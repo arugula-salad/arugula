@@ -258,6 +258,8 @@ macro_rules! every_op {
         $m!($crate::op::ops::RulesList);
         $m!($crate::op::ops::RulesForgetAll);
         $m!($crate::op::ops::RuleForget);
+        $m!($crate::op::ops::DocLinkGet);
+        $m!($crate::op::ops::DocLinkDelete);
         $m!($crate::op::ops::PaneWait);
         $m!($crate::op::ops::PaneSend);
         $m!($crate::op::ops::PaneKeys);
@@ -347,14 +349,15 @@ pub mod ops {
         Machine, PaneId,
         api::{
             AclSetRequest, Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConversationList,
-            ConversationsQuery, DetectionAnswer, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest,
-            GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned,
-            InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest,
-            MouseRequest, NotifyPref, NotifyRequest, OpenConversationRequest, OpenConversationResponse, PaneDiff,
-            PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
-            PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
-            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins,
-            TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
+            ConversationsQuery, DetectionAnswer, DocLinkUrl, DriverEntry, Empty, FollowUpRequest, FollowedUp,
+            FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo,
+            IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest,
+            LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest, OpenConversationRequest,
+            OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process,
+            PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse, SendRequest, Share,
+            ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest, StudioStatus,
+            Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest, TokenInfo, WaitRequest, WaitResult,
+            WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
@@ -527,6 +530,39 @@ pub mod ops {
         const PATH: &'static str = "/api/rules/{index}";
         const ACCESS: Access = Access::Owner;
         type Path = usize;
+        type Req = Empty;
+        type Res = Empty;
+    }
+
+    /// `GET /api/doc-links/ID` (#1066): the URL, key and all, of a Doc this
+    /// machine shared, for the account's list to copy. The owner's, and
+    /// never an agent's: it would read the key back.
+    pub struct DocLinkGet;
+
+    impl Op for DocLinkGet {
+        const NAME: &'static str = "doc_link.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/doc-links/{id}";
+        const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::DOCS);
+        // The URL holds the key that opens the Doc.
+        const CREDENTIAL: bool = true;
+        type Path = String;
+        type Req = Empty;
+        type Res = DocLinkUrl;
+    }
+
+    /// `DELETE /api/doc-links/ID` (#1066): unshare a Doc this machine
+    /// shared, whether or not its block is still open.
+    pub struct DocLinkDelete;
+
+    impl Op for DocLinkDelete {
+        const NAME: &'static str = "doc_link.delete";
+        const METHOD: Method = Method::Delete;
+        const PATH: &'static str = "/api/doc-links/{id}";
+        const ACCESS: Access = Access::Owner;
+        const FLAG: Option<&'static str> = Some(crate::flags::DOCS);
+        type Path = String;
         type Req = Empty;
         type Res = Empty;
     }

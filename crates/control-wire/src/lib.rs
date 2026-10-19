@@ -169,6 +169,16 @@ pub struct ControlWhere {
     pub block_domain: Option<String>,
 }
 
+/// Just what shared Docs need from `/control.json` (#1064), read apart from
+/// [`ControlInfo`] like the others.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ControlDocs {
+    #[serde(default)]
+    pub doc_links: Option<u8>,
+    #[serde(default)]
+    pub doc_viewer: Option<String>,
+}
+
 /// Just the jump host from `/control.json`, read apart from
 /// [`ControlInfo`] so an unrelated malformed field doesn't lose it.
 #[derive(Debug, Clone, Default, Deserialize)]

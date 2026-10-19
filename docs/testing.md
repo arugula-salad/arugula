@@ -469,6 +469,19 @@ with it and `web/e2e-interop.ts` checks the browser's code does; another
 implementation can check itself against the file alone. `just e2e-vectors`
 makes a new set.
 
+### Shared Doc links
+
+`crates/daemon/tests/fixtures/docs/link-vector.json` is a shared Doc's
+snapshot as the daemon seals it (#1066): a fixed key, id, version and
+nonces, the parts in base64, and the manifest and assets they hold. A Rust
+test (`docs/link.rs`) checks the encrypt path makes the file byte for byte
+(`UPDATE_LINK_VECTOR=1` rewrites it) and opens it; `web/e2e/doc-link.spec.ts`
+opens it with `web/src/doc-link.ts`, the code the page behind a link runs, on
+WebCrypto in Node, and checks that swapped parts, a part of another version
+or link, a cut-off end and a wrong key don't open. The same spec reads
+`web/dist/doc.html` and checks the page loads only the Doc renderer: no
+client, telemetry, service worker or socket.
+
 ## Browser tests
 
 `web/playwright.config.ts` makes the run's directories once and points the
@@ -1305,6 +1318,24 @@ Only what no test can do:
      app (its window on this daemon) and on a phone.
   5. Keep the screenshots for the PR's description, not the repository
      ([Binaries](../AGENTS.md#binaries)).
+
+- **A shared Doc on a phone and in a private window (#1066).** Playwright opens
+  a link in a fresh context (`doc-share.spec.ts`), on a Pixel 7 profile too; it
+  can't be a phone on a network of its own, or a second device with no account.
+  Before a release that changes sharing:
+  1. On a machine joined to the hosted control (or one of your own), with
+     `docs` on, open a Doc with text, a chart, a drawing and a picture. From the
+     phone, its block's menu: **Share link…**. The dialog shows the link and it
+     is copied.
+  2. Send the link to a laptop, and open it in a private window with no Arugula
+     account. Expect the Doc in the system's light or dark, all four kinds of
+     content, and nothing asking you to sign in.
+  3. On the phone, change a section and **Update shared copy**; reload the
+     laptop's window: the new text, at the same address. **Unshare**; reload:
+     "This Doc isn't shared any more".
+  4. From the account menu, **Shared Docs…** lists it with its size and how
+     often it was opened, **Copy link** while the machine is on, and **Unshare**.
+  5. Keep the screenshots for the PR's description.
 
 ## Planned
 

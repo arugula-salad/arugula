@@ -93,6 +93,10 @@ fn policy(method: &Method, path: &str) -> Policy {
         // CLI; an editor's browser could otherwise rewrite the owner's
         // report. #965: so are its pictures.
         ["api", "blocks", _, "call", "doc_outline" | "doc_fill" | "doc_asset_put"] => Policy::Owner,
+        // #1066: a Doc's link is the owner's, and the handler refuses an
+        // agent on the owner's CLI too: sharing publishes, and reading the
+        // link back reads its key.
+        ["api", "blocks", _, "call", "doc_share" | "doc_share_update" | "doc_unshare" | "doc_shares"] => Policy::Owner,
         // #965: reading a picture is a call (a POST), and a viewer's page
         // shows the Doc's pictures: without this row the default below
         // would ask for an editor.
@@ -338,6 +342,14 @@ mod tests {
         assert_eq!(policy(&p, "/api/blocks/7/call/why"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/blocks/7/call/graph"), Policy::Owner);
         // #963: a Doc is written by its owner only, and read by a viewer.
+        // #1066: ...and so is a Doc's link, whose methods publish it, take
+        // it down and read its key back.
+        for method in ["doc_share", "doc_share_update", "doc_unshare", "doc_shares"] {
+            assert_eq!(policy(&p, &format!("/api/blocks/7/call/{method}")), Policy::Owner, "{method}");
+        }
+        // The account list's way in is the same: operations, so the rows are theirs.
+        assert_eq!(policy(&g, "/api/doc-links/0123456789abcdef0123456789abcdef"), Policy::Owner);
+        assert_eq!(policy(&Method::DELETE, "/api/doc-links/0123456789abcdef0123456789abcdef"), Policy::Owner);
         for method in ["doc_outline", "doc_fill", "doc_asset_put"] {
             assert_eq!(policy(&p, &format!("/api/blocks/7/call/{method}")), Policy::Owner, "{method}");
         }

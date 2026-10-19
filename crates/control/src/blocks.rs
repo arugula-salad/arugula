@@ -163,7 +163,7 @@ pub async fn split(axum::extract::State(app): axum::extract::State<Arc<App>>, re
         // Never past here: none of control's routes answer on this host.
         Host::Docs => {
             let peer = req.extensions().get::<ConnectInfo<SocketAddr>>().map(|c| c.0);
-            crate::doc_links::serve(&app, req.method(), req.headers(), peer, req.uri().path())
+            crate::doc_links::serve(&app, req.method(), req.headers(), peer, req.uri().path(), req.uri().query())
         }
         Host::Block(key) => serve(&app, key, req).await,
     };

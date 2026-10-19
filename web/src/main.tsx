@@ -70,7 +70,7 @@ if (session) {
   setHostMenuExtras(() => controlMenuItems(session));
   setAccount({
     login: () => session.login || null,
-    items: () => accountItems(session),
+    items: () => accountItems(session, client.flag("docs")),
     signOut: () => void session.signOut(false),
     subscribe: (fn) => session.subscribe(fn),
   });

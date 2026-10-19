@@ -765,3 +765,65 @@ fn no_client_is_sent_a_pictures_bytes_and_a_restart_keeps_it() {
     assert_eq!(status, 200, "{}", &text[..text.len().min(200)]);
     assert!(text.contains(&b64(&bytes)[..40]));
 }
+
+/// #1066: a Doc's link is the owner's. An editor's or a viewer's call is
+/// refused by the access rows; an agent on the owner's CLI (the header it
+/// sends) is refused by the handler, and so is the account list's way in.
+#[test]
+fn only_the_owner_shares_a_doc_and_never_an_agent() {
+    let (d, pane, _) = shared();
+    let m = Mcp::bridge(&d, Some(pane));
+    let doc = m.call("doc", outline(2)).unwrap()["block"].as_u64().unwrap();
+    let bearer = d.bearer();
+    let agent = [("authorization", bearer.as_str()), ("x-arugula-agent", "1"), ("content-type", "application/json")];
+    let id = "0123456789abcdef0123456789abcdef";
+    let asks = "ask with the doc tool's share";
+
+    for method in ["doc_share", "doc_share_update", "doc_unshare", "doc_shares"] {
+        let path = format!("/api/blocks/{doc}/call/{method}");
+        for who in [FRIEND, EDITOR] {
+            let (status, text) = d.raw_as(who, "POST", &path, Some(json!({})));
+            assert_eq!(status, 403, "{who} {method}: {text}");
+        }
+        let (status, _, text) = d.tcp("POST", &path, &agent, Some("{}"));
+        assert_eq!(status, 403, "{method}: {text}");
+        assert!(text.contains(asks), "{method}: {text}");
+    }
+    for (method, path) in [("GET", format!("/api/doc-links/{id}")), ("DELETE", format!("/api/doc-links/{id}"))] {
+        for who in [FRIEND, EDITOR] {
+            let (status, text) = d.raw_as(who, method, &path, None);
+            assert_eq!(status, 403, "{who} {method}: {text}");
+        }
+        let (status, _, text) = d.tcp(method, &path, &agent, None);
+        assert_eq!(status, 403, "{method}: {text}");
+        assert!(text.contains(asks), "{method}: {text}");
+        // The owner is past all of it: this machine just never shared that.
+        let (status, text) = d.raw(method, &path, None);
+        assert_eq!(status, 404, "{method}: {text}");
+    }
+
+    // The owner gets as far as control, which this daemon hasn't joined.
+    let path = |m: &str| format!("/api/blocks/{doc}/call/{m}");
+    let (status, text) = d.raw("POST", &path("doc_share"), Some(json!({})));
+    assert_eq!(status, 400, "{text}");
+    assert!(text.contains("hasn't joined control: sharing needs control"), "{text}");
+    let (status, text) = d.raw("POST", &path("doc_shares"), Some(json!({})));
+    assert_eq!(status, 200, "{text}");
+    let said: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!((said["shared"].clone(), said["can"].clone()), (Value::Null, json!(false)), "{text}");
+    assert!(d.state(doc)["shared"].is_null());
+
+    // Off, it is refused like the rest of Docs (and says how to turn it on).
+    // A build without Labs has no flags to turn off.
+    #[cfg(feature = "labs")]
+    {
+        arugula_proto::flags::set(&d.state, "docs", false).unwrap();
+        let (status, text) = d.raw("POST", &path("doc_share"), Some(json!({})));
+        assert_eq!(status, 400, "{text}");
+        assert!(text.contains("Labs"), "{text}");
+        let (status, text) = d.raw("GET", &format!("/api/doc-links/{id}"), None);
+        assert_eq!(status, 404, "{text}");
+        assert!(text.contains("Labs"), "{text}");
+    }
+    drop(m);
+}

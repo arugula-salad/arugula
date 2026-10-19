@@ -309,12 +309,13 @@ pub async fn fallback(
     axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<SocketAddr>,
     method: Method,
     headers: HeaderMap,
+    uri: axum::http::Uri,
     Path(rest): Path<String>,
 ) -> Response {
     if app.cfg.block_domain.is_some() {
         return text(StatusCode::NOT_FOUND, "not found");
     }
-    serve(&app, &method, &headers, Some(peer), &format!("/{rest}"))
+    serve(&app, &method, &headers, Some(peer), &format!("/{rest}"), uri.query())
 }
 
 fn text(status: StatusCode, msg: &'static str) -> Response {
@@ -341,13 +342,27 @@ fn secure(h: &mut HeaderMap) {
 ///
 /// Everything else is a 404. No answer sets a cookie (nothing here does,
 /// and `blocks::split` strips one from any answer on the docs host).
-pub fn serve(app: &App, method: &Method, headers: &HeaderMap, peer: Option<SocketAddr>, path: &str) -> Response {
-    let mut res = answer(app, method, headers, peer, path);
+pub fn serve(
+    app: &App,
+    method: &Method,
+    headers: &HeaderMap,
+    peer: Option<SocketAddr>,
+    path: &str,
+    query: Option<&str>,
+) -> Response {
+    let mut res = answer(app, method, headers, peer, path, query);
     secure(res.headers_mut());
     res
 }
 
-fn answer(app: &App, method: &Method, headers: &HeaderMap, peer: Option<SocketAddr>, path: &str) -> Response {
+fn answer(
+    app: &App,
+    method: &Method,
+    headers: &HeaderMap,
+    peer: Option<SocketAddr>,
+    path: &str,
+    query: Option<&str>,
+) -> Response {
     let not_found = || text(StatusCode::NOT_FOUND, "not found");
     if !matches!(*method, Method::GET | Method::HEAD) {
         return not_found();
@@ -361,7 +376,11 @@ fn answer(app: &App, method: &Method, headers: &HeaderMap, peer: Option<SocketAd
             {
                 return e.into_response();
             }
-            data(app, headers, id, what).unwrap_or_else(|e| {
+            // A part says which version it expects (`?v=`), so a page that
+            // began on one version never mixes in another's.
+            let want =
+                query.and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("v="))).map(|v| v.parse::<u64>().ok());
+            data(app, headers, id, what, want).unwrap_or_else(|e| {
                 warn!(error = %e, "serving a Doc link");
                 text(StatusCode::INTERNAL_SERVER_ERROR, "something went wrong")
             })
@@ -408,9 +427,14 @@ fn fresh(headers: &HeaderMap, tag: &str) -> bool {
         .is_some_and(|v| v.split(',').map(str::trim).any(|t| t == "*" || t.strip_prefix("W/").unwrap_or(t) == tag))
 }
 
-fn data(app: &App, headers: &HeaderMap, id: &str, what: &str) -> anyhow::Result<Response> {
+/// `want` is the `?v=` a part was asked with: `Some(None)` when it isn't a
+/// number.
+fn data(app: &App, headers: &HeaderMap, id: &str, what: &str, want: Option<Option<u64>>) -> anyhow::Result<Response> {
     let gone = || text(StatusCode::NOT_FOUND, "this isn't shared any more");
     let Some(s) = app.db.doc_served(id)? else { return Ok(gone()) };
+    if what != "meta" && want.is_some_and(|v| v != Some(s.ver)) {
+        return Ok(gone());
+    }
     let meta = what == "meta";
     let n: u32 = if meta {
         0

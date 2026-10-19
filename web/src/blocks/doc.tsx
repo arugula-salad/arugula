@@ -12,50 +12,13 @@
 // viewer's call) the first time a section shows that rev.
 
 import { render } from "preact";
-import { useEffect, useMemo, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { PaneId } from "../proto";
-import { plain } from "../ui/embeds";
-import { Markdown } from "../ui/markdown";
+import { DocBlock, markdown, type DocState } from "./doc-render";
 import { registerBlock, type BlockView } from "./view";
 
-interface Section {
-  id: string;
-  heading: string;
-  intent: string;
-  /** `null` while pending. */
-  body: string | null;
-  /** Bumped when the body is written, a refill too. */
-  rev: number;
-}
-
-/** A picture the Doc keeps; the bytes are never in the state. */
-interface Asset {
-  name: string;
-  mime: string;
-  size: number;
-  /** Changes when the name is written again. */
-  rev: number;
-}
-
-interface DocState {
-  title: string;
-  entries: Section[];
-  assets?: Asset[];
-  rev: number;
-  error?: string;
-}
-
-/** The Doc as Markdown, as the daemon's `capture --text` has it: a chart is
- * a line saying what it is and a drawing is `[drawing]`. */
-function markdown(s: DocState): string {
-  const parts = [`# ${s.title}\n`];
-  for (const e of s.entries) {
-    const body = e.body !== null ? `${plain(e.body).trimEnd()}\n` : `_(coming${e.intent ? `: ${e.intent}` : ""})_\n`;
-    parts.push(`\n## ${e.heading}\n\n${body}`);
-  }
-  return parts.join("");
-}
+// The renderer is doc-render.tsx's; the share page imports it from there.
+export { DocBlock, type DocState, type ImageLoader } from "./doc-render";
 
 /** The pictures one Doc view has fetched, by `name/rev`, each as the data:
  * URL it is shown from. The view owns it and `dispose` empties it. A data:
@@ -107,83 +70,15 @@ function makeImages(client: Client, id: PaneId): Images {
   };
 }
 
+/** What the app adds to a Doc block (#1066): sharing it with a link is the
+ * owner's, and lives in ui/doc-share.tsx, which sets this when the app
+ * loads. The viewer behind a share link never loads it, so it stays out of
+ * that page. */
+export const docHooks: { state?: (client: Client, id: PaneId, s: DocState) => void } = {};
+
 /** The caches of the Doc views that are open, for a spec to look at. */
 const open = new Map<PaneId, Images>();
 (globalThis as { __arugulaDocImages?: (id: PaneId) => Map<string, string> | undefined }).__arugulaDocImages = (id) => open.get(id)?.cache;
-
-/** One picture of the Doc. Shown only from an asset the state lists; until it
- * arrives, or if it can't, the alt text stands in. */
-function DocImage({ images, name, alt, rev }: { images: Images; name: string; alt: string; rev: number | undefined }) {
-  const key = `${name}/${rev}`;
-  const [url, setUrl] = useState<string | null>(images.cache.get(key) ?? null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    if (rev === undefined) return;
-    setFailed(false);
-    const have = images.cache.get(key);
-    if (have) return setUrl(have);
-    // The picture shown stays until the new rev is here.
-    let live = true;
-    void images.load(name, rev).then((u) => live && (u ? setUrl(u) : setFailed(true)));
-    return () => {
-      live = false;
-    };
-  }, [images, key]);
-  if (rev === undefined || failed) return <span class="doc-image-missing" data-doc-image-missing>{alt || name}</span>;
-  if (!url) return <span class="doc-image-wait" role="img" aria-label={alt || name}>{alt || name}</span>;
-  return <img class="doc-image" src={url} alt={alt || name} loading="lazy" onError={() => setFailed(true)} />;
-}
-
-function DocBlock({ id, s, fresh, images }: { id: PaneId; s: DocState | null; fresh: Map<string, number>; images: Images }) {
-  // Drawn again when a picture is added or replaced, and not otherwise.
-  const kept = JSON.stringify(s?.assets ?? []);
-  const image = useMemo(() => {
-    const revs = new Map((JSON.parse(kept) as Asset[]).map((a) => [a.name, a.rev]));
-    return (src: string, alt: string, key: number) => {
-      const name = src.slice("assets/".length);
-      return <DocImage key={`${key}:${name}`} images={images} name={name} alt={alt} rev={revs.get(name)} />;
-    };
-  }, [kept, images]);
-  if (!s) return <div class="browser-card dim">Loading…</div>;
-  if (s.error) {
-    return (
-      <div class="browser-card error" data-doc-block={id}>
-        <p>Can't show this Doc</p>
-        <p class="dim">{s.error}</p>
-      </div>
-    );
-  }
-  const done = s.entries.filter((e) => e.body !== null).length;
-  return (
-    <div class="doc" data-doc-block={id}>
-      <div class="doc-page">
-        <h1 class="doc-title">{s.title || "Untitled"}</h1>
-        {s.entries.length === 0 && <p class="dim doc-wait">Waiting for the outline…</p>}
-        {s.entries.length > 0 && (
-          <p class="dim doc-progress" data-doc-progress>
-            {done} of {s.entries.length} sections written
-          </p>
-        )}
-        {s.entries.map((e) => (
-          <section key={e.id} class="doc-section" data-section={e.id} data-pending={e.body === null ? "" : undefined}>
-            <h2 class="doc-heading">{e.heading}</h2>
-            {e.body !== null ? (
-              // A refill is a new element, so its highlight plays again.
-              <div key={e.rev} class={fresh.get(e.id) === e.rev ? "doc-body doc-fresh" : "doc-body"}>
-                <Markdown text={e.body} refs={null} embeds image={image} />
-              </div>
-            ) : (
-              <div class="doc-pending">
-                <span class="doc-coming">Coming…</span>
-                {e.intent && <span class="doc-intent"> {e.intent}</span>}
-              </div>
-            )}
-          </section>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 registerBlock("doc", (client: Client, id): BlockView => {
   const host = document.createElement("div");
@@ -207,7 +102,7 @@ registerBlock("doc", (client: Client, id): BlockView => {
     if (note) host.textContent = "";
     note = false;
     host.className = "block block-doc";
-    render(<DocBlock id={id} s={state} fresh={fresh} images={images} />, host);
+    render(<DocBlock id={id} s={state} fresh={fresh} load={images.load} cached={images.cache} />, host);
   };
   const off = client.subscribe(draw);
   draw();
@@ -224,6 +119,7 @@ registerBlock("doc", (client: Client, id): BlockView => {
       }
       state = s;
       draw();
+      docHooks.state?.(client, id, s);
     },
     title: () => state?.title || "Doc",
     text: () => (state ? markdown(state) : ""),

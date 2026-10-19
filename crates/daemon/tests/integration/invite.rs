@@ -17,13 +17,19 @@ use std::{
 };
 
 use agentd::*;
+#[cfg(feature = "labs")]
+use arugula_e2e::channel::{Channel, Initiator, Msg, Refusal, RequestHead, prologue};
 use arugula_e2e::{
     Cert, DeviceKeys, Kind,
     push::PushSub,
     team::{AccountCerts, Member, Roster, TeamPin, TeamRole},
 };
 use base64::Engine;
+#[cfg(feature = "labs")]
+use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
+#[cfg(feature = "labs")]
+use tokio_tungstenite::tungstenite::Message;
 
 const OWNER: &str = "me@example.com";
 const FRIEND: &str = "friend@example.com";
@@ -346,6 +352,8 @@ impl Person {
 struct World {
     fake: Shared,
     url: String,
+    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
+    alex: DeviceKeys,
     alex_root: Cert,
     daemon: DeviceKeys,
     daemon_cert: Cert,
@@ -406,7 +414,7 @@ fn world_where(dee_role: TeamRole) -> World {
         f.teams.insert("t2".into(), (vec![forged], certs.clone()));
     }
     let url = serve(fake.clone());
-    World { fake, url, alex_root, daemon, daemon_cert, bea, cy, dee, t1: (vec![roster], certs) }
+    World { fake, url, alex, alex_root, daemon, daemon_cert, bea, cy, dee, t1: (vec![roster], certs) }
 }
 
 impl World {
@@ -632,4 +640,86 @@ fn an_agent_in_a_terminal_asks_and_the_owner_sends() {
     assert_eq!(d.get("/api/acl")["grants"][0]["principal"], "account:b1");
     std::thread::sleep(Duration::from_secs(2));
     assert_eq!(w.bea.got(&w.fake).len(), 1, "exactly one");
+}
+
+#[cfg(feature = "labs")]
+type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+#[cfg(feature = "labs")]
+/// A device's channel to the daemon at `/e2e`, as control's relay hands it
+/// over, once the daemon lets that device in (it has to have fetched the
+/// team's certificates first).
+async fn channel(d: &Daemon, daemon: &DeviceKeys, keys: &DeviceKeys) -> (Ws, Channel) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{}/e2e", d.port)).await.unwrap();
+        let (init, m1) = Initiator::start(keys, &daemon.noise_public, &prologue(&daemon.id())).unwrap();
+        ws.send(Message::Binary(m1.into())).await.unwrap();
+        if let Some(Ok(Message::Binary(m2))) = ws.next().await
+            && let Ok((said, ch)) = init.finish(&m2)
+            && Refusal::decode(&said).is_none()
+        {
+            return (ws, ch);
+        }
+        assert!(std::time::Instant::now() < deadline, "the daemon never let that device in");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+}
+
+#[cfg(feature = "labs")]
+async fn channel_call(ws: &mut Ws, ch: &Channel, method: &str, path: &str, body: Value) -> (u16, Value) {
+    let head = RequestHead {
+        method: method.into(),
+        path: path.into(),
+        content_type: Some("application/json".into()),
+        stream: false,
+        headers: Default::default(),
+    };
+    for w in ch.seal(&Msg::Request { id: 1, head, body: body.to_string().into_bytes() }).unwrap() {
+        ws.send(Message::Binary(w.into())).await.unwrap();
+    }
+    loop {
+        let m = tokio::time::timeout(Duration::from_secs(10), ws.next()).await.expect("an answer");
+        let Some(Ok(Message::Binary(w))) = m else { panic!("the channel closed") };
+        if let Some(Msg::Response { head, body, .. }) = ch.open(&w).unwrap() {
+            return (head.status, serde_json::from_slice(&body).unwrap_or(Value::Null));
+        }
+    }
+}
+
+/// #1066: a Doc's link belongs to the account that shares it. A team's other
+/// owner has the owner's rights here, but sharing, reading the link's key
+/// back and unsharing are refused them (the M79 rule), by the block's
+/// methods and by the account list's routes; the machine's own account,
+/// through the same kind of channel, is not.
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_teams_other_owner_cant_share_a_doc_or_read_its_link() {
+    let w = world_where(TeamRole::Owner);
+    w.fake.lock().unwrap().team = Some(w.t1.clone());
+    let d = w.daemon(true);
+    arugula_testkit::labs(&d.state, true);
+    let (pane, _) = first(&d);
+    let doc = d.post("/api/blocks", json!({ "type": "doc", "config": { "title": "Plan" }, "split": pane, "local": true }))
+        ["block"]
+        .as_u64()
+        .unwrap();
+    let (mut dee, dee_ch) = channel(&d, &w.daemon, &w.dee.keys).await;
+    let (mut alex, alex_ch) = channel(&d, &w.daemon, &w.alex).await;
+    let id = "0123456789abcdef0123456789abcdef";
+
+    let mut calls = Vec::new();
+    for m in ["doc_share", "doc_share_update", "doc_unshare", "doc_shares"] {
+        calls.push(("POST", format!("/api/blocks/{doc}/call/{m}")));
+    }
+    calls.push(("GET", format!("/api/doc-links/{id}")));
+    calls.push(("DELETE", format!("/api/doc-links/{id}")));
+    for (method, path) in &calls {
+        let (status, r) = channel_call(&mut dee, &dee_ch, method, path, json!({})).await;
+        assert_eq!(status, 403, "dee {method} {path}: {r}");
+        // Alex's own account is past the refusal (this machine hasn't joined
+        // control, or never shared that: something else says no).
+        let (status, r) = channel_call(&mut alex, &alex_ch, method, path, json!({})).await;
+        assert_ne!(status, 403, "alex {method} {path}: {r}");
+    }
 }

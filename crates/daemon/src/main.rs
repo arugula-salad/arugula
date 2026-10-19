@@ -951,6 +951,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         acl.clone(),
         args.no_relay,
     );
+    // Doc blocks share through control (#1066).
+    docs::link::init(control.clone());
     // M40: forge blocks' live updates (control's GitHub App, hooks here).
     forges::start(state_dir.clone(), Some(&control), direct_urls.clone());
     // Claude Code's IDE (M28): its relay keeps the connections.

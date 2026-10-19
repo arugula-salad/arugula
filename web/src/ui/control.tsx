@@ -25,6 +25,7 @@ import { ConfirmRemove } from "./confirm";
 import { canScan, Scanner } from "./scan";
 import { verifyCode, verifyWords } from "../e2e/words.ts";
 import { TelemetryCard } from "./telemetry-card";
+import { SharedDocs } from "./shared-docs";
 
 export function useControl(s: ControlSession) {
   useSubscribe((fn) => s.subscribe(fn));
@@ -687,7 +688,7 @@ function JoinCodeForm({ s }: { s: ControlSession }) {
   );
 }
 
-type Panel = "cloud" | "devices" | "add" | "add-device" | "teams" | "plan" | "account";
+type Panel = "cloud" | "devices" | "add" | "add-device" | "teams" | "plan" | "account" | "shared-docs";
 
 const openPanel = (p: Panel) => () => dispatchEvent(new CustomEvent("arugula:control-panel", { detail: p }));
 
@@ -762,6 +763,12 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   if (panel === "devices") return <Devices s={s} close={() => setPanel(null)} />;
   if (panel === "teams") return <Teams s={s} close={() => setPanel(null)} />;
   if (panel === "plan") return <Plan s={s} close={() => setPanel(null)} />;
+  if (panel === "shared-docs")
+    return (
+      <Modal close={() => setPanel(null)}>
+        <SharedDocs s={s} close={() => setPanel(null)} />
+      </Modal>
+    );
   if (panel === "account")
     return (
       <Modal close={() => setPanel(null)}>
@@ -1985,10 +1992,12 @@ export function controlMenuItems(s: ControlSession): MenuItem[] {
 
 /** The account's own items, in the account menu on every page (the bar's,
  * and the no-machines screen's, #97). Sign out is the menu's own, last. */
-export function accountItems(s: ControlSession): MenuItem[] {
+export function accountItems(s: ControlSession, docs = false): MenuItem[] {
   return [
     { label: "Teams…", run: panel("teams") },
     { label: "Devices and machines…", run: panel("devices") },
+    // #1066: follows the `docs` flag of the machine shown.
+    ...(docs ? [{ label: "Shared Docs…", run: panel("shared-docs") } as MenuItem] : []),
     { label: "Cloud agents…", run: openPanel("cloud") },
     { label: "Add a phone or browser…", run: openPanel("add-device") },
     { label: "Sign-in and account…", run: panel("account") },

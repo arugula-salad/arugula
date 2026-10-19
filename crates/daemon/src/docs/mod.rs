@@ -33,6 +33,12 @@
 //! lists them as `assets: [{name, mime, size, rev}]` and never holds their
 //! bytes; `doc_asset {name}` (a viewer's) answers `{mime, data}` for one.
 //!
+//! **Sharing** (#1064, [`link`]): `doc_share`, `doc_share_update`,
+//! `doc_unshare` and `doc_shares` (the owner's, and never an agent's: `api.rs`
+//! refuses the agent header) keep an encrypted snapshot on control and give
+//! a URL. The state gains `shared: {made, updated} | null` and nothing more:
+//! the key is in `<state>/doc-links.json`, never here.
+//!
 //! The Doc is Labs' while `docs` is a flag, but its code is core: it checks
 //! the flag itself when made ([`DocKind`]), and a restored one comes back
 //! with the flag off (#347: turning a flag off hides and refuses, it
@@ -40,6 +46,7 @@
 
 mod assets;
 mod embeds;
+pub mod link;
 
 use std::{
     path::{Path, PathBuf},
@@ -53,6 +60,7 @@ use serde_json::{Value, json};
 
 pub use assets::ASSET_MAX;
 use assets::{ASSETS_MAX, Asset};
+use link::{Fail, Link};
 
 use crate::{
     block::{Block, BlockCtx, BlockKind, Summary, no_method},
@@ -81,7 +89,9 @@ impl BlockKind for DocKind {
         }
         let config: Config = serde_json::from_value(config).map_err(|e| format!("doc config: {e}"))?;
         let dir = ctx.dir.join(FOLDER);
-        Ok(Doc::new(dir, config.title, ctx.restoring, Arc::new(move || ctx.changed())))
+        let mut link = Link::none(ctx.state_dir.clone(), ctx.id);
+        link.remote = link::remote();
+        Ok(Doc::with_link(dir, config.title, ctx.restoring, link, Arc::new(move || ctx.changed())))
     }
 
     fn stored_text(&self, dir: &Path) -> Option<String> {
@@ -142,9 +152,18 @@ struct State {
     /// The pictures kept in `assets/`, by name.
     assets: Vec<Asset>,
     rev: u64,
+    /// When it was shared with a link and last updated; the link is not here.
+    shared: Option<SharedAt>,
     /// The folder couldn't be read back: the block shows this and writes
     /// nothing.
     error: Option<String>,
+}
+
+/// What everyone who sees the Doc may know of its link.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+struct SharedAt {
+    made: u64,
+    updated: u64,
 }
 
 /// The Doc as the folder holds it.
@@ -165,10 +184,19 @@ pub struct Doc {
     io: tokio::sync::Mutex<()>,
     /// Each entry's fingerprint as clients were last sent it.
     sent: Mutex<Vec<u64>>,
+    /// Where this Doc's link is kept, and control.
+    link: Link,
+    /// One share, update or unshare at a time.
+    shares: tokio::sync::Mutex<()>,
 }
 
 impl Doc {
+    #[cfg(test)]
     pub fn new(dir: PathBuf, title: String, restoring: bool, changed: Changed) -> Arc<Doc> {
+        Doc::with_link(dir, title, restoring, Link::none(PathBuf::new(), 0), changed)
+    }
+
+    pub fn with_link(dir: PathBuf, title: String, restoring: bool, link: Link, changed: Changed) -> Arc<Doc> {
         let mut state = State { title: title.trim().to_owned(), ..Default::default() };
         if restoring && dir.join(OUTLINE).exists() {
             match load(&dir) {
@@ -178,6 +206,7 @@ impl Doc {
         }
         if restoring {
             state.assets = assets::load(&dir.join(assets::FOLDER));
+            state.shared = link.current().map(|(_, e)| SharedAt { made: e.made, updated: e.updated });
         }
         Arc::new_cyclic(|me| Doc {
             me: me.clone(),
@@ -186,6 +215,8 @@ impl Doc {
             state: Mutex::new(state),
             io: tokio::sync::Mutex::new(()),
             sent: Mutex::new(Vec::new()),
+            link,
+            shares: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -360,10 +391,115 @@ impl Doc {
         Ok(json!({ "mime": mime, "data": base64::engine::general_purpose::STANDARD.encode(bytes) }))
     }
 
+    /// The snapshot to share: the Doc as it is now, read under the write
+    /// lock so a fill can't land halfway.
+    async fn snapshot(&self) -> Result<(String, Vec<u8>), String> {
+        let _io = self.io.lock().await;
+        let (title, entries, kept) = {
+            let st = self.state.lock().unwrap();
+            if let Some(e) = &st.error {
+                return Err(e.clone());
+            }
+            if st.entries.is_empty() {
+                return Err("this Doc has no outline yet: there is nothing to share".into());
+            }
+            (st.title.clone(), st.entries.clone(), st.assets.clone())
+        };
+        let mut blobs = Vec::new();
+        let mut assets = Vec::new();
+        for a in &kept {
+            let bytes = tokio::fs::read(self.dir.join(assets::FOLDER).join(&a.name))
+                .await
+                .map_err(|e| format!("can't read the picture {}: {e}", a.name))?;
+            assets.push(link::ManifestAsset {
+                name: a.name.clone(),
+                mime: a.mime.to_owned(),
+                size: bytes.len() as u64,
+            });
+            blobs.push(bytes);
+        }
+        let manifest = link::Manifest {
+            title: title.clone(),
+            entries: entries
+                .into_iter()
+                .map(|e| link::ManifestEntry { id: e.id, heading: e.heading, intent: e.intent, body: e.body })
+                .collect(),
+            assets,
+        };
+        Ok((title, link::snapshot(&manifest, &blobs)))
+    }
+
+    /// Say the Doc is shared (or isn't), and tell clients.
+    fn set_shared(&self, shared: Option<SharedAt>) {
+        {
+            let mut st = self.state.lock().unwrap();
+            if st.shared == shared {
+                return;
+            }
+            st.shared = shared;
+            st.rev += 1;
+        }
+        (self.changed)();
+    }
+
+    /// `doc_share` and `doc_share_update`: the URL.
+    async fn share(&self, update: bool) -> Result<Value, String> {
+        arugula_mux::labs::flag(&self.link.state_dir, arugula_proto::flags::DOCS)?;
+        let _one = self.shares.lock().await;
+        let (title, plain) = self.snapshot().await?;
+        let got = if update { self.link.update(&title, plain).await } else { self.link.share(&title, plain).await };
+        match got {
+            Ok(s) => {
+                self.set_shared(Some(SharedAt { made: s.made, updated: s.updated }));
+                Ok(json!({ "url": s.url }))
+            }
+            Err(Fail::Gone) => {
+                self.set_shared(None);
+                Err(link::UNSHARED_ELSEWHERE.into())
+            }
+            Err(Fail::Said(e)) => Err(e),
+        }
+    }
+
+    /// `doc_shares`: this Doc's URL again, or that it has none (and whether
+    /// it could have).
+    async fn shares(&self) -> Result<Value, String> {
+        arugula_mux::labs::flag(&self.link.state_dir, arugula_proto::flags::DOCS)?;
+        let _one = self.shares.lock().await;
+        let got = match self.link.shares().await {
+            Ok(Some(s)) => {
+                self.set_shared(Some(SharedAt { made: s.made, updated: s.updated }));
+                return Ok(json!({ "url": s.url, "made": s.made, "updated": s.updated }));
+            }
+            Ok(None) | Err(Fail::Gone) => self.link.available().await,
+            Err(Fail::Said(e)) => return Err(e),
+        };
+        self.set_shared(None);
+        Ok(match got {
+            Ok(()) => json!({ "shared": null, "can": true }),
+            Err(why) => json!({ "shared": null, "can": false, "why": why }),
+        })
+    }
+
+    /// `doc_unshare`: with an `id`, only if that is this Doc's link.
+    async fn unshare(&self, id: Option<String>) -> Result<Value, String> {
+        arugula_mux::labs::flag(&self.link.state_dir, arugula_proto::flags::DOCS)?;
+        let _one = self.shares.lock().await;
+        if let Some(id) = &id
+            && self.link.current().is_none_or(|(mine, _)| mine != *id)
+        {
+            return Ok(json!({ "other": true }));
+        }
+        self.link.unshare(None).await?;
+        self.set_shared(None);
+        Ok(json!({}))
+    }
+
     fn state_json(&self) -> Value {
         let st = self.state.lock().unwrap();
         let mut v = json!({
             "title": st.title, "entries": st.entries, "entries_from": 0, "assets": st.assets, "rev": st.rev,
+            "shared": st.shared,
         });
         if let Some(e) = &st.error {
             v["error"] = json!(e);
@@ -510,6 +646,15 @@ impl Block for Doc {
                     let me = me.ok_or("closed")?;
                     me.asset(&name.ok_or("doc_asset needs {name}")?).await
                 })
+            }
+            "doc_share" | "doc_share_update" => {
+                let update = method == "doc_share_update";
+                Box::pin(async move { me.ok_or("closed")?.share(update).await })
+            }
+            "doc_shares" => Box::pin(async move { me.ok_or("closed")?.shares().await }),
+            "doc_unshare" => {
+                let id = args["id"].as_str().map(str::to_owned);
+                Box::pin(async move { me.ok_or("closed")?.unshare(id).await })
             }
             "state" => {
                 let s = self.state();
@@ -1074,5 +1219,413 @@ mod tests {
         assert_eq!(d.config(), json!({ "title": "Plan" }));
         assert_eq!(d.summary().title.as_deref(), Some("Plan"));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+/// Sharing a Doc (#1066), against a control that keeps what it is sent
+/// (`link::fake`). The format is `link.rs`'s own tests'.
+#[cfg(test)]
+mod share_tests {
+    use std::sync::atomic::AtomicUsize;
+
+    use base64::{
+        Engine,
+        engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+    };
+
+    use super::{
+        link::{self, Link, Seam, fake::Fake},
+        *,
+    };
+
+    /// A key that can be found by eye in anything it leaks into.
+    const MARKER: [u8; 32] = *b"ARUGULA-MARKER-KEY-0123456789ABC";
+    const ID: &str = "abcdefabcdefabcdefabcdefabcdefab";
+
+    struct Setup {
+        dir: PathBuf,
+        state_dir: PathBuf,
+        fake: Arc<Fake>,
+        doc: Arc<Doc>,
+    }
+
+    impl Drop for Setup {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn temp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "arugula-doc-share-{name}-{}-{}",
+            std::process::id(),
+            hex::encode(link_random())
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn link_random() -> [u8; 4] {
+        crate::push::random()
+    }
+
+    fn at(dir: &Path, fake: Option<Arc<Fake>>, restoring: bool) -> (Arc<Doc>, Arc<AtomicUsize>) {
+        let state_dir = dir.join("state");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        let mut link = Link::none(state_dir, 7);
+        link.remote = fake.map(|f| f as Arc<dyn link::Remote>);
+        link.seam = Some(Seam { key: Some(MARKER), id: Some(ID.into()), part_max: Some(512), counted_nonces: false });
+        let pushes = Arc::new(AtomicUsize::new(0));
+        let n = pushes.clone();
+        let doc = Doc::with_link(
+            dir.join("block").join(FOLDER),
+            "Plan".into(),
+            restoring,
+            link,
+            Arc::new(move || {
+                n.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }),
+        );
+        (doc, pushes)
+    }
+
+    /// A Doc with an outline, two sections (one with a picture) and `docs` on.
+    async fn setup(name: &str) -> Setup {
+        let dir = temp(name);
+        let fake = Fake::new();
+        let (doc, _) = at(&dir, Some(fake.clone()), false);
+        let state_dir = dir.join("state");
+        arugula_proto::flags::set(&state_dir, "docs", true).unwrap();
+        doc.call(
+            "doc_outline",
+            json!({ "title": "Plan", "sections": [
+            { "heading": "One", "intent": "first" }, { "heading": "Two", "intent": "second" }, { "heading": "Three" }
+        ] }),
+        )
+        .await
+        .unwrap();
+        let png = [b"\x89PNG\r\n\x1a\n".as_slice(), b"pretend pixels"].concat();
+        doc.call("doc_asset_put", json!({ "name": "dot.png", "data": STANDARD.encode(&png) })).await.unwrap();
+        doc.call("doc_fill", json!({ "section": "s1", "markdown": "Hello, secret words.\n\n![dot](assets/dot.png)" }))
+            .await
+            .unwrap();
+        doc.call("doc_fill", json!({ "section": "s2", "markdown": "x".repeat(2000) })).await.unwrap();
+        Setup { dir, state_dir, fake, doc }
+    }
+
+    fn key_forms() -> Vec<String> {
+        vec![
+            String::from_utf8(MARKER.to_vec()).unwrap(),
+            URL_SAFE_NO_PAD.encode(MARKER),
+            STANDARD.encode(MARKER),
+            hex::encode(MARKER),
+        ]
+    }
+
+    /// Every file under `dir`, with its text.
+    fn files(dir: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
+        for e in std::fs::read_dir(dir).unwrap() {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                files(&p, out);
+            } else {
+                out.push((p.clone(), std::fs::read(&p).unwrap()));
+            }
+        }
+    }
+
+    fn contains(hay: &[u8], needle: &str) -> bool {
+        hay.windows(needle.len()).any(|w| w == needle.as_bytes())
+    }
+
+    #[tokio::test]
+    async fn sharing_checks_the_quota_then_uploads_in_parts_and_the_url_opens() {
+        let s = setup("share").await;
+        let got = s.doc.call("doc_share", json!({})).await.unwrap();
+        let url = got["url"].as_str().unwrap();
+        assert_eq!(url, format!("https://docs.test/{ID}#k={}", URL_SAFE_NO_PAD.encode(MARKER)));
+
+        // The quota first, then each part, then the commit.
+        let paths = s.fake.paths();
+        assert_eq!(paths[0], "GET /api/doc-links/quota");
+        let parts = s.fake.served.lock().unwrap()[ID].1;
+        assert!(parts >= 3, "{parts}");
+        for n in 0..parts {
+            assert_eq!(paths[1 + n], format!("PUT /api/doc-links/{ID}/v/1/parts/{n}"));
+        }
+        assert_eq!(paths[1 + parts], format!("POST /api/doc-links/{ID}/v/1/commit"));
+        assert_eq!(paths.len(), parts + 2);
+
+        // What control holds opens with the key, as the manifest says.
+        let held: Vec<Vec<u8>> =
+            (0..parts).map(|n| s.fake.parts.lock().unwrap()[&(ID.to_string(), 1, n)].clone()).collect();
+        assert!(held.iter().all(|p| p.len() <= 512 + 28));
+        // Each part has a nonce of its own (random ones: the seam doesn't count them).
+        let mut ivs: Vec<&[u8]> = held.iter().map(|p| &p[..12]).collect();
+        ivs.sort();
+        ivs.dedup();
+        assert_eq!(ivs.len(), held.len(), "a nonce was reused");
+        let plain = link::open(&MARKER, ID, 1, &held).unwrap();
+        assert_eq!(&plain[..4], b"ADL1");
+        let len = u32::from_be_bytes(plain[4..8].try_into().unwrap()) as usize;
+        let manifest: Value = serde_json::from_slice(&plain[8..8 + len]).unwrap();
+        assert_eq!(manifest["title"], "Plan");
+        assert_eq!(manifest["entries"][0]["body"], "Hello, secret words.\n\n![dot](assets/dot.png)");
+        assert!(manifest["entries"][2]["body"].is_null());
+        assert_eq!(manifest["assets"][0]["name"], "dot.png");
+        assert_eq!(manifest["assets"][0]["mime"], "image/png");
+        // ...and nothing the viewer doesn't render.
+        assert_eq!(manifest["assets"][0].as_object().unwrap().len(), 3);
+        assert_eq!(manifest["entries"][0].as_object().unwrap().len(), 4);
+        assert_eq!(manifest.as_object().unwrap().len(), 3);
+        assert_eq!(plain.len(), 8 + len + manifest["assets"][0]["size"].as_u64().unwrap() as usize);
+
+        // Control holds ciphertext: not the words, and not the key.
+        for p in &held {
+            assert!(!contains(p, "secret words"));
+        }
+        // The state says only when.
+        let st = s.doc.state();
+        assert_eq!(st["shared"].as_object().unwrap().len(), 2);
+        assert!(st["shared"]["made"].as_u64().unwrap() > 0);
+        // A second share is refused, saying what to use.
+        let e = s.doc.call("doc_share", json!({})).await.unwrap_err();
+        assert!(e.contains("Update") && !e.contains('\n'), "{e}");
+        assert_eq!(s.fake.served.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_update_is_a_new_version_under_the_same_id_and_key_and_unshare_takes_it_down() {
+        let s = setup("update").await;
+        let first = s.doc.call("doc_share", json!({})).await.unwrap()["url"].as_str().unwrap().to_owned();
+        let made = s.doc.state()["shared"]["made"].clone();
+        s.doc.call("doc_fill", json!({ "section": "s3", "markdown": "A new section." })).await.unwrap();
+        let again = s.doc.call("doc_share_update", json!({})).await.unwrap()["url"].as_str().unwrap().to_owned();
+        assert_eq!(first, again, "the same URL");
+        assert_eq!(s.fake.served.lock().unwrap()[ID].0, 2);
+        assert!(s.fake.paths().iter().any(|p| p.starts_with(&format!("PUT /api/doc-links/{ID}/v/2/parts/0"))));
+        assert_eq!(s.doc.state()["shared"]["made"], made, "made stays");
+        let n = s.fake.served.lock().unwrap()[ID].1;
+        let held: Vec<Vec<u8>> =
+            (0..n).map(|n| s.fake.parts.lock().unwrap()[&(ID.to_string(), 2, n)].clone()).collect();
+        let plain = link::open(&MARKER, ID, 2, &held).unwrap();
+        assert!(contains(&plain, "A new section."));
+        // Version 2's parts don't open as version 1.
+        assert!(link::open(&MARKER, ID, 1, &held).is_none());
+
+        // Update on a Doc that isn't shared says so.
+        let other = setup("update-other").await;
+        let e = other.doc.call("doc_share_update", json!({})).await.unwrap_err();
+        assert!(e.contains("isn't shared"), "{e}");
+
+        // Another link's id leaves this one alone.
+        let r = s.doc.call("doc_unshare", json!({ "id": "f".repeat(32) })).await.unwrap();
+        assert_eq!(r["other"], true);
+        assert!(s.doc.state()["shared"].is_object());
+        s.doc.call("doc_unshare", json!({})).await.unwrap();
+        assert!(s.doc.state()["shared"].is_null());
+        assert!(s.fake.served.lock().unwrap().is_empty());
+        assert_eq!(s.fake.paths().last().unwrap(), &format!("DELETE /api/doc-links/{ID}"));
+        assert!(link::get(&s.state_dir, ID).unwrap().is_none(), "the key is forgotten");
+        let e = s.doc.call("doc_unshare", json!({})).await.unwrap_err();
+        assert!(e.contains("isn't shared"), "{e}");
+        // Shared again, it is a new link (the fixed id here; a new key and id in life).
+        s.doc.call("doc_share", json!({})).await.unwrap();
+        assert_eq!(s.fake.served.lock().unwrap()[ID].0, 1);
+    }
+
+    /// The trap: the key reaches the state, the Doc's folder, a log line or
+    /// an error. Every path a share takes, including the ones that fail, with
+    /// a key that can be found by eye.
+    #[tokio::test]
+    async fn the_key_is_in_the_store_and_nowhere_else() {
+        let logs = Arc::new(Mutex::new(Vec::<u8>::new()));
+        #[derive(Clone)]
+        struct Sink(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Sink {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let sink = Sink(logs.clone());
+        let _log = tracing::subscriber::set_default(
+            tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::TRACE)
+                .with_ansi(false)
+                .with_writer(move || sink.clone())
+                .finish(),
+        );
+        let s = setup("key").await;
+        let mut said = Vec::new();
+        said.push(s.doc.call("doc_share", json!({})).await.unwrap().to_string()); // the URL has it, once
+        said.push(s.doc.call("doc_shares", json!({})).await.unwrap().to_string());
+        s.doc.call("doc_fill", json!({ "section": "s3", "markdown": "More." })).await.unwrap();
+        said.push(s.doc.call("doc_share_update", json!({})).await.unwrap().to_string());
+        // Errors: a refusal from control, an unshare elsewhere, a second share.
+        *s.fake.refuse.lock().unwrap() = Some((413, "quota"));
+        said.push(s.doc.call("doc_share_update", json!({})).await.unwrap_err());
+        *s.fake.refuse.lock().unwrap() = Some((409, "stale"));
+        said.push(s.doc.call("doc_share_update", json!({})).await.unwrap_err());
+        *s.fake.refuse.lock().unwrap() = None;
+        said.push(s.doc.call("doc_share", json!({})).await.unwrap_err());
+        *s.fake.gone.lock().unwrap() = true;
+        said.push(s.doc.call("doc_share_update", json!({})).await.unwrap_err());
+        *s.fake.gone.lock().unwrap() = false;
+        said.push(s.doc.call("doc_share", json!({})).await.unwrap().to_string());
+        s.doc.call("doc_unshare", json!({})).await.unwrap();
+        said.push(s.doc.call("doc_unshare", json!({})).await.unwrap_err());
+
+        let state = serde_json::to_string(&s.doc.state()).unwrap();
+        let mut folder = Vec::new();
+        files(&s.dir.join("block"), &mut folder);
+        assert!(!folder.is_empty());
+        let log = logs.lock().unwrap().clone();
+        assert!(!log.is_empty(), "the logs were captured");
+        for form in key_forms() {
+            assert!(!state.contains(&form), "state holds the key as {form}");
+            for (p, b) in &folder {
+                assert!(!contains(b, &form), "{} holds the key as {form}", p.display());
+            }
+            assert!(!contains(&log, &form), "a log line holds the key as {form}");
+            // The answers that are errors (the URLs, 0 to 2 and 7, are the key's way out).
+            for (i, e) in said.iter().enumerate().filter(|(i, _)| ![0, 1, 2, 7].contains(i)) {
+                assert!(!e.contains(&form), "error {i} holds the key: {e}");
+            }
+        }
+        // The store is where it lives (a share that was unshared has nothing; share once more).
+        s.doc.call("doc_share", json!({})).await.unwrap();
+        let store = std::fs::read(s.state_dir.join(link::FILE)).unwrap();
+        assert!(contains(&store, &URL_SAFE_NO_PAD.encode(MARKER)));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(s.state_dir.join(link::FILE)).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+    }
+
+    #[tokio::test]
+    async fn the_quota_is_checked_before_anything_is_uploaded() {
+        let s = setup("quota").await;
+        // Over the account's bytes.
+        *s.fake.quota.lock().unwrap() = Some(
+            json!({ "used": (200u64 << 20) - 100, "limit": 200u64 << 20, "links": 3, "max_links": 100, "max_link": 48u64 << 20 }),
+        );
+        let e = s.doc.call("doc_share", json!({})).await.unwrap_err();
+        assert!(e.contains("past its 200 MB") && !e.contains('\n'), "{e}");
+        // Over the account's links.
+        *s.fake.quota.lock().unwrap() =
+            Some(json!({ "used": 0, "limit": 200u64 << 20, "links": 100, "max_links": 100, "max_link": 48u64 << 20 }));
+        let e = s.doc.call("doc_share", json!({})).await.unwrap_err();
+        assert!(e.contains("100 shared Docs") && e.contains("unshare one"), "{e}");
+        // Too big for a link.
+        *s.fake.quota.lock().unwrap() =
+            Some(json!({ "used": 0, "limit": 200u64 << 20, "links": 0, "max_links": 100, "max_link": 1000 }));
+        let e = s.doc.call("doc_share", json!({})).await.unwrap_err();
+        assert!(e.contains("too big") || e.contains("at most"), "{e}");
+        // Nothing but the quota was asked, and nothing was kept or shown.
+        assert!(s.fake.paths().iter().all(|p| p == "GET /api/doc-links/quota"), "{:?}", s.fake.paths());
+        assert!(s.fake.parts.lock().unwrap().is_empty());
+        assert!(link::get(&s.state_dir, ID).unwrap().is_none());
+        assert!(s.doc.state()["shared"].is_null());
+    }
+
+    #[tokio::test]
+    async fn a_404_for_a_link_we_hold_clears_shared_and_the_key() {
+        for how in ["update", "shares"] {
+            let s = setup(&format!("gone-{how}")).await;
+            s.doc.call("doc_share", json!({})).await.unwrap();
+            assert!(s.doc.state()["shared"].is_object());
+            *s.fake.gone.lock().unwrap() = true;
+            if how == "update" {
+                let e = s.doc.call("doc_share_update", json!({})).await.unwrap_err();
+                assert!(e.contains("unshared elsewhere") && e.contains("share it again"), "{e}");
+            } else {
+                let r = s.doc.call("doc_shares", json!({})).await.unwrap();
+                assert!(r["shared"].is_null(), "{r}");
+            }
+            assert!(s.doc.state()["shared"].is_null(), "{how}");
+            assert!(link::get(&s.state_dir, ID).unwrap().is_none(), "{how}: the key is forgotten");
+        }
+    }
+
+    #[tokio::test]
+    async fn each_refusal_of_control_is_one_line_and_the_daemon_doesnt_loop() {
+        let s = setup("refusals").await;
+        for (status, reason, says) in [
+            (413, "too_big", "control says too_big"),
+            (413, "links", "control says links"),
+            (507, "disk", "control says disk"),
+            (409, "stale", "newer copy"),
+            (409, "incomplete", "didn't get every part"),
+            (413, "part", "over 1 MB"),
+        ] {
+            s.fake.calls.lock().unwrap().clear();
+            *s.fake.refuse.lock().unwrap() = Some((status, reason));
+            let e = s.doc.call("doc_share", json!({})).await.unwrap_err();
+            assert!(e.contains(says) && !e.contains('\n'), "{reason}: {e}");
+            // Quota, the first part, and that's it: no retry.
+            assert_eq!(s.fake.paths().len(), 2, "{reason}: {:?}", s.fake.paths());
+            assert!(s.doc.state()["shared"].is_null());
+            assert!(link::get(&s.state_dir, ID).unwrap().is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn no_control_or_a_control_without_doc_links_says_what_to_do() {
+        let dir = temp("nocontrol");
+        let (doc, _) = at(&dir, None, false);
+        arugula_proto::flags::set(&dir.join("state"), "docs", true).unwrap();
+        doc.call("doc_outline", json!({ "title": "T", "sections": [{ "heading": "H" }] })).await.unwrap();
+        for m in ["doc_share"] {
+            assert_eq!(
+                doc.call(m, json!({})).await.unwrap_err(),
+                "this machine hasn't joined control: sharing needs control"
+            );
+        }
+        let r = doc.call("doc_shares", json!({})).await.unwrap();
+        assert_eq!((r["shared"].clone(), r["can"].clone()), (Value::Null, json!(false)));
+        assert_eq!(r["why"], "this machine hasn't joined control: sharing needs control");
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        let s = setup("old-control").await;
+        *s.fake.viewer.lock().unwrap() = None;
+        assert_eq!(s.doc.call("doc_share", json!({})).await.unwrap_err(), "this control can't keep shared Docs yet");
+        let r = s.doc.call("doc_shares", json!({})).await.unwrap();
+        assert_eq!(r["why"], "this control can't keep shared Docs yet");
+        assert!(s.fake.paths().is_empty(), "nothing was sent");
+    }
+
+    /// A build without Labs has no flags to turn off.
+    #[cfg(feature = "labs")]
+    #[tokio::test]
+    async fn the_docs_flag_gates_every_method() {
+        let s = setup("flag").await;
+        s.doc.call("doc_share", json!({})).await.unwrap();
+        let before = s.fake.paths().len();
+        arugula_proto::flags::set(&s.state_dir, "docs", false).unwrap();
+        for m in ["doc_share", "doc_share_update", "doc_unshare", "doc_shares"] {
+            let e = s.doc.call(m, json!({})).await.unwrap_err();
+            assert!(e.contains("Labs feature that's off"), "{m}: {e}");
+        }
+        assert_eq!(s.fake.paths().len(), before, "nothing reached control");
+        assert!(s.doc.state()["shared"].is_object(), "off hides and refuses; it doesn't unshare");
+    }
+
+    #[tokio::test]
+    async fn a_restart_keeps_the_doc_shared_and_a_closed_block_keeps_its_key() {
+        let s = setup("restart").await;
+        let url = s.doc.call("doc_share", json!({})).await.unwrap()["url"].as_str().unwrap().to_owned();
+        let shared = s.doc.state()["shared"].clone();
+        let (again, _) = at(&s.dir, Some(s.fake.clone()), true);
+        assert_eq!(again.state()["shared"], shared);
+        let r = again.call("doc_shares", json!({})).await.unwrap();
+        assert_eq!(r["url"], url.as_str());
+        // The block is gone; the key isn't (the account list still copies it).
+        drop(again);
+        assert_eq!(link::url_of(&s.state_dir, ID).unwrap().as_deref(), Some(url.as_str()));
     }
 }

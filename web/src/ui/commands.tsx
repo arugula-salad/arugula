@@ -23,6 +23,7 @@ import { openAppearance } from "./appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../desktop";
 import { keyHint } from "./keys";
 import { sessionThreadItems, threadItems } from "./threads";
+import { docShareItems } from "./doc-share";
 import { focusItems } from "./panes/layout";
 
 
@@ -64,6 +65,8 @@ export function paneItems(client: Client, id: PaneId, phone: boolean, workspace:
   const mine = client.machine(id);
   const own = mine !== undefined && "pane" in mine.owner && mine.owner.pane === id;
   return [
+    // #1066: a Doc's link, the owner's.
+    ...(info?.type === "doc" ? docShareItems(client, id) : []),
     ...focus,
     { label: "Split right", run: () => client.intent({ op: "split", pane: id, edge: "right" }) },
     { label: "Split down", run: () => client.intent({ op: "split", pane: id, edge: "bottom" }) },
