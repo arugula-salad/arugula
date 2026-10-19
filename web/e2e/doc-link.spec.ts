@@ -48,6 +48,8 @@ test("swapped parts, parts of another version, another link, a dropped end or a 
   const swapped = parts();
   [swapped[1], swapped[2]] = [swapped[2]!, swapped[1]!];
   await expect(open(key, vector.id, vector.ver, swapped)).rejects.toBeInstanceOf(Broken);
+  // The decryption itself refuses, not just the snapshot's checks after it.
+  await expect(openParts(key, vector.id, vector.ver, swapped)).rejects.toBeInstanceOf(Broken);
 
   // Part 0 of another version: sealed by the same key, bound to ver+1.
   await expect(open(key, vector.id, vector.ver + 1, parts())).rejects.toBeInstanceOf(Broken);
