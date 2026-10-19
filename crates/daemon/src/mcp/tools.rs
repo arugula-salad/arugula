@@ -412,6 +412,9 @@ pub struct StartAgentArgs {
     /// On a new throwaway VM of its own.
     #[serde(default)]
     pub vm: bool,
+    /// A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.
+    #[serde(default)]
+    pub chat: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -1103,6 +1106,11 @@ pub(crate) fn block_offers(on: On) -> Vec<results::BlockOffer> {
             open: "start_agent".into(),
             about: "An agent (Claude Code, Codex, any ACP agent) whose approvals and questions come to its block."
                 .into(),
+        },
+        results::BlockOffer {
+            kind: "chat".into(),
+            open: "start_agent {chat: true}".into(),
+            about: "A plain conversation with Claude: no tools, repo or shell.".into(),
         },
     ];
     let show = defs(on).into_iter().find(|d| d.name == "show");
@@ -2408,8 +2416,8 @@ impl<'a> Call<'a> {
         const MAX: u64 = 20 << 20;
         let pane = a.pane.id()?;
         let p = self.drivable(pane).await?;
-        if !matches!(p.info.kind, BlockType::Terminal | BlockType::Agent) {
-            return Err("attach puts a file into a terminal or an agent block".into());
+        if !matches!(p.info.kind, BlockType::Terminal | BlockType::Agent | BlockType::Chat) {
+            return Err("attach puts a file into a terminal, an agent block or a chat".into());
         }
         let (bytes, ext) = match (a.path, a.data) {
             (Some(path), None) => {
@@ -2441,7 +2449,7 @@ impl<'a> Call<'a> {
         };
         let path = crate::upload::store_whole(self.app, pane, &ext, bytes).await.map_err(|e| e.1)?;
         let by = self.by();
-        if p.info.kind == BlockType::Agent {
+        if p.info.kind.prompted() {
             let b =
                 self.app.mux.api(|r| Api::Block(pane, r)).await.flatten().ok_or_else(|| format!("no block %{pane}"))?;
             b.call_by("send", json!({ "text": a.text.unwrap_or_default(), "files": [path] }), Some(&by)).await?;
@@ -3564,6 +3572,9 @@ impl Call<'_> {
         };
         let recipe = a.recipe.as_deref().map(str::trim).filter(|n| !n.is_empty());
         may_start(self.on_machine().await?, host.is_some(), a.vm, recipe.is_some())?;
+        if a.chat {
+            return self.start_chat(a, beside, host).await;
+        }
         if recipe.is_some() && !matches!(a.agent, AgentKind::Claude) {
             return Err("recipe is for agent claude: Claude Code runs the recipe".into());
         }
@@ -3642,6 +3653,59 @@ impl Call<'_> {
             format!(
                 "Started an agent in %{block}; wait on it (until needs_input or idle), then read_output for its transcript"
             ),
+            results::BlockOnly { block },
+        )
+    }
+
+    /// `start_agent {chat: true}`: a chat block, Claude Code with no tools.
+    async fn start_chat(
+        &self,
+        a: StartAgentArgs,
+        beside: Option<arugula_proto::PaneId>,
+        host: Option<arugula_proto::MachineId>,
+    ) -> Out {
+        let agent_only = [
+            (!matches!(a.agent, AgentKind::Claude), "agent"),
+            (a.command.is_some(), "command"),
+            (a.recipe.is_some(), "recipe"),
+            (a.cwd.is_some(), "cwd"),
+            (!a.allow.is_empty(), "allow"),
+            (a.permission_mode.is_some(), "permission_mode"),
+            (a.user_settings, "user_settings"),
+            (a.vm, "vm"),
+        ];
+        if let Some((_, k)) = agent_only.iter().find(|(set, _)| *set) {
+            return Err(format!("{k} is an agent's: a chat is Claude with no tools, in a folder of its own"));
+        }
+        if host.is_some() {
+            self.share_my_machine().await;
+        }
+        let mut config = json!({ "agent": "claude", "prompt": a.prompt });
+        if let Some(m) = &a.model {
+            config["model"] = json!(m);
+        }
+        if let Some(t) = a.title.as_ref().filter(|t| !t.trim().is_empty()) {
+            config["title"] = json!(t.trim());
+        }
+        if host.is_none()
+            && let Some(d) = self.claude_config_dir()
+        {
+            config["claude_config_dir"] = json!(d);
+        }
+        let req = OpenRequest {
+            kind: BlockType::Chat,
+            config,
+            session: if beside.is_none() { a.session.clone() } else { None },
+            split: beside,
+            from_pane: beside,
+            vm: false,
+            image: None,
+            host,
+            local: false,
+        };
+        let block = self.open(req).await?;
+        done(
+            format!("Started a chat in %{block}; wait on it (until idle), then read_output for its answer"),
             results::BlockOnly { block },
         )
     }

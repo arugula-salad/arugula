@@ -510,8 +510,8 @@ impl Daemon {
         let block = self.blocks.get(&pane).map(|b| b.kind());
         match block {
             None if !self.panes.contains_key(&pane) => return Err(format!("no pane %{pane}")),
-            Some(BlockType::Agent | BlockType::Remote) => {
-                return Err(format!("%{pane} is an agent or remote block: it asks through its own methods"));
+            Some(BlockType::Agent | BlockType::Chat | BlockType::Remote) => {
+                return Err(format!("%{pane} is an agent, chat or remote block: it asks through its own methods"));
             }
             _ => {}
         }

@@ -66,7 +66,7 @@ export function useAddPane(): boolean {
 
 // ---- the drawer
 
-type Kind = "shell" | "agent" | "editor" | "changes" | "port";
+type Kind = "shell" | "agent" | "chat" | "editor" | "changes" | "port";
 type Place = "right" | "down";
 /** Where it runs: this host, the tab's machine (a VM tab), or another host
  * in the home daemon's list (a shell only). */
@@ -75,6 +75,7 @@ type Where = { kind: "here" } | { kind: "machine"; id: number; name: string } | 
 const KINDS: { kind: Kind; label: string; description: string }[] = [
   { kind: "shell", label: "Shell", description: "Run commands on a machine" },
   { kind: "agent", label: "Agent", description: "Start an AI agent in its own pane" },
+  { kind: "chat", label: "Chat", description: "Talk with Claude: no tools or files" },
   { kind: "editor", label: "Editor", description: "Edit files in a code workspace" },
   { kind: "changes", label: "Changes", description: "Review code changes and diffs" },
   { kind: "port", label: "Port", description: "Preview an app running on a port" },
@@ -118,6 +119,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   const whereRefusal = (w: Where): string | null => {
     if (w.kind === "host" && kind !== "shell") return "Only a shell opens on another host from here";
     if (w.kind !== "here" && kind === "agent") return "The agent dialog says where an agent runs";
+    if (w.kind !== "here" && kind === "chat") return "A chat runs on this machine";
     return null;
   };
   const chosenWhere = whereRefusal(where) ? { kind: "here" as const } : where;
@@ -133,7 +135,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
   const anchorName = anchor === undefined ? "" : `pane ${ordinal(tab, anchor)} (${client.title(anchor) || client.info(anchor)?.command || `%${anchor}`})`;
   const label = KINDS.find((k) => k.kind === kind)!.label;
   const what = kind === "port" ? `Port ${portMatch ? portMatch[1] : "…"}` : label;
-  const destination = `${what} on ${whereName(chosenWhere)}${kind === "port" ? "" : ` in ${theDir || "its home directory"}`}, ${place === "right" ? "right of" : "below"} ${anchorName}`;
+  const destination = `${what} on ${whereName(chosenWhere)}${kind === "port" || kind === "chat" ? "" : ` in ${theDir || "its home directory"}`}, ${place === "right" ? "right of" : "below"} ${anchorName}`;
   const refusal =
     anchor === undefined
       ? "No pane to put it beside"
@@ -214,7 +216,9 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
       return;
     }
     const body: OpenRequest =
-      kind === "editor"
+      kind === "chat"
+        ? { type: "chat", config: { agent: "claude" }, split: anchor, from_pane: anchor, local: true }
+        : kind === "editor"
         ? { type: "editor", config: theDir ? { path: theDir } : {}, split: anchor, from_pane: anchor, ...on }
         : kind === "changes"
           ? { type: "diff", config: theDir ? { repo: theDir } : {}, split: anchor, from_pane: anchor, ...on }
@@ -293,7 +297,7 @@ export function AddPaneDrawer({ client, tab }: { client: Client; tab: TabView })
           ))}
         </select>
       </label>
-      {kind !== "port" && (
+      {kind !== "port" && kind !== "chat" && (
         <div class="add-pane-row">
           <span class="add-pane-label">Working directory</span>
           <div class="add-pane-directory"><span class="add-pane-dir" data-add-pane-dir title={theDir || undefined}>
@@ -358,6 +362,7 @@ function KindIcon({ kind }: { kind: Kind }) {
   const paths: Record<Kind, string> = {
     shell: "M4 4h16v16H4z M7 9l3 3-3 3 M13 16h4",
     agent: "M5 8h14v12H5z M12 8V4 M9 4h6 M8 12h1 M15 12h1 M9 16h6",
+    chat: "M4 5h16v11H9l-5 4z M8 9h8 M8 12h5",
     editor: "M6 3h8l4 4v14H6z M14 3v5h4 M9 12h6 M9 16h6",
     changes: "M7 7v10 M9 5h7v12 M7 3a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M7 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4 M16 17a2 2 0 1 0 0 4a2 2 0 1 0 0-4",
     port: "M3 12h18 M12 3c-6 6-6 12 0 18 M12 3c6 6 6 12 0 18 M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18",

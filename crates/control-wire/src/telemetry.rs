@@ -226,6 +226,8 @@ pub enum BlockKind {
     Workspace,
     Studio,
     Conversation,
+    /// A chat block: a conversation with a model, no tools.
+    Chat,
     #[serde(other)]
     Other,
 }

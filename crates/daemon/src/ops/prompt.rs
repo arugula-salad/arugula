@@ -64,7 +64,9 @@ pub(crate) async fn prompt(
     let info = pane_info(app, id).await.ok_or_else(|| format!("no pane %{id}"))?;
     let block = match info.kind {
         BlockType::Terminal => None,
-        BlockType::Agent => Some(app.mux.api(|r| Api::Block(id, r)).await.flatten().ok_or(format!("no block %{id}"))?),
+        BlockType::Agent | BlockType::Chat => {
+            Some(app.mux.api(|r| Api::Block(id, r)).await.flatten().ok_or(format!("no block %{id}"))?)
+        }
         k => return Err(format!("%{id} is a {k:?} block, not an agent")),
     };
     if block.is_none() && info.work != Some(WorkKind::Agent) {

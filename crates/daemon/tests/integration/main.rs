@@ -21,6 +21,7 @@ mod attach;
 mod attention;
 mod block_channels;
 mod blocks;
+mod chat_blocks;
 #[cfg(unix)]
 mod client_fixtures;
 mod control_moves;

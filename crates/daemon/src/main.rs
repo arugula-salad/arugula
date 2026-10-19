@@ -701,7 +701,8 @@ fn kinds(
     use block::Make;
     let mut kinds = block::BlockKinds::default();
     kinds.add(BlockType::Browser, Make(browser::Browser::create));
-    kinds.add(BlockType::Agent, agent::AgentKind { mcp, secrets, rules });
+    kinds.add(BlockType::Agent, agent::AgentKind { mcp, secrets, rules: rules.clone() });
+    kinds.add(BlockType::Chat, agent::ChatKind { rules });
     editors::kinds(&mut kinds);
     kinds.add(BlockType::Remote, remote::RemoteKind);
     kinds.add(BlockType::Diff, Make(review::diff::Diff::create));
@@ -1169,6 +1170,7 @@ mod tests {
             BlockType::Invite,
             BlockType::Agents,
             BlockType::Doc,
+            BlockType::Chat,
             BlockType::Unknown,
         ];
         // A new type is a compile error here until it is listed above.
@@ -1187,6 +1189,7 @@ mod tests {
                 | BlockType::Invite
                 | BlockType::Agents
                 | BlockType::Doc
+                | BlockType::Chat
                 | BlockType::Unknown => {}
             }
             let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);

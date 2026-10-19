@@ -968,12 +968,25 @@ pub enum BlockType {
     /// A document an agent builds beside its pane: an outline, then
     /// sections filled in live (#962). Config `{title}`.
     Doc,
+    /// A plain conversation with a model: an agent block's ACP session
+    /// with every tool off, in a folder the daemon owns, and no repo, shell
+    /// or MCP. Config `{agent: claude, model?, title?, prompt?}`.
+    Chat,
     /// A type a newer daemon has and this build doesn't know: its state
     /// still parses. Nothing opens one, and the web client's types leave
     /// it out.
     #[serde(other)]
     #[cfg_attr(feature = "ts", ts(skip))]
     Unknown,
+}
+
+impl BlockType {
+    /// An agent block or a chat: a model you prompt, whose transcript the
+    /// block keeps, which takes files with its prompts and asks through its
+    /// own methods.
+    pub fn prompted(self) -> bool {
+        matches!(self, BlockType::Agent | BlockType::Chat)
+    }
 }
 
 /// Where a remote block's pane lives (#17): a host in the home daemon's

@@ -810,11 +810,11 @@ async fn open_block(
     }
 }
 
-/// Agent blocks by the Claude Code session they have.
+/// Agent blocks and chats by the Claude Code session they have.
 async fn blocks_by_session(app: &App) -> HashMap<String, PaneId> {
     let mut out = HashMap::new();
     for p in app.mux.api(Api::Panes).await.unwrap_or_default() {
-        if p.info.kind != arugula_proto::BlockType::Agent {
+        if !p.info.kind.prompted() {
             continue;
         }
         if let Some(b) = app.mux.api(|r| Api::Block(p.info.id, r)).await.flatten()

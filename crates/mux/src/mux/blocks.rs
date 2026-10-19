@@ -166,7 +166,7 @@ impl Daemon {
         match req.kind {
             BlockType::Editor => self.editor_defaults(&mut req, from),
             BlockType::Diff | BlockType::File => self.view_defaults(&mut req, from),
-            BlockType::Agent => self.agent_login(&mut req, from),
+            BlockType::Agent | BlockType::Chat => self.agent_login(&mut req, from),
             _ => {}
         }
         // A pane on another daemon (#17): only its place is here, never on
@@ -194,9 +194,9 @@ impl Daemon {
             (false, host) => host,
         };
         let made = req.vm.then_some(self.next_host).flatten();
-        // Here if asked; an agent also runs here unless asked for a machine;
-        // a page in a VM tab is the tab's machine's.
-        let local = req.local || (req.kind == BlockType::Agent && self.next_host.is_none());
+        // Here if asked; an agent (or a chat) also runs here unless asked
+        // for a machine; a page in a VM tab is the tab's machine's.
+        let local = req.local || (req.kind.prompted() && self.next_host.is_none());
         self.next_block = Some((req.kind, req.config));
         let intent = match (req.split, session) {
             (Some(pane), _) => Intent::Split { pane, edge: arugula_proto::Edge::Right, local, cwd: None },
@@ -285,9 +285,7 @@ impl Daemon {
         }
         let Some(beside) = req.split.or(from) else { return };
         let dir = if let Some(b) = self.blocks.get(&beside) {
-            (b.kind() == BlockType::Agent)
-                .then(|| b.config()["claude_config_dir"].as_str().map(str::to_owned))
-                .flatten()
+            b.kind().prompted().then(|| b.config()["claude_config_dir"].as_str().map(str::to_owned)).flatten()
         } else if self.meta.get(&beside).is_some_and(|m| m.host.is_some()) {
             None
         } else {
@@ -374,7 +372,10 @@ impl Daemon {
     /// everyone who may see them, as before.
     pub(super) fn only_shown(&self, client: ClientId, pane: PaneId) -> bool {
         self.patched.contains_key(&client)
-            && self.blocks.get(&pane).is_some_and(|b| matches!(b.kind(), BlockType::Agent | BlockType::Doc))
+            && self
+                .blocks
+                .get(&pane)
+                .is_some_and(|b| matches!(b.kind(), BlockType::Agent | BlockType::Chat | BlockType::Doc))
     }
 
     /// Send each page the agent blocks it just started showing, whole

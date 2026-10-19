@@ -1,6 +1,7 @@
 // Every block type's renderer, registered on import.
 import "./browser";
 import "./agent";
+import "./chat";
 import "./editor";
 import "./remote";
 import "./diff";

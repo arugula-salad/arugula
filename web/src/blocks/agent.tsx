@@ -102,6 +102,9 @@ export interface AgentState {
   } | null;
   entries_from: number;
   entries: Entry[];
+  /** The models the session offers, and the one it's on. */
+  models?: { value: string; name: string; description: string | null }[];
+  model?: string | null;
 }
 
 interface Worn {
@@ -156,7 +159,7 @@ function WornBar({ s }: { s: AgentState }) {
   );
 }
 
-const STATUS: Record<AgentState["status"], string> = {
+export const STATUS: Record<AgentState["status"], string> = {
   starting: "Starting",
   ready: "Ready",
   working: "Working",
@@ -169,7 +172,7 @@ const strip = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").replace
 /** Tool cards older than this many show plain text instead of a terminal. */
 const LIVE_TERMINALS = 30;
 
-function money(n: number, currency: string | null) {
+export function money(n: number, currency: string | null) {
   const sym = !currency || currency === "USD" ? "$" : `${currency} `;
   return `${sym}${n < 0.01 ? n.toFixed(4) : n.toFixed(2)}`;
 }
@@ -369,7 +372,7 @@ function keptImage(client: Client, id: PaneId, name: string): Promise<string | n
   return p;
 }
 
-function KeptImage({ client, id, name }: { client: Client; id: PaneId; name: string }) {
+export function KeptImage({ client, id, name }: { client: Client; id: PaneId; name: string }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -406,22 +409,25 @@ function Attached({ file, remove }: { file: File; remove: () => void }) {
 }
 
 /** Files in a paste or a drop. */
-function filesOf(data: DataTransfer | null): File[] {
+export function filesOf(data: DataTransfer | null): File[] {
   return data ? [...data.files] : [];
 }
 
-function Composer({
+export function Composer({
   client,
   id,
   s,
   attached,
   setAttached,
+  placeholder = "Message the agent…",
 }: {
   client: Client;
   id: PaneId;
   s: AgentState;
   attached: File[];
   setAttached: (f: File[]) => void;
+  /** What the empty box says when nothing's running. */
+  placeholder?: string;
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState<string | null>(null);
@@ -483,7 +489,7 @@ function Composer({
           e.preventDefault();
           setAttached([...attached, ...files]);
         }}
-        placeholder={busy ? "Queue a message…" : opened ? (s.import?.held ? "Fork it to go on here" : "Continue the conversation…") : "Message the agent…"}
+        placeholder={busy ? "Queue a message…" : opened ? (s.import?.held ? "Fork it to go on here" : "Continue the conversation…") : placeholder}
         onInput={(e) => setText((e.currentTarget as HTMLTextAreaElement).value)}
         onKeyDown={(e) => {
           // Enter sends on a keyboard; on a phone, the Send button does.

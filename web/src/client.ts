@@ -1050,6 +1050,24 @@ export class Client {
     );
   }
 
+  /** A chat block: a conversation with Claude, no tools, on this page's
+   * machine; beside `split`, or in a new tab of `session`. */
+  async newChat(o: { split?: PaneId; session?: number; from?: PaneId } = {}) {
+    this.lastIntentAt = Date.now();
+    await this.api(
+      "/api/blocks",
+      {
+        type: "chat",
+        config: { agent: "claude" },
+        split: o.split ?? null,
+        from_pane: o.from ?? null,
+        session: o.from === undefined ? (o.session?.toString() ?? null) : null,
+        local: true,
+      } satisfies OpenRequest,
+      "couldn't start the chat",
+    );
+  }
+
   /** A Claude Code conversation as an agent block (M33), or the block that
    * has it already, shown; `then` continues or forks it. Its id, or null
    * (and the error as a toast). */

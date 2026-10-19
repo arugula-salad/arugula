@@ -192,9 +192,9 @@ fn write_chunk(path: &FsPath, offset: u64, body: &[u8]) -> io::Result<()> {
     f.write_all(body)
 }
 
-/// An agent block (M71), which takes uploads as its prompts' files.
+/// An agent block (M71) or a chat, which takes uploads as its prompts' files.
 async fn agent(app: &App, id: PaneId) -> Option<Arc<dyn crate::block::Block>> {
-    app.mux.api(|r| Api::Block(id, r)).await.flatten().filter(|b| b.kind() == arugula_proto::BlockType::Agent)
+    app.mux.api(|r| Api::Block(id, r)).await.flatten().filter(|b| b.kind().prompted())
 }
 
 /// One of `pane`'s uploads, by the path the route answered: a file (not a

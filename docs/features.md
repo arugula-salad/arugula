@@ -35,7 +35,7 @@ around your panes. A phone keeps its own header and sheet.
   account.
 - **The tabs**, then **the pane toolbar:** the pane count (a switcher),
   the layouts *Columns*, *Grid* and *Main + stack*, *Focus* (one pane fills
-  the tab; again to restore it), and *+ Pane* (a shell, agent, editor,
+  the tab; again to restore it), and *+ Pane* (a shell, agent, chat, editor,
   changes or a port, on which machine, in which directory, to the right or
   below). The drawer previews the split before creation. Layouts and focus
   are the machine's, so everyone sees the same.
@@ -80,6 +80,29 @@ is shared per block: when clients choose different palettes, the latest update
 wins. New embedded editors start with the Explorer
 collapsed and compact chrome; Ctrl+B (Cmd+B on macOS) reopens the Explorer,
 and subsequent layout choices are kept. VM editors use the bundled Slate theme.
+
+### Chat blocks
+
+A chat block is a plain conversation with Claude, as in Claude's desktop
+app or ChatGPT: no repository, no shell, and none of a coding agent's
+chrome. Open one from *+ Pane* (*Chat*), a pane's menu (*Start a chat*),
+the phone's sheet (*New chat*), `arugula agent --chat`, or an agent's
+`start_agent {chat: true}`. It runs Claude Code on the machine's own login
+(through `claude-agent-acp`, as an agent block does) with every tool off,
+none of your settings (so no hooks or `CLAUDE.md`), no MCP servers (Arugula's
+neither, nor the account's claude.ai connectors), and a system prompt for a
+conversation, in a folder of the block's own in the daemon's state
+directory. No API key, and no other model client.
+
+Its bar picks the model from the ones Claude Code offers. Until Claude Code
+titles the conversation (after the first answer) it's called by its first
+message. Messages are Markdown; images and files go in by paste, drop or
+📎, as in an agent block. It belongs to the machine it's opened on: that
+daemon keeps the conversation and brings it back after a restart, and
+`capture`, history and search read it as they read an agent's transcript.
+Codex isn't offered: codex-acp has no way to turn every tool off (the
+shell goes with a feature flag, but its patch tool, code mode's `exec` and
+its subagents stay).
 
 ### Keys
 

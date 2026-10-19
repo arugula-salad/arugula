@@ -427,6 +427,9 @@ pub struct AgentKind {
 
 impl BlockKind for AgentKind {
     fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+        if config["chat"] == true {
+            return Err("a chat is a block of its own: open a chat block".into());
+        }
         let new = !ctx.restoring;
         // What it runs, for telemetry's count (M101): its kind and command.
         let agent = config["agent"].as_str().unwrap_or("claude").to_owned();
@@ -446,6 +449,53 @@ impl BlockKind for AgentKind {
     fn stored_text(&self, dir: &Path) -> Option<String> {
         transcript_of(dir)
     }
+}
+
+/// The chat type's kind: a plain conversation with a model, run by the
+/// agent block's code as Claude Code with every tool off ([`defs::chat_meta`]),
+/// in a folder of the block's own, with no MCP servers (not Arugula's
+/// either). Its stored text is [`AgentKind`]'s (the folder says `chat`).
+pub struct ChatKind {
+    pub rules: Arc<crate::rules::Rules>,
+}
+
+/// The folder a chat's session works in: the block's own, which nothing
+/// else uses (no repo, no project).
+const CHAT_DIR: &str = "chat";
+
+impl BlockKind for ChatKind {
+    fn create(&self, ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+        if ctx.sprite.is_some() {
+            return Err("a chat runs on a machine's own daemon, not in a VM".into());
+        }
+        let config = chat_config(&ctx.dir, &config, ctx.restoring)?;
+        let ctx = AgentCtx { block: ctx, mcp: None, secrets: Secrets::default(), rules: self.rules.clone() };
+        Agent::create(ctx, config)
+    }
+}
+
+/// A chat's config, from what it was opened (or saved) with: Claude Code,
+/// its model, title, first prompt and login, and, when it's restored, its
+/// session. Everything that gives an agent tools or a place to work is
+/// left out, and its directory is always the block's own.
+fn chat_config(dir: &Path, c: &Value, restoring: bool) -> Result<Value, String> {
+    if !matches!(c["agent"].as_str(), None | Some("claude")) {
+        return Err(defs::CHAT_CLAUDE_ONLY.into());
+    }
+    let cwd = dir.join(CHAT_DIR);
+    std::fs::create_dir_all(&cwd).map_err(|e| format!("the chat's folder: {e}"))?;
+    let mut out = json!({ "agent": "claude", "chat": true, "cwd": cwd.display().to_string() });
+    let keep: &[&str] = if restoring {
+        &["model", "title", "claude_config_dir", "session_id"]
+    } else {
+        &["model", "title", "prompt", "claude_config_dir"]
+    };
+    for k in keep {
+        if let Some(v) = c.get(*k).filter(|v| !v.is_null()) {
+            out[*k] = v.clone();
+        }
+    }
+    Ok(out)
 }
 
 /// What an agent block gets: the block's own, and what its kind holds.
@@ -468,6 +518,8 @@ pub struct Agent {
     ctx: AgentCtx,
     inner: Arc<Mutex<Inner>>,
     tx: mpsc::UnboundedSender<Msg>,
+    /// A chat block ([`ChatKind`]), for good.
+    chat: bool,
 }
 
 fn is_finished_stop(s: &str) -> bool {
@@ -561,6 +613,10 @@ impl Inner {
     /// environment. A VM's agent can't reach the host, so it gets a client
     /// for the relay the daemon opens into its VM (#59).
     fn servers(&self, ctx: &AgentCtx) -> Vec<Value> {
+        // A chat has no tools, and no MCP servers to bring any.
+        if self.cfg.def.chat {
+            return vec![];
+        }
         let mut list = self.cfg.mcp_servers.clone();
         // A worn recipe's (M76; M44 for Managoat agents), values resolved.
         if let Some(w) = &self.worn {
@@ -960,6 +1016,12 @@ impl Inner {
                         self.asks.clear();
                         fx.push(Effect::TurnEnded);
                     }
+                    (Purpose::SetModel, None) if r["configOptions"].is_array() => {
+                        self.config_options = r["configOptions"].clone();
+                    }
+                    (Purpose::SetModel, Some(e)) => {
+                        self.t.note(format!("Couldn't switch the model: {e}"), at);
+                    }
                     (Purpose::SetMode(mode), Some(e)) => {
                         self.t.note(format!("Couldn't switch to permission mode {mode}: {e}"), at);
                         self.error = Some(format!("permission mode {mode}: {e}"));
@@ -1237,7 +1299,48 @@ impl Inner {
 
     /// What the block is called: the person's title, else the session's.
     fn shown_title(&self) -> Option<String> {
-        self.cfg.title.clone().or_else(|| self.title.clone())
+        self.cfg.title.clone().or_else(|| self.title.clone()).or_else(|| self.first_words())
+    }
+
+    /// A chat's first message, cut short: what it's called until Claude
+    /// Code names the session (after its first turn), as the chat apps do.
+    fn first_words(&self) -> Option<String> {
+        if !self.cfg.def.chat {
+            return None;
+        }
+        let text = self.t.entries.iter().find_map(|e| match e {
+            Entry::User { text, .. } => Some(text.split_whitespace().collect::<Vec<_>>().join(" ")),
+            _ => None,
+        })?;
+        let text = text.trim();
+        if text.is_empty() {
+            return None;
+        }
+        const MAX: usize = 48;
+        if text.chars().count() <= MAX {
+            return Some(text.to_owned());
+        }
+        let cut: String = text.chars().take(MAX).collect();
+        let cut = cut.rsplit_once(' ').map(|(a, _)| a).filter(|a| a.len() > MAX / 2).unwrap_or(&cut);
+        Some(format!("{}…", cut.trim_end()))
+    }
+
+    /// The models the session offers (its `model` config option), and the
+    /// one it's on, for a picker.
+    fn models(&self) -> (Value, Value) {
+        let Some(opt) = self.config_options.as_array().and_then(|o| o.iter().find(|o| o["id"] == "model")) else {
+            return (json!([]), Value::Null);
+        };
+        let list: Vec<Value> = opt["options"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|o| {
+                let value = o["value"].as_str()?;
+                Some(json!({ "value": value, "name": o["name"].as_str().unwrap_or(value), "description": o["description"] }))
+            })
+            .collect();
+        (json!(list), opt["currentValue"].clone())
     }
 
     /// Its state, and the first entry that changed since the last time
@@ -1307,6 +1410,10 @@ impl Inner {
         });
         // M76: the recipe it wears, by name.
         state["recipe"] = json!(self.cfg.def.recipe);
+        // What it may switch to, and what it's on.
+        let (models, model) = self.models();
+        state["models"] = models;
+        state["model"] = model;
         // #606: it will carry on by itself (its turn held for background
         // work, or tasks it left running): `wait --idle` waits.
         state["held"] = json!(self.status == Status::Working && self.result_in);
@@ -1361,7 +1468,8 @@ impl Agent {
             return Err("a recipe runs on this host (with your skills and servers), not in a VM".into());
         }
         let log = ctx.log().map_err(|e| format!("agent log: {e}"))?;
-        let _ = std::fs::write(ctx.dir.join("kind"), "agent\n");
+        let kind = if cfg.def.chat { "chat\n" } else { "agent\n" };
+        let _ = std::fs::write(ctx.dir.join("kind"), kind);
         let mut inner = Inner::new(cfg, None);
         // Everything it did before, from its log.
         if ctx.restoring
@@ -1380,7 +1488,8 @@ impl Agent {
         }
         let (tx, rx) = mpsc::unbounded_channel();
         let member = inner.cfg.chant.clone();
-        let agent = Arc::new(Agent { ctx: ctx.clone(), inner: Arc::new(Mutex::new(inner)), tx });
+        let chat = inner.cfg.def.chat;
+        let agent = Arc::new(Agent { ctx: ctx.clone(), inner: Arc::new(Mutex::new(inner)), tx, chat });
         // #304: its run records, written in order, each noted in its log.
         if let Some(c) = member {
             let (inner, tx) = (Arc::downgrade(&agent.inner), agent.tx.clone());
@@ -1715,7 +1824,7 @@ impl Agent {
         inner.awaiting_shell = true;
         inner.status = Status::Starting;
         inner.error = None;
-        let agent = Agent { ctx: self.ctx.clone(), inner: self.inner.clone(), tx: self.tx.clone() };
+        let agent = Agent { ctx: self.ctx.clone(), inner: self.inner.clone(), tx: self.tx.clone(), chat: self.chat };
         self.ctx.rt.spawn(async move {
             agent.ctx.shell_env.local().await;
             let mut g = agent.inner.lock().unwrap();
@@ -1740,7 +1849,7 @@ impl Agent {
         inner.error = None;
         let def = inner.cfg.def.clone();
         let cwd = inner.cfg.cwd.clone();
-        let agent = Agent { ctx: self.ctx.clone(), inner: self.inner.clone(), tx: self.tx.clone() };
+        let agent = Agent { ctx: self.ctx.clone(), inner: self.inner.clone(), tx: self.tx.clone(), chat: self.chat };
         self.ctx.rt.spawn(async move {
             let which = def.as_managoat.clone().or_else(|| def.recipe.clone()).unwrap_or_default();
             let worn = match Runner::user(&agent.ctx).await {
@@ -2215,6 +2324,21 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
         }
         Effect::Permission(key) => {
             let Some(p) = g.pending.iter().find(|p| p.id == key).cloned() else { return };
+            // A chat has no tools: anything that asks is turned down unseen.
+            if g.cfg.def.chat {
+                let reject = p
+                    .options
+                    .iter()
+                    .find(|o| o.kind == "reject_once")
+                    .or(p.options.iter().find(|o| o.kind.starts_with("reject")));
+                let outcome = match reject {
+                    Some(o) => json!({ "outcome": "selected", "optionId": o.id }),
+                    None => json!({ "outcome": "cancelled" }),
+                };
+                g.note(json!({ "e": "deny", "title": p.title, "reason": "a chat has no tools" }));
+                g.out(json!({ "jsonrpc": "2.0", "id": p.rpc, "result": { "outcome": outcome } }));
+                return;
+            }
             let allowed = g
                 .cfg
                 .allow
@@ -2773,6 +2897,28 @@ impl Agent {
         g.cut && matches!(g.status, Status::Starting | Status::Ready)
     }
 
+    /// Switch the model (one of `state.models`): now, if the session is
+    /// open, and again whenever it's reopened.
+    fn set_model(&self, args: &Value) -> Result<Value, String> {
+        let model = args["model"].as_str().map(str::trim).filter(|m| !m.is_empty()).ok_or("set_model takes a model")?;
+        let mut g = self.inner.lock().unwrap();
+        let (models, _) = g.models();
+        if models.as_array().is_some_and(|l| !l.is_empty() && !l.iter().any(|m| m["value"] == model)) {
+            return Err(format!("{model} isn't one of this agent's models"));
+        }
+        g.cfg.def.model = Some(model.to_owned());
+        if g.cfg.session_id.is_some() && g.link.is_some() {
+            let session = g.session();
+            g.request(
+                "session/set_config_option",
+                json!({ "sessionId": session, "configId": "model", "value": model }),
+            );
+        }
+        drop(g);
+        self.changed();
+        Ok(json!({}))
+    }
+
     fn start(&self) -> Result<Value, String> {
         let mut g = self.inner.lock().unwrap();
         if g.link.is_some() && !matches!(g.status, Status::Exited | Status::Stopped) {
@@ -2788,7 +2934,7 @@ impl Agent {
 
 impl Block for Agent {
     fn kind(&self) -> BlockType {
-        BlockType::Agent
+        if self.chat { BlockType::Chat } else { BlockType::Agent }
     }
 
     fn config(&self) -> Value {
@@ -2879,9 +3025,10 @@ impl Block for Agent {
                 self.changed();
                 Ok(self.state())
             }
+            "set_model" => self.set_model(&args),
             "state" => Ok(self.state()),
             "image" => images::read(&self.ctx.dir, args["name"].as_str().unwrap_or_default()),
-            m => Err(no_method(BlockType::Agent, m)),
+            m => Err(no_method(self.kind(), m)),
         };
         Box::pin(async move { result })
     }
@@ -2990,7 +3137,7 @@ fn by_of(e: &Value) -> String {
 /// An agent block's transcript from its directory alone (for search over
 /// closed blocks too).
 pub fn transcript_of(dir: &Path) -> Option<String> {
-    if std::fs::read_to_string(dir.join("kind")).ok()?.trim() != "agent" {
+    if !matches!(std::fs::read_to_string(dir.join("kind")).ok()?.trim(), "agent" | "chat") {
         return None;
     }
     let log = PaneLog::open(dir.to_owned()).ok()?;

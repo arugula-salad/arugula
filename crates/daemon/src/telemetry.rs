@@ -224,6 +224,7 @@ fn block_kind(kind: BlockType, config: &Value) -> BlockKind {
         BlockType::Browser => BlockKind::Browser,
         BlockType::Agent if config.get("import").is_some_and(|i| !i.is_null()) => BlockKind::Conversation,
         BlockType::Agent => BlockKind::Agent,
+        BlockType::Chat => BlockKind::Chat,
         BlockType::Editor => BlockKind::Editor,
         BlockType::Diff => BlockKind::Review,
         BlockType::File => BlockKind::Files,

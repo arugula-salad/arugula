@@ -122,6 +122,11 @@ pub struct Def {
     /// a restarted daemon starts the adapter with it again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_config_dir: Option<String>,
+    /// A chat block's session ([`chat_meta`]): no tools, no MCP, no
+    /// settings, and a system prompt for a conversation. Set by the chat
+    /// kind only; an agent block refuses it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub chat: bool,
 }
 
 /// How to start the agent server.
@@ -175,6 +180,7 @@ impl Def {
 
     pub fn label(&self) -> String {
         match self.agent {
+            Kind::Claude if self.chat => "Claude".into(),
             Kind::Claude => match self.as_managoat.as_ref().or(self.recipe.as_ref()) {
                 Some(a) => format!("Claude Code as {a}"),
                 None => "Claude Code".into(),
@@ -199,6 +205,13 @@ impl Def {
             _ if self.user_settings && self.agent != Kind::Claude => {
                 Err("user_settings is Claude Code's (agent: claude)".into())
             }
+            // Codex has no switch that turns every tool off: its shell
+            // goes with `features.shell_tool`, but apply_patch, code mode's
+            // exec and its subagents stay (codex-acp 2.1.0, codex 0.155).
+            _ if self.chat && self.agent != Kind::Claude => Err(CHAT_CLAUDE_ONLY.into()),
+            _ if self.chat && (self.recipe.is_some() || self.user_settings || !self.command.is_empty()) => {
+                Err("a chat runs plain Claude Code: no recipe, settings or command".into())
+            }
             Kind::Codex if self.claude_config_dir.is_some() => {
                 Err("claude_config_dir is Claude Code's (agent: claude, or acp running its adapter)".into())
             }
@@ -220,7 +233,9 @@ impl Def {
                 l.remove = CLAUDE_ENV_REMOVE.iter().map(|s| s.to_string()).collect();
                 // Without this, your Claude Code settings and hooks (M3's
                 // attention hooks too) fire inside the block.
-                l.meta = if self.user_settings {
+                l.meta = if self.chat {
+                    chat_meta()
+                } else if self.user_settings {
                     user_settings_meta()
                 } else {
                     json!({ "claudeCode": { "options": { "settingSources": [] } } })
@@ -248,6 +263,33 @@ impl Def {
         }
         Ok(l)
     }
+}
+
+/// Why a chat isn't Codex (or another ACP agent): only Claude Code's
+/// adapter runs a session with every tool off.
+pub const CHAT_CLAUDE_ONLY: &str =
+    "a chat runs Claude Code (agent: claude): Codex has no way to turn all of its tools off";
+
+/// What a chat's model is told it is: a conversation, not a coding agent.
+pub const CHAT_SYSTEM: &str = "You are Claude, a helpful assistant, in a conversation with a person. \
+You have no tools, files or shell here: answer from what you know and what they share with you \
+(text, images and files they attach). Use Markdown where it helps.";
+
+/// A chat's `_meta`: Claude Code with no tools at all (`tools: []`, which
+/// takes AskUserQuestion and its subagents too), no settings sources (so no
+/// hooks, `CLAUDE.md` or permission rules), only the MCP servers the
+/// session names, which for a chat is none (`--strict-mcp-config`: not the
+/// account's claude.ai connectors either), and a system prompt of its own
+/// in place of Claude Code's.
+pub fn chat_meta() -> Value {
+    json!({
+        "systemPrompt": CHAT_SYSTEM,
+        "claudeCode": { "options": {
+            "settingSources": [],
+            "tools": [],
+            "extraArgs": { "strict-mcp-config": "" },
+        } },
+    })
 }
 
 /// Claude's `_meta` with your settings, skills and `CLAUDE.md` but every
@@ -434,6 +476,21 @@ mod tests {
             "{h}"
         );
         assert!(!h.contains("sk-secret"), "{h}");
+    }
+
+    /// A chat is Claude Code with every tool off, and nothing else.
+    #[test]
+    fn a_chat_has_no_tools() {
+        let home = Path::new("/nonexistent-home");
+        let chat = Def { chat: true, ..Default::default() };
+        let meta = chat.launch(home, false).unwrap().meta;
+        assert_eq!(meta["claudeCode"]["options"]["tools"], json!([]));
+        assert_eq!(meta["claudeCode"]["options"]["settingSources"], json!([]));
+        assert_eq!(meta["claudeCode"]["options"]["extraArgs"]["strict-mcp-config"], json!(""));
+        assert_eq!(meta["systemPrompt"], json!(CHAT_SYSTEM));
+        assert_eq!(Def { chat: true, agent: Kind::Codex, ..Default::default() }.check().unwrap_err(), CHAT_CLAUDE_ONLY);
+        assert!(Def { chat: true, recipe: Some("x".into()), ..Default::default() }.check().is_err());
+        assert!(Def { chat: true, user_settings: true, ..Default::default() }.check().is_err());
     }
 
     #[test]
