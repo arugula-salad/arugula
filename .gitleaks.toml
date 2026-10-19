@@ -1,8 +1,14 @@
-# gitleaks' default rules, minus lock files: their package names trip the
-# generic rule ("libcrux-secrets" in a Cargo.lock), and they hold no secrets.
+# gitleaks' default rules, minus lock files (their package names trip the
+# generic rule: "libcrux-secrets" in a Cargo.lock, and they hold no secrets)
+# and the Doc link test vector (#1066), whose key is the bytes 0 to 31 and
+# opens nothing but that fixture.
 [extend]
 useDefault = true
 
 [allowlist]
-description = "lock files"
-paths = ['''(^|/)Cargo\.lock$''', '''(^|/)pnpm-lock\.yaml$''']
+description = "lock files, and the Doc link test vector"
+paths = [
+  '''(^|/)Cargo\.lock$''',
+  '''(^|/)pnpm-lock\.yaml$''',
+  '''(^|/)crates/daemon/tests/fixtures/docs/link-vector\.json$''',
+]
