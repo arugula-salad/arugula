@@ -8903,6 +8903,11 @@ html[data-finish="glass"] .prompt-backdrop {
 .cloud-ws-pending th, .cloud-ws-pending td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--raised-hover); overflow-wrap: anywhere; }
 .cloud-ws-pending pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .cloud-ws-settings-form { max-width: 720px; }
+/* Rebuild and Retry (S40, M120). */
+.cloud-ws-settings-head > h3 { margin-right: auto; }
+.cloud-ws-mid-turn { padding: 8px 12px; border: 1px solid var(--raised-hover); border-radius: 6px; }
+.cloud-ws-mid-turn p { margin: 4px 0; }
+.cloud-ws-retry { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 
 /* ---- the workspace (M108, #1023; the only one since M113): a rail, the session sidebar, a
    context header, the tab strip and a status footer around `.main`. Only

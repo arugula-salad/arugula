@@ -142,14 +142,15 @@ pub async fn update(
 }
 
 /// Settings sends in flight, by Cloud workspace: one at a time, the
-/// route's or the worker's, so the environment ends as the last save.
+/// route's or the worker's, so the environment ends as the last save. A
+/// rebuild takes it too, so it builds from settings Managoat has.
 static SENDING: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
     std::sync::LazyLock::new(Default::default);
 
-struct Sending(String);
+pub(super) struct Sending(String);
 
 impl Sending {
-    fn take(id: &str) -> Option<Self> {
+    pub(super) fn take(id: &str) -> Option<Self> {
         SENDING.lock().unwrap().insert(id.to_owned()).then(|| Self(id.to_owned()))
     }
 }
