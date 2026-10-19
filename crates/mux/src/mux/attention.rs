@@ -562,6 +562,13 @@ impl Daemon {
         if self.is_invite(pane) && !by.as_ref().is_some_and(|b| b.who == "owner") {
             return Err(super::OWNER_ONLY.into());
         }
+        // ...and so is a Doc's share card (#1067): an agent's answer would
+        // publish.
+        if self.blocks.get(&pane).is_some_and(|b| b.kind() == BlockType::Doc)
+            && !by.as_ref().is_some_and(|b| b.who == "owner")
+        {
+            return Err(super::DOC_OWNER_ONLY.into());
+        }
         let ask = a.ask.clone();
         let permission = ask.kind == AskKind::Permission;
         let answer = match answer {

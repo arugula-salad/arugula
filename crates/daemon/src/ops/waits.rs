@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 
 use super::{Cx, Handle, OpError};
 use crate::{
-    api::{ApiError, bad, is_invite, not_on_invites},
+    api::{ApiError, bad, is_doc, is_invite, not_on_docs, not_on_invites},
     mux::{Api, AskReply, Cmd, InboxReply, MuxHandle},
     store::now_ms,
 };
@@ -48,6 +48,9 @@ impl Handle for PaneAsk {
         let app = cx.app;
         if is_invite(app, id).await {
             return Err(not_on_invites().into());
+        }
+        if is_doc(app, id).await {
+            return Err(not_on_docs().into());
         }
         let questions = req.questions.as_array().filter(|q| !q.is_empty()).ok_or_else(|| bad("no questions"))?;
         let message = match questions.as_slice() {
@@ -104,6 +107,9 @@ impl Handle for PanePermit {
         let app = cx.app;
         if is_invite(app, id).await {
             return Err(not_on_invites().into());
+        }
+        if is_doc(app, id).await {
+            return Err(not_on_docs().into());
         }
         let tool = hook.tool_name.ok_or_else(|| bad("no tool_name"))?;
         let input = hook.tool_input;
@@ -180,6 +186,9 @@ impl Handle for PaneAskWithdraw {
     async fn handle(cx: &Cx<'_>, id: PaneId, req: WithdrawRequest) -> Result<Empty, OpError> {
         if is_invite(cx.app, id).await {
             return Err(not_on_invites().into());
+        }
+        if is_doc(cx.app, id).await {
+            return Err(not_on_docs().into());
         }
         cx.app.mux.send(Cmd::Api(Api::AskWithdraw(id, req.id, None)));
         Ok(Empty {})

@@ -44,6 +44,7 @@
 //! with the flag off (#347: turning a flag off hides and refuses, it
 //! doesn't throw away).
 
+mod ask;
 mod assets;
 mod embeds;
 pub mod link;
@@ -91,7 +92,10 @@ impl BlockKind for DocKind {
         let dir = ctx.dir.join(FOLDER);
         let mut link = Link::none(ctx.state_dir.clone(), ctx.id);
         link.remote = link::remote();
-        Ok(Doc::with_link(dir, config.title, ctx.restoring, link, Arc::new(move || ctx.changed())))
+        let own = ctx.clone();
+        let doc = Doc::with_link(dir, config.title, ctx.restoring, link, Arc::new(move || ctx.changed()));
+        doc.attach(own, config.share_ask);
+        Ok(doc)
     }
 
     fn stored_text(&self, dir: &Path) -> Option<String> {
@@ -108,6 +112,9 @@ impl BlockKind for DocKind {
 struct Config {
     #[serde(default)]
     title: String,
+    /// #1067: an agent's ask to share, kept across a restart.
+    #[serde(default)]
+    share_ask: Option<ask::Asked>,
 }
 
 /// `doc.json`.
@@ -188,6 +195,8 @@ pub struct Doc {
     link: Link,
     /// One share, update or unshare at a time.
     shares: tokio::sync::Mutex<()>,
+    /// An agent's ask to share, and its card (#1067).
+    card: ask::Card,
 }
 
 impl Doc {
@@ -217,6 +226,7 @@ impl Doc {
             sent: Mutex::new(Vec::new()),
             link,
             shares: tokio::sync::Mutex::new(()),
+            card: Default::default(),
         })
     }
 
@@ -446,6 +456,11 @@ impl Doc {
     async fn share(&self, update: bool) -> Result<Value, String> {
         arugula_mux::labs::flag(&self.link.state_dir, arugula_proto::flags::DOCS)?;
         let _one = self.shares.lock().await;
+        self.share_held(update).await
+    }
+
+    /// ...with the share lock held (the card's Share holds it to settle).
+    async fn share_held(&self, update: bool) -> Result<Value, String> {
         let (title, plain) = self.snapshot().await?;
         let got = if update { self.link.update(&title, plain).await } else { self.link.share(&title, plain).await };
         match got {
@@ -580,7 +595,11 @@ impl Block for Doc {
     }
 
     fn config(&self) -> Value {
-        json!({ "title": self.state.lock().unwrap().title })
+        let mut v = json!({ "title": self.state.lock().unwrap().title });
+        if let Some(asked) = self.asked_json() {
+            v["share_ask"] = asked;
+        }
+        v
     }
 
     fn state(&self) -> Value {
@@ -609,8 +628,18 @@ impl Block for Doc {
     }
 
     fn call(&self, method: &str, args: Value) -> BoxFuture<'static, Result<Value, String>> {
+        self.call_by(method, args, None)
+    }
+
+    fn call_by(&self, method: &str, args: Value, by: Option<&str>) -> BoxFuture<'static, Result<Value, String>> {
         let me = self.me.upgrade();
         match method {
+            // #1067: an agent's ask. Not in `link::METHODS`: it raises a
+            // card and reads one, and uploads nothing.
+            "doc_share_ask" => {
+                let by = by.map(str::to_owned);
+                Box::pin(async move { me.ok_or("closed")?.share_ask(by).await })
+            }
             "doc_outline" => {
                 let title = args["title"].as_str().unwrap_or_default().to_owned();
                 let sections = serde_json::from_value::<Vec<Planned>>(args["sections"].clone())
@@ -667,7 +696,9 @@ impl Block for Doc {
         }
     }
 
-    fn close(&self) {}
+    fn close(&self) {
+        self.drop_card();
+    }
 
     fn summary(&self) -> Summary {
         let title = self.state.lock().unwrap().title.clone();
