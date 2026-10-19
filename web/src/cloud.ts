@@ -22,7 +22,8 @@ export const cloudPanes = {
   remember() { try { localStorage.setItem(`arugula.cloud-panes.${this.account}`, JSON.stringify(this.opened)); } catch { /* private browsing */ } },
   open(id: string) { if (!this.opened.includes(id)) this.opened.push(id); this.remember(); location.hash = `cloud=${id}`; changed(); },
   close(id: string) { this.opened = this.opened.filter((x) => x !== id); this.remember(); if (cloudRoute() === id) this.local(); changed(); },
-  local() { if (cloudRoute()) { history.replaceState(null, "", location.pathname + location.search); changed(); } },
+  /** Back to the machine: leaves a cloud run or a Cloud workspace. */
+  local() { if (cloudRoute() || cloudWorkspaceRoute()) { history.replaceState(null, "", location.pathname + location.search); changed(); } },
   connect(account: string) {
     this.account = account; this.enabled = false; this.runs = []; this.error = "";
     try { this.opened = JSON.parse(localStorage.getItem(`arugula.cloud-panes.${account}`) ?? "[]").filter((v: unknown) => typeof v === "string" && /^run_[0-9a-f]+$/.test(v)); } catch { this.opened = []; }
@@ -45,8 +46,114 @@ export const cloudPanes = {
     }));
   },
 };
+/** Every cloud pane the swarm and the attention drawer draw: runs, then
+ * Cloud workspace tabs. */
+export const cloudFleet = (): FleetPane[] => [...cloudPanes.fleet(), ...cloudWorkspaces.fleet()];
+/** Re-renders on cloud runs, Cloud workspaces and the route; returns the
+ * shown run, if one is. */
 export function useCloudPanes() {
   const [, tick] = useState(0);
   useEffect(() => cloudPanes.subscribe(() => tick((n) => n + 1)), []);
   return cloudRoute();
 }
+
+// ---- Cloud workspaces (S40, M116): a session in the shell backed by a
+// Managoat workspace. Control keeps them and their tabs; nothing about them
+// is remembered locally. The route is `#cloud-ws` (the list), or
+// `#cloud-ws=cw_…` with `/cwc_…` for a tab.
+
+export type CloudWorkspaceRepository = { url: string; ref?: string; mount?: string; secret?: string | null };
+export type CloudWorkspaceSpec = {
+  name: string; repositories: CloudWorkspaceRepository[]; packages: { apt?: string[]; npm?: string[] };
+  setup_script?: string; setup_timeout_seconds?: number | null; env_vars?: Record<string, string>;
+  networking?: { type: "unrestricted" | "limited"; allowed_hosts?: string[] } | null; secrets?: string[];
+};
+export type CloudWorkspace = {
+  id: string; name: string; saved_spec: CloudWorkspaceSpec; built_spec: CloudWorkspaceSpec | null;
+  status: "provisioning" | "ready" | "failed" | "deleting"; sandbox_status: "pending" | "starting" | "ready" | "suspended" | null;
+  error: string | null; revision: string | null; built_from_revision: string | null; stale: boolean; changed_fields: string[]; created: number;
+};
+export type CloudTab = {
+  id: string; cloud_workspace: string; agent_id: string; agent_name: string; runtime: string; model: string; cwd: string;
+  status: string; error: string | null; waiting_for_setup: boolean; created: number;
+};
+export type CloudModel = { runtime: string; model: string };
+
+export function cloudWorkspaceRoute(): { workspace: string | null; tab: string | null } | null {
+  const m = /^#cloud-ws(?:=(cw_[0-9a-f]+)(?:\/(cwc_[0-9a-f]+))?)?$/.exec(location.hash);
+  return m ? { workspace: m[1] ?? null, tab: m[2] ?? null } : null;
+}
+
+/** What the sidebar and the header say of a Cloud workspace, and its dot. */
+export function cloudWorkspaceState(w: CloudWorkspace): { word: string; dot: "needs_input" | "working" | "done" | "idle" | "offline" } {
+  if (w.status === "deleting") return { word: "Deleting", dot: "offline" };
+  if (w.status === "failed") return { word: "Failed", dot: "offline" };
+  if (w.status === "provisioning") return { word: "Setting up", dot: "working" };
+  if (w.stale) return { word: "Rebuild needed", dot: "done" };
+  if (w.sandbox_status === "suspended") return { word: "Parked", dot: "idle" };
+  return { word: "Ready", dot: "idle" };
+}
+
+/** A tab's attention, from its conversation's status. */
+export function cloudTabAttention(t: CloudTab): "needs_input" | "working" | "done" | "idle" {
+  if (t.status === "needs_input") return "needs_input";
+  if (["opening", "pending", "running", "closing"].includes(t.status)) return "working";
+  if (t.status === "failed") return "done";
+  return "idle";
+}
+
+/** The mounts a tab may start in: each repository's, else the home. */
+export const cloudWorkspaceMounts = (w: CloudWorkspace) =>
+  w.saved_spec.repositories.length ? w.saved_spec.repositories.map((r) => r.mount || "/home/sprite") : ["/home/sprite"];
+
+export const cloudWorkspaces = {
+  account: "", list: [] as CloudWorkspace[], tabs: new Map<string, CloudTab[]>(), loaded: false, error: "",
+  poke: () => {},
+  subscribe(fn: () => void) { listeners.add(fn); return () => { listeners.delete(fn); }; },
+  find(id: string | null) { return this.list.find((w) => w.id === id); },
+  /** Show the list, a Cloud workspace, or one of its tabs. */
+  open(workspace?: string, tab?: string) { location.hash = workspace ? `cloud-ws=${workspace}${tab ? `/${tab}` : ""}` : "cloud-ws"; changed(); },
+  /** Read again now (after a create, an open or a delete). */
+  refresh() { this.poke(); },
+  connect(account: string) {
+    this.account = account; this.list = []; this.tabs = new Map(); this.loaded = false; this.error = "";
+    let active = true, timer: ReturnType<typeof setTimeout>, running = false, again = false;
+    const poll = async () => {
+      clearTimeout(timer);
+      if (running) { again = true; return; }
+      running = true;
+      let wait = 3000;
+      try {
+        const v = await cloudApi<{ cloud_workspaces: CloudWorkspace[] }>("workspaces");
+        const tabs = await Promise.all(v.cloud_workspaces.map((w) => cloudApi<{ cloud_tabs: CloudTab[] }>(`workspaces/${w.id}/tabs`).then((t) => t.cloud_tabs, () => this.tabs.get(w.id) ?? [])));
+        if (!active) return;
+        this.list = v.cloud_workspaces; this.tabs = new Map(v.cloud_workspaces.map((w, i) => [w.id, tabs[i]])); this.error = ""; this.loaded = true;
+      } catch (e) {
+        if (!active) return;
+        // Not in the beta, or no cloud here: ask seldom.
+        this.error = (e as Error).message; this.loaded = true; wait = 15000;
+      } finally { running = false; }
+      changed();
+      if (active) timer = setTimeout(() => void poll(), again ? 0 : wait);
+      again = false;
+    };
+    this.poke = () => void poll();
+    if (account) void poll();
+    changed();
+    return () => { active = false; clearTimeout(timer); this.poke = () => {}; this.account = ""; this.list = []; this.tabs = new Map(); this.loaded = false; changed(); };
+  },
+  fleet(): FleetPane[] {
+    return this.list.flatMap((w) => (this.tabs.get(w.id) ?? []).map((t): FleetPane => {
+      const attention = cloudTabAttention(t);
+      const id = Number.parseInt(t.id.slice(4, 17), 16);
+      return {
+        key: `cloud:${t.id}`, host: "Cloud", id, cloudTab: { workspace: w.id, tab: t.id },
+        info: { id, epoch: 0, cwd: t.cwd, command: t.agent_name, running: attention === "working", policy: { kind: "none" }, current: null, last: null,
+          attention, integration: false, type: "agent", host: null, kind: "agent", title: `${t.agent_name} in ${w.name}`,
+          reason: attention === "needs_input" ? { kind: "input", since_ms: t.created, headline: `${t.agent_name} in ${w.name} waits for you`, actions: [] }
+            : t.status === "failed" ? { kind: "failed", since_ms: t.created, headline: t.error ?? `${t.agent_name} in ${w.name} failed`, actions: [] } : null },
+        session: { id: Number.parseInt(w.id.slice(3, 16), 16), name: w.name }, stale: !!this.error, person: { id: "me", name: "me", kind: "me" }, driver: null, watchers: [], unread: 0, mention: false,
+      };
+    }));
+  },
+};

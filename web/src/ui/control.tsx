@@ -581,6 +581,7 @@ export function NoMachines({ s, newAgent }: { s: ControlSession; newAgent?: () =
         ))}
         {cloudPanes.enabled && newAgent && <button class="primary" onClick={newAgent}>New agent</button>}
         <button onClick={openPanel("cloud")}>Cloud agents</button>
+        {cloudPanes.enabled && <button data-open-cloud-workspaces onClick={() => (location.hash = "cloud-ws")}>Cloud workspaces</button>}
         <h1>{s.asked.length ? "Add your own machine" : "Add a machine"}</h1>
         <AddMachine s={s} />
       </main>
@@ -692,6 +693,9 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
     const open = (e: Event) => setPanel((e as CustomEvent<Panel>).detail);
     const cloudMessage = (event: MessageEvent) => {
       if (event.data?.type === "open-cloud-run" && /^run_[0-9a-f]+$/.test(event.data.run)) location.hash = `cloud=${event.data.run}`;
+      if (event.data?.type === "open-cloud-tab" && /^cw_[0-9a-f]+$/.test(event.data.cloud_workspace) && /^cwc_[0-9a-f]+$/.test(event.data.cloud_tab)) {
+        location.hash = `cloud-ws=${event.data.cloud_workspace}/${event.data.cloud_tab}`;
+      }
     };
     navigator.serviceWorker?.addEventListener("message", cloudMessage);
     addEventListener("hashchange", on);

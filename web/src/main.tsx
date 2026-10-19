@@ -1,5 +1,5 @@
 import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
-import { cloudPanes, useCloudPanes } from "./cloud";
+import { cloudFleet, cloudPanes, cloudWorkspaceRoute, cloudWorkspaces, useCloudPanes } from "./cloud";
 // Arugula web client: tabs and splits of terminals owned by the daemon.
 
 import { OPS, opPath } from "./ops";
@@ -215,11 +215,12 @@ function ControlRoot({ s }: { s: ControlSession }) {
   useControl(s);
   const cloud = useCloudPanes();
   useEffect(() => { if (s.phase === "ready") return cloudPanes.connect(s.account); }, [s.phase, s.account]);
+  useEffect(() => { if (s.phase === "ready") return cloudWorkspaces.connect(s.account); }, [s.phase, s.account]);
   useSubscribe((fn) => directory.subscribe(fn));
   const body =
     s.phase !== "ready" ? (
       <ControlGate s={s} />
-    ) : client.e2e || cloud ? (
+    ) : client.e2e || cloud || cloudWorkspaceRoute() ? (
       <App key={client.base} client={client} cell={cell} />
     ) : s.daemons.length ? (
       // Machines, but none picked yet: not "Add a machine" (#749).
@@ -268,10 +269,12 @@ const fleetHosts = (): HostRef[] =>
       teamName: d?.team ? session?.teams.find((t) => t.team === d.team)?.roster.name : undefined,
     };
   });
-cloudPanes.subscribe(() => fleet.setCloudPanes(cloudPanes.fleet()));
+cloudPanes.subscribe(() => fleet.setCloudPanes(cloudFleet()));
 fleet.onOpen = (host, pane, share) => {
   const cloud = fleet.panes.find((p) => p.host === host && p.id === pane && p.cloudRun);
   if (cloud?.cloudRun) { cloudPanes.open(cloud.cloudRun); return; }
+  const tab = fleet.panes.find((p) => p.host === host && p.id === pane && p.cloudTab)?.cloudTab;
+  if (tab) { cloudWorkspaces.open(tab.workspace, tab.tab); return; }
   directory.select(host);
   // The host's client is made when the directory switches, then connects:
   // show the pane once it knows it.

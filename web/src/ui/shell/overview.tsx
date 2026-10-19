@@ -17,6 +17,7 @@ import { escapeTaken } from "../menu";
 import { closeOverview, overviewRoute } from "../places";
 import { BranchIcon } from "./icons";
 import { showSession, summarize } from "./session-sidebar";
+import { CloudWorkspaceCards } from "../cloud-workspaces";
 
 /** Whether `#overview` is up, kept current with the route. */
 export function useOverview(): { session?: number } | null {
@@ -192,6 +193,7 @@ export function SessionOverview({ client, session }: { client: Client; session?:
           );
         })}
       </div>
+      <CloudWorkspaceCards />
     </section>
   );
 }

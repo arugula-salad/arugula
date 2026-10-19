@@ -85,6 +85,9 @@ sw.addEventListener("fetch", (event: FetchEvent) => {
 
 interface Msg {
   cloud_run?: string;
+  /** A Cloud workspace tab's approval (S40): its workspace and tab. */
+  cloud_workspace?: string;
+  cloud_tab?: string;
   title?: string;
   body?: string;
   tag?: string;
@@ -147,9 +150,9 @@ sw.addEventListener("push", (event: PushEvent) => {
       tag: msg.tag || "arugula",
       renotify: true,
       icon: "/icon.svg",
-      requireInteraction: !!(approve || ask || gate || point || msg.cloud_run),
+      requireInteraction: !!(approve || ask || gate || point || msg.cloud_run || msg.cloud_tab),
       actions,
-      data: { cloud_run: msg.cloud_run, pane: msg.pane, daemon: msg.daemon, thread: msg.thread, approve, ask, reason, control: msg.control === true },
+      data: { cloud_run: msg.cloud_run, cloud_workspace: msg.cloud_workspace, cloud_tab: msg.cloud_tab, pane: msg.pane, daemon: msg.daemon, thread: msg.thread, approve, ask, reason, control: msg.control === true },
     } as NotificationOptions),
   );
 });
@@ -202,6 +205,17 @@ sw.addEventListener("notificationclick", (event: ClickEvent) => {
         if (window.focus) { window.postMessage({ type: "open-cloud-run", run }); return window.focus(); }
       }
       return sw.clients.openWindow(`/#cloud=${run}`);
+    })());
+    return;
+  }
+  if (data.cloud_workspace && data.cloud_tab && /^cw_[0-9a-f]+$/.test(data.cloud_workspace) && /^cwc_[0-9a-f]+$/.test(data.cloud_tab)) {
+    const target = { cloud_workspace: data.cloud_workspace, cloud_tab: data.cloud_tab };
+    event.waitUntil((async () => {
+      const windows = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const window of windows) {
+        if (window.focus) { window.postMessage({ type: "open-cloud-tab", ...target }); return window.focus(); }
+      }
+      return sw.clients.openWindow(`/#cloud-ws=${target.cloud_workspace}/${target.cloud_tab}`);
     })());
     return;
   }
