@@ -268,7 +268,7 @@ on merge, and every UI PR has Before | After shots.
   choice), maps `409 turns_running` to the mid-turn refusal that names the
   tabs, maps `409 rebuild_in_progress` to "already setting up", and retries
   `503` later. It shows progress through the status poll. **Retry** on a
-  failed workspace is the same call, without the warning. `built_spec` and the fingerprint update when the
+  failed workspace is the same call, without the warning. `built_spec` updates when the
   workspace reaches `ready`.
 - The live check waits for a Managoat release that carries #3018, because
   managoat.com doesn't have rebuild until then. If #3009 has landed, show the
