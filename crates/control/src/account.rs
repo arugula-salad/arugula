@@ -351,11 +351,17 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
         ));
     }
     let disband: Vec<String> = p.disband.iter().map(|(t, _, _)| t.clone()).collect();
+    // Its DMs go with it (M122): the other people's pages hear so.
+    let dms: Vec<String> = app.db.chat_rooms_member(account)?.into_iter().map(|r| r.id).collect();
     let daemons = app.db.delete_account(&crate::db::Erase { account, disband: &disband, retain_for: &p.retain_for })?;
     for d in &daemons {
         app.relay.drop_daemon(d);
     }
     app.relay.account_gone(account);
+    for r in &dms {
+        app.chat.room(r);
+    }
+    app.chat.changed();
     // The team's machines that stay (someone else's, now personal) were
     // relaying for its members: hang those connections up now (#206).
     hang_up.retain(|d| !daemons.contains(d));

@@ -12,4 +12,6 @@ shares with daemons and the CLI).
 Start with `src/main.rs`, then `src/api.rs` (devices, approvals, daemons
 joining, the directory) and `src/relay.rs` (the relay). `src/blocks.rs`
 serves blocks' own origins under `--block-domain` (M50), with their
-scripts from `web/src/block/`.
+scripts from `web/src/block/`. `src/chat.rs` (with `src/db/chat.rs`) is
+chat (M122): a team's channels, DMs and threads about panes, which control
+holds in plain text, the one exception to "metadata only".

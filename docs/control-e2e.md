@@ -7,6 +7,8 @@ end-to-end relay, teams, hosted sandboxes and push. It turns the control track's
 but it can't read.** That promise has limits, set out in
 [What holds against control](#what-holds-against-control): the client code
 control serves, and the first account a machine joins, are trusted.
+And it doesn't cover chat: since M122, control holds a team's channels,
+DMs and threads about panes in plain text ([Chat](#chat)).
 
 ## Summary
 
@@ -45,7 +47,12 @@ control serves, and the first account a machine joins, are trusted.
     the device signed;
   - control only adds the VAPID signature and posts it;
   - control's own notices (something waits for approval) it encrypts
-    itself, and they say only that.
+    itself, and they say only that;
+  - chat's pushes (M122) are control's own too: who, where, and the
+    first 200 characters of the message.
+- **Chat:** held by control in plain text (M122): channels, DMs and the
+  threads about panes, with the lines people choose to quote from a pane.
+  The rest of a pane never reaches control.
 
 ## Keys
 
@@ -934,6 +941,12 @@ leaves it. So:
   itself. They say only that something waits ("A new browser wants into
   your account", "Ada asks to join Acme"); approving still happens on the
   page, with the fingerprint.
+- **Chat's pushes (M122):** control sends these itself, encrypted to each
+  subscription, since it holds the chat anyway (S41 decision 5): who, where
+  and the first 200 characters ("jake mentioned you in #general", "jake
+  wrote to you"), tagged `chat-<room>` with the room for the tap. A mention
+  pushes, and anything in a DM; not your own posts, a room you have open or
+  muted, or a room you were pushed for in the last minute.
 
 This is confirmed by construction: the daemon's existing RFC 8291 encrypt
 plus a separate VAPID signer is exactly what the RFC allows. The push work adds the
@@ -950,6 +963,30 @@ only an approval does.
 - Control's session cookie is for control's API only (directory, approvals,
   invites). Daemons never accept it.
 
+## Chat
+
+Since M122 (S41, #978), chat is control's, in plain text: this is the
+exception to "control can't read". A team's channels and DMs, and the
+threads about a pane or a session, live in control's database with their
+read marks and a full-text index, so people talk while every machine
+sleeps, and control pushes and searches them itself.
+
+- **What enters control:** what people type, and the lines they choose to
+  quote from a pane (the page reads the pane end to end, and the person
+  picks the lines). Nothing else of the pane does: its output, input and
+  scrollback stay on the end-to-end channels above.
+- **Who reads a pane's thread:** whom its machine says, kept by control
+  (`POST /api/daemon/chat/readers`), and never anyone control wouldn't route
+  to the machine anyway. A pane chip opens only for someone who may reach
+  the machine; the quote is shown either way.
+- **Live:** `GET /api/chat/live`, Server-Sent Events over HTTP with the
+  session cookie, not the relay: chat isn't relay traffic, and works with no
+  machine up.
+- **Kept until deleted** (S41 decision 6): an author or an owner deletes a
+  message; deleting an account deletes its DMs and its machines' threads
+  and blanks its messages elsewhere; a disbanded team's rooms go with it.
+  Litestream's copies age out with the rest of control's backups.
+
 ## What control stores
 
 | Stored | Never stored |
@@ -959,9 +996,10 @@ only an approval does.
 | directory: daemon ids, names, URLs, last seen, presence | link keys (the fragment) |
 | connection metadata: who, which daemon, when, byte counts | push payloads in the clear |
 | signed push subscriptions, VAPID key pair | provider tokens for your own machines |
+| chat (M122): rooms, messages and the lines quoted from panes, read marks, who may read each pane's thread | the rest of a pane: what it printed that nobody quoted |
 
 Logs follow the same rule: nothing a daemon sends inside a stream is
-logged.
+logged, and chat's text isn't logged either.
 
 ## Open items
 

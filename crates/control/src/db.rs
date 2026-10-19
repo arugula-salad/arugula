@@ -3,7 +3,10 @@
 //! revocations, pending joins, the directory and byte counts. Nothing a
 //! daemon sends inside a channel ever reaches it. Managed cloud execution also
 //! stores agent definitions, prompts, results, and encrypted credential snapshots.
+//! Chat (M122, `chat`) is held here in plain text: rooms, messages and the
+//! lines people quote from panes, never the rest of a pane.
 
+pub mod chat;
 pub mod cloud;
 
 use std::{path::Path, sync::Mutex};
@@ -561,6 +564,7 @@ impl Db {
         )?;
         conn.execute_batch(SCHEMA)?;
         conn.execute_batch(cloud::SCHEMA)?;
+        conn.execute_batch(chat::SCHEMA)?;
         migrate(&conn)?;
         if !answers_before {
             grandfather_shares(&conn)?;
@@ -572,6 +576,7 @@ impl Db {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(SCHEMA).unwrap();
         conn.execute_batch(cloud::SCHEMA).unwrap();
+        conn.execute_batch(chat::SCHEMA).unwrap();
         migrate(&conn).unwrap();
         Self { conn: Mutex::new(conn) }
     }
@@ -2226,6 +2231,9 @@ impl Db {
                 tx.execute(sql, params![t])?;
             }
         }
+        // Chat (M122): its DMs, the threads on its machines, the disbanded
+        // teams' rooms, and its name on everything else.
+        chat::erase_account(&tx, a, &daemons, e.disband)?;
         // Certificates kept for teams that are gone now.
         tx.execute("DELETE FROM retained_certs WHERE account NOT IN (SELECT account FROM retained_for)", [])?;
         for d in &daemons {

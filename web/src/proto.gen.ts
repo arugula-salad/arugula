@@ -166,6 +166,223 @@ export type ChangesAsked = { note: string, by: string, at_ms: number,
  */
 revised_ms?: number, };
 
+/**
+ * `PATCH /api/chat/rooms/{id}/messages/{seq}`: the author's new text.
+ */
+export type ChatEdit = { text: string, };
+
+export type ChatFound = { found: Array<ChatHit>, };
+
+export type ChatHit = { room: string, message: ChatMessage, };
+
+/**
+ * What a room is.
+ */
+export type ChatKind = "channel" | "dm" | "pane" | "session" | "archive";
+
+/**
+ * What `GET /api/chat/live` sends, one JSON object per event (no event
+ * names). Every event but `hello` has an id, so `EventSource` resumes
+ * with `Last-Event-ID` after a drop; a stream that can't be resumed (it
+ * fell too far behind, or control restarted) gets `resync`: reload the
+ * rooms.
+ */
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "resync", };
+
+/**
+ * A message as the reader sees it.
+ */
+export type ChatMessage = { 
+/**
+ * Its number in the room. Messages brought in from a machine before
+ * the room had any of its own are numbered 0 and below (M124).
+ */
+seq: number, at: number, 
+/**
+ * The author's account, and their name now. Both are empty for a
+ * deleted account.
+ */
+author: string, name: string, text: string, 
+/**
+ * Lines the poster chose from a pane, copied in (decision 1).
+ */
+quote: string | null, pane: ChatPane | null, 
+/**
+ * The accounts it mentions.
+ */
+mentions: Array<string>, edited: number | null, 
+/**
+ * When it was deleted: its text, quote and pane are gone.
+ */
+deleted: number | null, 
+/**
+ * Brought in from a machine's own threads (M124): the name it had
+ * there.
+ */
+imported: string | null, };
+
+export type ChatMessages = { room: ChatRoom, 
+/**
+ * Oldest first.
+ */
+messages: Array<ChatMessage>, 
+/**
+ * There are more in the direction asked.
+ */
+more: boolean, };
+
+/**
+ * `POST /api/chat/rooms/{id}/mute`: no pushes from this room.
+ */
+export type ChatMute = { muted: boolean, };
+
+/**
+ * `POST /api/chat/teams/{team}/channels`: owners and editors make them.
+ */
+export type ChatNewChannel = { name: string, };
+
+/**
+ * `POST /api/chat/teams/{team}/dms`: the DM with a teammate, made the
+ * first time.
+ */
+export type ChatNewDm = { with: string, };
+
+/**
+ * `POST /api/chat/live/open`: the room a page's stream has open (`None`:
+ * none, or the page is hidden). Nobody is pushed for a room they have
+ * open.
+ */
+export type ChatOpen = { stream: string, room: string | null, };
+
+/**
+ * `POST /api/chat/targets`: the thread about a pane or a session, made
+ * the first time by someone who may read it.
+ */
+export type ChatOpenTarget = { machine: string, kind: ChatTargetKind, target: string, };
+
+/**
+ * A pane a message names, as the reader sees it: whether its chip opens
+ * for them (they may reach the machine), and the machine's name.
+ */
+export type ChatPane = { machine: string, machine_name: string, pane: string, opens: boolean, };
+
+/**
+ * A pane a message names, as the poster sends it.
+ */
+export type ChatPaneRef = { machine: string, pane: string, };
+
+/**
+ * Someone, as the reader sees them.
+ */
+export type ChatPerson = { account: string, name: string, };
+
+/**
+ * `POST /api/chat/rooms/{id}/messages`.
+ */
+export type ChatPost = { text: string, 
+/**
+ * A pane the message is about: only one on a machine the poster may
+ * reach.
+ */
+pane?: ChatPaneRef, quote?: string, };
+
+export type ChatPosted = { seq: number, 
+/**
+ * The accounts it mentions.
+ */
+mentions: Array<string>, 
+/**
+ * `@words` that named nobody who sees the room.
+ */
+unreached: Array<string>, 
+/**
+ * Whom control pushed (not those with the room open, muted, or pushed
+ * for it in the last minute).
+ */
+pushed: Array<ChatPushed>, };
+
+/**
+ * Why control pushed someone.
+ */
+export type ChatPushWhy = "mention" | "dm";
+
+export type ChatPushed = { account: string, why: ChatPushWhy, };
+
+/**
+ * `POST /api/chat/rooms/{id}/read`: read up to here (it only moves
+ * forward).
+ */
+export type ChatRead = { seq: number, };
+
+/**
+ * A room as one person sees it.
+ */
+export type ChatRoom = { id: string, kind: ChatKind, 
+/**
+ * The team a channel or DM is in.
+ */
+team: string | null, 
+/**
+ * A channel's name (without `#`); a pane's or session's room is
+ * named `pane 2`, `session 1`.
+ */
+name: string, 
+/**
+ * The machine a pane's or session's room is on, and its name.
+ */
+machine: string | null, machine_name: string | null, 
+/**
+ * The pane or session id there.
+ */
+target: string | null, 
+/**
+ * A DM's other person.
+ */
+with: ChatPerson | null, 
+/**
+ * The newest message's number, and the reader's read mark.
+ */
+last: number, read: number, 
+/**
+ * Messages after the read mark (not the reader's own), and how many
+ * of those mention the reader.
+ */
+unread: number, mentions: number, 
+/**
+ * The reader turned its pushes off.
+ */
+muted: boolean, 
+/**
+ * A channel its team's owners archived: read, not written.
+ */
+archived: boolean, 
+/**
+ * Whether the reader may post here now (a DM whose other person left
+ * the team, an archive, an archived channel: no).
+ */
+writable: boolean, };
+
+/**
+ * `PATCH /api/chat/rooms/{id}`: a channel renamed or archived, by its
+ * team's owners.
+ */
+export type ChatRoomChange = { name?: string, archived?: boolean, };
+
+/**
+ * `GET /api/chat/rooms/{id}`: a room and who sees it (whom `@` reaches).
+ */
+export type ChatRoomDetail = { room: ChatRoom, people: Array<ChatPerson>, };
+
+/**
+ * `GET /api/chat`: every room the reader sees.
+ */
+export type ChatRooms = { rooms: Array<ChatRoom>, };
+
+/**
+ * What a daemon's thread is about.
+ */
+export type ChatTargetKind = "pane" | "session";
+
 export type Check = { name: string, source: CheckSource, state: CheckState, allow_failure: boolean, 
 /**
  * Absolute (Forgejo's own are relative to the site; the adapter makes

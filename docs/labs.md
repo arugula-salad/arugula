@@ -164,6 +164,15 @@ so on a team every team machine needs one. Someone you share a session on
 a machine with labs with sees chat there; on a machine without it, nobody
 does.
 
+**Chat in control (M122, #978).** Chat is moving into control: a team's
+channels and DMs, and the threads about panes, held by control in plain
+text so they work with every machine asleep (DECISIONS.md "Chat lives in
+control, in plain text"). It's behind control's own `chat` flag, the
+account's or a team's (`POST /api/flags`), not the machine's. M122 is
+control's side only (the API under `/api/chat`, `crates/control/src/chat.rs`);
+the Chat page moves onto it in M123, and machines bring their old threads
+in with M124. Until then, what follows is the machine's own chat.
+
 - **Threads on panes and sessions**. Every pane and every session has
   a thread where the people working on it talk: *Thread* in a pane's menu,
   *Session thread* in the session menu, or the bubble on a pane. Messages
