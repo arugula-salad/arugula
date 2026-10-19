@@ -164,20 +164,17 @@ impl Db {
         if waiting + len > MAX_LINK {
             return Err(DocErr::TooBig);
         }
-        // The account's served bytes and every uncommitted byte of every
-        // link it has: many links half uploaded must not add up to more
-        // than the account may keep.
+        // What the account would hold: the served bytes of its other links
+        // (this link's commit replaces its own), and every uncommitted byte
+        // of every link it has, since many links half uploaded must not add
+        // up to more than the account may keep.
         let others: u64 = tx.query_row(
             "SELECT COALESCE(SUM(LENGTH(p.data)), 0) FROM doc_link_parts p JOIN doc_links l ON l.id = p.id
-             WHERE l.account = ?1 AND NOT (p.id = ?2 AND p.ver = ?3 AND p.n = ?4)",
+             WHERE l.account = ?1 AND p.ver != l.version AND NOT (p.id = ?2 AND p.ver = ?3 AND p.n = ?4)",
             params![account, id, ver, n],
             |r| r.get(0),
         )?;
-        let served: u64 = tx.query_row(
-            "SELECT COALESCE(SUM(size), 0) FROM doc_links WHERE account = ?1 AND version > 0",
-            params![account],
-            |r| r.get(0),
-        )?;
+        let served: u64 = served_bytes(&tx, account, id)?;
         if served + others + len > MAX_ACCOUNT {
             return Err(DocErr::Quota);
         }

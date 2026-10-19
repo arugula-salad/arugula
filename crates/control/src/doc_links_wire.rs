@@ -765,3 +765,41 @@ async fn parts_nobody_committed_are_swept_after_a_day() {
     assert_eq!(db.sweep_doc_links(now - day).unwrap(), 0);
     assert!(db.doc_served(&id(131)).unwrap().is_some());
 }
+
+/// Served bytes are counted once, and an update's own served version not at
+/// all: the commit replaces it.
+#[tokio::test]
+async fn served_bytes_count_once_and_an_update_replaces_its_own() {
+    let c = control(|_| {}).await;
+    person(&c.app, "ann", "a1");
+    let d = daemon(&c.app, "a1", "geek");
+    let mib = vec![1u8; 1 << 20];
+
+    // 150 MiB served, parts and all: a new 40 MiB link still goes up.
+    for i in 0..3 {
+        let part = vec![i as u8; 50 << 20];
+        c.app.db.seed_doc(&id(140 + i), "a1", &d.id(), 1, 50 << 20, Some((1, 0, &part)));
+    }
+    let (new, forty) = (id(150), 40);
+    for n in 0..forty {
+        assert_eq!(c.put(&d, &new, 1, n, &mib).await.0, 200, "part {n}");
+    }
+    let (st, v) = c.commit(&d, &new, 1, json!({ "parts": forty, "size": forty as u64 * (1 << 20) })).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(c.quota(&d).await.1["used"], 190u64 << 20);
+
+    // 190 MiB served in all: the 40 MiB link can be updated, though the
+    // other 150 and a whole new 40 would be over; its own old version isn't
+    // counted against it.
+    for n in 0..forty {
+        assert_eq!(c.put(&d, &new, 2, n, &mib).await.0, 200, "update part {n}");
+    }
+    let (st, v) = c.commit(&d, &new, 2, json!({ "parts": forty, "size": forty as u64 * (1 << 20) })).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(c.app.db.doc_part_keys(&new).iter().filter(|(ver, _)| *ver == 1).count(), 0);
+    // But the others' 150 still count: 10 MiB more of a new link is the cap.
+    for n in 0..10 {
+        assert_eq!(c.put(&d, &id(151), 1, n, &mib).await.0, 200);
+    }
+    assert_eq!(c.put(&d, &id(151), 1, 10, b"x").await.1["reason"], "quota");
+}
