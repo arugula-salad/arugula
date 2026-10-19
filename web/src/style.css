@@ -8908,6 +8908,8 @@ html[data-finish="glass"] .prompt-backdrop {
 .cloud-ws-mid-turn { padding: 8px 12px; border: 1px solid var(--raised-hover); border-radius: 6px; }
 .cloud-ws-mid-turn p { margin: 4px 0; }
 .cloud-ws-retry { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.cloud-ws-rebuild-waiting { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.cloud-ws-rebuild-waiting .control-error { white-space: normal; }
 
 /* ---- the workspace (M108, #1023; the only one since M113): a rail, the session sidebar, a
    context header, the tab strip and a status footer around `.main`. Only

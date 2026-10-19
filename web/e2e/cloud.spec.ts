@@ -21,9 +21,9 @@ let environment: Record<string, unknown> = {}, built: Record<string, unknown> = 
 const changedFields = () => buildFields.filter((f) => JSON.stringify(environment[f]) !== JSON.stringify(built[f]));
 const conversations = new Map<string, { status: string; prompt: string; answered: boolean }>();
 // Rebuild and Retry (M120): what each was asked with, and whether the next
-// setups fail.
+// setups fail, or a rebuild finds no machine free.
 const rebuilds: unknown[] = [], retries: unknown[] = [];
-let failSetup = false;
+let failSetup = false, noMachine = false;
 test.beforeAll(async () => {
   github = createServer((req, res) => {
     const url = new URL(req.url!, "http://github");
@@ -61,6 +61,10 @@ test.beforeAll(async () => {
     else if (path === "/api/workspaces/ws/rebuild" || path === "/api/workspaces/ws/retry") {
       (path.endsWith("/retry") ? retries : rebuilds).push(body);
       const running = [...conversations].filter(([, c]) => c.status === "running" && c.prompt === "Run the tests" && !c.answered).map(([id]) => id);
+      if (path.endsWith("/rebuild") && noMachine) {
+        res.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ error: "fleet_full", message: "no machine free" }));
+        return;
+      }
       if (path.endsWith("/rebuild") && running.length && !body.interrupt) {
         res.writeHead(409, { "content-type": "application/json" }).end(JSON.stringify({ error: "turns_running", message: "refused", conversation_ids: running }));
         return;
@@ -356,6 +360,26 @@ test("Rebuild asks first, warns that the disk is wiped, and clears the badge", a
   await confirm.locator("[data-cancel-rebuild]").click();
   await expect(confirm).toHaveCount(0);
   expect(rebuilds).toHaveLength(0);
+
+  // No machine free: it waits, says so, and Cancel stops control asking.
+  noMachine = true;
+  await page.locator('[data-rebuild-cloud-workspace="header"]').click();
+  await confirm.locator("[data-confirm-rebuild]").click();
+  await expect(confirm).toHaveCount(0);
+  const waiting = page.locator('[data-rebuild-waiting="header"]');
+  await expect(waiting).toContainText("Rebuild waiting for a machine");
+  await expect(page.locator('[data-rebuild-waiting="settings"]')).toBeVisible();
+  await expect(page.locator("[data-rebuild-queued]")).toBeVisible();
+  await expect.poll(() => rebuilds.length, { timeout: 15000 }).toBeGreaterThan(1);
+  await waiting.locator("[data-cancel-queued-rebuild]").click();
+  await expect(page.locator("[data-rebuild-waiting]")).toHaveCount(0);
+  await expect(page.locator('[data-rebuild-cloud-workspace="header"]')).toBeVisible();
+  const asked = rebuilds.length;
+  await page.waitForTimeout(3000);
+  expect(rebuilds).toHaveLength(asked);
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Rebuild needed · 1 change");
+  noMachine = false;
+  rebuilds.length = 0;
 
   // Settings' Rebuild, confirmed: setting up, then ready with no badge.
   await page.locator('[data-rebuild-cloud-workspace="settings"]').click();

@@ -8,12 +8,13 @@
 //! Both ask Managoat at once, so a refusal reaches the person. A 503 (no
 //! machine free, or the machine busy) changed nothing: it waits in
 //! `rebuild` and the worker asks again for a while. Nothing else is asked
-//! twice: a lost answer may have wiped the disk.
+//! twice: a lost answer may have wiped the disk. The person can cancel one
+//! that waits until the worker takes it to send.
 use super::{enabled, provider::Refusal, worker::observe_cloud_workspace, workspaces::Sending};
 use crate::{
     ApiError, App,
     auth::Session,
-    db::cloud::{CloudWorkspace, CloudWorkspaceJob, CloudWorkspaceRebuild},
+    db::cloud::{CancelledRebuild, CloudWorkspace, CloudWorkspaceJob, CloudWorkspaceRebuild},
     err, refusal,
 };
 use anyhow::{Context, Result};
@@ -45,7 +46,12 @@ pub async fn rebuild(
     Path(id): Path<String>,
     Json(input): Json<Rebuild>,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
-    let asked = CloudWorkspaceRebuild { retry: false, interrupt: input.interrupt, asked: arugula_e2e::now_ms() };
+    let asked = CloudWorkspaceRebuild {
+        retry: false,
+        interrupt: input.interrupt,
+        asked: arugula_e2e::now_ms(),
+        sending: false,
+    };
     ask(&app, &session, &id, asked).await
 }
 
@@ -55,7 +61,7 @@ pub async fn retry(
     session: Session,
     Path(id): Path<String>,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
-    let asked = CloudWorkspaceRebuild { retry: true, interrupt: false, asked: arugula_e2e::now_ms() };
+    let asked = CloudWorkspaceRebuild { retry: true, interrupt: false, asked: arugula_e2e::now_ms(), sending: false };
     ask(&app, &session, &id, asked).await
 }
 
@@ -138,6 +144,38 @@ async fn ask(
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "cloud workspace not found"))
 }
 
+/// `DELETE /api/cloud/workspaces/{id}/rebuild`: cancel a rebuild or retry
+/// waiting for a machine. 409 `rebuild_started` once the worker has sent it
+/// (or is sending it), and `not_waiting` with none waiting.
+pub async fn cancel(
+    State(app): State<Arc<App>>,
+    session: Session,
+    Path(id): Path<String>,
+) -> Result<Json<CloudWorkspace>, ApiError> {
+    enabled(&app, &session.account)?;
+    let account = &session.account;
+    match app.db.cancel_cloud_workspace_rebuild(account, &id)? {
+        CancelledRebuild::Cancelled => {
+            app.analytics.capture(account, "cloud workspace rebuild cancelled", json!({}));
+        }
+        CancelledRebuild::Started => {
+            return Err(refusal(
+                StatusCode::CONFLICT,
+                "rebuild_started",
+                "Too late to cancel: Managoat has a machine and it has started.",
+            ));
+        }
+        CancelledRebuild::NotWaiting => {
+            return Err(refusal(StatusCode::CONFLICT, "not_waiting", "Nothing is waiting for a machine."));
+        }
+        CancelledRebuild::NotFound => return Err(err(StatusCode::NOT_FOUND, "cloud workspace not found")),
+    }
+    app.db
+        .cloud_workspace(account, &id)?
+        .map(Json)
+        .ok_or_else(|| err(StatusCode::NOT_FOUND, "cloud workspace not found"))
+}
+
 async fn send(app: &App, workspace: &str, asked: &CloudWorkspaceRebuild) -> Result<Value> {
     let p = &app.cloud.as_ref().context("cloud is disabled")?.provider;
     if asked.retry { p.retry_workspace(workspace).await } else { p.rebuild_workspace(workspace, asked.interrupt).await }
@@ -204,13 +242,24 @@ pub(super) async fn send_queued(app: &App, job: &mut CloudWorkspaceJob, workspac
     let Some(_sending) = Sending::take(&id) else {
         return Ok(());
     };
+    // Taken in a transaction a cancel also takes: from here a cancel is
+    // answered `rebuild_started`, and one before it leaves nothing to take.
+    let Some((asked, taken)) = app.db.claim_cloud_workspace_rebuild(&id)? else {
+        return Ok(());
+    };
+    if taken {
+        // Taken before control stopped: it may have gone.
+        return app
+            .db
+            .drop_cloud_workspace_rebuild(&id, Some("Managoat didn't answer. If it isn't setting up now, try again."));
+    }
     match send(app, workspace, &asked).await {
         Ok(answer) => {
             observe_cloud_workspace(&mut job.cloud_workspace, &answer);
             app.db.rebuilt_cloud_workspace(&job.cloud_workspace)
         }
         Err(e) => match e.downcast_ref::<Refusal>() {
-            Some(r) if r.status == 503 => Ok(()),
+            Some(r) if r.status == 503 => app.db.unclaim_cloud_workspace_rebuild(&id, &asked),
             Some(r) if matches!(r.code.as_str(), "rebuild_in_progress" | "workspace_not_failed") => {
                 app.db.drop_cloud_workspace_rebuild(&id, None)
             }

@@ -12,10 +12,10 @@ import { cloudWorkspaceRoute, cloudWorkspaces, useCloudPanes, type CloudTab, typ
 const MID_TURN = ["pending", "running", "needs_input"];
 const tabName = (t: CloudTab) => `${t.agent_name} · ${t.runtime}`;
 
-/** POST to control, keeping the refusal's reason. */
-async function post(path: string, body: unknown): Promise<{ error?: string; reason?: string }> {
+/** POST (or DELETE) to control, keeping the refusal's reason. */
+async function post(path: string, body: unknown, method = "POST"): Promise<{ error?: string; reason?: string }> {
   try {
-    const r = await fetch(`/api/cloud/${path}`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch(`/api/cloud/${path}`, { method, credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     if (r.ok) return {};
     const value = await r.json().catch(() => ({}));
     return { error: value.error ?? `Request failed (${r.status})`, reason: value.reason };
@@ -31,14 +31,40 @@ export function RebuildCloudWorkspace({ w: given, place }: { w?: CloudWorkspace;
   const w = given ?? cloudWorkspaces.find(cloudWorkspaceRoute()?.workspace ?? null);
   const [asking, setAsking] = useState(false);
   if (!w || w.status !== "ready") return null;
-  const waiting = w.rebuild_queued;
+  if (w.rebuild_queued) {
+    return (
+      <span class="cloud-ws-rebuild-waiting" role="status" data-rebuild-waiting={place} title="Managoat has no machine free; control keeps asking for ten minutes">
+        Rebuild waiting for a machine <CancelQueuedRebuild w={w} class={place === "header" ? "ws-share" : undefined} />
+      </span>
+    );
+  }
   return (
     <>
-      <button class={place === "header" ? "ws-share" : w.stale ? "primary" : undefined} data-rebuild-cloud-workspace={place} disabled={waiting}
-        title={waiting ? "Waiting for Managoat to have a machine free" : "Set a new machine up from the saved settings. The disk is wiped."} onClick={() => setAsking(true)}>
-        {waiting ? "Rebuild waiting…" : "Rebuild"}
+      <button class={place === "header" ? "ws-share" : w.stale ? "primary" : undefined} data-rebuild-cloud-workspace={place}
+        title="Set a new machine up from the saved settings. The disk is wiped." onClick={() => setAsking(true)}>
+        Rebuild
       </button>
       {asking && <RebuildConfirm w={w} close={() => setAsking(false)} />}
+    </>
+  );
+}
+
+/** Cancel a rebuild or retry waiting for a machine. Too late once control
+ * has sent it: control says so (`rebuild_started`). */
+function CancelQueuedRebuild({ w, class: cls }: { w: CloudWorkspace; class?: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const go = async () => {
+    setBusy(true); setError("");
+    const r = await post(`workspaces/${w.id}/rebuild`, undefined, "DELETE");
+    setBusy(false);
+    if (r.error && r.reason !== "not_waiting") setError(r.error);
+    cloudWorkspaces.refresh();
+  };
+  return (
+    <>
+      <button class={cls} data-cancel-queued-rebuild disabled={busy} onClick={() => void go()}>{busy ? "Cancelling…" : "Cancel"}</button>
+      {error && <span role="alert" class="control-error" data-cancel-queued-rebuild-error>{error}</span>}
     </>
   );
 }
@@ -124,7 +150,7 @@ export function RetryCloudWorkspace({ w }: { w: CloudWorkspace }) {
  * waited didn't happen (while one is still wanted). */
 export function CloudWorkspaceRebuildNote({ w }: { w: CloudWorkspace }) {
   const what = w.status === "failed" ? "Retry" : "Rebuild";
-  if (w.rebuild_queued) return <p class="dim" role="status" data-rebuild-queued>{what} is waiting for Managoat to have a machine free. Control keeps asking for ten minutes.</p>;
+  if (w.rebuild_queued) return <p class="dim" role="status" data-rebuild-queued>{what} is waiting for Managoat to have a machine free. Control keeps asking for ten minutes.{w.status === "failed" && <> <CancelQueuedRebuild w={w} /></>}</p>;
   if (w.rebuild_error && (w.stale || w.status === "failed")) return <p role="alert" class="control-error" data-rebuild-error>{w.rebuild_error}</p>;
   return null;
 }

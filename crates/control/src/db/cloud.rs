@@ -662,6 +662,21 @@ pub struct CloudWorkspaceRebuild {
     pub interrupt: bool,
     /// When it was asked for.
     pub asked: u64,
+    /// The worker has taken it to send: too late to cancel.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sending: bool,
+}
+
+/// What cancelling a rebuild or retry that waits for a machine found.
+#[derive(Debug, PartialEq)]
+pub enum CancelledRebuild {
+    /// It won't be sent.
+    Cancelled,
+    /// The worker has sent it, or is sending it.
+    Started,
+    /// Nothing was waiting.
+    NotWaiting,
+    NotFound,
 }
 
 /// The Cloud workspace's provisioning journal, as `Execution` is a run's.
@@ -1685,6 +1700,64 @@ impl Db {
         Ok(queued.flatten().map(|q| serde_json::from_str(&q)).transpose()?)
     }
 
+    /// The worker takes the one waiting to send it, unless it was
+    /// cancelled: in one transaction with `cancel_cloud_workspace_rebuild`,
+    /// so a cancel answered `Cancelled` is never sent. True with it when it
+    /// was taken already: control stopped while sending it.
+    pub fn claim_cloud_workspace_rebuild(&self, id: &str) -> Result<Option<(CloudWorkspaceRebuild, bool)>> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let queued: Option<Option<String>> = tx
+            .query_row("SELECT rebuild FROM cloud_workspaces WHERE id=?1 AND deleted IS NULL", [id], |r| r.get(0))
+            .optional()?;
+        let Some(mut asked) =
+            queued.flatten().map(|q| serde_json::from_str::<CloudWorkspaceRebuild>(&q)).transpose()?
+        else {
+            return Ok(None);
+        };
+        let taken = std::mem::replace(&mut asked.sending, true);
+        tx.execute("UPDATE cloud_workspaces SET rebuild=?2 WHERE id=?1", params![id, serde_json::to_string(&asked)?])?;
+        tx.commit()?;
+        Ok(Some((asked, taken)))
+    }
+
+    /// Managoat still had no machine: it waits again, and can be cancelled.
+    pub fn unclaim_cloud_workspace_rebuild(&self, id: &str, asked: &CloudWorkspaceRebuild) -> Result<()> {
+        let waiting = CloudWorkspaceRebuild { sending: false, ..asked.clone() };
+        self.c().execute(
+            "UPDATE cloud_workspaces SET rebuild=?2 WHERE id=?1 AND deleted IS NULL AND rebuild IS NOT NULL",
+            params![id, serde_json::to_string(&waiting)?],
+        )?;
+        Ok(())
+    }
+
+    /// The person cancels a rebuild or retry waiting for a machine. One the
+    /// worker has taken has started; with none waiting, one that's setting
+    /// up has too.
+    pub fn cancel_cloud_workspace_rebuild(&self, account: &str, id: &str) -> Result<CancelledRebuild> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let found: Option<(Option<String>, String)> = tx
+            .query_row(
+                "SELECT rebuild,status FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL",
+                params![account, id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((queued, status)) = found else {
+            return Ok(CancelledRebuild::NotFound);
+        };
+        let Some(asked) = queued.map(|q| serde_json::from_str::<CloudWorkspaceRebuild>(&q)).transpose()? else {
+            return Ok(if status == "provisioning" { CancelledRebuild::Started } else { CancelledRebuild::NotWaiting });
+        };
+        if asked.sending {
+            return Ok(CancelledRebuild::Started);
+        }
+        tx.execute("UPDATE cloud_workspaces SET rebuild=NULL,rebuild_error=NULL WHERE id=?1", [id])?;
+        tx.commit()?;
+        Ok(CancelledRebuild::Cancelled)
+    }
+
     /// The one waiting won't be sent; `error` says why, when the person
     /// should know.
     pub fn drop_cloud_workspace_rebuild(&self, id: &str, error: Option<&str>) -> Result<()> {
@@ -2078,7 +2151,7 @@ mod tests {
         rebuilt.status = "provisioning".into();
         db.queue_cloud_workspace_rebuild(
             &created.id,
-            &CloudWorkspaceRebuild { retry: false, interrupt: false, asked: 0 },
+            &CloudWorkspaceRebuild { retry: false, interrupt: false, asked: 0, sending: false },
         )
         .unwrap();
         assert!(db.cloud_workspace("a", &created.id).unwrap().unwrap().rebuild_queued);
