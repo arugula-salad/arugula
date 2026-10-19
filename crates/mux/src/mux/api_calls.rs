@@ -43,6 +43,15 @@ impl Daemon {
             Api::Conv(req, who, reply) => {
                 let _ = reply.send(self.conv(req, &who));
             }
+            Api::ChatExport(reply) => {
+                let _ = reply.send(self.chat_export());
+            }
+            Api::ChatReaders(reply) => {
+                let _ = reply.send(self.chat_readers());
+            }
+            Api::ChatHandoff(given, reply) => {
+                let _ = reply.send(self.chat_handoff(&given));
+            }
             Api::CanRead(target, ids, reply) => {
                 // A conversation's people are its members: anyone else
                 // could be added to it.

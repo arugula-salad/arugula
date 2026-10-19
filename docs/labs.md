@@ -175,9 +175,12 @@ the Chat page lists the team's channels and DMs, then the threads on panes
 and sessions by machine; *Thread* on a pane opens its room beside it; a
 quote's chip opens the pane only for someone who may reach its machine;
 pushes open `#chat=<room>` (`web/src/chat-store.ts`, `web/src/ui/room.tsx`,
-`web/src/ui/chat-rooms.tsx`). Machines bring their old threads in with
-M124. With control's flag off, or on a page a machine serves, what follows
-is the machine's own chat.
+`web/src/ui/chat-rooms.tsx`). Since M124, a machine in control with the
+flag on brings its old threads and conversations in by itself (its
+`threads/` becomes `threads.imported/`); an older one is marked "Update to
+bring its threads into chat" under Devices and machines. With control's
+flag off, or on a page a machine serves, what follows is the machine's own
+chat.
 
 - **Threads on panes and sessions**. Every pane and every session has
   a thread where the people working on it talk: *Thread* in a pane's menu,

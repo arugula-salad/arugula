@@ -194,8 +194,9 @@ export type ChatLive = { "type": "hello", stream: string, } | { "type": "message
  */
 export type ChatMessage = { 
 /**
- * Its number in the room. Messages brought in from a machine before
- * the room had any of its own are numbered 0 and below (M124).
+ * Its number in the room. Messages brought in from a machine (M124)
+ * keep their old numbers, unless the room already had messages of its
+ * own: then they're numbered 0 and below, before control's.
  */
 seq: number, at: number, 
 /**
@@ -217,7 +218,8 @@ mentions: Array<string>, edited: number | null,
 deleted: number | null, 
 /**
  * Brought in from a machine's own threads (M124): the name it had
- * there.
+ * there. Someone with no account here (a tailnet login, an agent) is
+ * shown under the machine's owner, by this name.
  */
 imported: string | null, };
 

@@ -35,11 +35,13 @@ CREATE TABLE IF NOT EXISTS chat_rooms (
 CREATE INDEX IF NOT EXISTS chat_rooms_scope ON chat_rooms (scope);
 CREATE UNIQUE INDEX IF NOT EXISTS chat_rooms_target ON chat_rooms (kind, machine, target) WHERE machine IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS chat_rooms_channel ON chat_rooms (scope, name) WHERE kind = 'channel';
--- A DM's two people (and an archive's readers, M124). A channel's people
--- are its team's roster, and a pane's are its reader list: not rows here.
+-- A DM's two people (and an archive's readers, M124, each from `from_ms`).
+-- A channel's people are its team's roster, and a pane's are its reader
+-- list: not rows here.
 CREATE TABLE IF NOT EXISTS chat_members (
     room TEXT NOT NULL,
     account TEXT NOT NULL,
+    from_ms INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (room, account)
 );
 CREATE INDEX IF NOT EXISTS chat_members_account ON chat_members (account);
@@ -58,6 +60,8 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     edited INTEGER,
     deleted INTEGER,
     imported TEXT,
+    -- Its number on the machine it was brought in from (M124).
+    imported_id INTEGER,
     UNIQUE (room, seq)
 );
 CREATE INDEX IF NOT EXISTS chat_messages_author ON chat_messages (author);
@@ -93,6 +97,22 @@ CREATE TABLE IF NOT EXISTS chat_readers (
     PRIMARY KEY (machine, kind, target)
 );
 ";
+
+/// Columns M124 added to M122's tables, for a database made before them.
+pub(super) fn migrate(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    let has = |table: &str, col: &str| -> rusqlite::Result<bool> {
+        let mut q = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+        let names: Vec<String> = q.query_map([], |r| r.get(1))?.collect::<Result<_, _>>()?;
+        Ok(names.iter().any(|n| n == col))
+    };
+    if !has("chat_members", "from_ms")? {
+        conn.execute_batch("ALTER TABLE chat_members ADD COLUMN from_ms INTEGER NOT NULL DEFAULT 0")?;
+    }
+    if !has("chat_messages", "imported_id")? {
+        conn.execute_batch("ALTER TABLE chat_messages ADD COLUMN imported_id INTEGER")?;
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Room {
@@ -132,6 +152,14 @@ pub struct NewMessage<'a> {
     pub ref_machine: Option<&'a str>,
     pub ref_pane: Option<&'a str>,
     pub mentions: &'a [String],
+}
+
+/// A message brought in from a machine (M124): its number there, and the
+/// name its author had there.
+pub struct OldMessage<'a> {
+    pub id: u64,
+    pub name: &'a str,
+    pub m: NewMessage<'a>,
 }
 
 /// Which page of a room's messages.
@@ -393,6 +421,110 @@ impl Db {
         Ok((ms, more))
     }
 
+    /// Bring in a machine's old messages (M124), each once by its old
+    /// number (`imported_id`): those the room has already are left out.
+    /// While the room holds nothing of control's own, they keep their
+    /// numbers. Once it does, every message brought in goes before
+    /// control's, numbered up to 0 in their old order (S41 q6), so a later
+    /// part of an import still lands after the earlier ones. How many were
+    /// added, and how many it had.
+    pub fn import_chat_messages(&self, room: &str, old: &[OldMessage]) -> Result<(usize, usize)> {
+        // Far below any number a room gives, while they're put in order.
+        const PARKED: i64 = -(1 << 50);
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let have: std::collections::HashSet<i64> = {
+            let mut q =
+                tx.prepare("SELECT imported_id FROM chat_messages WHERE room = ?1 AND imported_id IS NOT NULL")?;
+            q.query_map(params![room], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
+        };
+        let mut new: Vec<&OldMessage> = old.iter().filter(|o| !have.contains(&(o.id as i64))).collect();
+        new.sort_by_key(|o| o.id);
+        new.dedup_by_key(|o| o.id);
+        let already = old.len() - new.len();
+        if new.is_empty() {
+            return Ok((0, already));
+        }
+        let own: bool = tx.query_row(
+            "SELECT EXISTS (SELECT 1 FROM chat_messages WHERE room = ?1 AND imported_id IS NULL)",
+            params![room],
+            |r| r.get(0),
+        )?;
+        if own {
+            tx.execute(
+                "UPDATE chat_messages SET seq = ?2 - imported_id WHERE room = ?1 AND imported_id IS NOT NULL",
+                params![room, PARKED],
+            )?;
+        }
+        let mut bytes = 0i64;
+        for o in &new {
+            let m = &o.m;
+            let id = o.id as i64;
+            tx.execute(
+                "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions,
+                 imported, imported_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    room,
+                    if own { PARKED - id } else { id },
+                    m.author,
+                    m.at,
+                    m.text,
+                    m.quote,
+                    m.ref_machine,
+                    m.ref_pane,
+                    serde_json::to_string(m.mentions)?,
+                    o.name,
+                    id
+                ],
+            )?;
+            bytes += (m.text.len() + m.quote.map_or(0, str::len)) as i64;
+        }
+        let last = if own {
+            // All of them, in their old order, up to 0.
+            tx.execute(
+                "UPDATE chat_messages SET seq = (
+                     SELECT n FROM (
+                         SELECT id, row_number() OVER (ORDER BY imported_id)
+                             - (SELECT count(*) FROM chat_messages WHERE room = ?1 AND imported_id IS NOT NULL) AS n
+                         FROM chat_messages WHERE room = ?1 AND imported_id IS NOT NULL
+                     ) x WHERE x.id = chat_messages.id)
+                 WHERE room = ?1 AND imported_id IS NOT NULL",
+                params![room],
+            )?;
+            0
+        } else {
+            new.last().map_or(0, |o| o.id as i64)
+        };
+        tx.execute(
+            "UPDATE chat_rooms SET last_seq = max(last_seq, ?2), bytes = bytes + ?3 WHERE id = ?1",
+            params![room, last, bytes],
+        )?;
+        tx.commit()?;
+        Ok((new.len(), already))
+    }
+
+    /// An archive's reader (M124), from when they read it (ms).
+    pub fn set_chat_member_from(&self, room: &str, account: &str, from: u64) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO chat_members (room, account, from_ms) VALUES (?1, ?2, ?3)
+             ON CONFLICT (room, account) DO UPDATE SET from_ms = excluded.from_ms",
+            params![room, account, from as i64],
+        )?;
+        Ok(())
+    }
+
+    /// From when a member of a room reads it (ms); `None`: not a member.
+    pub fn chat_member_from(&self, room: &str, account: &str) -> Result<Option<u64>> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT from_ms FROM chat_members WHERE room = ?1 AND account = ?2",
+                params![room, account],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
     pub fn chat_message(&self, room: &str, seq: i64) -> Result<Option<Message>> {
         Ok(self
             .c()
@@ -477,11 +609,13 @@ impl Db {
     }
 
     /// Others' messages after `read` (from `from` ms on), and how many of
-    /// them mention `account`.
+    /// them mention `account`. Messages brought in from a machine (M124)
+    /// count as read.
     pub fn chat_unread(&self, room: &str, account: &str, read: i64, from: u64) -> Result<(u64, u64)> {
         Ok(self.c().query_row(
             "SELECT count(*), coalesce(sum(EXISTS (SELECT 1 FROM json_each(mentions) WHERE value = ?3)), 0)
-             FROM chat_messages WHERE room = ?1 AND seq > ?2 AND author != ?3 AND deleted IS NULL AND at >= ?4",
+             FROM chat_messages WHERE room = ?1 AND seq > ?2 AND author != ?3 AND deleted IS NULL AND at >= ?4
+             AND imported_id IS NULL",
             params![room, read, account, from],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?)
@@ -578,6 +712,8 @@ pub(super) fn erase_account(tx: &Transaction, account: &str, machines: &[String]
     for t in disband {
         drop_rooms_where(tx, "scope = 'team:' || ?1", t)?;
     }
+    // Its machines' old conversations, archived under it (M124).
+    drop_rooms_where(tx, "scope = 'account:' || ?1", account)?;
     tx.execute(
         "UPDATE chat_messages SET author = '', text = '', quote = NULL, ref_machine = NULL, ref_pane = NULL,
          mentions = '[]', imported = NULL, deleted = coalesce(deleted, ?2) WHERE author = ?1",
@@ -668,6 +804,57 @@ mod tests {
         assert_eq!((ms.iter().map(|m| m.seq).collect::<Vec<_>>(), more), (vec![4], true));
     }
 
+    fn import(db: &Db, room: &str, ids: &[u64]) -> (usize, usize) {
+        let texts: Vec<String> = ids.iter().map(|i| format!("old {i}")).collect();
+        let old: Vec<OldMessage> = ids
+            .iter()
+            .zip(&texts)
+            .map(|(id, text)| OldMessage {
+                id: *id,
+                name: "Jake",
+                m: NewMessage {
+                    author: "a1",
+                    at: *id,
+                    text,
+                    quote: None,
+                    ref_machine: None,
+                    ref_pane: None,
+                    mentions: &[],
+                },
+            })
+            .collect();
+        db.import_chat_messages(room, &old).unwrap()
+    }
+
+    fn numbered(db: &Db, room: &str) -> Vec<(i64, String)> {
+        db.chat_messages(room, Page::After(i64::MIN), 200).unwrap().0.into_iter().map(|m| (m.seq, m.text)).collect()
+    }
+
+    #[test]
+    fn imports_keep_numbers_or_go_before_controls_own() {
+        let db = Db::memory();
+        let n = |seq: i64, t: &str| (seq, t.to_owned());
+        // A room with nothing of its own: old numbers kept, in parts, and
+        // each once.
+        room(&db, "fresh", "machine:m", "pane", &[]);
+        assert_eq!(import(&db, "fresh", &[1, 2]), (2, 0));
+        assert_eq!(import(&db, "fresh", &[2, 3]), (1, 1));
+        assert_eq!(numbered(&db, "fresh"), [n(1, "old 1"), n(2, "old 2"), n(3, "old 3")]);
+        assert_eq!(db.chat_room("fresh").unwrap().unwrap().last_seq, 3);
+        assert_eq!(post(&db, "fresh", "a2", "new", None, &[]), 4);
+        assert_eq!(db.chat_unread("fresh", "a3", 0, 0).unwrap(), (1, 0), "old messages count as read");
+
+        // A room used in control first: they go before its own, and a later
+        // part still lands after the earlier ones.
+        room(&db, "used", "machine:m", "session", &[]);
+        post(&db, "used", "a2", "new 1", None, &[]);
+        assert_eq!(import(&db, "used", &[1, 2]), (2, 0));
+        assert_eq!(import(&db, "used", &[3]), (1, 0));
+        assert_eq!(numbered(&db, "used"), [n(-2, "old 1"), n(-1, "old 2"), n(0, "old 3"), n(1, "new 1")]);
+        assert_eq!(post(&db, "used", "a2", "new 2", None, &[]), 2);
+        assert_eq!(db.chat_bytes("machine:m").unwrap() as usize, "old 1".len() * 6 + "new".len() + "new 1".len() * 2);
+    }
+
     #[test]
     fn the_index_follows_edits_and_deletes() {
         let db = Db::memory();
@@ -707,6 +894,7 @@ mod tests {
             last_seq: 0,
         };
         db.add_chat_room(&r, &[]).unwrap();
+        room(&db, "archive", "account:gone1", "archive", &["gone1", "b2"]);
         post(&db, "ch", "gone1", "secret plans", Some("quoted"), &["b2".into()]);
         post(&db, "ch", "b2", "@gonzo hi", None, &["gone1".into()]);
         post(&db, "dm", "b2", "just us", None, &[]);
@@ -715,7 +903,10 @@ mod tests {
             "other-box",
             "pane",
             "3",
-            &[ChatReader { account: "gone1".into(), from: None }, ChatReader { account: "b2".into(), from: Some(5) }],
+            &[
+                ChatReader { account: "gone1".into(), from: None, watching: false },
+                ChatReader { account: "b2".into(), from: Some(5), watching: false },
+            ],
             1,
         )
         .unwrap();
@@ -727,13 +918,14 @@ mod tests {
         assert!(db.chat_room("dm").unwrap().is_none(), "its DMs go, both sides");
         assert!(db.chat_room("pane").unwrap().is_none(), "the threads on its machines go");
         assert!(db.chat_room("gone-team").unwrap().is_none(), "a disbanded team's rooms go");
+        assert!(db.chat_room("archive").unwrap().is_none(), "its machines' old conversations go");
         let m = db.chat_message("ch", 1).unwrap().unwrap();
         assert_eq!((m.author.as_str(), m.text.as_str(), m.quote.as_deref()), ("", "", None));
         assert!(m.deleted.is_some());
         assert_eq!(db.chat_message("ch", 2).unwrap().unwrap().mentions, Vec::<String>::new());
         assert_eq!(
             db.chat_readers("other-box", "pane", "3").unwrap().unwrap(),
-            vec![ChatReader { account: "b2".into(), from: Some(5) }]
+            vec![ChatReader { account: "b2".into(), from: Some(5), watching: false }]
         );
         assert!(found(&db, &["ch"], "\"secret\"").is_empty() && found(&db, &["ch"], "\"quoted\"").is_empty());
         assert!(db.mentions("gone1").is_empty(), "{:?}", db.mentions("gone1"));

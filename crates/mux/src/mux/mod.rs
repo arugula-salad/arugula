@@ -6,6 +6,8 @@
 mod api_calls;
 mod attention;
 mod blocks;
+#[cfg(feature = "labs")]
+mod chat_import;
 mod clients;
 mod config;
 mod info;
@@ -43,6 +45,22 @@ pub type Posted = (ThreadMsg, Vec<arugula_proto::api::Unreached>);
 /// Why a thread request failed: an HTTP status and what to say.
 #[derive(Debug)]
 pub struct ThreadError(pub u16, pub String);
+
+/// What this machine brings into control's chat (M124), as the store has
+/// it: each pane's and session's thread, and each conversation with its
+/// timeline. `imported`: control has them already (`threads.imported/`).
+#[derive(Debug, Default)]
+pub struct ChatExport {
+    pub threads: Vec<(ThreadTarget, Vec<ThreadMsg>)>,
+    pub convs: Vec<(arugula_proto::Conversation, Vec<ThreadMsg>)>,
+    pub imported: bool,
+}
+
+/// Who may read the thread on each pane and session here now (M124): by
+/// principal id, each from when (ms; 0 is everything), and whether they
+/// only watch (a viewer: they read and don't post). The owner isn't listed:
+/// they read everything.
+pub type ChatReaders = Vec<(ThreadTarget, Vec<(String, u64, bool)>)>;
 
 /// What to do to a conversation (#855), and who asks. The mux checks it
 /// against the record (`labs::convs`).
@@ -283,6 +301,14 @@ pub enum Api {
     /// Make, change or delete a conversation (#855), as `who`: the record
     /// as it is after (a deleted one as it was).
     Conv(ConvReq, crate::acl::Principal, oneshot::Sender<Result<arugula_proto::Conversation, ThreadError>>),
+    /// M124: every thread and conversation kept here, for control.
+    ChatExport(oneshot::Sender<ChatExport>),
+    /// M124: who reads the thread on each pane and session here now.
+    ChatReaders(oneshot::Sender<ChatReaders>),
+    /// M124: control has the threads it was given (each one's last message
+    /// number): retire the store, unless something was posted since
+    /// (`Err`: export again).
+    ChatHandoff(Vec<(ThreadTarget, u64)>, oneshot::Sender<Result<(), String>>),
     /// `who` has read a thread up to a message.
     ThreadRead(ThreadTarget, crate::acl::Principal, Option<crate::acl::Principal>, u64),
     /// Which of these (principal ids) read a thread now (#297); `None` if
