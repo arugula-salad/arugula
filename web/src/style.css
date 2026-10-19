@@ -8865,7 +8865,21 @@ html[data-finish="glass"] .prompt-backdrop {
 .cloud-form textarea, .cloud-form select { padding: 8px; color: var(--fg); background: var(--letterbox); border: 1px solid var(--raised-hover); border-radius: 6px; font: inherit; }
 
 /* Account-owned agent panes use the same bar, transcript and tab surfaces. */
-.main > .cloud-agent { flex: 1; min-width: 0; width: 100%; overflow: auto; }
+.main > .cloud-agent { box-sizing: border-box; flex: 1; min-width: 0; width: 100%; height: 100%; min-height: 0; overflow: auto; }
+/* A tab: the bar and notes on top, the transcript scrolling between, the
+ * prompt box at the bottom. */
+.cloud-ws-view > .cloud-agent > :not(.cloud-transcript) { flex-shrink: 0; }
+/* A past run or past tab reads as one page: the pane scrolls, not its transcript. */
+.main > .cloud-agent > .cloud-transcript { flex: none; overflow: visible; }
+.cloud-agent .cloud-tool { margin: 0; }
+.cloud-agent .cloud-tool > summary { cursor: pointer; list-style: none; }
+.agent-perm-done { margin: 6px 0 0; color: var(--dim); font-size: 12px; }
+.cloud-setup-log > summary { cursor: pointer; }
+.cloud-setup-log > summary h3 { display: inline; }
+.cloud-setup-step { margin: 6px 0; }
+.cloud-setup-step > summary { cursor: pointer; }
+.cloud-setup-status { color: var(--dim); font-size: 12px; }
+.cloud-setup-status.failed { color: var(--danger); }
 .cloud-agent .agent-bar { flex-wrap: wrap; }
 .cloud-agent .cloud-transcript { min-height: 160px; }
 .cloud-agent > .agent-note { padding: 8px 12px; overflow-wrap: anywhere; }
@@ -8878,7 +8892,9 @@ html[data-finish="glass"] .prompt-backdrop {
 .prompt .cloud-panel.cloud-launch-form { max-height: none; overflow: visible; }
 
 /* Cloud workspaces (S40, M116): the list, a workspace, a tab, and their place in the sidebar. */
-.main > .cloud-ws-view { box-sizing: border-box; flex: 1; min-width: 0; width: 100%; overflow: auto; display: flex; flex-direction: column; }
+/* `.main` is a block in the shell: the view takes its height, so a long
+ * transcript scrolls inside the tab, not the page under the shell. */
+.main > .cloud-ws-view { box-sizing: border-box; flex: 1; min-width: 0; width: 100%; height: 100%; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
 .cloud-ws-view > .cloud-agent { flex: 1; min-height: 0; overflow: auto; }
 .cloud-ws-view.empty, .cloud-ws-home, .cloud-ws-view[data-cloud-ws-list] { padding: 16px; }
 .cloud-ws-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -10869,3 +10885,4 @@ html[data-workspace="new"] .thread-panel {
 .cloud-changes-path { overflow-wrap: anywhere; min-width: 0; }
 .cloud-changes-content { max-height: 480px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .cloud-tab-changes { padding: 8px 12px; max-height: 50%; overflow: auto; flex-shrink: 0; border-bottom: 1px solid var(--divider); }
+.cloud-ws-view button.link { padding: 0; border: none; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }

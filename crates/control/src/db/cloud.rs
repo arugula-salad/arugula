@@ -85,7 +85,8 @@ CREATE TABLE IF NOT EXISTS cloud_events (
 -- them (NULL: the ones it was created with). `rebuild` is a rebuild or
 -- retry Managoat had no machine for yet, which the worker sends again
 -- (M120); `rebuild_error` says why the last one queued didn't happen, and
--- `rebuilds` counts the ones Managoat took.
+-- `rebuilds` counts the ones Managoat took. `setup_step` is the step a
+-- setup is running, while it's `provisioning` (Managoat v0.39.0).
 CREATE TABLE IF NOT EXISTS cloud_workspaces (
     id TEXT PRIMARY KEY,
     account TEXT NOT NULL,
@@ -111,6 +112,7 @@ CREATE TABLE IF NOT EXISTS cloud_workspaces (
     rebuild TEXT,
     rebuild_error TEXT,
     rebuilds INTEGER NOT NULL DEFAULT 0,
+    setup_step TEXT,
     UNIQUE(account, request_key)
 );
 CREATE INDEX IF NOT EXISTS cloud_workspaces_owner ON cloud_workspaces(account, created);
@@ -128,7 +130,8 @@ CREATE TABLE IF NOT EXISTS cloud_workspace_specs (
 -- A tab: one conversation in a Cloud workspace, on a Managoat agent of its
 -- own. `spec` is what it was opened with. `provider_id` is the conversation
 -- and `started` whether a turn has begun. `closed` is set once its
--- conversation and agent are gone.
+-- conversation and agent are gone. `relaunch` is a prompt sent to a tab
+-- whose conversation failed: the worker starts a new conversation with it.
 CREATE TABLE IF NOT EXISTS cloud_tabs (
     id TEXT PRIMARY KEY,
     account TEXT NOT NULL,
@@ -141,6 +144,7 @@ CREATE TABLE IF NOT EXISTS cloud_tabs (
     provider_id TEXT,
     created INTEGER NOT NULL,
     closed INTEGER,
+    relaunch TEXT,
     UNIQUE(account, cloud_workspace, request_key)
 );
 CREATE INDEX IF NOT EXISTS cloud_tabs_owner ON cloud_tabs(cloud_workspace, created);
@@ -197,6 +201,26 @@ pub(super) fn migrate(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
              ALTER TABLE cloud_workspaces ADD COLUMN rebuild_error TEXT;
              ALTER TABLE cloud_workspaces ADD COLUMN rebuilds INTEGER NOT NULL DEFAULT 0;",
         )?;
+    }
+    // The setup's step (Managoat v0.39.0).
+    let stepless: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_workspaces')
+             AND NOT EXISTS(SELECT 1 FROM pragma_table_info('cloud_workspaces') WHERE name='setup_step')",
+        [],
+        |r| r.get(0),
+    )?;
+    if stepless {
+        conn.execute_batch("ALTER TABLE cloud_workspaces ADD COLUMN setup_step TEXT;")?;
+    }
+    // A failed tab's new conversation.
+    let unrelaunched: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_tabs')
+             AND NOT EXISTS(SELECT 1 FROM pragma_table_info('cloud_tabs') WHERE name='relaunch')",
+        [],
+        |r| r.get(0),
+    )?;
+    if unrelaunched {
+        conn.execute_batch("ALTER TABLE cloud_tabs ADD COLUMN relaunch TEXT;")?;
     }
     // Requests, notifications and events keyed on `run` (a foreign key to
     // `cloud_runs`) before tabs (M115): rekeyed on the conversation, with
@@ -631,6 +655,9 @@ pub struct CloudWorkspace {
     /// Managoat's `provisioning`, `ready` or `failed`, or `deleting`.
     pub status: String,
     pub sandbox_status: Option<String>,
+    /// The step its setup is running (`machine`, `packages`,
+    /// `repositories`, `setup_script`…) while it's `provisioning`.
+    pub setup_step: Option<String>,
     pub error: Option<String>,
     pub revision: Option<String>,
     pub built_from_revision: Option<String>,
@@ -744,6 +771,23 @@ pub struct CloudTab {
     pub created: u64,
 }
 
+/// A closed tab, read only: its conversation and agent are gone, its
+/// transcript is kept. Its Cloud workspace may be deleted too.
+#[derive(Debug, Clone, Serialize)]
+pub struct PastCloudTab {
+    pub id: String,
+    pub cloud_workspace: String,
+    pub cloud_workspace_name: String,
+    /// Its Cloud workspace was deleted (the tab ended with it).
+    pub cloud_workspace_deleted: bool,
+    pub agent_name: String,
+    pub runtime: String,
+    pub model: String,
+    pub cwd: String,
+    pub created: u64,
+    pub closed: u64,
+}
+
 /// The tab's provisioning journal, as `Execution` is a run's.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CloudTabExecution {
@@ -751,6 +795,26 @@ pub struct CloudTabExecution {
     pub agent: Option<String>,
     pub conversation: Option<String>,
     pub cursor: u64,
+    /// How many times the tab's conversation failed and was replaced by a
+    /// new one; each launch is labelled with it (`launch_key`).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub launches: u64,
+    /// The prompt the current conversation was relaunched with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
+impl CloudTabExecution {
+    /// The label and client request id of the tab's current conversation:
+    /// the tab's id, then `<tab>.<n>` for the n-th relaunch, so finding one
+    /// after a lost response never finds the failed one before it.
+    pub fn launch_key(&self, tab: &str) -> String {
+        if self.launches == 0 { tab.to_owned() } else { format!("{tab}.{}", self.launches) }
+    }
 }
 
 pub struct CloudTabJob {
@@ -760,6 +824,11 @@ pub struct CloudTabJob {
     pub execution: CloudTabExecution,
     pub started: bool,
     pub closing: bool,
+    /// A prompt asking for a new conversation, the current one having
+    /// failed.
+    pub relaunch: Option<String>,
+    /// The worker took `relaunch`: the checkpoint clears it.
+    pub relaunch_taken: bool,
     /// The Managoat workspace, environment and vault of its Cloud
     /// workspace, once made.
     pub workspace: Option<String>,
@@ -796,7 +865,24 @@ fn cloud_tab_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(CloudTab, CloudTabS
     Ok((tab, spec, started))
 }
 
-const CLOUD_WORKSPACE_COLUMNS: &str = "id,name,saved_spec,built_spec,status,sandbox_status,error,revision,built_from_revision,stale,changed_fields,created,settings_applied,rebuild,rebuild_error";
+fn past_cloud_tab_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<PastCloudTab> {
+    let spec: CloudTabSpec = serde_json::from_str(&r.get::<_, String>(4)?)
+        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e)))?;
+    Ok(PastCloudTab {
+        id: r.get(0)?,
+        cloud_workspace: r.get(1)?,
+        cloud_workspace_name: r.get(2)?,
+        cloud_workspace_deleted: r.get(3)?,
+        agent_name: spec.agent.name,
+        runtime: spec.runtime,
+        model: spec.model,
+        cwd: spec.cwd,
+        created: r.get(5)?,
+        closed: r.get(6)?,
+    })
+}
+
+const CLOUD_WORKSPACE_COLUMNS: &str = "id,name,saved_spec,built_spec,status,sandbox_status,error,revision,built_from_revision,stale,changed_fields,created,settings_applied,rebuild,rebuild_error,setup_step";
 
 fn cloud_workspace_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CloudWorkspace> {
     fn decode<T: serde::de::DeserializeOwned>(i: usize, s: &str) -> rusqlite::Result<T> {
@@ -824,6 +910,7 @@ fn cloud_workspace_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CloudWorkspace
         settings_applied: r.get(12)?,
         rebuild_queued: r.get::<_, Option<String>>(13)?.is_some(),
         rebuild_error: r.get(14)?,
+        setup_step: r.get(15)?,
     })
 }
 
@@ -1281,11 +1368,11 @@ impl Db {
                 |r| {
                     Ok((
                         cloud_workspace_row(r)?,
-                        r.get::<_, String>(15)?,
-                        r.get::<_, Option<String>>(16)?,
-                        r.get::<_, String>(17)?,
-                        r.get::<_, bool>(18)?,
-                        r.get::<_, u64>(19)?,
+                        r.get::<_, String>(16)?,
+                        r.get::<_, Option<String>>(17)?,
+                        r.get::<_, String>(18)?,
+                        r.get::<_, bool>(19)?,
+                        r.get::<_, u64>(20)?,
                     ))
                 },
             )
@@ -1330,7 +1417,7 @@ impl Db {
             "UPDATE cloud_workspaces SET
                  status=CASE WHEN (SELECT cancel FROM cloud_jobs WHERE id=?1)=1 THEN 'deleting' ELSE ?2 END,
                  sandbox_status=?3, error=?4, revision=?5, built_from_revision=?6, stale=?7, changed_fields=?8,
-                 environment=?9, vault=?10, provider_id=?11, saved_revision=COALESCE(saved_revision,?12),
+                 environment=?9, vault=?10, provider_id=?11, saved_revision=COALESCE(saved_revision,?12), setup_step=?14,
                  built_spec=CASE WHEN ?2='ready' AND ?6 IS NOT NULL THEN COALESCE(
                      (SELECT spec FROM cloud_workspace_specs WHERE cloud_workspace=?1 AND revision=?6),
                      CASE WHEN settings_applied=1 AND ?6=COALESCE(saved_revision,?12) THEN saved_spec END,
@@ -1350,6 +1437,7 @@ impl Db {
                 job.execution.workspace,
                 job.saved_revision,
                 job.rebuilds,
+                w.setup_step,
             ],
         )?;
         tx.commit()?;
@@ -1586,7 +1674,7 @@ impl Db {
                     "SELECT {CLOUD_WORKSPACE_COLUMNS},provider_id FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL"
                 ),
                 params![account, id],
-                |r| Ok((cloud_workspace_row(r)?, r.get(15)?)),
+                |r| Ok((cloud_workspace_row(r)?, r.get(16)?)),
             )
             .optional()?)
     }
@@ -1596,7 +1684,7 @@ impl Db {
     pub fn rebuilt_cloud_workspace(&self, w: &CloudWorkspace) -> Result<()> {
         self.c().execute(
             "UPDATE cloud_workspaces SET status=?2,sandbox_status=?3,error=?4,revision=?5,built_from_revision=?6,stale=?7,
-                 changed_fields=?8,rebuild=NULL,rebuild_error=NULL,rebuilds=rebuilds+1
+                 changed_fields=?8,setup_step=?9,rebuild=NULL,rebuild_error=NULL,rebuilds=rebuilds+1
              WHERE id=?1 AND deleted IS NULL AND status!='deleting'",
             params![
                 w.id,
@@ -1607,6 +1695,7 @@ impl Db {
                 w.built_from_revision,
                 w.stale,
                 serde_json::to_string(&w.changed_fields)?,
+                w.setup_step,
             ],
         )?;
         Ok(())
@@ -1814,6 +1903,32 @@ impl Db {
             .optional()?)
     }
 
+    /// The account's closed tabs, newest closed first: what a closed tab or
+    /// a deleted Cloud workspace leaves to read.
+    pub fn past_cloud_tabs(&self, account: &str) -> Result<Vec<PastCloudTab>> {
+        let conn = self.c();
+        let mut q = conn.prepare(
+            "SELECT t.id,t.cloud_workspace,w.name,w.deleted IS NOT NULL,t.spec,t.created,t.closed
+             FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace
+             WHERE t.account=?1 AND t.closed IS NOT NULL ORDER BY t.closed DESC, t.id",
+        )?;
+        let rows = q.query_map([account], past_cloud_tab_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn past_cloud_tab(&self, account: &str, tab: &str) -> Result<Option<PastCloudTab>> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT t.id,t.cloud_workspace,w.name,w.deleted IS NOT NULL,t.spec,t.created,t.closed
+                 FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace
+                 WHERE t.account=?1 AND t.id=?2 AND t.closed IS NOT NULL",
+                params![account, tab],
+                past_cloud_tab_row,
+            )
+            .optional()?)
+    }
+
     /// The Managoat conversation of a tab that's open and launched.
     pub fn cloud_tab_conversation(&self, account: &str, cloud_workspace: &str, tab: &str) -> Result<Option<String>> {
         Ok(self
@@ -1826,6 +1941,32 @@ impl Db {
             )
             .optional()?
             .flatten())
+    }
+
+    /// A prompt to a tab whose conversation failed: the worker opens a new
+    /// conversation for the tab with it (Managoat's `failed` is terminal).
+    /// The tab reads `opening` until then. `gone`: Managoat refused a prompt
+    /// to it as ended before control saw it fail. False when the tab isn't
+    /// open, or neither failed nor gone.
+    pub fn relaunch_cloud_tab(
+        &self,
+        account: &str,
+        cloud_workspace: &str,
+        tab: &str,
+        prompt: &str,
+        gone: bool,
+    ) -> Result<bool> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let changed = tx.execute(
+            "UPDATE cloud_tabs SET relaunch=?4,status='opening',error=NULL
+             WHERE account=?1 AND cloud_workspace=?2 AND id=?3 AND closed IS NULL AND provider_id IS NOT NULL
+               AND relaunch IS NULL AND (status='failed' OR ?5)
+               AND EXISTS(SELECT 1 FROM cloud_jobs WHERE id=?3 AND cancel=0)",
+            params![account, cloud_workspace, tab, prompt, gone],
+        )?;
+        tx.commit()?;
+        Ok(changed == 1)
     }
 
     /// Ask the worker to close it. Saying so again is harmless.
@@ -1857,7 +1998,7 @@ impl Db {
         let found = tx
             .query_row(
                 &format!(
-                    "SELECT {CLOUD_TAB_COLUMNS},t.account,j.body,j.cancel,w.provider_id,w.environment,w.vault
+                    "SELECT {CLOUD_TAB_COLUMNS},t.account,j.body,j.cancel,w.provider_id,w.environment,w.vault,t.relaunch
                      FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace JOIN cloud_jobs j ON j.id=t.id
                      WHERE j.kind='cloud_tab' AND t.closed IS NULL AND j.lease_until<=?1 ORDER BY j.lease_until,t.created LIMIT 1"
                 ),
@@ -1869,11 +2010,13 @@ impl Db {
                         r.get::<_, String>(9)?,
                         r.get::<_, bool>(10)?,
                         (r.get(11)?, r.get(12)?, r.get(13)?),
+                        r.get::<_, Option<String>>(14)?,
                     ))
                 },
             )
             .optional()?;
-        let Some(((tab, spec, started), account, body, closing, (workspace, environment, vault))) = found else {
+        let Some(((tab, spec, started), account, body, closing, (workspace, environment, vault), relaunch)) = found
+        else {
             return Ok(None);
         };
         let lease = hex::encode(arugula_e2e::random::<16>());
@@ -1886,6 +2029,8 @@ impl Db {
             execution: serde_json::from_str(&body)?,
             started,
             closing,
+            relaunch,
+            relaunch_taken: false,
             workspace,
             environment,
             vault,
@@ -1907,10 +2052,21 @@ impl Db {
         }
         tx.execute(
             "UPDATE cloud_tabs SET
-                 status=CASE WHEN (SELECT cancel FROM cloud_jobs WHERE id=?1)=1 THEN 'closing' ELSE ?2 END,
-                 error=?3, started=?4, provider_id=?5
+                 status=CASE WHEN (SELECT cancel FROM cloud_jobs WHERE id=?1)=1 THEN 'closing'
+                             WHEN relaunch IS NOT NULL AND NOT (?7 AND relaunch=?6) THEN 'opening' ELSE ?2 END,
+                 error=CASE WHEN relaunch IS NOT NULL AND NOT (?7 AND relaunch=?6) THEN NULL ELSE ?3 END,
+                 started=?4, provider_id=?5,
+                 relaunch=CASE WHEN ?7 AND relaunch=?6 THEN NULL ELSE relaunch END
              WHERE id=?1",
-            params![job.tab.id, job.tab.status, job.tab.error, job.started, job.execution.conversation],
+            params![
+                job.tab.id,
+                job.tab.status,
+                job.tab.error,
+                job.started,
+                job.execution.conversation,
+                job.relaunch,
+                job.relaunch_taken
+            ],
         )?;
         if job.closing || matches!(job.tab.status.as_str(), "failed" | "terminated") {
             tx.execute("UPDATE cloud_requests SET pending=0 WHERE conversation=?1", [&job.tab.id])?;
@@ -2198,7 +2354,11 @@ mod tests {
         let tab_job = db.claim_cloud_tab_job(0).unwrap().unwrap();
         assert!(tab_job.closing);
         db.finish_cloud_tab_close(&tab_job, 1).unwrap();
+        // Kept as a past tab until the account goes, then erased with it.
+        assert_eq!(db.past_cloud_tabs("a").unwrap().len(), 1);
+        assert!(db.past_cloud_tab("b", &tab.id).unwrap().is_none());
         db.delete_account(&erase).unwrap();
+        assert!(db.past_cloud_tabs("a").unwrap().is_empty());
         for table in ["cloud_tabs", "cloud_events", "cloud_jobs", "cloud_workspaces"] {
             let count: u64 = db.c().query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap();
             assert_eq!(count, 0, "{table}");

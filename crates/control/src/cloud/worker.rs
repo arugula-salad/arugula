@@ -54,6 +54,10 @@ async fn pump(
     Ok(events)
 }
 
+/// A tab whose conversation failed. Managoat's `failed` is terminal, and a
+/// first prompt that ran a Cloud workspace's setup fails with it.
+const TAB_FAILED: &str = "This tab's conversation failed (a failed setup ends the conversation it ran in). If the Cloud workspace failed, Retry it first. Then send a prompt: it starts a new conversation in this tab, and what's above stays.";
+
 /// What a run stopped by the retirement says, when it has nothing to say.
 const RUN_RETIRED: &str = "Cloud runs were retired before this run finished, so it was stopped. Its transcript is kept; Cloud workspaces replace runs.";
 
@@ -211,6 +215,7 @@ pub(super) fn observe_cloud_workspace(w: &mut crate::db::cloud::CloudWorkspace, 
     }
     let text = |key: &str| workspace[key].as_str().map(str::to_owned);
     w.sandbox_status = text("sandbox_status");
+    w.setup_step = if w.status == "provisioning" { text("setup_step") } else { None };
     w.error = text("error").map(|mut error| {
         if error.len() > 16_000 {
             let mut start = error.len() - 16_000;
@@ -415,7 +420,9 @@ fn save_cloud_tab(app: &App, job: &CloudTabJob, now: u64) -> Result<()> {
     let wait = match job.tab.status.as_str() {
         _ if job.closing || job.execution.stage != "live" && job.execution.stage != "rejected" => CLOUD_TAB_BUSY_MS,
         "running" | "pending" | "needs_input" => CLOUD_TAB_BUSY_MS,
-        "idle" => CLOUD_TAB_IDLE_MS,
+        // A failed one asks Managoat nothing (`step_cloud_tab`): it only
+        // waits for a prompt to relaunch it.
+        "idle" | "failed" => CLOUD_TAB_IDLE_MS,
         _ => CLOUD_TAB_ENDED_MS,
     };
     app.db.checkpoint_cloud_tab_job(job, Some(now + wait))
@@ -475,15 +482,18 @@ async fn step_cloud_tab(app: &App, job: &mut CloudTabJob, now: u64) -> Result<()
             let workspace = job.workspace.clone().context("missing workspace")?;
             job.execution.stage = "conversation_creating".into();
             app.db.checkpoint_cloud_tab_job(job, None)?;
-            let conversation =
-                p.launch_in_cloud_workspace(&agent, &workspace, &job.spec.cwd, &id, job.spec.prompt.as_deref()).await?;
+            let key = job.execution.launch_key(&id);
+            let prompt =
+                if job.execution.launches == 0 { job.spec.prompt.as_deref() } else { job.execution.prompt.as_deref() };
+            let conversation = p.launch_in_cloud_workspace(&agent, &workspace, &job.spec.cwd, &key, prompt).await?;
             job.execution.conversation = Some(conversation["id"].as_str().context("missing conversation")?.into());
             job.tab.status = conversation["status"].as_str().unwrap_or("pending").into();
             job.execution.stage = "live".into();
             save_cloud_tab(app, job, now)
         }
         "conversation_creating" => {
-            job.execution.conversation = p.find_cloud_tab_resource("conversations", &id).await?;
+            job.execution.conversation =
+                p.find_cloud_tab_resource("conversations", &job.execution.launch_key(&id)).await?;
             if job.execution.conversation.is_some() {
                 job.tab.status = "pending".into();
                 job.execution.stage = "live".into();
@@ -493,6 +503,25 @@ async fn step_cloud_tab(app: &App, job: &mut CloudTabJob, now: u64) -> Result<()
             save_cloud_tab(app, job, now)
         }
         "live" => {
+            // Its conversation failed, and a prompt asks for a new one: open
+            // it with that prompt. The old one's events stay the tab's, and
+            // Managoat's event ids are global, so the new one's follow them.
+            if let Some(prompt) = job.relaunch.clone() {
+                job.relaunch_taken = true;
+                job.execution.launches += 1;
+                job.execution.prompt = Some(prompt);
+                job.execution.conversation = None;
+                job.execution.stage = "agent_ready".into();
+                job.started = false;
+                job.tab.status = "opening".into();
+                job.tab.error = None;
+                return save_cloud_tab(app, job, now);
+            }
+            // A failed conversation is terminal and was read to its end when
+            // it failed: wait for a prompt, asking Managoat nothing.
+            if job.tab.status == "failed" {
+                return app.db.checkpoint_cloud_tab_job(job, Some(now + CLOUD_TAB_IDLE_MS));
+            }
             let conversation = job.execution.conversation.clone().context("missing conversation")?;
             let c = match p.conversation(&conversation).await {
                 Ok(c) => c,
@@ -514,6 +543,9 @@ async fn step_cloud_tab(app: &App, job: &mut CloudTabJob, now: u64) -> Result<()
             } else {
                 state
             };
+            if job.tab.status == "failed" {
+                job.tab.error = Some(TAB_FAILED.into());
+            }
             // A full page means more to read: come back soon.
             if events.len() >= 1000 {
                 return app.db.checkpoint_cloud_tab_job(job, Some(now + CLOUD_TAB_BUSY_MS));
@@ -639,6 +671,9 @@ mod tests {
                     let events = fake.tab_events.get(&id).cloned().unwrap_or_default();
                     json!(events.into_iter().filter(|e| e["id"].as_u64().unwrap() > after).collect::<Vec<_>>())
                 }
+                ("POST", "prompts") if matches!(conversation["status"].as_str(), Some("failed" | "terminated")) => {
+                    return (StatusCode::GONE, axum::Json(json!({"error":"conversation_terminal"}))).into_response();
+                }
                 ("POST", "prompts") => {
                     status(&mut fake, "running");
                     json!({"accepted":true})
@@ -706,7 +741,7 @@ mod tests {
                 let workspace = json!({
                     "id":"ws1","name":value["name"],"environment_id":value["environment_id"],"vault_id":value["vault_id"],
                     "status":"provisioning","error":null,"sandbox_status":"pending","revision":"rev1",
-                    "built_from_revision":null,"stale":false,"changed_fields":[],
+                    "built_from_revision":null,"stale":false,"changed_fields":[],"setup_step":"packages",
                 });
                 fake.workspace = Some(workspace.clone());
                 fake.built_environment = fake.environment.clone();
@@ -744,12 +779,31 @@ mod tests {
                     workspace["status"] = json!("failed");
                     workspace["sandbox_status"] = Value::Null;
                     workspace["error"] = json!("setup_script exited 1: npm ERR! missing script: build");
+                    workspace["setup_step"] = Value::Null;
                 } else if reads >= setup_reads {
                     workspace["status"] = json!("ready");
                     workspace["sandbox_status"] = json!("ready");
                     workspace["built_from_revision"] = built_revision;
+                    workspace["setup_step"] = Value::Null;
                 }
                 workspace.clone()
+            }
+            // What the last setup printed, kept by Managoat: readable while
+            // the machine is parked, failed or gone.
+            ("GET", "/api/workspaces/ws1/setup-log") => {
+                if fake.workspace.is_none() {
+                    return StatusCode::NOT_FOUND.into_response();
+                }
+                json!({
+                    "workspace_id":"ws1","sandbox_id":"sandbox9","status":"failed","step":"setup_script",
+                    "started_at":"2026-10-19T12:00:00Z","finished_at":"2026-10-19T12:00:09Z","internal":"x",
+                    "steps":[
+                        {"step":"packages","status":"succeeded","started_at":"2026-10-19T12:00:01Z","finished_at":"2026-10-19T12:00:05Z",
+                         "output":"Setting up jq\n","omitted_lines":0,"omitted_bytes":0,"sandbox_id":"sandbox9"},
+                        {"step":"setup_script","status":"failed","started_at":"2026-10-19T12:00:05Z","finished_at":"2026-10-19T12:00:09Z",
+                         "output":"npm ERR! missing script: build\n","omitted_lines":3,"omitted_bytes":120},
+                    ],
+                })
             }
             // The workspace's machine, read-only: Managoat answers a parked
             // one 409 and never wakes it.
@@ -1229,6 +1283,32 @@ mod tests {
         run(&app, 100_000, 60).await;
         assert!(app.db.cloud_workspace("a", &created.id).unwrap().is_none());
         assert_eq!(app.db.open_cloud_tabs(&created.id).unwrap(), 0);
+        // Both tabs stay readable as past tabs: the one closed on its own
+        // and the one its Cloud workspace's delete ended. Only to their
+        // account.
+        let past = call(M::GET, &format!("{base}/past-tabs"), "a", None).await.1;
+        let past = past["past_tabs"].as_array().unwrap().clone();
+        assert_eq!(past.len(), 2, "{past:?}");
+        assert_eq!((past[0]["id"].as_str(), past[1]["id"].as_str()), (Some(two), Some(one)), "newest closed first");
+        assert!(past.iter().all(|t| t["cloud_workspace_deleted"] == true && t["cloud_workspace_name"] == "App box"));
+        assert_eq!(past[1]["agent_name"], claude["agent_name"]);
+        assert_eq!(call(M::GET, &format!("{base}/past-tabs"), "b", None).await.1, json!({"past_tabs": []}));
+        for tab in [one, two] {
+            let (status, events) = call(M::GET, &format!("{base}/past-tabs/{tab}/events"), "a", None).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(events["events"].as_array().unwrap().len(), 2, "its transcript is kept");
+            assert_eq!(call(M::GET, &format!("{base}/past-tabs/{tab}"), "a", None).await.1["id"], tab);
+            assert_eq!(
+                call(M::GET, &format!("{base}/past-tabs/{tab}/requests"), "a", None).await.1,
+                json!({"requests": []})
+            );
+            for path in ["", "/events", "/requests"] {
+                assert_eq!(
+                    call(M::GET, &format!("{base}/past-tabs/{tab}{path}"), "b", None).await.0,
+                    StatusCode::NOT_FOUND
+                );
+            }
+        }
         let fake = fake.lock().unwrap();
         let at = |m: &str, p: &str| fake.calls.iter().position(|(cm, cp, _)| cm == m && cp == p).unwrap();
         assert!(at("DELETE", "/api/agents/agent3") < at("DELETE", "/api/vaults/vault1"));
@@ -1841,6 +1921,141 @@ mod tests {
         // Not failed: nothing to retry.
         let (status, refused) = call(M::POST, &retry, "a", None).await;
         assert_eq!((status, &refused["reason"]), (StatusCode::CONFLICT, &json!("not_failed")));
+        routes.abort();
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_tab_whose_conversation_failed_gets_a_new_one_on_its_next_prompt() {
+        use reqwest::Method as M;
+        let (app, fake, server) = serve(Fake { failed_setup: true, setup_reads: 1_000, ..Default::default() }).await;
+        let created = cloud_workspace(&app);
+        let (base, routes) = routes(&app).await;
+        let tabs = format!("{base}/workspaces/{}/tabs", created.id);
+        let body = |key: &str| json!({"request_key":key,"agent_id":"curated_review","runtime":"claude","model":"anthropic/test-model","prompt":"Review it"});
+        let tab = call(M::POST, &tabs, "a", Some(body("one"))).await.1;
+        let id = tab["id"].as_str().unwrap().to_owned();
+        let other = call(M::POST, &tabs, "a", Some(body("two"))).await.1;
+        let other = other["id"].as_str().unwrap().to_owned();
+        run(&app, 0, 30).await;
+        // The setup its first prompt waited for fails, and Managoat fails the
+        // conversation with it: `failed` is terminal.
+        fake.lock().unwrap().setup_reads = 1;
+        let conversation = |fake: &Mutex<Fake>, key: &str| {
+            fake.lock()
+                .unwrap()
+                .tab_conversations
+                .iter()
+                .find(|(_, c)| c["labels"]["arugula_tab"] == key)
+                .map(|(id, _)| id.clone())
+                .unwrap()
+        };
+        let first = conversation(&fake, &id);
+        {
+            let mut f = fake.lock().unwrap();
+            f.tab_conversations.get_mut(&first).unwrap()["status"] = json!("failed");
+            f.tab_events.insert(
+                first.clone(),
+                vec![
+                    json!({"id":10,"stage":"turn","state":"started","blocks":[{"kind":"prompt","body":"Review it"}]}),
+                    json!({"id":11,"kind":"output","stage":"setup","data":"npm ERR! missing script: build\n"}),
+                    json!({"id":12,"stage":"setup","state":"failed","data":"{\"exit_code\":127}"}),
+                ],
+            );
+        }
+        run(&app, 30_000, 30).await;
+        assert_eq!(app.db.cloud_workspace("a", &created.id).unwrap().unwrap().status, "failed");
+        let shown = call(M::GET, &format!("{tabs}/{id}"), "a", None).await.1;
+        assert_eq!(shown["status"], "failed");
+        assert!(shown["error"].as_str().unwrap().contains("Retry"), "{shown}");
+        // Retry, then prompt it: a new conversation for the tab, labelled
+        // apart from the failed one, started with that prompt.
+        fake.lock().unwrap().failed_setup = false;
+        assert_eq!(
+            call(M::POST, &format!("{base}/workspaces/{}/retry", created.id), "a", None).await.0,
+            StatusCode::OK
+        );
+        run(&app, 60_000, 10).await;
+        let prompt = format!("{tabs}/{id}/prompt");
+        assert_eq!(call(M::POST, &prompt, "b", Some(json!({"prompt":"Again"}))).await.0, StatusCode::NOT_FOUND);
+        let (status, answer) = call(M::POST, &prompt, "a", Some(json!({"prompt":"Again"}))).await;
+        assert_eq!((status, answer), (StatusCode::OK, json!({"relaunched": true})));
+        let shown = call(M::GET, &format!("{tabs}/{id}"), "a", None).await.1;
+        assert_eq!((&shown["status"], &shown["error"]), (&json!("opening"), &Value::Null));
+        assert_eq!(call(M::POST, &prompt, "a", Some(json!({"prompt":"Twice"}))).await.0, StatusCode::CONFLICT);
+        assert!(calls(&fake, "POST", &format!("/api/conversations/{first}/prompts")).is_empty());
+        run(&app, 70_000, 20).await;
+        let second = conversation(&fake, &format!("{id}.1"));
+        assert_ne!(second, first);
+        let launch = calls(&fake, "POST", "/api/conversations")
+            .into_iter()
+            .find(|l| l["labels"]["arugula_tab"] == format!("{id}.1"))
+            .unwrap();
+        assert_eq!((&launch["prompt"], &launch["client_request_id"]), (&json!("Again"), &json!(format!("{id}.1"))));
+        fake.lock().unwrap().tab_events.insert(
+            second.clone(),
+            vec![json!({"id":20,"stage":"turn","state":"started","blocks":[{"kind":"prompt","body":"Again"}]})],
+        );
+        run(&app, 100_000, 10).await;
+        let shown = call(M::GET, &format!("{tabs}/{id}"), "a", None).await.1;
+        assert_eq!((&shown["status"], &shown["error"]), (&json!("running"), &Value::Null));
+        // The old transcript stays above the new one.
+        let events = call(M::GET, &format!("{tabs}/{id}/events"), "a", None).await.1;
+        let ids: Vec<u64> = events["events"].as_array().unwrap().iter().map(|e| e["id"].as_u64().unwrap()).collect();
+        assert_eq!(ids, [10, 11, 12, 20]);
+        // A conversation Managoat ended before control saw it: its prompt is
+        // refused as gone (410), and the tab relaunches the same way.
+        let gone = conversation(&fake, &other);
+        fake.lock().unwrap().tab_conversations.get_mut(&gone).unwrap()["status"] = json!("terminated");
+        let (status, answer) =
+            call(M::POST, &format!("{tabs}/{other}/prompt"), "a", Some(json!({"prompt":"Hello"}))).await;
+        assert_eq!((status, answer), (StatusCode::OK, json!({"relaunched": true})));
+        run(&app, 120_000, 20).await;
+        let launch = calls(&fake, "POST", "/api/conversations")
+            .into_iter()
+            .find(|l| l["labels"]["arugula_tab"] == format!("{other}.1"))
+            .unwrap();
+        assert_eq!(launch["prompt"], "Hello");
+        routes.abort();
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn setup_step_and_setup_log_are_read_through_control() {
+        use reqwest::Method as M;
+        let (app, fake, server) = serve(Fake { failed_setup: true, setup_reads: 1_000, ..Default::default() }).await;
+        let created = cloud_workspace(&app);
+        let (base, routes) = routes(&app).await;
+        let log = format!("{base}/workspaces/{}/setup-log", created.id);
+        // Before Managoat has the workspace there's nothing to read.
+        assert_eq!(call(M::GET, &log, "a", None).await, (StatusCode::OK, json!({"log": null})));
+        run(&app, 0, 30).await;
+        let shown = app.db.cloud_workspace("a", &created.id).unwrap().unwrap();
+        assert_eq!((shown.status.as_str(), shown.setup_step.as_deref()), ("provisioning", Some("packages")));
+        let listed = call(M::GET, &format!("{base}/workspaces/{}", created.id), "a", None).await.1;
+        assert_eq!(listed["setup_step"], "packages", "{listed}");
+        fake.lock().unwrap().setup_reads = 1;
+        run(&app, 30_000, 30).await;
+        let shown = app.db.cloud_workspace("a", &created.id).unwrap().unwrap();
+        assert_eq!((shown.status.as_str(), shown.setup_step), ("failed", None));
+        // Only the documented fields: no ids, nothing else Managoat adds.
+        let (status, read) = call(M::GET, &log, "a", None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(read["log"]["status"], "failed");
+        assert_eq!(read["log"]["step"], "setup_script");
+        assert_eq!(read["log"]["steps"][1]["output"], "npm ERR! missing script: build\n");
+        assert_eq!(read["log"]["steps"][1]["omitted_lines"], 3);
+        let text = read.to_string();
+        assert!(!text.contains("sandbox9") && !text.contains("ws1") && !text.contains("internal"), "{text}");
+        assert_eq!(call(M::GET, &log, "b", None).await.0, StatusCode::NOT_FOUND);
+        // Reading it never touches the machine.
+        let fake_calls = fake.lock().unwrap().calls.clone();
+        assert!(
+            fake_calls
+                .iter()
+                .filter(|(_, p, _)| p.starts_with("/api/workspaces/ws1/"))
+                .all(|(m, p, _)| m == "GET" && p == "/api/workspaces/ws1/setup-log")
+        );
         routes.abort();
         server.abort();
     }

@@ -210,8 +210,19 @@ function cloudTurn(prompt: string): FakeTurn {
       writes: true,
       blocks: [
         { kind: "thinking", body: "README.md has no getting-started section; the guide belongs in docs/." },
-        { kind: "text", body: "I added docs/guide.md with the first steps and linked it from README.md. Open Changes to read the diff." },
+        // Streamed as Managoat streams a message: in chunks, with a tool
+        // call whose input arrives empty first.
+        ...["I'll", " look", " at the", " READ", "ME first."].map((body) => ({ kind: "text", body })),
+        { kind: "tool_use", id: "t1", name: "Read README.md", summary: "/home/sprite/app/README.md", body: "{}" },
+        { kind: "tool_result", tool_id: "t1", body: "# app" },
+        ...["I added docs/gu", "ide.md with the first steps and linked it from README.md:\n\n```md\n## Get", "ting started\nSee [the guide](docs/guide.md).\n```\n\nOpen Changes to read the diff."].map((body) => ({ kind: "text", body })),
       ],
+    };
+  // A long answer, to see a transcript scroll inside its pane.
+  if (prompt === "Explain the API's routes")
+    return {
+      blocks: ["The API serves these routes:\n\n", ...Array.from({ length: 40 }, (_, i) => `- \`GET /api/v1/items/${i + 1}\`: item ${i + 1}, as JSON.\n`), "\nEach answers 404 for an item that isn't there."]
+        .map((body) => ({ kind: "text", body })),
     };
   return { blocks: [{ kind: "text", body: `(the fake Managoat) Done: ${prompt}` }] };
 }
@@ -223,7 +234,7 @@ async function cloudFlags(): Promise<string[]> {
   const m = fakeManagoat(0, "127.0.0.1", {
     file: join(dir, "control/managoat.json"),
     // The setup fails until a retry: a Cloud workspace whose script runs pnpm.
-    fails: (env, setup) => (setup === 1 && /\bpnpm\b/.test(String(env.setup_script ?? "")) ? "setup_script exited 127: pnpm: command not found" : null),
+    fails: (env, setup) => (setup === 1 && /\bpnpm\b/.test(String(env.setup_script ?? "")) ? "the environment's setup script exited 127:\n+ pnpm install\n/home/sprite/.managoat/setup.sh: line 3: pnpm: command not found" : null),
     turn: cloudTurn,
     full: () => process.env.DEV_CONTROL_CLOUD_FULL === "1",
   });
@@ -286,8 +297,11 @@ async function seedCloud(d: Device) {
   };
   const result = { diff: { diff: "diff --git a/test/upload.test.ts b/test/upload.test.ts\n--- a/test/upload.test.ts\n+++ b/test/upload.test.ts\n@@ -3 +3 @@\n-  await sleep(100);\n+  await upload.done;\n" }, files: {} };
   db.prepare("INSERT INTO cloud_runs(id,account,request_key,spec,state,created,deadline,result) VALUES(?,?,?,?,?,?,?,?)").run(run, account, run, JSON.stringify(spec), "completed", created, created + 1_800_000, JSON.stringify(result));
-  // The page shows the run's prompt itself.
-  const events = [{ id: 1, blocks: [{ kind: "text", body: "The test slept instead of waiting for the upload; it waits on the upload now." }] }];
+  // As Managoat sent them: the turn opens with its prompt.
+  const events = [
+    { id: 1, stage: "turn", state: "started", blocks: [{ kind: "prompt", body: spec.prompt }] },
+    { id: 2, blocks: [{ kind: "text", body: "The test slept instead of waiting for the upload; it waits on the upload now." }] },
+  ];
   for (const e of events) db.prepare("INSERT INTO cloud_events(conversation,account,cursor,body) VALUES(?,?,?,?)").run(run, account, e.id, JSON.stringify(e));
   db.close();
   log("Cloud workspaces made");

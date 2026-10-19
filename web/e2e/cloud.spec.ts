@@ -111,7 +111,8 @@ test("cloud-only account saves a secret, starts an agent in a new Cloud workspac
   await expect(page.locator("[data-cloud-tab-view]")).toContainText("Docs written.", { timeout: 30000 });
 
   // A past run opens read only, with its download.
-  let events = [{ id: 1, blocks: [{ kind: "text", body: "Changed the example." }] }] as unknown[];
+  // Managoat's transcript opens the turn with its prompt: shown once.
+  let events = [{ id: 1, stage: "turn", state: "started", blocks: [{ kind: "prompt", body: "Fix the example" }] }, { id: 2, blocks: [{ kind: "text", body: "Changed the example." }] }] as unknown[];
   await page.route(/\/api\/cloud\/runs(\/|$|\?)/, (route) => {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() !== "GET") return route.fulfill({ status: 405, json: { error: "gone" } });
@@ -125,6 +126,7 @@ test("cloud-only account saves a secret, starts an agent in a new Cloud workspac
   await page.locator("[data-past-runs]").getByRole("button", { name: "Coding agent: Fix the example" }).click();
   await expect(page.locator("[data-cloud-pane] .agent-status", { hasText: "completed" })).toBeVisible();
   await expect(page.locator("[data-cloud-pane]")).toContainText("Changed the example.");
+  await expect(page.locator("[data-cloud-pane] .agent-user")).toHaveText(["Fix the example"]);
   await expect(page.getByRole("button", { name: "Cancel run" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Run again" })).toHaveCount(0);
   const download = page.waitForEvent("download");
@@ -166,8 +168,9 @@ test("a Cloud workspace sets up, runs two tabs, asks in the drawer and is delete
   await create.getByLabel("Repository URL").fill("https://github.com/example/app");
   await create.getByLabel("apt packages (optional)").fill("ffmpeg");
   await create.getByRole("button", { name: "Create Cloud workspace" }).click();
-  await expect(page.locator("[data-cloud-status]")).toHaveText("Setting up", { timeout: 15000 });
-  await expect(page.locator("[data-cloud-home-status]")).toContainText("Setting up");
+  // Managoat (v0.39.0) says which step it's on.
+  await expect(page.locator("[data-cloud-status]")).toHaveText(/^Setting up · (machine|packages|setup script)$/, { timeout: 15000 });
+  await expect(page.locator("[data-cloud-home-status]")).toContainText("Setting up · ");
   await expect(page.locator("[data-cloud-status]")).toHaveText("Ready", { timeout: 30000 });
   await expect(page.locator('[data-cloud-workspace][data-cloud-state="Ready"]')).toContainText("app work");
   await expect(page.locator(".cloud-ws-repos")).toContainText("/home/sprite/app");
@@ -202,15 +205,55 @@ test("a Cloud workspace sets up, runs two tabs, asks in the drawer and is delete
   await expect(page.locator("[data-cloud-tab-view]")).toContainText("Tests pass.", { timeout: 30000 });
   await expect(page.locator('[data-cloud-tab][data-attention="needs_input"]')).toHaveCount(0, { timeout: 30000 });
   await expect(page.locator("[data-open-attention]")).toHaveAttribute("data-bell-count", "0");
+  // Answered, it says so, with no buttons left to press.
+  await expect(page.locator("[data-cloud-tab-view] .agent-perm .agent-perm-done")).toHaveText("Answered: Allow once");
+  await expect(page.locator("[data-cloud-tab-view] .agent-perm button")).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator("[data-cloud-tab-view] .agent-perm .agent-perm-done")).toHaveText("Answered: Allow once", { timeout: 15000 });
+  await expect(page.locator("[data-cloud-tab-view] .agent-perm button")).toHaveCount(0);
+
+  // A streamed reply reads as one message: its chunks joined, its code
+  // fence whole, and a tool call's empty input not shown.
+  await open("Stream it");
+  const streamed = page.locator("[data-cloud-tab-view] .cloud-transcript");
+  await expect(streamed).toContainText("hello from claude", { timeout: 30000 });
+  await expect(streamed.locator(".agent-msg")).toHaveCount(2);
+  await expect(streamed.locator(".agent-msg").first()).toHaveText("I'll run pwd first.");
+  await expect(streamed.locator(".agent-msg").nth(1).locator("pre")).toHaveCount(1);
+  await expect(streamed.locator(".agent-msg").nth(1).locator("pre")).toContainText("echo hi");
+  await expect(streamed.locator(".cloud-tool").first()).toHaveText("Terminal · pwd");
+  await expect(streamed.getByText("{}", { exact: true })).toHaveCount(0);
+  // The tab scrolls inside its pane: the page under the shell never does.
+  expect(await page.evaluate(() => document.body.scrollTop + document.documentElement.scrollTop)).toBe(0);
+  await page.locator(".cloud-tab-prompt textarea").focus();
+  expect(await page.evaluate(() => document.body.scrollTop + document.documentElement.scrollTop)).toBe(0);
 
   // Delete names the tabs it ends, then everything goes.
   await page.locator("[data-delete-cloud-workspace]").click();
   const confirm = page.getByRole("alertdialog", { name: "Delete app work?" });
-  await expect(confirm.locator("[data-delete-ends] li")).toHaveCount(2);
+  await expect(confirm.locator("[data-delete-ends] li")).toHaveCount(3);
   await confirm.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(page.locator("[data-cloud-ws-list]")).toBeVisible();
   await expect(page.locator("[data-cloud-workspace]")).toHaveCount(0, { timeout: 45000 });
   expect(Object.values(fake().conversations).slice(before).every((c) => c.terminated)).toBe(true);
+
+  // Its tabs stay to read, as past tabs.
+  await page.reload();
+  await expect(page.locator("[data-past-tabs] li")).toHaveCount(3, { timeout: 15000 });
+  await expect(page.locator("[data-past-tabs]")).toContainText("app work (deleted)");
+  // The one that ran the tests (they're all the same agent).
+  const ran = await page.evaluate(async () => {
+    const { past_tabs } = await (await fetch("/api/cloud/past-tabs")).json() as { past_tabs: { id: string }[] };
+    for (const t of past_tabs) if (JSON.stringify(await (await fetch(`/api/cloud/past-tabs/${t.id}/events`)).json()).includes("Run the tests")) return t.id;
+    return "";
+  });
+  await page.locator(`[data-past-tab="${ran}"]`).click();
+  const past = page.locator("[data-past-tab-view]");
+  await expect(past).toContainText("Tests pass.", { timeout: 15000 });
+  await expect(past.locator(".agent-user")).toHaveText(["Run the tests"]);
+  await expect(past.locator("textarea")).toHaveCount(0);
+  await expect(past.locator(".agent-perm button")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Close past tab" })).toBeVisible();
 });
 
 test("adding a package says Rebuild needed and leaves the open tab alone", async ({ page }) => {
@@ -367,7 +410,7 @@ test("Rebuild asks first, warns that the disk is wiped, and clears the badge", a
   await page.locator('[data-rebuild-cloud-workspace="settings"]').click();
   await confirm.locator("[data-confirm-rebuild]").click();
   await expect(confirm).toHaveCount(0);
-  await expect(page.locator("[data-cloud-status]")).toHaveText("Setting up", { timeout: 15000 });
+  await expect(page.locator("[data-cloud-status]")).toHaveText(/^Setting up/, { timeout: 15000 });
   expect(fake().rebuilds).toEqual([{}]);
   await expect(page.locator("[data-cloud-status]")).toHaveText("Ready", { timeout: 30000 });
   await expect(page.locator("[data-cloud-rebuild-badge]")).toHaveCount(0);
@@ -396,6 +439,10 @@ test("Retry on a failed Cloud workspace sets it up again without a warning", asy
   await create.getByRole("button", { name: "Create Cloud workspace" }).click();
   await expect(page.locator("[data-cloud-status]")).toHaveText("Failed", { timeout: 30000 });
   await expect(page.locator("[data-cloud-failed]")).toContainText("pnpm: command not found");
+  // What the setup printed, step by step, read on demand.
+  await page.locator("[data-show-setup-log]").click();
+  await expect(page.locator('[data-setup-step="setup_script"][data-setup-status="failed"]')).toContainText("pnpm: command not found");
+  await expect(page.locator('[data-setup-step="packages"]')).toHaveAttribute("data-setup-status", "succeeded");
   // A failed workspace has no machine: Rebuild isn't offered, Retry is.
   await expect(page.locator("[data-rebuild-cloud-workspace]")).toHaveCount(0);
 

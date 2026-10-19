@@ -60,7 +60,8 @@ one disk: *+ Agent* opens one with its agent, runtime and model, and the
 directory it starts in. Tabs ask for approval in the tab, the bell and a
 push. *New agent* → *Run on: Cloud* opens an agent in one of them, or
 in a new one made from the repository you give it. The header shows the
-state and *Delete*, which names the tabs it ends. Cloud runs (a fresh
+state and *Delete*, which names the tabs it ends; closed tabs, and those
+of deleted Cloud workspaces, stay readable under *Past tabs*. Cloud runs (a fresh
 checkout per agent) are retired: past ones stay readable, with their
 downloads, under *Past runs* in Cloud agents.
 
