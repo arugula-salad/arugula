@@ -8878,18 +8878,22 @@ html[data-finish="glass"] .prompt-backdrop {
 .prompt .cloud-panel.cloud-launch-form { max-height: none; overflow: visible; }
 
 /* Cloud workspaces (S40, M116): the list, a workspace, a tab, and their place in the sidebar. */
-.main > .cloud-ws-view { flex: 1; min-width: 0; width: 100%; overflow: auto; display: flex; flex-direction: column; }
+.main > .cloud-ws-view { box-sizing: border-box; flex: 1; min-width: 0; width: 100%; overflow: auto; display: flex; flex-direction: column; }
 .cloud-ws-view > .cloud-agent { flex: 1; min-height: 0; overflow: auto; }
 .cloud-ws-view.empty, .cloud-ws-home, .cloud-ws-view[data-cloud-ws-list] { padding: 16px; }
 .cloud-ws-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .cloud-ws-list, .cloud-ws-repos, .cloud-ws-tabs { list-style: none; padding: 0; }
 .cloud-ws-list li, .cloud-ws-tabs li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 8px 0; overflow-wrap: anywhere; }
+/* A long name gives way, never the status. */
+.cloud-ws-list li { overflow-wrap: normal; }
+.cloud-ws-list-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.cloud-ws-list-state { flex: none; white-space: nowrap; color: var(--dim); }
 .cloud-ws-repos li { margin: 6px 0; overflow-wrap: anywhere; }
 .cloud-ws-failed { margin: 12px; padding: 10px 12px; border: 1px solid var(--danger); border-radius: 6px; }
 .cloud-ws-error { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .cloud-ws-repository { display: grid; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--raised-hover); }
 .cloud-tab-prompt { margin: 8px 12px 16px; }
-.ws-cloud-group { display: flex; flex-direction: column; padding-bottom: 8px; }
+.ws-cloud-group { display: flex; flex-direction: column; padding: 0 6px 8px; min-width: 0; }
 .ws-cloud-state { color: var(--dim); }
 .ws-cloud-new { align-self: flex-start; margin: 4px 10px; border: none; background: none; color: var(--dim); cursor: pointer; padding: 4px; }
 .ws-cloud-new:hover { color: var(--fg); }
@@ -8903,6 +8907,11 @@ html[data-finish="glass"] .prompt-backdrop {
 .cloud-ws-pending th, .cloud-ws-pending td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--raised-hover); overflow-wrap: anywhere; }
 .cloud-ws-pending pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .cloud-ws-settings-form { max-width: 720px; }
+.cloud-ws-back { flex: none; min-width: 32px; min-height: 32px; font-size: 20px; line-height: 1; color: var(--dim); }
+/* The strip: its tabs scroll, "+ Agent" stays one word beside them. */
+.cloud-tabstrip { display: flex; align-items: stretch; min-width: 0; }
+.cloud-tabstrip > .tabbar { flex: 0 1 auto; min-width: 0; }
+.new-tab.cloud-new-agent { flex: none; width: auto; padding: 0 10px; font-size: 13px; white-space: nowrap; }
 
 /* ---- the workspace (M108, #1023; the only one since M113): a rail, the session sidebar, a
    context header, the tab strip and a status footer around `.main`. Only
