@@ -72,7 +72,7 @@ What Managoat doesn't give us yet:
 | A rebuild call | managoat/managoat#2986 | No Rebuild button (decided). M120 waits for it |
 | The revision a sandbox was built from | managoat/managoat#2987 | Control's spec fingerprint (decided 2026-10-19) |
 | Setup output while it runs, and kept afterwards | managoat/managoat#3009 | "Setting up…" plus the failure tail (decided) |
-| A retry for a **failed** setup without a prompt | none filed yet; see decision 6 | The next prompt in any tab retries (Managoat's behaviour) |
+| A retry for a **failed** setup without a prompt | managoat/managoat#3013 | The next prompt in any tab retries (Managoat's behaviour) |
 
 ## Decided (Jake, 2026-10-18 and 2026-10-19; in #1039)
 
@@ -88,11 +88,14 @@ What Managoat doesn't give us yet:
 - Setup shows its status and the failure tail. #3009 is adopted when it
   lands.
 - New shell only.
+- Plan decisions reviewed 2026-10-19. Jake changed three of them: a runtime
+  and model chosen per tab (4), a separate Managoat retry issue (6, now
+  managoat/managoat#3013), and no diff saving before a rebuild (9).
 - UI name: **Cloud workspace**. Code names: `cloud_workspace` /
   `CloudWorkspace`, never a bare `Workspace`. The shell already uses
   `useWorkspaceKeys`, `arugula.workspace.*` and `BlockType::Workspace`.
 
-## Decisions this plan makes (change any)
+## Decisions this plan makes (reviewed by Jake, 2026-10-19)
 
 1. **Control owns one environment and one vault per workspace**, named
    after the workspace id and tagged `metadata.arugula_workspace`. That lets
@@ -114,26 +117,33 @@ What Managoat doesn't give us yet:
    stream can come later.
 4. **Each tab gets its own Managoat agent**, created from the cloud agent
    definition snapshotted when the tab opens, with `permission_policy: ask`
-   as runs have, and deleted when the tab closes. Every tab uses the
-   platform's model and runtime. Choosing a runtime per tab is out of this
-   track: control has one platform runtime.
+   as runs have, and deleted when the tab closes. **The runtime and model
+   are chosen per tab** (changed by Jake). Control takes
+   `ARUGULA_CLOUD_MODELS`, a list of `runtime:model` pairs (for example
+   `claude:claude-opus-5-5,codex:<model>,gemini:<model>`), each checked
+   against the existing rule that the runtime matches the model's prefix.
+   **+ Agent** offers the list, and the first entry is the default. When the
+   list is unset, `ARUGULA_CLOUD_MODEL` and `ARUGULA_CLOUD_RUNTIME` make a
+   one-entry list, so today's deploy keeps working. Each pair needs its
+   platform inference set up on the Managoat account before it's listed.
 5. **A tab's `cwd`** defaults to the first repository's mount, and can be
    any other mount or a path under `/home/sprite`.
 6. **Failed setup.** Managoat retries a failed setup only on the next
-   prompt into one of the workspace's conversations. Until it has a call for
-   that, the failed state says "Fix the settings, then send a prompt in any
-   tab to set up again", and with no tabs open it offers **+ Agent**. Ask
-   Managoat to let #2986's rebuild call also retry a `failed` workspace (a
-   comment on #2986); then **Retry** becomes the rebuild call.
+   prompt into one of the workspace's conversations. Until
+   managoat/managoat#3013 (`POST /api/workspaces/:id/retry`) lands, the
+   failed state says "Fix the settings, then send a prompt in any tab to set
+   up again", and with no tabs open it offers **+ Agent**. Once it lands,
+   **Retry** calls it.
 7. **Tabs and workspaces live in control's database**, not localStorage. The
    open tab list is the workspace's live conversations.
 8. **The event pump is generalised, not copied.** `cloud_events`,
    `cloud_requests` and `cloud_notifications` key on a conversation
    (`run_…` or `cwc_…`) instead of only a run, so approvals, push and the
    attention dot work the same for tabs.
-9. **Before a rebuild, control saves each repository's diff** from
-   `/api/workspaces/:id/diff`, under the runs' rule: a truncated diff or one
-   with binary changes stops the rebuild and says why.
+9. **Nothing is saved before a rebuild** (changed by Jake). The confirm
+   says plainly that the disk is wiped: uncommitted and untracked work,
+   anything outside the repos, and each agent's runtime memory. The user
+   commits or pushes first. Transcripts are kept.
 10. **Retiring runs** leaves `cloud_runs` and its results readable under
     **Past runs**, removes the run worker, the run routes that start or
     cancel anything, and `ARUGULA_CLOUD_DAILY_RUNS`, `_CONCURRENT_RUNS` and
@@ -167,8 +177,11 @@ on merge, and every UI PR has Before | After shots.
 
 ### M115 (#1072): control, tabs (conversations in a workspace)
 
-- `POST /api/cloud/workspaces/{id}/tabs` `{agent_id, cwd, prompt?}` creates
-  the agent, then launches with `workspace_id` and `cwd`, without
+- `ARUGULA_CLOUD_MODELS` (decision 4), parsed and checked at startup, with
+  the one-entry fallback. `GET /api/cloud/models` lists it for **+ Agent**.
+- `POST /api/cloud/workspaces/{id}/tabs` `{agent_id, runtime, model, cwd,
+  prompt?}` refuses a pair that isn't listed, then creates the agent with
+  that runtime and model, then launches with `workspace_id` and `cwd`, without
   `sandbox_api_access: "none"` (Managoat refuses it in a workspace).
   `DELETE …/tabs/{tab}` terminates the conversation and deletes the agent.
 - Prompt, interrupt, approve: `POST …/tabs/{tab}/prompt`, `…/interrupt`,
@@ -185,12 +198,13 @@ on merge, and every UI PR has Before | After shots.
   (setting up, ready, parked, failed, rebuild needed) and **+ Cloud
   workspace**.
 - `shell/tab-strip.tsx`: the workspace's tabs, with attention dots, and
-  **+ Agent** (agent definition, `cwd` from the mounts, first prompt).
+  **+ Agent** (agent definition, runtime and model from the list, `cwd`
+  from the mounts, first prompt). Each tab shows its runtime.
 - A tab view that reuses `RunDetails`' transcript and approval rendering.
   It's extracted into a shared component rather than copied.
 - `shell/context-header.tsx`: status and **Delete** (the confirm names the
   live tabs it ends). The failed state shows `error` and the decision 6
-  text.
+  text, plus **Retry** once managoat/managoat#3013 lands.
 - `shell/attention-drawer.tsx` and `overview.tsx`: tab items next to run
   items.
 - The create dialog: name, repositories, packages, setup script, secrets.
@@ -227,12 +241,13 @@ on merge, and every UI PR has Before | After shots.
 ### M120 (#1077): Rebuild (after M117; blocked on managoat/managoat#2986)
 
 - **Rebuild** in the header and in Settings. It's refused while a tab is
-  mid-turn, unless the user picks **Interrupt and rebuild**. Control saves
-  diffs first (decision 9), calls the rebuild route, and shows progress
-  through the status poll. `built_spec` and the fingerprint update when the
+  mid-turn, unless the user picks **Interrupt and rebuild**. The confirm
+  warns that the disk is wiped (decision 9). Control then calls the rebuild
+  route and shows progress through the status poll. `built_spec` and the fingerprint update when the
   workspace reaches `ready`.
 - If #2987 has landed by then, switch pending changes to Managoat's
-  revision. If #3009 has, show the setup log.
+  revision. If #3009 has, show the setup log. If #3013 has, **Retry** on a
+  failed workspace uses it.
 
 Order: M114 → M115 → M116 → M117 → M118. M119 can run after M116, alongside
 M117 and M118. M120 waits for #2986.
@@ -241,7 +256,7 @@ M117 and M118. M120 waits for #2986.
 
 The acceptance list in #1039 passes on control against managoat.com. That
 covers two repos plus `apt: [ffmpeg]` reaching `ready`; a claude tab and a
-second tab sharing the disk; the badge after a settings edit; a rebuild that
+codex tab sharing the disk; the badge after a settings edit; a rebuild that
 keeps the tabs; the failure tail on a broken setup; a parked workspace waking
 only on a prompt; delete; account isolation; and **New agent → Cloud** with
 past results still readable. `docs/managoat.md` describes Cloud workspaces.
@@ -251,4 +266,4 @@ past results still readable. `docs/managoat.md` describes Cloud workspaces.
 Sharing a workspace with a team or another person (Managoat refuses it; see
 #1002). Copying or forking a workspace. Uploading local uncommitted work.
 Changing a workspace's vault after create. Isolation between tabs in one
-workspace. A runtime per tab. The account event stream instead of polling.
+workspace. Saving diffs before a rebuild. The account event stream instead of polling.
