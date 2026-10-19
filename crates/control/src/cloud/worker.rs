@@ -1,5 +1,8 @@
 //! Durable, bounded reconciliation steps. Browser connections never own work.
-use crate::{App, db::cloud::Job};
+use crate::{
+    App,
+    db::cloud::{CloudWorkspaceJob, Job},
+};
 use anyhow::{Context, Result, bail};
 use reqwest::Method;
 use serde_json::{Value, json};
@@ -27,6 +30,11 @@ async fn tick_at(app: &App, now: u64) -> Result<()> {
     let Some(_) = &app.cloud else {
         return Ok(());
     };
+    let run = tick_run(app, now).await;
+    tick_cloud_workspace(app, now).await.and(run)
+}
+
+async fn tick_run(app: &App, now: u64) -> Result<()> {
     let Some(mut job) = app.db.claim_cloud_job(now)? else {
         return Ok(());
     };
@@ -351,6 +359,222 @@ async fn step(app: &App, job: &mut Job, now: u64) -> Result<()> {
     }
 }
 
+/// How soon a Cloud workspace's job runs again: soon while it's being set up
+/// or deleted, then often enough to see it park, wake or fall behind.
+const CLOUD_WORKSPACE_BUSY_MS: u64 = 3_000;
+const CLOUD_WORKSPACE_SETTLED_MS: u64 = 15_000;
+
+async fn tick_cloud_workspace(app: &App, now: u64) -> Result<()> {
+    let Some(mut job) = app.db.claim_cloud_workspace_job(now)? else {
+        return Ok(());
+    };
+    if let Err(error) = step_cloud_workspace(app, &mut job, now).await {
+        // A refused create made nothing. 408, 429 and 5xx (fleet_full among
+        // them) may have, or may yet: those reconcile.
+        let rejected = error
+            .downcast_ref::<super::provider::HttpFailure>()
+            .is_some_and(|e| e.1 == Method::POST && (400..500).contains(&e.0) && !matches!(e.0, 408 | 429));
+        if rejected && job.execution.stage.ends_with("_creating") {
+            job.execution.stage = "rejected".into();
+            fail(&mut job, "Managoat refused to set up this Cloud workspace.");
+            return save_cloud_workspace(app, &job, now);
+        }
+        app.db.checkpoint_cloud_workspace_job(&job, Some(now + 10_000))?;
+        tracing::warn!(cloud_workspace = %job.cloud_workspace.id, %error, "cloud workspace will reconcile");
+    }
+    Ok(())
+}
+
+fn save_cloud_workspace(app: &App, job: &CloudWorkspaceJob, now: u64) -> Result<()> {
+    let settled = job.execution.stage == "live" && job.cloud_workspace.status != "provisioning" && !job.deleting;
+    let wait = if settled || matches!(job.execution.stage.as_str(), "rejected" | "lost") {
+        CLOUD_WORKSPACE_SETTLED_MS
+    } else {
+        CLOUD_WORKSPACE_BUSY_MS
+    };
+    app.db.checkpoint_cloud_workspace_job(job, Some(now + wait))
+}
+
+fn fail(job: &mut CloudWorkspaceJob, error: &str) {
+    job.cloud_workspace.status = "failed".into();
+    job.cloud_workspace.error = Some(error.into());
+}
+
+/// Take in what Managoat says of its workspace. `error` is its failing step
+/// and the end of what that printed, already redacted; the end is kept.
+fn observe(job: &mut CloudWorkspaceJob, workspace: &Value) {
+    let w = &mut job.cloud_workspace;
+    if let Some(status @ ("provisioning" | "ready" | "failed")) = workspace["status"].as_str() {
+        w.status = status.into();
+    }
+    let text = |key: &str| workspace[key].as_str().map(str::to_owned);
+    w.sandbox_status = text("sandbox_status");
+    w.error = text("error").map(|mut error| {
+        if error.len() > 16_000 {
+            let mut start = error.len() - 16_000;
+            while !error.is_char_boundary(start) {
+                start += 1;
+            }
+            error = error.split_off(start);
+        }
+        error
+    });
+    w.revision = text("revision");
+    w.built_from_revision = text("built_from_revision");
+    w.stale = workspace["stale"].as_bool().unwrap_or(false);
+    w.changed_fields = workspace["changed_fields"]
+        .as_array()
+        .map(|fields| fields.iter().filter_map(|f| f.as_str().map(str::to_owned)).collect())
+        .unwrap_or_default();
+}
+
+/// Create (environment, vault and its secrets, workspace), then poll, then
+/// delete (workspace, vault, environment). Each create is journalled before
+/// Managoat is asked, and found again after a lost response.
+async fn step_cloud_workspace(app: &App, job: &mut CloudWorkspaceJob, now: u64) -> Result<()> {
+    let cloud = app.cloud.as_ref().context("cloud is disabled")?;
+    let p = &cloud.provider;
+    let id = job.cloud_workspace.id.clone();
+    let stage = job.execution.stage.clone();
+    // Never forget an in-flight creation: a `_creating` stage finds what it
+    // made first, and goes on to delete from there.
+    if job.deleting && !stage.ends_with("_creating") && !stage.starts_with("delete_") {
+        job.execution.stage = "delete_workspace".into();
+        return save_cloud_workspace(app, job, now);
+    }
+    let not_made = |job: &mut CloudWorkspaceJob, retry: &str| {
+        job.execution.stage = if job.deleting { "delete_workspace" } else { retry }.into();
+    };
+    match stage.as_str() {
+        "" => {
+            job.execution.stage = "environment_creating".into();
+            app.db.checkpoint_cloud_workspace_job(job, None)?;
+            let mut body = job.cloud_workspace.saved_spec.environment();
+            body["name"] = json!(id);
+            body["metadata"] = json!({"arugula_workspace": id});
+            let environment = p.create_value("environments", body).await?;
+            environment_made(job, &environment);
+            save_cloud_workspace(app, job, now)
+        }
+        "environment_creating" => {
+            match p.find_cloud_workspace_resource("environments", &id).await? {
+                Some(environment) => environment_made(job, &environment),
+                None => not_made(job, ""),
+            }
+            save_cloud_workspace(app, job, now)
+        }
+        "environment_ready" => {
+            job.execution.stage = "vault_creating".into();
+            app.db.checkpoint_cloud_workspace_job(job, None)?;
+            let vault = p.create("vaults", json!({"name": id, "metadata": {"arugula_workspace": id}})).await?;
+            job.execution.vault = Some(vault);
+            job.execution.stage = "vault_ready".into();
+            save_cloud_workspace(app, job, now)
+        }
+        "vault_creating" => {
+            match p.find_cloud_workspace_resource("vaults", &id).await? {
+                Some(vault) => {
+                    job.execution.vault = vault["id"].as_str().map(str::to_owned);
+                    job.execution.stage = "vault_ready".into();
+                }
+                None => not_made(job, "environment_ready"),
+            }
+            save_cloud_workspace(app, job, now)
+        }
+        "vault_ready" => {
+            let vault = job.execution.vault.clone().context("missing vault")?;
+            let next = job
+                .cloud_workspace
+                .saved_spec
+                .secret_names()
+                .into_iter()
+                .find(|name| !job.execution.secrets_uploaded.contains(name));
+            if let Some(name) = next {
+                let Some(sealed) = app.db.cloud_secret(&job.account, &name)? else {
+                    job.execution.stage = "rejected".into();
+                    fail(
+                        job,
+                        &format!(
+                            "The secret {name} was deleted before this Cloud workspace was set up. Delete it and create it again."
+                        ),
+                    );
+                    return save_cloud_workspace(app, job, now);
+                };
+                let cipher = cloud.secret_cipher.as_ref().context("cloud secrets key is unavailable")?;
+                let value = cipher.open(&job.account, &name, &sealed)?;
+                p.put_vault_secret(&vault, &name, &value).await?;
+                job.execution.secrets_uploaded.push(name);
+                return save_cloud_workspace(app, job, now);
+            }
+            let environment = job.execution.environment.clone().context("missing environment")?;
+            job.execution.stage = "workspace_creating".into();
+            app.db.checkpoint_cloud_workspace_job(job, None)?;
+            let workspace = p.create_workspace(&id, &environment, &vault).await?;
+            workspace_made(job, &workspace);
+            save_cloud_workspace(app, job, now)
+        }
+        "workspace_creating" => {
+            let environment = job.execution.environment.clone().context("missing environment")?;
+            match p.find_workspace(&id, &environment).await? {
+                Some(workspace) => workspace_made(job, &workspace),
+                None => not_made(job, "vault_ready"),
+            }
+            save_cloud_workspace(app, job, now)
+        }
+        "live" => {
+            let workspace = job.execution.workspace.clone().context("missing workspace")?;
+            match p.workspace(&workspace).await {
+                Ok(workspace) => observe(job, &workspace),
+                Err(e) if e.downcast_ref::<super::provider::HttpFailure>().is_some_and(|e| e.0 == 404) => {
+                    job.execution.stage = "lost".into();
+                    fail(job, "Managoat no longer has this Cloud workspace. Delete it and create it again.");
+                }
+                Err(e) => return Err(e),
+            }
+            save_cloud_workspace(app, job, now)
+        }
+        // Nothing to read: only a delete moves these on.
+        "rejected" | "lost" => save_cloud_workspace(app, job, now),
+        "delete_workspace" => {
+            if let Some(workspace) = &job.execution.workspace {
+                p.remove("workspaces", workspace).await?;
+            }
+            job.execution.workspace = None;
+            job.execution.stage = "delete_vault".into();
+            save_cloud_workspace(app, job, now)
+        }
+        // Managoat refuses (409) while its workspace still names it: retried.
+        "delete_vault" => {
+            if let Some(vault) = &job.execution.vault {
+                p.remove("vaults", vault).await?;
+            }
+            job.execution.vault = None;
+            job.execution.stage = "delete_environment".into();
+            save_cloud_workspace(app, job, now)
+        }
+        "delete_environment" => {
+            if let Some(environment) = &job.execution.environment {
+                p.remove("environments", environment).await?;
+            }
+            job.execution.environment = None;
+            app.db.finish_cloud_workspace_delete(job, now)
+        }
+        _ => bail!("unknown cloud workspace stage"),
+    }
+}
+
+fn environment_made(job: &mut CloudWorkspaceJob, environment: &Value) {
+    job.execution.environment = environment["id"].as_str().map(str::to_owned);
+    job.saved_revision = environment["revision"].as_str().map(str::to_owned);
+    job.execution.stage = "environment_ready".into();
+}
+
+fn workspace_made(job: &mut CloudWorkspaceJob, workspace: &Value) {
+    job.execution.workspace = workspace["id"].as_str().map(str::to_owned);
+    observe(job, workspace);
+    job.execution.stage = "live".into();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,6 +598,22 @@ mod tests {
         truncate_diff: bool,
         binary_diff: bool,
         failed_turn: bool,
+        // Cloud workspaces.
+        vault: Option<Value>,
+        workspace: Option<Value>,
+        /// Collections whose next create succeeds but loses its response.
+        lose: Vec<&'static str>,
+        workspace_reads: u32,
+        failed_setup: bool,
+        vault_in_use_once: bool,
+    }
+
+    impl Fake {
+        fn lost(&mut self, collection: &str) -> bool {
+            let lost = self.lose.contains(&collection);
+            self.lose.retain(|c| *c != collection);
+            lost
+        }
     }
 
     async fn handle(
@@ -392,19 +632,72 @@ mod tests {
             ("POST", "/api/environments") => {
                 let mut environment = value.clone();
                 environment["id"] = json!("env1");
-                fake.environment = Some(environment);
-                if fake.lose_create_response {
+                environment["revision"] = json!("rev1");
+                fake.environment = Some(environment.clone());
+                if fake.lose_create_response || fake.lost("environments") {
                     fake.lose_create_response = false;
                     return StatusCode::BAD_GATEWAY.into_response();
                 }
-                json!({"id":"env1"})
+                environment
+            }
+            ("PATCH", "/api/environments/env1") => json!({"id":"env1","revision":"rev2"}),
+            ("POST", "/api/vaults") => {
+                let mut vault = value.clone();
+                vault["id"] = json!("vault1");
+                fake.vault = Some(vault.clone());
+                if fake.lost("vaults") {
+                    return StatusCode::GATEWAY_TIMEOUT.into_response();
+                }
+                vault
+            }
+            ("GET", "/api/vaults") => json!(fake.vault.iter().collect::<Vec<_>>()),
+            ("POST", "/api/vaults/vault1/secrets") => json!({"key":value["key"]}),
+            ("POST", "/api/workspaces") => {
+                let workspace = json!({
+                    "id":"ws1","name":value["name"],"environment_id":value["environment_id"],"vault_id":value["vault_id"],
+                    "status":"provisioning","error":null,"sandbox_status":"pending","revision":"rev1",
+                    "built_from_revision":null,"stale":false,"changed_fields":[],
+                });
+                fake.workspace = Some(workspace.clone());
+                if fake.lost("workspaces") {
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                }
+                workspace
+            }
+            ("GET", "/api/workspaces") => json!(fake.workspace.iter().collect::<Vec<_>>()),
+            ("GET", "/api/workspaces/ws1") => {
+                let failed = fake.failed_setup;
+                fake.workspace_reads += 1;
+                let reads = fake.workspace_reads;
+                let Some(workspace) = fake.workspace.as_mut() else {
+                    return StatusCode::NOT_FOUND.into_response();
+                };
+                // Set up on the second read.
+                if reads >= 2 && failed {
+                    workspace["status"] = json!("failed");
+                    workspace["sandbox_status"] = Value::Null;
+                    workspace["error"] = json!("setup_script exited 1: npm ERR! missing script: build");
+                } else if reads >= 2 {
+                    workspace["status"] = json!("ready");
+                    workspace["sandbox_status"] = json!("ready");
+                    workspace["built_from_revision"] = json!("rev1");
+                }
+                workspace.clone()
+            }
+            ("DELETE", "/api/workspaces/ws1") => {
+                fake.workspace = None;
+                return StatusCode::NO_CONTENT.into_response();
+            }
+            ("DELETE", "/api/vaults/vault1") if fake.vault_in_use_once => {
+                fake.vault_in_use_once = false;
+                return StatusCode::CONFLICT.into_response();
             }
             ("GET", "/api/environments") => {
                 if fake.deny_lookup_once {
                     fake.deny_lookup_once = false;
                     return StatusCode::UNAUTHORIZED.into_response();
                 }
-                json!([fake.environment])
+                json!(fake.environment.iter().collect::<Vec<_>>())
             }
             ("POST", "/api/environments/env1/secrets") => json!({"key":value["key"]}),
             ("POST", "/api/agents") => json!({"id":"agent1"}),
@@ -509,6 +802,172 @@ mod tests {
             fake.lock().unwrap().calls.iter().filter(|(m, p, _)| m == "POST" && p == "/api/environments").count(),
             1
         );
+        server.abort();
+    }
+
+    async fn serve(scenario: Fake) -> (Arc<App>, Arc<Mutex<Fake>>, tokio::task::JoinHandle<()>) {
+        let fake = Arc::new(Mutex::new(scenario));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let router = Router::new().fallback(handle).with_state(fake.clone());
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let mut app = crate::cloud::tests::test_app();
+        Arc::get_mut(&mut app).unwrap().cloud.as_mut().unwrap().provider =
+            crate::cloud::provider::Provider::new(&base, "mock-key".into()).unwrap();
+        (app, fake, server)
+    }
+
+    fn cloud_workspace(app: &App) -> crate::db::cloud::CloudWorkspace {
+        let cipher = app.cloud.as_ref().unwrap().secret_cipher.as_ref().unwrap();
+        app.db
+            .put_cloud_secret("a", "GITHUB_TOKEN", &cipher.seal("a", "GITHUB_TOKEN", "repo-secret").unwrap())
+            .unwrap();
+        let mut spec: crate::db::cloud::CloudWorkspaceSpec = serde_json::from_value(json!({
+            "name":"App box",
+            "repositories":[{"url":"https://github.com/example/app","secret":"GITHUB_TOKEN"},
+                            {"url":"https://github.com/example/api","ref":"main","mount":"/work/api"}],
+            "packages":{"apt":["ffmpeg"]},
+            "setup_script":"cd /home/sprite/app && npm ci",
+        }))
+        .unwrap();
+        spec.normalize().unwrap();
+        app.db.create_cloud_workspace("a", "request", &spec, 0).unwrap()
+    }
+
+    fn posts(fake: &Mutex<Fake>, path: &str) -> usize {
+        fake.lock().unwrap().calls.iter().filter(|(m, p, _)| m == "POST" && p == path).count()
+    }
+
+    /// Run the worker for `ticks` seconds of its clock, from `from`.
+    async fn run(app: &App, from: u64, ticks: u64) {
+        for i in 0..ticks {
+            tick_at(app, from + i * 1_000).await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn cloud_workspace_is_set_up_and_reaches_ready() {
+        let (app, fake, server) = serve(Fake::default()).await;
+        let created = cloud_workspace(&app);
+        run(&app, 0, 60).await;
+        let saved = app.db.cloud_workspace("a", &created.id).unwrap().unwrap();
+        assert_eq!(saved.status, "ready");
+        assert_eq!(saved.sandbox_status.as_deref(), Some("ready"));
+        assert_eq!(saved.built_from_revision.as_deref(), Some("rev1"));
+        assert_eq!(saved.built_spec.as_ref(), Some(&saved.saved_spec));
+        assert!(app.db.cloud_workspace("b", &created.id).unwrap().is_none());
+        let fake = fake.lock().unwrap();
+        let at = |m: &str, p: &str| fake.calls.iter().position(|(cm, cp, _)| cm == m && cp == p).unwrap();
+        let (environment, vault) = (at("POST", "/api/environments"), at("POST", "/api/vaults"));
+        let (secret, workspace) = (at("POST", "/api/vaults/vault1/secrets"), at("POST", "/api/workspaces"));
+        assert!(environment < vault && vault < secret && secret < workspace);
+        let body = &fake.calls[environment].2;
+        assert_eq!(body["name"], created.id);
+        assert_eq!(body["metadata"]["arugula_workspace"], created.id);
+        assert_eq!(body["repositories"][0]["mount_path"], "/home/sprite/app");
+        assert_eq!(body["repositories"][0]["secret_key"], "GITHUB_TOKEN");
+        assert_eq!(body["repositories"][1]["ref"], "main");
+        assert_eq!(body["packages"]["apt"], json!(["ffmpeg"]));
+        assert_eq!(fake.calls[vault].2["metadata"]["arugula_workspace"], created.id);
+        assert_eq!(fake.calls[secret].2, json!({"key":"GITHUB_TOKEN","value":"repo-secret"}));
+        assert_eq!(fake.calls[workspace].2, json!({"name":created.id,"environment_id":"env1","vault_id":"vault1"}));
+        for path in ["/api/environments", "/api/vaults", "/api/workspaces", "/api/vaults/vault1/secrets"] {
+            assert_eq!(fake.calls.iter().filter(|(m, p, _)| m == "POST" && p == path).count(), 1, "{path}");
+        }
+        drop(fake);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn lost_cloud_workspace_create_responses_are_found_not_repeated() {
+        for lost in ["environments", "vaults", "workspaces"] {
+            let (app, fake, server) = serve(Fake { lose: vec![lost], ..Default::default() }).await;
+            let created = cloud_workspace(&app);
+            run(&app, 0, 120).await;
+            assert_eq!(app.db.cloud_workspace("a", &created.id).unwrap().unwrap().status, "ready", "{lost}");
+            for path in ["/api/environments", "/api/vaults", "/api/workspaces"] {
+                assert_eq!(posts(&fake, path), 1, "{lost}: {path}");
+            }
+            assert!(fake.lock().unwrap().calls.iter().any(|(m, p, _)| m == "GET" && p == &format!("/api/{lost}")));
+            server.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_setup_keeps_managoats_error() {
+        let (app, _fake, server) = serve(Fake { failed_setup: true, ..Default::default() }).await;
+        let created = cloud_workspace(&app);
+        run(&app, 0, 60).await;
+        let saved = app.db.cloud_workspace("a", &created.id).unwrap().unwrap();
+        assert_eq!(saved.status, "failed");
+        assert_eq!(saved.error.as_deref(), Some("setup_script exited 1: npm ERR! missing script: build"));
+        assert_eq!(saved.sandbox_status, None);
+        assert!(saved.built_spec.is_none());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn cloud_workspace_delete_survives_a_restart_part_way() {
+        let (app, fake, server) = serve(Fake { vault_in_use_once: true, ..Default::default() }).await;
+        let created = cloud_workspace(&app);
+        run(&app, 0, 60).await;
+        assert!(app.db.delete_cloud_workspace("a", &created.id).unwrap());
+        assert!(!app.db.delete_cloud_workspace("b", &created.id).unwrap());
+        assert_eq!(app.db.cloud_workspace("a", &created.id).unwrap().unwrap().status, "deleting");
+        // Up to the workspace's delete, then a worker dies holding the job.
+        let mut now = 60_000;
+        while !fake.lock().unwrap().calls.iter().any(|(m, p, _)| m == "DELETE" && p == "/api/workspaces/ws1") {
+            tick_at(&app, now).await.unwrap();
+            now += 1_000;
+            assert!(now < 200_000, "the workspace was never deleted");
+        }
+        now += 3_000;
+        let held = app.db.claim_cloud_workspace_job(now).unwrap().unwrap();
+        assert_eq!(held.execution.stage, "delete_vault");
+        drop(held);
+        let calls = fake.lock().unwrap().calls.len();
+        run(&app, now, 60).await;
+        assert_eq!(fake.lock().unwrap().calls.len(), calls, "the lease still holds");
+        assert_eq!(app.db.cloud_workspace("a", &created.id).unwrap().unwrap().status, "deleting");
+        // The restarted worker takes it up once the lease runs out, and a
+        // vault Managoat still counts as in use is tried again.
+        run(&app, now + 121_000, 60).await;
+        assert!(app.db.cloud_workspace("a", &created.id).unwrap().is_none());
+        assert!(app.db.cloud_workspaces("a").unwrap().is_empty());
+        let fake = fake.lock().unwrap();
+        for path in ["/api/workspaces/ws1", "/api/vaults/vault1", "/api/environments/env1"] {
+            assert!(fake.calls.iter().any(|(m, p, _)| m == "DELETE" && p == path), "{path}");
+        }
+        let deletes =
+            fake.calls.iter().filter(|(m, _, _)| m == "DELETE").map(|(_, p, _)| p.as_str()).collect::<Vec<_>>();
+        assert_eq!(deletes.last(), Some(&"/api/environments/env1"));
+        drop(fake);
+        assert!(app.db.claim_cloud_workspace_job(u64::MAX / 2).unwrap().is_none());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn delete_during_a_lost_create_cleans_up_what_was_made() {
+        let (app, fake, server) = serve(Fake { lose: vec!["environments"], ..Default::default() }).await;
+        let created = cloud_workspace(&app);
+        tick_at(&app, 0).await.unwrap();
+        app.db.delete_cloud_workspace("a", &created.id).unwrap();
+        run(&app, 20_000, 60).await;
+        assert!(app.db.cloud_workspace("a", &created.id).unwrap().is_none());
+        assert_eq!(posts(&fake, "/api/environments"), 1);
+        assert_eq!(posts(&fake, "/api/vaults"), 0);
+        assert_eq!(posts(&fake, "/api/workspaces"), 0);
+        assert!(fake.lock().unwrap().calls.iter().any(|(m, p, _)| m == "DELETE" && p == "/api/environments/env1"));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn environment_update_is_a_partial_patch() {
+        let (app, fake, server) = serve(Fake::default()).await;
+        let provider = &app.cloud.as_ref().unwrap().provider;
+        let updated = provider.update_environment("env1", json!({"packages":{"apt":["jq"]}})).await.unwrap();
+        assert_eq!(updated["revision"], "rev2");
+        assert_eq!(fake.lock().unwrap().calls[0].0, "PATCH");
         server.abort();
     }
 

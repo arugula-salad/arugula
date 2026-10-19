@@ -509,6 +509,8 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/cloud/runs/{id}/requests/{request}", post(cloud::answer))
         .route("/api/cloud/runs/{id}/cancel", post(cloud::cancel_run))
         .route("/api/cloud/runs/{id}/events", get(cloud::events))
+        .route("/api/cloud/workspaces", get(cloud::workspaces::list).post(cloud::workspaces::create))
+        .route("/api/cloud/workspaces/{id}", get(cloud::workspaces::show).delete(cloud::workspaces::delete))
         .route("/api/cloud/import", post(cloud::migration::import))
         .route("/api/cloud/agents", get(cloud::catalog).post(cloud::create_agent))
         .route("/api/cloud/agents/{id}", axum::routing::put(cloud::update_agent).delete(cloud::delete_agent))
