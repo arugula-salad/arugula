@@ -217,7 +217,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {state && <NewMachineNote />}
       {state && <AgentsNudge client={client} />}
       {main}
-      {phone && state && state.sessions.length > 0 && client.panes.has(client.active() ?? -1) && <KeyBar client={client} />}
+      {phone && !cloudWs && state && state.sessions.length > 0 && client.panes.has(client.active() ?? -1) && <KeyBar client={client} />}
       <MenuLayer />
       <PromptLayer />
       <ThreadLayer phone={phone} />
