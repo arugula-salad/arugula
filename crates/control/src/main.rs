@@ -515,7 +515,10 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/cloud/runs/{id}/cancel", post(cloud::cancel_run))
         .route("/api/cloud/runs/{id}/events", get(cloud::events))
         .route("/api/cloud/workspaces", get(cloud::workspaces::list).post(cloud::workspaces::create))
-        .route("/api/cloud/workspaces/{id}", get(cloud::workspaces::show).delete(cloud::workspaces::delete))
+        .route(
+            "/api/cloud/workspaces/{id}",
+            get(cloud::workspaces::show).patch(cloud::workspaces::update).delete(cloud::workspaces::delete),
+        )
         .route("/api/cloud/workspaces/{id}/tabs", get(cloud::tabs::list).post(cloud::tabs::open))
         .route("/api/cloud/workspaces/{id}/tabs/{tab}", get(cloud::tabs::show).delete(cloud::tabs::close))
         .route("/api/cloud/workspaces/{id}/tabs/{tab}/prompt", post(cloud::tabs::prompt))

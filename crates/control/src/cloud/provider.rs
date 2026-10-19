@@ -207,13 +207,11 @@ impl Provider {
         self.request(Method::POST, &["api", "vaults", vault, "secrets"], Some(json!({"key":key,"value":value}))).await
     }
 
-    #[allow(dead_code)] // M117: a secret taken off a Cloud workspace's settings.
     pub async fn delete_vault_secret(&self, vault: &str, key: &str) -> Result<Value> {
         self.request(Method::DELETE, &["api", "vaults", vault, "secrets", key], None).await
     }
 
     /// A partial update: the fields sent replace those fields only.
-    #[allow(dead_code)] // M117: saving a Cloud workspace's settings.
     pub async fn update_environment(&self, id: &str, body: Value) -> Result<Value> {
         self.request(Method::PATCH, &["api", "environments", id], Some(body)).await
     }

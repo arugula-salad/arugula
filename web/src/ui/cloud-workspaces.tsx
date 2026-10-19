@@ -12,6 +12,7 @@ import {
 } from "../cloud";
 import { ConfirmRemove } from "./confirm";
 import { CloudTranscript, useCloudConversation } from "./cloud";
+import { CloudWorkspaceSettings } from "./cloud-workspace-settings";
 
 /** Re-render on the store and the route; returns the route. */
 export function useCloudWorkspaces() {
@@ -336,6 +337,7 @@ function CloudWorkspaceHome({ w }: { w: CloudWorkspace }) {
         <p class="dim">None: tabs start in /home/sprite.</p>
       )}
       {(spec.packages.apt?.length || spec.packages.npm?.length) ? <p>Packages: {[...(spec.packages.apt ?? []).map((p) => `apt ${p}`), ...(spec.packages.npm ?? []).map((p) => `npm ${p}`)].join(", ")}</p> : null}
+      <CloudWorkspaceSettings w={w} />
       <h3>Tabs</h3>
       {tabs.length ? (
         <ul class="cloud-ws-tabs">{tabs.map((t) => <li key={t.id}><button onClick={() => cloudWorkspaces.open(w.id, t.id)}>{tabName(t)}</button> <span class="dim">{t.status.replaceAll("_", " ")} · {t.cwd}</span></li>)}</ul>
