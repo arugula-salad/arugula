@@ -25,6 +25,7 @@ import { GateWhy } from "./gate-why";
 import { PointChoices, pointOf } from "./point-choices";
 import { shareSession } from "./people";
 import { accountHeader, useAccount } from "./app-bar";
+import { docShareItems } from "./doc-share";
 
 export function PhoneHeader({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
@@ -247,6 +248,16 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
                 Agents
               </button>
             )}
+            {active !== undefined &&
+              owner &&
+              client.info(active)?.type === "doc" &&
+              docShareItems(client, active).map((i) =>
+                typeof i === "string" || "header" in i ? null : (
+                  <button key={i.label} data-doc-share={i.label} disabled={i.disabled} title={i.hint} onClick={act(i.run)}>
+                    {i.label}
+                  </button>
+                ),
+              )}
             {active !== undefined && owner && (
               <button data-changes onClick={act(() => openChanges(client, active))}>
                 Changes

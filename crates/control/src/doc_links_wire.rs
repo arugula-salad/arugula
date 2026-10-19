@@ -803,3 +803,22 @@ async fn served_bytes_count_once_and_an_update_replaces_its_own() {
     }
     assert_eq!(c.put(&d, &id(151), 1, 10, b"x").await.1["reason"], "quota");
 }
+
+/// A page that began on one version asks for its parts by it (`?v=`), so an
+/// Update landing mid-load is a 404 it can restart from, never a mix.
+#[tokio::test]
+async fn a_part_asked_for_by_version_is_a_404_once_another_is_served() {
+    let c = control(|_| {}).await;
+    let d = daemon(&c.app, "a1", "geek");
+    let link = id(90);
+    c.share(&d, &link, 1, &[b"one", b"two"]).await;
+    assert_eq!(c.view(&format!("/{link}/data/0?v=1")).await.bytes().await.unwrap().as_ref(), b"one");
+    assert_eq!(c.view(&format!("/{link}/data/0")).await.status(), 200, "no ?v= is the served version");
+    for bad in ["v=2", "v=0", "v=x", "v="] {
+        assert_eq!(c.view(&format!("/{link}/data/0?{bad}")).await.status(), 404, "{bad}");
+    }
+    assert_eq!(c.view(&format!("/{link}/data/meta?v=2")).await.status(), 200, "meta says which is served");
+    c.share(&d, &link, 2, &[b"new"]).await;
+    assert_eq!(c.view(&format!("/{link}/data/0?v=1")).await.status(), 404);
+    assert_eq!(c.view(&format!("/{link}/data/0?v=2")).await.bytes().await.unwrap().as_ref(), b"new");
+}

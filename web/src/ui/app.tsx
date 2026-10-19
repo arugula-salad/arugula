@@ -23,6 +23,7 @@ import { ControlRequests, ShareDialog } from "./people";
 import { directory } from "../hosts";
 import { DeveloperLayer } from "./developer";
 import { RulesLayer } from "./rules";
+import { DocShareLayer } from "./doc-share";
 import { startAgent } from "./agent-dialog";
 import { ConversationsLayer } from "./conversations";
 import { PickerLayer } from "./picker";
@@ -137,6 +138,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
       <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
       <RulesLayer />
+      <DocShareLayer />
       <DeveloperLayer />
       <PickerLayer />
       <PaletteLayer />
@@ -228,6 +230,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
       <InLabs on={client.flag("vms")}>{(l) => <l.SandboxesLayer />}</InLabs>
       <RulesLayer />
+      <DocShareLayer />
       <DeveloperLayer />
       <PickerLayer />
       <PaletteLayer />

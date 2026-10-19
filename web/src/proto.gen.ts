@@ -701,6 +701,11 @@ ide: string, };
 export type Dir = "row" | "column";
 
 /**
+ * `GET /api/doc-links/ID` (#1066): a shared Doc's URL, with its key.
+ */
+export type DocLinkUrl = { url: string, };
+
+/**
  * An agent's write, waiting for a person.
  */
 export type Draft = { id: string, 
@@ -2395,6 +2400,8 @@ export const OPS = {
   "conv.unlink": { method: "POST", path: "/api/convs/{id}/links/close" },
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
   "conversations.list": { method: "GET", path: "/api/conversations" },
+  "doc_link.delete": { method: "DELETE", path: "/api/doc-links/{id}" },
+  "doc_link.get": { method: "GET", path: "/api/doc-links/{id}" },
   "flag.set": { method: "PUT", path: "/api/flags/{name}" },
   "flags.list": { method: "GET", path: "/api/flags" },
   "fs.list": { method: "GET", path: "/api/fs/list" },

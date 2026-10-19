@@ -13,6 +13,7 @@ mod acl;
 mod close;
 mod conversations;
 mod convs;
+mod doc_links;
 mod flags;
 mod fs;
 mod hosts;

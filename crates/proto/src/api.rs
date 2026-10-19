@@ -734,6 +734,13 @@ pub struct SyncedRotated {
     pub key: u32,
 }
 
+/// `GET /api/doc-links/ID` (#1066): a shared Doc's URL, with its key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DocLinkUrl {
+    pub url: String,
+}
+
 /// What a route answers when it has nothing to say: `{}`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Empty {}

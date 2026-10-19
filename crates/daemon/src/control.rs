@@ -706,6 +706,11 @@ pub fn auth_header(keys: &DeviceKeys, method: &str, path_and_query: &str, body: 
 
 pub(crate) const AUTH: &str = "x-arugula-auth";
 
+/// What sharing a Doc says when this machine isn't in control, or its
+/// control doesn't keep shared Docs (#1064).
+pub const DOC_NOT_JOINED: &str = "this machine hasn't joined control: sharing needs control";
+pub const DOC_NO_LINKS: &str = "this control can't keep shared Docs yet";
+
 impl Control {
     pub fn new(
         state_dir: &Path,
@@ -1564,6 +1569,51 @@ impl Control {
             return Err(v["error"].as_str().map_or_else(|| format!("control said {status}"), str::to_owned));
         }
         Ok(serde_json::from_value(v).unwrap_or_default())
+    }
+
+    /// Where shared Docs are opened (#1064), from control's `/control.json`
+    /// when it keeps them. The refusals say what to do.
+    pub async fn doc_viewer(&self) -> Result<String, String> {
+        let e = self.enrolled().ok_or(DOC_NOT_JOINED)?;
+        let at = format!("{}{}", e.saved.url.trim_end_matches('/'), wire::CONTROL_JSON);
+        let docs: wire::ControlDocs = self
+            .http
+            .get(at)
+            .send()
+            .await
+            .map_err(|e| format!("can't reach control: {e}"))?
+            .json()
+            .await
+            .map_err(|_| DOC_NO_LINKS.to_owned())?;
+        match (docs.doc_links, docs.doc_viewer) {
+            (Some(_), Some(v)) if !v.is_empty() => Ok(v.trim_end_matches('/').to_owned()),
+            _ => Err(DOC_NO_LINKS.into()),
+        }
+    }
+
+    /// A signed call about a shared Doc (`/api/doc-links/…`): the status and
+    /// the JSON control answered. `body` is signed over exactly as sent.
+    pub async fn doc_call(&self, method: &str, path: &str, body: Vec<u8>) -> Result<(u16, serde_json::Value), String> {
+        let e = self.enrolled().ok_or(DOC_NOT_JOINED)?;
+        let m = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?;
+        let kind = if method == "POST" { "application/json" } else { "application/octet-stream" };
+        let res = self
+            .http
+            .request(m, format!("{}{path}", e.saved.url))
+            .header(AUTH, self.sign(&e, method, path, &body))
+            .header(reqwest::header::CONTENT_TYPE, kind)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| format!("can't reach control: {e}"))?;
+        let status = res.status().as_u16();
+        Ok((status, res.json().await.unwrap_or_default()))
+    }
+
+    /// The status of an anonymous GET, as a visitor's browser would see it.
+    pub async fn doc_probe(&self, url: &str) -> Result<u16, String> {
+        let res = self.http.get(url).send().await.map_err(|e| format!("can't reach control: {e}"))?;
+        Ok(res.status().as_u16())
     }
 
     /// A hosted sandbox's last session closed (M20): control deletes it.
