@@ -1,6 +1,7 @@
 //! Managed cloud execution, separate from the opaque terminal relay.
 //! The cloud service processes prompts and results; terminal relay encryption
 //! and device authorization remain unchanged.
+pub mod files;
 pub mod migration;
 pub mod notifications;
 pub mod provider;

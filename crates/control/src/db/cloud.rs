@@ -1145,6 +1145,21 @@ impl Db {
             .optional()?)
     }
 
+    /// The Managoat workspace behind one of the account's Cloud workspaces,
+    /// once Managoat has made it and until a delete is asked for.
+    pub fn cloud_workspace_machine(&self, account: &str, id: &str) -> Result<Option<String>> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT provider_id FROM cloud_workspaces
+                 WHERE account=?1 AND id=?2 AND deleted IS NULL AND status!='deleting'",
+                params![account, id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten())
+    }
+
     /// Ask the worker to delete it. Saying so again is harmless.
     pub fn delete_cloud_workspace(&self, account: &str, id: &str) -> Result<bool> {
         let mut conn = self.c();
