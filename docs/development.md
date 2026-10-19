@@ -70,6 +70,11 @@ needed*), and *web*, whose setup failed (*Retry* sets it up), plus a past
 run under *Cloud agents…*. Delete the state directory to make them again.
 With `DEV_CONTROL_CLOUD_FULL=1` too, Managoat has no machine free for a
 rebuild, so a Rebuild waits for a machine (with *Cancel*).
+`DEV_CONTROL_CHAT=1` turns on control's chat (M123): team *Acme*, with
+`$DEV_CONTROL_LOGIN` its owner and everyone in `DEV_CONTROL_LOGINS` a
+member (each with a headless device of their own that approves their
+browsers), the team's `chat` flag on, and on the first run *#general* and
+a DM with a few messages.
 
 `just dev-browser [--passkey] [--login NAME] [--profile DIR] URL [STEPS]`
 is a headless Chrome for a PR's screenshots of what dev-control shows:

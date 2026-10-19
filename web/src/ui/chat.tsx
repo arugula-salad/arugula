@@ -27,6 +27,7 @@ import { ThreadBody, type Quote } from "./threads";
 import { Avatar } from "./people";
 import { AppBar } from "./app-bar";
 import { ConvMembers, NewConv } from "./convs";
+import { RoomsView, useChat } from "./chat-rooms";
 
 /** A conversation's mark, beside a session's # and a pane's ↳. */
 export const CONV_SIGIL = "◇";
@@ -149,7 +150,11 @@ function goTo(s: Source, target: ThreadTarget, then?: (c: Client) => void) {
 export function ChatPage({ client }: { client: Client }) {
   useChatTick(client);
   const route = chatRoute();
-  const open = !!route && client.hasThreads();
+  // M123: chat is control's when its flag is on; the machines' own
+  // threads only while it isn't (until M125 takes them out).
+  const store = useChat();
+  if (store) return route ? <RoomsView client={client} route={route} store={store} /> : null;
+  const open = !!route && client.hasThreads() && !route.room;
   if (!open) return null;
   return <ChatView client={client} route={route!} />;
 }

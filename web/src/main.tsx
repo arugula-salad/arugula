@@ -34,7 +34,8 @@ import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
 import { setupDesktop } from "./desktop";
 import { installKeys } from "./ui/keys";
 import { openThread } from "./ui/threads";
-import { openChat } from "./ui/places";
+import { openChat, useChatOpen } from "./ui/places";
+import { chat } from "./chat-store";
 import { openDeveloper } from "./ui/developer";
 import { openGettingStarted, type Section } from "./ui/welcome";
 import { followMachine, machineTelemetryChanged, MachineTelemetryLayer } from "./ui/machine-telemetry";
@@ -107,6 +108,12 @@ if (session) {
       })),
       session.stale,
     );
+    // M123: chat is control's, once the account is in (it asks whether
+    // control's `chat` flag is on for it).
+    if (session.phase === "ready" && session.account) {
+      const roster = session.teams.flatMap((t) => t.roster.members.filter((m) => m.account === session.account).map((m) => m.name));
+      chat.start(session.account, [session.login, session.name, ...roster]);
+    }
   });
   void session.boot();
 }
@@ -217,10 +224,13 @@ function ControlRoot({ s }: { s: ControlSession }) {
   useEffect(() => { if (s.phase === "ready") return cloudPanes.connect(s.account); }, [s.phase, s.account]);
   useEffect(() => { if (s.phase === "ready") return cloudWorkspaces.connect(s.account); }, [s.phase, s.account]);
   useSubscribe((fn) => directory.subscribe(fn));
+  // M123: control's chat shows with no machine at all.
+  useSubscribe((fn) => chat.subscribe(fn));
+  const chatOpen = useChatOpen();
   const body =
     s.phase !== "ready" ? (
       <ControlGate s={s} />
-    ) : client.e2e || cloud || cloudWorkspaceRoute() ? (
+    ) : client.e2e || cloud || cloudWorkspaceRoute() || (chatOpen && chat.on) ? (
       <App key={client.base} client={client} cell={cell} />
     ) : s.daemons.length ? (
       // Machines, but none picked yet: not "Add a machine" (#749).
@@ -270,7 +280,7 @@ const fleetHosts = (): HostRef[] =>
     };
   });
 cloudPanes.subscribe(() => fleet.setCloudPanes(cloudFleet()));
-fleet.onOpen = (host, pane, share) => {
+fleet.onOpen = (host, pane, share, reveal) => {
   const tab = fleet.panes.find((p) => p.host === host && p.id === pane && p.cloudTab)?.cloudTab;
   if (tab) { cloudWorkspaces.open(tab.workspace, tab.tab); return; }
   directory.select(host);
@@ -281,6 +291,8 @@ fleet.onOpen = (host, pane, share) => {
     if (client.base === directory.base(host) && client.info(pane)) {
       client.setActive(pane);
       if (share) shareFrom(pane);
+      // A chat quote (M123): its lines in the pane, once it has drawn.
+      if (reveal) requestAnimationFrame(() => client.panes.get(pane)?.view.reveal(reveal));
       return;
     }
     if (Date.now() < until) setTimeout(go, 100);
@@ -484,6 +496,8 @@ Object.assign(window, {
     /** #17: the connections remote panes use, by host. */
     remotes,
     control: session,
+    /** M123: control's chat (rooms, messages, the live stream). */
+    chat,
     fleet,
     /** M26: made-up panes in the swarm (frame-rate check, screenshots). */
     swarmFake: (n: number) => fakeSwarm(fleet, n),

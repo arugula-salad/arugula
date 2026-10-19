@@ -12,6 +12,11 @@ import { CONV_MEMBERS_SEE, threadKey, type Invitable, type PaneId, type ThreadMs
 import { colorOf } from "./people";
 import type { MenuItem } from "./menu";
 import { Markup, mentionToken } from "./markup";
+// M123: with control's chat on, a pane's or session's thread is its room
+// there (./room); the daemon's threads below are for when it's off.
+import { chat, chatStore } from "../chat-store";
+import { useSubscribe } from "./hooks";
+import { RoomDrawer, closeRoomDrawer, openRoomDrawer } from "./room";
 
 export interface Quote {
   pane: PaneId;
@@ -24,13 +29,34 @@ const changed = () => listeners.forEach((fn) => fn());
 
 /** Show a thread, with output to quote in the next message. */
 export function openThread(client: Client, target: ThreadTarget, quote?: Quote) {
+  const machine = controlChat(client);
+  if (machine && !("conv" in target)) {
+    const pane = "pane" in target;
+    const id = pane ? target.pane : target.session;
+    void openRoomDrawer(machine, pane ? "pane" : "session", id, quote && { machine, pane: quote.pane, text: quote.text }, (s) => client.toast(s));
+    return;
+  }
   open = { client, target, quote };
   changed();
 }
 
 export function closeThread() {
+  closeRoomDrawer();
   open = null;
   changed();
+}
+
+/** The machine's id in control, when chat is control's (M123) and this
+ * client reaches the machine through it. */
+function controlChat(client: Client): string | null {
+  return chatStore() ? (client.e2e?.daemon.id ?? null) : null;
+}
+
+/** M123: a pane's unread in its room in control, as "3 new". */
+function roomUnreadLabel(machine: string, kind: "pane" | "session", id: number): string {
+  const r = chatStore()?.roomOf(machine, kind, id);
+  if (!r?.unread) return "";
+  return `${r.mentions ? "@ " : ""}${r.unread} new`;
 }
 
 /** "3 new", "@ 2 new", or nothing. */
@@ -42,6 +68,15 @@ function unreadLabel(client: Client, target: ThreadTarget): string {
 
 /** The pane menu's thread items. */
 export function threadItems(client: Client, pane: PaneId): MenuItem[] {
+  const machine = controlChat(client);
+  if (machine) {
+    const n = roomUnreadLabel(machine, "pane", pane);
+    const selected = client.panes.get(pane)?.view.selection().trim() ?? "";
+    return [
+      { label: n ? `Thread (${n})` : "Thread", run: () => openThread(client, { pane }) },
+      { label: "Quote selection in thread", disabled: !selected, run: () => openThread(client, { pane }, { pane, text: selected }) },
+    ];
+  }
   if (!client.hasThreads()) return [];
   const n = unreadLabel(client, { pane });
   const selected = client.panes.get(pane)?.view.selection().trim() ?? "";
@@ -61,6 +96,11 @@ export function threadItems(client: Client, pane: PaneId): MenuItem[] {
 
 /** The session menu's thread item. */
 export function sessionThreadItems(client: Client, session: number): MenuItem[] {
+  const machine = controlChat(client);
+  if (machine) {
+    const n = roomUnreadLabel(machine, "session", session);
+    return [{ label: n ? `Session thread (${n})` : "Session thread", run: () => openThread(client, { session }) }];
+  }
   if (!client.hasThreads()) return [];
   const n = unreadLabel(client, { session });
   return [{ label: n ? `Session thread (${n})` : "Session thread", run: () => openThread(client, { session }) }];
@@ -68,6 +108,24 @@ export function sessionThreadItems(client: Client, session: number): MenuItem[] 
 
 /** On a pane: its unread messages, or that it has a thread. */
 export function ThreadBadge({ client, pane }: { client: Client; pane: PaneId }) {
+  useSubscribe((fn) => chat.subscribe(fn));
+  const machine = controlChat(client);
+  if (machine) {
+    const u = chatStore()!.paneUnread(machine, pane);
+    if (!u.room) return null;
+    return (
+      <button
+        class={`thread-badge${u.unread ? " unread" : ""}${u.mention ? " mention" : ""}`}
+        title={u.unread ? `${u.unread} new in this pane's thread` : "This pane's thread"}
+        data-room-badge={u.room.id}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => openThread(client, { pane })}
+      >
+        <Bubble />
+        {u.unread ? <span>{u.mention ? `@ ${u.unread}` : u.unread}</span> : null}
+      </button>
+    );
+  }
   const s = client.thread({ pane });
   if (!s) return null;
   const n = s.unread ?? 0;
@@ -95,7 +153,7 @@ function Bubble() {
   );
 }
 
-export function ThreadLayer({ phone }: { phone: boolean }) {
+export function ThreadLayer({ phone, client }: { phone: boolean; client?: Client }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     const fn = () => setTick((t) => t + 1);
@@ -104,7 +162,7 @@ export function ThreadLayer({ phone }: { phone: boolean }) {
       listeners.delete(fn);
     };
   }, []);
-  if (!open) return null;
+  if (!open) return <RoomDrawer phone={phone} toast={(s) => client?.toast(s)} />;
   return <ThreadPanel key={threadKey(open.target)} client={open.client} target={open.target} quote={open.quote} phone={phone} />;
 }
 
