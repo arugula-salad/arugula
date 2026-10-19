@@ -2209,7 +2209,9 @@ impl Db {
             "DELETE FROM cloud_jobs WHERE id IN (SELECT id FROM cloud_runs WHERE account=?1 UNION SELECT id FROM cloud_workspaces WHERE account=?1 UNION SELECT id FROM cloud_tabs WHERE account=?1)",
             [a],
         )?;
-        for table in ["cloud_runs", "cloud_tabs", "cloud_workspaces", "cloud_agents", "cloud_secrets"] {
+        for table in
+            ["cloud_runs", "cloud_tabs", "cloud_workspace_specs", "cloud_workspaces", "cloud_agents", "cloud_secrets"]
+        {
             tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), [a])?;
         }
 

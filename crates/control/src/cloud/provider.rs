@@ -15,6 +15,53 @@ impl std::fmt::Display for HttpFailure {
 }
 impl std::error::Error for HttpFailure {}
 
+/// The refusal codes of Managoat's machine reads (its `error`), the only
+/// part of such a body control keeps.
+const READ_REFUSALS: &[&str] = &[
+    "sandbox_not_ready",
+    "sandbox_unavailable",
+    "path_not_found",
+    "ref_not_found",
+    "path_outside_sandbox",
+    "not_a_directory",
+    "is_a_directory",
+    "path_unreadable",
+    "not_a_repository",
+    "invalid_ref",
+    "invalid_path",
+];
+
+/// A machine read Managoat refused: its status, its code when it's one of
+/// `READ_REFUSALS`, and whether the machine is parked.
+#[derive(Debug)]
+pub struct ReadRefusal {
+    pub status: u16,
+    pub code: Option<&'static str>,
+    pub parked: bool,
+}
+impl std::fmt::Display for ReadRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "cloud provider refused the read: HTTP {} {}", self.status, self.code.unwrap_or(""))
+    }
+}
+impl std::error::Error for ReadRefusal {}
+/// Managoat said no to a rebuild or a retry, and nothing changed: a 4xx,
+/// or a 503 whose code says so. Only its `error` code and, for
+/// `turns_running`, its conversations' ids are kept; the rest of a body
+/// can echo what was sent.
+#[derive(Debug)]
+pub struct Refusal {
+    pub status: u16,
+    pub code: String,
+    pub conversation_ids: Vec<String>,
+}
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "cloud provider refused with HTTP {} {}", self.status, self.code)
+    }
+}
+impl std::error::Error for Refusal {}
+
 pub struct Provider {
     client: Client,
     base: Url,
@@ -184,20 +231,105 @@ impl Provider {
         self.request(Method::GET, &["api", "workspaces", id], None).await
     }
 
+    /// Replace the workspace's machine with one set up from its
+    /// environment as it is now. The disk is wiped; conversations keep
+    /// their transcripts. `interrupt` ends running turns instead of being
+    /// refused with `turns_running`. Never resent: a lost answer may have
+    /// wiped the disk.
+    pub async fn rebuild_workspace(&self, id: &str, interrupt: bool) -> Result<Value> {
+        let body = if interrupt { json!({"interrupt": true}) } else { json!({}) };
+        self.refusable(&["api", "workspaces", id, "rebuild"], body).await
+    }
+
+    /// Set a `failed` workspace up again, from its environment as it is now.
+    pub async fn retry_workspace(&self, id: &str) -> Result<Value> {
+        self.refusable(&["api", "workspaces", id, "retry"], json!({})).await
+    }
+
+    /// A POST whose refusals are a `Refusal`: a 4xx (but 408 and 429), or
+    /// a 503 `fleet_full` or `sandbox_unavailable`. Anything else, a lost
+    /// answer included, may have happened and is a plain error.
+    async fn refusable(&self, segments: &[&str], body: Value) -> Result<Value> {
+        let mut url = self.base.clone();
+        url.path_segments_mut().map_err(|_| anyhow::anyhow!("invalid cloud provider URL"))?.clear().extend(segments);
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(&self.key)
+            .json(&body)
+            .send()
+            .await
+            .context("cloud provider unavailable")?;
+        let status = response.status().as_u16();
+        if response.status().is_success() {
+            let value: Value = response.json().await.context("invalid cloud provider response")?;
+            return Ok(value.get("data").cloned().unwrap_or(value));
+        }
+        let body: Value = response.json().await.unwrap_or(Value::Null);
+        let word = |v: &Value, max: usize, ok: fn(char) -> bool| {
+            v.as_str().filter(|s| !s.is_empty() && s.len() <= max && s.chars().all(ok)).map(str::to_owned)
+        };
+        let code = word(&body["error"], 64, |c| c.is_ascii_lowercase() || c == '_').unwrap_or_default();
+        let refused = match status {
+            503 => matches!(code.as_str(), "fleet_full" | "sandbox_unavailable"),
+            408 | 429 => false,
+            400..500 => true,
+            _ => false,
+        };
+        if !refused {
+            return Err(HttpFailure(status, Method::POST).into());
+        }
+        let conversation_ids = body["conversation_ids"]
+            .as_array()
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| word(id, 64, |c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Err(Refusal { status, code, conversation_ids }.into())
+    }
+
     /// Write-only: Managoat never returns the value.
     pub async fn put_vault_secret(&self, vault: &str, key: &str, value: &str) -> Result<Value> {
         self.request(Method::POST, &["api", "vaults", vault, "secrets"], Some(json!({"key":key,"value":value}))).await
     }
 
-    #[allow(dead_code)] // M117: a secret taken off a Cloud workspace's settings.
     pub async fn delete_vault_secret(&self, vault: &str, key: &str) -> Result<Value> {
         self.request(Method::DELETE, &["api", "vaults", vault, "secrets", key], None).await
     }
 
     /// A partial update: the fields sent replace those fields only.
-    #[allow(dead_code)] // M117: saving a Cloud workspace's settings.
     pub async fn update_environment(&self, id: &str, body: Value) -> Result<Value> {
         self.request(Method::PATCH, &["api", "environments", id], Some(body)).await
+    }
+
+    /// One of the four reads of a Managoat workspace's machine (`files`,
+    /// `file`, `diff`, `git-status`). Managoat never resumes a parked
+    /// machine for one. A refusal keeps only its status and, when it's one
+    /// Managoat documents, its code: the rest of the body is never read out.
+    pub async fn read_cloud_workspace(&self, id: &str, read: &str, query: &[(&str, &str)]) -> Result<Value> {
+        let mut url = self.base.clone();
+        url.path_segments_mut().map_err(|_| anyhow::anyhow!("invalid cloud provider URL"))?.clear().extend([
+            "api",
+            "workspaces",
+            id,
+            read,
+        ]);
+        if !query.is_empty() {
+            url.query_pairs_mut().extend_pairs(query.iter().copied());
+        }
+        let response =
+            self.client.get(url).bearer_auth(&self.key).send().await.context("cloud provider unavailable")?;
+        let status = response.status();
+        if !status.is_success() {
+            let body: Value = response.json().await.unwrap_or(Value::Null);
+            let code = READ_REFUSALS.iter().copied().find(|c| body["error"] == *c);
+            let parked = body["status"] == "suspended";
+            return Err(ReadRefusal { status: status.as_u16(), code, parked }.into());
+        }
+        let value: Value = response.json().await.context("invalid cloud provider response")?;
+        Ok(value.get("data").cloned().unwrap_or(value))
     }
 
     pub async fn find(&self, collection: &str, run: &str) -> Result<Option<String>> {

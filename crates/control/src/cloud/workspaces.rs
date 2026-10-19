@@ -84,6 +84,149 @@ pub async fn delete(
     Ok(Json(found(&app, &session, &id)?))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Update {
+    pub spec: CloudWorkspaceSpec,
+}
+
+/// Save new settings (the whole spec) and send them: the environment's
+/// build fields, which the next rebuild uses, and the vault's secrets,
+/// which are live at once. The answer's `pending` says what a rebuild
+/// would change. A save Managoat didn't get yet says `settings_applied:
+/// false`, and the worker sends it again.
+pub async fn update(
+    State(app): State<Arc<App>>,
+    session: Session,
+    Path(id): Path<String>,
+    Json(mut input): Json<Update>,
+) -> Result<Json<CloudWorkspace>, ApiError> {
+    let cloud = enabled(&app, &session.account)?;
+    found(&app, &session, &id)?;
+    input.spec.normalize().map_err(|e| err(StatusCode::UNPROCESSABLE_ENTITY, &e.to_string()))?;
+    if !input.spec.secret_names().is_empty() && cloud.secret_cipher.is_none() {
+        return Err(err(StatusCode::SERVICE_UNAVAILABLE, "cloud secrets are not configured"));
+    }
+    let Some(sending) = Sending::take(&id) else {
+        return Err(err(StatusCode::CONFLICT, "its settings are being saved; try again in a moment"));
+    };
+    let saved = app
+        .db
+        .save_cloud_workspace_settings(&session.account, &id, &input.spec, arugula_e2e::now_ms())
+        .map_err(|e| match e.to_string().as_str() {
+            "cloud workspace not found" => err(StatusCode::NOT_FOUND, &e.to_string()),
+            "cloud workspace is being deleted" => err(StatusCode::CONFLICT, &e.to_string()),
+            "cloud workspace is not made yet" => {
+                err(StatusCode::CONFLICT, "it's still being made; change its settings once it's setting up")
+            }
+            "required cloud secret is missing" => {
+                err(StatusCode::UNPROCESSABLE_ENTITY, "connect every secret it names before saving")
+            }
+            _ => e.into(),
+        })?;
+    if saved {
+        match send_settings(&app, &id).await {
+            Ok(true) => {}
+            Ok(false) => {
+                return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "Managoat refused these settings; nothing changed"));
+            }
+            Err(error) => tracing::warn!(cloud_workspace = %id, %error, "cloud workspace settings will be sent again"),
+        }
+    }
+    drop(sending);
+    let w = found(&app, &session, &id)?;
+    if saved {
+        app.analytics.capture(&session.account, "cloud workspace settings saved", json!({"pending": w.pending.len()}));
+    }
+    Ok(Json(w))
+}
+
+/// Settings sends in flight, by Cloud workspace: one at a time, the
+/// route's or the worker's, so the environment ends as the last save. A
+/// rebuild takes it too, so it builds from settings Managoat has.
+static SENDING: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(Default::default);
+
+pub(super) struct Sending(String);
+
+impl Sending {
+    pub(super) fn take(id: &str) -> Option<Self> {
+        SENDING.lock().unwrap().insert(id.to_owned()).then(|| Self(id.to_owned()))
+    }
+}
+
+impl Drop for Sending {
+    fn drop(&mut self) {
+        SENDING.lock().unwrap().remove(&self.0);
+    }
+}
+
+/// The worker, on a live Cloud workspace: send a save Managoat didn't get.
+pub(super) async fn resend_settings(app: &App, id: &str) {
+    let Some(_sending) = Sending::take(id) else {
+        return;
+    };
+    if let Err(error) = send_settings(app, id).await {
+        tracing::warn!(cloud_workspace = %id, %error, "cloud workspace settings will be sent again");
+    }
+}
+
+/// Send the saved settings, if they're unsent: PATCH the environment, then
+/// put and delete the vault's secrets, then read whether the machine is now
+/// behind. False when Managoat refused the environment, and the saved
+/// settings went back to the ones it has. Every step can be sent again.
+async fn send_settings(app: &App, id: &str) -> anyhow::Result<bool> {
+    use anyhow::Context;
+    let cloud = app.cloud.as_ref().context("cloud is disabled")?;
+    let Some(s) = app.db.unsent_cloud_workspace_settings(id)? else {
+        return Ok(true);
+    };
+    let p = &cloud.provider;
+    let environment = match p.update_environment(&s.environment, s.spec.environment_update()).await {
+        Ok(environment) => environment,
+        Err(e)
+            if e.downcast_ref::<super::provider::HttpFailure>()
+                .is_some_and(|f| (400..500).contains(&f.0) && !matches!(f.0, 408 | 429)) =>
+        {
+            tracing::warn!(cloud_workspace = %id, error = %e, "managoat refused cloud workspace settings");
+            app.db.refused_cloud_workspace_settings(id)?;
+            return Ok(false);
+        }
+        Err(e) => return Err(e),
+    };
+    let wanted = s.spec.secret_names();
+    let mut held = s.vault_secrets.clone();
+    for name in wanted.iter().filter(|n| !s.vault_secrets.contains(n)) {
+        let sealed = app.db.cloud_secret(&s.account, name)?.context("a secret it names was deleted")?;
+        let cipher = cloud.secret_cipher.as_ref().context("cloud secrets key is unavailable")?;
+        p.put_vault_secret(&s.vault, name, &cipher.open(&s.account, name, &sealed)?).await?;
+        held.push(name.clone());
+        app.db.cloud_workspace_vault_secrets(id, &held)?;
+    }
+    for name in s.vault_secrets.iter().filter(|n| !wanted.contains(n)) {
+        p.delete_vault_secret(&s.vault, name).await?;
+        held.retain(|n| n != name);
+        app.db.cloud_workspace_vault_secrets(id, &held)?;
+    }
+    app.db.sent_cloud_workspace_settings(id, &s.spec, environment["revision"].as_str(), arugula_e2e::now_ms())?;
+    // Managoat says at once whether the machine is behind; the poll would
+    // say so later.
+    if let Ok(w) = p.workspace(&s.workspace).await {
+        let changed: Vec<String> = w["changed_fields"]
+            .as_array()
+            .map(|f| f.iter().filter_map(|f| f.as_str().map(str::to_owned)).collect())
+            .unwrap_or_default();
+        app.db.observe_cloud_workspace_staleness(
+            id,
+            w["revision"].as_str(),
+            w["built_from_revision"].as_str(),
+            w["stale"].as_bool().unwrap_or(false),
+            &changed,
+        )?;
+    }
+    Ok(true)
+}
+
 fn found(app: &App, session: &Session, id: &str) -> Result<CloudWorkspace, ApiError> {
     app.db.cloud_workspace(&session.account, id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "cloud workspace not found"))
 }
