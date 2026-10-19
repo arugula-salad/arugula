@@ -6,6 +6,9 @@
 //! client device and a daemon (docs/control-e2e.md): control introduces
 //! them and relays opaque messages, and the keys it distributes are signed
 //! by the account's own devices, so it can refuse service but can't read.
+//! The exception is chat (M122, `chat.rs`): a team's channels and DMs and
+//! the threads about panes are held here in plain text, with the lines
+//! people choose to quote from a pane; the rest of a pane never is.
 
 mod account;
 mod analytics;
@@ -17,6 +20,9 @@ mod billing;
 mod blocks;
 #[cfg(test)]
 mod blocks_wire;
+mod chat;
+#[cfg(test)]
+mod chat_wire;
 mod cloud;
 mod db;
 mod forge;
@@ -342,6 +348,8 @@ pub struct App {
     pub blocks: blocks::Open,
     /// Product analytics, when they're on.
     pub analytics: analytics::Analytics,
+    /// Chat's live streams and recent events (M122).
+    pub chat: chat::Hub,
 }
 
 #[cfg(test)]
@@ -380,6 +388,7 @@ impl App {
             guest_routes: Default::default(),
             blocks: Default::default(),
             analytics: Default::default(),
+            chat: Default::default(),
         }
     }
 }
@@ -505,6 +514,19 @@ pub fn router(app: Arc<App>) -> Router {
         .route(wire::TEAMS, get(teams::daemon_teams))
         .route(wire::ACCESS, post(teams::daemon_access))
         .route("/api/relay/link/{id}", get(relay::link))
+        .route("/api/chat", get(chat::rooms))
+        .route("/api/chat/live", get(chat::live))
+        .route("/api/chat/live/open", post(chat::open))
+        .route("/api/chat/search", get(chat::search))
+        .route("/api/chat/targets", post(chat::open_target))
+        .route("/api/chat/teams/{team}/channels", post(chat::new_channel))
+        .route("/api/chat/teams/{team}/dms", post(chat::new_dm))
+        .route("/api/chat/rooms/{id}", get(chat::room).patch(chat::change_room))
+        .route("/api/chat/rooms/{id}/messages", get(chat::messages).post(chat::post))
+        .route("/api/chat/rooms/{id}/messages/{seq}", axum::routing::patch(chat::edit).delete(chat::delete))
+        .route("/api/chat/rooms/{id}/read", post(chat::read))
+        .route("/api/chat/rooms/{id}/mute", post(chat::mute))
+        .route(wire::chat::CHAT_READERS, post(chat::daemon_readers))
         .route("/api/push/subscribe", post(push::subscribe))
         .route("/api/push/unsubscribe", post(push::unsubscribe))
         .route(wire::PUSH_SUBS, get(push::daemon_subs))
@@ -929,6 +951,7 @@ async fn run() -> anyhow::Result<()> {
         guest_routes: Default::default(),
         blocks: Default::default(),
         analytics,
+        chat: Default::default(),
     });
     if let (Some(l), Some(j)) = (guest_listener, &app.jump) {
         info!(addr = %l.local_addr()?, host = %j.host, port = j.port, "guest ssh jump host");

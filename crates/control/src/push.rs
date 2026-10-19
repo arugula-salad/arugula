@@ -205,8 +205,25 @@ async fn post(app: &App, endpoint: &str, body: Vec<u8>, ttl: u32, urgency: Optio
 /// for them (#104): `title`, `body`, and a tap that opens control's page,
 /// where the prompt is. In the background; a failure is only logged.
 pub fn notify(app: &Arc<App>, accounts: Vec<String>, tag: &str, title: String, body: String) {
+    notify_with(app, accounts, tag, title, body, serde_json::Map::new());
+}
+
+/// [`notify`], with more for the page beside the words (chat's room, for
+/// the tap to open it).
+pub fn notify_with(
+    app: &Arc<App>,
+    accounts: Vec<String>,
+    tag: &str,
+    title: String,
+    body: String,
+    more: serde_json::Map<String, Value>,
+) {
     let app = app.clone();
-    let msg = json!({ "title": title, "body": body, "tag": tag, "control": true }).to_string();
+    let mut msg = more;
+    for (k, v) in [("title", json!(title)), ("body", json!(body)), ("tag", json!(tag)), ("control", json!(true))] {
+        msg.insert(k.into(), v);
+    }
+    let msg = Value::Object(msg).to_string();
     tokio::spawn(async move {
         for account in accounts {
             let subs = match app.db.push_subs(&account) {
