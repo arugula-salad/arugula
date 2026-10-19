@@ -8896,6 +8896,13 @@ html[data-finish="glass"] .prompt-backdrop {
 .ws-ov-cloud-head { margin: 24px 0 8px; font-size: 14px; }
 .tab .attention.working { opacity: 0.5; }
 .cloud-ws-phone-head { display: flex; align-items: center; gap: 8px; padding: 6px 12px; flex-wrap: wrap; }
+/* A Cloud workspace's Settings (S40, M117): Built vs Saved, and the form. */
+.cloud-ws-settings { margin: 16px 0; }
+.cloud-ws-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.cloud-ws-pending { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.cloud-ws-pending th, .cloud-ws-pending td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--raised-hover); overflow-wrap: anywhere; }
+.cloud-ws-pending pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.cloud-ws-settings-form { max-width: 720px; }
 
 /* ---- the workspace (M108, #1023; the only one since M113): a rail, the session sidebar, a
    context header, the tab strip and a status footer around `.main`. Only

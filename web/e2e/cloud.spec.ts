@@ -14,6 +14,11 @@ let user = { id: 7, login: "cloud-tester" };
 // Cloud workspaces (S40): the fake workspace's reads, its tabs'
 // conversations (by id: status and whether its approval was answered).
 let workspaceReads = 0, made = 0;
+// The environment as last created or PATCHed, and as the workspace's setup
+// read it: the workspace is behind in the fields that differ (M117).
+const buildFields = ["repositories", "packages", "setup_script", "setup_timeout_seconds", "env_vars", "networking_type", "networking_config"];
+let environment: Record<string, unknown> = {}, built: Record<string, unknown> = {}, revision = 1;
+const changedFields = () => buildFields.filter((f) => JSON.stringify(environment[f]) !== JSON.stringify(built[f]));
 const conversations = new Map<string, { status: string; prompt: string; answered: boolean }>();
 test.beforeAll(async () => {
   github = createServer((req, res) => {
@@ -35,11 +40,15 @@ test.beforeAll(async () => {
     if (req.method === "DELETE") { res.writeHead(204).end(); return; }
     const tab = /^\/api\/conversations\/(tabconv\d+)(\/.*)?$/.exec(path);
     if (path === "/api/vaults") data = { id: "vault" };
-    else if (path === "/api/workspaces" && req.method === "POST") data = { id: "ws", name: body.name, environment_id: body.environment_id, vault_id: body.vault_id, status: "provisioning", sandbox_status: "pending", error: null, revision: "rev1", built_from_revision: null, stale: false, changed_fields: [] };
+    else if (path === "/api/workspaces" && req.method === "POST") {
+      built = { ...environment };
+      data = { id: "ws", name: body.name, environment_id: body.environment_id, vault_id: body.vault_id, status: "provisioning", sandbox_status: "pending", error: null, revision: "rev1", built_from_revision: null, stale: false, changed_fields: [] };
+    }
     // Setting up for the first reads, then ready.
     else if (path === "/api/workspaces/ws") {
       const ready = ++workspaceReads > 2;
-      data = { id: "ws", status: ready ? "ready" : "provisioning", sandbox_status: ready ? "ready" : "starting", error: null, revision: "rev1", built_from_revision: ready ? "rev1" : null, stale: false, changed_fields: [] };
+      const changed = ready ? changedFields() : [];
+      data = { id: "ws", status: ready ? "ready" : "provisioning", sandbox_status: ready ? "ready" : "starting", error: null, revision: `rev${revision}`, built_from_revision: ready ? `rev${built.revision}` : null, stale: changed.length > 0, changed_fields: changed };
     } else if (path === "/api/agents" && body.metadata?.arugula_tab) data = { id: `tabagent${++made}` };
     else if (path === "/api/conversations" && body.workspace_id) {
       const id = `tabconv${conversations.size + 1}`;
@@ -63,7 +72,16 @@ test.beforeAll(async () => {
       if (req.headers.authorization !== "Bearer legacy-test") { res.writeHead(401).end(); return; }
       data = { name: "Imported reviewer", system: "Review the changes", skills: [], mcp_servers: {} };
     }
-    else if (path === "/api/environments") data = { id: "env", revision: "rev1" };
+    else if (path === "/api/environments") {
+      revision = 1;
+      environment = { setup_timeout_seconds: 120, networking_type: "unrestricted", networking_config: {}, ...body, revision };
+      data = { id: "env", revision: "rev1" };
+    } else if (path === "/api/environments/env" && req.method === "PATCH") {
+      const next = { ...environment, ...body };
+      if (buildFields.some((f) => JSON.stringify(next[f]) !== JSON.stringify(environment[f]))) next.revision = ++revision;
+      environment = next;
+      data = { id: "env", revision: `rev${revision}` };
+    }
     else if (path.endsWith("/secrets")) { secret = body.value; data = { key: body.key }; }
     else if (path === "/api/agents") data = { id: "agent" };
     else if (path === "/api/conversations") data = { id: "conversation" };
@@ -228,4 +246,54 @@ test("a Cloud workspace sets up, runs two tabs, asks in the drawer and is delete
   await expect(page.locator("[data-cloud-ws-list]")).toBeVisible();
   await expect(page.locator("[data-cloud-workspace]")).toHaveCount(0, { timeout: 45000 });
   expect([...conversations.values()].every((c) => c.status === "terminated")).toBe(true);
+});
+
+test("adding a package says Rebuild needed and leaves the open tab alone", async ({ page }) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  user = { id: 9, login: "settings-tester" };
+  await page.goto(base); await page.locator("[data-signin=github]").click();
+  await page.locator("[data-stored-codes]").check();
+  await page.locator("[data-saved-codes]").click();
+  await page.locator("[data-open-cloud-workspaces]").click();
+  await page.locator("[data-new-cloud-workspace]").click();
+  const create = page.getByRole("dialog", { name: "New Cloud workspace" });
+  await create.getByLabel("Name", { exact: true }).fill("settings work");
+  await create.getByLabel("Repository URL").fill("https://github.com/example/app");
+  await create.getByLabel("apt packages (optional)").fill("ffmpeg");
+  await create.getByRole("button", { name: "Create Cloud workspace" }).click();
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Ready", { timeout: 30000 });
+  await expect(page.locator("[data-cloud-settings]")).toContainText("built from these settings");
+
+  // A tab that has done its work.
+  await page.locator("[data-new-cloud-tab]").click();
+  const dialog = page.getByRole("dialog", { name: "Open an agent" });
+  await dialog.getByLabel("First prompt (optional)").fill("Write the docs");
+  await dialog.getByRole("button", { name: "Open agent" }).click();
+  await expect(page.locator("[data-cloud-tab-view]")).toContainText("Docs written.", { timeout: 30000 });
+  const tab = await page.locator("[data-cloud-tab]").getAttribute("data-cloud-tab");
+
+  // Settings: one more package.
+  await page.locator(".ws-crumb", { hasText: "settings work" }).click();
+  await page.locator("[data-edit-cloud-settings]").click();
+  const form = page.getByRole("form", { name: "Cloud workspace settings" });
+  await expect(form.getByLabel("apt packages", { exact: true })).toHaveValue("ffmpeg");
+  await form.getByLabel("apt packages", { exact: true }).fill("ffmpeg jq");
+  await form.getByRole("button", { name: "Save settings" }).click();
+  await expect(form).toHaveCount(0);
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Rebuild needed · 1 change", { timeout: 15000 });
+  await expect(page.locator('[data-cloud-workspace][data-cloud-state="Rebuild needed · 1 change"]')).toContainText("settings work");
+  const change = page.locator('[data-cloud-pending] [data-pending-field="packages"]');
+  await expect(change.locator("td").first()).toHaveText("apt ffmpeg");
+  await expect(change.locator("td").last()).toHaveText("apt ffmpeg, apt jq");
+  expect(environment.packages).toEqual({ apt: ["ffmpeg", "jq"] });
+
+  // The tab is as it was: still open, its transcript there, its
+  // conversation not ended or prompted again.
+  await expect(page.locator("[data-cloud-tab]")).toHaveCount(1);
+  await page.locator(`[data-cloud-tab="${tab}"]`).click();
+  await expect(page.locator("[data-cloud-tab-view]")).toContainText("Docs written.");
+  const conversation = [...conversations.values()].find((c) => c.prompt === "Write the docs" && c.status !== "terminated");
+  expect(conversation).toBeTruthy();
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Rebuild needed · 1 change");
 });
