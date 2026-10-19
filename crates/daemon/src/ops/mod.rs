@@ -137,6 +137,12 @@ impl Cx<'_> {
         }
     }
 
+    /// A team's other owner (#935): `Owner` here, but not this machine's own
+    /// account, which is what the Doc links' keys belong to (#1066).
+    pub fn co_owner(&self) -> bool {
+        matches!(self.via, Via::Http { acting: Some(_), .. })
+    }
+
     /// An agent, or someone who isn't the owner: what the owner keeps for
     /// themselves (an invite block, #234) refuses them. Every MCP caller is
     /// an agent.

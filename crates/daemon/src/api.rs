@@ -1022,7 +1022,7 @@ async fn call(
         // owner's CLI either: it publishes (or reads back the key). As for
         // invites, an honor system: the CLI says when an agent runs it.
         if b.kind() == arugula_proto::BlockType::Doc && crate::docs::link::METHODS.contains(&method.as_str()) {
-            if !owner {
+            if !owner || foreign(&app, &dev) {
                 return Err(ApiError(StatusCode::FORBIDDEN, crate::docs::link::OWNER_ONLY.into()));
             }
             if crate::invite::agent(&headers) {

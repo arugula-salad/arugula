@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 
 use super::{Cx, Handle, OpError};
 use crate::{
-    docs::link::{self, AGENT_ASKS, Remote},
+    docs::link::{self, AGENT_ASKS, OWNER_ONLY, Remote},
     mux::Api,
 };
 
@@ -31,6 +31,9 @@ impl Handle for DocLinkGet {
         if cx.agent_or_guest() {
             return Err(OpError::Forbidden(AGENT_ASKS.into()));
         }
+        if cx.co_owner() {
+            return Err(OpError::Forbidden(OWNER_ONLY.into()));
+        }
         id_of(&id)?;
         match link::url_of(cx.app.control.state_dir(), &id) {
             Ok(Some(url)) => Ok(DocLinkUrl { url }),
@@ -44,6 +47,9 @@ impl Handle for DocLinkDelete {
     async fn handle(cx: &Cx<'_>, id: String, _: Empty) -> Result<Empty, OpError> {
         if cx.agent_or_guest() {
             return Err(OpError::Forbidden(AGENT_ASKS.into()));
+        }
+        if cx.co_owner() {
+            return Err(OpError::Forbidden(OWNER_ONLY.into()));
         }
         id_of(&id)?;
         let dir = cx.app.control.state_dir();
