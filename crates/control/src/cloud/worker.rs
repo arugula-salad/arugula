@@ -539,6 +539,7 @@ async fn step_cloud_workspace(app: &App, job: &mut CloudWorkspaceJob, now: u64) 
         }
         "live" => {
             let workspace = job.execution.workspace.clone().context("missing workspace")?;
+            super::workspaces::resend_settings(app, &id).await;
             match p.workspace(&workspace).await {
                 Ok(workspace) => observe(job, &workspace),
                 Err(e) if e.downcast_ref::<super::provider::HttpFailure>().is_some_and(|e| e.0 == 404) => {
@@ -799,6 +800,11 @@ mod tests {
         agents: Vec<Value>,
         tab_conversations: std::collections::BTreeMap<String, Value>,
         tab_events: std::collections::BTreeMap<String, Vec<Value>>,
+        // Settings (M117): the environment a setup read when it started,
+        // and how the next environment PATCH fails.
+        built_environment: Option<Value>,
+        refuse_patch: bool,
+        lose_patch: bool,
     }
 
     impl Fake {
@@ -863,7 +869,9 @@ mod tests {
         }
         let data = match (method.as_str(), path) {
             ("POST", "/api/environments") => {
-                let mut environment = value.clone();
+                let mut environment =
+                    json!({"setup_timeout_seconds":120,"networking_type":"unrestricted","networking_config":{}});
+                environment.as_object_mut().unwrap().extend(value.as_object().cloned().unwrap_or_default());
                 environment["id"] = json!("env1");
                 environment["revision"] = json!("rev1");
                 fake.environment = Some(environment.clone());
@@ -873,7 +881,27 @@ mod tests {
                 }
                 environment
             }
-            ("PATCH", "/api/environments/env1") => json!({"id":"env1","revision":"rev2"}),
+            // Each edit of a build field moves the revision, as Managoat's
+            // trigger does.
+            ("PATCH", "/api/environments/env1") => {
+                if std::mem::take(&mut fake.refuse_patch) {
+                    return StatusCode::UNPROCESSABLE_ENTITY.into_response();
+                }
+                let environment = fake.environment.get_or_insert_with(|| json!({"id":"env1","revision":"rev1"}));
+                let before = environment.clone();
+                for (k, v) in value.as_object().unwrap() {
+                    environment[k] = v.clone();
+                }
+                if *environment != before {
+                    let n = environment["revision"].as_str().unwrap()[3..].parse::<u32>().unwrap() + 1;
+                    environment["revision"] = json!(format!("rev{n}"));
+                }
+                let environment = environment.clone();
+                if std::mem::take(&mut fake.lose_patch) {
+                    return StatusCode::BAD_GATEWAY.into_response();
+                }
+                environment
+            }
             ("POST", "/api/vaults") => {
                 let mut vault = value.clone();
                 vault["id"] = json!("vault1");
@@ -892,6 +920,7 @@ mod tests {
                     "built_from_revision":null,"stale":false,"changed_fields":[],
                 });
                 fake.workspace = Some(workspace.clone());
+                fake.built_environment = fake.environment.clone();
                 if fake.lost("workspaces") {
                     return StatusCode::SERVICE_UNAVAILABLE.into_response();
                 }
@@ -903,9 +932,23 @@ mod tests {
                 fake.workspace_reads += 1;
                 let reads = fake.workspace_reads;
                 let setup_reads = if fake.setup_reads == 0 { 2 } else { fake.setup_reads };
+                let (environment, built) = (fake.environment.clone(), fake.built_environment.clone());
                 let Some(workspace) = fake.workspace.as_mut() else {
                     return StatusCode::NOT_FOUND.into_response();
                 };
+                // Behind its environment once built, field by field.
+                if let (Some(environment), Some(built)) = (environment, built) {
+                    workspace["revision"] = environment["revision"].clone();
+                    if workspace["status"] == "ready" {
+                        let fields = ["repositories", "packages", "setup_script", "setup_timeout_seconds", "env_vars"]
+                            .into_iter()
+                            .chain(["networking_type", "networking_config"])
+                            .filter(|f| environment[f] != built[f])
+                            .collect::<Vec<_>>();
+                        workspace["stale"] = json!(!fields.is_empty());
+                        workspace["changed_fields"] = json!(fields);
+                    }
+                }
                 // Set up on the second read.
                 if reads >= setup_reads && failed {
                     workspace["status"] = json!("failed");
@@ -1595,5 +1638,139 @@ mod tests {
     #[tokio::test]
     async fn deadline_stops_a_run_without_marking_it_successful() {
         exercise(Fake::default(), None, 40_000, "expired").await;
+    }
+
+    // ---- settings (M117)
+
+    async fn save(base: &str, id: &str, account: &str, spec: &Value) -> (StatusCode, Value) {
+        call(reqwest::Method::PATCH, &format!("{base}/workspaces/{id}"), account, Some(json!({"spec":spec}))).await
+    }
+
+    #[tokio::test]
+    async fn saved_settings_reach_the_environment_and_say_what_a_rebuild_changes() {
+        let (app, fake, server) = serve(Fake::default()).await;
+        let created = cloud_workspace(&app);
+        let cipher = app.cloud.as_ref().unwrap().secret_cipher.as_ref().unwrap();
+        app.db.put_cloud_secret("a", "NPM_TOKEN", &cipher.seal("a", "NPM_TOKEN", "npm-secret").unwrap()).unwrap();
+        run(&app, 0, 60).await;
+        let (base, routes) = routes(&app).await;
+        let mut spec = serde_json::to_value(&created.saved_spec).unwrap();
+
+        // A secret only: live in the vault, nothing to rebuild.
+        spec["secrets"] = json!(["NPM_TOKEN"]);
+        let (status, saved) = save(&base, &created.id, "a", &spec).await;
+        assert_eq!(status, StatusCode::OK, "{saved}");
+        assert_eq!(
+            (&saved["pending"], &saved["stale"], &saved["settings_applied"]),
+            (&json!([]), &json!(false), &json!(true))
+        );
+        assert_eq!(
+            calls(&fake, "POST", "/api/vaults/vault1/secrets").last(),
+            Some(&json!({"key":"NPM_TOKEN","value":"npm-secret"}))
+        );
+
+        // A package and an environment variable: the environment has them,
+        // and the machine is behind in those two fields.
+        spec["secrets"] = json!([]);
+        spec["packages"]["apt"] = json!(["ffmpeg", "jq"]);
+        spec["env_vars"] = json!({"API_URL":"https://api.example"});
+        let (status, saved) = save(&base, &created.id, "a", &spec).await;
+        assert_eq!(status, StatusCode::OK, "{saved}");
+        assert_eq!(saved["saved_spec"]["packages"]["apt"], json!(["ffmpeg", "jq"]));
+        assert_eq!(saved["built_spec"]["packages"]["apt"], json!(["ffmpeg"]));
+        assert_eq!(saved["stale"], true);
+        assert_eq!(
+            saved["pending"],
+            json!([
+                {"field":"packages","before":{"apt":["ffmpeg"],"npm":[]},"after":{"apt":["ffmpeg","jq"],"npm":[]}},
+                {"field":"env_vars","before":[],"after":["API_URL"]},
+            ])
+        );
+        assert!(!saved["pending"].to_string().contains("api.example"));
+        let patch = calls(&fake, "PATCH", "/api/environments/env1").last().cloned().unwrap();
+        assert_eq!(patch["packages"]["apt"], json!(["ffmpeg", "jq"]));
+        assert_eq!(patch["env_vars"], json!({"API_URL":"https://api.example"}));
+        assert_eq!((&patch["setup_timeout_seconds"], &patch["networking_type"]), (&json!(120), &json!("unrestricted")));
+        assert!(patch.get("name").is_none() && patch.get("metadata").is_none());
+        assert_eq!(calls(&fake, "DELETE", "/api/vaults/vault1/secrets/NPM_TOKEN").len(), 1);
+
+        // The poll keeps saying so, and the built spec stays the built one.
+        run(&app, 60_000, 30).await;
+        let shown = app.db.cloud_workspace("a", &created.id).unwrap().unwrap();
+        assert_eq!(shown.pending.iter().map(|c| c.field.as_str()).collect::<Vec<_>>(), ["packages", "env_vars"]);
+        assert_eq!(shown.built_spec.unwrap().packages.apt, ["ffmpeg"]);
+        assert_eq!(shown.status, "ready");
+
+        // Another account's is not found; bad settings are refused.
+        assert_eq!(save(&base, &created.id, "b", &spec).await.0, StatusCode::NOT_FOUND);
+        let mut bad = spec.clone();
+        bad["setup_timeout_seconds"] = json!(901);
+        assert_eq!(save(&base, &created.id, "a", &bad).await.0, StatusCode::UNPROCESSABLE_ENTITY);
+        bad = spec.clone();
+        bad["secrets"] = json!(["MISSING"]);
+        assert_eq!(save(&base, &created.id, "a", &bad).await.0, StatusCode::UNPROCESSABLE_ENTITY);
+        app.db.delete_cloud_workspace("a", &created.id).unwrap();
+        assert_eq!(save(&base, &created.id, "a", &spec).await.0, StatusCode::CONFLICT);
+        server.abort();
+        routes.abort();
+    }
+
+    #[tokio::test]
+    async fn a_refused_save_changes_nothing_and_a_lost_one_is_sent_again() {
+        let (app, fake, server) = serve(Fake::default()).await;
+        let created = cloud_workspace(&app);
+        run(&app, 0, 60).await;
+        let (base, routes) = routes(&app).await;
+        let mut spec = serde_json::to_value(&created.saved_spec).unwrap();
+        spec["packages"]["apt"] = json!(["ffmpeg", "jq"]);
+        spec["name"] = json!("Renamed");
+
+        fake.lock().unwrap().refuse_patch = true;
+        assert_eq!(save(&base, &created.id, "a", &spec).await.0, StatusCode::UNPROCESSABLE_ENTITY);
+        let shown = app.db.cloud_workspace("a", &created.id).unwrap().unwrap();
+        assert_eq!(
+            (&shown.saved_spec, shown.name.as_str(), shown.settings_applied),
+            (&created.saved_spec, "App box", true)
+        );
+
+        fake.lock().unwrap().lose_patch = true;
+        let (status, saved) = save(&base, &created.id, "a", &spec).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!((&saved["settings_applied"], &saved["name"]), (&json!(false), &json!("Renamed")));
+        run(&app, 60_000, 30).await;
+        let shown = app.db.cloud_workspace("a", &created.id).unwrap().unwrap();
+        assert!(shown.settings_applied);
+        assert_eq!(shown.pending.iter().map(|c| c.field.as_str()).collect::<Vec<_>>(), ["packages"]);
+        // Refused, lost, then sent again by the worker, and no more.
+        assert_eq!(calls(&fake, "PATCH", "/api/environments/env1").len(), 3);
+        server.abort();
+        routes.abort();
+    }
+
+    #[tokio::test]
+    async fn a_save_while_setting_up_keeps_the_spec_the_setup_built() {
+        let (app, fake, server) = serve(Fake { setup_reads: 6, ..Default::default() }).await;
+        let created = cloud_workspace(&app);
+        let (base, routes) = routes(&app).await;
+        let mut spec = serde_json::to_value(&created.saved_spec).unwrap();
+        spec["packages"]["apt"] = json!(["ffmpeg", "jq"]);
+        // Not before Managoat has the workspace.
+        assert_eq!(save(&base, &created.id, "a", &spec).await.0, StatusCode::CONFLICT);
+        let mut at = 0;
+        while fake.lock().unwrap().workspace.is_none() {
+            tick_at(&app, at).await.unwrap();
+            at += 1_000;
+        }
+        tick_at(&app, at + 3_000).await.unwrap();
+        assert_eq!(app.db.cloud_workspace("a", &created.id).unwrap().unwrap().status, "provisioning");
+        assert_eq!(save(&base, &created.id, "a", &spec).await.0, StatusCode::OK);
+        run(&app, at + 6_000, 60).await;
+        let shown = app.db.cloud_workspace("a", &created.id).unwrap().unwrap();
+        assert_eq!(shown.status, "ready");
+        assert_eq!(shown.built_spec.as_ref(), Some(&created.saved_spec));
+        assert_eq!(shown.saved_spec.packages.apt, ["ffmpeg", "jq"]);
+        assert_eq!(shown.pending.len(), 1);
+        server.abort();
+        routes.abort();
     }
 }

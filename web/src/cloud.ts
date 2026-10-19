@@ -72,7 +72,18 @@ export type CloudWorkspace = {
   id: string; name: string; saved_spec: CloudWorkspaceSpec; built_spec: CloudWorkspaceSpec | null;
   status: "provisioning" | "ready" | "failed" | "deleting"; sandbox_status: "pending" | "starting" | "ready" | "suspended" | null;
   error: string | null; revision: string | null; built_from_revision: string | null; stale: boolean; changed_fields: string[]; created: number;
+  /** What a rebuild changes (M117), and whether Managoat has the saved settings yet. */
+  pending: CloudWorkspaceChange[]; settings_applied: boolean;
 };
+/** A saved setting the machine wasn't built with: `before` is built (null when not known), `after` saved. `env_vars` are names only. */
+export type CloudWorkspaceChange = { field: string; before: unknown; after: unknown };
+
+/** "Rebuild needed · 2 changes", or null when the machine is as saved. */
+export function cloudWorkspaceRebuildBadge(w: CloudWorkspace): string | null {
+  if (!w.stale) return null;
+  const n = w.pending?.length ?? 0;
+  return n ? `Rebuild needed · ${n} change${n === 1 ? "" : "s"}` : "Rebuild needed";
+}
 export type CloudTab = {
   id: string; cloud_workspace: string; agent_id: string; agent_name: string; runtime: string; model: string; cwd: string;
   status: string; error: string | null; waiting_for_setup: boolean; created: number;
@@ -89,7 +100,7 @@ export function cloudWorkspaceState(w: CloudWorkspace): { word: string; dot: "ne
   if (w.status === "deleting") return { word: "Deleting", dot: "offline" };
   if (w.status === "failed") return { word: "Failed", dot: "offline" };
   if (w.status === "provisioning") return { word: "Setting up", dot: "working" };
-  if (w.stale) return { word: "Rebuild needed", dot: "done" };
+  if (w.stale) return { word: cloudWorkspaceRebuildBadge(w)!, dot: "done" };
   if (w.sandbox_status === "suspended") return { word: "Parked", dot: "idle" };
   return { word: "Ready", dot: "idle" };
 }

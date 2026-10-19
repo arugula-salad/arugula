@@ -79,7 +79,10 @@ CREATE TABLE IF NOT EXISTS cloud_events (
 -- `saved_spec` is what the user saved and `saved_revision` the environment
 -- revision it became; `built_spec` is the saved spec as of the revision that
 -- last reached `ready`. The rest mirrors the Managoat workspace's last poll.
--- `deleted` is set once its Managoat resources are gone.
+-- `deleted` is set once its Managoat resources are gone. `settings_applied`
+-- is 0 from a settings save until Managoat has them (M117), and
+-- `vault_secrets` names the secrets in the vault once a save has changed
+-- them (NULL: the ones it was created with).
 CREATE TABLE IF NOT EXISTS cloud_workspaces (
     id TEXT PRIMARY KEY,
     account TEXT NOT NULL,
@@ -100,9 +103,22 @@ CREATE TABLE IF NOT EXISTS cloud_workspaces (
     provider_id TEXT,
     created INTEGER NOT NULL,
     deleted INTEGER,
+    settings_applied INTEGER NOT NULL DEFAULT 1,
+    vault_secrets TEXT,
     UNIQUE(account, request_key)
 );
 CREATE INDEX IF NOT EXISTS cloud_workspaces_owner ON cloud_workspaces(account, created);
+-- The saved spec each environment revision was saved as, so `built_spec`
+-- is right when a setup built an older revision than the one saved last.
+-- The newest few are kept.
+CREATE TABLE IF NOT EXISTS cloud_workspace_specs (
+    cloud_workspace TEXT NOT NULL,
+    account TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    spec TEXT NOT NULL,
+    saved INTEGER NOT NULL,
+    PRIMARY KEY(cloud_workspace, revision)
+);
 -- A tab: one conversation in a Cloud workspace, on a Managoat agent of its
 -- own. `spec` is what it was opened with. `provider_id` is the conversation
 -- and `started` whether a turn has begun. `closed` is set once its
@@ -147,6 +163,19 @@ pub(super) fn migrate(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
              DROP TABLE cloud_jobs;
              ALTER TABLE cloud_jobs_v2 RENAME TO cloud_jobs;
              COMMIT;",
+        )?;
+    }
+    // Settings saves (M117).
+    let unsaved: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_workspaces')
+             AND NOT EXISTS(SELECT 1 FROM pragma_table_info('cloud_workspaces') WHERE name='settings_applied')",
+        [],
+        |r| r.get(0),
+    )?;
+    if unsaved {
+        conn.execute_batch(
+            "ALTER TABLE cloud_workspaces ADD COLUMN settings_applied INTEGER NOT NULL DEFAULT 1;
+             ALTER TABLE cloud_workspaces ADD COLUMN vault_secrets TEXT;",
         )?;
     }
     // Requests, notifications and events keyed on `run` (a foreign key to
@@ -508,6 +537,74 @@ impl CloudWorkspaceSpec {
     }
 }
 
+impl CloudWorkspaceSpec {
+    /// The build fields for a PATCH. Managoat keeps a field a PATCH leaves
+    /// out, so the defaults a create leaves to it are sent too.
+    pub fn environment_update(&self) -> serde_json::Value {
+        let mut body = self.environment();
+        body["setup_timeout_seconds"] = serde_json::json!(self.setup_timeout_seconds.unwrap_or(120));
+        let limited = self.networking.as_ref().filter(|n| n.kind == "limited");
+        body["networking_type"] = serde_json::json!(if limited.is_some() { "limited" } else { "unrestricted" });
+        body["networking_config"] = match limited {
+            Some(n) => serde_json::json!({"allowed_hosts":n.allowed_hosts}),
+            None => serde_json::json!({}),
+        };
+        body
+    }
+
+    /// One field's value as `pending` shows it. `env_vars` are names only:
+    /// Managoat never says a value, and nor does this.
+    fn field(&self, field: &str) -> serde_json::Value {
+        match field {
+            "repositories" => serde_json::json!(self.repositories),
+            "packages" => serde_json::json!(self.packages),
+            "setup_script" => serde_json::json!(self.setup_script),
+            "setup_timeout_seconds" => serde_json::json!(self.setup_timeout_seconds),
+            "env_vars" => serde_json::json!(self.env_vars.keys().collect::<Vec<_>>()),
+            "networking" => serde_json::json!(self.networking),
+            _ => serde_json::Value::Null,
+        }
+    }
+}
+
+/// A saved setting the machine wasn't built with: `before` from
+/// `built_spec` (null when that isn't known), `after` from `saved_spec`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CloudWorkspaceChange {
+    pub field: String,
+    pub before: serde_json::Value,
+    pub after: serde_json::Value,
+}
+
+/// What a rebuild would change: Managoat's `changed_fields` while it says
+/// `stale`, with values from the specs. Its `networking_type` and
+/// `networking_config` are the spec's one `networking`.
+pub fn pending_changes(
+    built: Option<&CloudWorkspaceSpec>,
+    saved: &CloudWorkspaceSpec,
+    stale: bool,
+    changed_fields: &[String],
+) -> Vec<CloudWorkspaceChange> {
+    if !stale {
+        return vec![];
+    }
+    let mut fields: Vec<&str> = vec![];
+    for f in changed_fields {
+        let f = if f.starts_with("networking_") { "networking" } else { f.as_str() };
+        if !fields.contains(&f) {
+            fields.push(f);
+        }
+    }
+    fields
+        .into_iter()
+        .map(|field| CloudWorkspaceChange {
+            field: field.into(),
+            before: built.map(|b| b.field(field)).unwrap_or_default(),
+            after: saved.field(field),
+        })
+        .collect()
+}
+
 /// A Cloud workspace as the account sees it. Its Managoat ids stay in
 /// control.
 #[derive(Debug, Clone, Serialize)]
@@ -524,6 +621,10 @@ pub struct CloudWorkspace {
     pub built_from_revision: Option<String>,
     pub stale: bool,
     pub changed_fields: Vec<String>,
+    /// What a rebuild would change (`pending_changes`).
+    pub pending: Vec<CloudWorkspaceChange>,
+    /// False from a settings save until Managoat has them.
+    pub settings_applied: bool,
     pub created: u64,
 }
 
@@ -646,26 +747,32 @@ fn cloud_tab_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(CloudTab, CloudTabS
     Ok((tab, spec, started))
 }
 
-const CLOUD_WORKSPACE_COLUMNS: &str = "id,name,saved_spec,built_spec,status,sandbox_status,error,revision,built_from_revision,stale,changed_fields,created";
+const CLOUD_WORKSPACE_COLUMNS: &str = "id,name,saved_spec,built_spec,status,sandbox_status,error,revision,built_from_revision,stale,changed_fields,created,settings_applied";
 
 fn cloud_workspace_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CloudWorkspace> {
     fn decode<T: serde::de::DeserializeOwned>(i: usize, s: &str) -> rusqlite::Result<T> {
         serde_json::from_str(s)
             .map_err(|e| rusqlite::Error::FromSqlConversionFailure(i, rusqlite::types::Type::Text, Box::new(e)))
     }
+    let saved_spec: CloudWorkspaceSpec = decode(2, &r.get::<_, String>(2)?)?;
+    let built_spec: Option<CloudWorkspaceSpec> = r.get::<_, Option<String>>(3)?.map(|s| decode(3, &s)).transpose()?;
+    let stale: bool = r.get(9)?;
+    let changed_fields: Vec<String> = decode(10, &r.get::<_, String>(10)?)?;
     Ok(CloudWorkspace {
         id: r.get(0)?,
         name: r.get(1)?,
-        saved_spec: decode(2, &r.get::<_, String>(2)?)?,
-        built_spec: r.get::<_, Option<String>>(3)?.map(|s| decode(3, &s)).transpose()?,
+        pending: pending_changes(built_spec.as_ref(), &saved_spec, stale, &changed_fields),
+        saved_spec,
+        built_spec,
         status: r.get(4)?,
         sandbox_status: r.get(5)?,
         error: r.get(6)?,
         revision: r.get(7)?,
         built_from_revision: r.get(8)?,
-        stale: r.get(9)?,
-        changed_fields: decode(10, &r.get::<_, String>(10)?)?,
+        stale,
+        changed_fields,
         created: r.get(11)?,
+        settings_applied: r.get(12)?,
     })
 }
 
@@ -1189,10 +1296,10 @@ impl Db {
                 |r| {
                     Ok((
                         cloud_workspace_row(r)?,
-                        r.get::<_, String>(12)?,
-                        r.get::<_, Option<String>>(13)?,
-                        r.get::<_, String>(14)?,
-                        r.get::<_, bool>(15)?,
+                        r.get::<_, String>(13)?,
+                        r.get::<_, Option<String>>(14)?,
+                        r.get::<_, String>(15)?,
+                        r.get::<_, bool>(16)?,
                     ))
                 },
             )
@@ -1218,7 +1325,7 @@ impl Db {
 
     /// Checkpoint under the claim, as `checkpoint_cloud_job` does. A delete
     /// asked for meanwhile keeps the status `deleting`. `built_spec` becomes
-    /// the saved spec once the revision that spec was saved as is built.
+    /// the spec a revision was saved as once that revision is built.
     pub fn checkpoint_cloud_workspace_job(&self, job: &CloudWorkspaceJob, release_at: Option<u64>) -> Result<()> {
         let mut conn = self.c();
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
@@ -1235,7 +1342,10 @@ impl Db {
                  status=CASE WHEN (SELECT cancel FROM cloud_jobs WHERE id=?1)=1 THEN 'deleting' ELSE ?2 END,
                  sandbox_status=?3, error=?4, revision=?5, built_from_revision=?6, stale=?7, changed_fields=?8,
                  environment=?9, vault=?10, provider_id=?11, saved_revision=COALESCE(saved_revision,?12),
-                 built_spec=CASE WHEN ?2='ready' AND ?6 IS NOT NULL AND ?6=COALESCE(saved_revision,?12) THEN saved_spec ELSE built_spec END
+                 built_spec=CASE WHEN ?2='ready' AND ?6 IS NOT NULL THEN COALESCE(
+                     (SELECT spec FROM cloud_workspace_specs WHERE cloud_workspace=?1 AND revision=?6),
+                     CASE WHEN settings_applied=1 AND ?6=COALESCE(saved_revision,?12) THEN saved_spec END,
+                     built_spec) ELSE built_spec END
              WHERE id=?1",
             params![
                 w.id,
@@ -1270,6 +1380,7 @@ impl Db {
             "UPDATE cloud_workspaces SET status='deleted',deleted=?1,environment=NULL,vault=NULL,provider_id=NULL WHERE id=?2",
             params![now, job.cloud_workspace.id],
         )?;
+        tx.execute("DELETE FROM cloud_workspace_specs WHERE cloud_workspace=?1", [&job.cloud_workspace.id])?;
         tx.commit()?;
         Ok(())
     }
@@ -1282,6 +1393,194 @@ impl Db {
                 r.get(0)
             })
             .optional()?)
+    }
+}
+
+/// A settings save still to send to Managoat: the saved spec, where it
+/// goes, and the secrets the vault holds now.
+pub struct CloudWorkspaceSettings {
+    pub account: String,
+    pub spec: CloudWorkspaceSpec,
+    pub environment: String,
+    pub vault: String,
+    pub workspace: String,
+    pub vault_secrets: Vec<String>,
+}
+
+/// Settings saves (M117). The route saves first and then sends them;
+/// until Managoat has them, `settings_applied` is 0 and the worker sends
+/// them again.
+impl Db {
+    /// Save new settings, to be sent. Refused while the Cloud workspace is
+    /// being made or deleted, and when it names a secret the account
+    /// doesn't have. False when they're the ones already sent.
+    pub fn save_cloud_workspace_settings(
+        &self,
+        account: &str,
+        id: &str,
+        spec: &CloudWorkspaceSpec,
+        now: u64,
+    ) -> Result<bool> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        type Row = (String, Option<String>, Option<String>, String, Option<String>, bool, Option<String>);
+        let found: Option<Row> = tx
+            .query_row(
+                "SELECT status,provider_id,vault,saved_spec,saved_revision,settings_applied,vault_secrets
+                 FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL",
+                params![account, id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+            )
+            .optional()?;
+        let Some((status, provider_id, vault, saved, saved_revision, applied, vault_secrets)) = found else {
+            bail!("cloud workspace not found");
+        };
+        if status == "deleting" {
+            bail!("cloud workspace is being deleted");
+        }
+        if provider_id.is_none() || vault.is_none() {
+            bail!("cloud workspace is not made yet");
+        }
+        let before: CloudWorkspaceSpec = serde_json::from_str(&saved)?;
+        if before == *spec && applied {
+            return Ok(false);
+        }
+        for name in spec.secret_names() {
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM cloud_secrets WHERE account=?1 AND name=?2)",
+                params![account, name],
+                |r| r.get(0),
+            )?;
+            if !exists {
+                bail!("required cloud secret is missing");
+            }
+        }
+        // Keep the spec the environment has now, in case a setup is
+        // building it.
+        if let (true, Some(revision)) = (applied, &saved_revision) {
+            tx.execute(
+                "INSERT OR IGNORE INTO cloud_workspace_specs(cloud_workspace,account,revision,spec,saved) VALUES(?1,?2,?3,?4,?5)",
+                params![id, account, revision, saved, now],
+            )?;
+        }
+        let vault_secrets = match vault_secrets {
+            Some(names) => names,
+            None => serde_json::to_string(&before.secret_names())?,
+        };
+        tx.execute(
+            "UPDATE cloud_workspaces SET saved_spec=?1,name=?2,settings_applied=0,vault_secrets=?3 WHERE id=?4",
+            params![serde_json::to_string(spec)?, spec.name, vault_secrets, id],
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// The settings still to send for this Cloud workspace, if any.
+    pub fn unsent_cloud_workspace_settings(&self, id: &str) -> Result<Option<CloudWorkspaceSettings>> {
+        let found = self
+            .c()
+            .query_row(
+                "SELECT account,saved_spec,environment,vault,provider_id,vault_secrets FROM cloud_workspaces
+                 WHERE id=?1 AND deleted IS NULL AND status!='deleting' AND settings_applied=0
+                   AND environment IS NOT NULL AND vault IS NOT NULL AND provider_id IS NOT NULL",
+                [id],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, String>(4)?,
+                        r.get::<_, Option<String>>(5)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((account, spec, environment, vault, workspace, vault_secrets)) = found else {
+            return Ok(None);
+        };
+        let spec: CloudWorkspaceSpec = serde_json::from_str(&spec)?;
+        let vault_secrets = match vault_secrets {
+            Some(names) => serde_json::from_str(&names)?,
+            None => spec.secret_names(),
+        };
+        Ok(Some(CloudWorkspaceSettings { account, spec, environment, vault, workspace, vault_secrets }))
+    }
+
+    /// The vault holds `names` now. Kept as each one goes, so a save cut
+    /// short doesn't put or delete a secret twice.
+    pub fn cloud_workspace_vault_secrets(&self, id: &str, names: &[String]) -> Result<()> {
+        self.c().execute(
+            "UPDATE cloud_workspaces SET vault_secrets=?1 WHERE id=?2",
+            params![serde_json::to_string(names)?, id],
+        )?;
+        Ok(())
+    }
+
+    /// Managoat has `spec`, as environment `revision`. A save made since
+    /// stays unsent.
+    pub fn sent_cloud_workspace_settings(
+        &self,
+        id: &str,
+        spec: &CloudWorkspaceSpec,
+        revision: Option<&str>,
+        now: u64,
+    ) -> Result<()> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let saved = serde_json::to_string(spec)?;
+        let changed = tx.execute(
+            "UPDATE cloud_workspaces SET settings_applied=1,saved_revision=COALESCE(?1,saved_revision)
+             WHERE id=?2 AND saved_spec=?3 AND deleted IS NULL",
+            params![revision, id, saved],
+        )?;
+        if let (1, Some(revision)) = (changed, revision) {
+            tx.execute(
+                "INSERT OR REPLACE INTO cloud_workspace_specs(cloud_workspace,account,revision,spec,saved)
+                 SELECT id,account,?2,?3,?4 FROM cloud_workspaces WHERE id=?1",
+                params![id, revision, saved, now],
+            )?;
+            tx.execute(
+                "DELETE FROM cloud_workspace_specs WHERE cloud_workspace=?1
+                   AND revision IS NOT (SELECT built_from_revision FROM cloud_workspaces WHERE id=?1)
+                   AND revision NOT IN (SELECT revision FROM cloud_workspace_specs WHERE cloud_workspace=?1
+                                        ORDER BY saved DESC, rowid DESC LIMIT 10)",
+                [id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Managoat refused the settings: go back to the ones it has. False
+    /// when those aren't known.
+    pub fn refused_cloud_workspace_settings(&self, id: &str) -> Result<bool> {
+        let changed = self.c().execute(
+            "UPDATE cloud_workspaces SET settings_applied=1,
+                 saved_spec=(SELECT spec FROM cloud_workspace_specs s WHERE s.cloud_workspace=?1 AND s.revision=saved_revision),
+                 name=(SELECT json_extract(spec,'$.name') FROM cloud_workspace_specs s WHERE s.cloud_workspace=?1 AND s.revision=saved_revision)
+             WHERE id=?1 AND EXISTS(SELECT 1 FROM cloud_workspace_specs s WHERE s.cloud_workspace=?1 AND s.revision=saved_revision)",
+            [id],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// What Managoat said of the machine just after a save: whether it's
+    /// behind, and in which fields.
+    pub fn observe_cloud_workspace_staleness(
+        &self,
+        id: &str,
+        revision: Option<&str>,
+        built_from_revision: Option<&str>,
+        stale: bool,
+        changed_fields: &[String],
+    ) -> Result<()> {
+        self.c().execute(
+            "UPDATE cloud_workspaces SET revision=?1,built_from_revision=?2,stale=?3,changed_fields=?4
+             WHERE id=?5 AND deleted IS NULL",
+            params![revision, built_from_revision, stale, serde_json::to_string(changed_fields)?, id],
+        )?;
+        Ok(())
     }
 }
 
@@ -1586,6 +1885,46 @@ mod tests {
             .unwrap();
         assert_eq!(row, ("run_1".into(), "run".into(), "{}".into(), true, "held".into(), 42));
         conn.execute("INSERT INTO cloud_jobs(id,kind,body) VALUES('cw_1','cloud_workspace','{}')", []).unwrap();
+    }
+
+    #[test]
+    fn cloud_workspaces_from_before_settings_saves_gain_their_columns() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE cloud_jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'run', body TEXT NOT NULL);
+             CREATE TABLE cloud_workspaces (id TEXT PRIMARY KEY, saved_spec TEXT NOT NULL);
+             INSERT INTO cloud_workspaces VALUES ('cw_1','{}');",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap();
+        let row: (bool, Option<String>) = conn
+            .query_row("SELECT settings_applied,vault_secrets FROM cloud_workspaces", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(row, (true, None));
+    }
+
+    #[test]
+    fn pending_changes_follow_managoats_fields_and_never_show_a_value() {
+        let built = cloud_workspace_spec();
+        let mut saved = built.clone();
+        saved.networking =
+            Some(CloudWorkspaceNetworking { kind: "limited".into(), allowed_hosts: vec!["x.example".into()] });
+        saved.env_vars.insert("TOKEN".into(), "hunter2".into());
+        let fields: Vec<String> =
+            ["env_vars", "networking_type", "networking_config"].into_iter().map(String::from).collect();
+        let pending = pending_changes(Some(&built), &saved, true, &fields);
+        assert_eq!(pending.iter().map(|c| c.field.as_str()).collect::<Vec<_>>(), ["env_vars", "networking"]);
+        assert_eq!(pending[0].after, serde_json::json!(["TOKEN"]));
+        assert_eq!(pending[1].before, serde_json::Value::Null);
+        assert_eq!(pending[1].after["allowed_hosts"], serde_json::json!(["x.example"]));
+        assert!(!serde_json::to_string(&pending).unwrap().contains("hunter2"));
+        // Not stale: nothing to rebuild, whatever the names say; no built
+        // spec: no before.
+        assert!(pending_changes(Some(&built), &saved, false, &fields).is_empty());
+        assert_eq!(pending_changes(None, &saved, true, &fields)[0].before, serde_json::Value::Null);
     }
 
     #[test]
