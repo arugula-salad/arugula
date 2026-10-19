@@ -7,13 +7,13 @@ import { expect, test } from "@playwright/test";
 import { controlPort, listen } from "./ports";
 
 let base: string, directory: string, control: ChildProcess, github: Server, provider: Server;
-let answered = false, terminated = false;
 let secret = "";
 // The GitHub account signing in: each test is a fresh control account.
 let user = { id: 7, login: "cloud-tester" };
-// Cloud workspaces (S40): the fake workspace's reads, its tabs'
+// Cloud workspaces (S40): each fake workspace's reads (by id), its tabs'
 // conversations (by id: status and whether its approval was answered).
-let workspaceReads = 0, made = 0;
+const workspaceReads = new Map<string, number>();
+let made = 0;
 const conversations = new Map<string, { status: string; prompt: string; answered: boolean }>();
 test.beforeAll(async () => {
   github = createServer((req, res) => {
@@ -35,11 +35,17 @@ test.beforeAll(async () => {
     if (req.method === "DELETE") { res.writeHead(204).end(); return; }
     const tab = /^\/api\/conversations\/(tabconv\d+)(\/.*)?$/.exec(path);
     if (path === "/api/vaults") data = { id: "vault" };
-    else if (path === "/api/workspaces" && req.method === "POST") data = { id: "ws", name: body.name, environment_id: body.environment_id, vault_id: body.vault_id, status: "provisioning", sandbox_status: "pending", error: null, revision: "rev1", built_from_revision: null, stale: false, changed_fields: [] };
+    else if (path === "/api/workspaces" && req.method === "POST") {
+      const id = `ws${workspaceReads.size + 1}`;
+      workspaceReads.set(id, 0);
+      data = { id, name: body.name, environment_id: body.environment_id, vault_id: body.vault_id, status: "provisioning", sandbox_status: "pending", error: null, revision: "rev1", built_from_revision: null, stale: false, changed_fields: [] };
+    }
     // Setting up for the first reads, then ready.
-    else if (path === "/api/workspaces/ws") {
-      const ready = ++workspaceReads > 2;
-      data = { id: "ws", status: ready ? "ready" : "provisioning", sandbox_status: ready ? "ready" : "starting", error: null, revision: "rev1", built_from_revision: ready ? "rev1" : null, stale: false, changed_fields: [] };
+    else if (path.startsWith("/api/workspaces/") && workspaceReads.has(path.slice("/api/workspaces/".length))) {
+      const id = path.slice("/api/workspaces/".length);
+      workspaceReads.set(id, workspaceReads.get(id)! + 1);
+      const ready = workspaceReads.get(id)! > 2;
+      data = { id, status: ready ? "ready" : "provisioning", sandbox_status: ready ? "ready" : "starting", error: null, revision: "rev1", built_from_revision: ready ? "rev1" : null, stale: false, changed_fields: [] };
     } else if (path === "/api/agents" && body.metadata?.arugula_tab) data = { id: `tabagent${++made}` };
     else if (path === "/api/conversations" && body.workspace_id) {
       const id = `tabconv${conversations.size + 1}`;
@@ -65,17 +71,6 @@ test.beforeAll(async () => {
     }
     else if (path === "/api/environments") data = { id: "env", revision: "rev1" };
     else if (path.endsWith("/secrets")) { secret = body.value; data = { key: body.key }; }
-    else if (path === "/api/agents") data = { id: "agent" };
-    else if (path === "/api/conversations") data = { id: "conversation" };
-    else if (path.endsWith("/events")) {
-      const events = [{ id: 1, blocks: [{ kind: "permission_request", request_id: "approval", summary: "Run the tests?", options: [{ optionId: "allow", name: "Allow once" }] }] }, ...(answered ? [{ id: 2, blocks: [{ kind: "text", body: "Tests pass. Change complete." }] }] : [])];
-      data = events.filter((e) => e.id > Number(url.searchParams.get("after")));
-    } else if (path.endsWith("/requests/approval")) { answered = true; }
-    else if (path.endsWith("/terminate")) { terminated = true; }
-    else if (path === "/api/conversations/conversation") data = { status: terminated ? "terminated" : answered ? "idle" : "running", sandbox_id: "sandbox", usage_total: {} };
-    else if (path === "/api/sandboxes/sandbox") data = { status: "ready", transition: null };
-    else if (path.endsWith("/diff")) data = { diff: "+fixed", truncated: false };
-    else if (path.endsWith("/git-status")) data = { entries: [], truncated: false };
     else { res.writeHead(404).end(); return; }
     res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ data }));
   });
@@ -87,11 +82,22 @@ test.beforeAll(async () => {
 });
 test.afterAll(() => { control?.kill(); github?.close(); provider?.close(); if (directory) rmSync(directory, { recursive: true, force: true }); });
 
-test("cloud-only account saves a secret, runs, reconnects, approves and downloads results", async ({ page }) => {
-  test.setTimeout(60000);
+// A run from before runs were retired (S40, M119): control's answers for
+// it, as a past run reads them.
+const pastRun = {
+  id: "run_0123abcd", state: "completed", created: 1, result: { diff: { diff: "+fixed" }, files: {} },
+  spec: { agent_id: "curated_coding", prompt: "Fix the example", repository: "https://github.com/example/repo", git_ref: "", agent: { name: "Coding agent", instructions: "", mcp_servers: {}, skills: [], secret_names: [] } },
+};
+
+test("cloud-only account saves a secret, starts an agent in a new Cloud workspace, approves, and reads a past run", async ({ page }) => {
+  test.setTimeout(90000);
   await page.goto(base); await page.locator("[data-signin=github]").click();
   await page.locator("[data-stored-codes]").check();
   await page.locator("[data-saved-codes]").click();
+  // Runs once opened as panes were remembered; they're forgotten on load.
+  await page.evaluate(() => localStorage.setItem("arugula.cloud-panes.someone", JSON.stringify(["run_0123abcd"])));
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("arugula.cloud-panes.someone"))).toBeNull();
   await page.getByRole("button", { name: "Cloud agents", exact: true }).click();
   await page.getByText("Manage agents", { exact: true }).click();
   await page.getByRole("button", { name: "Create agent", exact: true }).click();
@@ -99,12 +105,13 @@ test("cloud-only account saves a secret, runs, reconnects, approves and download
   await editor.getByLabel("Name", { exact: true }).fill("Custom reviewer");
   await editor.getByLabel("Instructions", { exact: true }).fill("Review the requested changes carefully.");
   await editor.getByRole("button", { name: "Save agent", exact: true }).click();
-  await expect(page.getByRole("option", { name: "Custom reviewer", exact: true })).toHaveCount(1);
+  const manage = page.locator("details").filter({ has: page.locator("summary", { hasText: /^Manage agents$/ }) });
+  await expect(manage.locator("p", { hasText: "Custom reviewer" })).toHaveCount(1);
   await page.getByText("Import an existing Managoat agent", { exact: true }).click();
   await page.getByLabel("Old agent ID", { exact: true }).fill("legacy");
   await page.getByLabel("Old API credential", { exact: true }).fill("legacy-test");
   await page.getByRole("button", { name: "Import definition", exact: true }).click();
-  await expect(page.getByRole("option", { name: "Imported reviewer", exact: true })).toHaveCount(1);
+  await expect(manage.locator("p", { hasText: "Imported reviewer" })).toHaveCount(1);
   await expect(page.getByLabel("Old API credential", { exact: true })).toHaveValue("");
   await page.getByText("Secrets", { exact: true }).click();
   const secrets = page.locator("details").filter({ has: page.locator("summary", { hasText: /^Secrets$/ }) });
@@ -112,58 +119,78 @@ test("cloud-only account saves a secret, runs, reconnects, approves and download
   await secrets.getByLabel("Value", { exact: true }).fill("test-repository-secret");
   await secrets.getByRole("button", { name: "Save secret" }).click();
   await expect(secrets.getByRole("button", { name: "Remove" })).toBeVisible();
+  // Nothing in the panel starts a run any more.
+  await expect(page.getByRole("button", { name: "Run in cloud" })).toHaveCount(0);
   await page.getByRole("button", { name: "Close", exact: true }).click();
+
+  // New agent → Cloud makes a Cloud workspace from the repository and opens
+  // the agent as its tab.
   await page.getByRole("button", { name: "New agent", exact: true }).click();
-  await expect(page.getByLabel("Run on")).toHaveValue("cloud");
-  await page.getByLabel("Repository URL").fill("https://github.com/example/repo");
-  await page.getByLabel("Repository credential").selectOption("GITHUB_TOKEN");
-  await page.getByLabel("Task", { exact: true }).fill("Fix the example");
-  await page.getByRole("button", { name: "Run in cloud" }).click();
+  const start = page.getByRole("dialog", { name: "Start an agent" });
+  await expect(start.getByLabel("Run on")).toHaveValue("cloud");
+  await expect(start.getByLabel("Cloud workspace")).toHaveValue("new");
+  await expect(start.getByRole("combobox", { name: /^Agent/ }).locator("option", { hasText: "Custom reviewer" })).toHaveCount(1);
+  await expect(start.getByLabel("Runtime and model")).toContainText("claude · anthropic/test");
+  await start.getByLabel("Repository URL").fill("https://github.com/example/repo");
+  await start.getByLabel("Repository credential").selectOption("GITHUB_TOKEN");
+  await start.getByLabel("Prompt", { exact: true }).fill("Run the tests");
+  await start.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(start).toHaveCount(0);
+  await expect(page.locator("[data-cloud-tab-view]")).toBeVisible({ timeout: 15000 });
+  await expect(page.locator("[data-cloud-status]")).toBeVisible();
+  await expect(page.locator(".ws-crumb-name")).toHaveText("repo");
   await expect(page.getByRole("button", { name: "Allow once" })).toBeVisible({ timeout: 30000 });
   expect(secret).toBe("test-repository-secret");
-  await page.goto(`${base}/#swarm`);
-  const cloudCard = page.locator('.swarm-card[data-kind="input"]').filter({ hasText: "Fix the example" });
-  await expect(cloudCard).toBeVisible();
-  await cloudCard.locator("[data-open-card]").click();
-  await expect(page.getByRole("button", { name: "Allow once" })).toBeVisible();
-  await expect(page.locator("[data-cloud-pane]")).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Cloud/ })).toHaveAttribute("aria-selected", "true");
   await page.reload();
-  await expect(page.getByRole("button", { name: "Allow once" })).toBeVisible();
   await page.getByRole("button", { name: "Allow once" }).click();
-  await expect(page.locator("[data-cloud-pane] .agent-status", { hasText: "completed" })).toBeVisible({ timeout: 30000 });
-  await page.getByRole("button", { name: "Run again", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Run again" })).toContainText("fresh checkout");
-  await page.getByRole("dialog", { name: "Run again" }).getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.locator("[data-cloud-tab-view]")).toContainText("Tests pass.", { timeout: 30000 });
+
+  // A second agent can join the same Cloud workspace from New agent.
+  await page.goto(`${base}/`);
+  await page.getByRole("button", { name: "New agent", exact: true }).click();
+  await expect(start.getByLabel("Cloud workspace")).toContainText("repo");
+  await expect(start.getByLabel("Repository URL")).toHaveCount(0);
+  await start.getByLabel("Prompt", { exact: true }).fill("Write the docs");
+  await start.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(page.locator("[data-cloud-tab]")).toHaveCount(2, { timeout: 15000 });
+  await expect(page.locator("[data-cloud-tab-view]")).toContainText("Docs written.", { timeout: 30000 });
+
+  // A past run opens read only, with its download.
+  let events = [{ id: 1, blocks: [{ kind: "text", body: "Changed the example." }] }] as unknown[];
+  await page.route(/\/api\/cloud\/runs(\/|$|\?)/, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() !== "GET") return route.fulfill({ status: 405, json: { error: "gone" } });
+    if (path === "/api/cloud/runs") return route.fulfill({ json: { runs: [pastRun] } });
+    if (path.endsWith("/events")) return route.fulfill({ json: { events } });
+    if (path.endsWith("/requests")) return route.fulfill({ json: { requests: [] } });
+    return route.fulfill({ json: pastRun });
+  });
+  await page.goto(`${base}/`);
+  await page.getByRole("button", { name: "Cloud agents", exact: true }).click();
+  await page.locator("[data-past-runs]").getByRole("button", { name: "Coding agent: Fix the example" }).click();
+  await expect(page.locator("[data-cloud-pane] .agent-status", { hasText: "completed" })).toBeVisible();
+  await expect(page.locator("[data-cloud-pane]")).toContainText("Changed the example.");
+  await expect(page.getByRole("button", { name: "Cancel run" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Run again" })).toHaveCount(0);
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download results and transcript" }).click();
-  expect((await download).suggestedFilename()).toMatch(/^run_.*\.json$/);
-  // Losing beta access must not hide saved work or its navigation entry.
-  await page.route("**/control.json", async (route) => {
-    const response = await route.fetch();
-    await route.fulfill({ response, json: { ...await response.json(), cloud: false } });
-  });
-  await page.route("**/api/cloud/agents", (route) => route.fulfill({ status: 403, json: { error: "Cloud beta access is disabled" } }));
-  await page.route("**/api/cloud/secrets", (route) => route.fulfill({ status: 503, json: { error: "Secrets are unavailable" } }));
-  await page.reload();
-  await page.getByRole("button", { name: "Close cloud pane" }).click();
-  await page.getByRole("button", { name: "Cloud agents", exact: true }).click();
-  await expect(page.getByText("New cloud runs are unavailable:", { exact: false })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Run in cloud" })).toBeDisabled();
-  await page.getByRole("button", { name: "Coding agent: Fix the example" }).click();
-  await expect(page.locator("[data-cloud-pane] .agent-status", { hasText: "completed" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Download results and transcript" })).toBeVisible();
+  expect((await download).suggestedFilename()).toBe("run_0123abcd.json");
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByRole("tab", { name: /Cloud.*Fix the example/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Close cloud pane" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close past run" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: "/tmp/arugula-cloud-mobile.png" });
   // Provider lifecycle failures may have no transcript blocks.
-  await page.route("**/api/cloud/runs/*/events?*", (route) => route.fulfill({ json: { events: [
-    { id: 1, stage: "turn", state: "failed", data: JSON.stringify({ reason: "The selected model is unavailable." }), blocks: [] },
-  ] } }));
+  events = [{ id: 1, stage: "turn", state: "failed", data: JSON.stringify({ reason: "The selected model is unavailable." }), blocks: [] }];
   await page.reload();
   await expect(page.getByText("The selected model is unavailable.", { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 1000, height: 800 });
+
+  // Losing beta access hides nothing saved.
+  await page.route("**/api/cloud/agents", (route) => route.fulfill({ status: 403, json: { error: "Cloud beta access is disabled" } }));
+  await page.route("**/api/cloud/secrets", (route) => route.fulfill({ status: 503, json: { error: "Secrets are unavailable" } }));
+  await page.goto(`${base}/`);
+  await page.getByRole("button", { name: "Cloud agents", exact: true }).click();
+  await expect(page.getByText("Cloud agents are unavailable:", { exact: false })).toBeVisible();
+  await expect(page.locator("[data-past-runs]")).toContainText("Fix the example");
 });
 
 test("a Cloud workspace sets up, runs two tabs, asks in the drawer and is deleted", async ({ page }) => {
@@ -171,6 +198,7 @@ test("a Cloud workspace sets up, runs two tabs, asks in the drawer and is delete
   // Wide enough for the session sidebar beside the panes.
   await page.setViewportSize({ width: 1400, height: 900 });
   user = { id: 8, login: "workspace-tester" };
+  const before = conversations.size;
   await page.goto(base); await page.locator("[data-signin=github]").click();
   await page.locator("[data-stored-codes]").check();
   await page.locator("[data-saved-codes]").click();
@@ -227,5 +255,5 @@ test("a Cloud workspace sets up, runs two tabs, asks in the drawer and is delete
   await confirm.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(page.locator("[data-cloud-ws-list]")).toBeVisible();
   await expect(page.locator("[data-cloud-workspace]")).toHaveCount(0, { timeout: 45000 });
-  expect([...conversations.values()].every((c) => c.status === "terminated")).toBe(true);
+  expect([...conversations.values()].slice(before).every((c) => c.status === "terminated")).toBe(true);
 });

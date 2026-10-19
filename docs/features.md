@@ -50,6 +50,20 @@ around your panes. A phone keeps its own header and sheet.
   the machine, the focused pane's repository and branch, agents running,
   what needs input, and the keys.
 
+**Cloud workspaces** (in the cloud beta) are sessions too, with no
+machine of yours behind them: a machine in the cloud, run through Arugula
+control, with your repositories on it ([managoat.md](managoat.md)). The
+sidebar's *Cloud workspaces* group lists them with their state (*Setting
+up*, *Ready*, *Parked*, *Failed*, *Rebuild needed*) and makes one with
+*+ Cloud workspace*. Each tab is an agent working there, all of them on
+one disk: *+ Agent* opens one with its agent, runtime and model, and the
+directory it starts in. Tabs ask for approval in the tab, the bell and a
+push. *New agent* → *Run on: Cloud* opens an agent in one of them, or
+in a new one made from the repository you give it. The header shows the
+state and *Delete*, which names the tabs it ends. Cloud runs (a fresh
+checkout per agent) are retired: past ones stay readable, with their
+downloads, under *Past runs* in Cloud agents.
+
 While the connection is down the workspace says so: it shows what it last
 heard, claims nothing is working or running, and turns off what would
 change something (with why, on the button). A viewer sees the session

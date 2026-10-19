@@ -271,8 +271,6 @@ const fleetHosts = (): HostRef[] =>
   });
 cloudPanes.subscribe(() => fleet.setCloudPanes(cloudFleet()));
 fleet.onOpen = (host, pane, share) => {
-  const cloud = fleet.panes.find((p) => p.host === host && p.id === pane && p.cloudRun);
-  if (cloud?.cloudRun) { cloudPanes.open(cloud.cloudRun); return; }
   const tab = fleet.panes.find((p) => p.host === host && p.id === pane && p.cloudTab)?.cloudTab;
   if (tab) { cloudWorkspaces.open(tab.workspace, tab.tab); return; }
   directory.select(host);

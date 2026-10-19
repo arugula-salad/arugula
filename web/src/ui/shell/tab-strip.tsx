@@ -1,4 +1,4 @@
-// The session's tabs, over the panes: each tab, the cloud runs opened
+// The session's tabs, over the panes: each tab, a past cloud run shown
 // beside them, and + (with ▾ for other kinds of tab). Many tabs scroll
 // sideways (the wheel too), the shown one is kept in sight, and + and ▾
 // stay at the end (M113).

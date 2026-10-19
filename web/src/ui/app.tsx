@@ -171,7 +171,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
                   <TabStrip client={client} session={session} renaming={renaming} setRenaming={setRenaming} />
                 </div>
               ) : (
-                cloudPanes.opened.length > 0 && (
+                cloud && (
                   <div class="ws-tabs">
                     <div class="tabbar" role="tablist">
                       <CloudTabs />
@@ -210,7 +210,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {!state && cloud && <AppBar client={client} at="panes" all>{!phone && <div class="tabbar" role="tablist"><CloudTabs /><button onClick={() => startAgent(client, {})}>New agent</button></div>}</AppBar>}
       {phone && cloudWs && <nav class="cloud-ws-phone-head" aria-label="Where you are"><CloudWorkspaceCrumbs /><span class="bar-fill" /><DeleteCloudWorkspace /></nav>}
       {phone && cloudWs?.workspace && <div class="cloud-phone-tabs">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudWorkspaceTabStrip /></div>}
-      {phone && !cloudWs && cloudPanes.opened.length > 0 && <div class="tabbar cloud-phone-tabs" role="tablist">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudTabs /></div>}
+      {phone && !cloudWs && cloud && <div class="tabbar cloud-phone-tabs" role="tablist">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudTabs /></div>}
       {state && <ControlBanner client={client} />}
       {state && <NewMachineNote />}
       {state && <AgentsNudge client={client} />}

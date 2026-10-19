@@ -1,5 +1,5 @@
 // The attention drawer (M111, #1026): what waits on you, on every machine,
-// in cloud runs and in Cloud workspace tabs, from the fleet model the swarm already builds. The
+// and in Cloud workspace tabs, from the fleet model the swarm already builds. The
 // header's bell, the footer's "needs input" and the sidebar's Needs you
 // open it. Selecting an item shows what it would run, where and who asks;
 // Allow and Deny (or the question's answer) go through the existing
@@ -51,12 +51,12 @@ function wants(info: PaneInfo): boolean {
 /** Owner-only asks (#234 invites, M79 tasks from another agent). */
 const ownersOnly = (info: PaneInfo) => info.ask?.source === "invite" || info.ask?.source === "a2a";
 
-/** A cloud run or a Cloud workspace's tab: control's, answered where it's shown. */
-const inCloud = (p: FleetPane) => !!(p.cloudRun || p.cloudTab);
+/** A Cloud workspace's tab: control's, answered where it's shown. */
+const inCloud = (p: FleetPane) => !!p.cloudTab;
 
 /** Everything that wants you: the shown machine's panes from its own
  * client (live, and it's the one that can act), every other machine's from
- * the fleet's summaries, and the account's cloud runs. Waiting first, then
+ * the fleet's summaries, and the account's Cloud workspace tabs. Waiting first, then
  * newest first. */
 export function attentionItems(client: Client): AttentionItem[] {
   const out: AttentionItem[] = [];
@@ -108,7 +108,7 @@ export function waitingCount(client: Client): number {
   return attentionItems(client).filter((i) => i.waiting).length;
 }
 
-/** Re-render on the shown machine's state, the fleet's and cloud runs'. */
+/** Re-render on the shown machine's state, the fleet's and Cloud workspaces'. */
 export function useAttentionTick(client: Client) {
   useSubscribe((fn) => client.subscribe(fn));
   useSubscribe((fn) => getFleet()?.subscribe(fn) ?? (() => {}));
@@ -208,19 +208,15 @@ function commandOf(p: FleetPane): string | null {
 
 function titleOf(i: AttentionItem): string {
   const r = reasonOf(i.p);
-  if (!r) return i.p.cloudTab ? "Cloud workspace tab waits for you" : i.p.cloudRun ? "Cloud run waits for you" : "Needs you";
+  if (!r) return i.p.cloudTab ? "Cloud workspace tab waits for you" : "Needs you";
   return cardTitle(r, 1, [shortHost(i.p.host)], agentOf(i.p) ?? undefined);
 }
 
-/** Go to the item's pane (or cloud run), on its machine, without answering. */
+/** Go to the item's pane (or Cloud workspace tab), on its machine, without answering. */
 export function goToItem(client: Client, i: AttentionItem) {
   closeAttention(false);
   const at = currentPlace();
   if (at !== "panes") closePlace(at);
-  if (i.p.cloudRun) {
-    cloudPanes.open(i.p.cloudRun);
-    return;
-  }
   if (i.p.cloudTab) {
     cloudWorkspaces.open(i.p.cloudTab.workspace, i.p.cloudTab.tab);
     return;
@@ -425,7 +421,7 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
       </div>
       <div class="ws-att-go">
         <button class="ws-att-goto" data-attention-goto onClick={() => goToItem(client, item)} title="Show it, on its machine; this doesn't answer it">
-          {p.cloudTab ? "Go to the tab" : p.cloudRun ? "Go to the run" : "Go to pane"}
+          {p.cloudTab ? "Go to the tab" : "Go to pane"}
         </button>
       </div>
     </section>
