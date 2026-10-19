@@ -519,6 +519,10 @@ pub fn router(app: Arc<App>) -> Router {
             "/api/cloud/workspaces/{id}",
             get(cloud::workspaces::show).patch(cloud::workspaces::update).delete(cloud::workspaces::delete),
         )
+        .route("/api/cloud/workspaces/{id}/files", get(cloud::files::files))
+        .route("/api/cloud/workspaces/{id}/file", get(cloud::files::file))
+        .route("/api/cloud/workspaces/{id}/diff", get(cloud::files::diff))
+        .route("/api/cloud/workspaces/{id}/git-status", get(cloud::files::git_status))
         .route("/api/cloud/workspaces/{id}/tabs", get(cloud::tabs::list).post(cloud::tabs::open))
         .route("/api/cloud/workspaces/{id}/tabs/{tab}", get(cloud::tabs::show).delete(cloud::tabs::close))
         .route("/api/cloud/workspaces/{id}/tabs/{tab}/prompt", post(cloud::tabs::prompt))

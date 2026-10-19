@@ -15,6 +15,36 @@ impl std::fmt::Display for HttpFailure {
 }
 impl std::error::Error for HttpFailure {}
 
+/// The refusal codes of Managoat's machine reads (its `error`), the only
+/// part of such a body control keeps.
+const READ_REFUSALS: &[&str] = &[
+    "sandbox_not_ready",
+    "sandbox_unavailable",
+    "path_not_found",
+    "ref_not_found",
+    "path_outside_sandbox",
+    "not_a_directory",
+    "is_a_directory",
+    "path_unreadable",
+    "not_a_repository",
+    "invalid_ref",
+    "invalid_path",
+];
+
+/// A machine read Managoat refused: its status, its code when it's one of
+/// `READ_REFUSALS`, and whether the machine is parked.
+#[derive(Debug)]
+pub struct ReadRefusal {
+    pub status: u16,
+    pub code: Option<&'static str>,
+    pub parked: bool,
+}
+impl std::fmt::Display for ReadRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "cloud provider refused the read: HTTP {} {}", self.status, self.code.unwrap_or(""))
+    }
+}
+impl std::error::Error for ReadRefusal {}
 /// Managoat said no to a rebuild or a retry, and nothing changed: a 4xx,
 /// or a 503 whose code says so. Only its `error` code and, for
 /// `turns_running`, its conversations' ids are kept; the rest of a body
@@ -290,6 +320,34 @@ impl Provider {
     /// A partial update: the fields sent replace those fields only.
     pub async fn update_environment(&self, id: &str, body: Value) -> Result<Value> {
         self.request(Method::PATCH, &["api", "environments", id], Some(body)).await
+    }
+
+    /// One of the four reads of a Managoat workspace's machine (`files`,
+    /// `file`, `diff`, `git-status`). Managoat never resumes a parked
+    /// machine for one. A refusal keeps only its status and, when it's one
+    /// Managoat documents, its code: the rest of the body is never read out.
+    pub async fn read_cloud_workspace(&self, id: &str, read: &str, query: &[(&str, &str)]) -> Result<Value> {
+        let mut url = self.base.clone();
+        url.path_segments_mut().map_err(|_| anyhow::anyhow!("invalid cloud provider URL"))?.clear().extend([
+            "api",
+            "workspaces",
+            id,
+            read,
+        ]);
+        if !query.is_empty() {
+            url.query_pairs_mut().extend_pairs(query.iter().copied());
+        }
+        let response =
+            self.client.get(url).bearer_auth(&self.key).send().await.context("cloud provider unavailable")?;
+        let status = response.status();
+        if !status.is_success() {
+            let body: Value = response.json().await.unwrap_or(Value::Null);
+            let code = READ_REFUSALS.iter().copied().find(|c| body["error"] == *c);
+            let parked = body["status"] == "suspended";
+            return Err(ReadRefusal { status: status.as_u16(), code, parked }.into());
+        }
+        let value: Value = response.json().await.context("invalid cloud provider response")?;
+        Ok(value.get("data").cloned().unwrap_or(value))
     }
 
     pub async fn find(&self, collection: &str, run: &str) -> Result<Option<String>> {

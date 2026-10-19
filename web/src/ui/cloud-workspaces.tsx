@@ -13,6 +13,7 @@ import {
 import { ConfirmRemove } from "./confirm";
 import { CloudTranscript, useCloudConversation } from "./cloud";
 import { CloudWorkspaceSettings } from "./cloud-workspace-settings";
+import { CloudWorkspaceChanges } from "./cloud-workspace-changes";
 import { RetryCloudWorkspace } from "./cloud-workspace-rebuild";
 
 /** Re-render on the store and the route; returns the route. */
@@ -346,6 +347,8 @@ function CloudWorkspaceHome({ w }: { w: CloudWorkspace }) {
       ) : (
         <p class="dim">No tabs yet. + Agent opens one.</p>
       )}
+      <h3>Changes</h3>
+      <CloudWorkspaceChanges w={w} />
     </div>
   );
 }
@@ -358,6 +361,7 @@ function CloudTabView({ w, tab, id }: { w: CloudWorkspace; tab?: CloudTab; id: s
   const t = item ?? tab;
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
+  const [changes, setChanges] = useState(false);
   if (!t) return <div class="agent cloud-agent">{error ? <p role="alert">{error}</p> : <p class="dim">Loading…</p>}</div>;
   const ended = ["closing", "terminated"].includes(t.status);
   const send = async (e: Event) => {
@@ -374,12 +378,14 @@ function CloudTabView({ w, tab, id }: { w: CloudWorkspace; tab?: CloudTab; id: s
         <span class="agent-name">{t.agent_name}</span>
         <span class="host-tag" title={t.model}>{t.runtime}</span>
         <span class="agent-spacer" />
+        <button data-cloud-tab-changes aria-pressed={changes} title="What's changed on this Cloud workspace's disk" onClick={() => setChanges(!changes)}>Changes</button>
         {(t.status === "running" || t.status === "needs_input") && <button onClick={() => void api(`${path}/interrupt`, "POST", {}).catch((e: Error) => setError(e.message))}>Interrupt</button>}
       </div>
       <div class="agent-note">{w.name} · <span class="mono">{t.cwd}</span> · {t.model}</div>
       {t.waiting_for_setup && <p class="agent-note" data-waiting-for-setup>Waiting for the Cloud workspace to finish setting up; the first prompt starts then.</p>}
       {t.error && <p role="alert" class="control-error">{t.error}</p>}
       {error && <p role="alert">{error}</p>}
+      {changes && <div class="cloud-tab-changes"><CloudWorkspaceChanges w={w} first={t.cwd} /></div>}
       <CloudTranscript events={events} pending={pending} answered={answered} ended={ended} answer={answer} setError={setError} />
       {!ended && t.status !== "opening" && (
         <form class="cloud-form cloud-tab-prompt" onSubmit={send}>

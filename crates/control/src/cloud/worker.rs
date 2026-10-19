@@ -810,6 +810,8 @@ mod tests {
         built_environment: Option<Value>,
         refuse_patch: bool,
         lose_patch: bool,
+        /// The workspace's machine is parked: its reads answer 409.
+        parked: bool,
         // Rebuild and Retry (M120): how many asks find no machine free, and
         // whether the next one is taken but its answer lost.
         rebuild_unavailable: u32,
@@ -970,6 +972,44 @@ mod tests {
                     workspace["built_from_revision"] = built_revision;
                 }
                 workspace.clone()
+            }
+            // The workspace's machine, read-only: Managoat answers a parked
+            // one 409 and never wakes it.
+            ("GET", read) if read.starts_with("/api/workspaces/ws1/") => {
+                let query = uri.query().unwrap_or_default();
+                if fake.parked {
+                    return (
+                        StatusCode::CONFLICT,
+                        axum::Json(json!({"error":"sandbox_not_ready","message":"the sandbox is suspended","status":"suspended"})),
+                    )
+                        .into_response();
+                }
+                if query.contains("path=%2Fhome%2Fsprite&") || query.ends_with("path=%2Fhome%2Fsprite") {
+                    return (
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        axum::Json(json!({"error":"not_a_repository","message":"echoed repo-secret"})),
+                    )
+                        .into_response();
+                }
+                match &read["/api/workspaces/ws1/".len()..] {
+                    "diff" => json!({
+                        "path":"/home/sprite/app","repo_root":"/home/sprite/app","staged":false,"ref":"HEAD",
+                        "diff":"diff --git a/README.md b/README.md\n+docs","truncated":false,"sandbox_id":"sandbox9",
+                    }),
+                    "git-status" => json!({
+                        "path":"/home/sprite/app","repo_root":"/home/sprite/app","branch":"main","untracked":"all",
+                        "entries":[{"path":"README.md","index":"unchanged","worktree":"modified","renamed_from":null},
+                                   {"path":"notes.txt","index":"untracked","worktree":"untracked","renamed_from":null}],
+                        "truncated":false,
+                    }),
+                    "file" => {
+                        json!({"path":"/home/sprite/app/notes.txt","size":5,"truncated":false,"encoding":"utf-8","content":"notes"})
+                    }
+                    "files" => {
+                        json!({"path":"/home/sprite","entries":[{"name":"app","type":"directory","size":null}],"truncated":false})
+                    }
+                    _ => return StatusCode::NOT_FOUND.into_response(),
+                }
             }
             // A new machine from the environment as it is now, set up over
             // the next reads. A rebuild is refused while a tab's turn runs,
@@ -1507,6 +1547,94 @@ mod tests {
         let at = |m: &str, p: &str| fake.calls.iter().position(|(cm, cp, _)| cm == m && cp == p).unwrap();
         assert!(at("DELETE", "/api/agents/agent3") < at("DELETE", "/api/vaults/vault1"));
         drop(fake);
+        routes.abort();
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn cloud_workspace_reads_are_account_scoped_and_never_wake_it() {
+        use reqwest::Method as M;
+        let (app, fake, server) = serve(Fake::default()).await;
+        let w = cloud_workspace(&app);
+        let (base, routes) = routes(&app).await;
+        let item = format!("{base}/workspaces/{}", w.id);
+        // Before Managoat has made its machine there's nothing to read.
+        let (status, body) = call(M::GET, &format!("{item}/diff"), "a", None).await;
+        assert_eq!((status, body["reason"].as_str()), (StatusCode::CONFLICT, Some("not_ready")));
+        run(&app, 0, 60).await;
+        assert_eq!(app.db.cloud_workspace("a", &w.id).unwrap().unwrap().status, "ready");
+
+        let (status, diff) = call(M::GET, &format!("{item}/diff?path=/home/sprite/app&ref=HEAD"), "a", None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(diff["repo_root"], "/home/sprite/app");
+        assert!(diff["diff"].as_str().unwrap().contains("+docs"));
+        // Only the documented fields reach the client.
+        assert!(diff.get("sandbox_id").is_none());
+        let (status, git) =
+            call(M::GET, &format!("{item}/git-status?path=/home/sprite/app&untracked=all"), "a", None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(git["entries"][1]["path"], "notes.txt");
+        assert_eq!(git["branch"], "main");
+        let (status, file) = call(M::GET, &format!("{item}/file?path=/home/sprite/app/notes.txt"), "a", None).await;
+        assert_eq!((status, file["content"].as_str()), (StatusCode::OK, Some("notes")));
+        let (status, files) = call(M::GET, &format!("{item}/files"), "a", None).await;
+        assert_eq!((status, files["entries"][0]["name"].as_str()), (StatusCode::OK, Some("app")));
+        let sent: Vec<String> = fake
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .filter(|(_, p, _)| p.starts_with("/api/workspaces/ws1/"))
+            .map(|(_, p, _)| p.clone())
+            .collect();
+        assert_eq!(
+            sent,
+            [
+                "/api/workspaces/ws1/diff?path=%2Fhome%2Fsprite%2Fapp&ref=HEAD",
+                "/api/workspaces/ws1/git-status?path=%2Fhome%2Fsprite%2Fapp&untracked=all",
+                "/api/workspaces/ws1/file?path=%2Fhome%2Fsprite%2Fapp%2Fnotes.txt",
+                "/api/workspaces/ws1/files",
+            ]
+        );
+
+        // Another account's id is 404 on every read, one outside the beta
+        // 403, and neither reaches Managoat.
+        let before = fake.lock().unwrap().calls.len();
+        for read in ["files", "file?path=/home/sprite/app/notes.txt", "diff", "git-status"] {
+            assert_eq!(call(M::GET, &format!("{item}/{read}"), "b", None).await.0, StatusCode::NOT_FOUND, "{read}");
+            assert_eq!(call(M::GET, &format!("{item}/{read}"), "c", None).await.0, StatusCode::FORBIDDEN, "{read}");
+        }
+        assert_eq!(fake.lock().unwrap().calls.len(), before);
+
+        // Managoat's refusal comes back in control's words, never its body.
+        let (status, body) = call(M::GET, &format!("{item}/diff?path=/home/sprite"), "a", None).await;
+        assert_eq!((status, body["reason"].as_str()), (StatusCode::UNPROCESSABLE_ENTITY, Some("not_a_repository")));
+        assert!(!body.to_string().contains("repo-secret"));
+        for bad in ["diff?path=%01", "git-status?untracked=everything", "file?path=a&max_bytes=0"] {
+            assert_eq!(
+                call(M::GET, &format!("{item}/{bad}"), "a", None).await.0,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{bad}"
+            );
+        }
+        assert_eq!(call(M::GET, &format!("{item}/diff?sandbox=1"), "a", None).await.0, StatusCode::BAD_REQUEST);
+
+        // Parked: each read is refused, and nothing but those reads is sent,
+        // so nothing wakes the machine.
+        fake.lock().unwrap().parked = true;
+        let before = fake.lock().unwrap().calls.len();
+        for read in ["files", "file?path=/home/sprite/app/notes.txt", "diff", "git-status"] {
+            let (status, body) = call(M::GET, &format!("{item}/{read}"), "a", None).await;
+            assert_eq!((status, body["reason"].as_str()), (StatusCode::CONFLICT, Some("parked")), "{read}");
+        }
+        let calls = fake.lock().unwrap().calls[before..].to_vec();
+        assert_eq!(calls.len(), 4);
+        assert!(calls.iter().all(|(m, p, _)| m == "GET" && p.starts_with("/api/workspaces/ws1/")), "{calls:?}");
+
+        // Deleting: no reads.
+        app.db.delete_cloud_workspace("a", &w.id).unwrap();
+        let (status, body) = call(M::GET, &format!("{item}/diff"), "a", None).await;
+        assert_eq!((status, body["reason"].as_str()), (StatusCode::CONFLICT, Some("deleting")));
         routes.abort();
         server.abort();
     }
