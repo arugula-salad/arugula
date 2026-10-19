@@ -19,6 +19,7 @@ let workspaceReads = 0, made = 0;
 const buildFields = ["repositories", "packages", "setup_script", "setup_timeout_seconds", "env_vars", "networking_type", "networking_config"];
 let environment: Record<string, unknown> = {}, built: Record<string, unknown> = {}, revision = 1;
 const changedFields = () => buildFields.filter((f) => JSON.stringify(environment[f]) !== JSON.stringify(built[f]));
+const machineReads: string[] = [];
 const conversations = new Map<string, { status: string; prompt: string; answered: boolean }>();
 test.beforeAll(async () => {
   github = createServer((req, res) => {
@@ -49,6 +50,14 @@ test.beforeAll(async () => {
       const ready = ++workspaceReads > 2;
       const changed = ready ? changedFields() : [];
       data = { id: "ws", status: ready ? "ready" : "provisioning", sandbox_status: ready ? "ready" : "starting", error: null, revision: `rev${revision}`, built_from_revision: ready ? `rev${built.revision}` : null, stale: changed.length > 0, changed_fields: changed };
+    } else if (/^\/api\/workspaces\/ws\/(diff|git-status|file)$/.test(path)) {
+      // The machine's reads (M118): the guide tab's change, once it ran.
+      machineReads.push(`${path}${url.search}`);
+      const wrote = [...conversations.values()].some((c) => c.prompt === "Write the guide");
+      if (path.endsWith("/diff")) data = { path: url.searchParams.get("path"), repo_root: "/home/sprite/app", staged: false, ref: url.searchParams.get("ref"), truncated: false, diff: wrote ? "diff --git a/README.md b/README.md\nindex 1..2 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # app\n+Docs for the app.\n" : "" };
+      else if (path.endsWith("/git-status")) data = { path: url.searchParams.get("path"), repo_root: "/home/sprite/app", branch: "main", untracked: "all", truncated: false, entries: wrote ? [{ path: "README.md", index: "unchanged", worktree: "modified", renamed_from: null }, { path: "docs/guide.md", index: "untracked", worktree: "untracked", renamed_from: null }] : [] };
+      else if (url.searchParams.get("path") === "/home/sprite/app/docs/guide.md") data = { path: "/home/sprite/app/docs/guide.md", size: 13, truncated: false, encoding: "utf-8", content: "# Guide\nStart." };
+      else { res.writeHead(404).end(); return; }
     } else if (path === "/api/agents" && body.metadata?.arugula_tab) data = { id: `tabagent${++made}` };
     else if (path === "/api/conversations" && body.workspace_id) {
       const id = `tabconv${conversations.size + 1}`;
@@ -296,4 +305,44 @@ test("adding a package says Rebuild needed and leaves the open tab alone", async
   const conversation = [...conversations.values()].find((c) => c.prompt === "Write the docs" && c.status !== "terminated");
   expect(conversation).toBeTruthy();
   await expect(page.locator("[data-cloud-status]")).toHaveText("Rebuild needed · 1 change");
+});
+
+test("a change an agent made in a Cloud workspace shows in Changes", async ({ page }) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  user = { id: 10, login: "changes-tester" };
+  await page.goto(base); await page.locator("[data-signin=github]").click();
+  await page.locator("[data-stored-codes]").check();
+  await page.locator("[data-saved-codes]").click();
+  await page.locator("[data-open-cloud-workspaces]").click();
+  await page.locator("[data-new-cloud-workspace]").click();
+  const create = page.getByRole("dialog", { name: "New Cloud workspace" });
+  await create.getByLabel("Name", { exact: true }).fill("docs box");
+  await create.getByLabel("Repository URL").fill("https://github.com/example/app");
+  await create.getByRole("button", { name: "Create Cloud workspace" }).click();
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Ready", { timeout: 30000 });
+  // Nothing changed yet.
+  const repo = page.locator('[data-cloud-changes-repo="/home/sprite/app"]');
+  await expect(repo).toContainText("no changes", { timeout: 15000 });
+
+  await page.locator("[data-new-cloud-tab]").click();
+  const dialog = page.getByRole("dialog", { name: "Open an agent" });
+  await dialog.getByLabel("First prompt (optional)").fill("Write the guide");
+  await dialog.getByRole("button", { name: "Open agent" }).click();
+  await expect(page.locator("[data-cloud-tab-view]")).toContainText("Docs written.", { timeout: 30000 });
+  await page.locator("[data-cloud-tab-changes]").click();
+  const changes = page.locator("[data-cloud-tab-view] [data-cloud-changes]");
+  await expect(changes.locator('[data-cloud-diff-file="README.md"]')).toContainText("Docs for the app.", { timeout: 15000 });
+  await expect(changes.locator(".cloud-changes-status li")).toHaveCount(2);
+  await expect(changes).toContainText("main");
+  // An untracked file the diff can't show opens from the status.
+  await changes.getByRole("button", { name: "docs/guide.md" }).click();
+  await expect(changes.locator('[data-cloud-file="/home/sprite/app/docs/guide.md"]')).toContainText("Start.");
+  // Each read named the repository, and the diff was against HEAD.
+  expect(machineReads).toContain("/api/workspaces/ws/diff?path=%2Fhome%2Fsprite%2Fapp&ref=HEAD");
+  expect(machineReads).toContain("/api/workspaces/ws/git-status?path=%2Fhome%2Fsprite%2Fapp&untracked=all");
+
+  await page.locator("[data-delete-cloud-workspace]").click();
+  await page.getByRole("alertdialog", { name: "Delete docs box?" }).getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.locator("[data-cloud-workspace]")).toHaveCount(0, { timeout: 45000 });
 });

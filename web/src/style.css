@@ -10835,3 +10835,21 @@ html[data-workspace="new"] .thread-panel {
 .grid.with-headers .pane-badge {
   display: none;
 }
+
+/* A Cloud workspace's Changes (S40, M118): git status and diff per repository, and a file. */
+.cloud-changes { display: flex; flex-direction: column; gap: 12px; }
+.cloud-changes-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
+.cloud-changes-repo { border: 1px solid var(--divider); border-radius: 6px; overflow: hidden; }
+.cloud-changes-repo > h4 { margin: 0; padding: 8px 10px; font-size: 13px; overflow-wrap: anywhere; border-bottom: 1px solid var(--divider); }
+.cloud-changes-repo > p { margin: 8px 10px; }
+.cloud-changes-status { list-style: none; margin: 0; padding: 6px 10px; }
+.cloud-changes-status li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+.cloud-changes-open { border: none; background: none; padding: 0; color: var(--fg); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.cloud-changes-open:hover:not(:disabled) { text-decoration: underline; }
+.cloud-changes-diff > summary { cursor: pointer; list-style: none; }
+.cloud-changes .adds { color: #a6e3a1; }
+.cloud-changes .dels { color: #f38ba8; }
+.cloud-changes-file { border: 1px solid var(--divider); border-radius: 6px; padding: 8px 10px; }
+.cloud-changes-path { overflow-wrap: anywhere; min-width: 0; }
+.cloud-changes-content { max-height: 480px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.cloud-tab-changes { padding: 8px 12px; max-height: 50%; overflow: auto; flex-shrink: 0; border-bottom: 1px solid var(--divider); }
