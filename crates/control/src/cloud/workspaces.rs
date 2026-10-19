@@ -5,7 +5,7 @@
 use super::enabled;
 use crate::{
     ApiError, App,
-    auth::Session,
+    auth::{CloudDriver, Session},
     db::cloud::{CloudWorkspace, CloudWorkspaceSpec},
     err,
 };
@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-pub async fn list(State(app): State<Arc<App>>, session: Session) -> Result<Json<Value>, ApiError> {
+pub async fn list(State(app): State<Arc<App>>, CloudDriver(session): CloudDriver) -> Result<Json<Value>, ApiError> {
     Ok(Json(json!({"cloud_workspaces": app.db.cloud_workspaces(&session.account)?})))
 }
 
@@ -31,7 +31,7 @@ pub struct Create {
 
 pub async fn create(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Json(mut input): Json<Create>,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
     let cloud = enabled(&app, &session.account)?;
@@ -65,7 +65,7 @@ pub async fn create(
 
 pub async fn show(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
     Ok(Json(found(&app, &session, &id)?))
@@ -315,6 +315,123 @@ mod tests {
                 .status();
             assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{bad}");
         }
+        server.abort();
+    }
+
+    /// A daemon joined to an account.
+    fn daemon(app: &App, account: &str) -> arugula_e2e::DeviceKeys {
+        let keys = arugula_e2e::DeviceKeys::generate();
+        let cert = arugula_e2e::Cert::new(&keys, account, arugula_e2e::Kind::Daemon, "geek");
+        app.db.put_device(&cert, true, arugula_e2e::now_ms()).unwrap();
+        app.db.put_daemon(account, &cert.device, "geek", &[]).unwrap();
+        keys
+    }
+
+    fn signed(keys: &arugula_e2e::DeviceKeys, method: &str, path: &str, body: &[u8]) -> String {
+        let ms = arugula_e2e::now_ms();
+        let nonce = hex::encode(arugula_e2e::random::<16>());
+        let msg = crate::auth::daemon_auth_message_v2(method, path, ms, &nonce, body);
+        format!("v2 {} {ms} {nonce} {}", keys.id(), hex::encode(keys.signature(msg.as_bytes())))
+    }
+
+    /// #1094: a daemon drives its own account's Cloud workspaces (for the
+    /// agents on its machine) and reaches no one else's; settings, secrets,
+    /// deleting and the agent library stay a person's.
+    #[tokio::test]
+    async fn a_daemon_drives_its_accounts_cloud_workspaces_only() {
+        let app = crate::cloud::tests::test_app();
+        let (da, db) = (daemon(&app, "a"), daemon(&app, "b"));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, crate::router(app)).await.unwrap() });
+        let client = reqwest::Client::new();
+        let call = |keys: &arugula_e2e::DeviceKeys, method: &str, path: &str, body: Option<Value>| {
+            let bytes = body.map(|b| serde_json::to_vec(&b).unwrap()).unwrap_or_default();
+            let mut req = client
+                .request(method.parse().unwrap(), format!("{base}{path}"))
+                .header("x-arugula-auth", signed(keys, method, path, &bytes));
+            if !bytes.is_empty() {
+                req = req.header("content-type", "application/json").body(bytes);
+            }
+            async move {
+                let r = req.send().await.unwrap();
+                (r.status(), r.json::<Value>().await.unwrap_or_default())
+            }
+        };
+        let body = json!({"request_key":"one","spec":{"name":"Agent box"}});
+        let (status, created) = call(&da, "POST", "/api/cloud/workspaces", Some(body)).await;
+        assert_eq!(status, StatusCode::OK, "{created}");
+        let id = created["id"].as_str().unwrap().to_owned();
+        let (status, listed) = call(&da, "GET", "/api/cloud/workspaces", None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(listed["cloud_workspaces"][0]["id"], id.as_str());
+        // A person of account a sees what a's daemon made.
+        let mine: Value = client
+            .get(format!("{base}/api/cloud/workspaces/{id}"))
+            .header("cookie", "ilg_session=session-a")
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(mine["name"], "Agent box");
+        assert_eq!(call(&da, "GET", "/api/cloud/agents", None).await.0, StatusCode::OK);
+        assert_eq!(call(&da, "GET", "/api/cloud/models", None).await.0, StatusCode::OK);
+        let open =
+            json!({"request_key":"t","agent_id":"curated_coding","runtime":"claude","model":"anthropic/test-model"});
+        let (status, opened) = call(&da, "POST", &format!("/api/cloud/workspaces/{id}/tabs"), Some(open.clone())).await;
+        assert_eq!(status, StatusCode::OK, "{opened}");
+        let tab = format!("/api/cloud/workspaces/{id}/tabs/{}", opened["id"].as_str().unwrap());
+        assert_eq!(call(&da, "GET", &tab, None).await.1["status"], "opening");
+
+        // Account b's daemon: none of a's, on any route it may use.
+        let (_, listed) = call(&db, "GET", "/api/cloud/workspaces", None).await;
+        assert_eq!(listed["cloud_workspaces"], json!([]));
+        for (method, path, body) in [
+            ("GET", format!("/api/cloud/workspaces/{id}"), None),
+            ("GET", format!("/api/cloud/workspaces/{id}/tabs"), None),
+            ("POST", format!("/api/cloud/workspaces/{id}/tabs"), Some(open)),
+            ("GET", format!("/api/cloud/workspaces/{id}/files"), None),
+            ("GET", format!("/api/cloud/workspaces/{id}/file?path=%2Fhome%2Fsprite%2Fx"), None),
+            ("GET", format!("/api/cloud/workspaces/{id}/diff"), None),
+            ("GET", format!("/api/cloud/workspaces/{id}/git-status"), None),
+            ("GET", format!("/api/cloud/workspaces/{id}/setup-log"), None),
+            ("POST", format!("/api/cloud/workspaces/{id}/rebuild"), Some(json!({}))),
+            ("POST", format!("/api/cloud/workspaces/{id}/retry"), None),
+            ("GET", tab.clone(), None),
+            ("DELETE", tab.clone(), None),
+            ("POST", format!("{tab}/prompt"), Some(json!({"prompt":"hi"}))),
+            ("POST", format!("{tab}/interrupt"), None),
+            ("GET", format!("{tab}/events"), None),
+            ("GET", format!("{tab}/requests"), None),
+            ("POST", format!("{tab}/requests/r1"), Some(json!({"option_id":"allow"}))),
+        ] {
+            let (status, said) = call(&db, method, &path, body).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{method} {path}: {said}");
+        }
+
+        // What stays a person's: a daemon is refused there, even its own.
+        for (method, path, body) in [
+            ("PATCH", format!("/api/cloud/workspaces/{id}"), Some(json!({"spec":{"name":"x"}}))),
+            ("DELETE", format!("/api/cloud/workspaces/{id}"), None),
+            ("DELETE", format!("/api/cloud/workspaces/{id}/rebuild"), None),
+            ("GET", "/api/cloud/secrets".to_owned(), None),
+            ("POST", "/api/cloud/agents".to_owned(), Some(json!({"name":"x","instructions":"y"}))),
+            ("GET", "/api/cloud/past-tabs".to_owned(), None),
+        ] {
+            let (status, said) = call(&da, method, &path, body).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path}: {said}");
+        }
+        assert_eq!(call(&da, "GET", &format!("/api/cloud/workspaces/{id}"), None).await.1["status"], "provisioning");
+
+        // A daemon's signature for a route still covers that request only.
+        let path = "/api/cloud/workspaces";
+        let h = signed(&da, "GET", path, b"");
+        let ok = client.get(format!("{base}{path}")).header("x-arugula-auth", &h).send().await.unwrap();
+        assert_eq!(ok.status(), StatusCode::OK);
+        let again = client.get(format!("{base}{path}")).header("x-arugula-auth", &h).send().await.unwrap();
+        assert_eq!(again.status(), StatusCode::UNAUTHORIZED);
         server.abort();
     }
 }

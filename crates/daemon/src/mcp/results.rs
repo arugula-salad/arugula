@@ -396,6 +396,19 @@ pub struct ControlJoined {
     /// The teams whose rosters this machine holds (its own, on a team's
     /// machine, and those shared with it), by name.
     pub teams: Vec<String>,
+    /// Whether you can drive the user's Cloud workspaces from here.
+    pub cloud: CloudReach,
+}
+
+/// The owner's Cloud workspaces in control, as agents here reach them
+/// (#1094).
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct CloudReach {
+    /// This machine is joined to control, and control has Cloud workspaces
+    /// for its owner.
+    pub reachable: bool,
+    /// What to use, or why not.
+    pub note: String,
 }
 
 /// `read_forge`.

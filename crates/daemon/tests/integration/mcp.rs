@@ -142,7 +142,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 19 - NO_FORGE);
+    assert_eq!(tools.len(), 21 - NO_FORGE);
     // Studio apps, chant workspaces and chat aren't listed without their
     // flags (chat's tools, the others' kinds), and a caller who names one is
     // told how to turn it on (#347); a build without Labs says it isn't
@@ -158,7 +158,7 @@ async fn tools_through_the_stdio_bridge() {
         assert!(!kinds(&tools, tool).contains(&kind.to_owned()), "{tool} kind {kind}");
     }
     let said = refused(&s, "list", json!({ "kind": "managoat_agent", "name": "nobody" })).await;
-    assert!(said.contains("Cloud agents in your Arugula account"), "{said}");
+    assert!(said.contains("Cloud workspaces in your Arugula account") && said.contains("cloud_workspaces"), "{said}");
     #[cfg(feature = "labs")]
     {
         let said = refused(&s, "read_thread", json!({ "pane": 1 })).await;
@@ -420,7 +420,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 19 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 21 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -495,7 +495,7 @@ async fn http_with_a_token_until_it_is_revoked() {
         d.post("/api/mcp/tokens", json!({ "name": "watcher", "scope": "read" }))["token"].as_str().unwrap().to_owned();
     let w = http(&d, &ro, Client::named("watcher")).await.unwrap();
     // (Chat's read_thread is among the read-only tools only with labs, and read_forge only with the forge.)
-    assert_eq!(w.list_all_tools().await.unwrap().len(), 8 - NO_FORGE / 2);
+    assert_eq!(w.list_all_tools().await.unwrap().len(), 9 - NO_FORGE / 2);
     assert!(refused(&w, "run", json!({ "command": "true" })).await.contains("may only read"));
     // Grouped, a write is still a write.
     assert!(refused(&w, "show", json!({ "kind": "port", "port": 1 })).await.contains("may only read"));
@@ -930,7 +930,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 19 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 21 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -938,7 +938,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 23, "{:?}", names(&with));
+        assert_eq!(with.len(), 25, "{:?}", names(&with));
         for name in ["read_thread", "post_thread", "delegate"] {
             assert!(with.iter().any(|t| t.name == name), "{name} isn't listed with labs");
         }
@@ -958,13 +958,13 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
         // and none of the others' kinds.
         arugula_proto::flags::set(&d.state, "chat", true).unwrap();
         let chat = s.list_all_tools().await.unwrap();
-        assert_eq!(chat.len(), 21, "{:?}", names(&chat));
+        assert_eq!(chat.len(), 23, "{:?}", names(&chat));
         assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
         arugula_proto::flags::set(&d.state, "chat", false).unwrap();
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 19 - NO_FORGE);
+        assert_eq!(without.len(), 21 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -973,7 +973,7 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 19 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 21 - NO_FORGE, "{:?}", names(&with));
         assert!(!with.iter().any(|t| t.name == "read_thread" || t.name == "post_thread"));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
@@ -1602,4 +1602,196 @@ async fn capabilities_says_what_is_here_and_whether_hooks_are_live() {
     let c = call(&s, "capabilities", json!({})).await;
     assert_eq!(c["hooks"]["live"], Value::Null, "{c}");
     s.cancel().await.unwrap();
+}
+
+/// A fake control's Cloud workspace routes (#1094): one workspace and one
+/// tab, whose turn ends a few reads after a prompt (and reads idle once
+/// right after it, as control may before its next read of Managoat), and
+/// every request's signature header.
+#[derive(Clone, Default)]
+struct FakeCloud {
+    signed: Arc<std::sync::Mutex<Vec<String>>>,
+    bodies: Arc<std::sync::Mutex<Vec<Value>>>,
+    /// Reads of the tab since its prompt (none: not prompted).
+    reads: Arc<std::sync::Mutex<Option<u32>>>,
+}
+
+fn fake_tab(f: &FakeCloud) -> Value {
+    let status = match *f.reads.lock().unwrap() {
+        Some(2) => "running",
+        _ => "idle",
+    };
+    json!({ "id": "cwc_0b", "cloud_workspace": "cw_0a", "agent_name": "Coding agent", "status": status })
+}
+
+async fn fake_cloud(f: FakeCloud) -> String {
+    use axum::{
+        Json, Router,
+        extract::{Query, Request, State},
+        middleware::{self, Next},
+        routing::{get, post},
+    };
+    use std::collections::HashMap;
+    async fn note(State(f): State<FakeCloud>, req: Request, next: Next) -> axum::response::Response {
+        if let Some(h) = req.headers().get("x-arugula-auth").and_then(|h| h.to_str().ok()) {
+            f.signed.lock().unwrap().push(format!("{} {h}", req.uri().path()));
+        }
+        next.run(req).await
+    }
+    let workspace =
+        json!({ "id": "cw_0a", "name": "App box", "status": "ready", "saved_spec": { "repositories": [] } });
+    let (listed, made) = (workspace.clone(), workspace);
+    let tab = "/api/cloud/workspaces/cw_0a/tabs/cwc_0b";
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .route(
+            "/api/cloud/models",
+            get(|| async { Json(json!({ "models": [{ "runtime": "claude", "model": "anthropic/test" }] })) }),
+        )
+        .route(
+            "/api/cloud/workspaces",
+            get(move || {
+                let w = listed.clone();
+                async move { Json(json!({ "cloud_workspaces": [w] })) }
+            })
+            .post(move |State(f): State<FakeCloud>, Json(body): Json<Value>| {
+                let w = made.clone();
+                async move {
+                    f.bodies.lock().unwrap().push(body);
+                    Json(w)
+                }
+            }),
+        )
+        .route(
+            "/api/cloud/workspaces/cw_0a/tabs",
+            post(|State(f): State<FakeCloud>, Json(body): Json<Value>| async move {
+                f.bodies.lock().unwrap().push(body);
+                Json(fake_tab(&f))
+            }),
+        )
+        .route(
+            tab,
+            get(|State(f): State<FakeCloud>| async move {
+                if let Some(n) = f.reads.lock().unwrap().as_mut() {
+                    *n += 1;
+                }
+                Json(fake_tab(&f))
+            }),
+        )
+        .route(
+            &format!("{tab}/prompt"),
+            post(|State(f): State<FakeCloud>, Json(body): Json<Value>| async move {
+                f.bodies.lock().unwrap().push(body);
+                *f.reads.lock().unwrap() = Some(0);
+                Json(json!({}))
+            }),
+        )
+        .route(
+            &format!("{tab}/events"),
+            get(|State(f): State<FakeCloud>, Query(q): Query<HashMap<String, String>>| async move {
+                let after: u64 = q.get("after").and_then(|a| a.parse().ok()).unwrap_or(0);
+                let mut all = vec![json!({ "id": 7, "blocks": [{ "kind": "prompt", "body": "earlier" }] })];
+                if f.reads.lock().unwrap().is_some_and(|n| n >= 2) {
+                    all.push(json!({ "id": 8, "blocks": [{ "kind": "prompt", "body": "fix it" }] }));
+                    all.push(json!({ "id": 9, "blocks": [{ "kind": "text", "body": "Fixed " }, { "kind": "text", "body": "it." }] }));
+                }
+                let events: Vec<Value> = all.into_iter().filter(|e| e["id"].as_u64().unwrap() > after).collect();
+                Json(json!({ "events": events }))
+            }),
+        )
+        .route(
+            "/api/cloud/workspaces/cw_0a/file",
+            get(|Query(q): Query<HashMap<String, String>>| async move {
+                Json(json!({ "path": q["path"], "size": 5, "truncated": false, "encoding": "utf-8", "content": "hello" }))
+            }),
+        )
+        .layer(middleware::from_fn_with_state(f.clone(), note))
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// #1094: an agent here drives the owner's Cloud workspaces through
+/// control, signed as this machine; not joined, it's told so.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_drives_cloud_workspaces_through_control() {
+    let fake = FakeCloud::default();
+    let url = fake_cloud(fake.clone()).await;
+    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let s = bridge(&d, Client::named("claude-code")).await;
+
+    let said = refused(&s, "list", json!({ "kind": "cloud_workspaces" })).await;
+    assert!(said.contains("hasn't joined Arugula control"), "{said}");
+    let c = call(&s, "capabilities", json!({})).await;
+    assert_eq!(c["control"]["cloud"]["reachable"], false, "{c}");
+
+    // Joined, as `join` leaves it; the running daemon notices.
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let c = call(&s, "capabilities", json!({})).await;
+        if c["control"]["cloud"]["reachable"] == true {
+            assert!(c["summary"].as_str().unwrap().contains("Cloud workspaces: yes"), "{c}");
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "never reachable: {c}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
+    let create = json!({
+        "kind": "create", "name": "App box", "apt": ["ffmpeg"],
+        "repositories": [{ "url": "https://github.com/example/app" }],
+    });
+    let made = call(&s, "cloud", create).await;
+    assert_eq!(made["cloud_workspace"]["id"], "cw_0a", "{made}");
+    assert_eq!(made["link"], format!("{url}/#cloud-ws=cw_0a"), "{made}");
+    let listed = call(&s, "list", json!({ "kind": "cloud_workspaces" })).await;
+    assert_eq!(listed["cloud_workspaces"][0]["name"], "App box", "{listed}");
+    let opened = call(&s, "cloud", json!({ "kind": "open_tab", "cloud_workspace": "cw_0a" })).await;
+    assert_eq!(opened["cloud_tab"]["id"], "cwc_0b", "{opened}");
+    {
+        let bodies = fake.bodies.lock().unwrap();
+        assert_eq!(bodies[0]["spec"]["packages"]["apt"], json!(["ffmpeg"]), "{bodies:?}");
+        assert!(bodies[0]["request_key"].as_str().unwrap().starts_with("mcp-"), "{bodies:?}");
+        // The default agent, on the first model offered.
+        let tab = &bodies[1];
+        assert_eq!((tab["agent_id"].as_str(), tab["model"].as_str()), (Some("curated_coding"), Some("anthropic/test")));
+    }
+
+    // A prompt waits for the turn: control still reading idle right after
+    // it isn't the end of it.
+    let prompt =
+        json!({ "kind": "prompt", "cloud_workspace": "cw_0a", "tab": "cwc_0b", "text": "fix it", "timeout": 30 });
+    let r = call(&s, "cloud", prompt).await;
+    assert_eq!((r["state"].as_str(), r["offset"].as_u64()), (Some("idle"), Some(7)), "{r}");
+    assert!(r["reply"].as_str().unwrap().contains("> fix it\n\nFixed it."), "{r}");
+    let read = json!({ "kind": "events", "cloud_workspace": "cw_0a", "tab": "cwc_0b", "offset": 8 });
+    let page = call(&s, "read_cloud", read).await;
+    assert_eq!((page["text"].as_str(), page["next_offset"].as_u64()), (Some("\nFixed it."), Some(9)), "{page}");
+    let w = call(&s, "wait", json!({ "cloud_workspace": "cw_0a", "tab": "cwc_0b", "until": "idle" })).await;
+    assert_eq!(w["state"], "idle", "{w}");
+    let why = refused(&s, "wait", json!({ "cloud_workspace": "cw_0a", "tab": "cwc_0b", "until": "exit" })).await;
+    assert!(why.contains("until idle or needs_input"), "{why}");
+    let file = json!({ "kind": "file", "cloud_workspace": "cw_0a", "path": "/home/sprite/app/a b" });
+    let f = call(&s, "read_cloud", file).await;
+    assert_eq!((f["path"].as_str(), f["content"].as_str()), (Some("/home/sprite/app/a b"), Some("hello")), "{f}");
+    let why = refused(&s, "read_cloud", json!({ "kind": "files", "cloud_workspace": "../daemon" })).await;
+    assert!(why.contains("isn't a cloud_workspace id"), "{why}");
+
+    // Every call was signed as this machine.
+    let signed = fake.signed.lock().unwrap().clone();
+    let cloud: Vec<&String> = signed.iter().filter(|s| s.starts_with("/api/cloud/")).collect();
+    assert!(cloud.len() > 8, "{signed:?}");
+    assert!(cloud.iter().all(|s| s.contains(&format!(" v2 {} ", keys.id()))), "{signed:?}");
+    s.cancel().await.unwrap();
+    drop(d);
 }

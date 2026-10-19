@@ -1566,6 +1566,40 @@ impl Control {
         Ok(serde_json::from_value(v).unwrap_or_default())
     }
 
+    /// A call to control's Cloud workspace routes (`/api/cloud/...`) as
+    /// this machine (#1094): signed with its key, so control acts as its
+    /// account, the machine's owner. The error is control's own words, or
+    /// what to do about it, for an agent to read.
+    pub async fn cloud(
+        &self,
+        method: reqwest::Method,
+        path_and_query: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value, CloudRefused> {
+        let e = self.enrolled().ok_or(CloudRefused::NotJoined)?;
+        let bytes = body.map(|b| serde_json::to_vec(b).unwrap_or_default()).unwrap_or_default();
+        let mut req = self
+            .http
+            .request(method.clone(), format!("{}{path_and_query}", e.saved.url))
+            .header(AUTH, self.sign(&e, method.as_str(), path_and_query, &bytes));
+        if body.is_some() {
+            req = req.header(reqwest::header::CONTENT_TYPE, "application/json").body(bytes);
+        }
+        let res = req.send().await.map_err(|e| CloudRefused::Unreachable(e.to_string()))?;
+        let status = res.status().as_u16();
+        let v: serde_json::Value = res.json().await.unwrap_or_default();
+        if (200..300).contains(&status) {
+            return Ok(v);
+        }
+        let said = v["error"].as_str().map_or_else(|| format!("control answered {status}"), str::to_owned);
+        Err(match (status, said.as_str()) {
+            (404, "cloud agents are not configured") => CloudRefused::Off,
+            // A control from before #1094 takes only people there.
+            (401, "sign in first") => CloudRefused::OldControl,
+            _ => CloudRefused::Said { status, said, reason: v["reason"].as_str().map(str::to_owned) },
+        })
+    }
+
     /// A hosted sandbox's last session closed (M20): control deletes it.
     pub fn sandbox_done(self: &Arc<Self>) {
         let Some(e) = self.enrolled() else { return };
@@ -1845,6 +1879,38 @@ async fn relay_once(
     out.extend(crate::forges::watch_messages());
     let texts = crate::dial::Texts { on_text: &on_text, out };
     crate::dial::serve_mux(ws, accept, Some(raw), Some(&control.nudge), Some(texts)).await
+}
+
+/// Why a call to control's Cloud workspace routes didn't happen
+/// ([`Control::cloud`]).
+#[derive(Debug, Clone, PartialEq)]
+pub enum CloudRefused {
+    /// This machine hasn't joined control.
+    NotJoined,
+    /// Control couldn't be reached.
+    Unreachable(String),
+    /// Control has no Cloud workspaces (it isn't set up for them).
+    Off,
+    /// Control takes only people on these routes: it's from before #1094.
+    OldControl,
+    /// What control said, and its reason code (a refusal's).
+    Said { status: u16, said: String, reason: Option<String> },
+}
+
+impl std::fmt::Display for CloudRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CloudRefused::NotJoined => f.write_str(
+                "this machine hasn't joined Arugula control, where Cloud workspaces live: ask your person to join it (Getting started on the web page, or `arugulad join`)",
+            ),
+            CloudRefused::Unreachable(e) => write!(f, "can't reach Arugula control: {e}"),
+            CloudRefused::Off => f.write_str("this Arugula control has no Cloud workspaces (it isn't set up for them)"),
+            CloudRefused::OldControl => f.write_str(
+                "this Arugula control doesn't let machines drive Cloud workspaces yet (it's older than this machine's Arugula); use control's web page",
+            ),
+            CloudRefused::Said { said, .. } => write!(f, "control says: {said}"),
+        }
+    }
 }
 
 // ---------------------------------------------------------------- join

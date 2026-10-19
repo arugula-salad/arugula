@@ -90,6 +90,7 @@ const READ_RULES: &[&str] = &[
     "mcp__arugula__read_forge",
     "mcp__arugula__read_invite",
     "mcp__arugula__read_file",
+    "mcp__arugula__read_cloud",
     "mcp__arugula__read_thread",
 ];
 
@@ -134,6 +135,7 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__draft",
     "mcp__arugula__invite_person",
     "mcp__arugula__device_call",
+    "mcp__arugula__cloud",
     "mcp__arugula__post_thread",
 ];
 
@@ -797,6 +799,7 @@ mod tests {
             "mcp__arugula__read_forge",
             "mcp__arugula__read_invite",
             "mcp__arugula__read_file",
+            "mcp__arugula__read_cloud",
             "mcp__arugula__read_thread",
         ];
         assert_eq!(READ_RULES, read);

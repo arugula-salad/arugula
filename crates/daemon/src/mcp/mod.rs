@@ -30,6 +30,7 @@
 //! client typed is in history as theirs.
 
 mod capabilities;
+mod cloud;
 pub(crate) mod ops;
 pub mod relay;
 pub(crate) mod results;
@@ -312,6 +313,8 @@ screenshot) into a terminal or an agent block, show to put a block in front of t
 read_forge to read a PR or issue block and draft for a comment, review, merge or new issue the user sends, \
 invite_person to ask the user to bring someone into the session (read_invite says what became of it), \
 start_agent and agent_respond to supervise another agent, \
+cloud and read_cloud for the user's Cloud workspaces in Arugula control (agents on machines in the cloud; \
+list kind cloud_workspaces lists them, and you act as the user there), \
 history for what happened before (kind output: what panes printed). Output is paged: pass next_offset \
 back as offset. show's kinds: port (a dev server in a browser block beside its terminal), changes (a \
 diff), file (at a line), pr, issue, conversation (a Claude Code conversation, to continue or fork); show \

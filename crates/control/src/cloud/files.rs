@@ -5,7 +5,11 @@
 //! only ever sends these GETs. Every lookup is the caller's own: another
 //! account's id is 404.
 use super::{enabled, provider::ReadRefusal};
-use crate::{ApiError, App, auth::Session, err, refusal};
+use crate::{
+    ApiError, App,
+    auth::{CloudDriver, Session},
+    err, refusal,
+};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -58,7 +62,7 @@ pub struct GitStatusQuery {
 /// A directory listing: `{path, entries: [{name, type, size}], truncated}`.
 pub async fn files(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
     Query(q): Query<FilesQuery>,
 ) -> Result<Json<Value>, ApiError> {
@@ -70,7 +74,7 @@ pub async fn files(
 /// One file, redacted: `{path, size, truncated, encoding, content}`.
 pub async fn file(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
     Query(q): Query<FileQuery>,
 ) -> Result<Json<Value>, ApiError> {
@@ -84,7 +88,7 @@ pub async fn file(
 /// `{path, repo_root, staged, ref, diff, truncated}`.
 pub async fn diff(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
     Query(q): Query<DiffQuery>,
 ) -> Result<Json<Value>, ApiError> {
@@ -108,7 +112,7 @@ pub async fn diff(
 /// renamed_from}], truncated}`.
 pub async fn git_status(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
     Query(q): Query<GitStatusQuery>,
 ) -> Result<Json<Value>, ApiError> {
@@ -139,7 +143,7 @@ pub async fn git_status(
 /// failed, lost or parked, and never wakes it.
 pub async fn setup_log(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     let cloud = enabled(&app, &session.account)?;

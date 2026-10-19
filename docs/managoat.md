@@ -64,6 +64,23 @@ what you want to keep first.
 Control sets no limits on Cloud workspaces: no count, no live-turn cap,
 no turn deadline and no idle delete. Managoat parks idle machines.
 
+**From agents (#1094).** An agent on a machine joined to control drives
+its owner's Cloud workspaces through the `arugula` MCP server: `list`
+kinds `cloud_workspaces`, `cloud_tabs` and `cloud_agents`; `read_cloud`
+(a tab's transcript and requests, the machine's files, a file, the diff,
+git status and the setup log); `cloud` (create one, open a tab, prompt it
+and wait for its turn, interrupt, answer, close a tab, rebuild, retry);
+and `wait` with `cloud_workspace` and `tab`. `capabilities` says whether
+they reach (`control.cloud`). The daemon calls control's `/api/cloud/...`
+routes signed with its own key, and control acts as the machine's account,
+the owner. So **anyone who may run things on a machine, a teammate with
+run rights or a guest's agent there, can drive the owner's Cloud
+workspaces through agents on it**: that was decided (Jake, 2026-10-19), not
+overlooked. Changing a Cloud workspace's settings, deleting one, secrets,
+the agent library and past tabs stay on control's page, for a person.
+Not joined, or with a control that has no Cloud workspaces, the tools say
+so.
+
 ## Secrets and privacy
 
 Cloud prompts, results, and selected secrets are processed by control and

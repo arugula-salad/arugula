@@ -13,7 +13,7 @@ pub mod workspaces;
 
 use crate::{
     ApiError, App,
-    auth::Session,
+    auth::{CloudDriver, Session},
     db::cloud::{AgentDefinition, CloudAgent},
     err,
 };
@@ -120,7 +120,7 @@ fn curated_agents() -> Vec<CloudAgent> {
     }).collect()
 }
 
-pub async fn catalog(State(app): State<Arc<App>>, session: Session) -> Result<Json<Value>, ApiError> {
+pub async fn catalog(State(app): State<Arc<App>>, CloudDriver(session): CloudDriver) -> Result<Json<Value>, ApiError> {
     enabled(&app, &session.account)?;
     let mut agents = curated_agents();
     agents.extend(app.db.cloud_agents(&session.account)?);
@@ -128,7 +128,7 @@ pub async fn catalog(State(app): State<Arc<App>>, session: Session) -> Result<Js
 }
 
 /// The runtimes and models **+ Agent** offers, the first the default.
-pub async fn models(State(app): State<Arc<App>>, session: Session) -> Result<Json<Value>, ApiError> {
+pub async fn models(State(app): State<Arc<App>>, CloudDriver(session): CloudDriver) -> Result<Json<Value>, ApiError> {
     let cloud = enabled(&app, &session.account)?;
     Ok(Json(json!({ "models": cloud.models })))
 }

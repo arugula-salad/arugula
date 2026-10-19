@@ -13,7 +13,7 @@
 use super::{enabled, provider::Refusal, worker::observe_cloud_workspace, workspaces::Sending};
 use crate::{
     ApiError, App,
-    auth::Session,
+    auth::{CloudDriver, Session},
     db::cloud::{CancelledRebuild, CloudWorkspace, CloudWorkspaceJob, CloudWorkspaceRebuild},
     err, refusal,
 };
@@ -42,7 +42,7 @@ pub struct Rebuild {
 /// `provisioning`, or `rebuild_queued` when Managoat had no machine free.
 pub async fn rebuild(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
     Json(input): Json<Rebuild>,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
@@ -58,7 +58,7 @@ pub async fn rebuild(
 /// `POST /api/cloud/workspaces/{id}/retry`: a failed setup, again.
 pub async fn retry(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
     let asked = CloudWorkspaceRebuild { retry: true, interrupt: false, asked: arugula_e2e::now_ms(), sending: false };
