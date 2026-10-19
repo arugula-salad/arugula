@@ -18,6 +18,7 @@ import { getFleet } from "./hosts";
 import { closeChat, openRoom } from "./places";
 import { Markup, mentionToken } from "./markup";
 import { MsgAvatar } from "./threads";
+import { getControlSession } from "./people";
 import { useSubscribe } from "./hooks";
 import type { FleetPane } from "../fleet";
 import { whatItDoes } from "../swarm/model";
@@ -49,14 +50,41 @@ export function roomLabel(r: ChatRoom): string {
   if (r.kind === "pane" && r.target !== null) {
     const p = fleetPane(r.machine, r.target);
     const what = p ? whatItDoes(p) : "";
-    return what ? `%${r.target} ${what}` : `%${r.target}`;
+    // While its machine sleeps the fleet may not know it: the last title
+    // this browser saw.
+    return `%${r.target}${titled(r.id, what) ? ` ${titled(r.id, what)}` : ""}`;
   }
   if (r.kind === "session" && r.target !== null) {
     const h = r.machine ? getFleet()?.hostById(r.machine) : undefined;
     const s = h?.summary?.sessions.find((x) => String(x.id) === r.target);
-    return s?.name ?? r.name;
+    return titled(r.id, s?.name ?? "") || r.name;
   }
   return r.name;
+}
+
+const TITLES_KEY = "chat.roomTitles";
+let titles: Record<string, string> | null = null;
+
+/** A pane's or session's title for its room: `now` when known (kept), else
+ * the last one kept in this browser. */
+function titled(room: string, now: string): string {
+  if (!titles) {
+    try {
+      titles = JSON.parse(localStorage.getItem(TITLES_KEY) ?? "{}") as Record<string, string>;
+    } catch {
+      titles = {};
+    }
+  }
+  if (!now) return titles[room] ?? "";
+  if (titles[room] !== now) {
+    titles[room] = now;
+    try {
+      localStorage.setItem(TITLES_KEY, JSON.stringify(titles));
+    } catch {
+      // kept for this page only
+    }
+  }
+  return now;
 }
 
 /** A room's mark: # a channel, @ a DM, ↳ a pane, ▤ a session, ⌂ an archive. */
@@ -493,13 +521,18 @@ function EditBox({ text: start, done }: { text: string; done: (t: string | null)
 /** The pane a message names, with its quote: opens it where the reader
  * may (control says), else shows only what was quoted. */
 function PaneChip({ pane, quote, toast }: { pane: NonNullable<ChatMessage["pane"]>; quote: string | null; toast: (s: string) => void }) {
+  useSubscribe((fn) => getFleet()?.subscribe(fn) ?? (() => {}));
   const where = `%${pane.pane} on ${pane.machine_name || "a machine"}`;
+  // One that would open, on a machine that's asleep: marked, not just said
+  // on hover.
+  const asleep = pane.opens && !machineUp(pane.machine);
   const from = (
     <span class="thread-quote-from">
-      <span class="chat-pane-chip" data-pane-chip={`${pane.machine}/${pane.pane}`} data-opens={pane.opens ? "1" : "0"}>
+      <span class="chat-pane-chip" data-pane-chip={`${pane.machine}/${pane.pane}`} data-opens={pane.opens ? "1" : "0"} data-asleep={asleep ? "1" : undefined}>
         ↳ {where}
       </span>
       {!pane.opens && <span class="dim"> · not a pane you can open</span>}
+      {asleep && <span class="chat-pane-asleep"> · asleep</span>}
     </span>
   );
   if (!pane.opens) {
@@ -512,8 +545,8 @@ function PaneChip({ pane, quote, toast }: { pane: NonNullable<ChatMessage["pane"
   }
   return (
     <button
-      class="thread-quote"
-      title={machineUp(pane.machine) ? "Show it in the pane" : `${pane.machine_name} is asleep: the quote is all there is for now`}
+      class={asleep ? "thread-quote asleep" : "thread-quote"}
+      title={!asleep ? "Show it in the pane" : `${pane.machine_name} is asleep: the quote is all there is for now`}
       aria-label={`Open ${where}`}
       onClick={() => goToPane(pane.machine, pane.pane, quote, toast)}
     >
@@ -525,13 +558,18 @@ function PaneChip({ pane, quote, toast }: { pane: NonNullable<ChatMessage["pane"
 
 // ---- writing
 
-/** Whom `@` reaches here, but me, as tokens control resolves: a login or
- * a one-word name. */
+/** Whom `@` reaches here, but me, as tokens control resolves: control
+ * matches a login, a whole name, or the one word a team's roster calls
+ * someone. A name with spaces can't be typed after `@`, so it's their
+ * roster word, from the teams this page knows. */
 function mentionables(room: string): { token: string; name: string; who: string }[] {
   const out: { token: string; name: string; who: string }[] = [];
+  const words = new Map<string, string>();
+  for (const t of getControlSession()?.teams ?? []) for (const m of t.roster.members) if (m.name) words.set(m.account, m.name);
   for (const p of chat.people(room)) {
     if (p.account === chat.me || !p.name) continue;
-    const token = /\s/.test(p.name.trim()) ? mentionToken(p.name) : p.name.trim().toLowerCase();
+    const name = p.name.trim();
+    const token = (/\s/.test(name) ? (words.get(p.account) ?? mentionToken(name)) : name).toLowerCase();
     if (token) out.push({ token, name: p.name, who: p.account });
   }
   return out;
@@ -558,6 +596,9 @@ function RoomCompose({
   const [pick, setPick] = useState(0);
   const [missed, setMissed] = useState<string[]>([]);
   const [picking, setPicking] = useState(false);
+  // Quoting reads a pane on a machine of yours: none, no button.
+  useSubscribe((fn) => getFleet()?.subscribe(fn) ?? (() => {}));
+  const canQuote = (getFleet()?.list.length ?? 0) > 0;
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => keepDraft(key, text), [key, text]);
   useEffect(() => {
@@ -661,7 +702,7 @@ function RoomCompose({
           ))}
         </ul>
       )}
-      <div class="compose-box with-tools">
+      <div class={canQuote ? "compose-box with-tools" : "compose-box"}>
         {quote && (
           <div class="thread-quote pending" data-quote-pending>
             <span class="thread-quote-from">
@@ -700,12 +741,12 @@ function RoomCompose({
             }
           }}
         />
-        <button type="button" class="compose-tool" title="Quote lines from a pane" aria-label="Quote a pane" aria-pressed={picking} data-quote-pane onClick={() => setPicking((p) => !p)}>
+        {canQuote && (<button type="button" class="compose-tool" title="Quote lines from a pane" aria-label="Quote a pane" aria-pressed={picking} data-quote-pane onClick={() => setPicking((p) => !p)}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
             <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
             <path d="M4 6l2 2-2 2M8 10h4" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
-        </button>
+        </button>)}
         <button class="compose-send" type="submit" title="Send (Enter)" aria-label="Send" disabled={sending || (!text.trim() && !quote)}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
             <path d="M2 2.5l12 5.5-12 5.5 1.8-5.5L2 2.5zm1.8 5.5h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />

@@ -7084,6 +7084,17 @@ button.thread-quote:hover {
   font-family: ui-monospace, monospace;
 }
 
+/* Its machine is asleep: it opens once it's back. */
+.thread-quote.asleep {
+  opacity: 0.6;
+  border-left-style: dashed;
+}
+
+.chat-pane-asleep {
+  font-weight: 600;
+  color: var(--dim);
+}
+
 .chat-older {
   display: block;
   margin: 8px auto;

@@ -370,15 +370,25 @@ export function RoomSearchView({ store, q, phone }: { store: ChatStore; q: strin
   );
 }
 
+/** How many rooms Activity reads for mentions of you. */
+const ACTIVITY_ROOMS = 30;
+
 /** What needs you on every machine, and messages that mention you. */
 export function RoomActivityView({ store, phone }: { store: ChatStore; phone: boolean }) {
   const fleet = getFleet();
   useSubscribe((fn) => fleet?.subscribe(fn) ?? (() => {}));
   useSubscribe((fn) => store.subscribe(fn));
-  const withMentions = store.rooms.filter((r) => r.mentions > 0).map((r) => r.id);
+  // Recent mentions, read or not: the newest page of the rooms that spoke
+  // most recently (those with an unread mention first), not only those
+  // with one unread.
+  const recent = [...store.rooms]
+    .filter((r) => r.last !== 0)
+    .sort((a, b) => b.mentions - a.mentions || b.last - a.last)
+    .slice(0, ACTIVITY_ROOMS)
+    .map((r) => r.id);
   useEffect(() => {
-    for (const id of withMentions) void store.load(id).catch(() => {});
-  }, [withMentions.join(",")]);
+    for (const id of recent) void store.load(id).catch(() => {});
+  }, [recent.join(",")]);
   const hits: { room: string; m: ChatMessage }[] = [];
   for (const r of store.rooms) for (const m of store.messages(r.id)?.list ?? []) if (m.mentions.includes(store.me) && m.deleted === null) hits.push({ room: r.id, m });
   hits.sort((a, b) => b.m.at - a.m.at);

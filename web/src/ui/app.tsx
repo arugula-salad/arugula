@@ -116,11 +116,13 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   // M123: control's chat needs no machine up.
   useSubscribe((fn) => chat.subscribe(fn));
   const chatOpen = useChatOpen() && (!!state || !!chatStore()) && hasChat(client);
+  const controlChat = chatOpen && !!chatStore();
   const overviewOpen = ws && !!overview && !!state && !cloud && !cloudWs;
   const main = (
     <main class="main" inert={chatOpen || overviewOpen}>
       {cloudWs ? <CloudWorkspaceMain /> : cloud ? (cloud.startsWith("cwc_") ? <PastTabDetails key={cloud} id={cloud} /> : <RunDetails key={cloud} id={cloud} />) : !state ? (
-        <HostPicker />
+        // M123: under control's chat there's no machine to wait for.
+        controlChat ? null : <HostPicker />
       ) : state.sessions.length === 0 ? (
         <NoSessions client={client} phone={phone} />
       ) : tab ? (
@@ -240,7 +242,8 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {/* An ask to drive shows over the share dialog (#551). */}
       <ShareDialog client={client} />
       <ControlRequests client={client} />
-      {!cloud && !cloudWs && <StatusPill client={client} />}
+      {/* M123: control's chat connects to no machine: only its errors. */}
+      {!cloud && !cloudWs && <StatusPill client={client} errorsOnly={controlChat} />}
     </div>
   );
 }

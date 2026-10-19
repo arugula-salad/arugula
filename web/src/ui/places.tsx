@@ -215,26 +215,37 @@ export function Places({ client, at }: { client: Client; at: Place }) {
   useChatTick(client);
   const { n, mention } = hasChat(client) ? chatUnread(client) : { n: 0, mention: false };
   const agents = client.flag("agents") && !client.state?.roles;
+  // M123: control's chat for someone with no machine: no panes to go to.
+  const machines = !!client.state || directory.names.length > 0;
   return (
     <div class="places" role="group" aria-label="Places">
-      <button
-        class={at === "panes" ? "place here" : "place"}
-        title="Your panes"
-        data-open-panes
-        aria-pressed={at === "panes"}
-        onClick={() => closePlace(at)}
-      >
-        Panes
-      </button>
-      <button
-        class={at === "swarm" ? "place here" : "place"}
-        title="Every pane, everywhere (the swarm)"
-        data-open-swarm
-        aria-pressed={at === "swarm"}
-        onClick={() => at !== "swarm" && openSwarm()}
-      >
-        Swarm
-      </button>
+      {machines && (
+        <button
+          class={at === "panes" ? "place here" : "place"}
+          title="Your panes"
+          data-open-panes
+          aria-pressed={at === "panes"}
+          onClick={() => closePlace(at)}
+        >
+          Panes
+        </button>
+      )}
+      {machines && (
+        <button
+          class={at === "swarm" ? "place here" : "place"}
+          title="Every pane, everywhere (the swarm)"
+          data-open-swarm
+          aria-pressed={at === "swarm"}
+          onClick={() => at !== "swarm" && openSwarm()}
+        >
+          Swarm
+        </button>
+      )}
+      {!machines && (
+        <button class="place" title="Back to adding a machine" data-chat-leave onClick={() => closePlace(at)}>
+          Machines
+        </button>
+      )}
       {hasChat(client) && (
         <button
           class={at === "chat" ? "place here" : "place"}

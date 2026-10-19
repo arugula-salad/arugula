@@ -113,6 +113,13 @@ test("Bob has it live, mentioned; the chip doesn't open for him", async () => {
   await box.fill("on it @alice");
   await box.press("Enter");
   await expect(alice.locator("[data-room-view] .thread-msg").last()).toContainText("on it", { timeout: 15_000 });
+  // No machine of his: nothing to quote from, and nothing to connect to.
+  await expect(page.locator("[data-quote-pane]")).toHaveCount(0);
+  await expect(bob.locator("#status")).toHaveCount(0);
+  // Activity lists the mention after a reload, though he's read it.
+  await bob.goto("/#chat=activity");
+  await bob.reload();
+  await expect(bob.locator(`[data-chat-activity-view] [data-hit-room="${general}"]`)).toContainText("the mean test fails", { timeout: 15_000 });
 });
 
 test("a pane's thread opens beside it, and only its machine's owner reads it", async () => {
@@ -155,7 +162,12 @@ test("with every daemon stopped, they write in #general and a DM, from the web a
   await expect(dm.locator(".thread-msg").last()).toContainText("are you there?");
   // Her chip on the asleep machine says so rather than open nothing.
   await alice.goto(`/#chat=${general}`);
-  await page.locator("[data-room-view] [data-pane-chip][data-opens='1']").first().click();
+  const chip = page.locator("[data-room-view] [data-pane-chip][data-opens='1']").first();
+  await expect(chip).toHaveAttribute("data-asleep", "1");
+  await expect(page.locator("[data-room-view] .thread-quote.asleep").first()).toContainText("asleep");
+  // Its machine asleep, nothing says it's connecting over the room.
+  await expect(alice.locator("#status")).toHaveCount(0);
+  await chip.click();
   await expect.poll(() => alice.evaluate(() => window.__arugula.client.error)).toContain("asleep");
   await alice.goto(`/#chat=${dmId}`);
   await expect(dm.locator(".thread-msg").last()).toContainText("are you there?", { timeout: 15_000 });
