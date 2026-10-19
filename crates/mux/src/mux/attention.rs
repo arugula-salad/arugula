@@ -753,7 +753,7 @@ impl Daemon {
             ("Stop" | "UserPromptSubmit" | "SessionStart", Some(_)) => Some("closed"),
             _ => None,
         };
-        // #888: a turn someone started, as conversations count turns.
+        // #888: a turn someone started, for `/api/events`.
         if event == "UserPromptSubmit" && self.panes.contains_key(&pane) {
             self.emit(Some(pane), EventKind::Prompted);
         }

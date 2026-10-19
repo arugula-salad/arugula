@@ -8,8 +8,7 @@
 //!   checked roster names for that account (a teammate's), never to one
 //!   control alone vouches for.
 //! - **What it may do there** is the other machine's to decide: a daemon is
-//!   let in for `/api/a2a/` only, as its account, and for the panes a
-//!   conversation here was granted there (`e2e.rs`, #856).
+//!   let in for `/api/a2a/` only, as its account (`e2e.rs`).
 //! - **One standing channel per machine** (#856): every request to it goes
 //!   down the same relay socket, numbered (`Msg::Request { id }`), and the
 //!   answers come back by number. It closes when it's been idle a while,
@@ -110,21 +109,6 @@ pub async fn find(control: &Control, which: &str) -> anyhow::Result<Machine> {
     }
 }
 
-/// How long [`find_by_id`] waits for the refresh a miss asks for.
-const MISS_REFRESH: Duration = Duration::from_secs(10);
-
-/// The machine whose device id is `id`. A miss refreshes this daemon's
-/// trust once and looks again (#856): a machine that joined after this one
-/// isn't trusted until the next refresh, which can be a minute away.
-/// `Ok(None)`: control doesn't list it for this one at all.
-pub async fn find_by_id(control: &Control, id: &str) -> anyhow::Result<Option<Machine>> {
-    if let Some(m) = machines(control).await?.into_iter().find(|m| m.id == id) {
-        return Ok(Some(m));
-    }
-    control.refresh_now(MISS_REFRESH).await;
-    Ok(machines(control).await?.into_iter().find(|m| m.id == id))
-}
-
 /// `GET path` on `m`, through control's relay: its status and body.
 pub async fn get(control: &Control, m: &Machine, path: &str) -> anyhow::Result<(u16, Vec<u8>)> {
     request(control, m, "GET", path, None, &[]).await
@@ -140,19 +124,6 @@ pub async fn request(
     body: Option<&serde_json::Value>,
     headers: &[(&str, &str)],
 ) -> anyhow::Result<(u16, Vec<u8>)> {
-    request_within(control, m, method, path, body, headers, TIMEOUT).await
-}
-
-/// [`request`] with a limit of its own.
-pub async fn request_within(
-    control: &Control,
-    m: &Machine,
-    method: &str,
-    path: &str,
-    body: Option<&serde_json::Value>,
-    headers: &[(&str, &str)],
-    limit: Duration,
-) -> anyhow::Result<(u16, Vec<u8>)> {
     let head = RequestHead {
         method: method.into(),
         path: path.into(),
@@ -161,50 +132,9 @@ pub async fn request_within(
         headers: headers.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect(),
     };
     let body = body.map(|b| serde_json::to_vec(b).unwrap_or_default()).unwrap_or_default();
-    tokio::time::timeout(limit, send(control, m, head, body))
+    tokio::time::timeout(TIMEOUT, send(control, m, head, body))
         .await
         .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))?
-}
-
-/// `GET path` on `m` as a stream (#857: a linked pane's events), on the
-/// standing channel: each part of the answer to `part` as it comes, until
-/// the far end ends it, the channel goes, or `part` says stop. Its status,
-/// and the body when it was refused (a refusal comes whole).
-pub async fn follow(
-    control: &Control,
-    m: &Machine,
-    path: &str,
-    headers: &[(&str, &str)],
-    mut part: impl FnMut(&[u8]) -> bool + Send,
-) -> anyhow::Result<(u16, Vec<u8>)> {
-    let head = RequestHead {
-        method: "GET".into(),
-        path: path.into(),
-        content_type: None,
-        stream: true,
-        headers: headers.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect(),
-    };
-    for _ in 0..2 {
-        let (conn, new) = tokio::time::timeout(TIMEOUT, channel(control, m))
-            .await
-            .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))??;
-        let mut refused = Vec::new();
-        let got = conn
-            .ask_parts(head.clone(), Vec::new(), |status, bytes| {
-                if status >= 400 {
-                    refused.extend(bytes);
-                    return true;
-                }
-                part(&bytes)
-            })
-            .await?;
-        match got {
-            Some(status) => return Ok((status, refused)),
-            None if new => break,
-            None => conn.alive.store(false, Ordering::SeqCst),
-        }
-    }
-    anyhow::bail!("{} closed before answering", m.name)
 }
 
 /// How long a standing channel stays open with nothing asked on it.

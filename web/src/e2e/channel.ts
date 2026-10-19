@@ -10,7 +10,6 @@ import { cat, Initiator, type Cipher } from "./noise.ts";
 import type { DeviceKeys } from "./keys.ts";
 import { unhex } from "./cert.ts";
 import { fullReason, RelayMux, type SocketLike } from "./relaymux.ts";
-import { JsonText } from "../exact.ts";
 
 const CHUNK = 16 * 1024;
 const MAX_MSG = 64 << 20;
@@ -368,7 +367,7 @@ export class E2ESocket {
     const id = this.nextId++;
     // Raw bytes (an upload's chunk, M70) go as they are.
     const raw = body instanceof Uint8Array ? body : undefined;
-    const json = body === undefined || raw ? undefined : body instanceof JsonText ? body.text : JSON.stringify(body);
+    const json = body === undefined || raw ? undefined : JSON.stringify(body);
     return new Promise((res, rej) => {
       if (!this.open) return rej(new Error("not connected"));
       const t = setTimeout(() => {

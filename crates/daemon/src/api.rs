@@ -20,14 +20,12 @@ use arugula_proto::{
         RunResponse, SecretFinding, SendRequest, WaitRequest, WaitResult,
     },
     op::ops::{
-        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConvAct, ConvCreate, ConvDelete,
-        ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLeadStart, ConvLinkAdd, ConvLinkClose, ConvLinksGet,
-        ConvMemberAdd, ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList, FlagSet, FlagsList,
-        ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention,
-        PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PanePorts,
-        PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll,
-        RulesList, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet, ThreadGet, ThreadPost,
-        ThreadRead,
+        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConvCreate, ConvDelete, ConvMemberAdd,
+        ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList, FlagSet, FlagsList, ListPanes, MachineReset,
+        MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf,
+        PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PanePorts, PaneProcess, PanePrompt,
+        PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet,
+        ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet, ThreadGet, ThreadPost, ThreadRead,
     },
 };
 use axum::{
@@ -81,14 +79,6 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<ConvDelete>()
         .op::<ConvMemberAdd>()
         .op::<ConvMemberRemove>()
-        .op::<ConvLinkAdd>()
-        .op::<ConvLinkClose>()
-        .op::<ConvLinksGet>()
-        .op::<ConvAct>()
-        .op::<ConvLeadStart>()
-        .op::<ConvGrantMake>()
-        .op::<ConvGrantsList>()
-        .op::<ConvGrantRevoke>()
         .op::<ClosePane>()
         .route("/api/panes/{id}/capture", get(capture))
         .op::<PaneProcess>()
@@ -244,7 +234,6 @@ async fn act(
     State(app): AppState,
     who: Option<axum::Extension<crate::acl::Principal>>,
     dev: Option<axum::Extension<crate::e2e::Caller>>,
-    via: Option<axum::Extension<ConvVia>>,
     headers: HeaderMap,
     Json(req): Json<arugula_proto::api::ActRequest>,
 ) -> Res<Response> {
@@ -253,16 +242,6 @@ async fn act(
     let panes = req.targets();
     if panes.is_empty() {
         return Err(bad("name a pane (pane) or several (panes)"));
-    }
-    // #857: a conversation's home answering its link's card, by the grant
-    // on the pane (e2e.rs let it through for that pane only). That's the
-    // grant's rule, not the account's.
-    if let Some(axum::Extension(via)) = via {
-        let [pane] = panes[..] else { return Err(bad("a conversation answers one pane's card")) };
-        let r = act_for_conv(&app, pane, &req, who, &via).await;
-        let status = if r.is_ok() { StatusCode::OK } else { StatusCode::CONFLICT };
-        let results = vec![ActResult { pane, ok: r.is_ok(), error: r.err() }];
-        return Ok((status, Json(ActResponse { results })).into_response());
     }
     // An agent's invite (#234): the owner's alone, and not an agent's on
     // the owner's CLI (a courtesy, as for `call`).
@@ -466,93 +445,6 @@ fn foreign(app: &App, dev: &Option<axum::Extension<crate::e2e::Caller>>) -> bool
     dev.as_ref().is_some_and(|d| Some(&d.0.account) != own.as_ref())
 }
 
-/// A conversation's answer to a linked pane's card (#857): set on a request
-/// a grant let through (`e2e.rs`), or made here for a link at home.
-#[derive(Debug, Clone)]
-pub struct ConvVia {
-    /// The conversation, as the grant names it.
-    pub conv_title: String,
-    /// Who in it answered, as its home says.
-    pub member: String,
-}
-
-impl ConvVia {
-    /// Who answered, as the pane's history and its card record it.
-    fn label(&self) -> String {
-        let member = if self.member.is_empty() { "someone" } else { &self.member };
-        if self.conv_title.is_empty() {
-            format!("{member} via a conversation")
-        } else {
-            format!("{member} via conversation \u{201c}{}\u{201d}", self.conv_title)
-        }
-    }
-}
-
-/// What a grant lets a conversation answer: a card on its own pane, with
-/// the grant maker's rights capped at an editor's. So an owner's own cards
-/// (an agent's invites, a task's consent, M79) aren't a conversation's, and
-/// an editor must still be one on the pane now. Recorded as the member, via
-/// the conversation.
-pub(crate) async fn act_for_conv(
-    app: &App,
-    pane: PaneId,
-    req: &arugula_proto::api::ActRequest,
-    who: crate::acl::Principal,
-    via: &ConvVia,
-) -> Result<(), String> {
-    use arugula_proto::Action;
-    // #887: an edit waiting as a diff is accepted or rejected (as is, never
-    // changed from a conversation).
-    let edit = matches!(req.action, Action::Accept | Action::Reject);
-    if !(matches!(req.action, Action::Allow | Action::Deny | Action::Answer) || edit && req.text.is_none()) {
-        return Err(
-            "a conversation allows, denies or answers a card, or accepts or rejects an edit, nothing else".into()
-        );
-    }
-    if req.id.is_none() {
-        return Err("name the ask it answers (id)".into());
-    }
-    if is_invite(app, pane).await || is_agents(app, pane).await {
-        return Err("a conversation answers its link's own asks: this card is the machine owner's".into());
-    }
-    if !who.is_owner() {
-        match app.mux.api(|r| Api::RoleOn(who.clone(), pane, r)).await.flatten() {
-            Some((role, _)) if role >= arugula_core::Role::Editor => {}
-            Some(_) => return Err(format!("whoever linked %{pane} may only watch it now")),
-            None => return Err(format!("no pane %{pane}")),
-        }
-        // And may still drive it (#959): a grant outlives no trust.
-        may_drive(app, &who, pane).await.map_err(|e| e.1)?;
-    }
-    let by = Driver { who: who.id().to_owned(), name: via.label() };
-    act_one(app, pane, req, Some(by)).await
-}
-
-/// A conversation's answer to its lead's own card (#859): the lead is its
-/// conversation's, started here with the owner's rights, so whoever may
-/// drive its block may answer what it asks, as they may `@lead` it (#959).
-/// Allow, deny or answer one ask by its id, on the lead's block only;
-/// recorded as the member, via the conversation.
-#[cfg(feature = "labs")]
-pub(crate) async fn act_for_lead(
-    app: &App,
-    lead: PaneId,
-    req: &arugula_proto::api::ActRequest,
-    who: &crate::acl::Principal,
-    via: &ConvVia,
-) -> Result<(), String> {
-    use arugula_proto::Action;
-    if !matches!(req.action, Action::Allow | Action::Deny | Action::Answer) {
-        return Err("a conversation allows, denies or answers a card, nothing else".into());
-    }
-    if req.id.is_none() {
-        return Err("name the ask it answers (id)".into());
-    }
-    may_drive(app, who, lead).await.map_err(|e| e.1)?;
-    let by = Driver { who: who.id().to_owned(), name: via.label() };
-    act_one(app, lead, req, Some(by)).await
-}
-
 /// Refused unless `who` may drive pane or block `id`: on the owner's
 /// machine, an editor needs their trust (M14), for prompting an agent and
 /// answering for it as for typing (#959). Said as typing says it.
@@ -590,14 +482,6 @@ pub(crate) fn not_on_invites() -> ApiError {
 /// What to call whoever made a request (M13), to attribute what they did.
 pub(crate) async fn who_is(app: &App, who: crate::acl::Principal) -> Option<Driver> {
     app.mux.api(|r| Api::Who(who, r)).await
-}
-
-/// What chat calls someone (#889), as their messages name them: a link's
-/// grant and an answer through a conversation name them so too.
-#[cfg_attr(not(feature = "labs"), allow(dead_code))]
-pub(crate) async fn chat_name(app: &App, who: crate::acl::Principal) -> String {
-    let id = who.id().to_owned();
-    app.mux.api(|r| Api::ChatName(who, r)).await.unwrap_or(id)
 }
 
 /// A block's method, on someone's behalf (M29): an approval or answer is

@@ -853,28 +853,13 @@ pub async fn daemon_peers(State(app): State<Arc<App>>, d: DaemonAuth, Query(q): 
     {
         let login = app.db.account(&owner)?.map(|a| a.login).filter(|l| !l.is_empty());
         let who = login.as_deref().unwrap_or("Someone");
-        // #857: an offer that's a conversation's says which.
-        let (by_conv, plain): (Vec<String>, Vec<String>) =
-            new.into_iter().partition(|a| app.db.offer_reason(&d.cert.device, a).ok().flatten().is_some());
-        for a in by_conv {
-            let conv = app.db.offer_reason(&d.cert.device, &a)?.unwrap_or_default();
-            crate::push::notify(
-                &app,
-                vec![a],
-                &format!("control-share-{}", d.cert.device),
-                format!("{who} added you to {conv}"),
-                format!("A conversation on {}. Open Arugula to accept or turn it down.", row.name),
-            );
-        }
-        if !plain.is_empty() {
-            crate::push::notify(
-                &app,
-                plain,
-                &format!("control-share-{}", d.cert.device),
-                format!("{who} wants to share {} with you", row.name),
-                "Open Arugula to accept or turn it down.".into(),
-            );
-        }
+        crate::push::notify(
+            &app,
+            new,
+            &format!("control-share-{}", d.cert.device),
+            format!("{who} wants to share {} with you", row.name),
+            "Open Arugula to accept or turn it down.".into(),
+        );
     }
     crate::reply(&out)
 }
@@ -943,29 +928,11 @@ pub async fn answer_share(
 /// daemon decides for itself; control routes only those it would anyway
 /// (see the top): this list narrows that, never widens it.
 pub async fn daemon_access(State(app): State<Arc<App>>, d: DaemonAuth, Json(b): Json<wire::AccessList>) -> R {
-    if b.accounts.len() > 500 || b.agents.len() > 500 || b.links.len() > 500 || b.reasons.len() > 500 {
+    if b.accounts.len() > 500 || b.agents.len() > 500 {
         return Err(err(StatusCode::BAD_REQUEST, "too many"));
     }
     app.db.set_access(&d.cert.device, &b.accounts, b.links_until)?;
-    // #857: the conversation an offer is for, for the offer to name. A
-    // title, one line, kept short: it's shown to someone else.
-    let reasons: Vec<(String, String)> = b
-        .reasons
-        .iter()
-        .map(|r| {
-            let conv: String = r.conv.split_whitespace().collect::<Vec<_>>().join(" ");
-            (r.account.clone(), conv.chars().take(wire::AccessReason::MAX_CONV).collect::<String>())
-        })
-        .filter(|(a, c)| !a.is_empty() && !c.is_empty())
-        .collect();
-    app.db.set_offer_reasons(&d.cert.device, &reasons)?;
-    // A daemon reaching for a linked pane (#856) is routed exactly as one
-    // reaching for agents: its daemons only, as far as its person would be.
-    let mut daemons = b.agents;
-    daemons.extend(b.links);
-    daemons.sort();
-    daemons.dedup();
-    app.db.set_agent_access(&d.cert.device, &daemons)?;
+    app.db.set_agent_access(&d.cert.device, &b.agents)?;
     crate::reply(&wire::Ack {})
 }
 

@@ -184,16 +184,6 @@ impl Request for crate::api::ConvMemberRequest {}
 
 impl Request for crate::api::ConvMemberRemoveRequest {}
 
-impl Request for crate::api::ConvGrantRequest {}
-
-impl Request for crate::api::ConvGrantRevokeRequest {}
-
-impl Request for crate::api::ConvLinkRequest {}
-
-impl Request for crate::api::ConvUnlinkRequest {}
-
-impl Request for crate::api::ConvActRequest {}
-
 impl Request for crate::api::NotifyRequest {}
 
 impl Request for crate::api::StudioLoginRequest {}
@@ -335,14 +325,6 @@ macro_rules! every_op {
         $m!($crate::op::ops::ConvDelete);
         $m!($crate::op::ops::ConvMemberAdd);
         $m!($crate::op::ops::ConvMemberRemove);
-        $m!($crate::op::ops::ConvLinkAdd);
-        $m!($crate::op::ops::ConvLinkClose);
-        $m!($crate::op::ops::ConvLinksGet);
-        $m!($crate::op::ops::ConvAct);
-        $m!($crate::op::ops::ConvLeadStart);
-        $m!($crate::op::ops::ConvGrantMake);
-        $m!($crate::op::ops::ConvGrantsList);
-        $m!($crate::op::ops::ConvGrantRevoke);
         // #578 part a: fs, hosts, setup.
         $m!($crate::op::ops::FsListGet);
         $m!($crate::op::ops::FsStatGet);
@@ -400,16 +382,16 @@ pub mod ops {
         Machine, PaneId,
         api::{
             AclSetRequest, Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConvCreateRequest,
-            ConvGrantRequest, ConvGrantRevokeRequest, ConvLinkRequest, ConvMemberRemoveRequest, ConvMemberRequest,
-            ConvRenameRequest, ConvUnlinkRequest, ConversationList, ConversationsQuery, DetectionAnswer, DriverEntry,
-            Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite, GuestInviteRequest, IdeDiffs,
-            IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer, InstallAdapterRequest,
-            InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest, NotifyPref, NotifyRequest,
-            OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary, PermitAnswer, PermitRequest,
-            Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey, PushSubscriptions, Rules, RunResponse,
-            SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps, StudioLoggedIn, StudioLoginRequest,
-            StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins, TeamPinsRequest, ThreadMessages,
-            ThreadPostRequest, ThreadPosted, ThreadReadRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
+            ConvMemberRemoveRequest, ConvMemberRequest, ConvRenameRequest, ConversationList, ConversationsQuery,
+            DetectionAnswer, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite,
+            GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer,
+            InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest,
+            NotifyPref, NotifyRequest, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary,
+            PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
+            PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
+            StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins,
+            TeamPinsRequest, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, TokenInfo,
+            WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
@@ -949,7 +931,7 @@ pub mod ops {
     }
 
     /// `GET /api/threads/{target}` (M61): a thread's messages, as the caller
-    /// may read them (MCP's `read_thread`). The mux checks each thread.
+    /// may read them. The mux checks each thread.
     pub struct ThreadGet;
 
     impl Op for ThreadGet {
@@ -963,9 +945,8 @@ pub mod ops {
         type Res = ThreadMessages;
     }
 
-    /// `POST /api/threads/{target}` (M61): post in a thread, which an
-    /// `@agent` in a pane's one carries to the pane's agent (MCP's
-    /// `post_thread`).
+    /// `POST /api/threads/{target}` (M61): post in a thread. People's only:
+    /// an `@agent` in it is text (#1095).
     pub struct ThreadPost;
 
     impl Op for ThreadPost {
@@ -1067,134 +1048,6 @@ pub mod ops {
         type Path = crate::ConvId;
         type Req = ConvMemberRemoveRequest;
         type Res = crate::Conversation;
-    }
-
-    /// `POST /api/convs/{id}/links` (#856): link a pane, here or on
-    /// another machine, that its machine granted this conversation. The
-    /// owner and members link; the home checks it reaches the pane.
-    pub struct ConvLinkAdd;
-
-    impl Op for ConvLinkAdd {
-        const NAME: &'static str = "conv.link";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/convs/{id}/links";
-        const ACCESS: Access = Access::Handler;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = crate::ConvId;
-        type Req = ConvLinkRequest;
-        type Res = crate::Conversation;
-    }
-
-    /// `POST /api/convs/{id}/links/close`: close a link (the
-    /// conversation's owner, or whoever linked it). It stays, closed.
-    pub struct ConvLinkClose;
-
-    impl Op for ConvLinkClose {
-        const NAME: &'static str = "conv.unlink";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/convs/{id}/links/close";
-        const ACCESS: Access = Access::Handler;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = crate::ConvId;
-        type Req = ConvUnlinkRequest;
-        type Res = crate::Conversation;
-    }
-
-    /// `GET /api/convs/{id}/links`: each link's state now (live, closed,
-    /// offline), read from its machine. A link its machine refuses is
-    /// closed for good.
-    pub struct ConvLinksGet;
-
-    impl Op for ConvLinksGet {
-        const NAME: &'static str = "conv.links";
-        const METHOD: Method = Method::Get;
-        const PATH: &'static str = "/api/convs/{id}/links";
-        const ACCESS: Access = Access::Handler;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = crate::ConvId;
-        type Req = Empty;
-        type Res = Vec<crate::ConvLinkStatus>;
-    }
-
-    /// `POST /api/convs/{id}/act` (#857): answer a link's card from the
-    /// conversation, for someone in it. It goes through the link's machine,
-    /// by the ask's id, with the rights of whoever granted the pane there.
-    pub struct ConvAct;
-
-    impl Op for ConvAct {
-        const NAME: &'static str = "conv.act";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/convs/{id}/act";
-        const ACCESS: Access = Access::Handler;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = crate::ConvId;
-        type Req = crate::api::ConvActRequest;
-        type Res = Empty;
-    }
-
-    /// `POST /api/convs/{id}/lead` (#858): start the conversation's lead,
-    /// or a new one in place of a lost one, for someone in it. The new
-    /// block is told the links and the last messages; the conversation
-    /// keeps its id and timeline.
-    pub struct ConvLeadStart;
-
-    impl Op for ConvLeadStart {
-        const NAME: &'static str = "conv.lead";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/convs/{id}/lead";
-        const ACCESS: Access = Access::Handler;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = crate::ConvId;
-        type Req = Empty;
-        type Res = crate::Conversation;
-    }
-
-    /// `POST /api/panes/{id}/conv-grants` (#856): let a conversation's home
-    /// drive this pane (prompt, wait, capture, events, cards) with the
-    /// caller's rights, an editor's at most. Kept here, on the pane's
-    /// machine, where "you may drive it" is checked.
-    pub struct ConvGrantMake;
-
-    impl Op for ConvGrantMake {
-        const NAME: &'static str = "conv.grant";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/panes/{id}/conv-grants";
-        const ACCESS: Access = Access::Pane(Role::Editor);
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        const DRIVES: bool = true;
-        type Path = PaneId;
-        type Req = ConvGrantRequest;
-        type Res = crate::ConvGrant;
-    }
-
-    /// `GET /api/panes/{id}/conv-grants`: the conversations this pane is
-    /// linked to, by their grants here.
-    pub struct ConvGrantsList;
-
-    impl Op for ConvGrantsList {
-        const NAME: &'static str = "conv.grants";
-        const METHOD: Method = Method::Get;
-        const PATH: &'static str = "/api/panes/{id}/conv-grants";
-        const ACCESS: Access = Access::Pane(Role::Viewer);
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = PaneId;
-        type Req = Empty;
-        type Res = Vec<crate::ConvGrant>;
-    }
-
-    /// `POST /api/panes/{id}/conv-grants/revoke`: take a grant back, which
-    /// cuts the conversation's link to this pane.
-    pub struct ConvGrantRevoke;
-
-    impl Op for ConvGrantRevoke {
-        const NAME: &'static str = "conv.grant_revoke";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/panes/{id}/conv-grants/revoke";
-        const ACCESS: Access = Access::Pane(Role::Editor);
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = PaneId;
-        type Req = ConvGrantRevokeRequest;
-        type Res = Vec<crate::ConvGrant>;
     }
 
     /// `GET /api/machines`: the machines panes run on (`arugula machines`).

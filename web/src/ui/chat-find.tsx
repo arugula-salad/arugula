@@ -1,6 +1,6 @@
 // Getting around the chat page (M75): Ctrl/Cmd+K to jump to a channel,
-// search over every machine's threads, Activity (your mentions and the
-// agents' answers to you), and keys to move through the channels.
+// search over every machine's threads, Activity (your mentions and what
+// needs you), and keys to move through the channels.
 //
 // Search and Activity read the threads through each machine's own
 // connection, as the person reading may: the daemon's `/api/search` is the
@@ -110,9 +110,9 @@ function HitList({ hits, multi }: { hits: Hit[]; multi: boolean }) {
               <time>{when(h.m.at)}</time>
             </span>
             <span class="chat-hit-body">
-              {h.m.agent ? <span class="msg-avatar agent">⚙</span> : <MsgAvatar who={h.m.who} name={h.m.name} pic={h.m.pic} />}
+              <MsgAvatar who={h.m.who} name={h.m.name} pic={h.m.pic} />
               <span class="chat-hit-text">
-                <b>{h.m.agent ? h.m.name : h.m.name.split("@")[0]}</b>
+                <b>{h.m.name.split("@")[0]}</b>
                 {h.m.text ? <Markup text={h.m.text} /> : <p class="thread-text">{h.m.quote?.text}</p>}
               </span>
             </span>
@@ -148,21 +148,13 @@ export function activityCount(all: Source[]): number {
   return n;
 }
 
-/** Messages for you: the ones that @mention you, and an agent's answer
- * after you @mentioned it. */
+/** Messages for you: the ones that @mention you. */
 function activity(index: Indexed[]): Hit[] {
   const out: Hit[] = [];
   for (const { s, target, summary, msgs } of index) {
     const me = s.client.chatMe();
     const firstUnread = summary.unread ? summary.last - summary.unread + 1 : Infinity;
-    let asked = false;
-    for (const m of msgs) {
-      if (m.who === me && m.to_agent) asked = true;
-      else if (m.agent && asked) {
-        out.push({ s, target, m, unread: m.id >= firstUnread });
-        asked = false;
-      } else if (m.mentions?.includes(me)) out.push({ s, target, m, unread: m.id >= firstUnread });
-    }
+    for (const m of msgs) if (m.mentions?.includes(me)) out.push({ s, target, m, unread: m.id >= firstUnread });
   }
   return out.sort((a, b) => b.m.at - a.m.at).slice(0, 100);
 }
@@ -184,7 +176,7 @@ export function ActivityView({ all, multi, phone }: { all: Source[]; multi: bool
   }, [finished]);
   return (
     <section class="chat-thread chat-view" aria-label="Activity" data-chat-activity-view>
-      <ViewHead title="Activity" sub="What needs you on every machine, mentions of you, and agents' answers to you" phone={phone} />
+      <ViewHead title="Activity" sub="What needs you on every machine, and mentions of you" phone={phone} />
       <div class="thread-list">
         {fleet && needs.length > 0 && <NeedsYou fleet={fleet} panes={needs} />}
         {hits.length === 0 && needs.length === 0 && (

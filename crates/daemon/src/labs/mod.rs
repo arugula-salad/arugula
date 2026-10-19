@@ -48,18 +48,8 @@ use crate::{block::BlockKinds, provider::Provider, server::App};
 // Agent recipes and their A2A cards (M76): the `agents` flag.
 #[cfg(feature = "labs")]
 pub mod agents;
-// A conversation's links (#856): grants on a pane for a conversation's
-// home, and the home's links. Chat's (the `chat` flag).
 #[cfg(feature = "labs")]
 pub mod apps;
-#[cfg(feature = "labs")]
-pub mod links;
-// What a conversation's links do, in its timeline, and its cards (#857).
-#[cfg(feature = "labs")]
-pub mod events;
-// A conversation's lead (#858): the agent block that drives its links.
-#[cfg(feature = "labs")]
-pub mod lead;
 // Forgejo and GitLab as forges (#457): their adapters, the `tea` logins
 // Forgejo reads with, and the webhooks they send. GitHub is core's. The
 // parts of a forge block that connect to them are `forge/labs_forges.rs`,
@@ -143,10 +133,6 @@ pub fn resume_tasks(app: &Arc<App>) {
     if on(app.control.state_dir(), arugula_proto::flags::AGENTS) {
         agents::tasks::resume(app);
     }
-    // #857: each conversation's links, watched again.
-    events::resume(app);
-    // #858: and its lead, followed again and told what it was owed.
-    lead::resume(app);
 }
 
 #[cfg(not(feature = "labs"))]
@@ -498,157 +484,6 @@ pub fn chat() -> Result<(), String> {
 #[cfg(not(feature = "labs"))]
 pub fn chat() -> Result<(), String> {
     Err(not_built("Chat"))
-}
-
-/// A conversation's link events (#857) in a build without Labs: none.
-#[cfg(not(feature = "labs"))]
-pub mod events {
-    use std::sync::Arc;
-
-    use arugula_proto::{ConvId, ConvLink, api::ConvActRequest};
-
-    use crate::{acl::Principal, server::App};
-
-    pub fn watch(_app: &Arc<App>, _id: ConvId, _l: &ConvLink) {}
-
-    pub fn stop(_id: ConvId, _link: Option<&str>) {}
-
-    pub async fn act(
-        _app: &App,
-        _id: ConvId,
-        _req: ConvActRequest,
-        _who: &Principal,
-    ) -> Result<(), super::links::Refusal> {
-        Err((501, super::not_built("Chat")))
-    }
-}
-
-/// A conversation's lead (#858) in a build without Labs: none, so no
-/// token is a lead's and no call names a link.
-#[cfg(not(feature = "labs"))]
-pub mod lead {
-    use std::sync::Arc;
-
-    use arugula_proto::{ConvId, Conversation, PaneId, ThreadMsg};
-    use serde_json::Value;
-
-    use crate::{
-        mcp::tools::{Call, Out},
-        server::App,
-    };
-
-    pub const WHO: &str = "lead";
-
-    pub async fn of(_app: &App, _block: PaneId) -> Option<ConvId> {
-        None
-    }
-
-    pub async fn start(_app: &Arc<App>, _id: ConvId) -> Result<Conversation, super::links::Refusal> {
-        Err((501, super::not_built("Chat")))
-    }
-
-    pub async fn tell(_app: &Arc<App>, _id: ConvId, _msg: &ThreadMsg) -> Result<bool, String> {
-        Err(super::not_built("Chat"))
-    }
-
-    pub async fn posted(_app: &App, _id: ConvId, _msg: u64) {}
-
-    pub fn stop(_id: ConvId) {}
-
-    pub async fn route(_call: &Call<'_>, _conv: ConvId, _tool: &str, args: Value) -> Result<Value, Out> {
-        Ok(args)
-    }
-
-    pub async fn after(_app: &App, _conv: ConvId, _name: &str, _tool: &str, _v: &Value) {}
-
-    pub async fn links_now(_call: &Call<'_>) -> Out {
-        Err(super::not_built("Chat"))
-    }
-
-    pub async fn adopt(
-        _app: &Arc<App>,
-        _conv: ConvId,
-        _pane: PaneId,
-        _title: Option<String>,
-    ) -> Result<String, super::links::Refusal> {
-        Err((501, super::not_built("Chat")))
-    }
-}
-
-/// A conversation's links (#856) in a build without Labs: no grants, and
-/// every request says chat isn't in this build.
-#[cfg(not(feature = "labs"))]
-pub mod links {
-    use std::path::Path;
-
-    use arugula_proto::{
-        ConvGrant, ConvId, ConvLinkStatus, Conversation, PaneId,
-        api::{ConvGrantRequest, ConvLinkRequest},
-    };
-
-    use crate::{acl::Principal, server::App};
-
-    pub type Refusal = (u16, String);
-
-    /// Never made here: without Labs no request is a linked one.
-    #[allow(dead_code)]
-    pub enum Linked {
-        Yes(Principal, String),
-        Revoked,
-    }
-
-    pub const BY_HEADER: &str = "Arugula-Conv-By";
-
-    fn no<T>() -> Result<T, Refusal> {
-        Err((501, super::not_built("Chat")))
-    }
-
-    pub fn granted_devices(_dir: &Path) -> Vec<String> {
-        Vec::new()
-    }
-
-    pub const CONV_HEADER: &str = "Arugula-Conv";
-
-    pub async fn linked(
-        _app: &App,
-        _device: &str,
-        _conv: Option<&str>,
-        _method: &str,
-        _path: &str,
-        _body: &[u8],
-    ) -> Option<Linked> {
-        None
-    }
-
-    pub async fn grant(
-        _app: &App,
-        _pane: PaneId,
-        _req: ConvGrantRequest,
-        _by: &Principal,
-    ) -> Result<ConvGrant, Refusal> {
-        no()
-    }
-
-    pub async fn grants(_app: &App, _pane: PaneId) -> Vec<ConvGrant> {
-        Vec::new()
-    }
-
-    pub async fn revoke(_app: &App, _pane: PaneId, _device: &str, _conv: ConvId) -> Result<Vec<ConvGrant>, Refusal> {
-        no()
-    }
-
-    pub async fn link(
-        _app: &App,
-        _id: ConvId,
-        _req: ConvLinkRequest,
-        _who: &Principal,
-    ) -> Result<Conversation, Refusal> {
-        no()
-    }
-
-    pub async fn statuses(_app: &App, _id: ConvId, _who: &Principal) -> Result<Vec<ConvLinkStatus>, Refusal> {
-        no()
-    }
 }
 
 /// Sets up the studio token store (M35) at start-up. A build without Labs

@@ -3,8 +3,8 @@
 //! Who reads and who posts follows the pane: watchers read, drivers post,
 //! a private pane's thread is its owner's, and a "from now" share starts
 //! when it was made. Each person's unread count comes in their state.
-//! `@agent` in a pane's thread reaches the agent there as a follow-up, and
-//! threads outlive a daemon restart. A mention reaches team members who
+//! `@agent` in a thread is text like any other `@` (#1095: agents are out
+//! of chat), and threads outlive a daemon restart. A mention reaches team members who
 //! aren't connected, on a notification of its thread's own, and a role change
 //! keeps what a "from now" share already reads. An owner's @ that names
 //! someone who can't read the thread offers to invite them (#297): into
@@ -196,39 +196,17 @@ fn threads_and_reads_outlive_a_restart() {
     assert!(hits.as_array().unwrap().iter().any(|h| h["thread"] == format!("pane-{pane}")), "{hits}");
 }
 
+/// #1095: `@agent` reaches no agent. It's an `@` that names nobody, said to
+/// the poster as any other, and the post says nothing of an agent.
 #[test]
-fn at_agent_reaches_the_panes_agent_from_someone_who_drives_it() {
+fn at_agent_is_plain_text() {
     let d = daemon("threads-agent");
     let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();
-    // Claude Code's Stop hook, waiting for a follow-up (`arugula inbox`).
-    let sock = d.sock();
-    let waiter = std::thread::spawn(move || {
-        use std::io::{Read, Write};
-        let mut s = std::os::unix::net::UnixStream::connect(sock).unwrap();
-        let body = std::fs::read_to_string(format!("{}/tests/fixtures/s18-hook-stop.json", env!("CARGO_MANIFEST_DIR")))
-            .unwrap();
-        let req = format!(
-            "POST /api/panes/{pane}/inbox HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        s.write_all(req.as_bytes()).unwrap();
-        let mut out = String::new();
-        let _ = s.read_to_string(&mut out);
-        out
-    });
-    d.wait_for("the waiter", || {
-        d.get("/api/panes").as_array().unwrap().iter().any(|p| p["id"] == pane && p["inbox"] == true)
-    });
     let r = d.post(&format!("/api/threads/pane-{pane}"), json!({ "text": "@agent please rerun the tests" }));
-    assert_eq!(r["message"]["to_agent"], true);
-    assert_eq!(r["agent"]["delivered"], true, "{r}");
-    let got = waiter.join().unwrap();
-    assert!(got.contains("wrote in this pane's thread: @agent please rerun the tests"), "{got}");
-    assert!(got.contains("post_thread"), "{got}");
-
-    // Plain mentions don't.
-    let r = d.post(&format!("/api/threads/pane-{pane}"), json!({ "text": "the agent is slow" }));
-    assert_eq!(r["message"]["to_agent"], Value::Null);
+    assert_eq!(r["message"]["text"], "@agent please rerun the tests", "{r}");
+    assert_eq!(r["message"]["landed"], Value::Null, "{r}");
+    assert_eq!(r["unreached"], json!([{ "token": "agent", "why": "nobody" }]), "{r}");
+    assert!(r.get("agent").is_none() && r["message"].get("to_agent").is_none(), "{r}");
 }
 
 /// Which `@` tokens landed, and what is said to the poster about the rest.
@@ -255,41 +233,26 @@ async fn only_what_landed_is_marked_and_the_rest_is_told_to_the_poster_alone() {
     assert_eq!(r["message"]["landed"], json!(["driver"]), "{r}");
     assert_eq!(reasons(&r), [pair("notreal", "nobody")]);
 
-    // The owner driving a pane: @claude lands too.
+    // The owner driving a pane: @claude and @agent are nobody (#1095).
     let r = d.post(&key, json!({ "text": "@Claude look, @agent" }));
-    assert_eq!(r["message"]["landed"], json!(["claude", "agent"]), "{r}");
-    assert_eq!(r["unreached"], json!([]));
+    assert_eq!(r["message"]["landed"], Value::Null, "{r}");
+    assert_eq!(reasons(&r), [pair("claude", "nobody"), pair("agent", "nobody")]);
 
     // Yourself, and nothing at all, say nothing and land nothing.
     let r = d.post(&key, json!({ "text": "@me hello" }));
     assert_eq!((r["message"]["landed"].clone(), r["unreached"].clone()), (Value::Null, json!([])), "{r}");
 
-    // In a session thread an @agent has no pane to go to.
+    // In a session thread too.
     let r = d.post(&format!("/api/threads/session-{session}"), json!({ "text": "@claude ping @driver" }));
     assert_eq!(r["message"]["landed"], json!(["driver"]), "{r}");
-    assert_eq!(r["message"]["to_agent"], Value::Null);
-    assert_eq!(reasons(&r), [pair("claude", "agent_needs_pane")]);
+    assert_eq!(reasons(&r), [pair("claude", "nobody")]);
 
-    // A guest editor isn't trusted to drive the owner's pane, so their
-    // @agent is refused.
+    // A guest editor's @agent is a comment, as the owner's is.
     let (s, v) = guest(&d, DRIVER, "POST", &key, Some(json!({ "text": "@agent run it, @notreal" })));
     assert_eq!(s, 200, "{v}");
-    assert_eq!(v["message"]["to_agent"], Value::Null, "{v}");
     assert_eq!(v["message"]["landed"], Value::Null, "{v}");
-    assert_eq!(reasons(&v), [pair("agent", "may_not_drive"), pair("notreal", "nobody")]);
-    // It's a comment all the same.
+    assert_eq!(reasons(&v), [pair("agent", "nobody"), pair("notreal", "nobody")]);
     assert_eq!(v["message"]["text"], "@agent run it, @notreal", "{v}");
-
-    // Once the owner trusts them with the pane (#959), it reaches the agent.
-    let to = format!("tailnet:{DRIVER}");
-    d.trust(pane, &to, 30);
-    d.wait_for("the trust", || {
-        d.get("/api/panes").as_array().unwrap().iter().any(|p| p["id"] == pane && p["trusted"][0][0] == to)
-    });
-    let (s, v) = guest(&d, DRIVER, "POST", &key, Some(json!({ "text": "@agent run it" })));
-    assert_eq!(s, 200, "{v}");
-    assert_eq!(v["message"]["to_agent"], true, "{v}");
-    assert_eq!(v["message"]["landed"], json!(["agent"]), "{v}");
 
     // A name that exists but can't read this thread reads like one that
     // doesn't: same reason, nothing to tell them apart.

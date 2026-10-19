@@ -8,7 +8,6 @@
 // own, fetched when one is picked.
 
 export { ChatPage } from "./ui/chat";
-export { LinkLayer, linkItems } from "./ui/links";
 export { AgentsPage } from "./ui/agents-page";
 export { AppsLayer, pickApp } from "./ui/apps";
 export { SandboxesLayer, openSandboxes } from "./ui/sandboxes";

@@ -16,8 +16,8 @@
 //! the tool passes through.
 
 use arugula_proto::{
-    Attention, BlockType, PaneId, ThreadTarget,
-    api::{HistoryKind, Unreached},
+    Attention, BlockType, PaneId,
+    api::HistoryKind,
     ask::Ask,
     forge::{Draft, ForgeWant},
 };
@@ -175,22 +175,6 @@ pub struct Panes {
 pub struct BlockResource {
     pub pane: PaneEntry,
     pub state: Value,
-}
-
-/// `read_thread`.
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct ThreadRead {
-    pub thread: ThreadTarget,
-    pub messages: Vec<arugula_proto::ThreadMsg>,
-    pub last: u64,
-}
-
-/// `post_thread`.
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct ThreadPosted {
-    pub thread: ThreadTarget,
-    pub message: arugula_proto::ThreadMsg,
-    pub unreached: Vec<Unreached>,
 }
 
 /// One command in `history`.
@@ -782,20 +766,6 @@ mod tests {
         same(
             PromptedAgent { result: PromptResult::NeedsInput { question: None, ask: None }, pane: 7 },
             json!({ "result": "needs_input", "pane": 7 }),
-        );
-        shaped(
-            ThreadRead { thread: ThreadTarget::Pane(3), messages: vec![], last: 0 },
-            json!({ "thread": ThreadTarget::Pane(3), "messages": [], "last": 0 }),
-        );
-        shaped(
-            ThreadPosted {
-                thread: ThreadTarget::Session(1),
-                message: serde_json::from_value(json!({ "id": 1, "at": 2, "who": "mcp:x", "name": "x", "text": "hi" }))
-                    .unwrap(),
-                unreached: vec![],
-            },
-            json!({ "thread": ThreadTarget::Session(1),
-                "message": { "id": 1, "at": 2, "who": "mcp:x", "name": "x", "text": "hi" }, "unreached": [] }),
         );
         same(Devices { devices: vec![] }, json!({ "devices": [] }));
         shaped(

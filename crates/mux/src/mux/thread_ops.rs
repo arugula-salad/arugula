@@ -36,17 +36,6 @@ impl Daemon {
         }
     }
 
-    /// Whether `who` may instruct conversation `conv`'s lead (#858): whoever
-    /// may drive its block, as it runs here with the owner's rights (#959).
-    /// With no lead yet, an `@lead` starts one: the owner's, or a team's
-    /// member's.
-    fn may_tell_lead(&self, who: &Principal, conv: arugula_proto::ConvId) -> bool {
-        match self.threads.conv(conv).and_then(|c| c.lead.as_ref()) {
-            Some(l) => self.may_drive_here(who, l.block).is_ok(),
-            None => who.is_owner() || self.config.acl.team_role(who).is_some_and(|r| r >= Role::Editor),
-        }
-    }
-
     /// `who`'s role in a thread, and the time its messages start for them:
     /// a pane's thread is read by whoever may read the pane (a private
     /// pane's only by its owner), a session's by whoever has a role in it.
@@ -137,10 +126,7 @@ impl Daemon {
     }
 
     pub(super) fn thread_post(&mut self, post: ThreadPost) -> Result<Posted, ThreadError> {
-        let ThreadPost { target, who, acting, as_agent, text, quote, event } = post;
-        if event.is_some() && !matches!(target, ThreadTarget::Conv(_)) {
-            return Err(ThreadError(400, "only a conversation's links post events".into()));
-        }
+        let ThreadPost { target, who, acting, text, quote } = post;
         let (role, _) = self.thread_role(&who, target).ok_or_else(|| ThreadError(404, "no such thread".into()))?;
         if role < Role::Editor {
             return Err(ThreadError(403, "you're watching this session; you can't post in its threads".into()));
@@ -156,11 +142,8 @@ impl Daemon {
         }
         // Rights are `who`'s; the name on the post is the speaker's (#935).
         let speaker = acting.as_ref().unwrap_or(&who);
-        let by = as_agent
-            .clone()
-            .unwrap_or_else(|| Driver { who: speaker.id().to_owned(), name: self.chat_name_of(speaker) });
-        // An event's line mentions nobody: what it quotes is a pane's.
-        let tokens = if event.is_some() { Vec::new() } else { crate::labs::threads::mentions(&text) };
+        let by = Driver { who: speaker.id().to_owned(), name: self.chat_name_of(speaker) };
+        let tokens = crate::labs::threads::mentions(&text);
         // A team's other owner reads every thread, as the owner does.
         let co_owner = |p: &Principal| p.id().strip_prefix("account:").is_some_and(|a| self.config.people.owns_here(a));
         let mentions: Vec<String> = self
@@ -174,23 +157,6 @@ impl Daemon {
             })
             .map(|p| p.id().to_owned())
             .collect();
-        // An @agent goes to the pane's agent as a follow-up: an instruction,
-        // so only from someone who may drive it (and never from an agent).
-        // In a conversation, @lead goes to its lead (#858), which runs here
-        // with the owner's rights: so only from someone who may drive the
-        // lead's block (#959). Anyone else's is a comment.
-        let to_agent = as_agent.is_none()
-            && match target {
-                ThreadTarget::Pane(p) => {
-                    crate::labs::threads::calls_agent(&tokens) && self.may_drive_here(&who, p).is_ok()
-                }
-                ThreadTarget::Conv(c) => crate::labs::threads::calls_lead(&tokens) && self.may_tell_lead(&who, c),
-                ThreadTarget::Session(_) => false,
-            };
-        let reaches_agent = |t: &String| match target {
-            ThreadTarget::Conv(_) => crate::labs::threads::calls_lead(std::slice::from_ref(t)),
-            _ => crate::labs::threads::calls_agent(std::slice::from_ref(t)),
-        };
         // Which tokens went anywhere; the rest are the poster's to hear about.
         let me = self.chat_name_of(speaker);
         let (mut landed, mut unreached) = (Vec::new(), Vec::new());
@@ -198,19 +164,10 @@ impl Daemon {
             let person = self.mentionable().into_iter().any(|p| {
                 mentions.iter().any(|m| m == p.id()) && crate::labs::threads::names(t, p.id(), &self.chat_name_of(&p))
             });
-            if person || (to_agent && reaches_agent(t)) {
+            if person {
                 landed.push(t.clone());
             } else if crate::labs::threads::names(t, speaker.id(), &me) {
                 // Yourself: nothing to say.
-            } else if matches!(target, ThreadTarget::Conv(_)) && reaches_agent(t) {
-                unreached.push(Unreached { token: t.clone(), why: UnreachedWhy::MayNotDrive });
-            } else if crate::labs::threads::calls_agent(std::slice::from_ref(t)) {
-                let why = if matches!(target, ThreadTarget::Pane(_)) {
-                    UnreachedWhy::MayNotDrive
-                } else {
-                    UnreachedWhy::AgentNeedsPane
-                };
-                unreached.push(Unreached { token: t.clone(), why });
             } else {
                 unreached.push(Unreached { token: t.clone(), why: UnreachedWhy::Nobody });
             }
@@ -220,14 +177,11 @@ impl Daemon {
             at: now_ms(),
             who: by.who.clone(),
             name: by.name.clone(),
-            pic: if as_agent.is_some() { None } else { self.pic_of(speaker) },
+            pic: self.pic_of(speaker),
             text,
             quote,
             mentions,
             landed,
-            to_agent,
-            agent: as_agent.is_some(),
-            event,
         };
         let msg = self.threads.post(target, msg).map_err(|e| ThreadError(500, format!("can't save it: {e}")))?;
         // What you post, you've read.
@@ -240,8 +194,7 @@ impl Daemon {
         }
         self.soon();
         self.notify_mentions(target, &msg);
-        self.notify_card(target, &msg);
-        Ok((msg, to_agent, unreached))
+        Ok((msg, unreached))
     }
 
     /// Tell everyone a message mentions, on their phones too.
@@ -272,26 +225,6 @@ impl Daemon {
                 .notify
                 .notify(pane, &title, &body, Some(extra.clone()), Some(extra.clone()), &|p| p.id() == id.as_str());
         }
-    }
-}
-
-impl Daemon {
-    /// A link's card (#857) goes to everyone in its conversation, on their
-    /// phones too, from here: they may not reach the link's machine.
-    fn notify_card(&self, target: ThreadTarget, msg: &ThreadMsg) {
-        let (ThreadTarget::Conv(id), Some(e)) = (target, &msg.event) else { return };
-        if e.kind != arugula_proto::ConvEventKind::NeedsInput {
-            return;
-        }
-        let Some(c) = self.threads.conv(id) else { return };
-        let title = format!("{} needs you in {}", e.link, c.title);
-        let body: String = e.ask.as_ref().map(|a| a.input.as_str()).unwrap_or(&msg.text).chars().take(200).collect();
-        let extra = serde_json::json!({ "thread": target.key(), "tag": format!("thread-{}-{}", target.key(), e.link) });
-        let people: Vec<String> =
-            std::iter::once(c.owner.clone()).chain(c.members.iter().map(|m| m.who.clone())).collect();
-        self.config
-            .notify
-            .notify(0, &title, &body, Some(extra.clone()), Some(extra), &|p| people.iter().any(|w| w == p.id()));
     }
 }
 
@@ -363,40 +296,13 @@ impl Daemon {
                 (c, Some(Change::Add { who, name, history, at: now_ms(), root }))
             }
             ConvReq::RemoveMember { id, member } => (get(self, id)?, Some(Change::Remove(member))),
-            ConvReq::Link { id, mut link } => {
-                link.by_name = self.chat_name_of(who);
-                link.at = now_ms();
-                (get(self, id)?, Some(Change::Link(link)))
-            }
-            ConvReq::Unlink { id, name } => (get(self, id)?, Some(Change::Unlink(name))),
-            ConvReq::Lead { id, change } => {
-                let mut c = get(self, id)?;
-                let reply = match &change {
-                    convs::LeadChange::Replied { who, msg } => Some((who.clone(), *msg)),
-                    _ => None,
-                };
-                convs::lead(&mut c, change).map_err(err)?;
-                self.threads.save_conv(c.clone()).map_err(|e| ThreadError(500, format!("can't save it: {e}")))?;
-                self.soon();
-                if let Some((who, msg)) = reply {
-                    self.notify_reply(&c, &who, msg);
-                }
-                return Ok(c);
-            }
-            ConvReq::LinkClosed { id, name, why } => {
-                let mut c = get(self, id)?;
-                if !convs::close_link(&mut c, &name, &why) {
-                    return Ok(c);
-                }
-                (c, None)
-            }
         };
         let (mut added, mut gone) = (None, None);
         if let Some(change) = change {
             match &change {
                 Change::Add { who, .. } => added = Some(who.clone()),
                 Change::Remove(who) => gone = Some(who.clone()),
-                Change::Rename(_) | Change::Link(_) | Change::Unlink(_) => {}
+                Change::Rename(_) => {}
             }
             convs::apply(&mut c, &by, change).map_err(err)?;
         }
@@ -444,19 +350,6 @@ impl Daemon {
                 format!("{name} names {}: give their id", named.iter().map(|p| p.id()).collect::<Vec<_>>().join(", ")),
             )),
         }
-    }
-
-    /// Tell whoever asked the lead (#858) that it answered, on their phones
-    /// too: its posts mention no one, so nothing else would.
-    fn notify_reply(&self, c: &Conversation, who: &[String], msg: u64) {
-        let target = ThreadTarget::Conv(c.id);
-        let Some(m) = self.threads.get(target).iter().find(|m| m.id == msg) else { return };
-        let title = format!("The lead answered you in {}", c.title);
-        let body: String = m.text.chars().take(200).collect();
-        let extra = serde_json::json!({ "thread": target.key(), "tag": format!("thread-{}", target.key()) });
-        self.config.notify.notify(0, &title, &body, Some(extra.clone()), Some(extra), &|p| {
-            who.iter().any(|w| w == p.id()) && c.floor(p.id()).is_some()
-        });
     }
 
     /// Tell someone just added to a conversation, on their phone too: what

@@ -120,8 +120,9 @@ test("history across days reads like a team chat", async ({ browser }) => {
   await expect(thread.locator('[data-msg="4"] .msg-avatar')).toHaveCount(0);
   await expect(thread.locator('[data-msg="4"] .msg-hover-time')).toHaveCount(1);
 
-  // The agent's message: its badge, a code block, and its @mention of you.
-  await expect(thread.locator('[data-msg="5"] .msg-badge')).toHaveText("Agent");
+  // An old agent's message (#1095: agents are out of chat) reads as anyone's:
+  // no badge, a code block, and its @mention of you.
+  await expect(thread.locator('[data-msg="5"] .msg-badge')).toHaveCount(0);
   await expect(thread.locator('[data-msg="5"] .msg-code')).toHaveText("fn main() {}");
   await expect(thread.locator('[data-msg="5"] .mention.me')).toHaveText("@me");
   await expect(thread.locator('[data-msg="5"]')).toHaveClass(/for-me/);

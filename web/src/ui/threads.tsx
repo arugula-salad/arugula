@@ -6,14 +6,12 @@
 // this thread body.
 
 import { Fragment } from "preact";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Client } from "../client";
 import { CONV_MEMBERS_SEE, threadKey, type Invitable, type PaneId, type ThreadMsg, type ThreadTarget, type Unreached } from "../proto";
 import { colorOf } from "./people";
 import type { MenuItem } from "./menu";
 import { Markup, mentionToken } from "./markup";
-import { labsNow } from "../labs-load";
-import { EventBody, eventIndex, type EventIndex } from "./conv-events";
 
 export interface Quote {
   pane: PaneId;
@@ -58,9 +56,6 @@ export function threadItems(client: Client, pane: PaneId): MenuItem[] {
           } as MenuItem,
         ]
       : []),
-    // #856: link it into a conversation (the Labs chunk is loaded: this
-    // machine keeps threads).
-    ...(labsNow()?.linkItems(client, pane) ?? []),
   ];
 }
 
@@ -274,9 +269,6 @@ export function ThreadBody({
   }, [client, threadKey(target), last, client.thread(target)?.unread]);
 
   const isMe = meMatcher(client);
-  // #857: what a conversation's events say about each other (a card answered).
-  const events = useMemo(() => eventIndex(msgs ?? []), [msgs]);
-  const conv = "conv" in target ? target.conv : undefined;
   return (
     <>
       <div class="thread-list" ref={list}>
@@ -284,11 +276,11 @@ export function ThreadBody({
         {msgs?.length === 0 && (
           <p class="thread-empty">
             {"conv" in target ? (
-              "Nothing yet. Everyone in this conversation reads it; write @name to notify one of them, or @lead to have the lead work in the linked panes."
+              "Nothing yet. Everyone in this conversation reads it; write @name to notify one of them."
             ) : (
               <>
-                Nothing yet. {"pane" in target ? "Talk about this pane here" : "Talk about this session here"}; write @agent to reach
-                the agent in a pane, or @name to notify someone.
+                Nothing yet. {"pane" in target ? "Talk about this pane here" : "Talk about this session here"}; write @name to notify
+                someone.
               </>
             )}
           </p>
@@ -316,8 +308,6 @@ export function ThreadBody({
                 extras={extras}
                 mayPost={mayPost && !gone}
                 reply={(q) => composeRef.current?.reply(q)}
-                conv={conv}
-                events={events}
               />
             </Fragment>
           );
@@ -340,7 +330,7 @@ export function ThreadBody({
           setError={setError}
           people={people(client, msgs ?? [], target)}
           draftKey={extras.draftKey}
-          placeholder={extras.name ? undefined : "pane" in target ? "Message (@agent reaches its agent)" : "Message"}
+          placeholder={extras.name ? undefined : "Message"}
           title={extras.name ?? title(client, target)}
         />
       ) : (
@@ -364,7 +354,7 @@ function meMatcher(client: Client): (token: string) => boolean {
 }
 
 /** People to @mention: who's here and who has posted (in a conversation,
- * who's in it), and the pane's agent. */
+ * who's in it). */
 function people(client: Client, msgs: ThreadMsg[], target: ThreadTarget): { token: string; name: string; who: string; pic?: string }[] {
   const out = new Map<string, { token: string; name: string; who: string; pic?: string }>();
   const me = client.chatMe();
@@ -377,7 +367,7 @@ function people(client: Client, msgs: ThreadMsg[], target: ThreadTarget): { toke
     const who = p.chat ?? p.who;
     if (who !== me) out.set(who, { token: mentionToken(p.name), name: p.name, who, pic: p.pic });
   }
-  for (const m of msgs) if (!m.agent && m.who !== me && !out.has(m.who)) out.set(m.who, { token: mentionToken(m.name), name: m.name, who: m.who, pic: m.pic });
+  for (const m of msgs) if (m.who !== me && !out.has(m.who)) out.set(m.who, { token: mentionToken(m.name), name: m.name, who: m.who, pic: m.pic });
   return [...out.values()].filter((p) => p.token);
 }
 
@@ -447,7 +437,7 @@ function Compose({
   const caret = input.current?.selectionStart ?? text.length;
   const typing = /(?:^|[^\w])@([\w.-]*)$/.exec(text.slice(0, caret));
   const options = typing
-    ? [...who, ...("pane" in target ? [{ token: "agent", name: "The pane's agent", who: "agent" }] : [])]
+    ? who
         .filter((p) => p.token.startsWith(typing[1].toLowerCase()) || p.name.toLowerCase().startsWith(typing[1].toLowerCase()))
         .slice(0, 6)
     : [];
@@ -526,7 +516,7 @@ function Compose({
                 choose(p.token);
               }}
             >
-              {p.who === "agent" ? <span class="msg-avatar agent">⚙</span> : <MsgAvatar who={p.who} name={p.name} pic={p.pic} />}
+              <MsgAvatar who={p.who} name={p.name} pic={p.pic} />
               <b>{p.name}</b>
               <span>@{p.token}</span>
             </li>
@@ -718,14 +708,9 @@ function Message({
   extras,
   mayPost,
   reply,
-  conv,
-  events,
 }: {
   client: Client;
   m: ThreadMsg;
-  /** The conversation it's in (#857), whose events it may carry. */
-  conv?: string;
-  events?: EventIndex;
   /** The message before it, when it's on the same day and no line between. */
   prev?: ThreadMsg;
   isMe: (token: string) => boolean;
@@ -738,19 +723,13 @@ function Message({
   const head = !prev || prev.who !== m.who || m.at - prev.at > 5 * 60_000;
   const mine = m.who === client.chatMe();
   const [copied, setCopied] = useState(false);
-  const name = m.agent ? m.name : m.name.split("@")[0];
+  const name = m.name.split("@")[0];
   const link = extras.link?.(m.id);
   return (
     <div class={`thread-msg${head ? " first" : ""}${mine ? " mine" : ""}${m.mentions?.includes(client.chatMe()) ? " for-me" : ""}`} data-msg={m.id}>
       <div class="msg-gutter">
         {head ? (
-          m.agent ? (
-            <span class="msg-avatar agent" aria-hidden="true">
-              ⚙
-            </span>
-          ) : (
-            <MsgAvatar who={m.who} name={m.name} pic={m.pic} />
-          )
+          <MsgAvatar who={m.who} name={m.name} pic={m.pic} />
         ) : (
           <time class="msg-hover-time" title={new Date(m.at).toLocaleString()}>
             {when(m.at)}
@@ -760,18 +739,11 @@ function Message({
       <div class="msg-body">
         {head && (
           <div class="thread-head">
-            <span class="thread-name" style={{ color: m.agent ? "var(--accent)" : undefined }}>
-              {name}
-            </span>
-            {m.agent && <span class="msg-badge">{m.who.startsWith("link:") ? "Link" : "Agent"}</span>}
+            <span class="thread-name">{name}</span>
             <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>
           </div>
         )}
-        {m.event && conv && events ? (
-          <EventBody client={client} conv={conv} m={m} index={events} />
-        ) : (
-          m.text && <Markup text={m.text} isMe={isMe} landed={reached(m, isMe, client.chatMe())} />
-        )}
+        {m.text && <Markup text={m.text} isMe={isMe} landed={reached(m, isMe, client.chatMe())} />}
         {m.quote && (
           <button class="thread-quote" title="Show it in the pane" onClick={() => reveal(m.quote!)}>
             <span class="thread-quote-from">
@@ -781,7 +753,6 @@ function Message({
             <pre>{m.quote.text}</pre>
           </button>
         )}
-        {m.to_agent && <div class="thread-tag">{conv ? "sent to the lead" : "sent to the pane's agent"}</div>}
       </div>
       <div class="msg-tools" role="toolbar" aria-label="Message actions">
         {mayPost && (
@@ -819,14 +790,7 @@ function Message({
 /** What to tell the poster about an `@` that went nowhere. Unknown names and
  *  names without access read the same: it must not say who exists. */
 function unreachedNote(u: Unreached): string {
-  switch (u.why) {
-    case "agent_needs_pane":
-      return `@${u.token} reaches an agent from its pane's thread`;
-    case "may_not_drive":
-      return `@${u.token} reaches the agent only from someone who can drive the pane`;
-    default:
-      return `Nobody here called ${u.token} can read this thread`;
-  }
+  return `Nobody here called ${u.token} can read this thread`;
 }
 
 /** The @tokens of a message that reached someone (#296): the daemon's

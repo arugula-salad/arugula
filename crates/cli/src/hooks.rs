@@ -91,7 +91,6 @@ const READ_RULES: &[&str] = &[
     "mcp__arugula__read_invite",
     "mcp__arugula__read_file",
     "mcp__arugula__read_cloud",
-    "mcp__arugula__read_thread",
 ];
 
 /// What `install` adds beside [`READ_RULES`], without `--allow-acting`
@@ -136,7 +135,6 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__invite_person",
     "mcp__arugula__device_call",
     "mcp__arugula__cloud",
-    "mcp__arugula__post_thread",
 ];
 
 #[derive(Subcommand)]
@@ -800,7 +798,6 @@ mod tests {
             "mcp__arugula__read_invite",
             "mcp__arugula__read_file",
             "mcp__arugula__read_cloud",
-            "mcp__arugula__read_thread",
         ];
         assert_eq!(READ_RULES, read);
         let acting_cli = [
@@ -821,8 +818,8 @@ mod tests {
     fn mcp_rules_follow_the_permissions_snippet() {
         // docs/mcp-permissions.json is what the daemon's own test checks
         // against `read_only` (tools.rs), so tying the CLI's lists to it
-        // ties them to the tools. The chat tools and `delegate` are the
-        // ones it leaves out (flags).
+        // ties them to the tools. `delegate` and `doc` are the ones it
+        // leaves out (flags).
         let snippet: Value = serde_json::from_str(include_str!("../../../docs/mcp-permissions.json")).unwrap();
         let list = |key: &str| -> Vec<String> {
             snippet["permissions"][key].as_array().unwrap().iter().map(|s| s.as_str().unwrap().to_owned()).collect()
@@ -834,8 +831,7 @@ mod tests {
         // the Doc's own write (#963).
         let by_default: Vec<&str> = READ_RULES.iter().chain(OWN_WRITE_RULES).copied().collect();
         let (read, acting) = (mcp(&by_default), mcp(ACTING_RULES));
-        let flagged =
-            ["mcp__arugula__read_thread", "mcp__arugula__post_thread", "mcp__arugula__delegate", "mcp__arugula__doc"];
+        let flagged = ["mcp__arugula__delegate", "mcp__arugula__doc"];
         let without =
             |v: &[String]| -> Vec<String> { v.iter().filter(|r| !flagged.contains(&r.as_str())).cloned().collect() };
         assert_eq!(without(&read), list("allow"));
