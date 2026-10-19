@@ -343,6 +343,8 @@ agent specs go in M121. `tap.spec.ts` and `labs-off.spec.ts` change their routes
 
 ## Decisions for Jake
 
+**Decided (Jake, 2026-10-19): the recommendation, (a), on all ten.**
+
 Each is a choice, with a recommendation.
 
 1. **A quoted pane.**
@@ -400,7 +402,7 @@ Each is a choice, with a recommendation.
 
 M121–M126 are unclaimed. Checked 2026-10-19: GitHub issues and PRs (the highest is M120), remote
 branches, and `.claude/worktrees` (`cw-m114` … `cw-m120`). Each builds on the one before unless it
-says otherwise. Nothing from this branch merges as is.
+says otherwise. Nothing from the prototype merges as is (it's kept on the branch `s41-chat-in-control-prototype`).
 
 - **M121: agents out of chat.** Independent of the rest.
   - Remove the lead, links, grants, events and cards (`lead.rs`, `links.rs`, `events.rs`) and their
