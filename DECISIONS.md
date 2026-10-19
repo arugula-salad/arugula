@@ -432,7 +432,7 @@ Where: `crates/daemon/src/agent/mod.rs`, `crates/daemon/src/rules.rs`.
 From: [M6b](docs/plan-archive.md#m6b-agent-blocks-acp-clients), S7, #166.
 
 ### A chat block is an agent block with every tool off
-A chat (a plain conversation with a model, #chat-block, 2026-10-19) is the
+A chat (a plain conversation with a model, #1102, 2026-10-19) is the
 agent block's ACP code under a type of its own, not a model client of
 Arugula's: Claude Code on the machine's login, so no API keys. Its session
 gets `tools: []`, no settings sources, `--strict-mcp-config` and no MCP
