@@ -222,7 +222,7 @@ export function CloudWorkspaceTabStrip() {
     } catch { /* The next poll still shows it. */ }
   };
   return (
-    <div class="tabstrip">
+    <div class="tabstrip cloud-tabstrip">
       <div class="tabbar" role="tablist" aria-label={`Tabs in ${w.name}`}>
         {tabsOf(w).map((t) => {
           const selected = route?.tab === t.id;
@@ -308,8 +308,8 @@ function CloudWorkspaceList({ create }: { create: () => void }) {
       <ul class="cloud-ws-list">
         {list.map((w) => (
           <li key={w.id}>
-            <button onClick={() => showCloudWorkspace(w)}>{w.name}</button>
-            <span>{cloudWorkspaceState(w).word} · {tabsOf(w).length} tab{tabsOf(w).length === 1 ? "" : "s"}</span>
+            <button class="cloud-ws-list-name" title={w.name} onClick={() => showCloudWorkspace(w)}>{w.name}</button>
+            <span class="cloud-ws-list-state">{cloudWorkspaceState(w).word} · {tabsOf(w).length} tab{tabsOf(w).length === 1 ? "" : "s"}</span>
           </li>
         ))}
       </ul>

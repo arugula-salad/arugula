@@ -206,10 +206,11 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
     <div class={phone ? "app phone" : "app"}>
       {/* A computer gets here only before a machine answers (or with a
           cloud run's details and none shown). */}
-      {state && phone && <PhoneHeader client={client} />}
+      {/* A Cloud workspace is no machine's: no machine or session crumbs. */}
+      {state && phone && !cloudWs && <PhoneHeader client={client} />}
       {!state && cloud && <AppBar client={client} at="panes" all>{!phone && <div class="tabbar" role="tablist"><CloudTabs /><button onClick={() => startAgent(client, {})}>New agent</button></div>}</AppBar>}
-      {phone && cloudWs && <nav class="cloud-ws-phone-head" aria-label="Where you are"><CloudWorkspaceCrumbs /><span class="bar-fill" /><DeleteCloudWorkspace /></nav>}
-      {phone && cloudWs?.workspace && <div class="cloud-phone-tabs">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudWorkspaceTabStrip /></div>}
+      {phone && cloudWs && <nav class="cloud-ws-phone-head" aria-label="Where you are">{state && <button class="cloud-ws-back" title="Back to this machine" aria-label="Back to this machine" onClick={() => cloudPanes.local()}>‹</button>}<CloudWorkspaceCrumbs /><span class="bar-fill" /><DeleteCloudWorkspace /></nav>}
+      {phone && cloudWs?.workspace && <div class="cloud-phone-tabs"><CloudWorkspaceTabStrip /></div>}
       {phone && !cloudWs && cloudPanes.opened.length > 0 && <div class="tabbar cloud-phone-tabs" role="tablist">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudTabs /></div>}
       {state && <ControlBanner client={client} />}
       {state && <NewMachineNote />}
