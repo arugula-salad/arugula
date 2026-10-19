@@ -9223,6 +9223,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 .ws-icon-button {
   display: grid;
   place-items: center;
+  padding: 0;
   width: 26px;
   height: 26px;
   border-radius: 6px;
