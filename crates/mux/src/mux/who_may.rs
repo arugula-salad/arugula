@@ -117,11 +117,11 @@ impl Daemon {
     }
 
     /// What chat calls someone (#889): in threads and conversations (their
-    /// messages, the lead's view of them, a link's grant and the answers
-    /// they give through it). The owner is their login on control, as
-    /// control's page calls them, else their tailnet login without its
-    /// domain (`jake@example.com` is `jake`), as the page shows them and an
-    /// `@` reaches them.
+    /// messages). The owner is their login on control, as control's page
+    /// calls them, else their tailnet login without its domain
+    /// (`jake@example.com` is `jake`), as the page shows them and an `@`
+    /// reaches them.
+    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
     pub(super) fn chat_name_of(&self, who: &Principal) -> String {
         match who {
             Principal::Owner => self.config.people.owner_login().unwrap_or_else(|| short_name(&self.config.owner_name)),
@@ -365,6 +365,7 @@ impl Daemon {
 
 /// A login as a name (#889): an email's part before the `@`. A name with
 /// a space in it ("Jake Gaylor") is a name already, and stays.
+#[cfg_attr(not(feature = "labs"), allow(dead_code))]
 fn short_name(login: &str) -> String {
     let login = login.trim();
     match login.split_once('@') {

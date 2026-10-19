@@ -43,7 +43,7 @@ one isn't made.
 
 | Flag | What is refused without it |
 | --- | --- |
-| `chat` | `/api/threads/…` (get, post, read), `/api/convs…`, `read_thread`/`post_thread` by name, an invite from a thread |
+| `chat` | `/api/threads/…` (get, post, read), `/api/convs…`, an invite from a thread |
 | `vms` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
 | `studio` | `/api/studio…`, app blocks, `show` kind `app` |
 | `workspaces` | chant workspace blocks |
@@ -100,10 +100,11 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
   `--wisp-token-file`, `--loam-url`,
   `--loam-key-file`
   (`LABS_OPTIONS` in `crates/daemon/src/args.rs`).
-- **MCP:** `read_thread` and `post_thread`, the kinds `show:app`,
-  `show:workspace` and `list:agents`, and `start_agent`'s `recipe` and `vm`
-  (`UNLISTED` and `UNLISTED_ARGS` in `crates/daemon/src/mcp/tools.rs`).
-  Unlisted tools called by name are refused without their flag.
+- **MCP:** the kinds `show:app`, `show:workspace` and `list:agents`, and
+  `start_agent`'s `recipe` and `vm` (`UNLISTED` and `UNLISTED_ARGS` in
+  `crates/daemon/src/mcp/tools.rs`). Unlisted tools called by name are
+  refused without their flag. Chat has no MCP tools: agents are out of chat
+  (#1095).
 - **Web client:** `Client.has("vms" | "studio")` and
   `hasLabs()`/`hasThreads()` in `web/src/client.ts`: VM panes and tabs,
   *Sandboxes…*, *Split (local)* and a VM tab's *Machine* items, studio
@@ -176,14 +177,17 @@ does.
   their phone too (a tap opens the thread; team members are reached
   whether or not they're connected). *Quote selection in thread* posts terminal output as a
   quote that stays readable after the pane scrolls; clicking it jumps back
-  to the output. `@agent` (or `@claude`) in a pane's thread goes to that
-  pane's agent as a follow-up, from whoever may drive it, and agents read
-  and answer with the MCP tools `read_thread` and `post_thread`. Only an
-  `@` that reached someone is marked in the thread; one that reached no
-  one (a name nobody here who can read the thread has, or an `@agent` in a
-  session's thread or from someone who can't drive the pane) stays plain
-  and the poster, and no one else, is told so under the message (and in
-  `post_thread`'s `unreached`).
+  to the output. Only an `@` that reached someone is marked in the thread;
+  one that reached no one (a name nobody here who can read the thread has)
+  stays plain and the poster, and no one else, is told so under the
+  message.
+- **Agents are out of chat** (#1095). Threads and conversations are
+  people's: no agent reads or posts in them, `@agent`, `@claude` and
+  `@lead` are text like any other `@` (they name nobody), and a
+  conversation links no panes and has no lead. A message an agent posted
+  before, or a link's event, reads as the text it was kept with. Agents
+  come back into chat once it's control's (#978), through the grants #959
+  and #1002 work out.
 - **Conversations** (#855). A thread of its own, not about one pane or
   session: *New conversation* (the + by *Channels* on the chat page) asks
   for a title and keeps it on the machine you're on, or another of yours
@@ -195,124 +199,11 @@ does.
   can once they're in, for its conversations only: control routes them to
   it, and they see the conversations they're in there and nothing else.
   The invite and the members list both say what membership means: members
-  can have the lead type into and read every linked pane, so invite only
-  people you'd hand those terminals to. Members read and post whatever their role
+  see every terminal line quoted in it. Members read and post whatever their role
   in the machine's sessions; they can leave, and only you rename it, take
   people out or delete it. Unread counts, @mentions (a push whose tap opens
   the conversation), Activity and search work as for any thread. An @ of
   someone who can reach the machine but isn't in it offers to add them.
-- **Links** (#856). *Add to conversation…* on a pane's menu (for someone
-  who may type in it) links the pane into a conversation you're in, on
-  this machine or another of yours or a teammate's, or into a new one
-  here. When the conversation has other people in it, it says first that
-  they'll be able to drive the pane through @lead. Linking is two steps,
-  on two machines: the pane's machine keeps a grant, with your rights on
-  the pane, and the conversation's home keeps the link, named L1, L2… The
-  conversation's header shows a chip for each, live, offline (its machine
-  can't be reached now) or closed; a chip opens the pane, or its thread if
-  you can't open it. *Linked conversations…* on the pane lists its grants,
-  and *Revoke* cuts that link: the home finds it refused and closes it for
-  good (a pane linked again is a new link). The owner, or whoever linked
-  one, can close a link from its chip. The home drives a linked pane
-  (its lead does) through control's relay, and only that pane: its
-  prompt, wait, screen, events and card answers.
-- **What links do** (#857). Each link's turns show up in its conversation
-  as they happen, wherever its pane runs:
-  - **Turn ended**, with how long it worked, how many asks were answered
-    on the way ("worked 40s, 3 approvals"), and its last message: an agent
-    block's own, or for Claude Code in a terminal the one its `Stop` hook
-    hands `arugula attention done` (so its hooks need to be on, `arugula
-    hooks install`). Only a turn in which the pane worked counts; prompting
-    a pane isn't one.
-  - **A card** for each permission or question it asks that nothing
-    answers within two seconds (an ask a standing rule answers at once is
-    only counted). It shows the tool and what it wants to run, with
-    *Allow* and *Deny* (a question: *Skip*, or answer it at the pane), and
-    is pushed to everyone in the conversation from its home, on their
-    phones too. A question (Claude's AskUserQuestion) shows its options as
-    the card beside the pane does: one pick or several, an *Other* box (a
-    note on a single pick), *Submit* and *Skip*; the conversation records
-    the answer ("Which runner? → pytest"). A question from an older
-    machine, which doesn't send its options, still offers only *Skip*.
-    Anyone in the conversation may answer, whatever their role
-    on the pane: the answer goes to the pane's own machine, names the ask,
-    and so can't land on a newer one ("it asks something else"). The
-    conversation says who answered; the pane's history says "*name* via
-    conversation “*title*”", with the rights of whoever linked it there, no
-    more than an editor's. A card answered at the pane says so once the
-    pane moves on, or once its answer is refused because the ask is gone
-    (it stops offering *Allow*). A pane linked while it's already asking
-    (a permission, a question or an edit's diff) gets that ask's card too,
-    after the same hold (#895): the home's watch of a link starts with
-    where the pane is now, and so does each follow it takes up again. A
-    pane on another machine needs this build there too; an older one
-    starts the follow from its next change.
-  - **An edit waiting as a diff** (#887). arugulad is Claude Code's IDE,
-    so in a terminal Claude Code's Write or Edit asks its permission, then
-    waits as a diff in the pane, and that ask can't be answered any more.
-    The diff is the card instead: the file, its lines added and removed,
-    the diff itself, and *Accept* or *Reject*, answered through the pane's
-    machine as a permission is ("bob accepted L1: edit calc.py (+3 −1)").
-    A card already posted for the ask is retired at once (answered
-    elsewhere); one held is replaced, so the edit counts once. Accepting
-    with changes stays at the pane. Both machines need a build with this:
-    an older pane's machine doesn't send the diff, so its edit still waits
-    at the terminal. The lead never hits this: agent blocks have no IDE,
-    so its edits are ordinary permission cards.
-  - **Exited** when its program ends, and for a linked PR (a forge block),
-    its checks finishing, or its merging or closing.
-  - Claude Code's "waiting for your input", a minute after each turn, posts
-    nothing, nor does a blink of work with nothing to say (under two
-    seconds, no summary, nothing asked: Claude Code starting in a
-    terminal does it), nor a turn nobody prompted with nothing to say and
-    nothing asked (#888: someone opening the pane can set it working until
-    it's quiet). A turn is prompted when Claude Code's `UserPromptSubmit`
-    hook fires (a prompt typed in the terminal, or the lead's
-    `prompt_agent`) or a follow-up reaches it; that rule starts once the
-    pane has said so once, so a pane without the hooks, or on a machine
-    without this build, keeps only the two-second one. The same line
-    twice in a row is one. The home watches each link again when it
-    restarts.
-- **The lead** (#858). Every conversation has one: a Claude Code agent
-  block on its home machine, started with it on your default model
-  (Claude Code's `model` setting, read from the daemon's Claude directory
-  when the lead starts: each turn costs that model's price), in a tab of its own in the
-  *conversations* session, so you can watch it work. It acts with the
-  conversation owner's rights, and a request to a pane on another machine
-  still runs under that link's grant there.
-  - **`@lead`** in the conversation is its next prompt, from anyone in
-    it who may drive the lead's block: the owner, a team's member on a
-    team's machine, or someone the owner trusts with it (#959). Anyone
-    else's `@lead` is a comment. Each prompt says who wrote what, what happened in the
-    conversation since its last turn (its links' events included), the
-    links by name and how to answer, so it needs nothing it was told
-    before; `read_thread` has the rest.
-  - **It drives the links by name** (L1, L2…): `prompt_agent`, `wait`
-    and `read_output`, here or through the relay. A pane number reaches
-    only its own tab, never a link. It can't answer a link's cards (those
-    are the people's: waiting on a link waits through them), type into a
-    link, or run a command in one. `list` kind `links` shows them.
-  - **A link it prompted wakes it** when its turn ends, now if the lead
-    is idle, else once its turn is done.
-  - **Its replies** are its `post_thread`s, or its turn's last message
-    when it doesn't post. A reply to an `@lead` notifies whoever asked, on
-    their phone too.
-  - **Its own asks are cards** (#859): a tool outside its allow list (its
-    own Bash, `start_agent`…) or a question of its own shows in the
-    conversation as the lead's card, held two seconds as a link's are,
-    pushed to everyone in it, and answered on the lead's block, by the
-    ask's id, by whoever may `@lead` it: the lead acts with the owner's
-    rights.
-  - **`start_agent`** from it opens a helper beside it, which becomes the
-    next link.
-  - **What it has seen** (the last message it was shown), whom it owes an
-    answer and which links it waits on are kept in the conversation's
-    record, so a restart loses none of it: a link that finished meanwhile
-    wakes it, and a turn the restart cut off is taken up again.
-  - **The header's first chip** is the lead: working, idle or needs you,
-    and it opens its block. A lead that's gone (closed) says so; the next
-    `@lead`, or the chip, starts another, which is shown the last messages
-    and the links. The conversation keeps its id and timeline.
 - **An @ of someone who can't see the thread offers to invite them**. When you, the owner, write "@sam look" and Sam is someone this
   machine knows (shared with elsewhere, or on a roster it checked) but
   can't read that thread, the composer says "Sam can't see this. Invite
@@ -323,8 +214,7 @@ does.
   way every other thread of the session starts at the invite, like any
   "from now" share, and a later role change keeps what Sam could read.
   Nobody else's post is offered anything, so an @ never tells an editor
-  who exists. Agents get no offer: `post_thread` points them at
-  `invite_person`.
+  who exists.
 - **Chat: every thread in one place.** *Chat* (beside *Panes* and *Swarm*
   in the bar, the phone's sheet, or the command palette; `/#chat`) is a
   page of its own, laid out like a team chat. On the left: *Activity*,
@@ -336,13 +226,13 @@ does.
   under the page; *Panes*, or Back, returns to them.
   - **Messages** carry the poster's picture, run together under one
     heading, and have a line between days and a red *New* line at the
-    first one you hadn't read. An agent's are badged. Text takes a little
+    first one you hadn't read. Text takes a little
     Markdown: `code`, fenced code blocks, **bold**, *italic*, links and
     @mentions (yours stand out); anything else, HTML included, stays text.
     Hover a message to quote it in your reply, copy a link to it (the link
     opens the thread at that message), or go to its pane.
   - **Writing:** Enter sends, Shift+Enter makes a new line, and @ offers
-    the people here (and `@agent` in a pane's thread). An unsent message
+    the people here. An unsent message
     waits in its thread while you look at another.
   - **The header** says where the thread is and what its pane is doing,
     who's in it, and has *Go to pane* (or *Go to
@@ -350,7 +240,7 @@ does.
     session's panes), and the people.
   - **Getting around:** the search field in the bar searches every thread
     on every machine you can read as you type. *Activity* lists messages
-    that mention you and agents' answers to you. Ctrl/Cmd+K jumps to a
+    that mention you, and what needs you. Ctrl/Cmd+K jumps to a
     channel by name. Alt+↑/↓ moves between channels, Alt+Shift+↑/↓ between
     unread ones, and Shift+Esc marks everything read.
 
@@ -366,9 +256,8 @@ menu, *Session thread* in the session menu, or the bubble on a pane.
 - **Where it lives:** on the machine that runs the pane, like its output.
   Control relays it encrypted, as it does the terminal.
 - **@name** notifies them, on their phone too, whether or not they're
-  connected (team members included); tapping it opens the thread. **@agent** in a pane's
-  thread goes to the agent in that pane as a follow-up, if you may drive
-  it; agents answer in the thread.
+  connected (team members included); tapping it opens the thread. **@agent**
+  is text: agents are out of chat.
 - **@name of someone who can't see it:** if you own the machine and it
   knows them (shared with elsewhere, or on a team roster it checked), the
   composer offers to invite them. They see your message and what follows
@@ -380,23 +269,13 @@ menu, *Session thread* in the session menu, or the bubble on a pane.
   and the members they added read and post, members from when they were
   added unless added with its history, whatever their role in the
   machine's sessions. A conversation lives on its home machine, in
-  `<state>/threads/conv-<id>.json` (its title, members and links) beside
-  its messages, and never in control. Members see everything linked; the
-  pane itself, its terminal and its own thread, stays with the people it's
+  `<state>/threads/conv-<id>.json` (its title and members) beside its
+  messages, and never in control. Members see what's quoted in it; a pane
+  itself, its terminal and its own thread, stays with the people it's
   shared with.
-- **A link** is a grant on the pane's machine (`<state>/conv-grants.json`),
-  made by someone who may drive the pane: the conversation's home then
-  reaches that pane, and nothing else there, with that person's rights on
-  it, no more than an editor's. Revoking the grant on the pane cuts the
-  link. Its events come to the home over the same channel, and its
-  cards are answered through it.
-- **The lead** reaches the conversation's links by name and its own tab,
-  nothing else: no other pane by number, no other thread. Whoever is in
-  the conversation can have it work in every linked pane.
 - **Someone outside your teams** added to a conversation is asked first,
-  as with a share: the offer they see names the conversation ("Jake added
-  you to *calc tests*"), and accepting lists the machine with only that
-  conversation.
+  with control's share offer, and accepting lists the machine with only its
+  conversations.
 
 ## Chant workspaces
 

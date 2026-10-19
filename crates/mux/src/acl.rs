@@ -131,9 +131,6 @@ pub struct Reach {
     pub name: String,
     /// The root their account's devices chain to.
     pub root: String,
-    /// The conversation they were first added to, by title: the offer
-    /// they see names it (#857).
-    pub conv: String,
 }
 
 impl Acl {

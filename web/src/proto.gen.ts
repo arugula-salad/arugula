@@ -8,7 +8,7 @@ export type NodeId = number;
 export type ClientId = number;
 export type MachineId = number;
 
-export const CONV_MEMBERS_SEE = "Members can have the lead type into and read every linked pane. Invite only people you'd hand those terminals to.";
+export const CONV_MEMBERS_SEE = "Members see every terminal line quoted in it.";
 
 /**
  * `POST /api/attention/act`: do something about one pane's reason, or
@@ -114,14 +114,13 @@ what: AskWhat,
  */
 agent: string, 
 /**
- * A permission's tool (`Bash`, `Edit`…), when it's known (#857: a
- * conversation's card shows it).
+ * A permission's tool (`Bash`, `Edit`…), when it's known (#857).
  */
 tool?: string, 
 /**
  * A question's choices (#859): Claude's AskUserQuestion `questions`
  * (`question`, `header`, `multiSelect`, `options`), so a card away from
- * the pane (a conversation's) can be answered with them. Boxed: a
+ * the pane can be answered with them. Boxed: a
  * reason rides in every attention event.
  */
 questions?: import("./blocks/ask").Question[], };
@@ -256,161 +255,10 @@ dropped_ms?: number,
 code?: string, approve?: string, };
 
 /**
- * `POST /api/convs/{id}/act` (#857): answer a link's card from the
- * conversation, by its ask's id, through the link's machine.
- */
-export type ConvActRequest = { 
-/**
- * The link: `L1`, `L2`…
- */
-link: string, 
-/**
- * The ask it answers (`ConvAsk::id`).
- */
-id: string, 
-/**
- * `allow` or `deny` a permission; `answer` or `deny` a question;
- * `accept` or `reject` an edit (#887; `allow` and `deny` do too).
- */
-action: Action, 
-/**
- * `deny`: why, for the agent.
- */
-message?: string, 
-/**
- * `answer`: the card's fields.
- */
-content?: Record<string, unknown>, };
-
-/**
- * What a link asks, on its card (#857). Answering names `id`, so an
- * answer never lands on a newer prompt.
- */
-export type ConvAsk = { id: string, what: AskWhat, 
-/**
- * A permission's tool, when known.
- */
-tool?: string, 
-/**
- * What it wants, in a line ("Bash: pytest -q"), or the question.
- */
-input: string, 
-/**
- * A question's choices (#859), as [`AskRef::questions`]: the card shows
- * them, and its answer is their fields (`question_<n>`,
- * `question_<n>_custom`).
- */
-questions?: import("./blocks/ask").Question[], 
-/**
- * An edit waiting as a diff (#887): the card shows it, with Accept and
- * Reject. Its `id` is the diff's, and `what` is `approve`, so a page
- * that doesn't know diffs offers Allow and Deny, which do the same.
- */
-diff?: DiffInfo, };
-
-/**
  * `POST /api/convs` (#855): a new conversation here, owned by whoever
  * makes it.
  */
 export type ConvCreateRequest = { title: string, };
-
-/**
- * What a linked pane did, as its conversation's timeline has it (#857):
- * posted by the home's watcher on that link, and by whoever answered a
- * card. A message carrying one is shown as a line or a card, not text.
- */
-export type ConvEvent = { kind: ConvEventKind, 
-/**
- * The link: `L1`, `L2`…, or `lead` for the lead's own asks (#859).
- */
-link: string, 
-/**
- * `needs_input` and `answered`: what it asks.
- */
-ask?: ConvAsk, 
-/**
- * `turn_ended`: its last message. `pr`: what the forge says.
- * `answered` a question: the answer, in a line (#859).
- */
-summary?: string, 
-/**
- * `turn_ended`: how long it worked (ms).
- */
-worked_ms?: number, 
-/**
- * `turn_ended`: the asks answered during the turn, by a standing rule,
- * a card here, or at the pane.
- */
-approvals?: number, 
-/**
- * `answered`: what was done.
- */
-action?: Action, 
-/**
- * `exited`: its code, when it has one.
- */
-code?: number, 
-/**
- * `pr`: whether its checks passed.
- */
-ok?: boolean, };
-
-export type ConvEventKind = "turn_ended" | "needs_input" | "answered" | "exited" | "pr";
-
-/**
- * A link grant (#856), kept on the pane's machine
- * (`<state>/conv-grants.json`): the daemon `device` may drive `pane` here
- * for conversation `conv`, with the rights of the person who made it
- * (`by`), no more than an editor's, and only to prompt, wait, capture,
- * follow its events and answer its cards.
- */
-export type ConvGrant = { 
-/**
- * The conversation's home: a daemon's device id in control, or this
- * machine's own.
- */
-device: string, 
-/**
- * Its name, to show.
- */
-device_name: string, pane: number, 
-/**
- * The pane's epoch when it was granted.
- */
-epoch: number, conv: ConvId, 
-/**
- * The conversation's title, to show.
- */
-conv_title: string, 
-/**
- * Who made it: a principal id on this machine, and their name.
- */
-by: string, by_name: string, 
-/**
- * When (ms since the epoch).
- */
-at: number, 
-/**
- * When it was revoked, or its pane closed: kept for a while so the
- * home hears "revoked" rather than nothing, then dropped.
- */
-revoked?: number, };
-
-/**
- * `POST /api/panes/{id}/conv-grants` (#856): let a conversation's home
- * drive this pane, with the caller's rights on it (an editor's at most).
- */
-export type ConvGrantRequest = { 
-/**
- * The home's device id in control; none or empty: this machine.
- */
-device?: string | null, device_name?: string | null, conv: ConvId, conv_title?: string | null, };
-
-/**
- * `POST /api/panes/{id}/conv-grants/revoke`: take a grant back, which
- * cuts the link.
- */
-export type ConvGrantRevokeRequest = { device: string, conv: ConvId, };
 
 /**
  * A conversation's id (#855): 16 random bytes, written `c-` and 32 hex
@@ -419,120 +267,6 @@ export type ConvGrantRevokeRequest = { device: string, conv: ConvId, };
  * so [`ThreadTarget`] stays `Copy`.
  */
 export type ConvId = string;
-
-/**
- * A conversation's lead (#858): an agent block on the home machine whose
- * MCP token reaches the conversation's links by name. `@lead` is its next
- * prompt; what it has seen, whom it owes an answer and which links it
- * waits on are kept here, so a restart loses none of it.
- */
-export type ConvLead = { 
-/**
- * Its agent block, here.
- */
-block: number, 
-/**
- * When it was started (ms since the epoch).
- */
-at: number, 
-/**
- * The last timeline message it has been shown: "since your last turn"
- * is what comes after.
- */
-cursor: number, 
-/**
- * Whoever wrote `@lead` and hasn't had its answer yet (principal ids):
- * its next reply notifies them.
- */
-asked?: Array<string>, 
-/**
- * Links it prompted and hasn't seen finish: one that ends its turn
- * wakes it.
- */
-awaiting?: Array<string>, 
-/**
- * Links that ended their turn while it was busy: they wake it once
- * it's done.
- */
-woke?: Array<string>, 
-/**
- * Its replies in the current turn (it posted with `post_thread`), so
- * its last message isn't posted too.
- */
-posted?: number, };
-
-/**
- * A pane a conversation links (#856), on its home machine or another. The
- * pane's machine keeps the grant that lets the home drive it
- * ([`ConvGrant`]); this is the home's side.
- */
-export type ConvLink = { 
-/**
- * `L1`, `L2`…, in the order linked, never used twice.
- */
-name: string, 
-/**
- * The pane's machine: its device id in control, or none for the home
- * machine itself. Never its name, which can change.
- */
-machine?: string, 
-/**
- * The machine's name when it was linked, to show.
- */
-machine_name: string, pane: number, 
-/**
- * The pane's epoch when it was linked.
- */
-epoch: number, 
-/**
- * What it is ("claude in calc"), to show.
- */
-title: string, 
-/**
- * Who linked it: a principal id here, and their name.
- */
-by: string, by_name: string, 
-/**
- * When (ms since the epoch).
- */
-at: number, 
-/**
- * Closed: the pane went, its grant was revoked, or it was unlinked. It
- * stays, as a closed link, and is never opened again.
- */
-closed?: string, };
-
-/**
- * `POST /api/convs/{id}/links` (#856): link a pane the pane's machine has
- * granted this conversation (`ConvGrant`).
- */
-export type ConvLinkRequest = { 
-/**
- * The pane's machine, by device id; none: this one.
- */
-machine?: string | null, pane: number, 
-/**
- * The pane's epoch, as its grant gave it.
- */
-epoch?: number | null, title?: string | null, };
-
-/**
- * What a link is now, as its home reads it (#856).
- */
-export type ConvLinkState = "live" | "closed" | "offline";
-
-/**
- * One link's state, as `GET /api/convs/{id}/links` answers it.
- */
-export type ConvLinkStatus = { name: string, state: ConvLinkState, 
-/**
- * What its pane is doing, when live and known.
- */
-attention?: Attention, 
-/**
- * Why it's closed or offline.
- */
-why?: string, };
 
 /**
  * Someone in a conversation who isn't its owner: they read and post.
@@ -581,12 +315,6 @@ name?: string | null, root?: string | null, };
 export type ConvRenameRequest = { title: string, };
 
 /**
- * `POST /api/convs/{id}/links/close`: close a link (its owner, or whoever
- * linked it). It stays, closed.
- */
-export type ConvUnlinkRequest = { name: string, };
-
-/**
  * A conversation (#855): a thread of its own, kept on its home machine in
  * `<state>/threads/conv-<id>.json` beside its timeline. Its people are
  * its record's, not a session's: the owner, and the members they added.
@@ -608,18 +336,7 @@ members: Array<ConvMember>,
 /**
  * When it was made (ms since the epoch).
  */
-created: number, 
-/**
- * The panes it links (#856), here and on other machines, in the order
- * they were linked. A closed one stays, and its name isn't used again.
- */
-links: Array<ConvLink>, 
-/**
- * Its lead (#858): the agent block on this machine that drives the
- * links, with the owner's rights. None until one is started, and kept
- * (with its block gone) when it's lost, until it's replaced.
- */
-lead?: ConvLead, };
+created: number, };
 
 /**
  * An editor's debug session.
@@ -1844,8 +1561,8 @@ ask?: AskRef,
  */
 gate?: Gate, 
 /**
- * `diff`: the edit that waits (#887), so a card away from the pane (a
- * conversation's) can show it and accept it by its id. Boxed: a reason
+ * `diff`: the edit that waits (#887), so a card away from the pane (the
+ * attention drawer's) can show it and accept it by its id. Boxed: a reason
  * rides in every attention event. A pane's own info leaves it out (its
  * `diff` has it).
  */
@@ -2147,12 +1864,6 @@ export type TelemetrySetRequest = { on: boolean, via?: string, };
 export type TelemetryWhy = "yes" | "not_asked" | "no" | "do_not_track" | "env" | "ci" | "test";
 
 /**
- * What handing a post to the pane's agent came to: `delivered` (`false`:
- * queued), or `error`.
- */
-export type ThreadAgent = { delivered?: boolean, error?: string, };
-
-/**
  * `GET /api/threads/…`: a thread's messages, as the caller may read them.
  */
 export type ThreadMessages = { target: ThreadTarget, messages: Array<ThreadMsg>, };
@@ -2170,8 +1881,7 @@ id: number,
  */
 at: number, 
 /**
- * Who posted it: a principal id (`owner`, `tailnet:…`, `account:…`),
- * or `mcp:…` for an agent.
+ * Who posted it: a principal id (`owner`, `tailnet:…`, `account:…`).
  */
 who: string, name: string, 
 /**
@@ -2187,23 +1897,11 @@ quote?: Quote,
  */
 mentions?: Array<string>, 
 /**
- * The `@` tokens (lowercase) that reached someone: each one naming a
- * person in `mentions`, and the agent's when `to_agent`. The page
- * marks only these; an `@word` that reached no one stays plain.
+ * The `@` tokens (lowercase) that reached someone, each one naming a
+ * person in `mentions`. The page marks only these; an `@word` that
+ * reached no one stays plain.
  */
-landed?: Array<string>, 
-/**
- * It @mentioned the pane's agent, and went to it as a follow-up.
- */
-to_agent?: boolean, 
-/**
- * An agent posted it (through MCP).
- */
-agent?: boolean, 
-/**
- * What a linked pane did (#857), in a conversation's timeline.
- */
-event?: ConvEvent, };
+landed?: Array<string>, };
 
 /**
  * `POST /api/threads/…`: a message, with output it quotes.
@@ -2211,11 +1909,10 @@ event?: ConvEvent, };
 export type ThreadPostRequest = { text?: string | null, quote?: Quote | null, };
 
 /**
- * What a post answers. `agent` is set when an `@agent` went to the pane's
- * agent; `invitable` only in the owner's answer (#297), so nobody else's
- * says who exists.
+ * What a post answers. `invitable` only in the owner's answer (#297), so
+ * nobody else's says who exists.
  */
-export type ThreadPosted = { message: ThreadMsg, agent: ThreadAgent | null, unreached: Array<Unreached>, invitable?: Array<Invitable>, };
+export type ThreadPosted = { message: ThreadMsg, unreached: Array<Unreached>, invitable?: Array<Invitable>, };
 
 /**
  * `POST /api/threads/…/read`: the caller has read up to that message.
@@ -2253,7 +1950,7 @@ export type Unreached = { token: string, why: UnreachedWhy, };
 /**
  * Why an `@` in a post reached no one.
  */
-export type UnreachedWhy = "agent_needs_pane" | "may_not_drive" | "nobody";
+export type UnreachedWhy = "nobody";
 
 /**
  * What a pane is busy with (M23), for drawing and grouping it without
@@ -2380,19 +2077,11 @@ export const OPS = {
   "adapters.list": { method: "GET", path: "/api/agents/adapters" },
   "agents.get": { method: "GET", path: "/api/hosts/self/agents" },
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
-  "conv.act": { method: "POST", path: "/api/convs/{id}/act" },
   "conv.create": { method: "POST", path: "/api/convs" },
   "conv.delete": { method: "DELETE", path: "/api/convs/{id}" },
-  "conv.grant": { method: "POST", path: "/api/panes/{id}/conv-grants" },
-  "conv.grant_revoke": { method: "POST", path: "/api/panes/{id}/conv-grants/revoke" },
-  "conv.grants": { method: "GET", path: "/api/panes/{id}/conv-grants" },
-  "conv.lead": { method: "POST", path: "/api/convs/{id}/lead" },
-  "conv.link": { method: "POST", path: "/api/convs/{id}/links" },
-  "conv.links": { method: "GET", path: "/api/convs/{id}/links" },
   "conv.member_add": { method: "POST", path: "/api/convs/{id}/members" },
   "conv.member_remove": { method: "POST", path: "/api/convs/{id}/members/remove" },
   "conv.rename": { method: "POST", path: "/api/convs/{id}/rename" },
-  "conv.unlink": { method: "POST", path: "/api/convs/{id}/links/close" },
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
   "conversations.list": { method: "GET", path: "/api/conversations" },
   "flag.set": { method: "PUT", path: "/api/flags/{name}" },

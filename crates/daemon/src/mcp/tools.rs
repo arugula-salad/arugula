@@ -8,11 +8,11 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use arugula_proto::{
-    Attention, BlockType, Driver, PaneId, Policy, SessionId, StartedBy, ThreadTarget,
+    Attention, BlockType, Driver, PaneId, Policy, StartedBy,
     api::{ActRequest, HistoryEntry, HistoryKind, OpenRequest, PaneSummary, RunRequest, WaitResult},
     flags::{self, On},
     forge::{ForgeState, ItemKind, ReviewEvent, Write},
-    op::ops::{ClosePane, ConversationOpen, ConversationsList, ListPanes, ThreadGet, ThreadPost},
+    op::ops::{ClosePane, ConversationOpen, ConversationsList, ListPanes},
 };
 use rmcp::{
     Peer, RoleServer,
@@ -268,31 +268,6 @@ pub struct WaitArgs {
 
 #[derive(Deserialize, JsonSchema, Default)]
 pub struct ListArgs {}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct ThreadArgs {
-    /// The pane whose thread it is (`7` or `"%7"`). Neither this nor a session: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
-    #[serde(default)]
-    pub pane: Option<PaneArg>,
-    /// Or a session's thread, by its id.
-    #[serde(default)]
-    pub session: Option<SessionId>,
-    /// Only messages after this id (what an earlier call returned as last).
-    #[serde(default)]
-    pub after: Option<u64>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-pub struct PostThreadArgs {
-    /// The pane whose thread to post in (`7` or `"%7"`). Neither this nor a session: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
-    #[serde(default)]
-    pub pane: Option<PaneArg>,
-    /// Or a session's thread, by its id.
-    #[serde(default)]
-    pub session: Option<SessionId>,
-    /// The message. `@name` mentions someone (they're notified).
-    pub text: String,
-}
 
 #[derive(Deserialize, JsonSchema)]
 pub struct HistoryArgs {
@@ -984,12 +959,6 @@ const LIST: &[Kind] = &[
     super::ops::kind::<ListPanes>(),
     super::ops::kind::<ConversationsList>(),
     Kind {
-        name: "links",
-        description: "A conversation's lead only: the conversation's links (L1, L2…), each with what it is, where it is and its state now. Give a link's name as the pane of prompt_agent, wait and read_output.",
-        schema: schema_for_type::<NoArgs>,
-        flag: Some(flags::CHAT),
-    },
-    Kind {
         name: "devices",
         description: "The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.",
         schema: schema_for_type::<NoArgs>,
@@ -1005,9 +974,6 @@ const LIST: &[Kind] = &[
     super::cloud::LIST_TABS,
     super::cloud::LIST_AGENTS,
 ];
-
-/// Kinds listed to a conversation's lead alone (#858).
-const LEAD_ONLY: [(&str, &str); 1] = [("list", "links")];
 
 /// The jobs that work but aren't listed without their Labs flag: they're for
 /// setups a stranger doesn't have (the studio, chant workspaces).
@@ -1253,8 +1219,6 @@ fn all_defs() -> Vec<Def> {
             output: Some(output_schema::<results::Capabilities>),
         },
         super::ops::def::<ClosePane>(),
-        super::ops::def::<ThreadGet>(),
-        super::ops::def::<ThreadPost>(),
         Def {
             name: "history",
             title: "Command history and output",
@@ -1569,15 +1533,6 @@ pub fn list(scope: Scope, on: On) -> Vec<Tool> {
     defs(on)
         .into_iter()
         .filter(|d| scope != Scope::Read || d.read_only)
-        .map(|mut d| {
-            // A lead's links (#858) are its own.
-            if let Args::Kinds { kinds, .. } = &mut d.args
-                && scope.leads().is_none()
-            {
-                kinds.retain(|k| !LEAD_ONLY.contains(&(d.name, k.name)));
-            }
-            d
-        })
         .map(|d| {
             let (description, schema) = match &d.args {
                 Args::One(schema) => (d.description.to_owned(), without_labs(d.name, schema(), on)),
@@ -1736,33 +1691,11 @@ pub struct Call<'a> {
     peer: Peer<RoleServer>,
     progress: Option<ProgressToken>,
     ctx: RequestContext<RoleServer>,
-    /// A conversation's lead (#858) naming a link here: the link and its
-    /// pane, which this call alone may reach.
-    link: std::sync::OnceLock<(String, PaneId)>,
 }
 
 impl<'a> Call<'a> {
     pub fn new(app: &'a Arc<App>, caller: Caller, client: String, ctx: &RequestContext<RoleServer>) -> Self {
-        Self {
-            app,
-            caller,
-            client,
-            peer: ctx.peer.clone(),
-            progress: ctx.meta.get_progress_token(),
-            ctx: ctx.clone(),
-            link: std::sync::OnceLock::new(),
-        }
-    }
-
-    /// This call is on link `name` (#858), pane `pane` here.
-    #[cfg_attr(not(feature = "labs"), allow(dead_code, reason = "a lead's links are Labs'"))]
-    pub(crate) fn set_link(&self, name: &str, pane: PaneId) {
-        let _ = self.link.set((name.to_owned(), pane));
-    }
-
-    /// The pane of the link this call is on, if it's one here.
-    fn link_pane(&self) -> Option<PaneId> {
-        self.link.get().map(|(_, p)| *p)
+        Self { app, caller, client, peer: ctx.peer.clone(), progress: ctx.meta.get_progress_token(), ctx: ctx.clone() }
     }
 
     pub(crate) fn app(&self) -> &'a Arc<App> {
@@ -1771,11 +1704,6 @@ impl<'a> Call<'a> {
 
     pub(crate) fn by(&self) -> String {
         format!("mcp:{}", self.client)
-    }
-
-    /// The client's name (`claude-code`).
-    pub(crate) fn client(&self) -> &str {
-        &self.client
     }
 
     fn driver(&self) -> Driver {
@@ -1793,18 +1721,7 @@ impl<'a> Call<'a> {
         if self.caller.scope == Scope::Read && !def.read_only {
             return fail(format!("this token may only read; {name} changes things (ask for a full token)"));
         }
-        // #858: a lead names its links: one here is its pane for this call;
-        // one elsewhere is done there.
-        let lead = self.caller.scope.leads();
-        let args = match lead {
-            Some(conv) => match crate::labs::lead::route(self, conv, name, args).await {
-                Ok(args) => args,
-                Err(Ok(v)) => return CallToolResult::structured(v),
-                Err(Err(e)) => return fail(e),
-            },
-            None => args,
-        };
-        let mut out = match (name, kind) {
+        let out = match (name, kind) {
             ("run", _) => match parse(args) {
                 Ok(a) => self.run(a).await,
                 Err(e) => Err(e),
@@ -1830,8 +1747,6 @@ impl<'a> Call<'a> {
                 Err(e) => Err(e),
             },
             ("close", _) => super::ops::call::<ClosePane>(self, args).await,
-            ("read_thread", _) => super::ops::call::<ThreadGet>(self, args).await,
-            ("post_thread", _) => super::ops::call::<ThreadPost>(self, args).await,
             ("history", _) => match parse(args) {
                 Ok(a) => self.history_or_output(a).await,
                 Err(e) => Err(e),
@@ -1880,7 +1795,6 @@ impl<'a> Call<'a> {
             ("list", Some("panes")) => super::ops::call::<ListPanes>(self, args).await,
             ("list", Some("conversations")) => super::ops::call::<ConversationsList>(self, args).await,
             ("list", Some("devices")) => self.list_devices(),
-            ("list", Some("links")) => crate::labs::lead::links_now(self).await,
             ("list", Some("cloud_workspaces")) => match parse::<NoArgs>(args) {
                 Ok(_) => self.list_cloud_workspaces().await,
                 Err(e) => Err(e),
@@ -1990,14 +1904,6 @@ impl<'a> Call<'a> {
             (_, Some(k)) => Err(format!("{name} kind {k} isn't wired up")),
             (_, None) => Err(format!("no tool {name}")),
         };
-        if let (Some(conv), Some((link, pane)), Ok(v)) = (lead, self.link.get(), &mut out) {
-            // Its name, not its number, which reaches nothing from a lead.
-            if let Some(s) = v["summary"].as_str() {
-                v["summary"] = json!(s.replace(&format!("%{pane}"), link));
-            }
-            v["link"] = json!(link);
-            crate::labs::lead::after(self.app, conv, link, name, v).await;
-        }
         match out {
             Ok(v) => CallToolResult::structured(v),
             Err(e) => fail(e),
@@ -2131,18 +2037,9 @@ impl<'a> Call<'a> {
         let Some(p) = panes.iter().find(|p| p.info.id == pane).cloned() else {
             return Err(self.gone(pane).await);
         };
-        // A lead's link here, named for this call (#858).
-        if self.link_pane() == Some(pane) {
-            return Ok(p);
-        }
         if let Some(me) = self.me() {
             let tab = panes.iter().find(|p| p.info.id == me).map(|p| p.tab);
             if tab != Some(p.tab) {
-                if self.caller.scope.leads().is_some() {
-                    return Err(format!(
-                        "%{pane} isn't in your tab: a lead reaches its links by name (L1, L2…; list kind links), never by number"
-                    ));
-                }
                 return Err(format!("%{pane} is in another tab: this agent's token reaches its own tab only"));
             }
         }
@@ -2154,7 +2051,6 @@ impl<'a> Call<'a> {
     pub(crate) async fn drivable(&self, pane: PaneId) -> Result<PaneSummary, String> {
         let p = self.readable(pane).await?;
         if let Some(me) = self.me()
-            && self.link_pane() != Some(pane)
             && p.info.started_by.as_ref().and_then(|s| s.block) != Some(me)
         {
             return Err(format!("%{pane} wasn't started by this agent: it may read it, not drive or close it"));
@@ -2748,38 +2644,6 @@ impl<'a> Call<'a> {
         let panes = self.panes().await;
         let tab = panes.iter().find(|p| p.info.id == me).map(|p| p.tab);
         Some(panes.iter().filter(|p| Some(p.tab) == tab).map(|p| p.info.id).collect())
-    }
-
-    /// The thread a call names: a pane's or a session's, within what this
-    /// caller reaches (an agent block's token: its own tab and session).
-    pub(crate) async fn thread_of(
-        &self,
-        pane: Option<&PaneArg>,
-        session: Option<SessionId>,
-    ) -> Result<ThreadTarget, String> {
-        // A lead's thread is its conversation (#858), and only that.
-        if let Some(conv) = self.caller.scope.leads() {
-            if pane.is_some() || session.is_some() {
-                return Err("a lead reads and posts in its conversation only: give no pane or session".into());
-            }
-            return Ok(ThreadTarget::Conv(conv));
-        }
-        match (pane.map(PaneArg::id).transpose()?, session) {
-            (Some(_), Some(_)) => Err("give a pane or a session, not both".into()),
-            (Some(p), None) => self.readable(p).await.map(|_| ThreadTarget::Pane(p)),
-            (None, Some(s)) => {
-                if let Some(me) = self.me()
-                    && self.readable(me).await?.session != s
-                {
-                    return Err(format!("session {s} isn't this agent's: its token reaches its own session only"));
-                }
-                Ok(ThreadTarget::Session(s))
-            }
-            (None, None) => match self.own_pane() {
-                Some(own) => self.readable(own).await.map(|_| ThreadTarget::Pane(own)),
-                None => Err("which thread? give a pane or a session".into()),
-            },
-        }
     }
 
     async fn history(&self, a: HistoryArgs) -> Out {
@@ -3710,17 +3574,6 @@ impl Call<'_> {
             local: false,
         };
         let block = self.open(req).await?;
-        // #858: a lead's helper is one of its links.
-        if let Some(conv) = self.caller.scope.leads() {
-            let title = a.title.clone().filter(|t| !t.trim().is_empty());
-            let name = crate::labs::lead::adopt(self.app, conv, block, title).await.map_err(|e| e.1)?;
-            return done(
-                format!(
-                    "Started an agent in %{block}, linked as {name}: wait on {name} (until needs_input or idle), then read_output for what it said"
-                ),
-                results::BlockOnly { block },
-            );
-        }
         done(
             format!(
                 "Started an agent in %{block}; wait on it (until needs_input or idle), then read_output for its transcript"
@@ -4353,7 +4206,8 @@ mod tests {
         assert_eq!((hint("show").destructive_hint, hint("show").open_world_hint), (Some(false), Some(true)));
     }
 
-    /// Chat's two tools, unlisted without the `chat` flag (`Op::FLAG`).
+    /// Chat's old tools: agents are out of chat (#1095), so no build has
+    /// them, whatever its flags.
     const CHAT_TOOLS: [&str; 2] = ["read_thread", "post_thread"];
 
     /// How many of the tools a build without the forge doesn't list.
@@ -4383,17 +4237,13 @@ mod tests {
             .unwrap_or_default()
     }
 
-    /// Studio apps, chant workspaces and chat are for what a
-    /// stranger doesn't have: without `labs` chat's tools and the others'
-    /// kinds aren't listed (18 tools of 20), with it all are, and a caller
-    /// who names one reaches it either way.
+    /// Studio apps and chant workspaces are for what a stranger doesn't
+    /// have: without `labs` their kinds (and the `delegate` and `doc` tools)
+    /// aren't listed, with it all are, and a caller who names one reaches it
+    /// either way.
     #[test]
     fn unlisted_tools_are_not_listed_without_labs_but_are_there() {
         for scope in [Scope::Full, Scope::Read] {
-            let listed: Vec<String> = list(scope, fl(false)).iter().map(|t| t.name.to_string()).collect();
-            for name in CHAT_TOOLS {
-                assert!(!listed.contains(&name.to_string()), "{name} is listed for {scope:?} without labs");
-            }
             let with: Vec<String> = list(scope, fl(true)).iter().map(|t| t.name.to_string()).collect();
             for d in all_defs().iter().filter(|d| scope == Scope::Full || d.read_only) {
                 if !crate::forges::BUILT && FORGE_TOOLS.contains(&d.name) {
@@ -4463,12 +4313,13 @@ mod tests {
         assert!(e.contains("port") && !e.contains("managoat") && !e.contains("workspace"), "{e}");
         let every: Vec<&str> = all_defs().iter().map(|d| d.name).collect();
         for name in CHAT_TOOLS {
-            assert!(every.contains(&name), "{name} no longer has a definition");
+            assert!(!every.contains(&name), "{name} is an agent's again");
+            assert!(route(name, json!({}), fl(true)).is_err(), "{name}");
         }
-        assert_eq!(every.len(), 25);
+        assert_eq!(every.len(), 23);
         assert_eq!(defs(fl(false)).len(), 21 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 25 - NO_FORGE);
-        assert_eq!(every.len(), defs(fl(false)).len() + CHAT_TOOLS.len() + 2 + NO_FORGE, "and delegate and doc");
+        assert_eq!(defs(fl(true)).len(), 23 - NO_FORGE);
+        assert_eq!(every.len(), defs(fl(false)).len() + 2 + NO_FORGE, "and delegate and doc");
     }
 
     /// A grouped call says what's wrong with it: no kind, a kind it doesn't
@@ -4613,10 +4464,10 @@ mod tests {
         let managoat = Value::Object((*start.input_schema).clone()).to_string().contains("\"managoat\"");
         assert!(!managoat, "retired direct execution is never advertised");
         let with = crate::mcp::instructions(fl(true));
-        assert!(with.contains("read_thread and post_thread") && with.contains("@agent"), "{with}");
-        // Labs only adds the thread and Doc sentences.
+        assert!(!with.contains("thread") && !with.contains("@agent"), "{with}");
+        // Labs only adds the Doc sentence.
         let without = crate::mcp::instructions(fl(false));
-        let plain = with.replace(crate::mcp::THREAD_INSTRUCTIONS, "").replace(crate::mcp::DOC_INSTRUCTIONS, "");
+        let plain = with.replace(crate::mcp::DOC_INSTRUCTIONS, "");
         assert!(with.len() > without.len() && plain == without);
         assert!(with.contains("doc to build a report") && !without.contains("doc to build"), "{with}");
     }

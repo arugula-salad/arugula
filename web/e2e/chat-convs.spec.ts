@@ -18,7 +18,7 @@ import { labs } from "./labs";
 
 const OWNER = "me@example.com";
 const FRIEND = "friend@example.com";
-const SEE = "Members can have the lead type into and read every linked pane. Invite only people you'd hand those terminals to.";
+const SEE = "Members see every terminal line quoted in it.";
 
 let base = "";
 let daemon: ChildProcess;

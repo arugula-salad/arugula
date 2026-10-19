@@ -1440,25 +1440,13 @@ function ShareOfferPrompt({ s, o }: { s: ControlSession; o: ShareOffer }) {
   };
   return (
     <Modal>
-      <h2>{o.conv ? "A conversation" : "A shared session"}</h2>
-      {o.conv ? (
-        <p data-share-offer={o.daemon}>
-          <b data-share-offer-owner>{who}</b>
-          {o.owner_login && o.owner_login !== who ? ` (${o.owner_login})` : ""} added you to <i data-share-offer-conv>{o.conv}</i>, a
-          conversation on their machine <b data-share-offer-machine>{o.name}</b>.
-        </p>
-      ) : (
-        <p data-share-offer={o.daemon}>
-          <b data-share-offer-owner>{who}</b>
-          {o.owner_login && o.owner_login !== who ? ` (${o.owner_login})` : ""} wants to share a session on their machine{" "}
-          <b data-share-offer-machine>{o.name}</b> with you.
-        </p>
-      )}
-      <p class="dim">
-        {o.conv
-          ? "Accept only if you know them. Accepting lists the machine here, with only that conversation, and lets its notifications reach you."
-          : "Accept only if you know them. Accepting lists the machine here and lets its notifications reach you."}
+      <h2>A shared session</h2>
+      <p data-share-offer={o.daemon}>
+        <b data-share-offer-owner>{who}</b>
+        {o.owner_login && o.owner_login !== who ? ` (${o.owner_login})` : ""} wants to share a session on their machine{" "}
+        <b data-share-offer-machine>{o.name}</b> with you.
       </p>
+      <p class="dim">Accept only if you know them. Accepting lists the machine here and lets its notifications reach you.</p>
       {err ? <p class="control-error">{err}</p> : null}
       <div class="prompt-buttons">
         <button data-share-decline disabled={busy} onClick={answer(false)}>

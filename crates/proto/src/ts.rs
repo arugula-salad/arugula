@@ -71,13 +71,6 @@ fn generate() -> String {
     c.visit::<crate::api::ConvRenameRequest>();
     c.visit::<crate::api::ConvMemberRequest>();
     c.visit::<crate::api::ConvMemberRemoveRequest>();
-    c.visit::<crate::api::ConvGrantRequest>();
-    c.visit::<crate::api::ConvGrantRevokeRequest>();
-    c.visit::<crate::api::ConvLinkRequest>();
-    c.visit::<crate::api::ConvUnlinkRequest>();
-    c.visit::<crate::api::ConvActRequest>();
-    c.visit::<crate::ConvGrant>();
-    c.visit::<crate::ConvLinkStatus>();
     c.visit::<InviteRequest>();
     c.visit::<Invited>();
     c.visit::<RunRequest>();
