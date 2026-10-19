@@ -2196,14 +2196,20 @@ impl Db {
             |r| r.get(0),
         )?;
         anyhow::ensure!(!live, "wait for your Cloud workspaces to be deleted before deleting your account");
-        for table in ["cloud_run_secrets", "cloud_requests", "cloud_notifications", "cloud_events"] {
-            tx.execute(&format!("DELETE FROM {table} WHERE run IN (SELECT id FROM cloud_runs WHERE account=?1)"), [a])?;
+        let open: bool =
+            tx.query_row("SELECT EXISTS(SELECT 1 FROM cloud_tabs WHERE account=?1 AND closed IS NULL)", [a], |r| {
+                r.get(0)
+            })?;
+        anyhow::ensure!(!open, "wait for your Cloud workspaces to be deleted before deleting your account");
+        tx.execute("DELETE FROM cloud_run_secrets WHERE run IN (SELECT id FROM cloud_runs WHERE account=?1)", [a])?;
+        for table in ["cloud_requests", "cloud_notifications", "cloud_events"] {
+            tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), [a])?;
         }
         tx.execute(
-            "DELETE FROM cloud_jobs WHERE id IN (SELECT id FROM cloud_runs WHERE account=?1 UNION SELECT id FROM cloud_workspaces WHERE account=?1)",
+            "DELETE FROM cloud_jobs WHERE id IN (SELECT id FROM cloud_runs WHERE account=?1 UNION SELECT id FROM cloud_workspaces WHERE account=?1 UNION SELECT id FROM cloud_tabs WHERE account=?1)",
             [a],
         )?;
-        for table in ["cloud_runs", "cloud_workspaces", "cloud_agents", "cloud_secrets"] {
+        for table in ["cloud_runs", "cloud_tabs", "cloud_workspaces", "cloud_agents", "cloud_secrets"] {
             tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), [a])?;
         }
 

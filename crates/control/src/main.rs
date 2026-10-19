@@ -163,6 +163,11 @@ struct Args {
     cloud_model: Option<String>,
     #[arg(long, env = "ARUGULA_CLOUD_RUNTIME", default_value = "claude", value_parser = ["claude", "codex", "gemini"])]
     cloud_runtime: String,
+    /// What a Cloud workspace's tabs may run on: `runtime:model` pairs,
+    /// comma-separated, the first the default. Unset, it's
+    /// ARUGULA_CLOUD_RUNTIME:ARUGULA_CLOUD_MODEL.
+    #[arg(long, env = "ARUGULA_CLOUD_MODELS", value_delimiter = ',')]
+    cloud_models: Vec<String>,
     #[arg(long, env = "ARUGULA_CLOUD_DAILY_RUNS", default_value_t = 10)]
     cloud_daily_runs: u64,
     #[arg(long, env = "ARUGULA_CLOUD_CONCURRENT_RUNS", default_value_t = 2)]
@@ -511,6 +516,14 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/cloud/runs/{id}/events", get(cloud::events))
         .route("/api/cloud/workspaces", get(cloud::workspaces::list).post(cloud::workspaces::create))
         .route("/api/cloud/workspaces/{id}", get(cloud::workspaces::show).delete(cloud::workspaces::delete))
+        .route("/api/cloud/workspaces/{id}/tabs", get(cloud::tabs::list).post(cloud::tabs::open))
+        .route("/api/cloud/workspaces/{id}/tabs/{tab}", get(cloud::tabs::show).delete(cloud::tabs::close))
+        .route("/api/cloud/workspaces/{id}/tabs/{tab}/prompt", post(cloud::tabs::prompt))
+        .route("/api/cloud/workspaces/{id}/tabs/{tab}/interrupt", post(cloud::tabs::interrupt))
+        .route("/api/cloud/workspaces/{id}/tabs/{tab}/events", get(cloud::tabs::events))
+        .route("/api/cloud/workspaces/{id}/tabs/{tab}/requests", get(cloud::tabs::requests))
+        .route("/api/cloud/workspaces/{id}/tabs/{tab}/requests/{request}", post(cloud::tabs::answer))
+        .route("/api/cloud/models", get(cloud::models))
         .route("/api/cloud/import", post(cloud::migration::import))
         .route("/api/cloud/agents", get(cloud::catalog).post(cloud::create_agent))
         .route("/api/cloud/agents/{id}", axum::routing::put(cloud::update_agent).delete(cloud::delete_agent))
@@ -848,19 +861,7 @@ async fn run() -> anyhow::Result<()> {
     }
     let cloud = match a.cloud_provider_key.filter(|k| !k.is_empty()) {
         Some(key) => {
-            let model = a
-                .cloud_model
-                .filter(|m| !m.trim().is_empty())
-                .context("ARUGULA_CLOUD_MODEL is required for cloud agents")?;
-            let prefix = match a.cloud_runtime.as_str() {
-                "claude" => "anthropic/",
-                "codex" => "openai/",
-                _ => "google/",
-            };
-            anyhow::ensure!(
-                model.starts_with(prefix) && model.len() > prefix.len(),
-                "cloud model must match the configured runtime"
-            );
+            let (model, runtime, models) = cloud::configured_models(a.cloud_model, a.cloud_runtime, &a.cloud_models)?;
             let duration_ms = a
                 .cloud_run_minutes
                 .checked_mul(60_000)
@@ -871,7 +872,8 @@ async fn run() -> anyhow::Result<()> {
                 provider: cloud::provider::Provider::new(&a.cloud_provider_url, key)?,
                 accounts: a.cloud_accounts,
                 model,
-                runtime: a.cloud_runtime,
+                runtime,
+                models,
                 limits: db::cloud::RunLimits {
                     daily_runs: a.cloud_daily_runs,
                     concurrent_runs: a.cloud_concurrent_runs,
