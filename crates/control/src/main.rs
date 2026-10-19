@@ -15,6 +15,7 @@ mod auth;
 mod backup;
 mod billing;
 mod blocks;
+mod chat;
 #[cfg(test)]
 mod blocks_wire;
 mod cloud;
@@ -505,6 +506,15 @@ pub fn router(app: Arc<App>) -> Router {
         .route(wire::TEAMS, get(teams::daemon_teams))
         .route(wire::ACCESS, post(teams::daemon_access))
         .route("/api/relay/link/{id}", get(relay::link))
+        .route("/api/chat", get(chat::rooms))
+        .route("/api/chat/live", get(chat::live))
+        .route("/api/chat/search", get(chat::search))
+        .route("/api/chat/import", post(chat::import))
+        .route("/api/chat/targets", post(chat::open_target))
+        .route("/api/chat/teams/{team}/channels", post(chat::create_channel))
+        .route("/api/chat/teams/{team}/dms", post(chat::open_dm))
+        .route("/api/chat/rooms/{id}/messages", get(chat::messages).post(chat::post))
+        .route("/api/chat/rooms/{id}/read", post(chat::read))
         .route("/api/push/subscribe", post(push::subscribe))
         .route("/api/push/unsubscribe", post(push::unsubscribe))
         .route(wire::PUSH_SUBS, get(push::daemon_subs))

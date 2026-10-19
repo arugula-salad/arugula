@@ -309,6 +309,8 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
     // Cloud workspaces' Managoat resources go in the worker: ask for that,
     // and refuse until it's done.
     app.db.delete_cloud_workspaces(account)?;
+    // S41: chat goes with the account (its DMs, its messages' text).
+    app.db.erase_chat_account(account)?;
     if !app.db.cloud_workspaces(account)?.is_empty() {
         return Err(err(StatusCode::CONFLICT, "Your Cloud workspaces are being deleted. Try again in a minute."));
     }

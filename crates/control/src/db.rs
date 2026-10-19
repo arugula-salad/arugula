@@ -4,6 +4,7 @@
 //! daemon sends inside a channel ever reaches it. Managed cloud execution also
 //! stores agent definitions, prompts, results, and encrypted credential snapshots.
 
+pub mod chat;
 pub mod cloud;
 
 use std::{path::Path, sync::Mutex};
@@ -564,6 +565,7 @@ impl Db {
         )?;
         conn.execute_batch(SCHEMA)?;
         conn.execute_batch(cloud::SCHEMA)?;
+        conn.execute_batch(chat::SCHEMA)?;
         migrate(&conn)?;
         if !answers_before {
             grandfather_shares(&conn)?;
@@ -575,6 +577,7 @@ impl Db {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(SCHEMA).unwrap();
         conn.execute_batch(cloud::SCHEMA).unwrap();
+        conn.execute_batch(chat::SCHEMA).unwrap();
         migrate(&conn).unwrap();
         Self { conn: Mutex::new(conn) }
     }
