@@ -6,6 +6,7 @@ pub mod notifications;
 pub mod provider;
 pub mod secrets;
 pub mod worker;
+pub mod workspaces;
 
 use crate::{
     ApiError, App,
@@ -21,6 +22,18 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
+
+/// A clone URL Managoat may fetch: HTTPS, with no credentials in it.
+pub fn https_repository(repository: &str) -> bool {
+    url::Url::parse(repository).is_ok_and(|url| {
+        url.scheme() == "https"
+            && url.host_str().is_some()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.query().is_none()
+            && url.fragment().is_none()
+    })
+}
 
 pub struct Cloud {
     pub provider: provider::Provider,
@@ -127,15 +140,7 @@ pub async fn start_run(
     Json(input): Json<StartRun>,
 ) -> Result<Json<crate::db::cloud::CloudRun>, ApiError> {
     let cloud = enabled(&app, &session.account)?;
-    let url = url::Url::parse(&input.repository)
-        .map_err(|_| err(StatusCode::UNPROCESSABLE_ENTITY, "repository must be an HTTPS URL"))?;
-    if url.scheme() != "https"
-        || url.host_str().is_none()
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-    {
+    if !https_repository(&input.repository) {
         return Err(err(
             StatusCode::UNPROCESSABLE_ENTITY,
             "repository must be an HTTPS URL without embedded credentials",

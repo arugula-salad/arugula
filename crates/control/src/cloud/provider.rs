@@ -109,6 +109,62 @@ impl Provider {
         value["id"].as_str().map(str::to_owned).context("cloud resource has no id")
     }
 
+    /// The created resource, whole: an environment's carries its `revision`.
+    pub async fn create_value(&self, collection: &str, body: Value) -> Result<Value> {
+        let value = self.request(Method::POST, &["api", collection], Some(body)).await?;
+        value["id"].as_str().context("cloud resource has no id")?;
+        Ok(value)
+    }
+
+    /// The environment or vault control made for a Cloud workspace, found by
+    /// its `metadata.arugula_workspace` after a lost create response.
+    pub async fn find_cloud_workspace_resource(&self, collection: &str, id: &str) -> Result<Option<Value>> {
+        let values = self.query(Method::GET, &["api", collection], &[], None).await?;
+        let values = values.as_array().context("invalid cloud resource list")?;
+        let matches: Vec<_> = values.iter().filter(|v| v["metadata"]["arugula_workspace"] == id).collect();
+        if matches.len() > 1 {
+            bail!("multiple cloud resources for one cloud workspace");
+        }
+        matches.first().map(|v| v["id"].as_str().context("cloud resource has no id").map(|_| (*v).clone())).transpose()
+    }
+
+    /// A Managoat workspace has no metadata: control names it after the
+    /// Cloud workspace's id, on the environment made for it.
+    pub async fn create_workspace(&self, name: &str, environment: &str, vault: &str) -> Result<Value> {
+        self.create_value("workspaces", json!({"name":name,"environment_id":environment,"vault_id":vault})).await
+    }
+
+    pub async fn find_workspace(&self, name: &str, environment: &str) -> Result<Option<Value>> {
+        let values = self.query(Method::GET, &["api", "workspaces"], &[], None).await?;
+        let values = values.as_array().context("invalid cloud workspace list")?;
+        let matches: Vec<_> =
+            values.iter().filter(|v| v["name"] == name && v["environment_id"] == environment).collect();
+        if matches.len() > 1 {
+            bail!("multiple provider workspaces for one cloud workspace");
+        }
+        Ok(matches.first().map(|v| (*v).clone()))
+    }
+
+    pub async fn workspace(&self, id: &str) -> Result<Value> {
+        self.request(Method::GET, &["api", "workspaces", id], None).await
+    }
+
+    /// Write-only: Managoat never returns the value.
+    pub async fn put_vault_secret(&self, vault: &str, key: &str, value: &str) -> Result<Value> {
+        self.request(Method::POST, &["api", "vaults", vault, "secrets"], Some(json!({"key":key,"value":value}))).await
+    }
+
+    #[allow(dead_code)] // M117: a secret taken off a Cloud workspace's settings.
+    pub async fn delete_vault_secret(&self, vault: &str, key: &str) -> Result<Value> {
+        self.request(Method::DELETE, &["api", "vaults", vault, "secrets", key], None).await
+    }
+
+    /// A partial update: the fields sent replace those fields only.
+    #[allow(dead_code)] // M117: saving a Cloud workspace's settings.
+    pub async fn update_environment(&self, id: &str, body: Value) -> Result<Value> {
+        self.request(Method::PATCH, &["api", "environments", id], Some(body)).await
+    }
+
     pub async fn find(&self, collection: &str, run: &str) -> Result<Option<String>> {
         let label = format!("arugula_run:{run}");
         let query = if collection == "conversations" { vec![("label", label.as_str())] } else { vec![("search", run)] };
