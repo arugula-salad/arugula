@@ -2119,7 +2119,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
 
 /* ---- chat blocks: an agent block's messages in a reading column */
 
-.chat .chat-column {
+.chat-block .chat-block-column {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2128,31 +2128,31 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   margin: 0 auto;
 }
 
-.chat .agent-msg {
+.chat-block .agent-msg {
   font-size: 14px;
   line-height: 1.55;
 }
 
-.chat-empty {
+.chat-block-empty {
   margin: 18vh auto 0;
   max-width: 420px;
   text-align: center;
   color: var(--dim);
 }
 
-.chat-empty h3 {
+.chat-block-empty h3 {
   margin: 0 0 6px;
   color: var(--fg);
   font-size: 17px;
   font-weight: 600;
 }
 
-.chat-empty p {
+.chat-block-empty p {
   margin: 0;
   font-size: 13px;
 }
 
-.chat-model {
+.chat-block-model {
   max-width: 40%;
   padding: 2px 6px;
   font-size: 12px;
@@ -2162,11 +2162,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   border-radius: 5px;
 }
 
-.chat .agent-composer {
-  width: 100%;
-  max-width: 760px;
-  margin: 0 auto;
-  box-sizing: border-box;
+.chat-block .agent-composer {
+  padding-inline: max(10px, calc((100% - 760px) / 2));
 }
 
 /* ---- sandboxes (M4b) */

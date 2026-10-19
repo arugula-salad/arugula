@@ -36,7 +36,7 @@ function ModelPicker({ client, id, s }: { client: Client; id: PaneId; s: AgentSt
   const current = s.model ?? "";
   return (
     <select
-      class="chat-model"
+      class="chat-block-model"
       aria-label="Model"
       data-chat-model
       value={current}
@@ -93,7 +93,7 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
   const said = s.entries.some((e) => e.type === "user" || e.type === "agent");
   return (
     <div
-      class="agent chat"
+      class="agent chat-block"
       onDragOver={(e) => {
         if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
       }}
@@ -124,10 +124,10 @@ function ChatBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentStat
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
-        <div class="chat-column">
+        <div class="chat-block-column">
           {s.entries_from > 0 && <div class="agent-note">{s.entries_from} earlier messages: `arugula capture %{id}`</div>}
           {!said && !s.queued.length && (
-            <div class="chat-empty">
+            <div class="chat-block-empty">
               <h3>What's on your mind?</h3>
               <p>A conversation with {s.label}: no tools, files or shell. Attach images or files to talk about them.</p>
             </div>
