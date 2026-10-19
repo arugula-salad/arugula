@@ -1,8 +1,9 @@
 /* Workspace chrome: keep the structure quiet, and make selection legible.
    All colors come from the chosen palette; phone chrome is unchanged. */
 .app.ws {
-  --chrome-line: color-mix(in srgb, var(--subtle) 22%, var(--surface));
-  --chrome-selected: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  --chrome-line: color-mix(in srgb, var(--muted) 55%, var(--surface));
+  --chrome-panel: color-mix(in srgb, var(--bg) 60%, var(--surface));
+  --chrome-selected: color-mix(in srgb, var(--accent) 14%, var(--surface));
   --chrome-selected-line: color-mix(in srgb, var(--accent) 65%, var(--surface));
 }
 
@@ -278,4 +279,49 @@
   .pane-toolbar {
     gap: 4px;
   }
+}
+
+/* Align the workspace's reading order: identity on the left, actions on
+   the right. Surface boundaries are independent of text contrast. */
+.ws-head, .ws-sidebar, .ws-rail, .ws-foot {
+  background: var(--surface);
+}
+.ws-session-main {
+  display: grid;
+  width: 100%;
+  gap: 7px;
+  padding: 11px 10px;
+}
+.ws-session-line {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto auto;
+  width: 100%;
+}
+.ws-session-counts { grid-column: 4; justify-self: end; }
+.ws-session-sub { padding-right: 30px; }
+.ws-session.current {
+  box-shadow: inset 2px 0 var(--accent);
+}
+.ws-session-more { right: 7px; bottom: 8px; }
+.ws-session > .att { right: 34px; bottom: 11px; }
+.ws-group:not(:first-child) { border-top-color: var(--chrome-line); }
+.ws-tabs .tab {
+  border-color: var(--chrome-line);
+  background: var(--chrome-panel);
+  padding-inline: 12px;
+  font-weight: 400;
+}
+.ws-tabs .tab.selected { font-weight: 500; }
+.pane-toolbar {
+  background: var(--surface);
+  padding-inline: 10px;
+}
+.pt-count { margin-left: auto; }
+.pt-fill { flex: none; width: 4px; }
+.pt-note { position: absolute; right: 10px; top: 100%; z-index: 10; background: var(--surface); }
+.ws-activity { background: var(--chrome-panel); }
+.ws-foot kbd { border-color: var(--chrome-line); }
+@media (max-width: 1100px) {
+  .ws-foot-hints { gap: 6px !important; }
+  .pane-toolbar .pt-presets > button { padding-inline: 5px; }
 }

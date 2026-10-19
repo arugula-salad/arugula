@@ -164,6 +164,12 @@ test.describe("on a computer", () => {
     await page.getByRole("menuitem", { name: "Appearance…" }).click();
     await expect(page.locator("[data-appearance]")).toBeVisible();
     await expect(page.locator("[data-workspace-choice]")).toHaveCount(0);
+    await page.getByRole("button", { name: "Use Control look" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-palette", "slate");
+    await expect(page.locator("html")).toHaveAttribute("data-finish", "flat");
+    await expect(page.locator("html")).toHaveAttribute("data-corners", "soft");
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("arugula-appearance")!)))
+      .toEqual({ palette: "slate", finish: "flat", corners: "soft" });
 
     // Nobody's pick: Slate, in a dark scheme.
     const fresh = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: "dark" });

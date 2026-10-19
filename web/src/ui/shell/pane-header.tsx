@@ -120,10 +120,10 @@ export function PaneHeader({
     >
       {n > 0 && (
         <span class="pane-header-n" title={jump ? `Pane ${n} (${jump})` : `Pane ${n}`} data-pane-ordinal={n}>
-          {n}
+          {String(n).padStart(2, "0")}
         </span>
       )}
-      <span class="pane-header-type">{type}</span>
+      <span class="pane-header-type" role="img" aria-label={type} title={type}><PaneTypeIcon type={info?.type} /></span>
       <span class="pane-header-title">{title}</span>
       {status.word && client.connected && (
         <span class={`pane-header-status ${status.cls}`} data-pane-status={status.cls}>
@@ -164,3 +164,13 @@ const ExpandIcon = ({ on }: { on: boolean }) => (
     {on ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" /> : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}
   </svg>
 );
+
+/** Type remains named for assistive technology and in the hover label. */
+function PaneTypeIcon({ type }: { type: string | undefined }) {
+  const path = type === "agent" ? "M7 8h10v11H7zM12 8V4M9 12h1M14 12h1M10 16h4"
+    : type === "editor" ? "M6 3h8l4 4v14H6zM14 3v5h4M9 12h6M9 16h6"
+    : type === "diff" ? "M6 3v18M18 3v18M3 8h6M15 16h6M18 13v6"
+    : type === "browser" ? "M3 5h18v14H3zM3 9h18M6 7h1M9 7h1"
+    : "M4 6l6 6-6 6M12 18h8";
+  return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={path} /></svg>;
+}

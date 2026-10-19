@@ -226,7 +226,7 @@ test("the pane header's menu focuses, splits and closes", async ({ page }) => {
   const second = (await panes(page))[1];
   await expect(page.locator("[data-pane-header]")).toHaveCount(2);
   // Its number is the Ctrl+Shift+digit one, not the pane's id.
-  await expect(page.locator(`[data-pane-header="${second}"] [data-pane-ordinal]`)).toHaveText("2");
+  await expect(page.locator(`[data-pane-header="${second}"] [data-pane-ordinal]`)).toHaveText("02");
 
   // A click on the header gives that pane the keys.
   await page.locator(`[data-pane-header="${first}"] .pane-header-title`).click();
