@@ -51,6 +51,10 @@
 //                      was built (Rebuild needed), and web, whose setup
 //                      failed (Retry sets it up). And a past run. The
 //                      fake keeps its state beside control's database.
+//   DEV_CONTROL_CLOUD_FULL=1
+//                      with DEV_CONTROL_CLOUD, Managoat has no machine
+//                      free for a rebuild (503 fleet_full): a Rebuild
+//                      waits for a machine until it's cancelled.
 //
 // Start over: delete the state directory.
 
@@ -221,6 +225,7 @@ async function cloudFlags(): Promise<string[]> {
     // The setup fails until a retry: a Cloud workspace whose script runs pnpm.
     fails: (env, setup) => (setup === 1 && /\bpnpm\b/.test(String(env.setup_script ?? "")) ? "setup_script exited 127: pnpm: command not found" : null),
     turn: cloudTurn,
+    full: () => process.env.DEV_CONTROL_CLOUD_FULL === "1",
   });
   managoat = m.server;
   if (!managoat.listening) await new Promise((r) => managoat!.once("listening", r));

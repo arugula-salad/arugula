@@ -11,9 +11,10 @@ import { controlPort, listen } from "./ports";
 let base: string, directory: string, control: ChildProcess, github: Server;
 // The GitHub account signing in: each test is a fresh control account.
 let user = { id: 7, login: "cloud-tester" };
-// Managoat (S40): the next setups fail while `failSetup` is set (M120).
-let failSetup = false;
-const managoat = fakeManagoat(0, "127.0.0.1", { fails: () => (failSetup ? "setup_script exited 1: pnpm: command not found" : null) });
+// Managoat (S40): the next setups fail while `failSetup` is set, and a
+// rebuild finds no machine free while `noMachine` is (M120).
+let failSetup = false, noMachine = false;
+const managoat = fakeManagoat(0, "127.0.0.1", { fails: () => (failSetup ? "setup_script exited 1: pnpm: command not found" : null), full: () => noMachine });
 const fake = () => managoat.state();
 test.beforeAll(async () => {
   github = createServer((req, res) => {
@@ -341,6 +342,26 @@ test("Rebuild asks first, warns that the disk is wiped, and clears the badge", a
   await confirm.locator("[data-cancel-rebuild]").click();
   await expect(confirm).toHaveCount(0);
   expect(fake().rebuilds).toHaveLength(0);
+
+  // No machine free: it waits, says so, and Cancel stops control asking.
+  noMachine = true;
+  await page.locator('[data-rebuild-cloud-workspace="header"]').click();
+  await confirm.locator("[data-confirm-rebuild]").click();
+  await expect(confirm).toHaveCount(0);
+  const waiting = page.locator('[data-rebuild-waiting="header"]');
+  await expect(waiting).toContainText("Rebuild waiting for a machine");
+  await expect(page.locator('[data-rebuild-waiting="settings"]')).toBeVisible();
+  await expect(page.locator("[data-rebuild-queued]")).toBeVisible();
+  await expect.poll(() => fake().rebuilds.length, { timeout: 15000 }).toBeGreaterThan(1);
+  await waiting.locator("[data-cancel-queued-rebuild]").click();
+  await expect(page.locator("[data-rebuild-waiting]")).toHaveCount(0);
+  await expect(page.locator('[data-rebuild-cloud-workspace="header"]')).toBeVisible();
+  const asked = fake().rebuilds.length;
+  await page.waitForTimeout(3000);
+  expect(fake().rebuilds).toHaveLength(asked);
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Rebuild needed · 1 change");
+  noMachine = false;
+  fake().rebuilds.length = 0;
 
   // Settings' Rebuild, confirmed: setting up, then ready with no badge.
   await page.locator('[data-rebuild-cloud-workspace="settings"]').click();

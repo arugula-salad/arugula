@@ -131,6 +131,9 @@ export interface FakeManagoatOptions {
    * then one more for each rebuild or retry). Asked on every read. */
   fails?: (environment: Record<string, unknown>, setup: number) => string | null;
   turn?: (prompt: string) => FakeTurn;
+  /** Whether a rebuild of this workspace finds no machine free: Managoat
+   * answers 503 fleet_full, and control keeps asking (M120). */
+  full?: (workspace: string) => boolean;
   /** A JSON file the state is kept in between runs (dev-control's: control's
    * database outlives the process, so its workspaces must too). */
   file?: string;
@@ -158,6 +161,7 @@ interface Turn {
 export function fakeManagoat(port = 0, host = "127.0.0.1", options: FakeManagoatOptions = {}) {
   const turnOf = options.turn ?? testTurn;
   const fails = options.fails ?? (() => null);
+  const full = options.full ?? (() => false);
   const empty = () => ({
     secret: "",
     environments: {} as Record<string, Record<string, unknown> & { revision: number }>,
@@ -277,6 +281,10 @@ export function fakeManagoat(port = 0, host = "127.0.0.1", options: FakeManagoat
       // interrupts them.
       if ((rest[0] === "rebuild" || rest[0] === "retry") && req.method === "POST") {
         (rest[0] === "retry" ? state.retries : state.rebuilds).push(b);
+        if (rest[0] === "rebuild" && full(id)) {
+          save();
+          return res.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ error: "fleet_full", message: "no machine free" }));
+        }
         const running = Object.entries(state.conversations).filter(([, c]) => c.workspace === id && waiting(c)).map(([id]) => id);
         if (rest[0] === "rebuild" && running.length && !b.interrupt) {
           save();

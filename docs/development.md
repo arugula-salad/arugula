@@ -68,6 +68,8 @@ change for Changes, one waits on an approval, so its Rebuild asks to
 interrupt), *api*, ready with settings saved since it was built (*Rebuild
 needed*), and *web*, whose setup failed (*Retry* sets it up), plus a past
 run under *Cloud agents…*. Delete the state directory to make them again.
+With `DEV_CONTROL_CLOUD_FULL=1` too, Managoat has no machine free for a
+rebuild, so a Rebuild waits for a machine (with *Cancel*).
 
 `just dev-browser [--passkey] [--login NAME] [--profile DIR] URL [STEPS]`
 is a headless Chrome for a PR's screenshots of what dev-control shows:
