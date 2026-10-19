@@ -40,10 +40,10 @@ use crate::{
 };
 
 /// A page of output, by default (characters).
-const PAGE: usize = 16_000;
+pub(crate) const PAGE: usize = 16_000;
 /// The most any one result carries: Claude Code swaps anything over about
 /// 50,000 for a preview and a file (S14).
-const PAGE_MAX: usize = 40_000;
+pub(crate) const PAGE_MAX: usize = 40_000;
 /// How long a wait (or `run` with `wait`) waits before answering "still
 /// running": under interactive Claude Code's 120s auto-background.
 const WAIT_DEFAULT: Duration = Duration::from_secs(100);
@@ -243,7 +243,10 @@ pub enum Until {
 
 #[derive(Deserialize, JsonSchema)]
 pub struct WaitArgs {
-    pub pane: PaneArg,
+    /// The pane or block. Or, instead, a Cloud workspace's tab
+    /// (cloud_workspace and tab).
+    #[serde(default)]
+    pub pane: Option<PaneArg>,
     pub until: Until,
     /// For until: match, a regular expression.
     #[serde(default)]
@@ -251,6 +254,16 @@ pub struct WaitArgs {
     /// Seconds before answering "still running" (default 100).
     #[serde(default)]
     pub timeout: Option<f64>,
+    /// A Cloud workspace's id (cw_…), with tab.
+    #[serde(default)]
+    pub cloud_workspace: Option<String>,
+    /// A Cloud workspace's tab (cwc_…), to wait until idle or needs_input.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// With tab: the offset cloud kind prompt returned, so a turn just
+    /// prompted isn't taken for done before it starts.
+    #[serde(default)]
+    pub after: Option<u64>,
 }
 
 #[derive(Deserialize, JsonSchema, Default)]
@@ -985,6 +998,9 @@ const LIST: &[Kind] = &[
         schema: schema_for_type::<ListTeamAgentsArgs>,
         flag: None,
     },
+    super::cloud::LIST_WORKSPACES,
+    super::cloud::LIST_TABS,
+    super::cloud::LIST_AGENTS,
 ];
 
 /// Kinds listed to a conversation's lead alone (#858).
@@ -1183,7 +1199,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "wait",
             title: "Wait for a pane",
-            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
             args: Args::One(schema_for_type::<WaitArgs>),
             read_only: true,
             destructive: false,
@@ -1374,6 +1390,30 @@ fn all_defs() -> Vec<Def> {
             open_world: true,
             flag: None,
             output: Some(output_schema::<results::DeviceCalled>),
+        },
+        Def {
+            name: "read_cloud",
+            title: "Read a Cloud workspace",
+            description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine.",
+            args: Args::Kinds { kinds: table(super::cloud::READ), default: None },
+            read_only: true,
+            destructive: false,
+            idempotent: true,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
+        Def {
+            name: "cloud",
+            title: "Drive a Cloud workspace",
+            description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild or retry. The user sees it all on control's page. Changing a Cloud workspace's settings or deleting one is theirs, on that page.",
+            args: Args::Kinds { kinds: table(super::cloud::DRIVE), default: None },
+            read_only: false,
+            destructive: true,
+            idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
         },
     ]
 }
@@ -1833,6 +1873,20 @@ impl<'a> Call<'a> {
             ("list", Some("conversations")) => super::ops::call::<ConversationsList>(self, args).await,
             ("list", Some("devices")) => self.list_devices(),
             ("list", Some("links")) => crate::labs::lead::links_now(self).await,
+            ("list", Some("cloud_workspaces")) => match parse::<NoArgs>(args) {
+                Ok(_) => self.list_cloud_workspaces().await,
+                Err(e) => Err(e),
+            },
+            ("list", Some("cloud_tabs")) => match parse(args) {
+                Ok(a) => self.list_cloud_tabs(a).await,
+                Err(e) => Err(e),
+            },
+            ("list", Some("cloud_agents")) => match parse::<NoArgs>(args) {
+                Ok(_) => self.list_cloud_agents().await,
+                Err(e) => Err(e),
+            },
+            ("read_cloud", Some(kind)) => self.read_cloud(kind, args).await,
+            ("cloud", Some(kind)) => self.drive_cloud(kind, args).await,
             ("delegate", Some(kind @ ("send" | "get" | "answer" | "cancel" | "review" | "apply"))) => match parse(args)
             {
                 Ok(a) => self.delegate(kind, a).await,
@@ -2620,7 +2674,25 @@ impl<'a> Call<'a> {
     }
 
     async fn wait(&self, a: WaitArgs) -> Out {
-        let pane = a.pane.id()?;
+        // #1094: a Cloud workspace's tab, in control.
+        if let Some(tab) = &a.tab {
+            if a.pane.is_some() {
+                return Err("give a pane, or a Cloud workspace's tab (cloud_workspace and tab), not both".into());
+            }
+            let workspace =
+                a.cloud_workspace.as_deref().ok_or("a Cloud workspace's tab needs its cloud_workspace (cw_…) too")?;
+            let until = match a.until {
+                Until::Idle => super::cloud::TabUntil::Idle,
+                Until::NeedsInput => super::cloud::TabUntil::NeedsInput,
+                _ => return Err("a Cloud workspace's tab waits until idle or needs_input".into()),
+            };
+            return self.wait_tab(workspace, tab, until, a.after, Self::limit(a.timeout)).await;
+        }
+        if a.cloud_workspace.is_some() || a.after.is_some() {
+            return Err("cloud_workspace and after go with tab (a Cloud workspace's tab)".into());
+        }
+        let pane =
+            a.pane.ok_or("wait for what? give a pane, or a Cloud workspace's tab (cloud_workspace and tab)")?.id()?;
         let p = self.readable(pane).await?;
         let until = match a.until {
             Until::CommandEnd => "command-end",
@@ -4129,6 +4201,8 @@ mod tests {
             let tools = serde_json::to_string(&list(scope, fl(labs))).unwrap().to_lowercase();
             assert!(!tools.contains("fountain") && !tools.contains("managoat"), "the tool list mentions Managoat");
             assert!(!tools.contains("studio"), "the tool list mentions studio");
+            // Cloud workspaces (#1094) are everyone's; chant's are Labs'.
+            let tools = tools.replace("cloud workspace", "").replace("cloud_workspace", "");
             assert!(!tools.contains("workspace"), "the tool list mentions workspaces");
             assert!(!tools.contains("read_thread"), "the tool list mentions chat");
             assert!(!tools.contains("post_thread"), "the tool list mentions chat");
@@ -4186,14 +4260,23 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full, fl(false));
-        assert_eq!(all.len(), 19 - NO_FORGE);
+        assert_eq!(all.len(), 21 - NO_FORGE);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
             .map(|t| t.name.as_ref())
             .collect();
-        let mut want =
-            vec!["read_output", "wait", "list", "capabilities", "history", "read_forge", "read_invite", "read_file"];
+        let mut want = vec![
+            "read_output",
+            "wait",
+            "list",
+            "capabilities",
+            "history",
+            "read_forge",
+            "read_invite",
+            "read_file",
+            "read_cloud",
+        ];
         want.retain(|n| crate::forges::BUILT || !FORGE_TOOLS.contains(n));
         assert_eq!(ro, want);
         assert_eq!(list(Scope::Read, fl(false)).len(), ro.len(), "a read token sees the read-only tools only");
@@ -4318,9 +4401,9 @@ mod tests {
         for name in CHAT_TOOLS {
             assert!(every.contains(&name), "{name} no longer has a definition");
         }
-        assert_eq!(every.len(), 23);
-        assert_eq!(defs(fl(false)).len(), 19 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 23 - NO_FORGE);
+        assert_eq!(every.len(), 25);
+        assert_eq!(defs(fl(false)).len(), 21 - NO_FORGE);
+        assert_eq!(defs(fl(true)).len(), 25 - NO_FORGE);
         assert_eq!(every.len(), defs(fl(false)).len() + CHAT_TOOLS.len() + 2 + NO_FORGE, "and delegate and doc");
     }
 
@@ -4429,6 +4512,8 @@ mod tests {
             if crate::labs::BUILT {
                 lower = lower.replace("sandbox provider", "");
             }
+            // Cloud workspaces (#1094) are everyone's; chant's are Labs'.
+            lower = lower.replace("cloud workspace", "").replace("cloud_workspace", "");
             for word in [
                 "fountain",
                 "managoat",

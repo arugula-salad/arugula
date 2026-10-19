@@ -160,7 +160,8 @@ fn installed(home: &Path, name: &str) -> String {
 }
 
 /// Why a Managoat block doesn't start: daemon-side Managoat was removed.
-pub const CLOUD_MIGRATION: &str = "Direct Managoat execution is retired. Open Cloud agents in your Arugula account to run or import an agent. Saved local transcripts remain readable.";
+/// Agents here drive Cloud workspaces with the MCP cloud tools (#1094).
+pub const CLOUD_MIGRATION: &str = "Direct Managoat execution is retired. Cloud agents run in Cloud workspaces in your Arugula account: open them on control's page, or, as an agent, with Arugula's cloud tools (list kind cloud_workspaces, then cloud kind open_tab and prompt). Saved local transcripts remain readable.";
 
 /// Why a block can't wear a Managoat agent here (M44's `as_fountain`).
 pub const AS_MANAGOAT_GONE: &str = "wearing a Managoat agent here (as_fountain) was retired on 2026-10-15: \

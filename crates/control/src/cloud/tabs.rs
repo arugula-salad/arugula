@@ -7,7 +7,7 @@
 use super::{deliver_answer, enabled, find_agent, provider::HttpFailure};
 use crate::{
     ApiError, App,
-    auth::Session,
+    auth::{CloudDriver, Session},
     db::cloud::{CloudTab, CloudTabSpec, CloudWorkspace, CloudWorkspaceSpec},
     err,
 };
@@ -61,7 +61,7 @@ fn conversation(app: &App, session: &Session, id: &str, tab: &str) -> Result<Str
 
 pub async fn list(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     cloud_workspace(&app, &session, &id)?;
@@ -84,7 +84,7 @@ pub struct Open {
 
 pub async fn open(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
     Json(input): Json<Open>,
 ) -> Result<Json<CloudTab>, ApiError> {
@@ -149,7 +149,7 @@ pub async fn open(
 
 pub async fn show(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path((id, tab)): Path<(String, String)>,
 ) -> Result<Json<CloudTab>, ApiError> {
     Ok(Json(found(&app, &session, &id, &tab)?))
@@ -159,7 +159,7 @@ pub async fn show(
 /// tabs, and the machine, carry on. The answer says `closing`.
 pub async fn close(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path((id, tab)): Path<(String, String)>,
 ) -> Result<Json<CloudTab>, ApiError> {
     found(&app, &session, &id, &tab)?;
@@ -180,7 +180,7 @@ pub struct Prompt {
 /// one (`{"relaunched": true}`).
 pub async fn prompt(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path((id, tab)): Path<(String, String)>,
     Json(input): Json<Prompt>,
 ) -> Result<Json<Value>, ApiError> {
@@ -227,7 +227,7 @@ pub async fn prompt(
 /// Stops the turn in flight. The tab stays open.
 pub async fn interrupt(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path((id, tab)): Path<(String, String)>,
 ) -> Result<Json<Value>, ApiError> {
     let cloud = enabled(&app, &session.account)?;
@@ -248,7 +248,7 @@ pub struct EventQuery {
 
 pub async fn events(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path((id, tab)): Path<(String, String)>,
     Query(query): Query<EventQuery>,
 ) -> Result<Json<Value>, ApiError> {
@@ -258,7 +258,7 @@ pub async fn events(
 
 pub async fn requests(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path((id, tab)): Path<(String, String)>,
 ) -> Result<Json<Value>, ApiError> {
     found(&app, &session, &id, &tab)?;
@@ -267,7 +267,7 @@ pub async fn requests(
 
 pub async fn answer(
     State(app): State<Arc<App>>,
-    session: Session,
+    CloudDriver(session): CloudDriver,
     Path((id, tab, request)): Path<(String, String, String)>,
     Json(answer): Json<super::Answer>,
 ) -> Result<Json<Value>, ApiError> {

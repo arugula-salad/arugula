@@ -10,7 +10,7 @@
 use arugula_proto::flags::On;
 
 use super::{
-    results::{Capabilities, ControlJoined, ForgeSignIn, HooksLive},
+    results::{Capabilities, CloudReach, ControlJoined, ForgeSignIn, HooksLive},
     tools::{self, Call, Out, done},
 };
 use crate::{review::Runner, store::now_ms};
@@ -25,11 +25,11 @@ impl Call<'_> {
         let on = crate::labs::flags(app.control.state_dir());
         let forges = self.forges(on).await;
         let hooks = self.hooks().await;
-        let control = control(app);
+        let control = control(app, self.cloud_reach().await);
         let tools = tools::list(self.scope(), on).into_iter().map(|t| t.name.to_string()).collect();
         let signed: Vec<&str> = forges.iter().filter(|f| f.signed_in).map(|f| f.forge.as_str()).collect();
         let summary = format!(
-            "Arugula {}: hooks {}; forges signed in: {}; control: {}",
+            "Arugula {}: hooks {}; forges signed in: {}; control: {}; Cloud workspaces: {}",
             env!("CARGO_PKG_VERSION"),
             match hooks.live {
                 Some(true) => "live",
@@ -38,6 +38,7 @@ impl Call<'_> {
             },
             if signed.is_empty() { "none".to_owned() } else { signed.join(", ") },
             control.state,
+            if control.cloud.reachable { "yes" } else { "no" },
         );
         done(
             summary,
@@ -132,8 +133,9 @@ impl Call<'_> {
     }
 }
 
-/// This machine's standing with control, and the teams it holds rosters of.
-fn control(app: &crate::server::App) -> ControlJoined {
+/// This machine's standing with control, the teams it holds rosters of,
+/// and whether its agents reach the owner's Cloud workspaces (#1094).
+fn control(app: &crate::server::App, cloud: CloudReach) -> ControlJoined {
     let st = app.control.state();
     let teams = app
         .control
@@ -148,5 +150,5 @@ fn control(app: &crate::server::App) -> ControlJoined {
                 .collect()
         })
         .unwrap_or_default();
-    ControlJoined { state: st.state, kind: st.kind, name: st.name, connected: st.connected, teams }
+    ControlJoined { state: st.state, kind: st.kind, name: st.name, connected: st.connected, teams, cloud }
 }
