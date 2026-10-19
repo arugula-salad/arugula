@@ -11,6 +11,12 @@ repository.workspace = true
 arugula-e2e = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+ts-rs = { workspace = true, optional = true, features = ["no-serde-warnings"] }
+
+[features]
+# TypeScript for the chat types control's page uses (M122): arugula-proto's
+# `ts` feature turns it on and puts them in web/src/proto.gen.ts.
+ts = ["dep:ts-rs"]
 
 [dev-dependencies]
 serde_urlencoded = { workspace = true }

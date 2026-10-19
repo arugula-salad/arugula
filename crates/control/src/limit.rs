@@ -71,7 +71,18 @@ pub const INSTALL_REPORTS: (&str, usize) = ("install-report", 30);
 /// Control's page's reports (M104), per account: one a minute from each
 /// open page, and one as it closes, so a few tabs' worth.
 pub const PAGE_REPORTS: (&str, usize) = ("page-report", 300);
+/// Chat (M122). Posts are counted per minute ([`Limits::check_account_per_minute`]):
+/// one account's, and everyone's together, a brake on the database.
+pub const CHAT_POSTS: (&str, usize) = ("chat-post", 60);
+pub const ALL_CHAT_POSTS: (&str, usize) = ("chat-post-all", 6_000);
+/// Channels, DMs and pane threads made, per account, per hour.
+pub const CHAT_ROOMS: (&str, usize) = ("chat-room", 120);
+/// Searches, per account, per hour.
+pub const CHAT_SEARCHES: (&str, usize) = ("chat-search", 600);
+/// Reader lists a daemon sends, per hour.
+pub const CHAT_READERS: (&str, usize) = ("chat-readers", 600);
 const WINDOW: Duration = Duration::from_secs(3600);
+const MINUTE: Duration = Duration::from_secs(60);
 
 /// What a client address counts as: itself, or for IPv6 its /64.
 pub fn bucket(ip: IpAddr) -> IpAddr {
@@ -127,15 +138,36 @@ impl Limits {
         self.count(what, String::new(), "too many of those lately; try again later")
     }
 
-    fn count(&self, (what, per_hour): (&'static str, usize), who: String, msg: &str) -> Result<(), ApiError> {
+    /// Count one use by an account, `what.1` a minute; refuse once over.
+    pub fn check_account_per_minute(&self, what: (&'static str, usize), account: &str) -> Result<(), ApiError> {
+        self.count_in(what, format!("account:{account}"), "too many of those lately; try again in a minute", MINUTE)
+    }
+
+    /// Count one use of something with one limit for everyone, `what.1` a
+    /// minute.
+    pub fn check_all_per_minute(&self, what: (&'static str, usize)) -> Result<(), ApiError> {
+        self.count_in(what, String::new(), "too many of those lately; try again in a minute", MINUTE)
+    }
+
+    fn count(&self, what: (&'static str, usize), who: String, msg: &str) -> Result<(), ApiError> {
+        self.count_in(what, who, msg, WINDOW)
+    }
+
+    fn count_in(
+        &self,
+        (what, most): (&'static str, usize),
+        who: String,
+        msg: &str,
+        window: Duration,
+    ) -> Result<(), ApiError> {
         let now = Instant::now();
         let mut seen = self.seen.lock().unwrap();
         if seen.len() > 100_000 {
             seen.retain(|_, v| v.last().is_some_and(|t| now.duration_since(*t) < WINDOW));
         }
         let v = seen.entry((what, who)).or_default();
-        v.retain(|t| now.duration_since(*t) < WINDOW);
-        if v.len() >= per_hour {
+        v.retain(|t| now.duration_since(*t) < window);
+        if v.len() >= most {
             return Err(err(StatusCode::TOO_MANY_REQUESTS, msg));
         }
         v.push(now);

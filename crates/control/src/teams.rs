@@ -387,6 +387,8 @@ pub async fn set_roster(
         app.db.drop_request(&team, &m.account)?;
     }
     nudge_team(&app, &team);
+    // Who sees the team's chat may have changed.
+    app.chat.changed();
     let added = b.roster.members.iter().filter(|m| prev.member(&m.account).is_none()).count();
     let removed = prev.members.iter().filter(|m| b.roster.member(&m.account).is_none()).count();
     let owners = b.roster.members.iter().filter(|m| m.role == TeamRole::Owner).count();
@@ -710,6 +712,7 @@ pub async fn lock(State(app): State<Arc<App>>, s: Session, Path(team): Path<Stri
         app.db.drop_invites(&team)?;
     }
     nudge_team(&app, &team);
+    app.chat.changed();
     app.analytics.capture_team(&s.account, &team, if b.locked { "team locked" } else { "team unlocked" }, json!({}));
     app.analytics.group(&s.account, &team, json!({ "locked": b.locked }));
     Ok(Json(json!({ "locked": b.locked })))

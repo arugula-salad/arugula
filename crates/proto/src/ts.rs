@@ -97,6 +97,25 @@ fn generate() -> String {
     c.visit::<crate::workspace::Record>();
     c.visit::<crate::workspace::MemberWhy>();
     c.visit::<crate::workspace::Lease>();
+    // Chat held by control (M122): what control's page says to control.
+    {
+        use arugula_control_wire::chat::*;
+        c.visit::<ChatRooms>();
+        c.visit::<ChatRoomDetail>();
+        c.visit::<ChatMessages>();
+        c.visit::<ChatNewChannel>();
+        c.visit::<ChatNewDm>();
+        c.visit::<ChatOpenTarget>();
+        c.visit::<ChatRoomChange>();
+        c.visit::<ChatPost>();
+        c.visit::<ChatPosted>();
+        c.visit::<ChatEdit>();
+        c.visit::<ChatRead>();
+        c.visit::<ChatMute>();
+        c.visit::<ChatFound>();
+        c.visit::<ChatOpen>();
+        c.visit::<ChatLive>();
+    }
     c.decls.sort();
     let mut out = String::from(
         "// Generated from crates/proto by `just proto-ts`: don't edit. Change the\n\

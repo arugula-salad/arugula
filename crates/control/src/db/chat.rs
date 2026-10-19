@@ -1,0 +1,742 @@
+//! Chat (M122): rooms, their messages in plain text, read marks, an FTS5
+//! index, and who may read each pane's or session's thread as its daemon
+//! last said. Who sees what is decided in `crate::chat`; this is storage.
+//!
+//! - A room's `scope` is what it belongs to, and what deleting takes it
+//!   with: `team:<id>` (a channel or a DM), `machine:<id>` (the thread on a
+//!   pane or a session there), or `account:<id>` (an archive, M124).
+//! - Control numbers messages per room (`seq`), in the same transaction
+//!   that moves the room's `last_seq`. M124's import numbers old messages
+//!   0 and below, before the room's own.
+//! - A deleted message keeps its row and number, with no text, quote, pane
+//!   or mentions, so numbers and read marks hold.
+
+use anyhow::Result;
+use arugula_control_wire::chat::ChatReader;
+use rusqlite::{OptionalExtension, Transaction, params, params_from_iter};
+
+use super::{Db, taken};
+
+pub(super) const SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS chat_rooms (
+    id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    machine TEXT,
+    target TEXT,
+    created_by TEXT NOT NULL,
+    created INTEGER NOT NULL,
+    archived INTEGER,
+    last_seq INTEGER NOT NULL DEFAULT 0,
+    -- The text and quotes it holds, for the team's cap.
+    bytes INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS chat_rooms_scope ON chat_rooms (scope);
+CREATE UNIQUE INDEX IF NOT EXISTS chat_rooms_target ON chat_rooms (kind, machine, target) WHERE machine IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS chat_rooms_channel ON chat_rooms (scope, name) WHERE kind = 'channel';
+-- A DM's two people (and an archive's readers, M124). A channel's people
+-- are its team's roster, and a pane's are its reader list: not rows here.
+CREATE TABLE IF NOT EXISTS chat_members (
+    room TEXT NOT NULL,
+    account TEXT NOT NULL,
+    PRIMARY KEY (room, account)
+);
+CREATE INDEX IF NOT EXISTS chat_members_account ON chat_members (account);
+-- `id` is the FTS index's rowid: an INTEGER PRIMARY KEY, so VACUUM keeps it.
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY,
+    room TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    author TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    quote TEXT,
+    ref_machine TEXT,
+    ref_pane TEXT,
+    mentions TEXT NOT NULL DEFAULT '[]',
+    edited INTEGER,
+    deleted INTEGER,
+    imported TEXT,
+    UNIQUE (room, seq)
+);
+CREATE INDEX IF NOT EXISTS chat_messages_author ON chat_messages (author);
+CREATE VIRTUAL TABLE IF NOT EXISTS chat_fts USING fts5 (text, quote, content='chat_messages', content_rowid='id');
+CREATE TRIGGER IF NOT EXISTS chat_fts_insert AFTER INSERT ON chat_messages BEGIN
+    INSERT INTO chat_fts (rowid, text, quote) VALUES (new.id, new.text, coalesce(new.quote, ''));
+END;
+CREATE TRIGGER IF NOT EXISTS chat_fts_delete AFTER DELETE ON chat_messages BEGIN
+    INSERT INTO chat_fts (chat_fts, rowid, text, quote) VALUES ('delete', old.id, old.text, coalesce(old.quote, ''));
+END;
+CREATE TRIGGER IF NOT EXISTS chat_fts_update AFTER UPDATE OF text, quote ON chat_messages BEGIN
+    INSERT INTO chat_fts (chat_fts, rowid, text, quote) VALUES ('delete', old.id, old.text, coalesce(old.quote, ''));
+    INSERT INTO chat_fts (rowid, text, quote) VALUES (new.id, new.text, coalesce(new.quote, ''));
+END;
+-- A person's read mark in a room (it only moves forward), and whether
+-- they turned its pushes off.
+CREATE TABLE IF NOT EXISTS chat_reads (
+    room TEXT NOT NULL,
+    account TEXT NOT NULL,
+    seq INTEGER NOT NULL DEFAULT 0,
+    muted INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (room, account)
+);
+CREATE INDEX IF NOT EXISTS chat_reads_account ON chat_reads (account);
+-- Who may read the thread on a pane or session, as its machine last said
+-- (S41 decision 2): `readers` is a JSON list of `ChatReader`.
+CREATE TABLE IF NOT EXISTS chat_readers (
+    machine TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    target TEXT NOT NULL,
+    readers TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (machine, kind, target)
+);
+";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Room {
+    pub id: String,
+    pub scope: String,
+    pub kind: String,
+    pub name: String,
+    pub machine: Option<String>,
+    pub target: Option<String>,
+    pub created_by: String,
+    pub created: u64,
+    pub archived: Option<u64>,
+    pub last_seq: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Message {
+    pub room: String,
+    pub seq: i64,
+    pub author: String,
+    pub at: u64,
+    pub text: String,
+    pub quote: Option<String>,
+    pub ref_machine: Option<String>,
+    pub ref_pane: Option<String>,
+    pub mentions: Vec<String>,
+    pub edited: Option<u64>,
+    pub deleted: Option<u64>,
+    pub imported: Option<String>,
+}
+
+pub struct NewMessage<'a> {
+    pub author: &'a str,
+    pub at: u64,
+    pub text: &'a str,
+    pub quote: Option<&'a str>,
+    pub ref_machine: Option<&'a str>,
+    pub ref_pane: Option<&'a str>,
+    pub mentions: &'a [String],
+}
+
+/// Which page of a room's messages.
+#[derive(Debug, Clone, Copy)]
+pub enum Page {
+    After(i64),
+    Before(i64),
+    Newest,
+}
+
+/// What a search asks for, beside the rooms.
+#[derive(Debug, Default)]
+pub struct Search<'a> {
+    /// An FTS5 query, already made safe.
+    pub fts: Option<&'a str>,
+    pub author: Option<&'a str>,
+    pub has_quote: bool,
+}
+
+const ROOM_COLS: &str = "id, scope, kind, name, machine, target, created_by, created, archived, last_seq";
+const MSG_COLS: &str = "room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, edited, deleted, imported";
+
+fn room_row(r: &rusqlite::Row) -> rusqlite::Result<Room> {
+    Ok(Room {
+        id: r.get(0)?,
+        scope: r.get(1)?,
+        kind: r.get(2)?,
+        name: r.get(3)?,
+        machine: r.get(4)?,
+        target: r.get(5)?,
+        created_by: r.get(6)?,
+        created: r.get(7)?,
+        archived: r.get(8)?,
+        last_seq: r.get(9)?,
+    })
+}
+
+fn msg_row(r: &rusqlite::Row) -> rusqlite::Result<Message> {
+    let mentions: String = r.get(8)?;
+    Ok(Message {
+        room: r.get(0)?,
+        seq: r.get(1)?,
+        author: r.get(2)?,
+        at: r.get(3)?,
+        text: r.get(4)?,
+        quote: r.get(5)?,
+        ref_machine: r.get(6)?,
+        ref_pane: r.get(7)?,
+        mentions: serde_json::from_str(&mentions).unwrap_or_default(),
+        edited: r.get(9)?,
+        deleted: r.get(10)?,
+        imported: r.get(11)?,
+    })
+}
+
+fn marks(n: usize) -> String {
+    vec!["?"; n].join(",")
+}
+
+impl Db {
+    pub fn chat_room(&self, id: &str) -> Result<Option<Room>> {
+        Ok(self
+            .c()
+            .query_row(&format!("SELECT {ROOM_COLS} FROM chat_rooms WHERE id = ?1"), params![id], room_row)
+            .optional()?)
+    }
+
+    /// The thread on a pane or session.
+    pub fn chat_room_for(&self, kind: &str, machine: &str, target: &str) -> Result<Option<Room>> {
+        Ok(self
+            .c()
+            .query_row(
+                &format!("SELECT {ROOM_COLS} FROM chat_rooms WHERE kind = ?1 AND machine = ?2 AND target = ?3"),
+                params![kind, machine, target],
+                room_row,
+            )
+            .optional()?)
+    }
+
+    /// The DM between two people in a scope.
+    pub fn chat_dm(&self, scope: &str, a: &str, b: &str) -> Result<Option<Room>> {
+        Ok(self
+            .c()
+            .query_row(
+                &format!(
+                    "SELECT {ROOM_COLS} FROM chat_rooms r WHERE scope = ?1 AND kind = 'dm'
+                     AND EXISTS (SELECT 1 FROM chat_members WHERE room = r.id AND account = ?2)
+                     AND EXISTS (SELECT 1 FROM chat_members WHERE room = r.id AND account = ?3)"
+                ),
+                params![scope, a, b],
+                room_row,
+            )
+            .optional()?)
+    }
+
+    /// A new room, with its members (a DM's two people). Fails with
+    /// [`super::Taken`] for a channel name or a pane's room already there.
+    pub fn add_chat_room(&self, room: &Room, members: &[&str]) -> Result<()> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute(
+            "INSERT INTO chat_rooms (id, scope, kind, name, machine, target, created_by, created)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                room.id,
+                room.scope,
+                room.kind,
+                room.name,
+                room.machine,
+                room.target,
+                room.created_by,
+                room.created
+            ],
+        )
+        .map_err(taken)?;
+        for a in members {
+            tx.execute("INSERT OR IGNORE INTO chat_members (room, account) VALUES (?1, ?2)", params![room.id, a])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Channels and DMs in these scopes, and the threads on these machines.
+    pub fn chat_rooms_in(&self, scopes: &[String], machines: &[String]) -> Result<Vec<Room>> {
+        let c = self.c();
+        let mut out = Vec::new();
+        if !scopes.is_empty() {
+            let mut q = c.prepare(&format!(
+                "SELECT {ROOM_COLS} FROM chat_rooms WHERE scope IN ({}) ORDER BY created",
+                marks(scopes.len())
+            ))?;
+            out.extend(q.query_map(params_from_iter(scopes), room_row)?.collect::<rusqlite::Result<Vec<_>>>()?);
+        }
+        if !machines.is_empty() {
+            let mut q = c.prepare(&format!(
+                "SELECT {ROOM_COLS} FROM chat_rooms WHERE machine IN ({}) ORDER BY created",
+                marks(machines.len())
+            ))?;
+            out.extend(q.query_map(params_from_iter(machines), room_row)?.collect::<rusqlite::Result<Vec<_>>>()?);
+        }
+        out.dedup_by(|a, b| a.id == b.id);
+        Ok(out)
+    }
+
+    /// Rooms an account is a member of by row: its DMs and archives.
+    pub fn chat_rooms_member(&self, account: &str) -> Result<Vec<Room>> {
+        let c = self.c();
+        let mut q = c.prepare(&format!(
+            "SELECT {ROOM_COLS} FROM chat_rooms WHERE id IN (SELECT room FROM chat_members WHERE account = ?1)
+             ORDER BY created"
+        ))?;
+        Ok(q.query_map(params![account], room_row)?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    pub fn chat_members(&self, room: &str) -> Result<Vec<String>> {
+        let c = self.c();
+        let mut q = c.prepare("SELECT account FROM chat_members WHERE room = ?1 ORDER BY account")?;
+        Ok(q.query_map(params![room], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// How many channels a scope has.
+    pub fn chat_channels(&self, scope: &str) -> Result<u64> {
+        Ok(self.c().query_row(
+            "SELECT count(*) FROM chat_rooms WHERE scope = ?1 AND kind = 'channel'",
+            params![scope],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// How many rooms a scope has (pane threads on a machine).
+    pub fn chat_rooms_count(&self, scope: &str) -> Result<u64> {
+        Ok(self.c().query_row("SELECT count(*) FROM chat_rooms WHERE scope = ?1", params![scope], |r| r.get(0))?)
+    }
+
+    /// The text and quotes a scope's rooms hold.
+    pub fn chat_bytes(&self, scope: &str) -> Result<u64> {
+        Ok(self.c().query_row(
+            "SELECT coalesce(sum(bytes), 0) FROM chat_rooms WHERE scope = ?1",
+            params![scope],
+            |r| r.get(0),
+        )?)
+    }
+
+    pub fn rename_chat_room(&self, id: &str, name: &str) -> Result<()> {
+        self.c().execute("UPDATE chat_rooms SET name = ?2 WHERE id = ?1", params![id, name]).map_err(taken)?;
+        Ok(())
+    }
+
+    pub fn archive_chat_room(&self, id: &str, at: Option<u64>) -> Result<()> {
+        self.c().execute("UPDATE chat_rooms SET archived = ?2 WHERE id = ?1", params![id, at])?;
+        Ok(())
+    }
+
+    /// Append a message: control numbers it, and its author has read it.
+    /// Its number.
+    pub fn add_chat_message(&self, room: &str, m: &NewMessage) -> Result<i64> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let bytes = (m.text.len() + m.quote.map_or(0, str::len)) as i64;
+        let seq: i64 = tx.query_row(
+            "UPDATE chat_rooms SET last_seq = last_seq + 1, bytes = bytes + ?2 WHERE id = ?1 RETURNING last_seq",
+            params![room, bytes],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                room,
+                seq,
+                m.author,
+                m.at,
+                m.text,
+                m.quote,
+                m.ref_machine,
+                m.ref_pane,
+                serde_json::to_string(m.mentions)?
+            ],
+        )?;
+        tx.execute(
+            "INSERT INTO chat_reads (room, account, seq) VALUES (?1, ?2, ?3)
+             ON CONFLICT (room, account) DO UPDATE SET seq = max(seq, excluded.seq)",
+            params![room, m.author, seq],
+        )?;
+        tx.commit()?;
+        Ok(seq)
+    }
+
+    /// A page of a room's messages, oldest first, and whether there are
+    /// more that way.
+    pub fn chat_messages(&self, room: &str, page: Page, limit: u32) -> Result<(Vec<Message>, bool)> {
+        let c = self.c();
+        let n = i64::from(limit) + 1;
+        let mut ms: Vec<Message> = match page {
+            Page::After(after) => {
+                let mut q = c.prepare(&format!(
+                    "SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3"
+                ))?;
+                q.query_map(params![room, after, n], msg_row)?.collect::<rusqlite::Result<_>>()?
+            }
+            Page::Before(before) => {
+                let mut q = c.prepare(&format!(
+                    "SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND seq < ?2 ORDER BY seq DESC LIMIT ?3"
+                ))?;
+                q.query_map(params![room, before, n], msg_row)?.collect::<rusqlite::Result<_>>()?
+            }
+            Page::Newest => {
+                let mut q = c.prepare(&format!(
+                    "SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 ORDER BY seq DESC LIMIT ?2"
+                ))?;
+                q.query_map(params![room, n], msg_row)?.collect::<rusqlite::Result<_>>()?
+            }
+        };
+        let more = ms.len() > limit as usize;
+        ms.truncate(limit as usize);
+        if !matches!(page, Page::After(_)) {
+            ms.reverse();
+        }
+        Ok((ms, more))
+    }
+
+    pub fn chat_message(&self, room: &str, seq: i64) -> Result<Option<Message>> {
+        Ok(self
+            .c()
+            .query_row(
+                &format!("SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND seq = ?2"),
+                params![room, seq],
+                msg_row,
+            )
+            .optional()?)
+    }
+
+    /// The author's new text, and whom it mentions now.
+    pub fn edit_chat_message(&self, room: &str, seq: i64, text: &str, mentions: &[String], at: u64) -> Result<()> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let old: i64 = tx.query_row(
+            "SELECT length(CAST(text AS BLOB)) FROM chat_messages WHERE room = ?1 AND seq = ?2",
+            params![room, seq],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "UPDATE chat_messages SET text = ?3, mentions = ?4, edited = ?5 WHERE room = ?1 AND seq = ?2",
+            params![room, seq, text, serde_json::to_string(mentions)?, at],
+        )?;
+        tx.execute(
+            "UPDATE chat_rooms SET bytes = max(0, bytes - ?2 + ?3) WHERE id = ?1",
+            params![room, old, text.len() as i64],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Delete a message: its row and number stay, with nothing in them.
+    pub fn delete_chat_message(&self, room: &str, seq: i64, at: u64) -> Result<()> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let old: i64 = tx.query_row(
+            "SELECT length(CAST(text AS BLOB)) + coalesce(length(CAST(quote AS BLOB)), 0)
+             FROM chat_messages WHERE room = ?1 AND seq = ?2",
+            params![room, seq],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "UPDATE chat_messages SET text = '', quote = NULL, ref_machine = NULL, ref_pane = NULL,
+             mentions = '[]', deleted = ?3 WHERE room = ?1 AND seq = ?2",
+            params![room, seq, at],
+        )?;
+        tx.execute("UPDATE chat_rooms SET bytes = max(0, bytes - ?2) WHERE id = ?1", params![room, old])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// An account's read mark in a room, and whether it's muted.
+    pub fn chat_mark(&self, room: &str, account: &str) -> Result<(i64, bool)> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT seq, muted FROM chat_reads WHERE room = ?1 AND account = ?2",
+                params![room, account],
+                |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0)),
+            )
+            .optional()?
+            .unwrap_or((0, false)))
+    }
+
+    /// Move a read mark forward (never back). Whether it moved.
+    pub fn set_chat_read(&self, room: &str, account: &str, seq: i64) -> Result<bool> {
+        Ok(self.c().execute(
+            "INSERT INTO chat_reads (room, account, seq) VALUES (?1, ?2, ?3)
+             ON CONFLICT (room, account) DO UPDATE SET seq = excluded.seq WHERE excluded.seq > chat_reads.seq",
+            params![room, account, seq],
+        )? > 0)
+    }
+
+    pub fn set_chat_muted(&self, room: &str, account: &str, muted: bool) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO chat_reads (room, account, muted) VALUES (?1, ?2, ?3)
+             ON CONFLICT (room, account) DO UPDATE SET muted = excluded.muted",
+            params![room, account, muted as i64],
+        )?;
+        Ok(())
+    }
+
+    /// Others' messages after `read` (from `from` ms on), and how many of
+    /// them mention `account`.
+    pub fn chat_unread(&self, room: &str, account: &str, read: i64, from: u64) -> Result<(u64, u64)> {
+        Ok(self.c().query_row(
+            "SELECT count(*), coalesce(sum(EXISTS (SELECT 1 FROM json_each(mentions) WHERE value = ?3)), 0)
+             FROM chat_messages WHERE room = ?1 AND seq > ?2 AND author != ?3 AND deleted IS NULL AND at >= ?4",
+            params![room, read, account, from],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?)
+    }
+
+    /// Messages in these rooms that match, newest first.
+    pub fn chat_search(&self, rooms: &[String], s: &Search, limit: u32) -> Result<Vec<Message>> {
+        if rooms.is_empty() {
+            return Ok(vec![]);
+        }
+        let cols = MSG_COLS.split(", ").map(|c| format!("m.{c}")).collect::<Vec<_>>().join(", ");
+        let mut sql = format!("SELECT {cols} FROM chat_messages m");
+        let mut args: Vec<String> = Vec::new();
+        let mut wh = vec![format!("m.room IN ({})", marks(rooms.len())), "m.deleted IS NULL".to_owned()];
+        if let Some(q) = s.fts {
+            sql.push_str(" JOIN chat_fts f ON f.rowid = m.id");
+            wh.insert(0, "chat_fts MATCH ?".into());
+            args.push(q.to_owned());
+        }
+        args.extend(rooms.iter().cloned());
+        if let Some(a) = s.author {
+            wh.push("m.author = ?".into());
+            args.push(a.to_owned());
+        }
+        if s.has_quote {
+            wh.push("m.quote IS NOT NULL AND m.quote != ''".into());
+        }
+        sql.push_str(&format!(" WHERE {} ORDER BY m.at DESC, m.id DESC LIMIT {limit}", wh.join(" AND ")));
+        let c = self.c();
+        let mut q = c.prepare(&sql)?;
+        Ok(q.query_map(params_from_iter(args), msg_row)?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Who may read the thread on a pane or session, as its machine last
+    /// said; `None` before it has said.
+    pub fn chat_readers(&self, machine: &str, kind: &str, target: &str) -> Result<Option<Vec<ChatReader>>> {
+        let body: Option<String> = self
+            .c()
+            .query_row(
+                "SELECT readers FROM chat_readers WHERE machine = ?1 AND kind = ?2 AND target = ?3",
+                params![machine, kind, target],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(body.map(|b| serde_json::from_str(&b)).transpose()?)
+    }
+
+    pub fn set_chat_readers(
+        &self,
+        machine: &str,
+        kind: &str,
+        target: &str,
+        readers: &[ChatReader],
+        at: u64,
+    ) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO chat_readers (machine, kind, target, readers, at) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (machine, kind, target) DO UPDATE SET readers = excluded.readers, at = excluded.at",
+            params![machine, kind, target, serde_json::to_string(readers)?, at],
+        )?;
+        Ok(())
+    }
+}
+
+/// Every room in a scope, and all that's in them.
+fn drop_rooms_where(tx: &Transaction, cond: &str, arg: &str) -> rusqlite::Result<()> {
+    // Which first: `cond` may read `chat_members`, which goes too.
+    let ids: Vec<String> = {
+        let mut q = tx.prepare(&format!("SELECT id FROM chat_rooms WHERE {cond}"))?;
+        q.query_map([arg], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
+    };
+    for id in ids {
+        for table in ["chat_messages", "chat_reads", "chat_members"] {
+            tx.execute(&format!("DELETE FROM {table} WHERE room = ?1"), [&id])?;
+        }
+        tx.execute("DELETE FROM chat_rooms WHERE id = ?1", [&id])?;
+    }
+    Ok(())
+}
+
+/// What deleting an account takes from chat (S41 decision 6), inside
+/// `Db::delete_account`'s transaction:
+/// - its DMs, both sides, and the threads on its machines;
+/// - the rooms of the teams that go with it;
+/// - its messages elsewhere keep their rows and numbers, blank and with no
+///   author ("a deleted account");
+/// - it leaves no trace in others' mentions, read marks or reader lists.
+pub(super) fn erase_account(tx: &Transaction, account: &str, machines: &[String], disband: &[String]) -> Result<()> {
+    drop_rooms_where(tx, "kind = 'dm' AND id IN (SELECT room FROM chat_members WHERE account = ?1)", account)?;
+    for m in machines {
+        drop_rooms_where(tx, "scope = 'machine:' || ?1", m)?;
+        tx.execute("DELETE FROM chat_readers WHERE machine = ?1", [m])?;
+    }
+    for t in disband {
+        drop_rooms_where(tx, "scope = 'team:' || ?1", t)?;
+    }
+    tx.execute(
+        "UPDATE chat_messages SET author = '', text = '', quote = NULL, ref_machine = NULL, ref_pane = NULL,
+         mentions = '[]', imported = NULL, deleted = coalesce(deleted, ?2) WHERE author = ?1",
+        params![account, arugula_e2e::now_ms()],
+    )?;
+    tx.execute(
+        "UPDATE chat_messages SET mentions = (SELECT json_group_array(value) FROM json_each(mentions) WHERE value != ?1)
+         WHERE EXISTS (SELECT 1 FROM json_each(mentions) WHERE value = ?1)",
+        [account],
+    )?;
+    tx.execute(
+        "UPDATE chat_readers SET readers = (SELECT json_group_array(json(value)) FROM json_each(readers)
+             WHERE json_extract(value, '$.account') != ?1)
+         WHERE EXISTS (SELECT 1 FROM json_each(readers) WHERE json_extract(value, '$.account') = ?1)",
+        [account],
+    )?;
+    tx.execute("UPDATE chat_rooms SET created_by = '' WHERE created_by = ?1", [account])?;
+    tx.execute("DELETE FROM chat_reads WHERE account = ?1", [account])?;
+    tx.execute("DELETE FROM chat_members WHERE account = ?1", [account])?;
+    // Rooms' byte counts after the blanking.
+    tx.execute(
+        "UPDATE chat_rooms SET bytes = (SELECT coalesce(sum(length(CAST(text AS BLOB)) + coalesce(length(CAST(quote AS BLOB)), 0)), 0)
+         FROM chat_messages WHERE room = chat_rooms.id)",
+        [],
+    )?;
+    // The index's old segments still hold the blanked words until they're
+    // merged: merge them now (deleting an account is rare).
+    tx.execute("INSERT INTO chat_fts (chat_fts) VALUES ('optimize')", [])?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn room(db: &Db, id: &str, scope: &str, kind: &str, members: &[&str]) {
+        let r = Room {
+            id: id.into(),
+            scope: scope.into(),
+            kind: kind.into(),
+            name: id.into(),
+            machine: None,
+            target: None,
+            created_by: "a1".into(),
+            created: 1,
+            archived: None,
+            last_seq: 0,
+        };
+        db.add_chat_room(&r, members).unwrap();
+    }
+
+    fn post(db: &Db, room: &str, author: &str, text: &str, quote: Option<&str>, mentions: &[String]) -> i64 {
+        db.add_chat_message(
+            room,
+            &NewMessage { author, at: 1, text, quote, ref_machine: None, ref_pane: None, mentions },
+        )
+        .unwrap()
+    }
+
+    fn found(db: &Db, rooms: &[&str], q: &str) -> Vec<i64> {
+        let rooms: Vec<String> = rooms.iter().map(|s| s.to_string()).collect();
+        db.chat_search(&rooms, &Search { fts: Some(q), ..Default::default() }, 50)
+            .unwrap()
+            .iter()
+            .map(|m| m.seq)
+            .collect()
+    }
+
+    #[test]
+    fn numbers_read_marks_and_pages() {
+        let db = Db::memory();
+        room(&db, "r1", "team:t", "channel", &[]);
+        for i in 1..=5 {
+            assert_eq!(post(&db, "r1", if i % 2 == 0 { "a2" } else { "a1" }, &format!("m{i}"), None, &[]), i);
+        }
+        // Your own post marks you read; others' are unread.
+        assert_eq!(db.chat_mark("r1", "a1").unwrap(), (5, false));
+        assert_eq!(db.chat_mark("r1", "a2").unwrap().0, 4);
+        assert_eq!(db.chat_unread("r1", "a2", 4, 0).unwrap(), (1, 0));
+        // Marks only move forward.
+        assert!(!db.set_chat_read("r1", "a1", 2).unwrap());
+        assert_eq!(db.chat_mark("r1", "a1").unwrap().0, 5);
+        let (ms, more) = db.chat_messages("r1", Page::Newest, 2).unwrap();
+        assert_eq!((ms.iter().map(|m| m.seq).collect::<Vec<_>>(), more), (vec![4, 5], true));
+        let (ms, more) = db.chat_messages("r1", Page::Before(4), 10).unwrap();
+        assert_eq!((ms.iter().map(|m| m.seq).collect::<Vec<_>>(), more), (vec![1, 2, 3], false));
+        let (ms, more) = db.chat_messages("r1", Page::After(3), 1).unwrap();
+        assert_eq!((ms.iter().map(|m| m.seq).collect::<Vec<_>>(), more), (vec![4], true));
+    }
+
+    #[test]
+    fn the_index_follows_edits_and_deletes() {
+        let db = Db::memory();
+        room(&db, "r1", "team:t", "channel", &[]);
+        post(&db, "r1", "a1", "the mean test fails", Some("FAILED mean"), &[]);
+        post(&db, "r1", "a1", "deploy done", None, &[]);
+        assert_eq!(found(&db, &["r1"], "\"mean\""), vec![1]);
+        assert_eq!(found(&db, &["r1"], "\"FAILED\""), vec![1], "quotes are searched too");
+        assert_eq!(found(&db, &["r1"], "\"dep\"*"), vec![2]);
+        db.edit_chat_message("r1", 2, "rollback done", &[], 2).unwrap();
+        assert!(found(&db, &["r1"], "\"deploy\"").is_empty(), "an edit leaves no old words in the index");
+        assert_eq!(found(&db, &["r1"], "\"rollback\""), vec![2]);
+        db.delete_chat_message("r1", 1, 3).unwrap();
+        assert!(found(&db, &["r1"], "\"mean\"").is_empty());
+        assert!(found(&db, &["r1"], "\"FAILED\"").is_empty());
+        let m = db.chat_message("r1", 1).unwrap().unwrap();
+        assert_eq!((m.text.as_str(), m.quote, m.deleted), ("", None, Some(3)), "the number stays");
+        assert!(found(&db, &["other"], "\"rollback\"").is_empty(), "only the rooms asked");
+    }
+
+    #[test]
+    fn erasing_an_account_leaves_nothing_of_it_in_chat() {
+        let db = Db::memory();
+        room(&db, "ch", "team:t", "channel", &[]);
+        room(&db, "dm", "team:t", "dm", &["gone1", "b2"]);
+        room(&db, "gone-team", "team:t2", "channel", &[]);
+        let r = Room {
+            id: "pane".into(),
+            scope: "machine:box".into(),
+            kind: "pane".into(),
+            name: "pane 1".into(),
+            machine: Some("box".into()),
+            target: Some("1".into()),
+            created_by: "gone1".into(),
+            created: 1,
+            archived: None,
+            last_seq: 0,
+        };
+        db.add_chat_room(&r, &[]).unwrap();
+        post(&db, "ch", "gone1", "secret plans", Some("quoted"), &["b2".into()]);
+        post(&db, "ch", "b2", "@gonzo hi", None, &["gone1".into()]);
+        post(&db, "dm", "b2", "just us", None, &[]);
+        post(&db, "pane", "b2", "on its box", None, &[]);
+        db.set_chat_readers(
+            "other-box",
+            "pane",
+            "3",
+            &[ChatReader { account: "gone1".into(), from: None }, ChatReader { account: "b2".into(), from: Some(5) }],
+            1,
+        )
+        .unwrap();
+        let mut c = db.c();
+        let tx = c.transaction().unwrap();
+        erase_account(&tx, "gone1", &["box".into()], &["t2".into()]).unwrap();
+        tx.commit().unwrap();
+        drop(c);
+        assert!(db.chat_room("dm").unwrap().is_none(), "its DMs go, both sides");
+        assert!(db.chat_room("pane").unwrap().is_none(), "the threads on its machines go");
+        assert!(db.chat_room("gone-team").unwrap().is_none(), "a disbanded team's rooms go");
+        let m = db.chat_message("ch", 1).unwrap().unwrap();
+        assert_eq!((m.author.as_str(), m.text.as_str(), m.quote.as_deref()), ("", "", None));
+        assert!(m.deleted.is_some());
+        assert_eq!(db.chat_message("ch", 2).unwrap().unwrap().mentions, Vec::<String>::new());
+        assert_eq!(
+            db.chat_readers("other-box", "pane", "3").unwrap().unwrap(),
+            vec![ChatReader { account: "b2".into(), from: Some(5) }]
+        );
+        assert!(found(&db, &["ch"], "\"secret\"").is_empty() && found(&db, &["ch"], "\"quoted\"").is_empty());
+        assert!(db.mentions("gone1").is_empty(), "{:?}", db.mentions("gone1"));
+        assert_eq!(db.chat_bytes("team:t").unwrap(), "@gonzo hi".len() as u64);
+    }
+}

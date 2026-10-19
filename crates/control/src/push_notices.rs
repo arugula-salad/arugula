@@ -29,7 +29,7 @@ use crate::{
 };
 
 /// A browser's push subscription: its keys, and what its service got.
-struct Phone {
+pub(crate) struct Phone {
     ua: p256::SecretKey,
     auth: [u8; 16],
     got: mpsc::UnboundedReceiver<Vec<u8>>,
@@ -38,7 +38,7 @@ struct Phone {
 impl Phone {
     /// Subscribed for `account`'s approved device `keys`, at a push service
     /// on a port of its own.
-    async fn subscribe(app: &App, account: &str, keys: &DeviceKeys, seed: u8) -> (Self, String) {
+    pub(crate) async fn subscribe(app: &App, account: &str, keys: &DeviceKeys, seed: u8) -> (Self, String) {
         let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let host = l.local_addr().unwrap().to_string();
         let (tx, got) = mpsc::unbounded_channel();
@@ -84,7 +84,7 @@ impl Phone {
     }
 
     /// The next notification, decrypted (RFC 8291), or none soon.
-    async fn next(&mut self) -> Option<Value> {
+    pub(crate) async fn next(&mut self) -> Option<Value> {
         use aes_gcm::{Aes128Gcm, KeyInit, aead::Aead};
         use hkdf::Hkdf;
         use sha2::Sha256;
@@ -113,7 +113,7 @@ impl Phone {
     }
 
     /// Nothing more within a moment.
-    async fn quiet(&mut self) -> bool {
+    pub(crate) async fn quiet(&mut self) -> bool {
         tokio::time::timeout(Duration::from_millis(500), self.got.recv()).await.is_err()
     }
 }

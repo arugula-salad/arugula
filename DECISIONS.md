@@ -776,12 +776,31 @@ streams, and a channel request answers within seconds; tasks take minutes.
 Where: `crates/daemon/src/labs/agents/tasks.rs`, `block.rs` (the hub), `delegate.rs`, `crates/daemon/src/api.rs` (`foreign`, `is_agents`).
 From: [S34](https://github.com/arugula-salad/arugula/issues/397) q4, q6; M78 (#400), M79 (#401).
 
-### Threads live on the daemon that owns the pane; conversations on their home
-Pane and session threads are kept in `<state>/threads/`, outside the pane's
-own directory (closing a pane keeps its conversation), with the pane's access
-rules. Team channels are ciphertext in control (MLS), and voice is WebRTC on a
-session, signaled through the session's daemon, with control only handing out
-short-lived TURN credentials.
+### Chat lives in control, in plain text; terminal content doesn't
+Chat is a team's, not a machine's (Jake, 2026-10-19, #978): control holds a
+team's channels and DMs and the threads about a pane or a session, in plain
+text, so people talk with every machine asleep. Control numbers messages per
+room, keeps read marks, resolves mentions against who sees the room, pushes
+(who, where and the first 200 characters), searches with SQLite FTS5, and
+tells open pages over one Server-Sent Events stream each (`Last-Event-ID`
+resumes it). A message may name a pane and quote lines the poster chose
+from it; those lines are copied into control, and nothing else of the pane
+is. A pane's or session's thread is read by whom its machine last said
+(`POST /api/daemon/chat/readers`, each with a "from now" floor), within
+whom control routes to that machine at all; before the machine has said,
+by its owner and its team's owners. A DM belongs to a team: one person
+leaving makes it read-only for the other and gone for them. Messages are
+kept until deleted: an author or an owner deletes one (its number stays,
+empty); deleting an account deletes its DMs and its machines' threads and
+blanks its messages elsewhere; a team that goes with its founder takes its
+rooms. It's behind control's `chat` Labs flag, the account's or a team's.
+Agents aren't in chat (M121); a machine with no control has no chat.
+Where: `crates/control/src/chat.rs`, `crates/control/src/db/chat.rs`, `crates/control-wire/src/chat.rs`.
+From: [S41](spikes/s41-chat-in-control/README.md) (decisions 1–10, all as recommended), M122 (#1096).
+
+Until M124 imports them and M125 removes the store, the daemon still keeps
+its own pane and session threads in `<state>/threads/` for pages from before,
+with the pane's access rules, and its M81 conversations as below.
 
 A conversation (#855) is a third kind of thread beside them, not a pane or
 session thread moved: those stay as they are, because their access, unread
@@ -1011,6 +1030,9 @@ Every client-to-daemon stream through control is one Noise channel
 (`Noise_IK_25519_AESGCM_SHA256`), on the relay and on direct paths from
 control's page, with one channel per viewer so revoking closes it. A page a
 daemon serves itself still uses plain `/ws`, inside the tailnet's WireGuard.
+The exception is chat (M122, "Chat lives in control, in plain text"):
+control reads a team's chat, and the lines someone chooses to quote from a
+pane into it. A pane's output, input and scrollback stay end to end.
 Where: `crates/e2e/src/channel.rs`, `crates/control/src/relay.rs`, `crates/daemon/src/e2e.rs`.
 From: [Control track](docs/plan-archive.md#control-track-s15-m17m22-added-2026-10-01), [M18](docs/plan-archive.md#m18-relay-and-end-to-end-encryption), docs/control-e2e.md.
 

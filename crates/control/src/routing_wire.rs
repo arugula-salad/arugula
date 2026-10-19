@@ -24,13 +24,13 @@ use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
 
 use crate::{App, auth::hash, db::Team};
 
-struct Control {
-    app: Arc<App>,
-    base: String,
-    http: reqwest::Client,
+pub(crate) struct Control {
+    pub(crate) app: Arc<App>,
+    pub(crate) base: String,
+    pub(crate) http: reqwest::Client,
 }
 
-async fn control(tweak: impl FnOnce(&mut App)) -> Control {
+pub(crate) async fn control(tweak: impl FnOnce(&mut App)) -> Control {
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
     let mut app = App::for_tests(&base);
@@ -42,7 +42,7 @@ async fn control(tweak: impl FnOnce(&mut App)) -> Control {
 }
 
 /// An account with an approved first device (its root).
-fn person(app: &App, login: &str, id: &str) -> DeviceKeys {
+pub(crate) fn person(app: &App, login: &str, id: &str) -> DeviceKeys {
     app.db.account_for("github", &format!("gh-{id}"), login, id, now_ms()).unwrap();
     let keys = DeviceKeys::generate();
     let mut c = Cert::new(&keys, id, Kind::Browser, "laptop");
@@ -52,7 +52,7 @@ fn person(app: &App, login: &str, id: &str) -> DeviceKeys {
 }
 
 /// A daemon joined to `account`.
-fn daemon(app: &App, account: &str, name: &str) -> DeviceKeys {
+pub(crate) fn daemon(app: &App, account: &str, name: &str) -> DeviceKeys {
     let keys = DeviceKeys::generate();
     let cert = Cert::new(&keys, account, Kind::Daemon, name);
     app.db.put_device(&cert, true, now_ms()).unwrap();
@@ -61,13 +61,13 @@ fn daemon(app: &App, account: &str, name: &str) -> DeviceKeys {
 }
 
 /// A signed-in session's cookie.
-fn session(app: &App, account: &str) -> String {
+pub(crate) fn session(app: &App, account: &str) -> String {
     let t = crate::auth::token();
     app.db.add_session(&hash(&t), account, now_ms(), now_ms() + 3_600_000).unwrap();
     format!("{}={t}", crate::auth::SESSION_COOKIE)
 }
 
-fn v2(keys: &DeviceKeys, method: &str, path_and_query: &str, body: &[u8]) -> String {
+pub(crate) fn v2(keys: &DeviceKeys, method: &str, path_and_query: &str, body: &[u8]) -> String {
     let ms = now_ms();
     let nonce = hex::encode(arugula_e2e::random::<16>());
     let msg = crate::auth::daemon_auth_message_v2(method, path_and_query, ms, &nonce, body);
@@ -93,7 +93,7 @@ impl Control {
         (r.status().as_u16(), r.json().await.unwrap_or_default())
     }
 
-    async fn daemon_post(&self, keys: &DeviceKeys, path: &str, body: &Value) -> (u16, Value) {
+    pub(crate) async fn daemon_post(&self, keys: &DeviceKeys, path: &str, body: &Value) -> (u16, Value) {
         let b = serde_json::to_vec(body).unwrap();
         let r = self
             .http
@@ -107,7 +107,7 @@ impl Control {
         (r.status().as_u16(), r.json().await.unwrap_or_default())
     }
 
-    async fn as_person(&self, cookie: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
+    pub(crate) async fn as_person(&self, cookie: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
         let mut req = self
             .http
             .request(method.parse().unwrap(), format!("{}{path}", self.base))
@@ -735,7 +735,7 @@ async fn a_device_pins_its_root_with_its_own_signature() {
     assert_eq!(all["passkeys"], json!([keys.id()]));
 }
 
-fn roster(team: &str, version: u64, members: Vec<Member>, by: &DeviceKeys) -> Roster {
+pub(crate) fn roster(team: &str, version: u64, members: Vec<Member>, by: &DeviceKeys) -> Roster {
     let mut r = Roster {
         v: 1,
         team: team.into(),
@@ -752,7 +752,7 @@ fn roster(team: &str, version: u64, members: Vec<Member>, by: &DeviceKeys) -> Ro
     r
 }
 
-fn member(account: &str, root: &DeviceKeys, role: TeamRole) -> Member {
+pub(crate) fn member(account: &str, root: &DeviceKeys, role: TeamRole) -> Member {
     Member { account: account.into(), root: root.id(), role, name: account.into() }
 }
 
