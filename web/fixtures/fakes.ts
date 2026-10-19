@@ -107,14 +107,28 @@ export function fakePush(port: number, host = "127.0.0.1") {
  * machine's diff and git status then show `fakeChange`). */
 export interface FakeTurn {
   asks?: string;
-  blocks: { kind: string; body: string }[];
+  /** Managoat's blocks, one event each, as `?blocks=true` sends them: a
+   * message streams as many `text` chunks. */
+  blocks: { kind: string; body?: unknown; id?: string; name?: string; summary?: string; tool_id?: string }[];
   writes?: boolean;
 }
 
-/** The e2e's turns: "Run the tests" asks first, "Write the guide" writes. */
+/** A reply streamed as Managoat sends one: text in chunks that cut words
+ * and a code fence apart, and a tool call whose input arrives empty (`{}`)
+ * before its result. */
+export const streamedTurn: FakeTurn["blocks"] = [
+  { kind: "text", body: "I" }, { kind: "text", body: "'ll" }, { kind: "text", body: " run" }, { kind: "text", body: " `" },
+  { kind: "text", body: "pwd" }, { kind: "text", body: "` first." },
+  { kind: "tool_use", id: "tool1", name: "Terminal", summary: "pwd", body: "{}" },
+  { kind: "tool_result", tool_id: "tool1", body: "/home/sprite/app" },
+  { kind: "text", body: "hello from cla" }, { kind: "text", body: "ude\n\n```sh\necho" }, { kind: "text", body: " hi\n```\n" },
+];
+
+/** The e2e's turns: "Run the tests" asks first, "Write the guide" writes,
+ * "Stream it" streams. */
 const testTurn = (prompt: string): FakeTurn => ({
   asks: prompt === "Run the tests" ? "Run the tests?" : undefined,
-  blocks: [{ kind: "text", body: prompt === "Run the tests" ? "Tests pass." : "Docs written." }],
+  blocks: prompt === "Stream it" ? streamedTurn : [{ kind: "text", body: prompt === "Run the tests" ? "Tests pass." : "Docs written." }],
   writes: prompt === "Write the guide",
 });
 
@@ -146,6 +160,8 @@ const buildFields = ["repositories", "packages", "setup_script", "setup_timeout_
 interface Turn {
   prompt: string;
   answered: boolean;
+  /** The option its approval was answered with. */
+  option?: string;
   interrupted?: boolean;
   /** Its change was on a disk a rebuild or retry wiped. */
   wiped?: boolean;
@@ -192,11 +208,13 @@ export function fakeManagoat(port = 0, host = "127.0.0.1", options: FakeManagoat
     const ready = w.reads > 2;
     const revision = state.environments[w.environment]?.revision ?? 1;
     const failed = ready ? fails(w.built, w.setups) : null;
-    if (failed) return { id, name: w.name, environment_id: w.environment, status: "failed", sandbox_status: null, error: failed, revision: `rev${revision}`, built_from_revision: null, stale: false, changed_fields: [] };
+    if (failed) return { id, name: w.name, environment_id: w.environment, status: "failed", sandbox_status: null, setup_step: null, error: failed, revision: `rev${revision}`, built_from_revision: null, stale: false, changed_fields: [] };
     const behind = ready ? changed(w) : [];
     return {
       id, name: w.name, environment_id: w.environment,
       status: ready ? "ready" : "provisioning", sandbox_status: ready ? "ready" : "starting", error: null,
+      // Managoat v0.39.0: the step a setup is running, while it runs.
+      setup_step: ready ? null : (["machine", "packages", "setup_script"][w.reads] ?? "setup_script"),
       revision: `rev${revision}`, built_from_revision: ready ? `rev${w.built.revision}` : null, stale: behind.length > 0, changed_fields: behind,
     };
   };
@@ -208,7 +226,9 @@ export function fakeManagoat(port = 0, host = "127.0.0.1", options: FakeManagoat
     c.turns.forEach((t, n) => {
       const turn = turnOf(t.prompt);
       out.push({ id: ++id, stage: "turn", state: "started", blocks: [{ kind: "prompt", body: t.prompt }] });
-      if (turn.asks) out.push({ id: ++id, blocks: [{ kind: "permission_request", request_id: n ? `approval${n}` : "approval", summary: turn.asks, options: [{ optionId: "allow", name: "Allow once" }] }] });
+      const request = n ? `approval${n}` : "approval";
+      if (turn.asks) out.push({ id: ++id, blocks: [{ kind: "permission_request", request_id: request, summary: turn.asks, options: [{ optionId: "allow", name: "Allow once" }, { optionId: "always", name: "Allow always" }, { optionId: "deny", name: "Deny" }] }] });
+      if (turn.asks && t.answered) out.push({ id: ++id, stage: "request", state: "done", data: JSON.stringify({ request_id: request, kind: "permission", outcome: "answered", option_id: t.option ?? "allow" }) });
       if (t.interrupted) out.push({ id: ++id, stage: "turn", state: "interrupted", blocks: [{ kind: "text", body: "Interrupted." }] });
       else if (!turn.asks || t.answered) for (const b of turn.blocks) out.push({ id: ++id, blocks: [b] });
     });
@@ -297,6 +317,22 @@ export function fakeManagoat(port = 0, host = "127.0.0.1", options: FakeManagoat
         w.setups++;
         return reply({ ...machine(id), status: "provisioning", sandbox_status: "pending" }, 202);
       }
+      // What the last setup printed (v0.39.0): kept by Managoat, so it reads
+      // whatever the machine is doing. A failed setup's script printed its
+      // error.
+      if (rest[0] === "setup-log" && req.method === "GET") {
+        const m = machine(id) as { status: string; error: string | null };
+        if (m.status === "provisioning" && w.reads === 0) return reply(null);
+        const failed = m.status === "failed";
+        const step = (name: string, status: string, output: string) => ({ step: name, status, started_at: "2026-10-19T12:00:00Z", finished_at: status === "running" ? null : "2026-10-19T12:00:05Z", output, omitted_lines: 0, omitted_bytes: 0 });
+        const steps = [
+          step("machine", "succeeded", ""),
+          step("packages", "succeeded", "Reading package lists...\nSetting up jq (1.7.1-3)\n"),
+          step("repositories", "succeeded", "Cloning into '/home/sprite/app'...\n"),
+          step("setup_script", failed ? "failed" : m.status === "ready" ? "succeeded" : "running", failed ? `${(m.error ?? "").split(":").slice(1).join(":").trim()}\n` : "done\n"),
+        ];
+        return reply({ workspace_id: id, sandbox_id: `sandbox-${id}`, status: failed ? "failed" : m.status === "ready" ? "succeeded" : "running", step: failed ? "setup_script" : null, started_at: "2026-10-19T12:00:00Z", finished_at: "2026-10-19T12:00:09Z", steps });
+      }
       // The machine's reads (M118): the change a writing turn made, once it ran.
       if (["diff", "git-status", "file"].includes(rest[0])) {
         state.machineReads.push(`${path}${url.search}`);
@@ -337,7 +373,7 @@ export function fakeManagoat(port = 0, host = "127.0.0.1", options: FakeManagoat
       if (r === "events") return reply(events(c).filter((e) => (e.id as number) > Number(url.searchParams.get("after") ?? 0)));
       if (r.startsWith("requests/")) {
         const t = c.turns.at(-1);
-        if (t) t.answered = true;
+        if (t) { t.answered = true; t.option = b.option_id; }
         return reply({});
       }
       if (r === "prompts") {

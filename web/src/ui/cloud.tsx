@@ -1,14 +1,61 @@
 import { AgentMessage } from "../blocks/agent-message";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
-import { cloudApi as api, cloudPanes, cloudTerminal as terminal, useCloudPanes, type CloudAgent as Agent, type CloudRun as Run } from "../cloud";
-type Block = { kind: string; body?: unknown; summary?: string; request_id?: string; options?: { optionId: string; name?: string }[]; schema?: { properties?: Record<string, { type?: string; title?: string; enum?: string[] }>; required?: string[] } };
-type Event = { id: number; stage?: string; state?: string; data?: string; blocks?: Block[] };
+import { cloudApi as api, cloudPanes, cloudTerminal as terminal, useCloudPanes, type CloudAgent as Agent, type CloudRun as Run, type PastCloudTab } from "../cloud";
+type Block = { kind: string; body?: unknown; summary?: string; name?: string; request_id?: string; options?: { optionId: string; name?: string }[]; schema?: { properties?: Record<string, { type?: string; title?: string; enum?: string[] }>; required?: string[] } };
+export type Event = { id: number; kind?: string; stage?: string; state?: string; data?: string; blocks?: Block[] };
+
+const parsed = (data: string | undefined): Record<string, unknown> => {
+  try { const v = JSON.parse(data ?? "{}"); return v && typeof v === "object" ? v : {}; } catch { return {}; }
+};
+
+/** Nothing to show: an empty string, or an empty object or list (a tool
+ * call's input before the agent has filled it in is `{}`). */
+export function emptyBody(body: unknown): boolean {
+  if (body == null) return true;
+  if (typeof body === "string") { const t = body.trim(); return !t || t === "{}" || t === "[]"; }
+  if (Array.isArray(body)) return body.length === 0;
+  return typeof body === "object" && Object.keys(body).length === 0;
+}
+
+/** The transcript's blocks in order, with each run of text (or thinking)
+ * chunks joined into one: Managoat sends a message as many chunks, one
+ * block each, that join with nothing between them. Anything else (a tool
+ * call, an approval, the next prompt) ends the run. `init` and `raw`
+ * blocks are bookkeeping, not output. */
+export function transcriptBlocks(events: Event[]): { key: string; block: Block }[] {
+  const out: { key: string; block: Block }[] = [];
+  for (const event of events) {
+    (event.blocks ?? []).forEach((block, index) => {
+      if (block.kind === "init" || block.kind === "raw") return;
+      const last = out.at(-1);
+      const joins = (k: string) => k === "text" || k === "thinking" || k === "thought";
+      if (joins(block.kind) && typeof block.body === "string" && last && last.block.kind === block.kind && typeof last.block.body === "string") {
+        last.block = { ...last.block, body: last.block.body + block.body };
+        return;
+      }
+      out.push({ key: `${event.id}-${index}`, block });
+    });
+  }
+  return out;
+}
+
+/** How each request the transcript shows was settled, from its `request`
+ * `done` stage: whether it was answered and with which option. */
+function settledRequests(events: Event[]): Map<string, { outcome?: string; option?: string }> {
+  const settled = new Map<string, { outcome?: string; option?: string }>();
+  for (const e of events) {
+    if (e.stage !== "request" || e.state !== "done") continue;
+    const d = parsed(e.data);
+    const id = d.request_id ?? d.requestId;
+    if (typeof id === "string") settled.set(id, { outcome: typeof d.outcome === "string" ? d.outcome : undefined, option: typeof d.option_id === "string" ? d.option_id : undefined });
+  }
+  return settled;
+}
 
 function eventFailure(event: Event): string {
-  let data: { reason?: unknown; error?: unknown } = {};
-  try { data = JSON.parse(event.data ?? "{}"); } catch { /* Fall back to the stage below. */ }
-  if (data && typeof data.reason === "string") return data.reason;
+  const data = parsed(event.data);
+  if (typeof data.reason === "string") return data.reason;
   if (data && typeof data.error === "string") return data.error;
   return `Cloud execution failed during ${event.stage ?? "the run"}.`;
 }
@@ -115,7 +162,7 @@ function SecretEditor({ names, refresh }: { names: string[]; refresh: () => Prom
  * (`workspaces/<id>/tabs/<tab>`). Polling stops once `ended` says so and
  * the transcript is read to its end. */
 export function useCloudConversation<T>(path: string, ended: (item: T) => boolean) {
-  const [item, setItem] = useState<T | null>(null); const [events, setEvents] = useState<Event[]>([]); const [error, setError] = useState(""); const [answered, setAnswered] = useState<string[]>([]); const [pending, setPending] = useState<string[]>([]);
+  const [item, setItem] = useState<T | null>(null); const [events, setEvents] = useState<Event[]>([]); const [error, setError] = useState(""); const [answered, setAnswered] = useState<Record<string, string>>({}); const [pending, setPending] = useState<string[]>([]);
   const cursor = useRef(0);
   useEffect(() => {
     let active = true, timer: ReturnType<typeof setTimeout>;
@@ -130,30 +177,85 @@ export function useCloudConversation<T>(path: string, ended: (item: T) => boolea
     };
     void poll(); return () => { active = false; clearTimeout(timer); };
   }, [path]);
-  const answer = async (request: string, body: unknown) => { await api(`${path}/requests/${encodeURIComponent(request)}`, "POST", body); setAnswered((old) => [...old, request]); };
+  // What each request was answered with here: the option's id, or the
+  // form's action.
+  const answer = async (request: string, body: { option_id?: string; action?: string }) => {
+    await api(`${path}/requests/${encodeURIComponent(request)}`, "POST", body);
+    setAnswered((old) => ({ ...old, [request]: body.option_id ?? body.action ?? "answered" }));
+  };
   return { item, events, error, setError, pending, answered, answer };
 }
 
-/** The transcript and its approvals, shared by a run and a Cloud workspace
- * tab: the last failure, then each block, with permission and question
- * requests answerable while they're pending and `ended` is false. */
+/** The transcript and its approvals, shared by a run, a Cloud workspace
+ * tab and a past tab: the last failure, then each block, with permission
+ * and question requests answerable while they're pending and `ended` is
+ * false, and said how they were settled once they aren't. `lead` is the
+ * prompt to show first when the transcript doesn't carry it. */
 export function CloudTranscript({ lead, events, pending, answered, ended, answer, setError }: {
-  lead?: string; events: Event[]; pending: string[]; answered: string[]; ended: boolean;
-  answer: (request: string, body: unknown) => Promise<void>; setError: (error: string) => void;
+  lead?: string; events: Event[]; pending: string[]; answered: Record<string, string>; ended: boolean;
+  answer: (request: string, body: { option_id?: string; action?: string }) => Promise<void>; setError: (error: string) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   useLayoutEffect(() => { if (scroller.current && stick.current) scroller.current.scrollTop = scroller.current.scrollHeight; });
-  const open = (request: string) => !ended && pending.includes(request) && !answered.includes(request);
+  const open = (request: string) => !ended && pending.includes(request) && !(request in answered);
+  const settled = settledRequests(events);
+  const blocks = transcriptBlocks(events);
+  // Managoat's transcript opens each turn with its prompt: a lead the
+  // transcript already has isn't shown twice.
+  const showLead = lead !== undefined && !blocks.some(({ block }) => block.kind === "prompt");
+  /** How a request that's no longer open was settled. */
+  const outcome = (request: string, options?: Block["options"]): string => {
+    const named = (id?: string) => (id && options?.find((o) => o.optionId === id)?.name) || id;
+    if (request in answered) return answered[request] === "decline" ? "Declined" : answered[request] === "accept" ? "Answered" : `Answered: ${named(answered[request])}`;
+    const s = settled.get(request);
+    if (s?.option) return `Answered: ${named(s.option)}`;
+    if (s?.outcome && s.outcome !== "answered") return `Not answered (${s.outcome.replaceAll("_", " ")})`;
+    if (s) return "Answered";
+    return pending.includes(request) ? "Waiting" : "No longer waiting";
+  };
   return <>
     {events.filter((event) => event.state === "failed").slice(-1).map((event) => <p key={event.id} role="alert" class="control-error">{eventFailure(event)}</p>)}
-    <div class="agent-log cloud-transcript" ref={scroller} onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>{lead !== undefined && <div class="agent-user">{lead}</div>}{events.flatMap((event) => (event.blocks ?? []).map((block, index) => <div key={`${event.id}-${index}`}>
-      {block.kind === "permission_request" && block.request_id ? <div class="agent-perm" role="alertdialog" aria-label={block.summary ?? "Agent approval"}><pre class="agent-perm-cmd">{block.summary}</pre>{block.options?.map((option) => <button key={option.optionId} disabled={!open(block.request_id!)} onClick={() => void answer(block.request_id!, { option_id: option.optionId }).catch((e: Error) => setError(e.message))}>{option.name ?? option.optionId}</button>)}</div>
-        : block.kind === "elicitation_request" && block.request_id ? <Question block={block} disabled={!open(block.request_id)} answer={(body) => answer(block.request_id!, body)} />
-        : block.kind === "prompt" && typeof block.body === "string" ? <div class="agent-user">{block.body}</div>
-        : <AgentMessage text={typeof block.body === "string" ? block.body : block.body ? JSON.stringify(block.body, null, 2) : block.summary ?? ""} thought={block.kind === "thinking" || block.kind === "thought"} />}
-    </div>))}</div>
+    <div class="agent-log cloud-transcript" ref={scroller} onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>{showLead && <div class="agent-user">{lead}</div>}{blocks.map(({ key, block }) => {
+      const body = <CloudBlock block={block} open={open} outcome={outcome} answer={answer} setError={setError} />;
+      return body && <div key={key}>{body}</div>;
+    })}</div>
   </>;
+}
+
+function CloudBlock({ block, open, outcome, answer, setError }: {
+  block: Block; open: (request: string) => boolean; outcome: (request: string, options?: Block["options"]) => string;
+  answer: (request: string, body: { option_id?: string; action?: string }) => Promise<void>; setError: (error: string) => void;
+}) {
+  const request = block.request_id;
+  if (block.kind === "permission_request" && request) {
+    return <div class="agent-perm" role={open(request) ? "alertdialog" : undefined} aria-label={block.summary ?? "Agent approval"} data-request={request} data-settled={open(request) ? undefined : ""}>
+      <pre class="agent-perm-cmd">{block.summary || block.name}</pre>
+      {open(request)
+        ? block.options?.map((option) => <button key={option.optionId} onClick={() => void answer(request, { option_id: option.optionId }).catch((e: Error) => setError(e.message))}>{option.name ?? option.optionId}</button>)
+        : <p class="agent-perm-done">{outcome(request, block.options)}</p>}
+    </div>;
+  }
+  if (block.kind === "elicitation_request" && request) {
+    return open(request) ? <Question block={block} answer={(body) => answer(request, body)} />
+      : <div class="agent-perm" data-request={request} data-settled=""><p>{String(block.body ?? "The agent asked a question")}</p><p class="agent-perm-done">{outcome(request)}</p></div>;
+  }
+  if (block.kind === "prompt" && typeof block.body === "string") return <div class="agent-user">{block.body}</div>;
+  // A tool's output is text it printed, not markdown.
+  if (block.kind === "tool_result") {
+    if (emptyBody(block.body)) return null;
+    const failed = (block as { error?: boolean }).error === true;
+    return <details class={`agent-tool cloud-tool${failed ? " failed" : ""}`}><summary class="agent-tool-head"><span class="agent-tool-title">{failed ? "Tool failed" : "Tool output"}</span></summary><pre class="agent-tool-text">{typeof block.body === "string" ? block.body : JSON.stringify(block.body, null, 2)}</pre></details>;
+  }
+  if (block.kind === "tool_use") {
+    const title = [block.name, block.summary].filter(Boolean).join(" · ") || "tool";
+    return emptyBody(block.body)
+      ? <div class="agent-tool cloud-tool"><div class="agent-tool-head"><span class="agent-tool-title">{title}</span></div></div>
+      : <details class="agent-tool cloud-tool"><summary class="agent-tool-head"><span class="agent-tool-title">{title}</span></summary><pre class="agent-tool-text">{typeof block.body === "string" ? block.body : JSON.stringify(block.body, null, 2)}</pre></details>;
+  }
+  const text = !emptyBody(block.body) ? (typeof block.body === "string" ? block.body : JSON.stringify(block.body, null, 2)) : block.summary ?? "";
+  if (!text.trim()) return null;
+  return <AgentMessage text={text} thought={block.kind === "thinking" || block.kind === "thought"} />;
 }
 
 /** A past run, read only: what it was asked, its transcript, and its saved
@@ -167,6 +269,17 @@ export function RunDetails({ id, back }: { id: string; back?: () => void }) {
   </>}</div>;
 }
 
+/** A closed tab, read only: its transcript, kept after its conversation
+ * ended and after its Cloud workspace was deleted. */
+export function PastTabDetails({ id }: { id: string }) {
+  const { item: tab, events, error, setError, pending, answered, answer } = useCloudConversation<PastCloudTab>(`past-tabs/${id}`, () => true);
+  return <div class="agent cloud-agent" data-cloud-pane={id} data-past-tab-view={id}>{error && <p role="alert">{error}</p>}{tab && <>
+    <div class="agent-bar"><span class="agent-status">Closed</span><span class="agent-name">{tab.agent_name}</span><span class="host-tag" title={tab.model}>{tab.runtime}</span><span class="host-tag">Past tab</span></div>
+    <div class="agent-note">{tab.cloud_workspace_name}{tab.cloud_workspace_deleted ? " (deleted)" : ""} · <span class="mono">{tab.cwd}</span> · Read only: its conversation has ended.</div>
+    <CloudTranscript events={events} pending={pending} answered={answered} ended answer={answer} setError={setError} />
+  </>}</div>;
+}
+
 function SavedResults({ result }: { result: Record<string, unknown> }) {
   const diff = result.diff as { diff?: string } | undefined;
   const files = result.files as Record<string, { content: string; encoding: string }> | undefined;
@@ -177,7 +290,7 @@ function SavedResults({ result }: { result: Record<string, unknown> }) {
   </>;
 }
 
-function Question({ block, disabled, answer }: { block: Block; disabled: boolean; answer: (body: unknown) => Promise<void> }) {
+function Question({ block, answer }: { block: Block; answer: (body: { action: string; content?: unknown }) => Promise<void> }) {
   const [values, setValues] = useState<Record<string, unknown>>({}); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   return <form class="cloud-form" onSubmit={async (e) => { e.preventDefault(); setBusy(true); try { await answer({ action: "accept", content: values }); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}>
     <p>{String(block.body ?? "The agent needs your input")}</p>
@@ -192,13 +305,15 @@ function Question({ block, disabled, answer }: { block: Block; disabled: boolean
             ? <input type="number" required={required} step={field.type === "integer" ? "1" : "any"} onInput={(e) => set(e.currentTarget.valueAsNumber)} />
             : <input type="text" required={required} onInput={(e) => set(e.currentTarget.value)} />}</label>;
     })}
-    {error && <p role="alert">{error}</p>}<button disabled={disabled || busy}>Answer</button><button type="button" disabled={disabled || busy} onClick={() => void answer({ action: "decline" }).catch((e: Error) => setError(e.message))}>Decline</button>
+    {error && <p role="alert">{error}</p>}<button disabled={busy}>Answer</button><button type="button" disabled={busy} onClick={() => void answer({ action: "decline" }).catch((e: Error) => setError(e.message))}>Decline</button>
   </form>;
 }
 
-/** The shown past run, as a tab: closing it goes back to the machine. */
+/** The shown past run or past tab, as a tab: closing it goes back to the
+ * machine. */
 export function CloudTabs() {
   const selected = useCloudPanes();
   if (!selected) return null;
-  return <div class="tab selected" role="tab" aria-selected key={selected}><span class="host-tag">Cloud</span><span class="tab-label">Past run</span><button class="tab-close" title="Close past run" aria-label="Close past run" onClick={(e) => { e.stopPropagation(); cloudPanes.local(); }}>×</button></div>;
+  const what = selected.startsWith("cwc_") ? "Past tab" : "Past run";
+  return <div class="tab selected" role="tab" aria-selected key={selected}><span class="host-tag">Cloud</span><span class="tab-label">{what}</span><button class="tab-close" title={`Close ${what.toLowerCase()}`} aria-label={`Close ${what.toLowerCase()}`} onClick={(e) => { e.stopPropagation(); cloudPanes.local(); }}>×</button></div>;
 }

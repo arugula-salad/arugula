@@ -25,11 +25,16 @@ secrets) and workspace, named after the Cloud workspace's id. Nothing is
 shared between Cloud workspaces.
 
 **Its state** shows in the sidebar and the header: *Setting up* while
-packages install, repositories clone and the setup script runs; *Ready*;
+packages install, repositories clone and the setup script runs, with the
+step it's on (*Setting up · packages*); *Ready*;
 *Parked* while Managoat has put an idle machine to sleep (a prompt to any
 tab wakes it); *Failed*, with Managoat's failing step and the end of what
 it printed; and *Rebuild needed* when what it was built from has changed
 since. Control polls the workspace for these; a restart doesn't lose them.
+**Setup log** on the workspace's page (and *Show setup log* on a failed
+one) reads what the last setup printed, step by step, as Managoat kept
+and redacted it; it's read when opened, never polled, and never wakes a
+parked machine. Both need Managoat v0.39.0.
 
 **Tabs.** **+ Agent** opens a tab: a cloud agent (curated, or one of
 yours), a runtime and model from the list control offers, the directory it
@@ -39,8 +44,13 @@ while the Cloud workspace is setting up keeps its first prompt until setup
 is done, and says so. Each tab gets its own Managoat agent, made from the
 agent definition as it was when the tab opened, with every tool call
 asking first. Approvals and questions show in the tab, in the bell's
-drawer and the swarm, and as a push. Closing a tab ends its conversation
-and deletes its agent.
+drawer and the swarm, and as a push; once answered they say how. Closing
+a tab ends its conversation and deletes its agent; its transcript stays,
+read only, under *Past tabs* on the Cloud workspaces page, and so do the
+tabs of a deleted Cloud workspace, until the account is deleted. A tab
+whose conversation failed (a first prompt that ran a setup that failed
+ends that conversation in Managoat) starts a new conversation on its
+next prompt, with the old transcript kept above.
 
 **New agent → Run on: Cloud** opens an agent as a tab in one of your Cloud
 workspaces (the one shown, or the newest), or in a new one made from the

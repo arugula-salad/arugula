@@ -7,8 +7,8 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
-  cloudApi as api, cloudTabAttention, cloudWorkspaceMounts, cloudWorkspaceRoute, cloudWorkspaces, cloudWorkspaceState, useCloudPanes,
-  type CloudAgent, type CloudModel, type CloudTab, type CloudWorkspace, type CloudWorkspaceSpec,
+  cloudApi as api, cloudPanes, cloudTabAttention, cloudWorkspaceMounts, cloudWorkspaceRoute, cloudWorkspaces, cloudWorkspaceState, setupStepName, useCloudPanes,
+  type CloudAgent, type CloudModel, type CloudSetupLog, type CloudTab, type CloudWorkspace, type CloudWorkspaceSpec, type PastCloudTab,
 } from "../cloud";
 import { ConfirmRemove } from "./confirm";
 import { CloudTranscript, useCloudConversation } from "./cloud";
@@ -286,15 +286,65 @@ export function CloudWorkspaceMain() {
   );
 }
 
-/** A failed setup: Managoat's failing step and the end of what it printed. */
+/** A failed setup: Managoat's failing step and the end of what it printed
+ * (since v0.39.0 a failed script's `error` ends with its output's tail, so
+ * it's shown as lines), and the way to its whole setup log. */
 function CloudWorkspaceFailure({ w }: { w: CloudWorkspace }) {
   if (w.status !== "failed") return null;
+  const showLog = () => {
+    if (cloudWorkspaceRoute()?.tab) cloudWorkspaces.open(w.id);
+    scrollToLog = true;
+    requestAnimationFrame(() => {
+      const log = document.querySelector<HTMLDetailsElement>("[data-cloud-setup-log]");
+      if (log) { log.open = true; log.scrollIntoView({ block: "start" }); }
+    });
+  };
   return (
     <div class="cloud-ws-failed" role="alert" data-cloud-failed>
       <p><b>Setup failed.</b> Change its settings below if they need it, then Retry. A prompt to one of its tabs sets it up again too.</p>
-      {w.error && <pre class="cloud-ws-error">{w.error}</pre>}
+      {w.error && <pre class="cloud-ws-error" data-cloud-error>{w.error}</pre>}
+      <p><button class="link" data-show-setup-log onClick={showLog}>Show setup log</button></p>
       <RetryCloudWorkspace w={w} />
     </div>
+  );
+}
+
+/** What the last setup printed, step by step: read from control when it's
+ * opened (Managoat keeps it, so it reads without waking the machine), never
+ * polled. Reopening reads it again. */
+/** Show setup log asked for it: once it's read, bring it into view. */
+let scrollToLog = false;
+
+function CloudSetupLog({ w }: { w: CloudWorkspace }) {
+  const [log, setLog] = useState<CloudSetupLog | null | undefined>(undefined);
+  const [error, setError] = useState("");
+  const shown = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (log === undefined || !scrollToLog) return;
+    scrollToLog = false;
+    shown.current?.scrollIntoView({ block: "start" });
+  }, [log]);
+  const read = () => {
+    setError("");
+    void api<{ log: CloudSetupLog | null }>(`workspaces/${w.id}/setup-log`).then((v) => setLog(v.log), (e: Error) => setError(e.message));
+  };
+  return (
+    <details class="cloud-setup-log" data-cloud-setup-log ref={shown} onToggle={(e) => { if (e.currentTarget.open) read(); }}>
+      <summary><h3>Setup log</h3></summary>
+      {error ? <p role="alert" class="control-error">{error}</p>
+        : log === undefined ? <p class="dim">Loading…</p>
+        : !log ? <p class="dim">No setup has been kept yet.</p>
+        : <>
+          <p class="dim">{log.status ? `${log.status[0].toUpperCase()}${log.status.slice(1)}` : ""}{log.step ? ` at ${setupStepName(log.step)}` : ""}{log.finished_at ? ` · ${new Date(log.finished_at).toLocaleString()}` : ""} <button class="link" onClick={read}>Read again</button></p>
+          {log.steps.map((step, i) => (
+            <details key={`${step.step}-${i}`} class="cloud-setup-step" data-setup-step={step.step} data-setup-status={step.status} open={step.status === "failed"}>
+              <summary><span class="mono">{setupStepName(step.step)}</span> <span class={`cloud-setup-status ${step.status ?? ""}`}>{step.status}</span></summary>
+              {step.omitted_lines ? <p class="dim">{step.omitted_lines} earlier line{step.omitted_lines === 1 ? "" : "s"} left out.</p> : null}
+              {step.output ? <pre class="cloud-ws-error">{step.output}</pre> : <p class="dim">It printed nothing.</p>}
+            </details>
+          ))}
+        </>}
+    </details>
   );
 }
 
@@ -314,6 +364,29 @@ function CloudWorkspaceList({ create }: { create: () => void }) {
           <li key={w.id}>
             <button class="cloud-ws-list-name" title={w.name} onClick={() => showCloudWorkspace(w)}>{w.name}</button>
             <span class="cloud-ws-list-state">{cloudWorkspaceState(w).word} · {tabsOf(w).length} tab{tabsOf(w).length === 1 ? "" : "s"}</span>
+          </li>
+        ))}
+      </ul>
+      <PastTabs />
+    </>
+  );
+}
+
+/** Closed tabs, read only: what a closed tab, or a deleted Cloud
+ * workspace's, leaves to read. Read when the list is shown. */
+function PastTabs() {
+  const [tabs, setTabs] = useState<PastCloudTab[]>([]);
+  useEffect(() => { void api<{ past_tabs: PastCloudTab[] }>("past-tabs").then((v) => setTabs(v.past_tabs), () => {}); }, []);
+  if (!tabs.length) return null;
+  return (
+    <>
+      <h3>Past tabs</h3>
+      <p class="dim">Closed tabs, and the tabs of deleted Cloud workspaces: their transcripts, to read.</p>
+      <ul class="cloud-ws-list" data-past-tabs>
+        {tabs.map((t) => (
+          <li key={t.id}>
+            <button class="cloud-ws-list-name" data-past-tab={t.id} title={`${t.agent_name} in ${t.cloud_workspace_name}`} onClick={() => cloudPanes.open(t.id)}>{t.agent_name} · {t.runtime}</button>
+            <span class="cloud-ws-list-state">{t.cloud_workspace_name}{t.cloud_workspace_deleted ? " (deleted)" : ""} · {new Date(t.closed).toLocaleDateString()}</span>
           </li>
         ))}
       </ul>
@@ -349,6 +422,7 @@ function CloudWorkspaceHome({ w }: { w: CloudWorkspace }) {
       )}
       <h3>Changes</h3>
       <CloudWorkspaceChanges w={w} />
+      <CloudSetupLog w={w} />
     </div>
   );
 }

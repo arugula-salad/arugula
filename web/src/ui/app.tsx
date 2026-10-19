@@ -4,7 +4,7 @@
 // the layers over them (menus, dialogs, the palette).
 
 import { cloudPanes, cloudWorkspaceRoute, useCloudPanes } from "../cloud";
-import { CloudTabs, RunDetails } from "./cloud";
+import { CloudTabs, PastTabDetails, RunDetails } from "./cloud";
 import { CloudWorkspaceCrumbs, CloudWorkspaceMain, CloudWorkspaceTabStrip, DeleteCloudWorkspace } from "./cloud-workspaces";
 import { RebuildCloudWorkspace } from "./cloud-workspace-rebuild";
 import { useEffect, useLayoutEffect, useState } from "preact/hooks";
@@ -116,7 +116,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   const overviewOpen = ws && !!overview && !!state && !cloud && !cloudWs;
   const main = (
     <main class="main" inert={chatOpen || overviewOpen}>
-      {cloudWs ? <CloudWorkspaceMain /> : cloud ? <RunDetails key={cloud} id={cloud} /> : !state ? (
+      {cloudWs ? <CloudWorkspaceMain /> : cloud ? (cloud.startsWith("cwc_") ? <PastTabDetails key={cloud} id={cloud} /> : <RunDetails key={cloud} id={cloud} />) : !state ? (
         <HostPicker />
       ) : state.sessions.length === 0 ? (
         <NoSessions client={client} phone={phone} />

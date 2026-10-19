@@ -1,5 +1,5 @@
 //! `/api/cloud/workspaces/{id}/{files,file,diff,git-status}`: a Cloud
-//! workspace's disk, read-only, proxied to Managoat's reads of its current
+//! workspace's disk, read-only (and `setup-log`, what its last setup printed), proxied to Managoat's reads of its current
 //! machine (S40, M118). Managoat redacts what they return and never resumes
 //! a parked machine for one, so a read here never wakes it either: control
 //! only ever sends these GETs. Every lookup is the caller's own: another
@@ -129,6 +129,61 @@ pub async fn git_status(
         &["path", "repo_root", "branch", "untracked", "entries", "truncated"],
     )
     .await
+}
+
+/// What the last setup printed, step by step, redacted by Managoat
+/// (v0.39.0, managoat#3009): `{log: null}` until a setup has begun, else
+/// `{log: {status, step, started_at, finished_at, steps: [{step, status,
+/// started_at, finished_at, output, omitted_lines, omitted_bytes}]}}`.
+/// Managoat keeps it, not the machine, so it reads while the machine is
+/// failed, lost or parked, and never wakes it.
+pub async fn setup_log(
+    State(app): State<Arc<App>>,
+    session: Session,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let cloud = enabled(&app, &session.account)?;
+    app.db
+        .cloud_workspace(&session.account, &id)?
+        .ok_or_else(|| err(StatusCode::NOT_FOUND, "cloud workspace not found"))?;
+    let Some(machine) = app.db.cloud_workspace_provider_id(&session.account, &id)? else {
+        return Ok(Json(serde_json::json!({ "log": null })));
+    };
+    let value = match cloud.provider.read_cloud_workspace(&machine, "setup-log", &[]).await {
+        Ok(value) => value,
+        // Managoat has no such workspace (any more): nothing was kept.
+        Err(e) if e.downcast_ref::<ReadRefusal>().is_some_and(|r| r.status == 404) => Value::Null,
+        Err(_) => return Err(err(StatusCode::BAD_GATEWAY, "could not read the setup log; try again")),
+    };
+    Ok(Json(serde_json::json!({ "log": setup_log_fields(&value) })))
+}
+
+/// Only the documented fields of a setup log: no ids, nothing Managoat adds.
+pub(super) fn setup_log_fields(value: &Value) -> Value {
+    if !value.is_object() {
+        return Value::Null;
+    }
+    let pick = |v: &Value, fields: &[&str]| -> Map<String, Value> {
+        fields.iter().filter_map(|f| v.get(*f).map(|x| ((*f).to_owned(), x.clone()))).collect()
+    };
+    let mut log = pick(value, &["status", "step", "started_at", "finished_at"]);
+    let steps: Vec<Value> = value["steps"]
+        .as_array()
+        .map(|steps| {
+            steps
+                .iter()
+                .filter(|s| s.is_object())
+                .map(|s| {
+                    Value::Object(pick(
+                        s,
+                        &["step", "status", "started_at", "finished_at", "output", "omitted_lines", "omitted_bytes"],
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    log.insert("steps".into(), Value::Array(steps));
+    Value::Object(log)
 }
 
 /// Managoat confines the path to the machine's roots; control only refuses

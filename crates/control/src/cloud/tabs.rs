@@ -176,7 +176,8 @@ pub struct Prompt {
 
 /// A follow-up. A parked machine wakes on it. A response lost on the way
 /// back is a 502, never sent again here: the client reads the tab's events
-/// before it retries.
+/// before it retries. To a tab whose conversation failed it starts a new
+/// one (`{"relaunched": true}`).
 pub async fn prompt(
     State(app): State<Arc<App>>,
     session: Session,
@@ -187,15 +188,34 @@ pub async fn prompt(
     if input.prompt.trim().is_empty() || input.prompt.len() > 64_000 {
         return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "a prompt must contain 1–64000 bytes"));
     }
-    let conversation = conversation(&app, &session, &id, &tab)?;
-    let request = format!("{tab}-{}", hex::encode(arugula_e2e::random::<8>()));
-    cloud.provider.prompt(&conversation, &input.prompt, &request).await.map_err(|e| {
-        match e.downcast_ref::<HttpFailure>().map(|f| f.0) {
-            Some(409) => err(StatusCode::CONFLICT, "this tab can't take a prompt now; wait for its turn to end"),
-            Some(422) => err(StatusCode::UNPROCESSABLE_ENTITY, "Managoat refused the prompt"),
-            _ => err(StatusCode::BAD_GATEWAY, "could not deliver the prompt; refresh the tab before retrying"),
+    // Managoat's `failed` is terminal: a conversation that failed (one whose
+    // first prompt ran a setup that failed, say) takes no more prompts. The
+    // tab gets a new conversation instead, started with this prompt, and
+    // keeps the old one's transcript above it.
+    let relaunch = |gone: bool| -> Result<Json<Value>, ApiError> {
+        if !app.db.relaunch_cloud_tab(&session.account, &id, &tab, &input.prompt, gone)? {
+            return Err(err(StatusCode::CONFLICT, "this tab is starting a new conversation; wait for it"));
         }
-    })?;
+        app.analytics.capture(&session.account, "cloud tab relaunched", json!({ "gone": gone }));
+        Ok(Json(json!({"relaunched": true})))
+    };
+    let t = found(&app, &session, &id, &tab)?;
+    if t.status == "failed" && app.db.cloud_tab_conversation(&session.account, &id, &tab)?.is_some() {
+        return relaunch(false);
+    }
+    let conversation = conversation(&app, &session, &id, &tab)?;
+    if t.status == "opening" {
+        return Err(err(StatusCode::CONFLICT, "this tab is still opening"));
+    }
+    let request = format!("{tab}-{}", hex::encode(arugula_e2e::random::<8>()));
+    if let Err(e) = cloud.provider.prompt(&conversation, &input.prompt, &request).await {
+        return match e.downcast_ref::<HttpFailure>().map(|f| f.0) {
+            Some(410) => relaunch(true),
+            Some(409) => Err(err(StatusCode::CONFLICT, "this tab can't take a prompt now; wait for its turn to end")),
+            Some(422) => Err(err(StatusCode::UNPROCESSABLE_ENTITY, "Managoat refused the prompt")),
+            _ => Err(err(StatusCode::BAD_GATEWAY, "could not deliver the prompt; refresh the tab before retrying")),
+        };
+    }
     app.analytics.capture(
         &session.account,
         "cloud tab prompted",
@@ -253,4 +273,44 @@ pub async fn answer(
 ) -> Result<Json<Value>, ApiError> {
     let conversation = conversation(&app, &session, &id, &tab)?;
     deliver_answer(&app, &session.account, &tab, &conversation, &request, answer).await
+}
+
+// ---- past tabs: closed ones, and those of deleted Cloud workspaces
+
+/// The account's closed tabs, read only: their conversations and agents
+/// are gone, their transcripts stay. Another account's are never listed.
+pub async fn past(State(app): State<Arc<App>>, session: Session) -> Result<Json<Value>, ApiError> {
+    Ok(Json(json!({"past_tabs": app.db.past_cloud_tabs(&session.account)?})))
+}
+
+fn past_found(app: &App, session: &Session, tab: &str) -> Result<crate::db::cloud::PastCloudTab, ApiError> {
+    app.db.past_cloud_tab(&session.account, tab)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "past tab not found"))
+}
+
+pub async fn past_show(
+    State(app): State<Arc<App>>,
+    session: Session,
+    Path(tab): Path<String>,
+) -> Result<Json<crate::db::cloud::PastCloudTab>, ApiError> {
+    Ok(Json(past_found(&app, &session, &tab)?))
+}
+
+pub async fn past_events(
+    State(app): State<Arc<App>>,
+    session: Session,
+    Path(tab): Path<String>,
+    Query(query): Query<EventQuery>,
+) -> Result<Json<Value>, ApiError> {
+    past_found(&app, &session, &tab)?;
+    Ok(Json(json!({"events": app.db.cloud_events(&session.account, &tab, query.after)?})))
+}
+
+/// A past tab asks nothing: its requests ended with it.
+pub async fn past_requests(
+    State(app): State<Arc<App>>,
+    session: Session,
+    Path(tab): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    past_found(&app, &session, &tab)?;
+    Ok(Json(json!({"requests": []})))
 }

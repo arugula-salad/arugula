@@ -16,12 +16,13 @@ export async function cloudApi<T>(path: string, method = "GET", body?: unknown):
 }
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
-export const cloudRoute = () => /^#cloud=(run_[0-9a-f]+)$/.exec(location.hash)?.[1] ?? null;
+/** The shown past run (`#cloud=run_…`) or past tab (`#cloud=cwc_…`). */
+export const cloudRoute = () => /^#cloud=((?:run|cwc)_[0-9a-f]+)$/.exec(location.hash)?.[1] ?? null;
 addEventListener("hashchange", changed);
 export const cloudPanes = {
   account: "", enabled: false,
   subscribe(fn: () => void) { listeners.add(fn); return () => { listeners.delete(fn); }; },
-  /** Show a past run. */
+  /** Show a past run or a past tab. */
   open(id: string) { location.hash = `cloud=${id}`; changed(); },
   /** Back to the machine: leaves a past run or a Cloud workspace. */
   local() { if (cloudRoute() || cloudWorkspaceRoute()) { history.replaceState(null, "", location.pathname + location.search); changed(); } },
@@ -74,7 +75,16 @@ export type CloudWorkspace = {
   pending: CloudWorkspaceChange[]; settings_applied: boolean;
   /** A rebuild or retry waiting for Managoat to have a machine free (M120), and why the last one that waited didn't happen. */
   rebuild_queued: boolean; rebuild_error: string | null;
+  /** The step its setup is running while it's provisioning (Managoat v0.39.0). */
+  setup_step?: string | null;
 };
+/** What a Cloud workspace's last setup printed, step by step, redacted by Managoat. */
+export type CloudSetupLog = {
+  status?: string; step?: string | null; started_at?: string | null; finished_at?: string | null;
+  steps: { step: string; status?: string; started_at?: string | null; finished_at?: string | null; output?: string; omitted_lines?: number; omitted_bytes?: number }[];
+};
+/** A setup step as people read it: "setup_script" → "setup script". */
+export const setupStepName = (step: string) => step.replaceAll("_", " ");
 /** A saved setting the machine wasn't built with: `before` is built (null when not known), `after` saved. `env_vars` are names only. */
 export type CloudWorkspaceChange = { field: string; before: unknown; after: unknown };
 
@@ -89,6 +99,12 @@ export type CloudTab = {
   status: string; error: string | null; waiting_for_setup: boolean; created: number;
 };
 export type CloudModel = { runtime: string; model: string };
+/** A closed tab, read only: closed on its own or with its deleted Cloud
+ * workspace. Its transcript is kept. */
+export type PastCloudTab = {
+  id: string; cloud_workspace: string; cloud_workspace_name: string; cloud_workspace_deleted: boolean;
+  agent_name: string; runtime: string; model: string; cwd: string; created: number; closed: number;
+};
 
 export function cloudWorkspaceRoute(): { workspace: string | null; tab: string | null } | null {
   const m = /^#cloud-ws(?:=(cw_[0-9a-f]+)(?:\/(cwc_[0-9a-f]+))?)?$/.exec(location.hash);
@@ -99,7 +115,7 @@ export function cloudWorkspaceRoute(): { workspace: string | null; tab: string |
 export function cloudWorkspaceState(w: CloudWorkspace): { word: string; dot: "needs_input" | "working" | "done" | "idle" | "offline" } {
   if (w.status === "deleting") return { word: "Deleting", dot: "offline" };
   if (w.status === "failed") return { word: "Failed", dot: "offline" };
-  if (w.status === "provisioning") return { word: "Setting up", dot: "working" };
+  if (w.status === "provisioning") return { word: w.setup_step ? `Setting up · ${setupStepName(w.setup_step)}` : "Setting up", dot: "working" };
   if (w.stale) return { word: cloudWorkspaceRebuildBadge(w)!, dot: "done" };
   if (w.sandbox_status === "suspended") return { word: "Parked", dot: "idle" };
   return { word: "Ready", dot: "idle" };
