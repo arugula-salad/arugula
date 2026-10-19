@@ -1,0 +1,32 @@
+[  0.1s] control up at http://127.0.0.1:35525 (pid 916644)
+[  0.2s] team acme (f4521d367c13cab8): jake owner, alex editor
+[  5.2s] box-a 597263b688cf4018 (jake's, in acme, pid 916879); box-b 5d93202e40b5869c (alex's own, pid 917159)
+[  6.7s] box-a pane %2 (session 2) has an M61 thread of 2 messages and a session thread of 1, on box-a's disk
+[  6.9s] jake captured box-a's pane over the relay: test calc::mean ... FAILED
+  left: 3
+ right: 2
+[  7.0s] alex captured box-b's pane over the relay: deploy: staging is at 4f2c1e0, health 200
+[  7.5s] both machines stopped; control's directory, as jake sees it: ["box-a online=false"]
+[  7.5s] both machines stopped; control's directory, as alex sees it: ["box-b online=false","box-a online=false"]
+[  7.5s] box-a's threads dir: pane-2.jsonl, reads.json, session-2.jsonl
+[  7.5s] one old message as the daemon wrote it: {"id":1,"at":1792443654713,"who":"owner","name":"owner","text":"Before the move: this mean test has been flaky all week.","quote":{"pane":2,"text":"test calc::mean ... FAILED"}}
+[  7.5s] imported: [{"messages":2,"room":"th_debe00ea5e91b372","same_numbers":2,"target":"2"},{"messages":1,"room":"th_daaa45bfbced4213","same_numbers":1,"target":"2"}]
+[  7.5s] alex's phone subscribed to push at http://127.0.0.1:39915/alex-phone
+[  7.8s] jake posted in #general: {"mentions":["9bfcf6a1b5efd7ab"],"pushed":[{"account":"9bfcf6a1b5efd7ab","why":"mention"}],"seq":1}
+[  7.8s] alex's live stream got it 2 ms after the post: {"event":"message","data":{"room":"ch_83d8f9346fab26a7","seq":1},"at":1792443655796}
+[  7.8s] alex posted in #general, quoting a pane on box-b (his own, not the team's): {"mentions":[],"pushed":[],"seq":2}
+[  7.8s] alex wrote to jake in a DM: {"mentions":[],"pushed":[{"account":"b5527af4dae4e6a4","why":"dm"}],"seq":1}
+[  7.8s] jake answered in the DM: {"mentions":["9bfcf6a1b5efd7ab"],"pushed":[{"account":"9bfcf6a1b5efd7ab","why":"mention"}],"seq":2}
+[  7.8s] jake's rooms: ["pane pane 2: last 2, read 2, unread 0, mentions 0","session session 2: last 1, read 1, unread 0, mentions 0","channel general: last 2, read 1, unread 1, mentions 0","dm with alex: last 2, read 2, unread 0, mentions 0"]
+[  7.8s] alex's rooms: ["pane pane 2: last 2, read 0, unread 2, mentions 0","session session 2: last 1, read 0, unread 1, mentions 0","channel general: last 2, read 2, unread 0, mentions 0","dm with jake: last 2, read 1, unread 1, mentions 1"]
+[  7.8s] #general as jake sees it: [{"seq":1,"name":"jake","text":"@alex the mean test fails on box-a, quoted below. Can you look?","quote":"test calc::mean ... FAILED\n  left: 3\n right: 2","pane":{"machine":"597263b688cf4018","machine_name":"box-a","opens":true,"pane":"2"}},{"seq":2,"name":"alex","text":"Looking. Meanwhile staging on my box says this:","quote":"deploy: staging is at 4f2c1e0, health 200","pane":{"machine":"5d93202e40b5869c","machine_name":"box-b","opens":false,"pane":"2"}}]
+[  7.8s] the pane chips as alex sees them: [{"machine":"597263b688cf4018","machine_name":"box-a","opens":true,"pane":"2"},{"machine":"5d93202e40b5869c","machine_name":"box-b","opens":true,"pane":"2"}]
+[  7.9s] box-a's pane %2 thread, imported, as alex reads it with box-a off: [{"seq":1,"name":"jake","text":"Before the move: this mean test has been flaky all week.","quote":"test calc::mean ... FAILED","imported":"imported"},{"seq":2,"name":"jake","text":"Second note, still on box-a's disk.","quote":null,"imported":"imported"}]
+[  7.9s] sam (not in acme): 0 rooms, #general: /api/chat/rooms/ch_83d8f9346fab26a7/messages: 404 {"error":"no such room"}, search "mean": 0 hits
+[  7.9s] alex read #general up to the end: {"id":"ch_83d8f9346fab26a7","kind":"channel","last":2,"machine":null,"mentions":0,"name":"general","read":2,"scope":"f4521d367c13cab8","target":null,"unread":0,"with":null}
+[  7.9s] jake searched "mean": 3 hits: ["dm_94cb25814412f5fe#2: Yes. @alex ship it after the mean fix.","ch_83d8f9346fab26a7#1: @alex the mean test fails on box-a, quoted below. Can you lo","th_debe00ea5e91b372#1: Before the move: this mean test has been flaky all week."]
+[  7.9s] alex searched "FAILED" (in quotes too): 2 hits
+[  8.9s] alex's phone got 2 pushes: [{"body":"@alex the mean test fails on box-a, quoted below. Can you look?","control":true,"tag":"chat-ch_83d8f9346fab26a7","title":"jake mentioned you in #general"},{"body":"Yes. @alex ship it after the mean fix.","control":true,"tag":"chat-dm_94cb25814412f5fe","title":"jake mentioned you in a direct message"}]
+[  8.9s] live events alex's stream got: [{"room":"ch_83d8f9346fab26a7","seq":1},{"room":"ch_83d8f9346fab26a7","seq":2},{"room":"dm_94cb25814412f5fe","seq":1},{"room":"dm_94cb25814412f5fe","seq":2},{"room":"th_debe00ea5e91b372","seq":3}]
+[ 12.4s] 2000 idle live streams: control's RSS 33976 kB before, 76544 kB with them open (21.3 kB each); one post reached 2000 of them, the last 78 ms after it was sent
+[ 12.5s] done; control's database is $RIG/control/control.db
