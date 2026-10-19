@@ -17,6 +17,15 @@ export function convTap(n: { daemon?: string; thread?: string }): string | undef
   return `/#chat=${t}${n.daemon ? `&host=${n.daemon}` : ""}`;
 }
 
+/** A chat push from control (M123): `chat: {room, seq}`, opened on the chat
+ * page at that message. Anything that isn't a room's id opens nothing. */
+export function chatTap(n: { chat?: unknown }): string | undefined {
+  const c = n.chat as { room?: unknown; seq?: unknown } | undefined;
+  if (!c || typeof c.room !== "string" || !/^[a-z]{2}_[0-9a-f]{8,32}$/.test(c.room)) return undefined;
+  const msg = typeof c.seq === "number" && Number.isInteger(c.seq) ? `&msg=${c.seq}` : "";
+  return `/#chat=${c.room}${msg}`;
+}
+
 /** A push's Share (#237): the pane, with its session's share picker open. */
 export function shareUrl(n: { pane: number; daemon?: string }): string {
   return (n.daemon ? `/#pane=${n.daemon}.${n.pane}` : `/#pane=${n.pane}`) + "&share";

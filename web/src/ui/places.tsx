@@ -12,6 +12,7 @@ import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { parseThreadKey, threadKey, type ThreadTarget } from "../proto";
 import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
+import { chat, chatStore, ROOM_ID } from "../chat-store";
 
 // ---- the route
 
@@ -27,6 +28,8 @@ export interface ChatRoute {
   /** M75: Activity (your mentions), or search results for `q`. */
   view?: "activity" | "search";
   q?: string;
+  /** M123: a room in control's chat (`#chat=<room>`). */
+  room?: string;
 }
 
 /** `#chat`, `#chat=<host>/<pane-N|session-N|conv-c-…>` for one thread, and
@@ -36,6 +39,10 @@ export function chatRoute(): ChatRoute | null {
   if (location.hash === "#chat=activity") return { view: "activity" };
   const q = /^#chat=search\/(.*)$/.exec(location.hash);
   if (q) return { view: "search", q: safeDecode(q[1]) };
+  // M123: a room in control's chat, and a message in it (imported ones
+  // are numbered 0 and below).
+  const r = /^#chat=([a-z]{2}_[0-9a-f]+)(?:&msg=(-?\d+))?$/.exec(location.hash);
+  if (r && ROOM_ID.test(r[1])) return { room: r[1], msg: r[2] ? Number(r[2]) : undefined };
   const m = /^#chat(?:=(.*)\/((?:pane|session)-\d+|conv-c-[0-9a-f]{32})(?:&msg=(\d+))?)?$/.exec(location.hash);
   if (!m) return null;
   return m[2] ? { host: safeDecode(m[1]), key: m[2], msg: m[3] ? Number(m[3]) : undefined } : {};
@@ -80,6 +87,20 @@ export function openChat(host?: string, target?: ThreadTarget, msg?: number) {
   else changed();
 }
 
+/** M123: a room in control's chat, at message `msg`. */
+export function openRoom(room: string, msg?: number) {
+  closeThread();
+  const hash = `chat=${room}${msg !== undefined ? `&msg=${msg}` : ""}`;
+  if (location.hash !== `#${hash}`) location.hash = hash;
+  else changed();
+}
+
+/** Whether this page has chat: control's (M123), or this machine's own
+ * threads while control's isn't on. */
+export function hasChat(client: Client): boolean {
+  return !!chatStore() || client.hasThreads();
+}
+
 export function closeChat() {
   history.replaceState(null, "", location.pathname + location.search);
   changed();
@@ -118,6 +139,8 @@ export function sources(client: Client, fleet: Fleet | null): Source[] {
 /** Unread messages in every thread this person sees, and whether one
  * mentions them: for the bar's button. */
 export function chatUnread(client: Client): { n: number; mention: boolean } {
+  const store = chatStore();
+  if (store) return store.unread();
   let n = 0;
   let mention = false;
   for (const s of sources(client, getFleet())) {
@@ -135,7 +158,7 @@ export function useChatTick(client: Client) {
   useEffect(() => {
     const fn = () => setTick((t) => t + 1);
     listeners.add(fn);
-    const offs = [client.subscribe(fn), getFleet()?.subscribe(fn)];
+    const offs = [client.subscribe(fn), getFleet()?.subscribe(fn), chat.subscribe(fn)];
     return () => {
       listeners.delete(fn);
       for (const off of offs) off?.();
@@ -190,7 +213,7 @@ export function closePlace(at: Place) {
  * (./app-bar). Agents (#403) is the machine owner's, with its flag. */
 export function Places({ client, at }: { client: Client; at: Place }) {
   useChatTick(client);
-  const { n, mention } = client.hasThreads() ? chatUnread(client) : { n: 0, mention: false };
+  const { n, mention } = hasChat(client) ? chatUnread(client) : { n: 0, mention: false };
   const agents = client.flag("agents") && !client.state?.roles;
   return (
     <div class="places" role="group" aria-label="Places">
@@ -212,10 +235,10 @@ export function Places({ client, at }: { client: Client; at: Place }) {
       >
         Swarm
       </button>
-      {client.hasThreads() && (
+      {hasChat(client) && (
         <button
           class={at === "chat" ? "place here" : "place"}
-          title="Chat: every thread, on every machine"
+          title={chatStore() ? "Chat: your teams' channels, messages and threads" : "Chat: every thread, on every machine"}
           data-open-chat
           aria-pressed={at === "chat"}
           onClick={() => at !== "chat" && openChat()}

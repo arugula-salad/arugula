@@ -7006,6 +7006,128 @@ button.thread-quote:hover {
   cursor: default;
 }
 
+/* M123: control's chat. The composer's "Quote a pane" beside Send. */
+.compose-box.with-tools {
+  grid-template-columns: 1fr auto auto;
+}
+
+.compose-tool {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 2px 6px 0;
+  border-radius: 6px;
+  color: var(--dim);
+}
+
+.compose-tool:hover,
+.compose-tool[aria-pressed="true"] {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+/* Picking a pane to quote, and the lines to keep from it. */
+.chat-quote-pick {
+  margin: 0 0 8px;
+  padding: 8px;
+  border: 1px solid var(--raised-hover);
+  border-radius: 8px;
+  background: var(--surface);
+  max-height: 50vh;
+  overflow: auto;
+}
+
+.chat-quote-pick header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.chat-quote-pick ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-quote-pick li button {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  text-align: left;
+  border-radius: 4px;
+}
+
+.chat-quote-pick li button:hover {
+  background: var(--raised);
+}
+
+.chat-quote-text {
+  width: 100%;
+  box-sizing: border-box;
+  font: 12px/1.35 ui-monospace, monospace;
+  color: var(--fg);
+  background: var(--letterbox);
+  border: 1px solid var(--raised-hover);
+  border-radius: 4px;
+  padding: 6px;
+}
+
+/* A quote whose pane the reader can't open: no pointer, no hover. */
+.thread-quote.inert {
+  cursor: default;
+}
+
+.chat-pane-chip {
+  font-family: ui-monospace, monospace;
+}
+
+.chat-older {
+  display: block;
+  margin: 8px auto;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: var(--dim);
+  border-radius: 10px;
+}
+
+.chat-older:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+.msg-edit textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 3em;
+  font: inherit;
+  color: var(--fg);
+  background: var(--letterbox);
+  border: 1px solid var(--raised-hover);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.msg-edit span {
+  font-size: 11px;
+}
+
+.chat-row.muted .chat-label {
+  opacity: 0.6;
+}
+
+.chat-sigil.chat-dm-pic {
+  width: 16px;
+  --msg-gutter: 16px;
+}
+
+.chat-sigil.chat-dm-pic .msg-avatar {
+  border-radius: 4px;
+  font-size: 8px;
+}
+
 .mention-pick {
   position: absolute;
   left: 12px;

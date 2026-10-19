@@ -1,9 +1,22 @@
 // Where a tap on a notification goes (src/tap.ts, used by the service
 // worker): the pane, the card, a mention's thread (M61), and a
-// conversation on the chat page (#855).
+// conversation on the chat page (#855), and a room of control's chat (M123).
 
 import { expect, test } from "@playwright/test";
-import { shareUrl, tapUrl, withShare } from "../src/tap";
+import { chatTap, shareUrl, tapUrl, withShare } from "../src/tap";
+
+test("a chat push from control opens its room at the message (M123)", () => {
+  const room = `ch_${"0a".repeat(8)}`;
+  expect(chatTap({ chat: { room, seq: 7 } })).toBe(`/#chat=${room}&msg=7`);
+  expect(chatTap({ chat: { room: `dm_${"1f".repeat(8)}` } })).toBe(`/#chat=dm_${"1f".repeat(8)}`);
+  // Imported messages are numbered 0 and below.
+  expect(chatTap({ chat: { room, seq: -3 } })).toBe(`/#chat=${room}&msg=-3`);
+  // Not a room's id, or no room: nothing to open.
+  for (const bad of ["ch_", "CH_0a0a0a0a", `ch_${"0a".repeat(8)}/../x`, `ch_${"0a".repeat(8)}&x=1`, 3, null]) {
+    expect(chatTap({ chat: { room: bad, seq: 1 } })).toBeUndefined();
+  }
+  expect(chatTap({})).toBeUndefined();
+});
 
 test("a tap opens the pane, and a mention's thread over it", () => {
   expect(tapUrl({ pane: 3 })).toBe("/#pane=3");

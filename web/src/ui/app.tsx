@@ -16,7 +16,8 @@ import { KeyBar, PhoneHeader } from "./phone";
 import { ThreadLayer } from "./threads";
 import { InLabs } from "./in-labs";
 import { agentsRoute } from "./agents-route";
-import { useChatOpen } from "./places";
+import { hasChat, useChatOpen } from "./places";
+import { chat, chatStore } from "../chat-store";
 import { AppBar } from "./app-bar";
 import { HostPicker, NewMachineNote, setMachineItems } from "./hosts";
 import { ControlRequests, ShareDialog } from "./people";
@@ -112,7 +113,9 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   const tab = client.tabView();
   // M73: the chat page covers the panes, which stay laid out under it (so
   // their terminals keep their size) but can't be reached.
-  const chatOpen = useChatOpen() && !!state && client.hasThreads();
+  // M123: control's chat needs no machine up.
+  useSubscribe((fn) => chat.subscribe(fn));
+  const chatOpen = useChatOpen() && (!!state || !!chatStore()) && hasChat(client);
   const overviewOpen = ws && !!overview && !!state && !cloud && !cloudWs;
   const main = (
     <main class="main" inert={chatOpen || overviewOpen}>
@@ -129,8 +132,8 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
     <>
       <MenuLayer />
       <PromptLayer />
-      <ThreadLayer phone={phone} />
-      {state && <InLabs on={client.hasThreads()}>{(l) => <l.ChatPage client={client} />}</InLabs>}
+      <ThreadLayer phone={phone} client={client} />
+      {(state || chatStore()) && <InLabs on={hasChat(client)}>{(l) => <l.ChatPage client={client} />}</InLabs>}
       <InLabs on={client.hasThreads()}>{(l) => <l.LinkLayer />}</InLabs>
       {state && <AgentsPageLayer client={client} />}
       <ConversationsLayer />
@@ -220,8 +223,8 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {phone && !cloudWs && state && state.sessions.length > 0 && client.panes.has(client.active() ?? -1) && <KeyBar client={client} />}
       <MenuLayer />
       <PromptLayer />
-      <ThreadLayer phone={phone} />
-      {state && <InLabs on={client.hasThreads()}>{(l) => <l.ChatPage client={client} />}</InLabs>}
+      <ThreadLayer phone={phone} client={client} />
+      {(state || chatStore()) && <InLabs on={hasChat(client)}>{(l) => <l.ChatPage client={client} />}</InLabs>}
       <InLabs on={client.hasThreads()}>{(l) => <l.LinkLayer />}</InLabs>
       {state && <AgentsPageLayer client={client} />}
       <ConversationsLayer />

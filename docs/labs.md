@@ -168,9 +168,15 @@ channels and DMs, and the threads about panes, held by control in plain
 text so they work with every machine asleep (DECISIONS.md "Chat lives in
 control, in plain text"). It's behind control's own `chat` flag, the
 account's or a team's (`POST /api/flags`), not the machine's. M122 is
-control's side only (the API under `/api/chat`, `crates/control/src/chat.rs`);
-the Chat page moves onto it in M123, and machines bring their old threads
-in with M124. Until then, what follows is the machine's own chat.
+control's side only (the API under `/api/chat`, `crates/control/src/chat.rs`).
+Since M123, control's page reads chat from control when that flag is on:
+the Chat page lists the team's channels and DMs, then the threads on panes
+and sessions by machine; *Thread* on a pane opens its room beside it; a
+quote's chip opens the pane only for someone who may reach its machine;
+pushes open `#chat=<room>` (`web/src/chat-store.ts`, `web/src/ui/room.tsx`,
+`web/src/ui/chat-rooms.tsx`). Machines bring their old threads in with
+M124. With control's flag off, or on a page a machine serves, what follows
+is the machine's own chat.
 
 - **Threads on panes and sessions**. Every pane and every session has
   a thread where the people working on it talk: *Thread* in a pane's menu,

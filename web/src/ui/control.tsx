@@ -9,6 +9,7 @@ import { enableControlPush } from "../push";
 import { AlongsideError, api, cameToRecover, DEVICE_HASH, deviceName, inApp, inviteInHash, JOIN_HASH, joinInHash, passkeyRegister, passkeySignIn, previewInvite, RefusedError, shownName, signedAppIn, signInNext, splitDeviceCode, takesSecret, wholeJoinInHash, type AppLogin, type ControlSession, type DeviceCode, type JoinRequest } from "../control";
 import { fingerprint, normalizeCode, normalizeSecret, splitJoinCode, type Cert } from "../e2e/cert.ts";
 import { useSubscribe } from "./hooks";
+import { chat } from "../chat-store";
 import { directory } from "../hosts";
 import { CopyButton, CopyText, download } from "./copy";
 import { ROLE_HELP, roleAs, roleLabel } from "./roles";
@@ -566,6 +567,7 @@ function RecoveryCodes({ s }: { s: ControlSession }) {
  * this account is waiting on (#103), and how to add a machine (#98). */
 export function NoMachines({ s, newAgent }: { s: ControlSession; newAgent?: () => void }) {
   useCloudPanes();
+  useSubscribe((fn) => chat.subscribe(fn));
   return (
     <div class="control-page">
       <header class="control-account" data-account-bar>
@@ -579,6 +581,12 @@ export function NoMachines({ s, newAgent }: { s: ControlSession; newAgent?: () =
             Waiting for {a.owners.length ? a.owners.join(" or ") : "an owner"} to add you to <b>{a.name}</b>. Their machines appear here when they do.
           </p>
         ))}
+        {/* M123: chat is control's, and needs no machine. */}
+        {chat.on && (
+          <button data-open-chat onClick={() => (location.hash = "chat")}>
+            Chat
+          </button>
+        )}
         {cloudPanes.enabled && newAgent && <button class="primary" onClick={newAgent}>New agent</button>}
         <button onClick={openPanel("cloud")}>Cloud agents</button>
         {cloudPanes.enabled && <button data-open-cloud-workspaces onClick={() => (location.hash = "cloud-ws")}>Cloud workspaces</button>}

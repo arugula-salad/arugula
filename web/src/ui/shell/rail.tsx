@@ -12,7 +12,7 @@ import { onSwarmRoute, openSwarm } from "../../swarm/route";
 import { openAgentsPage } from "../agents-route";
 import { settingsItems } from "../commands";
 import { openMenu } from "../menu";
-import { chatUnread, closePlace, currentPlace, openChat, openOverview, useChatTick, type Place } from "../places";
+import { chatUnread, closePlace, currentPlace, hasChat, openChat, openOverview, useChatTick, type Place } from "../places";
 import { countView } from "../../telemetry";
 import { AgentsIcon, ChatIcon, Mark, PanesIcon, SessionsIcon, SettingsIcon, SwarmIcon } from "./icons";
 import { focusSessionSearch, setSidebarOpen, useSidebar } from "./prefs";
@@ -37,7 +37,7 @@ function usePlace(client: Client): Place {
 export function Rail({ client }: { client: Client }) {
   const at = usePlace(client);
   const { open } = useSidebar();
-  const threads = client.hasThreads();
+  const threads = hasChat(client);
   const { n, mention } = threads ? chatUnread(client) : { n: 0, mention: false };
   // As places.tsx decides: the machine owner's, with the Labs flag.
   const agents = client.flag("agents") && !client.state?.roles;
