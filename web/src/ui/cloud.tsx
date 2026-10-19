@@ -13,37 +13,22 @@ function eventFailure(event: Event): string {
   return `Cloud execution failed during ${event.stage ?? "the run"}.`;
 }
 
-export function CloudPanel({ close, initialRun, notify, launchOnly = false, repeat }: { close: () => void; initialRun?: string; notify: () => Promise<string>; launchOnly?: boolean; repeat?: Run }) {
+/** The account's cloud agents: the ones it may open in a Cloud workspace's
+ * tabs, its secrets, and its past runs (runs are retired, S40 M119: they
+ * open read only, with their downloads). */
+export function CloudPanel({ close, notify }: { close: () => void; notify: () => Promise<string> }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [names, setNames] = useState<string[]>([]);
-  const [agent, setAgent] = useState(repeat?.spec.agent_id ?? "curated_coding");
-  const [repository, setRepository] = useState(repeat?.spec.repository ?? "");
-  const [gitRef, setGitRef] = useState(repeat?.spec.git_ref ?? "");
-  const [repositorySecret, setRepositorySecret] = useState("");
-  const [prompt, setPrompt] = useState(repeat?.spec.prompt ?? "");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState<string | null>(initialRun ?? null);
   const [editor, setEditor] = useState<Agent | "new" | null>(null);
-  const [limits, setLimits] = useState("");
   const [unavailable, setUnavailable] = useState("");
-  const requestKey = useRef(crypto.randomUUID());
-  useEffect(() => { requestKey.current = crypto.randomUUID(); }, [agent, repository, gitRef, repositorySecret, prompt]);
   const refresh = async () => {
-    const [catalog, history, secrets] = await Promise.allSettled([
-      api<{ agents: Agent[]; limits: { daily_runs: number; concurrent_runs: number; duration_ms: number } }>("agents"),
-      api<{ runs: Run[] }>("runs"), api<{ names: string[] }>("secrets"),
-    ]);
+    const [catalog, history, secrets] = await Promise.allSettled([api<{ agents: Agent[] }>("agents"), api<{ runs: Run[] }>("runs"), api<{ names: string[] }>("secrets")]);
     if (history.status === "fulfilled") setRuns(history.value.runs);
     if (secrets.status === "fulfilled") setNames(secrets.value.names);
-    if (catalog.status === "fulfilled") {
-      setAgents(catalog.value.agents); setUnavailable("");
-      const limits = catalog.value.limits;
-      setLimits(`${limits.daily_runs} runs per day · ${limits.concurrent_runs} at once · ${limits.duration_ms / 60000} minutes per run`);
-    } else {
-      setAgents([]); setLimits(""); setUnavailable(`New cloud runs are unavailable: ${catalog.reason.message}`);
-    }
+    if (catalog.status === "fulfilled") { setAgents(catalog.value.agents); setUnavailable(""); }
+    else { setAgents([]); setUnavailable(`Cloud agents are unavailable: ${catalog.reason.message}`); }
     if (history.status === "rejected") throw history.reason;
     if (secrets.status === "rejected") throw secrets.reason;
   };
@@ -53,38 +38,23 @@ export function CloudPanel({ close, initialRun, notify, launchOnly = false, repe
     void poll(); const timer = setInterval(() => void poll(), 5000);
     return () => { active = false; clearInterval(timer); };
   }, []);
-  return <div class={`cloud-panel${launchOnly ? " cloud-launch-form" : ""}`}>
-    {!launchOnly && <div class="prompt-buttons"><h2>Cloud agents</h2><button onClick={close}>Close</button></div>}
-    <p>Run an agent in a fresh checkout. Work continues when you close this window. Saved results remain after the checkout is removed.</p>
-    {!launchOnly && <button onClick={() => void notify().then((state) => { if (state !== "on") setError(state === "denied" ? "Notifications are blocked in browser settings." : "Notifications are unavailable in this browser."); }, (e: Error) => setError(e.message))}>Notify me when an agent needs input</button>}
-    <p class="dim">{unavailable || `Limited beta${limits ? ` · ${limits}` : ""}`}</p>
+  return <div class="cloud-panel">
+    <div class="prompt-buttons"><h2>Cloud agents</h2><button onClick={close}>Close</button></div>
+    <p>Agents run in Cloud workspaces: a machine in the cloud with your repositories on it. <b>New agent</b> → <b>Cloud</b> opens one there, and so does <b>+ Agent</b> in a Cloud workspace.</p>
+    {!unavailable && <p><button data-open-cloud-workspaces onClick={() => { close(); location.hash = "cloud-ws"; }}>Cloud workspaces</button></p>}
+    <button onClick={() => void notify().then((state) => { if (state !== "on") setError(state === "denied" ? "Notifications are blocked in browser settings." : "Notifications are unavailable in this browser."); }, (e: Error) => setError(e.message))}>Notify me when an agent needs input</button>
+    <p class="dim">{unavailable || "Limited beta"}</p>
     <p class="dim">Cloud execution processes your prompts, repository, selected secrets, and results. Terminal connections remain end-to-end encrypted.</p>
     {error && <p role="alert" class="control-error">{error}</p>}
-    {selected ? <RunDetails key={selected} id={selected} back={() => setSelected(null)} /> : <>
-      <form class="cloud-form" onSubmit={async (e) => {
-        e.preventDefault(); setBusy(true); setError("");
-        try {
-          const run = await api<Run>("runs", "POST", { request_key: requestKey.current, agent_id: agent, repository, git_ref: gitRef, repository_secret: repositorySecret || null, prompt });
-          requestKey.current = crypto.randomUUID(); cloudPanes.open(run.id); close();
-        } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
-      }}>
-        <label>Agent<select value={agent} onChange={(e) => setAgent(e.currentTarget.value)}>{agents.map((a) => <option key={a.id} value={a.id}>{a.definition.name}{a.curated ? " · Arugula" : ""}</option>)}</select></label>
-        <label>Repository URL<input type="url" required placeholder="https://github.com/owner/repository" value={repository} onInput={(e) => setRepository(e.currentTarget.value)} /></label>
-        <label>Branch or tag (optional)<input value={gitRef} onInput={(e) => setGitRef(e.currentTarget.value)} /></label>
-        <label>Repository credential<select value={repositorySecret} onChange={(e) => setRepositorySecret(e.currentTarget.value)}><option value="">Public repository</option>{names.map((n) => <option key={n}>{n}</option>)}</select></label>
-        <label>Task<textarea required rows={4} value={prompt} onInput={(e) => setPrompt(e.currentTarget.value)} /></label>
-        <button class="primary" disabled={busy || !agents.length}>{busy ? "Starting…" : "Run in cloud"}</button>
-      </form>
-      {!launchOnly && <><h3>Runs</h3>
-      {!runs.length && <p class="dim">Your runs will appear here.</p>}
-      <ul class="cloud-runs">{runs.map((r) => <li key={r.id}><button onClick={() => { cloudPanes.open(r.id); close(); }}>{r.spec.agent.name}: {r.spec.prompt.slice(0, 90)}</button><span>{r.state.replaceAll("_", " ")}</span></li>)}</ul>
-      <details><summary>Manage agents</summary><button onClick={() => setEditor("new")}>Create agent</button>
-        {agents.map((a) => <p key={a.id}>{a.definition.name} <button onClick={() => setEditor(a)}>{a.curated ? "Customize a copy" : "Edit"}</button></p>)}
+    <details><summary>Manage agents</summary><button onClick={() => setEditor("new")}>Create agent</button>
+      {agents.map((a) => <p key={a.id}>{a.definition.name} <button onClick={() => setEditor(a)}>{a.curated ? "Customize a copy" : "Edit"}</button></p>)}
         {editor && <AgentEditor key={typeof editor === "string" ? editor : editor.id} agent={editor === "new" ? undefined : editor} names={names} done={() => { setEditor(null); void refresh(); }} />}
-      </details>
-      <details><summary>Import an existing Managoat agent</summary><ImportAgent refresh={refresh} /></details>
-      <details><summary>Secrets</summary><SecretEditor names={names} refresh={refresh} /></details></>}
-    </>}
+    </details>
+    <details><summary>Import an existing Managoat agent</summary><ImportAgent refresh={refresh} /></details>
+    <details><summary>Secrets</summary><SecretEditor names={names} refresh={refresh} /></details>
+    {runs.length > 0 && <><h3>Past runs</h3>
+      <p class="dim">One-shot runs are retired. What they did stays here to read and download.</p>
+      <ul class="cloud-runs" data-past-runs>{runs.map((r) => <li key={r.id}><button onClick={() => { cloudPanes.open(r.id); close(); }}>{r.spec.agent.name}: {r.spec.prompt.slice(0, 90)}</button><span>{r.state.replaceAll("_", " ")}</span></li>)}</ul></>}
   </div>;
 }
 
@@ -124,7 +94,7 @@ function ImportAgent({ refresh }: { refresh: () => Promise<void> }) {
       setKey(""); setMessage(`Imported ${result.agent.definition.name}. ${result.warnings.join(" ")}`); await refresh();
     } catch (error) { setMessage((error as Error).message); } finally { setBusy(false); }
   }}>
-    <p>Your old credential is used once to read the agent definition and is not saved. Cloud runs use Arugula's account. Reconnect tools and secrets after importing; old conversations stay on the old account.</p>
+    <p>Your old credential is used once to read the agent definition and is not saved. Cloud agents use Arugula's account. Reconnect tools and secrets after importing; old conversations stay on the old account.</p>
     <label>Old agent ID<input required value={id} onInput={(e) => setId(e.currentTarget.value)} /></label>
     <label>Old API credential<input required type="password" autoComplete="off" value={key} onInput={(e) => setKey(e.currentTarget.value)} /></label>
     <button disabled={busy}>Import definition</button>{message && <p role="status">{message}</p>}
@@ -133,7 +103,7 @@ function ImportAgent({ refresh }: { refresh: () => Promise<void> }) {
 
 function SecretEditor({ names, refresh }: { names: string[]; refresh: () => Promise<void> }) {
   const [name, setName] = useState(""); const [value, setValue] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
-  return <><p>Values are write-only. Updates apply to new runs; existing runs keep their selected credentials.</p><form class="cloud-form" onSubmit={async (e) => {
+  return <><p>Values are write-only. A Cloud workspace takes the ones it names when it's made.</p><form class="cloud-form" onSubmit={async (e) => {
     e.preventDefault(); setBusy(true); setError("");
     try { await api(`secrets/${encodeURIComponent(name)}`, "PUT", { value }); setValue(""); setName(""); await refresh(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }}><label>Name<input required placeholder="GITHUB_TOKEN" value={name} onInput={(e) => setName(e.currentTarget.value)} /></label><label>Value<input type="password" autoComplete="new-password" required value={value} onInput={(e) => setValue(e.currentTarget.value)} /></label><button disabled={busy}>Save secret</button></form>
@@ -186,15 +156,15 @@ export function CloudTranscript({ lead, events, pending, answered, ended, answer
   </>;
 }
 
+/** A past run, read only: what it was asked, its transcript, and its saved
+ * results to download. Runs are retired (S40, M119). */
 export function RunDetails({ id, back }: { id: string; back?: () => void }) {
   const { item: run, events, error, setError, pending, answered, answer } = useCloudConversation<Run>(`runs/${id}`, terminal);
-  const [repeat, setRepeat] = useState(false);
   return <div class="agent cloud-agent" data-cloud-pane={id}>{back && <button onClick={back}>Back to runs</button>}{error && <p role="alert">{error}</p>}{run && <>
-    <div class="agent-bar"><span class="agent-status">{run.state === "needs_input" ? "Needs you" : run.state.replaceAll("_", " ")}</span><span class="agent-name">{run.spec.agent.name}</span><span class="host-tag">Cloud</span><span class="agent-spacer" />{terminal(run) && <button onClick={() => setRepeat(true)}>Run again</button>}</div><div class="agent-note">{run.spec.repository} · {run.spec.git_ref || "default branch"} · Fresh checkout</div>
-    {!terminal(run) && <button onClick={() => void api(`runs/${id}/cancel`, "POST", {}).catch((e: Error) => setError(e.message))}>Cancel run</button>}
-    <CloudTranscript lead={run.spec.prompt} events={events} pending={pending} answered={answered} ended={terminal(run)} answer={answer} setError={setError} />
+    <div class="agent-bar"><span class="agent-status">{run.state.replaceAll("_", " ")}</span><span class="agent-name">{run.spec.agent.name}</span><span class="host-tag">Past run</span></div><div class="agent-note">{run.spec.repository} · {run.spec.git_ref || "default branch"} · Read only: runs are retired, and agents now run in Cloud workspaces.</div>
+    <CloudTranscript lead={run.spec.prompt} events={events} pending={pending} answered={answered} ended answer={answer} setError={setError} />
     {run.result && <><h3>Saved results</h3><button onClick={() => { const url = URL.createObjectURL(new Blob([JSON.stringify({ run, events }, null, 2)], { type: "application/json" })); const a = document.createElement("a"); a.href = url; a.download = `${id}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}>Download results and transcript</button><SavedResults result={run.result} /></>}
-  </>}{repeat && run && <div class="prompt-backdrop" role="dialog" aria-label="Run again"><div class="prompt cloud-launch"><h2>Run again</h2><p>This starts a fresh checkout. Saved changes from this run are not applied automatically.</p><CloudPanel launchOnly repeat={run} close={() => setRepeat(false)} notify={async () => "off"} /><button onClick={() => setRepeat(false)}>Cancel</button></div></div>}</div>;
+  </>}</div>;
 }
 
 function SavedResults({ result }: { result: Record<string, unknown> }) {
@@ -226,7 +196,9 @@ function Question({ block, disabled, answer }: { block: Block; disabled: boolean
   </form>;
 }
 
+/** The shown past run, as a tab: closing it goes back to the machine. */
 export function CloudTabs() {
   const selected = useCloudPanes();
-  return <>{cloudPanes.opened.map((id) => { const run = cloudPanes.runs.find((r) => r.id === id); return <div class={`tab${selected === id ? " selected" : ""}`} role="tab" aria-selected={selected === id} key={id} onClick={() => cloudPanes.open(id)}><span class="host-tag">Cloud</span><span class="tab-label">{run?.spec.prompt.slice(0, 45) || "Cloud agent"}</span>{run?.state === "needs_input" && <span class="attention" title="Needs you">●</span>}<button class="tab-close" title="Close cloud pane" aria-label="Close cloud pane" onClick={(e) => { e.stopPropagation(); cloudPanes.close(id); }}>×</button></div>; })}</>;
+  if (!selected) return null;
+  return <div class="tab selected" role="tab" aria-selected key={selected}><span class="host-tag">Cloud</span><span class="tab-label">Past run</span><button class="tab-close" title="Close past run" aria-label="Close past run" onClick={(e) => { e.stopPropagation(); cloudPanes.local(); }}>×</button></div>;
 }

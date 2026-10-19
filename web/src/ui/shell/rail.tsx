@@ -108,7 +108,7 @@ export function Rail({ client }: { client: Client }) {
       {agents && (
         <RailButton
           label="Agents"
-          tip="Agents: this machine's recipes and your team's agents (cloud runs open as tabs)"
+          tip="Agents: this machine's recipes and your team's agents (cloud agents open in Cloud workspaces)"
           here={at === "agents"}
           hook="data-open-agents"
           onClick={() => at !== "agents" && openAgentsPage()}

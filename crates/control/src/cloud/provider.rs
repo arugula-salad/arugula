@@ -117,24 +117,6 @@ impl Provider {
         Ok(value.get("data").cloned().unwrap_or(value))
     }
 
-    /// Each run gets its own conversation/sandbox. Explicitly prohibit the
-    /// provider from injecting its account-wide API credential into the sandbox.
-    pub async fn launch(&self, agent: &str, environment: &str, run: &str, prompt: &str) -> Result<Value> {
-        self.request(
-            Method::POST,
-            &["api", "conversations"],
-            Some(json!({
-                "agent_id": agent,
-                "environment_id": environment,
-                "prompt": prompt,
-                "client_request_id": run,
-                "sandbox_api_access": "none",
-                "labels": {"arugula_run": run},
-            })),
-        )
-        .await
-    }
-
     /// A tab: a conversation on a Cloud workspace's machine, in `cwd`. A
     /// workspace's machine is shared, so `sandbox_api_access: "none"` (which
     /// needs a sandbox of the conversation's own) is refused there and not
@@ -338,7 +320,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     #[tokio::test]
-    async fn launch_uses_server_auth_and_isolated_sandbox() {
+    async fn launch_uses_server_auth_and_the_cloud_workspace() {
         let received = Arc::new(Mutex::new(None));
         async fn capture(
             State(received): State<Arc<Mutex<Option<Value>>>>,
@@ -354,12 +336,15 @@ mod tests {
         let app = Router::new().route("/api/conversations", post(capture)).with_state(received.clone());
         let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let provider = Provider::new(&base, "server-secret".into()).unwrap();
-        let result = provider.launch("agent", "environment", "run_123", "hello").await.unwrap();
+        let result = provider
+            .launch_in_cloud_workspace("agent", "ws", "/home/sprite/app", "cwc_123", Some("hello"))
+            .await
+            .unwrap();
         assert_eq!(result["id"], "provider-conversation");
         let body = received.lock().unwrap().clone().unwrap();
-        assert_eq!(body["sandbox_api_access"], "none");
-        assert_eq!(body["client_request_id"], "run_123");
-        assert_eq!(body["environment_id"], "environment");
+        assert!(body.get("sandbox_api_access").is_none());
+        assert_eq!(body["client_request_id"], "cwc_123");
+        assert_eq!((&body["workspace_id"], &body["cwd"]), (&json!("ws"), &json!("/home/sprite/app")));
         assert!(body.get("channel_id").is_none());
         assert!(body.get("sandbox_id").is_none());
         assert!(!body.to_string().contains("server-secret"));
