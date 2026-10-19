@@ -10,7 +10,7 @@ import { useSubscribe } from "./hooks";
 import { AttentionBadge } from "./attention";
 import { HostCrumb, HostSection } from "./hosts";
 import { openSwarm } from "../swarm/route";
-import { openChat } from "./places";
+import { hasChat, openChat } from "./places";
 import { openChanges, openIssue, openPort, openPr } from "../blocks";
 import { startAgent } from "./agent-dialog";
 import { pickConversation } from "./conversations";
@@ -174,7 +174,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
           <button data-open-swarm onClick={act(openSwarm)}>
             Swarm
           </button>
-          {client.hasThreads() && (
+          {hasChat(client) && (
             <button data-open-chat onClick={act(() => openChat())}>
               Chat
             </button>

@@ -17,6 +17,10 @@ import { cardTitle, holdStill, reasonOf, shortHost, shortPaths, shownNow, wantsY
 import { CONV_SIGIL, paneLabel, sessionName, type Row } from "./chat";
 import { Markup } from "./markup";
 import { MsgAvatar } from "./threads";
+import type { ChatStore } from "../chat-store";
+import type { ChatHit, ChatMessage, ChatRoom } from "../proto";
+import { openRoom } from "./places";
+import { roomLabel, roomSigil, machineName } from "./room";
 
 // ---- every thread's messages, loaded as they're needed
 
@@ -288,6 +292,113 @@ export function SearchView({ all, q, multi, phone }: { all: Source[]; q: string;
   );
 }
 
+// ---- control's chat (M123): search and Activity over its rooms
+
+/** A message found in a room, and a way there. */
+function RoomHits({ store, hits }: { store: ChatStore; hits: { room: string; m: ChatMessage }[] }) {
+  return (
+    <ul class="chat-hits">
+      {hits.map(({ room, m }) => {
+        const r = store.room(room);
+        const unread = !!r && m.seq > r.read && !store.mine(m);
+        return (
+          <li key={`${room}/${m.seq}`}>
+            <button class={unread ? "chat-hit unread" : "chat-hit"} data-chat-hit={m.seq} data-hit-room={room} onClick={() => openRoom(room, m.seq)}>
+              <span class="chat-hit-where">
+                <span>{r ? whereOf(r) : "a room"}</span>
+                <time>{when(m.at)}</time>
+              </span>
+              <span class="chat-hit-body">
+                <MsgAvatar who={m.author || "gone"} name={m.name || "someone"} />
+                <span class="chat-hit-text">
+                  <b>{m.name || "someone"}</b>
+                  {m.text ? <Markup text={m.text} /> : <p class="thread-text">{m.quote}</p>}
+                </span>
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function whereOf(r: ChatRoom): string {
+  const name = `${roomSigil(r)} ${roomLabel(r)}`;
+  return r.machine ? `${name} · ${machineName(r.machine, r.machine_name ?? "")}` : name;
+}
+
+/** Search over the rooms this person reads, by control (`GET
+ * /api/chat/search`: words, `mea*`, `in:#ch`, `from:@login`,
+ * `has:quote`). */
+export function RoomSearchView({ store, q, phone }: { store: ChatStore; q: string; phone: boolean }) {
+  const [hits, setHits] = useState<ChatHit[] | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let live = true;
+    setErr("");
+    if (!q.trim()) return setHits([]);
+    setHits(null);
+    store.search(q).then(
+      (r) => live && setHits(r.found),
+      (e: Error) => live && (setErr(e.message), setHits([])),
+    );
+    return () => {
+      live = false;
+    };
+  }, [q]);
+  const n = hits?.length ?? 0;
+  return (
+    <section class="chat-thread chat-view" aria-label="Search" data-chat-search-view>
+      <ViewHead title={q ? `Results for “${q}”` : "Search"} sub={q ? (hits === null ? "Looking…" : `${n >= 50 ? "50+" : n} ${n === 1 ? "message" : "messages"}`) : undefined} phone={phone} />
+      {phone && <SearchField route={{ view: "search", q }} phone />}
+      <div class="thread-list">
+        {!q && <p class="thread-empty">Type to search every room you read. in:#channel, from:@someone and has:quote narrow it.</p>}
+        {q && hits?.length === 0 && !err && <p class="thread-empty">No messages match.</p>}
+        {err && <p class="thread-error">{err}</p>}
+        <RoomHits store={store} hits={(hits ?? []).map((h) => ({ room: h.room, m: h.message }))} />
+      </div>
+    </section>
+  );
+}
+
+/** How many rooms Activity reads for mentions of you. */
+const ACTIVITY_ROOMS = 30;
+
+/** What needs you on every machine, and messages that mention you. */
+export function RoomActivityView({ store, phone }: { store: ChatStore; phone: boolean }) {
+  const fleet = getFleet();
+  useSubscribe((fn) => fleet?.subscribe(fn) ?? (() => {}));
+  useSubscribe((fn) => store.subscribe(fn));
+  // Recent mentions, read or not: the newest page of the rooms that spoke
+  // most recently (those with an unread mention first), not only those
+  // with one unread.
+  const recent = [...store.rooms]
+    .filter((r) => r.last !== 0)
+    .sort((a, b) => b.mentions - a.mentions || b.last - a.last)
+    .slice(0, ACTIVITY_ROOMS)
+    .map((r) => r.id);
+  useEffect(() => {
+    for (const id of recent) void store.load(id).catch(() => {});
+  }, [recent.join(",")]);
+  const hits: { room: string; m: ChatMessage }[] = [];
+  for (const r of store.rooms) for (const m of store.messages(r.id)?.list ?? []) if (m.mentions.includes(store.me) && m.deleted === null) hits.push({ room: r.id, m });
+  hits.sort((a, b) => b.m.at - a.m.at);
+  const needs = needing(fleet);
+  shownNow(needs);
+  return (
+    <section class="chat-thread chat-view" aria-label="Activity" data-chat-activity-view>
+      <ViewHead title="Activity" sub="What needs you on every machine, and mentions of you" phone={phone} />
+      <div class="thread-list">
+        {fleet && needs.length > 0 && <NeedsYou fleet={fleet} panes={needs} />}
+        {hits.length === 0 && needs.length === 0 && <p class="thread-empty">Nothing for you yet. When an agent asks you something or finishes, or someone @mentions you, it's here.</p>}
+        {hits.length > 0 && needs.length > 0 && <h3 class="activity-head">Messages</h3>}
+        <RoomHits store={store} hits={hits.slice(0, 100)} />
+      </div>
+    </section>
+  );
+}
+
 /** The bar's search field: results show as you type. On a phone (#889)
  * it heads the results instead, opened from the list's search button: it
  * takes the focus when it's empty, and emptying it stays on the results. */
@@ -346,9 +457,24 @@ export function openSwitcher() {
   switcherListeners.forEach((fn) => fn());
 }
 
-function closeSwitcher() {
+export function closeSwitcher() {
   switcherOpen = false;
   switcherListeners.forEach((fn) => fn());
+}
+
+/** Whether the switcher is open, kept current (control's chat, M123,
+ * draws its own list of rooms in it). */
+export function useSwitcherOpen(): boolean {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((t) => t + 1);
+    switcherListeners.add(fn);
+    return () => {
+      switcherListeners.delete(fn);
+      switcherOpen = false;
+    };
+  }, []);
+  return switcherOpen;
 }
 
 interface Channel {

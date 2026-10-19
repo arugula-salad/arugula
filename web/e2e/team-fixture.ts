@@ -130,6 +130,15 @@ export class TeamControl {
     this.machines.set(name, { proc, args });
   }
 
+  /** Stop a machine's daemon (by its PID) and wait for it to exit. */
+  async stopMachine(name: string) {
+    const m = this.machines.get(name)!;
+    if (m.proc.exitCode !== null || m.proc.signalCode !== null) return;
+    const gone = new Promise((r) => m.proc.on("exit", r));
+    m.proc.kill("SIGTERM");
+    await gone;
+  }
+
   /** Stop a machine's daemon and start it again, on the same state. */
   async restartMachine(name: string) {
     const m = this.machines.get(name)!;

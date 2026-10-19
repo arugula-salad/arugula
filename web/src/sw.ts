@@ -12,14 +12,15 @@
 // itself, used only when the daemon that serves it doesn't answer: the page
 // can then still reach the other hosts on its saved list (M4a). Nothing else
 // is cached. Control's own notices (a new device or a team request
-// waiting, #104) open its page, which shows the prompt.
+// waiting, #104) open its page, which shows the prompt; its chat pushes
+// (M123) open the room on the chat page.
 //
 // Built by itself into dist/sw.js as a classic worker (vite.sw.config.ts).
 
 import { E2ESocket } from "./e2e/channel.ts";
 import type { ActRequest } from "./proto";
 import { existingKeys, loadWorkerDirectory } from "./e2e/keys.ts";
-import { convTap, shareUrl, tapThread, tapUrl, withShare } from "./tap.ts";
+import { chatTap, convTap, shareUrl, tapThread, tapUrl, withShare } from "./tap.ts";
 
 /** The parts of a service worker's global scope used here (the project's
  * types are the page's). */
@@ -101,6 +102,8 @@ interface Msg {
   reason?: { kind: string; actions: string[]; gate?: { id: string; title?: string; choices?: { value: string; label: string }[] } };
   /** Control's own (#104): a device or a person waits for approval. */
   control?: boolean;
+  /** M123: control's chat: the room and message a push is about. */
+  chat?: { room: string; seq: number };
   /** M61: an @mention in this thread (`pane-7`, `session-2`). */
   thread?: string;
 }
@@ -152,7 +155,7 @@ sw.addEventListener("push", (event: PushEvent) => {
       icon: "/icon.svg",
       requireInteraction: !!(approve || ask || gate || point || msg.cloud_run || msg.cloud_tab),
       actions,
-      data: { cloud_run: msg.cloud_run, cloud_workspace: msg.cloud_workspace, cloud_tab: msg.cloud_tab, pane: msg.pane, daemon: msg.daemon, thread: msg.thread, approve, ask, reason, control: msg.control === true },
+      data: { cloud_run: msg.cloud_run, cloud_workspace: msg.cloud_workspace, cloud_tab: msg.cloud_tab, pane: msg.pane, daemon: msg.daemon, thread: msg.thread, chat: msg.chat, approve, ask, reason, control: msg.control === true },
     } as NotificationOptions),
   );
 });
@@ -293,6 +296,23 @@ sw.addEventListener("notificationclick", (event: ClickEvent) => {
           }
         }
         return sw.clients.openWindow(shareUrl({ pane, daemon: data.daemon }));
+      })(),
+    );
+    return;
+  }
+  // A chat push from control (M123): the room, at the message.
+  const room = data.control ? chatTap(data) : undefined;
+  if (room) {
+    event.waitUntil(
+      (async () => {
+        const wins = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
+        for (const w of wins) {
+          if (w.focus) {
+            w.postMessage({ type: "open-room", url: room });
+            return w.focus();
+          }
+        }
+        return sw.clients.openWindow(room);
       })(),
     );
     return;
