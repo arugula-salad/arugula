@@ -93,3 +93,17 @@
 .picker.palette.phone { width: 100%; height: var(--app-height); max-height: 100%; border-radius: 0; }
 
 .picker.palette.phone .picker-list { flex: 1; max-height: none; }
+
+.appearance-control-look {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  text-align: left;
+}
+.appearance-control-look span { font-size: 12px; color: var(--subtle); }

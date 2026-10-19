@@ -42,6 +42,10 @@ function AppearanceDialog({ close }: { close: () => void }) {
       <div class="prompt appearance" data-appearance onKeyDown={(e) => e.key === "Escape" && close()}>
         <h2>Appearance</h2>
         <p class="hint">On this device. The terminals follow the palette.</p>
+        <button class="appearance-control-look" data-control-look onClick={() => setAppearance({ palette: "slate", finish: "flat", corners: "soft" })}>
+          <strong>Use Control look</strong>
+          <span>Near-black Slate, cyan focus, soft pane corners</span>
+        </button>
         <h3>Palette</h3>
         <div class="appearance-palettes" role="radiogroup" aria-label="Palette">
           <PaletteCard
