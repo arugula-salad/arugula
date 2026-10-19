@@ -28,6 +28,10 @@ export async function registerWorker(
       if (e.data?.type === "open-pane" && typeof e.data.pane === "number") onOpenPane(e.data.pane, e.data.daemon, e.data.thread, e.data.share === true);
       // #855: a conversation, on the chat page.
       if (e.data?.type === "open-chat" && typeof e.data.thread === "string") onOpenChat?.(e.data.thread, e.data.daemon);
+      // M123: a room in control's chat (sw.ts made the address: `/#chat=…`).
+      if (e.data?.type === "open-room" && typeof e.data.url === "string" && /^\/#chat=[a-z]{2}_[0-9a-f]+(?:&msg=-?\d+)?$/.test(e.data.url)) {
+        location.hash = e.data.url.slice(2);
+      }
       // #104: control's page looks for what waits (its prompt shows).
       if (e.data?.type === "control-refresh") dispatchEvent(new Event("arugula:control-refresh"));
       // M26: at its card on the swarm's rail.

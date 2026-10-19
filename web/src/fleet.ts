@@ -19,6 +19,7 @@
 
 import { Client } from "./client";
 import type { Driver, PaneInfo, Presence, State, ThreadSummary } from "./proto";
+import { chat, chatStore } from "./chat-store";
 import { RelayMux } from "./e2e/relaymux";
 
 export type HostStatus = "connecting" | "connected" | "stale" | "offline" | "asleep" | "capped";
@@ -217,6 +218,8 @@ export class Fleet {
   start() {
     if (this.timer !== undefined) return;
     this.timer = window.setInterval(() => this.tick(), 1000);
+    // M123: the panes' unread counts come from control's chat.
+    chat.subscribe(() => this.emit());
     document.addEventListener("visibilitychange", () => {
       clearTimeout(this.hidden);
       if (document.visibilityState === "visible") {
@@ -392,14 +395,14 @@ export class Fleet {
 
   /** Shows a pane in the tab view, and with `share` its session's share
    * picker (#237): set by the page. */
-  onOpen: (host: string, pane: number, share?: boolean) => void = () => {};
+  onOpen: (host: string, pane: number, share?: boolean, reveal?: string) => void = () => {};
 
   /** Open a pane of the merged list in its tab, connected for real (a
    * sleeping sandbox wakes for it); `share` opens the share picker for
    * its session there. */
-  open(host: string, pane: number, share = false) {
+  open(host: string, pane: number, share = false, reveal?: string) {
     this.touch(host);
-    this.onOpen(host, pane, share);
+    this.onOpen(host, pane, share, reveal);
   }
 
   /** Someone opened this host (or a pane on it): it counts as used. */
@@ -482,6 +485,11 @@ export class Fleet {
     return this.list.find((h) => h.name === name);
   }
 
+  /** A host by its daemon's id (control's name for a machine). */
+  hostById(id: string): FleetHost | undefined {
+    return this.list.find((h) => h.id === id);
+  }
+
   /** How many summary connections are open (or opening). */
   get connections(): number {
     return [...this.hosts.values()].filter((e) => e.client).length;
@@ -530,10 +538,14 @@ export class Fleet {
       const watchers = new Map<number, Presence[]>();
       for (const p of st.presence ?? []) if (p.pane !== undefined) (watchers.get(p.pane) ?? watchers.set(p.pane, []).get(p.pane)!).push(p);
       const threads = new Map<number, ThreadSummary>();
-      // Only where the machine has threads (labs): a cached summary has no
-      // client to ask, so shows none.
-      if (e.client?.hasThreads()) for (const t of st.threads ?? []) if ("pane" in t.target) threads.set(t.target.pane, t);
+      // M123: control's chat, by the machine's id, when it's on; else the
+      // machine's own threads, only where it has them (labs): a cached
+      // summary has no client to ask, so shows none.
+      const store = chatStore();
+      if (!store && e.client?.hasThreads()) for (const t of st.threads ?? []) if ("pane" in t.target) threads.set(t.target.pane, t);
+      const unreadOf = (pane: number) => (store ? store.paneUnread(e.ref.id, pane) : { unread: threads.get(pane)?.unread ?? 0, mention: !!threads.get(pane)?.mention });
       for (const info of st.panes) {
+        const u = unreadOf(info.id);
         // Someone else's private pane (M14): not even a tile.
         if (info.private && st.roles) continue;
         // A pane from another host in this layout (#17): its own host lists it.
@@ -550,8 +562,8 @@ export class Fleet {
           person,
           driver: info.driver ?? null,
           watchers: watchers.get(info.id) ?? [],
-          unread: threads.get(info.id)?.unread ?? 0,
-          mention: !!threads.get(info.id)?.mention,
+          unread: u.unread,
+          mention: u.mention,
         });
       }
     }

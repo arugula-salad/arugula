@@ -51,6 +51,11 @@
 //                      was built (Rebuild needed), and web, whose setup
 //                      failed (Retry sets it up). And a past run. The
 //                      fake keeps its state beside control's database.
+//   DEV_CONTROL_CHAT=1 control's chat (M123): team Acme with $DEV_CONTROL_LOGIN
+//                      its owner and DEV_CONTROL_LOGINS its members (their
+//                      browsers approved by headless devices of their own),
+//                      the team's `chat` flag on, and #general and a DM
+//                      seeded on the first run.
 //   DEV_CONTROL_CLOUD_FULL=1
 //                      with DEV_CONTROL_CLOUD, Managoat has no machine
 //                      free for a rebuild (503 fleet_full): a Rebuild
@@ -84,6 +89,7 @@ const logins = (process.env.DEV_CONTROL_LOGINS ?? "").split(",").map((l) => l.tr
 const labs = process.env.DEV_CONTROL_LABS !== "0";
 const approveAll = process.env.DEV_CONTROL_APPROVE_BROWSERS !== "0";
 const cloud = process.env.DEV_CONTROL_CLOUD === "1";
+const chatOn = process.env.DEV_CONTROL_CHAT === "1";
 const machines = process.argv.slice(2).length ? process.argv.slice(2) : ["workstation", "laptop"];
 const bin = process.env.TARGET_DIR ?? "../target/debug";
 const base = `http://${host}:${port}`;
@@ -319,6 +325,41 @@ async function device(): Promise<Device> {
   return d;
 }
 
+/** DEV_CONTROL_CHAT=1 (M123): team Acme, with $DEV_CONTROL_LOGIN its owner
+ * and everyone in DEV_CONTROL_LOGINS a member (each with a headless device
+ * of their own, kept in the state directory, which approves their
+ * browsers), control's `chat` flag on for it, and on the first run
+ * #general and a DM with a few messages. Returns the others' devices. */
+async function seedChat(d: Device): Promise<Device[]> {
+  const others: Device[] = [];
+  for (const l of logins) {
+    const file = join(dir, `device-${l}.json`);
+    let o: Device;
+    if (existsSync(file)) {
+      o = await Device.load(file);
+      await o.session(l);
+    } else o = await Device.signIn({ control: base, via, login: l, name: "dev-control" });
+    await o.save(file);
+    others.push(o);
+  }
+  const file = join(dir, "chat.json");
+  if (existsSync(file)) return others;
+  const team = await d.createTeam("Acme");
+  for (const o of others) await o.acceptInvite(team, await d.invite(team, "editor"));
+  if (others.length) await d.admitAll(team);
+  await d.api("/api/flags", { name: "chat", on: true, team });
+  const general = await d.api<{ id: string }>(`/api/chat/teams/${team}/channels`, { name: "general" });
+  await d.api(`/api/chat/rooms/${general.id}/messages`, { text: "Morning! The deploy went out green." });
+  for (const o of others) {
+    await o.api(`/api/chat/rooms/${general.id}/messages`, { text: `@${login} nice. I'll look at the flaky upload test next.` });
+    const dm = await o.api<{ id: string }>(`/api/chat/teams/${team}/dms`, { with: d.account });
+    await o.api(`/api/chat/rooms/${dm.id}/messages`, { text: "got a minute after standup?" });
+  }
+  writeFileSync(file, JSON.stringify({ team, general: general.id }));
+  log("chat: team Acme, #general");
+  return others;
+}
+
 /** `arugulad join`, approved by the device. */
 async function join_(d: Device, name: string, state: string) {
   const joining = spawn(`${bin}/arugulad`, ["join", base, "--name", name, "--state-dir", state], { stdio: ["pipe", "pipe", "inherit"] });
@@ -365,7 +406,7 @@ async function startMachines(d: Device) {
 }
 
 /** Any browser that signs in is approved, as another device of yours would. */
-async function approveBrowsers(d: Device) {
+async function approveBrowsers(d: Device, who = login) {
   for (;;) {
     try {
       const { pending } = await d.api<{ pending: Cert[] }>("/api/devices");
@@ -377,7 +418,7 @@ async function approveBrowsers(d: Device) {
       }
     } catch (e) {
       // Control restarting, or the session gone: sign in again.
-      await d.session(login).catch(() => {});
+      await d.session(who).catch(() => {});
       if (!(e instanceof Error && /401|403/.test(e.message))) log(`approving: ${String(e)}`);
     }
     await sleep(1000);
@@ -391,14 +432,16 @@ await startControl();
 const d = await device();
 await startMachines(d);
 if (cloud) await seedCloud(d).catch((e) => log(`Cloud workspaces: ${String(e)}`));
+const chatPeople = chatOn ? await seedChat(d).catch((e) => (log(`chat: ${String(e)}`), [] as Device[])) : [];
 console.log(`
 dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DEV_CONTROL_HOST=localhost)" : ""}
   Sign in with GitHub (the fake one signs you in as ${login}${logins.length ? `, or asks: ${[login, ...logins].join(", ")}` : ""});
   ${approveAll ? `${login}'s browsers are approved (press It matches: the account is ${fingerprint(d.root)})` : `${login}'s browsers stay waiting to be approved (DEV_CONTROL_APPROVE_BROWSERS=0)`}. Machines: ${machines.join(", ")}${labs ? ", with Labs" : ""}.
   ${blockDomain ? `Ports and editors open on b-<key>.${blockDomain} (Chrome; DEV_CONTROL_BLOCK_DOMAIN= for none; the block scripts aren't rebuilt on change).` : "No block domain: ports and editors are off on the machines."}
   ${cloud ? "Cloud is on, with a fake Managoat: Cloud workspaces app, api and web, and a past run." : "No Cloud (DEV_CONTROL_CLOUD=1 for Cloud workspaces with a fake Managoat)."}
+  ${chatOn ? `Chat is on: team Acme (${[login, ...chatPeople.map((o) => o.login)].join(", ")}) with #general${chatPeople.length ? " and a DM" : ""}; ${chatPeople.length ? `${chatPeople.map((o) => o.login).join(", ")}'s browsers are approved by their own devices.` : "DEV_CONTROL_LOGINS=sam for a second person."}` : "No chat in control (DEV_CONTROL_CHAT=1: team Acme with chat on)."}
   Edit web/src, wait for "web rebuilt", reload. State: ${dir}. Ctrl-C stops.
 `);
 // Leaving browsers alone: stay up for the web build and the machines.
-if (approveAll) await approveBrowsers(d);
+if (approveAll) await Promise.all([approveBrowsers(d), ...chatPeople.map((o) => approveBrowsers(o, o.login))]);
 else setInterval(() => {}, 1 << 30);
