@@ -1,0 +1,42 @@
+{
+  "assets": [
+    {
+      "b64": "iVBORw0KGgoBAgM=",
+      "name": "dot.png"
+    }
+  ],
+  "id": "00112233445566778899aabbccddeeff",
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "manifest": {
+    "assets": [
+      {
+        "mime": "image/png",
+        "name": "dot.png",
+        "size": 11
+      }
+    ],
+    "entries": [
+      {
+        "body": "Hello, **world**. 🥬\n\n![dot](assets/dot.png)",
+        "heading": "Intro",
+        "id": "s1",
+        "intent": "what it says"
+      },
+      {
+        "body": null,
+        "heading": "Later",
+        "id": "s2",
+        "intent": ""
+      }
+    ],
+    "title": "Vector"
+  },
+  "parts": [
+    "AAAAAAAAAAAAAAAAT/j577Usg0Jzit1cbED0u+hhADZL9Q9dorKR5quLLz8rLMSGcYmab1fhS9ey/0tii28khx0YKMJyjB1vJBQ8i5xHliFY9JhICAE+rqbQNsQ=",
+    "AAAAAAAAAAAAAAABN/qdlSqAVXB6DGsbm85bgzX2aHQX0y33USwhu0lUCnwAtC+UREDrEHn16XYDlmtXBDx9sg1xuOvie0ELee7/Z50rtf/2pIL7HZhEbMIgrGI=",
+    "AAAAAAAAAAAAAAACvSwGHMc4v6XKIlh+A2+b4uE+F63C0i3G6l9oGALpeajGS5yuQghGgzvxwHzzF//QWCszcM7010uF/rkCMk9ViP0AtbrYD3VtP72r8BJiqBQ=",
+    "AAAAAAAAAAAAAAADYkB3kWwYxLbf78pTiWQN8m/3gn99eX1tT1hKD8cuRjKCWkRz0lGK6eeFWrGywu/SrIilv5YQvAo5nh+GTvXsqZF0Hq/dNNNJcQ38NvJd61Y=",
+    "AAAAAAAAAAAAAAAEOXL8MPSsJpTXg1C3JZREvNH7x+xq/lOQi1HDnP8wlBCw6A=="
+  ],
+  "ver": 3
+}

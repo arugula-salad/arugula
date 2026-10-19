@@ -535,6 +535,9 @@ pub struct Control {
     retrying: tokio::sync::Mutex<()>,
     /// How talking to control is going (#325).
     link: std::sync::Mutex<Link>,
+    /// Where shared Docs are viewed, when and from which control it was read
+    /// (`doc_viewer`).
+    doc_info: std::sync::Mutex<Option<(std::time::Instant, String, String)>>,
 }
 
 /// How talking to control is going, for [`State`].
@@ -706,6 +709,12 @@ pub fn auth_header(keys: &DeviceKeys, method: &str, path_and_query: &str, body: 
 
 pub(crate) const AUTH: &str = "x-arugula-auth";
 
+/// What sharing a Doc says when this machine isn't in control, or its
+/// control doesn't keep shared Docs (#1064).
+const DOC_INFO_TTL: Duration = Duration::from_secs(600);
+pub const DOC_NOT_JOINED: &str = "this machine hasn't joined control: sharing needs control";
+pub const DOC_NO_LINKS: &str = "this control can't keep shared Docs yet";
+
 impl Control {
     pub fn new(
         state_dir: &Path,
@@ -742,6 +751,7 @@ impl Control {
             ),
             retrying: Default::default(),
             link: std::sync::Mutex::new(Link { dropped: read_dropped(state_dir), ..Default::default() }),
+            doc_info: Default::default(),
         });
         me.reload();
         me
@@ -1564,6 +1574,66 @@ impl Control {
             return Err(v["error"].as_str().map_or_else(|| format!("control said {status}"), str::to_owned));
         }
         Ok(serde_json::from_value(v).unwrap_or_default())
+    }
+
+    /// Where shared Docs are opened (#1064), from control's `/control.json`
+    /// when it keeps them. The refusals say what to do.
+    pub async fn doc_viewer(&self) -> Result<String, String> {
+        let e = self.enrolled().ok_or(DOC_NOT_JOINED)?;
+        // Kept ten minutes, so opening a Doc doesn't ask control each time;
+        // a refused call about a link forgets it (`doc_call`).
+        if let Some((at, url, viewer)) = self.doc_info.lock().unwrap().as_ref()
+            && *url == e.saved.url
+            && at.elapsed() < DOC_INFO_TTL
+        {
+            return Ok(viewer.clone());
+        }
+        let at = format!("{}{}", e.saved.url.trim_end_matches('/'), wire::CONTROL_JSON);
+        let docs: wire::ControlDocs = self
+            .http
+            .get(at)
+            .send()
+            .await
+            .map_err(|e| format!("can't reach control: {e}"))?
+            .json()
+            .await
+            .map_err(|_| DOC_NO_LINKS.to_owned())?;
+        match (docs.doc_links, docs.doc_viewer) {
+            (Some(_), Some(v)) if !v.is_empty() => {
+                let v = v.trim_end_matches('/').to_owned();
+                *self.doc_info.lock().unwrap() = Some((std::time::Instant::now(), e.saved.url.clone(), v.clone()));
+                Ok(v)
+            }
+            _ => Err(DOC_NO_LINKS.into()),
+        }
+    }
+
+    /// A signed call about a shared Doc (`/api/doc-links/…`): the status and
+    /// the JSON control answered. `body` is signed over exactly as sent.
+    pub async fn doc_call(&self, method: &str, path: &str, body: Vec<u8>) -> Result<(u16, serde_json::Value), String> {
+        let e = self.enrolled().ok_or(DOC_NOT_JOINED)?;
+        let m = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?;
+        let kind = if method == "POST" { "application/json" } else { "application/octet-stream" };
+        let res = self
+            .http
+            .request(m, format!("{}{path}", e.saved.url))
+            .header(AUTH, self.sign(&e, method, path, &body))
+            .header(reqwest::header::CONTENT_TYPE, kind)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| format!("can't reach control: {e}"))?;
+        let status = res.status().as_u16();
+        if status != 200 {
+            *self.doc_info.lock().unwrap() = None;
+        }
+        Ok((status, res.json().await.unwrap_or_default()))
+    }
+
+    /// The status of an anonymous GET, as a visitor's browser would see it.
+    pub async fn doc_probe(&self, url: &str) -> Result<u16, String> {
+        let res = self.http.get(url).send().await.map_err(|e| format!("can't reach control: {e}"))?;
+        Ok(res.status().as_u16())
     }
 
     /// A hosted sandbox's last session closed (M20): control deletes it.
@@ -2653,6 +2723,43 @@ pub(crate) mod tests {
         let c = Control::new(dir, vec![], String::new(), acl.clone(), false);
         c.install(Some(Enrolled::build(saved_for(url, "a"), Arc::new(DeviceKeys::generate()), &acl, false, &[])));
         c
+    }
+
+    /// Opening a Doc asks control where Docs are viewed once, not each time
+    /// (#1066); a refused call about a link makes the next one ask again.
+    #[tokio::test]
+    async fn where_docs_are_viewed_is_kept_and_forgotten_when_a_call_is_refused() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let hits = Arc::new(AtomicUsize::new(0));
+        let h = hits.clone();
+        let app = axum::Router::new()
+            .route(
+                "/control.json",
+                axum::routing::get(move || {
+                    h.fetch_add(1, Ordering::SeqCst);
+                    async { axum::Json(serde_json::json!({ "doc_links": 1, "doc_viewer": "https://docs.test/" })) }
+                }),
+            )
+            .route(
+                "/api/doc-links/quota",
+                axum::routing::get(|| async { (axum::http::StatusCode::NOT_FOUND, axum::Json(serde_json::json!({}))) }),
+            );
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(l, app).await });
+        let dir = std::env::temp_dir().join(format!("arugula-docinfo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let c = joined_at(&dir, &url);
+        for _ in 0..3 {
+            assert_eq!(c.doc_viewer().await.unwrap(), "https://docs.test");
+        }
+        assert_eq!(hits.load(Ordering::SeqCst), 1, "asked once");
+        let (status, _) = c.doc_call("GET", "/api/doc-links/quota", vec![]).await.unwrap();
+        assert_eq!(status, 404);
+        assert_eq!(c.doc_viewer().await.unwrap(), "https://docs.test");
+        assert_eq!(hits.load(Ordering::SeqCst), 2, "asked again after a refusal");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     fn mv(keys: &DeviceKeys, by: &Cert, daemon: &str, team: Option<&TeamPin>, at: u64) -> Move {

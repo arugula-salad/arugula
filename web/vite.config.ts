@@ -1,7 +1,8 @@
 import { defineConfig } from "vite";
 
 // `just dev` runs a dev daemon on 7682 that accepts this server's origin.
-// Two pages: the app, and the read-only viewer behind share links.
+// Three pages: the app, the read-only viewer behind share links, and the
+// viewer of a shared Doc (doc.html, #1066).
 export default defineConfig({
   server: {
     port: 5173,
@@ -11,7 +12,7 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     target: "es2022",
-    rollupOptions: { input: { main: "index.html", share: "share.html" } },
+    rollupOptions: { input: { main: "index.html", share: "share.html", doc: "doc.html" } },
     // Follow mode's CodeMirror (M28) is a chunk of its own, about 510 kB
     // (180 kB gzipped), loaded only when someone follows an editor.
     chunkSizeWarningLimit: 560,

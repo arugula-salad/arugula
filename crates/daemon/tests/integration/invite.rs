@@ -736,8 +736,13 @@ async fn text_of(ws: &mut Ws, ch: &Channel, kind: &str) -> Value {
 /// A POST through the channel: its status and JSON body.
 #[cfg(feature = "labs")]
 async fn channel_post(ws: &mut Ws, ch: &Channel, path: &str, body: Value) -> (u16, Value) {
+    channel_call(ws, ch, "POST", path, body).await
+}
+
+#[cfg(feature = "labs")]
+async fn channel_call(ws: &mut Ws, ch: &Channel, method: &str, path: &str, body: Value) -> (u16, Value) {
     let head = RequestHead {
-        method: "POST".into(),
+        method: method.into(),
         path: path.into(),
         content_type: Some("application/json".into()),
         stream: false,
@@ -818,4 +823,41 @@ async fn a_teams_other_owner_posts_under_their_own_name() {
     assert_eq!(unread(&text_of(&mut alex2, &alex2_ch, "hello").await), (1, false), "Alex: Dee's answer only");
     let (mut dee3, dee3_ch) = channel(&d, &w.daemon, &w.dee.keys).await;
     assert_eq!(unread(&text_of(&mut dee3, &dee3_ch, "hello").await), (0, false), "Dee: all read");
+}
+
+/// #1066: a Doc's link belongs to the account that shares it. A team's other
+/// owner has the owner's rights here, but sharing, reading the link's key
+/// back and unsharing are refused them (the M79 rule), by the block's
+/// methods and by the account list's routes; the machine's own account,
+/// through the same kind of channel, is not.
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_teams_other_owner_cant_share_a_doc_or_read_its_link() {
+    let w = world_where(TeamRole::Owner);
+    w.fake.lock().unwrap().team = Some(w.t1.clone());
+    let d = w.daemon(true);
+    arugula_testkit::labs(&d.state, true);
+    let (pane, _) = first(&d);
+    let doc = d.post("/api/blocks", json!({ "type": "doc", "config": { "title": "Plan" }, "split": pane, "local": true }))
+        ["block"]
+        .as_u64()
+        .unwrap();
+    let (mut dee, dee_ch) = channel(&d, &w.daemon, &w.dee.keys).await;
+    let (mut alex, alex_ch) = channel(&d, &w.daemon, &w.alex).await;
+    let id = "0123456789abcdef0123456789abcdef";
+
+    let mut calls = Vec::new();
+    for m in ["doc_share", "doc_share_update", "doc_unshare", "doc_shares"] {
+        calls.push(("POST", format!("/api/blocks/{doc}/call/{m}")));
+    }
+    calls.push(("GET", format!("/api/doc-links/{id}")));
+    calls.push(("DELETE", format!("/api/doc-links/{id}")));
+    for (method, path) in &calls {
+        let (status, r) = channel_call(&mut dee, &dee_ch, method, path, json!({})).await;
+        assert_eq!(status, 403, "dee {method} {path}: {r}");
+        // Alex's own account is past the refusal (this machine hasn't joined
+        // control, or never shared that: something else says no).
+        let (status, r) = channel_call(&mut alex, &alex_ch, method, path, json!({})).await;
+        assert_ne!(status, 403, "alex {method} {path}: {r}");
+    }
 }

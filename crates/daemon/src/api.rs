@@ -22,12 +22,12 @@ use arugula_proto::{
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConvAct, ConvCreate, ConvDelete,
         ConvGrantMake, ConvGrantRevoke, ConvGrantsList, ConvLeadStart, ConvLinkAdd, ConvLinkClose, ConvLinksGet,
-        ConvMemberAdd, ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList, FlagSet, FlagsList,
-        ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention,
-        PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PanePorts,
-        PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll,
-        RulesList, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet, ThreadGet, ThreadPost,
-        ThreadRead,
+        ConvMemberAdd, ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList, DocLinkDelete, DocLinkGet,
+        FlagSet, FlagsList, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw,
+        PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse,
+        PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest,
+        RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
+        ThreadGet, ThreadPost, ThreadRead,
     },
 };
 use axum::{
@@ -101,6 +101,8 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<RulesList>()
         .op::<RulesForgetAll>()
         .op::<RuleForget>()
+        .op::<DocLinkGet>()
+        .op::<DocLinkDelete>()
         .op::<PaneWait>()
         .op::<ShellEnvGet>()
         .op::<ShellEnvRefresh>()
@@ -1015,6 +1017,17 @@ async fn call(
         // on the owner's CLI either (as a forge's drafts, a courtesy).
         if b.kind() == arugula_proto::BlockType::Invite && (!owner || crate::invite::agent(&headers)) {
             return Err(ApiError(StatusCode::FORBIDDEN, crate::invite::OWNER_ONLY.into()));
+        }
+        // A Doc's link (#1066) is the owner's, and not for an agent on the
+        // owner's CLI either: it publishes (or reads back the key). As for
+        // invites, an honor system: the CLI says when an agent runs it.
+        if b.kind() == arugula_proto::BlockType::Doc && crate::docs::link::METHODS.contains(&method.as_str()) {
+            if !owner || foreign(&app, &dev) {
+                return Err(ApiError(StatusCode::FORBIDDEN, crate::docs::link::OWNER_ONLY.into()));
+            }
+            if crate::invite::agent(&headers) {
+                return Err(ApiError(StatusCode::FORBIDDEN, crate::docs::link::AGENT_ASKS.into()));
+            }
         }
         // M79: a task's card, and taking a grant back, are this machine's
         // own account's: not an editor's, nor a team's other owner's. So is

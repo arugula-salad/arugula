@@ -13,6 +13,7 @@ mod acl;
 mod close;
 mod conversations;
 mod convs;
+mod doc_links;
 mod flags;
 mod fs;
 mod hosts;
@@ -134,6 +135,12 @@ impl Cx<'_> {
             Via::Http { who, .. } => Ok(who.clone()),
             Via::Mcp(_) => Err(OpError::Unreachable("that is for a person, not an agent's token".into())),
         }
+    }
+
+    /// A team's other owner (#935): `Owner` here, but not this machine's own
+    /// account, which is what the Doc links' keys belong to (#1066).
+    pub fn co_owner(&self) -> bool {
+        matches!(self.via, Via::Http { acting: Some(_), .. })
     }
 
     /// An agent, or someone who isn't the owner: what the owner keeps for

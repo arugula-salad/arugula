@@ -219,6 +219,11 @@ with the link. **Control holds ciphertext only and can't read it.**
   privacy notice says so (it lives on the site, not in this repo).
 - **Per address,** the docs host's data reads are limited to 12,000 an
   hour (a 48-part Doc is about 50); a repeat visit of a version is a 304.
+- **`?v=<ver>` on a part** (`…/data/<n>?v=<ver>`, #1066): control answers
+  404 unless that is the version it serves, so a page that began on one
+  version, when an Update lands mid-load, starts over from `meta` and never
+  mixes two. The viewer page (`web/doc.html`) loads no font, so the CSP
+  needs no `font-src`.
 
 ### Backups (Litestream to Cloudflare R2)
 

@@ -9,6 +9,8 @@ export type MenuItem =
       run: () => void;
       danger?: boolean;
       disabled?: boolean;
+      /** Why it is disabled, or what it does: the tooltip. */
+      hint?: string;
       checked?: boolean;
       /** Its chord, shown beside it here and in the command palette. */
       shortcut?: string;
@@ -117,6 +119,7 @@ export function MenuLayer() {
             aria-keyshortcuts={item.shortcut?.replace("Ctrl", "Control")}
             class={item.danger ? "menu-item danger" : "menu-item"}
             disabled={item.disabled}
+            title={item.hint}
             onClick={() => {
               closeMenu();
               item.run();
