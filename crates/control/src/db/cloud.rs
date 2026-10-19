@@ -1209,7 +1209,7 @@ impl Db {
 
     /// The Managoat workspace behind one of the account's Cloud workspaces,
     /// once Managoat has made it and until a delete is asked for.
-    pub fn cloud_workspace_machine(&self, account: &str, id: &str) -> Result<Option<String>> {
+    pub fn cloud_workspace_provider_id(&self, account: &str, id: &str) -> Result<Option<String>> {
         Ok(self
             .c()
             .query_row(
