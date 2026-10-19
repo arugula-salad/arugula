@@ -105,6 +105,14 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     refresh. With it, port and editor blocks open on them with no block
     flags (no `--block-listen`); their own page doesn't offer those
     blocks, since it can't show them.
+- **Shared Docs** (#1064): always on, and idle until a machine calls. With
+  a block domain, anyone opens a link at `docs.<domain>` (a fixed label,
+  so the wildcard DNS name and certificate cover it); without one, at
+  `/d/<id>` on control's own origin. Either way it's a page under a strict
+  CSP, with no cookie and none of control's API. The `docs` host answers
+  only `/<id>`, `/<id>/data/meta`, `/<id>/data/<n>` and `/assets/…`; with a
+  block domain, `/d/` on control's origin is a 404. `/control.json` says
+  where (`doc_links`, `doc_viewer`). More under "Shared Docs" below.
 - **Billing** (optional) needs both `STRIPE_SECRET_KEY` and
   `STRIPE_WEBHOOK_SECRET`; with the key alone control doesn't start.
 - **Behind a proxy** that passes the client's address in a header, use
@@ -161,6 +169,56 @@ sign-ins still get through when it's full). Each minute it changed,
 `clients`), the ceiling (`max`) and how many were refused for it
 (`refused`); `the relay is full` and `the relay has room again` mark
 when it fills and empties.
+
+### Shared Docs
+
+A person shares one Doc with a link (#1064). The machine encrypts the
+snapshot (AES-256-GCM, the key only in the link's `#` fragment) and pushes
+it in parts of at most 1 MB; control stores them and serves them to anyone
+with the link. **Control holds ciphertext only and can't read it.**
+
+- **Two tables** in `control.db`: `doc_links` (`id`, `account`, `daemon`,
+  the served `version`, `parts`, `size`, `made`, `updated`, a rough
+  `opens`) and `doc_link_parts` (BLOB rows keyed `(id, ver, n)`, `at`).
+  A grep of the database finds no title or text of a shared Doc. Deleting
+  a link, a machine (`drop_daemon`) or an account deletes its rows.
+- **Limits**, per account: 200 MB of shared Docs in all and 100 links; per
+  link, 48 MB of ciphertext (every Doc fits). A part is refused, with
+  nothing stored, when it would pass the link's 48 MB or the account's
+  200 MB, counting every half-uploaded version of every link the account
+  has, and when the account already has 100 links. A commit checks them
+  again.
+- **The disk guard:** while the database's disk is over 80% full, control
+  refuses new parts (507, "control's disk is over 80% full"). Parts that
+  were never committed are swept after a day.
+- **The volume must be extended before this is deployed.** It was made at
+  1 GB, and 200 MB an account is more than that:
+
+  ```
+  fly volumes extend <volume id> -s 10 -a illogical-control
+  ```
+
+  (`fly volumes list -a illogical-control` has the id. A volume can grow,
+  never shrink.) Sizes are the disk's, not Litestream's: the restore
+  recipes below need a volume as big as the database.
+- **What it costs in R2** (Litestream, from R2's public prices: storage
+  $0.015 a GB-month, $4.50 per million writes, no charge for reads out):
+  ciphertext doesn't compress, and Litestream keeps a snapshot of the
+  whole database a day for 7 days, so each GB of shared Docs held costs
+  about 8 GB in the bucket, 12 cents a month. Each part is one or two
+  writes, and a 43 MB Doc about 50 to 100: a fraction of a cent. Fly's
+  own volume snapshots (5 days) hold them too, and add to the volume's
+  cost, not R2's.
+- **Backups and Unshare:** an unshared Doc's ciphertext stays in the
+  backups until they age out, a week at most (Fly's snapshots, 5 days).
+  Anyone who kept the link could decrypt it from a restored backup, so
+  **Update isn't a retraction**.
+- **What control learns:** that a Doc of this size, from this account and
+  machine, was shared, updated, opened (roughly how often: previews and
+  bots count) and unshared, and when. Not its title or content. The
+  privacy notice says so (it lives on the site, not in this repo).
+- **Per address,** the docs host's data reads are limited to 12,000 an
+  hour (a 48-part Doc is about 50); a repeat visit of a version is a 304.
 
 ### Backups (Litestream to Cloudflare R2)
 

@@ -146,7 +146,7 @@ pub fn daemon_auth_message_v2(method: &str, path_and_query: &str, ms: u64, nonce
 }
 
 /// The most a signed request's body may be.
-const MAX_SIGNED_BODY: usize = 1 << 20;
+pub const MAX_SIGNED_BODY: usize = 1 << 20;
 
 /// Signatures (or other one-time proofs) already taken, until they'd be
 /// too old to take anyway.

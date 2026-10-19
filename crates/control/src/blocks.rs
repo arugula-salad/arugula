@@ -94,6 +94,8 @@ const HTML: &str = "text/html; charset=utf-8";
 pub enum Host {
     /// A block's origin: `b-<key>.<block domain>`, with its key.
     Block(String),
+    /// `docs.<block domain>`: shared Docs' viewer (`doc_links.rs`).
+    Docs,
     /// Under the block domain, but no block's (the bare domain, another
     /// label, a key that isn't one): nothing here.
     Nothing,
@@ -137,6 +139,10 @@ pub fn host(domain: &str, headers: &HeaderMap) -> Host {
             None => return Host::Control,
         }
     };
+    // A fixed label: it can't be a `b-<hex>` one.
+    if label == "docs" {
+        return Host::Docs;
+    }
     // `b-` and the daemon's site key (32 hex digits today; a label holds
     // at most 63 characters).
     match label.strip_prefix("b-") {
@@ -151,12 +157,16 @@ pub fn host(domain: &str, headers: &HeaderMap) -> Host {
 /// control's own routes (its page, cookies, sessions, API).
 pub async fn split(axum::extract::State(app): axum::extract::State<Arc<App>>, req: Request, next: Next) -> Response {
     let Some(domain) = app.cfg.block_domain.as_deref() else { return next.run(req).await };
-    let key = match host(domain, req.headers()) {
+    let mut res = match host(domain, req.headers()) {
         Host::Control => return next.run(req).await,
         Host::Nothing => return plain(StatusCode::NOT_FOUND, "no such block"),
-        Host::Block(k) => k,
+        // Never past here: none of control's routes answer on this host.
+        Host::Docs => {
+            let peer = req.extensions().get::<ConnectInfo<SocketAddr>>().map(|c| c.0);
+            crate::doc_links::serve(&app, req.method(), req.headers(), peer, req.uri().path())
+        }
+        Host::Block(key) => serve(&app, key, req).await,
     };
-    let mut res = serve(&app, key, req).await;
     let h = res.headers_mut();
     h.remove(header::SET_COOKIE);
     h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
