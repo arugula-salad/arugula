@@ -65,14 +65,31 @@ Managoat now gives us (manual: *About workspaces*):
 - A retry or rebuild runs the environment as it is at that moment.
 - Vault edits reach live conversations through the broker.
 
-What Managoat doesn't give us yet:
+Since then (merged on Managoat's main 2026-10-19, **not released yet**;
+managoat.com gets them with the next Managoat release):
 
-| Gap | Issue | Until then |
+- `POST /api/workspaces/:id/rebuild` (#2986, #3018), with an optional
+  `{"interrupt": true}`. It answers `202` with `status: "provisioning"`. The
+  disk is wiped, and conversations keep their transcripts and lose their
+  runtime sessions. Refusals: `409 turns_running` (with `conversation_ids`),
+  `409 rebuild_in_progress` (while `provisioning`), `422
+  sandbox_provider_disabled`, and `503 fleet_full` / `sandbox_unavailable`
+  (nothing changed, so try again). It's **allowed on a `failed`
+  workspace**, which makes it the retry too.
+- `revision`, `built_from_revision`, `stale` and `changed_fields` (names
+  only, never values) on the workspace (#2987, #3012). An environment edit
+  that moves `revision` sends `workspace.status`. A workspace also has a
+  `sandbox_status` (`pending`, `starting`, `ready`, `suspended`, or `null`)
+  beside `status`.
+- A conversation's `cwd` may be a repository the environment clones outside
+  `/home/sprite`, for example `/work/app` (#3011).
+
+Still open, and nothing waits on either:
+
+| Gap | Issue | Meanwhile |
 |---|---|---|
-| A rebuild call | managoat/managoat#2986 | No Rebuild button (decided). M120 waits for it |
-| The revision a sandbox was built from | managoat/managoat#2987 | Control's spec fingerprint (decided 2026-10-19) |
-| Setup output while it runs, and kept afterwards | managoat/managoat#3009 | "Setting up…" plus the failure tail (decided) |
-| A retry for a **failed** setup without a prompt | managoat/managoat#3013 | The next prompt in any tab retries (Managoat's behaviour) |
+| Setup output while it runs, and kept afterwards | managoat/managoat#3009 | "Setting up…" plus the failure tail |
+| A separate retry call | managoat/managoat#3013 | **Retry** calls rebuild on a `failed` workspace, so #3013 is a nicety |
 
 ## Decided (Jake, 2026-10-18 and 2026-10-19; in #1039)
 
@@ -83,8 +100,9 @@ What Managoat doesn't give us yet:
   deadline, no idle delete.
 - Cloud runs are retired: **New agent → Cloud** goes to a workspace, and past
   results stay readable.
-- Start now. **Rebuild needed** comes from control's fingerprint until #2987
-  lands.
+- Start now. (The fingerprint stopgap is gone: #2987 shipped before the
+  build started, and Managoat's `stale` and `changed_fields` drive **Rebuild
+  needed**.)
 - Setup shows its status and the failure tail. #3009 is adopted when it
   lands.
 - New shell only.
@@ -105,12 +123,11 @@ What Managoat doesn't give us yet:
 2. **The saved spec** is `{name, repositories[{url, ref, mount, secret}],
    packages{apt, …}, setup_script, setup_timeout_seconds, env_vars,
    networking}`. Repositories mount at `/home/sprite/<repo name>` by default.
-   The **fingerprint** is a SHA-256 of the canonical JSON of the
-   provision-time fields (everything except `name`). Control stores
-   `built_fingerprint` and `built_spec` when a setup reaches `ready`. Pending
-   changes are `saved_spec` against `built_spec`, field by field. When #2987
-   lands, the revision replaces the fingerprint and `built_spec` stays as the
-   source of the diff.
+   **Rebuild needed** is Managoat's `stale`, and *which* fields is its
+   `changed_fields`. Managoat sends names only, so control keeps
+   `built_spec` (the saved spec as of the revision that last reached
+   `ready`, matched on `built_from_revision`) to show before and after
+   values. There's no fingerprint.
 3. **Status comes from polling, not the account stream.** The worker polls
    `GET /api/workspaces/:id` for live workspaces, as it polls run events
    today. That's one mechanism, and it survives restarts. The account event
@@ -127,13 +144,14 @@ What Managoat doesn't give us yet:
    one-entry list, so today's deploy keeps working. Each pair needs its
    platform inference set up on the Managoat account before it's listed.
 5. **A tab's `cwd`** defaults to the first repository's mount, and can be
-   any other mount or a path under `/home/sprite`.
+   any other mount (which may be outside `/home/sprite`, #3011) or a path
+   under `/home/sprite`.
 6. **Failed setup.** Managoat retries a failed setup only on the next
    prompt into one of the workspace's conversations. Until
-   managoat/managoat#3013 (`POST /api/workspaces/:id/retry`) lands, the
-   failed state says "Fix the settings, then send a prompt in any tab to set
-   up again", and with no tabs open it offers **+ Agent**. Once it lands,
-   **Retry** calls it.
+   managoat/managoat#3013 lands, **Retry** on a failed workspace calls
+   `POST /api/workspaces/:id/rebuild`, which Managoat allows on a `failed`
+   workspace. A failed workspace has no machine, so there's no disk to wipe
+   and the warning isn't shown. If #3013 lands, Retry moves to it.
 7. **Tabs and workspaces live in control's database**, not localStorage. The
    open tab list is the workspace's live conversations.
 8. **The event pump is generalised, not copied.** `cloud_events`,
@@ -164,12 +182,13 @@ on merge, and every UI PR has Before | After shots.
   delete, and vault secrets. `PATCH /api/environments/:id`. `find` by
   `metadata.arugula_workspace`.
 - `db/cloud.rs`: `cloud_workspaces` (id `cw_…`, account, name, saved_spec,
-  built_spec, built_fingerprint, status, error, environment, vault,
-  provider_id, created, deleted) and the job rows for them in `cloud_jobs`,
+  built_spec, status, sandbox_status, error, revision, built_from_revision,
+  stale, changed_fields, environment, vault, provider_id, created, deleted) and the job rows for them in `cloud_jobs`,
   with a `kind`.
 - `worker.rs`: create (environment, then vault and its secrets, then
   workspace), each stage journalled and reconciled after a lost response;
-  status polling into `status` and `error`; delete (workspace, then vault,
+  status polling into `status`, `sandbox_status`, `error` and the revision
+  fields, and `built_spec` set when `built_from_revision` reaches `ready`; delete (workspace, then vault,
   then environment), which survives a restart part way through.
 - Routes: `GET/POST /api/cloud/workspaces`, `GET/DELETE
   /api/cloud/workspaces/{id}`. Another account's id gets 404 everywhere.
@@ -204,7 +223,7 @@ on merge, and every UI PR has Before | After shots.
   It's extracted into a shared component rather than copied.
 - `shell/context-header.tsx`: status and **Delete** (the confirm names the
   live tabs it ends). The failed state shows `error` and the decision 6
-  text, plus **Retry** once managoat/managoat#3013 lands.
+  text. **Retry** arrives in M120 with the rebuild call.
 - `shell/attention-drawer.tsx` and `overview.tsx`: tab items next to run
   items.
 - The create dialog: name, repositories, packages, setup script, secrets.
@@ -214,7 +233,9 @@ on merge, and every UI PR has Before | After shots.
 - `PATCH /api/cloud/workspaces/{id}` saves `saved_spec` and PATCHes the
   environment. Secret changes go to the vault and are live, with no rebuild.
 - The response, and the workspace, carry `pending: [{field, before,
-  after}]` from `saved_spec` against `built_spec`.
+  after}]`, built from Managoat's `stale` and `changed_fields` with values
+  from `built_spec` and `saved_spec`. `env_vars` values are masked, as
+  Managoat does.
 - Web: a **Settings** panel (a form over the saved spec, Built vs Saved,
   the last `error`), and the **Rebuild needed · N changes** badge in the
   header and the sidebar.
@@ -238,19 +259,23 @@ on merge, and every UI PR has Before | After shots.
 - Drop `arugula.cloud-panes.*` from localStorage on load. Rewrite
   `docs/managoat.md` and update `docs/features.md`.
 
-### M120 (#1077): Rebuild (after M117; blocked on managoat/managoat#2986)
+### M120 (#1077): Rebuild and Retry (after M117)
 
 - **Rebuild** in the header and in Settings. It's refused while a tab is
   mid-turn, unless the user picks **Interrupt and rebuild**. The confirm
-  warns that the disk is wiped (decision 9). Control then calls the rebuild
-  route and shows progress through the status poll. `built_spec` and the fingerprint update when the
+  warns that the disk is wiped (decision 9). Control then calls
+  `POST /api/workspaces/:id/rebuild` (`interrupt: true` for the interrupt
+  choice), maps `409 turns_running` to the mid-turn refusal that names the
+  tabs, maps `409 rebuild_in_progress` to "already setting up", and retries
+  `503` later. It shows progress through the status poll. **Retry** on a
+  failed workspace is the same call, without the warning. `built_spec` and the fingerprint update when the
   workspace reaches `ready`.
-- If #2987 has landed by then, switch pending changes to Managoat's
-  revision. If #3009 has, show the setup log. If #3013 has, **Retry** on a
-  failed workspace uses it.
+- The live check waits for a Managoat release that carries #3018, because
+  managoat.com doesn't have rebuild until then. If #3009 has landed, show the
+  setup log.
 
 Order: M114 → M115 → M116 → M117 → M118. M119 can run after M116, alongside
-M117 and M118. M120 waits for #2986.
+M117 and M118. M120 follows M117.
 
 ## Done when
 
