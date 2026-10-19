@@ -62,21 +62,23 @@ export function Rail({ client }: { client: Client }) {
       >
         <Mark />
       </button>
-      <RailButton
-        label="Sessions"
-        tip={`${open && at === "panes" ? "Hide" : "Show"} the sessions on ${host}`}
-        here={open && at === "panes"}
-        toggle
-        hook="data-open-sessions"
-        onClick={() => {
-          if (at !== "panes") {
-            closePlace(at);
-            setSidebarOpen(true);
-          } else setSidebarOpen(!open);
-        }}
-      >
-        <SessionsIcon />
-      </RailButton>
+      <div class="ws-rail-utility">
+        <RailButton
+          label="Sessions"
+          tip={`${open && at === "panes" ? "Hide" : "Show"} sessions sidebar on ${host}`}
+          here={open && at === "panes"}
+          toggle
+          hook="data-open-sessions"
+          onClick={() => {
+            if (at !== "panes") {
+              closePlace(at);
+              setSidebarOpen(true);
+            } else setSidebarOpen(!open);
+          }}
+        >
+          <SessionsIcon />
+        </RailButton>
+      </div>
       <RailButton label="Panes" tip="Your panes: back to this session's last tab and pane" here={at === "panes"} hook="data-open-panes" onClick={panes}>
         <PanesIcon />
       </RailButton>
@@ -146,12 +148,15 @@ function RailButton({
     <button
       class={`ws-rail-button${here ? (toggle ? " on" : " here") : ""}`}
       aria-label={aria ?? label}
-      aria-pressed={here}
+      aria-pressed={toggle ? undefined : here}
+      aria-expanded={toggle ? here : undefined}
+      aria-controls={toggle ? "ws-session-sidebar" : undefined}
       title={tip}
       {...{ [hook]: "" }}
       onClick={onClick}
     >
       {children}
+      {toggle && <span class="ws-sidebar-chevron" aria-hidden="true">{here ? "‹" : "›"}</span>}
       <span class="ws-rail-label" aria-hidden="true">
         {label}
       </span>

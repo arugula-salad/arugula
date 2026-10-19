@@ -54,6 +54,50 @@ test.describe("on a computer", () => {
     await expect(page.locator('[data-session-group="idle"], [data-session-group="working"]').first()).toBeVisible();
   });
 
+  test("session attention and actions never overlap timestamps at compact widths", async ({ page }) => {
+    await newWorkspace(page);
+    await page.evaluate(() => {
+      const c = window.__arugula.client;
+      c.sleep(); // Freeze this layout fixture against live activity deltas.
+      const p = c.state!.panes.find((p) => p.id === c.active())!;
+      p.attention = "needs_input";
+      p.activity = { ...p.activity!, last_ms: Date.now() };
+      p.branch = "a-long-branch-name-that-needs-to-truncate";
+      c.emit();
+    });
+    const r = page.locator('.ws-session[data-attention="needs_input"]');
+    await expect(r.locator(".att")).toBeVisible();
+    for (const width of [200, 248, 380]) {
+      await page.locator(".ws-sidebar").evaluate((el, w) => { el.style.width = `${w}px`; }, width);
+      for (const time of ["now", "59m ago", "123d ago"]) {
+        await r.locator(".ws-session-ago").evaluate((el, t) => { el.textContent = t; }, time);
+        const boxes = await Promise.all([".ws-session-ago", ".att", ".ws-session-more"].map((s) => r.locator(s).boundingBox()));
+        const [ago, badge, more] = boxes.map((b) => b!);
+        expect(ago.x + ago.width).toBeLessThanOrEqual(badge.x);
+        expect(badge.x + badge.width).toBeLessThanOrEqual(more.x);
+        const outer = (await r.boundingBox())!;
+        expect(more.x + more.width).toBeLessThanOrEqual(outer.x + outer.width);
+      }
+    }
+  });
+
+  test("macOS reserves the native controls strip once, including with native tabs", async ({ page }) => {
+    await newWorkspace(page);
+    expect((await page.locator(".ws-head").boundingBox())!.y).toBe(0);
+    await page.evaluate(() => { document.documentElement.dataset.desktop = "macos"; });
+    const header = (await page.locator(".ws-head").boundingBox())!;
+    const brand = (await page.locator(".ws-brand").boundingBox())!;
+    expect(header.y).toBe(28);
+    expect(brand.y).toBe(header.y);
+    expect((await page.locator(".ws-wordmark").boundingBox())!.y).toBeGreaterThanOrEqual(28);
+    await page.evaluate(() => {
+      document.documentElement.dataset.nativeTabs = "";
+      document.documentElement.style.setProperty("--native-tabs", "64px");
+    });
+    expect((await page.locator(".ws-head").boundingBox())!.y).toBe(64);
+    expect((await page.locator(".ws-brand").boundingBox())!.y).toBe(64);
+  });
+
   test("rail routes keep the way back: Panes returns to the same tab and pane", async ({ page }) => {
     await newWorkspace(page);
     const t = (await tab(page)).id;
@@ -73,9 +117,13 @@ test.describe("on a computer", () => {
     expect((await tab(page)).id).toBe(t);
     expect(await active(page)).toBe(pane);
 
+    // Sessions is a disclosure, distinct from destination selection.
+    await expect(rail.locator("[data-open-sessions]")).toHaveAttribute("aria-expanded", "true");
+    await expect(rail.locator("[data-open-sessions]")).not.toHaveAttribute("aria-pressed");
     // Sessions hides and shows the sidebar, and the device remembers.
     await rail.locator("[data-open-sessions]").click();
     await expect(page.locator("[data-session-sidebar]")).toHaveCount(0);
+    await expect(rail.locator("[data-open-sessions]")).toHaveAttribute("aria-expanded", "false");
     await page.reload();
     await expect(page.locator(".ws-rail")).toBeVisible();
     await expect(page.locator("[data-session-sidebar]")).toHaveCount(0);
@@ -334,7 +382,9 @@ test.describe("accessibility", () => {
 
     // The terminal has the keys; the palette moves them to the tabs.
     await page.keyboard.press("Control+Shift+KeyP");
+    await expect(page.getByRole("textbox", { name: "Command", exact: true })).toBeFocused();
     await page.keyboard.type("keyboard to the tabs");
+    await expect(page.locator(".palette-row.selected")).toContainText("Move the keyboard to the tabs");
     await page.keyboard.press("Enter");
     const shown = page.locator(`[data-tab-id="${t2}"]`);
     await expect(shown).toBeFocused();
@@ -349,7 +399,9 @@ test.describe("accessibility", () => {
     await expect.poll(() => tab(page).then((t) => t.id)).toBe(t1);
     // A state change doesn't take the keys from a tab a keyboard is on.
     await page.keyboard.press("Control+Shift+KeyP");
+    await expect(page.getByRole("textbox", { name: "Command", exact: true })).toBeFocused();
     await page.keyboard.type("keyboard to the tabs");
+    await expect(page.locator(".palette-row.selected")).toContainText("Move the keyboard to the tabs");
     await page.keyboard.press("Enter");
     await expect(page.locator(`[data-tab-id="${t1}"]`)).toBeFocused();
     await page.evaluate((t) => window.__arugula.client.intent({ op: "rename_tab", tab: t, name: "renamed" }), t2);
@@ -357,7 +409,9 @@ test.describe("accessibility", () => {
     await expect(page.locator(`[data-tab-id="${t1}"]`)).toBeFocused();
     // And the sidebar: the palette puts the keys in its search.
     await page.keyboard.press("Control+Shift+KeyP");
+    await expect(page.getByRole("textbox", { name: "Command", exact: true })).toBeFocused();
     await page.keyboard.type("keyboard to the sessions");
+    await expect(page.locator(".palette-row.selected")).toContainText("Move the keyboard to the sessions");
     await page.keyboard.press("Enter");
     await expect(page.locator("[data-session-search]")).toBeFocused();
   });
@@ -394,6 +448,35 @@ test.describe("accessibility", () => {
     }
     // Back to nothing picked.
     await page.getByRole("button", { name: "Reset" }).click();
+  });
+
+  test("terminal text contrasts with explicit program backgrounds after a palette change", async ({ page }) => {
+    await newWorkspace(page);
+    await page.locator("[data-account-menu]").click();
+    await page.getByRole("menuitem", { name: "Appearance…" }).click();
+    for (const palette of ["latte", "slate"]) {
+      await page.locator(`[data-palette-choice="${palette}"]`).click();
+      await expect(page.locator("html")).toHaveAttribute("data-palette", palette);
+      await page.evaluate(async () => {
+        const v = window.__arugula.client.viewOf(window.__arugula.client.active()!)!;
+        v.setVisible(false); // Inspect the DOM renderer's actual cell colors.
+        await new Promise<void>((resolve) => v.term.write("\x1b[2J\x1b[H\x1b[0;48;2;56;56;72mCOMPOSER\x1b[0m\r\n\x1b[38;2;166;227;161;48;2;239;241;245mSTATUS\x1b[0m", resolve));
+      });
+      for (const text of ["COMPOSER", "STATUS"]) {
+        const cell = page.locator(".xterm-rows span").filter({ hasText: text });
+        await expect(cell).toBeVisible();
+        const ratio = await cell.evaluate((el) => {
+          const css = getComputedStyle(el);
+          const lum = (color: string) => color.match(/\d+/g)!.slice(0, 3).map(Number).map((c) => {
+            const n = c / 255;
+            return n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4;
+          }).reduce((sum, n, i) => sum + n * [0.2126, 0.7152, 0.0722][i], 0);
+          const a = lum(css.color), b = lum(css.backgroundColor);
+          return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        });
+        expect(ratio, `${palette} ${text}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
   });
 
   test("less motion when asked: nothing animates, and the cursor doesn't blink", async ({ page }) => {

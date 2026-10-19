@@ -8988,7 +8988,7 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
   color: var(--on-color);
 }
 
-.ws-body {
+.ws-shell-body {
   flex: 1;
   min-width: 0;
   display: flex;
