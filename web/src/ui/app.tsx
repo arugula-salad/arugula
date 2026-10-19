@@ -6,6 +6,7 @@
 import { cloudPanes, cloudWorkspaceRoute, useCloudPanes } from "../cloud";
 import { CloudTabs, RunDetails } from "./cloud";
 import { CloudWorkspaceCrumbs, CloudWorkspaceMain, CloudWorkspaceTabStrip, DeleteCloudWorkspace } from "./cloud-workspaces";
+import { RebuildCloudWorkspace } from "./cloud-workspace-rebuild";
 import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Cell } from "./cells";
@@ -209,7 +210,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {/* A Cloud workspace is no machine's: no machine or session crumbs. */}
       {state && phone && !cloudWs && <PhoneHeader client={client} />}
       {!state && cloud && <AppBar client={client} at="panes" all>{!phone && <div class="tabbar" role="tablist"><CloudTabs /><button onClick={() => startAgent(client, {})}>New agent</button></div>}</AppBar>}
-      {phone && cloudWs && <nav class="cloud-ws-phone-head" aria-label="Where you are">{state && <button class="cloud-ws-back" title="Back to this machine" aria-label="Back to this machine" onClick={() => cloudPanes.local()}>‹</button>}<CloudWorkspaceCrumbs /><span class="bar-fill" /><DeleteCloudWorkspace /></nav>}
+      {phone && cloudWs && <nav class="cloud-ws-phone-head" aria-label="Where you are">{state && <button class="cloud-ws-back" title="Back to this machine" aria-label="Back to this machine" onClick={() => cloudPanes.local()}>‹</button>}<CloudWorkspaceCrumbs /><span class="bar-fill" /><RebuildCloudWorkspace place="header" /><DeleteCloudWorkspace /></nav>}
       {phone && cloudWs?.workspace && <div class="cloud-phone-tabs"><CloudWorkspaceTabStrip /></div>}
       {phone && !cloudWs && cloudPanes.opened.length > 0 && <div class="tabbar cloud-phone-tabs" role="tablist">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudTabs /></div>}
       {state && <ControlBanner client={client} />}

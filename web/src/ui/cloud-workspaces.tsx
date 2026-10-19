@@ -12,7 +12,9 @@ import {
 } from "../cloud";
 import { ConfirmRemove } from "./confirm";
 import { CloudTranscript, useCloudConversation } from "./cloud";
+import { CloudWorkspaceSettings } from "./cloud-workspace-settings";
 import { CloudWorkspaceChanges } from "./cloud-workspace-changes";
+import { RetryCloudWorkspace } from "./cloud-workspace-rebuild";
 
 /** Re-render on the store and the route; returns the route. */
 export function useCloudWorkspaces() {
@@ -289,8 +291,9 @@ function CloudWorkspaceFailure({ w }: { w: CloudWorkspace }) {
   if (w.status !== "failed") return null;
   return (
     <div class="cloud-ws-failed" role="alert" data-cloud-failed>
-      <p><b>Setup failed.</b> Managoat sets the machine up again on the next prompt to one of this workspace's tabs. If it has no tabs, or the settings need changing, delete it and create it again.</p>
+      <p><b>Setup failed.</b> Change its settings below if they need it, then Retry. A prompt to one of its tabs sets it up again too.</p>
       {w.error && <pre class="cloud-ws-error">{w.error}</pre>}
+      <RetryCloudWorkspace w={w} />
     </div>
   );
 }
@@ -337,6 +340,7 @@ function CloudWorkspaceHome({ w }: { w: CloudWorkspace }) {
         <p class="dim">None: tabs start in /home/sprite.</p>
       )}
       {(spec.packages.apt?.length || spec.packages.npm?.length) ? <p>Packages: {[...(spec.packages.apt ?? []).map((p) => `apt ${p}`), ...(spec.packages.npm ?? []).map((p) => `npm ${p}`)].join(", ")}</p> : null}
+      <CloudWorkspaceSettings w={w} />
       <h3>Tabs</h3>
       {tabs.length ? (
         <ul class="cloud-ws-tabs">{tabs.map((t) => <li key={t.id}><button onClick={() => cloudWorkspaces.open(w.id, t.id)}>{tabName(t)}</button> <span class="dim">{t.status.replaceAll("_", " ")} · {t.cwd}</span></li>)}</ul>

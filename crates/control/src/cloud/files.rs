@@ -167,7 +167,7 @@ async fn read(
     if w.status == "deleting" {
         return Err(refusal(StatusCode::CONFLICT, "deleting", "this Cloud workspace is being deleted"));
     }
-    let Some(machine) = app.db.cloud_workspace_machine(&session.account, id)? else {
+    let Some(machine) = app.db.cloud_workspace_provider_id(&session.account, id)? else {
         return Err(refusal(StatusCode::CONFLICT, "not_ready", "this Cloud workspace's machine isn't made yet"));
     };
     let query: Vec<(&str, &str)> = query.iter().map(|(k, v)| (*k, v.as_str())).collect();

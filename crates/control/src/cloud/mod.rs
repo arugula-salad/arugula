@@ -5,6 +5,7 @@ pub mod files;
 pub mod migration;
 pub mod notifications;
 pub mod provider;
+pub mod rebuild;
 pub mod secrets;
 pub mod tabs;
 pub mod worker;

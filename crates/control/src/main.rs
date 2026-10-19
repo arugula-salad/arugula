@@ -515,7 +515,10 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/cloud/runs/{id}/cancel", post(cloud::cancel_run))
         .route("/api/cloud/runs/{id}/events", get(cloud::events))
         .route("/api/cloud/workspaces", get(cloud::workspaces::list).post(cloud::workspaces::create))
-        .route("/api/cloud/workspaces/{id}", get(cloud::workspaces::show).delete(cloud::workspaces::delete))
+        .route(
+            "/api/cloud/workspaces/{id}",
+            get(cloud::workspaces::show).patch(cloud::workspaces::update).delete(cloud::workspaces::delete),
+        )
         .route("/api/cloud/workspaces/{id}/files", get(cloud::files::files))
         .route("/api/cloud/workspaces/{id}/file", get(cloud::files::file))
         .route("/api/cloud/workspaces/{id}/diff", get(cloud::files::diff))
@@ -527,6 +530,8 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/cloud/workspaces/{id}/tabs/{tab}/events", get(cloud::tabs::events))
         .route("/api/cloud/workspaces/{id}/tabs/{tab}/requests", get(cloud::tabs::requests))
         .route("/api/cloud/workspaces/{id}/tabs/{tab}/requests/{request}", post(cloud::tabs::answer))
+        .route("/api/cloud/workspaces/{id}/rebuild", post(cloud::rebuild::rebuild).delete(cloud::rebuild::cancel))
+        .route("/api/cloud/workspaces/{id}/retry", post(cloud::rebuild::retry))
         .route("/api/cloud/models", get(cloud::models))
         .route("/api/cloud/import", post(cloud::migration::import))
         .route("/api/cloud/agents", get(cloud::catalog).post(cloud::create_agent))
