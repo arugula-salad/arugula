@@ -1360,6 +1360,11 @@ mod share_tests {
         let held: Vec<Vec<u8>> =
             (0..parts).map(|n| s.fake.parts.lock().unwrap()[&(ID.to_string(), 1, n)].clone()).collect();
         assert!(held.iter().all(|p| p.len() <= 512 + 28));
+        // Each part has a nonce of its own (random ones: the seam doesn't count them).
+        let mut ivs: Vec<&[u8]> = held.iter().map(|p| &p[..12]).collect();
+        ivs.sort();
+        ivs.dedup();
+        assert_eq!(ivs.len(), held.len(), "a nonce was reused");
         let plain = link::open(&MARKER, ID, 1, &held).unwrap();
         assert_eq!(&plain[..4], b"ADL1");
         let len = u32::from_be_bytes(plain[4..8].try_into().unwrap()) as usize;
