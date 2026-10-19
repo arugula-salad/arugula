@@ -263,8 +263,8 @@ pub struct Reason {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub gate: Option<Box<Gate>>,
-    /// `diff`: the edit that waits (#887), so a card away from the pane (a
-    /// conversation's) can show it and accept it by its id. Boxed: a reason
+    /// `diff`: the edit that waits (#887), so a card away from the pane (the
+    /// attention drawer's) can show it and accept it by its id. Boxed: a reason
     /// rides in every attention event. A pane's own info leaves it out (its
     /// `diff` has it).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -455,14 +455,13 @@ pub struct AskRef {
     pub what: AskWhat,
     /// Who asks: the agent (`claude`, `managoat`, …).
     pub agent: String,
-    /// A permission's tool (`Bash`, `Edit`…), when it's known (#857: a
-    /// conversation's card shows it).
+    /// A permission's tool (`Bash`, `Edit`…), when it's known (#857).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub tool: Option<String>,
     /// A question's choices (#859): Claude's AskUserQuestion `questions`
     /// (`question`, `header`, `multiSelect`, `options`), so a card away from
-    /// the pane (a conversation's) can be answered with them. Boxed: a
+    /// the pane can be answered with them. Boxed: a
     /// reason rides in every attention event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
@@ -1376,49 +1375,6 @@ pub struct Conversation {
     pub members: Vec<ConvMember>,
     /// When it was made (ms since the epoch).
     pub created: u64,
-    /// The panes it links (#856), here and on other machines, in the order
-    /// they were linked. A closed one stays, and its name isn't used again.
-    #[serde(default)]
-    pub links: Vec<ConvLink>,
-    /// Its lead (#858): the agent block on this machine that drives the
-    /// links, with the owner's rights. None until one is started, and kept
-    /// (with its block gone) when it's lost, until it's replaced.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub lead: Option<ConvLead>,
-}
-
-/// A conversation's lead (#858): an agent block on the home machine whose
-/// MCP token reaches the conversation's links by name. `@lead` is its next
-/// prompt; what it has seen, whom it owes an answer and which links it
-/// waits on are kept here, so a restart loses none of it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ConvLead {
-    /// Its agent block, here.
-    pub block: PaneId,
-    /// When it was started (ms since the epoch).
-    pub at: u64,
-    /// The last timeline message it has been shown: "since your last turn"
-    /// is what comes after.
-    #[serde(default)]
-    pub cursor: u64,
-    /// Whoever wrote `@lead` and hasn't had its answer yet (principal ids):
-    /// its next reply notifies them.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub asked: Vec<String>,
-    /// Links it prompted and hasn't seen finish: one that ends its turn
-    /// wakes it.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub awaiting: Vec<String>,
-    /// Links that ended their turn while it was busy: they wake it once
-    /// it's done.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub woke: Vec<String>,
-    /// Its replies in the current turn (it posted with `post_thread`), so
-    /// its last message isn't posted too.
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub posted: u32,
 }
 
 /// Someone in a conversation who isn't its owner: they read and post.
@@ -1442,194 +1398,6 @@ pub struct ConvMember {
     pub root: Option<String>,
 }
 
-/// A pane a conversation links (#856), on its home machine or another. The
-/// pane's machine keeps the grant that lets the home drive it
-/// ([`ConvGrant`]); this is the home's side.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ConvLink {
-    /// `L1`, `L2`…, in the order linked, never used twice.
-    pub name: String,
-    /// The pane's machine: its device id in control, or none for the home
-    /// machine itself. Never its name, which can change.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub machine: Option<String>,
-    /// The machine's name when it was linked, to show.
-    #[serde(default)]
-    pub machine_name: String,
-    pub pane: PaneId,
-    /// The pane's epoch when it was linked.
-    #[serde(default)]
-    pub epoch: u64,
-    /// What it is ("claude in calc"), to show.
-    #[serde(default)]
-    pub title: String,
-    /// Who linked it: a principal id here, and their name.
-    pub by: String,
-    #[serde(default)]
-    pub by_name: String,
-    /// When (ms since the epoch).
-    pub at: u64,
-    /// Closed: the pane went, its grant was revoked, or it was unlinked. It
-    /// stays, as a closed link, and is never opened again.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub closed: Option<String>,
-}
-
-/// What a link is now, as its home reads it (#856).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub enum ConvLinkState {
-    /// Its machine answers for it.
-    Live,
-    /// Closed for good (`ConvLink::closed` says why).
-    Closed,
-    /// Its machine can't be reached now.
-    Offline,
-}
-
-/// One link's state, as `GET /api/convs/{id}/links` answers it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ConvLinkStatus {
-    pub name: String,
-    pub state: ConvLinkState,
-    /// What its pane is doing, when live and known.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub attention: Option<Attention>,
-    /// Why it's closed or offline.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub why: Option<String>,
-}
-
-/// A link grant (#856), kept on the pane's machine
-/// (`<state>/conv-grants.json`): the daemon `device` may drive `pane` here
-/// for conversation `conv`, with the rights of the person who made it
-/// (`by`), no more than an editor's, and only to prompt, wait, capture,
-/// follow its events and answer its cards.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ConvGrant {
-    /// The conversation's home: a daemon's device id in control, or this
-    /// machine's own.
-    pub device: String,
-    /// Its name, to show.
-    #[serde(default)]
-    pub device_name: String,
-    pub pane: PaneId,
-    /// The pane's epoch when it was granted.
-    #[serde(default)]
-    pub epoch: u64,
-    pub conv: ConvId,
-    /// The conversation's title, to show.
-    #[serde(default)]
-    pub conv_title: String,
-    /// Who made it: a principal id on this machine, and their name.
-    pub by: String,
-    #[serde(default)]
-    pub by_name: String,
-    /// When (ms since the epoch).
-    pub at: u64,
-    /// When it was revoked, or its pane closed: kept for a while so the
-    /// home hears "revoked" rather than nothing, then dropped.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub revoked: Option<u64>,
-}
-
-/// What a linked pane did, as its conversation's timeline has it (#857):
-/// posted by the home's watcher on that link, and by whoever answered a
-/// card. A message carrying one is shown as a line or a card, not text.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct ConvEvent {
-    pub kind: ConvEventKind,
-    /// The link: `L1`, `L2`…, or `lead` for the lead's own asks (#859).
-    pub link: String,
-    /// `needs_input` and `answered`: what it asks.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub ask: Option<ConvAsk>,
-    /// `turn_ended`: its last message. `pr`: what the forge says.
-    /// `answered` a question: the answer, in a line (#859).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub summary: Option<String>,
-    /// `turn_ended`: how long it worked (ms).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub worked_ms: Option<u64>,
-    /// `turn_ended`: the asks answered during the turn, by a standing rule,
-    /// a card here, or at the pane.
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub approvals: u32,
-    /// `answered`: what was done.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub action: Option<Action>,
-    /// `exited`: its code, when it has one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub code: Option<i32>,
-    /// `pr`: whether its checks passed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub ok: Option<bool>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub enum ConvEventKind {
-    /// Its turn ended, after it worked.
-    TurnEnded,
-    /// It asks (a permission or a question), or an edit waits as a diff
-    /// (#887): a card, answered here.
-    NeedsInput,
-    /// Someone answered its card in the conversation.
-    Answered,
-    /// Its program ended.
-    Exited,
-    /// A linked PR's checks finished (or it merged or closed).
-    Pr,
-}
-
-/// What a link asks, on its card (#857). Answering names `id`, so an
-/// answer never lands on a newer prompt.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct ConvAsk {
-    pub id: String,
-    pub what: AskWhat,
-    /// A permission's tool, when known.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub tool: Option<String>,
-    /// What it wants, in a line ("Bash: pytest -q"), or the question.
-    pub input: String,
-    /// A question's choices (#859), as [`AskRef::questions`]: the card shows
-    /// them, and its answer is their fields (`question_<n>`,
-    /// `question_<n>_custom`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    #[cfg_attr(feature = "ts", ts(type = "import(\"./blocks/ask\").Question[]"))]
-    pub questions: Option<serde_json::Value>,
-    /// An edit waiting as a diff (#887): the card shows it, with Accept and
-    /// Reject. Its `id` is the diff's, and `what` is `approve`, so a page
-    /// that doesn't know diffs offers Allow and Deny, which do the same.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub diff: Option<Box<DiffInfo>>,
-}
-
 impl Conversation {
     /// Where `who`'s reading starts: 0 for the owner and a member added with
     /// history, else when they joined; `None` for someone not in it.
@@ -1642,10 +1410,10 @@ impl Conversation {
     }
 }
 
-/// What the invite to a conversation, and its members list, say (#855;
-/// Jake, 2026-10-13): being a member is a drive grant on every linked pane.
-pub const CONV_MEMBERS_SEE: &str =
-    "Members can have the lead type into and read every linked pane. Invite only people you'd hand those terminals to.";
+/// What the invite to a conversation, and its members list, say (#855):
+/// a member reads every quote in it. Agents are out of chat (#1095), so
+/// being one drives nothing.
+pub const CONV_MEMBERS_SEE: &str = "Members see every terminal line quoted in it.";
 
 /// One message in a thread (M61).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1656,8 +1424,7 @@ pub struct ThreadMsg {
     pub id: u64,
     /// When it was posted (ms since the epoch).
     pub at: u64,
-    /// Who posted it: a principal id (`owner`, `tailnet:…`, `account:…`),
-    /// or `mcp:…` for an agent.
+    /// Who posted it: a principal id (`owner`, `tailnet:…`, `account:…`).
     pub who: String,
     pub name: String,
     /// M74: the poster's picture when they posted, if they have one.
@@ -1672,21 +1439,11 @@ pub struct ThreadMsg {
     /// Principal ids it @mentions.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mentions: Vec<String>,
-    /// The `@` tokens (lowercase) that reached someone: each one naming a
-    /// person in `mentions`, and the agent's when `to_agent`. The page
-    /// marks only these; an `@word` that reached no one stays plain.
+    /// The `@` tokens (lowercase) that reached someone, each one naming a
+    /// person in `mentions`. The page marks only these; an `@word` that
+    /// reached no one stays plain.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub landed: Vec<String>,
-    /// It @mentioned the pane's agent, and went to it as a follow-up.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub to_agent: bool,
-    /// An agent posted it (through MCP).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub agent: bool,
-    /// What a linked pane did (#857), in a conversation's timeline.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub event: Option<ConvEvent>,
 }
 
 /// Output quoted in a thread message: kept as text, so it stays readable

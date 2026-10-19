@@ -208,14 +208,14 @@ test("a thread is read and written in the view, and links to its pane", async ()
   expect(await page.evaluate(() => window.__arugula.client.active())).toBe(home.pane);
 });
 
-test("@claude in a session channel says it needs a pane's thread; @notreal isn't marked", async () => {
+test("@claude in a session channel names nobody (#1095); @notreal isn't marked", async () => {
   await page.locator("[data-open-chat]").click();
   const chat = page.locator("[data-chat]");
   await chat.locator(".chat-list section[data-chat-machine]").first().locator(`[data-chat-thread="session-${home.session}"]`).click();
   await expect(chat.locator(".chat-thread")).toContainText("standup in five");
   await chat.locator(".chat-thread textarea").fill("@claude are you there");
   await chat.locator(".chat-thread textarea").press("Enter");
-  await expect(chat.locator(".chat-thread .thread-note.unreached")).toHaveText("@claude reaches an agent from its pane's thread");
+  await expect(chat.locator(".chat-thread .thread-note.unreached")).toHaveText("Nobody here called claude can read this thread");
   await expect(chat.locator(".chat-thread .thread-msg").filter({ hasText: "are you there" }).locator(".mention")).toHaveCount(0);
   await chat.locator(".chat-thread textarea").fill("@notreal hello");
   await chat.locator(".chat-thread textarea").press("Enter");

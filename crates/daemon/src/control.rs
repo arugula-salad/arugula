@@ -237,9 +237,6 @@ pub struct Enrolled {
     /// #399: this machine offers agents, so its teams' members' daemons get
     /// in to call them (and control is told to route those accounts).
     pub open_agents: bool,
-    /// #856: daemons in `agent_callers` only because a pane here is linked to
-    /// one of their conversations: they get those panes and not the agents.
-    pub link_only: std::collections::HashSet<String>,
     /// Team members' roles on every session (not owners: they're the owner).
     pub team_roles: HashMap<String, Role>,
     /// Members of teams sessions were shared with, by team, and their role
@@ -250,8 +247,7 @@ pub struct Enrolled {
 }
 
 impl Enrolled {
-    /// `granted`: the daemons a link grant here names (#856).
-    fn build(saved: Saved, keys: Arc<DeviceKeys>, acl: &Acl, open_agents: bool, granted: &[String]) -> Self {
+    fn build(saved: Saved, keys: Arc<DeviceKeys>, acl: &Acl, open_agents: bool) -> Self {
         let trusted = saved.trust.evaluate(&saved.certs, &saved.revocations);
         let mut others = Vec::new();
         let mut team_roles = HashMap::new();
@@ -316,69 +312,8 @@ impl Enrolled {
                 }
             }
         }
-        let mut agent_callers = Self::agent_callers(&saved, &trusted, open_agents);
-        let link_only = Self::link_callers(&saved, acl, granted, &mut agent_callers);
-        Self {
-            saved,
-            keys,
-            trusted,
-            others,
-            agent_callers,
-            open_agents,
-            link_only,
-            team_roles,
-            shared_roles,
-            push: Vec::new(),
-        }
-    }
-
-    /// #856: the daemons a link grant here names that aren't let in already,
-    /// added to `callers` (as their account) and returned: a conversation's
-    /// home on a teammate's machine, or one a session here is shared with.
-    /// Each is found where its account's devices can be checked (a roster
-    /// this daemon verified, or a root a grant pinned), never on control's
-    /// word alone.
-    fn link_callers(
-        saved: &Saved,
-        acl: &Acl,
-        granted: &[String],
-        callers: &mut Vec<(Cert, Principal)>,
-    ) -> std::collections::HashSet<String> {
-        let mut out = std::collections::HashSet::new();
-        let wanted = |c: &Cert| c.kind == Kind::Daemon && c.device != saved.cert.device && granted.contains(&c.device);
-        let who = |account: &str, name: &str| Principal::User {
-            id: format!("account:{account}"),
-            name: if name.is_empty() { account.to_owned() } else { name.to_owned() },
-            pic: None,
-        };
-        let mut found: Vec<(Cert, Principal)> = Vec::new();
-        for t in saved.shared_teams.values() {
-            for m in t.roster.members.iter().filter(|m| !t.locked || m.role == TeamRole::Owner) {
-                let p = who(&m.account, t.names.get(&m.account).unwrap_or(&m.name));
-                found.extend(t.roster.devices(&m.account, &t.certs).devices.into_values().map(|c| (c, p.clone())));
-            }
-        }
-        let roots = acl
-            .list()
-            .into_iter()
-            .filter_map(|g| Some((g.principal.strip_prefix("account:")?.to_owned(), g.root?)))
-            .chain(
-                acl.reach()
-                    .into_iter()
-                    .filter_map(|r| Some((r.principal.strip_prefix("account:")?.to_owned(), r.root))),
-            );
-        for (account, root) in roots {
-            let Some(p) = saved.peers.get(&account) else { continue };
-            let t = Trust { account: account.clone(), root }.evaluate(&p.certs, &p.revocations);
-            found.extend(t.devices.into_values().map(|c| (c, who(&account, &p.name))));
-        }
-        for (c, p) in found {
-            if wanted(&c) && !callers.iter().any(|(o, _)| o.device == c.device) {
-                out.insert(c.device.clone());
-                callers.push((c, p));
-            }
-        }
-        out
+        let agent_callers = Self::agent_callers(&saved, &trusted, open_agents);
+        Self { saved, keys, trusted, others, agent_callers, open_agents, team_roles, shared_roles, push: Vec::new() }
     }
 
     /// The daemons that may call this machine's agents (#399), each as its
@@ -456,22 +391,6 @@ impl Enrolled {
         let mut a: Vec<String> = self
             .agent_callers
             .iter()
-            .map(|(c, _)| c.account.clone())
-            .filter(|a| *a != self.saved.cert.account)
-            .collect();
-        a.sort();
-        a.dedup();
-        a
-    }
-
-    /// #856: the accounts whose daemons get in for the panes linked here to
-    /// their conversations only: control routes their daemons, never their
-    /// people.
-    fn link_accounts(&self) -> Vec<String> {
-        let mut a: Vec<String> = self
-            .agent_callers
-            .iter()
-            .filter(|(c, _)| self.link_only.contains(&c.device))
             .map(|(c, _)| c.account.clone())
             .filter(|a| *a != self.saved.cert.account)
             .collect();
@@ -915,11 +834,6 @@ impl Control {
         crate::labs::offers_agents(&self.state_dir)
     }
 
-    /// The daemons a link grant here names (#856).
-    fn granted(&self) -> Vec<String> {
-        crate::labs::links::granted_devices(&self.state_dir)
-    }
-
     /// What this daemon tells control it understands, and (#347) whether
     /// its owner has Developer settings here, so control's page offers
     /// Labs flags only to people with such a machine.
@@ -1197,7 +1111,7 @@ impl Control {
         let next = match read_saved(&self.state_dir).and_then(|s| {
             let Some(saved) = s else { return Ok(None) };
             let keys = DeviceKeys::load(&self.state_dir.join(KEY_FILE))?;
-            Ok(Some(Enrolled::build(saved, Arc::new(keys), &self.acl, self.open_agents(), &self.granted())))
+            Ok(Some(Enrolled::build(saved, Arc::new(keys), &self.acl, self.open_agents())))
         }) {
             Ok(n) => n,
             Err(e) => {
@@ -1429,7 +1343,7 @@ impl Control {
         if changed {
             write_saved(&self.state_dir, &saved)?;
         }
-        let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents(), &self.granted());
+        let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
         if next.trusted.get(&next.saved.cert.device).is_none() {
             warn!("this daemon's own certificate no longer checks out (revoked?)");
         }
@@ -1638,22 +1552,7 @@ impl Control {
     /// Tell control which accounts get in (it routes them; we decide).
     async fn publish(&self, e: &Enrolled) {
         let links = self.acl.links_until();
-        let body = wire::AccessList {
-            accounts: e.accounts(),
-            links_until: links,
-            agents: e.agent_accounts(),
-            links: e.link_accounts(),
-            // #857: those a conversation here let in, with its title.
-            reasons: self
-                .acl
-                .reach()
-                .into_iter()
-                .filter_map(|r| {
-                    let account = r.principal.strip_prefix("account:")?.to_owned();
-                    Some(wire::AccessReason { account, conv: r.conv })
-                })
-                .collect(),
-        };
+        let body = wire::AccessList { accounts: e.accounts(), links_until: links, agents: e.agent_accounts() };
         if self.published.lock().unwrap().as_ref() == Some(&body) {
             return;
         }
@@ -2717,7 +2616,7 @@ pub(crate) mod tests {
     pub(crate) fn joined_at(dir: &Path, url: &str) -> Arc<Control> {
         let acl = Arc::new(Acl::open(dir));
         let c = Control::new(dir, vec![], String::new(), acl.clone(), false);
-        c.install(Some(Enrolled::build(saved_for(url, "a"), Arc::new(DeviceKeys::generate()), &acl, false, &[])));
+        c.install(Some(Enrolled::build(saved_for(url, "a"), Arc::new(DeviceKeys::generate()), &acl, false)));
         c
     }
 
@@ -3324,7 +3223,7 @@ pub(crate) mod tests {
         let c = Control::new(&r.dir, vec![], String::new(), r.acl.clone(), false);
         let changed = *c.changed.borrow();
         c.reload();
-        c.install(c.enrolled().map(|e| Enrolled::build(e.saved.clone(), e.keys.clone(), &r.acl, false, &[])));
+        c.install(c.enrolled().map(|e| Enrolled::build(e.saved.clone(), e.keys.clone(), &r.acl, false)));
         assert!(*c.changed.borrow() > changed);
         assert_eq!(*c.refreshed.borrow(), 0, "not by reload or install");
         c.refresh().await.unwrap();
@@ -3735,7 +3634,7 @@ pub(crate) mod tests {
             e.agent_callers.iter().find(|(x, _)| x.device == c.device).map(|(_, p)| p.id().to_owned())
         };
 
-        let closed = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false, &[]);
+        let closed = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
         assert_eq!(who(&closed, &m_other).as_deref(), Some("account:m"), "this account's other machine, not the owner");
         assert_eq!(who(&closed, &o_box).as_deref(), Some("account:o"), "a team owner's machine, not the owner");
         assert_eq!(who(&closed, &p_box), None, "a pinned team's only while agents are offered");
@@ -3745,7 +3644,7 @@ pub(crate) mod tests {
         assert!(closed.others.iter().any(|(c, p)| c.device == o_root.device && p.is_owner()));
         assert!(!closed.others.iter().any(|(c, _)| c.kind == Kind::Daemon));
 
-        let open = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, true, &[]);
+        let open = Enrolled::build(saved, Arc::new(DeviceKeys::generate()), &acl, true);
         assert_eq!(who(&open, &p_box).as_deref(), Some("account:p"));
         assert_eq!(open.agent_accounts(), ["o", "p"], "control routes those, for agents; never this account");
         let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
@@ -3809,7 +3708,7 @@ pub(crate) mod tests {
         let dir = std::env::temp_dir().join(format!("arugula-co-owners-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Arc::new(Acl::open(&dir));
-        let mut e = Enrolled::build(saved, Arc::new(keys), &acl, false, &[]);
+        let mut e = Enrolled::build(saved, Arc::new(keys), &acl, false);
         let sub = |account: &str, device: &Cert| PushSub {
             v: 1,
             account: account.into(),
@@ -3904,7 +3803,7 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let acl = Acl::open(&dir);
         let keys = Arc::new(keys);
-        let name = |saved: &Saved| match &Enrolled::build(saved.clone(), keys.clone(), &acl, false, &[]).others[0].1 {
+        let name = |saved: &Saved| match &Enrolled::build(saved.clone(), keys.clone(), &acl, false).others[0].1 {
             Principal::User { name, .. } => name.clone(),
             other => panic!("{other:?}"),
         };

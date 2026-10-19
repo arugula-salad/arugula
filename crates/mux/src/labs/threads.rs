@@ -107,17 +107,10 @@ impl Threads {
         let mut out: Vec<crate::acl::Reach> = Vec::new();
         let mut convs: Vec<&Conversation> = self.convs.values().collect();
         convs.sort_by_key(|c| (c.created, c.id));
-        for c in convs {
-            for m in &c.members {
-                let Some(root) = &m.root else { continue };
-                if !out.iter().any(|r| r.principal == m.who) {
-                    out.push(crate::acl::Reach {
-                        principal: m.who.clone(),
-                        name: m.name.clone(),
-                        root: root.clone(),
-                        conv: c.title.clone(),
-                    });
-                }
+        for m in convs.into_iter().flat_map(|c| &c.members) {
+            let Some(root) = &m.root else { continue };
+            if !out.iter().any(|r| r.principal == m.who) {
+                out.push(crate::acl::Reach { principal: m.who.clone(), name: m.name.clone(), root: root.clone() });
             }
         }
         out
@@ -261,17 +254,6 @@ pub fn names(token: &str, id: &str, name: &str) -> bool {
     [squashed.as_str(), first, local, login.as_str()].iter().any(|n| !n.is_empty() && token == *n)
 }
 
-/// Whether a message calls the pane's agent.
-pub fn calls_agent(tokens: &[String]) -> bool {
-    tokens.iter().any(|t| t == "agent" || t == "claude")
-}
-
-/// Whether a conversation's message's `@`s (from [`mentions`]) call its
-/// lead (#858).
-pub fn calls_lead(tokens: &[String]) -> bool {
-    tokens.iter().any(|t| t == "lead")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,9 +290,6 @@ mod tests {
             quote: None,
             mentions: vec![],
             landed: Vec::new(),
-            to_agent: false,
-            agent: false,
-            event: None,
         }
     }
 
@@ -403,6 +382,5 @@ mod tests {
         assert!(!names("sa", "account:abc", "Sam Lee"));
         assert!(names("me", "owner", "me@example.com"));
         assert!(names("owner", "owner", "Jake"));
-        assert!(calls_agent(&mentions("hey @Claude look")));
     }
 }

@@ -131,7 +131,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <PromptLayer />
       <ThreadLayer phone={phone} />
       {state && <InLabs on={client.hasThreads()}>{(l) => <l.ChatPage client={client} />}</InLabs>}
-      <InLabs on={client.hasThreads()}>{(l) => <l.LinkLayer />}</InLabs>
       {state && <AgentsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
@@ -222,7 +221,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <PromptLayer />
       <ThreadLayer phone={phone} />
       {state && <InLabs on={client.hasThreads()}>{(l) => <l.ChatPage client={client} />}</InLabs>}
-      <InLabs on={client.hasThreads()}>{(l) => <l.LinkLayer />}</InLabs>
       {state && <AgentsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>

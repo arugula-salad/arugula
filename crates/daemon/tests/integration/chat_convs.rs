@@ -196,16 +196,13 @@ async fn a_conversation_has_its_own_members_floors_and_rules() {
 }
 
 /// #889: the owner is called by their name, not their tailnet login's email
-/// (as control calls them, and as the page shows them), in what they post,
-/// the conversation they make and the grants they give, and an `@` of it
-/// still reaches them. A link here keeps its grant's epoch exactly, not
-/// the one a browser sent (it rounds nanoseconds).
+/// (as control calls them, and as the page shows them), in what they post
+/// and the conversation they make, and an `@` of it still reaches them.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_owner_is_named_short_and_a_link_keeps_its_epoch() {
+async fn the_owner_is_named_short() {
     let d = daemon("convs-name");
     let panes = d.get("/api/panes");
-    let (pane, session) = (panes[0]["id"].as_u64().unwrap(), panes[0]["session"].as_u64().unwrap());
-    let epoch = panes[0]["epoch"].as_u64().unwrap();
+    let session = panes[0]["session"].as_u64().unwrap();
     d.post("/api/acl", json!({ "session": session, "principal": format!("tailnet:{WATCHER}"), "role": "editor" }));
 
     let (s, c) = owner(&d, "POST", "/api/convs", Some(json!({ "title": "names" })));
@@ -222,13 +219,6 @@ async fn the_owner_is_named_short_and_a_link_keeps_its_epoch() {
     let (s, v) = guest(&d, WATCHER, "POST", &thread, Some(json!({ "text": "@me are you there?" })));
     assert_eq!(s, 200, "{v}");
     assert_eq!(v["message"]["mentions"], json!(["owner"]), "{v}");
-
-    let (s, g) = owner(&d, "POST", &format!("/api/panes/{pane}/conv-grants"), Some(json!({ "conv": id })));
-    assert_eq!(s, 200, "{g}");
-    assert_eq!((g["by_name"].as_str(), g["epoch"].as_u64()), (Some("me"), Some(epoch)), "{g}");
-    // A browser's rounded epoch doesn't replace the grant's.
-    let c = d.post(&format!("/api/convs/{id}/links"), json!({ "pane": pane, "epoch": epoch / 1000 * 1000 + 1 }));
-    assert_eq!(c["links"][0]["epoch"].as_u64(), Some(epoch), "{c}");
 }
 
 /// With chat off, conversations are refused like every thread route.

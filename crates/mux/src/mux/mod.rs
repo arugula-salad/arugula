@@ -33,18 +33,12 @@ pub struct ThreadPost {
     /// A team's other owner posting (#935): they're named, and their post
     /// is recorded, as themselves; `who` still decides what they may.
     pub acting: Option<crate::acl::Principal>,
-    /// An agent posting through MCP: its name. Access is still `who`'s.
-    pub as_agent: Option<Driver>,
     pub text: String,
     pub quote: Option<arugula_proto::Quote>,
-    /// What a linked pane did (#857): a conversation's only. Its text is
-    /// what a reader that doesn't know events shows.
-    pub event: Option<arugula_proto::ConvEvent>,
 }
 
-/// What a post comes to: the message, whether it went to the pane's agent,
-/// and the `@`s that reached no one.
-pub type Posted = (ThreadMsg, bool, Vec<arugula_proto::api::Unreached>);
+/// What a post comes to: the message, and the `@`s that reached no one.
+pub type Posted = (ThreadMsg, Vec<arugula_proto::api::Unreached>);
 
 /// Why a thread request failed: an HTTP status and what to say.
 #[derive(Debug)]
@@ -81,58 +75,6 @@ pub enum ConvReq {
         id: arugula_proto::ConvId,
         member: String,
     },
-    /// Link a pane (#856), as its grant on the pane's machine allows: the
-    /// daemon checked that. Its name and `by` are the mux's to fill.
-    Link {
-        id: arugula_proto::ConvId,
-        link: arugula_proto::ConvLink,
-    },
-    /// Close a link, as someone (its owner, or whoever linked it).
-    Unlink {
-        id: arugula_proto::ConvId,
-        name: String,
-    },
-    /// Close a link because its pane's machine refused it or the pane went:
-    /// the daemon's, never a request's.
-    LinkClosed {
-        id: arugula_proto::ConvId,
-        name: String,
-        why: String,
-    },
-    /// Its lead started, or what it has seen, owes or waits on (#858): the
-    /// daemon's, never a request's.
-    Lead {
-        id: arugula_proto::ConvId,
-        change: LeadChange,
-    },
-}
-
-/// What happens to a conversation's lead (#858): the daemon's, never a
-/// request's.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LeadChange {
-    /// A lead started in `block`, first or in place of a lost one, having
-    /// been shown up to `cursor`. Whom the lost one owed an answer, and the
-    /// links it waited on, are the new one's.
-    Start { block: arugula_proto::PaneId, at: u64, cursor: u64 },
-    /// It was handed a prompt showing the timeline up to `cursor`.
-    Turn { cursor: u64 },
-    /// `who` wrote `@lead`: its next reply is theirs.
-    Asked(String),
-    /// It posted in its turn.
-    Posted,
-    /// Its reply (message `msg`) answers these people: the mux tells them.
-    Replied { who: Vec<String>, msg: u64 },
-    /// A turn of its ended: the next one hasn't posted yet.
-    TurnDone,
-    /// It prompted this link: the link's turn ending wakes it.
-    Await(String),
-    /// It saw this link finish itself (it waited on it).
-    Settled(String),
-    /// This link ended its turn: if the lead waited on it, it's to be woken.
-    LinkEnded(String),
-    /// It was told these links ended.
-    Woken(Vec<String>),
 }
 
 use self::attention::{TermAsk, Waiter};
@@ -326,8 +268,6 @@ pub enum Api {
     Answered(PaneId, Driver, String, String, String),
     /// What to call someone (M13), for attribution.
     Who(crate::acl::Principal, oneshot::Sender<Driver>),
-    /// What chat calls someone (#889): the owner by a short name.
-    ChatName(crate::acl::Principal, oneshot::Sender<String>),
     /// The asker gave up (Claude Code interrupted it): close the card.
     /// With a token, only if it's still that registration's.
     AskWithdraw(PaneId, Option<String>, Option<u64>),
@@ -338,15 +278,11 @@ pub enum Api {
     MayDrive(crate::acl::Principal, PaneId, oneshot::Sender<Result<(), String>>),
     /// A thread's messages (M61), as `who` may read them.
     ThreadGet(ThreadTarget, crate::acl::Principal, oneshot::Sender<Result<Vec<ThreadMsg>, ThreadError>>),
-    /// Post in a thread as `who`. `as_agent`: an agent posts through MCP
-    /// under that name. Answers with the message, and whether it goes to
-    /// the pane's agent as a follow-up.
+    /// Post in a thread as `who`. Answers with the message.
     ThreadPost(ThreadPost, oneshot::Sender<Result<Posted, ThreadError>>),
     /// Make, change or delete a conversation (#855), as `who`: the record
     /// as it is after (a deleted one as it was).
     Conv(ConvReq, crate::acl::Principal, oneshot::Sender<Result<arugula_proto::Conversation, ThreadError>>),
-    /// Every conversation kept here (#857: the daemon watches their links).
-    Convs(oneshot::Sender<Vec<arugula_proto::Conversation>>),
     /// `who` has read a thread up to a message.
     ThreadRead(ThreadTarget, crate::acl::Principal, Option<crate::acl::Principal>, u64),
     /// Which of these (principal ids) read a thread now (#297); `None` if

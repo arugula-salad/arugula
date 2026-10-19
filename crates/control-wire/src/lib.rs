@@ -28,8 +28,8 @@ pub mod telemetry;
 pub use join::{CliJoinRequest, JoinPoll, JoinProof, JoinRequest, JoinStarted, JoinTeam, PollQuery};
 pub use push::{PushAnswer, PushRequest, PushSubs};
 pub use team::{
-    AccessList, AccessReason, DEV_SETTINGS, Features, Flags, LOCAL_ONLY_FLAGS, PeerCerts, PeersQuery, SharedTeamAnswer,
-    TeamAnswer, TeamNone, TeamQuery, TeamsQuery, TrustAnswer,
+    AccessList, DEV_SETTINGS, Features, Flags, LOCAL_ONLY_FLAGS, PeerCerts, PeersQuery, SharedTeamAnswer, TeamAnswer,
+    TeamNone, TeamQuery, TeamsQuery, TrustAnswer,
 };
 
 /// What control says about itself, to browsers, the CLI and daemons.

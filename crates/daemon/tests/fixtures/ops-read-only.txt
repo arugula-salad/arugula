@@ -2,8 +2,6 @@
 acl.get GET /api/acl
 adapters.list GET /api/agents/adapters
 agents.get GET /api/hosts/self/agents
-conv.grants GET /api/panes/{id}/conv-grants
-conv.links GET /api/convs/{id}/links
 conversations.list GET /api/conversations
 flags.list GET /api/flags
 fs.list GET /api/fs/list

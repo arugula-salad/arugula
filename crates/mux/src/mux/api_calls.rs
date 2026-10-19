@@ -43,9 +43,6 @@ impl Daemon {
             Api::Conv(req, who, reply) => {
                 let _ = reply.send(self.conv(req, &who));
             }
-            Api::Convs(reply) => {
-                let _ = reply.send(self.convs_for(&Principal::Owner));
-            }
             Api::CanRead(target, ids, reply) => {
                 // A conversation's people are its members: anyone else
                 // could be added to it.
@@ -309,9 +306,6 @@ impl Daemon {
             Api::Answered(pane, by, id, how, headline) => self.record_answer(pane, &by, &id, &how, &headline),
             Api::Who(who, reply) => {
                 let _ = reply.send(self.driver_of(&who));
-            }
-            Api::ChatName(who, reply) => {
-                let _ = reply.send(self.chat_name_of(&who));
             }
             Api::AskWithdraw(pane, id, token) => {
                 let open = self.asks.get(&pane).is_some_and(|a| {

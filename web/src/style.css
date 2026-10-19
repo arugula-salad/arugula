@@ -6730,12 +6730,6 @@ button.diff-why-run {
   object-fit: cover;
 }
 
-.msg-avatar.agent {
-  background: color-mix(in srgb, var(--accent) 30%, var(--raised));
-  color: var(--accent);
-  font-size: 16px;
-}
-
 .msg-hover-time {
   visibility: hidden;
   padding-top: 3px;
@@ -6760,17 +6754,6 @@ button.diff-why-run {
 
 .thread-name {
   font-weight: 700;
-}
-
-.msg-badge {
-  padding: 0 4px;
-  border-radius: 3px;
-  background: var(--raised);
-  color: var(--dim);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .thread-head time {
@@ -6943,11 +6926,6 @@ button.thread-quote:hover {
   position: absolute;
   top: 4px;
   right: 4px;
-  color: var(--dim);
-}
-
-.thread-tag {
-  font-size: 11px;
   color: var(--dim);
 }
 
@@ -8624,231 +8602,12 @@ html[data-finish="glass"] .prompt-backdrop {
   background: #000;
 }
 
-/* #856: a conversation's links, as chips under its header. */
-.link-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--raised);
-}
-
-.link-chip {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  border: 1px solid var(--raised-hover);
-  border-radius: 999px;
-  font-size: 12px;
-}
-
-.link-chip-open {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 2px 10px;
-  overflow: hidden;
-  color: var(--fg);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.link-chip-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ok);
-}
-
-.link-chip.offline .link-chip-dot {
-  background: var(--warn);
-}
-
-.link-chip.closed {
-  opacity: 0.6;
-}
-
-.link-chip.closed .link-chip-dot {
-  background: var(--muted);
-}
-
-.link-chip.closed .link-chip-open {
-  text-decoration: line-through;
-}
-
-/* #858: the lead, first among them. */
-.link-chip.lead {
-  border-style: dashed;
-}
-
-.link-chip.lead.working .link-chip-dot {
-  background: var(--accent);
-}
-
-.link-chip.lead.waiting .link-chip-dot {
-  background: var(--warn);
-}
-
-.link-chip.lead.idle .link-chip-dot,
-.link-chip.lead.gone .link-chip-dot,
-.link-chip.lead.none .link-chip-dot {
-  background: var(--muted);
-}
-
-.link-chip-close {
-  padding: 2px 8px 2px 2px;
-  color: var(--dim);
-}
-
-.link-chip-close:hover {
-  color: var(--fg);
-}
-
-.link-choices {
-  margin: 0 0 10px;
-  padding: 0;
-  list-style: none;
-}
-
-.link-choices li + li {
-  margin-top: 6px;
-}
-
 .conv-teammates {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 10px;
   margin: 8px 0 0;
   color: var(--dim);
-}
-
-/* #857: what a conversation's links do, in its timeline. */
-.conv-event {
-  font-size: 13px;
-  line-height: 1.46;
-}
-
-.conv-event-line {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0 6px;
-  color: var(--fg);
-}
-
-.conv-event-meta {
-  color: var(--dim);
-}
-
-.conv-event-dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--dim);
-  align-self: center;
-}
-
-.conv-event-dot.done {
-  background: var(--ok, #3fb950);
-}
-
-.conv-event-dot.failed {
-  background: var(--danger, #f85149);
-}
-
-.conv-event-summary {
-  margin: 4px 0 2px;
-  padding: 6px 8px;
-  border-left: 3px solid var(--raised-hover);
-  border-radius: 4px;
-  background: var(--letterbox);
-  overflow-wrap: anywhere;
-}
-
-.conv-event-summary > .msg-code {
-  background: var(--bg);
-}
-
-.conv-card {
-  margin: 4px 0;
-  padding: 8px 10px;
-  max-width: 560px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  background: var(--letterbox);
-}
-
-.conv-card.answered,
-.conv-card.moved {
-  border-color: var(--raised-hover);
-}
-
-.conv-card-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--dim);
-}
-
-.conv-card-input {
-  margin: 4px 0 8px;
-  font: 12px/1.35 ui-monospace, monospace;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.conv-card-buttons {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.conv-card-buttons button {
-  min-height: 32px;
-  padding: 0 14px;
-}
-
-.conv-card-note {
-  font-size: 12px;
-  color: var(--dim);
-}
-
-/* #887: an edit waiting as a diff, on its card. */
-.conv-card-file {
-  margin: 4px 0;
-  font: 12px/1.35 ui-monospace, monospace;
-  overflow-wrap: anywhere;
-}
-
-.conv-card-diff {
-  margin: 0 0 8px;
-}
-
-.conv-card-diff summary {
-  font-size: 12px;
-  color: var(--dim);
-  cursor: pointer;
-}
-
-/* #859: a question's options on its card, as beside the pane. */
-.conv-card-form {
-  margin: 6px 0 0;
-  padding: 0;
-  border: none;
-  min-width: 0;
-}
-
-.conv-card .ask {
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: none;
 }
 
 .cloud-panel { width: min(850px, 85vw); max-height: 85vh; overflow: auto; }

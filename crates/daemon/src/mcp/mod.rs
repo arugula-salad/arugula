@@ -40,7 +40,7 @@ pub(crate) mod tools;
 use std::sync::Arc;
 
 use arugula_proto::{
-    BlockType, ConvId, PaneId,
+    BlockType, PaneId,
     flags::{self, On},
 };
 use axum::{
@@ -112,28 +112,14 @@ pub enum Scope {
     /// (on the tab's machine, in a VM tab), driving and closing what it
     /// started, and reading the rest of its tab. Nothing in other tabs.
     Block(PaneId),
-    /// A conversation's lead (#858): its block's scope, plus the
-    /// conversation's links, by name only (`L1`, `L2`…), to prompt, wait on
-    /// and read; and its conversation's thread. A pane number reaches only
-    /// what a block's token reaches (its own tab), so a number that happens
-    /// to be a link's on another machine can't be mistaken for it.
-    Lead { block: PaneId, conv: ConvId },
 }
 
 impl Scope {
     /// The agent block whose token this is.
     pub fn block(self) -> Option<PaneId> {
         match self {
-            Scope::Block(b) | Scope::Lead { block: b, .. } => Some(b),
+            Scope::Block(b) => Some(b),
             Scope::Full | Scope::Read => None,
-        }
-    }
-
-    /// The conversation this caller leads.
-    pub fn leads(self) -> Option<ConvId> {
-        match self {
-            Scope::Lead { conv, .. } => Some(conv),
-            _ => None,
         }
     }
 }
@@ -227,14 +213,7 @@ async fn authenticate(State(app): State<Arc<App>>, mut req: Request, next: Next)
                 Caller::new(scope, Some(name), pane)
             }
             Some(Bearer::Block(id)) => match app.mux.api(|r| Api::Block(id, r)).await.flatten() {
-                Some(b) if b.kind() == BlockType::Agent => {
-                    // A conversation's lead (#858) reaches its links too.
-                    let scope = match crate::labs::lead::of(&app, id).await {
-                        Some(conv) => Scope::Lead { block: id, conv },
-                        None => Scope::Block(id),
-                    };
-                    Caller::new(scope, Some(format!("%{id}")), pane)
-                }
+                Some(b) if b.kind() == BlockType::Agent => Caller::new(Scope::Block(id), Some(format!("%{id}")), pane),
                 _ => return refuse(StatusCode::UNAUTHORIZED, &format!("agent block %{id} is gone; its token with it")),
             },
             None => return refuse(StatusCode::UNAUTHORIZED, "unknown or revoked MCP token"),
@@ -324,22 +303,14 @@ answer), follow-ups (arugula inbox) and attention on cards; without them your qu
 `arugula hooks install` adds them: ask your person first (capabilities says whether yours are live). \
 Run each `arugula ...` command on its own, not in a pipeline or an `&&` chain, so the allow rules match it.";
 
-/// What the people's conversation about a pane or session adds to the
-/// instructions: only on a machine with the `chat` flag, where those tools
-/// are listed.
-const THREAD_INSTRUCTIONS: &str = "read_thread and post_thread for the people's conversation about a pane or session (an @agent message there reaches you as a follow-up: answer with post_thread), ";
-
 /// What the `docs` flag adds: the `doc` tool is listed only where it is on.
 const DOC_INSTRUCTIONS: &str = "doc to build a report, plan or write-up the user watches fill in beside your pane, ";
 
-/// The server's instructions: without the `chat` flag, they leave out
-/// threads; without `docs`, the Doc.
+/// The server's instructions: without the `docs` flag, they leave out the
+/// Doc. Chat isn't an agent's (#1095): nothing of it is here.
 pub(crate) fn instructions(on: On) -> String {
     let at = INSTRUCTIONS_BASE.find("history for what").expect("the instructions name history");
     let mut out = INSTRUCTIONS_BASE[..at].to_owned();
-    if on.has(flags::CHAT) {
-        out.push_str(THREAD_INSTRUCTIONS);
-    }
     if on.has(flags::DOCS) {
         out.push_str(DOC_INSTRUCTIONS);
     }

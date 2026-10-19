@@ -58,13 +58,6 @@ import {
   type ConvMemberRequest,
   type ConvRenameRequest,
   type Conversation,
-  type ConvGrant,
-  type ConvGrantRequest,
-  type ConvGrantRevokeRequest,
-  type ConvLinkRequest,
-  type ConvLinkStatus,
-  type ConvUnlinkRequest,
-  type ConvActRequest,
 } from "./proto";
 import { decompress } from "fzstd";
 import { SCROLLBACK, TerminalView } from "./terminal-view";
@@ -72,7 +65,6 @@ import { makeBlockView, type BlockView } from "./blocks";
 import { E2ESocket, type DaemonClock, type DaemonRef } from "./e2e/channel.ts";
 import type { DeviceKeys } from "./e2e/keys.ts";
 import { pick, upload } from "./upload";
-import { JsonText, exactField, withExact } from "./exact";
 import { desktopApp } from "./desktop";
 
 /** Ack about this often (bytes drawn); the daemon allows 512 KB. */
@@ -399,7 +391,7 @@ export class Client {
         ? {}
         : body instanceof Uint8Array
           ? { headers: { "Content-Type": "application/octet-stream" }, body: body as BodyInit }
-          : { headers: { "Content-Type": "application/json" }, body: body instanceof JsonText ? body.text : JSON.stringify(body) }),
+          : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
     });
     return { ok: res.ok, status: res.status, json: <T,>() => res.json() as Promise<T>, text: () => res.text() };
   }
@@ -638,7 +630,6 @@ export class Client {
     const r = await this.request(OPS["thread.post"].method, opPath("thread.post", { target: threadKey(t) }), { text, quote } satisfies ThreadPostRequest);
     if (!r.ok) throw new Error((await r.json<{ error?: string }>().catch(() => ({ error: undefined }))).error ?? `HTTP ${r.status}`);
     const body = await r.json<ThreadPosted>();
-    if (body.agent?.error) this.showError(`the agent didn't get it: ${body.agent.error}`);
     return { message: body.message, unreached: body.unreached ?? [], invitable: body.invitable ?? [] };
   }
 
@@ -727,60 +718,6 @@ export class Client {
         root: reach?.root ?? null,
       } satisfies ConvMemberRequest),
     );
-  }
-
-  // ---- links (#856): a conversation's panes, by a grant on the pane's machine
-
-  /** Let a conversation's home drive `pane` here, with this person's
-   *  rights on it. `device`: the home's control device id, null when the
-   *  home is this machine. */
-  async grantConv(pane: PaneId, req: ConvGrantRequest): Promise<ConvGrant & { epoch_exact: string }> {
-    const r = await this.convOk(this.request(OPS["conv.grant"].method, opPath("conv.grant", { id: pane }), req));
-    // Its epoch's digits as the daemon wrote them (#889): `epoch` is rounded.
-    const text = r.text ? await r.text() : JSON.stringify(await r.json());
-    const g = JSON.parse(text) as ConvGrant;
-    return { ...g, epoch_exact: exactField(text, "epoch") ?? String(g.epoch) };
-  }
-
-  /** The conversations `pane` is linked to, by their grants here. */
-  convGrants(pane: PaneId): Promise<ConvGrant[]> {
-    return this.convCall(this.request(OPS["conv.grants"].method, opPath("conv.grants", { id: pane })));
-  }
-
-  /** Take a grant back: the conversation's link to `pane` is cut. */
-  revokeConvGrant(pane: PaneId, device: string, conv: string): Promise<ConvGrant[]> {
-    return this.convCall(
-      this.request(OPS["conv.grant_revoke"].method, opPath("conv.grant_revoke", { id: pane }), { device, conv } satisfies ConvGrantRevokeRequest),
-    );
-  }
-
-  /** Answer a link's card (#857), by its ask's id: it goes to the link's
-   *  machine, and the conversation records who answered. */
-  convAct(id: string, req: ConvActRequest): Promise<unknown> {
-    return this.convCall(this.request(OPS["conv.act"].method, opPath("conv.act", { id }), req));
-  }
-
-  /** Link a pane its machine granted this conversation (kept here). */
-  linkConv(id: string, req: ConvLinkRequest, epochExact?: string): Promise<Conversation> {
-    // The grant's epoch, exactly (#889), still a JSON number.
-    const body = epochExact ? withExact(req, "epoch", epochExact) : req;
-    return this.convCall(this.request(OPS["conv.link"].method, opPath("conv.link", { id }), body));
-  }
-
-  /** Start the conversation's lead (#858), or a new one in place of a
-   *  lost one: the conversation keeps its id and timeline. */
-  startLead(id: string): Promise<Conversation> {
-    return this.convCall(this.request(OPS["conv.lead"].method, opPath("conv.lead", { id })));
-  }
-
-  /** Each link's state now, read from its machine. */
-  convLinks(id: string): Promise<ConvLinkStatus[]> {
-    return this.convCall(this.request(OPS["conv.links"].method, opPath("conv.links", { id })));
-  }
-
-  /** Close a link (it stays, closed). */
-  unlinkConv(id: string, name: string): Promise<Conversation> {
-    return this.convCall(this.request(OPS["conv.unlink"].method, opPath("conv.unlink", { id }), { name } satisfies ConvUnlinkRequest));
   }
 
   /** Take someone out (its owner), or leave (yourself). */

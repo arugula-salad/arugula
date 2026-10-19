@@ -143,13 +143,14 @@ async fn tools_through_the_stdio_bridge() {
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
     assert_eq!(tools.len(), 21 - NO_FORGE);
-    // Studio apps, chant workspaces and chat aren't listed without their
-    // flags (chat's tools, the others' kinds), and a caller who names one is
-    // told how to turn it on (#347); a build without Labs says it isn't
-    // built. Daemon-side Managoat was removed: its kinds aren't listed, and
-    // a caller who names one is told where cloud agents went.
+    // Studio apps and chant workspaces aren't listed without their flags,
+    // and a caller who names one is told how to turn it on (#347); a build
+    // without Labs says it isn't built. Daemon-side Managoat was removed: its
+    // kinds aren't listed, and a caller who names one is told where cloud
+    // agents went. Chat's old tools are gone (#1095).
     for name in ["read_thread", "post_thread"] {
         assert!(tools.iter().all(|t| t.name != name), "{name} is listed");
+        assert!(refused(&s, name, json!({ "pane": 1 })).await.contains("no tool"), "{name} by name");
     }
     for (tool, kind) in [("show", "app"), ("show", "workspace")] {
         assert!(!kinds(&tools, tool).contains(&kind.to_owned()), "{tool} kind {kind} is listed");
@@ -159,11 +160,6 @@ async fn tools_through_the_stdio_bridge() {
     }
     let said = refused(&s, "list", json!({ "kind": "managoat_agent", "name": "nobody" })).await;
     assert!(said.contains("Cloud workspaces in your Arugula account") && said.contains("cloud_workspaces"), "{said}");
-    #[cfg(feature = "labs")]
-    {
-        let said = refused(&s, "read_thread", json!({ "pane": 1 })).await;
-        assert!(said.contains("`arugulad flags chat on`"), "read_thread by name: {said}");
-    }
     let ro = |n: &str| tools.iter().find(|t| t.name == n).unwrap().annotations.as_ref().unwrap().read_only_hint;
     assert_eq!(
         (ro("read_output"), ro("wait"), ro("run"), ro("close")),
@@ -334,24 +330,6 @@ async fn what_a_tool_answers_fits_the_output_schema_it_lists() {
         fits("close", &call(&s, "close", json!({ "pane": p["pane"] })).await);
     }
 
-    #[cfg(feature = "labs")]
-    {
-        arugula_testkit::labs(&d.state, true);
-        let tools = s.list_all_tools().await.unwrap();
-        let first = d.get("/api/panes")[0]["id"].as_u64().unwrap();
-        for name in ["read_thread", "post_thread"] {
-            assert!(tools.iter().any(|t| t.name == name && t.output_schema.is_some()), "{name} lists no outputSchema");
-        }
-        let schema = |name: &str| {
-            Value::Object((**tools.iter().find(|t| t.name == name).unwrap().output_schema.as_ref().unwrap()).clone())
-        };
-        let posted = call(&s, "post_thread", json!({ "pane": first, "text": "@nobody does this fit?" })).await;
-        assert_eq!(posted["unreached"][0]["why"], "nobody", "{posted}");
-        arugula_testkit::schema::conforms(&posted, &schema("post_thread")).unwrap();
-        let read = call(&s, "read_thread", json!({ "pane": first })).await;
-        arugula_testkit::schema::conforms(&read, &schema("read_thread")).unwrap();
-        arugula_testkit::labs(&d.state, false);
-    }
     s.cancel().await.unwrap();
 }
 
@@ -494,7 +472,7 @@ async fn http_with_a_token_until_it_is_revoked() {
     let ro =
         d.post("/api/mcp/tokens", json!({ "name": "watcher", "scope": "read" }))["token"].as_str().unwrap().to_owned();
     let w = http(&d, &ro, Client::named("watcher")).await.unwrap();
-    // (Chat's read_thread is among the read-only tools only with labs, and read_forge only with the forge.)
+    // (read_forge is among the read-only tools only with the forge.)
     assert_eq!(w.list_all_tools().await.unwrap().len(), 9 - NO_FORGE / 2);
     assert!(refused(&w, "run", json!({ "command": "true" })).await.contains("may only read"));
     // Grouped, a write is still a write.
@@ -920,12 +898,12 @@ async fn prompt_agent_records_the_client_as_who_prompted() {
     assert_eq!(entries[at - 1]["text"], "A follow-up from mcp:claude-code", "{entries}");
 }
 
-/// The `labs` file in the state dir lists chat's two tools and the other
-/// five jobs (kinds of show and list), and brings
-/// back the thread text in the instructions, and removing it takes them away
-/// again, both with no restart. Each is read where it's used, on a `stat`.
+/// The `labs` file in the state dir lists `delegate`, `doc` and the other
+/// jobs (kinds of show and list), and removing it takes them away again,
+/// with no restart. Each is read where it's used, on a `stat`. Chat's old
+/// tools and their text never come back (#1095).
 #[tokio::test(flavor = "multi_thread")]
-async fn labs_lists_all_the_tools_and_the_thread_text() {
+async fn labs_lists_all_the_tools() {
     let d = Daemon::child();
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
@@ -938,27 +916,26 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 25, "{:?}", names(&with));
-        for name in ["read_thread", "post_thread", "delegate"] {
-            assert!(with.iter().any(|t| t.name == name), "{name} isn't listed with labs");
-        }
+        assert_eq!(with.len(), 23, "{:?}", names(&with));
+        assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
+        assert!(!with.iter().any(|t| t.name == "read_thread" || t.name == "post_thread"), "{:?}", names(&with));
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
         }
         for (tool, kind) in [("show", "managoat"), ("list", "managoat_agents"), ("list", "managoat_agent")] {
             assert!(!kinds(&with, tool).contains(&kind.to_owned()), "retired {tool} kind {kind} is listed with labs");
         }
-        // A new connection's instructions have the thread text.
+        // A new connection's instructions have no thread text.
         let s2 = bridge(&d, Client::named("claude-code")).await;
-        assert!(instructions(&s2).contains("read_thread and post_thread"), "{}", instructions(&s2));
+        assert!(!instructions(&s2).contains("thread"), "{}", instructions(&s2));
         s2.cancel().await.unwrap();
 
         arugula_testkit::labs(&d.state, false);
-        // #665: chat's flag alone lists its two tools and the thread text,
-        // and none of the others' kinds.
+        // #665: chat's flag alone lists no tool of its own (#1095), and none
+        // of the others' kinds.
         arugula_proto::flags::set(&d.state, "chat", true).unwrap();
         let chat = s.list_all_tools().await.unwrap();
-        assert_eq!(chat.len(), 23, "{:?}", names(&chat));
+        assert_eq!(chat.len(), 21, "{:?}", names(&chat));
         assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
         arugula_proto::flags::set(&d.state, "chat", false).unwrap();
         // A `fountain` flag from before #942's F5 changes nothing.
@@ -982,91 +959,6 @@ async fn labs_lists_all_the_tools_and_the_thread_text() {
     s.cancel().await.unwrap();
 }
 
-/// M61: an agent reads the people's thread about a pane and answers in it.
-#[cfg(feature = "labs")]
-#[tokio::test(flavor = "multi_thread")]
-async fn an_agent_reads_and_posts_in_threads() {
-    let d = Daemon::child();
-    arugula_testkit::labs(&d.state, true);
-    let panes = d.get("/api/panes");
-    let (pane, session) = (panes[0]["id"].as_u64().unwrap(), panes[0]["session"].as_u64().unwrap());
-    d.post(&format!("/api/threads/pane-{pane}"), json!({ "text": "why does the build fail?" }));
-    let s = bridge(&d, Client::named("claude-code")).await;
-    let r = call(&s, "read_thread", json!({ "pane": format!("%{pane}") })).await;
-    assert_eq!(r["messages"][0]["text"], "why does the build fail?");
-    assert!(r["summary"].as_str().unwrap().contains("why does the build fail?"), "{r}");
-    let p = call(&s, "post_thread", json!({ "pane": pane, "text": "a missing env var: FOO" })).await;
-    assert_eq!(
-        (p["message"]["agent"].as_bool(), p["message"]["name"].as_str()),
-        (Some(true), Some("claude-code (agent)"))
-    );
-    let r = call(&s, "read_thread", json!({ "pane": pane, "after": 1 })).await;
-    assert_eq!(r["messages"].as_array().unwrap().len(), 1, "{r}");
-    call(&s, "post_thread", json!({ "session": session, "text": "done for today" })).await;
-    assert_eq!(d.get(&format!("/api/threads/session-{session}"))["messages"][0]["text"], "done for today");
-    // An @ that goes nowhere comes back to the agent that wrote it.
-    let p = call(&s, "post_thread", json!({ "session": session, "text": "@claude @notreal ping" })).await;
-    assert_eq!(
-        p["unreached"],
-        json!([{ "token": "claude", "why": "agent_needs_pane" }, { "token": "notreal", "why": "nobody" }])
-    );
-    // A client with no pane of its own has to say which thread.
-    assert!(refused(&s, "post_thread", json!({ "text": "hi" })).await.contains("which thread"));
-    s.cancel().await.unwrap();
-}
-
-/// M61: an agent block's own pane is its thread unless it names another.
-#[cfg(feature = "labs")]
-#[test]
-fn an_agent_blocks_thread_is_its_own() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent", "--block-listen", "127.0.0.1:0"]);
-    arugula_testkit::labs(&d.state, true);
-    let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
-    let a = d.open("hello");
-    d.wait(a, "idle");
-    agent_mcp(&d, a, "post_thread", json!({ "text": "starting on it" })).unwrap();
-    assert_eq!(d.get(&format!("/api/threads/pane-{a}"))["messages"][0]["text"], "starting on it");
-    // Another tab's pane isn't its to post in.
-    let e = agent_mcp(&d, a, "post_thread", json!({ "pane": other, "text": "hi" })).unwrap_err();
-    assert!(e.contains("another tab"), "{e}");
-}
-
-/// An agent block's token reads and posts in the threads of its own tab and
-/// session only: another tab's pane, another session, or a pane that isn't
-/// open, by either tool.
-#[cfg(feature = "labs")]
-#[test]
-fn an_agent_blocks_threads_stop_at_its_tab_and_session() {
-    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent", "--block-listen", "127.0.0.1:0"]);
-    arugula_testkit::labs(&d.state, true);
-    let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
-    d.post(&format!("/api/threads/pane-{other}"), json!({ "text": "not for the agent" }));
-    let a = d.open("hello");
-    d.wait(a, "idle");
-    let session =
-        d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == a).unwrap()["session"].as_u64().unwrap();
-    // Its own pane and session work.
-    agent_mcp(&d, a, "read_thread", json!({})).unwrap();
-    agent_mcp(&d, a, "read_thread", json!({ "session": session })).unwrap();
-    agent_mcp(&d, a, "post_thread", json!({ "session": session, "text": "mine" })).unwrap();
-    // Another tab's pane is not its to read or post in.
-    let e = agent_mcp(&d, a, "read_thread", json!({ "pane": other })).unwrap_err();
-    assert!(e.contains("another tab") && !e.contains("not for the agent"), "{e}");
-    let e = agent_mcp(&d, a, "post_thread", json!({ "pane": other, "text": "hi" })).unwrap_err();
-    assert!(e.contains("another tab"), "{e}");
-    // Nor another session's.
-    let elsewhere = session + 1000;
-    for (tool, args) in [
-        ("read_thread", json!({ "session": elsewhere })),
-        ("post_thread", json!({ "session": elsewhere, "text": "hi" })),
-    ] {
-        let e = agent_mcp(&d, a, tool, args.clone()).expect_err(&format!("{tool} {args}"));
-        assert!(e.contains("isn't this agent's"), "{tool}: {e}");
-    }
-    // The refusals posted nothing.
-    assert_eq!(d.get(&format!("/api/threads/pane-{other}"))["messages"].as_array().unwrap().len(), 1);
-}
-
 /// A Claude Code in a terminal pane, through `arugula mcp`, is that pane
 /// where a call leaves one out, and `list` says which it is.
 #[cfg(feature = "labs")]
@@ -1076,25 +968,14 @@ async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
     arugula_testkit::labs(&d.state, true);
     let mine = d.get("/api/panes")[0]["id"].as_u64().unwrap();
     let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
-    d.post(&format!("/api/threads/pane-{mine}"), json!({ "text": "what is this pane for?" }));
-    d.post(&format!("/api/threads/pane-{other}"), json!({ "text": "and this one?" }));
 
     let s = bridge_in(&d, Client::named("claude-code"), Some(mine)).await;
-    let r = call(&s, "read_thread", json!({})).await;
-    assert_eq!(r["messages"][0]["text"], "what is this pane for?", "{r}");
-    call(&s, "post_thread", json!({ "text": "a build pane" })).await;
-    let posted = d.get(&format!("/api/threads/pane-{mine}"));
-    assert_eq!(posted["messages"][1]["text"], "a build pane", "{posted}");
-    assert_eq!(d.get(&format!("/api/threads/pane-{other}"))["messages"].as_array().unwrap().len(), 1);
     // Splitting "self" opens beside it, in its tab.
     let r = call(&s, "run", json!({ "split": "self" })).await;
     let split = r["pane"].as_u64().unwrap();
     assert_ne!(split, mine);
     let tab = |p: u64| d.get("/api/panes").as_array().unwrap().iter().find(|x| x["id"] == p).unwrap()["tab"].clone();
     assert_eq!(tab(split), tab(mine), "{r}");
-    // Naming a pane still wins.
-    let r = call(&s, "read_thread", json!({ "pane": other })).await;
-    assert_eq!(r["messages"][0]["text"], "and this one?", "{r}");
     let l = call(&s, "list", json!({})).await;
     let you: Vec<u64> = l["panes"]
         .as_array()
@@ -1104,12 +985,12 @@ async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
         .map(|p| p["pane"].as_u64().unwrap())
         .collect();
     assert_eq!(you, [mine], "only the caller's row says you: {l}");
+    assert!(l["panes"].as_array().unwrap().iter().any(|p| p["pane"] == other), "{l}");
     assert!(l["panes"].as_array().unwrap().iter().all(|p| p.get("you").is_none() || p["you"] == true), "{l}");
     s.cancel().await.unwrap();
 
-    // No pane, as before: it has to say which thread.
+    // No pane, as before.
     let s = bridge_in(&d, Client::named("claude-code"), None).await;
-    assert!(refused(&s, "read_thread", json!({})).await.contains("which thread"));
     assert!(refused(&s, "run", json!({ "split": "Self" })).await.contains("no pane of its own"));
     let l = call(&s, "list", json!({})).await;
     assert!(l["panes"].as_array().unwrap().iter().all(|p| p.get("you").is_none()), "{l}");
@@ -1117,8 +998,8 @@ async fn a_terminal_pane_is_the_default_of_the_mcp_server_it_runs() {
 
     // A pane that isn't open resolves no better than a wrong one named.
     let s = bridge_in(&d, Client::named("claude-code"), Some(9999)).await;
-    let by_default = refused(&s, "read_thread", json!({})).await;
-    assert_eq!(by_default, refused(&s, "read_thread", json!({ "pane": 9999 })).await);
+    let by_default = refused(&s, "read_file", json!({ "path": "notes.txt" })).await;
+    assert_eq!(by_default, refused(&s, "read_file", json!({ "path": "notes.txt", "pane": 9999 })).await);
     s.cancel().await.unwrap();
 }
 
@@ -1131,7 +1012,6 @@ async fn an_agent_blocks_token_is_its_own_pane_whatever_the_header_says() {
     let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent", "--block-listen", "127.0.0.1:0"]);
     arugula_testkit::labs(&d.state, true);
     let other = d.post("/api/run", json!({}))["pane"].as_u64().unwrap();
-    d.post(&format!("/api/threads/pane-{other}"), json!({ "text": "not for the agent" }));
     let a = d.open("hello");
     d.wait(a, "idle");
     let servers = std::fs::read_dir(&d.sessions)
@@ -1149,9 +1029,6 @@ async fn an_agent_blocks_token_is_its_own_pane_whatever_the_header_says() {
         .custom_headers
         .insert(HeaderName::from_static("x-arugula-pane"), HeaderValue::from_str(&other.to_string()).unwrap());
     let s = Client::named("claude-code").serve(StreamableHttpClientTransport::from_config(config)).await.unwrap();
-    call(&s, "post_thread", json!({ "text": "from the agent" })).await;
-    assert_eq!(d.get(&format!("/api/threads/pane-{a}"))["messages"][0]["text"], "from the agent");
-    assert_eq!(d.get(&format!("/api/threads/pane-{other}"))["messages"].as_array().unwrap().len(), 1);
     let l = call(&s, "list", json!({})).await;
     let you: Vec<u64> = l["panes"]
         .as_array()
@@ -1178,38 +1055,6 @@ fn shared_daemon(env: &[(&str, &str)]) -> (Daemon, u64, u64) {
     let (pane, session) = (p["id"].as_u64().unwrap(), p["session"].as_u64().unwrap());
     d.post("/api/acl", json!({ "session": session, "principal": format!("tailnet:{FRIEND}"), "role": "editor" }));
     (d, pane, session)
-}
-
-/// #297: an agent's @name of someone who can't see the thread makes no
-/// invite card and no grant; post_thread points it at invite_person.
-#[cfg(feature = "labs")]
-#[tokio::test(flavor = "multi_thread")]
-async fn an_agents_mention_invites_nobody() {
-    let (d, pane, session) = shared_daemon(&[]);
-    let elsewhere = d.post("/api/run", json!({ "session": "other" }))["pane"].as_u64().unwrap();
-    let other =
-        d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == elsewhere).unwrap()["session"].clone();
-    d.post("/api/acl", json!({ "session": other, "principal": "tailnet:sam@example.com", "role": "viewer" }));
-    // post_thread is listed on a machine with labs.
-    arugula_testkit::labs(&d.state, true);
-    let s = bridge(&d, Client::named("claude-code")).await;
-    let tools = s.list_tools(None).await.unwrap();
-    let post = tools.tools.iter().find(|t| t.name == "post_thread").unwrap();
-    assert!(post.description.as_deref().unwrap_or("").contains("invite_person"), "{post:?}");
-    let p = call(&s, "post_thread", json!({ "pane": pane, "text": "@sam look" })).await;
-    assert_eq!(p["unreached"], json!([{ "token": "sam", "why": "nobody" }]), "{p}");
-    assert!(p.get("invitable").is_none(), "{p}");
-    s.cancel().await.unwrap();
-    assert!(invite_blocks(&d).is_empty());
-    let grants = d.get("/api/acl")["grants"].clone();
-    assert!(
-        grants
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|g| g["principal"] != "tailnet:sam@example.com" || g["session"] != session),
-        "{grants}"
-    );
 }
 
 /// A POST on the socket as the CLI sends it under Claude Code: the HTTP

@@ -279,15 +279,15 @@ panes needs a per-pane, time-limited trust grant. Anything that types into a
 pane, including uploads, checks both the role and `MayDrive`; a new route that
 types must be added to that check by path.
 Instructing an agent and approving its tools are the machine owner's unless
-granted (Jake, 2026-10-17, #959): prompting a pane (`prompt`), `cd`, an
-`@agent` that reaches it, and answering for it (an approval, a question, its
-dialog, a command run again, an edit, a debugger) check `MayDrive` too. A
+granted (Jake, 2026-10-17, #959): prompting a pane (`prompt`), `cd`, and
+answering for it (an approval, a question, its dialog, a command run again,
+an edit, a debugger) check `MayDrive` too. A
 block or a VM pane is no exception: only a VM the guest started (and so
 the agent block they started on it) is theirs to drive. A team's editors on
 a team's machine drive by their role, as before. Dismissing a card, and
 answering what isn't a shell or an agent here (a workspace's or a studio
 box's gate, decision or question, a forge's review or checks, a page's
-question), don't drive. An `@agent` from someone without trust is a comment.
+question), don't drive.
 Where: `crates/daemon/src/authz.rs` (`Api::MayDrive`), `crates/mux/src/mux/who_may.rs` (`may_drive_here`), `crates/daemon/src/api.rs` (`may_drive`, `is_review`), `crates/daemon/src/upload.rs`.
 From: [M14](docs/plan-archive.md#m14-safe-write-access), [M70](docs/plan-archive.md#m70-images-into-terminal-panes-249), #959.
 
@@ -785,8 +785,7 @@ cards there), so the Team agents block holds them, one at a time. One is
 opened in session `a2a` when none is open, so a card always has a place,
 gets attention and is pushed. Answering it goes through the routes that see
 the channel's caller (`act`, a block's `answer`), and those refuse a device
-of another account. (A conversation's grant answers its own pane's asks
-under its own rule, #857, and never these cards.) *Allow for an hour* is a grant for that account and
+of another account. *Allow for an hour* is a grant for that account and
 agent, kept on disk, listed and revocable. The caller polls rather than
 streams, and a channel request answers within seconds; tasks take minutes.
 Where: `crates/daemon/src/labs/agents/tasks.rs`, `block.rs` (the hub), `delegate.rs`, `crates/daemon/src/api.rs` (`foreign`, `is_agents`).
@@ -814,199 +813,41 @@ Being a member is how someone reaches the home machine (Jake, 2026-10-13,
 root (from a roster the home checked, or the one the owner's browser
 pinned), so the home lets their devices in and control routes them there,
 as a share would, but for its conversations only: they have no role in its
-sessions. Members see everything linked (Jake, after S36); the pane itself,
-its terminal and its own thread, stays with the people it's shared with.
-Membership is a drive grant on every linked pane through the conversation's
-lead (Jake, 2026-10-13), so the invite, the members list and linking a pane
-into a conversation with members all say so.
+sessions. Members see what's quoted in it; a pane itself, its terminal and
+its own thread, stays with the people it's shared with. A conversation links
+no panes and has no lead: agents are out of chat (#1095, below).
 Where: `crates/mux/src/labs/threads.rs`, `crates/mux/src/labs/convs.rs`, `crates/mux/src/mux/thread_ops.rs`, `crates/daemon/src/ops/convs.rs`, `crates/mux/src/labs/calls.rs`, `crates/daemon/src/control.rs` (`Acl::reach` in `others`).
-From: [Talk track](docs/plan-archive.md#talk-track-s30-m61m64-added-2026-10-05), [M61](docs/plan-archive.md#m61-threads-on-panes-and-sessions-240), [S36](spikes/s36-conversations/README.md) q1 and q4, M81 (#855), M82 (#856).
+From: [Talk track](docs/plan-archive.md#talk-track-s30-m61m64-added-2026-10-05), [M61](docs/plan-archive.md#m61-threads-on-panes-and-sessions-240), [S36](spikes/s36-conversations/README.md) q1 and q4, M81 (#855), M82 (#856), M121 (#1095).
 
-### A conversation's home drives a linked pane through the relay, by a grant on that pane
-A conversation links panes on its home machine and on others (#856). The
-pane's machine keeps the grant (`<state>/conv-grants.json`: the home's
-device, the pane and its epoch, the conversation, who made it), and the
-home keeps the link (`L1`, `L2`…, the machine's device id, never its name,
-the pane, its epoch, a title). Someone who may drive the pane makes the
-grant from their own device, through that machine's `conv.grant` (an
-editor's role and drive trust), so "you can only link a pane you may drive"
-is checked where the pane is, not at home; the home then links it after
-checking, over the relay, that it's let in. The home's daemon channel
-(`serve_agent_caller`) is let through for a granted pane's prompt, wait,
-capture, `events?pane=N` and `attention/act` naming that pane, written
-plainly, and nothing else, with the grant maker's rights on the pane: none
-of those needs more than an editor's, so that is the cap. A grant is listed
-on the pane and revoked there; a revoked one (or one whose pane closed) is
-kept a week, so the home hears "revoked" (410) and closes the link for good
-rather than taking silence for offline. A closed link stays in the
-conversation, and linking the pane again is a new link. A teammate's own
-machine lets the home's daemon in only while a grant names it, for those
-panes only (not its agents), found through a roster it verified or a root a
-share pinned, and names its account in a `links` list that control routes
-as it routes `agents`. It's the relay channel and not A2A tasks: a link is
-an existing pane people work in, driven turn by turn for as long as the
-conversation lasts.
-Where: `crates/daemon/src/labs/links.rs`, `crates/daemon/src/e2e.rs` (`serve_agent_caller`), `crates/daemon/src/control.rs` (`link_callers`, `link_accounts`), `crates/daemon/src/peer.rs`, `crates/mux/src/labs/convs.rs`, `crates/control/src/teams.rs` (`daemon_access`).
-From: [S36](spikes/s36-conversations/README.md) q2 and q4, M82 (#856).
-
-### A conversation hears its links at home, and answers their cards through the pane's machine
-What a linked pane does is posted in its conversation by the home (#857):
-one watcher per open link, on the mux's event bus for a pane at home or
-`/api/events?pane=N&type=attention,exit&follow=1` followed over the
-standing channel for one elsewhere (its grant lets that through), started
-again with the daemon. The pane's own attention is the signal, filtered by
-rules S36's run forced: a turn ends only after the pane worked; only an ask
-(`ReasonKind::Ask`) is something to answer, so Claude Code's "waiting for
-your input" a minute later is dropped; the same line twice is one; and a
-turn's lines are coalesced (an ask answered within two seconds, by a
-standing rule say, is counted, and the turn's end says "worked 40s, 3
-approvals"). The turn's summary is its last assistant message, carried in
-its `done` reason: an agent block's own, or the one Claude Code's `Stop`
-hook gives `arugula attention done` (`last_assistant_message`, else the
-transcript's last). Events are typed messages (`ThreadMsg.event`: kind,
-link, ask), so the page shows cards and lines, not text to parse; each card
-is pushed to the conversation's people from the home, which they all reach.
-A card is answered by its ask's id through the pane's machine's own
-`attention/act`, never "whatever it asks now", so a late answer can't land
-on a newer prompt. The home records the member who answered; the pane's
-machine records them "via conversation …" with the grant maker's rights.
-That is the grant's rule, not the account's: a request a grant let through
-may answer its own pane's asks whichever account the home is (M79's
-other-account check guards the machine's own task cards, which stay the
-owner's), capped at an editor's: an agent's invites and task consent are
-refused, and a grant maker who is only an editor must still be one.
-Someone outside the owner's teams added to a conversation gets control's
-share offer, which names the conversation (`AccessList.reasons`).
-Where: `crates/daemon/src/labs/events.rs` (`Rules`, the watchers, `act`), `crates/daemon/src/api.rs` (`ConvVia`, `act_for_conv`), `crates/daemon/src/peer.rs` (`follow`), `crates/mux/src/mux/thread_ops.rs` (`notify_card`), `crates/cli/src/cmd/attention.rs`, `crates/control/src/teams.rs` (`daemon_access`).
-From: [S36](spikes/s36-conversations/README.md) q5 and q8, M83 (#857).
-
-### A conversation's lead drives its links by name, with the owner's rights
-Each conversation has one lead (#858, Jake, 2026-10-13): a Claude Code
-agent block on its home machine, started with the conversation on the
-user's default model, in a tab of its own. Its MCP token is
-`Scope::Lead { block, conv }`: a block's (its own tab, what it started),
-plus the conversation's links, addressed by name only (`L1`, `L2`…). A
-pane number from a lead reaches its own tab and nothing else, because a
-link's number is another machine's: S36's first run gave the lead "L2
-(%3 on box-b)" and it drove its own `%3`. On links it has `prompt_agent`,
-`wait` (until idle waits through the link's cards) and `read_output`; a
-link here is its pane for that call alone, one elsewhere is done there
-through the relay under its grant (the grant maker's rights, capped at
-an editor's). Not on links: `agent_respond` (cards are the people's),
-`send_input` and `run` (a step past prompting its agent). Its thread is
-its conversation, and `list` kind `links` is its alone. It acts with the
-owner's rights, so instructing it is driving its block (#959): `@lead`
-from the owner, a team's member on a team's machine, or someone the owner
-trusts with the lead's block is its next prompt (anyone else's is a
-comment), and the prompt carries everything (who wrote what, the
-conversation since its last turn, the links by name, how to answer):
-the brief is in its system prompt, which a resumed session doesn't get
-again. The record keeps its cursor (the last message it was shown),
-whom it owes an answer and the links it waits on, so a restart loses
-nothing: a link it prompted that ends its turn wakes it, now or when its
-own turn ends. Its replies are its `post_thread`s, or its turn's last
-message when it posts nothing, and a reply notifies whoever asked. A
-helper it starts is a link, by a grant the home makes with the owner's
-rights. A lost lead is replaced by a new block shown the last messages
-and the links; the conversation keeps its id and timeline.
-Where: `crates/daemon/src/labs/lead.rs`, `crates/daemon/src/mcp/mod.rs` (`Scope::Lead`), `crates/daemon/src/mcp/tools.rs` (`readable`, `thread_of`), `crates/mux/src/labs/convs.rs` (`lead`), `crates/mux/src/mux/thread_ops.rs` (`notify_reply`).
-From: [S36](spikes/s36-conversations/README.md) q3 and q6, M84 (#858).
-
-### A conversation's cards carry their question, and the lead's own asks are cards too
-A question on a conversation's card is answered there (#859, Jake,
-2026-10-14), not only skipped: the ask's reference (`AskRef.questions`,
-boxed, since a reason rides in every attention event) carries Claude's
-AskUserQuestion `questions` from the pane's machine, whether a terminal's
-hook or an agent block raised it, so a watcher elsewhere has them without
-asking again. The card is the pane's own question card, and the answer
-is its fields, sent as `conv.act` `answer` by the ask's id through the
-pane's machine as a permission is; the conversation records the answer in
-a line. The lead's own asks (a tool outside its allow list, a question of
-its own) are cards in its conversation, link `lead`, by the links' rules
-(held two seconds, so one its allow list answers isn't posted), and whoever
-may `@lead` it answers them on the lead's block (`act_for_lead`): the
-lead acts with the owner's rights, so answering its prompt is driving it
-(#959). The real
-run (M85) added a rule and a fix: a turn under two seconds with no summary
-and nothing asked isn't posted, since Claude Code starting in a terminal
-makes one; and a lead turn counts as replied by a post since its own
-prompt went in, not by a count across turns, because a prompt queued
-behind a turn starts as it ends and the block never looks idle between
-them (its last message was lost). A lead waiting on its own card is still
-in its turn, so a link ending then wakes it afterwards, not mid-turn. The lead keeps the user's default model (a per-conversation model
-was the fallback, left for after the live run).
-Where: `crates/daemon/src/labs/events.rs` (`Rules`, `act_on_lead`, `post_lead_card`), `crates/daemon/src/labs/lead.rs` (`watch`), `crates/daemon/src/api.rs` (`act_for_lead`), `crates/mux/src/mux/attention.rs` (`ask_reason`), `web/src/ui/conv-events.tsx`.
-From: M83 (#862) and M84 (#866) "For Jake", M85 (#859).
-
-### An edit's diff is a conversation's card, and it retires the ask it replaced
-arugulad is Claude Code's IDE, so a Write or Edit in a terminal asks its
-permission (the hook's card) and then waits as a diff, which the pane shows
-instead (#887, the M85 live run). The ask can't be answered after that, so a
-conversation's card for it went stale (its Allow got 409) and the edit
-stalled at the terminal. The diff is the card now: the pane's machine puts
-the `DiffInfo` on the diff's reason (boxed, as `AskRef.questions` is; a
-pane's own info leaves it out, since its `diff` has it), the home's watcher
-posts it as a `needs_input` card whose ask is the diff (`ConvAsk.diff`, id
-the diff's, `what` approve), and Accept or Reject goes as `conv.act` through
-the pane's machine's `attention/act`, as a permission does. The diff takes
-the ask's place in the rules: a held ask is dropped for it (one edit, one
-approval); a carded ask is retired by posting the diff's card at once,
-without the hold, since nobody answered the ask for two seconds already.
-`what` stays approve so a page from before this offers Allow and Deny, which
-the home maps to Accept and Reject. A card whose answer is refused (409, its
-ask went) stops offering its buttons on that page; other pages learn it when
-the link moves on. Rejected: an `AskWhat::Edit` (every client's ask matches
-would change for a card only conversations show), and having the home fetch
-the diff from the pane's machine (another route through the grant, and a
-race with the diff closing).
-Where: `crates/daemon/src/labs/events.rs` (`Rules::on_diff`, `diff_ask`, `card_action`), `crates/daemon/src/ide/cards.rs` (`card`), `crates/daemon/src/api.rs` (`act_for_conv`), `crates/mux/src/mux/info.rs`, `web/src/ui/conv-events.tsx`.
-From: #887 (M85's live run, #859).
+### Agents are out of chat
+Threads and conversations are people's (Jake, 2026-10-19, S41 decisions 8
+and 9). No agent reads or posts in them: MCP has no `read_thread` or
+`post_thread`, and the thread operations refuse a call through MCP. `@agent`,
+`@claude` and `@lead` are text like any other `@`, and reach no one. A
+conversation has no links to panes, no grants on them, no events or cards
+in its timeline and no lead (M82–M85 are removed, with `conv-grants.json`
+and control's `AccessList.links` and `reasons`); a member added from outside
+the owner's teams gets control's plain share offer. Old messages an agent
+posted, or a link's events, read as the text they were kept with. Agents
+come back into chat only through the grants #959 and #1002 work out, once
+chat is control's (#978), not through the daemon's thread store.
+Where: `crates/daemon/src/ops/threads.rs` (`person`), `crates/mux/src/mux/thread_ops.rs` (`thread_post`), `crates/daemon/src/mcp/tools.rs` (the tool list).
+From: [S41](spikes/s41-chat-in-control/README.md) q7 and decisions 8 and 9, M121 (#1095).
 
 ### Chat calls the owner by a short name; ledgers keep their login
 On a machine's own page the owner's name was their tailnet login, an email,
-so the lead wrote `@jake@example.com` and a pane's history said
-"jake@example.com via conversation …", while control's page (and the page's
-own headers) said "jake" (#889). In threads and conversations the owner is
-now their login on control when the machine is one person's and enrolled
-(as control's page calls them), else their tailnet login without its domain:
-their messages, a conversation's `owner_name`, a link's and a grant's
-`by_name`, and the answers they give through a conversation
-(`chat_name_of`, `api::chat_name`). An `@` of it still reaches them
+so chat wrote `@jake@example.com`, while control's page (and the page's own
+headers) said "jake" (#889). In threads and conversations the owner is now
+their login on control when the machine is one person's and enrolled (as
+control's page calls them), else their tailnet login without its domain:
+their messages and a conversation's `owner_name` (`chat_name_of`). An `@` of
+it still reaches them
 (`threads::names` matches the part before the `@`). Ledgers keep the full
 login (`name_of`): a gate's actor, which chant records, and a forge write's
 sender. Rejected: shortening `name_of` itself, which changed what chant and
 the forge ledgers record.
-Where: `crates/mux/src/mux/who_may.rs` (`chat_name_of`, `short_name`), `crates/mux/src/mux/outside.rs` (`People::owner_login`), `crates/mux/src/mux/thread_ops.rs`, `crates/daemon/src/api.rs` (`chat_name`).
+Where: `crates/mux/src/mux/who_may.rs` (`chat_name_of`, `short_name`), `crates/mux/src/mux/outside.rs` (`People::owner_login`), `crates/mux/src/mux/thread_ops.rs`.
 From: #889 (M85's live run, #859).
-
-### A link's turn is one someone prompted; its watch starts from where the pane is
-M85's live run posted "Turn ended · worked 2s" three times with nobody
-prompting L1 (#888). It was filed as Claude Code's idle recap, but geek's
-log and the transcript say otherwise: the recap (`away_summary`) changed
-no attention at all, and each of the three was a client opening the pane
-(the headless browser taking a screenshot) sending it input, which sets a
-done or nudging pane working ("input") until it's quiet ("quiet") 2.5 s
-later. So the rule isn't about recaps or a time: the pane's machine emits
-`EventKind::Prompted` when Claude Code's `UserPromptSubmit` hook fires (a
-prompt typed in the terminal, the lead's `prompt_agent`, which types it)
-or a follow-up is delivered (`arugula inbox` wakes Claude Code without
-that hook), and a turn nobody prompted that says nothing and asked nothing
-isn't posted. It applies only once the link has sent one `prompted`, so a
-pane without the hooks, an agent block, or a machine on an older build
-keeps the two-second blink rule (kept for those). A turn nobody prompted
-that does say something (Claude Code woken by a background task's end, with
-its `Stop` summary) still posts. Rejected: a longer blink cutoff (a poke
-looks busy as long as its screen keeps redrawing), and dropping every
-unprompted turn (those background wakes).
-A link's watch starts with the pane's attention now, its reason with the
-card's diff (`api::attention_now`): from the mux for a pane here, and as the
-first line of `/api/events?pane=N&type=…attention…&follow=1` from another
-machine, so a pane linked while it's asking is a card (#895), and a follow
-taken up again sees what changed while it was down. Only a single pane's
-follow naming `attention` starts so, so the stream's other readers see
-nothing new, and the grant's route check needs no new key.
-Where: `crates/daemon/src/labs/events.rs` (`Rules`, `here`, `there`), `crates/daemon/src/api.rs` (`attention_now`, `events`), `crates/mux/src/mux/attention.rs` (`hook`, `follow_up`, `wait_inbox`).
-From: #888 and #895 (M85's live run, #859; tracker #851).
 
 ## Federation and control
 

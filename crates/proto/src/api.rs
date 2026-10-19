@@ -792,79 +792,6 @@ pub struct ConvMemberRequest {
     pub root: Option<String>,
 }
 
-/// `POST /api/panes/{id}/conv-grants` (#856): let a conversation's home
-/// drive this pane, with the caller's rights on it (an editor's at most).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
-pub struct ConvGrantRequest {
-    /// The home's device id in control; none or empty: this machine.
-    #[serde(default)]
-    pub device: Option<String>,
-    #[serde(default)]
-    pub device_name: Option<String>,
-    pub conv: crate::ConvId,
-    #[serde(default)]
-    pub conv_title: Option<String>,
-}
-
-/// `POST /api/panes/{id}/conv-grants/revoke`: take a grant back, which
-/// cuts the link.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ConvGrantRevokeRequest {
-    pub device: String,
-    pub conv: crate::ConvId,
-}
-
-/// `POST /api/convs/{id}/links` (#856): link a pane the pane's machine has
-/// granted this conversation (`ConvGrant`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
-pub struct ConvLinkRequest {
-    /// The pane's machine, by device id; none: this one.
-    #[serde(default)]
-    pub machine: Option<String>,
-    pub pane: crate::PaneId,
-    /// The pane's epoch, as its grant gave it.
-    #[serde(default)]
-    pub epoch: Option<u64>,
-    #[serde(default)]
-    pub title: Option<String>,
-}
-
-/// `POST /api/convs/{id}/links/close`: close a link (its owner, or whoever
-/// linked it). It stays, closed.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ConvUnlinkRequest {
-    pub name: String,
-}
-
-/// `POST /api/convs/{id}/act` (#857): answer a link's card from the
-/// conversation, by its ask's id, through the link's machine.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ConvActRequest {
-    /// The link: `L1`, `L2`…
-    pub link: String,
-    /// The ask it answers (`ConvAsk::id`).
-    pub id: String,
-    /// `allow` or `deny` a permission; `answer` or `deny` a question;
-    /// `accept` or `reject` an edit (#887; `allow` and `deny` do too).
-    pub action: crate::Action,
-    /// `deny`: why, for the agent.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub message: Option<String>,
-    /// `answer`: the card's fields.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    #[cfg_attr(feature = "ts", ts(type = "Record<string, unknown>"))]
-    pub content: Option<serde_json::Value>,
-}
-
 /// `POST /api/convs/{id}/members/remove`: take someone out (the owner), or
 /// leave (a member, naming themselves).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -880,30 +807,16 @@ pub struct ThreadReadRequest {
     pub upto: u64,
 }
 
-/// What a post answers. `agent` is set when an `@agent` went to the pane's
-/// agent; `invitable` only in the owner's answer (#297), so nobody else's
-/// says who exists.
+/// What a post answers. `invitable` only in the owner's answer (#297), so
+/// nobody else's says who exists.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ThreadPosted {
     pub message: crate::ThreadMsg,
-    pub agent: Option<ThreadAgent>,
     pub unreached: Vec<Unreached>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub invitable: Option<Vec<Invitable>>,
-}
-
-/// What handing a post to the pane's agent came to: `delivered` (`false`:
-/// queued), or `error`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(optional_fields))]
-pub struct ThreadAgent {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delivered: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
 }
 
 /// Why an `@` in a post reached no one.
@@ -912,10 +825,6 @@ pub struct ThreadAgent {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub enum UnreachedWhy {
-    /// `@agent` in a session's thread: an agent is a pane's.
-    AgentNeedsPane,
-    /// `@agent` from someone who may not drive the pane.
-    MayNotDrive,
     /// The name is unknown, or its owner can't read the thread.
     Nobody,
 }
@@ -1788,9 +1697,6 @@ mod wire {
             quote: Some(Quote { pane: 2, text: "ls".into() }),
             mentions: vec![],
             landed: vec![],
-            to_agent: false,
-            agent: false,
-            event: None,
         }
     }
 
@@ -1808,68 +1714,37 @@ mod wire {
             json!({ "target": ThreadTarget::Session(1), "messages": Vec::<ThreadMsg>::new() })
         );
 
-        // What the old `Unreached` and the old `agent` values serialized to.
-        let unreached = vec![
-            Unreached { token: "sam".into(), why: UnreachedWhy::Nobody },
-            Unreached { token: "agent".into(), why: UnreachedWhy::MayNotDrive },
-        ];
-        let old_unreached = json!([{ "token": "sam", "why": "nobody" }, { "token": "agent", "why": "may_not_drive" }]);
-        let session = Unreached { token: "agent".into(), why: UnreachedWhy::AgentNeedsPane };
-        assert_eq!(serde_json::to_value(&session).unwrap(), json!({ "token": "agent", "why": "agent_needs_pane" }));
-        let agents = [
-            (None, Value::Null),
-            (Some(ThreadAgent { delivered: Some(true), error: None }), json!({ "delivered": true })),
-            (Some(ThreadAgent { delivered: Some(false), error: None }), json!({ "delivered": false })),
-            (Some(ThreadAgent { delivered: None, error: Some("gone".into()) }), json!({ "error": "gone" })),
-        ];
-        for (agent, old_agent) in agents {
-            // Anyone's post: no `invitable`.
-            let theirs = ThreadPosted {
-                message: m.clone(),
-                agent: agent.clone(),
-                unreached: unreached.clone(),
-                invitable: None,
-            };
+        // What the old `Unreached` values serialized to.
+        let unreached = vec![Unreached { token: "sam".into(), why: UnreachedWhy::Nobody }];
+        let old_unreached = json!([{ "token": "sam", "why": "nobody" }]);
+        // Anyone's post: no `invitable`.
+        let theirs = ThreadPosted { message: m.clone(), unreached: unreached.clone(), invitable: None };
+        assert_eq!(serde_json::to_value(&theirs).unwrap(), json!({ "message": m, "unreached": old_unreached }));
+        // The owner's, even with no one to offer.
+        for (invitable, old) in [
+            (vec![], json!([])),
+            (
+                vec![
+                    Invitable { token: "sam".into(), who: "tailnet:sam@x".into(), name: "sam".into(), merged: None },
+                    Invitable {
+                        token: "al".into(),
+                        who: "account:1".into(),
+                        name: "al".into(),
+                        merged: Some("tailnet:al@x".into()),
+                    },
+                ],
+                // `merged` is only inserted when there is one.
+                json!([
+                    { "token": "sam", "who": "tailnet:sam@x", "name": "sam" },
+                    { "token": "al", "who": "account:1", "name": "al", "merged": "tailnet:al@x" },
+                ]),
+            ),
+        ] {
+            let mine = ThreadPosted { message: m.clone(), unreached: vec![], invitable: Some(invitable) };
             assert_eq!(
-                serde_json::to_value(&theirs).unwrap(),
-                json!({ "message": m, "agent": old_agent, "unreached": old_unreached })
+                serde_json::to_value(&mine).unwrap(),
+                json!({ "message": m, "unreached": [], "invitable": old })
             );
-            // The owner's, even with no one to offer.
-            for (invitable, old) in [
-                (vec![], json!([])),
-                (
-                    vec![
-                        Invitable {
-                            token: "sam".into(),
-                            who: "tailnet:sam@x".into(),
-                            name: "sam".into(),
-                            merged: None,
-                        },
-                        Invitable {
-                            token: "al".into(),
-                            who: "account:1".into(),
-                            name: "al".into(),
-                            merged: Some("tailnet:al@x".into()),
-                        },
-                    ],
-                    // `merged` is only inserted when there is one.
-                    json!([
-                        { "token": "sam", "who": "tailnet:sam@x", "name": "sam" },
-                        { "token": "al", "who": "account:1", "name": "al", "merged": "tailnet:al@x" },
-                    ]),
-                ),
-            ] {
-                let mine = ThreadPosted {
-                    message: m.clone(),
-                    agent: agent.clone(),
-                    unreached: vec![],
-                    invitable: Some(invitable),
-                };
-                assert_eq!(
-                    serde_json::to_value(&mine).unwrap(),
-                    json!({ "message": m, "agent": old_agent, "unreached": [], "invitable": old })
-                );
-            }
         }
 
         assert_eq!(serde_json::to_value(Empty::default()).unwrap(), json!({}));

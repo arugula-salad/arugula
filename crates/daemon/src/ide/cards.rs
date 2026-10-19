@@ -101,7 +101,7 @@ impl Cards {
             bundle: None,
             ask: None,
             gate: None,
-            // #887: a conversation's watcher cards it from the reason alone.
+            // #887: a card away from the pane shows it from the reason alone.
             diff: Some(Box::new(d.clone())),
             actions: vec![Action::Accept, Action::Reject, Action::Dismiss],
         };
