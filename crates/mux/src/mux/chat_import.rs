@@ -42,7 +42,10 @@ impl Daemon {
             .map(|t| {
                 let readers = people
                     .iter()
-                    .filter_map(|p| self.thread_role(p, t).map(|(_, from)| (p.id().to_owned(), from)))
+                    .filter_map(|p| {
+                        self.thread_role(p, t)
+                            .map(|(role, from)| (p.id().to_owned(), from, role < arugula_core::Role::Editor))
+                    })
                     .collect();
                 (t, readers)
             })

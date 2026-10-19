@@ -811,7 +811,9 @@ count as read. An author with an account that sees the room stays theirs;
 anyone else shows under the machine's owner by their old name. Conversations
 become read-only `archive` rooms in the owner's account, read by their
 members from when each joined (decision 3). After the import the daemon
-keeps control's reader lists current. A daemon from before says no
+keeps control's reader lists current. A session's viewer stays read-only
+(Jake, 2026-10-19): their reader entry says `watching`, so the room isn't
+writable for them and a post is refused (403, `watching`). A daemon from before says no
 `chat-import` in its features, and control's page tells its owner "Update
 to bring its threads into chat". Where: `crates/daemon/src/chat_import.rs`,
 `crates/mux/src/mux/chat_import.rs`, `chat::daemon_import` in control.

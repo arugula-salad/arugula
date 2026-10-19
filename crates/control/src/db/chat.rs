@@ -903,7 +903,10 @@ mod tests {
             "other-box",
             "pane",
             "3",
-            &[ChatReader { account: "gone1".into(), from: None }, ChatReader { account: "b2".into(), from: Some(5) }],
+            &[
+                ChatReader { account: "gone1".into(), from: None, watching: false },
+                ChatReader { account: "b2".into(), from: Some(5), watching: false },
+            ],
             1,
         )
         .unwrap();
@@ -922,7 +925,7 @@ mod tests {
         assert_eq!(db.chat_message("ch", 2).unwrap().unwrap().mentions, Vec::<String>::new());
         assert_eq!(
             db.chat_readers("other-box", "pane", "3").unwrap().unwrap(),
-            vec![ChatReader { account: "b2".into(), from: Some(5) }]
+            vec![ChatReader { account: "b2".into(), from: Some(5), watching: false }]
         );
         assert!(found(&db, &["ch"], "\"secret\"").is_empty() && found(&db, &["ch"], "\"quoted\"").is_empty());
         assert!(db.mentions("gone1").is_empty(), "{:?}", db.mentions("gone1"));

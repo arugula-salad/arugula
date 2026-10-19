@@ -63,9 +63,10 @@ pub struct ChatExport {
 }
 
 /// Who may read the thread on each pane and session here now (M124): by
-/// principal id, each from when (ms; 0 is everything). The owner isn't
-/// listed: they read everything.
-pub type ChatReaders = Vec<(ThreadTarget, Vec<(String, u64)>)>;
+/// principal id, each from when (ms; 0 is everything), and whether they
+/// only watch (a viewer: they read and don't post). The owner isn't listed:
+/// they read everything.
+pub type ChatReaders = Vec<(ThreadTarget, Vec<(String, u64, bool)>)>;
 
 /// What to do to a conversation (#855), and who asks. The mux checks it
 /// against the record (`labs::convs`).

@@ -386,12 +386,16 @@ pub struct ChatReaderList {
 }
 
 /// One account that may read a thread, and from when (ms; its "from now"
-/// floor, if it has one): it doesn't see messages from before.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// floor, if it has one): it doesn't see messages from before. `watching`:
+/// they watch the session (a viewer), so they read the thread and don't
+/// post in it (Jake, 2026-10-19). An archive's members never post.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatReader {
     pub account: String,
     #[serde(default)]
     pub from: Option<u64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub watching: bool,
 }
 
 /// How many lists control kept.

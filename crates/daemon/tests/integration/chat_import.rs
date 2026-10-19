@@ -184,7 +184,8 @@ fn a_daemon_brings_its_threads_into_control_once() {
     assert!(left.is_empty(), "{left:?}");
 
     // The reader lists stay current: sharing a session with alex's account
-    // tells control he reads its thread.
+    // tells control he reads its thread, and with carol's as a viewer that
+    // she only watches it (she reads, and doesn't post).
     let session = body["readers"]
         .as_array()
         .unwrap()
@@ -197,8 +198,15 @@ fn a_daemon_brings_its_threads_into_control_once() {
         json!({ "session": session, "principal": "account:a2", "name": "alex", "role": "editor", "history": true,
                 "root": DeviceKeys::generate().id() }),
     );
-    let alex =
-        json!({ "kind": "session", "target": session.to_string(), "readers": [{ "account": "a2", "from": null }] });
+    d.post(
+        "/api/acl",
+        json!({ "session": session, "principal": "account:a4", "name": "carol", "role": "viewer", "history": true,
+                "root": DeviceKeys::generate().id() }),
+    );
+    let alex = json!({ "kind": "session", "target": session.to_string(), "readers": [
+        { "account": "a2", "from": null },
+        { "account": "a4", "from": null, "watching": true },
+    ] });
     d.wait_for("alex's reader list", || {
         f.readers.lock().unwrap().iter().any(|b| b["targets"].as_array().unwrap().contains(&alex))
     });

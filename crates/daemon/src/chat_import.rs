@@ -154,10 +154,10 @@ fn readers(lists: crate::mux::ChatReaders, owner: &str) -> Vec<ChatReaderList> {
         .filter_map(|(t, people)| {
             let (kind, target) = kind_of(t)?;
             let mut readers: Vec<ChatReader> = Vec::new();
-            for (who, from) in people {
+            for (who, from, watching) in people {
                 let Some(account) = account_of(&who, owner).filter(|a| a != owner) else { continue };
                 if !readers.iter().any(|r| r.account == account) {
-                    readers.push(ChatReader { account, from: (from > 0).then_some(from) });
+                    readers.push(ChatReader { account, from: (from > 0).then_some(from), watching });
                 }
             }
             Some(ChatReaderList { kind, target, readers })
@@ -191,10 +191,10 @@ fn message(m: &ThreadMsg, owner: &str) -> ChatImportMessage {
 /// were added with its history.
 fn members(c: &Conversation, owner: &str) -> Vec<ChatReader> {
     let mut out: Vec<ChatReader> = Vec::new();
-    let first = account_of(&c.owner, owner).into_iter().map(|a| ChatReader { account: a, from: None });
+    let first = account_of(&c.owner, owner).into_iter().map(|a| ChatReader { account: a, from: None, watching: false });
     let rest = c.members.iter().filter_map(|m| {
         let account = account_of(&m.who, owner)?;
-        Some(ChatReader { account, from: (!m.history && m.joined > 0).then_some(m.joined) })
+        Some(ChatReader { account, from: (!m.history && m.joined > 0).then_some(m.joined), watching: false })
     });
     for r in first.chain(rest) {
         if !out.iter().any(|x| x.account == r.account) {
@@ -317,21 +317,27 @@ mod tests {
             (
                 ThreadTarget::Pane(2),
                 vec![
-                    ("account:a2".into(), 0),
-                    ("tailnet:x".into(), 0),
-                    ("account:a1".into(), 0),
-                    ("account:a3".into(), 55),
+                    ("account:a2".into(), 0, false),
+                    ("tailnet:x".into(), 0, false),
+                    ("account:a1".into(), 0, false),
+                    ("account:a3".into(), 55, true),
                 ],
             ),
             (ThreadTarget::Session(1), vec![]),
-            (ThreadTarget::Conv("c-00000000000000000000000000000001".parse().unwrap()), vec![("account:a2".into(), 0)]),
+            (
+                ThreadTarget::Conv("c-00000000000000000000000000000001".parse().unwrap()),
+                vec![("account:a2".into(), 0, false)],
+            ),
         ];
         let got = readers(lists, "a1");
         assert_eq!(got.len(), 2, "conversations have no reader lists");
         assert_eq!((got[0].kind, got[0].target.as_str()), (ChatTargetKind::Pane, "2"));
         assert_eq!(
             got[0].readers,
-            [ChatReader { account: "a2".into(), from: None }, ChatReader { account: "a3".into(), from: Some(55) }]
+            [
+                ChatReader { account: "a2".into(), from: None, watching: false },
+                ChatReader { account: "a3".into(), from: Some(55), watching: true }
+            ]
         );
         assert_eq!((got[1].kind, got[1].target.as_str(), got[1].readers.len()), (ChatTargetKind::Session, "1", 0));
     }
@@ -350,9 +356,9 @@ mod tests {
         assert_eq!(
             members(&c, "a1"),
             [
-                ChatReader { account: "a1".into(), from: None },
-                ChatReader { account: "a2".into(), from: Some(100) },
-                ChatReader { account: "a3".into(), from: None },
+                ChatReader { account: "a1".into(), from: None, watching: false },
+                ChatReader { account: "a2".into(), from: Some(100), watching: false },
+                ChatReader { account: "a3".into(), from: None, watching: false },
             ]
         );
     }

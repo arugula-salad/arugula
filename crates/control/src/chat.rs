@@ -67,6 +67,8 @@ type J<T> = Result<Json<T>, ApiError>;
 pub const FLAG: &str = "chat";
 /// The reason a refusal gives when chat isn't on for the account.
 pub const CHAT_OFF: &str = "chat_off";
+/// ...and when a viewer posts in a session's or pane's thread.
+pub const WATCHING: &str = "watching";
 /// At most this many channels per team, rooms per machine, and bytes of
 /// text and quotes per team (or machine).
 const MAX_CHANNELS: u64 = 200;
@@ -165,13 +167,25 @@ pub fn sight(app: &App, account: &str, room: &Room) -> anyhow::Result<Option<u64
     })
 }
 
-/// Whether someone who sees `room` may post in it now.
-fn writable(app: &App, room: &Room) -> anyhow::Result<bool> {
+/// Whether `account` only watches the thread on `machine`'s pane or
+/// session: its machine said they're a viewer there (Jake, 2026-10-19).
+/// They read it and don't post.
+fn watching(app: &App, account: &str, room: &Room) -> anyhow::Result<bool> {
+    let (Some(m), Some(t)) = (&room.machine, &room.target) else { return Ok(false) };
+    if app.db.daemon_account(m)?.as_deref() == Some(account) {
+        return Ok(false);
+    }
+    Ok(app.db.chat_readers(m, &room.kind, t)?.is_some_and(|l| l.iter().any(|r| r.account == account && r.watching)))
+}
+
+/// Whether `account`, who sees `room`, may post in it now.
+fn writable(app: &App, room: &Room, account: &str) -> anyhow::Result<bool> {
     if room.archived.is_some() {
         return Ok(false);
     }
     Ok(match (room.kind.as_str(), room.scope.strip_prefix("team:")) {
-        ("channel" | "pane" | "session", _) => true,
+        ("channel", _) => true,
+        ("pane" | "session", _) => !watching(app, account, room)?,
         // Both still in the team: one who left ends it for the other.
         ("dm", Some(team)) => {
             let mut all = true;
@@ -299,7 +313,7 @@ fn listed(app: &App, account: &str, room: &Room, from: u64) -> anyhow::Result<Ch
         mentions,
         muted,
         archived: room.archived.is_some(),
-        writable: writable(app, room)?,
+        writable: writable(app, room, account)?,
     })
 }
 
@@ -943,7 +957,14 @@ pub async fn post(
 ) -> J<ChatPosted> {
     gate(&app, &s.account)?;
     let (room, _) = room_for(&app, &s.account, &id)?;
-    if !writable(&app, &room)? {
+    if watching(&app, &s.account, &room)? {
+        return Err(refusal(
+            StatusCode::FORBIDDEN,
+            WATCHING,
+            "you're watching this session: you read its threads, and its owner can let you post",
+        ));
+    }
+    if !writable(&app, &room, &s.account)? {
         return Err(err(StatusCode::CONFLICT, "this room is read-only"));
     }
     let text = b.text.trim();
@@ -1069,7 +1090,14 @@ pub async fn edit(
     if m.author != s.account || m.deleted.is_some() {
         return Err(err(StatusCode::FORBIDDEN, "only its author edits a message"));
     }
-    if !writable(&app, &room)? {
+    if watching(&app, &s.account, &room)? {
+        return Err(refusal(
+            StatusCode::FORBIDDEN,
+            WATCHING,
+            "you're watching this session: you read its threads, and its owner can let you post",
+        ));
+    }
+    if !writable(&app, &room, &s.account)? {
         return Err(err(StatusCode::CONFLICT, "this room is read-only"));
     }
     let text = b.text.trim();

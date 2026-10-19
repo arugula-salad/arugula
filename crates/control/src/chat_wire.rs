@@ -704,3 +704,36 @@ async fn controls_page_says_which_machines_to_update_for_chat() {
     let dir = r.ok(&r.jake, "GET", "/api/directory", None).await;
     assert_eq!(update(&dir, &r.box_a.id()), None);
 }
+
+#[tokio::test]
+async fn a_viewer_reads_a_sessions_thread_and_doesnt_post() {
+    let r = rig().await;
+    // box-a says alex drives session 1 and carol only watches it.
+    let list = json!({ "kind": "session", "target": "1", "readers": [
+        { "account": "a2alex" }, { "account": "a4carol", "watching": true },
+    ] });
+    let (st, v) = r
+        .import(
+            &r.box_a,
+            &json!({ "readers": [list], "threads": [
+        { "kind": "session", "target": "1", "messages": [old(1, 1000, Some("a4carol"), "carol", "from before")] },
+    ] }),
+        )
+        .await;
+    assert_eq!(st, 200, "{v}");
+    let th = r.target(&r.carol, "session", "1").await;
+    assert_eq!(r.told(&r.carol, &th).await, [t(1, "a4carol", "carol", "from before")], "she reads it");
+    assert_eq!(r.room_in_list(&r.carol, &th).await["writable"], false);
+    assert_eq!(r.room_in_list(&r.alex, &th).await["writable"], true);
+    assert_eq!(r.room_in_list(&r.jake, &th).await["writable"], true, "the owner always posts");
+    let (st, v) =
+        r.call(&r.carol, "POST", &format!("/api/chat/rooms/{th}/messages"), Some(json!({ "text": "hi" }))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("watching")), "{v}");
+    assert!(v["error"].as_str().unwrap().contains("watching this session"));
+    assert_eq!(r.post(&r.alex, &th, json!({ "text": "hi carol" })).await["seq"], 2);
+
+    // Made an editor there, she posts.
+    let list = json!({ "targets": [{ "kind": "session", "target": "1", "readers": [{ "account": "a4carol" }] }] });
+    assert_eq!(r.readers(&r.box_a, list).await.0, 200);
+    assert_eq!(r.post(&r.carol, &th, json!({ "text": "thanks" })).await["seq"], 3);
+}
