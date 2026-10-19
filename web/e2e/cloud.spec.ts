@@ -9,6 +9,12 @@ import { controlPort, listen } from "./ports";
 let base: string, directory: string, control: ChildProcess, github: Server, provider: Server;
 let answered = false, terminated = false;
 let secret = "";
+// The GitHub account signing in: each test is a fresh control account.
+let user = { id: 7, login: "cloud-tester" };
+// Cloud workspaces (S40): the fake workspace's reads, its tabs'
+// conversations (by id: status and whether its approval was answered).
+let workspaceReads = 0, made = 0;
+const conversations = new Map<string, { status: string; prompt: string; answered: boolean }>();
 test.beforeAll(async () => {
   github = createServer((req, res) => {
     const url = new URL(req.url!, "http://github");
@@ -18,7 +24,7 @@ test.beforeAll(async () => {
       res.writeHead(302, { location: back.href }).end();
     } else {
       res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify(url.pathname === "/user" ? { id: 7, login: "cloud-tester" } : { access_token: "test-token" }));
+      res.end(JSON.stringify(url.pathname === "/user" ? user : { access_token: "test-token" }));
     }
   });
   provider = createServer(async (req, res) => {
@@ -27,11 +33,37 @@ test.beforeAll(async () => {
     const url = new URL(req.url!, "http://provider"); const path = url.pathname;
     let data: unknown = {};
     if (req.method === "DELETE") { res.writeHead(204).end(); return; }
-    if (path === "/api/agents/legacy") {
+    const tab = /^\/api\/conversations\/(tabconv\d+)(\/.*)?$/.exec(path);
+    if (path === "/api/vaults") data = { id: "vault" };
+    else if (path === "/api/workspaces" && req.method === "POST") data = { id: "ws", name: body.name, environment_id: body.environment_id, vault_id: body.vault_id, status: "provisioning", sandbox_status: "pending", error: null, revision: "rev1", built_from_revision: null, stale: false, changed_fields: [] };
+    // Setting up for the first reads, then ready.
+    else if (path === "/api/workspaces/ws") {
+      const ready = ++workspaceReads > 2;
+      data = { id: "ws", status: ready ? "ready" : "provisioning", sandbox_status: ready ? "ready" : "starting", error: null, revision: "rev1", built_from_revision: ready ? "rev1" : null, stale: false, changed_fields: [] };
+    } else if (path === "/api/agents" && body.metadata?.arugula_tab) data = { id: `tabagent${++made}` };
+    else if (path === "/api/conversations" && body.workspace_id) {
+      const id = `tabconv${conversations.size + 1}`;
+      conversations.set(id, { status: "running", prompt: body.prompt, answered: false });
+      data = { id, status: "running" };
+    } else if (tab) {
+      const c = conversations.get(tab[1])!; const rest = tab[2] ?? "";
+      // The tests prompt asks for an approval; any other just answers.
+      const asks = c.prompt === "Run the tests";
+      if (rest === "/events") {
+        const events = [{ id: 1, stage: "turn", state: "started", blocks: [{ kind: "prompt", body: c.prompt }] },
+          ...(asks ? [{ id: 2, blocks: [{ kind: "permission_request", request_id: "approval", summary: "Run the tests?", options: [{ optionId: "allow", name: "Allow once" }] }] }] : []),
+          ...(!asks || c.answered ? [{ id: 3, blocks: [{ kind: "text", body: asks ? "Tests pass." : "Docs written." }] }] : [])];
+        data = events.filter((e) => e.id > Number(url.searchParams.get("after")));
+      } else if (rest === "/requests/approval") { c.answered = true; c.status = "idle"; }
+      else if (rest === "/terminate") c.status = "terminated";
+      else if (rest === "") data = { id: tab[1], status: c.status === "running" && !asks ? "idle" : c.status, usage_total: {} };
+      else { res.writeHead(404).end(); return; }
+    }
+    else if (path === "/api/agents/legacy") {
       if (req.headers.authorization !== "Bearer legacy-test") { res.writeHead(401).end(); return; }
       data = { name: "Imported reviewer", system: "Review the changes", skills: [], mcp_servers: {} };
     }
-    else if (path === "/api/environments") data = { id: "env" };
+    else if (path === "/api/environments") data = { id: "env", revision: "rev1" };
     else if (path.endsWith("/secrets")) { secret = body.value; data = { key: body.key }; }
     else if (path === "/api/agents") data = { id: "agent" };
     else if (path === "/api/conversations") data = { id: "conversation" };
@@ -132,4 +164,68 @@ test("cloud-only account saves a secret, runs, reconnects, approves and download
   ] } }));
   await page.reload();
   await expect(page.getByText("The selected model is unavailable.", { exact: true })).toBeVisible();
+});
+
+test("a Cloud workspace sets up, runs two tabs, asks in the drawer and is deleted", async ({ page }) => {
+  test.setTimeout(90000);
+  // Wide enough for the session sidebar beside the panes.
+  await page.setViewportSize({ width: 1400, height: 900 });
+  user = { id: 8, login: "workspace-tester" };
+  await page.goto(base); await page.locator("[data-signin=github]").click();
+  await page.locator("[data-stored-codes]").check();
+  await page.locator("[data-saved-codes]").click();
+  // An account with no machine reaches its Cloud workspaces too.
+  await page.locator("[data-open-cloud-workspaces]").click();
+  await expect(page.locator("[data-cloud-workspaces-group]")).toBeVisible();
+  await page.locator("[data-new-cloud-workspace]").click();
+  const create = page.getByRole("dialog", { name: "New Cloud workspace" });
+  await create.getByLabel("Name", { exact: true }).fill("app work");
+  await create.getByLabel("Repository URL").fill("https://github.com/example/app");
+  await create.getByLabel("apt packages (optional)").fill("ffmpeg");
+  await create.getByRole("button", { name: "Create Cloud workspace" }).click();
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Setting up", { timeout: 15000 });
+  await expect(page.locator("[data-cloud-home-status]")).toContainText("Setting up");
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Ready", { timeout: 30000 });
+  await expect(page.locator('[data-cloud-workspace][data-cloud-state="Ready"]')).toContainText("app work");
+  await expect(page.locator(".cloud-ws-repos")).toContainText("/home/sprite/app");
+
+  // Two tabs, each from + Agent, each in the first repository's mount.
+  const open = async (prompt: string) => {
+    await page.locator("[data-new-cloud-tab]").click();
+    const dialog = page.getByRole("dialog", { name: "Open an agent" });
+    await expect(dialog.getByLabel("Runtime and model")).toContainText("claude · anthropic/test");
+    await expect(dialog.getByLabel("Starts in")).toHaveValue("/home/sprite/app");
+    await dialog.getByLabel("First prompt (optional)").fill(prompt);
+    await dialog.getByRole("button", { name: "Open agent" }).click();
+    await expect(dialog).toHaveCount(0);
+  };
+  await open("Run the tests");
+  await expect(page.locator("[data-cloud-tab-view] .agent-user", { hasText: "Run the tests" })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByRole("button", { name: "Allow once" })).toBeVisible({ timeout: 30000 });
+  await open("Write the docs");
+  await expect(page.locator("[data-cloud-tab-view]")).toContainText("Docs written.", { timeout: 30000 });
+  await expect(page.locator("[data-cloud-tab]")).toHaveCount(2);
+  await expect(page.locator("[data-cloud-tab] .host-tag").first()).toHaveText("claude");
+  await expect(page.locator('[data-cloud-tab][data-attention="needs_input"]')).toHaveCount(1, { timeout: 30000 });
+
+  // The approval waits in the drawer, which goes to its tab.
+  await expect(page.locator("[data-open-attention]")).toHaveAttribute("data-bell-count", "1");
+  await page.locator("[data-open-attention]").click();
+  const drawer = page.locator("[data-attention-drawer]");
+  await expect(drawer.locator(".ws-att-item")).toContainText("app work");
+  await drawer.locator("[data-attention-goto]").click();
+  await expect(page.locator('[data-cloud-tab][aria-selected="true"][data-attention="needs_input"]')).toBeVisible();
+  await page.getByRole("button", { name: "Allow once" }).click();
+  await expect(page.locator("[data-cloud-tab-view]")).toContainText("Tests pass.", { timeout: 30000 });
+  await expect(page.locator('[data-cloud-tab][data-attention="needs_input"]')).toHaveCount(0, { timeout: 30000 });
+  await expect(page.locator("[data-open-attention]")).toHaveAttribute("data-bell-count", "0");
+
+  // Delete names the tabs it ends, then everything goes.
+  await page.locator("[data-delete-cloud-workspace]").click();
+  const confirm = page.getByRole("alertdialog", { name: "Delete app work?" });
+  await expect(confirm.locator("[data-delete-ends] li")).toHaveCount(2);
+  await confirm.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.locator("[data-cloud-ws-list]")).toBeVisible();
+  await expect(page.locator("[data-cloud-workspace]")).toHaveCount(0, { timeout: 45000 });
+  expect([...conversations.values()].every((c) => c.status === "terminated")).toBe(true);
 });
