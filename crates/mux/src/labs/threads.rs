@@ -18,6 +18,10 @@ use std::path::{Path, PathBuf};
 use arugula_proto::{ConvId, Conversation, ThreadMsg, ThreadTarget};
 use tracing::warn;
 
+/// Where `threads/` goes once control has it (M124): beside it, kept, and
+/// never read again. Its being there says the import is done.
+pub const IMPORTED: &str = "threads.imported";
+
 /// The longest message kept, in bytes (longer ones are cut).
 pub const MAX_TEXT: usize = 8 * 1024;
 /// The longest quote kept, in bytes.
@@ -89,6 +93,26 @@ impl Threads {
             }
         }
         Self { dir, msgs, reads, reads_dirty: false, convs }
+    }
+
+    /// Whether control has this machine's threads already (M124).
+    pub fn imported(&self) -> bool {
+        self.dir.with_file_name(IMPORTED).exists()
+    }
+
+    /// Control has every thread kept here (M124): `threads/` becomes
+    /// `threads.imported/`, and an empty store takes its place, so neither
+    /// this daemon nor an older one after a downgrade has them twice.
+    pub fn retire(&mut self) -> io::Result<()> {
+        self.save();
+        let to = self.dir.with_file_name(IMPORTED);
+        if to.exists() {
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("{} is there already", to.display())));
+        }
+        std::fs::rename(&self.dir, &to)?;
+        let root = self.dir.parent().map(Path::to_owned).unwrap_or_default();
+        *self = Threads::open(&root);
+        Ok(())
     }
 
     /// A conversation kept here.
@@ -347,6 +371,21 @@ mod tests {
         assert_eq!(t.read_upto("account:sam", target), 0);
         assert!(!dir.path().join(format!("threads/{key}.json")).exists());
         assert_eq!(t.get(ThreadTarget::Pane(1)).len(), 1, "other threads stay");
+    }
+
+    #[test]
+    fn retiring_moves_the_threads_aside_once() {
+        let dir = Tmp::new("retire");
+        let mut t = Threads::open(dir.path());
+        t.post(ThreadTarget::Pane(1), msg("old")).unwrap();
+        assert!(t.mark_read("owner", ThreadTarget::Pane(1), 1));
+        assert!(!t.imported());
+        t.retire().unwrap();
+        assert!(t.imported() && t.get(ThreadTarget::Pane(1)).is_empty(), "an empty store in its place");
+        assert!(dir.path().join("threads.imported/pane-1.jsonl").exists());
+        assert!(dir.path().join("threads.imported/reads.json").exists(), "read marks saved first");
+        assert!(Threads::open(dir.path()).targets().next().is_none(), "nothing for the next start");
+        assert!(t.retire().is_err(), "never over an earlier import");
     }
 
     #[test]

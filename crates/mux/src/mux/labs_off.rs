@@ -49,4 +49,17 @@ impl Daemon {
     pub(super) fn threads_for(&self, _who: &Principal, _me: &Principal) -> Vec<ThreadSummary> {
         Vec::new()
     }
+
+    /// Nothing kept, so nothing to bring into control (M124).
+    pub(super) fn chat_export(&self) -> super::ChatExport {
+        super::ChatExport::default()
+    }
+
+    pub(super) fn chat_readers(&self) -> super::ChatReaders {
+        Vec::new()
+    }
+
+    pub(super) fn chat_handoff(&mut self, _given: &[(ThreadTarget, u64)]) -> Result<(), String> {
+        Ok(())
+    }
 }

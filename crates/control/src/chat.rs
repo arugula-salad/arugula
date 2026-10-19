@@ -15,6 +15,9 @@
 //!   (`teams::may_reach`). Before the machine has said, its owner and, for a
 //!   team's machine, the team's owners. The machine's owner always reads.
 //!
+//! - an archive (an old conversation a machine brought in, M124): its
+//!   members, each from when they joined it, read-only.
+//!
 //! Anyone else gets 404, as if the room weren't there.
 //!
 //! **What a message holds:** text, and optionally a pane it's about
@@ -38,8 +41,8 @@ use std::{
 use arugula_control_wire::chat::{
     self as wire, ChatEdit, ChatFound, ChatHit, ChatKind, ChatLive, ChatMessage, ChatMessages, ChatMessagesQuery,
     ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget, ChatPane, ChatPerson, ChatPost, ChatPosted,
-    ChatPushWhy, ChatPushed, ChatRead, ChatReaders, ChatReadersStored, ChatRoom, ChatRoomChange, ChatRoomDetail,
-    ChatRooms, ChatSearchQuery,
+    ChatPushWhy, ChatPushed, ChatRead, ChatReaderList, ChatReaders, ChatReadersStored, ChatRoom, ChatRoomChange,
+    ChatRoomDetail, ChatRooms, ChatSearchQuery,
 };
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -54,7 +57,7 @@ use tokio::sync::broadcast;
 use crate::{
     ApiError, App,
     auth::{DaemonAuth, Session},
-    db::chat::{Message, NewMessage, Page, Room, Search},
+    db::chat::{Message, NewMessage, OldMessage, Page, Room, Search},
     err, labs_flags, refusal, teams,
 };
 
@@ -64,6 +67,8 @@ type J<T> = Result<Json<T>, ApiError>;
 pub const FLAG: &str = "chat";
 /// The reason a refusal gives when chat isn't on for the account.
 pub const CHAT_OFF: &str = "chat_off";
+/// ...and when a viewer posts in a session's or pane's thread.
+pub const WATCHING: &str = "watching";
 /// At most this many channels per team, rooms per machine, and bytes of
 /// text and quotes per team (or machine).
 const MAX_CHANNELS: u64 = 200;
@@ -157,18 +162,30 @@ pub fn sight(app: &App, account: &str, room: &Room) -> anyhow::Result<Option<u64
             (Some(m), Some(t)) => target_sight(app, account, m, &room.kind, t)?,
             _ => None,
         },
-        ("archive", _) => app.db.chat_members(&room.id)?.iter().any(|a| a == account).then_some(0),
+        ("archive", _) => app.db.chat_member_from(&room.id, account)?,
         _ => None,
     })
 }
 
-/// Whether someone who sees `room` may post in it now.
-fn writable(app: &App, room: &Room) -> anyhow::Result<bool> {
+/// Whether `account` only watches the thread on `machine`'s pane or
+/// session: its machine said they're a viewer there (Jake, 2026-10-19).
+/// They read it and don't post.
+fn watching(app: &App, account: &str, room: &Room) -> anyhow::Result<bool> {
+    let (Some(m), Some(t)) = (&room.machine, &room.target) else { return Ok(false) };
+    if app.db.daemon_account(m)?.as_deref() == Some(account) {
+        return Ok(false);
+    }
+    Ok(app.db.chat_readers(m, &room.kind, t)?.is_some_and(|l| l.iter().any(|r| r.account == account && r.watching)))
+}
+
+/// Whether `account`, who sees `room`, may post in it now.
+fn writable(app: &App, room: &Room, account: &str) -> anyhow::Result<bool> {
     if room.archived.is_some() {
         return Ok(false);
     }
     Ok(match (room.kind.as_str(), room.scope.strip_prefix("team:")) {
-        ("channel" | "pane" | "session", _) => true,
+        ("channel", _) => true,
+        ("pane" | "session", _) => !watching(app, account, room)?,
         // Both still in the team: one who left ends it for the other.
         ("dm", Some(team)) => {
             let mut all = true;
@@ -296,7 +313,7 @@ fn listed(app: &App, account: &str, room: &Room, from: u64) -> anyhow::Result<Ch
         mentions,
         muted,
         archived: room.archived.is_some(),
-        writable: writable(app, room)?,
+        writable: writable(app, room, account)?,
     })
 }
 
@@ -940,7 +957,14 @@ pub async fn post(
 ) -> J<ChatPosted> {
     gate(&app, &s.account)?;
     let (room, _) = room_for(&app, &s.account, &id)?;
-    if !writable(&app, &room)? {
+    if watching(&app, &s.account, &room)? {
+        return Err(refusal(
+            StatusCode::FORBIDDEN,
+            WATCHING,
+            "you're watching this session: you read its threads, and its owner can let you post",
+        ));
+    }
+    if !writable(&app, &room, &s.account)? {
         return Err(err(StatusCode::CONFLICT, "this room is read-only"));
     }
     let text = b.text.trim();
@@ -1066,7 +1090,14 @@ pub async fn edit(
     if m.author != s.account || m.deleted.is_some() {
         return Err(err(StatusCode::FORBIDDEN, "only its author edits a message"));
     }
-    if !writable(&app, &room)? {
+    if watching(&app, &s.account, &room)? {
+        return Err(refusal(
+            StatusCode::FORBIDDEN,
+            WATCHING,
+            "you're watching this session: you read its threads, and its owner can let you post",
+        ));
+    }
+    if !writable(&app, &room, &s.account)? {
         return Err(err(StatusCode::CONFLICT, "this room is read-only"));
     }
     let text = b.text.trim();
@@ -1218,6 +1249,52 @@ fn machine_chat_on(app: &App, machine: &str, owner: &str) -> anyhow::Result<bool
     })
 }
 
+/// The calling machine and its owner, if chat is on for it.
+fn chat_machine(app: &App, d: DaemonAuth) -> Result<(String, String), ApiError> {
+    let machine = d.cert.device;
+    let owner = app.db.daemon_account(&machine)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?;
+    if !machine_chat_on(app, &machine, &owner)? {
+        return Err(refusal(StatusCode::FORBIDDEN, CHAT_OFF, "chat isn't on for this machine's account or team"));
+    }
+    Ok((machine, owner))
+}
+
+fn check_reader_lists(lists: &[ChatReaderList]) -> Result<(), ApiError> {
+    if lists.len() > wire::MAX_READER_TARGETS
+        || lists.iter().any(|t| t.readers.len() > wire::MAX_READERS || !valid_target(&t.target))
+    {
+        return Err(err(StatusCode::BAD_REQUEST, "at most 500 threads of 500 readers each, by their ids"));
+    }
+    Ok(())
+}
+
+fn target_kind(k: wire::ChatTargetKind) -> &'static str {
+    match k {
+        wire::ChatTargetKind::Pane => "pane",
+        wire::ChatTargetKind::Session => "session",
+    }
+}
+
+/// Keep a machine's reader lists; the rooms they change.
+fn store_readers(app: &App, machine: &str, lists: &[ChatReaderList]) -> anyhow::Result<Vec<String>> {
+    let now = now_ms();
+    let mut rooms = Vec::new();
+    for t in lists {
+        let kind = target_kind(t.kind);
+        let mut readers: Vec<wire::ChatReader> = Vec::new();
+        for r in &t.readers {
+            if !r.account.is_empty() && r.account.len() <= 64 && !readers.iter().any(|x| x.account == r.account) {
+                readers.push(r.clone());
+            }
+        }
+        app.db.set_chat_readers(machine, kind, &t.target, &readers, now)?;
+        if let Some(r) = app.db.chat_room_for(kind, machine, &t.target)? {
+            rooms.push(r.id);
+        }
+    }
+    Ok(rooms)
+}
+
 /// `POST /api/daemon/chat/readers`: a machine says who may read the threads
 /// on its panes and sessions (decision 2). Each list it names replaces the
 /// last; control still routes nobody it wouldn't anyway (`target_sight`).
@@ -1226,40 +1303,195 @@ pub async fn daemon_readers(
     d: DaemonAuth,
     Json(b): Json<ChatReaders>,
 ) -> J<ChatReadersStored> {
-    let machine = d.cert.device;
-    let owner = app.db.daemon_account(&machine)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?;
-    if !machine_chat_on(&app, &machine, &owner)? {
-        return Err(refusal(StatusCode::FORBIDDEN, CHAT_OFF, "chat isn't on for this machine's account or team"));
-    }
-    if b.targets.len() > wire::MAX_READER_TARGETS
-        || b.targets.iter().any(|t| t.readers.len() > wire::MAX_READERS || !valid_target(&t.target))
-    {
-        return Err(err(StatusCode::BAD_REQUEST, "at most 500 threads of 500 readers each, by their ids"));
-    }
+    let (machine, _) = chat_machine(&app, d)?;
+    check_reader_lists(&b.targets)?;
     app.limits.check_daemon(crate::limit::CHAT_READERS, &machine)?;
-    let now = now_ms();
-    let mut rooms = Vec::new();
-    for t in &b.targets {
-        let kind = match t.kind {
-            wire::ChatTargetKind::Pane => "pane",
-            wire::ChatTargetKind::Session => "session",
-        };
-        let mut readers: Vec<wire::ChatReader> = Vec::new();
-        for r in &t.readers {
-            if !r.account.is_empty() && r.account.len() <= 64 && !readers.iter().any(|x| x.account == r.account) {
-                readers.push(r.clone());
-            }
-        }
-        app.db.set_chat_readers(&machine, kind, &t.target, &readers, now)?;
-        if let Some(r) = app.db.chat_room_for(kind, &machine, &t.target)? {
-            rooms.push(r.id);
-        }
-    }
+    let rooms = store_readers(&app, &machine, &b.targets)?;
     app.chat.changed();
     for r in rooms {
         app.chat.room(&r);
     }
     Ok(Json(ChatReadersStored { stored: b.targets.len() }))
+}
+
+/// `s`, at most `max` bytes, cut on a character.
+fn cut(s: &str, max: usize) -> &str {
+    let mut at = s.len().min(max);
+    while !s.is_char_boundary(at) {
+        at -= 1;
+    }
+    &s[..at]
+}
+
+/// `POST /api/daemon/chat/import` (M124, S41 q6): a machine brings in the
+/// threads it kept itself, once, signed as itself.
+/// - Each pane's or session's thread goes into its room on this machine,
+///   made if it isn't there. Its messages keep their numbers, unless the
+///   room has messages of control's already: then they go before them, 0
+///   and below.
+/// - Each conversation becomes a read-only archive in its owner's account,
+///   read by its members (with an account) from when they joined it.
+/// - An author is kept by account when they had one and see the room;
+///   anyone else (a tailnet login, an agent, someone who no longer sees it)
+///   shows under the machine's owner, by the name they had there.
+/// - Every message is taken once, by its old number, so the call may be
+///   sent again, or in parts. Imported messages count as read.
+pub async fn daemon_import(
+    State(app): State<Arc<App>>,
+    d: DaemonAuth,
+    Json(b): Json<wire::ChatImport>,
+) -> J<wire::ChatImported> {
+    let (machine, owner) = chat_machine(&app, d)?;
+    check_reader_lists(&b.readers)?;
+    if b.threads.len() + b.archives.len() > wire::MAX_IMPORT_ROOMS
+        || b.threads.iter().any(|t| !valid_target(&t.target))
+        || b.archives.iter().any(|a| !valid_target(&a.id) || a.members.len() > wire::MAX_READERS)
+    {
+        return Err(err(StatusCode::BAD_REQUEST, "at most 500 threads and conversations, by their ids"));
+    }
+    app.limits.check_daemon(crate::limit::CHAT_IMPORTS, &machine)?;
+    let mut touched = store_readers(&app, &machine, &b.readers)?;
+    let mut out = wire::ChatImported::default();
+    let now = now_ms();
+
+    // Who an author or a mention may be: someone who sees the room.
+    let sees = |room: &Room, a: &str, cache: &mut HashMap<String, bool>| -> anyhow::Result<bool> {
+        if let Some(s) = cache.get(a) {
+            return Ok(*s);
+        }
+        let s = a == owner || sight(&app, a, room)?.is_some();
+        cache.insert(a.to_owned(), s);
+        Ok(s)
+    };
+    let mut import = |room: &Room, msgs: &[wire::ChatImportMessage]| -> Result<(), ApiError> {
+        let bytes: u64 = msgs.iter().map(|m| (m.text.len() + m.quote.as_ref().map_or(0, String::len)) as u64).sum();
+        if app.db.chat_bytes(&room.scope)? + bytes > MAX_SCOPE_BYTES {
+            return Err(err(StatusCode::INSUFFICIENT_STORAGE, "this machine's chat is full (1 GB)"));
+        }
+        let mut cache = HashMap::new();
+        let mut kept = Vec::with_capacity(msgs.len());
+        for m in msgs {
+            let author = match &m.account {
+                Some(a) if sees(room, a, &mut cache)? => a.clone(),
+                _ => owner.clone(),
+            };
+            let mut mentions = Vec::new();
+            for a in &m.mentions {
+                if a != &author && !mentions.contains(a) && sees(room, a, &mut cache)? {
+                    mentions.push(a.clone());
+                }
+            }
+            kept.push((author, mentions));
+        }
+        let old: Vec<OldMessage> = msgs
+            .iter()
+            .zip(&kept)
+            .map(|(m, (author, mentions))| OldMessage {
+                id: m.id,
+                name: cut(&m.name, 200),
+                m: NewMessage {
+                    author,
+                    at: m.at,
+                    text: cut(&m.text, wire::MAX_TEXT),
+                    quote: m.quote.as_deref().map(|q| cut(q, wire::MAX_QUOTE)),
+                    ref_machine: m.pane.as_ref().filter(|p| valid_target(p)).map(|_| machine.as_str()),
+                    ref_pane: m.pane.as_deref().filter(|p| valid_target(p)),
+                    mentions,
+                },
+            })
+            .collect();
+        let (added, already) = app.db.import_chat_messages(&room.id, &old)?;
+        out.messages += added;
+        out.already += already;
+        if added > 0 {
+            out.rooms += 1;
+        }
+        Ok(())
+    };
+
+    for t in &b.threads {
+        let kind = target_kind(t.kind);
+        let room = match app.db.chat_room_for(kind, &machine, &t.target)? {
+            Some(r) => r,
+            None => {
+                let scope = machine_scope(&machine);
+                if app.db.chat_rooms_count(&scope)? >= MAX_THREADS {
+                    return Err(err(StatusCode::CONFLICT, "this machine has too many threads"));
+                }
+                let room = Room {
+                    id: new_id("th_"),
+                    scope,
+                    kind: kind.into(),
+                    name: format!("{kind} {}", t.target),
+                    machine: Some(machine.clone()),
+                    target: Some(t.target.clone()),
+                    created_by: owner.clone(),
+                    created: now,
+                    archived: None,
+                    last_seq: 0,
+                };
+                match app.db.add_chat_room(&room, &[]) {
+                    Ok(()) => room,
+                    Err(e) if e.is::<crate::db::Taken>() => app
+                        .db
+                        .chat_room_for(kind, &machine, &t.target)?
+                        .ok_or_else(|| err(StatusCode::CONFLICT, "try again"))?,
+                    Err(e) => return Err(e.into()),
+                }
+            }
+        };
+        import(&room, &t.messages)?;
+        touched.push(room.id);
+    }
+
+    for a in &b.archives {
+        let room = match app.db.chat_room_for("archive", &machine, &a.id)? {
+            Some(r) => r,
+            None => {
+                let room = Room {
+                    id: new_id("ar_"),
+                    scope: format!("account:{owner}"),
+                    kind: "archive".into(),
+                    name: cut(a.title.trim(), 200).to_owned(),
+                    machine: Some(machine.clone()),
+                    target: Some(a.id.clone()),
+                    created_by: owner.clone(),
+                    created: if a.created > 0 { a.created } else { now },
+                    archived: Some(now),
+                    last_seq: 0,
+                };
+                match app.db.add_chat_room(&room, &[&owner]) {
+                    Ok(()) => room,
+                    Err(e) if e.is::<crate::db::Taken>() => app
+                        .db
+                        .chat_room_for("archive", &machine, &a.id)?
+                        .ok_or_else(|| err(StatusCode::CONFLICT, "try again"))?,
+                    Err(e) => return Err(e.into()),
+                }
+            }
+        };
+        // Its members, each from when they joined; the owner reads it all.
+        for m in &a.members {
+            if m.account == owner || app.db.account(&m.account)?.is_none() {
+                continue;
+            }
+            app.db.set_chat_member_from(&room.id, &m.account, m.from.unwrap_or(0))?;
+        }
+        app.db.set_chat_member_from(&room.id, &owner, 0)?;
+        import(&room, &a.messages)?;
+        touched.push(room.id);
+    }
+
+    app.chat.changed();
+    touched.sort();
+    touched.dedup();
+    for r in touched {
+        app.chat.room(&r);
+    }
+    if out.messages > 0 {
+        app.analytics.capture(&owner, "chat imported", json!({ "rooms": out.rooms, "messages": out.messages }));
+    }
+    Ok(Json(out))
 }
 
 #[cfg(test)]
