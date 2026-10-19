@@ -138,6 +138,9 @@ export class TerminalView {
     this.host.className = "term-host";
     this.term = new Terminal({
       theme: terminalTheme(),
+      // Programs can mix explicit backgrounds with palette/default text.
+      // Keep those cells readable when this device switches light/dark.
+      minimumContrastRatio: 4.5,
       fontFamily: FONT_FAMILY,
       fontSize: FONT_SIZE,
       // No blinking for someone who asked for less motion (M113).

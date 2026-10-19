@@ -344,10 +344,12 @@ function SessionRow({
           )}
         </button>
       )}
-      <AttentionBadge state={row.attention} reason={row.reason} pane={row.pane} client={client} />
-      <button class="ws-icon-button ws-session-more" aria-label={`Actions for ${s.name}`} title="Rename, share, notifications, close" onClick={menu}>
-        <MoreIcon />
-      </button>
+      <span class="ws-session-actions">
+        <AttentionBadge state={row.attention} reason={row.reason} pane={row.pane} client={client} />
+        <button class="ws-icon-button ws-session-more" aria-label={`Actions for ${s.name}`} title="Rename, share, notifications, close" onClick={menu}>
+          <MoreIcon />
+        </button>
+      </span>
     </div>
   );
 }

@@ -153,7 +153,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
     return (
       <div class={stale ? "app ws stale" : "app ws"}>
         <Rail client={client} />
-        <div class="ws-body">
+        <div class="ws-shell-body">
           <ContextHeader client={client} setRenaming={setRenaming} inert={chatOpen} />
           <div class="ws-row" inert={chatOpen}>
             <SessionSidebar client={client} renaming={renaming} setRenaming={setRenaming} />
