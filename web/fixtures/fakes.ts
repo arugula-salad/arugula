@@ -1,9 +1,10 @@
 // The outside services arugula-control talks to, faked: GitHub sign-in,
-// Stripe and a Web Push endpoint. `web/control-smoke.ts` starts them in its
+// Stripe, a Web Push endpoint and Managoat (Cloud workspaces). `web/control-smoke.ts` starts them in its
 // own process; the test stack's `control` profile (testnet/) runs them in a
 // container with `fakes-serve.ts`. Each records what it was sent, for the
 // test to check.
 
+import { readFileSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 
 /** A request a fake got: its path, headers, and body. */
@@ -98,4 +99,264 @@ export function fakePush(port: number, host = "127.0.0.1") {
     res.writeHead(201).end();
   }).listen(port, host);
   return { server, pushed };
+}
+
+/** One turn of a fake Managoat conversation, from its prompt: an approval
+ * it asks for first (its summary), the blocks it answers with (after the
+ * approval, if it asks), and whether it changes the repository (the
+ * machine's diff and git status then show `fakeChange`). */
+export interface FakeTurn {
+  asks?: string;
+  blocks: { kind: string; body: string }[];
+  writes?: boolean;
+}
+
+/** The e2e's turns: "Run the tests" asks first, "Write the guide" writes. */
+const testTurn = (prompt: string): FakeTurn => ({
+  asks: prompt === "Run the tests" ? "Run the tests?" : undefined,
+  blocks: [{ kind: "text", body: prompt === "Run the tests" ? "Tests pass." : "Docs written." }],
+  writes: prompt === "Write the guide",
+});
+
+/** What a turn that writes leaves in a repository: README.md changed and
+ * docs/guide.md new. */
+export const fakeChange = {
+  diff: "diff --git a/README.md b/README.md\nindex 1..2 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n # app\n+Docs for the app.\n",
+  file: { name: "docs/guide.md", content: "# Guide\nStart." },
+};
+
+export interface FakeManagoatOptions {
+  /** Why a workspace's setup fails, or null when it doesn't: from its
+   * environment as the setup read it, and which setup it is (1 the first,
+   * then one more for each rebuild or retry). Asked on every read. */
+  fails?: (environment: Record<string, unknown>, setup: number) => string | null;
+  turn?: (prompt: string) => FakeTurn;
+  /** Whether a rebuild of this workspace finds no machine free: Managoat
+   * answers 503 fleet_full, and control keeps asking (M120). */
+  full?: (workspace: string) => boolean;
+  /** A JSON file the state is kept in between runs (dev-control's: control's
+   * database outlives the process, so its workspaces must too). */
+  file?: string;
+}
+
+/** The environment fields a workspace's setup reads: the workspace is
+ * behind in those that changed since (M117). */
+const buildFields = ["repositories", "packages", "setup_script", "setup_timeout_seconds", "env_vars", "networking_type", "networking_config"];
+
+interface Turn {
+  prompt: string;
+  answered: boolean;
+  interrupted?: boolean;
+  /** Its change was on a disk a rebuild or retry wiped. */
+  wiped?: boolean;
+}
+
+/** A fake Managoat (S40): environments, vaults and their secrets, Cloud
+ * workspaces' machines that set up over their first reads and then are
+ * ready (or fail), rebuilds and retries, the machine's reads (diff, git
+ * status, a file), agents, and conversations whose turns come from `turn`.
+ * `state` is what it holds, for a test to check; `rebuilds` and `retries`
+ * what each was asked with. Every id is the fake's own: env1, ws1,
+ * tabconv1. */
+export function fakeManagoat(port = 0, host = "127.0.0.1", options: FakeManagoatOptions = {}) {
+  const turnOf = options.turn ?? testTurn;
+  const fails = options.fails ?? (() => null);
+  const full = options.full ?? (() => false);
+  const empty = () => ({
+    secret: "",
+    environments: {} as Record<string, Record<string, unknown> & { revision: number }>,
+    // Each machine: its reads since it was (re)built, which setup it is,
+    // and the environment as that setup read it.
+    workspaces: {} as Record<string, { name: string; environment: string; reads: number; setups: number; built: Record<string, unknown> & { revision: number } }>,
+    agents: 0,
+    conversations: {} as Record<string, { workspace: string; turns: Turn[]; terminated: boolean; labels: unknown }>,
+    rebuilds: [] as unknown[],
+    retries: [] as unknown[],
+    machineReads: [] as string[],
+  });
+  let state = empty();
+  if (options.file) {
+    try {
+      state = { ...state, ...JSON.parse(readFileSync(options.file, "utf8")) };
+    } catch {
+      // a first run
+    }
+  }
+  const save = () => options.file && writeFileSync(options.file, JSON.stringify(state, null, 1));
+  const changed = (w: (typeof state.workspaces)[string]) => {
+    const env = state.environments[w.environment] ?? {};
+    return buildFields.filter((f) => JSON.stringify(env[f]) !== JSON.stringify(w.built[f]));
+  };
+  const machine = (id: string) => {
+    const w = state.workspaces[id];
+    const ready = w.reads > 2;
+    const revision = state.environments[w.environment]?.revision ?? 1;
+    const failed = ready ? fails(w.built, w.setups) : null;
+    if (failed) return { id, name: w.name, environment_id: w.environment, status: "failed", sandbox_status: null, error: failed, revision: `rev${revision}`, built_from_revision: null, stale: false, changed_fields: [] };
+    const behind = ready ? changed(w) : [];
+    return {
+      id, name: w.name, environment_id: w.environment,
+      status: ready ? "ready" : "provisioning", sandbox_status: ready ? "ready" : "starting", error: null,
+      revision: `rev${revision}`, built_from_revision: ready ? `rev${w.built.revision}` : null, stale: behind.length > 0, changed_fields: behind,
+    };
+  };
+  // A conversation's events: each turn's start, its approval while it asks,
+  // its answer once it may.
+  const events = (c: (typeof state.conversations)[string]) => {
+    const out: Record<string, unknown>[] = [];
+    let id = 0;
+    c.turns.forEach((t, n) => {
+      const turn = turnOf(t.prompt);
+      out.push({ id: ++id, stage: "turn", state: "started", blocks: [{ kind: "prompt", body: t.prompt }] });
+      if (turn.asks) out.push({ id: ++id, blocks: [{ kind: "permission_request", request_id: n ? `approval${n}` : "approval", summary: turn.asks, options: [{ optionId: "allow", name: "Allow once" }] }] });
+      if (t.interrupted) out.push({ id: ++id, stage: "turn", state: "interrupted", blocks: [{ kind: "text", body: "Interrupted." }] });
+      else if (!turn.asks || t.answered) for (const b of turn.blocks) out.push({ id: ++id, blocks: [b] });
+    });
+    return out;
+  };
+  const waiting = (c: (typeof state.conversations)[string]) => {
+    const t = c.turns.at(-1);
+    return !!t && !c.terminated && !!turnOf(t.prompt).asks && !t.answered && !t.interrupted;
+  };
+  const wrote = (workspace: string) =>
+    Object.values(state.conversations).some((c) => c.workspace === workspace && c.turns.some((t) => !t.wiped && turnOf(t.prompt).writes && (t.answered || !turnOf(t.prompt).asks)));
+
+  const server = createServer(async (req, res) => {
+    const raw = await body(req);
+    const b = raw.length ? JSON.parse(raw.toString()) : {};
+    const url = new URL(req.url!, "http://managoat");
+    const path = url.pathname;
+    const reply = (data: unknown, status = 200) => {
+      save();
+      res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify({ data }));
+    };
+    const missing = () => res.writeHead(404).end();
+    const parts = path.split("/").slice(1); // api, collection, id, rest…
+    if (parts[0] !== "api") return missing();
+    const [, collection, id, ...rest] = parts;
+    if (req.method === "DELETE") {
+      if (collection === "workspaces" && id && !rest.length) delete state.workspaces[id];
+      save();
+      return res.writeHead(204).end();
+    }
+    if (collection === "vaults") {
+      if (!id) return reply(req.method === "POST" ? { id: "vault" } : []);
+      if (rest[0] === "secrets") {
+        state.secret = b.value;
+        return reply({ key: b.key });
+      }
+      return missing();
+    }
+    if (collection === "environments") {
+      if (!id && req.method === "POST") {
+        const env = `env${Object.keys(state.environments).length + 1}`;
+        state.environments[env] = { setup_timeout_seconds: 120, networking_type: "unrestricted", networking_config: {}, ...b, revision: 1 };
+        return reply({ id: env, revision: "rev1" });
+      }
+      if (!id) return reply(Object.entries(state.environments).map(([id, e]) => ({ id, metadata: e.metadata })));
+      const env = state.environments[id];
+      if (!env) return missing();
+      if (req.method === "PATCH") {
+        const next = { ...env, ...b };
+        if (buildFields.some((f) => JSON.stringify(next[f]) !== JSON.stringify(env[f]))) next.revision = env.revision + 1;
+        state.environments[id] = next;
+      }
+      return reply({ id, revision: `rev${state.environments[id].revision}` });
+    }
+    if (collection === "workspaces") {
+      if (!id && req.method === "POST") {
+        const ws = `ws${Object.keys(state.workspaces).length + 1}`;
+        state.workspaces[ws] = { name: b.name, environment: b.environment_id, reads: 0, setups: 1, built: { ...state.environments[b.environment_id] } };
+        return reply({ ...machine(ws), vault_id: b.vault_id, status: "provisioning", sandbox_status: "pending" });
+      }
+      if (!id) return reply(Object.keys(state.workspaces).map(machine));
+      const w = state.workspaces[id];
+      if (!w) return missing();
+      if (!rest.length) {
+        w.reads++;
+        return reply(machine(id));
+      }
+      // A new machine from the environment as it is now, set up over the
+      // next reads. A rebuild is refused while a turn runs, unless it
+      // interrupts them.
+      if ((rest[0] === "rebuild" || rest[0] === "retry") && req.method === "POST") {
+        (rest[0] === "retry" ? state.retries : state.rebuilds).push(b);
+        if (rest[0] === "rebuild" && full(id)) {
+          save();
+          return res.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ error: "fleet_full", message: "no machine free" }));
+        }
+        const running = Object.entries(state.conversations).filter(([, c]) => c.workspace === id && waiting(c)).map(([id]) => id);
+        if (rest[0] === "rebuild" && running.length && !b.interrupt) {
+          save();
+          return res.writeHead(409, { "content-type": "application/json" }).end(JSON.stringify({ error: "turns_running", message: "refused", conversation_ids: running }));
+        }
+        for (const c of running) state.conversations[c].turns.at(-1)!.interrupted = true;
+        for (const c of Object.values(state.conversations)) if (c.workspace === id) for (const t of c.turns) t.wiped = true;
+        w.built = { ...state.environments[w.environment] };
+        w.reads = 0;
+        w.setups++;
+        return reply({ ...machine(id), status: "provisioning", sandbox_status: "pending" }, 202);
+      }
+      // The machine's reads (M118): the change a writing turn made, once it ran.
+      if (["diff", "git-status", "file"].includes(rest[0])) {
+        state.machineReads.push(`${path}${url.search}`);
+        const root = url.searchParams.get("path");
+        const changes = wrote(id);
+        if (rest[0] === "diff") return reply({ path: root, repo_root: root, staged: false, ref: url.searchParams.get("ref"), truncated: false, diff: changes ? fakeChange.diff : "" });
+        if (rest[0] === "git-status")
+          return reply({
+            path: root, repo_root: root, branch: "main", untracked: "all", truncated: false,
+            entries: changes ? [{ path: "README.md", index: "unchanged", worktree: "modified", renamed_from: null }, { path: fakeChange.file.name, index: "untracked", worktree: "untracked", renamed_from: null }] : [],
+          });
+        if (changes && root?.endsWith(`/${fakeChange.file.name}`)) return reply({ path: root, size: fakeChange.file.content.length, truncated: false, encoding: "utf-8", content: fakeChange.file.content });
+      }
+      return missing();
+    }
+    if (collection === "agents") {
+      if (id === "legacy") {
+        if (req.headers.authorization !== "Bearer legacy-test") return res.writeHead(401).end();
+        return reply({ name: "Imported reviewer", system: "Review the changes", skills: [], mcp_servers: {} });
+      }
+      if (!id && req.method === "POST" && b.metadata?.arugula_tab) return reply({ id: `tabagent${++state.agents}` });
+      if (!id) return reply([]);
+      return missing();
+    }
+    if (collection === "conversations") {
+      if (!id && req.method === "POST" && b.workspace_id) {
+        const conv = `tabconv${Object.keys(state.conversations).length + 1}`;
+        state.conversations[conv] = { workspace: b.workspace_id, turns: b.prompt ? [{ prompt: b.prompt, answered: false }] : [], terminated: false, labels: b.labels };
+        return reply({ id: conv, status: b.prompt ? "running" : "idle" });
+      }
+      if (!id) {
+        const label = url.searchParams.get("label");
+        return reply(Object.entries(state.conversations).filter(([, c]) => !label || `arugula_tab:${(c.labels as { arugula_tab?: string })?.arugula_tab}` === label).map(([id, c]) => ({ id, labels: c.labels })));
+      }
+      const c = state.conversations[id];
+      if (!c) return missing();
+      const r = rest.join("/");
+      if (r === "events") return reply(events(c).filter((e) => (e.id as number) > Number(url.searchParams.get("after") ?? 0)));
+      if (r.startsWith("requests/")) {
+        const t = c.turns.at(-1);
+        if (t) t.answered = true;
+        return reply({});
+      }
+      if (r === "prompts") {
+        if (waiting(c)) return reply({}, 409);
+        c.turns.push({ prompt: b.prompt, answered: false });
+        return reply({});
+      }
+      if (r === "interrupt") {
+        if (!waiting(c)) return reply({}, 409);
+        c.turns.at(-1)!.interrupted = true;
+        return reply({});
+      }
+      if (r === "terminate") {
+        c.terminated = true;
+        return reply({});
+      }
+      if (r === "") return reply({ id, status: c.terminated ? "terminated" : waiting(c) ? "running" : "idle", usage_total: {} });
+    }
+    missing();
+  }).listen(port, host);
+  return { server, state: () => state };
 }

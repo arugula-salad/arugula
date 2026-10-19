@@ -42,16 +42,30 @@
 //                      stays waiting, not yet a device (for the waiting
 //                      screens, *Add a machine and a device?* and #326).
 //                      The machines' own joins are still approved.
+//   DEV_CONTROL_CLOUD=1
+//                      Cloud on (S40): a fake Managoat (fixtures/fakes.ts)
+//                      and control's cloud flags, for every account. The
+//                      first run makes three Cloud workspaces: app, ready
+//                      with two tabs (one wrote a change, one waits on an
+//                      approval), api, ready with settings saved since it
+//                      was built (Rebuild needed), and web, whose setup
+//                      failed (Retry sets it up). And a past run. The
+//                      fake keeps its state beside control's database.
+//   DEV_CONTROL_CLOUD_FULL=1
+//                      with DEV_CONTROL_CLOUD, Managoat has no machine
+//                      free for a rebuild (503 fleet_full): a Rebuild
+//                      waits for a machine until it's cancelled.
 //
 // Start over: delete the state directory.
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import type { Server } from "node:http";
 import { Device } from "./fixtures/device.ts";
-import { fakeGithub } from "./fixtures/fakes.ts";
+import { fakeGithub, fakeManagoat, type FakeTurn } from "./fixtures/fakes.ts";
 import { fingerprint, type Cert } from "./src/e2e/cert.ts";
 
 // An agent's pane exports ARUGULA_* (the socket, keep-panes…) that would
@@ -69,6 +83,7 @@ const blockDomain = process.env.DEV_CONTROL_BLOCK_DOMAIN ?? (host === "localhost
 const logins = (process.env.DEV_CONTROL_LOGINS ?? "").split(",").map((l) => l.trim()).filter(Boolean);
 const labs = process.env.DEV_CONTROL_LABS !== "0";
 const approveAll = process.env.DEV_CONTROL_APPROVE_BROWSERS !== "0";
+const cloud = process.env.DEV_CONTROL_CLOUD === "1";
 const machines = process.argv.slice(2).length ? process.argv.slice(2) : ["workstation", "laptop"];
 const bin = process.env.TARGET_DIR ?? "../target/debug";
 const base = `http://${host}:${port}`;
@@ -80,6 +95,7 @@ const web = join(dir, "web");
 
 const procs: ChildProcess[] = [];
 let github: Server | undefined;
+let managoat: Server | undefined;
 /** Each child leads a process group of its own (`detached`), and goes with
  * its whole group: `npx vite` runs vite under a shell, and a daemon its
  * panes' shims, which a signal to the child alone would leave running. */
@@ -100,6 +116,7 @@ const bye = (code = 0) => {
     // none left, or no pkill
   }
   github?.close();
+  managoat?.close();
   process.exit(code);
 };
 process.on("exit", () => procs.forEach(stop));
@@ -170,11 +187,110 @@ async function startControl() {
       ...["--static-dir", web, "--github-client-id", "dev", "--github-client-secret", "dev"],
       ...["--github-url", gh, "--github-api", gh],
       ...(blockDomain ? ["--block-domain", blockDomain] : []),
+      ...(cloud ? await cloudFlags() : []),
     ],
     { stdio: ["ignore", "ignore", "inherit"], detached: true },
   );
   procs.push(control);
   await up(`${direct}/control.json`, control);
+}
+
+/** Cloud's turns: what each tab's agent answers (fixtures/fakes.ts). */
+function cloudTurn(prompt: string): FakeTurn {
+  if (prompt === "Run the tests")
+    return {
+      asks: "pnpm test",
+      blocks: [
+        { kind: "thinking", body: "The suite is vitest; run it once and read the summary." },
+        { kind: "text", body: "All 48 tests pass (6 files, 2.3 s). Nothing to fix." },
+      ],
+    };
+  if (prompt === "Write the guide")
+    return {
+      writes: true,
+      blocks: [
+        { kind: "thinking", body: "README.md has no getting-started section; the guide belongs in docs/." },
+        { kind: "text", body: "I added docs/guide.md with the first steps and linked it from README.md. Open Changes to read the diff." },
+      ],
+    };
+  return { blocks: [{ kind: "text", body: `(the fake Managoat) Done: ${prompt}` }] };
+}
+
+/** Cloud on: a fake Managoat that keeps its state beside control's
+ * database, and control's flags for it. The secrets key is made on the
+ * first run and kept, so saved secrets open on the next. */
+async function cloudFlags(): Promise<string[]> {
+  const m = fakeManagoat(0, "127.0.0.1", {
+    file: join(dir, "control/managoat.json"),
+    // The setup fails until a retry: a Cloud workspace whose script runs pnpm.
+    fails: (env, setup) => (setup === 1 && /\bpnpm\b/.test(String(env.setup_script ?? "")) ? "setup_script exited 127: pnpm: command not found" : null),
+    turn: cloudTurn,
+    full: () => process.env.DEV_CONTROL_CLOUD_FULL === "1",
+  });
+  managoat = m.server;
+  if (!managoat.listening) await new Promise((r) => managoat!.once("listening", r));
+  const keyFile = join(dir, "control/cloud-secret-key");
+  if (!existsSync(keyFile)) writeFileSync(keyFile, randomBytes(32).toString("hex"), { mode: 0o600 });
+  return [
+    ...["--cloud-provider-url", `http://127.0.0.1:${(managoat.address() as { port: number }).port}`, "--cloud-provider-key", "dev"],
+    ...["--cloud-secret-key", readFileSync(keyFile, "utf8").trim(), "--cloud-accounts", "*"],
+    ...["--cloud-models", "claude:anthropic/claude-sonnet-4-5,codex:openai/gpt-5-codex"],
+  ];
+}
+
+interface DevCloudWorkspace {
+  id: string;
+  status: string;
+  saved_spec: Record<string, unknown>;
+}
+
+/** The first run with Cloud on: three Cloud workspaces to look at, made
+ * through control as the account (DEV_CONTROL_CLOUD above), and a past
+ * run. Later runs find them there. */
+async function seedCloud(d: Device) {
+  const { cloud_workspaces } = await d.api<{ cloud_workspaces: DevCloudWorkspace[] }>("/api/cloud/workspaces");
+  if (cloud_workspaces.length) return;
+  log("making Cloud workspaces: app, api, web…");
+  const create = (name: string, spec: Record<string, unknown>) =>
+    d.api<DevCloudWorkspace>("/api/cloud/workspaces", { request_key: `dev-${name}`, spec: { name, repositories: [{ url: `https://github.com/example/${name}` }], ...spec } });
+  const app = await create("app", { packages: { apt: ["ffmpeg"] }, setup_script: "npm ci" });
+  const api = await create("api", { packages: { apt: ["postgresql-client"] }, setup_script: "cargo fetch" });
+  await create("web", { setup_script: "pnpm install" });
+  const settled = async (w: DevCloudWorkspace) => {
+    for (let i = 0; i < 300; i++) {
+      const now = await d.api<DevCloudWorkspace>(`/api/cloud/workspaces/${w.id}`);
+      if (now.status !== "provisioning") return now;
+      await sleep(500);
+    }
+    throw new Error(`Cloud workspace ${w.id} didn't set up`);
+  };
+  const tab = (w: DevCloudWorkspace, key: string, agent: string, prompt: string) =>
+    d.api(`/api/cloud/workspaces/${w.id}/tabs`, { request_key: key, agent_id: agent, runtime: "claude", model: "anthropic/claude-sonnet-4-5", prompt });
+  await tab(await settled(app), "dev-app-guide", "curated_coding", "Write the guide");
+  await tab(app, "dev-app-tests", "curated_review", "Run the tests");
+  const built = await settled(api);
+  await tab(built, "dev-api-docs", "curated_coding", "Explain the API's routes");
+  // Saved after it was built: what a rebuild would change.
+  await d.api(`/api/cloud/workspaces/${api.id}`, { spec: { ...built.saved_spec, packages: { apt: ["postgresql-client", "jq"] }, env_vars: { RUST_LOG: "debug" } } }, "PATCH");
+  // A run from before runs were retired (M119), as control kept them.
+  const { account } = await d.api<{ account: string }>("/api/me");
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(join(dir, "control/control.db"));
+  db.exec("PRAGMA busy_timeout=5000");
+  const run = `run_${randomBytes(16).toString("hex")}`;
+  const created = Date.now() - 3 * 86_400_000;
+  const spec = {
+    agent_id: "curated_coding", agent_version: 1,
+    agent: { name: "Coding agent", instructions: "Implement the requested change.", mcp_servers: {}, skills: [], secret_names: [] },
+    model: "anthropic/claude-sonnet-4-5", runtime: "claude", repository: "https://github.com/example/app", git_ref: "", prompt: "Fix the flaky upload test",
+  };
+  const result = { diff: { diff: "diff --git a/test/upload.test.ts b/test/upload.test.ts\n--- a/test/upload.test.ts\n+++ b/test/upload.test.ts\n@@ -3 +3 @@\n-  await sleep(100);\n+  await upload.done;\n" }, files: {} };
+  db.prepare("INSERT INTO cloud_runs(id,account,request_key,spec,state,created,deadline,result) VALUES(?,?,?,?,?,?,?,?)").run(run, account, run, JSON.stringify(spec), "completed", created, created + 1_800_000, JSON.stringify(result));
+  // The page shows the run's prompt itself.
+  const events = [{ id: 1, blocks: [{ kind: "text", body: "The test slept instead of waiting for the upload; it waits on the upload now." }] }];
+  for (const e of events) db.prepare("INSERT INTO cloud_events(conversation,account,cursor,body) VALUES(?,?,?,?)").run(run, account, e.id, JSON.stringify(e));
+  db.close();
+  log("Cloud workspaces made");
 }
 
 /** The account's headless device: made on the first run, kept after. */
@@ -260,11 +376,13 @@ await webBuild();
 await startControl();
 const d = await device();
 await startMachines(d);
+if (cloud) await seedCloud(d).catch((e) => log(`Cloud workspaces: ${String(e)}`));
 console.log(`
 dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DEV_CONTROL_HOST=localhost)" : ""}
   Sign in with GitHub (the fake one signs you in as ${login}${logins.length ? `, or asks: ${[login, ...logins].join(", ")}` : ""});
   ${approveAll ? `${login}'s browsers are approved (press It matches: the account is ${fingerprint(d.root)})` : `${login}'s browsers stay waiting to be approved (DEV_CONTROL_APPROVE_BROWSERS=0)`}. Machines: ${machines.join(", ")}${labs ? ", with Labs" : ""}.
   ${blockDomain ? `Ports and editors open on b-<key>.${blockDomain} (Chrome; DEV_CONTROL_BLOCK_DOMAIN= for none; the block scripts aren't rebuilt on change).` : "No block domain: ports and editors are off on the machines."}
+  ${cloud ? "Cloud is on, with a fake Managoat: Cloud workspaces app, api and web, and a past run." : "No Cloud (DEV_CONTROL_CLOUD=1 for Cloud workspaces with a fake Managoat)."}
   Edit web/src, wait for "web rebuilt", reload. State: ${dir}. Ctrl-C stops.
 `);
 // Leaving browsers alone: stay up for the web build and the machines.
