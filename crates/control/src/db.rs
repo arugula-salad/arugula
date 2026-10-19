@@ -2188,7 +2188,7 @@ impl Db {
         let mut c = self.c();
         let tx = c.transaction()?;
         let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM cloud_runs WHERE account=?1 AND state NOT IN ('completed','failed','cancelled','expired'))", [a], |r| r.get(0))?;
-        anyhow::ensure!(!active, "cancel cloud runs and wait for cleanup before deleting your account");
+        anyhow::ensure!(!active, "wait for your cloud runs to finish stopping before deleting your account");
         // Its Managoat resources go first (`Db::delete_cloud_workspaces`).
         let live: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM cloud_workspaces WHERE account=?1 AND deleted IS NULL)",

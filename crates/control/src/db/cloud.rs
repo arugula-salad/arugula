@@ -287,12 +287,6 @@ pub struct CloudRun {
     pub result: Option<serde_json::Value>,
 }
 
-pub struct RunLimits {
-    pub daily_runs: u64,
-    pub concurrent_runs: u64,
-    pub duration_ms: u64,
-}
-
 /// Internal provisioning journal. Persist intent before contacting the provider
 /// so a restart reconciles an uncertain creation instead of duplicating it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -308,11 +302,12 @@ pub struct Execution {
     pub secrets_uploaded: Vec<String>,
 }
 
+/// A run that hasn't finished stopping. Runs are retired (S40, decision
+/// 10): the worker only stops what's left of one, never starts one.
 pub struct Job {
     pub run: CloudRun,
     pub account: String,
     pub execution: Execution,
-    pub cancelled: bool,
     pub lease: String,
 }
 
@@ -715,12 +710,6 @@ impl Db {
         self.c().execute("DELETE FROM cloud_secrets WHERE account=?1 AND name=?2", params![account, name])?;
         Ok(())
     }
-    pub fn cloud_run_secrets(&self, account: &str, id: &str) -> Result<Vec<(String, Vec<u8>)>> {
-        let conn = self.c();
-        let mut q = conn.prepare("SELECT s.name,s.sealed FROM cloud_run_secrets s JOIN cloud_runs r ON r.id=s.run WHERE r.account=?1 AND r.id=?2 ORDER BY s.name")?;
-        Ok(q.query_map(params![account, id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?)
-    }
-
     pub fn cloud_agents(&self, account: &str) -> Result<Vec<CloudAgent>> {
         let conn = self.c();
         let mut q =
@@ -777,110 +766,35 @@ impl Db {
         )? == 1)
     }
 
-    /// Reserve capacity and insert the run in one write transaction. Retries
-    /// return the original run, including after it finishes; they never execute
-    /// another prompt or consume another slot. A reused key with different input
-    /// is a conflict rather than silently accepting the wrong work.
-    pub fn reserve_cloud_run(
+    /// A run as one was made before runs were retired, with its job at
+    /// `execution` and in `state`.
+    #[cfg(test)]
+    pub fn insert_cloud_run(
         &self,
         account: &str,
-        request_key: &str,
         spec: &RunSpec,
-        limits: &RunLimits,
+        execution: &Execution,
+        state: &str,
         now: u64,
     ) -> Result<CloudRun> {
-        if request_key.is_empty() || request_key.len() > 128 {
-            bail!("invalid request key");
-        }
-        if limits.duration_ms == 0 {
-            bail!("cloud run duration must be positive");
-        }
-        let deadline = now.checked_add(limits.duration_ms).ok_or_else(|| anyhow::anyhow!("invalid deadline"))?;
-        let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        require_account(&tx, account)?;
-        let existing = tx
-            .query_row(
-                "SELECT id,spec,state,created,deadline,result FROM cloud_runs WHERE account=?1 AND request_key=?2",
-                params![account, request_key],
-                row,
-            )
-            .optional()?;
-        if let Some(existing) = existing {
-            if existing.spec != *spec {
-                bail!("request key already used with different input");
-            }
-            return Ok(existing);
-        }
-        let daily: u64 = tx.query_row(
-            "SELECT count(*) FROM cloud_runs WHERE account=?1 AND created>=?2",
-            params![account, now / 86_400_000 * 86_400_000],
-            |r| r.get(0),
+        let id = format!("run_{}", hex::encode(arugula_e2e::random::<16>()));
+        let conn = self.c();
+        conn.execute(
+            "INSERT INTO cloud_runs(id,account,request_key,spec,state,provider_id,created,deadline) VALUES(?1,?2,?1,?3,?4,?5,?6,?7)",
+            params![id, account, serde_json::to_string(spec)?, state, execution.conversation, now, now + 1_800_000],
         )?;
-        // Expired executions continue to occupy capacity until the worker has
-        // confirmed termination and preserved their results.
-        let active: u64 = tx.query_row(
-            "SELECT count(*) FROM cloud_runs WHERE account=?1 AND state NOT IN ('completed','failed','cancelled','expired')",
-            [account], |r| r.get(0),
-        )?;
-        if daily >= limits.daily_runs {
-            bail!("daily cloud run limit reached");
-        }
-        if active >= limits.concurrent_runs {
-            bail!("concurrent cloud run limit reached");
-        }
-        let run = CloudRun {
-            id: format!("run_{}", hex::encode(arugula_e2e::random::<16>())),
-            spec: spec.clone(),
-            state: "queued".into(),
-            created: now,
-            deadline,
-            result: None,
-        };
-        tx.execute(
-            "INSERT INTO cloud_runs(id,account,request_key,spec,created,deadline) VALUES(?1,?2,?3,?4,?5,?6)",
-            params![run.id, account, request_key, serde_json::to_string(spec)?, now, deadline],
-        )?;
-        let mut names = spec.agent.secret_names.clone();
-        if let Some(name) = &spec.repository_secret {
-            names.push(name.clone());
-        }
-        names.sort();
-        names.dedup();
-        for name in names {
-            let sealed: Option<Vec<u8>> = tx
-                .query_row(
-                    "SELECT sealed FROM cloud_secrets WHERE account=?1 AND name=?2",
-                    params![account, name],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            let sealed = sealed.ok_or_else(|| anyhow::anyhow!("required cloud secret is missing"))?;
-            tx.execute(
-                "INSERT INTO cloud_run_secrets(run,name,sealed) VALUES(?1,?2,?3)",
-                params![run.id, name, sealed],
-            )?;
-        }
-        tx.execute(
+        conn.execute(
             "INSERT INTO cloud_jobs(id,kind,body) VALUES(?1,'run',?2)",
-            params![run.id, serde_json::to_string(&Execution::default())?],
+            params![id, serde_json::to_string(execution)?],
         )?;
-        tx.commit()?;
-        Ok(run)
+        drop(conn);
+        Ok(self.cloud_run(account, &id)?.expect("just inserted"))
     }
 
     pub fn cloud_runs(&self, account: &str) -> Result<Vec<CloudRun>> {
         let conn = self.c();
         let mut q = conn.prepare("SELECT id,spec,state,created,deadline,result FROM cloud_runs WHERE account=?1 ORDER BY created DESC LIMIT 100")?;
         Ok(q.query_map([account], row)?.collect::<rusqlite::Result<Vec<_>>>()?)
-    }
-
-    pub fn cloud_conversation(&self, account: &str, id: &str, now: u64) -> Result<Option<String>> {
-        Ok(self.c().query_row("SELECT r.provider_id FROM cloud_runs r JOIN cloud_jobs j ON j.id=r.id WHERE r.account=?1 AND r.id=?2 AND r.state IN ('running','needs_input','recovering') AND j.cancel=0 AND r.deadline>?3", params![account,id,now], |r| r.get::<_,Option<String>>(0)).optional()?.flatten())
-    }
-
-    pub fn cancel_cloud_run(&self, account: &str, id: &str) -> Result<bool> {
-        Ok(self.c().execute("UPDATE cloud_jobs SET cancel=1 WHERE id IN (SELECT id FROM cloud_runs WHERE account=?1 AND id=?2 AND state NOT IN ('completed','failed','cancelled','expired'))", params![account,id])? == 1)
     }
 
     /// A conversation's events: a run's or a tab's.
@@ -943,14 +857,14 @@ impl Db {
     pub fn claim_cloud_job(&self, now: u64) -> Result<Option<Job>> {
         let mut conn = self.c();
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let found = tx.query_row("SELECT r.id,r.spec,r.state,r.created,r.deadline,r.result,r.account,j.body,j.cancel FROM cloud_runs r JOIN cloud_jobs j ON j.id=r.id WHERE r.state NOT IN ('completed','failed','cancelled','expired') AND j.lease_until<=?1 ORDER BY j.lease_until,r.created LIMIT 1", [now], |r| Ok((row(r)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?,r.get::<_,bool>(8)?))).optional()?;
-        let Some((run, account, body, cancelled)) = found else {
+        let found = tx.query_row("SELECT r.id,r.spec,r.state,r.created,r.deadline,r.result,r.account,j.body FROM cloud_runs r JOIN cloud_jobs j ON j.id=r.id WHERE r.state NOT IN ('completed','failed','cancelled','expired') AND j.lease_until<=?1 ORDER BY j.lease_until,r.created LIMIT 1", [now], |r| Ok((row(r)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?))).optional()?;
+        let Some((run, account, body)) = found else {
             return Ok(None);
         };
         let lease = hex::encode(arugula_e2e::random::<16>());
         tx.execute("UPDATE cloud_jobs SET lease=?1,lease_until=?2 WHERE id=?3", params![lease, now + 120_000, run.id])?;
         tx.commit()?;
-        Ok(Some(Job { run, account, execution: serde_json::from_str(&body)?, cancelled, lease }))
+        Ok(Some(Job { run, account, execution: serde_json::from_str(&body)?, lease }))
     }
 
     /// Checkpoint under the claim. A stale worker cannot overwrite its successor.
@@ -1526,8 +1440,9 @@ mod tests {
             prompt: "fix tests".into(),
         }
     }
-    fn limits() -> RunLimits {
-        RunLimits { daily_runs: 2, concurrent_runs: 1, duration_ms: 60000 }
+    /// A run left running when runs were retired.
+    fn run(db: &Db, account: &str, spec: &RunSpec) -> CloudRun {
+        db.insert_cloud_run(account, spec, &Execution::default(), "running", 0).unwrap()
     }
 
     fn cloud_workspace_spec() -> CloudWorkspaceSpec {
@@ -1705,7 +1620,7 @@ mod tests {
     #[test]
     fn account_deletion_waits_for_cleanup_then_erases_cloud_data() {
         let db = test_db();
-        let run = db.reserve_cloud_run("a", "delete", &spec(), &limits(), 0).unwrap();
+        let run = run(&db, "a", &spec());
         db.create_cloud_agent("a", spec().agent).unwrap();
         db.put_cloud_secret("a", "TOKEN", b"sealed").unwrap();
         db.put_cloud_secret("b", "TOKEN", b"other-owner").unwrap();
@@ -1741,29 +1656,14 @@ mod tests {
         }
         assert!(db.cloud_secret_names("a").unwrap().is_empty());
         assert_eq!(db.cloud_secret_names("b").unwrap(), ["TOKEN"]);
-        assert!(db.reserve_cloud_run("a", "raced", &spec(), &limits(), 0).is_err());
         assert!(db.create_cloud_agent("a", spec().agent).is_err());
         assert!(db.put_cloud_secret("a", "TOKEN", b"raced").is_err());
     }
 
     #[test]
-    fn cancelled_and_expired_runs_cannot_receive_answers() {
-        let db = test_db();
-        let run = db.reserve_cloud_run("a", "approval", &spec(), &limits(), 0).unwrap();
-        let mut job = db.claim_cloud_job(0).unwrap().unwrap();
-        job.execution.conversation = Some("conversation".into());
-        db.checkpoint_cloud_job(&job, "needs_input", None, None).unwrap();
-        assert_eq!(db.cloud_conversation("a", &run.id, 1).unwrap().as_deref(), Some("conversation"));
-        assert!(db.cloud_conversation("b", &run.id, 1).unwrap().is_none());
-        assert!(db.cloud_conversation("a", &run.id, run.deadline).unwrap().is_none());
-        db.cancel_cloud_run("a", &run.id).unwrap();
-        assert!(db.cloud_conversation("a", &run.id, 1).unwrap().is_none());
-    }
-
-    #[test]
     fn approval_replay_does_not_reopen_resolved_requests_or_duplicate_notifications() {
         let db = test_db();
-        let run = db.reserve_cloud_run("a", "approval", &spec(), &limits(), 0).unwrap();
+        let run = run(&db, "a", &spec());
         let job = db.claim_cloud_job(0).unwrap().unwrap();
         let request = serde_json::json!({"id":1,"blocks":[{"kind":"permission_request","request_id":"approve-1","options":[{"optionId":"allow"}]}]});
         db.append_cloud_events(&job, std::slice::from_ref(&request)).unwrap();
@@ -1790,29 +1690,10 @@ mod tests {
     }
 
     #[test]
-    fn run_secrets_are_encrypted_snapshots_and_missing_secrets_roll_back() {
-        let db = test_db();
-        let cipher = crate::cloud::secrets::SecretCipher::new(&"01".repeat(32)).unwrap();
-        let mut spec = spec();
-        spec.repository_secret = Some("GITHUB_TOKEN".into());
-        assert!(db.reserve_cloud_run("a", "missing", &spec, &limits(), 0).is_err());
-        assert!(db.cloud_runs("a").unwrap().is_empty());
-        let original = cipher.seal("a", "GITHUB_TOKEN", "original").unwrap();
-        db.put_cloud_secret("a", "GITHUB_TOKEN", &original).unwrap();
-        let run = db.reserve_cloud_run("a", "ready", &spec, &limits(), 0).unwrap();
-        db.put_cloud_secret("a", "GITHUB_TOKEN", &cipher.seal("a", "GITHUB_TOKEN", "rotated").unwrap()).unwrap();
-        db.delete_cloud_secret("a", "GITHUB_TOKEN").unwrap();
-        let snapshot = db.cloud_run_secrets("a", &run.id).unwrap();
-        assert_eq!(snapshot.len(), 1);
-        assert_eq!(cipher.open("a", "GITHUB_TOKEN", &snapshot[0].1).unwrap(), "original");
-        assert!(db.cloud_run_secrets("b", &run.id).unwrap().is_empty());
-        assert!(!serde_json::to_string(&run).unwrap().contains("original"));
-    }
-
-    #[test]
     fn stale_worker_cannot_overwrite_reclaimed_job() {
         let db = test_db();
-        let run = db.reserve_cloud_run("a", "claim", &spec(), &limits(), 0).unwrap();
+        let run = run(&db, "a", &spec());
+        assert!(db.cloud_run("b", &run.id).unwrap().is_none());
         let first = db.claim_cloud_job(0).unwrap().unwrap();
         assert!(db.claim_cloud_job(100).unwrap().is_none());
         let second = db.claim_cloud_job(120_001).unwrap().unwrap();
@@ -1820,9 +1701,7 @@ mod tests {
         assert!(db.checkpoint_cloud_job(&first, "running", None, Some(0)).is_err());
         assert!(db.append_cloud_events(&first, &[serde_json::json!({"id":1})]).is_err());
         assert!(db.checkpoint_cloud_job(&second, "running", None, Some(130_000)).is_ok());
-        assert!(!db.cancel_cloud_run("b", &run.id).unwrap());
-        assert!(db.cancel_cloud_run("a", &run.id).unwrap());
-        assert!(db.claim_cloud_job(130_000).unwrap().unwrap().cancelled);
+        assert_eq!(db.claim_cloud_job(130_000).unwrap().unwrap().run.id, run.id);
     }
 
     #[test]
@@ -1833,14 +1712,12 @@ mod tests {
             let db = Db::open(&path).unwrap();
             db.account_for("test", "a", "a", "a", 0).unwrap();
             db.create_cloud_agent("a", spec().agent).unwrap();
-            id = db.reserve_cloud_run("a", "request", &spec(), &limits(), 100).unwrap().id;
+            id = run(&db, "a", &spec()).id;
         }
         {
             let db = Db::open(&path).unwrap();
             assert_eq!(db.cloud_agents("a").unwrap().len(), 1);
             assert_eq!(db.cloud_run("a", &id).unwrap().unwrap().spec, spec());
-            assert_eq!(db.reserve_cloud_run("a", "request", &spec(), &limits(), 200).unwrap().id, id);
-            assert!(db.reserve_cloud_run("a", "another", &spec(), &limits(), 200).is_err());
         }
         std::fs::remove_file(path).unwrap();
     }
@@ -1853,7 +1730,7 @@ mod tests {
         let mut launch = spec();
         launch.agent_id = agent.id.clone();
         launch.agent = agent.definition.clone();
-        let run = db.reserve_cloud_run("a", "launch", &launch, &limits(), 0).unwrap();
+        let run = run(&db, "a", &launch);
         let mut edited = agent.definition.clone();
         edited.instructions = "New instructions".into();
         assert!(!db.update_cloud_agent("b", &agent.id, 1, &edited).unwrap());
@@ -1874,51 +1751,5 @@ mod tests {
         assert!(agent.validate().is_ok());
         agent.instructions = "x".repeat(64_001);
         assert!(agent.validate().is_err());
-    }
-
-    #[test]
-    fn retries_are_idempotent_and_account_scoped() {
-        let db = test_db();
-        let first = db.reserve_cloud_run("a", "request", &spec(), &limits(), 100).unwrap();
-        let retry = db.reserve_cloud_run("a", "request", &spec(), &limits(), 200).unwrap();
-        assert_eq!(first.id, retry.id);
-        assert_eq!(first.deadline, retry.deadline);
-        assert!(db.cloud_run("b", &first.id).unwrap().is_none());
-        assert!(db.cloud_run("a", &first.id).unwrap().is_some());
-        let other = db.reserve_cloud_run("b", "request", &spec(), &limits(), 200).unwrap();
-        assert_ne!(first.id, other.id);
-        let mut changed = spec();
-        changed.prompt = "different work".into();
-        assert!(db.reserve_cloud_run("a", "request", &changed, &limits(), 200).is_err());
-    }
-
-    #[test]
-    fn expired_but_unconfirmed_work_still_occupies_capacity() {
-        let db = test_db();
-        db.reserve_cloud_run("a", "one", &spec(), &limits(), 0).unwrap();
-        assert!(db.reserve_cloud_run("a", "two", &spec(), &limits(), 70000).is_err());
-    }
-
-    #[test]
-    fn daily_limit_survives_completion() {
-        let db = test_db();
-        for key in ["one", "two"] {
-            db.reserve_cloud_run("a", key, &spec(), &limits(), 100).unwrap();
-            db.c().execute("UPDATE cloud_runs SET state='completed'", []).unwrap();
-        }
-        assert!(db.reserve_cloud_run("a", "three", &spec(), &limits(), 200).is_err());
-        assert!(db.reserve_cloud_run("a", "four", &spec(), &limits(), 86_400_000).is_ok());
-    }
-
-    #[test]
-    fn concurrent_submissions_cannot_overbook() {
-        let db = std::sync::Arc::new(test_db());
-        let handles: Vec<_> = (0..8)
-            .map(|i| {
-                let db = db.clone();
-                std::thread::spawn(move || db.reserve_cloud_run("a", &i.to_string(), &spec(), &limits(), 0).is_ok())
-            })
-            .collect();
-        assert_eq!(handles.into_iter().map(|h| usize::from(h.join().unwrap())).sum::<usize>(), 1);
     }
 }
