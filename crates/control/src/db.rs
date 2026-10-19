@@ -8,6 +8,7 @@
 
 pub mod chat;
 pub mod cloud;
+pub mod doc_links;
 
 use std::{path::Path, sync::Mutex};
 
@@ -565,6 +566,7 @@ impl Db {
         conn.execute_batch(SCHEMA)?;
         conn.execute_batch(cloud::SCHEMA)?;
         conn.execute_batch(chat::SCHEMA)?;
+        conn.execute_batch(doc_links::SCHEMA)?;
         migrate(&conn)?;
         chat::migrate(&conn)?;
         if !answers_before {
@@ -578,6 +580,7 @@ impl Db {
         conn.execute_batch(SCHEMA).unwrap();
         conn.execute_batch(cloud::SCHEMA).unwrap();
         conn.execute_batch(chat::SCHEMA).unwrap();
+        conn.execute_batch(doc_links::SCHEMA).unwrap();
         migrate(&conn).unwrap();
         chat::migrate(&conn).unwrap();
         Self { conn: Mutex::new(conn) }
@@ -1332,6 +1335,10 @@ impl Db {
         c.execute("DELETE FROM daemon_offers WHERE daemon = ?1", params![id])?;
         c.execute("DELETE FROM daemon_offer_pushes WHERE daemon = ?1", params![id])?;
         c.execute("DELETE FROM share_answers WHERE daemon = ?1", params![id])?;
+        // The Docs it shared: a link needs its machine's say to change, and
+        // the machine is gone.
+        c.execute("DELETE FROM doc_link_parts WHERE id IN (SELECT id FROM doc_links WHERE daemon = ?1)", params![id])?;
+        c.execute("DELETE FROM doc_links WHERE daemon = ?1", params![id])?;
         Ok(())
     }
 
@@ -2256,6 +2263,8 @@ impl Db {
             }
         }
         for sql in [
+            "DELETE FROM doc_link_parts WHERE id IN (SELECT id FROM doc_links WHERE account = ?1)",
+            "DELETE FROM doc_links WHERE account = ?1",
             "DELETE FROM identities WHERE account = ?1",
             "DELETE FROM sessions WHERE account = ?1",
             "DELETE FROM passkeys WHERE account = ?1",

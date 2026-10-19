@@ -344,6 +344,10 @@ fn an_older_controls_control_json_parses() {
     // Without them, they aren't said at all.
     assert!(serde_json::to_value(&old).unwrap().get("join_secret").is_none());
     assert!(serde_json::to_value(&old).unwrap().get("device_secret").is_none());
+    // Nor the Doc links an older control doesn't have (#1064).
+    assert!(old.doc_links.is_none() && old.doc_viewer.is_none());
+    assert!(serde_json::to_value(&old).unwrap().get("doc_links").is_none());
+    assert!(serde_json::to_value(&old).unwrap().get("doc_viewer").is_none());
 }
 
 /// A machine or the CLI reads only `join_secret` to decide on a secret

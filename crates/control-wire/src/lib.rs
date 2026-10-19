@@ -112,6 +112,14 @@ pub struct ControlInfo {
     /// blocks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block_domain: Option<String>,
+    /// Control keeps encrypted Doc snapshots and serves them to anyone with
+    /// the link (#1064): the version of that API. `None`: it doesn't.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc_links: Option<u8>,
+    /// Where those are opened, without a trailing slash: a link is
+    /// `<doc_viewer>/<id>#k=<key>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub doc_viewer: Option<String>,
 }
 
 /// Just the signature version from `/control.json`, for a daemon deciding

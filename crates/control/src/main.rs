@@ -25,6 +25,9 @@ mod chat;
 mod chat_wire;
 mod cloud;
 mod db;
+mod doc_links;
+#[cfg(test)]
+mod doc_links_wire;
 mod forge;
 #[cfg(test)]
 mod forge_wire;
@@ -350,6 +353,8 @@ pub struct App {
     pub analytics: analytics::Analytics,
     /// Chat's live streams and recent events (M122).
     pub chat: chat::Hub,
+    /// Shared Docs: the disk guard and the open counts (#1064).
+    pub docs: doc_links::Docs,
 }
 
 #[cfg(test)]
@@ -389,6 +394,7 @@ impl App {
             blocks: Default::default(),
             analytics: Default::default(),
             chat: Default::default(),
+            docs: Default::default(),
         }
     }
 }
@@ -567,6 +573,13 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/cloud/import", post(cloud::migration::import))
         .route("/api/cloud/agents", get(cloud::catalog).post(cloud::create_agent))
         .route("/api/cloud/agents/{id}", axum::routing::put(cloud::update_agent).delete(cloud::delete_agent))
+        .route("/api/doc-links", get(doc_links::list))
+        .route("/api/doc-links/quota", get(doc_links::quota))
+        .route("/api/doc-links/{id}", axum::routing::delete(doc_links::remove))
+        .route("/api/doc-links/{id}/v/{ver}/parts/{n}", axum::routing::put(doc_links::put_part))
+        .route("/api/doc-links/{id}/v/{ver}/commit", post(doc_links::commit))
+        // The viewer where there's no block domain (`doc_links::serve`).
+        .route("/d/{*rest}", axum::routing::any(doc_links::fallback))
         .route("/api/sandboxes", get(sandboxes::list).post(sandboxes::create))
         .route("/api/sandboxes/{id}", axum::routing::delete(sandboxes::delete))
         .route(wire::SANDBOX_DONE, post(sandboxes::done))
@@ -652,6 +665,9 @@ async fn control_json(
         guest_ssh: app.jump.as_ref().map(guest_jump::Jump::describe),
         // Where blocks get origins of their own (M50).
         block_domain: app.cfg.block_domain.clone(),
+        // Shared Docs (#1064), and where they are opened.
+        doc_links: Some(1),
+        doc_viewer: Some(doc_links::viewer_url(&app.cfg.public_url, app.cfg.block_domain.as_deref())),
     })
 }
 
@@ -836,6 +852,7 @@ async fn run() -> anyhow::Result<()> {
         b.restore_if_missing().await?;
     }
     let db = db::Db::open(&a.db)?;
+    let db_dir = a.db.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(std::path::Path::new(".")).to_owned();
     let http = roots::client(std::time::Duration::from_secs(15))?;
     let analytics = match set(a.posthog_api_key) {
         Some(key) => analytics::Analytics::start(key, &a.posthog_host, http.clone()),
@@ -953,6 +970,8 @@ async fn run() -> anyhow::Result<()> {
         blocks: Default::default(),
         analytics,
         chat: Default::default(),
+        // The database's directory, whose disk shared Docs fill.
+        docs: doc_links::Docs::at(db_dir),
     });
     if let (Some(l), Some(j)) = (guest_listener, &app.jump) {
         info!(addr = %l.local_addr()?, host = %j.host, port = j.port, "guest ssh jump host");
@@ -975,11 +994,27 @@ async fn run() -> anyhow::Result<()> {
             }
         });
     }
+    // Shared Docs' open counts reach the database.
+    {
+        let a2 = app.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(doc_links::FLUSH_EVERY).await;
+                a2.docs.flush(&a2.db);
+            }
+        });
+    }
     // Expired sessions, join codes and invites go (#173).
     {
         let a2 = app.clone();
         tokio::spawn(async move {
             loop {
+                // And the parts of a shared Doc's upload nobody finished.
+                match a2.db.sweep_doc_links(arugula_e2e::now_ms().saturating_sub(doc_links::SWEEP_AFTER_MS)) {
+                    Ok(n) if n > 0 => info!(parts = n, "swept uncommitted Doc parts"),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!(error = %e, "sweeping Doc parts"),
+                }
                 match a2.db.prune(arugula_e2e::now_ms()) {
                     Ok(n) if n > 0 => info!(sessions = n, "pruned expired sessions"),
                     Ok(_) => {}
@@ -1000,6 +1035,7 @@ async fn run() -> anyhow::Result<()> {
         _ = stopping() => info!("stopping"),
     }
     app.analytics.flush().await;
+    app.docs.flush(&app.db);
     // Litestream syncs what's left before control goes.
     if let Some(b) = &backup {
         b.stop().await;
