@@ -27,18 +27,40 @@ pub fn start(app: Arc<App>) {
 
 async fn tick(app: &App) -> Result<()> {
     let now = arugula_e2e::now_ms();
-    for (account, run, request) in app.db.cloud_notifications(now)? {
-        let delivered = send(app, &account, &run).await.is_ok();
-        app.db.cloud_notification_result(&run, &request, delivered, now + 30_000)?;
+    for n in app.db.cloud_notifications(now)? {
+        let target = match &n.cloud_workspace {
+            Some(cloud_workspace) => Target::Tab { cloud_workspace, tab: &n.conversation },
+            None => Target::Run(&n.conversation),
+        };
+        let delivered = send(app, &n.account, target).await.is_ok();
+        app.db.cloud_notification_result(&n.conversation, &n.request, delivered, now + 30_000)?;
     }
     Ok(())
 }
 
-async fn send(app: &App, account: &str, run: &str) -> Result<()> {
-    let payload = serde_json::to_vec(&serde_json::json!({
-        "title":"Arugula cloud agent", "body":"An agent needs your input.",
-        "tag":format!("cloud-{run}"), "cloud_run":run,
-    }))?;
+/// The conversation a push opens: a run, or a tab in a Cloud workspace.
+#[derive(Clone, Copy)]
+enum Target<'a> {
+    Run(&'a str),
+    Tab { cloud_workspace: &'a str, tab: &'a str },
+}
+
+/// What the push says: no prompt, no request, only where to go.
+fn payload(target: Target<'_>) -> serde_json::Value {
+    match target {
+        Target::Run(run) => serde_json::json!({
+            "title":"Arugula cloud agent", "body":"An agent needs your input.",
+            "tag":format!("cloud-{run}"), "cloud_run":run,
+        }),
+        Target::Tab { cloud_workspace, tab } => serde_json::json!({
+            "title":"Arugula cloud agent", "body":"An agent needs your input.",
+            "tag":format!("cloud-{tab}"), "cloud_workspace":cloud_workspace, "cloud_tab":tab,
+        }),
+    }
+}
+
+async fn send(app: &App, account: &str, target: Target<'_>) -> Result<()> {
+    let payload = serde_json::to_vec(&payload(target))?;
     for value in app.db.push_subs(account)? {
         let sub: arugula_e2e::push::PushSub = serde_json::from_value(value)?;
         let Some((cert, true)) = app.db.device(account, &sub.device)? else {
@@ -172,10 +194,15 @@ mod tests {
         };
         sub.sign_with(&device);
         app.db.put_push_sub(&sub.endpoint, "a", &serde_json::to_string(&sub).unwrap()).unwrap();
-        send(&app, "b", "run_test").await.unwrap();
+        send(&app, "b", Target::Run("run_test")).await.unwrap();
         assert_eq!(received.load(std::sync::atomic::Ordering::SeqCst), 0);
-        send(&app, "a", "run_test").await.unwrap();
+        send(&app, "a", Target::Run("run_test")).await.unwrap();
         assert_eq!(received.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            payload(Target::Tab { cloud_workspace: "cw_1", tab: "cwc_1" }),
+            serde_json::json!({"title":"Arugula cloud agent","body":"An agent needs your input.",
+                "tag":"cloud-cwc_1","cloud_workspace":"cw_1","cloud_tab":"cwc_1"})
+        );
         assert!(app.db.push_subs("a").unwrap().is_empty());
         server.abort();
     }

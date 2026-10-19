@@ -1,7 +1,7 @@
 //! Durable, bounded reconciliation steps. Browser connections never own work.
 use crate::{
     App,
-    db::cloud::{CloudWorkspaceJob, Job},
+    db::cloud::{CloudTabJob, CloudWorkspaceJob, Job},
 };
 use anyhow::{Context, Result, bail};
 use reqwest::Method;
@@ -31,7 +31,27 @@ async fn tick_at(app: &App, now: u64) -> Result<()> {
         return Ok(());
     };
     let run = tick_run(app, now).await;
-    tick_cloud_workspace(app, now).await.and(run)
+    let cloud_workspace = tick_cloud_workspace(app, now).await;
+    tick_cloud_tab(app, now).await.and(cloud_workspace).and(run)
+}
+
+/// Read a conversation's next page of events and take them in under its
+/// job's claim (`id` is the run's or the tab's). Returns the page.
+async fn pump(
+    app: &App,
+    id: &str,
+    account: &str,
+    lease: &str,
+    conversation: &str,
+    cursor: &mut u64,
+) -> Result<Vec<Value>> {
+    let p = &app.cloud.as_ref().context("cloud is disabled")?.provider;
+    let events = p.events(conversation, *cursor).await?;
+    app.db.append_conversation_events(id, account, lease, &events)?;
+    if let Some(last) = events.iter().filter_map(|e| e["id"].as_u64()).max() {
+        *cursor = last;
+    }
+    Ok(events)
 }
 
 async fn tick_run(app: &App, now: u64) -> Result<()> {
@@ -191,17 +211,13 @@ async fn step(app: &App, job: &mut Job, now: u64) -> Result<()> {
             {
                 return Err(error);
             }
-            let events = p.events(id, job.execution.cursor).await?;
-            app.db.append_cloud_events(job, &events)?;
+            let events = pump(app, &job.run.id, &job.account, &job.lease, id, &mut job.execution.cursor).await?;
             // A failed turn can leave its reusable provider conversation idle.
             // Persist failure before draining subsequent event pages.
             if job.execution.outcome.is_none()
                 && events.iter().any(|event| event["stage"] == "turn" && event["state"] == "failed")
             {
                 job.execution.outcome = Some("failed".into());
-            }
-            if let Some(cursor) = events.iter().filter_map(|e| e["id"].as_u64()).max() {
-                job.execution.cursor = cursor;
             }
             job.execution.sandbox = c["sandbox_id"].as_str().map(str::to_owned);
             if matches!(state, "idle" | "failed" | "terminated") && events.len() < 1000 {
@@ -544,7 +560,11 @@ async fn step_cloud_workspace(app: &App, job: &mut CloudWorkspaceJob, now: u64) 
             save_cloud_workspace(app, job, now)
         }
         // Managoat refuses (409) while its workspace still names it: retried.
+        // Its tabs' agents name it too, so they go first.
         "delete_vault" => {
+            if app.db.open_cloud_tabs(&id)? > 0 {
+                return save_cloud_workspace(app, job, now);
+            }
             if let Some(vault) = &job.execution.vault {
                 p.remove("vaults", vault).await?;
             }
@@ -573,6 +593,172 @@ fn workspace_made(job: &mut CloudWorkspaceJob, workspace: &Value) {
     job.execution.workspace = workspace["id"].as_str().map(str::to_owned);
     observe(job, workspace);
     job.execution.stage = "live".into();
+}
+
+/// How soon a tab's job runs again: soon while a turn runs or waits on an
+/// answer, less often while idle, and seldom once it has ended.
+const CLOUD_TAB_BUSY_MS: u64 = 2_000;
+const CLOUD_TAB_IDLE_MS: u64 = 5_000;
+const CLOUD_TAB_ENDED_MS: u64 = 60_000;
+
+async fn tick_cloud_tab(app: &App, now: u64) -> Result<()> {
+    let Some(mut job) = app.db.claim_cloud_tab_job(now)? else {
+        return Ok(());
+    };
+    if let Err(error) = step_cloud_tab(app, &mut job, now).await {
+        // As for a Cloud workspace: a refused create made nothing.
+        let rejected = error
+            .downcast_ref::<super::provider::HttpFailure>()
+            .is_some_and(|e| e.1 == Method::POST && (400..500).contains(&e.0) && !matches!(e.0, 408 | 429));
+        if rejected && job.execution.stage.ends_with("_creating") {
+            job.execution.stage = "rejected".into();
+            job.tab.status = "failed".into();
+            job.tab.error = Some("Managoat refused to open this tab.".into());
+            return save_cloud_tab(app, &job, now);
+        }
+        app.db.checkpoint_cloud_tab_job(&job, Some(now + 10_000))?;
+        tracing::warn!(cloud_tab = %job.tab.id, %error, "cloud tab will reconcile");
+    }
+    Ok(())
+}
+
+fn save_cloud_tab(app: &App, job: &CloudTabJob, now: u64) -> Result<()> {
+    let wait = match job.tab.status.as_str() {
+        _ if job.closing || job.execution.stage != "live" && job.execution.stage != "rejected" => CLOUD_TAB_BUSY_MS,
+        "running" | "pending" | "needs_input" => CLOUD_TAB_BUSY_MS,
+        "idle" => CLOUD_TAB_IDLE_MS,
+        _ => CLOUD_TAB_ENDED_MS,
+    };
+    app.db.checkpoint_cloud_tab_job(job, Some(now + wait))
+}
+
+/// Open (agent, then conversation), then follow the conversation, then
+/// close (conversation, then agent). Each create is journalled before
+/// Managoat is asked, and found again after a lost response.
+async fn step_cloud_tab(app: &App, job: &mut CloudTabJob, now: u64) -> Result<()> {
+    let cloud = app.cloud.as_ref().context("cloud is disabled")?;
+    let p = &cloud.provider;
+    let id = job.tab.id.clone();
+    let stage = job.execution.stage.clone();
+    // Never forget an in-flight creation: find what it made first.
+    if job.closing && !stage.ends_with("_creating") && !matches!(stage.as_str(), "terminate" | "delete_agent") {
+        job.execution.stage = "terminate".into();
+        return save_cloud_tab(app, job, now);
+    }
+    let not_made = |job: &mut CloudTabJob, retry: &str| {
+        job.execution.stage = if job.closing { "terminate" } else { retry }.into();
+    };
+    match stage.as_str() {
+        "" => {
+            // Its Cloud workspace isn't made yet: wait for it.
+            let (Some(environment), Some(vault), Some(_)) = (&job.environment, &job.vault, &job.workspace) else {
+                return save_cloud_tab(app, job, now);
+            };
+            let spec = &job.spec;
+            let body = json!({
+                "name": id, "metadata": {"arugula_tab": id},
+                "environment_id": environment, "allowed_environment_ids": [], "allowed_vault_ids": [vault],
+                "runtime": spec.runtime, "model": spec.model,
+                "system": format!(
+                    "{}\nYou work in {}, on a machine other agents may share.",
+                    spec.agent.instructions, spec.cwd
+                ),
+                "mcp_servers": spec.agent.mcp_servers, "skills": spec.agent.skills,
+                "permission_policy": {"default": "ask"},
+            });
+            job.execution.stage = "agent_creating".into();
+            app.db.checkpoint_cloud_tab_job(job, None)?;
+            job.execution.agent = Some(p.create("agents", body).await?);
+            job.execution.stage = "agent_ready".into();
+            save_cloud_tab(app, job, now)
+        }
+        "agent_creating" => {
+            job.execution.agent = p.find_cloud_tab_resource("agents", &id).await?;
+            if job.execution.agent.is_some() {
+                job.execution.stage = "agent_ready".into();
+            } else {
+                not_made(job, "");
+            }
+            save_cloud_tab(app, job, now)
+        }
+        "agent_ready" => {
+            let agent = job.execution.agent.clone().context("missing agent")?;
+            let workspace = job.workspace.clone().context("missing workspace")?;
+            job.execution.stage = "conversation_creating".into();
+            app.db.checkpoint_cloud_tab_job(job, None)?;
+            let conversation =
+                p.launch_in_cloud_workspace(&agent, &workspace, &job.spec.cwd, &id, job.spec.prompt.as_deref()).await?;
+            job.execution.conversation = Some(conversation["id"].as_str().context("missing conversation")?.into());
+            job.tab.status = conversation["status"].as_str().unwrap_or("pending").into();
+            job.execution.stage = "live".into();
+            save_cloud_tab(app, job, now)
+        }
+        "conversation_creating" => {
+            job.execution.conversation = p.find_cloud_tab_resource("conversations", &id).await?;
+            if job.execution.conversation.is_some() {
+                job.tab.status = "pending".into();
+                job.execution.stage = "live".into();
+            } else {
+                not_made(job, "agent_ready");
+            }
+            save_cloud_tab(app, job, now)
+        }
+        "live" => {
+            let conversation = job.execution.conversation.clone().context("missing conversation")?;
+            let c = match p.conversation(&conversation).await {
+                Ok(c) => c,
+                Err(e) if e.downcast_ref::<super::provider::HttpFailure>().is_some_and(|e| e.0 == 404) => {
+                    job.tab.status = "failed".into();
+                    job.tab.error = Some("Managoat no longer has this conversation. Close the tab.".into());
+                    return save_cloud_tab(app, job, now);
+                }
+                Err(e) => return Err(e),
+            };
+            let state = c["status"].as_str().context("missing conversation status")?.to_owned();
+            let events = pump(app, &id, &job.account, &job.lease, &conversation, &mut job.execution.cursor).await?;
+            if events.iter().any(|e| e["stage"] == "turn") {
+                job.started = true;
+            }
+            let waiting = !app.db.cloud_requests(&job.account, &id)?.is_empty();
+            job.tab.status = if waiting && !matches!(state.as_str(), "failed" | "terminated") {
+                "needs_input".into()
+            } else {
+                state
+            };
+            // A full page means more to read: come back soon.
+            if events.len() >= 1000 {
+                return app.db.checkpoint_cloud_tab_job(job, Some(now + CLOUD_TAB_BUSY_MS));
+            }
+            save_cloud_tab(app, job, now)
+        }
+        // Nothing to follow: only a close moves it on.
+        "rejected" => save_cloud_tab(app, job, now),
+        "terminate" => {
+            if let Some(conversation) = &job.execution.conversation {
+                let c = match p.conversation(conversation).await {
+                    Ok(c) => c,
+                    Err(e) if e.downcast_ref::<super::provider::HttpFailure>().is_some_and(|e| e.0 == 404) => {
+                        json!({"status":"terminated"})
+                    }
+                    Err(e) => return Err(e),
+                };
+                if !matches!(c["status"].as_str(), Some("terminated" | "failed")) {
+                    p.terminate(conversation).await?;
+                    return save_cloud_tab(app, job, now);
+                }
+            }
+            job.execution.stage = "delete_agent".into();
+            save_cloud_tab(app, job, now)
+        }
+        "delete_agent" => {
+            if let Some(agent) = &job.execution.agent {
+                p.remove("agents", agent).await?;
+            }
+            job.execution.agent = None;
+            app.db.finish_cloud_tab_close(job, now)
+        }
+        _ => bail!("unknown cloud tab stage"),
+    }
 }
 
 #[cfg(test)]
@@ -606,6 +792,13 @@ mod tests {
         workspace_reads: u32,
         failed_setup: bool,
         vault_in_use_once: bool,
+        /// The workspace read that finds setup done (2 when left at 0).
+        setup_reads: u32,
+        // Tabs: their agents and conversations, by id, and each
+        // conversation's events.
+        agents: Vec<Value>,
+        tab_conversations: std::collections::BTreeMap<String, Value>,
+        tab_events: std::collections::BTreeMap<String, Vec<Value>>,
     }
 
     impl Fake {
@@ -628,6 +821,46 @@ mod tests {
         let value: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
         fake.calls.push((method.to_string(), uri.to_string(), value.clone()));
         let path = uri.path();
+        if let Some(rest) = path.strip_prefix("/api/conversations/tabconv") {
+            let (n, action) = rest.split_once('/').unwrap_or((rest, ""));
+            let id = format!("tabconv{n}");
+            let Some(conversation) = fake.tab_conversations.get(&id).cloned() else {
+                return StatusCode::NOT_FOUND.into_response();
+            };
+            let status = |fake: &mut Fake, status: &str| {
+                fake.tab_conversations.get_mut(&id).unwrap()["status"] = json!(status);
+            };
+            let data = match (method.as_str(), action) {
+                ("GET", "") => conversation,
+                ("GET", "events") => {
+                    let after: u64 = uri
+                        .query()
+                        .unwrap_or_default()
+                        .split('&')
+                        .find_map(|kv| kv.strip_prefix("after="))
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
+                    let events = fake.tab_events.get(&id).cloned().unwrap_or_default();
+                    json!(events.into_iter().filter(|e| e["id"].as_u64().unwrap() > after).collect::<Vec<_>>())
+                }
+                ("POST", "prompts") => {
+                    status(&mut fake, "running");
+                    json!({"accepted":true})
+                }
+                ("POST", "interrupt") if conversation["status"] == "running" => {
+                    status(&mut fake, "idle");
+                    json!({})
+                }
+                ("POST", "interrupt") => return StatusCode::CONFLICT.into_response(),
+                ("POST", "terminate") => {
+                    status(&mut fake, "terminated");
+                    json!({})
+                }
+                ("POST", action) if action.starts_with("requests/") => json!({}),
+                _ => panic!("unexpected mock request: {method} {uri}"),
+            };
+            return axum::Json(json!({"data":data})).into_response();
+        }
         let data = match (method.as_str(), path) {
             ("POST", "/api/environments") => {
                 let mut environment = value.clone();
@@ -669,15 +902,16 @@ mod tests {
                 let failed = fake.failed_setup;
                 fake.workspace_reads += 1;
                 let reads = fake.workspace_reads;
+                let setup_reads = if fake.setup_reads == 0 { 2 } else { fake.setup_reads };
                 let Some(workspace) = fake.workspace.as_mut() else {
                     return StatusCode::NOT_FOUND.into_response();
                 };
                 // Set up on the second read.
-                if reads >= 2 && failed {
+                if reads >= setup_reads && failed {
                     workspace["status"] = json!("failed");
                     workspace["sandbox_status"] = Value::Null;
                     workspace["error"] = json!("setup_script exited 1: npm ERR! missing script: build");
-                } else if reads >= 2 {
+                } else if reads >= setup_reads {
                     workspace["status"] = json!("ready");
                     workspace["sandbox_status"] = json!("ready");
                     workspace["built_from_revision"] = json!("rev1");
@@ -700,7 +934,30 @@ mod tests {
                 json!(fake.environment.iter().collect::<Vec<_>>())
             }
             ("POST", "/api/environments/env1/secrets") => json!({"key":value["key"]}),
+            ("POST", "/api/agents") if value["metadata"]["arugula_tab"].is_string() => {
+                let mut agent = value.clone();
+                agent["id"] = json!(format!("agent{}", fake.agents.len() + 2));
+                fake.agents.push(agent.clone());
+                if fake.lost("agents") {
+                    return StatusCode::BAD_GATEWAY.into_response();
+                }
+                agent
+            }
+            ("GET", "/api/agents") => json!(fake.agents),
             ("POST", "/api/agents") => json!({"id":"agent1"}),
+            ("POST", "/api/conversations") if value["workspace_id"].is_string() => {
+                let id = format!("tabconv{}", fake.tab_conversations.len() + 1);
+                let status = if value["prompt"].is_string() { "running" } else { "idle" };
+                let conversation = json!({
+                    "id":id,"status":status,"workspace_id":value["workspace_id"],"cwd":value["cwd"],"labels":value["labels"],
+                });
+                fake.tab_conversations.insert(id, conversation.clone());
+                if fake.lost("conversations") {
+                    return StatusCode::BAD_GATEWAY.into_response();
+                }
+                conversation
+            }
+            ("GET", "/api/conversations") => json!(fake.tab_conversations.values().collect::<Vec<_>>()),
             ("POST", "/api/conversations") => json!({"id":"conv1"}),
             ("GET", "/api/conversations/conv1/events") => {
                 if uri.query().unwrap_or_default().contains("after=0") {
@@ -959,6 +1216,266 @@ mod tests {
         assert_eq!(posts(&fake, "/api/workspaces"), 0);
         assert!(fake.lock().unwrap().calls.iter().any(|(m, p, _)| m == "DELETE" && p == "/api/environments/env1"));
         server.abort();
+    }
+
+    /// Control's routes over `app`, and a client signed in as `account`.
+    async fn routes(app: &Arc<App>) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/api/cloud", listener.local_addr().unwrap());
+        let app = app.clone();
+        (base, tokio::spawn(async move { axum::serve(listener, crate::router(app)).await.unwrap() }))
+    }
+
+    async fn call(method: reqwest::Method, url: &str, account: &str, body: Option<Value>) -> (StatusCode, Value) {
+        let mut request =
+            reqwest::Client::new().request(method, url).header("cookie", format!("ilg_session=session-{account}"));
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+        let response = request.send().await.unwrap();
+        let status = StatusCode::from_u16(response.status().as_u16()).unwrap();
+        (status, response.json().await.unwrap_or(Value::Null))
+    }
+
+    fn calls(fake: &Mutex<Fake>, method: &str, path: &str) -> Vec<Value> {
+        fake.lock()
+            .unwrap()
+            .calls
+            .iter()
+            .filter(|(m, p, _)| m == method && p == path)
+            .map(|(_, _, b)| b.clone())
+            .collect()
+    }
+
+    /// A permission request in `conversation`, as its next event.
+    fn ask(fake: &Mutex<Fake>, conversation: &str, request: &str) {
+        let mut fake = fake.lock().unwrap();
+        let events = fake.tab_events.entry(conversation.into()).or_default();
+        let id = events.len() as u64 + 1;
+        events.push(json!({"id":id,"stage":"turn","state":"started"}));
+        events.push(json!({"id":id + 1,"blocks":[{"kind":"permission_request","request_id":request,"options":[{"optionId":"allow"}]}]}));
+    }
+
+    #[tokio::test]
+    async fn tabs_run_side_by_side_and_close_on_their_own() {
+        use reqwest::Method as M;
+        let (app, fake, server) = serve(Fake::default()).await;
+        let created = cloud_workspace(&app);
+        run(&app, 0, 30).await;
+        let (base, routes) = routes(&app).await;
+        let tabs = format!("{base}/workspaces/{}/tabs", created.id);
+        let (status, models) = call(M::GET, &format!("{base}/models"), "a", None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(models["models"][1], json!({"runtime":"codex","model":"openai/test-model"}));
+        let open = |key: &str, runtime: &str, model: &str, cwd: Option<&str>| {
+            let mut body = json!({"request_key":key,"agent_id":"curated_coding","runtime":runtime,"model":model,"prompt":"Run the tests"});
+            if let Some(cwd) = cwd {
+                body["cwd"] = json!(cwd);
+            }
+            body
+        };
+        // A pair that isn't listed, and a cwd outside the mounts and home.
+        for bad in [
+            open("x", "codex", "anthropic/test-model", None),
+            open("x", "gemini", "google/test-model", None),
+            open("x", "claude", "anthropic/test-model", Some("/etc")),
+            open("x", "claude", "anthropic/test-model", Some("/home/sprite/.managoat/x")),
+            open("x", "claude", "anthropic/test-model", Some("/work/api/../../etc")),
+        ] {
+            assert_eq!(call(M::POST, &tabs, "a", Some(bad.clone())).await.0, StatusCode::UNPROCESSABLE_ENTITY, "{bad}");
+        }
+        let (status, claude) =
+            call(M::POST, &tabs, "a", Some(open("one", "claude", "anthropic/test-model", None))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(claude["id"].as_str().unwrap().starts_with("cwc_"));
+        assert_eq!(claude["status"], "opening");
+        assert_eq!(claude["cwd"], "/home/sprite/app");
+        let again = call(M::POST, &tabs, "a", Some(open("one", "claude", "anthropic/test-model", None))).await.1;
+        assert_eq!(again["id"], claude["id"]);
+        let (status, codex) =
+            call(M::POST, &tabs, "a", Some(open("two", "codex", "openai/test-model", Some("/work/api/src")))).await;
+        assert_eq!(status, StatusCode::OK);
+        // Another account's Cloud workspace has no tabs to show it.
+        assert_eq!(call(M::GET, &tabs, "b", None).await.0, StatusCode::NOT_FOUND);
+        assert_eq!(
+            call(M::POST, &tabs, "b", Some(open("one", "claude", "anthropic/test-model", None))).await.0,
+            StatusCode::NOT_FOUND
+        );
+        run(&app, 30_000, 20).await;
+        let listed = call(M::GET, &tabs, "a", None).await.1;
+        let listed = listed["cloud_tabs"].as_array().unwrap();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0]["id"], claude["id"]);
+        assert!(listed.iter().all(|t| t["status"] == "running" && t["waiting_for_setup"] == false), "{listed:?}");
+        let agents = calls(&fake, "POST", "/api/agents");
+        assert_eq!(agents.len(), 2);
+        assert_eq!(
+            (agents[0]["runtime"].as_str(), agents[0]["model"].as_str()),
+            (Some("claude"), Some("anthropic/test-model"))
+        );
+        assert_eq!(
+            (agents[1]["runtime"].as_str(), agents[1]["model"].as_str()),
+            (Some("codex"), Some("openai/test-model"))
+        );
+        assert_eq!(agents[0]["permission_policy"]["default"], "ask");
+        assert_eq!(agents[0]["allowed_vault_ids"], json!(["vault1"]));
+        let launches = calls(&fake, "POST", "/api/conversations");
+        assert_eq!(launches.len(), 2);
+        assert_eq!(launches[0]["workspace_id"], "ws1");
+        assert_eq!(launches[0]["cwd"], "/home/sprite/app");
+        assert_eq!(launches[1]["cwd"], "/work/api/src");
+        assert_eq!(launches[1]["agent_id"], "agent3");
+        assert!(launches.iter().all(|l| l.get("sandbox_api_access").is_none() && l["prompt"] == "Run the tests"));
+        // Each tab asks for approval: it shows on that tab alone, and pushes.
+        ask(&fake, "tabconv1", "approve-1");
+        ask(&fake, "tabconv2", "approve-2");
+        run(&app, 50_000, 10).await;
+        let (one, two) = (claude["id"].as_str().unwrap(), codex["id"].as_str().unwrap());
+        for (tab, request) in [(one, "approve-1"), (two, "approve-2")] {
+            let shown = call(M::GET, &format!("{tabs}/{tab}"), "a", None).await.1;
+            assert_eq!(shown["status"], "needs_input");
+            let requests = call(M::GET, &format!("{tabs}/{tab}/requests"), "a", None).await.1;
+            assert_eq!(requests["requests"].as_array().unwrap().len(), 1);
+            assert_eq!(requests["requests"][0]["request_id"], request);
+            let events = call(M::GET, &format!("{tabs}/{tab}/events"), "a", None).await.1;
+            assert_eq!(events["events"].as_array().unwrap().len(), 2);
+            assert_eq!(call(M::GET, &format!("{tabs}/{tab}/requests"), "b", None).await.0, StatusCode::NOT_FOUND);
+        }
+        let pushes = app.db.cloud_notifications(i64::MAX as u64).unwrap();
+        assert_eq!(pushes.len(), 2);
+        assert!(pushes.iter().all(|n| n.account == "a" && n.cloud_workspace.as_deref() == Some(created.id.as_str())));
+        // Approve, prompt and interrupt each tab.
+        for (tab, conversation, request) in [(one, "tabconv1", "approve-1"), (two, "tabconv2", "approve-2")] {
+            let answer = json!({"option_id":"allow"});
+            let url = format!("{tabs}/{tab}/requests/{request}");
+            assert_eq!(call(M::POST, &url, "b", Some(answer.clone())).await.0, StatusCode::NOT_FOUND);
+            assert_eq!(call(M::POST, &url, "a", Some(answer)).await.0, StatusCode::OK);
+            assert_eq!(calls(&fake, "POST", &format!("/api/conversations/{conversation}/requests/{request}")).len(), 1);
+            let requests = call(M::GET, &format!("{tabs}/{tab}/requests"), "a", None).await.1;
+            assert_eq!(requests["requests"], json!([]));
+            let interrupt = format!("{tabs}/{tab}/interrupt");
+            assert_eq!(call(M::POST, &interrupt, "a", None).await.0, StatusCode::OK);
+            assert_eq!(call(M::POST, &interrupt, "a", None).await.0, StatusCode::CONFLICT, "nothing running");
+            let prompt = format!("{tabs}/{tab}/prompt");
+            assert_eq!(
+                call(M::POST, &prompt, "a", Some(json!({"prompt":" "}))).await.0,
+                StatusCode::UNPROCESSABLE_ENTITY
+            );
+            assert_eq!(call(M::POST, &prompt, "b", Some(json!({"prompt":"Next"}))).await.0, StatusCode::NOT_FOUND);
+            assert_eq!(call(M::POST, &prompt, "a", Some(json!({"prompt":"Next"}))).await.0, StatusCode::OK);
+            let sent = calls(&fake, "POST", &format!("/api/conversations/{conversation}/prompts"));
+            assert_eq!(sent.len(), 1);
+            assert_eq!(sent[0]["prompt"], "Next");
+            assert!(sent[0]["client_request_id"].as_str().unwrap().starts_with(tab));
+        }
+        assert!(app.db.cloud_notifications(i64::MAX as u64).unwrap().is_empty());
+        // Closing one tab ends its conversation and its agent, nothing else.
+        assert_eq!(call(M::DELETE, &format!("{tabs}/{one}"), "b", None).await.0, StatusCode::NOT_FOUND);
+        let (status, closing) = call(M::DELETE, &format!("{tabs}/{one}"), "a", None).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(closing["status"], "closing");
+        assert_eq!(
+            call(M::POST, &format!("{tabs}/{one}/prompt"), "a", Some(json!({"prompt":"x"}))).await.0,
+            StatusCode::CONFLICT
+        );
+        run(&app, 70_000, 20).await;
+        assert_eq!(call(M::GET, &format!("{tabs}/{one}"), "a", None).await.0, StatusCode::NOT_FOUND);
+        let listed = call(M::GET, &tabs, "a", None).await.1;
+        assert_eq!(listed["cloud_tabs"].as_array().unwrap().len(), 1);
+        assert_eq!(listed["cloud_tabs"][0]["id"], two);
+        assert_eq!(calls(&fake, "POST", "/api/conversations/tabconv1/terminate").len(), 1);
+        assert!(calls(&fake, "POST", "/api/conversations/tabconv2/terminate").is_empty());
+        assert_eq!(calls(&fake, "DELETE", "/api/agents/agent2").len(), 1);
+        assert!(calls(&fake, "DELETE", "/api/agents/agent3").is_empty());
+        assert!(calls(&fake, "DELETE", "/api/workspaces/ws1").is_empty());
+        assert_eq!(app.db.cloud_workspace("a", &created.id).unwrap().unwrap().status, "ready");
+        // Deleting the Cloud workspace closes the tab left, and its vault
+        // and environment go only after that tab's agent.
+        assert_eq!(call(M::DELETE, &format!("{base}/workspaces/{}", created.id), "a", None).await.0, StatusCode::OK);
+        assert_eq!(
+            call(M::POST, &tabs, "a", Some(open("three", "claude", "anthropic/test-model", None))).await.0,
+            StatusCode::CONFLICT
+        );
+        run(&app, 100_000, 60).await;
+        assert!(app.db.cloud_workspace("a", &created.id).unwrap().is_none());
+        assert_eq!(app.db.open_cloud_tabs(&created.id).unwrap(), 0);
+        let fake = fake.lock().unwrap();
+        let at = |m: &str, p: &str| fake.calls.iter().position(|(cm, cp, _)| cm == m && cp == p).unwrap();
+        assert!(at("DELETE", "/api/agents/agent3") < at("DELETE", "/api/vaults/vault1"));
+        drop(fake);
+        routes.abort();
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_tab_opened_while_setting_up_waits_with_its_first_prompt() {
+        use reqwest::Method as M;
+        let (app, fake, server) = serve(Fake { setup_reads: 1_000, ..Default::default() }).await;
+        let created = cloud_workspace(&app);
+        let (base, routes) = routes(&app).await;
+        let tabs = format!("{base}/workspaces/{}/tabs", created.id);
+        let body = |key: &str, prompt: Option<&str>| json!({"request_key":key,"agent_id":"curated_review","runtime":"claude","model":"anthropic/test-model","prompt":prompt});
+        // Opened before control has even made the Managoat workspace.
+        let (status, tab) = call(M::POST, &tabs, "a", Some(body("one", Some("Review it")))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(tab["waiting_for_setup"], true);
+        let quiet = call(M::POST, &tabs, "a", Some(body("two", None))).await.1;
+        assert_eq!(quiet["waiting_for_setup"], false, "no prompt to wait with");
+        run(&app, 0, 30).await;
+        assert_eq!(app.db.cloud_workspace("a", &created.id).unwrap().unwrap().status, "provisioning");
+        let launches = calls(&fake, "POST", "/api/conversations");
+        assert_eq!(launches.len(), 2);
+        let id = tab["id"].as_str().unwrap();
+        let launch = |tab: &str| launches.iter().find(|l| l["labels"]["arugula_tab"] == tab).unwrap().clone();
+        assert_eq!(launch(id)["prompt"], "Review it");
+        assert!(launch(quiet["id"].as_str().unwrap()).get("prompt").is_none());
+        let conversation = if launch(id) == launches[0] { "tabconv1" } else { "tabconv2" };
+        let shown = call(M::GET, &format!("{tabs}/{id}"), "a", None).await.1;
+        assert_eq!(shown["waiting_for_setup"], true);
+        // Setup ends and the prompt's turn starts.
+        fake.lock().unwrap().setup_reads = 1;
+        fake.lock()
+            .unwrap()
+            .tab_events
+            .insert(conversation.into(), vec![json!({"id":1,"stage":"turn","state":"started"})]);
+        run(&app, 30_000, 30).await;
+        assert_eq!(app.db.cloud_workspace("a", &created.id).unwrap().unwrap().status, "ready");
+        let shown = call(M::GET, &format!("{tabs}/{id}"), "a", None).await.1;
+        assert_eq!(shown["waiting_for_setup"], false);
+        assert_eq!(shown["status"], "running");
+        routes.abort();
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn lost_tab_create_responses_are_found_not_repeated() {
+        for lost in ["agents", "conversations"] {
+            let (app, fake, server) = serve(Fake { lose: vec![lost], ..Default::default() }).await;
+            let created = cloud_workspace(&app);
+            run(&app, 0, 30).await;
+            let spec = crate::db::cloud::CloudTabSpec {
+                agent_id: "curated_coding".into(),
+                agent_version: 1,
+                agent: crate::cloud::curated_agents().remove(0).definition,
+                runtime: "claude".into(),
+                model: "anthropic/test-model".into(),
+                cwd: "/home/sprite/app".into(),
+                prompt: None,
+            };
+            let tab = app.db.create_cloud_tab("a", &created.id, "tab", &spec, 0).unwrap();
+            run(&app, 30_000, 60).await;
+            assert_eq!(app.db.cloud_tab("a", &created.id, &tab.id).unwrap().unwrap().status, "idle", "{lost}");
+            assert_eq!(posts(&fake, "/api/agents"), 1, "{lost}");
+            assert_eq!(posts(&fake, "/api/conversations"), 1, "{lost}");
+            assert!(
+                fake.lock()
+                    .unwrap()
+                    .calls
+                    .iter()
+                    .any(|(m, p, _)| m == "GET" && p.starts_with(&format!("/api/{lost}?")))
+            );
+            server.abort();
+        }
     }
 
     #[tokio::test]

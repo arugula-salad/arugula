@@ -70,8 +70,9 @@ Configure control through deployment secrets and environment variables:
 | `ARUGULA_MANAGOAT_API_KEY` | Dedicated platform account credential; enables the worker. |
 | `ARUGULA_CLOUD_SECRET_KEY` | 32 random bytes encoded as 64 hex characters, used to encrypt user secrets. Back up separately from the database. |
 | `ARUGULA_CLOUD_ACCOUNTS` | Comma-separated Arugula account IDs admitted to the beta. An empty list admits nobody; `*` admits everyone. |
-| `ARUGULA_CLOUD_MODEL` | Required model supported by the platform account. |
+| `ARUGULA_CLOUD_MODEL` | Model supported by the platform account; required unless `ARUGULA_CLOUD_MODELS` is set. |
 | `ARUGULA_CLOUD_RUNTIME` | `claude` (default), `codex`, or `gemini`; must match the model prefix. |
+| `ARUGULA_CLOUD_MODELS` | What a Cloud workspace's tabs may run on: comma-separated `runtime:model` pairs (for example `claude:anthropic/<model>,codex:openai/<model>`), the first the default. Each model must match its runtime's prefix, and each pair needs its platform inference set up on the backend account. Unset, it is the one pair `ARUGULA_CLOUD_RUNTIME`:`ARUGULA_CLOUD_MODEL`. Runs use `ARUGULA_CLOUD_MODEL`, or the first pair when that is unset. |
 | `ARUGULA_CLOUD_DAILY_RUNS` | Per-account daily admission cap; default 10. |
 | `ARUGULA_CLOUD_CONCURRENT_RUNS` | Per-account concurrent admission cap; default 2. |
 | `ARUGULA_CLOUD_RUN_MINUTES` | Run deadline including approval waits; default 30. |

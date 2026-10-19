@@ -104,6 +104,59 @@ impl Provider {
         .await
     }
 
+    /// A tab: a conversation on a Cloud workspace's machine, in `cwd`. A
+    /// workspace's machine is shared, so `sandbox_api_access: "none"` (which
+    /// needs a sandbox of the conversation's own) is refused there and not
+    /// sent. With no prompt, nothing starts until the first one.
+    pub async fn launch_in_cloud_workspace(
+        &self,
+        agent: &str,
+        workspace: &str,
+        cwd: &str,
+        tab: &str,
+        prompt: Option<&str>,
+    ) -> Result<Value> {
+        let mut body = json!({
+            "agent_id": agent,
+            "workspace_id": workspace,
+            "cwd": cwd,
+            "client_request_id": tab,
+            "labels": {"arugula_tab": tab},
+        });
+        if let Some(prompt) = prompt {
+            body["prompt"] = json!(prompt);
+        }
+        self.request(Method::POST, &["api", "conversations"], Some(body)).await
+    }
+
+    /// A follow-up. Never resent after a lost response: Managoat would open
+    /// a second turn.
+    pub async fn prompt(&self, id: &str, prompt: &str, client_request_id: &str) -> Result<Value> {
+        self.request(
+            Method::POST,
+            &["api", "conversations", id, "prompts"],
+            Some(json!({"prompt":prompt,"client_request_id":client_request_id})),
+        )
+        .await
+    }
+
+    /// The agent or conversation control made for a tab, found by its
+    /// `metadata.arugula_tab` or `labels.arugula_tab` after a lost response.
+    pub async fn find_cloud_tab_resource(&self, collection: &str, tab: &str) -> Result<Option<String>> {
+        let label = format!("arugula_tab:{tab}");
+        let query = if collection == "conversations" { vec![("label", label.as_str())] } else { vec![("search", tab)] };
+        let values = self.query(Method::GET, &["api", collection], &query, None).await?;
+        let values = values.as_array().context("invalid cloud resource list")?;
+        let matches: Vec<_> = values
+            .iter()
+            .filter(|v| v["metadata"]["arugula_tab"] == tab || v["labels"]["arugula_tab"] == tab)
+            .collect();
+        if matches.len() > 1 {
+            bail!("multiple cloud resources for one tab");
+        }
+        matches.first().map(|v| v["id"].as_str().map(str::to_owned).context("cloud resource has no id")).transpose()
+    }
+
     pub async fn create(&self, collection: &str, body: Value) -> Result<String> {
         let value = self.request(Method::POST, &["api", collection], Some(body)).await?;
         value["id"].as_str().map(str::to_owned).context("cloud resource has no id")

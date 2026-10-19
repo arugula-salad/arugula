@@ -39,9 +39,10 @@ CREATE TABLE IF NOT EXISTS cloud_run_secrets (
     sealed BLOB NOT NULL,
     PRIMARY KEY(run,name)
 );
--- One per run, and one per Cloud workspace for its whole life: `id` is the
--- run's or the Cloud workspace's, and `kind` says which ('run' or
--- 'cloud_workspace'). `cancel` on a Cloud workspace's job is its delete.
+-- One per run, one per Cloud workspace and one per tab, each for its whole
+-- life: `id` is the run's, the Cloud workspace's or the tab's, and `kind`
+-- says which ('run', 'cloud_workspace' or 'cloud_tab'). `cancel` on a Cloud
+-- workspace's job is its delete, and on a tab's its close.
 CREATE TABLE IF NOT EXISTS cloud_jobs (
     id TEXT PRIMARY KEY,
     kind TEXT NOT NULL DEFAULT 'run',
@@ -50,25 +51,30 @@ CREATE TABLE IF NOT EXISTS cloud_jobs (
     lease TEXT,
     lease_until INTEGER NOT NULL DEFAULT 0
 );
+-- A conversation's approvals, push deliveries and events, keyed on the
+-- conversation: a run (`run_…`) or a Cloud workspace's tab (`cwc_…`).
 CREATE TABLE IF NOT EXISTS cloud_requests (
-    run TEXT NOT NULL REFERENCES cloud_runs(id),
+    conversation TEXT NOT NULL,
+    account TEXT NOT NULL,
     id TEXT NOT NULL,
     body TEXT NOT NULL,
     pending INTEGER NOT NULL DEFAULT 1,
-    PRIMARY KEY(run,id)
+    PRIMARY KEY(conversation,id)
 );
 CREATE TABLE IF NOT EXISTS cloud_notifications (
-    run TEXT NOT NULL REFERENCES cloud_runs(id),
+    conversation TEXT NOT NULL,
+    account TEXT NOT NULL,
     request TEXT NOT NULL,
     delivered INTEGER NOT NULL DEFAULT 0,
     next_attempt INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY(run,request)
+    PRIMARY KEY(conversation,request)
 );
 CREATE TABLE IF NOT EXISTS cloud_events (
-    run TEXT NOT NULL REFERENCES cloud_runs(id),
+    conversation TEXT NOT NULL,
+    account TEXT NOT NULL,
     cursor INTEGER NOT NULL,
     body TEXT NOT NULL,
-    PRIMARY KEY(run,cursor)
+    PRIMARY KEY(conversation,cursor)
 );
 -- `saved_spec` is what the user saved and `saved_revision` the environment
 -- revision it became; `built_spec` is the saved spec as of the revision that
@@ -97,10 +103,29 @@ CREATE TABLE IF NOT EXISTS cloud_workspaces (
     UNIQUE(account, request_key)
 );
 CREATE INDEX IF NOT EXISTS cloud_workspaces_owner ON cloud_workspaces(account, created);
+-- A tab: one conversation in a Cloud workspace, on a Managoat agent of its
+-- own. `spec` is what it was opened with. `provider_id` is the conversation
+-- and `started` whether a turn has begun. `closed` is set once its
+-- conversation and agent are gone.
+CREATE TABLE IF NOT EXISTS cloud_tabs (
+    id TEXT PRIMARY KEY,
+    account TEXT NOT NULL,
+    cloud_workspace TEXT NOT NULL REFERENCES cloud_workspaces(id),
+    request_key TEXT NOT NULL,
+    spec TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'opening',
+    error TEXT,
+    started INTEGER NOT NULL DEFAULT 0,
+    provider_id TEXT,
+    created INTEGER NOT NULL,
+    closed INTEGER,
+    UNIQUE(account, cloud_workspace, request_key)
+);
+CREATE INDEX IF NOT EXISTS cloud_tabs_owner ON cloud_tabs(cloud_workspace, created);
 ";
 
-/// `cloud_jobs` keyed on a run (`run`, a foreign key to `cloud_runs`) before
-/// Cloud workspaces (M114): rebuilt keyed on `id`, with a `kind`.
+/// Tables keyed on a run before Cloud workspaces, rebuilt: `cloud_jobs`
+/// (M114) on `id`, with a `kind`, and the conversation tables (M115).
 pub(super) fn migrate(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     let keyed_on_run: bool =
         conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('cloud_jobs') WHERE name='run')", [], |r| {
@@ -121,6 +146,54 @@ pub(super) fn migrate(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
                  SELECT run,'run',body,cancel,lease,lease_until FROM cloud_jobs;
              DROP TABLE cloud_jobs;
              ALTER TABLE cloud_jobs_v2 RENAME TO cloud_jobs;
+             COMMIT;",
+        )?;
+    }
+    // Requests, notifications and events keyed on `run` (a foreign key to
+    // `cloud_runs`) before tabs (M115): rekeyed on the conversation, with
+    // its account.
+    let events_keyed_on_run: bool =
+        conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('cloud_events') WHERE name='run')", [], |r| {
+            r.get(0)
+        })?;
+    if events_keyed_on_run {
+        conn.execute_batch(
+            "BEGIN;
+             CREATE TABLE cloud_requests_v2 (
+                 conversation TEXT NOT NULL,
+                 account TEXT NOT NULL,
+                 id TEXT NOT NULL,
+                 body TEXT NOT NULL,
+                 pending INTEGER NOT NULL DEFAULT 1,
+                 PRIMARY KEY(conversation,id)
+             );
+             INSERT INTO cloud_requests_v2(conversation,account,id,body,pending)
+                 SELECT q.run,r.account,q.id,q.body,q.pending FROM cloud_requests q JOIN cloud_runs r ON r.id=q.run;
+             DROP TABLE cloud_requests;
+             ALTER TABLE cloud_requests_v2 RENAME TO cloud_requests;
+             CREATE TABLE cloud_notifications_v2 (
+                 conversation TEXT NOT NULL,
+                 account TEXT NOT NULL,
+                 request TEXT NOT NULL,
+                 delivered INTEGER NOT NULL DEFAULT 0,
+                 next_attempt INTEGER NOT NULL DEFAULT 0,
+                 PRIMARY KEY(conversation,request)
+             );
+             INSERT INTO cloud_notifications_v2(conversation,account,request,delivered,next_attempt)
+                 SELECT n.run,r.account,n.request,n.delivered,n.next_attempt FROM cloud_notifications n JOIN cloud_runs r ON r.id=n.run;
+             DROP TABLE cloud_notifications;
+             ALTER TABLE cloud_notifications_v2 RENAME TO cloud_notifications;
+             CREATE TABLE cloud_events_v2 (
+                 conversation TEXT NOT NULL,
+                 account TEXT NOT NULL,
+                 cursor INTEGER NOT NULL,
+                 body TEXT NOT NULL,
+                 PRIMARY KEY(conversation,cursor)
+             );
+             INSERT INTO cloud_events_v2(conversation,account,cursor,body)
+                 SELECT e.run,r.account,e.cursor,e.body FROM cloud_events e JOIN cloud_runs r ON r.id=e.run;
+             DROP TABLE cloud_events;
+             ALTER TABLE cloud_events_v2 RENAME TO cloud_events;
              COMMIT;",
         )?;
     }
@@ -475,6 +548,104 @@ pub struct CloudWorkspaceJob {
     pub lease: String,
 }
 
+/// An approval push still to send.
+pub struct CloudNotification {
+    pub account: String,
+    /// The run's or the tab's id.
+    pub conversation: String,
+    pub request: String,
+    /// The tab's Cloud workspace; `None` for a run.
+    pub cloud_workspace: Option<String>,
+}
+
+/// What a tab was opened with, kept as it was: editing the agent later
+/// doesn't change a tab that's open.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CloudTabSpec {
+    pub agent_id: String,
+    pub agent_version: u64,
+    pub agent: AgentDefinition,
+    pub runtime: String,
+    pub model: String,
+    pub cwd: String,
+    #[serde(default)]
+    pub prompt: Option<String>,
+}
+
+/// A tab as the account sees it: one conversation in a Cloud workspace.
+#[derive(Debug, Clone, Serialize)]
+pub struct CloudTab {
+    pub id: String,
+    pub cloud_workspace: String,
+    pub agent_id: String,
+    pub agent_name: String,
+    pub runtime: String,
+    pub model: String,
+    pub cwd: String,
+    /// `opening` until its conversation is launched, then the
+    /// conversation's (`pending`, `running`, `idle`, `failed`, `terminated`)
+    /// or `needs_input`; `closing` once closed; `failed` too when Managoat
+    /// refused to open it.
+    pub status: String,
+    pub error: Option<String>,
+    /// Opened with a first prompt while the Cloud workspace sets up: the
+    /// prompt waits in Managoat until setup ends.
+    pub waiting_for_setup: bool,
+    pub created: u64,
+}
+
+/// The tab's provisioning journal, as `Execution` is a run's.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CloudTabExecution {
+    pub stage: String,
+    pub agent: Option<String>,
+    pub conversation: Option<String>,
+    pub cursor: u64,
+}
+
+pub struct CloudTabJob {
+    pub tab: CloudTab,
+    pub spec: CloudTabSpec,
+    pub account: String,
+    pub execution: CloudTabExecution,
+    pub started: bool,
+    pub closing: bool,
+    /// The Managoat workspace, environment and vault of its Cloud
+    /// workspace, once made.
+    pub workspace: Option<String>,
+    pub environment: Option<String>,
+    pub vault: Option<String>,
+    pub lease: String,
+}
+
+const CLOUD_TAB_COLUMNS: &str = "t.id,t.cloud_workspace,t.spec,t.status,t.error,t.started,t.created,w.status";
+
+fn cloud_tab_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(CloudTab, CloudTabSpec, bool)> {
+    let spec: CloudTabSpec = serde_json::from_str(&r.get::<_, String>(2)?)
+        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e)))?;
+    let status: String = r.get(3)?;
+    let started: bool = r.get(5)?;
+    let setting_up = r.get::<_, String>(7)? == "provisioning";
+    let waiting_for_setup = spec.prompt.is_some()
+        && !started
+        && setting_up
+        && matches!(status.as_str(), "opening" | "pending" | "running" | "idle");
+    let tab = CloudTab {
+        id: r.get(0)?,
+        cloud_workspace: r.get(1)?,
+        agent_id: spec.agent_id.clone(),
+        agent_name: spec.agent.name.clone(),
+        runtime: spec.runtime.clone(),
+        model: spec.model.clone(),
+        cwd: spec.cwd.clone(),
+        status,
+        error: r.get(4)?,
+        waiting_for_setup,
+        created: r.get(6)?,
+    };
+    Ok((tab, spec, started))
+}
+
 const CLOUD_WORKSPACE_COLUMNS: &str = "id,name,saved_spec,built_spec,status,sandbox_status,error,revision,built_from_revision,stale,changed_fields,created";
 
 fn cloud_workspace_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CloudWorkspace> {
@@ -712,32 +883,58 @@ impl Db {
         Ok(self.c().execute("UPDATE cloud_jobs SET cancel=1 WHERE id IN (SELECT id FROM cloud_runs WHERE account=?1 AND id=?2 AND state NOT IN ('completed','failed','cancelled','expired'))", params![account,id])? == 1)
     }
 
+    /// A conversation's events: a run's or a tab's.
     pub fn cloud_events(&self, account: &str, id: &str, after: u64) -> Result<Vec<serde_json::Value>> {
         let conn = self.c();
-        let mut q = conn.prepare("SELECT e.body FROM cloud_events e JOIN cloud_runs r ON r.id=e.run WHERE r.account=?1 AND r.id=?2 AND e.cursor>?3 ORDER BY e.cursor LIMIT 1000")?;
+        let mut q = conn.prepare("SELECT body FROM cloud_events WHERE account=?1 AND conversation=?2 AND cursor>?3 ORDER BY cursor LIMIT 1000")?;
         let rows = q.query_map(params![account, id, after], |r| r.get::<_, String>(0))?;
         rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
     }
 
-    pub fn cloud_requests(&self, account: &str, run: &str) -> Result<Vec<serde_json::Value>> {
+    pub fn cloud_requests(&self, account: &str, conversation: &str) -> Result<Vec<serde_json::Value>> {
         let conn = self.c();
-        let mut q = conn.prepare("SELECT q.body FROM cloud_requests q JOIN cloud_runs r ON r.id=q.run WHERE r.account=?1 AND r.id=?2 AND q.pending=1")?;
-        let rows = q.query_map(params![account, run], |r| r.get::<_, String>(0))?;
+        let mut q =
+            conn.prepare("SELECT body FROM cloud_requests WHERE account=?1 AND conversation=?2 AND pending=1")?;
+        let rows = q.query_map(params![account, conversation], |r| r.get::<_, String>(0))?;
         rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
     }
-    pub fn resolve_cloud_request(&self, account: &str, run: &str, request: &str) -> Result<()> {
-        self.c().execute("UPDATE cloud_requests SET pending=0 WHERE run=?1 AND id=?2 AND EXISTS(SELECT 1 FROM cloud_runs WHERE id=?1 AND account=?3)",params![run,request,account])?;
+    pub fn resolve_cloud_request(&self, account: &str, conversation: &str, request: &str) -> Result<()> {
+        self.c().execute(
+            "UPDATE cloud_requests SET pending=0 WHERE account=?1 AND conversation=?2 AND id=?3",
+            params![account, conversation, request],
+        )?;
         Ok(())
     }
-    pub fn cloud_notifications(&self, now: u64) -> Result<Vec<(String, String, String)>> {
+    /// Undelivered pushes: (account, conversation, request, and the Cloud
+    /// workspace when the conversation is a tab).
+    pub fn cloud_notifications(&self, now: u64) -> Result<Vec<CloudNotification>> {
         let conn = self.c();
-        let mut q = conn.prepare("SELECT r.account,n.run,n.request FROM cloud_notifications n JOIN cloud_runs r ON r.id=n.run JOIN cloud_requests q ON q.run=n.run AND q.id=n.request WHERE n.delivered=0 AND n.next_attempt<=?1 AND q.pending=1 ORDER BY r.created LIMIT 20")?;
-        Ok(q.query_map([now], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<Vec<_>>>()?)
+        let mut q = conn.prepare(
+            "SELECT n.account,n.conversation,n.request,t.cloud_workspace FROM cloud_notifications n
+             JOIN cloud_requests q ON q.conversation=n.conversation AND q.id=n.request
+             LEFT JOIN cloud_tabs t ON t.id=n.conversation
+             WHERE n.delivered=0 AND n.next_attempt<=?1 AND q.pending=1 ORDER BY n.next_attempt,n.rowid LIMIT 20",
+        )?;
+        Ok(q.query_map([now], |r| {
+            Ok(CloudNotification {
+                account: r.get(0)?,
+                conversation: r.get(1)?,
+                request: r.get(2)?,
+                cloud_workspace: r.get(3)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?)
     }
-    pub fn cloud_notification_result(&self, run: &str, request: &str, delivered: bool, next: u64) -> Result<()> {
+    pub fn cloud_notification_result(
+        &self,
+        conversation: &str,
+        request: &str,
+        delivered: bool,
+        next: u64,
+    ) -> Result<()> {
         self.c().execute(
-            "UPDATE cloud_notifications SET delivered=?1,next_attempt=?2 WHERE run=?3 AND request=?4",
-            params![delivered, next, run, request],
+            "UPDATE cloud_notifications SET delivered=?1,next_attempt=?2 WHERE conversation=?3 AND request=?4",
+            params![delivered, next, conversation, request],
         )?;
         Ok(())
     }
@@ -778,7 +975,7 @@ impl Db {
             params![state, result.map(serde_json::to_string).transpose()?, job.execution.conversation, job.run.id],
         )?;
         if matches!(state, "saving_results" | "cleaning_up" | "completed" | "failed" | "cancelled" | "expired") {
-            tx.execute("UPDATE cloud_requests SET pending=0 WHERE run=?1", [&job.run.id])?;
+            tx.execute("UPDATE cloud_requests SET pending=0 WHERE conversation=?1", [&job.run.id])?;
         }
         if matches!(state, "completed" | "failed" | "cancelled" | "expired") {
             tx.execute("DELETE FROM cloud_run_secrets WHERE run=?1", [&job.run.id])?;
@@ -787,12 +984,26 @@ impl Db {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn append_cloud_events(&self, job: &Job, events: &[serde_json::Value]) -> Result<()> {
+        self.append_conversation_events(&job.run.id, &job.account, &job.lease, events)
+    }
+
+    /// Take in a page of a conversation's events under its job's claim (`id`
+    /// is the run's or the tab's): the approvals it asks for become requests
+    /// and pushes, and the ones answered or ended stop being pending.
+    pub fn append_conversation_events(
+        &self,
+        id: &str,
+        account: &str,
+        lease: &str,
+        events: &[serde_json::Value],
+    ) -> Result<()> {
         let mut conn = self.c();
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let owns: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM cloud_jobs WHERE id=?1 AND lease=?2)",
-            params![job.run.id, job.lease],
+            params![id, lease],
             |r| r.get(0),
         )?;
         if !owns {
@@ -801,8 +1012,8 @@ impl Db {
         for event in events {
             let cursor = event["id"].as_u64().ok_or_else(|| anyhow::anyhow!("invalid cloud event cursor"))?;
             let inserted = tx.execute(
-                "INSERT OR IGNORE INTO cloud_events(run,cursor,body) VALUES(?1,?2,?3)",
-                params![job.run.id, cursor, serde_json::to_string(event)?],
+                "INSERT OR IGNORE INTO cloud_events(conversation,account,cursor,body) VALUES(?1,?2,?3,?4)",
+                params![id, account, cursor, serde_json::to_string(event)?],
             )?;
             if inserted == 0 {
                 continue;
@@ -810,15 +1021,15 @@ impl Db {
             if let Some(blocks) = event["blocks"].as_array() {
                 for block in blocks {
                     if matches!(block["kind"].as_str(), Some("permission_request" | "elicitation_request"))
-                        && let Some(id) = block["request_id"].as_str()
+                        && let Some(request) = block["request_id"].as_str()
                     {
                         tx.execute(
-                            "INSERT OR IGNORE INTO cloud_requests(run,id,body) VALUES(?1,?2,?3)",
-                            params![job.run.id, id, serde_json::to_string(block)?],
+                            "INSERT OR IGNORE INTO cloud_requests(conversation,account,id,body) VALUES(?1,?2,?3,?4)",
+                            params![id, account, request, serde_json::to_string(block)?],
                         )?;
                         tx.execute(
-                            "INSERT OR IGNORE INTO cloud_notifications(run,request) VALUES(?1,?2)",
-                            params![job.run.id, id],
+                            "INSERT OR IGNORE INTO cloud_notifications(conversation,account,request) VALUES(?1,?2,?3)",
+                            params![id, account, request],
                         )?;
                     }
                 }
@@ -828,12 +1039,15 @@ impl Db {
                     .as_str()
                     .and_then(|s| serde_json::from_str(s).ok())
                     .unwrap_or_else(|| event["data"].clone());
-                if let Some(id) = data["request_id"].as_str().or_else(|| data["requestId"].as_str()) {
-                    tx.execute("UPDATE cloud_requests SET pending=0 WHERE run=?1 AND id=?2", params![job.run.id, id])?;
+                if let Some(request) = data["request_id"].as_str().or_else(|| data["requestId"].as_str()) {
+                    tx.execute(
+                        "UPDATE cloud_requests SET pending=0 WHERE conversation=?1 AND id=?2",
+                        params![id, request],
+                    )?;
                 }
             }
             if event["stage"] == "turn" && matches!(event["state"].as_str(), Some("done" | "failed")) {
-                tx.execute("UPDATE cloud_requests SET pending=0 WHERE run=?1", [&job.run.id])?;
+                tx.execute("UPDATE cloud_requests SET pending=0 WHERE conversation=?1", [id])?;
             }
         }
         tx.commit()?;
@@ -940,6 +1154,15 @@ impl Db {
             params![account, id],
         )?;
         tx.execute("UPDATE cloud_jobs SET cancel=1 WHERE id=?1 AND kind='cloud_workspace'", [id])?;
+        // Managoat ends its conversations; each tab's agent goes with its tab.
+        tx.execute(
+            "UPDATE cloud_tabs SET status='closing' WHERE account=?1 AND cloud_workspace=?2 AND closed IS NULL",
+            params![account, id],
+        )?;
+        tx.execute(
+            "UPDATE cloud_jobs SET cancel=1 WHERE kind='cloud_tab' AND id IN (SELECT id FROM cloud_tabs WHERE account=?1 AND cloud_workspace=?2)",
+            params![account, id],
+        )?;
         tx.commit()?;
         Ok(changed == 1)
     }
@@ -1062,6 +1285,217 @@ impl Db {
     }
 }
 
+impl Db {
+    /// Open a tab and its job. A retry with the same request key returns the
+    /// first one; with other settings it's a conflict. A Cloud workspace
+    /// being deleted, or one Managoat never made, takes no tabs.
+    pub fn create_cloud_tab(
+        &self,
+        account: &str,
+        cloud_workspace: &str,
+        request_key: &str,
+        spec: &CloudTabSpec,
+        now: u64,
+    ) -> Result<CloudTab> {
+        if request_key.is_empty() || request_key.len() > 128 {
+            bail!("invalid request key");
+        }
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let existing = tx
+            .query_row(
+                &format!(
+                    "SELECT {CLOUD_TAB_COLUMNS} FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace
+                     WHERE t.account=?1 AND t.cloud_workspace=?2 AND t.request_key=?3"
+                ),
+                params![account, cloud_workspace, request_key],
+                cloud_tab_row,
+            )
+            .optional()?;
+        if let Some((tab, existing, _)) = existing {
+            if existing != *spec {
+                bail!("request key already used with different input");
+            }
+            return Ok(tab);
+        }
+        let found: Option<(String, Option<String>)> = tx
+            .query_row(
+                "SELECT status,provider_id FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL",
+                params![account, cloud_workspace],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        match found {
+            None => bail!("cloud workspace not found"),
+            Some((status, _)) if status == "deleting" => bail!("cloud workspace is being deleted"),
+            Some((status, None)) if status == "failed" => bail!("cloud workspace has no machine"),
+            Some(_) => {}
+        }
+        let id = format!("cwc_{}", hex::encode(arugula_e2e::random::<16>()));
+        tx.execute(
+            "INSERT INTO cloud_tabs(id,account,cloud_workspace,request_key,spec,created) VALUES(?1,?2,?3,?4,?5,?6)",
+            params![id, account, cloud_workspace, request_key, serde_json::to_string(spec)?, now],
+        )?;
+        tx.execute(
+            "INSERT INTO cloud_jobs(id,kind,body) VALUES(?1,'cloud_tab',?2)",
+            params![id, serde_json::to_string(&CloudTabExecution::default())?],
+        )?;
+        let (created, _, _) = tx.query_row(
+            &format!(
+                "SELECT {CLOUD_TAB_COLUMNS} FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace WHERE t.id=?1"
+            ),
+            [&id],
+            cloud_tab_row,
+        )?;
+        tx.commit()?;
+        Ok(created)
+    }
+
+    /// A Cloud workspace's tabs that aren't closed yet, oldest first.
+    pub fn cloud_tabs(&self, account: &str, cloud_workspace: &str) -> Result<Vec<CloudTab>> {
+        let conn = self.c();
+        let mut q = conn.prepare(&format!(
+            "SELECT {CLOUD_TAB_COLUMNS} FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace
+             WHERE t.account=?1 AND t.cloud_workspace=?2 AND t.closed IS NULL ORDER BY t.created, t.id"
+        ))?;
+        Ok(q.query_map(params![account, cloud_workspace], |r| cloud_tab_row(r).map(|(tab, _, _)| tab))?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn cloud_tab(&self, account: &str, cloud_workspace: &str, tab: &str) -> Result<Option<CloudTab>> {
+        Ok(self
+            .c()
+            .query_row(
+                &format!(
+                    "SELECT {CLOUD_TAB_COLUMNS} FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace
+                     WHERE t.account=?1 AND t.cloud_workspace=?2 AND t.id=?3 AND t.closed IS NULL"
+                ),
+                params![account, cloud_workspace, tab],
+                |r| cloud_tab_row(r).map(|(tab, _, _)| tab),
+            )
+            .optional()?)
+    }
+
+    /// The Managoat conversation of a tab that's open and launched.
+    pub fn cloud_tab_conversation(&self, account: &str, cloud_workspace: &str, tab: &str) -> Result<Option<String>> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT t.provider_id FROM cloud_tabs t JOIN cloud_jobs j ON j.id=t.id
+                 WHERE t.account=?1 AND t.cloud_workspace=?2 AND t.id=?3 AND t.closed IS NULL AND j.cancel=0",
+                params![account, cloud_workspace, tab],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten())
+    }
+
+    /// Ask the worker to close it. Saying so again is harmless.
+    pub fn close_cloud_tab(&self, account: &str, cloud_workspace: &str, tab: &str) -> Result<bool> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let changed = tx.execute(
+            "UPDATE cloud_tabs SET status='closing' WHERE account=?1 AND cloud_workspace=?2 AND id=?3 AND closed IS NULL",
+            params![account, cloud_workspace, tab],
+        )?;
+        tx.execute("UPDATE cloud_jobs SET cancel=1 WHERE id=?1 AND kind='cloud_tab'", [tab])?;
+        tx.execute("UPDATE cloud_requests SET pending=0 WHERE conversation=?1", [tab])?;
+        tx.commit()?;
+        Ok(changed == 1)
+    }
+
+    /// How many of a Cloud workspace's tabs still have a Managoat agent.
+    pub fn open_cloud_tabs(&self, cloud_workspace: &str) -> Result<u64> {
+        Ok(self.c().query_row(
+            "SELECT count(*) FROM cloud_tabs WHERE cloud_workspace=?1 AND closed IS NULL",
+            [cloud_workspace],
+            |r| r.get(0),
+        )?)
+    }
+
+    pub fn claim_cloud_tab_job(&self, now: u64) -> Result<Option<CloudTabJob>> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let found = tx
+            .query_row(
+                &format!(
+                    "SELECT {CLOUD_TAB_COLUMNS},t.account,j.body,j.cancel,w.provider_id,w.environment,w.vault
+                     FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace JOIN cloud_jobs j ON j.id=t.id
+                     WHERE j.kind='cloud_tab' AND t.closed IS NULL AND j.lease_until<=?1 ORDER BY j.lease_until,t.created LIMIT 1"
+                ),
+                [now],
+                |r| {
+                    Ok((
+                        cloud_tab_row(r)?,
+                        r.get::<_, String>(8)?,
+                        r.get::<_, String>(9)?,
+                        r.get::<_, bool>(10)?,
+                        (r.get(11)?, r.get(12)?, r.get(13)?),
+                    ))
+                },
+            )
+            .optional()?;
+        let Some(((tab, spec, started), account, body, closing, (workspace, environment, vault))) = found else {
+            return Ok(None);
+        };
+        let lease = hex::encode(arugula_e2e::random::<16>());
+        tx.execute("UPDATE cloud_jobs SET lease=?1,lease_until=?2 WHERE id=?3", params![lease, now + 120_000, tab.id])?;
+        tx.commit()?;
+        Ok(Some(CloudTabJob {
+            tab,
+            spec,
+            account,
+            execution: serde_json::from_str(&body)?,
+            started,
+            closing,
+            workspace,
+            environment,
+            vault,
+            lease,
+        }))
+    }
+
+    /// Checkpoint under the claim. A close asked for meanwhile keeps the
+    /// status `closing`, and a tab that's closing or has ended asks nothing.
+    pub fn checkpoint_cloud_tab_job(&self, job: &CloudTabJob, release_at: Option<u64>) -> Result<()> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let changed = tx.execute(
+            "UPDATE cloud_jobs SET body=?1,lease_until=COALESCE(?2,lease_until) WHERE id=?3 AND lease=?4",
+            params![serde_json::to_string(&job.execution)?, release_at, job.tab.id, job.lease],
+        )?;
+        if changed != 1 {
+            bail!("cloud job lease lost");
+        }
+        tx.execute(
+            "UPDATE cloud_tabs SET
+                 status=CASE WHEN (SELECT cancel FROM cloud_jobs WHERE id=?1)=1 THEN 'closing' ELSE ?2 END,
+                 error=?3, started=?4, provider_id=?5
+             WHERE id=?1",
+            params![job.tab.id, job.tab.status, job.tab.error, job.started, job.execution.conversation],
+        )?;
+        if job.closing || matches!(job.tab.status.as_str(), "failed" | "terminated") {
+            tx.execute("UPDATE cloud_requests SET pending=0 WHERE conversation=?1", [&job.tab.id])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Its conversation and agent are gone: keep the row (its transcript
+    /// stays readable to control) and end the job.
+    pub fn finish_cloud_tab_close(&self, job: &CloudTabJob, now: u64) -> Result<()> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        if tx.execute("DELETE FROM cloud_jobs WHERE id=?1 AND lease=?2", params![job.tab.id, job.lease])? != 1 {
+            bail!("cloud job lease lost");
+        }
+        tx.execute("UPDATE cloud_tabs SET status='closed',closed=?1 WHERE id=?2", params![now, job.tab.id])?;
+        tx.execute("UPDATE cloud_requests SET pending=0 WHERE conversation=?1", [&job.tab.id])?;
+        tx.commit()?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1155,6 +1589,93 @@ mod tests {
     }
 
     #[test]
+    fn conversation_tables_keyed_on_run_are_rekeyed_with_their_account() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE cloud_runs (id TEXT PRIMARY KEY, account TEXT NOT NULL);
+             CREATE TABLE cloud_jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'run', body TEXT NOT NULL,
+                 cancel INTEGER NOT NULL DEFAULT 0, lease TEXT, lease_until INTEGER NOT NULL DEFAULT 0);
+             CREATE TABLE cloud_requests (run TEXT NOT NULL REFERENCES cloud_runs(id), id TEXT NOT NULL,
+                 body TEXT NOT NULL, pending INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(run,id));
+             CREATE TABLE cloud_notifications (run TEXT NOT NULL REFERENCES cloud_runs(id), request TEXT NOT NULL,
+                 delivered INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(run,request));
+             CREATE TABLE cloud_events (run TEXT NOT NULL REFERENCES cloud_runs(id), cursor INTEGER NOT NULL,
+                 body TEXT NOT NULL, PRIMARY KEY(run,cursor));
+             INSERT INTO cloud_runs VALUES ('run_1','a');
+             INSERT INTO cloud_requests(run,id,body,pending) VALUES ('run_1','approve','{}',0);
+             INSERT INTO cloud_notifications(run,request,delivered,next_attempt) VALUES ('run_1','approve',1,7);
+             INSERT INTO cloud_events(run,cursor,body) VALUES ('run_1',3,'{\"id\":3}');",
+        )
+        .unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap();
+        let request: (String, String, String, bool) = conn
+            .query_row("SELECT conversation,account,id,pending FROM cloud_requests", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })
+            .unwrap();
+        assert_eq!(request, ("run_1".into(), "a".into(), "approve".into(), false));
+        let push: (String, String, bool, u64) = conn
+            .query_row("SELECT conversation,account,delivered,next_attempt FROM cloud_notifications", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })
+            .unwrap();
+        assert_eq!(push, ("run_1".into(), "a".into(), true, 7));
+        let event: (String, String, u64) = conn
+            .query_row("SELECT conversation,account,cursor FROM cloud_events", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(event, ("run_1".into(), "a".into(), 3));
+        // A tab's id isn't a run's, and is taken now.
+        conn.execute("INSERT INTO cloud_events(conversation,account,cursor,body) VALUES('cwc_1','a',1,'{}')", [])
+            .unwrap();
+    }
+
+    #[test]
+    fn account_erasure_waits_for_tabs_and_takes_their_events() {
+        let db = test_db();
+        let w = db.create_cloud_workspace("a", "erase", &cloud_workspace_spec(), 0).unwrap();
+        db.c().execute("UPDATE cloud_workspaces SET status='ready',provider_id='ws1' WHERE id=?1", [&w.id]).unwrap();
+        let spec = CloudTabSpec {
+            agent_id: "agent_test".into(),
+            agent_version: 1,
+            agent: spec().agent,
+            runtime: "claude".into(),
+            model: "anthropic/test".into(),
+            cwd: "/home/sprite/app".into(),
+            prompt: None,
+        };
+        assert!(db.create_cloud_tab("b", &w.id, "tab", &spec, 0).is_err(), "another account's");
+        let tab = db.create_cloud_tab("a", &w.id, "tab", &spec, 0).unwrap();
+        db.c()
+            .execute("INSERT INTO cloud_events(conversation,account,cursor,body) VALUES(?1,'a',1,'{}')", [&tab.id])
+            .unwrap();
+        // Deleting the Cloud workspace closes its tabs.
+        db.delete_cloud_workspaces("a").unwrap();
+        assert_eq!(db.cloud_tab("a", &w.id, &tab.id).unwrap().unwrap().status, "closing");
+        assert!(db.create_cloud_tab("a", &w.id, "late", &spec, 0).is_err());
+        let erase = super::super::Erase { account: "a", disband: &[], retain_for: &[] };
+        let w_job = loop {
+            let job = db.claim_cloud_workspace_job(0).unwrap().unwrap();
+            if job.cloud_workspace.id == w.id {
+                break job;
+            }
+        };
+        db.finish_cloud_workspace_delete(&w_job, 1).unwrap();
+        assert!(db.delete_account(&erase).is_err(), "its tab still has an agent");
+        let tab_job = db.claim_cloud_tab_job(0).unwrap().unwrap();
+        assert!(tab_job.closing);
+        db.finish_cloud_tab_close(&tab_job, 1).unwrap();
+        db.delete_account(&erase).unwrap();
+        for table in ["cloud_tabs", "cloud_events", "cloud_jobs", "cloud_workspaces"] {
+            let count: u64 = db.c().query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap();
+            assert_eq!(count, 0, "{table}");
+        }
+    }
+
+    #[test]
     fn built_spec_follows_the_revision_that_reached_ready() {
         let db = test_db();
         let w = db.create_cloud_workspace("a", "built", &cloud_workspace_spec(), 0).unwrap();
@@ -1198,9 +1719,9 @@ mod tests {
         // foreign-key ordering, including already-delivered notifications.
         for sql in [
             "INSERT INTO cloud_run_secrets(run,name,sealed) VALUES(?1,'TOKEN',X'01')",
-            "INSERT INTO cloud_requests(run,id,body) VALUES(?1,'approval','{}')",
-            "INSERT INTO cloud_notifications(run,request) VALUES(?1,'approval')",
-            "INSERT INTO cloud_events(run,cursor,body) VALUES(?1,1,'{}')",
+            "INSERT INTO cloud_requests(conversation,account,id,body) VALUES(?1,'a','approval','{}')",
+            "INSERT INTO cloud_notifications(conversation,account,request) VALUES(?1,'a','approval')",
+            "INSERT INTO cloud_events(conversation,account,cursor,body) VALUES(?1,'a',1,'{}')",
         ] {
             db.c().execute(sql, [&run.id]).unwrap();
         }
