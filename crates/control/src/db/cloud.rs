@@ -82,7 +82,10 @@ CREATE TABLE IF NOT EXISTS cloud_events (
 -- `deleted` is set once its Managoat resources are gone. `settings_applied`
 -- is 0 from a settings save until Managoat has them (M117), and
 -- `vault_secrets` names the secrets in the vault once a save has changed
--- them (NULL: the ones it was created with).
+-- them (NULL: the ones it was created with). `rebuild` is a rebuild or
+-- retry Managoat had no machine for yet, which the worker sends again
+-- (M120); `rebuild_error` says why the last one queued didn't happen, and
+-- `rebuilds` counts the ones Managoat took.
 CREATE TABLE IF NOT EXISTS cloud_workspaces (
     id TEXT PRIMARY KEY,
     account TEXT NOT NULL,
@@ -105,6 +108,9 @@ CREATE TABLE IF NOT EXISTS cloud_workspaces (
     deleted INTEGER,
     settings_applied INTEGER NOT NULL DEFAULT 1,
     vault_secrets TEXT,
+    rebuild TEXT,
+    rebuild_error TEXT,
+    rebuilds INTEGER NOT NULL DEFAULT 0,
     UNIQUE(account, request_key)
 );
 CREATE INDEX IF NOT EXISTS cloud_workspaces_owner ON cloud_workspaces(account, created);
@@ -176,6 +182,20 @@ pub(super) fn migrate(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
         conn.execute_batch(
             "ALTER TABLE cloud_workspaces ADD COLUMN settings_applied INTEGER NOT NULL DEFAULT 1;
              ALTER TABLE cloud_workspaces ADD COLUMN vault_secrets TEXT;",
+        )?;
+    }
+    // Rebuild and Retry (M120).
+    let unrebuilt: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='cloud_workspaces')
+             AND NOT EXISTS(SELECT 1 FROM pragma_table_info('cloud_workspaces') WHERE name='rebuilds')",
+        [],
+        |r| r.get(0),
+    )?;
+    if unrebuilt {
+        conn.execute_batch(
+            "ALTER TABLE cloud_workspaces ADD COLUMN rebuild TEXT;
+             ALTER TABLE cloud_workspaces ADD COLUMN rebuild_error TEXT;
+             ALTER TABLE cloud_workspaces ADD COLUMN rebuilds INTEGER NOT NULL DEFAULT 0;",
         )?;
     }
     // Requests, notifications and events keyed on `run` (a foreign key to
@@ -625,7 +645,38 @@ pub struct CloudWorkspace {
     pub pending: Vec<CloudWorkspaceChange>,
     /// False from a settings save until Managoat has them.
     pub settings_applied: bool,
+    /// A rebuild or retry waits for Managoat to have a machine free.
+    pub rebuild_queued: bool,
+    /// Why the last one that waited didn't happen.
+    pub rebuild_error: Option<String>,
     pub created: u64,
+}
+
+/// A rebuild or retry asked for (M120), kept while Managoat has no machine
+/// free for it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CloudWorkspaceRebuild {
+    /// Retry a failed setup, rather than rebuild.
+    pub retry: bool,
+    /// End running turns rather than be refused.
+    pub interrupt: bool,
+    /// When it was asked for.
+    pub asked: u64,
+    /// The worker has taken it to send: too late to cancel.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sending: bool,
+}
+
+/// What cancelling a rebuild or retry that waits for a machine found.
+#[derive(Debug, PartialEq)]
+pub enum CancelledRebuild {
+    /// It won't be sent.
+    Cancelled,
+    /// The worker has sent it, or is sending it.
+    Started,
+    /// Nothing was waiting.
+    NotWaiting,
+    NotFound,
 }
 
 /// The Cloud workspace's provisioning journal, as `Execution` is a run's.
@@ -646,6 +697,9 @@ pub struct CloudWorkspaceJob {
     /// Revision of the environment control made, from its create response.
     pub saved_revision: Option<String>,
     pub deleting: bool,
+    /// The Cloud workspace's `rebuilds` when claimed: a rebuild taken since
+    /// has newer statuses than this job read.
+    pub rebuilds: u64,
     pub lease: String,
 }
 
@@ -747,7 +801,7 @@ fn cloud_tab_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(CloudTab, CloudTabS
     Ok((tab, spec, started))
 }
 
-const CLOUD_WORKSPACE_COLUMNS: &str = "id,name,saved_spec,built_spec,status,sandbox_status,error,revision,built_from_revision,stale,changed_fields,created,settings_applied";
+const CLOUD_WORKSPACE_COLUMNS: &str = "id,name,saved_spec,built_spec,status,sandbox_status,error,revision,built_from_revision,stale,changed_fields,created,settings_applied,rebuild,rebuild_error";
 
 fn cloud_workspace_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CloudWorkspace> {
     fn decode<T: serde::de::DeserializeOwned>(i: usize, s: &str) -> rusqlite::Result<T> {
@@ -773,6 +827,8 @@ fn cloud_workspace_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CloudWorkspace
         changed_fields,
         created: r.get(11)?,
         settings_applied: r.get(12)?,
+        rebuild_queued: r.get::<_, Option<String>>(13)?.is_some(),
+        rebuild_error: r.get(14)?,
     })
 }
 
@@ -1289,22 +1345,23 @@ impl Db {
         let found = tx
             .query_row(
                 &format!(
-                    "SELECT {columns},w.account,w.saved_revision,j.body,j.cancel FROM cloud_workspaces w JOIN cloud_jobs j ON j.id=w.id
+                    "SELECT {columns},w.account,w.saved_revision,j.body,j.cancel,w.rebuilds FROM cloud_workspaces w JOIN cloud_jobs j ON j.id=w.id
                      WHERE j.kind='cloud_workspace' AND w.deleted IS NULL AND j.lease_until<=?1 ORDER BY j.lease_until,w.created LIMIT 1"
                 ),
                 [now],
                 |r| {
                     Ok((
                         cloud_workspace_row(r)?,
-                        r.get::<_, String>(13)?,
-                        r.get::<_, Option<String>>(14)?,
                         r.get::<_, String>(15)?,
-                        r.get::<_, bool>(16)?,
+                        r.get::<_, Option<String>>(16)?,
+                        r.get::<_, String>(17)?,
+                        r.get::<_, bool>(18)?,
+                        r.get::<_, u64>(19)?,
                     ))
                 },
             )
             .optional()?;
-        let Some((cloud_workspace, account, saved_revision, body, deleting)) = found else {
+        let Some((cloud_workspace, account, saved_revision, body, deleting, rebuilds)) = found else {
             return Ok(None);
         };
         let lease = hex::encode(arugula_e2e::random::<16>());
@@ -1319,13 +1376,16 @@ impl Db {
             execution: serde_json::from_str(&body)?,
             saved_revision,
             deleting,
+            rebuilds,
             lease,
         }))
     }
 
     /// Checkpoint under the claim, as `checkpoint_cloud_job` does. A delete
     /// asked for meanwhile keeps the status `deleting`. `built_spec` becomes
-    /// the spec a revision was saved as once that revision is built.
+    /// the spec a revision was saved as once that revision is built. What
+    /// the job read is left alone when a rebuild was taken since it was
+    /// claimed: the rebuild's answer is newer.
     pub fn checkpoint_cloud_workspace_job(&self, job: &CloudWorkspaceJob, release_at: Option<u64>) -> Result<()> {
         let mut conn = self.c();
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
@@ -1346,7 +1406,7 @@ impl Db {
                      (SELECT spec FROM cloud_workspace_specs WHERE cloud_workspace=?1 AND revision=?6),
                      CASE WHEN settings_applied=1 AND ?6=COALESCE(saved_revision,?12) THEN saved_spec END,
                      built_spec) ELSE built_spec END
-             WHERE id=?1",
+             WHERE id=?1 AND rebuilds=?13",
             params![
                 w.id,
                 w.status,
@@ -1360,6 +1420,7 @@ impl Db {
                 job.execution.vault,
                 job.execution.workspace,
                 job.saved_revision,
+                job.rebuilds,
             ],
         )?;
         tx.commit()?;
@@ -1581,6 +1642,155 @@ impl Db {
             params![revision, built_from_revision, stale, serde_json::to_string(changed_fields)?, id],
         )?;
         Ok(())
+    }
+}
+
+/// Rebuild and Retry (M120). The route asks Managoat at once; one Managoat
+/// had no machine free for waits in `rebuild` for the worker.
+impl Db {
+    /// The Cloud workspace and its Managoat workspace, once there is one.
+    pub fn cloud_workspace_machine(&self, account: &str, id: &str) -> Result<Option<(CloudWorkspace, Option<String>)>> {
+        Ok(self
+            .c()
+            .query_row(
+                &format!(
+                    "SELECT {CLOUD_WORKSPACE_COLUMNS},provider_id FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL"
+                ),
+                params![account, id],
+                |r| Ok((cloud_workspace_row(r)?, r.get(15)?)),
+            )
+            .optional()?)
+    }
+
+    /// Managoat took a rebuild or a retry, and `w` is what it answered: the
+    /// Cloud workspace is setting up again. One that waited is done.
+    pub fn rebuilt_cloud_workspace(&self, w: &CloudWorkspace) -> Result<()> {
+        self.c().execute(
+            "UPDATE cloud_workspaces SET status=?2,sandbox_status=?3,error=?4,revision=?5,built_from_revision=?6,stale=?7,
+                 changed_fields=?8,rebuild=NULL,rebuild_error=NULL,rebuilds=rebuilds+1
+             WHERE id=?1 AND deleted IS NULL AND status!='deleting'",
+            params![
+                w.id,
+                w.status,
+                w.sandbox_status,
+                w.error,
+                w.revision,
+                w.built_from_revision,
+                w.stale,
+                serde_json::to_string(&w.changed_fields)?,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Managoat had no machine free: the worker asks again.
+    pub fn queue_cloud_workspace_rebuild(&self, id: &str, rebuild: &CloudWorkspaceRebuild) -> Result<()> {
+        self.c().execute(
+            "UPDATE cloud_workspaces SET rebuild=?2,rebuild_error=NULL WHERE id=?1 AND deleted IS NULL",
+            params![id, serde_json::to_string(rebuild)?],
+        )?;
+        Ok(())
+    }
+
+    pub fn queued_cloud_workspace_rebuild(&self, id: &str) -> Result<Option<CloudWorkspaceRebuild>> {
+        let queued: Option<Option<String>> = self
+            .c()
+            .query_row("SELECT rebuild FROM cloud_workspaces WHERE id=?1 AND deleted IS NULL", [id], |r| r.get(0))
+            .optional()?;
+        Ok(queued.flatten().map(|q| serde_json::from_str(&q)).transpose()?)
+    }
+
+    /// The worker takes the one waiting to send it, unless it was
+    /// cancelled: in one transaction with `cancel_cloud_workspace_rebuild`,
+    /// so a cancel answered `Cancelled` is never sent. True with it when it
+    /// was taken already: control stopped while sending it.
+    pub fn claim_cloud_workspace_rebuild(&self, id: &str) -> Result<Option<(CloudWorkspaceRebuild, bool)>> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let queued: Option<Option<String>> = tx
+            .query_row("SELECT rebuild FROM cloud_workspaces WHERE id=?1 AND deleted IS NULL", [id], |r| r.get(0))
+            .optional()?;
+        let Some(mut asked) =
+            queued.flatten().map(|q| serde_json::from_str::<CloudWorkspaceRebuild>(&q)).transpose()?
+        else {
+            return Ok(None);
+        };
+        let taken = std::mem::replace(&mut asked.sending, true);
+        tx.execute("UPDATE cloud_workspaces SET rebuild=?2 WHERE id=?1", params![id, serde_json::to_string(&asked)?])?;
+        tx.commit()?;
+        Ok(Some((asked, taken)))
+    }
+
+    /// Managoat still had no machine: it waits again, and can be cancelled.
+    pub fn unclaim_cloud_workspace_rebuild(&self, id: &str, asked: &CloudWorkspaceRebuild) -> Result<()> {
+        let waiting = CloudWorkspaceRebuild { sending: false, ..asked.clone() };
+        self.c().execute(
+            "UPDATE cloud_workspaces SET rebuild=?2 WHERE id=?1 AND deleted IS NULL AND rebuild IS NOT NULL",
+            params![id, serde_json::to_string(&waiting)?],
+        )?;
+        Ok(())
+    }
+
+    /// The person cancels a rebuild or retry waiting for a machine. One the
+    /// worker has taken has started; with none waiting, one that's setting
+    /// up has too.
+    pub fn cancel_cloud_workspace_rebuild(&self, account: &str, id: &str) -> Result<CancelledRebuild> {
+        let mut conn = self.c();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let found: Option<(Option<String>, String)> = tx
+            .query_row(
+                "SELECT rebuild,status FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL",
+                params![account, id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((queued, status)) = found else {
+            return Ok(CancelledRebuild::NotFound);
+        };
+        let Some(asked) = queued.map(|q| serde_json::from_str::<CloudWorkspaceRebuild>(&q)).transpose()? else {
+            return Ok(if status == "provisioning" { CancelledRebuild::Started } else { CancelledRebuild::NotWaiting });
+        };
+        if asked.sending {
+            return Ok(CancelledRebuild::Started);
+        }
+        tx.execute("UPDATE cloud_workspaces SET rebuild=NULL,rebuild_error=NULL WHERE id=?1", [id])?;
+        tx.commit()?;
+        Ok(CancelledRebuild::Cancelled)
+    }
+
+    /// The one waiting won't be sent; `error` says why, when the person
+    /// should know.
+    pub fn drop_cloud_workspace_rebuild(&self, id: &str, error: Option<&str>) -> Result<()> {
+        self.c().execute(
+            "UPDATE cloud_workspaces SET rebuild=NULL,rebuild_error=?2 WHERE id=?1 AND deleted IS NULL",
+            params![id, error],
+        )?;
+        Ok(())
+    }
+
+    /// The open tabs on these Managoat conversations, as "agent · runtime".
+    pub fn cloud_tab_names(
+        &self,
+        account: &str,
+        cloud_workspace: &str,
+        conversations: &[String],
+    ) -> Result<Vec<String>> {
+        let conn = self.c();
+        let mut q = conn.prepare(
+            "SELECT provider_id,spec FROM cloud_tabs
+             WHERE account=?1 AND cloud_workspace=?2 AND closed IS NULL AND provider_id IS NOT NULL ORDER BY created,id",
+        )?;
+        let rows =
+            q.query_map(params![account, cloud_workspace], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut names = vec![];
+        for row in rows {
+            let (conversation, spec) = row?;
+            if conversations.contains(&conversation) {
+                let spec: CloudTabSpec = serde_json::from_str(&spec)?;
+                names.push(format!("{} · {}", spec.agent.name, spec.runtime));
+            }
+        }
+        Ok(names)
     }
 }
 
@@ -1904,6 +2114,57 @@ mod tests {
             })
             .unwrap();
         assert_eq!(row, (true, None));
+    }
+
+    #[test]
+    fn cloud_workspaces_from_before_rebuilds_gain_their_columns() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE cloud_jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'run', body TEXT NOT NULL);
+             CREATE TABLE cloud_workspaces (id TEXT PRIMARY KEY, saved_spec TEXT NOT NULL,
+                 settings_applied INTEGER NOT NULL DEFAULT 1, vault_secrets TEXT);
+             INSERT INTO cloud_workspaces(id,saved_spec) VALUES ('cw_1','{}');",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        migrate(&conn).unwrap();
+        let row: (Option<String>, Option<String>, u64) = conn
+            .query_row("SELECT rebuild,rebuild_error,rebuilds FROM cloud_workspaces", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(row, (None, None, 0));
+    }
+
+    #[test]
+    fn a_worker_that_read_before_a_rebuild_does_not_undo_it() {
+        let db = test_db();
+        let created = db.create_cloud_workspace("a", "one", &cloud_workspace_spec(), 0).unwrap();
+        let mut job = db.claim_cloud_workspace_job(0).unwrap().unwrap();
+        job.execution.stage = "live".into();
+        job.cloud_workspace.status = "ready".into();
+        job.cloud_workspace.stale = true;
+        db.checkpoint_cloud_workspace_job(&job, Some(0)).unwrap();
+        // The worker reads `ready` and stale; a rebuild is taken meanwhile.
+        let mut job = db.claim_cloud_workspace_job(0).unwrap().unwrap();
+        let mut rebuilt = job.cloud_workspace.clone();
+        rebuilt.status = "provisioning".into();
+        db.queue_cloud_workspace_rebuild(
+            &created.id,
+            &CloudWorkspaceRebuild { retry: false, interrupt: false, asked: 0, sending: false },
+        )
+        .unwrap();
+        assert!(db.cloud_workspace("a", &created.id).unwrap().unwrap().rebuild_queued);
+        db.rebuilt_cloud_workspace(&rebuilt).unwrap();
+        job.cloud_workspace.status = "ready".into();
+        db.checkpoint_cloud_workspace_job(&job, Some(0)).unwrap();
+        let shown = db.cloud_workspace("a", &created.id).unwrap().unwrap();
+        assert_eq!((shown.status.as_str(), shown.rebuild_queued), ("provisioning", false));
+        // The next claim reads past it.
+        let mut job = db.claim_cloud_workspace_job(0).unwrap().unwrap();
+        job.cloud_workspace.status = "ready".into();
+        db.checkpoint_cloud_workspace_job(&job, Some(0)).unwrap();
+        assert_eq!(db.cloud_workspace("a", &created.id).unwrap().unwrap().status, "ready");
     }
 
     #[test]

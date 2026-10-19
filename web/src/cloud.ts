@@ -74,6 +74,8 @@ export type CloudWorkspace = {
   error: string | null; revision: string | null; built_from_revision: string | null; stale: boolean; changed_fields: string[]; created: number;
   /** What a rebuild changes (M117), and whether Managoat has the saved settings yet. */
   pending: CloudWorkspaceChange[]; settings_applied: boolean;
+  /** A rebuild or retry waiting for Managoat to have a machine free (M120), and why the last one that waited didn't happen. */
+  rebuild_queued: boolean; rebuild_error: string | null;
 };
 /** A saved setting the machine wasn't built with: `before` is built (null when not known), `after` saved. `env_vars` are names only. */
 export type CloudWorkspaceChange = { field: string; before: unknown; after: unknown };
@@ -113,9 +115,13 @@ export function cloudTabAttention(t: CloudTab): "needs_input" | "working" | "don
   return "idle";
 }
 
-/** The mounts a tab may start in: each repository's, else the home. */
-export const cloudWorkspaceMounts = (w: CloudWorkspace) =>
-  w.saved_spec.repositories.length ? w.saved_spec.repositories.map((r) => r.mount || "/home/sprite") : ["/home/sprite"];
+/** The mounts a tab may start in: each repository's on the machine, else
+ * the home. A repository saved since isn't on its disk until a rebuild, so
+ * these come from the built settings (the saved ones until the first build). */
+export const cloudWorkspaceMounts = (w: CloudWorkspace) => {
+  const built = w.built_spec ?? w.saved_spec;
+  return built.repositories.length ? built.repositories.map((r) => r.mount || "/home/sprite") : ["/home/sprite"];
+};
 
 export const cloudWorkspaces = {
   account: "", list: [] as CloudWorkspace[], tabs: new Map<string, CloudTab[]>(), loaded: false, error: "",

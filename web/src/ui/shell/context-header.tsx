@@ -19,6 +19,7 @@ import { useSidebar } from "./prefs";
 import { openOverview } from "../places";
 import { cloudWorkspaceRoute } from "../../cloud";
 import { CloudWorkspaceCrumbs, DeleteCloudWorkspace, useCloudWorkspaces } from "../cloud-workspaces";
+import { RebuildCloudWorkspace } from "../cloud-workspace-rebuild";
 
 export type Connection = "direct" | "relayed" | "reconnecting" | "offline";
 
@@ -152,6 +153,7 @@ function CloudWorkspaceHeader({ client, inert }: { client: Client; inert: boolea
       <div class="bar-fill" data-tauri-drag-region />
       {client.state && <CommandsButton client={client} search />}
       <AttentionBell client={client} />
+      <RebuildCloudWorkspace place="header" />
       <DeleteCloudWorkspace />
       <AccountButton client={client} />
       <WindowButtons />
