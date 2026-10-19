@@ -154,10 +154,11 @@ impl Db {
                 false
             }
         };
-        // What this link has uploaded and not committed, without the part
-        // this one replaces.
+        // What this link has uploaded and not committed (the commit replaces
+        // its served version), without the part this one replaces.
         let waiting: u64 = tx.query_row(
-            "SELECT COALESCE(SUM(LENGTH(data)), 0) FROM doc_link_parts WHERE id = ?1 AND NOT (ver = ?2 AND n = ?3)",
+            "SELECT COALESCE(SUM(LENGTH(data)), 0) FROM doc_link_parts WHERE id = ?1 AND NOT (ver = ?2 AND n = ?3)
+             AND ver != COALESCE((SELECT version FROM doc_links WHERE id = ?1), 0)",
             params![id, ver, n],
             |r| r.get(0),
         )?;
