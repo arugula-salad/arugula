@@ -278,7 +278,9 @@ What's in them:
   `cloud request answered`, `cloud secret saved/deleted`,
   `cloud workspace created` (counts of repositories, secrets, packages and
   env vars), `cloud workspace settings saved` (how many changes a rebuild
-  would make), `cloud workspace deleted`.
+  would make), `cloud workspace rebuilt` and `cloud workspace retried`
+  (whether it interrupted turns, and whether it waited for a machine),
+  `cloud workspace deleted`.
 - **Other**: `push turned on` (the push service's host), `push turned off`,
   `push relayed` (status), `labs flag set`.
 - **Machines' versions**: `machine version` (machine, version, os, arch)

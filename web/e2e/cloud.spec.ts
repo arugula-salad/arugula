@@ -21,6 +21,10 @@ let environment: Record<string, unknown> = {}, built: Record<string, unknown> = 
 const changedFields = () => buildFields.filter((f) => JSON.stringify(environment[f]) !== JSON.stringify(built[f]));
 const machineReads: string[] = [];
 const conversations = new Map<string, { status: string; prompt: string; answered: boolean }>();
+// Rebuild and Retry (M120): what each was asked with, and whether the next
+// setups fail.
+const rebuilds: unknown[] = [], retries: unknown[] = [];
+let failSetup = false;
 test.beforeAll(async () => {
   github = createServer((req, res) => {
     const url = new URL(req.url!, "http://github");
@@ -47,13 +51,29 @@ test.beforeAll(async () => {
       built = { ...environment };
       data = { id, name: body.name, environment_id: body.environment_id, vault_id: body.vault_id, status: "provisioning", sandbox_status: "pending", error: null, revision: "rev1", built_from_revision: null, stale: false, changed_fields: [] };
     }
-    // Setting up for the first reads, then ready.
+    // Setting up for the first reads, then ready (or failed).
     else if (path.startsWith("/api/workspaces/") && workspaceReads.has(path.slice("/api/workspaces/".length))) {
       const id = path.slice("/api/workspaces/".length);
       workspaceReads.set(id, workspaceReads.get(id)! + 1);
       const ready = workspaceReads.get(id)! > 2;
       const changed = ready ? changedFields() : [];
-      data = { id, status: ready ? "ready" : "provisioning", sandbox_status: ready ? "ready" : "starting", error: null, revision: `rev${revision}`, built_from_revision: ready ? `rev${built.revision}` : null, stale: changed.length > 0, changed_fields: changed };
+      data = ready && failSetup
+        ? { id, status: "failed", sandbox_status: null, error: "setup_script exited 1: pnpm: command not found", revision: `rev${revision}`, built_from_revision: null, stale: false, changed_fields: [] }
+        : { id, status: ready ? "ready" : "provisioning", sandbox_status: ready ? "ready" : "starting", error: null, revision: `rev${revision}`, built_from_revision: ready ? `rev${built.revision}` : null, stale: changed.length > 0, changed_fields: changed };
+    }
+    // A new machine from the environment as it is now, set up over the next
+    // reads. A rebuild is refused while a turn runs, unless it interrupts.
+    else if (/^\/api\/workspaces\/ws\d+\/(rebuild|retry)$/.test(path) && req.method === "POST") {
+      const id = path.split("/")[3];
+      (path.endsWith("/retry") ? retries : rebuilds).push(body);
+      const running = [...conversations].filter(([, c]) => c.status === "running" && c.prompt === "Run the tests" && !c.answered).map(([id]) => id);
+      if (path.endsWith("/rebuild") && running.length && !body.interrupt) {
+        res.writeHead(409, { "content-type": "application/json" }).end(JSON.stringify({ error: "turns_running", message: "refused", conversation_ids: running }));
+        return;
+      }
+      built = { ...environment }; workspaceReads.set(id, 0);
+      res.writeHead(202, { "content-type": "application/json" }).end(JSON.stringify({ data: { id, status: "provisioning", sandbox_status: "pending", error: null, revision: `rev${revision}`, built_from_revision: null, stale: false, changed_fields: [] } }));
+      return;
     } else if (/^\/api\/workspaces\/ws\d+\/(diff|git-status|file)$/.test(path)) {
       // The machine's reads (M118): the guide tab's change, once it ran.
       machineReads.push(`${path}${url.search}`);
@@ -371,4 +391,90 @@ test("a change an agent made in a Cloud workspace shows in Changes", async ({ pa
   await page.locator("[data-delete-cloud-workspace]").click();
   await page.getByRole("alertdialog", { name: "Delete docs box?" }).getByRole("button", { name: "Delete", exact: true }).click();
   await expect(page.locator("[data-cloud-workspace]")).toHaveCount(0, { timeout: 45000 });
+});
+
+test("Rebuild asks first, warns that the disk is wiped, and clears the badge", async ({ page }) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  user = { id: 11, login: "rebuild-tester" };
+  await page.goto(base); await page.locator("[data-signin=github]").click();
+  await page.locator("[data-stored-codes]").check();
+  await page.locator("[data-saved-codes]").click();
+  await page.locator("[data-open-cloud-workspaces]").click();
+  await page.locator("[data-new-cloud-workspace]").click();
+  const create = page.getByRole("dialog", { name: "New Cloud workspace" });
+  await create.getByLabel("Name", { exact: true }).fill("rebuild work");
+  await create.getByLabel("Repository URL").fill("https://github.com/example/app");
+  await create.getByLabel("apt packages (optional)").fill("ffmpeg");
+  await create.getByRole("button", { name: "Create Cloud workspace" }).click();
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Ready", { timeout: 30000 });
+
+  // A tab with some work, then one more package.
+  await page.locator("[data-new-cloud-tab]").click();
+  const dialog = page.getByRole("dialog", { name: "Open an agent" });
+  await dialog.getByLabel("First prompt (optional)").fill("Write the docs");
+  await dialog.getByRole("button", { name: "Open agent" }).click();
+  await expect(page.locator("[data-cloud-tab-view]")).toContainText("Docs written.", { timeout: 30000 });
+  const tab = await page.locator("[data-cloud-tab]").getAttribute("data-cloud-tab");
+  await page.locator(".ws-crumb", { hasText: "rebuild work" }).click();
+  await page.locator("[data-edit-cloud-settings]").click();
+  const form = page.getByRole("form", { name: "Cloud workspace settings" });
+  await form.getByLabel("apt packages", { exact: true }).fill("ffmpeg jq");
+  await form.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Rebuild needed · 1 change", { timeout: 15000 });
+
+  // The header's Rebuild asks, and says the disk is wiped; Cancel sends nothing.
+  await page.locator('[data-rebuild-cloud-workspace="header"]').click();
+  const confirm = page.getByRole("alertdialog", { name: "Rebuild rebuild work?" });
+  await expect(confirm.locator("[data-rebuild-warning]")).toContainText("The disk is wiped.");
+  await expect(confirm.locator("[data-rebuild-warning]")).toContainText("uncommitted and untracked work");
+  await expect(confirm.locator("[data-rebuild-mid-turn]")).toHaveCount(0);
+  await confirm.locator("[data-cancel-rebuild]").click();
+  await expect(confirm).toHaveCount(0);
+  expect(rebuilds).toHaveLength(0);
+
+  // Settings' Rebuild, confirmed: setting up, then ready with no badge.
+  await page.locator('[data-rebuild-cloud-workspace="settings"]').click();
+  await confirm.locator("[data-confirm-rebuild]").click();
+  await expect(confirm).toHaveCount(0);
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Setting up", { timeout: 15000 });
+  expect(rebuilds).toEqual([{}]);
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Ready", { timeout: 30000 });
+  await expect(page.locator("[data-cloud-rebuild-badge]")).toHaveCount(0);
+  await expect(page.locator("[data-cloud-settings]")).toContainText("built from these settings");
+  await expect(page.locator('[data-cloud-workspace][data-cloud-state="Ready"]')).toContainText("rebuild work");
+
+  // The tab is still there, with its transcript.
+  await expect(page.locator("[data-cloud-tab]")).toHaveCount(1);
+  await page.locator(`[data-cloud-tab="${tab}"]`).click();
+  await expect(page.locator("[data-cloud-tab-view]")).toContainText("Docs written.");
+});
+
+test("Retry on a failed Cloud workspace sets it up again without a warning", async ({ page }) => {
+  test.setTimeout(90000);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  user = { id: 12, login: "retry-tester" };
+  failSetup = true;
+  await page.goto(base); await page.locator("[data-signin=github]").click();
+  await page.locator("[data-stored-codes]").check();
+  await page.locator("[data-saved-codes]").click();
+  await page.locator("[data-open-cloud-workspaces]").click();
+  await page.locator("[data-new-cloud-workspace]").click();
+  const create = page.getByRole("dialog", { name: "New Cloud workspace" });
+  await create.getByLabel("Name", { exact: true }).fill("retry work");
+  await create.getByLabel("Repository URL").fill("https://github.com/example/app");
+  await create.getByRole("button", { name: "Create Cloud workspace" }).click();
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Failed", { timeout: 30000 });
+  await expect(page.locator("[data-cloud-failed]")).toContainText("pnpm: command not found");
+  // A failed workspace has no machine: Rebuild isn't offered, Retry is.
+  await expect(page.locator("[data-rebuild-cloud-workspace]")).toHaveCount(0);
+
+  failSetup = false;
+  const rebuildsBefore = rebuilds.length;
+  await page.locator("[data-retry-cloud-workspace]").click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(page.locator("[data-cloud-status]")).toHaveText("Ready", { timeout: 30000 });
+  await expect(page.locator("[data-cloud-failed]")).toHaveCount(0);
+  expect(retries).toHaveLength(1);
+  expect(rebuilds).toHaveLength(rebuildsBefore);
 });

@@ -5,6 +5,7 @@
 // `changed_fields`, with values from the specs) is what a rebuild changes.
 
 import { useEffect, useState } from "preact/hooks";
+import { CloudWorkspaceRebuildNote, RebuildCloudWorkspace } from "./cloud-workspace-rebuild";
 import { cloudApi as api, cloudWorkspaceRebuildBadge, cloudWorkspaces, type CloudWorkspace, type CloudWorkspaceChange, type CloudWorkspaceSpec } from "../cloud";
 
 /** Words split on commas and spaces: "ffmpeg, jq" → ["ffmpeg", "jq"]. */
@@ -66,7 +67,9 @@ export function CloudWorkspaceSettings({ w }: { w: CloudWorkspace }) {
       <div class="cloud-ws-settings-head">
         <h3>Settings</h3>
         {!editing && w.status !== "deleting" && <button data-edit-cloud-settings onClick={() => setEditing(true)}>Edit settings</button>}
+        {!editing && <RebuildCloudWorkspace w={w} place="settings" />}
       </div>
+      {w.status !== "failed" && <CloudWorkspaceRebuildNote w={w} />}
       {w.settings_applied === false && <p class="dim" role="status" data-settings-unsent>Saved. Sending them to Managoat; control keeps trying.</p>}
       {badge ? (
         <>

@@ -45,6 +45,22 @@ impl std::fmt::Display for ReadRefusal {
     }
 }
 impl std::error::Error for ReadRefusal {}
+/// Managoat said no to a rebuild or a retry, and nothing changed: a 4xx,
+/// or a 503 whose code says so. Only its `error` code and, for
+/// `turns_running`, its conversations' ids are kept; the rest of a body
+/// can echo what was sent.
+#[derive(Debug)]
+pub struct Refusal {
+    pub status: u16,
+    pub code: String,
+    pub conversation_ids: Vec<String>,
+}
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "cloud provider refused with HTTP {} {}", self.status, self.code)
+    }
+}
+impl std::error::Error for Refusal {}
 
 pub struct Provider {
     client: Client,
@@ -213,6 +229,65 @@ impl Provider {
 
     pub async fn workspace(&self, id: &str) -> Result<Value> {
         self.request(Method::GET, &["api", "workspaces", id], None).await
+    }
+
+    /// Replace the workspace's machine with one set up from its
+    /// environment as it is now. The disk is wiped; conversations keep
+    /// their transcripts. `interrupt` ends running turns instead of being
+    /// refused with `turns_running`. Never resent: a lost answer may have
+    /// wiped the disk.
+    pub async fn rebuild_workspace(&self, id: &str, interrupt: bool) -> Result<Value> {
+        let body = if interrupt { json!({"interrupt": true}) } else { json!({}) };
+        self.refusable(&["api", "workspaces", id, "rebuild"], body).await
+    }
+
+    /// Set a `failed` workspace up again, from its environment as it is now.
+    pub async fn retry_workspace(&self, id: &str) -> Result<Value> {
+        self.refusable(&["api", "workspaces", id, "retry"], json!({})).await
+    }
+
+    /// A POST whose refusals are a `Refusal`: a 4xx (but 408 and 429), or
+    /// a 503 `fleet_full` or `sandbox_unavailable`. Anything else, a lost
+    /// answer included, may have happened and is a plain error.
+    async fn refusable(&self, segments: &[&str], body: Value) -> Result<Value> {
+        let mut url = self.base.clone();
+        url.path_segments_mut().map_err(|_| anyhow::anyhow!("invalid cloud provider URL"))?.clear().extend(segments);
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(&self.key)
+            .json(&body)
+            .send()
+            .await
+            .context("cloud provider unavailable")?;
+        let status = response.status().as_u16();
+        if response.status().is_success() {
+            let value: Value = response.json().await.context("invalid cloud provider response")?;
+            return Ok(value.get("data").cloned().unwrap_or(value));
+        }
+        let body: Value = response.json().await.unwrap_or(Value::Null);
+        let word = |v: &Value, max: usize, ok: fn(char) -> bool| {
+            v.as_str().filter(|s| !s.is_empty() && s.len() <= max && s.chars().all(ok)).map(str::to_owned)
+        };
+        let code = word(&body["error"], 64, |c| c.is_ascii_lowercase() || c == '_').unwrap_or_default();
+        let refused = match status {
+            503 => matches!(code.as_str(), "fleet_full" | "sandbox_unavailable"),
+            408 | 429 => false,
+            400..500 => true,
+            _ => false,
+        };
+        if !refused {
+            return Err(HttpFailure(status, Method::POST).into());
+        }
+        let conversation_ids = body["conversation_ids"]
+            .as_array()
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| word(id, 64, |c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Err(Refusal { status, code, conversation_ids }.into())
     }
 
     /// Write-only: Managoat never returns the value.

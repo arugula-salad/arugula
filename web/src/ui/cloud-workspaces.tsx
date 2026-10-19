@@ -14,6 +14,7 @@ import { ConfirmRemove } from "./confirm";
 import { CloudTranscript, useCloudConversation } from "./cloud";
 import { CloudWorkspaceSettings } from "./cloud-workspace-settings";
 import { CloudWorkspaceChanges } from "./cloud-workspace-changes";
+import { RetryCloudWorkspace } from "./cloud-workspace-rebuild";
 
 /** Re-render on the store and the route; returns the route. */
 export function useCloudWorkspaces() {
@@ -290,8 +291,9 @@ function CloudWorkspaceFailure({ w }: { w: CloudWorkspace }) {
   if (w.status !== "failed") return null;
   return (
     <div class="cloud-ws-failed" role="alert" data-cloud-failed>
-      <p><b>Setup failed.</b> Managoat sets the machine up again on the next prompt to one of this workspace's tabs. If it has no tabs, or the settings need changing, delete it and create it again.</p>
+      <p><b>Setup failed.</b> Change its settings below if they need it, then Retry. A prompt to one of its tabs sets it up again too.</p>
       {w.error && <pre class="cloud-ws-error">{w.error}</pre>}
+      <RetryCloudWorkspace w={w} />
     </div>
   );
 }
