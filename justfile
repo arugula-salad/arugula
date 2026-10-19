@@ -346,6 +346,17 @@ desktop-check:
 notices:
     scripts/notices
 
+# CI runs it on main (check.yml's clippy) and on pull requests (binaries.yml).
+# Fails when THIRD_PARTY.md or the desktop app's is stale: run `just notices`.
+notices-check: notices
+    git diff --exit-code THIRD_PARTY.md crates/desktop/THIRD_PARTY.md
+
+# CI runs it on main (check.yml's lint) and on pull requests (binaries.yml).
+# rustfmt's check over the workspace and the desktop app's own.
+fmt-check:
+    cargo fmt --all --check
+    cd crates/desktop && cargo fmt --check
+
 # Release without waiting for a version bump to pass CI (#524): commit the
 # bump on top of the newest commit on main with a ci/green tag, tag it, and
 # push the tag with main, the bump merged in (docs/development.md).

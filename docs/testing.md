@@ -44,8 +44,8 @@ or an account skip without it and name what's missing
 
 CI (`.github/workflows/check.yml`) runs on pushes, every job it can at
 once (#287); a new push to a branch cancels that branch's run:
-- **lint** (GitHub's runners): rustfmt, shellcheck, `just test-scripts`
-  and gitleaks.
+- **lint** (GitHub's runners): rustfmt (`just fmt-check`), shellcheck,
+  `just test-scripts` and gitleaks (`scripts/ci-gitleaks`).
 - On the home cloud's runners (`arugula-amd64`, a fresh pod per job;
   [development.md](development.md#ci)):
   - **build** and **static**: the debug binaries (with `--features
@@ -54,7 +54,7 @@ once (#287); a new push to a branch cancels that branch's run:
     (`scripts/ci-env keep`, `.github/actions/setup`);
   - **clippy**: Linux, Apple silicon (`just check-macos`; Intel's runs
     weekly in macos-intel.yml), the desktop app
-    and `just notices`;
+    and `just notices-check`;
   - **core**: `just check-core`, clippy and the daemon's and the CLI's
     tests with the `labs` feature off (#452);
   - **test**: `just test`, the box's binaries from static: it builds
@@ -84,6 +84,17 @@ once (#287); a new push to a branch cancels that branch's run:
   `mac_runner`, `runs-on: [self-hosted, macos-arm64]`):
   `just test` and `just e2e-webkit`, with `ARUGULA_SKIP_DOCKER=1` (no
   Docker there; geek's test runs the ssh tests).
+
+Pull requests run none of check.yml (the home cloud's pods take only
+main's pushes). They run `.github/workflows/binaries.yml` on GitHub's
+runners (`ubuntu-latest`): **binaries** (`scripts/check-binaries`) and
+**quick**, the checks that take seconds and would otherwise first fail on
+main after the merge, by the recipes main runs: rustfmt (`just fmt-check`,
+also the desktop app's), gitleaks over the pull request's own commits
+(`scripts/ci-gitleaks BASE..HEAD`; lint scans the whole history) and
+`just notices-check` (cargo-about reads `cargo metadata` and the crates'
+sources, no build; pnpm reads web's `node_modules`). Main still runs them
+all (lint and clippy), for anything pushed without a pull request.
 
 A commit on main whose required checks all passed gets a `ci/green/<sha>`
 tag, and one that passed and then failed a re-run gets `ci/revoked/<sha>`

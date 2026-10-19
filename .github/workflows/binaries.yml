@@ -1,7 +1,10 @@
 name: binaries
 
-# No screenshots, recordings or builds in the repo (AGENTS.md, "Binaries").
-# Cheap enough to run on every PR, unlike check.yml, which runs by hand.
+# The checks cheap enough for every pull request, on GitHub's runners: the
+# home cloud's pods run only main's pushes (check.yml). binaries: no
+# screenshots, recordings or builds in the repo (AGENTS.md, "Binaries").
+# quick: the seconds-long checks that otherwise first fail on main, after the
+# merge (rustfmt, gitleaks, THIRD_PARTY.md), by the recipes check.yml runs.
 on:
   pull_request:
   push:
@@ -13,3 +16,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: scripts/check-binaries
+
+  # Not named like check.yml's jobs: chant matches main's required checks by
+  # name (docs/testing.md). Only pull requests; main runs these in check.yml.
+  quick:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks reads the pull request's commits.
+          fetch-depth: 0
+      - uses: taiki-e/install-action@v2
+        with:
+          # cargo-about: scripts/notices' version.
+          tool: just,cargo-about@0.9.2
+      - name: Formatting
+        # rust-toolchain.toml's toolchain, rustfmt only.
+        run: rustup component add rustfmt && just fmt-check
+      - name: No secrets in the pull request's commits
+        run: scripts/ci-gitleaks "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+      # The notices read the crates' sources (cargo metadata and the
+      # registry, no build) and web's node_modules (pnpm licenses): Node 24
+      # and pnpm 12, as on main (.github/actions/setup).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - name: web's packages
+        run: cd web && pnpm install --frozen-lockfile
+      - name: THIRD_PARTY.md is current
+        run: just notices-check
