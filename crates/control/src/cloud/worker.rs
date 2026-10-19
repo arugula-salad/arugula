@@ -1722,6 +1722,104 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_rebuild_waiting_for_a_machine_can_be_cancelled_until_it_is_sent() {
+        use reqwest::Method as M;
+        let (app, fake, server) = serve(Fake { rebuild_unavailable: u32::MAX, ..Default::default() }).await;
+        let created = cloud_workspace(&app);
+        run(&app, 0, 30).await;
+        let (base, routes) = routes(&app).await;
+        let rebuild = format!("{base}/workspaces/{}/rebuild", created.id);
+        assert_eq!(call(M::POST, &rebuild, "a", Some(json!({}))).await.1["rebuild_queued"], true);
+
+        // Another account's isn't found; the person's is cancelled, and the
+        // worker doesn't ask again.
+        assert_eq!(call(M::DELETE, &rebuild, "b", None).await.0, StatusCode::NOT_FOUND);
+        assert!(app.db.cloud_workspace("a", &created.id).unwrap().unwrap().rebuild_queued);
+        let (status, cancelled) = call(M::DELETE, &rebuild, "a", None).await;
+        assert_eq!(
+            (status, &cancelled["rebuild_queued"], &cancelled["status"]),
+            (StatusCode::OK, &json!(false), &json!("ready"))
+        );
+        let now = arugula_e2e::now_ms();
+        run(&app, now, 30).await;
+        assert_eq!(posts(&fake, "/api/workspaces/ws1/rebuild"), 1);
+        let (status, none) = call(M::DELETE, &rebuild, "a", None).await;
+        assert_eq!((status, &none["reason"]), (StatusCode::CONFLICT, &json!("not_waiting")));
+
+        // Taken by the worker to send: too late. Back in the queue after
+        // another 503, it can be cancelled again.
+        assert_eq!(call(M::POST, &rebuild, "a", Some(json!({}))).await.1["rebuild_queued"], true);
+        let (asked, taken) = app.db.claim_cloud_workspace_rebuild(&created.id).unwrap().unwrap();
+        assert!(!taken);
+        let (status, started) = call(M::DELETE, &rebuild, "a", None).await;
+        assert_eq!((status, &started["reason"]), (StatusCode::CONFLICT, &json!("rebuild_started")));
+        app.db.unclaim_cloud_workspace_rebuild(&created.id, &asked).unwrap();
+        assert_eq!(call(M::DELETE, &rebuild, "a", None).await.0, StatusCode::OK);
+
+        // One taken when control stopped may have gone: let go, not sent again.
+        assert_eq!(call(M::POST, &rebuild, "a", Some(json!({}))).await.1["rebuild_queued"], true);
+        app.db.claim_cloud_workspace_rebuild(&created.id).unwrap().unwrap();
+        let sent = posts(&fake, "/api/workspaces/ws1/rebuild");
+        run(&app, now + 30_000, 2).await;
+        assert_eq!(posts(&fake, "/api/workspaces/ws1/rebuild"), sent);
+        let shown = app.db.cloud_workspace("a", &created.id).unwrap().unwrap();
+        assert!(!shown.rebuild_queued);
+        assert!(shown.rebuild_error.unwrap().starts_with("Managoat didn't answer"));
+
+        // Sent by the worker once there's a machine: it has started.
+        assert_eq!(call(M::POST, &rebuild, "a", Some(json!({}))).await.1["rebuild_queued"], true);
+        fake.lock().unwrap().rebuild_unavailable = 0;
+        run(&app, now + 60_000, 1).await;
+        assert_eq!(app.db.cloud_workspace("a", &created.id).unwrap().unwrap().status, "provisioning");
+        let (status, started) = call(M::DELETE, &rebuild, "a", None).await;
+        assert_eq!((status, &started["reason"]), (StatusCode::CONFLICT, &json!("rebuild_started")));
+        routes.abort();
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn a_tab_starts_in_a_repository_once_it_is_built() {
+        use reqwest::Method as M;
+        let (app, _fake, server) = serve(Fake::default()).await;
+        let created = cloud_workspace(&app);
+        let (base, routes) = routes(&app).await;
+        let item = format!("{base}/workspaces/{}", created.id);
+        let open = |key: &str, cwd: &str| json!({"request_key":key,"agent_id":"curated_coding","runtime":"claude","model":"anthropic/test-model","cwd":cwd});
+        // Before the first build, the saved settings are what it's built from.
+        assert_eq!(call(M::POST, &format!("{item}/tabs"), "a", Some(open("one", "/work/api"))).await.0, StatusCode::OK);
+        run(&app, 0, 30).await;
+        assert!(app.db.cloud_workspace("a", &created.id).unwrap().unwrap().built_spec.is_some());
+
+        // A repository saved since isn't on the disk until a rebuild.
+        let mut spec = serde_json::to_value(&created.saved_spec).unwrap();
+        spec["repositories"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"url":"https://github.com/example/web","mount":"/work/web"}));
+        assert_eq!(save(&base, &created.id, "a", &spec).await.0, StatusCode::OK);
+        let (status, refused) = call(M::POST, &format!("{item}/tabs"), "a", Some(open("two", "/work/web"))).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{refused}");
+        for (key, cwd) in [("three", "/work/api/src"), ("four", "/home/sprite/notes")] {
+            assert_eq!(
+                call(M::POST, &format!("{item}/tabs"), "a", Some(open(key, cwd))).await.0,
+                StatusCode::OK,
+                "{cwd}"
+            );
+        }
+        let (status, rebuilt) = call(M::POST, &format!("{item}/rebuild"), "a", Some(json!({"interrupt":true}))).await;
+        assert_eq!((status, &rebuilt["status"]), (StatusCode::OK, &json!("provisioning")), "{rebuilt}");
+        run(&app, 30_000, 30).await;
+        let shown = app.db.cloud_workspace("a", &created.id).unwrap().unwrap();
+        assert_eq!(shown.built_spec.unwrap().repositories.len(), 3);
+        assert_eq!(
+            call(M::POST, &format!("{item}/tabs"), "a", Some(open("five", "/work/web"))).await.0,
+            StatusCode::OK
+        );
+        routes.abort();
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn retry_sets_a_failed_cloud_workspace_up_again() {
         use reqwest::Method as M;
         let (app, fake, server) = serve(Fake { failed_setup: true, ..Default::default() }).await;

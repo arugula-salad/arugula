@@ -533,7 +533,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/cloud/workspaces/{id}/tabs/{tab}/events", get(cloud::tabs::events))
         .route("/api/cloud/workspaces/{id}/tabs/{tab}/requests", get(cloud::tabs::requests))
         .route("/api/cloud/workspaces/{id}/tabs/{tab}/requests/{request}", post(cloud::tabs::answer))
-        .route("/api/cloud/workspaces/{id}/rebuild", post(cloud::rebuild::rebuild))
+        .route("/api/cloud/workspaces/{id}/rebuild", post(cloud::rebuild::rebuild).delete(cloud::rebuild::cancel))
         .route("/api/cloud/workspaces/{id}/retry", post(cloud::rebuild::retry))
         .route("/api/cloud/models", get(cloud::models))
         .route("/api/cloud/import", post(cloud::migration::import))

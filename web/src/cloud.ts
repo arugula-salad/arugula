@@ -113,9 +113,13 @@ export function cloudTabAttention(t: CloudTab): "needs_input" | "working" | "don
   return "idle";
 }
 
-/** The mounts a tab may start in: each repository's, else the home. */
-export const cloudWorkspaceMounts = (w: CloudWorkspace) =>
-  w.saved_spec.repositories.length ? w.saved_spec.repositories.map((r) => r.mount || "/home/sprite") : ["/home/sprite"];
+/** The mounts a tab may start in: each repository's on the machine, else
+ * the home. A repository saved since isn't on its disk until a rebuild, so
+ * these come from the built settings (the saved ones until the first build). */
+export const cloudWorkspaceMounts = (w: CloudWorkspace) => {
+  const built = w.built_spec ?? w.saved_spec;
+  return built.repositories.length ? built.repositories.map((r) => r.mount || "/home/sprite") : ["/home/sprite"];
+};
 
 export const cloudWorkspaces = {
   account: "", list: [] as CloudWorkspace[], tabs: new Map<string, CloudTab[]>(), loaded: false, error: "",

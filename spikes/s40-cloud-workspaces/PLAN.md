@@ -145,7 +145,9 @@ Still open, and nothing waits on either:
    platform inference set up on the Managoat account before it's listed.
 5. **A tab's `cwd`** defaults to the first repository's mount, and can be
    any other mount (which may be outside `/home/sprite`, #3011) or a path
-   under `/home/sprite`.
+   under `/home/sprite`. The mounts are the built settings' (`built_spec`;
+   the saved ones only before the first build): a repository saved since
+   isn't on the disk until a rebuild (changed by Jake).
 6. **Failed setup.** Managoat retries a failed setup only on the next
    prompt into one of the workspace's conversations. Until
    managoat/managoat#3013 lands, **Retry** on a failed workspace calls
@@ -267,12 +269,15 @@ on merge, and every UI PR has Before | After shots.
   `POST /api/workspaces/:id/rebuild` (`interrupt: true` for the interrupt
   choice), maps `409 turns_running` to the mid-turn refusal that names the
   tabs, maps `409 rebuild_in_progress` to "already setting up", and retries
-  `503` later. It shows progress through the status poll. **Retry** on a
+  `503` later. While it waits, the header and Settings say **Rebuild
+  waiting for a machine** with **Cancel**
+  (`DELETE /api/cloud/workspaces/{id}/rebuild`), which clears it unless the
+  worker has taken it to send (`409 rebuild_started`; changed by Jake). It
+  shows progress through the status poll. **Retry** on a
   failed workspace is the same call, without the warning. `built_spec` updates when the
   workspace reaches `ready`.
-- The live check waits for a Managoat release that carries #3018, because
-  managoat.com doesn't have rebuild until then. If #3009 has landed, show the
-  setup log.
+- The live check runs on hosted control after merge (Managoat v0.38.0 has
+  rebuild and retry). If #3009 has landed, show the setup log.
 
 Order: M114 → M115 → M116 → M117 → M118. M119 can run after M116, alongside
 M117 and M118. M120 follows M117.

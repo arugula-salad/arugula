@@ -22,7 +22,13 @@ use std::sync::Arc;
 
 /// A tab's `cwd` (decision 5): a repository's mount or a directory under
 /// one, which may be outside `/home/sprite`, or a directory under
-/// `/home/sprite` outside Managoat's config homes.
+/// `/home/sprite` outside Managoat's config homes. `spec` is `on_disk`'s.
+/// The settings the machine was built from: a repository saved since isn't
+/// on its disk until a rebuild. The saved ones until the first build.
+fn on_disk(w: &CloudWorkspace) -> &CloudWorkspaceSpec {
+    w.built_spec.as_ref().unwrap_or(&w.saved_spec)
+}
+
 fn cwd_allowed(spec: &CloudWorkspaceSpec, cwd: &str) -> bool {
     let segments: Vec<&str> = cwd.split('/').skip(1).collect();
     if !cwd.starts_with('/')
@@ -87,13 +93,14 @@ pub async fn open(
     if !cloud.models.iter().any(|m| m.runtime == input.runtime && m.model == input.model) {
         return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "that runtime and model aren't offered"));
     }
+    let built = on_disk(&w);
     let cwd = input.cwd.unwrap_or_else(|| {
-        w.saved_spec.repositories.first().map(|r| r.mount.clone()).unwrap_or_else(|| "/home/sprite".into())
+        built.repositories.first().map(|r| r.mount.clone()).unwrap_or_else(|| "/home/sprite".into())
     });
-    if !cwd_allowed(&w.saved_spec, &cwd) {
+    if !cwd_allowed(built, &cwd) {
         return Err(err(
             StatusCode::UNPROCESSABLE_ENTITY,
-            "cwd must be a repository's mount, or a directory under one or under /home/sprite",
+            "cwd must be the mount of a repository on the machine, or a directory under one or under /home/sprite (a repository saved since arrives with a rebuild)",
         ));
     }
     if input.prompt.as_ref().is_some_and(|p| p.trim().is_empty() || p.len() > 64_000) {
@@ -110,7 +117,7 @@ pub async fn open(
     }
     let props = json!({
         "agent_curated": agent.curated, "runtime": input.runtime, "model": input.model,
-        "cwd_is_mount": w.saved_spec.repositories.iter().any(|r| r.mount == cwd),
+        "cwd_is_mount": built.repositories.iter().any(|r| r.mount == cwd),
         "prompt": input.prompt.is_some(), "setting_up": w.status == "provisioning",
     });
     let spec = CloudTabSpec {
