@@ -5647,11 +5647,11 @@ limitations under the License.
 
 Used by:
 - [libghostty-vt 0.2.1](https://github.com/uzaaft/libghostty-rs)
-- [arugula 0.46.1](https://github.com/arugula-salad/arugula)
-- [arugula-control 0.46.1](https://github.com/arugula-salad/arugula)
+- [arugula 0.46.2](https://github.com/arugula-salad/arugula)
+- [arugula-control 0.46.2](https://github.com/arugula-salad/arugula)
 - [arugula-control-wire 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-core 0.0.0](https://github.com/arugula-salad/arugula)
-- [arugulad 0.46.1](https://github.com/arugula-salad/arugula)
+- [arugulad 0.46.2](https://github.com/arugula-salad/arugula)
 - [arugula-e2e 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-mux 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-proto 0.0.0](https://github.com/arugula-salad/arugula)
