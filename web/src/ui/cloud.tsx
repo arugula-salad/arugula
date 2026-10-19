@@ -140,36 +140,59 @@ function SecretEditor({ names, refresh }: { names: string[]; refresh: () => Prom
     {error && <p role="alert">{error}</p>}{names.map((n) => <p key={n}>{n} <button onClick={async () => { try { await api(`secrets/${encodeURIComponent(n)}`, "DELETE"); await refresh(); } catch (e) { setError((e as Error).message); } }}>Remove</button></p>)}</>;
 }
 
-export function RunDetails({ id, back }: { id: string; back?: () => void }) {
-  const [run, setRun] = useState<Run | null>(null); const [events, setEvents] = useState<Event[]>([]); const [error, setError] = useState(""); const [answered, setAnswered] = useState<string[]>([]); const [pending, setPending] = useState<string[]>([]);
+/** A cloud conversation's record, transcript and pending requests, polled
+ * from control: a run's (`runs/<id>`) or a Cloud workspace tab's
+ * (`workspaces/<id>/tabs/<tab>`). Polling stops once `ended` says so and
+ * the transcript is read to its end. */
+export function useCloudConversation<T>(path: string, ended: (item: T) => boolean) {
+  const [item, setItem] = useState<T | null>(null); const [events, setEvents] = useState<Event[]>([]); const [error, setError] = useState(""); const [answered, setAnswered] = useState<string[]>([]); const [pending, setPending] = useState<string[]>([]);
   const cursor = useRef(0);
-  const [repeat, setRepeat] = useState(false);
-  const scroller = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
-  useLayoutEffect(() => { if (scroller.current && stick.current) scroller.current.scrollTop = scroller.current.scrollHeight; });
   useEffect(() => {
     let active = true, timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const [r, page, requests] = await Promise.all([api<Run>(`runs/${id}`), api<{ events: Event[] }>(`runs/${id}/events?after=${cursor.current}`), api<{ requests: Block[] }>(`runs/${id}/requests`)]);
+        const [r, page, requests] = await Promise.all([api<T>(path), api<{ events: Event[] }>(`${path}/events?after=${cursor.current}`), api<{ requests: Block[] }>(`${path}/requests`)]);
         if (!active) return;
-        setRun(r); setPending(requests.requests.flatMap((r) => r.request_id ? [r.request_id] : []));
+        setItem(r); setPending(requests.requests.flatMap((r) => r.request_id ? [r.request_id] : []));
         if (page.events.length) { cursor.current = Math.max(...page.events.map((e) => e.id)); setEvents((old) => [...old, ...page.events]); }
-        if (!terminal(r) || page.events.length === 1000) timer = setTimeout(() => void poll(), page.events.length === 1000 ? 0 : 2000);
+        if (!ended(r) || page.events.length === 1000) timer = setTimeout(() => void poll(), page.events.length === 1000 ? 0 : 2000);
       } catch (e) { if (active) { setError((e as Error).message); timer = setTimeout(() => void poll(), 5000); } }
     };
     void poll(); return () => { active = false; clearTimeout(timer); };
-  }, [id]);
-  const answer = async (request: string, body: unknown) => { await api(`runs/${id}/requests/${encodeURIComponent(request)}`, "POST", body); setAnswered((old) => [...old, request]); };
+  }, [path]);
+  const answer = async (request: string, body: unknown) => { await api(`${path}/requests/${encodeURIComponent(request)}`, "POST", body); setAnswered((old) => [...old, request]); };
+  return { item, events, error, setError, pending, answered, answer };
+}
+
+/** The transcript and its approvals, shared by a run and a Cloud workspace
+ * tab: the last failure, then each block, with permission and question
+ * requests answerable while they're pending and `ended` is false. */
+export function CloudTranscript({ lead, events, pending, answered, ended, answer, setError }: {
+  lead?: string; events: Event[]; pending: string[]; answered: string[]; ended: boolean;
+  answer: (request: string, body: unknown) => Promise<void>; setError: (error: string) => void;
+}) {
+  const scroller = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
+  useLayoutEffect(() => { if (scroller.current && stick.current) scroller.current.scrollTop = scroller.current.scrollHeight; });
+  const open = (request: string) => !ended && pending.includes(request) && !answered.includes(request);
+  return <>
+    {events.filter((event) => event.state === "failed").slice(-1).map((event) => <p key={event.id} role="alert" class="control-error">{eventFailure(event)}</p>)}
+    <div class="agent-log cloud-transcript" ref={scroller} onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>{lead !== undefined && <div class="agent-user">{lead}</div>}{events.flatMap((event) => (event.blocks ?? []).map((block, index) => <div key={`${event.id}-${index}`}>
+      {block.kind === "permission_request" && block.request_id ? <div class="agent-perm" role="alertdialog" aria-label={block.summary ?? "Agent approval"}><pre class="agent-perm-cmd">{block.summary}</pre>{block.options?.map((option) => <button key={option.optionId} disabled={!open(block.request_id!)} onClick={() => void answer(block.request_id!, { option_id: option.optionId }).catch((e: Error) => setError(e.message))}>{option.name ?? option.optionId}</button>)}</div>
+        : block.kind === "elicitation_request" && block.request_id ? <Question block={block} disabled={!open(block.request_id)} answer={(body) => answer(block.request_id!, body)} />
+        : block.kind === "prompt" && typeof block.body === "string" ? <div class="agent-user">{block.body}</div>
+        : <AgentMessage text={typeof block.body === "string" ? block.body : block.body ? JSON.stringify(block.body, null, 2) : block.summary ?? ""} thought={block.kind === "thinking" || block.kind === "thought"} />}
+    </div>))}</div>
+  </>;
+}
+
+export function RunDetails({ id, back }: { id: string; back?: () => void }) {
+  const { item: run, events, error, setError, pending, answered, answer } = useCloudConversation<Run>(`runs/${id}`, terminal);
+  const [repeat, setRepeat] = useState(false);
   return <div class="agent cloud-agent" data-cloud-pane={id}>{back && <button onClick={back}>Back to runs</button>}{error && <p role="alert">{error}</p>}{run && <>
     <div class="agent-bar"><span class="agent-status">{run.state === "needs_input" ? "Needs you" : run.state.replaceAll("_", " ")}</span><span class="agent-name">{run.spec.agent.name}</span><span class="host-tag">Cloud</span><span class="agent-spacer" />{terminal(run) && <button onClick={() => setRepeat(true)}>Run again</button>}</div><div class="agent-note">{run.spec.repository} · {run.spec.git_ref || "default branch"} · Fresh checkout</div>
     {!terminal(run) && <button onClick={() => void api(`runs/${id}/cancel`, "POST", {}).catch((e: Error) => setError(e.message))}>Cancel run</button>}
-    {events.filter((event) => event.state === "failed").slice(-1).map((event) => <p key={event.id} role="alert" class="control-error">{eventFailure(event)}</p>)}
-    <div class="agent-log cloud-transcript" ref={scroller} onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}><div class="agent-user">{run.spec.prompt}</div>{events.flatMap((event) => (event.blocks ?? []).map((block, index) => <div key={`${event.id}-${index}`}>
-      {block.kind === "permission_request" && block.request_id ? <div class="agent-perm" role="alertdialog" aria-label={block.summary ?? "Agent approval"}><pre class="agent-perm-cmd">{block.summary}</pre>{block.options?.map((option) => <button key={option.optionId} disabled={terminal(run) || !pending.includes(block.request_id!) || answered.includes(block.request_id!)} onClick={() => void answer(block.request_id!, { option_id: option.optionId }).catch((e: Error) => setError(e.message))}>{option.name ?? option.optionId}</button>)}</div>
-        : block.kind === "elicitation_request" && block.request_id ? <Question block={block} disabled={terminal(run) || !pending.includes(block.request_id) || answered.includes(block.request_id)} answer={(body) => answer(block.request_id!, body)} />
-        : <AgentMessage text={typeof block.body === "string" ? block.body : block.body ? JSON.stringify(block.body, null, 2) : block.summary ?? ""} thought={block.kind === "thinking" || block.kind === "thought"} />}
-    </div>))}</div>
+    <CloudTranscript lead={run.spec.prompt} events={events} pending={pending} answered={answered} ended={terminal(run)} answer={answer} setError={setError} />
     {run.result && <><h3>Saved results</h3><button onClick={() => { const url = URL.createObjectURL(new Blob([JSON.stringify({ run, events }, null, 2)], { type: "application/json" })); const a = document.createElement("a"); a.href = url; a.download = `${id}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}>Download results and transcript</button><SavedResults result={run.result} /></>}
   </>}{repeat && run && <div class="prompt-backdrop" role="dialog" aria-label="Run again"><div class="prompt cloud-launch"><h2>Run again</h2><p>This starts a fresh checkout. Saved changes from this run are not applied automatically.</p><CloudPanel launchOnly repeat={run} close={() => setRepeat(false)} notify={async () => "off"} /><button onClick={() => setRepeat(false)}>Cancel</button></div></div>}</div>;
 }

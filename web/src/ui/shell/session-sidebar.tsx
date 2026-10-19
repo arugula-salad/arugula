@@ -5,7 +5,8 @@
 
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { cloudPanes, cloudRoute } from "../../cloud";
+import { cloudPanes, cloudRoute, cloudWorkspaceRoute } from "../../cloud";
+import { CloudWorkspacesGroup } from "../cloud-workspaces";
 import { paneIds, type Client } from "../../client";
 import { directory } from "../../hosts";
 import type { Attention, PaneInfo, Session, SessionId, TabId } from "../../proto";
@@ -122,7 +123,8 @@ export function SessionSidebar({
   // their panes start and stop working.
   const [hiPick, setHi] = useState<SessionId | null>(null);
   const search = useRef<HTMLInputElement>(null);
-  const state = client.state!;
+  // S40: with no machine shown, only the Cloud workspaces.
+  const state = client.state;
   // Re-render each minute too, for "2m ago".
   const [, tick] = useState(0);
   useEffect(() => {
@@ -132,7 +134,7 @@ export function SessionSidebar({
   useLayoutEffect(() => {
     if (open && takeSearchFocus()) search.current?.focus();
   });
-  const all = state.sessions.map((s) => summarize(client, s));
+  const all = state ? state.sessions.map((s) => summarize(client, s)) : [];
   const q = query.trim().toLowerCase();
   const shown = q ? all.filter((r) => r.session.name.toLowerCase().includes(q) || (r.context ?? "").toLowerCase().includes(q)) : all;
   // In the order they're drawn, for the arrow keys.
@@ -174,10 +176,11 @@ export function SessionSidebar({
   };
   const host = directory.current || "this machine";
   // New sessions are the machine owner's (a guest's would be refused).
-  const owner = !state.roles;
+  const owner = !!state && !state.roles;
   const offline = offlineWhy(client);
   return (
-    <aside id="ws-session-sidebar" class={narrow ? "ws-sidebar overlay" : "ws-sidebar"} style={{ width: `${width}px` }} aria-label={`Sessions on ${host}`} data-session-sidebar>
+    <aside id="ws-session-sidebar" class={narrow ? "ws-sidebar overlay" : "ws-sidebar"} style={{ width: `${width}px` }} aria-label={state ? `Sessions on ${host}` : "Cloud workspaces"} data-session-sidebar>
+      {state && <>
       <div class="ws-sidebar-head">
         <h2>Sessions</h2>
         <span class="ws-sidebar-count">{all.length}</span>
@@ -239,7 +242,7 @@ export function SessionSidebar({
                   key={r.session.id}
                   client={client}
                   row={r}
-                  current={r.session.id === client.session && !cloudRoute()}
+                  current={r.session.id === client.session && !cloudRoute() && !cloudWorkspaceRoute()}
                   hi={!!q && r.session.id === hiId}
                   renaming={renaming?.kind === "session" && renaming.id === r.session.id}
                   setRenaming={setRenaming}
@@ -262,6 +265,8 @@ export function SessionSidebar({
           </div>
         )}
       </div>
+      </>}
+      <CloudWorkspacesGroup enabled={cloudPanes.enabled} />
       {!narrow && <Resizer width={width} />}
     </aside>
   );

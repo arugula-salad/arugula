@@ -63,6 +63,8 @@ export interface FleetHost extends HostRef {
 /** One pane of the merged list. */
 export interface FleetPane {
   cloudRun?: string;
+  /** A Cloud workspace's tab (S40, M116): its workspace and tab ids. */
+  cloudTab?: { workspace: string; tab: string };
   /** `host:pane`, unique across the fleet. */
   key: string;
   host: string;
