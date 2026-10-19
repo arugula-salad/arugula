@@ -1,5 +1,5 @@
 import { cloudPanes, useCloudPanes } from "../cloud";
-import { CloudPanel } from "./cloud";
+import { CloudAgentLaunch } from "./cloud-launch";
 // Starting an agent block: which agent, where it runs, and the first prompt.
 // Opened from a pane's menu and the phone's sheet.
 
@@ -59,7 +59,7 @@ type Remembered = { kind?: Kind; acp?: string; model?: string };
 const remembered = (): Remembered => {
   try {
     const last = JSON.parse(localStorage.getItem("arugula.agent") ?? "{}") as Omit<Remembered, "kind"> & { kind?: Kind | "fountain" | "managoat" };
-    // Direct cloud launch choices now live in the account panel.
+    // Cloud agents are chosen under Run on: Cloud.
     return { ...last, kind: last.kind === "fountain" || last.kind === "managoat" ? "claude" : last.kind };
   } catch {
     return {};
@@ -109,7 +109,8 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
   };
 
   const executionChoice = <label>Run on<select aria-label="Run on" value={execution} onChange={(e) => setExecution(e.currentTarget.value)}><option value="local" disabled={!client.state}>This machine</option>{cloudPanes.enabled && <option value="cloud">Cloud</option>}</select></label>;
-  if (execution === "cloud") return <div class="prompt-backdrop" role="dialog" aria-label="Start an agent" onKeyDown={(e) => e.key === "Escape" && close()}><div class="prompt agent-dialog cloud-launch"><h2>Start an agent</h2>{executionChoice}<CloudPanel launchOnly close={close} notify={async () => "off"} /><button onClick={close}>Cancel</button></div></div>;
+  // S40: a cloud agent opens as a tab in a Cloud workspace.
+  if (execution === "cloud") return <CloudAgentLaunch close={close} choice={executionChoice} />;
   return (
     <div class="prompt-backdrop" role="dialog" aria-label="Start an agent" onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <form

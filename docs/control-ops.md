@@ -273,8 +273,8 @@ What's in them:
   `relay refused` (account limit or relay full).
 - **Paid things**: `checkout started`, `upgraded`, `subscription changed`,
   `sandbox created`, `sandbox failed`, `sandbox deleted` (minutes),
-  `cloud agent created/updated/deleted/imported`, `cloud run started`,
-  `cloud run finished` (outcome, minutes), `cloud run cancelled`,
+  `cloud agent created/updated/deleted/imported`, `cloud run stopped`
+  (outcome; a run left over from before runs were retired),
   `cloud request answered`, `cloud secret saved/deleted`,
   `cloud workspace created` (counts of repositories, secrets, packages and
   env vars), `cloud workspace settings saved` (how many changes a rebuild

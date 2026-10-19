@@ -1,44 +1,90 @@
 # Managed cloud agents
 
-Arugula control owns the Managoat integration. Users open **Cloud agents**
-in their Arugula account; they do not need a Managoat account, login, or
-model-provider credential. Managoat is an implementation dependency of
-control, not a connection configured on each user's machine.
+Arugula control owns the Managoat integration. Users open **Cloud
+workspaces** and **Cloud agents** in their Arugula account; they do not
+need a Managoat account, login, or model-provider credential. Managoat is
+an implementation dependency of control, not a connection configured on
+each user's machine.
 
-## Running an agent
+## Cloud workspaces
 
-Open **New agent**, select **Cloud** under **Run on**, and choose a curated
-coding or review agent, or save a custom agent with
-instructions, tools, skills, and selected secrets. Supply a repository,
-revision, and prompt. Each run creates a fresh environment and checkout.
-Local uncommitted work is not uploaded automatically.
+A Cloud workspace is a session in the shell backed by a Managoat
+workspace: one machine in the cloud with your repositories on it, set up
+once. Its tabs are agent conversations on that machine, and they share
+its disk. Control keeps Cloud workspaces and their tabs; nothing about
+them is remembered in the browser.
 
-Cloud runs open as agent panes beside machine tabs, with a Cloud indicator.
-They also appear in the swarm; a waiting run opens its approval in the pane.
-Runs continue when the browser disconnects. Open panes return after reload;
-closing a pane does not cancel its run. Reopen Cloud agents to find history,
-definitions, and secrets. Answer approvals, cancel a run, and download saved
-results and transcripts from the pane. **Run again** starts a fresh checkout
-with the previous task prefilled; it does not apply earlier results automatically. Approval requests wait within the run's deadline;
-the deadline does not pause while waiting for a person. Browser push
-notifications require an existing notification subscription.
+**Making one.** **+ Cloud workspace** in the sidebar (or **New Cloud
+workspace** in the list) takes a name, up to ten repositories (each an
+HTTPS URL with an optional branch or tag and a credential from your
+secrets), apt and npm packages, a setup script, and the secrets its agents
+may use. A repository is cloned to `/home/sprite/<repository name>` unless
+it names another absolute mount. For each Cloud workspace control makes
+its own Managoat environment (what the machine is built from), vault (its
+secrets) and workspace, named after the Cloud workspace's id. Nothing is
+shared between Cloud workspaces.
 
-Control saves the transcript and repository changes before terminating the
-conversation and deleting its temporary agent and environment. If changes
-cannot be preserved completely (for example, a truncated diff or tracked
-binary changes), the run remains in recovery and retains its environment
-for operator recovery. A destroyed or inaccessible sandbox can prevent
-file recovery; the saved result explicitly reports that limitation.
+**Its state** shows in the sidebar and the header: *Setting up* while
+packages install, repositories clone and the setup script runs; *Ready*;
+*Parked* while Managoat has put an idle machine to sleep (a prompt to any
+tab wakes it); *Failed*, with Managoat's failing step and the end of what
+it printed; and *Rebuild needed* when what it was built from has changed
+since. Control polls the workspace for these; a restart doesn't lose them.
+
+**Tabs.** **+ Agent** opens a tab: a cloud agent (curated, or one of
+yours), a runtime and model from the list control offers, the directory it
+starts in (a repository's mount by default, or another directory under
+one, or under `/home/sprite`), and an optional first prompt. A tab opened
+while the Cloud workspace is setting up keeps its first prompt until setup
+is done, and says so. Each tab gets its own Managoat agent, made from the
+agent definition as it was when the tab opened, with every tool call
+asking first. Approvals and questions show in the tab, in the bell's
+drawer and the swarm, and as a push. Closing a tab ends its conversation
+and deletes its agent.
+
+**New agent → Run on: Cloud** opens an agent as a tab in one of your Cloud
+workspaces (the one shown, or the newest), or in a new one made from the
+repository you give it.
+
+**Delete** (in the header) names the tabs it ends, then removes the
+workspace, the vault and the environment, in that order, surviving a
+restart part way. Everything on the machine's disk goes: commit and push
+what you want to keep first.
+
+Control sets no limits on Cloud workspaces: no count, no live-turn cap,
+no turn deadline and no idle delete. Managoat parks idle machines.
+
+## Secrets and privacy
 
 Cloud prompts, results, and selected secrets are processed by control and
 its backend. They are separate from Arugula's encrypted terminal relay.
-Secrets are write-only in the UI and account-bound encrypted in the database.
-A run snapshots the selected secrets, so editing a secret does not change
-an already queued run. Model-provider credentials belong to the platform.
-Account deletion waits for active cloud runs to finish cleanup (including
-operator recovery when needed), then erases the account's cloud records. It
-starts deleting the account's Cloud workspaces (their Managoat workspace,
-vault and environment) and refuses until that's done.
+Secrets are write-only in the UI and encrypted, bound to the account, in
+control's database. The secrets a Cloud workspace names (its repository
+credentials and the others it lists) are copied to its vault when it's
+made. Model-provider credentials belong to the platform.
+
+Account deletion starts deleting the account's Cloud workspaces (their
+tabs' agents, then their Managoat workspace, vault and environment) and
+refuses until that's done, and until any leftover cloud run has finished
+stopping. Then it erases the account's cloud records.
+
+## Past runs
+
+Cloud runs (one agent in a fresh checkout per run, with its changes saved
+at the end) were retired for Cloud workspaces (S40, #1076). Nothing starts,
+cancels or answers a run any more. Past runs stay readable: **Past runs**
+in Cloud agents opens each one read only, with its transcript, its saved
+changes, and **Download results and transcript**. Panes of runs that a
+browser remembered are forgotten on load.
+
+A run that a deploy finds unfinished is stopped: a create whose response
+was lost is found first, the transcript is read to its end, then the
+conversation is ended and its agent and environment are deleted. It reads
+*cancelled*, and says why. A run that was in recovery because its changes
+couldn't be saved completely (a truncated diff or binary files) is left
+as it is, with its environment, for an operator: control logs it once a
+day. Inspect it before removing its provider resources by hand; that
+environment may hold the only copy of a user's changes.
 
 ## Existing Managoat users
 
@@ -70,36 +116,35 @@ Configure control through deployment secrets and environment variables:
 | `ARUGULA_MANAGOAT_API_KEY` | Dedicated platform account credential; enables the worker. |
 | `ARUGULA_CLOUD_SECRET_KEY` | 32 random bytes encoded as 64 hex characters, used to encrypt user secrets. Back up separately from the database. |
 | `ARUGULA_CLOUD_ACCOUNTS` | Comma-separated Arugula account IDs admitted to the beta. An empty list admits nobody; `*` admits everyone. |
-| `ARUGULA_CLOUD_MODEL` | Model supported by the platform account; required unless `ARUGULA_CLOUD_MODELS` is set. |
-| `ARUGULA_CLOUD_RUNTIME` | `claude` (default), `codex`, or `gemini`; must match the model prefix. |
-| `ARUGULA_CLOUD_MODELS` | What a Cloud workspace's tabs may run on: comma-separated `runtime:model` pairs (for example `claude:anthropic/<model>,codex:openai/<model>`), the first the default. Each model must match its runtime's prefix, and each pair needs its platform inference set up on the backend account. Unset, it is the one pair `ARUGULA_CLOUD_RUNTIME`:`ARUGULA_CLOUD_MODEL`. Runs use `ARUGULA_CLOUD_MODEL`, or the first pair when that is unset. |
-| `ARUGULA_CLOUD_DAILY_RUNS` | Per-account daily admission cap; default 10. |
-| `ARUGULA_CLOUD_CONCURRENT_RUNS` | Per-account concurrent admission cap; default 2. |
-| `ARUGULA_CLOUD_RUN_MINUTES` | Run deadline including approval waits; default 30. |
+| `ARUGULA_CLOUD_MODELS` | What tabs may run on: comma-separated `runtime:model` pairs (for example `claude:anthropic/<model>,codex:openai/<model>`), the first the default. Each model must match its runtime's prefix (`claude` takes `anthropic/…`, `codex` `openai/…`, `gemini` `google/…`), and each pair needs its platform inference set up on the backend account. |
+| `ARUGULA_CLOUD_MODEL` | With `ARUGULA_CLOUD_MODELS` unset, the one model tabs run on; required then. |
+| `ARUGULA_CLOUD_RUNTIME` | With `ARUGULA_CLOUD_MODELS` unset, that model's runtime: `claude` (default), `codex`, or `gemini`. |
 
-These are run and time caps, not a dollar spending limit. Platform inference
-must be configured on the backend account before admitting users. Do not
-put credentials in client builds, repository files, chat, or command output.
-Losing the encryption key prevents recovery of stored user secrets.
+`ARUGULA_CLOUD_DAILY_RUNS`, `ARUGULA_CLOUD_CONCURRENT_RUNS` and
+`ARUGULA_CLOUD_RUN_MINUTES` were the run caps. They still parse, so an old
+deploy starts, and only log that they do nothing.
+
+There is no dollar spending limit, and control caps nothing. Platform
+inference must be configured on the backend account before admitting
+users. Do not put credentials in client builds, repository files, chat, or
+command output. Losing the encryption key prevents recovery of stored user
+secrets.
 
 Worker stages and provider resource IDs are persisted in control's SQLite
-database. Workers lease runs, reconcile uncertain creation responses, and
-resume after a process restart. Preserve the database and encryption key
-across deployments. Inspect runs in recovery before manually removing
-provider resources; those environments may hold the only remaining copy
-of a user's changes.
+database (`cloud_jobs`, one row per Cloud workspace, tab, or unfinished
+past run). Each stage is journalled before control contacts Managoat, so
+workers lease jobs, find a create whose response was lost instead of
+repeating it, and resume after a process restart. Preserve the database
+and encryption key across deployments.
 
 ## Verification
 
-The control cloud tests cover account isolation, limits, encrypted secrets,
-imports, durable execution, approvals, result capture, and cleanup. The
-cloud browser spec exercises the UI against a real control process and a
-fake provider. Daemon regressions verify that saved Managoat transcripts
-restore without starting, and that the old routes and blocks are refused.
-
-The ignored `cloud::worker::tests::live_subscription_run` test exercises a
-real backend account. Set `ARUGULA_MANAGOAT_API_KEY`, `ARUGULA_CLOUD_MODEL`,
-`ARUGULA_CLOUD_RUNTIME`, and `ARUGULA_LIVE_TEST_DB` through a private test
-environment. Run it through the repository's suite lock. Inspect any
-requested approval before answering it; retain the test database to resume
-or recover a partially completed run.
+The control cloud tests (`cargo test -p arugula-control cloud`) drive the
+worker against an in-process fake Managoat. They cover account isolation,
+encrypted secrets, imports, Cloud workspace setup, failure and delete
+(including lost create responses and a restart part way), tabs side by
+side, approvals and pushes, the retired run routes, and stopping a
+leftover run. The cloud browser spec (`web/playwright.cloud.config.ts`)
+runs the UI against a real control process and a fake provider. Daemon
+regressions verify that saved Managoat transcripts restore without
+starting, and that the old routes and blocks are refused.

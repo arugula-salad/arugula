@@ -158,7 +158,8 @@ struct Args {
     /// Limited beta allowlist; empty disables access for all accounts.
     #[arg(long, env = "ARUGULA_CLOUD_ACCOUNTS", value_delimiter = ',')]
     cloud_accounts: Vec<String>,
-    /// Platform-funded model, required when cloud execution is configured.
+    /// Platform-funded model, required when cloud execution is configured
+    /// and ARUGULA_CLOUD_MODELS is unset.
     #[arg(long, env = "ARUGULA_CLOUD_MODEL")]
     cloud_model: Option<String>,
     #[arg(long, env = "ARUGULA_CLOUD_RUNTIME", default_value = "claude", value_parser = ["claude", "codex", "gemini"])]
@@ -168,12 +169,14 @@ struct Args {
     /// ARUGULA_CLOUD_RUNTIME:ARUGULA_CLOUD_MODEL.
     #[arg(long, env = "ARUGULA_CLOUD_MODELS", value_delimiter = ',')]
     cloud_models: Vec<String>,
-    #[arg(long, env = "ARUGULA_CLOUD_DAILY_RUNS", default_value_t = 10)]
-    cloud_daily_runs: u64,
-    #[arg(long, env = "ARUGULA_CLOUD_CONCURRENT_RUNS", default_value_t = 2)]
-    cloud_concurrent_runs: u64,
-    #[arg(long, env = "ARUGULA_CLOUD_RUN_MINUTES", default_value_t = 30)]
-    cloud_run_minutes: u64,
+    /// Retired with Cloud runs (S40, decision 10): still parsed, so an old
+    /// deploy starts, and do nothing but say so.
+    #[arg(long, env = "ARUGULA_CLOUD_DAILY_RUNS", hide = true)]
+    cloud_daily_runs: Option<String>,
+    #[arg(long, env = "ARUGULA_CLOUD_CONCURRENT_RUNS", hide = true)]
+    cloud_concurrent_runs: Option<String>,
+    #[arg(long, env = "ARUGULA_CLOUD_RUN_MINUTES", hide = true)]
+    cloud_run_minutes: Option<String>,
 
     /// Billing (M22): a Stripe secret key turns it on (STRIPE_SECRET_KEY);
     /// webhooks are checked with STRIPE_WEBHOOK_SECRET.
@@ -508,11 +511,11 @@ pub fn router(app: Arc<App>) -> Router {
         .route(wire::PUSH, post(push::daemon_send))
         .route("/api/cloud/secrets", get(cloud::list_secrets))
         .route("/api/cloud/secrets/{name}", axum::routing::put(cloud::put_secret).delete(cloud::delete_secret))
-        .route("/api/cloud/runs", get(cloud::runs).post(cloud::start_run))
+        // Past runs (S40, decision 10): read only. Nothing starts, cancels or
+        // answers a run any more.
+        .route("/api/cloud/runs", get(cloud::runs))
         .route("/api/cloud/runs/{id}", get(cloud::run))
         .route("/api/cloud/runs/{id}/requests", get(cloud::requests))
-        .route("/api/cloud/runs/{id}/requests/{request}", post(cloud::answer))
-        .route("/api/cloud/runs/{id}/cancel", post(cloud::cancel_run))
         .route("/api/cloud/runs/{id}/events", get(cloud::events))
         .route("/api/cloud/workspaces", get(cloud::workspaces::list).post(cloud::workspaces::create))
         .route(
@@ -868,28 +871,22 @@ async fn run() -> anyhow::Result<()> {
         Some(d) => info!(domain = %d, "blocks served at b-<key>.{d}"),
         None => info!("no ARUGULA_CONTROL_BLOCK_DOMAIN: blocks aren't served through control"),
     }
-    let cloud = match a.cloud_provider_key.filter(|k| !k.is_empty()) {
-        Some(key) => {
-            let (model, runtime, models) = cloud::configured_models(a.cloud_model, a.cloud_runtime, &a.cloud_models)?;
-            let duration_ms = a
-                .cloud_run_minutes
-                .checked_mul(60_000)
-                .filter(|m| *m > 0)
-                .context("cloud run duration must be positive and finite")?;
-            Some(cloud::Cloud {
-                secret_cipher: a.cloud_secret_key.as_deref().map(cloud::secrets::SecretCipher::new).transpose()?,
-                provider: cloud::provider::Provider::new(&a.cloud_provider_url, key)?,
-                accounts: a.cloud_accounts,
-                model,
-                runtime,
-                models,
-                limits: db::cloud::RunLimits {
-                    daily_runs: a.cloud_daily_runs,
-                    concurrent_runs: a.cloud_concurrent_runs,
-                    duration_ms,
-                },
-            })
+    for (name, set) in [
+        ("ARUGULA_CLOUD_DAILY_RUNS", a.cloud_daily_runs.is_some()),
+        ("ARUGULA_CLOUD_CONCURRENT_RUNS", a.cloud_concurrent_runs.is_some()),
+        ("ARUGULA_CLOUD_RUN_MINUTES", a.cloud_run_minutes.is_some()),
+    ] {
+        if set {
+            tracing::warn!("{name} does nothing: Cloud runs were retired, and Cloud workspaces have no caps");
         }
+    }
+    let cloud = match a.cloud_provider_key.filter(|k| !k.is_empty()) {
+        Some(key) => Some(cloud::Cloud {
+            secret_cipher: a.cloud_secret_key.as_deref().map(cloud::secrets::SecretCipher::new).transpose()?,
+            provider: cloud::provider::Provider::new(&a.cloud_provider_url, key)?,
+            accounts: a.cloud_accounts,
+            models: cloud::configured_models(a.cloud_model, a.cloud_runtime, &a.cloud_models)?,
+        }),
         None => None,
     };
     let app = Arc::new(App {
@@ -1022,6 +1019,25 @@ mod tests {
     fn args() {
         use clap::CommandFactory;
         super::Args::command().debug_assert();
+    }
+
+    #[test]
+    fn retired_run_caps_still_parse() {
+        use clap::Parser;
+        let a = super::Args::try_parse_from([
+            "arugula-control",
+            "--cloud-daily-runs",
+            "10",
+            "--cloud-concurrent-runs",
+            "2",
+            "--cloud-run-minutes",
+            "30",
+        ])
+        .unwrap();
+        assert_eq!(a.cloud_daily_runs.as_deref(), Some("10"));
+        assert!(a.cloud_concurrent_runs.is_some() && a.cloud_run_minutes.is_some());
+        let help = <super::Args as clap::CommandFactory>::command().render_help().to_string();
+        assert!(!help.contains("daily-runs"), "{help}");
     }
 
     #[test]

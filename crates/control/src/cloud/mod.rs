@@ -14,7 +14,7 @@ pub mod workspaces;
 use crate::{
     ApiError, App,
     auth::Session,
-    db::cloud::{AgentDefinition, CloudAgent, RunLimits},
+    db::cloud::{AgentDefinition, CloudAgent},
     err,
 };
 use anyhow::{Result, bail};
@@ -77,38 +77,29 @@ pub fn parse_models(pairs: &[String]) -> Result<Vec<CloudModel>> {
     Ok(models)
 }
 
-/// The run model and runtime, and the tabs' list: `ARUGULA_CLOUD_MODELS`,
-/// or else the one pair `ARUGULA_CLOUD_RUNTIME`:`ARUGULA_CLOUD_MODEL`, so a
-/// deploy from before the list keeps working. Runs take
-/// `ARUGULA_CLOUD_MODEL`, or the first listed.
-pub fn configured_models(
-    model: Option<String>,
-    runtime: String,
-    pairs: &[String],
-) -> Result<(String, String, Vec<CloudModel>)> {
+/// What tabs may run on: `ARUGULA_CLOUD_MODELS`, or else the one pair
+/// `ARUGULA_CLOUD_RUNTIME`:`ARUGULA_CLOUD_MODEL`, so a deploy from before
+/// the list keeps working. With the list set, the other two are unused.
+pub fn configured_models(model: Option<String>, runtime: String, pairs: &[String]) -> Result<Vec<CloudModel>> {
     let models = parse_models(pairs)?;
-    let (model, runtime) = match (model.filter(|m| !m.trim().is_empty()), models.first()) {
-        (Some(model), _) => (model, runtime),
-        (None, Some(first)) => (first.model.clone(), first.runtime.clone()),
-        (None, None) => bail!("ARUGULA_CLOUD_MODEL or ARUGULA_CLOUD_MODELS is required for cloud agents"),
+    if !models.is_empty() {
+        return Ok(models);
+    }
+    let Some(model) = model.filter(|m| !m.trim().is_empty()) else {
+        bail!("ARUGULA_CLOUD_MODEL or ARUGULA_CLOUD_MODELS is required for cloud agents");
     };
     if !model_fits_runtime(&runtime, &model) {
         bail!("cloud model must match the configured runtime");
     }
-    let models =
-        if models.is_empty() { vec![CloudModel { runtime: runtime.clone(), model: model.clone() }] } else { models };
-    Ok((model, runtime, models))
+    Ok(vec![CloudModel { runtime, model }])
 }
 
 pub struct Cloud {
     pub provider: provider::Provider,
     pub secret_cipher: Option<secrets::SecretCipher>,
     pub accounts: Vec<String>,
-    pub model: String,
-    pub runtime: String,
     /// What a tab may run on; never empty.
     pub models: Vec<CloudModel>,
-    pub limits: RunLimits,
 }
 
 fn enabled<'a>(app: &'a App, account: &str) -> Result<&'a Cloud, ApiError> {
@@ -130,11 +121,10 @@ fn curated_agents() -> Vec<CloudAgent> {
 }
 
 pub async fn catalog(State(app): State<Arc<App>>, session: Session) -> Result<Json<Value>, ApiError> {
-    let cloud = enabled(&app, &session.account)?;
+    enabled(&app, &session.account)?;
     let mut agents = curated_agents();
     agents.extend(app.db.cloud_agents(&session.account)?);
-    Ok(Json(json!({ "agents": agents, "model": cloud.model,
-        "limits": {"daily_runs": cloud.limits.daily_runs, "concurrent_runs": cloud.limits.concurrent_runs, "duration_ms": cloud.limits.duration_ms} })))
+    Ok(Json(json!({ "agents": agents })))
 }
 
 /// The runtimes and models **+ Agent** offers, the first the default.
@@ -194,82 +184,6 @@ pub async fn delete_agent(
     Ok(Json(json!({})))
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StartRun {
-    pub request_key: String,
-    pub agent_id: String,
-    pub repository: String,
-    #[serde(default)]
-    pub git_ref: String,
-    #[serde(default)]
-    pub repository_secret: Option<String>,
-    pub prompt: String,
-}
-
-pub async fn start_run(
-    State(app): State<Arc<App>>,
-    session: Session,
-    Json(input): Json<StartRun>,
-) -> Result<Json<crate::db::cloud::CloudRun>, ApiError> {
-    let cloud = enabled(&app, &session.account)?;
-    if !https_repository(&input.repository) {
-        return Err(err(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "repository must be an HTTPS URL without embedded credentials",
-        ));
-    }
-    if input.git_ref.starts_with('-')
-        || input.git_ref.chars().any(char::is_control)
-        || input.git_ref.len() > 256
-        || input.prompt.trim().is_empty()
-        || input.prompt.len() > 64_000
-        || input.request_key.is_empty()
-        || input.request_key.len() > 128
-    {
-        return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "invalid ref, prompt, or request key"));
-    }
-    let agent = find_agent(&app, &session.account, &input.agent_id)?;
-    if input.repository_secret.as_ref().is_some_and(|name| !secrets::valid_name(name)) {
-        return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "invalid repository secret name"));
-    }
-    if (!agent.definition.secret_names.is_empty() || input.repository_secret.is_some()) && cloud.secret_cipher.is_none()
-    {
-        return Err(err(StatusCode::SERVICE_UNAVAILABLE, "cloud secrets are not configured"));
-    }
-    let props = json!({
-        "agent_curated": agent.curated, "runtime": cloud.runtime, "model": cloud.model,
-        "repository_secret": input.repository_secret.is_some(), "agent_secrets": agent.definition.secret_names.len(),
-        "git_ref": !input.git_ref.is_empty(), "prompt_chars": input.prompt.chars().count(),
-    });
-    let spec = crate::db::cloud::RunSpec {
-        agent_id: agent.id,
-        agent_version: agent.version,
-        agent: agent.definition,
-        model: cloud.model.clone(),
-        runtime: cloud.runtime.clone(),
-        repository: input.repository,
-        git_ref: input.git_ref,
-        repository_secret: input.repository_secret,
-        prompt: input.prompt,
-    };
-    let run = app
-        .db
-        .reserve_cloud_run(&session.account, &input.request_key, &spec, &cloud.limits, arugula_e2e::now_ms())
-        .map_err(|e| match e.to_string().as_str() {
-            "daily cloud run limit reached" | "concurrent cloud run limit reached" => {
-                err(StatusCode::TOO_MANY_REQUESTS, &e.to_string())
-            }
-            "required cloud secret is missing" => {
-                err(StatusCode::UNPROCESSABLE_ENTITY, "connect every required secret before starting a run")
-            }
-            "request key already used with different input" => err(StatusCode::CONFLICT, &e.to_string()),
-            _ => e.into(),
-        })?;
-    app.analytics.capture(&session.account, "cloud run started", props);
-    Ok(Json(run))
-}
-
 /// A curated agent or one of the account's.
 fn find_agent(app: &App, account: &str, id: &str) -> Result<CloudAgent, ApiError> {
     let mut agents = curated_agents();
@@ -289,19 +203,6 @@ pub async fn run(
     Ok(Json(app.db.cloud_run(&session.account, &id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "run not found"))?))
 }
 
-pub async fn cancel_run(
-    State(app): State<Arc<App>>,
-    session: Session,
-    Path(id): Path<String>,
-) -> Result<Json<Value>, ApiError> {
-    if app.db.cloud_run(&session.account, &id)?.is_none() {
-        return Err(err(StatusCode::NOT_FOUND, "run not found"));
-    }
-    app.db.cancel_cloud_run(&session.account, &id)?;
-    app.analytics.capture(&session.account, "cloud run cancelled", json!({}));
-    Ok(Json(json!({})))
-}
-
 #[derive(Deserialize)]
 pub struct EventQuery {
     #[serde(default)]
@@ -319,6 +220,8 @@ pub async fn events(
     Ok(Json(json!({"events":app.db.cloud_events(&session.account,&id,query.after)?})))
 }
 
+/// A past run's pending requests: none once it's stopped, but the
+/// transcript view still reads them.
 pub async fn requests(
     State(app): State<Arc<App>>,
     session: Session,
@@ -337,21 +240,8 @@ pub struct Answer {
     action: Option<String>,
     content: Option<Value>,
 }
-pub async fn answer(
-    State(app): State<Arc<App>>,
-    session: Session,
-    Path((id, request)): Path<(String, String)>,
-    Json(answer): Json<Answer>,
-) -> Result<Json<Value>, ApiError> {
-    let conversation = app
-        .db
-        .cloud_conversation(&session.account, &id, arugula_e2e::now_ms())?
-        .ok_or_else(|| err(StatusCode::NOT_FOUND, "active run not found"))?;
-    deliver_answer(&app, &session.account, &id, &conversation, &request, answer).await
-}
-
-/// Answer a request in a run's or a tab's conversation (`id`), whose
-/// Managoat conversation is `conversation`.
+/// Answer a request in a tab's conversation (`id`), whose Managoat
+/// conversation is `conversation`.
 async fn deliver_answer(
     app: &App,
     account: &str,
@@ -451,13 +341,10 @@ mod tests {
             secret_cipher: Some(secrets::SecretCipher::new(&"01".repeat(32)).unwrap()),
             provider: provider::Provider::new("https://provider.example", "platform-key".into()).unwrap(),
             accounts: vec!["a".into(), "b".into()],
-            model: "anthropic/test-model".into(),
-            runtime: "claude".into(),
             models: vec![
                 CloudModel { runtime: "claude".into(), model: "anthropic/test-model".into() },
                 CloudModel { runtime: "codex".into(), model: "openai/test-model".into() },
             ],
-            limits: RunLimits { daily_runs: 10, concurrent_runs: 2, duration_ms: 60_000 },
         });
         Arc::new(app)
     }
@@ -465,16 +352,14 @@ mod tests {
     #[test]
     fn models_fall_back_to_the_one_configured_pair() {
         let pair = |runtime: &str, model: &str| CloudModel { runtime: runtime.into(), model: model.into() };
-        let (model, runtime, models) = configured_models(Some("anthropic/one".into()), "claude".into(), &[]).unwrap();
-        assert_eq!((model.as_str(), runtime.as_str()), ("anthropic/one", "claude"));
+        let models = configured_models(Some("anthropic/one".into()), "claude".into(), &[]).unwrap();
         assert_eq!(models, [pair("claude", "anthropic/one")]);
         let listed = ["claude:anthropic/a".to_owned(), " codex:openai/b ".into(), "gemini:google/c".into()];
-        let (model, runtime, models) = configured_models(None, "claude".into(), &listed).unwrap();
-        assert_eq!((model.as_str(), runtime.as_str()), ("anthropic/a", "claude"));
+        let models = configured_models(None, "claude".into(), &listed).unwrap();
         assert_eq!(models, [pair("claude", "anthropic/a"), pair("codex", "openai/b"), pair("gemini", "google/c")]);
-        // Runs keep ARUGULA_CLOUD_MODEL when both are set.
-        let (model, runtime, _) = configured_models(Some("openai/run".into()), "codex".into(), &listed).unwrap();
-        assert_eq!((model.as_str(), runtime.as_str()), ("openai/run", "codex"));
+        // The list wins when both are set.
+        let models = configured_models(Some("openai/old".into()), "codex".into(), &listed).unwrap();
+        assert_eq!(models[0], pair("claude", "anthropic/a"));
         for (model, runtime, pairs) in [
             (None, "claude", vec![]),
             (Some("openai/x"), "claude", vec![]),

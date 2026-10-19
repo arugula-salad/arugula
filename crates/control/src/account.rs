@@ -222,7 +222,7 @@ pub fn plan(app: &App, account: &str) -> anyhow::Result<Plan> {
     let mine: HashSet<String> = approved.iter().chain(&pending).map(|c| c.device.clone()).collect();
     let mut p = Plan { confirm, ..Default::default() };
     if app.db.active_cloud_runs(account)? > 0 {
-        p.blockers.push("Cancel cloud runs and wait for cleanup before deleting your account. Runs in recovery need their results recovered first.".into());
+        p.blockers.push("Wait for your cloud runs to finish stopping before deleting your account. A run holding changes that couldn't be saved needs them recovered first.".into());
     }
     if app.db.billing(&format!("account:{account}"))?.is_some_and(|b| b.active()) {
         p.pays.push("your own plan".into());

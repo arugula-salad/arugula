@@ -663,12 +663,21 @@ From: [S34](https://github.com/arugula-salad/arugula/issues/397), M76 (#398), #4
 
 ### Cloud execution is owned by Arugula control
 
-Arugula owns the backend account and inference configuration. Users start
-cloud runs through their Arugula account, choose curated or custom agents,
-and provide only the application secrets those agents need. Every run gets
-a fresh disposable checkout; control persists its lifecycle, approvals,
-transcript, and results across browser disconnects and process restarts.
-The beta is account-allowlisted with admission and duration limits.
+Arugula owns the backend account and inference configuration. Users run
+cloud agents through their Arugula account, choose curated or custom agents,
+and provide only the application secrets those agents need. Control
+persists their lifecycle, approvals and transcripts across browser
+disconnects and process restarts. The beta is account-allowlisted.
+
+Agents run in Cloud workspaces (#1039, S40): a session backed by a Managoat
+workspace, one machine per Cloud workspace with its own environment and
+vault, whose tabs are conversations sharing its disk. Control sets no
+limits on them. One-shot cloud runs (a fresh checkout per run, with daily,
+concurrent and duration caps) were retired for them (S40 decision 10,
+#1076): nothing starts, cancels or answers a run, past runs stay readable
+with their downloads, a deploy stops a leftover run (one in recovery stays
+for an operator), and the cap variables still parse and say they do
+nothing. Jake, 2026-10-18 and 2026-10-19.
 
 This replaced the daemon's direct-account workflows (#942): its Managoat
 login, account streams, remote catalogs, and recipe execution were retired,
@@ -680,8 +689,10 @@ remain machine-owned. Cloud processing is separate from the encrypted
 terminal relay.
 
 Where: `crates/control/src/cloud/`, `crates/control/src/db/cloud.rs`,
-`web/src/ui/cloud.tsx`, [managed cloud agents](docs/managoat.md).
-From: Jake's managed-platform integration decisions, 2026-10-16.
+`web/src/ui/cloud.tsx`, `web/src/ui/cloud-workspaces.tsx`,
+`web/src/ui/cloud-launch.tsx`, [managed cloud agents](docs/managoat.md),
+`spikes/s40-cloud-workspaces/PLAN.md`.
+From: Jake's managed-platform integration decisions, 2026-10-16; #1039.
 
 ### Daemon-side Managoat is removed
 The daemon's own Managoat integration (#942's F1 to F5: its device sign-in
