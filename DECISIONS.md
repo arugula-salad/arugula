@@ -798,9 +798,23 @@ Agents aren't in chat (M121); a machine with no control has no chat.
 Where: `crates/control/src/chat.rs`, `crates/control/src/db/chat.rs`, `crates/control-wire/src/chat.rs`.
 From: [S41](spikes/s41-chat-in-control/README.md) (decisions 1–10, all as recommended), M122 (#1096).
 
-Until M124 imports them and M125 removes the store, the daemon still keeps
-its own pane and session threads in `<state>/threads/` for pages from before,
-with the pane's access rules, and its M81 conversations as below.
+Until M125 removes the store, the daemon still keeps its own pane and session
+threads in `<state>/threads/` for pages from before, with the pane's access
+rules, and its M81 conversations as below. M124 brings them into control
+once: a daemon in control with `chat` on posts them signed as itself
+(`POST /api/daemon/chat/import`), then moves `threads/` to
+`threads.imported/` so a second start, or an older daemon after a
+downgrade, has none. Old messages keep their numbers, or go before a room's
+own (0 and below) when it was used in control first; control takes each
+once by its old number, so a retry or a split import is safe, and they
+count as read. An author with an account that sees the room stays theirs;
+anyone else shows under the machine's owner by their old name. Conversations
+become read-only `archive` rooms in the owner's account, read by their
+members from when each joined (decision 3). After the import the daemon
+keeps control's reader lists current. A daemon from before says no
+`chat-import` in its features, and control's page tells its owner "Update
+to bring its threads into chat". Where: `crates/daemon/src/chat_import.rs`,
+`crates/mux/src/mux/chat_import.rs`, `chat::daemon_import` in control.
 
 A conversation (#855) is a third kind of thread beside them, not a pane or
 session thread moved: those stay as they are, because their access, unread

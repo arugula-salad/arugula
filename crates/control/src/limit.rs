@@ -81,6 +81,8 @@ pub const CHAT_ROOMS: (&str, usize) = ("chat-room", 120);
 pub const CHAT_SEARCHES: (&str, usize) = ("chat-search", 600);
 /// Reader lists a daemon sends, per hour.
 pub const CHAT_READERS: (&str, usize) = ("chat-readers", 600);
+/// Imports of a machine's old threads (M124), per hour: a big one comes in parts.
+pub const CHAT_IMPORTS: (&str, usize) = ("chat-imports", 120);
 const WINDOW: Duration = Duration::from_secs(3600);
 const MINUTE: Duration = Duration::from_secs(60);
 

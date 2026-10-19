@@ -569,6 +569,7 @@ impl Db {
         conn.execute_batch(cloud::SCHEMA)?;
         conn.execute_batch(chat::SCHEMA)?;
         migrate(&conn)?;
+        chat::migrate(&conn)?;
         if !answers_before {
             grandfather_shares(&conn)?;
         }
@@ -581,6 +582,7 @@ impl Db {
         conn.execute_batch(cloud::SCHEMA).unwrap();
         conn.execute_batch(chat::SCHEMA).unwrap();
         migrate(&conn).unwrap();
+        chat::migrate(&conn).unwrap();
         Self { conn: Mutex::new(conn) }
     }
 

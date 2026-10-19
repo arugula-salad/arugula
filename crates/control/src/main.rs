@@ -527,6 +527,7 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/chat/rooms/{id}/read", post(chat::read))
         .route("/api/chat/rooms/{id}/mute", post(chat::mute))
         .route(wire::chat::CHAT_READERS, post(chat::daemon_readers))
+        .route(wire::chat::CHAT_IMPORT, post(chat::daemon_import))
         .route("/api/push/subscribe", post(push::subscribe))
         .route("/api/push/unsubscribe", post(push::unsubscribe))
         .route(wire::PUSH_SUBS, get(push::daemon_subs))

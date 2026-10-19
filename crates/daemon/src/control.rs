@@ -83,8 +83,17 @@ pub const REFRESH_WAIT: Duration = Duration::from_secs(10);
 /// What this daemon tells control it understands, so control offers only
 /// what every daemon checking a team can take (presigned invites' rosters).
 /// `ARUGULA_FEATURES` says otherwise (tests play an older daemon with "").
+/// `chat-import` (M124): it brings its threads into control's chat, so
+/// control's page doesn't tell its owner to update it.
 fn features() -> String {
-    std::env::var("ARUGULA_FEATURES").unwrap_or_else(|_| "presigned-invites,owner-moves,join-secret".into())
+    std::env::var("ARUGULA_FEATURES")
+        .unwrap_or_else(|_| format!("presigned-invites,owner-moves,join-secret,{}", wire::chat::CHAT_IMPORT_FEATURE))
+}
+
+/// Whether this daemon brings its threads into control (M124): an older
+/// one, played by `ARUGULA_FEATURES` without `chat-import`, doesn't.
+pub fn imports_chat() -> bool {
+    has_feature(&features(), wire::chat::CHAT_IMPORT_FEATURE)
 }
 
 /// Whether `features` names `feature`.
@@ -622,6 +631,19 @@ impl std::fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
+/// Control answered a POST with something other than success: its status,
+/// and what it said ([`Control::post_signed`]).
+#[derive(Debug)]
+pub struct Answered(pub u16, pub String);
+
+impl std::fmt::Display for Answered {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.1, self.0)
+    }
+}
+
+impl std::error::Error for Answered {}
+
 fn read_dropped(dir: &Path) -> Option<Dropped> {
     serde_json::from_slice(&std::fs::read(dir.join(DROPPED_FILE)).ok()?).ok()
 }
@@ -930,6 +952,32 @@ impl Control {
             f.push_str(wire::DEV_SETTINGS);
         }
         f
+    }
+
+    /// Told the number of each refresh that went through, as it ends.
+    pub fn on_refresh(&self) -> watch::Receiver<u64> {
+        self.refreshed.subscribe()
+    }
+
+    /// POST JSON to control, signed as this machine (M124), if it's in
+    /// control: its answer, or what it said when it refused.
+    pub async fn post_signed<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &impl Serialize,
+    ) -> anyhow::Result<T> {
+        let e = self.enrolled().ok_or_else(|| anyhow::anyhow!("this machine isn't in control"))?;
+        let res = self.post_json(&e, path, body).send().await?;
+        if !res.status().is_success() {
+            let status = res.status().as_u16();
+            return Err(Answered(status, control_said(res).await).into());
+        }
+        Ok(res.json().await?)
+    }
+
+    /// The account this machine belongs to, while it's in control.
+    pub fn account(&self) -> Option<String> {
+        self.enrolled().map(|e| e.saved.cert.account.clone())
     }
 
     /// Look again soon (grants changed here, say).
@@ -1634,6 +1682,7 @@ impl Control {
     /// Run for good: notice joins and leaves, keep certificates fresh, and
     /// keep the relay socket up while enrolled.
     pub fn start(self: &Arc<Self>, app: Arc<App>) {
+        crate::chat_import::start(self.clone(), app.clone());
         let (a, r) = (app.clone(), app.clone());
         self.run(
             move || app.mux.send(crate::mux::Cmd::AclChanged),

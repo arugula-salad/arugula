@@ -169,8 +169,11 @@ text so they work with every machine asleep (DECISIONS.md "Chat lives in
 control, in plain text"). It's behind control's own `chat` flag, the
 account's or a team's (`POST /api/flags`), not the machine's. M122 is
 control's side only (the API under `/api/chat`, `crates/control/src/chat.rs`);
-the Chat page moves onto it in M123, and machines bring their old threads
-in with M124. Until then, what follows is the machine's own chat.
+the Chat page moves onto it in M123. A machine in control with the flag on
+brings its old threads and conversations in by itself once it runs M124
+(its `threads/` becomes `threads.imported/`); an older one is marked
+"Update to bring its threads into chat" under Devices and machines. Until
+then, what follows is the machine's own chat.
 
 - **Threads on panes and sessions**. Every pane and every session has
   a thread where the people working on it talk: *Thread* in a pane's menu,

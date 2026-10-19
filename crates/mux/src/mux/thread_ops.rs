@@ -121,7 +121,7 @@ impl Daemon {
     /// Everyone a message could @mention: the owner, the team's other
     /// owners (#386), everyone shared with, team members (connected or
     /// not), and whoever is connected.
-    fn mentionable(&self) -> Vec<Principal> {
+    pub(super) fn mentionable(&self) -> Vec<Principal> {
         let mut out = vec![Principal::Owner];
         out.extend(self.config.people.co_owners());
         for g in self.config.acl.list() {

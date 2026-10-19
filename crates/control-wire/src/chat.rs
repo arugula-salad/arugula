@@ -6,7 +6,8 @@
 //!
 //! Daemons hold the panes, never the talk about them. What they tell
 //! control is who may read each pane's or session's thread
-//! ([`CHAT_READERS`], decision 2 of S41).
+//! ([`CHAT_READERS`], decision 2 of S41), and, once, the threads they kept
+//! themselves before chat moved here ([`CHAT_IMPORT`], M124).
 //!
 //! These types are new with M122, so nothing older reads them; the web
 //! client's copy is generated (`just proto-ts`, the `ts` feature).
@@ -16,6 +17,15 @@ use serde::{Deserialize, Serialize};
 /// A daemon says who may read its panes' and sessions' threads (`POST`),
 /// [`ChatReaders`], answered [`ChatReadersStored`].
 pub const CHAT_READERS: &str = "/api/daemon/chat/readers";
+
+/// A daemon brings in the threads it kept itself (`POST`, M124),
+/// [`ChatImport`], answered [`ChatImported`].
+pub const CHAT_IMPORT: &str = "/api/daemon/chat/import";
+
+/// What a daemon that brings its threads into control says it understands
+/// (its `features`): control's page tells the owner of a machine without it
+/// to update it, so its threads come into chat.
+pub const CHAT_IMPORT_FEATURE: &str = "chat-import";
 
 /// The most text a message carries, and the most of a pane it quotes.
 pub const MAX_TEXT: usize = 8 * 1024;
@@ -138,8 +148,9 @@ pub struct ChatPane {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatMessage {
-    /// Its number in the room. Messages brought in from a machine before
-    /// the room had any of its own are numbered 0 and below (M124).
+    /// Its number in the room. Messages brought in from a machine (M124)
+    /// keep their old numbers, unless the room already had messages of its
+    /// own: then they're numbered 0 and below, before control's.
     pub seq: i64,
     pub at: u64,
     /// The author's account, and their name now. Both are empty for a
@@ -156,7 +167,8 @@ pub struct ChatMessage {
     /// When it was deleted: its text, quote and pane are gone.
     pub deleted: Option<u64>,
     /// Brought in from a machine's own threads (M124): the name it had
-    /// there.
+    /// there. Someone with no account here (a tailnet login, an agent) is
+    /// shown under the machine's owner, by this name.
     pub imported: Option<String>,
 }
 
@@ -391,3 +403,81 @@ pub struct ChatReadersStored {
 /// The most lists in one [`ChatReaders`], and readers in one list.
 pub const MAX_READER_TARGETS: usize = 500;
 pub const MAX_READERS: usize = 500;
+
+/// What a daemon brings into control, once, from the threads it kept
+/// itself (M61) and its conversations (M81), when it first finds chat on in
+/// control (S41 q6). Control takes each message once, by its old number, so
+/// a call that's sent again (or split over several) adds only what it
+/// hasn't got.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatImport {
+    /// Pane and session threads, each into its room on this machine.
+    #[serde(default)]
+    pub threads: Vec<ChatImportThread>,
+    /// Conversations, each into a read-only archive for its people.
+    #[serde(default)]
+    pub archives: Vec<ChatImportArchive>,
+    /// Who reads each thread now, stored first, as [`ChatReaders`] does.
+    #[serde(default)]
+    pub readers: Vec<ChatReaderList>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatImportThread {
+    pub kind: ChatTargetKind,
+    pub target: String,
+    pub messages: Vec<ChatImportMessage>,
+}
+
+/// A conversation, kept as text (decision 3): its title, its owner and
+/// members (by account; others had none), and its timeline.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatImportArchive {
+    /// Its id on the machine (`c-…`).
+    pub id: String,
+    pub title: String,
+    pub created: u64,
+    /// Who read it, and from when (ms; 0 is everything): its owner and its
+    /// members with an account.
+    pub members: Vec<ChatReader>,
+    pub messages: Vec<ChatImportMessage>,
+}
+
+/// One message as the machine kept it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatImportMessage {
+    /// Its number there: 1, 2, 3…
+    pub id: u64,
+    pub at: u64,
+    /// The author's account, if they had one (the machine's owner, or
+    /// `account:…`).
+    #[serde(default)]
+    pub account: Option<String>,
+    /// Their name there.
+    pub name: String,
+    pub text: String,
+    /// The lines it quoted, and the pane they came from (on this machine).
+    #[serde(default)]
+    pub quote: Option<String>,
+    #[serde(default)]
+    pub pane: Option<String>,
+    /// The accounts it mentioned.
+    #[serde(default)]
+    pub mentions: Vec<String>,
+}
+
+/// What control took.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatImported {
+    /// Rooms it made or added to.
+    pub rooms: usize,
+    /// Messages added, and those it had already.
+    pub messages: usize,
+    pub already: usize,
+}
+
+/// The most threads and archives one [`ChatImport`] carries, and the most
+/// bytes a daemon puts in one (control takes signed bodies up to 1 MB): a
+/// daemon with more sends several, a long thread in parts, oldest first.
+pub const MAX_IMPORT_ROOMS: usize = 500;
+pub const MAX_IMPORT_BODY: usize = 768 << 10;
