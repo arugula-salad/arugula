@@ -280,6 +280,14 @@ test("a Doc saved while the flag was on stays on the machine and shows as in Lab
     await expect(paneEl(page, made.block)).toContainText("This block is in Labs");
     await expect(page.locator(`[data-doc-block="${made.block}"]`)).toHaveCount(0);
     expect((await api(`/api/blocks/${made.block}`)).ok).toBe(true);
+    // Sharing it with a link is Docs' too (#1066): refused, and not in its menu.
+    const shared = await api(`/api/blocks/${made.block}/call/doc_share`, {});
+    expect(shared.status).toBe(400);
+    expect(await shared.text()).toContain("Labs feature that's off");
+    await paneEl(page, made.block).click({ button: "right", position: { x: 60, y: 60 } });
+    await expect(page.getByRole("menu")).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /Share link|Copy link|Update shared copy|Unshare/ })).toHaveCount(0);
+    await page.keyboard.press("Escape");
   } finally {
     await api(`/api/panes/${made.block}/close`, {});
   }

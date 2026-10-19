@@ -814,12 +814,16 @@ fn only_the_owner_shares_a_doc_and_never_an_agent() {
     assert!(d.state(doc)["shared"].is_null());
 
     // Off, it is refused like the rest of Docs (and says how to turn it on).
-    arugula_proto::flags::set(&d.state, "docs", false).unwrap();
-    let (status, text) = d.raw("POST", &path("doc_share"), Some(json!({})));
-    assert_eq!(status, 400, "{text}");
-    assert!(text.contains("Labs"), "{text}");
-    let (status, text) = d.raw("GET", &format!("/api/doc-links/{id}"), None);
-    assert_eq!(status, 404, "{text}");
-    assert!(text.contains("Labs"), "{text}");
+    // A build without Labs has no flags to turn off.
+    #[cfg(feature = "labs")]
+    {
+        arugula_proto::flags::set(&d.state, "docs", false).unwrap();
+        let (status, text) = d.raw("POST", &path("doc_share"), Some(json!({})));
+        assert_eq!(status, 400, "{text}");
+        assert!(text.contains("Labs"), "{text}");
+        let (status, text) = d.raw("GET", &format!("/api/doc-links/{id}"), None);
+        assert_eq!(status, 404, "{text}");
+        assert!(text.contains("Labs"), "{text}");
+    }
     drop(m);
 }

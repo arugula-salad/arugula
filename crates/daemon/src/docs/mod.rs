@@ -1594,6 +1594,8 @@ mod share_tests {
         assert!(s.fake.paths().is_empty(), "nothing was sent");
     }
 
+    /// A build without Labs has no flags to turn off.
+    #[cfg(feature = "labs")]
     #[tokio::test]
     async fn the_docs_flag_gates_every_method() {
         let s = setup("flag").await;

@@ -2,8 +2,9 @@
    app's, with its dark palette in :root; this is the light one for a reader
    whose system is light (Latte, as the app's "system" palette), and the
    column the Doc fills. */
+/* `:root:root`, because the page's stylesheets load in either order. */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:root {
     --bg: #eff1f5;
     --fg: #4c4f69;
     --dim: #6c6f85;

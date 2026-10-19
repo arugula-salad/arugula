@@ -73,6 +73,7 @@ export function SharedDocs({ s, close }: { s: ControlSession; close: () => void 
 
   const unshare = async (r: Row) => {
     setRemoving(null);
+    setNote("");
     try {
       const d = machine(r);
       if (d) {
