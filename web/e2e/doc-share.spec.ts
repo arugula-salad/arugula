@@ -249,7 +249,10 @@ for (const mode of [DOMAIN, null] as const) {
           expect(v.violations, "the page's CSP refused nothing").toEqual([]);
           if (SHOTS && mode) {
             mkdirSync(SHOTS, { recursive: true });
-            await v.page.screenshot({ path: join(SHOTS, `viewer-${name}-${scheme}.png`), fullPage: true });
+            // The page scrolls inside itself, so "full page" is a viewport as tall as the Doc.
+            const tall = await v.page.evaluate(() => (document.querySelector(".doc") as HTMLElement).scrollHeight);
+            await v.page.setViewportSize({ width: v.page.viewportSize()!.width, height: tall + 40 });
+            await v.page.screenshot({ path: join(SHOTS, `viewer-${name}-${scheme}.png`) });
           }
           await v.ctx.close();
         }
