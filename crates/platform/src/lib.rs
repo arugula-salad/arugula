@@ -15,9 +15,9 @@
 //! - [`auth`] is who's asking, as the hub found out: a [`Principal`].
 //! - [`router()`] is the platform's routes, which the hub mounts in process.
 //!
-//! Today it runs inside the hub's process. Billing moved in first (M139);
-//! Cloud (M137) and chat (M138) move in next, each into its own module
-//! here. M140 runs it as its own process behind the hub.
+//! Today it runs inside the hub's process. Billing moved in first (M139),
+//! then Cloud ([`cloud`], M137); chat (M138) moves in next, into its own
+//! module here. M140 runs it as its own process behind the hub.
 //!
 //! [`Principal`]: arugula_control_common::Principal
 
@@ -83,10 +83,12 @@ pub struct Platform {
     pub analytics: Analytics,
     /// Billing (M22), when there's a Stripe key: `billing`.
     pub stripe: Option<billing::Stripe>,
+    /// Cloud workspaces (M137), when this control has a Managoat key.
+    pub cloud: Option<cloud::Cloud>,
 }
 
 impl Platform {
     pub fn new(cfg: Config, db: db::Db, hub: Arc<dyn HubPort>, http: reqwest::Client, analytics: Analytics) -> Self {
-        Platform { cfg, db, hub, http, limits: Limits::new(None), analytics, stripe: None }
+        Platform { cfg, db, hub, http, limits: Limits::new(None), analytics, stripe: None, cloud: None }
     }
 }

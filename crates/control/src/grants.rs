@@ -3,7 +3,8 @@
 //! the agents on a machine drive its owner's Cloud workspaces (aru-047).
 //! Every machine that joins an account gets it; the owner lists, revokes
 //! and gives it back here (`arugula grants` in the CLI), and
-//! `auth::CloudDriver` refuses a machine without a live one.
+//! the platform's `cloud::CloudDriver` refuses a machine without a live one
+//! (it asks through `HubPort::can_drive_cloud`).
 //!
 //! Only a person (a signed-in browser, or a CLI device) manages grants: a
 //! machine's signature isn't a [`Session`], so it can't give itself one.
@@ -80,13 +81,34 @@ pub async fn give(State(app): State<Arc<App>>, s: Session, Json(b): Json<Give>) 
 mod tests {
     use super::*;
     use crate::routing_wire::{daemon, v2};
+    use arugula_platform::cloud::{Cloud, CloudModel, provider::Provider, secrets::SecretCipher};
+
+    /// The hub with Cloud on in its platform (M137): accounts `a`, `b`
+    /// and `c` with sessions `session-a`…, and `a` and `b` in the beta.
+    /// Calls go through the hub's gate and `hub_port::InProcess`, as they
+    /// do in production.
+    pub(crate) fn cloud_app() -> Arc<App> {
+        let mut app = App::for_tests("https://control.example");
+        let now = now_ms();
+        for id in ["a", "b", "c"] {
+            app.db.account_for("test", id, id, id, now).unwrap();
+            app.db.add_session(&crate::auth::hash(&format!("session-{id}")), id, now, now + 60_000).unwrap();
+        }
+        Arc::get_mut(&mut app.platform).expect("not started yet").cloud = Some(Cloud {
+            secret_cipher: Some(SecretCipher::new(&"01".repeat(32)).unwrap()),
+            provider: Provider::new("https://provider.example", "platform-key".into()).unwrap(),
+            accounts: vec!["a".into(), "b".into()],
+            models: vec![CloudModel { runtime: "claude".into(), model: "anthropic/test-model".into() }],
+        });
+        app.start()
+    }
 
     /// Revoking one machine's grant refuses that machine on the Cloud
     /// workspace routes and leaves the owner's other machine alone; giving
     /// it back lets it in again.
     #[tokio::test]
     async fn a_revoked_grant_refuses_only_its_own_machine() {
-        let app = crate::cloud::tests::test_app();
+        let app = cloud_app();
         let (geek, mini) = (daemon(&app, "a", "geek"), daemon(&app, "a", "mini"));
         let (geek_id, mini_id) = (geek.id(), mini.id());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -187,6 +209,14 @@ mod tests {
         assert!(given["live"] == true && given["id"] != geeks.as_str(), "a new grant: {given}");
         assert_eq!(person("POST", "/api/grants", Some(give)).await.1["id"], given["id"], "a live one is the answer");
         assert_eq!(call(&geek, "GET", "/api/cloud/workspaces", None).await.0, StatusCode::OK);
+        // A machine's signature still covers its one request: the hub's
+        // gate takes it once, for the platform's routes as for its own.
+        let path = "/api/cloud/workspaces";
+        let h = v2(&geek, "GET", path, b"");
+        let ok = client.get(format!("{base}{path}")).header("x-arugula-auth", &h).send().await.unwrap();
+        assert_eq!(ok.status(), StatusCode::OK);
+        let again = client.get(format!("{base}{path}")).header("x-arugula-auth", &h).send().await.unwrap();
+        assert_eq!(again.status(), StatusCode::UNAUTHORIZED);
         // The revoked one stays on the list.
         let (_, listed) = person("GET", "/api/grants", None).await;
         let states: Vec<_> = listed["grants"]

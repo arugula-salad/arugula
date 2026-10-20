@@ -12,12 +12,13 @@
 //! that waits until the worker takes it to send.
 use super::{enabled, provider::Refusal, worker::observe_cloud_workspace, workspaces::Sending};
 use crate::{
-    ApiError, App,
-    auth::{CloudDriver, Session},
+    Platform,
+    auth::Person,
+    cloud::CloudDriver,
     db::cloud::{CancelledRebuild, CloudWorkspace, CloudWorkspaceJob, CloudWorkspaceRebuild},
-    err, refusal,
 };
 use anyhow::{Context, Result};
+use arugula_control_common::{ApiError, err, refusal};
 use axum::{
     Json,
     extract::{Path, State},
@@ -41,7 +42,7 @@ pub struct Rebuild {
 /// `POST /api/cloud/workspaces/{id}/rebuild`. The answer says
 /// `provisioning`, or `rebuild_queued` when Managoat had no machine free.
 pub async fn rebuild(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
     Json(input): Json<Rebuild>,
@@ -57,7 +58,7 @@ pub async fn rebuild(
 
 /// `POST /api/cloud/workspaces/{id}/retry`: a failed setup, again.
 pub async fn retry(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
@@ -66,8 +67,8 @@ pub async fn retry(
 }
 
 async fn ask(
-    app: &App,
-    session: &Session,
+    app: &Platform,
+    session: &Person,
     id: &str,
     asked: CloudWorkspaceRebuild,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
@@ -148,8 +149,8 @@ async fn ask(
 /// waiting for a machine. 409 `rebuild_started` once the worker has sent it
 /// (or is sending it), and `not_waiting` with none waiting.
 pub async fn cancel(
-    State(app): State<Arc<App>>,
-    session: Session,
+    State(app): State<Arc<Platform>>,
+    session: Person,
     Path(id): Path<String>,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
     enabled(&app, &session.account)?;
@@ -176,7 +177,7 @@ pub async fn cancel(
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "cloud workspace not found"))
 }
 
-async fn send(app: &App, workspace: &str, asked: &CloudWorkspaceRebuild) -> Result<Value> {
+async fn send(app: &Platform, workspace: &str, asked: &CloudWorkspaceRebuild) -> Result<Value> {
     let p = &app.cloud.as_ref().context("cloud is disabled")?.provider;
     if asked.retry { p.retry_workspace(workspace).await } else { p.rebuild_workspace(workspace, asked.interrupt).await }
 }
@@ -219,7 +220,7 @@ fn refused(r: &Refusal, names: &[String]) -> (StatusCode, &'static str, String) 
 /// The worker, on a live Cloud workspace it has just read: ask again for a
 /// rebuild or retry Managoat had no machine for. One that no longer applies
 /// (a setup is running, or a retry's workspace isn't failed) is let go.
-pub(super) async fn send_queued(app: &App, job: &mut CloudWorkspaceJob, workspace: &str, now: u64) -> Result<()> {
+pub(super) async fn send_queued(app: &Platform, job: &mut CloudWorkspaceJob, workspace: &str, now: u64) -> Result<()> {
     let id = job.cloud_workspace.id.clone();
     let Some(asked) = app.db.queued_cloud_workspace_rebuild(&id)? else {
         return Ok(());

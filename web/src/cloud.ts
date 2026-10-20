@@ -6,9 +6,13 @@ import { createContext } from "preact";
 import { useContext, useEffect, useState } from "preact/hooks";
 import type { FleetPane } from "./fleet";
 import { maintenance, platformFetch, refusalOf } from "./maintenance";
-export type Definition = { name: string; instructions: string; mcp_servers: Record<string, unknown>; skills: { name: string; content: string }[]; secret_names: string[] };
-export type CloudAgent = { id: string; version: number; curated: boolean; definition: Definition };
-export type CloudRun = { id: string; state: string; created: number; spec: { agent_id: string; prompt: string; repository: string; git_ref: string; repository_secret?: string | null; agent: Definition }; result: Record<string, unknown> | null };
+import type { CloudRun, CloudTab, CloudTabs, CloudWorkspace, CloudWorkspaces } from "./proto.gen";
+// Control's `/api/cloud/` types are generated from crates/cloud-wire
+// (proto.gen.ts, `just proto-ts`, M137).
+export type {
+  AgentDefinition as Definition, CloudAgent, CloudModel, CloudRun, CloudSetupLog, CloudTab, CloudWorkspace, CloudWorkspaceChange,
+  CloudWorkspaceRepository, CloudWorkspaceSpec, PastCloudTab,
+} from "./proto.gen";
 export const cloudTerminal = (run: CloudRun) => ["completed", "failed", "cancelled", "expired"].includes(run.state);
 /** Control's `/api/cloud/`, waiting out a maintenance window (M141). */
 export async function cloudApi<T>(path: string, method = "GET", body?: unknown): Promise<T> {
@@ -72,51 +76,14 @@ export function useCloudPanes() {
 // is remembered locally. The route is `#cloud-ws` (the list), or
 // `#cloud-ws=cw_…` with `/cwc_…` for a tab.
 
-export type CloudWorkspaceRepository = { url: string; ref?: string; mount?: string; secret?: string | null };
-export type CloudWorkspaceSpec = {
-  name: string; repositories: CloudWorkspaceRepository[]; packages: { apt?: string[]; npm?: string[] };
-  setup_script?: string; setup_timeout_seconds?: number | null; env_vars?: Record<string, string>;
-  networking?: { type: "unrestricted" | "limited"; allowed_hosts?: string[] } | null; secrets?: string[];
-};
-export type CloudWorkspace = {
-  id: string; name: string; saved_spec: CloudWorkspaceSpec; built_spec: CloudWorkspaceSpec | null;
-  status: "provisioning" | "ready" | "failed" | "deleting"; sandbox_status: "pending" | "starting" | "ready" | "suspended" | null;
-  error: string | null; revision: string | null; built_from_revision: string | null; stale: boolean; changed_fields: string[]; created: number;
-  /** What a rebuild changes (M117), and whether Managoat has the saved settings yet. */
-  pending: CloudWorkspaceChange[]; settings_applied: boolean;
-  /** A rebuild or retry waiting for Managoat to have a machine free (M120), and why the last one that waited didn't happen. */
-  rebuild_queued: boolean; rebuild_error: string | null;
-  /** The step its setup is running while it's provisioning (Managoat v0.39.0). */
-  setup_step?: string | null;
-};
-/** What a Cloud workspace's last setup printed, step by step, redacted by Managoat. */
-export type CloudSetupLog = {
-  status?: string; step?: string | null; started_at?: string | null; finished_at?: string | null;
-  steps: { step: string; status?: string; started_at?: string | null; finished_at?: string | null; output?: string; omitted_lines?: number; omitted_bytes?: number }[];
-};
 /** A setup step as people read it: "setup_script" → "setup script". */
 export const setupStepName = (step: string) => step.replaceAll("_", " ");
-/** A saved setting the machine wasn't built with: `before` is built (null when not known), `after` saved. `env_vars` are names only. */
-export type CloudWorkspaceChange = { field: string; before: unknown; after: unknown };
-
 /** "Rebuild needed · 2 changes", or null when the machine is as saved. */
 export function cloudWorkspaceRebuildBadge(w: CloudWorkspace): string | null {
   if (!w.stale) return null;
   const n = w.pending?.length ?? 0;
   return n ? `Rebuild needed · ${n} change${n === 1 ? "" : "s"}` : "Rebuild needed";
 }
-export type CloudTab = {
-  id: string; cloud_workspace: string; agent_id: string; agent_name: string; runtime: string; model: string; cwd: string;
-  status: string; error: string | null; waiting_for_setup: boolean; created: number;
-};
-export type CloudModel = { runtime: string; model: string };
-/** A closed tab, read only: closed on its own or with its deleted Cloud
- * workspace. Its transcript is kept. */
-export type PastCloudTab = {
-  id: string; cloud_workspace: string; cloud_workspace_name: string; cloud_workspace_deleted: boolean;
-  agent_name: string; runtime: string; model: string; cwd: string; created: number; closed: number;
-};
-
 export function cloudWorkspaceRoute(): { workspace: string | null; tab: string | null } | null {
   const m = /^#cloud-ws(?:=(cw_[0-9a-f]+)(?:\/(cwc_[0-9a-f]+))?)?$/.exec(location.hash);
   return m ? { workspace: m[1] ?? null, tab: m[2] ?? null } : null;
@@ -166,8 +133,8 @@ export const cloudWorkspaces = {
       running = true;
       let wait = 3000;
       try {
-        const v = await cloudApi<{ cloud_workspaces: CloudWorkspace[] }>("workspaces");
-        const tabs = await Promise.all(v.cloud_workspaces.map((w) => cloudApi<{ cloud_tabs: CloudTab[] }>(`workspaces/${w.id}/tabs`).then((t) => t.cloud_tabs, () => this.tabs.get(w.id) ?? [])));
+        const v = await cloudApi<CloudWorkspaces>("workspaces");
+        const tabs = await Promise.all(v.cloud_workspaces.map((w) => cloudApi<CloudTabs>(`workspaces/${w.id}/tabs`).then((t) => t.cloud_tabs, () => this.tabs.get(w.id) ?? [])));
         if (!active) return;
         this.list = v.cloud_workspaces; this.tabs = new Map(v.cloud_workspaces.map((w, i) => [w.id, tabs[i]])); this.error = ""; this.loaded = true;
       } catch (e) {

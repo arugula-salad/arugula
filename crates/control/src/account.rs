@@ -223,9 +223,6 @@ pub fn plan(app: &App, account: &str) -> anyhow::Result<Plan> {
     let (approved, pending) = app.db.devices(account)?;
     let mine: HashSet<String> = approved.iter().chain(&pending).map(|c| c.device.clone()).collect();
     let mut p = Plan { confirm, ..Default::default() };
-    if app.db.active_cloud_runs(account)? > 0 {
-        p.blockers.push("Wait for your cloud runs to finish stopping before deleting your account. A run holding changes that couldn't be saved needs them recovered first.".into());
-    }
     for team in app.db.team_ids()? {
         let Some(t) = app.db.team(&team)? else { continue };
         let rosters: Vec<Roster> =
@@ -285,6 +282,7 @@ pub async fn pays(app: &App, account: &str, p: &Plan) -> anyhow::Result<Vec<Stri
 pub async fn preview(State(app): State<Arc<App>>, s: Session) -> R {
     let mut p = plan(&app, &s.account)?;
     p.pays = pays(&app, &s.account, &p).await?;
+    p.blockers.splice(0..0, app.platform.delete_blockers(&s.account, false).await?);
     let machines = app.db.daemons(&s.account)?.len();
     let vms = app.db.sandboxes(&s.account)?.iter().filter(|x| x.deleted.is_none()).count();
     Ok(Json(json!({
@@ -315,6 +313,8 @@ pub async fn delete(State(app): State<Arc<App>>, s: Session, Json(b): Json<Confi
 pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Result<(), ApiError> {
     let mut p = plan(app, account)?;
     p.pays = pays(app, account, &p).await?;
+    // The platform's first (Cloud's runs still stopping, M137).
+    p.blockers.splice(0..0, app.platform.delete_blockers(account, false).await?);
     if !typed.trim().eq_ignore_ascii_case(p.confirm.trim()) {
         return Err(err(StatusCode::BAD_REQUEST, &format!("type {} to confirm", p.confirm)));
     }
@@ -324,11 +324,10 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
     if !p.pays.is_empty() {
         return Err(err(StatusCode::CONFLICT, &format!("cancel {} first", p.pays.join(" and "))));
     }
-    // Cloud workspaces' Managoat resources go in the worker: ask for that,
-    // and refuse until it's done.
-    app.db.delete_cloud_workspaces(account)?;
-    if !app.db.cloud_workspaces(account)?.is_empty() {
-        return Err(err(StatusCode::CONFLICT, "Your Cloud workspaces are being deleted. Try again in a minute."));
+    // What takes time to go, the platform starts now (Cloud workspaces at
+    // Managoat, in its worker), and refuses until it's done.
+    if let Some(why) = app.platform.delete_blockers(account, true).await?.first() {
+        return Err(err(StatusCode::CONFLICT, why));
     }
     // Hosted VMs go the way they always do.
     for x in app.db.sandboxes(account)? {
@@ -372,7 +371,7 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
     // Its DMs go with it (M122): the other people's pages hear so.
     let dms: Vec<String> = app.db.chat_rooms_member(account)?.into_iter().map(|r| r.id).collect();
     let daemons = app.db.delete_account(&crate::db::Erase { account, disband: &disband, retain_for: &p.retain_for })?;
-    // Then the platform's rows of it: billing's (M139).
+    // Then the platform's rows of it: billing's (M139) and Cloud's (M137).
     let deleted = arugula_platform::Deleted {
         account: account.to_owned(),
         machines: daemons.clone(),

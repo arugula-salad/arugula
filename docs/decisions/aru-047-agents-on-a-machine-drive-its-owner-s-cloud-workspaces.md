@@ -25,7 +25,7 @@ decided_on: "2026-10-19"
 reviews: []
 constrains:
   - "path:crates/control/src/auth.rs"
-  - "path:crates/control/src/cloud"
+  - "path:crates/platform/src/cloud"
   - "path:crates/daemon/src/mcp/cloud.rs"
   - "path:crates/daemon/src/control.rs"
 ---
@@ -42,7 +42,7 @@ guest's agent on it, drives the owner's Cloud workspaces; that is the
 point, not a leak. A daemon reaches no other account's, and not what stays
 a person's: settings, deleting, secrets, the agent library, past tabs.
 Where: `crates/control/src/auth.rs` (`CloudDriver`), the handlers in
-`crates/control/src/cloud/`, `crates/daemon/src/mcp/cloud.rs`,
+`crates/platform/src/cloud/`, `crates/daemon/src/mcp/cloud.rs`,
 `crates/daemon/src/control.rs` (`Control::cloud`),
 [docs/control.md](docs/control.md), [managed cloud agents](docs/managoat.md).
 From: #1094, Jake, 2026-10-19 (full drive, for any agent on the machine).

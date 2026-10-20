@@ -12,8 +12,9 @@
 //! - A grant is a subject's power over a scope: a daemon's `cloud.drive`
 //!   over its owner's account, for now (M130: aru-047 as grants). Every
 //!   machine joined to an account gets one, and control checks it on the
-//!   Cloud workspace routes (`auth::CloudDriver`). A revoked grant keeps its
-//!   row; giving it back is a new one.
+//!   Cloud workspace routes (the platform's `cloud::CloudDriver`, through
+//!   `HubPort::can_drive_cloud`). A revoked grant keeps its row; giving it
+//!   back is a new one.
 //!
 //! Nothing reads `project_id` yet (M129).
 
@@ -84,8 +85,25 @@ const ATTACHED: [&str; 3] = ["cloud_workspaces", "chat_rooms", "cloud_secrets"];
 /// workspaces or cloud secrets its personal one, and those rows and team
 /// channels the right one. Runs on every start; with nothing to do, it
 /// changes nothing.
+///
+/// Cloud's tables are the platform's (M137), made by its own connection
+/// after this one: a table that isn't there yet (a fresh database) is
+/// skipped, and the platform gives each new row its project itself
+/// (`HubPort::personal_project`).
 pub(super) fn migrate(conn: &Connection, now: u64) -> rusqlite::Result<()> {
+    let mut attached = Vec::new();
     for table in ATTACHED {
+        let there: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+            [table],
+            |r| r.get(0),
+        )?;
+        if there {
+            attached.push(table);
+        }
+    }
+    let cloud: Vec<&str> = ["cloud_workspaces", "cloud_secrets"].into_iter().filter(|t| attached.contains(t)).collect();
+    for &table in &attached {
         let has: bool = conn.query_row(
             &format!("SELECT EXISTS(SELECT 1 FROM pragma_table_info('{table}') WHERE name='project_id')"),
             [],
@@ -105,16 +123,19 @@ pub(super) fn migrate(conn: &Connection, now: u64) -> rusqlite::Result<()> {
         ),
         [now],
     )?;
-    tx.execute(
-        &format!(
-            "INSERT INTO projects (id, account_id, name, is_default, created_at)
-             SELECT {NEW_ID_SQL}, o.account, 'Personal', 1, ?1
-             FROM (SELECT account FROM cloud_workspaces UNION SELECT account FROM cloud_secrets) o
-             WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.account_id = o.account AND p.is_default = 1)"
-        ),
-        [now],
-    )?;
-    for table in ["cloud_workspaces", "cloud_secrets"] {
+    if !cloud.is_empty() {
+        let owners = cloud.iter().map(|t| format!("SELECT account FROM {t}")).collect::<Vec<_>>().join(" UNION ");
+        tx.execute(
+            &format!(
+                "INSERT INTO projects (id, account_id, name, is_default, created_at)
+                 SELECT {NEW_ID_SQL}, o.account, 'Personal', 1, ?1
+                 FROM ({owners}) o
+                 WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.account_id = o.account AND p.is_default = 1)"
+            ),
+            [now],
+        )?;
+    }
+    for table in cloud {
         tx.execute(
             &format!(
                 "UPDATE {table} SET project_id = (SELECT p.id FROM projects p
@@ -124,12 +145,14 @@ pub(super) fn migrate(conn: &Connection, now: u64) -> rusqlite::Result<()> {
             [],
         )?;
     }
-    tx.execute(
-        "UPDATE chat_rooms SET project_id = (SELECT p.id FROM projects p
-             WHERE p.team_id = substr(chat_rooms.scope, 6) AND p.is_default = 1)
-         WHERE project_id IS NULL AND kind = 'channel' AND scope LIKE 'team:%'",
-        [],
-    )?;
+    if attached.contains(&"chat_rooms") {
+        tx.execute(
+            "UPDATE chat_rooms SET project_id = (SELECT p.id FROM projects p
+                 WHERE p.team_id = substr(chat_rooms.scope, 6) AND p.is_default = 1)
+             WHERE project_id IS NULL AND kind = 'channel' AND scope LIKE 'team:%'",
+            [],
+        )?;
+    }
     // Teams from before the projection, and any that lost it.
     let unprojected: Vec<String> = {
         let mut q = tx.prepare(
@@ -245,6 +268,22 @@ fn grant_row(r: &rusqlite::Row) -> rusqlite::Result<Grant> {
 }
 
 impl Db {
+    /// The account's personal project, made now if it has none: what its
+    /// Cloud workspaces and cloud secrets belong to, for the platform
+    /// (`HubPort::personal_project`, M137). `None`: no such account.
+    pub fn personal_project(&self, account: &str, now: u64) -> anyhow::Result<Option<String>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let there: bool =
+            tx.query_row("SELECT EXISTS (SELECT 1 FROM accounts WHERE id = ?1)", [account], |r| r.get(0))?;
+        if !there {
+            return Ok(None);
+        }
+        let id = personal_project(&tx, account, now)?;
+        tx.commit()?;
+        Ok(Some(id))
+    }
+
     /// Whether this machine holds a live `cloud.drive` grant over its
     /// owner's account: what the Cloud workspace routes check (M130).
     pub fn can_drive_cloud(&self, daemon: &str, account: &str) -> anyhow::Result<bool> {
@@ -596,17 +635,13 @@ mod tests {
         let rooms = dump(&db.c(), "SELECT id, project_id FROM chat_rooms ORDER BY id");
         assert_eq!(rooms, [vec![Some("c1".into()), Some(team_project)], vec![Some("d1".into()), None]]);
 
-        // A workspace and a secret go to the owner's personal project, made
-        // once, the first time.
+        // An account's personal project (what its Cloud workspaces and
+        // secrets go to, through `HubPort::personal_project`) is made once,
+        // the first time.
         assert_eq!(count(&db.c(), "SELECT count(*) FROM projects WHERE account_id = 'bob'"), 0);
-        db.put_cloud_secret("bob", "S", b"x").unwrap();
-        db.put_cloud_secret("bob", "S", b"y").unwrap();
-        let spec: crate::db::cloud::CloudWorkspaceSpec =
-            serde_json::from_value(serde_json::json!({"name":"box"})).unwrap();
-        db.create_cloud_workspace("bob", "k", &spec, 1).unwrap();
-        let personal = super::personal_project(&db.c(), "bob", 2).unwrap();
+        let personal = db.personal_project("bob", 1).unwrap().unwrap();
+        assert_eq!(db.personal_project("bob", 2).unwrap(), Some(personal.clone()));
         assert_eq!(count(&db.c(), "SELECT count(*) FROM projects WHERE account_id = 'bob'"), 1);
-        assert_eq!(dump(&db.c(), "SELECT project_id FROM cloud_secrets"), [[Some(personal.clone())]]);
-        assert_eq!(dump(&db.c(), "SELECT project_id FROM cloud_workspaces"), [[Some(personal)]]);
+        assert_eq!(db.personal_project("nobody", 2).unwrap(), None, "no such account");
     }
 }

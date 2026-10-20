@@ -6,11 +6,13 @@
 //! lookup is the caller's own: another account's id is 404.
 use super::{deliver_answer, enabled, find_agent, provider::HttpFailure};
 use crate::{
-    ApiError, App,
-    auth::{CloudDriver, Session},
-    db::cloud::{CloudTab, CloudTabSpec, CloudWorkspace, CloudWorkspaceSpec},
-    err,
+    Platform,
+    auth::Person,
+    cloud::CloudDriver,
+    db::cloud::{CloudTab, CloudTabSpec, CloudWorkspace, CloudWorkspaceSpec, SpecRules},
 };
+use arugula_cloud_wire::CloudTabs;
+use arugula_control_common::{ApiError, err};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -42,16 +44,16 @@ fn cwd_allowed(spec: &CloudWorkspaceSpec, cwd: &str) -> bool {
     !under("/home/sprite/.managoat") && (under("/home/sprite") || spec.repositories.iter().any(|r| under(&r.mount)))
 }
 
-fn cloud_workspace(app: &App, session: &Session, id: &str) -> Result<CloudWorkspace, ApiError> {
+fn cloud_workspace(app: &Platform, session: &Person, id: &str) -> Result<CloudWorkspace, ApiError> {
     app.db.cloud_workspace(&session.account, id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "cloud workspace not found"))
 }
 
-fn found(app: &App, session: &Session, id: &str, tab: &str) -> Result<CloudTab, ApiError> {
+fn found(app: &Platform, session: &Person, id: &str, tab: &str) -> Result<CloudTab, ApiError> {
     app.db.cloud_tab(&session.account, id, tab)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "tab not found"))
 }
 
 /// The tab's Managoat conversation, once it's launched and while it's open.
-fn conversation(app: &App, session: &Session, id: &str, tab: &str) -> Result<String, ApiError> {
+fn conversation(app: &Platform, session: &Person, id: &str, tab: &str) -> Result<String, ApiError> {
     let found = found(app, session, id, tab)?;
     app.db.cloud_tab_conversation(&session.account, id, tab)?.ok_or_else(|| {
         let message = if found.status == "closing" { "this tab is closing" } else { "this tab is still opening" };
@@ -60,12 +62,12 @@ fn conversation(app: &App, session: &Session, id: &str, tab: &str) -> Result<Str
 }
 
 pub async fn list(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
-) -> Result<Json<Value>, ApiError> {
+) -> Result<Json<CloudTabs>, ApiError> {
     cloud_workspace(&app, &session, &id)?;
-    Ok(Json(json!({"cloud_tabs": app.db.cloud_tabs(&session.account, &id)?})))
+    Ok(Json(CloudTabs { cloud_tabs: app.db.cloud_tabs(&session.account, &id)? }))
 }
 
 #[derive(Deserialize)]
@@ -83,7 +85,7 @@ pub struct Open {
 }
 
 pub async fn open(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
     Json(input): Json<Open>,
@@ -148,7 +150,7 @@ pub async fn open(
 }
 
 pub async fn show(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path((id, tab)): Path<(String, String)>,
 ) -> Result<Json<CloudTab>, ApiError> {
@@ -158,7 +160,7 @@ pub async fn show(
 /// Ends its conversation and deletes its agent, in the worker. The other
 /// tabs, and the machine, carry on. The answer says `closing`.
 pub async fn close(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path((id, tab)): Path<(String, String)>,
 ) -> Result<Json<CloudTab>, ApiError> {
@@ -179,7 +181,7 @@ pub struct Prompt {
 /// before it retries. To a tab whose conversation failed it starts a new
 /// one (`{"relaunched": true}`).
 pub async fn prompt(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path((id, tab)): Path<(String, String)>,
     Json(input): Json<Prompt>,
@@ -226,7 +228,7 @@ pub async fn prompt(
 
 /// Stops the turn in flight. The tab stays open.
 pub async fn interrupt(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path((id, tab)): Path<(String, String)>,
 ) -> Result<Json<Value>, ApiError> {
@@ -247,7 +249,7 @@ pub struct EventQuery {
 }
 
 pub async fn events(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path((id, tab)): Path<(String, String)>,
     Query(query): Query<EventQuery>,
@@ -257,7 +259,7 @@ pub async fn events(
 }
 
 pub async fn requests(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path((id, tab)): Path<(String, String)>,
 ) -> Result<Json<Value>, ApiError> {
@@ -266,7 +268,7 @@ pub async fn requests(
 }
 
 pub async fn answer(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path((id, tab, request)): Path<(String, String, String)>,
     Json(answer): Json<super::Answer>,
@@ -279,25 +281,25 @@ pub async fn answer(
 
 /// The account's closed tabs, read only: their conversations and agents
 /// are gone, their transcripts stay. Another account's are never listed.
-pub async fn past(State(app): State<Arc<App>>, session: Session) -> Result<Json<Value>, ApiError> {
+pub async fn past(State(app): State<Arc<Platform>>, session: Person) -> Result<Json<Value>, ApiError> {
     Ok(Json(json!({"past_tabs": app.db.past_cloud_tabs(&session.account)?})))
 }
 
-fn past_found(app: &App, session: &Session, tab: &str) -> Result<crate::db::cloud::PastCloudTab, ApiError> {
+fn past_found(app: &Platform, session: &Person, tab: &str) -> Result<crate::db::cloud::PastCloudTab, ApiError> {
     app.db.past_cloud_tab(&session.account, tab)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "past tab not found"))
 }
 
 pub async fn past_show(
-    State(app): State<Arc<App>>,
-    session: Session,
+    State(app): State<Arc<Platform>>,
+    session: Person,
     Path(tab): Path<String>,
 ) -> Result<Json<crate::db::cloud::PastCloudTab>, ApiError> {
     Ok(Json(past_found(&app, &session, &tab)?))
 }
 
 pub async fn past_events(
-    State(app): State<Arc<App>>,
-    session: Session,
+    State(app): State<Arc<Platform>>,
+    session: Person,
     Path(tab): Path<String>,
     Query(query): Query<EventQuery>,
 ) -> Result<Json<Value>, ApiError> {
@@ -307,8 +309,8 @@ pub async fn past_events(
 
 /// A past tab asks nothing: its requests ended with it.
 pub async fn past_requests(
-    State(app): State<Arc<App>>,
-    session: Session,
+    State(app): State<Arc<Platform>>,
+    session: Person,
     Path(tab): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     past_found(&app, &session, &tab)?;

@@ -7,9 +7,10 @@ because the relay stays in the hub (`arugula-control`), which is also the
 gateway for every platform path.
 
 Today it runs inside the hub's process. Billing has moved in (M139:
-`src/billing.rs`, its tables in `src/db/billing.rs`); Cloud (M137) and chat
-(M138) follow, each into its own module (`src/cloud/`, `src/chat.rs`). M140
-runs it as its own process behind the hub.
+`src/billing.rs`, its tables in `src/db/billing.rs`), and so has Cloud
+(M137: `src/cloud/`, its tables in `src/db/cloud.rs`, its flags in
+`cloud::Args`, its API types in `arugula-cloud-wire`); chat (M138) follows,
+into `src/chat.rs`. M140 runs it as its own process behind the hub.
 
 Start with `src/lib.rs`, then:
 - `src/hub.rs`: `HubPort`, everything the platform asks the hub, and the
@@ -23,5 +24,5 @@ Start with `src/lib.rs`, then:
 - `src/contract.rs` (feature `contract`): the tests every `HubPort` passes.
   Control runs them against its in-process port (`hub_port.rs`).
 
-Depends on `arugula-control-common` and `arugula-e2e`, never on
-`arugula-control`.
+Depends on `arugula-control-common`, `arugula-cloud-wire` and
+`arugula-e2e`, never on `arugula-control`.

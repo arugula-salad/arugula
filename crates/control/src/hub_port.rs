@@ -229,6 +229,14 @@ impl HubPort for InProcess {
     fn changes(&self, after: u64, limit: u32) -> BoxFuture<'_, HubResult<ChangePage>> {
         Box::pin(async move { self.app()?.db.changes(after, limit) })
     }
+
+    fn personal_project<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        Box::pin(async move { self.app()?.db.personal_project(account, arugula_e2e::now_ms()) })
+    }
+
+    fn can_drive_cloud<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, HubResult<bool>> {
+        Box::pin(async move { self.app()?.db.can_drive_cloud(daemon, account) })
+    }
 }
 
 /// In front of the platform's routes, in process: who's asking, as the
@@ -453,6 +461,23 @@ mod tests {
 
         fn prune_changes(&self, now: u64) -> anyhow::Result<()> {
             self.app.db.prune_changes(now).map(|_| ())
+        }
+
+        fn machine(&self, account: &str, name: &str) -> anyhow::Result<String> {
+            let keys = DeviceKeys::generate();
+            let cert = Cert::new(&keys, account, Kind::Daemon, name);
+            self.app.db.put_device(&cert, true, arugula_e2e::now_ms())?;
+            self.app.db.put_daemon(account, &cert.device, name, &[])?;
+            Ok(cert.device)
+        }
+
+        fn revoke_cloud_drive(&self, account: &str, daemon: &str) -> anyhow::Result<()> {
+            for g in self.app.db.grants(account)? {
+                if g.subject_id == daemon {
+                    self.app.db.revoke_grant(account, &g.id, arugula_e2e::now_ms())?;
+                }
+            }
+            Ok(())
         }
     }
 

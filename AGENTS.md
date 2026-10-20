@@ -43,14 +43,17 @@ Each has a `README.md` with where to start reading.
   builds without libghostty and Zig.
 - `crates/control`: Arugula control's hub: accounts, devices, the directory
   and the relay. It runs the platform in process for now.
-- `crates/platform`: control's platform (#1150): chat, Cloud and billing
-  move here. It reaches the hub only through `HubPort`, and the hub reaches
+- `crates/platform`: control's platform (#1150): billing and Cloud are
+  here, and chat moves here next. It reaches the hub only through `HubPort`, and the hub reaches
   it through `PlatformPort`.
 - `crates/control-common`: what the hub and the platform both use: the SQLite
   opener, API errors, rate limits, analytics and the signed principal.
 - `crates/control-wire`: the enrolment, routing, relay, push and TURN messages
   between daemons and control (and the CLI's join), one type each, so both
   sides build from the same definition.
+- `crates/cloud-wire`: what control's `/api/cloud/` takes and answers with
+  (Cloud workspaces, tabs, agents); the web client's copy is generated
+  from it (`just proto-ts`).
 - `crates/testkit`: the harness for the daemon's integration tests.
 - `crates/desktop`: the desktop app (Tauri). Outside the Cargo workspace, with
   its own `Cargo.lock`, so it releases on its own (#388).

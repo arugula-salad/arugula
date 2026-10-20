@@ -1,14 +1,14 @@
 //! Durable, bounded reconciliation steps. Browser connections never own work.
 use crate::{
-    App,
-    db::cloud::{CloudTabJob, CloudWorkspaceJob, Job},
+    Platform,
+    db::cloud::{CloudTabJob, CloudWorkspaceJob, Job, SpecRules},
 };
 use anyhow::{Context, Result, bail};
 use reqwest::Method;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-pub fn start(app: Arc<App>) {
+pub fn start(app: Arc<Platform>) {
     for _ in 0..4 {
         let app = app.clone();
         tokio::spawn(async move {
@@ -22,11 +22,11 @@ pub fn start(app: Arc<App>) {
     }
 }
 
-pub async fn tick(app: &App) -> Result<()> {
+pub async fn tick(app: &Platform) -> Result<()> {
     tick_at(app, arugula_e2e::now_ms()).await
 }
 
-async fn tick_at(app: &App, now: u64) -> Result<()> {
+async fn tick_at(app: &Platform, now: u64) -> Result<()> {
     let Some(_) = &app.cloud else {
         return Ok(());
     };
@@ -38,7 +38,7 @@ async fn tick_at(app: &App, now: u64) -> Result<()> {
 /// Read a conversation's next page of events and take them in under its
 /// job's claim (`id` is the run's or the tab's). Returns the page.
 async fn pump(
-    app: &App,
+    app: &Platform,
     id: &str,
     account: &str,
     lease: &str,
@@ -65,7 +65,7 @@ const RUN_RETIRED: &str = "Cloud runs were retired before this run finished, so 
 /// deploy finds unfinished is stopped instead, without losing what it made:
 /// a create whose response was lost is found first, the conversation is
 /// read to its end and terminated, then its agent and environment go.
-async fn tick_run(app: &App, now: u64) -> Result<()> {
+async fn tick_run(app: &Platform, now: u64) -> Result<()> {
     let Some(mut job) = app.db.claim_cloud_job(now)? else {
         return Ok(());
     };
@@ -78,11 +78,11 @@ async fn tick_run(app: &App, now: u64) -> Result<()> {
     Ok(())
 }
 
-fn save(app: &App, job: &Job, state: &str, result: Option<&Value>, now: u64) -> Result<()> {
+fn save(app: &Platform, job: &Job, state: &str, result: Option<&Value>, now: u64) -> Result<()> {
     app.db.checkpoint_cloud_job(job, state, result, Some(now + 2_000))
 }
 
-async fn stop_run(app: &App, job: &mut Job, now: u64) -> Result<()> {
+async fn stop_run(app: &Platform, job: &mut Job, now: u64) -> Result<()> {
     let p = &app.cloud.as_ref().context("cloud is disabled")?.provider;
     let ex = &mut job.execution;
     match ex.stage.as_str() {
@@ -167,7 +167,7 @@ async fn stop_run(app: &App, job: &mut Job, now: u64) -> Result<()> {
 const CLOUD_WORKSPACE_BUSY_MS: u64 = 3_000;
 const CLOUD_WORKSPACE_SETTLED_MS: u64 = 15_000;
 
-async fn tick_cloud_workspace(app: &App, now: u64) -> Result<()> {
+async fn tick_cloud_workspace(app: &Platform, now: u64) -> Result<()> {
     let Some(mut job) = app.db.claim_cloud_workspace_job(now)? else {
         return Ok(());
     };
@@ -188,7 +188,7 @@ async fn tick_cloud_workspace(app: &App, now: u64) -> Result<()> {
     Ok(())
 }
 
-fn save_cloud_workspace(app: &App, job: &CloudWorkspaceJob, now: u64) -> Result<()> {
+fn save_cloud_workspace(app: &Platform, job: &CloudWorkspaceJob, now: u64) -> Result<()> {
     let settled = job.execution.stage == "live" && job.cloud_workspace.status != "provisioning" && !job.deleting;
     let wait = if settled || matches!(job.execution.stage.as_str(), "rejected" | "lost") {
         CLOUD_WORKSPACE_SETTLED_MS
@@ -238,7 +238,7 @@ pub(super) fn observe_cloud_workspace(w: &mut crate::db::cloud::CloudWorkspace, 
 /// Create (environment, vault and its secrets, workspace), then poll, then
 /// delete (workspace, vault, environment). Each create is journalled before
 /// Managoat is asked, and found again after a lost response.
-async fn step_cloud_workspace(app: &App, job: &mut CloudWorkspaceJob, now: u64) -> Result<()> {
+async fn step_cloud_workspace(app: &Platform, job: &mut CloudWorkspaceJob, now: u64) -> Result<()> {
     let cloud = app.cloud.as_ref().context("cloud is disabled")?;
     let p = &cloud.provider;
     let id = job.cloud_workspace.id.clone();
@@ -395,7 +395,7 @@ const CLOUD_TAB_BUSY_MS: u64 = 2_000;
 const CLOUD_TAB_IDLE_MS: u64 = 5_000;
 const CLOUD_TAB_ENDED_MS: u64 = 60_000;
 
-async fn tick_cloud_tab(app: &App, now: u64) -> Result<()> {
+async fn tick_cloud_tab(app: &Platform, now: u64) -> Result<()> {
     let Some(mut job) = app.db.claim_cloud_tab_job(now)? else {
         return Ok(());
     };
@@ -416,7 +416,7 @@ async fn tick_cloud_tab(app: &App, now: u64) -> Result<()> {
     Ok(())
 }
 
-fn save_cloud_tab(app: &App, job: &CloudTabJob, now: u64) -> Result<()> {
+fn save_cloud_tab(app: &Platform, job: &CloudTabJob, now: u64) -> Result<()> {
     let wait = match job.tab.status.as_str() {
         _ if job.closing || job.execution.stage != "live" && job.execution.stage != "rejected" => CLOUD_TAB_BUSY_MS,
         "running" | "pending" | "needs_input" => CLOUD_TAB_BUSY_MS,
@@ -431,7 +431,7 @@ fn save_cloud_tab(app: &App, job: &CloudTabJob, now: u64) -> Result<()> {
 /// Open (agent, then conversation), then follow the conversation, then
 /// close (conversation, then agent). Each create is journalled before
 /// Managoat is asked, and found again after a lost response.
-async fn step_cloud_tab(app: &App, job: &mut CloudTabJob, now: u64) -> Result<()> {
+async fn step_cloud_tab(app: &Platform, job: &mut CloudTabJob, now: u64) -> Result<()> {
     let cloud = app.cloud.as_ref().context("cloud is disabled")?;
     let p = &cloud.provider;
     let id = job.tab.id.clone();
@@ -946,7 +946,7 @@ mod tests {
         axum::Json(json!({"data":data})).into_response()
     }
 
-    async fn serve(scenario: Fake) -> (Arc<App>, Arc<Mutex<Fake>>, tokio::task::JoinHandle<()>) {
+    async fn serve(scenario: Fake) -> (Arc<Platform>, Arc<Mutex<Fake>>, tokio::task::JoinHandle<()>) {
         let fake = Arc::new(Mutex::new(scenario));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
@@ -957,10 +957,10 @@ mod tests {
         (app.start(), fake, server)
     }
 
-    fn cloud_workspace(app: &App) -> crate::db::cloud::CloudWorkspace {
+    fn cloud_workspace(app: &Platform) -> crate::db::cloud::CloudWorkspace {
         let cipher = app.cloud.as_ref().unwrap().secret_cipher.as_ref().unwrap();
         app.db
-            .put_cloud_secret("a", "GITHUB_TOKEN", &cipher.seal("a", "GITHUB_TOKEN", "repo-secret").unwrap())
+            .put_cloud_secret("a", "prj_a", "GITHUB_TOKEN", &cipher.seal("a", "GITHUB_TOKEN", "repo-secret").unwrap())
             .unwrap();
         let mut spec: crate::db::cloud::CloudWorkspaceSpec = serde_json::from_value(json!({
             "name":"App box",
@@ -971,7 +971,7 @@ mod tests {
         }))
         .unwrap();
         spec.normalize().unwrap();
-        app.db.create_cloud_workspace("a", "request", &spec, 0).unwrap()
+        app.db.create_cloud_workspace("a", "prj_a", "request", &spec, 0).unwrap()
     }
 
     fn posts(fake: &Mutex<Fake>, path: &str) -> usize {
@@ -979,7 +979,7 @@ mod tests {
     }
 
     /// Run the worker for `ticks` seconds of its clock, from `from`.
-    async fn run(app: &App, from: u64, ticks: u64) {
+    async fn run(app: &Platform, from: u64, ticks: u64) {
         for i in 0..ticks {
             tick_at(app, from + i * 1_000).await.unwrap();
         }
@@ -1102,11 +1102,11 @@ mod tests {
     }
 
     /// Control's routes over `app`, and a client signed in as `account`.
-    async fn routes(app: &Arc<App>) -> (String, tokio::task::JoinHandle<()>) {
+    async fn routes(app: &Arc<Platform>) -> (String, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}/api/cloud", listener.local_addr().unwrap());
         let app = app.clone();
-        (base, tokio::spawn(async move { axum::serve(listener, crate::router(app)).await.unwrap() }))
+        (base, tokio::spawn(async move { axum::serve(listener, crate::cloud::tests::router(app)).await.unwrap() }))
     }
 
     async fn call(method: reqwest::Method, url: &str, account: &str, body: Option<Value>) -> (StatusCode, Value) {
@@ -1487,7 +1487,7 @@ mod tests {
 
     /// A run as one was made before runs were retired, its job at `stage`
     /// with everything it had made.
-    fn retired_run(app: &App, stage: &str, made: bool) -> crate::db::cloud::CloudRun {
+    fn retired_run(app: &Platform, stage: &str, made: bool) -> crate::db::cloud::CloudRun {
         let spec = crate::db::cloud::RunSpec {
             agent_id: "curated_coding".into(),
             agent_version: 1,
@@ -1583,7 +1583,9 @@ mod tests {
         let (app, fake, server) = serve(Fake::default()).await;
         let created = cloud_workspace(&app);
         let cipher = app.cloud.as_ref().unwrap().secret_cipher.as_ref().unwrap();
-        app.db.put_cloud_secret("a", "NPM_TOKEN", &cipher.seal("a", "NPM_TOKEN", "npm-secret").unwrap()).unwrap();
+        app.db
+            .put_cloud_secret("a", "prj_a", "NPM_TOKEN", &cipher.seal("a", "NPM_TOKEN", "npm-secret").unwrap())
+            .unwrap();
         run(&app, 0, 60).await;
         let (base, routes) = routes(&app).await;
         let mut spec = serde_json::to_value(&created.saved_spec).unwrap();

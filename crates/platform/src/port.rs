@@ -47,14 +47,17 @@ pub struct Deleted {
     pub disbanded: Vec<String>,
 }
 
-/// In process. Billing has filled in its parts (M139): `active_plans`,
-/// `roster_changed` and its part of `account_deleted`. The rest answer
-/// "nothing here" until Cloud fills in `delete_blockers` and its part of
-/// `account_deleted` (M137), and chat `chat_on` and its part (M138); until
-/// then the hub answers those itself.
+/// In process. Billing (M139) answers `active_plans`, `roster_changed`
+/// and its part of `account_deleted`; Cloud (M137) `delete_blockers` and
+/// its part of `account_deleted`. `chat_on` answers "nothing here" until
+/// chat fills it in, with its part (M138); until then the hub answers it
+/// itself.
 impl PlatformPort for Platform {
-    fn delete_blockers<'a>(&'a self, _account: &'a str, _start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
-        Box::pin(async { Ok(vec![]) })
+    fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
+        Box::pin(async move {
+            let blockers = crate::cloud::account::delete_blockers(self, account, start)?;
+            Ok(blockers)
+        })
     }
 
     fn account_deleted<'a>(&'a self, deleted: &'a Deleted) -> BoxFuture<'a, anyhow::Result<()>> {
@@ -63,6 +66,8 @@ impl PlatformPort for Platform {
             let tx = c.transaction()?;
             db::billing::erase_account(&tx, deleted)?;
             tx.commit()?;
+            drop(c);
+            crate::cloud::account::account_deleted(self, &deleted.account)?;
             Ok(())
         })
     }

@@ -2,6 +2,10 @@
 //! authorization boundary: every lookup is scoped to the owning account.
 use super::Db;
 use anyhow::{Result, bail};
+pub use arugula_cloud_wire::{
+    AgentDefinition, CloudAgent, CloudRun, CloudTab, CloudWorkspace, CloudWorkspaceChange, CloudWorkspaceNetworking,
+    CloudWorkspacePackages, CloudWorkspaceRepository, CloudWorkspaceSpec, PastCloudTab, RunSpec, Skill,
+};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
@@ -276,30 +280,13 @@ pub(super) fn migrate(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// User-editable agent definition. Model funding and execution credentials are
-/// supplied by control, not accepted as user-selected provider configuration.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentDefinition {
-    pub name: String,
-    pub instructions: String,
-    #[serde(default)]
-    pub mcp_servers: std::collections::BTreeMap<String, serde_json::Value>,
-    #[serde(default)]
-    pub skills: Vec<Skill>,
-    #[serde(default)]
-    pub secret_names: Vec<String>,
+/// What control checks of an agent's definition before keeping it.
+pub trait AgentRules {
+    fn validate(&self) -> Result<()>;
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Skill {
-    pub name: String,
-    pub content: String,
-}
-
-impl AgentDefinition {
-    pub fn validate(&self) -> Result<()> {
+impl AgentRules for AgentDefinition {
+    fn validate(&self) -> Result<()> {
         if self.name.trim().is_empty() || self.name.len() > 120 {
             bail!("name must contain 1–120 bytes");
         }
@@ -329,40 +316,6 @@ impl AgentDefinition {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CloudAgent {
-    pub id: String,
-    pub version: u64,
-    pub definition: AgentDefinition,
-    pub curated: bool,
-}
-
-/// Immutable launch snapshot. Changing an agent later cannot change a queued run.
-/// Credentials belong in the secret store, never in this record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RunSpec {
-    pub agent_id: String,
-    pub agent_version: u64,
-    pub agent: AgentDefinition,
-    pub model: String,
-    pub runtime: String,
-    pub repository: String,
-    pub git_ref: String,
-    #[serde(default)]
-    pub repository_secret: Option<String>,
-    pub prompt: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CloudRun {
-    pub id: String,
-    pub spec: RunSpec,
-    pub state: String,
-    pub created: u64,
-    pub deadline: u64,
-    pub result: Option<serde_json::Value>,
-}
-
 /// Internal provisioning journal. Persist intent before contacting the provider
 /// so a restart reconciles an uncertain creation instead of duplicating it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -387,73 +340,31 @@ pub struct Job {
     pub lease: String,
 }
 
-/// What a Cloud workspace's machine is built from, as the user saved it: it
-/// becomes the environment control keeps for the Cloud workspace. Secret
-/// values stay in the account's secret store; this only names them.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CloudWorkspaceSpec {
-    pub name: String,
-    #[serde(default)]
-    pub repositories: Vec<CloudWorkspaceRepository>,
-    #[serde(default)]
-    pub packages: CloudWorkspacePackages,
-    #[serde(default)]
-    pub setup_script: String,
-    #[serde(default)]
-    pub setup_timeout_seconds: Option<u32>,
-    #[serde(default)]
-    pub env_vars: std::collections::BTreeMap<String, String>,
-    #[serde(default)]
-    pub networking: Option<CloudWorkspaceNetworking>,
-    /// The account's secrets the vault holds besides the repositories' own.
-    #[serde(default)]
-    pub secrets: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CloudWorkspaceRepository {
-    pub url: String,
-    #[serde(default, rename = "ref")]
-    pub git_ref: String,
-    /// `/home/sprite/<repository name>` when left out.
-    #[serde(default)]
-    pub mount: String,
-    /// The secret the clone authenticates with, kept in the vault.
-    #[serde(default)]
-    pub secret: Option<String>,
-}
-
-/// Managoat installs `apt` and `npm` packages; other toolchains go in the
-/// setup script.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CloudWorkspacePackages {
-    #[serde(default)]
-    pub apt: Vec<String>,
-    #[serde(default)]
-    pub npm: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CloudWorkspaceNetworking {
-    /// `unrestricted` or `limited`.
-    #[serde(rename = "type")]
-    pub kind: String,
-    #[serde(default)]
-    pub allowed_hosts: Vec<String>,
-}
-
 fn plain_word(s: &str, max: usize) -> bool {
     !s.is_empty() && s.len() <= max && !s.starts_with('-') && !s.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
-impl CloudWorkspaceSpec {
+/// What control checks of a Cloud workspace's settings, and what it makes
+/// of them for Managoat.
+pub trait SpecRules {
     /// Check what the user sent and fill in the default mounts, so the saved
     /// spec says where each repository is.
-    pub fn normalize(&mut self) -> Result<()> {
+    fn normalize(&mut self) -> Result<()>;
+    /// Every secret the vault holds: the repositories' and the others.
+    fn secret_names(&self) -> Vec<String>;
+    /// The environment's build fields, every one sent so the same body can
+    /// replace them on an update.
+    fn environment(&self) -> serde_json::Value;
+    /// The build fields for a PATCH. Managoat keeps a field a PATCH leaves
+    /// out, so the defaults a create leaves to it are sent too.
+    fn environment_update(&self) -> serde_json::Value;
+    /// One field's value as `pending` shows it. `env_vars` are names only:
+    /// Managoat never says a value, and nor does this.
+    fn field(&self, field: &str) -> serde_json::Value;
+}
+
+impl SpecRules for CloudWorkspaceSpec {
+    fn normalize(&mut self) -> Result<()> {
         self.name = self.name.trim().to_owned();
         if self.name.is_empty() || self.name.len() > 120 {
             bail!("name must contain 1–120 bytes");
@@ -530,8 +441,7 @@ impl CloudWorkspaceSpec {
         Ok(())
     }
 
-    /// Every secret the vault holds: the repositories' and the others.
-    pub fn secret_names(&self) -> Vec<String> {
+    fn secret_names(&self) -> Vec<String> {
         let mut names: Vec<String> =
             self.repositories.iter().filter_map(|r| r.secret.clone()).chain(self.secrets.iter().cloned()).collect();
         names.sort();
@@ -539,9 +449,7 @@ impl CloudWorkspaceSpec {
         names
     }
 
-    /// The environment's build fields, every one sent so the same body can
-    /// replace them on an update.
-    pub fn environment(&self) -> serde_json::Value {
+    fn environment(&self) -> serde_json::Value {
         let repositories: Vec<_> = self
             .repositories
             .iter()
@@ -577,12 +485,8 @@ impl CloudWorkspaceSpec {
         }
         body
     }
-}
 
-impl CloudWorkspaceSpec {
-    /// The build fields for a PATCH. Managoat keeps a field a PATCH leaves
-    /// out, so the defaults a create leaves to it are sent too.
-    pub fn environment_update(&self) -> serde_json::Value {
+    fn environment_update(&self) -> serde_json::Value {
         let mut body = self.environment();
         body["setup_timeout_seconds"] = serde_json::json!(self.setup_timeout_seconds.unwrap_or(120));
         let limited = self.networking.as_ref().filter(|n| n.kind == "limited");
@@ -594,8 +498,6 @@ impl CloudWorkspaceSpec {
         body
     }
 
-    /// One field's value as `pending` shows it. `env_vars` are names only:
-    /// Managoat never says a value, and nor does this.
     fn field(&self, field: &str) -> serde_json::Value {
         match field {
             "repositories" => serde_json::json!(self.repositories),
@@ -607,15 +509,6 @@ impl CloudWorkspaceSpec {
             _ => serde_json::Value::Null,
         }
     }
-}
-
-/// A saved setting the machine wasn't built with: `before` from
-/// `built_spec` (null when that isn't known), `after` from `saved_spec`.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct CloudWorkspaceChange {
-    pub field: String,
-    pub before: serde_json::Value,
-    pub after: serde_json::Value,
 }
 
 /// What a rebuild would change: Managoat's `changed_fields` while it says
@@ -645,36 +538,6 @@ pub fn pending_changes(
             after: saved.field(field),
         })
         .collect()
-}
-
-/// A Cloud workspace as the account sees it. Its Managoat ids stay in
-/// control.
-#[derive(Debug, Clone, Serialize)]
-pub struct CloudWorkspace {
-    pub id: String,
-    pub name: String,
-    pub saved_spec: CloudWorkspaceSpec,
-    pub built_spec: Option<CloudWorkspaceSpec>,
-    /// Managoat's `provisioning`, `ready` or `failed`, or `deleting`.
-    pub status: String,
-    pub sandbox_status: Option<String>,
-    /// The step its setup is running (`machine`, `packages`,
-    /// `repositories`, `setup_script`…) while it's `provisioning`.
-    pub setup_step: Option<String>,
-    pub error: Option<String>,
-    pub revision: Option<String>,
-    pub built_from_revision: Option<String>,
-    pub stale: bool,
-    pub changed_fields: Vec<String>,
-    /// What a rebuild would change (`pending_changes`).
-    pub pending: Vec<CloudWorkspaceChange>,
-    /// False from a settings save until Managoat has them.
-    pub settings_applied: bool,
-    /// A rebuild or retry waits for Managoat to have a machine free.
-    pub rebuild_queued: bool,
-    /// Why the last one that waited didn't happen.
-    pub rebuild_error: Option<String>,
-    pub created: u64,
 }
 
 /// A rebuild or retry asked for (M120), kept while Managoat has no machine
@@ -750,45 +613,6 @@ pub struct CloudTabSpec {
     pub cwd: String,
     #[serde(default)]
     pub prompt: Option<String>,
-}
-
-/// A tab as the account sees it: one conversation in a Cloud workspace.
-#[derive(Debug, Clone, Serialize)]
-pub struct CloudTab {
-    pub id: String,
-    pub cloud_workspace: String,
-    pub agent_id: String,
-    pub agent_name: String,
-    pub runtime: String,
-    pub model: String,
-    pub cwd: String,
-    /// `opening` until its conversation is launched, then the
-    /// conversation's (`pending`, `running`, `idle`, `failed`, `terminated`)
-    /// or `needs_input`; `closing` once closed; `failed` too when Managoat
-    /// refused to open it.
-    pub status: String,
-    pub error: Option<String>,
-    /// Opened with a first prompt while the Cloud workspace sets up: the
-    /// prompt waits in Managoat until setup ends.
-    pub waiting_for_setup: bool,
-    pub created: u64,
-}
-
-/// A closed tab, read only: its conversation and agent are gone, its
-/// transcript is kept. Its Cloud workspace may be deleted too.
-#[derive(Debug, Clone, Serialize)]
-pub struct PastCloudTab {
-    pub id: String,
-    pub cloud_workspace: String,
-    pub cloud_workspace_name: String,
-    /// Its Cloud workspace was deleted (the tab ended with it).
-    pub cloud_workspace_deleted: bool,
-    pub agent_name: String,
-    pub runtime: String,
-    pub model: String,
-    pub cwd: String,
-    pub created: u64,
-    pub closed: u64,
 }
 
 /// The tab's provisioning journal, as `Execution` is a run's.
@@ -935,14 +759,6 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CloudRun> {
     })
 }
 
-fn require_account(conn: &rusqlite::Connection, account: &str) -> Result<()> {
-    let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1)", [account], |r| r.get(0))?;
-    if !exists {
-        bail!("account no longer exists");
-    }
-    Ok(())
-}
-
 impl Db {
     pub fn active_cloud_runs(&self, account: &str) -> Result<u64> {
         Ok(self.c().query_row("SELECT count(*) FROM cloud_runs WHERE account=?1 AND state NOT IN ('completed','failed','cancelled','expired')", [account], |r| r.get(0))?)
@@ -953,13 +769,10 @@ impl Db {
         let mut q = conn.prepare("SELECT name FROM cloud_secrets WHERE account=?1 ORDER BY name")?;
         Ok(q.query_map([account], |r| r.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?)
     }
-    pub fn put_cloud_secret(&self, account: &str, name: &str, sealed: &[u8]) -> Result<()> {
-        let mut conn = self.c();
-        let tx = conn.transaction()?;
-        require_account(&tx, account)?;
-        let project = super::projects::personal_project(&tx, account, arugula_e2e::now_ms())?;
-        tx.execute("INSERT INTO cloud_secrets(account,name,sealed,project_id) VALUES(?1,?2,?3,?4) ON CONFLICT(account,name) DO UPDATE SET sealed=excluded.sealed",params![account,name,sealed,project])?;
-        tx.commit()?;
+    /// Keep a sealed secret in the account's personal `project` (M129,
+    /// which the hub gives: `HubPort::personal_project`).
+    pub fn put_cloud_secret(&self, account: &str, project: &str, name: &str, sealed: &[u8]) -> Result<()> {
+        self.c().execute("INSERT INTO cloud_secrets(account,name,sealed,project_id) VALUES(?1,?2,?3,?4) ON CONFLICT(account,name) DO UPDATE SET sealed=excluded.sealed",params![account,name,sealed,project])?;
         Ok(())
     }
     pub fn delete_cloud_secret(&self, account: &str, name: &str) -> Result<()> {
@@ -989,7 +802,6 @@ impl Db {
         };
         let mut conn = self.c();
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        require_account(&tx, account)?;
         let count: u64 =
             tx.query_row("SELECT count(*) FROM cloud_agents WHERE account=?1 AND archived=0", [account], |r| r.get(0))?;
         if count >= 100 {
@@ -1237,11 +1049,13 @@ impl Db {
 }
 
 impl Db {
-    /// Create a Cloud workspace and its job. A retry with the same request
-    /// key returns the first one; with other settings it's a conflict.
+    /// Create a Cloud workspace and its job, in the account's personal
+    /// `project`. A retry with the same request key returns the first one;
+    /// with other settings it's a conflict.
     pub fn create_cloud_workspace(
         &self,
         account: &str,
+        project: &str,
         request_key: &str,
         spec: &CloudWorkspaceSpec,
         now: u64,
@@ -1251,7 +1065,6 @@ impl Db {
         }
         let mut conn = self.c();
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        require_account(&tx, account)?;
         let existing = tx
             .query_row(
                 &format!("SELECT {CLOUD_WORKSPACE_COLUMNS} FROM cloud_workspaces WHERE account=?1 AND request_key=?2"),
@@ -1276,7 +1089,6 @@ impl Db {
             }
         }
         let id = format!("cw_{}", hex::encode(arugula_e2e::random::<16>()));
-        let project = super::projects::personal_project(&tx, account, now)?;
         tx.execute(
             "INSERT INTO cloud_workspaces(id,account,request_key,name,saved_spec,created,project_id) VALUES(?1,?2,?3,?4,?5,?6,?7)",
             params![id, account, request_key, spec.name, serde_json::to_string(spec)?, now, project],
@@ -1359,6 +1171,50 @@ impl Db {
             self.delete_cloud_workspace(account, &w.id)?;
         }
         Ok(())
+    }
+
+    /// Whether the account's Cloud workspaces are all deleted at Managoat,
+    /// and every tab closed (a tab's agent is Managoat's too): what erasing
+    /// the account waits for.
+    pub fn cloud_workspaces_gone(&self, account: &str) -> Result<bool> {
+        let live: bool = self.c().query_row(
+            "SELECT EXISTS(SELECT 1 FROM cloud_workspaces WHERE account=?1 AND deleted IS NULL)
+                 OR EXISTS(SELECT 1 FROM cloud_tabs WHERE account=?1 AND closed IS NULL)",
+            [account],
+            |r| r.get(0),
+        )?;
+        Ok(!live)
+    }
+
+    /// Erase everything Cloud keeps of an account that's gone, in one
+    /// transaction: what the hub's `Db::delete_account` did while Cloud
+    /// lived there (M137). Answers the Cloud workspaces and tabs that
+    /// weren't deleted at Managoat yet, which go all the same.
+    pub fn erase_cloud_account(&self, a: &str) -> Result<Vec<String>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let left: Vec<String> = {
+            let mut q = tx.prepare(
+                "SELECT id FROM cloud_workspaces WHERE account=?1 AND deleted IS NULL
+                 UNION ALL SELECT id FROM cloud_tabs WHERE account=?1 AND closed IS NULL",
+            )?;
+            q.query_map([a], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
+        };
+        tx.execute("DELETE FROM cloud_run_secrets WHERE run IN (SELECT id FROM cloud_runs WHERE account=?1)", [a])?;
+        for table in ["cloud_requests", "cloud_notifications", "cloud_events"] {
+            tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), [a])?;
+        }
+        tx.execute(
+            "DELETE FROM cloud_jobs WHERE id IN (SELECT id FROM cloud_runs WHERE account=?1 UNION SELECT id FROM cloud_workspaces WHERE account=?1 UNION SELECT id FROM cloud_tabs WHERE account=?1)",
+            [a],
+        )?;
+        for table in
+            ["cloud_runs", "cloud_tabs", "cloud_workspace_specs", "cloud_workspaces", "cloud_agents", "cloud_secrets"]
+        {
+            tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), [a])?;
+        }
+        tx.commit()?;
+        Ok(left)
     }
 
     pub fn claim_cloud_workspace_job(&self, now: u64) -> Result<Option<CloudWorkspaceJob>> {
@@ -2101,11 +1957,7 @@ impl Db {
 mod tests {
     use super::*;
     fn test_db() -> Db {
-        let db = Db::memory();
-        for id in ["a", "b"] {
-            db.account_for("test", id, id, id, 0).unwrap();
-        }
-        db
+        Db::memory()
     }
 
     fn spec() -> RunSpec {
@@ -2144,17 +1996,17 @@ mod tests {
     #[test]
     fn account_erasure_waits_for_cloud_workspaces_to_be_deleted() {
         let db = test_db();
-        let kept = db.create_cloud_workspace("b", "keep", &cloud_workspace_spec(), 0).unwrap();
-        let w = db.create_cloud_workspace("a", "erase", &cloud_workspace_spec(), 0).unwrap();
-        let erase = super::super::Erase { account: "a", disband: &[], retain_for: &[] };
-        assert!(db.delete_account(&erase).is_err());
+        let kept = db.create_cloud_workspace("b", "prj_b", "keep", &cloud_workspace_spec(), 0).unwrap();
+        let w = db.create_cloud_workspace("a", "prj_a", "erase", &cloud_workspace_spec(), 0).unwrap();
+        assert!(!db.cloud_workspaces_gone("a").unwrap());
         db.delete_cloud_workspaces("a").unwrap();
-        assert!(db.delete_account(&erase).is_err(), "still deleting");
+        assert!(!db.cloud_workspaces_gone("a").unwrap(), "still deleting");
         let job = db.claim_cloud_workspace_job(0).unwrap().unwrap();
         let job = if job.cloud_workspace.id == w.id { job } else { db.claim_cloud_workspace_job(0).unwrap().unwrap() };
         assert!(job.deleting);
         db.finish_cloud_workspace_delete(&job, 1).unwrap();
-        db.delete_account(&erase).unwrap();
+        assert!(db.cloud_workspaces_gone("a").unwrap());
+        assert_eq!(db.erase_cloud_account("a").unwrap(), Vec::<String>::new());
         let rows: u64 = db.c().query_row("SELECT count(*) FROM cloud_workspaces", [], |r| r.get(0)).unwrap();
         assert_eq!(rows, 1);
         let jobs: u64 = db.c().query_row("SELECT count(*) FROM cloud_jobs", [], |r| r.get(0)).unwrap();
@@ -2232,7 +2084,7 @@ mod tests {
     #[test]
     fn a_worker_that_read_before_a_rebuild_does_not_undo_it() {
         let db = test_db();
-        let created = db.create_cloud_workspace("a", "one", &cloud_workspace_spec(), 0).unwrap();
+        let created = db.create_cloud_workspace("a", "prj_a", "one", &cloud_workspace_spec(), 0).unwrap();
         let mut job = db.claim_cloud_workspace_job(0).unwrap().unwrap();
         job.execution.stage = "live".into();
         job.cloud_workspace.status = "ready".into();
@@ -2329,7 +2181,7 @@ mod tests {
     #[test]
     fn account_erasure_waits_for_tabs_and_takes_their_events() {
         let db = test_db();
-        let w = db.create_cloud_workspace("a", "erase", &cloud_workspace_spec(), 0).unwrap();
+        let w = db.create_cloud_workspace("a", "prj_a", "erase", &cloud_workspace_spec(), 0).unwrap();
         db.c().execute("UPDATE cloud_workspaces SET status='ready',provider_id='ws1' WHERE id=?1", [&w.id]).unwrap();
         let spec = CloudTabSpec {
             agent_id: "agent_test".into(),
@@ -2349,7 +2201,6 @@ mod tests {
         db.delete_cloud_workspaces("a").unwrap();
         assert_eq!(db.cloud_tab("a", &w.id, &tab.id).unwrap().unwrap().status, "closing");
         assert!(db.create_cloud_tab("a", &w.id, "late", &spec, 0).is_err());
-        let erase = super::super::Erase { account: "a", disband: &[], retain_for: &[] };
         let w_job = loop {
             let job = db.claim_cloud_workspace_job(0).unwrap().unwrap();
             if job.cloud_workspace.id == w.id {
@@ -2357,14 +2208,15 @@ mod tests {
             }
         };
         db.finish_cloud_workspace_delete(&w_job, 1).unwrap();
-        assert!(db.delete_account(&erase).is_err(), "its tab still has an agent");
+        assert!(!db.cloud_workspaces_gone("a").unwrap(), "its tab still has an agent");
         let tab_job = db.claim_cloud_tab_job(0).unwrap().unwrap();
         assert!(tab_job.closing);
         db.finish_cloud_tab_close(&tab_job, 1).unwrap();
         // Kept as a past tab until the account goes, then erased with it.
         assert_eq!(db.past_cloud_tabs("a").unwrap().len(), 1);
         assert!(db.past_cloud_tab("b", &tab.id).unwrap().is_none());
-        db.delete_account(&erase).unwrap();
+        assert!(db.cloud_workspaces_gone("a").unwrap());
+        db.erase_cloud_account("a").unwrap();
         assert!(db.past_cloud_tabs("a").unwrap().is_empty());
         for table in ["cloud_tabs", "cloud_events", "cloud_jobs", "cloud_workspaces"] {
             let count: u64 = db.c().query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap();
@@ -2375,7 +2227,7 @@ mod tests {
     #[test]
     fn built_spec_follows_the_revision_that_reached_ready() {
         let db = test_db();
-        let w = db.create_cloud_workspace("a", "built", &cloud_workspace_spec(), 0).unwrap();
+        let w = db.create_cloud_workspace("a", "prj_a", "built", &cloud_workspace_spec(), 0).unwrap();
         let mut job = db.claim_cloud_workspace_job(0).unwrap().unwrap();
         job.saved_revision = Some("rev1".into());
         job.cloud_workspace.status = "ready".into();
@@ -2400,15 +2252,12 @@ mod tests {
     }
 
     #[test]
-    fn account_deletion_waits_for_cleanup_then_erases_cloud_data() {
+    fn erasing_an_account_takes_every_cloud_row_of_its() {
         let db = test_db();
         let run = run(&db, "a", &spec());
         db.create_cloud_agent("a", spec().agent).unwrap();
-        db.put_cloud_secret("a", "TOKEN", b"sealed").unwrap();
-        db.put_cloud_secret("b", "TOKEN", b"other-owner").unwrap();
-        let erase = super::super::Erase { account: "a", disband: &[], retain_for: &[] };
-        assert!(db.delete_account(&erase).is_err());
-        assert!(db.account("a").unwrap().is_some());
+        db.put_cloud_secret("a", "prj_a", "TOKEN", b"sealed").unwrap();
+        db.put_cloud_secret("b", "prj_b", "TOKEN", b"other-owner").unwrap();
         assert_eq!(db.active_cloud_runs("a").unwrap(), 1);
         let job = db.claim_cloud_job(0).unwrap().unwrap();
         db.checkpoint_cloud_job(&job, "cancelled", Some(&serde_json::json!({})), None).unwrap();
@@ -2422,8 +2271,8 @@ mod tests {
         ] {
             db.c().execute(sql, [&run.id]).unwrap();
         }
-        db.delete_account(&erase).unwrap();
-        assert!(db.account("a").unwrap().is_none());
+        assert_eq!(db.active_cloud_runs("a").unwrap(), 0);
+        db.erase_cloud_account("a").unwrap();
         for table in [
             "cloud_runs",
             "cloud_agents",
@@ -2438,8 +2287,6 @@ mod tests {
         }
         assert!(db.cloud_secret_names("a").unwrap().is_empty());
         assert_eq!(db.cloud_secret_names("b").unwrap(), ["TOKEN"]);
-        assert!(db.create_cloud_agent("a", spec().agent).is_err());
-        assert!(db.put_cloud_secret("a", "TOKEN", b"raced").is_err());
     }
 
     #[test]
@@ -2492,7 +2339,6 @@ mod tests {
         let id;
         {
             let db = Db::open(&path).unwrap();
-            db.account_for("test", "a", "a", "a", 0).unwrap();
             db.create_cloud_agent("a", spec().agent).unwrap();
             id = run(&db, "a", &spec()).id;
         }

@@ -24,8 +24,8 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-16"
 reviews: []
 constrains:
-  - "path:crates/control/src/cloud"
-  - "path:crates/control/src/db/cloud.rs"
+  - "path:crates/platform/src/cloud"
+  - "path:crates/platform/src/db/cloud.rs"
   - "path:web/src/ui/cloud.tsx"
   - "path:web/src/ui/cloud-workspaces.tsx"
   - "path:web/src/ui/cloud-launch.tsx"
@@ -67,7 +67,7 @@ processes: a hub and a platform", #1150): the worker, its leases, Managoat
 and cloud secrets move there (M137), and the hub's gateway keeps the Cloud
 paths on `control.arugula.io`.
 
-Where: `crates/control/src/cloud/`, `crates/control/src/db/cloud.rs`,
+Where: `crates/platform/src/cloud/`, `crates/platform/src/db/cloud.rs`,
 `web/src/ui/cloud.tsx`, `web/src/ui/cloud-workspaces.tsx`,
 `web/src/ui/cloud-launch.tsx`, [managed cloud agents](docs/managoat.md),
 `spikes/s40-cloud-workspaces/PLAN.md`.

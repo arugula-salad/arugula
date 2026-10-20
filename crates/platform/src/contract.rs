@@ -55,6 +55,11 @@ pub trait Fixture: Send + Sync {
     fn pushes(&self) -> usize;
     /// The hub's prune of its change feed, as it would run at `now` (ms).
     fn prune_changes(&self, now: u64) -> anyhow::Result<()>;
+    /// A machine that joins the account the way a daemon does, approved,
+    /// which gives it `cloud.drive` over the account: its id.
+    fn machine(&self, account: &str, name: &str) -> anyhow::Result<String>;
+    /// The account revokes its machine's `cloud.drive` grant.
+    fn revoke_cloud_drive(&self, account: &str, daemon: &str) -> anyhow::Result<()>;
 }
 
 /// Every check, in turn.
@@ -67,6 +72,7 @@ pub async fn run(f: &dyn Fixture) {
     flags(f).await;
     meters(f).await;
     push(f).await;
+    cloud(f).await;
     // Last: it prunes the feed.
     changes(f).await;
 }
@@ -307,6 +313,27 @@ async fn push(f: &dyn Fixture) {
     f.subscribe("acct-pv", true).unwrap();
     assert_eq!(hub.push("acct-pv", &msg).await.unwrap(), Pushed { sent: 0, gone: 1, failed: 0 });
     assert_eq!(hub.push("acct-pv", &msg).await.unwrap(), Pushed::default(), "a subscription that's gone is forgotten");
+}
+
+/// What Cloud asks (M137): an account's personal project, and a machine's
+/// `cloud.drive` grant.
+async fn cloud(f: &dyn Fixture) {
+    let hub = f.hub();
+    f.account("acct-cl", "cl", "").unwrap();
+    f.account("acct-cm", "cm", "").unwrap();
+    let project = hub.personal_project("acct-cl").await.unwrap().expect("an account has one");
+    assert!(project.starts_with("prj_"), "{project}");
+    assert_eq!(hub.personal_project("acct-cl").await.unwrap(), Some(project.clone()), "the same one after");
+    let theirs = hub.personal_project("acct-cm").await.unwrap().expect("each account has its own");
+    assert_ne!(theirs, project);
+    assert_eq!(hub.personal_project("acct-none").await.unwrap(), None, "no such account");
+
+    let m = f.machine("acct-cl", "cl-box").unwrap();
+    assert!(hub.can_drive_cloud(&m, "acct-cl").await.unwrap(), "a machine that joined drives its account's");
+    assert!(!hub.can_drive_cloud(&m, "acct-cm").await.unwrap(), "and no other account's");
+    assert!(!hub.can_drive_cloud("dmn-none", "acct-cl").await.unwrap(), "no such machine");
+    f.revoke_cloud_drive("acct-cl", &m).unwrap();
+    assert!(!hub.can_drive_cloud(&m, "acct-cl").await.unwrap(), "a revoked grant");
 }
 
 /// Every change after `after`, a page of `limit` at a time.
