@@ -12,7 +12,6 @@
 mod acl;
 mod close;
 mod conversations;
-mod convs;
 mod flags;
 mod fs;
 mod hosts;
@@ -32,7 +31,6 @@ mod signin;
 mod studio;
 mod synced;
 mod telemetry;
-mod threads;
 mod tokens;
 mod wait;
 mod waits;
@@ -100,9 +98,7 @@ impl OpError {
 pub enum Via<'a> {
     /// An HTTP request, past `authz::check`: who asks (and whether that's
     /// the owner), and whether the owner's CLI says an agent runs it.
-    /// `acting`: a team's other owner (#935), who is `Owner` here for what
-    /// they may and themselves for what is recorded as theirs.
-    Http { who: Principal, owner: bool, agent: bool, acting: Option<Principal> },
+    Http { who: Principal, owner: bool, agent: bool },
     /// An MCP tool call, with its caller's scope.
     Mcp(&'a Call<'a>),
 }
@@ -178,26 +174,6 @@ impl FromPath for usize {
     }
 }
 
-/// `pane-7`, `session-2` or `conv-c-…`; anything else is the 404 the
-/// thread routes gave.
-impl FromPath for arugula_proto::ThreadTarget {
-    async fn from_parts(parts: &mut Parts) -> Result<Self, Response> {
-        let Path(key) = Path::<String>::from_request_parts(parts, &()).await.map_err(IntoResponse::into_response)?;
-        Self::parse(&key).ok_or_else(|| {
-            ApiError(StatusCode::NOT_FOUND, "a thread is pane-N, session-N or conv-c-…".into()).into_response()
-        })
-    }
-}
-
-/// A conversation's id, `c-` and 32 hex digits (#855); anything else is
-/// no conversation (404).
-impl FromPath for arugula_proto::ConvId {
-    async fn from_parts(parts: &mut Parts) -> Result<Self, Response> {
-        let Path(id) = Path::<String>::from_request_parts(parts, &()).await.map_err(IntoResponse::into_response)?;
-        id.parse().map_err(|why: String| ApiError(StatusCode::NOT_FOUND, why).into_response())
-    }
-}
-
 impl FromPath for String {
     async fn from_parts(parts: &mut Parts) -> Result<Self, Response> {
         Path::<String>::from_request_parts(parts, &()).await.map(|Path(s)| s).map_err(IntoResponse::into_response)
@@ -235,11 +211,6 @@ where
     let who = parts.extensions.get::<Principal>().cloned().unwrap_or(Principal::Owner);
     let owner = who.is_owner();
     let agent = crate::invite::agent(&parts.headers);
-    let acting = parts
-        .extensions
-        .get::<crate::e2e::Caller>()
-        .filter(|_| owner)
-        .and_then(|c| app.control.co_owner_of(&c.account));
     let body = match <O::Req as Request>::without_body() {
         Some(none) => none,
         // A GET's request is its query string.
@@ -265,7 +236,7 @@ where
     if O::ACCESS == Access::Owner && !owner {
         return ApiError(StatusCode::FORBIDDEN, "only the owner can".into()).into_response();
     }
-    let cx = Cx { app: &app, via: Via::Http { who, owner, agent, acting } };
+    let cx = Cx { app: &app, via: Via::Http { who, owner, agent } };
     match O::handle(&cx, path, body).await {
         Ok(res) => Json(res).into_response(),
         Err(OpError::Text(code, why)) => (code, why).into_response(),

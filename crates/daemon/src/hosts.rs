@@ -555,7 +555,6 @@ pub(crate) fn features(app: &App) -> HostFeatures {
         block_channels: crate::sites::control_blocks(),
         vms: on.has(flags::VMS) && app.mux.provider.is_some(),
         studio: on.has(flags::STUDIO) && crate::labs::studio_here(),
-        threads: on.has(flags::CHAT),
         flags: Some(on.names().map(str::to_owned).collect()),
     }
 }

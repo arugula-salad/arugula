@@ -28,4 +28,3 @@ studio.apps GET /api/studio/apps
 studio.get GET /api/studio
 synced.list GET /api/synced
 team_pins.get GET /api/team-pins
-thread.get GET /api/threads/{target}

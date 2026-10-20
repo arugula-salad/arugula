@@ -332,9 +332,6 @@ impl InviteBlock {
             history: false,
             drive_minutes: drive,
             root: None,
-            thread: None,
-            msg: None,
-            whole_thread: false,
         };
         let drafted = super::Drafted { by: d.by.clone(), pane: d.from, approved_by: by.name.clone() };
         let app = self.hook.get().and_then(Weak::upgrade);

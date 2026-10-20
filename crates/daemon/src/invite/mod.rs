@@ -18,10 +18,6 @@
 //! agent's on the owner's CLI (`X-Arugula-Agent`): an agent asks with
 //! `invite_person`, and the owner sends it.
 //!
-//! From a thread (#297: the owner's offer when an @ named someone who
-//! can't read it), it opens that thread: from the message, or all of it,
-//! and no other thread's past.
-//!
 //! An agent's invite (#234, MCP's `invite_person`) is a draft on a card
 //! ([`card`]) that only the owner sends: then [`run`] does the same, as
 //! them.
@@ -32,7 +28,7 @@ use std::sync::{Arc, OnceLock, Weak};
 
 use arugula_core::{Role, SessionId};
 use arugula_proto::{
-    PaneId, ThreadTarget,
+    PaneId,
     api::{InviteDelivery, InviteGrant, InviteRequest, Invited, TeamPins, TeamPinsRequest},
     op::ops::{InviteSend, TeamPinsGet, TeamPinsSet},
 };
@@ -43,7 +39,7 @@ use axum::{
 use serde_json::json;
 
 use crate::{
-    acl::{Principal, ThreadFrom},
+    acl::Principal,
     control::{REFRESH_WAIT, Waiting},
     mux::{Api, Cmd},
     ops::OpRoutes,
@@ -92,51 +88,9 @@ pub struct Person {
     pub id: String,
     pub name: String,
     root: Option<String>,
-    /// Another principal [`nameable`] took to be them (a login by their
-    /// name): shown, so the owner sees whom it chose.
-    pub merged: Option<String>,
 }
 
 const UNKNOWN: &str = "share once from the web (it checks their fingerprint), then invite works";
-
-/// Everyone an invite may name (#297): those shared with, and the members
-/// of rosters this daemon checked, as [`resolve`] finds them. One person
-/// known two ways (a login and an account of the same name) is their
-/// account, which control reaches; not whoever owns this machine.
-pub fn nameable(app: &App) -> Vec<Person> {
-    let mut out: Vec<Person> = Vec::new();
-    let grants = app
-        .acl
-        .list()
-        .into_iter()
-        .filter(|g| g.principal.starts_with("tailnet:") || g.principal.starts_with("account:"));
-    let people = grants.map(|g| Person { id: g.principal, name: g.name, root: g.root, merged: None }).chain(
-        app.control.known().into_iter().map(|k| Person {
-            id: format!("account:{}", k.account),
-            name: k.name,
-            root: Some(k.root),
-            merged: None,
-        }),
-    );
-    let account = |p: &Person| p.id.starts_with("account:");
-    let key = |p: &Person| p.name.split('@').next().unwrap_or("").trim().to_lowercase();
-    for p in people {
-        if is_me(app, &p.id) || out.iter().any(|o| o.id == p.id) {
-            continue;
-        }
-        // A login and an account by one name: the account, saying which
-        // login it stands for. Two logins, or two accounts, are two people.
-        match out.iter().position(|o| account(o) != account(&p) && key(o) == key(&p)) {
-            Some(i) if account(&p) => {
-                let login = std::mem::replace(&mut out[i], p);
-                out[i].merged = Some(login.id);
-            }
-            Some(i) => out[i].merged = Some(p.id),
-            None => out.push(p),
-        }
-    }
-    out
-}
 
 /// Who `who` is, by what this daemon knows itself: its grants and the
 /// rosters it checked. An explicit root counts only where nothing else
@@ -158,7 +112,7 @@ pub fn resolve(app: &App, who: &str, root: Option<String>) -> Result<Person, (St
             return Err(no(StatusCode::BAD_REQUEST, "tailnet:<login>"));
         }
         let login = login.to_ascii_lowercase();
-        return Ok(Person { id: format!("tailnet:{login}"), name: login, root: None, merged: None });
+        return Ok(Person { id: format!("tailnet:{login}"), name: login, root: None });
     }
     let unknown = || {
         let hint = if who.contains('@') { format!(" (a tailnet login: tailnet:{who})") } else { String::new() };
@@ -169,14 +123,14 @@ pub fn resolve(app: &App, who: &str, root: Option<String>) -> Result<Person, (St
             return Err(no(StatusCode::BAD_REQUEST, "account:<id>"));
         }
         if let Some(g) = grants.iter().find(|g| g.principal == who) {
-            return Ok(Person { id: who.to_owned(), name: g.name.clone(), root: g.root.clone(), merged: None });
+            return Ok(Person { id: who.to_owned(), name: g.name.clone(), root: g.root.clone() });
         }
         if let Some(k) = known.iter().find(|k| k.account == account) {
-            return Ok(Person { id: who.to_owned(), name: k.name.clone(), root: Some(k.root.clone()), merged: None });
+            return Ok(Person { id: who.to_owned(), name: k.name.clone(), root: Some(k.root.clone()) });
         }
         return match root {
             Some(r) if ok_id(&r) && r.bytes().all(|c| c.is_ascii_alphanumeric()) => {
-                Ok(Person { id: who.to_owned(), name: account.to_owned(), root: Some(r), merged: None })
+                Ok(Person { id: who.to_owned(), name: account.to_owned(), root: Some(r) })
             }
             Some(_) => Err(no(StatusCode::BAD_REQUEST, "root: a device id")),
             None => Err(unknown()),
@@ -188,13 +142,13 @@ pub fn resolve(app: &App, who: &str, root: Option<String>) -> Result<Person, (St
     for g in &grants {
         let tail = g.principal.split_once(':').map_or("", |(_, t)| t);
         if (same(&g.name) || same(tail)) && !found.iter().any(|p| p.id == g.principal) {
-            found.push(Person { id: g.principal.clone(), name: g.name.clone(), root: g.root.clone(), merged: None });
+            found.push(Person { id: g.principal.clone(), name: g.name.clone(), root: g.root.clone() });
         }
     }
     for k in &known {
         let id = format!("account:{}", k.account);
         if (same(&k.name) || same(&k.account)) && !found.iter().any(|p| p.id == id) {
-            found.push(Person { id, name: k.name.clone(), root: Some(k.root.clone()), merged: None });
+            found.push(Person { id, name: k.name.clone(), root: Some(k.root.clone()) });
         }
     }
     match found.len() {
@@ -235,12 +189,7 @@ pub async fn run(app: &App, b: InviteRequest, drafted: Option<&Drafted>) -> Resu
             return Err(no(StatusCode::BAD_REQUEST, "drive_minutes: 1 to 1440"));
         }
     }
-    let thread = from_thread(app, &b).await?;
-    let pane = b.pane.or(match thread.as_ref().and_then(|t| ThreadTarget::parse(&t.thread)) {
-        Some(ThreadTarget::Pane(p)) => Some(p),
-        _ => None,
-    });
-    let (pane, session_name) = match app.mux.api(|r| Api::InviteTo(b.session, pane, r)).await {
+    let (pane, session_name) = match app.mux.api(|r| Api::InviteTo(b.session, b.pane, r)).await {
         Some(Ok(x)) => x,
         Some(Err(why)) => return Err(no(StatusCode::NOT_FOUND, why)),
         None => return Err(no(StatusCode::SERVICE_UNAVAILABLE, "shutting down")),
@@ -283,19 +232,8 @@ pub async fn run(app: &App, b: InviteRequest, drafted: Option<&Drafted>) -> Resu
                 None => return Err(no(StatusCode::NOT_FOUND, "no such session")),
             }
         };
-        // Where the thread it came from starts for them: only a new grant's
-        // (one held keeps its own), and moot with history.
-        let thread_from = thread.clone().filter(|_| grant.is_none() && from.is_some());
-        let set = app.acl.set_full(
-            b.session,
-            &person.id,
-            &person.name,
-            Some(want),
-            "owner",
-            from,
-            person.root.clone(),
-            thread_from,
-        );
+        let set =
+            app.acl.set_full(b.session, &person.id, &person.name, Some(want), "owner", from, person.root.clone());
         if let Err(e) = set {
             return Err(no(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
         }
@@ -317,11 +255,7 @@ pub async fn run(app: &App, b: InviteRequest, drafted: Option<&Drafted>) -> Resu
     let note: String = b.note.as_deref().unwrap_or("").trim().chars().take(300).collect();
     let title = format!("{owner} brought you into {session_name}");
     let body = if note.is_empty() { "Open it to join in.".to_owned() } else { note.clone() };
-    let mut extra = json!({ "tag": format!("invite-{id}"), "invite": id, "session": b.session });
-    // A tap opens the thread they were mentioned in.
-    if let Some(t) = &thread {
-        extra["thread"] = json!(t.thread);
-    }
+    let extra = json!({ "tag": format!("invite-{id}"), "invite": id, "session": b.session });
     // Whoever of theirs is here now hears at once.
     let told = if note.is_empty() { title.clone() } else { format!("{title}: {note}") };
     app.mux.send(Cmd::Api(Api::Tell(person.id.clone(), told)));
@@ -347,40 +281,6 @@ pub async fn run(app: &App, b: InviteRequest, drafted: Option<&Drafted>) -> Resu
         reason,
         drive,
     })
-}
-
-/// An invite from a thread (#297): the thread, checked to be in the
-/// session, and where it starts for them: the message, posted already and
-/// in that thread, or all of it.
-async fn from_thread(app: &App, b: &InviteRequest) -> Result<Option<ThreadFrom>, (StatusCode, String)> {
-    let Some(key) = &b.thread else {
-        if b.msg.is_some() || b.whole_thread {
-            return Err(no(StatusCode::BAD_REQUEST, "msg and whole_thread go with a thread"));
-        }
-        return Ok(None);
-    };
-    // Threads are chat's, which the machine may have off (#347).
-    crate::labs::flag(app.control.state_dir(), arugula_proto::flags::CHAT)
-        .map_err(|why| no(StatusCode::BAD_REQUEST, why))?;
-    let target = ThreadTarget::parse(key).ok_or_else(|| no(StatusCode::BAD_REQUEST, "thread: pane-N or session-N"))?;
-    let (session, at) = match app.mux.api(|r| Api::ThreadPlace(target, b.msg, r)).await {
-        Some(Ok(x)) => x,
-        Some(Err(why)) => return Err(no(StatusCode::BAD_REQUEST, why)),
-        None => return Err(no(StatusCode::SERVICE_UNAVAILABLE, "shutting down")),
-    };
-    if session != b.session {
-        return Err(no(StatusCode::BAD_REQUEST, format!("{key} isn't in session {}", b.session)));
-    }
-    let from = match (b.msg, at) {
-        (None, _) if b.whole_thread => 0,
-        (None, _) => {
-            return Err(no(StatusCode::BAD_REQUEST, "msg: the message they're brought in to see (or whole_thread)"));
-        }
-        (Some(m), None) => return Err(no(StatusCode::BAD_REQUEST, format!("{key} has no message {m}"))),
-        (Some(_), Some(_)) if b.whole_thread => 0,
-        (Some(_), Some(at)) => at,
-    };
-    Ok(Some(ThreadFrom { thread: target.key(), from }))
 }
 
 fn article(r: Role) -> &'static str {

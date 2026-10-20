@@ -291,16 +291,6 @@ impl Enrolled {
                 others.push((c, Principal::User { id: g.principal.clone(), name: name.clone(), pic: None }));
             }
         }
-        // #856: people a conversation here lets in by being in it, from the
-        // root its owner's browser pinned (or a roster here names).
-        for r in acl.reach() {
-            let Some(account) = r.principal.strip_prefix("account:") else { continue };
-            let Some(p) = saved.peers.get(account) else { continue };
-            let t = Trust { account: account.to_owned(), root: r.root.clone() }.evaluate(&p.certs, &p.revocations);
-            for c in t.devices.into_values().filter(|c| c.kind.connects()) {
-                others.push((c, Principal::User { id: r.principal.clone(), name: r.name.clone(), pic: None }));
-            }
-        }
         // Teams sessions were shared with (M30): their members, as people.
         let mut shared_roles: HashMap<String, HashMap<String, Role>> = HashMap::new();
         for (team, t) in &saved.shared_teams {
@@ -1307,16 +1297,9 @@ impl Control {
             saved.locked = t.locked;
         }
 
-        // People sessions here are shared with, and (#856) those a
-        // conversation here lets in.
-        let accounts: Vec<String> = self
-            .acl
-            .list()
-            .iter()
-            .map(|g| g.principal.clone())
-            .chain(self.acl.reach().into_iter().map(|r| r.principal))
-            .filter_map(|p| p.strip_prefix("account:").map(str::to_owned))
-            .collect();
+        // People sessions here are shared with.
+        let accounts: Vec<String> =
+            self.acl.list().iter().filter_map(|g| g.principal.strip_prefix("account:").map(str::to_owned)).collect();
         // The account's own login comes with them (M30): what to call it.
         let own = saved.cert.account.clone();
         let mut peers: BTreeMap<String, PeerCerts> = self
@@ -3105,7 +3088,7 @@ pub(crate) mod tests {
         /// The owner shares session 1 with Bea, as `account:b1`.
         fn grant(&self) {
             let root = self.bea.id();
-            self.acl.set_full(1, "account:b1", "bea", Some(Role::Editor), "owner", None, Some(root), None).unwrap();
+            self.acl.set_full(1, "account:b1", "bea", Some(Role::Editor), "owner", None, Some(root)).unwrap();
         }
 
         /// What Bea's phone got, decrypted as a browser would (RFC 8291).

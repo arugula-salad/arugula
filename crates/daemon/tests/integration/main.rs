@@ -34,12 +34,10 @@ mod doc;
 mod editor_swarm;
 #[cfg(feature = "editor")]
 mod editors;
-// M124: the store it imports from is Labs'.
+// M124: the `chat` flag that turns the import on is Labs'.
 #[cfg(all(unix, feature = "labs"))]
 mod chat_import;
 // #347: needs the forge too (Forgejo's block is one of its gates).
-#[cfg(feature = "labs")]
-mod chat_convs;
 #[cfg(all(feature = "labs", feature = "forge"))]
 mod flag_gates;
 #[cfg(feature = "labs")]
@@ -66,8 +64,6 @@ mod hosts;
 #[cfg(feature = "editor")]
 mod ide;
 mod invite;
-#[cfg(not(feature = "labs"))]
-mod labs_off;
 mod local_auth;
 #[cfg(feature = "labs")]
 mod machines;
@@ -90,8 +86,6 @@ mod ssh;
 mod summaries;
 mod team_answers;
 mod telemetry;
-#[cfg(feature = "labs")]
-mod threads;
 mod upgrade;
 mod vm_layout;
 #[cfg(feature = "labs")]

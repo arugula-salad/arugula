@@ -5,11 +5,9 @@
 
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
-import type { Fleet } from "../fleet";
 import { directory } from "../hosts";
 import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
-import { parseThreadKey, threadKey, type ThreadTarget } from "../proto";
 import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
 import { chat, chatStore, ROOM_ID } from "../chat-store";
@@ -21,8 +19,6 @@ const changed = () => listeners.forEach((fn) => fn());
 addEventListener("hashchange", changed);
 
 export interface ChatRoute {
-  host?: string;
-  key?: string;
   /** M74: a message to show (a copied link). */
   msg?: number;
   /** M75: Activity (your mentions), or search results for `q`. */
@@ -32,9 +28,8 @@ export interface ChatRoute {
   room?: string;
 }
 
-/** `#chat`, `#chat=<host>/<pane-N|session-N|conv-c-…>` for one thread, and
- * `…&msg=N` for one message in it; `#chat=activity`, and
- * `#chat=search/<words>`. */
+/** `#chat`, `#chat=<room>` for one room of control's chat and `…&msg=N`
+ * for one message in it; `#chat=activity`, and `#chat=search/<words>`. */
 export function chatRoute(): ChatRoute | null {
   if (location.hash === "#chat=activity") return { view: "activity" };
   const q = /^#chat=search\/(.*)$/.exec(location.hash);
@@ -43,9 +38,9 @@ export function chatRoute(): ChatRoute | null {
   // are numbered 0 and below).
   const r = /^#chat=([a-z]{2}_[0-9a-f]+)(?:&msg=(-?\d+))?$/.exec(location.hash);
   if (r && ROOM_ID.test(r[1])) return { room: r[1], msg: r[2] ? Number(r[2]) : undefined };
-  const m = /^#chat(?:=(.*)\/((?:pane|session)-\d+|conv-c-[0-9a-f]{32})(?:&msg=(\d+))?)?$/.exec(location.hash);
-  if (!m) return null;
-  return m[2] ? { host: safeDecode(m[1]), key: m[2], msg: m[3] ? Number(m[3]) : undefined } : {};
+  // Anything else of chat's (a link to a machine's thread from before
+  // M125): chat, from the top.
+  return /^#chat(?:=|$)/.test(location.hash) ? {} : null;
 }
 
 function safeDecode(s: string): string {
@@ -79,11 +74,9 @@ export function useChatOpen(): boolean {
   return isChatOpen();
 }
 
-export function openChat(host?: string, target?: ThreadTarget, msg?: number) {
+export function openChat() {
   closeThread();
-  const hash =
-    host !== undefined && target ? `chat=${encodeURIComponent(host)}/${threadKey(target)}${msg !== undefined ? `&msg=${msg}` : ""}` : "chat";
-  if (location.hash !== `#${hash}`) location.hash = hash;
+  if (location.hash !== "#chat") location.hash = "chat";
   else changed();
 }
 
@@ -95,10 +88,10 @@ export function openRoom(room: string, msg?: number) {
   else changed();
 }
 
-/** Whether this page has chat: control's (M123), or this machine's own
- * threads while control's isn't on. */
-export function hasChat(client: Client): boolean {
-  return !!chatStore() || client.hasThreads();
+/** Whether this page has chat: control's (M123), when its `chat` flag is
+ * on for this account. No machine keeps threads of its own (M125). */
+export function hasChat(): boolean {
+  return !!chatStore();
 }
 
 export function closeChat() {
@@ -110,46 +103,10 @@ export function isChatOpen(): boolean {
   return chatRoute() !== null;
 }
 
-export function targetOf(key: string): ThreadTarget | null {
-  return parseThreadKey(key);
-}
-
-// ---- where the threads come from
-
-export interface Source {
-  host: string;
-  client: Client;
-  /** The page's own connection (it can show panes; the rest go there). */
-  shown: boolean;
-}
-
-/** Every host with threads to show: the shown one through the page's own
- * client, the others through the fleet's, when they keep threads. */
-export function sources(client: Client, fleet: Fleet | null): Source[] {
-  const current = directory.current;
-  const out: Source[] = [{ host: current, client, shown: true }];
-  for (const h of fleet?.list ?? []) {
-    if (h.name === current) continue;
-    const c = fleet!.clientOf(h.name);
-    if (c?.state && c.hasThreads()) out.push({ host: h.name, client: c, shown: false });
-  }
-  return out;
-}
-
 /** Unread messages in every thread this person sees, and whether one
  * mentions them: for the bar's button. */
-export function chatUnread(client: Client): { n: number; mention: boolean } {
-  const store = chatStore();
-  if (store) return store.unread();
-  let n = 0;
-  let mention = false;
-  for (const s of sources(client, getFleet())) {
-    for (const t of s.client.state?.threads ?? []) {
-      n += t.unread ?? 0;
-      mention ||= !!t.mention;
-    }
-  }
-  return { n, mention };
+export function chatUnread(): { n: number; mention: boolean } {
+  return chatStore()?.unread() ?? { n: 0, mention: false };
 }
 
 /** Re-render on any host's change, and on the route's. */
@@ -213,7 +170,7 @@ export function closePlace(at: Place) {
  * (./app-bar). Agents (#403) is the machine owner's, with its flag. */
 export function Places({ client, at }: { client: Client; at: Place }) {
   useChatTick(client);
-  const { n, mention } = hasChat(client) ? chatUnread(client) : { n: 0, mention: false };
+  const { n, mention } = chatUnread();
   const agents = client.flag("agents") && !client.state?.roles;
   // M123: control's chat for someone with no machine: no panes to go to.
   const machines = !!client.state || directory.names.length > 0;
@@ -246,10 +203,10 @@ export function Places({ client, at }: { client: Client; at: Place }) {
           Machines
         </button>
       )}
-      {hasChat(client) && (
+      {hasChat() && (
         <button
           class={at === "chat" ? "place here" : "place"}
-          title={chatStore() ? "Chat: your teams' channels, messages and threads" : "Chat: every thread, on every machine"}
+          title="Chat: your teams' channels, messages and threads"
           data-open-chat
           aria-pressed={at === "chat"}
           onClick={() => at !== "chat" && openChat()}

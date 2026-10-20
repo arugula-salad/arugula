@@ -20,7 +20,6 @@ import { labs } from "./labs";
 import { ANY, daemonPort } from "./ports";
 
 const OWNER = "me@example.com";
-const FRIEND = "friend@example.com";
 let base = "";
 let state = "";
 let daemon: ChildProcess | undefined;
@@ -89,7 +88,7 @@ async function noLabsItems(page: Page, pane: number) {
 }
 
 test("the host says labs is off, and what follows it", async () => {
-  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, studio: false, threads: false, block_channels: false, flags: [] });
+  expect(await features()).toEqual({ labs: false, dev: false, blocks: false, vms: false, studio: false, block_channels: false, flags: [] });
 });
 
 test("links to Forgejo and GitLab stay plain links; GitHub's still open as blocks", async ({ page }) => {
@@ -153,44 +152,6 @@ test("without labs the page never requests the Labs chunk", async ({ page }) => 
   expect(asked.filter((u) => LABS_CHUNK.test(u))).toEqual([]);
 });
 
-test("a thread message posted through the API shows nowhere", async ({ page }) => {
-  await open(page);
-  const [pane, session] = await page.evaluate(() => {
-    const c = window.__arugula.client;
-    return [c.state!.panes[0].id, c.state!.sessions[0].id];
-  });
-  await ready(page, pane);
-  expect((await api("/api/acl", { session, principal: `tailnet:${FRIEND}`, role: "editor" })).ok).toBe(true);
-  // With chat off the routes refuse, and say how to turn it on (#347).
-  for (const [path, body] of [
-    [`/api/threads/pane-${pane}`, { text: "anyone here? @me" }],
-    [`/api/threads/session-${session}`, undefined],
-  ] as const) {
-    const r = await api(path, body, FRIEND);
-    expect(r.status).toBe(404);
-    expect(((await r.json()) as { error: string }).error).toContain("`arugulad flags chat on`");
-  }
-  // A machine that had chat on keeps its threads when it's turned off: a
-  // friend who drives posts while it's on, so there's something new for the
-  // owner, and then the flags file goes (so the machine hasn't asked for
-  // Developer settings either, as before).
-  writeFileSync(join(state, "flags.json"), JSON.stringify({ flags: { chat: true } }));
-  expect((await api(`/api/threads/pane-${pane}`, { text: "anyone here? @me" }, FRIEND)).ok).toBe(true);
-  expect((await api(`/api/threads/session-${session}`, { text: "standup in 5" }, FRIEND)).ok).toBe(true);
-  rmSync(join(state, "flags.json"));
-  // The daemon still sends the page the threads it has...
-  await expect
-    .poll(() => page.evaluate(() => (window.__arugula.client.state!.threads ?? []).filter((t) => t.unread).length))
-    .toBeGreaterThan(0);
-  // ...and the page shows no sign of them: no badge, no unread dot, no thread.
-  await expect(page.locator(".thread-badge")).toHaveCount(0);
-  await expect(page.locator(".session-unread")).toHaveCount(0);
-  await expect(page.locator(".thread-panel")).toHaveCount(0);
-  expect(await page.evaluate(([p, s]) => [window.__arugula.client.thread({ pane: p }), window.__arugula.client.thread({ session: s })], [pane, session])).toEqual([undefined, undefined]);
-  await expect(page.locator("[data-open-chat]")).toHaveCount(0);
-  await noLabsItems(page, pane);
-});
-
 test("the swarm has one theme and no picker, whatever this browser saved", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("arugula.swarm.theme", "city"));
   await open(page);
@@ -202,23 +163,21 @@ test("the swarm has one theme and no picker, whatever this browser saved", async
   await expect(page.locator("[data-theme-pick]")).toHaveCount(0);
   await expect(page.getByText("Theme", { exact: true })).toHaveCount(0);
   await expect(page.locator("canvas.swarm-city")).toHaveCount(0);
-  // Its tiles show no unread, though the daemon has threads with some.
-  expect(await page.evaluate(() => (window.__arugula.client.state!.threads ?? []).some((t) => t.unread))).toBe(true);
+  // Its tiles show no unread: chat is control's (M125), and there's none here.
   expect(await page.evaluate(() => window.__arugula.fleet.panes.map((p) => [p.unread, p.mention]))).not.toEqual([]);
   expect(await page.evaluate(() => window.__arugula.fleet.panes.every((p) => !p.unread && !p.mention))).toBe(true);
   // The rest of the bar is still there.
   await expect(page.locator('[data-g="machine"]')).toBeVisible();
 });
 
-test("a mention's notification opens only the pane", async ({ page }) => {
+test("an older daemon's mention notification opens only the pane", async ({ page }) => {
   const pane = ((await (await api("/api/panes")).json()) as { id: number }[])[0].id;
-  await api(`/api/threads/pane-${pane}`, { text: "look at this @me" });
   // A cold load, as a tap on the notification is: not a navigation within a page.
   await page.goto(`/#pane=${pane}&thread=pane-${pane}`);
   await expect.poll(() => page.evaluate(() => window.__arugula?.client.connected)).toBe(true);
   await expect.poll(() => page.evaluate((p) => window.__arugula.client.active() === p, pane)).toBe(true);
-  // Features are read before the thread would open: wait for them, and then
-  // for a moment more, since the failure is a panel that opens late.
+  // Wait for the features, and then a moment more, since the failure would
+  // be a drawer that opens late.
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
   await page.waitForTimeout(500);
   await expect(page.locator(".thread-panel")).toHaveCount(0);
@@ -254,7 +213,7 @@ test("a daemon from before labs, which says nothing of it, gets none of it eithe
   const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
   await ready(page, pane);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.features?.vms)).toBe(true);
-  expect(await page.evaluate(() => [window.__arugula.client.hasLabs(), window.__arugula.client.hasThreads()])).toEqual([false, false]);
+  expect(await page.evaluate(() => window.__arugula.client.hasLabs())).toBe(false);
   expect(await page.evaluate(() => (["vms", "studio"] as const).map((f) => window.__arugula.client.has(f)))).toEqual([false, false]);
   await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   await expect(page.locator(".thread-badge, .session-unread")).toHaveCount(0);
@@ -291,11 +250,8 @@ test("setting the flag on the running daemon brings it all back, with no restart
   const asked: string[] = [];
   page.on("request", (r) => asked.push(r.url()));
   labs(state);
-  // Something new for the owner, from the friend.
-  const pane0 = ((await (await api("/api/panes")).json()) as { id: number }[])[0].id;
-  expect((await api(`/api/threads/pane-${pane0}`, { text: "still there?" }, FRIEND)).ok).toBe(true);
   expect(await features()).toEqual({
-    ...{ labs: true, dev: true, blocks: false, vms: true, studio: true, threads: true, block_channels: false },
+    ...{ labs: true, dev: true, blocks: false, vms: true, studio: true, block_channels: false },
     // `labs`, the one switch from before, is every flag (#665).
     flags: ["chat", "vms", "studio", "workspaces", "guest-ssh", "swarm-themes", "forges", "agents", "docs"],
   });
@@ -304,19 +260,16 @@ test("setting the flag on the running daemon brings it all back, with no restart
   const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
   await ready(page, pane);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.hasLabs())).toBe(true);
-  await expect(page.locator("[data-open-chat]")).toBeVisible();
+  // Chat is control's (M125): a machine on its own has none, Labs or not.
+  await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   // Now the Labs chunk was fetched, since this machine has them.
   expect(asked.filter((u) => LABS_CHUNK.test(u)).length).toBeGreaterThan(0);
-  await expect(page.locator(".thread-badge.unread")).toBeVisible();
-  await expect(page.locator(".session-unread")).toBeVisible();
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
   for (const name of ["Invite over ssh…", "New VM pane on the right", "Open a studio app…"]) {
     await expect(page.getByRole("menuitem", { name })).toBeVisible();
   }
-  await expect(page.getByRole("menuitem", { name: /^Thread/ })).toBeVisible();
   await page.keyboard.press("Escape");
 
   await page.goto("/#swarm");
   await expect(page.locator("[data-theme-pick]")).toHaveCount(4);
-  await expect.poll(() => page.evaluate(() => window.__arugula.fleet.panes.some((p) => p.unread > 0))).toBe(true);
 });

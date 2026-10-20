@@ -116,28 +116,6 @@ impl Daemon {
         }
     }
 
-    /// What chat calls someone (#889): in threads and conversations (their
-    /// messages). The owner is their login on control, as control's page
-    /// calls them, else their tailnet login without its domain
-    /// (`jake@example.com` is `jake`), as the page shows them and an `@`
-    /// reaches them.
-    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
-    pub(super) fn chat_name_of(&self, who: &Principal) -> String {
-        match who {
-            Principal::Owner => self.config.people.owner_login().unwrap_or_else(|| short_name(&self.config.owner_name)),
-            Principal::User { name, .. } => name.clone(),
-        }
-    }
-
-    /// A person's picture, if they have one.
-    #[cfg_attr(not(feature = "labs"), allow(dead_code))]
-    pub(super) fn pic_of(&self, who: &Principal) -> Option<String> {
-        match who {
-            Principal::User { pic, .. } => pic.clone(),
-            Principal::Owner => self.config.owner_pic.clone(),
-        }
-    }
-
     pub(super) fn driver_of(&self, who: &Principal) -> Driver {
         Driver { who: who.id().to_owned(), name: self.name_of(who) }
     }
@@ -358,32 +336,5 @@ impl Daemon {
             }
         }
         Some(out)
-    }
-
-    // ---- threads (M61)
-}
-
-/// A login as a name (#889): an email's part before the `@`. A name with
-/// a space in it ("Jake Gaylor") is a name already, and stays.
-#[cfg_attr(not(feature = "labs"), allow(dead_code))]
-fn short_name(login: &str) -> String {
-    let login = login.trim();
-    match login.split_once('@') {
-        Some((local, _)) if !local.is_empty() && !login.contains(char::is_whitespace) => local.to_owned(),
-        _ => login.to_owned(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::short_name;
-
-    #[test]
-    fn an_owners_login_is_named_without_its_domain() {
-        assert_eq!(short_name("jake@example.com"), "jake");
-        assert_eq!(short_name("jake"), "jake");
-        assert_eq!(short_name("owner"), "owner");
-        assert_eq!(short_name("Jake G <jake@example.com>"), "Jake G <jake@example.com>");
-        assert_eq!(short_name("@odd"), "@odd");
     }
 }

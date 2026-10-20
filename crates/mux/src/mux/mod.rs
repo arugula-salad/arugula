@@ -6,17 +6,12 @@
 mod api_calls;
 mod attention;
 mod blocks;
-#[cfg(feature = "labs")]
-mod chat_import;
+mod chat_readers;
 mod clients;
 mod config;
 mod info;
-#[cfg(not(feature = "labs"))]
-mod labs_off;
 mod machines;
 mod outside;
-#[cfg(feature = "labs")]
-mod thread_ops;
 mod who_may;
 
 pub use config::{AtExit, Config};
@@ -28,72 +23,19 @@ pub const OWNER_ONLY: &str = "only the session's owner sends or declines an invi
 /// ...and closes the block it waits on (its drafts would go with it).
 pub const CLOSE_OWNER_ONLY: &str = "only the session's owner closes an invite block";
 
-/// A post to a thread (M61).
-pub struct ThreadPost {
-    pub target: ThreadTarget,
-    pub who: crate::acl::Principal,
-    /// A team's other owner posting (#935): they're named, and their post
-    /// is recorded, as themselves; `who` still decides what they may.
-    pub acting: Option<crate::acl::Principal>,
-    pub text: String,
-    pub quote: Option<arugula_proto::Quote>,
-}
-
-/// What a post comes to: the message, and the `@`s that reached no one.
-pub type Posted = (ThreadMsg, Vec<arugula_proto::api::Unreached>);
-
-/// Why a thread request failed: an HTTP status and what to say.
-#[derive(Debug)]
-pub struct ThreadError(pub u16, pub String);
-
-/// What this machine brings into control's chat (M124), as the store has
-/// it: each pane's and session's thread, and each conversation with its
-/// timeline. `imported`: control has them already (`threads.imported/`).
-#[derive(Debug, Default)]
-pub struct ChatExport {
-    pub threads: Vec<(ThreadTarget, Vec<ThreadMsg>)>,
-    pub convs: Vec<(arugula_proto::Conversation, Vec<ThreadMsg>)>,
-    pub imported: bool,
+/// What a thread in control's chat is about, here (M124): a pane or a
+/// session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ChatTarget {
+    Pane(PaneId),
+    Session(SessionId),
 }
 
 /// Who may read the thread on each pane and session here now (M124): by
 /// principal id, each from when (ms; 0 is everything), and whether they
 /// only watch (a viewer: they read and don't post). The owner isn't listed:
 /// they read everything.
-pub type ChatReaders = Vec<(ThreadTarget, Vec<(String, u64, bool)>)>;
-
-/// What to do to a conversation (#855), and who asks. The mux checks it
-/// against the record (`labs::convs`).
-#[derive(Debug)]
-pub enum ConvReq {
-    /// The record, for someone in it.
-    Get {
-        id: arugula_proto::ConvId,
-    },
-    Create {
-        title: String,
-    },
-    Rename {
-        id: arugula_proto::ConvId,
-        title: String,
-    },
-    Delete {
-        id: arugula_proto::ConvId,
-    },
-    /// `member`: a principal id, or a name as an `@` gives it. `reach`: for
-    /// an `account:` who doesn't reach this machine yet (#856), their name
-    /// and their account's root: being a member lets them in.
-    AddMember {
-        id: arugula_proto::ConvId,
-        member: String,
-        history: bool,
-        reach: Option<(String, String)>,
-    },
-    RemoveMember {
-        id: arugula_proto::ConvId,
-        member: String,
-    },
-}
+pub type ChatReaders = Vec<(ChatTarget, Vec<(String, u64, bool)>)>;
 
 use self::attention::{TermAsk, Waiter};
 use crate::{
@@ -106,8 +48,7 @@ use crate::{
 use arugula_core::{Intent, Mux, Role};
 use arugula_proto::{
     Action, Activity, Attention, BlockType, ClientId, ClientMsg, Driver, Event, EventKind, Machine, MachineId,
-    MachineState, Owner, PaneId, Policy, Presence, Reason, ReasonKind, ServerMsg, SessionId, TabId, ThreadMsg,
-    ThreadSummary, ThreadTarget, WorkKind,
+    MachineState, Owner, PaneId, Policy, Presence, Reason, ReasonKind, ServerMsg, SessionId, TabId, WorkKind,
     api::{OpenRequest, PaneSummary, RunRequest},
     ask::Ask,
 };
@@ -294,30 +235,9 @@ pub enum Api {
     RoleOn(crate::acl::Principal, PaneId, oneshot::Sender<Option<(Role, Option<u64>)>>),
     /// Whether a guest may type in a pane on this machine (M14).
     MayDrive(crate::acl::Principal, PaneId, oneshot::Sender<Result<(), String>>),
-    /// A thread's messages (M61), as `who` may read them.
-    ThreadGet(ThreadTarget, crate::acl::Principal, oneshot::Sender<Result<Vec<ThreadMsg>, ThreadError>>),
-    /// Post in a thread as `who`. Answers with the message.
-    ThreadPost(ThreadPost, oneshot::Sender<Result<Posted, ThreadError>>),
-    /// Make, change or delete a conversation (#855), as `who`: the record
-    /// as it is after (a deleted one as it was).
-    Conv(ConvReq, crate::acl::Principal, oneshot::Sender<Result<arugula_proto::Conversation, ThreadError>>),
-    /// M124: every thread and conversation kept here, for control.
-    ChatExport(oneshot::Sender<ChatExport>),
-    /// M124: who reads the thread on each pane and session here now.
+    /// M124: who reads the thread on each pane and session here, for
+    /// control's chat.
     ChatReaders(oneshot::Sender<ChatReaders>),
-    /// M124: control has the threads it was given (each one's last message
-    /// number): retire the store, unless something was posted since
-    /// (`Err`: export again).
-    ChatHandoff(Vec<(ThreadTarget, u64)>, oneshot::Sender<Result<(), String>>),
-    /// `who` has read a thread up to a message.
-    ThreadRead(ThreadTarget, crate::acl::Principal, Option<crate::acl::Principal>, u64),
-    /// Which of these (principal ids) read a thread now (#297); `None` if
-    /// no grant could open it (gone, or a private pane's).
-    CanRead(ThreadTarget, Vec<String>, oneshot::Sender<Option<Vec<bool>>>),
-    /// A thread an invite opens at (#297): its session, and when a message
-    /// of it was posted (`None`: no such message there). `Err`: no grant
-    /// could open the thread.
-    ThreadPlace(ThreadTarget, Option<u64>, oneshot::Sender<Result<(SessionId, Option<u64>), String>>),
     /// Where an invite to a session opens (#233): the pane given, if it's
     /// in the session, else the session's first; and the session's name.
     InviteTo(SessionId, Option<PaneId>, oneshot::Sender<Result<(PaneId, String), String>>),
@@ -543,8 +463,6 @@ struct Daemon {
     sizes: BTreeMap<PaneId, (u16, u16)>,
     config: Config,
     store: StateDir,
-    /// Threads on panes and sessions (M61).
-    threads: crate::labs::Threads,
     notices: NoticeSink,
     events: broadcast::Sender<Event>,
     /// Non-terminal blocks (terminals are in `panes`).
@@ -620,9 +538,8 @@ enum Dirty {
     All,
 }
 
-/// What one person sees besides panes: machines, who's here, threads,
-/// conversations.
-type Seen = (Vec<Machine>, Vec<Presence>, Vec<ThreadSummary>, Vec<arugula_proto::Conversation>);
+/// What one person sees besides panes: machines, and who's here.
+type Seen = (Vec<Machine>, Vec<Presence>);
 
 /// A pane as one client has it.
 type PaneJson = serde_json::Map<String, serde_json::Value>;
@@ -637,8 +554,6 @@ struct Sent {
     panes: HashMap<PaneId, PaneJson>,
     machines: Vec<Machine>,
     presence: Vec<Presence>,
-    threads: Vec<ThreadSummary>,
-    convs: Vec<arugula_proto::Conversation>,
 }
 
 /// A pane's working directory and foreground command, as the OS showed
@@ -716,7 +631,6 @@ pub fn start(
         trust: HashMap::new(),
         sizes: BTreeMap::new(),
         config,
-        threads: crate::labs::Threads::open(store.root()),
         store: store.clone(),
         notices,
         events: events.clone(),
@@ -760,8 +674,6 @@ pub fn start(
         }
     }
     d.sweep_machines();
-    // Who conversations here let in (#856), before control's first refresh.
-    d.config.acl.set_reach(d.threads.reach());
     let (provider, daemon_id) = (d.config.provider.clone(), d.config.daemon_id.clone());
     tokio::spawn(d.run(rx, notices_rx));
     MuxHandle { tx, events, store, provider, daemon_id, fs, shell_env, kinds, inventory }
@@ -1404,7 +1316,7 @@ impl Daemon {
     fn handle(&mut self, cmd: Cmd) {
         match cmd {
             Cmd::Connect { sub } => {
-                let state = self.state_for(&sub.principal, sub.acting.as_ref().unwrap_or(&sub.principal));
+                let state = self.state_for(&sub.principal);
                 let (client, who) = (sub.client, sub.principal.clone());
                 self.clients.insert(client, sub.clone());
                 self.send_state(client, state, false, true);

@@ -2732,7 +2732,6 @@ impl<'a> Call<'a> {
                 open: h.open,
                 offset: h.offset,
                 command: h.command,
-                thread: h.thread,
                 line: one_line(&h.line, 300),
             })
             .collect();

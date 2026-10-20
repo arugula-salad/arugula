@@ -1,6 +1,6 @@
 //! The mux's Labs surface (see the daemon's `labs/mod.rs` for the pattern):
 //! what Labs puts inside the core, with a twin for builds without the
-//! feature: a VM pane's terminal and chat's threads.
+//! feature: a VM pane's terminal.
 
 use std::sync::Arc;
 
@@ -9,12 +9,6 @@ use crate::provider::{Begin, Exec, ExecEvent, Provider};
 // VMs: the machines panes run on.
 #[cfg(feature = "labs")]
 pub mod machine;
-// Chat (M61): the threads on panes and sessions.
-#[cfg(feature = "labs")]
-pub mod threads;
-// Chat's conversations (#855): their rules.
-#[cfg(feature = "labs")]
-pub mod convs;
 
 /// What a request that needs a Labs feature this build lacks answers.
 pub fn not_built(what: &str) -> String {
@@ -51,25 +45,6 @@ pub fn flag(_state_dir: &std::path::Path, _flag: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Threads on panes and sessions. Always made, so
-/// it has a twin that holds nothing and touches nothing on disk: a build
-/// without Labs never opens, writes or deletes the state dir's `threads/`,
-/// so a later build with Labs finds it as it was.
-#[cfg(feature = "labs")]
-pub use threads::Threads;
-
-#[cfg(not(feature = "labs"))]
-pub use absent::Threads;
-
-/// Whether `token` (an `@name` in a message) names this person: see
-/// `threads::names`. Nobody is named where there is no chat.
-#[cfg(feature = "labs")]
-pub use threads::names as thread_names;
-
-#[cfg(not(feature = "labs"))]
-pub fn thread_names(_token: &str, _id: &str, _name: &str) -> bool {
-    false
-}
 
 /// Why a request that needs VM panes can't have them: `why` when there is
 /// no provider here, and that this build has no VMs when it was built without
@@ -82,42 +57,6 @@ pub fn vms_unavailable(why: &str) -> String {
 #[cfg(not(feature = "labs"))]
 pub fn vms_unavailable(_why: &str) -> String {
     "VMs aren't in this build (built without labs)".to_owned()
-}
-
-/// The twin of Threads, for a build without Labs.
-#[cfg(not(feature = "labs"))]
-mod absent {
-    use std::path::Path;
-
-    use arugula_proto::{ThreadMsg, ThreadTarget};
-
-    /// Threads of a build without Labs: none, and nothing read from or
-    /// written to the state dir.
-    pub struct Threads;
-
-    impl Threads {
-        pub fn open(_root: &Path) -> Self {
-            Threads
-        }
-
-        pub fn get(&self, _target: ThreadTarget) -> &[ThreadMsg] {
-            &[]
-        }
-
-        pub fn targets(&self) -> impl Iterator<Item = ThreadTarget> + '_ {
-            std::iter::empty()
-        }
-
-        pub fn mark_read(&mut self, _who: &str, _target: ThreadTarget, _upto: u64) -> bool {
-            false
-        }
-
-        pub fn save(&mut self) {}
-
-        pub fn reach(&self) -> Vec<crate::acl::Reach> {
-            Vec::new()
-        }
-    }
 }
 
 /// Starts (or resumes) a session on `sprite`, a VM pane's terminal. There is

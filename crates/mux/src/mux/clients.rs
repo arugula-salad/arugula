@@ -33,7 +33,6 @@ impl Daemon {
             return;
         };
         let who = sub.principal.clone();
-        let me = sub.acting.clone().unwrap_or_else(|| who.clone());
         match msg {
             ClientMsg::Attach { panes, zstd, acks, kitty_keys: _ } => {
                 for a in panes {
@@ -140,7 +139,7 @@ impl Daemon {
                 } else {
                     self.summary.remove(&client);
                 }
-                let state = self.state_for(&who, &me);
+                let state = self.state_for(&who);
                 self.send_state(client, state, summary, false);
                 // It leaves (or joins) everyone's presence.
                 self.soon();
@@ -553,23 +552,17 @@ impl Daemon {
         };
         let infos: HashMap<PaneId, PaneInfo> =
             ids.iter().filter_map(|id| Some((*id, self.info_of_any(*id)?))).collect();
-        // Who each is, and who they are in chat (#935): two clients of the
-        // owner's are one view, but not their threads' reads.
-        let clients: Vec<(ClientId, Principal, Principal)> = self
-            .clients
-            .values()
-            .map(|c| (c.client, c.principal.clone(), c.acting.clone().unwrap_or_else(|| c.principal.clone())))
-            .collect();
+        let clients: Vec<(ClientId, Principal)> =
+            self.clients.values().map(|c| (c.client, c.principal.clone())).collect();
         // Most clients are one person's: work each view out once.
-        let mut states: HashMap<(Principal, Principal), State> = HashMap::new();
+        let mut states: HashMap<Principal, State> = HashMap::new();
         let mut views: HashMap<(Principal, bool), PaneView> = HashMap::new();
-        let mut people: HashMap<(Principal, Principal), Seen> = HashMap::new();
-        for (client, who, me) in clients {
+        let mut people: HashMap<Principal, Seen> = HashMap::new();
+        for (client, who) in clients {
             let summary = self.summary.contains(&client);
             let stale = full || self.sent.get(&client).is_none_or(|s| s.rev != self.mux.rev);
             if stale {
-                let state =
-                    states.entry((who.clone(), me.clone())).or_insert_with(|| self.state_for(&who, &me)).clone();
+                let state = states.entry(who.clone()).or_insert_with(|| self.state_for(&who)).clone();
                 self.send_state(client, state, summary, false);
                 continue;
             }
@@ -584,9 +577,8 @@ impl Daemon {
                     })
                     .collect()
             });
-            let (machines, presence, threads, convs) = people.entry((who.clone(), me.clone())).or_insert_with(|| {
-                (self.machines_for(&who), self.presence(&who), self.threads_for(&who, &me), self.convs_for(&who))
-            });
+            let (machines, presence) =
+                people.entry(who.clone()).or_insert_with(|| (self.machines_for(&who), self.presence(&who)));
             let Some(sent) = self.sent.get_mut(&client) else { continue };
             let mut delta = Delta::default();
             for (id, v) in view.iter() {
@@ -625,14 +617,6 @@ impl Daemon {
                 sent.presence = presence.clone();
                 delta.presence = Some(presence.clone());
             }
-            if sent.threads != *threads {
-                sent.threads = threads.clone();
-                delta.threads = Some(threads.clone());
-            }
-            if sent.convs != *convs {
-                sent.convs = convs.clone();
-                delta.convs = Some(convs.clone());
-            }
             if !delta.is_empty()
                 && let Some(c) = self.clients.get(&client)
             {
@@ -651,8 +635,6 @@ impl Daemon {
             panes: HashMap::new(),
             machines: state.machines.clone(),
             presence: state.presence.clone(),
-            threads: state.threads.clone(),
-            convs: state.convs.clone(),
         };
         let mut panes = Vec::with_capacity(state.panes.len());
         for p in &state.panes {
@@ -838,11 +820,9 @@ impl Daemon {
     /// What `who` sees: everything for the owner; for anyone else only the
     /// sessions granted to them, their tabs, panes and machines, and their
     /// role in each.
-    pub(super) fn state_for(&self, who: &Principal, me: &Principal) -> State {
+    pub(super) fn state_for(&self, who: &Principal) -> State {
         let mut st = self.state();
         st.presence = self.presence(who);
-        st.threads = self.threads_for(who, me);
-        st.convs = self.convs_for(who);
         if who.is_owner() {
             return st;
         }

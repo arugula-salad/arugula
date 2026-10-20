@@ -300,7 +300,7 @@ fn a_remote_pane_runs_there_and_has_its_place_here() {
 }
 
 /// What a stranger doesn't get follows the flags in the state dir's
-/// `flags.json`, one to a feature: `GET /api/host` says so, with threads
+/// `flags.json`, one to a feature: `GET /api/host` says so, with Labs
 /// (and studio and VMs, where set up) each following its own, and
 /// setting one on a running daemon, from outside it or through
 /// `PUT /api/flags/{name}`, flips it with no restart. Daemon-side Managoat
@@ -320,14 +320,15 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     let features = || d.get("/api/host")["features"].clone();
     let f = features();
     assert_eq!(f["labs"], false, "{f}");
-    for key in ["threads", "studio", "vms"] {
+    for key in ["studio", "vms"] {
         assert_eq!(f[key], false, "{key} without labs: {f}");
     }
     assert!(f.get("fountain").is_none(), "daemon-side Managoat was removed: {f}");
+    assert!(f.get("threads").is_none(), "chat is control's (M125): {f}");
 
     arugula_testkit::labs(&d.state, true);
     let f = features();
-    assert_eq!((f["labs"].clone(), f["threads"].clone()), (true.into(), true.into()));
+    assert_eq!(f["labs"], true, "{f}");
     // Huddles were removed (2026-10-18): no `calls` for an older page to read.
     assert!(f.get("calls").is_none(), "{f}");
     // Studio and VMs are not set up.
@@ -336,7 +337,7 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
     // Off again, and on through the owner's route.
     arugula_testkit::labs(&d.state, false);
     let f = features();
-    assert_eq!((f["labs"].clone(), f["threads"].clone()), (false.into(), false.into()));
+    assert_eq!(f["labs"], false, "{f}");
     // #665: each feature has a flag of its own, and the owner's route turns
     // chat on alone.
     assert_eq!(f["dev"], true, "the flags file is there: {f}");
@@ -346,7 +347,7 @@ fn each_flag_turns_on_its_part_of_what_a_stranger_doesnt_get() {
         ("chat".into(), "Chat".into(), true.into(), true.into())
     );
     let f = features();
-    assert_eq!((f["labs"].clone(), f["threads"].clone()), (true.into(), true.into()), "{f}");
+    assert_eq!(f["labs"], true, "{f}");
     assert_eq!(f["flags"], serde_json::json!(["chat"]));
     let all = d.get("/api/flags");
     assert_eq!(all.as_array().map(Vec::len), Some(arugula_proto::flags::FLAGS.len()), "{all}");
@@ -482,7 +483,7 @@ fn a_build_without_labs_ignores_the_labs_file() {
         .start();
     arugula_testkit::labs(&d.state, true);
     let host = d.get("/api/host");
-    for key in ["labs", "threads", "studio", "vms"] {
+    for key in ["labs", "studio", "vms"] {
         assert_eq!(host["features"][key], false, "{key}: {host}");
     }
 }

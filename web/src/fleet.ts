@@ -18,7 +18,7 @@
 // - A heartbeat notices a link that died without closing.
 
 import { Client } from "./client";
-import type { Driver, PaneInfo, Presence, State, ThreadSummary } from "./proto";
+import type { Driver, PaneInfo, Presence, State } from "./proto";
 import { chat, chatStore } from "./chat-store";
 import { RelayMux } from "./e2e/relaymux";
 
@@ -442,7 +442,7 @@ export class Fleet {
     return c.request(method, path, body);
   }
 
-  /** A host's summary connection, for its threads (the chat view). */
+  /** A host's summary connection (its flags, say). */
   clientOf(host: string): Client | null {
     return this.hosts.get(host)?.client ?? null;
   }
@@ -537,13 +537,9 @@ export class Fleet {
       const person = this.personOf(e.ref);
       const watchers = new Map<number, Presence[]>();
       for (const p of st.presence ?? []) if (p.pane !== undefined) (watchers.get(p.pane) ?? watchers.set(p.pane, []).get(p.pane)!).push(p);
-      const threads = new Map<number, ThreadSummary>();
-      // M123: control's chat, by the machine's id, when it's on; else the
-      // machine's own threads, only where it has them (labs): a cached
-      // summary has no client to ask, so shows none.
+      // M123: unread from control's chat, by the machine's id, when it's on.
       const store = chatStore();
-      if (!store && e.client?.hasThreads()) for (const t of st.threads ?? []) if ("pane" in t.target) threads.set(t.target.pane, t);
-      const unreadOf = (pane: number) => (store ? store.paneUnread(e.ref.id, pane) : { unread: threads.get(pane)?.unread ?? 0, mention: !!threads.get(pane)?.mention });
+      const unreadOf = (pane: number) => (store ? store.paneUnread(e.ref.id, pane) : { unread: 0, mention: false });
       for (const info of st.panes) {
         const u = unreadOf(info.id);
         // Someone else's private pane (M14): not even a tile.

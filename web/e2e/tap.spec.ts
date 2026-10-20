@@ -1,6 +1,5 @@
 // Where a tap on a notification goes (src/tap.ts, used by the service
-// worker): the pane, the card, a mention's thread (M61), and a
-// conversation on the chat page (#855), and a room of control's chat (M123).
+// worker): the pane, the card, and a room of control's chat (M123).
 
 import { expect, test } from "@playwright/test";
 import { chatTap, shareUrl, tapUrl, withShare } from "../src/tap";
@@ -18,31 +17,12 @@ test("a chat push from control opens its room at the message (M123)", () => {
   expect(chatTap({})).toBeUndefined();
 });
 
-test("a tap opens the pane, and a mention's thread over it", () => {
+test("a tap opens the pane", () => {
   expect(tapUrl({ pane: 3 })).toBe("/#pane=3");
-  expect(tapUrl({ pane: 3, thread: "pane-3" })).toBe("/#pane=3&thread=pane-3");
-  expect(tapUrl({ pane: 3, thread: "session-2" })).toBe("/#pane=3&thread=session-2");
 });
 
 test("through control the pane is on its daemon", () => {
-  expect(tapUrl({ pane: 3, daemon: "d1", thread: "pane-3" })).toBe("/#pane=d1.3&thread=pane-3");
   expect(tapUrl({ pane: 3, daemon: "d1" })).toBe("/#pane=d1.3");
-});
-
-test("a thread that isn't a pane's or a session's is dropped", () => {
-  for (const thread of ["pane-x", "pane-3/../x", "other-3", "pane-3&x=1", "", "pane-"]) {
-    expect(tapUrl({ pane: 3, thread })).toBe("/#pane=3");
-  }
-});
-
-test("a conversation's opens the chat page on it, on its home machine (#855)", () => {
-  const conv = `conv-c-${"0a".repeat(16)}`;
-  expect(tapUrl({ pane: 0, thread: conv })).toBe(`/#chat=${conv}`);
-  expect(tapUrl({ pane: 0, daemon: "d1", thread: conv })).toBe(`/#chat=${conv}&host=d1`);
-  // Not an id: no conversation, and no pane either.
-  for (const thread of ["conv-c-12", `conv-c-${"0A".repeat(16)}`, `conv-${"0a".repeat(16)}`]) {
-    expect(tapUrl({ pane: 0, thread })).toBe("/");
-  }
 });
 
 test("something that wants you opens at its card", () => {

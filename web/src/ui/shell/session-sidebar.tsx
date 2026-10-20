@@ -15,6 +15,7 @@ import { sessionItems } from "../commands";
 import { openFresh } from "../open-fresh";
 import { closePlace, currentPlace, openOverview } from "../places";
 import { openAttention } from "./attention-drawer";
+import { sessionUnread } from "../threads";
 import { BranchIcon, MoreIcon, PanesIcon, PlusIcon, SearchIcon, TabsIcon } from "./icons";
 import { setSidebarOpen, setSidebarWidth, takeSearchFocus, useSidebar } from "./prefs";
 import { offlineWhy } from "./live";
@@ -298,7 +299,7 @@ function SessionRow({
     );
   };
   const when = ago(row.last);
-  const unread = client.thread({ session: s.id });
+  const unread = sessionUnread(client, s.id);
   return (
     <div
       id={`ws-session-${s.id}`}
@@ -322,7 +323,7 @@ function SessionRow({
           <span class="ws-session-line">
             <span class={`ws-dot ${row.attention}`} aria-hidden="true" />
             <span class="ws-session-name">{s.name}</span>
-            {unread?.unread ? <span class={unread.mention ? "session-unread mention" : "session-unread"} title="New in the session thread" /> : null}
+            {unread.unread ? <span class={unread.mention ? "session-unread mention" : "session-unread"} title="New in the session thread" /> : null}
             <span class="ws-session-counts" aria-label={`${row.tabs} tabs, ${row.panes} panes`}>
               <span title={`${row.tabs} tab${row.tabs === 1 ? "" : "s"}`}>
                 <TabsIcon /> {row.tabs}
@@ -422,7 +423,7 @@ export function SessionButton({
       ...sessionItems(client, session.id, rename, { bar: true }),
     ]);
   };
-  const unread = client.thread({ session: session.id });
+  const unread = sessionUnread(client, session.id);
   return (
     <span class="ws-crumb-group">
       <button
@@ -434,7 +435,7 @@ export function SessionButton({
         onContextMenu={sessionMenu}
       >
         <span class="ws-crumb-name">{session.name}</span>
-        {unread?.unread ? <span class={unread.mention ? "session-unread mention" : "session-unread"} title="New in the session thread" /> : null}
+        {unread.unread ? <span class={unread.mention ? "session-unread mention" : "session-unread"} title="New in the session thread" /> : null}
       </button>
       <button class="ws-crumb-caret" aria-label={`Session menu: ${session.name}`} title="Switch sessions, rename, share, close" data-crumb-menu onClick={sessionMenu}>
         <span class="caret" aria-hidden="true">▾</span>

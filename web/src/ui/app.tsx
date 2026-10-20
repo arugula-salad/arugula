@@ -17,7 +17,7 @@ import { ThreadLayer } from "./threads";
 import { InLabs } from "./in-labs";
 import { agentsRoute } from "./agents-route";
 import { hasChat, useChatOpen } from "./places";
-import { chat, chatStore } from "../chat-store";
+import { chat } from "../chat-store";
 import { AppBar } from "./app-bar";
 import { HostPicker, NewMachineNote, setMachineItems } from "./hosts";
 import { ControlRequests, ShareDialog } from "./people";
@@ -113,16 +113,15 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   const tab = client.tabView();
   // M73: the chat page covers the panes, which stay laid out under it (so
   // their terminals keep their size) but can't be reached.
-  // M123: control's chat needs no machine up.
+  // M123: chat is control's, and needs no machine up.
   useSubscribe((fn) => chat.subscribe(fn));
-  const chatOpen = useChatOpen() && (!!state || !!chatStore()) && hasChat(client);
-  const controlChat = chatOpen && !!chatStore();
+  const chatOpen = useChatOpen() && hasChat();
   const overviewOpen = ws && !!overview && !!state && !cloud && !cloudWs;
   const main = (
     <main class="main" inert={chatOpen || overviewOpen}>
       {cloudWs ? <CloudWorkspaceMain /> : cloud ? (cloud.startsWith("cwc_") ? <PastTabDetails key={cloud} id={cloud} /> : <RunDetails key={cloud} id={cloud} />) : !state ? (
         // M123: under control's chat there's no machine to wait for.
-        controlChat ? null : <HostPicker />
+        chatOpen ? null : <HostPicker />
       ) : state.sessions.length === 0 ? (
         <NoSessions client={client} phone={phone} />
       ) : tab ? (
@@ -135,7 +134,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <MenuLayer />
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
-      {(state || chatStore()) && <InLabs on={hasChat(client)}>{(l) => <l.ChatPage client={client} />}</InLabs>}
+      {hasChat() && <InLabs on>{(l) => <l.ChatPage client={client} />}</InLabs>}
       {state && <AgentsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
@@ -225,7 +224,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <MenuLayer />
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
-      {(state || chatStore()) && <InLabs on={hasChat(client)}>{(l) => <l.ChatPage client={client} />}</InLabs>}
+      {hasChat() && <InLabs on>{(l) => <l.ChatPage client={client} />}</InLabs>}
       {state && <AgentsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
@@ -241,7 +240,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <ShareDialog client={client} />
       <ControlRequests client={client} />
       {/* M123: control's chat connects to no machine: only its errors. */}
-      {!cloud && !cloudWs && <StatusPill client={client} errorsOnly={controlChat} />}
+      {!cloud && !cloudWs && <StatusPill client={client} errorsOnly={chatOpen} />}
     </div>
   );
 }

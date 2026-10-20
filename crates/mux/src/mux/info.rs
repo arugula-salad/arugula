@@ -96,7 +96,6 @@ impl Daemon {
     /// Write the layout and pane details if anything changed since the last
     /// write.
     pub(super) fn save(&mut self) {
-        self.threads.save();
         // Whichever notices a new directory or command tells the clients
         // (at the next tick).
         self.refresh_meta();
@@ -330,8 +329,6 @@ impl Daemon {
             options,
             roles: None,
             presence: Vec::new(),
-            threads: Vec::new(),
-            convs: Vec::new(),
         }
     }
 }

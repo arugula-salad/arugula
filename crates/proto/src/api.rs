@@ -40,10 +40,7 @@
 //! | GET | `/api/panes/N/export.cast` | | asciicast v3 |
 //! | GET | `/api/events` | `pane=`, `session=`, `type=a,b`, `follow=1`, `since=` secs | NDJSON `Event`s, each with an `id` (M112); a guest gets the panes they may read; a follow of one pane naming `attention` starts with its attention now (#895) |
 //! | GET | `/api/history` | `pane=`, `session=`, `failed=1`, `since=` secs, `cwd=`, `match=`, `kind=`, `limit=`, `host=` | `[HistoryEntry]`, each with a stable `id` (M112); a guest gets the panes they may read |
-//! | GET | `/api/search` | `re=`, `since=` secs | `[SearchHit]` (output, and thread messages) |
-//! | GET | `/api/threads/pane-N`, `/api/threads/session-N` | | `ThreadMessages`: a thread (M61), as the caller may read it |
-//! | POST | `/api/threads/pane-N`, `/api/threads/session-N` | `ThreadPostRequest` | `ThreadPosted`: posted (needs drive); `agent` is `{delivered}` (or `{error}`) when an `@agent` went to the pane's agent |
-//! | POST | `/api/threads/…/read` | `ThreadReadRequest` | `Empty`: the caller has read up to that message |
+//! | GET | `/api/search` | `re=`, `since=` secs | `[SearchHit]`: lines of output |
 //! | GET | `/api/fs/…`, POST `/api/panes/N/cd` | | files on a host: see [`crate::fs`] |
 //! | GET | `/api/host` | | `HostInfo`: this daemon's name and version, its tailnet URL, whether the tailnet has reached it, the control it joined |
 //! | GET | `/api/hosts/self/shell-env` | | `ShellEnv`: the shell environment blocks that run your tools get (#74) |
@@ -575,10 +572,6 @@ pub struct SearchHit {
     /// A synced copy of another host's history (`host=NAME`), not ours.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
-    /// A message in a thread (M61), `pane-N` or `session-N` (then `pane`
-    /// is 0), not output: `offset` is the message's id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thread: Option<String>,
 }
 
 /// `POST /api/shares`: a read-only link to one terminal pane.
@@ -738,121 +731,6 @@ pub struct SyncedRotated {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Empty {}
 
-/// `GET /api/threads/…`: a thread's messages, as the caller may read them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ThreadMessages {
-    pub target: crate::ThreadTarget,
-    pub messages: Vec<crate::ThreadMsg>,
-}
-
-/// `POST /api/threads/…`: a message, with output it quotes.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
-pub struct ThreadPostRequest {
-    #[serde(default)]
-    #[cfg_attr(feature = "ts", ts(as = "Option<String>"))]
-    pub text: String,
-    #[serde(default)]
-    pub quote: Option<crate::Quote>,
-}
-
-/// `POST /api/convs` (#855): a new conversation here, owned by whoever
-/// makes it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ConvCreateRequest {
-    pub title: String,
-}
-
-/// `POST /api/convs/{id}/rename`: its new title.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ConvRenameRequest {
-    pub title: String,
-}
-
-/// `POST /api/convs/{id}/members`: add someone, by principal id or by a name
-/// the way an `@` names them, reading from now on or, `history`, all of it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(optional_fields = nullable))]
-pub struct ConvMemberRequest {
-    pub who: String,
-    #[serde(default)]
-    #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
-    pub history: bool,
-    /// For an `account:` who doesn't reach this machine yet (#856): what to
-    /// call them, and their account's root, as the owner's browser pinned
-    /// it. Being a member then lets them in, for its conversations only.
-    #[serde(default)]
-    pub name: Option<String>,
-    #[serde(default)]
-    pub root: Option<String>,
-}
-
-/// `POST /api/convs/{id}/members/remove`: take someone out (the owner), or
-/// leave (a member, naming themselves).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ConvMemberRemoveRequest {
-    pub who: String,
-}
-
-/// `POST /api/threads/…/read`: the caller has read up to that message.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ThreadReadRequest {
-    pub upto: u64,
-}
-
-/// What a post answers. `invitable` only in the owner's answer (#297), so
-/// nobody else's says who exists.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ThreadPosted {
-    pub message: crate::ThreadMsg,
-    pub unreached: Vec<Unreached>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub invitable: Option<Vec<Invitable>>,
-}
-
-/// Why an `@` in a post reached no one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub enum UnreachedWhy {
-    /// The name is unknown, or its owner can't read the thread.
-    Nobody,
-}
-
-/// An `@` in a post that reached no one, for the poster alone.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct Unreached {
-    pub token: String,
-    pub why: UnreachedWhy,
-}
-
-/// Someone the owner's `@token` named who can't read the thread (#297):
-/// theirs to invite.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(optional_fields))]
-pub struct Invitable {
-    pub token: String,
-    /// `tailnet:<login>` or `account:<id>`.
-    pub who: String,
-    pub name: String,
-    /// Another principal taken to be them (a login by their name).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub merged: Option<String>,
-}
-
 /// `POST /api/invite`: share a session with someone and tell them, and only
 /// them (#233; the owner's).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -881,17 +759,6 @@ pub struct InviteRequest {
     /// whose fingerprint the owner checked with them.
     #[serde(default)]
     pub root: Option<String>,
-    /// From a thread's mention (#297): the thread (`pane-N`, `session-N`)
-    /// it opens, the one a "from now" share reads from `msg` on (the
-    /// message that mentioned them), or all of with `whole_thread`. Other
-    /// threads start at the share, as ever.
-    #[serde(default)]
-    pub thread: Option<String>,
-    #[serde(default)]
-    pub msg: Option<u64>,
-    #[serde(default)]
-    #[cfg_attr(feature = "ts", ts(as = "Option<bool>"))]
-    pub whole_thread: bool,
 }
 
 /// How an invite's push went: `sent` once a subscription took it,
@@ -1684,75 +1551,7 @@ mod wire {
     use serde_json::{Value, json};
 
     use super::*;
-    use crate::{Quote, ThreadMsg, ThreadTarget, hosts::*};
-
-    fn msg() -> ThreadMsg {
-        ThreadMsg {
-            id: 3,
-            at: 1000,
-            who: "owner".into(),
-            name: "owner".into(),
-            pic: None,
-            text: "hi @sam".into(),
-            quote: Some(Quote { pane: 2, text: "ls".into() }),
-            mentions: vec![],
-            landed: vec![],
-        }
-    }
-
-    /// `thread_get`, `thread_post` and `thread_read`.
-    #[test]
-    fn threads_answer_as_they_did() {
-        let m = msg();
-        let target = ThreadTarget::Pane(2);
-        let msgs = vec![m.clone()];
-        let typed = ThreadMessages { target, messages: msgs.clone() };
-        assert_eq!(serde_json::to_value(&typed).unwrap(), json!({ "target": target, "messages": msgs }));
-        let none = ThreadMessages { target: ThreadTarget::Session(1), messages: vec![] };
-        assert_eq!(
-            serde_json::to_value(&none).unwrap(),
-            json!({ "target": ThreadTarget::Session(1), "messages": Vec::<ThreadMsg>::new() })
-        );
-
-        // What the old `Unreached` values serialized to.
-        let unreached = vec![Unreached { token: "sam".into(), why: UnreachedWhy::Nobody }];
-        let old_unreached = json!([{ "token": "sam", "why": "nobody" }]);
-        // Anyone's post: no `invitable`.
-        let theirs = ThreadPosted { message: m.clone(), unreached: unreached.clone(), invitable: None };
-        assert_eq!(serde_json::to_value(&theirs).unwrap(), json!({ "message": m, "unreached": old_unreached }));
-        // The owner's, even with no one to offer.
-        for (invitable, old) in [
-            (vec![], json!([])),
-            (
-                vec![
-                    Invitable { token: "sam".into(), who: "tailnet:sam@x".into(), name: "sam".into(), merged: None },
-                    Invitable {
-                        token: "al".into(),
-                        who: "account:1".into(),
-                        name: "al".into(),
-                        merged: Some("tailnet:al@x".into()),
-                    },
-                ],
-                // `merged` is only inserted when there is one.
-                json!([
-                    { "token": "sam", "who": "tailnet:sam@x", "name": "sam" },
-                    { "token": "al", "who": "account:1", "name": "al", "merged": "tailnet:al@x" },
-                ]),
-            ),
-        ] {
-            let mine = ThreadPosted { message: m.clone(), unreached: vec![], invitable: Some(invitable) };
-            assert_eq!(
-                serde_json::to_value(&mine).unwrap(),
-                json!({ "message": m, "unreached": [], "invitable": old })
-            );
-        }
-
-        assert_eq!(serde_json::to_value(Empty::default()).unwrap(), json!({}));
-        // What the handlers read still has its defaults.
-        let post: ThreadPostRequest = serde_json::from_value(json!({})).unwrap();
-        assert_eq!((post.text.as_str(), post.quote), ("", None));
-        assert_eq!(serde_json::from_value::<ThreadReadRequest>(json!({ "upto": 4 })).unwrap().upto, 4);
-    }
+    use crate::hosts::*;
 
     /// `invite::run`'s answer.
     #[test]
@@ -1795,7 +1594,7 @@ mod wire {
             assert_eq!(delivery.as_str(), old_delivery);
         }
         let req: InviteRequest = serde_json::from_value(json!({ "session": 1, "who": "sam" })).unwrap();
-        assert_eq!((req.role, req.history, req.whole_thread, req.thread), (None, false, false, None));
+        assert_eq!((req.role, req.history), (None, false));
     }
 
     /// `run`, `open_block`, `open_conversation` and `close`.
@@ -1895,9 +1694,10 @@ mod wire {
                 "tailnet_seen": true, "control": "https://control", "team": "acme",
                 // `dev` came with flags (#665); `flags` is left out when unsaid;
                 // `block_channels` came with blocks through control (#150);
-                // `calls` went with huddles, `fountain` with daemon-side Managoat.
+                // `calls` went with huddles, `fountain` with daemon-side Managoat,
+                // `threads` with the daemon's chat (M125).
                 "features": { "labs": true, "dev": false, "blocks": true, "vms": false, "studio": false,
-                              "threads": false, "block_channels": false },
+                              "block_channels": false },
             })
         );
     }

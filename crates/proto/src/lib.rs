@@ -671,9 +671,6 @@ pub enum ServerMsg {
         #[cfg_attr(feature = "ts", ts(as = "follow::FollowMsg"))]
         msg: serde_json::Value,
     },
-    /// A new message in a pane's or session's thread (M61), sent to every
-    /// client whose person may read it.
-    Thread { target: ThreadTarget, msg: ThreadMsg },
     /// An agent calls one of this hand's tools (S33). `from` says who, for
     /// the person to decide. Answer with [`ClientMsg::HandReply`].
     HandCall {
@@ -688,8 +685,8 @@ pub enum ServerMsg {
 /// Changes to the last [`State`]: each pane in `panes` is `{id, ...}` with
 /// only the fields that changed (a field set to `null` went back to its
 /// default, absent); `gone` panes left this client's view. `machines` and
-/// `presence` (and `threads`, `convs`) are whole when present. Anything else (sessions, tabs,
-/// options, roles) changes with a new `State`.
+/// `presence` are whole when present. Anything else (sessions, tabs, options,
+/// roles) changes with a new `State`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Delta {
@@ -702,10 +699,6 @@ pub struct Delta {
     pub machines: Option<Vec<Machine>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub presence: Option<Vec<Presence>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub threads: Option<Vec<ThreadSummary>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub convs: Option<Vec<Conversation>>,
 }
 
 impl Delta {
@@ -714,8 +707,6 @@ impl Delta {
             && self.gone.is_empty()
             && self.machines.is_none()
             && self.presence.is_none()
-            && self.threads.is_none()
-            && self.convs.is_none()
     }
 }
 
@@ -751,12 +742,6 @@ impl State {
         }
         if let Some(p) = &delta.presence {
             self.presence = p.clone();
-        }
-        if let Some(t) = &delta.threads {
-            self.threads = t.clone();
-        }
-        if let Some(c) = &delta.convs {
-            self.convs = c.clone();
         }
     }
 }
@@ -834,13 +819,6 @@ pub struct State {
     /// client sees.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub presence: Vec<Presence>,
-    /// The threads (M61) this person may read that have messages, with how
-    /// many they haven't read.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub threads: Vec<ThreadSummary>,
-    /// The conversations (#855) kept here that this person is in.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub convs: Vec<Conversation>,
 }
 
 pub type MachineId = u32;
@@ -1279,216 +1257,6 @@ pub struct Presence {
     pub pane: Option<PaneId>,
 }
 
-/// What a thread (M61) is about: a pane, a session, or nothing but itself:
-/// a conversation (#855), with members of its own, kept on its home machine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub enum ThreadTarget {
-    Pane(PaneId),
-    Session(SessionId),
-    Conv(ConvId),
-}
-
-impl ThreadTarget {
-    /// `pane-7`, `session-2` or `conv-c-…`: its name in paths and file names.
-    pub fn key(&self) -> String {
-        match self {
-            ThreadTarget::Pane(p) => format!("pane-{p}"),
-            ThreadTarget::Session(s) => format!("session-{s}"),
-            ThreadTarget::Conv(c) => format!("conv-{c}"),
-        }
-    }
-
-    pub fn parse(key: &str) -> Option<Self> {
-        if let Some(p) = key.strip_prefix("pane-") {
-            return p.parse().ok().map(ThreadTarget::Pane);
-        }
-        if let Some(c) = key.strip_prefix("conv-") {
-            return c.parse().ok().map(ThreadTarget::Conv);
-        }
-        key.strip_prefix("session-")?.parse().ok().map(ThreadTarget::Session)
-    }
-}
-
-/// A conversation's id (#855): 16 random bytes, written `c-` and 32 hex
-/// digits, a string on the wire (JavaScript never sees a 128-bit number).
-/// Global without asking anyone: the home machine isn't part of it. `Copy`,
-/// so [`ThreadTarget`] stays `Copy`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(type = "string"))]
-pub struct ConvId(pub [u8; 16]);
-
-#[cfg(feature = "schema")]
-impl schemars::JsonSchema for ConvId {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ConvId".into()
-    }
-
-    fn json_schema(g: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        String::json_schema(g)
-    }
-}
-
-impl std::fmt::Display for ConvId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("c-")?;
-        for b in self.0 {
-            write!(f, "{b:02x}")?;
-        }
-        Ok(())
-    }
-}
-
-impl std::str::FromStr for ConvId {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, String> {
-        let h = s.strip_prefix("c-").ok_or("a conversation's id starts with c-")?;
-        if h.len() != 32 || !h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
-            return Err("a conversation's id is c- and 32 lowercase hex digits".into());
-        }
-        let mut out = [0u8; 16];
-        for (i, o) in out.iter_mut().enumerate() {
-            *o = u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).map_err(|e| e.to_string())?;
-        }
-        Ok(ConvId(out))
-    }
-}
-
-impl Serialize for ConvId {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.collect_str(self)
-    }
-}
-
-impl<'de> Deserialize<'de> for ConvId {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        String::deserialize(d)?.parse().map_err(serde::de::Error::custom)
-    }
-}
-
-/// A conversation (#855): a thread of its own, kept on its home machine in
-/// `<state>/threads/conv-<id>.json` beside its timeline. Its people are
-/// its record's, not a session's: the owner, and the members they added.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct Conversation {
-    pub id: ConvId,
-    pub title: String,
-    /// Its owner's principal id on the home machine (`owner`): who renames
-    /// and deletes it and adds and removes members.
-    pub owner: String,
-    /// The owner's name when it was made.
-    #[serde(default)]
-    pub owner_name: String,
-    /// Everyone else in it, in the order they were added.
-    #[serde(default)]
-    pub members: Vec<ConvMember>,
-    /// When it was made (ms since the epoch).
-    pub created: u64,
-}
-
-/// Someone in a conversation who isn't its owner: they read and post.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ConvMember {
-    /// Their principal id (`account:…`, `tailnet:…`).
-    pub who: String,
-    pub name: String,
-    /// When they were added (ms): they read from here on, unless `history`.
-    pub joined: u64,
-    /// Added "with history": they read the whole conversation.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
-    pub history: bool,
-    /// The root their account's devices chain to, for someone who reaches
-    /// this machine only by being a member (#856): their devices are let in,
-    /// and control routes them here, while they're in it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub root: Option<String>,
-}
-
-impl Conversation {
-    /// Where `who`'s reading starts: 0 for the owner and a member added with
-    /// history, else when they joined; `None` for someone not in it.
-    pub fn floor(&self, who: &str) -> Option<u64> {
-        if who == self.owner {
-            return Some(0);
-        }
-        let m = self.members.iter().find(|m| m.who == who)?;
-        Some(if m.history { 0 } else { m.joined })
-    }
-}
-
-/// What the invite to a conversation, and its members list, say (#855):
-/// a member reads every quote in it. Agents are out of chat (#1095), so
-/// being one drives nothing.
-pub const CONV_MEMBERS_SEE: &str = "Members see every terminal line quoted in it.";
-
-/// One message in a thread (M61).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct ThreadMsg {
-    /// 1, 2, 3, ... within its thread.
-    pub id: u64,
-    /// When it was posted (ms since the epoch).
-    pub at: u64,
-    /// Who posted it: a principal id (`owner`, `tailnet:…`, `account:…`).
-    pub who: String,
-    pub name: String,
-    /// M74: the poster's picture when they posted, if they have one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub pic: Option<String>,
-    pub text: String,
-    /// Terminal output it quotes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub quote: Option<Quote>,
-    /// Principal ids it @mentions.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub mentions: Vec<String>,
-    /// The `@` tokens (lowercase) that reached someone, each one naming a
-    /// person in `mentions`. The page marks only these; an `@word` that
-    /// reached no one stays plain.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub landed: Vec<String>,
-}
-
-/// Output quoted in a thread message: kept as text, so it stays readable
-/// after the pane scrolls or closes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-pub struct Quote {
-    pub pane: PaneId,
-    pub text: String,
-}
-
-/// A thread as one person has it (M61).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ThreadSummary {
-    pub target: ThreadTarget,
-    /// The newest message's id and time.
-    pub last: u64,
-    pub at: u64,
-    /// Messages from others they haven't read.
-    #[serde(default, skip_serializing_if = "is_zero")]
-    pub unread: u32,
-    /// One of those mentions them.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub mention: bool,
-}
-
-fn is_zero(n: &u32) -> bool {
-    *n == 0
-}
-
 fn yes() -> bool {
     true
 }
@@ -1649,8 +1417,6 @@ mod tests {
             options: Box::new(options),
             roles: Some(vec![(1, arugula_core::Role::Viewer), (4, arugula_core::Role::Editor)]),
             presence: vec![],
-            threads: vec![],
-            convs: vec![],
         };
         let msg = ServerMsg::State { state };
         let back: ServerMsg = serde_json::from_str(&serde_json::to_string(&msg).unwrap()).unwrap();

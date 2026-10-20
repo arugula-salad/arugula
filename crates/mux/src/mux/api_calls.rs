@@ -2,9 +2,8 @@
 //! answered here in the same order as every other change.
 
 use super::{Api, AskReply, Daemon, SAVE_DEBOUNCE};
-use crate::acl::Principal;
 use arugula_core::{Intent, Role};
-use arugula_proto::{PaneId, ServerMsg, ThreadTarget, ask::AskKind};
+use arugula_proto::{PaneId, ServerMsg, ask::AskKind};
 use tokio::time::Instant;
 use tracing::info;
 
@@ -27,50 +26,8 @@ impl Daemon {
             Api::MayDrive(who, pane, reply) => {
                 let _ = reply.send(self.may_drive_here(&who, pane));
             }
-            Api::ThreadGet(target, who, reply) => {
-                let _ = reply.send(self.thread_get(target, &who));
-            }
-            Api::ThreadPost(post, reply) => {
-                let _ = reply.send(self.thread_post(post));
-            }
-            Api::ThreadRead(target, who, acting, upto) => {
-                let reader = acting.as_ref().unwrap_or(&who).id();
-                if self.thread_role(&who, target).is_some() && self.threads.mark_read(reader, target, upto) {
-                    self.save_due.get_or_insert_with(|| Instant::now() + SAVE_DEBOUNCE);
-                    self.soon();
-                }
-            }
-            Api::Conv(req, who, reply) => {
-                let _ = reply.send(self.conv(req, &who));
-            }
-            Api::ChatExport(reply) => {
-                let _ = reply.send(self.chat_export());
-            }
             Api::ChatReaders(reply) => {
                 let _ = reply.send(self.chat_readers());
-            }
-            Api::ChatHandoff(given, reply) => {
-                let _ = reply.send(self.chat_handoff(&given));
-            }
-            Api::CanRead(target, ids, reply) => {
-                // A conversation's people are its members: anyone else
-                // could be added to it.
-                let open = match target {
-                    ThreadTarget::Conv(_) => self.thread_exists(target).then_some(()),
-                    _ => self.thread_session(target).map(|_| ()),
-                };
-                let r = open.map(|_| {
-                    ids.into_iter()
-                        .map(|id| {
-                            let p = Principal::User { id, name: String::new(), pic: None };
-                            self.thread_role(&p, target).is_some()
-                        })
-                        .collect()
-                });
-                let _ = reply.send(r);
-            }
-            Api::ThreadPlace(target, msg, reply) => {
-                let _ = reply.send(self.thread_place(target, msg));
             }
             Api::InviteTo(session, pane, reply) => {
                 let r = match self.mux.session(session) {
