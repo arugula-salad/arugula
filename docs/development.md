@@ -199,8 +199,11 @@ daemon's update check read it.
    that trusts the `marketplace` environment, #934), both by the
    workflow's OIDC token with no secret, skipping a version that's
    already there, and trying each store even if the other refuses: bump
-   `crates/daemon/src/editor/ext/package.json` to ship a new one. It builds
-   no app.
+   `crates/daemon/src/editor/ext/package.json` to ship a new one. Its
+   `control` job deploys the hosted control from the tag's x86_64 static
+   build as soon as that's built, with no approval step, and fails unless
+   control then answers and runs the tag's image (the `FLY_API_TOKEN`
+   secret; [control-ops.md](control-ops.md#deploys)). It builds no app.
 3. Running daemons find it within 12 hours and offer *Update now*
    (`arugulad update` from a terminal); `install.sh` picks it up by
    itself. The site and the docs for users are

@@ -81,6 +81,8 @@ static arch="x86_64": web
 
 # Deploy the hosted Arugula control to Fly (packaging/control/fly.toml):
 # the static x86_64 binary in a distroless image, from a small build context.
+# Release tags deploy it from CI (release.yml's `control` job, M133); this
+# is for hotfixes, and the fallback when that job can't.
 control-deploy: static
     #!/usr/bin/env bash
     set -euo pipefail
