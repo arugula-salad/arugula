@@ -482,10 +482,9 @@ fn share_follows_drive_the_flag_and_the_kind() {
     }
 }
 
-/// An ask whose day went by while the daemon was stopped is not put on the
-/// screen again, which would notify the owner of a card that lapses at once:
-/// no card and no attention for the Doc after the restart, and the next
-/// `share` says it lapsed.
+/// An ask whose day went by while the daemon was stopped comes back lapsed,
+/// with no card, and the next `share` says so. (That it is never put up and
+/// taken down, which would notify the owner, is a unit test in `docs/mod.rs`.)
 #[test]
 fn an_ask_past_its_day_at_restore_lapses_with_no_card() {
     let mut w = World::new(&[("ARUGULA_DOC_SHARE_TTL_MS", "3000")]);
@@ -495,11 +494,8 @@ fn an_ask_past_its_day_at_restore_lapses_with_no_card() {
     std::thread::sleep(Duration::from_millis(3500));
     w.d.start();
     let term = w.d.get("/api/panes")[0]["id"].as_u64().unwrap();
-    // Long enough for a card to have been raised and taken down again.
     std::thread::sleep(Duration::from_millis(1500));
     assert!(w.card().is_none(), "no card");
-    let seen = w.d.raw("GET", &format!("/api/events?pane={}&since=600", w.doc), None).1;
-    assert!(!seen.contains("needs_input"), "the Doc asked for attention: {seen}");
     let m = Mcp::bridge(&w.d, Some(term));
     let r = m.call("doc", json!({ "kind": "share", "block": w.doc })).unwrap();
     assert_eq!(said(&r), "lapsed", "{r}");

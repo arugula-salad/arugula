@@ -983,7 +983,21 @@ mod tests {
 
     /// A block's context in `state_dir`, as the multiplexer makes one.
     fn ctx(state_dir: &Path, restoring: bool) -> (BlockCtx, tokio::sync::mpsc::UnboundedReceiver<crate::pane::Notice>) {
+        let (ctx, seen, _) = ctx_with_cmds(state_dir, restoring);
+        (ctx, seen)
+    }
+
+    /// ...and the commands it sends the multiplexer (a block's asks).
+    fn ctx_with_cmds(
+        state_dir: &Path,
+        restoring: bool,
+    ) -> (
+        BlockCtx,
+        tokio::sync::mpsc::UnboundedReceiver<crate::pane::Notice>,
+        tokio::sync::mpsc::UnboundedReceiver<crate::mux::Cmd>,
+    ) {
         let (notices, seen) = tokio::sync::mpsc::unbounded_channel();
+        let (cmds, sent) = tokio::sync::mpsc::unbounded_channel();
         let home = state_dir.to_path_buf();
         let base = crate::block::BlockEnv {
             notices,
@@ -1008,12 +1022,12 @@ mod tests {
                 vec![],
                 std::time::Duration::from_secs(1),
             ),
-            cmds: None,
+            cmds: Some(cmds),
             ids: Default::default(),
             state_dir: state_dir.to_path_buf(),
         };
         let dir = state_dir.join("blocks/7");
-        (BlockCtx::new(7, dir, base, None, restoring, Default::default(), Default::default()), seen)
+        (BlockCtx::new(7, dir, base, None, restoring, Default::default(), Default::default()), seen, sent)
     }
 
     /// Made only where the machine has `docs` on; brought back whatever the
@@ -1035,6 +1049,34 @@ mod tests {
         arugula_proto::flags::set(&state, arugula_proto::flags::DOCS, false).unwrap();
         let (back, _seen) = ctx(&state, true);
         assert_eq!(DocKind.create(back, config).map(|b| b.kind()).unwrap(), BlockType::Doc, "restored with it off");
+        std::fs::remove_dir_all(state).unwrap();
+    }
+
+    /// #1067: an ask restored within its day puts its card up; one past its
+    /// day does not (a card shown and taken down at once would still notify
+    /// the owner), and is left for `expire` to lapse.
+    #[tokio::test]
+    async fn a_restored_ask_is_raised_only_within_its_day() {
+        let state = temp("restore-ask");
+        arugula_proto::flags::set(&state, arugula_proto::flags::DOCS, true).unwrap();
+        let asks = |mut sent: tokio::sync::mpsc::UnboundedReceiver<crate::mux::Cmd>| {
+            let mut n = 0;
+            while let Ok(c) = sent.try_recv() {
+                n += usize::from(matches!(c, crate::mux::Cmd::Api(crate::mux::Api::Ask(..))));
+            }
+            n
+        };
+        for (at_ms, raised) in [(now_ms(), 1), (1, 0)] {
+            let (ctx, _seen, sent) = ctx_with_cmds(&state, true);
+            let config = json!({ "title": "Plan", "share_ask": { "at_ms": at_ms, "by": "mcp:claude-code" } });
+            let doc = DocKind.create(ctx, config).unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            assert_eq!(asks(sent), raised, "an ask made at {at_ms}");
+            if raised == 0 {
+                // ...and it lapsed: the config says so.
+                assert_eq!(doc.config()["share_ask"]["outcome"], "lapsed", "{}", doc.config());
+            }
+        }
         std::fs::remove_dir_all(state).unwrap();
     }
 
