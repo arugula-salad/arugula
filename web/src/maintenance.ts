@@ -11,8 +11,9 @@
 // again whatever its method (a message posted included). Any other 503 is
 // the answer: control gives one for what won't change in minutes (Cloud's
 // secrets not configured here, say). The waits are control-wire's
-// `maintenance::Waits`, which the daemon and the CLI use: what `Retry-After` asks, between 1s and 30s,
-// else 2s, 4s, 8s… up to 30s, for five minutes in all.
+// `maintenance::Waits`, which the daemon and the CLI use: what
+// `Retry-After` asks, between 1s and 30s, else 2s, 4s, 8s… up to 30s, for
+// five minutes in all.
 
 /** The `reason` control's 503 gives during a maintenance window. */
 export const MAINTENANCE = "maintenance";
