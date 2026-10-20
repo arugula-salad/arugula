@@ -226,13 +226,11 @@ just control-census
 ```
 
 which is `fly ssh console -a illogical-control -C "/arugula-control census --db /data/control.db"`.
-It sizes the version skew a change to control has to survive. A control
-from before the command shipped has no `census`; the same count in SQL,
-with the `sqlite3` binary on the volume:
-
-```
-fly ssh console -a illogical-control -C "/data/sqlite3 -readonly -header -column /data/control.db \"SELECT COALESCE(version,'unknown') AS version, COUNT(*) AS daemons, strftime('%Y-%m-%d %H:%M', MIN(last_seen)/1000, 'unixepoch') AS oldest_last_seen, strftime('%Y-%m-%d %H:%M', MAX(last_seen)/1000, 'unixepoch') AS newest_last_seen FROM daemons WHERE last_seen >= (strftime('%s','now') - 30*86400)*1000 GROUP BY version ORDER BY daemons DESC\""
-```
+It sizes the version skew a change to control has to survive. The
+volume no longer carries a `sqlite3` binary (removed 2026-10-20 with the
+other leftovers from 2026-10-03): for another read-only query, fetch a
+copy with `fly ssh sftp get /data/control.db` or restore one from
+Litestream (below), and query it locally.
 
 ### Deploys
 
