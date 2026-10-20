@@ -327,7 +327,7 @@ Run each `arugula ...` command on its own, not in a pipeline or an `&&` chain, s
 const THREAD_INSTRUCTIONS: &str = "read_thread and post_thread for the people's conversation about a pane or session (an @agent message there reaches you as a follow-up: answer with post_thread), ";
 
 /// What the `docs` flag adds: the `doc` tool is listed only where it is on.
-const DOC_INSTRUCTIONS: &str = "doc to build a report, plan or write-up the user watches fill in beside your pane, ";
+const DOC_INSTRUCTIONS: &str = "doc to build a report, plan or write-up the user watches fill in beside your pane (when they want to show it to someone, ask with share: the user decides), ";
 
 /// The server's instructions: without the `chat` flag, they leave out
 /// threads; without `docs`, the Doc.

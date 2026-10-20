@@ -275,6 +275,15 @@ async fn act(
             }
         }
     }
+    // A Doc's share card (#1067) is the owner's too, and neither an agent's
+    // on the owner's CLI nor a team's other owner's (who is `Owner` here).
+    if !who.is_owner() || foreign(&app, &dev) || crate::invite::agent(&headers) {
+        for p in &panes {
+            if is_doc(&app, *p).await {
+                return Err(ApiError(StatusCode::FORBIDDEN, crate::mux::DOC_OWNER_ONLY.into()));
+            }
+        }
+    }
     // M79: a task's consent card is this machine's own account's, not a
     // team's other owner's (who is `Owner` here too).
     if !who.is_owner() || foreign(&app, &dev) {
@@ -514,7 +523,7 @@ pub(crate) async fn act_for_conv(
     if req.id.is_none() {
         return Err("name the ask it answers (id)".into());
     }
-    if is_invite(app, pane).await || is_agents(app, pane).await {
+    if is_invite(app, pane).await || is_agents(app, pane).await || is_doc(app, pane).await {
         return Err("a conversation answers its link's own asks: this card is the machine owner's".into());
     }
     if !who.is_owner() {
@@ -585,8 +594,17 @@ pub(crate) async fn is_invite(app: &App, id: PaneId) -> bool {
     app.mux.api(|r| Api::Block(id, r)).await.flatten().is_some_and(|b| b.kind() == arugula_proto::BlockType::Invite)
 }
 
+/// Whether a block is a Doc, whose only card is the owner's share card.
+pub(crate) async fn is_doc(app: &App, id: PaneId) -> bool {
+    app.mux.api(|r| Api::Block(id, r)).await.flatten().is_some_and(|b| b.kind() == arugula_proto::BlockType::Doc)
+}
+
 pub(crate) fn not_on_invites() -> ApiError {
     ApiError(StatusCode::FORBIDDEN, "an invite block shows only its own cards".into())
+}
+
+pub(crate) fn not_on_docs() -> ApiError {
+    ApiError(StatusCode::FORBIDDEN, "a Doc block shows only its own cards".into())
 }
 
 /// What to call whoever made a request (M13), to attribute what they did.
@@ -718,7 +736,9 @@ async fn answer_terminal(
     };
     match app.mux.api(|r| Api::AskReply(id, ask_id, reply, by, r)).await {
         Some(Ok(a)) => Ok(Json(Answered { answered: a.id })),
-        Some(Err(e)) if e == crate::invite::OWNER_ONLY => Err(ApiError(StatusCode::FORBIDDEN, e)),
+        Some(Err(e)) if e == crate::invite::OWNER_ONLY || e == crate::mux::DOC_OWNER_ONLY => {
+            Err(ApiError(StatusCode::FORBIDDEN, e))
+        }
         Some(Err(e)) => Err(bad(e)),
         None => Err(ApiError(StatusCode::SERVICE_UNAVAILABLE, "daemon is shutting down".into())),
     }
@@ -1017,6 +1037,15 @@ async fn call(
         // on the owner's CLI either (as a forge's drafts, a courtesy).
         if b.kind() == arugula_proto::BlockType::Invite && (!owner || crate::invite::agent(&headers)) {
             return Err(ApiError(StatusCode::FORBIDDEN, crate::invite::OWNER_ONLY.into()));
+        }
+        // A Doc's share card (#1067) is answered by the owner, and not by an
+        // agent on the owner's CLI or a team's other owner (the mux refuses
+        // every other principal's answer too).
+        if b.kind() == arugula_proto::BlockType::Doc
+            && matches!(method.as_str(), "answer" | "decline" | "terminal" | "approve" | "deny")
+            && (!owner || foreign(&app, &dev) || crate::invite::agent(&headers))
+        {
+            return Err(ApiError(StatusCode::FORBIDDEN, crate::mux::DOC_OWNER_ONLY.into()));
         }
         // A Doc's link (#1066) is the owner's, and not for an agent on the
         // owner's CLI either: it publishes (or reads back the key). As for

@@ -861,3 +861,50 @@ async fn a_teams_other_owner_cant_share_a_doc_or_read_its_link() {
         assert_ne!(status, 403, "alex {method} {path}: {r}");
     }
 }
+
+/// #1067: the card an agent's `doc share` raises is the owner's to answer, and
+/// a team's other owner is `owner` to the mux, so only the routes' own check
+/// stops them: both the act route and `call answer` say 403, the card stays,
+/// and nothing is shared (a Share that got through would settle the ask and
+/// take the card down, one way or the other).
+#[cfg(feature = "labs")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_teams_other_owner_cant_answer_a_docs_share_card() {
+    let w = world_where(TeamRole::Owner);
+    w.fake.lock().unwrap().team = Some(w.t1.clone());
+    let d = w.daemon(true);
+    arugula_testkit::labs(&d.state, true);
+    let (pane, _) = first(&d);
+    // The MCP bridge runs a runtime of its own: off this one's threads.
+    let via_mcp = |args: Value| -> Value {
+        std::thread::scope(|t| t.spawn(|| Mcp::bridge(&d, Some(pane)).call("doc", args).unwrap()).join().unwrap())
+    };
+    let sections = json!([{ "heading": "One", "intent": "first" }]);
+    let doc = via_mcp(json!({ "kind": "new", "title": "Plan", "sections": sections }))["block"].as_u64().unwrap();
+    let r = via_mcp(json!({ "kind": "share", "block": doc }));
+    assert_eq!(r["status"], "waiting", "{r}");
+    let card =
+        || d.get("/api/panes").as_array().unwrap().iter().find(|p| p["id"] == doc).map(|p| p["ask"].clone()).unwrap();
+    d.wait_for("the card", || !card().is_null());
+    let id = card()["id"].clone();
+
+    let (mut dee, dee_ch) = channel(&d, &w.daemon, &w.dee.keys).await;
+    let only = "only the owner can share this Doc";
+    let act = json!({ "action": "answer", "pane": doc, "id": id, "content": {} });
+    let (status, r) = channel_post(&mut dee, &dee_ch, "/api/attention/act", act).await;
+    assert_eq!(status, 403, "act: {r}");
+    assert!(r.to_string().contains(only), "act: {r}");
+    for method in ["answer", "decline"] {
+        let (status, r) =
+            channel_post(&mut dee, &dee_ch, &format!("/api/blocks/{doc}/call/{method}"), json!({ "id": id })).await;
+        assert_eq!(status, 403, "{method}: {r}");
+        assert!(r.to_string().contains(only), "{method}: {r}");
+    }
+
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(card()["id"], id, "the card is still there");
+    assert!(d.state(doc)["shared"].is_null());
+    assert!(!d.state.join("doc-links.json").exists(), "nothing was shared");
+    let r = via_mcp(json!({ "kind": "share", "block": doc }));
+    assert_eq!(r["status"], "waiting", "still pending: {r}");
+}

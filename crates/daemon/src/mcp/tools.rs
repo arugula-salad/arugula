@@ -343,6 +343,12 @@ pub struct OpenPortArgs {
     pub beside: Option<PaneArg>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct DocShareArgs {
+    /// The Doc block (from doc new).
+    pub block: PaneArg,
+}
+
 // Read only by the handler, which a build without Labs lacks.
 #[cfg_attr(not(feature = "labs"), allow(dead_code))]
 #[derive(Deserialize, JsonSchema)]
@@ -959,6 +965,12 @@ Every fence is checked before anything is written: a bad chart or drawing is ref
         name: "asset",
         description: r##"Put a picture in a Doc (its block, a name, and one of path or data): a PNG, JPEG, GIF or WebP, at most 2 MB, at most 20 per Doc. path is an absolute path to a file you saved; an agent on a machine of its own sends data (base64) instead. What the bytes are decides the type, so the name has to end in the right extension (.png, .jpg, .jpeg, .gif, .webp); an SVG file is refused: draw it with a ```svg fence. Returns assets/<name>; show it in a section with ![what it shows](assets/<name>). Put the asset before the doc fill that names it: a fill naming an asset the Doc doesn't have is refused. Only assets/ images show; an http:// or ../ one is refused. A name already used is replaced. For example: {"kind": "asset", "block": 7, "name": "flow.png", "path": "/tmp/flow.png"}."##,
         schema: schema_for_type::<DocAssetArgs>,
+        flag: Some(flags::DOCS),
+    },
+    Kind {
+        name: "share",
+        description: r##"Ask the user to share a finished Doc (its block) with a link anyone can open, without an account. A card asks them on the Doc and nothing is published until they tap Share; this returns {status: "waiting"} at once. Call share again on the same block to learn the outcome: shared (with the url, which you can give the user), declined, lapsed (a card nobody answered in a day) or failed (with why). A Doc already shared answers shared. Asking again after a decline raises a new card. Don't ask more than once for a Doc unless the user wants it."##,
+        schema: schema_for_type::<DocShareArgs>,
         flag: Some(flags::DOCS),
     },
 ];
@@ -1852,6 +1864,10 @@ impl<'a> Call<'a> {
             },
             ("doc", Some("asset")) => match parse(args) {
                 Ok(a) => self.doc_asset(a).await,
+                Err(e) => Err(e),
+            },
+            ("doc", Some("share")) => match parse(args) {
+                Ok(a) => self.doc_share(a).await,
                 Err(e) => Err(e),
             },
             // show
@@ -2976,6 +2992,31 @@ impl<'a> Call<'a> {
             format!("Filled {} of Doc %{block} ({} bytes)", a.section, out["bytes"]),
             json!({ "block": block, "section": a.section, "bytes": out["bytes"] }),
         )
+    }
+
+    /// `doc share`: ask the owner to share a Doc this caller may drive, or
+    /// say what became of the ask. It never publishes: the owner's tap does.
+    async fn doc_share(&self, a: DocShareArgs) -> Out {
+        crate::labs::flag(self.app.control.state_dir(), flags::DOCS)?;
+        let block = a.block.id()?;
+        let p = self.drivable(block).await?;
+        if p.info.kind != BlockType::Doc {
+            return Err(format!("%{block} isn't a Doc: doc new makes one"));
+        }
+        let b =
+            self.app.mux.api(|r| Api::Block(block, r)).await.flatten().ok_or_else(|| format!("no block %{block}"))?;
+        let out = b.call_by("doc_share_ask", json!({}), Some(&self.by())).await?;
+        let status = out["status"].as_str().unwrap_or("waiting").to_owned();
+        let summary = match status.as_str() {
+            "shared" => format!("Doc %{block} is shared: {}", out["url"].as_str().unwrap_or_default()),
+            "waiting" => format!("Asked the user to share Doc %{block}; call share again to see what they chose"),
+            "failed" => {
+                format!("Sharing Doc %{block} failed: {}", out["why"].as_str().unwrap_or("it didn't go through"))
+            }
+            "declined" => format!("The user chose not to share Doc %{block} now; sharing again asks again"),
+            _ => format!("Nobody answered the ask to share Doc %{block} in time; sharing again asks again"),
+        };
+        done(summary, out)
     }
 
     /// `doc asset`: a picture into a Doc this caller may drive, from a file
@@ -4482,7 +4523,7 @@ mod tests {
         assert!(docs(On::none()).is_none());
         assert!(docs(On::all()).is_some());
         let Some(Def { args: Args::Kinds { kinds, .. }, .. }) = docs(On::all()) else { panic!("doc has kinds") };
-        assert_eq!(kinds.iter().map(|k| k.name).collect::<Vec<_>>(), ["new", "fill", "asset"]);
+        assert_eq!(kinds.iter().map(|k| k.name).collect::<Vec<_>>(), ["new", "fill", "asset", "share"]);
         let off = block_offers(On::none());
         assert!(off.iter().all(|o| o.kind != "doc"), "{off:?}");
         let on = block_offers(On::all());

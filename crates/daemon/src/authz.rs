@@ -92,7 +92,7 @@ fn policy(method: &Method, path: &str) -> Policy {
         // #963: a Doc is written by the agent that builds it and the owner's
         // CLI; an editor's browser could otherwise rewrite the owner's
         // report. #965: so are its pictures.
-        ["api", "blocks", _, "call", "doc_outline" | "doc_fill" | "doc_asset_put"] => Policy::Owner,
+        ["api", "blocks", _, "call", "doc_outline" | "doc_fill" | "doc_asset_put" | "doc_share_ask"] => Policy::Owner,
         // #1066: a Doc's link is the owner's, and the handler refuses an
         // agent on the owner's CLI too: sharing publishes, and reading the
         // link back reads its key.
@@ -352,7 +352,7 @@ mod tests {
         // The account list's way in is the same: operations, so the rows are theirs.
         assert_eq!(policy(&g, "/api/doc-links/0123456789abcdef0123456789abcdef"), Policy::Owner);
         assert_eq!(policy(&Method::DELETE, "/api/doc-links/0123456789abcdef0123456789abcdef"), Policy::Owner);
-        for method in ["doc_outline", "doc_fill", "doc_asset_put"] {
+        for method in ["doc_outline", "doc_fill", "doc_asset_put", "doc_share_ask"] {
             assert_eq!(policy(&p, &format!("/api/blocks/7/call/{method}")), Policy::Owner, "{method}");
         }
         // #965: ...but its pictures are read by a viewer, whose page shows

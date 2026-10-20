@@ -23,6 +23,9 @@ pub use outside::{AgentSessions, CardsCall, CardsCx, Notify, PaneCards, PaneGone
 /// Who answers an invite card: the owner, by any route.
 pub const OWNER_ONLY: &str = "only the session's owner sends or declines an invite";
 
+/// Who answers a Doc's share card (#1067): the owner, by any route.
+pub const DOC_OWNER_ONLY: &str = "only the owner can share this Doc";
+
 /// ...and closes the block it waits on (its drafts would go with it).
 pub const CLOSE_OWNER_ONLY: &str = "only the session's owner closes an invite block";
 
