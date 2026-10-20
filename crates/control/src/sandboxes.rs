@@ -56,10 +56,10 @@ pub async fn create(State(app): State<Arc<App>>, s: Session, body: Option<Json<V
     // With billing, a paid plan pays for them; without, an allowlist.
     let allowed = h.allow.iter().any(|a| a == &s.account || a == "*");
     if !allowed {
-        if app.stripe.is_none() {
+        if !app.cfg.billing {
             return Err(err(StatusCode::FORBIDDEN, "hosted sandboxes aren't open yet"));
         }
-        if !crate::billing::paid(&app, &s.account)? {
+        if !crate::plans::paid(&app, &s.account).await? {
             return Err(err(StatusCode::PAYMENT_REQUIRED, "hosted VMs are on a paid plan: upgrade first"));
         }
     }
@@ -172,7 +172,7 @@ pub async fn list(State(app): State<Arc<App>>, s: Session) -> R {
         }));
     }
     let open = app.hosted.as_ref().is_some_and(|h| h.allow.iter().any(|a| a == &s.account || a == "*"))
-        || (app.hosted.is_some() && app.stripe.is_some() && crate::billing::paid(&app, &s.account)?);
+        || (app.hosted.is_some() && app.cfg.billing && crate::plans::paid(&app, &s.account).await?);
     Ok(Json(json!({ "sandboxes": out, "open": open })))
 }
 

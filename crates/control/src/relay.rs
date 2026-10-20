@@ -375,7 +375,7 @@ pub async fn dial(
 ) -> Response {
     let urls = q.direct_urls();
     let id = d.cert.device.clone();
-    let ticket = match app.relay.admit(&app.db, &d.cert.account, true, app.stripe.is_some()) {
+    let ticket = match app.relay.admit(&app.db, &d.cert.account, true, app.cfg.billing) {
         Ok(t) => t,
         Err(why) => {
             note_refused(&app, &d.cert.account, "machine", &why);
@@ -508,7 +508,7 @@ pub async fn client(
         Ok(false) => return err(StatusCode::NOT_FOUND, "no such daemon").into_response(),
         Err(e) => return crate::ApiError::from(e).into_response(),
     }
-    splice_to(app, id, Some(s.account), &headers, up)
+    splice_to(app, id, Some(s.account), &headers, up).await
 }
 
 /// A read-only link's viewer (M19): no account. Only to a daemon that has
@@ -524,13 +524,13 @@ pub async fn link(
         return e.into_response();
     }
     match app.db.daemon_has_links(&id, now_ms()) {
-        Ok(true) => splice_to(app, id, None, &headers, up),
+        Ok(true) => splice_to(app, id, None, &headers, up).await,
         Ok(false) => err(StatusCode::NOT_FOUND, "that link has expired").into_response(),
         Err(e) => crate::ApiError::from(e).into_response(),
     }
 }
 
-fn splice_to(
+async fn splice_to(
     app: Arc<App>,
     id: String,
     account: Option<String>,
@@ -541,7 +541,7 @@ fn splice_to(
     let Some(who) = account.clone().or_else(|| app.db.daemon_account(&id).ok().flatten()) else {
         return err(StatusCode::NOT_FOUND, "no such daemon").into_response();
     };
-    let ticket = match app.relay.admit(&app.db, &who, false, app.stripe.is_some()) {
+    let ticket = match app.relay.admit(&app.db, &who, false, app.cfg.billing) {
         Ok(t) => t,
         Err(why) => {
             note_refused(&app, &who, if account.is_some() { "client" } else { "link" }, &why);
@@ -571,8 +571,10 @@ fn splice_to(
     }
     // Past twice the free allowance, a free account's relayed traffic
     // slows down (M22); it's warned before that.
-    let slow =
-        account.as_deref().is_some_and(|a| crate::billing::relay_standing(&app, a).is_ok_and(|(_, _, slow)| slow));
+    let slow = match account.as_deref() {
+        Some(a) => crate::plans::relay_standing(&app, a).await.is_ok_and(|(_, _, slow)| slow),
+        None => false,
+    };
     let Some(mux) = app.relay.mux(&id) else {
         return err(StatusCode::SERVICE_UNAVAILABLE, "that daemon isn't connected to the relay").into_response();
     };
@@ -758,7 +760,7 @@ fn mframe(kind: u8, chan: u32, payload: &[u8]) -> Vec<u8> {
 }
 
 pub async fn many(State(app): State<Arc<App>>, s: Session, headers: HeaderMap, up: WebSocketUpgrade) -> Response {
-    let ticket = match app.relay.admit(&app.db, &s.account, false, app.stripe.is_some()) {
+    let ticket = match app.relay.admit(&app.db, &s.account, false, app.cfg.billing) {
         Ok(t) => Arc::new(t),
         Err(why) => {
             note_refused(&app, &s.account, "page", &why);
@@ -866,7 +868,7 @@ async fn channel(
         let _ = out.send(refuse("a hosted sandbox: use /api/relay/c")).await;
         return false;
     }
-    let slow = crate::billing::relay_standing(&app, &account).is_ok_and(|(_, _, slow)| slow);
+    let slow = crate::plans::relay_standing(&app, &account).await.is_ok_and(|(_, _, slow)| slow);
     let Some(stream) = app.relay.mux(&id).and_then(|m| m.open().ok()) else {
         let _ = out.send(refuse("that daemon isn't connected to the relay")).await;
         return false;

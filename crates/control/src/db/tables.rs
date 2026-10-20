@@ -31,7 +31,6 @@ struct Table {
     plane: Plane,
     /// Not in the doc: which process holds a table is how control runs,
     /// not what it stores.
-    #[expect(dead_code, reason = "parsed to check it's one of the two")]
     process: Process,
     holds: Holds,
     what: String,
@@ -51,7 +50,7 @@ enum Plane {
 }
 
 /// Which of control's two processes owns it (#1150).
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum Process {
     Hub,
@@ -115,12 +114,14 @@ fn manifest() -> Manifest {
     m
 }
 
-/// Every table and view in a database made by `Db::open`, but SQLite's own
-/// and the shadow tables of an FTS5 table it lists.
+/// Every table and view in a database made by `Db::open` and the
+/// platform's `Db::open` beside it (as control opens both), but SQLite's
+/// own and the shadow tables of an FTS5 table it lists.
 fn schema() -> Vec<String> {
     let path = std::env::temp_dir().join(format!("arugula-tables-{}.db", hex::encode(arugula_e2e::random::<16>())));
     let names = {
         let db = Db::open(&path).unwrap();
+        let _platform = arugula_platform::db::Db::open(&path).unwrap();
         let c = db.c();
         let rows: Vec<(String, String)> = c
             .prepare("SELECT name, sql FROM sqlite_master WHERE type IN ('table', 'view') AND substr(name, 1, 7) != 'sqlite_'")
@@ -175,6 +176,29 @@ fn every_table_is_listed() {
         "crates/control/tables.toml doesn't match control's database (\"Two planes, two trust rules\"). \
          Fix it as below, then run `just control-tables` to write the doc:\n{wrong}"
     );
+}
+
+/// The platform makes the tables listed as its own, and the hub makes
+/// none of them (#1150): a feature's tables move with it.
+#[test]
+fn each_process_makes_its_own_tables() {
+    let m = manifest();
+    let names = |c: &rusqlite::Connection| -> Vec<String> {
+        c.prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY name")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    let platform = names(&arugula_platform::db::Db::memory().c());
+    let mut listed: Vec<String> =
+        m.table.iter().filter(|t| t.process == Process::Platform).map(|t| t.name.clone()).collect();
+    listed.sort();
+    assert_eq!(platform, listed, "tables.toml's `process = \"platform\"` rows are what the platform makes");
+    let hub = names(&Db::memory().c());
+    let both: Vec<&String> = platform.iter().filter(|n| hub.contains(n)).collect();
+    assert!(both.is_empty(), "the hub still makes the platform's {both:?}");
 }
 
 fn party_names(m: &Manifest, t: &Table) -> String {

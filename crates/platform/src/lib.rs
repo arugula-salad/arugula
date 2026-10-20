@@ -15,9 +15,9 @@
 //! - [`auth`] is who's asking, as the hub found out: a [`Principal`].
 //! - [`router()`] is the platform's routes, which the hub mounts in process.
 //!
-//! Today it runs inside the hub's process and holds nothing yet: Cloud
-//! (M137), chat (M138) and billing (M139) move in next, each into its own
-//! module here. M140 runs it as its own process behind the hub.
+//! Today it runs inside the hub's process. Billing moved in first (M139);
+//! Cloud (M137) and chat (M138) move in next, each into its own module
+//! here. M140 runs it as its own process behind the hub.
 //!
 //! [`Principal`]: arugula_control_common::Principal
 
@@ -46,11 +46,31 @@ pub struct Config {
     /// The URL people reach control at (the hub's first site), without a
     /// trailing slash.
     pub public_url: String,
+    /// Every URL control answers at, `public_url` first (#507), without a
+    /// trailing slash.
+    pub sites: Vec<String>,
+    /// Free relay traffic per account per month, with billing on.
+    pub relay_free_bytes: u64,
+}
+
+impl Config {
+    /// The site a request came in on, by its Host header; the first when
+    /// it's none of them.
+    pub fn site(&self, headers: &axum::http::HeaderMap) -> &str {
+        let host = headers.get(axum::http::header::HOST).and_then(|h| h.to_str().ok()).map(str::to_ascii_lowercase);
+        let authority = |s: &str| {
+            let u = url::Url::parse(s).ok()?;
+            let host = u.host_str()?.to_ascii_lowercase();
+            Some(u.port().map_or(host.clone(), |p| format!("{host}:{p}")))
+        };
+        host.and_then(|h| self.sites.iter().find(|s| authority(s).as_deref() == Some(h.as_str())))
+            .map_or(&self.public_url, |s| s)
+    }
 }
 
 /// The platform: its own database, its view of the hub, and what it keeps
-/// in memory. The features moving in add their own fields (`cloud`,
-/// `chat`, `stripe`), as `App` has them now.
+/// in memory. Each feature that moves in brings its own fields, as `App`
+/// has them now: billing's `stripe`, then Cloud's and chat's.
 pub struct Platform {
     pub cfg: Config,
     pub db: db::Db,
@@ -61,10 +81,12 @@ pub struct Platform {
     pub limits: Limits,
     /// Product analytics: in process, a handle on the hub's queue.
     pub analytics: Analytics,
+    /// Billing (M22), when there's a Stripe key: `billing`.
+    pub stripe: Option<billing::Stripe>,
 }
 
 impl Platform {
     pub fn new(cfg: Config, db: db::Db, hub: Arc<dyn HubPort>, http: reqwest::Client, analytics: Analytics) -> Self {
-        Platform { cfg, db, hub, http, limits: Limits::new(None), analytics }
+        Platform { cfg, db, hub, http, limits: Limits::new(None), analytics, stripe: None }
     }
 }

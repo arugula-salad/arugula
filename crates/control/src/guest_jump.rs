@@ -289,9 +289,8 @@ impl Handler for Hop {
             return Ok(());
         };
         let account = self.app.db.daemon_account(&daemon).ok().flatten();
-        let ticket = account
-            .as_deref()
-            .and_then(|a| self.app.relay.admit(&self.app.db, a, false, self.app.stripe.is_some()).ok());
+        let ticket =
+            account.as_deref().and_then(|a| self.app.relay.admit(&self.app.db, a, false, self.app.cfg.billing).ok());
         let stream = self.app.relay.daemon_mux(&daemon).and_then(|m| m.open_raw(STREAM_KIND).ok());
         let (Some(account), Some(ticket), Some(stream)) = (account, ticket, stream) else {
             reply.reject(russh::ChannelOpenFailure::ConnectFailed).await;

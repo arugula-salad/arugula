@@ -17,18 +17,22 @@ use std::{
 use arugula_control_common::sqlite;
 use rusqlite::Connection;
 
+pub mod billing;
+
 pub struct Db {
     conn: Mutex<Connection>,
 }
 
-/// The platform's tables, made if they aren't there. None yet.
-const SCHEMA: &str = "";
+/// The platform's tables, made if they aren't there: each feature's own.
+const SCHEMA: &[&str] = &[billing::SCHEMA];
 
 impl Db {
     /// The database at `path`: in process, the hub's file.
     pub fn open(path: &Path) -> anyhow::Result<Self> {
         let conn = sqlite::open(path)?;
-        conn.execute_batch(SCHEMA)?;
+        for schema in SCHEMA {
+            conn.execute_batch(schema)?;
+        }
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -36,7 +40,9 @@ impl Db {
     /// in it.
     pub fn memory() -> Self {
         let conn = sqlite::memory();
-        conn.execute_batch(SCHEMA).expect("the platform's schema");
+        for schema in SCHEMA {
+            conn.execute_batch(schema).expect("the platform's schema");
+        }
         Self { conn: Mutex::new(conn) }
     }
 
@@ -57,7 +63,8 @@ mod tests {
         let n: i64 = db.c().query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get(0)).unwrap();
         assert!(n >= 1, "the same file");
         let mem = super::Db::memory();
-        let n: i64 = mem.c().query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get(0)).unwrap();
+        let n: i64 =
+            mem.c().query_row("SELECT count(*) FROM sqlite_master WHERE name = 'accounts'", [], |r| r.get(0)).unwrap();
         assert_eq!(n, 0, "a test's database has nothing of the hub's");
         drop((hub, db));
         for ext in ["", "-wal", "-shm"] {

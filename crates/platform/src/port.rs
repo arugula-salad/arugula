@@ -11,7 +11,7 @@
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 
-use crate::Platform;
+use crate::{Platform, billing, db};
 
 pub trait PlatformPort: Send + Sync {
     /// What stands in the way of deleting an account, as sentences for its
@@ -31,6 +31,10 @@ pub trait PlatformPort: Send + Sync {
 
     /// Whether chat is on for an account, for the page (`/api/me`).
     fn chat_on<'a>(&'a self, account: &'a str) -> BoxFuture<'a, anyhow::Result<bool>>;
+
+    /// A team's roster changed (the hub just took a new version): billing's
+    /// seats follow it. Waits for Stripe, as the roster's route always has.
+    fn roster_changed<'a>(&'a self, team: &'a str) -> BoxFuture<'a, anyhow::Result<()>>;
 }
 
 /// An account the hub deleted.
@@ -43,24 +47,38 @@ pub struct Deleted {
     pub disbanded: Vec<String>,
 }
 
-/// In process. The platform holds nothing yet, so each answer is "nothing
-/// here": Cloud fills in `delete_blockers` and its part of
-/// `account_deleted` (M137), chat `chat_on` and its part (M138), billing
-/// `active_plans` (M139). Until then the hub answers these itself.
+/// In process. Billing has filled in its parts (M139): `active_plans`,
+/// `roster_changed` and its part of `account_deleted`. The rest answer
+/// "nothing here" until Cloud fills in `delete_blockers` and its part of
+/// `account_deleted` (M137), and chat `chat_on` and its part (M138); until
+/// then the hub answers those itself.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, _account: &'a str, _start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         Box::pin(async { Ok(vec![]) })
     }
 
-    fn account_deleted<'a>(&'a self, _deleted: &'a Deleted) -> BoxFuture<'a, anyhow::Result<()>> {
-        Box::pin(async { Ok(()) })
+    fn account_deleted<'a>(&'a self, deleted: &'a Deleted) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async move {
+            let mut c = self.db.c();
+            let tx = c.transaction()?;
+            db::billing::erase_account(&tx, deleted)?;
+            tx.commit()?;
+            Ok(())
+        })
     }
 
-    fn active_plans<'a>(&'a self, _owners: &'a [String]) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
-        Box::pin(async { Ok(vec![]) })
+    fn active_plans<'a>(&'a self, owners: &'a [String]) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
+        Box::pin(async move { self.db.active_plans(owners) })
     }
 
     fn chat_on<'a>(&'a self, _account: &'a str) -> BoxFuture<'a, anyhow::Result<bool>> {
         Box::pin(async { Ok(false) })
+    }
+
+    fn roster_changed<'a>(&'a self, team: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
+        Box::pin(async move {
+            billing::sync_seats(self, team).await;
+            Ok(())
+        })
     }
 }

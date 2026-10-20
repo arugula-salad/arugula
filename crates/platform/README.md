@@ -6,10 +6,10 @@ grants. It deploys as often as it likes without dropping a relayed terminal,
 because the relay stays in the hub (`arugula-control`), which is also the
 gateway for every platform path.
 
-Today it runs inside the hub's process and holds nothing yet. Cloud (M137),
-chat (M138) and billing (M139) move in, each into its own module
-(`src/cloud/`, `src/chat.rs`, `src/billing.rs`); M140 runs it as its own
-process behind the hub.
+Today it runs inside the hub's process. Billing has moved in (M139:
+`src/billing.rs`, its tables in `src/db/billing.rs`); Cloud (M137) and chat
+(M138) follow, each into its own module (`src/cloud/`, `src/chat.rs`). M140
+runs it as its own process behind the hub.
 
 Start with `src/lib.rs`, then:
 - `src/hub.rs`: `HubPort`, everything the platform asks the hub, and the
