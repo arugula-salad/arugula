@@ -8,10 +8,10 @@
 //
 // The hub's gateway answers that 503 before it forwards anything, so a
 // request refused with `maintenance` wasn't processed: it's safe to send
-// again whatever its method (a message posted included). Any other 503
-// may have come after the work was done, so only a GET or HEAD is sent
-// again on one. The waits are control-wire's `maintenance::Waits`, which
-// the daemon and the CLI use: what `Retry-After` asks, between 1s and 30s,
+// again whatever its method (a message posted included). Any other 503 is
+// the answer: control gives one for what won't change in minutes (Cloud's
+// secrets not configured here, say). The waits are control-wire's
+// `maintenance::Waits`, which the daemon and the CLI use: what `Retry-After` asks, between 1s and 30s,
 // else 2s, 4s, 8s… up to 30s, for five minutes in all.
 
 /** The `reason` control's 503 gives during a maintenance window. */
@@ -72,14 +72,13 @@ async function isMaintenance(res: Response): Promise<boolean> {
  * failure throws, as `fetch` does. `init.body` must be sendable twice (a
  * string, as every caller's is). */
 export async function platformFetch(input: string, init: RequestInit = {}): Promise<Response> {
-  const method = (init.method ?? "GET").toUpperCase();
   let tries = 0;
   let waited = 0;
   for (;;) {
     const res = await fetch(input, init);
     const window = await isMaintenance(res);
     heard(window);
-    if (res.status !== 503 || !(window || method === "GET" || method === "HEAD")) return res;
+    if (!window) return res;
     const wait = nextWait(retryAfter(res.headers.get("Retry-After")), tries, waited);
     if (wait === null) return res;
     tries += 1;

@@ -2829,7 +2829,7 @@ pub(crate) mod tests {
     }
 
     /// M141: control's maintenance 503 is waited out, for any method, each
-    /// try signed afresh; another 503 is sent again only for a GET; a call
+    /// try signed afresh; no other 503 is sent again; a call
     /// that doesn't wait says so calmly.
     #[tokio::test]
     async fn a_maintenance_window_is_waited_out() {
@@ -2896,7 +2896,7 @@ pub(crate) mod tests {
             c.cloud_with(Some(short), Method::GET, "/api/cloud/models", None).await,
             Err(CloudRefused::Maintenance)
         );
-        // Some other 503 to a POST may have done its work: not sent again.
+        // Any other 503 is the answer: not sent again.
         let e = c.cloud_with(Some(quick), Method::POST, "/api/cloud/agents", Some(&body)).await.unwrap_err();
         assert!(matches!(e, CloudRefused::Said { status: 503, .. }), "{e:?}");
         assert_eq!(plain.load(Ordering::SeqCst), 1);
