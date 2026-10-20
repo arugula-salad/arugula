@@ -1381,8 +1381,12 @@ export class ControlSession {
   } | null = null;
 
   async loadBilling() {
-    // Billing is the platform's: a maintenance window (M141) is waited out.
-    this.billing = await api<NonNullable<ControlSession["billing"]>>("/api/billing", undefined, platformFetch).catch(() => null);
+    // Billing is the platform's, but every refresh waits for this, so a
+    // maintenance window (M141) isn't waited out here: what was read stays
+    // until a refresh after it.
+    this.billing = await api<NonNullable<ControlSession["billing"]>>("/api/billing").catch((e) =>
+      e instanceof HttpError && e.status === 503 ? this.billing : null,
+    );
   }
 
   /** Off to Stripe Checkout to upgrade (a team, or this account). */
