@@ -2,7 +2,215 @@
   "name": "arugula",
   "schema": 1,
   "minReader": "0.108.0",
-  "members": [],
+  "members": [
+    {
+      "name": "daemon",
+      "dir": "crates/daemon",
+      "kind": "other",
+      "because": "a Rust crate, arugulad: owns the terminals and serves the API, the web client and the editors' socket (the VS Code extension lives in src/editor/ext)",
+      "outputs": ["arugulad", "editor-socket"],
+      "links": [
+        { "member": "web", "output": "dist" },
+        { "member": "mux", "output": "crate" },
+        { "member": "core", "output": "crate" },
+        { "member": "vt", "output": "crate" },
+        { "member": "proto", "output": "crate" },
+        { "member": "control-wire", "output": "crate" },
+        { "member": "e2e", "output": "crate" }
+      ]
+    },
+    {
+      "name": "cli",
+      "dir": "crates/cli",
+      "kind": "other",
+      "because": "a Rust crate, the arugula command: drives arugulad over its API",
+      "outputs": ["arugula"],
+      "links": [
+        { "member": "proto", "output": "crate" },
+        { "member": "core", "output": "crate" },
+        { "member": "control-wire", "output": "crate" },
+        { "member": "e2e", "output": "crate" }
+      ]
+    },
+    {
+      "name": "web",
+      "dir": "web",
+      "kind": "other",
+      "because": "a pnpm package, the web client: built to web/dist, which arugulad and arugula-control embed",
+      "outputs": ["dist"],
+      "links": [{ "member": "proto", "output": "ts" }],
+      "generated": [
+        {
+          "path": "src/proto.gen.ts",
+          "generator": "just proto-ts",
+          "sources": ["crates/proto/src"]
+        }
+      ]
+    },
+    {
+      "name": "control",
+      "dir": "crates/control",
+      "kind": "other",
+      "because": "a Rust crate, arugula-control: accounts, devices, the directory and the relay, serving the web client",
+      "outputs": ["arugula-control"],
+      "links": [
+        { "member": "web", "output": "dist" },
+        { "member": "core", "output": "crate" },
+        { "member": "control-wire", "output": "crate" },
+        { "member": "e2e", "output": "crate" }
+      ]
+    },
+    {
+      "name": "desktop",
+      "dir": "crates/desktop",
+      "kind": "other",
+      "because": "a Tauri app, its own Cargo workspace: carries arugulad and arugula as sidecars and installs the daemon on first start",
+      "outputs": ["app"],
+      "links": [
+        { "member": "daemon", "output": "arugulad" },
+        { "member": "cli", "output": "arugula" },
+        { "member": "proto", "output": "crate" }
+      ],
+      "generated": [
+        {
+          "path": "THIRD_PARTY.md",
+          "generator": "../../scripts/notices",
+          "sources": ["scripts/notices", "about.hbs", "crates/desktop/about.toml", "crates/desktop/Cargo.lock"]
+        }
+      ]
+    },
+    {
+      "name": "mux",
+      "dir": "crates/mux",
+      "kind": "other",
+      "because": "a Rust library crate: the daemon's core (state directory, ACL, panes, providers)",
+      "outputs": ["crate"],
+      "links": [
+        { "member": "core", "output": "crate" },
+        { "member": "proto", "output": "crate" },
+        { "member": "vt", "output": "crate" }
+      ]
+    },
+    {
+      "name": "core",
+      "dir": "crates/core",
+      "kind": "other",
+      "because": "a Rust library crate: the multiplexer's state, sessions, tabs and panes, without PTYs or networking",
+      "outputs": ["crate"]
+    },
+    {
+      "name": "vt",
+      "dir": "crates/vt",
+      "kind": "other",
+      "because": "a Rust library crate: server-side terminal state for a pane, over libghostty-vt",
+      "outputs": ["crate"],
+      "links": [{ "member": "libghostty-vt-sys", "output": "crate" }]
+    },
+    {
+      "name": "proto",
+      "dir": "crates/proto",
+      "kind": "other",
+      "because": "a Rust library crate: the wire protocol between arugulad and its clients, and the TypeScript copy web/src/proto.gen.ts",
+      "outputs": ["crate", "ts"],
+      "links": [
+        { "member": "core", "output": "crate" },
+        { "member": "control-wire", "output": "crate" }
+      ]
+    },
+    {
+      "name": "control-wire",
+      "dir": "crates/control-wire",
+      "kind": "other",
+      "because": "a Rust library crate: what daemons and control say to each other to enrol and route",
+      "outputs": ["crate"],
+      "links": [{ "member": "e2e", "output": "crate" }]
+    },
+    {
+      "name": "e2e",
+      "dir": "crates/e2e",
+      "kind": "other",
+      "because": "a Rust library crate: end-to-end encryption between clients and daemons",
+      "outputs": ["crate"]
+    },
+    {
+      "name": "testkit",
+      "dir": "crates/testkit",
+      "kind": "other",
+      "because": "a Rust library crate, unpublished: the harness for arugulad's integration tests",
+      "outputs": ["crate"],
+      "links": [{ "member": "proto", "output": "crate" }]
+    },
+    {
+      "name": "libghostty-vt-sys",
+      "dir": "vendor/libghostty-vt-sys",
+      "kind": "other",
+      "because": "a vendored Rust crate: Ghostty's terminal library, patched at build time",
+      "outputs": ["crate"]
+    },
+    {
+      "name": "nvim",
+      "dir": "editors/nvim",
+      "kind": "other",
+      "because": "a Neovim plugin: puts nvim in the swarm over arugulad's editors' socket",
+      "links": [{ "member": "daemon", "output": "editor-socket" }]
+    },
+    {
+      "name": "devcontainer",
+      "dir": "editors/devcontainer",
+      "kind": "other",
+      "because": "a dev container feature: mounts arugulad's editors' socket into a container for VS Code",
+      "links": [{ "member": "daemon", "output": "editor-socket" }]
+    },
+    {
+      "name": "claude-code-plugin",
+      "dir": "plugins/claude-code",
+      "kind": "other",
+      "because": "a Claude Code plugin: hooks and skills that call the arugula command",
+      "links": [{ "member": "cli", "output": "arugula" }]
+    },
+    {
+      "name": "packaging-control",
+      "dir": "packaging/control",
+      "kind": "other",
+      "because": "the hosted control's image and Fly config, from the static binaries",
+      "links": [
+        { "member": "control", "output": "arugula-control" },
+        { "member": "daemon", "output": "arugulad" }
+      ]
+    },
+    {
+      "name": "packaging-desktop",
+      "dir": "packaging/desktop",
+      "kind": "other",
+      "because": "the Linux desktop app's build container: .deb, .rpm and AppImage",
+      "links": [{ "member": "desktop", "output": "app" }]
+    },
+    {
+      "name": "packaging-homebrew",
+      "dir": "packaging/homebrew",
+      "kind": "other",
+      "because": "the Homebrew formula template, filled in from a release's tarballs",
+      "links": [
+        { "member": "daemon", "output": "arugulad" },
+        { "member": "cli", "output": "arugula" }
+      ]
+    },
+    {
+      "name": "testnet",
+      "dir": "testnet",
+      "kind": "other",
+      "because": "a Compose stack of real services (bastions, forges, a tailnet) that tests run the static binaries against",
+      "links": [
+        { "member": "daemon", "output": "arugulad" },
+        { "member": "cli", "output": "arugula" }
+      ]
+    },
+    {
+      "name": "chant-fixtures",
+      "kind": "examples",
+      "glob": "web/e2e/fixtures/chant-*"
+    }
+  ],
   "records": [{ "kind": "docs/decisions/decision.kind.mjs" }],
   "writeScope": {
     "agent": { "records": { "decision": ["new", "review"] } }
