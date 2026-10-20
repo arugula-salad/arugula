@@ -349,6 +349,15 @@ enum Command {
     Login(cmd::login::Args),
     /// Forget this CLI's key for control (`arugula login` makes a new one).
     Logout,
+    /// What your machines may do with your Cloud workspaces on Arugula control.
+    ///
+    /// Every machine you join gets `cloud.drive`: the agents on it drive your
+    /// Cloud workspaces. `revoke` takes it from one machine, `restore` gives
+    /// it back; `ls` (the default) lists them. Needs `arugula login`.
+    Grants {
+        #[command(subcommand)]
+        cmd: Option<cmd::grants::GrantsCmd>,
+    },
     /// How Arugula is doing on this machine.
     ///
     /// The daemon (its version, the service that runs it, its binary and
@@ -585,6 +594,9 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         control::logout()?;
         return Ok(0);
     }
+    if let Command::Grants { cmd } = cli.cmd {
+        return cmd::grants::run(cmd, cli.json);
+    }
     if let Command::Bridge { probe } = cli.cmd {
         // On a box, for a client that ssh'd in: this daemon's socket on
         // stdin and stdout.
@@ -680,7 +692,8 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         | Command::Bridge { .. }
         | Command::Join(_)
         | Command::Login(_)
-        | Command::Logout => {
+        | Command::Logout
+        | Command::Grants { .. } => {
             unreachable!("handled before connecting")
         }
         Command::Ls => cmd::ls::run(ctx),

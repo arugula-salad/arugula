@@ -136,11 +136,23 @@ impl FromRequestParts<Arc<App>> for Reacher {
 /// CLI device, or (#1094) one of the account's daemons, for the agents on
 /// that machine. A daemon acts as its account (its owner), so anyone who
 /// may run things on that machine drives the owner's Cloud workspaces
-/// through it; that was decided, not overlooked. A daemon has no cookie,
-/// so no origin to check; a person's request is checked as [`Session`]
-/// checks it. Only the Cloud workspace and tab routes take one: settings,
-/// secrets, deleting and the agent library stay a person's.
+/// through it; that was decided, not overlooked. Since M130 (#1126) the
+/// daemon needs a live `cloud.drive` grant over its account ("Grants, not
+/// impersonation"): every joined machine has one until its owner revokes
+/// it. A daemon has no cookie, so no origin to check; a person's request is
+/// checked as [`Session`] checks it. Only the Cloud workspace and tab
+/// routes take one: settings, secrets, deleting and the agent library stay
+/// a person's.
 pub struct CloudDriver(pub Session);
+
+/// What a machine without a live `cloud.drive` grant is told: which
+/// machine, and how its owner gives the power back.
+pub fn no_cloud_drive(name: &str) -> String {
+    format!(
+        "{name} can't drive this account's Cloud workspaces: its cloud.drive grant was revoked. \
+         To restore it, run `arugula grants restore {name}` on a device logged in to the account (`arugula login`)"
+    )
+}
 
 impl FromRequestParts<Arc<App>> for CloudDriver {
     type Rejection = ApiError;
@@ -151,6 +163,10 @@ impl FromRequestParts<Arc<App>> for CloudDriver {
         {
             if let Some(a) = parts.extensions.get::<crate::analytics::Asker>() {
                 a.set(&cert.account);
+            }
+            if !app.db.can_drive_cloud(&cert.device, &cert.account)? {
+                warn!(what = "cloud_drive", account = %cert.account, daemon = %cert.device, why = "no live cloud.drive grant", "refused");
+                return Err(err(StatusCode::FORBIDDEN, &no_cloud_drive(&cert.name)));
             }
             return Ok(CloudDriver(Session { account: cert.account.clone() }));
         }

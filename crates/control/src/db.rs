@@ -919,6 +919,10 @@ impl Db {
         )?;
         // Asking again (or being approved) clears a turn-down.
         tx.execute("DELETE FROM turned_down WHERE account = ?1 AND device = ?2", params![cert.account, cert.device])?;
+        // A machine joining an account drives its Cloud workspaces (M130).
+        if approved && cert.kind == Kind::Daemon {
+            projects::grant_on_join(&tx, &cert.device, &cert.account, now)?;
+        }
         if approved && cert.approver == cert.device {
             tx.execute(
                 "UPDATE accounts SET root = ?2 WHERE id = ?1 AND root IS NULL",
@@ -1344,6 +1348,7 @@ impl Db {
         c.execute("DELETE FROM daemon_offers WHERE daemon = ?1", params![id])?;
         c.execute("DELETE FROM daemon_offer_pushes WHERE daemon = ?1", params![id])?;
         c.execute("DELETE FROM share_answers WHERE daemon = ?1", params![id])?;
+        c.execute("DELETE FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1", params![id])?;
         // The Docs it shared: a link needs its machine's say to change, and
         // the machine is gone.
         c.execute("DELETE FROM doc_link_parts WHERE id IN (SELECT id FROM doc_links WHERE daemon = ?1)", params![id])?;

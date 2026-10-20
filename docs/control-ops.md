@@ -320,6 +320,31 @@ A team channel whose team is gone would show up here as one without a
 project: control drops a team's rooms with the team, so there shouldn't be
 any.
 
+**`cloud.drive` grants (M130, #1126).** Every approved machine holds a live
+grant over its account unless its owner revoked it. Control doesn't record
+which machine made a call, so "every machine that drove a workspace in the
+last 30 days" is checked as every machine of an account that made a Cloud
+workspace or opened a tab in that time. This prints nothing when it holds
+(on production after the deploy, or on a copy):
+
+```
+sqlite3 /tmp/control.db <<'EOF'
+SELECT 'machine without a live cloud.drive grant', d.account, d.id, n.name,
+       (SELECT max(g.revoked_at) FROM grants g WHERE g.subject_id = d.id) AS revoked_at
+FROM devices d LEFT JOIN daemons n ON n.id = d.id
+WHERE d.kind = 'daemon' AND d.approved = 1
+  AND d.account IN (
+    SELECT account FROM cloud_workspaces WHERE created > (strftime('%s', 'now') - 30 * 86400) * 1000
+    UNION SELECT account FROM cloud_tabs WHERE created > (strftime('%s', 'now') - 30 * 86400) * 1000)
+  AND NOT EXISTS (SELECT 1 FROM grants g WHERE g.subject_kind = 'daemon' AND g.subject_id = d.id
+    AND g.power = 'cloud.drive' AND g.scope_kind = 'account' AND g.scope_id = d.account
+    AND g.revoked_at IS NULL);
+EOF
+```
+
+A row with `revoked_at` set is a grant its owner revoked, not a miss. Drop
+the `d.account IN (…)` clause to check every machine.
+
 ### Product analytics (PostHog)
 
 Control sends product events to PostHog when it has a project API key
