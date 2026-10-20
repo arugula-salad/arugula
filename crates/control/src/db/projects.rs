@@ -10,11 +10,17 @@
 //!   the same transaction as every roster write, for platform queries. It's
 //!   never read for machine access: the signed roster stays the authority.
 //! - A grant is a subject's power over a scope: a daemon's `cloud.drive`
-//!   over its owner's account, for now. A revoked grant keeps its row.
+//!   over its owner's account, for now (M130: aru-047 as grants). Every
+//!   machine joined to an account gets one, and control checks it on the
+//!   Cloud workspace routes (`auth::CloudDriver`). A revoked grant keeps its
+//!   row; giving it back is a new one.
 //!
 //! Nothing reads `project_id` yet (M129).
 
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::Serialize;
+
+use super::Db;
 
 pub(super) const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS projects (
@@ -62,6 +68,13 @@ CREATE INDEX IF NOT EXISTS grants_scope ON grants (scope_kind, scope_id);
 /// What a project's id looks like: `prj_` and 32 hex characters, beside
 /// `cw_` for Cloud workspaces.
 const NEW_ID_SQL: &str = "'prj_' || lower(hex(randomblob(16)))";
+
+/// A grant's id: `grt_` and 32 hex characters.
+const NEW_GRANT_SQL: &str = "'grt_' || lower(hex(randomblob(16)))";
+
+/// A machine's power to drive its owner's Cloud workspaces (aru-047), over
+/// the owner's account.
+pub const CLOUD_DRIVE: &str = "cloud.drive";
 
 /// The tables that carry a `project_id`.
 const ATTACHED: [&str; 3] = ["cloud_workspaces", "chat_rooms", "cloud_secrets"];
@@ -127,6 +140,19 @@ pub(super) fn migrate(conn: &Connection, now: u64) -> rusqlite::Result<()> {
     for team in unprojected {
         project_roster(&tx, &team)?;
     }
+    // aru-047 as grants (M130): every machine joined to an account drives
+    // its Cloud workspaces, unless its owner took that back (a revoked
+    // grant keeps its row, so it isn't given again here).
+    tx.execute(
+        &format!(
+            "INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
+             SELECT {NEW_GRANT_SQL}, 'daemon', d.id, '{CLOUD_DRIVE}', 'account', d.account, d.account, ?1
+             FROM devices d WHERE d.kind = 'daemon' AND d.approved = 1 AND NOT EXISTS (
+                 SELECT 1 FROM grants g WHERE g.subject_kind = 'daemon' AND g.subject_id = d.id
+                 AND g.power = '{CLOUD_DRIVE}' AND g.scope_kind = 'account' AND g.scope_id = d.account)"
+        ),
+        [now],
+    )?;
     tx.commit()
 }
 
@@ -165,6 +191,149 @@ pub(super) fn personal_project(c: &Connection, account: &str, now: u64) -> rusql
         params![account, now],
         |r| r.get(0),
     )
+}
+
+/// A machine that joined an account gets `cloud.drive` over it, inside the
+/// transaction that approves it, unless it has had one there before (a
+/// revoked one stays revoked; a machine that joins again was dropped first,
+/// and its grants with it).
+pub(super) fn grant_on_join(c: &Connection, daemon: &str, account: &str, now: u64) -> rusqlite::Result<()> {
+    c.execute(
+        &format!(
+            "INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
+             SELECT {NEW_GRANT_SQL}, 'daemon', ?1, '{CLOUD_DRIVE}', 'account', ?2, ?2, ?3
+             WHERE NOT EXISTS (SELECT 1 FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1
+                 AND power = '{CLOUD_DRIVE}' AND scope_kind = 'account' AND scope_id = ?2)"
+        ),
+        params![daemon, account, now],
+    )?;
+    Ok(())
+}
+
+/// A grant, with its machine's name for people.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Grant {
+    pub id: String,
+    pub subject_kind: String,
+    pub subject_id: String,
+    /// The machine's name in the directory, when it's there.
+    pub subject_name: Option<String>,
+    pub power: String,
+    pub scope_kind: String,
+    pub scope_id: String,
+    pub granted_by: String,
+    pub created_at: u64,
+    pub revoked_at: Option<u64>,
+}
+
+const GRANT_COLUMNS: &str = "g.id, g.subject_kind, g.subject_id, d.name, g.power, g.scope_kind, g.scope_id,
+    g.granted_by, g.created_at, g.revoked_at";
+
+fn grant_row(r: &rusqlite::Row) -> rusqlite::Result<Grant> {
+    Ok(Grant {
+        id: r.get(0)?,
+        subject_kind: r.get(1)?,
+        subject_id: r.get(2)?,
+        subject_name: r.get(3)?,
+        power: r.get(4)?,
+        scope_kind: r.get(5)?,
+        scope_id: r.get(6)?,
+        granted_by: r.get(7)?,
+        created_at: r.get(8)?,
+        revoked_at: r.get(9)?,
+    })
+}
+
+impl Db {
+    /// Whether this machine holds a live `cloud.drive` grant over its
+    /// owner's account: what the Cloud workspace routes check (M130).
+    pub fn can_drive_cloud(&self, daemon: &str, account: &str) -> anyhow::Result<bool> {
+        Ok(self.c().query_row(
+            &format!(
+                "SELECT EXISTS (SELECT 1 FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1
+                 AND power = '{CLOUD_DRIVE}' AND scope_kind = 'account' AND scope_id = ?2 AND revoked_at IS NULL)"
+            ),
+            params![daemon, account],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// The grants over an account, live and revoked: by machine, newest
+    /// first.
+    pub fn grants(&self, account: &str) -> anyhow::Result<Vec<Grant>> {
+        let c = self.c();
+        let mut q = c.prepare(&format!(
+            "SELECT {GRANT_COLUMNS} FROM grants g LEFT JOIN daemons d ON g.subject_kind = 'daemon' AND d.id = g.subject_id
+             WHERE g.scope_kind = 'account' AND g.scope_id = ?1
+             ORDER BY coalesce(d.name, g.subject_id), g.subject_id, g.created_at DESC, g.id"
+        ))?;
+        Ok(q.query_map([account], grant_row)?.collect::<rusqlite::Result<_>>()?)
+    }
+
+    fn grant(c: &Connection, account: &str, id: &str) -> rusqlite::Result<Option<Grant>> {
+        c.query_row(
+            &format!(
+                "SELECT {GRANT_COLUMNS} FROM grants g LEFT JOIN daemons d ON g.subject_kind = 'daemon' AND d.id = g.subject_id
+                 WHERE g.id = ?1 AND g.scope_kind = 'account' AND g.scope_id = ?2"
+            ),
+            params![id, account],
+            grant_row,
+        )
+        .optional()
+    }
+
+    /// Revoke one of the grants over an account; revoking it again changes
+    /// nothing. `None`: no such grant over it.
+    pub fn revoke_grant(&self, account: &str, id: &str, now: u64) -> anyhow::Result<Option<Grant>> {
+        let c = self.c();
+        c.execute(
+            "UPDATE grants SET revoked_at = ?3 WHERE id = ?1 AND scope_kind = 'account' AND scope_id = ?2
+             AND revoked_at IS NULL",
+            params![id, account, now],
+        )?;
+        Ok(Self::grant(&c, account, id)?)
+    }
+
+    /// Give one of the account's own machines `cloud.drive` over it again,
+    /// as a new grant (the revoked one stays, for the record). One that's
+    /// live already is the answer as it is. `None`: not the account's
+    /// machine.
+    pub fn give_cloud_drive(&self, account: &str, daemon: &str, by: &str, now: u64) -> anyhow::Result<Option<Grant>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let mine: bool = tx.query_row(
+            "SELECT EXISTS (SELECT 1 FROM devices WHERE account = ?1 AND id = ?2 AND kind = 'daemon' AND approved = 1)",
+            params![account, daemon],
+            |r| r.get(0),
+        )?;
+        if !mine {
+            return Ok(None);
+        }
+        let live: Option<String> = tx
+            .query_row(
+                &format!(
+                    "SELECT id FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1 AND power = '{CLOUD_DRIVE}'
+                     AND scope_kind = 'account' AND scope_id = ?2 AND revoked_at IS NULL"
+                ),
+                params![daemon, account],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let id = match live {
+            Some(id) => id,
+            None => tx.query_row(
+                &format!(
+                    "INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
+                     VALUES ({NEW_GRANT_SQL}, 'daemon', ?1, '{CLOUD_DRIVE}', 'account', ?2, ?3, ?4) RETURNING id"
+                ),
+                params![daemon, account, by, now],
+                |r| r.get(0),
+            )?,
+        };
+        let g = Self::grant(&tx, account, &id)?;
+        tx.commit()?;
+        Ok(g)
+    }
 }
 
 /// Rewrite a team's `team_members` from its latest roster, inside the
@@ -323,6 +492,35 @@ mod tests {
         super::migrate(&conn, 9).unwrap();
         assert_eq!((dump(&conn, all), dump(&conn, "SELECT * FROM team_members ORDER BY 1, 2")), before);
         assert_eq!(dump(&conn, "SELECT id, project_id FROM chat_rooms ORDER BY id"), rooms);
+    }
+
+    /// M130's backfill: every approved machine gets `cloud.drive` over its
+    /// account, except one whose owner revoked it; a waiting one, a
+    /// browser or a CLI gets none.
+    #[test]
+    fn the_backfill_grants_every_joined_machine_cloud_drive_once() {
+        let conn = old_shape();
+        conn.execute_batch(
+            "INSERT INTO devices (account, id, kind, cert, approved, created) VALUES
+                 ('alice', 'geek', 'daemon', '{}', 1, 1), ('alice', 'mini', 'daemon', '{}', 1, 1),
+                 ('bob', 'box', 'daemon', '{}', 1, 1), ('bob', 'waiting', 'daemon', '{}', 0, 1),
+                 ('bob', 'laptop', 'browser', '{}', 1, 1), ('bob', 'cli', 'cli', '{}', 1, 1);
+             INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at, revoked_at)
+                 VALUES ('grt_old', 'daemon', 'mini', 'cloud.drive', 'account', 'alice', 'alice', 1, 2);",
+        )
+        .unwrap();
+        super::migrate(&conn, 5).unwrap();
+        let grants = "SELECT subject_id, scope_id, granted_by, revoked_at FROM grants ORDER BY subject_id";
+        let rows = |r: &[&str]| r.iter().map(|s| (*s != "-").then(|| s.to_string())).collect::<Vec<_>>();
+        let want = vec![
+            rows(&["box", "bob", "bob", "-"]),
+            rows(&["geek", "alice", "alice", "-"]),
+            rows(&["mini", "alice", "alice", "2"]),
+        ];
+        assert_eq!(dump(&conn, grants), want);
+        assert!(dump(&conn, "SELECT id FROM grants").iter().all(|r| r[0].as_deref().unwrap().starts_with("grt_")));
+        super::migrate(&conn, 9).unwrap();
+        assert_eq!(dump(&conn, grants), want);
     }
 
     #[test]

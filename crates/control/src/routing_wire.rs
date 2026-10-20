@@ -236,6 +236,30 @@ async fn joining_again_needs_the_machines_key() {
     assert_eq!(c.app.db.daemon_row(&other.id()).unwrap().unwrap().0, "a1");
 }
 
+/// M130: a machine that joins gets `cloud.drive` over its owner's account,
+/// as the machines from before got it from the backfill.
+#[tokio::test]
+async fn a_joined_machine_drives_its_owners_cloud_workspaces() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let keys = DeviceKeys::generate();
+    let b = join_body(&keys, true);
+    let r: Value = c.http.post(format!("{}/api/join", c.base)).json(&b).send().await.unwrap().json().await.unwrap();
+    let code = r["code"].as_str().unwrap().to_owned();
+    assert!(!c.app.db.can_drive_cloud(&keys.id(), "a1").unwrap(), "not before it's approved");
+    let ask: Cert = serde_json::from_value(b["cert"].clone()).unwrap();
+    let mut approval = Cert { account: "a1".into(), ..ask };
+    approval.sign_with(&root);
+    let cookie = session(&c.app, "a1");
+    let (st, _) =
+        c.as_person(&cookie, "POST", &format!("/api/joins/{code}/approve"), Some(json!({ "cert": approval }))).await;
+    assert_eq!(st, 200);
+    assert!(c.app.db.can_drive_cloud(&keys.id(), "a1").unwrap());
+    let grants = c.app.db.grants("a1").unwrap();
+    assert_eq!(grants.len(), 1);
+    assert_eq!((grants[0].subject_name.as_deref(), grants[0].granted_by.as_str()), (Some("box"), "a1"));
+}
+
 #[tokio::test]
 async fn a_removed_machine_rejoins_only_with_a_new_key() {
     let c = control(|_| {}).await;

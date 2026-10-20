@@ -187,7 +187,7 @@ fn socket_of(t: &Target) -> PathBuf {
     }
 }
 
-fn ago(ms: u64) -> String {
+pub(crate) fn ago(ms: u64) -> String {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64);
     let secs = now.unwrap_or(0).saturating_sub(ms) / 1000;
     match secs {
