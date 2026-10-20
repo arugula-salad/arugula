@@ -46,3 +46,12 @@ Where: `crates/control/src/auth.rs` (`CloudDriver`), the handlers in
 `crates/daemon/src/control.rs` (`Control::cloud`),
 [docs/control.md](docs/control.md), [managed cloud agents](docs/managoat.md).
 From: #1094, Jake, 2026-10-19 (full drive, for any agent on the machine).
+
+Since step 1 of the platform roadmap (#1122, Jake, 2026-10-20) the power
+stays and is recorded as grants ("Grants, not impersonation"): each machine
+holds a `cloud.drive` grant scoped to its owner's account, backfilled for
+every joined machine and given to each new one, and control checks it on
+these routes. Behaviour doesn't change, but the owner can revoke it machine
+by machine, and a machine without a live grant is refused. It's per machine
+because the daemon signs every MCP call as itself; narrowing it to the
+owner's own agents is a later daemon change. From: M130 (#1126).

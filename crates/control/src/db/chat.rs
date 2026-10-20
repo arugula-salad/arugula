@@ -30,7 +30,9 @@ CREATE TABLE IF NOT EXISTS chat_rooms (
     archived INTEGER,
     last_seq INTEGER NOT NULL DEFAULT 0,
     -- The text and quotes it holds, for the team's cap.
-    bytes INTEGER NOT NULL DEFAULT 0
+    bytes INTEGER NOT NULL DEFAULT 0,
+    -- A team channel's project (the team's default); NULL for the rest.
+    project_id TEXT
 );
 CREATE INDEX IF NOT EXISTS chat_rooms_scope ON chat_rooms (scope);
 CREATE UNIQUE INDEX IF NOT EXISTS chat_rooms_target ON chat_rooms (kind, machine, target) WHERE machine IS NOT NULL;
@@ -260,9 +262,15 @@ impl Db {
     pub fn add_chat_room(&self, room: &Room, members: &[&str]) -> Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
+        // A team's channel belongs to the team's default project; DMs and
+        // threads to none.
+        let project = match room.scope.strip_prefix("team:").filter(|_| room.kind == "channel") {
+            Some(team) => Some(super::projects::team_project(&tx, team, room.created)?),
+            None => None,
+        };
         tx.execute(
-            "INSERT INTO chat_rooms (id, scope, kind, name, machine, target, created_by, created)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO chat_rooms (id, scope, kind, name, machine, target, created_by, created, project_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 room.id,
                 room.scope,
@@ -271,7 +279,8 @@ impl Db {
                 room.machine,
                 room.target,
                 room.created_by,
-                room.created
+                room.created,
+                project
             ],
         )
         .map_err(taken)?;

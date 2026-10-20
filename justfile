@@ -59,6 +59,13 @@ proto-ts mode="write":
 decisions mode="write":
     node scripts/decisions-index.mjs {{ if mode == "write" { "" } else { "--check" } }}
 
+# Write "What control stores" in docs/control-e2e.md from control's table
+# manifest (crates/control/tables.toml). Without `write`, check it's
+# current, and that the manifest lists every table control has: the same
+# tests `just test` runs, so CI runs them too.
+control-tables mode="write":
+    {{ if mode == "write" { "ARUGULA_WRITE_DOCS=1" } else { "" } }} {{cargo}} test -q -p arugula-control tables::
+
 # Release build of everything.
 build: web
     {{cargo}} build --release
@@ -661,6 +668,7 @@ mux-guard:
 check: test mux-guard
     just proto-ts check
     just decisions check
+    just control-tables check
     scripts/check-binaries
     {{cargo}} fmt --all --check
     {{cargo}} clippy --workspace --all-targets -- -D warnings
