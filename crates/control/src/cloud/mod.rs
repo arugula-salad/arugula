@@ -323,7 +323,7 @@ pub async fn delete_secret(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     pub(crate) fn test_app() -> Arc<App> {

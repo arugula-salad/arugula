@@ -20,6 +20,7 @@ mod billing;
 mod blocks;
 #[cfg(test)]
 mod blocks_wire;
+mod census;
 mod chat;
 #[cfg(test)]
 mod chat_wire;
@@ -31,6 +32,7 @@ mod doc_links_wire;
 mod forge;
 #[cfg(test)]
 mod forge_wire;
+mod grants;
 mod guest_jump;
 mod labs_flags;
 mod limit;
@@ -570,6 +572,8 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/api/cloud/past-tabs/{tab}/events", get(cloud::tabs::past_events))
         .route("/api/cloud/past-tabs/{tab}/requests", get(cloud::tabs::past_requests))
         .route("/api/cloud/models", get(cloud::models))
+        .route("/api/grants", get(grants::list).post(grants::give))
+        .route("/api/grants/{id}/revoke", post(grants::revoke))
         .route("/api/cloud/import", post(cloud::migration::import))
         .route("/api/cloud/agents", get(cloud::catalog).post(cloud::create_agent))
         .route("/api/cloud/agents/{id}", axum::routing::put(cloud::update_agent).delete(cloud::delete_agent))
@@ -796,6 +800,12 @@ fn github_app(a: &Args) -> anyhow::Result<Option<forge::GithubApp>> {
 }
 
 fn main() -> anyhow::Result<()> {
+    // `arugula-control census`: an operator's read-only look at the
+    // database (census.rs), with no server.
+    let mut argv = std::env::args().skip(1).peekable();
+    if argv.peek().is_some_and(|a| a == "census") {
+        return census::run(argv.skip(1));
+    }
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
 }
 

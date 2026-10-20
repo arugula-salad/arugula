@@ -122,7 +122,7 @@ impl Enrolled {
     }
 
     /// A request to control, signed with this CLI's key.
-    fn api(&self, method: &str, path: &str, body: Option<&Value>) -> anyhow::Result<Value> {
+    pub(crate) fn api(&self, method: &str, path: &str, body: Option<&Value>) -> anyhow::Result<Value> {
         let bytes = body.map(|b| b.to_string()).unwrap_or_default();
         let auth = request_auth(&self.keys, method, path, bytes.as_bytes());
         let u = self.url()?;

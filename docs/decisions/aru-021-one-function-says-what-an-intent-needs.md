@@ -41,5 +41,9 @@ daemon enforces it on every path: the WebSocket (in the mux, per message), the
 HTTP API (`authz.rs`), the Unix socket and the channel.
 The unit of sharing is the session; tabs, blocks and machines inherit it.
 Grants are data (`acl.json`) with an audit log (`audit.jsonl`).
+That is the machine plane. An intent that touches platform objects in
+control (a Cloud workspace, a team channel, a cloud secret) checks the
+platform's own grants, rows in control's `grants` table ("Grants, not
+impersonation", #1122), as this function checks a role.
 Where: `crates/core/src/access.rs`, `crates/mux/src/acl.rs`, `crates/daemon/src/authz.rs`, `crates/mux/src/mux/who_may.rs`.
 From: [M12](docs/plan-archive.md#m12-principals-and-roles), [Multiplayer track](docs/plan-archive.md#multiplayer-track-m12m15-added-2026-10-01).

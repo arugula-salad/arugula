@@ -157,6 +157,83 @@ Daemons join a self-hosted control the same way:
 The hosted control is one Fly machine (`packaging/control/fly.toml`):
 `shared-cpu-1x` with 1 GB, in `ewr`, SQLite on the `control_data` volume.
 
+### The volume
+
+`control_data` is 10 GB, mounted at `/data`. It holds `control.db` with
+its WAL, Litestream's working files, and Shared Docs' ciphertext, which
+can reach 200 MB per account (below). A volume can grow but never
+shrink, so it was made 10 GB once rather than grown a step at a time.
+It was made at 1 GB and extended on 2026-10-20 (M132) with:
+
+```
+fly volumes list -a illogical-control      # the id: vol_r68lmz2doox9myd4
+fly volumes extend vol_r68lmz2doox9myd4 -s 10 -a illogical-control
+```
+
+The restore recipes below need a volume at least as big as the
+database.
+
+### Secrets
+
+What `illogical-control` has set with `fly secrets set`, and what reads
+each. Anything else in `fly secrets list` is stale: record its value in
+Infisical (project `arugula`, env `prod`), then `fly secrets unset` it.
+The rest of control's settings are in `fly.toml`'s `[env]`.
+
+- `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`,
+  `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_WEBHOOK_SECRET`,
+  `GITHUB_APP_PRIVATE_KEY`: the GitHub App (`main.rs`). Its client id and
+  secret also sign people in, since `GITHUB_CLIENT_ID` and
+  `GITHUB_CLIENT_SECRET` aren't set.
+- `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT` (`backup.rs`), and
+  `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` (checked by
+  `backup.rs`, read by Litestream from the environment it inherits).
+- `ARUGULA_MANAGOAT_API_KEY`: Cloud workspaces' provider. Without it,
+  Cloud workspaces are off.
+- `ARUGULA_CLOUD_SECRET_KEY`: encrypts cloud secrets at rest.
+- `ARUGULA_CLOUD_ACCOUNTS`: who may use Cloud workspaces (`*` for all).
+- `ARUGULA_CLOUD_MODELS`: the `runtime:model` pairs a Cloud workspace's
+  tabs may run on, the first the default. `ARUGULA_CLOUD_MODEL` and
+  `ARUGULA_CLOUD_RUNTIME` are only read when it's unset
+  (`cloud::configured_models`), so with it set they're stale.
+- `POSTHOG_API_KEY`: product analytics (`analytics.rs`).
+- `SPRITES_TOKEN`: hosted sandboxes (M20). Only accounts in
+  `ARUGULA_SANDBOX_ACCOUNTS` may make one, and that isn't set, so they're
+  off for everyone.
+
+Read, but they do nothing: `ARUGULA_CLOUD_DAILY_RUNS`,
+`ARUGULA_CLOUD_CONCURRENT_RUNS`, `ARUGULA_CLOUD_RUN_MINUTES`. Cloud runs
+were retired; control still parses them so an old deploy starts, and
+logs that they do nothing.
+
+Unset on 2026-10-20 (M132), their values kept in Infisical under
+`/illogical/control`: `ILLOGICAL_SANDBOX_ACCOUNTS`, which nothing read (the
+code reads `ARUGULA_SANDBOX_ACCOUNTS`, so renaming it would have turned
+hosted sandboxes on for the accounts it listed), and `ARUGULA_CLOUD_MODEL`
+and `ARUGULA_CLOUD_RUNTIME`, stale with `ARUGULA_CLOUD_MODELS` set.
+
+### Daemon census
+
+Control keeps, on each daemon's row, when it was last on the relay
+(`last_seen`) and the version it last said it runs (`version`, from
+`GET /api/daemon/trust`; daemons before 0.43.0 never say).
+`arugula-control census` counts the daemons seen in the last 30 days
+(`--days`) by version, with the oldest and newest last-seen for each. It
+opens the database read-only, so it runs beside the live control:
+
+```
+just control-census
+```
+
+which is `fly ssh console -a illogical-control -C "/arugula-control census --db /data/control.db"`.
+It sizes the version skew a change to control has to survive. A control
+from before the command shipped has no `census`; the same count in SQL,
+with the `sqlite3` binary on the volume:
+
+```
+fly ssh console -a illogical-control -C "/data/sqlite3 -readonly -header -column /data/control.db \"SELECT COALESCE(version,'unknown') AS version, COUNT(*) AS daemons, strftime('%Y-%m-%d %H:%M', MIN(last_seen)/1000, 'unixepoch') AS oldest_last_seen, strftime('%Y-%m-%d %H:%M', MAX(last_seen)/1000, 'unixepoch') AS newest_last_seen FROM daemons WHERE last_seen >= (strftime('%s','now') - 30*86400)*1000 GROUP BY version ORDER BY daemons DESC\""
+```
+
 ### Deploys
 
 Each release tag deploys control (M133, #1129). It's automatic, with no
@@ -182,8 +259,10 @@ approval step.
   release is already running, the job says so and deploys nothing.
 - **The token** is the repository secret `FLY_API_TOKEN`, a deploy token
   for this app only. Without it the job fails and says so; control isn't
-  deployed until it's set and the job is re-run. It expires after a year
-  (`-x`), and then deploys fail as unauthorized. To make or replace it:
+  deployed until it's set and the job is re-run. The one set on
+  2026-10-20 is named `github-release-arugula-v2` and expires in 2046
+  (`fly tokens list -a illogical-control`). To replace it, make a new one
+  (`-x` sets a shorter expiry), then revoke the old:
 
   ```
   fly tokens create deploy -a illogical-control -n github-release -x 8760h
@@ -235,16 +314,8 @@ with the link. **Control holds ciphertext only and can't read it.**
 - **The disk guard:** while the database's disk is over 80% full, control
   refuses new parts (507, "control's disk is over 80% full"). Parts that
   were never committed are swept after a day.
-- **The volume must be extended before this is deployed.** It was made at
-  1 GB, and 200 MB an account is more than that:
-
-  ```
-  fly volumes extend <volume id> -s 10 -a illogical-control
-  ```
-
-  (`fly volumes list -a illogical-control` has the id. A volume can grow,
-  never shrink.) Sizes are the disk's, not Litestream's: the restore
-  recipes below need a volume as big as the database.
+- **The volume** is 10 GB, since 200 MB an account is more than the
+  1 GB it was made at ("The volume" above).
 - **What it costs in R2** (Litestream, from R2's public prices: storage
   $0.015 a GB-month, $4.50 per million writes, no charge for reads out):
   ciphertext doesn't compress, and Litestream keeps a snapshot of the
@@ -307,7 +378,7 @@ To turn it on:
 ### Restoring
 
 - **Onto a new volume:** create it (`fly volumes create control_data -r ewr
-  -s 1`), point the machine at it (or destroy the old volume), and start
+  -s 10`), point the machine at it (or destroy the old volume), and start
   the machine. Control finds no database and restores the latest backup.
 - **To look at a backup, or go back in time,** on any machine with
   `litestream` and the same four values in its environment:
@@ -331,6 +402,63 @@ To turn it on:
   device and machine was there, and replication carried on.
 
 Fly's own daily volume snapshots (kept 5 days) still run.
+
+### Checking a migration on a copy
+
+Control migrates its database every time it opens it. To see what a new
+version does to production's data before deploying it, restore a copy as
+above to `/tmp/control.db`, then open it with the new build and stop it
+once it's listening (on another port, with nothing else set):
+
+```
+arugula-control --db /tmp/control.db --listen 127.0.0.1:7699
+```
+
+**Projects (M129, #1125).** Every team has one default project, and every
+Cloud workspace, team channel and cloud secret has a project; DMs, pane
+threads and archives have none. Each of these prints nothing when it holds:
+
+```
+sqlite3 /tmp/control.db <<'EOF'
+SELECT 'team without one default', t.id FROM teams t
+  WHERE (SELECT count(*) FROM projects p WHERE p.team_id = t.id AND p.is_default = 1) != 1;
+SELECT 'workspace without a project', id FROM cloud_workspaces WHERE project_id IS NULL;
+SELECT 'team channel without a project', id, scope FROM chat_rooms
+  WHERE kind = 'channel' AND scope LIKE 'team:%' AND project_id IS NULL;
+SELECT 'secret without a project', account, name FROM cloud_secrets WHERE project_id IS NULL;
+SELECT 'room in a project that should not be', id, kind FROM chat_rooms
+  WHERE project_id IS NOT NULL AND NOT (kind = 'channel' AND scope LIKE 'team:%');
+EOF
+```
+
+A team channel whose team is gone would show up here as one without a
+project: control drops a team's rooms with the team, so there shouldn't be
+any.
+
+**`cloud.drive` grants (M130, #1126).** Every approved machine holds a live
+grant over its account unless its owner revoked it. Control doesn't record
+which machine made a call, so "every machine that drove a workspace in the
+last 30 days" is checked as every machine of an account that made a Cloud
+workspace or opened a tab in that time. This prints nothing when it holds
+(on production after the deploy, or on a copy):
+
+```
+sqlite3 /tmp/control.db <<'EOF'
+SELECT 'machine without a live cloud.drive grant', d.account, d.id, n.name,
+       (SELECT max(g.revoked_at) FROM grants g WHERE g.subject_id = d.id) AS revoked_at
+FROM devices d LEFT JOIN daemons n ON n.id = d.id
+WHERE d.kind = 'daemon' AND d.approved = 1
+  AND d.account IN (
+    SELECT account FROM cloud_workspaces WHERE created > (strftime('%s', 'now') - 30 * 86400) * 1000
+    UNION SELECT account FROM cloud_tabs WHERE created > (strftime('%s', 'now') - 30 * 86400) * 1000)
+  AND NOT EXISTS (SELECT 1 FROM grants g WHERE g.subject_kind = 'daemon' AND g.subject_id = d.id
+    AND g.power = 'cloud.drive' AND g.scope_kind = 'account' AND g.scope_id = d.account
+    AND g.revoked_at IS NULL);
+EOF
+```
+
+A row with `revoked_at` set is a grant its owner revoked, not a miss. Drop
+the `d.account IN (…)` clause to check every machine.
 
 ### Product analytics (PostHog)
 

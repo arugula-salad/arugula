@@ -5,10 +5,15 @@
 //! stores agent definitions, prompts, results, and encrypted credential snapshots.
 //! Chat (M122, `chat`) is held here in plain text: rooms, messages and the
 //! lines people quote from panes, never the rest of a pane.
+//! Projects, team members and grants (`projects`, #1122) are the platform
+//! plane's nouns.
 
 pub mod chat;
 pub mod cloud;
 pub mod doc_links;
+pub mod projects;
+#[cfg(test)]
+mod tables;
 
 use std::{path::Path, sync::Mutex};
 
@@ -567,8 +572,10 @@ impl Db {
         conn.execute_batch(cloud::SCHEMA)?;
         conn.execute_batch(chat::SCHEMA)?;
         conn.execute_batch(doc_links::SCHEMA)?;
+        conn.execute_batch(projects::SCHEMA)?;
         migrate(&conn)?;
         chat::migrate(&conn)?;
+        projects::migrate(&conn, arugula_e2e::now_ms())?;
         if !answers_before {
             grandfather_shares(&conn)?;
         }
@@ -581,8 +588,10 @@ impl Db {
         conn.execute_batch(cloud::SCHEMA).unwrap();
         conn.execute_batch(chat::SCHEMA).unwrap();
         conn.execute_batch(doc_links::SCHEMA).unwrap();
+        conn.execute_batch(projects::SCHEMA).unwrap();
         migrate(&conn).unwrap();
         chat::migrate(&conn).unwrap();
+        projects::migrate(&conn, arugula_e2e::now_ms()).unwrap();
         Self { conn: Mutex::new(conn) }
     }
 
@@ -910,6 +919,10 @@ impl Db {
         )?;
         // Asking again (or being approved) clears a turn-down.
         tx.execute("DELETE FROM turned_down WHERE account = ?1 AND device = ?2", params![cert.account, cert.device])?;
+        // A machine joining an account drives its Cloud workspaces (M130).
+        if approved && cert.kind == Kind::Daemon {
+            projects::grant_on_join(&tx, &cert.device, &cert.account, now)?;
+        }
         if approved && cert.approver == cert.device {
             tx.execute(
                 "UPDATE accounts SET root = ?2 WHERE id = ?1 AND root IS NULL",
@@ -1335,6 +1348,7 @@ impl Db {
         c.execute("DELETE FROM daemon_offers WHERE daemon = ?1", params![id])?;
         c.execute("DELETE FROM daemon_offer_pushes WHERE daemon = ?1", params![id])?;
         c.execute("DELETE FROM share_answers WHERE daemon = ?1", params![id])?;
+        c.execute("DELETE FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1", params![id])?;
         // The Docs it shared: a link needs its machine's say to change, and
         // the machine is gone.
         c.execute("DELETE FROM doc_link_parts WHERE id IN (SELECT id FROM doc_links WHERE daemon = ?1)", params![id])?;
@@ -1472,6 +1486,8 @@ impl Db {
             "INSERT INTO rosters (team, version, body) VALUES (?1, ?2, ?3)",
             params![t.id, roster_version, roster],
         )?;
+        projects::project_roster(&tx, &t.id)?;
+        projects::team_project(&tx, &t.id, now)?;
         tx.commit()?;
         Ok(())
     }
@@ -1497,15 +1513,19 @@ impl Db {
     }
 
     /// Fails with [`Taken`] when that version is already there.
+    /// `team_members` follows in the same transaction.
     pub fn add_roster(&self, team: &str, version: u64, body: &str) -> anyhow::Result<()> {
-        let c = self.c();
-        c.execute("INSERT INTO rosters (team, version, body) VALUES (?1, ?2, ?3)", params![team, version, body])
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute("INSERT INTO rosters (team, version, body) VALUES (?1, ?2, ?3)", params![team, version, body])
             .map_err(taken)?;
         if let Some(name) =
             serde_json::from_str::<serde_json::Value>(body).ok().and_then(|v| v["name"].as_str().map(str::to_owned))
         {
-            c.execute("UPDATE teams SET name = ?2 WHERE id = ?1", params![team, name])?;
+            tx.execute("UPDATE teams SET name = ?2 WHERE id = ?1", params![team, name])?;
         }
+        projects::project_roster(&tx, team)?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -2243,6 +2263,7 @@ impl Db {
         // Chat (M122): its DMs, the threads on its machines, the disbanded
         // teams' rooms, and its name on everything else.
         chat::erase_account(&tx, a, &daemons, e.disband)?;
+        projects::erase_account(&tx, a, &daemons, e.disband)?;
         // Certificates kept for teams that are gone now.
         tx.execute("DELETE FROM retained_certs WHERE account NOT IN (SELECT account FROM retained_for)", [])?;
         for d in &daemons {
