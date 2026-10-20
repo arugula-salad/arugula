@@ -162,7 +162,7 @@ dependencies = [
 
 [[package]]
 name = "arugula"
-version = "0.49.0"
+version = "0.50.0"
 dependencies = [
  "anyhow",
  "arugula-control-wire",
@@ -185,7 +185,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-control"
-version = "0.49.0"
+version = "0.50.0"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
@@ -323,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "arugulad"
-version = "0.49.0"
+version = "0.50.0"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
