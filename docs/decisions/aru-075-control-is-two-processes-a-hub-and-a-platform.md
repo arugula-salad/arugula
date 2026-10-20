@@ -62,8 +62,9 @@ The seam is `HubPort`, the one interface the platform calls the hub
 through (who someone is, what devices and rosters say, push). It's
 implemented in process first (M136) and over the private network once the
 platform is its own Fly app (M140). It only grows: we deploy both sides,
-platform first, so a new platform never calls a hub method that isn't there
-yet. If `HubPort` changes shape week after week, the seam is in the wrong
+platform first, so the hub never forwards a route the platform doesn't serve
+yet; a hub method the platform needs ships in the hub a release before the
+platform calls it. If `HubPort` changes shape week after week, the seam is in the wrong
 place, and we stop and rethink (#1150).
 
 **Processes are not planes.** "Two planes, two trust rules" names trust
