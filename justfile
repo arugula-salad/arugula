@@ -89,6 +89,11 @@ control-deploy: static
     cp {{target_dir}}/x86_64-unknown-linux-musl/release/arugula-control {{target_dir}}/x86_64-unknown-linux-musl/release/arugulad packaging/control/Dockerfile packaging/control/fly.toml "$ctx"/
     cd "$ctx" && fly deploy --local-only --ha=false
 
+# The daemons the hosted control saw in the last 30 days, by version: a
+# read-only look at its database (docs/control-ops.md, "Daemon census").
+control-census days="30":
+    fly ssh console -a illogical-control -C "/arugula-control census --db /data/control.db --days {{days}}"
+
 # The macOS daemon and CLI for Intel Macs, cross-compiled on Apple silicon
 # (or built natively on an Intel Mac): target/x86_64-apple-darwin/release/.
 # Then `just dist` and `just desktop x86_64`.
