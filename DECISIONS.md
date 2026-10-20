@@ -62,6 +62,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-023](docs/decisions/aru-023-who-can-reach-a-daemon.md): Who can reach a daemon
 - [aru-024](docs/decisions/aru-024-a-guest-types-on-your-machine-only-by-trust-or-in-a-vm.md): A guest types on your machine only by trust, or in a VM
 - [aru-025](docs/decisions/aru-025-only-the-owner-s-agent-reaches-panes-over-ssh.md): Only the owner's agent reaches panes over ssh
+- [aru-073](docs/decisions/aru-073-grants-not-impersonation.md): Grants, not impersonation
 
 ## Clients
 
@@ -108,6 +109,9 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-060](docs/decisions/aru-060-every-team-invite-link-carries-a-one-time-key-admitting.md): Every team invite link carries a one-time key; admitting someone compares nothing
 - [aru-061](docs/decisions/aru-061-a-passkey-with-prf-is-a-device-one-wherever-it-syncs.md): A passkey with PRF is a device: one wherever it syncs
 - [aru-062](docs/decisions/aru-062-control-s-code-is-open-only-the-hosted-control-is-supported.md): Control's code is open, only the hosted control is supported; the tailnet stays first class
+- [aru-071](docs/decisions/aru-071-two-planes-two-trust-rules.md): Two planes, two trust rules
+- [aru-072](docs/decisions/aru-072-the-project-is-the-unit-of-platform-sharing.md): The project is the unit of platform sharing
+- [aru-074](docs/decisions/aru-074-one-vocabulary-project-with-prj-ids.md): One vocabulary: Project, with prj_ ids
 
 ## Build and release
 

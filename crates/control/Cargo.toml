@@ -49,6 +49,8 @@ workspace = true
 [dev-dependencies]
 aes-gcm = { workspace = true }
 hkdf = { workspace = true }
+# tables.toml, the table manifest (src/db/tables.rs).
+toml = { version = "1.1.8", default-features = false, features = ["std", "parse", "serde"] }
 
 [features]
 # Embed web/dist even in a debug build (rust-embed reads it from the source

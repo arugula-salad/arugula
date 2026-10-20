@@ -50,7 +50,11 @@ constrains:
 
 Chat is a team's, not a machine's (Jake, 2026-10-19, #978): control holds a
 team's channels and DMs and the threads about a pane or a session, in plain
-text, so people talk with every machine asleep. Control numbers messages per
+text, so people talk with every machine asleep. It's one case of the platform
+plane's rule ("Two planes, two trust rules", #1122): plaintext for what has
+to exist while every machine is asleep, listed in `crates/control/tables.toml`.
+A team's channels belong to its default project ("The project is the unit
+of platform sharing"); DMs and pane or session threads belong to no project. Control numbers messages per
 room, keeps read marks, resolves mentions against who sees the room, pushes
 (who, where and the first 200 characters), searches with SQLite FTS5, and
 tells open pages over one Server-Sent Events stream each (`Last-Event-ID`

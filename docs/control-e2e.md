@@ -7,8 +7,10 @@ end-to-end relay, teams, hosted sandboxes and push. It turns the control track's
 but it can't read.** That promise has limits, set out in
 [What holds against control](#what-holds-against-control): the client code
 control serves, and the first account a machine joins, are trusted.
-And it doesn't cover chat: since M122, control holds a team's channels,
-DMs and threads about panes in plain text ([Chat](#chat)).
+And it covers the machine plane only: the platform plane, what has to exist
+while every machine is asleep (chat, Cloud workspaces, Shared Docs,
+billing), is held in control, much of it in plain text. [What control
+stores](#what-control-stores) lists every table of both.
 
 ## Summary
 
@@ -989,14 +991,97 @@ sleeps, and control pushes and searches them itself.
 
 ## What control stores
 
-| Stored | Never stored |
-|---|---|
-| accounts and their display names, OAuth ids, passkey public keys | Noise or signing private keys of anything |
-| device and daemon certificates, revocations, signed grants | terminal bytes, snapshots, logs, history |
-| directory: daemon ids, names, URLs, last seen, presence | link keys (the fragment) |
-| connection metadata: who, which daemon, when, byte counts | push payloads in the clear |
-| signed push subscriptions, VAPID key pair | provider tokens for your own machines |
-| chat (M122): rooms, messages and the lines quoted from panes, read marks, who may read each pane's thread | the rest of a pane: what it printed that nobody quoted |
+<!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
+
+Control's database has 54 tables in two planes ("Two planes, two trust rules"):
+
+- **The machine plane** (29 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The platform plane** (25 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, and Cloud workspaces. Control reads most of it, and says so here.
+
+Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
+
+### The machine plane
+
+| Table | Holds | What | Gone with the account | Also seen by |
+|---|---|---|---|---|
+| `accounts` | metadata | An account: its id, its root device, its display name, and its answer about page telemetry. | yes | PostHog |
+| `identities` | metadata | A sign-in identity: the provider, its id for the person, and their login. | yes | GitHub |
+| `sessions` | metadata | A sign-in session: a hash of its token, the browser's User-Agent, its device, when it ends. | yes |  |
+| `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it, whether it gives PRF. | yes |  |
+| `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
+| `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |
+| `revocations` | metadata | A signed revocation of a device's or machine's key. | yes |  |
+| `joins` | metadata | A machine asking to join: its certificate, a hash of its poll token, its addresses, the approval. | yes |  |
+| `daemons` | metadata | The directory: a joined machine's id, name, addresses, team, last seen, and the version, OS and arch it runs. | yes | PostHog |
+| `daemon_access` | metadata | The accounts a machine says it lets in, for routing (the machine checks for itself). | yes |  |
+| `daemon_agent_access` | metadata | The accounts whose machines a machine lets in for its agents, for routing. | yes |  |
+| `daemon_offers` | metadata | A machine shared with an account that hasn't said yes yet. | yes |  |
+| `daemon_offer_pushes` | metadata | When an account was last pushed about a shared machine. | yes |  |
+| `share_answers` | metadata | An account's yes or no to a machine shared with it. | yes |  |
+| `daemon_links` | metadata | Until when a machine has a live share link, so control routes link guests to it. | yes |  |
+| `sandboxes` | metadata | A hosted sandbox: its VM's id, the device that asked, a hash of its join ticket, its state. | yes | Sprites |
+| `push_subs` | metadata | A browser's signed push subscription: the push service's endpoint and the keys pushes are encrypted to. | yes |  |
+| `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends. | nothing of one |  |
+| `notices` | metadata | A notice for an account with no push, made from names control holds ("Ada left Acme"). | yes |  |
+| `labs_flags` | metadata | The Labs flags an account or a team turned on for its machines. | yes: a team's go when the team does. | PostHog |
+| `teams` | metadata | A team: its id, name, founder and founder's root, and whether it's locked. | partly: the teams it founded, or that nobody else is left in, go with it; the rest stay. | PostHog |
+| `rosters` | metadata | A team's signed roster, every version: who's in it and their roles. | partly: a disbanded team's go; in a team that stays, it's in the signed roster until an owner signs a new one. |  |
+| `invites` | metadata | An Ask me first invite: a hash of its code, the team, the role, its expiry, the owner's signed invite. | yes |  |
+| `presigned_invites` | metadata | A one-time invite an owner's device signed, waiting to be used. | yes |  |
+| `team_requests` | metadata | Someone asking to join a team: their account, root, name, the role, the invite and its proof. | yes |  |
+| `daemon_watches` | metadata | A machine that checks a team's rosters because a session was shared with it. | yes |  |
+| `retained_certs` | metadata | A deleted account's device certificates and revocations, to check teams' signed history it signed. | kept: made when the account goes, if a team that stays has its signatures; gone once no such team is left. |  |
+| `retained_for` | metadata | Which teams a deleted account's certificates are kept for. | kept: as retained_certs. |  |
+| `gone_daemons` | metadata | A hash of each machine of a deleted account, so one asking again is told why. | kept: made when the account goes: a hash of the machine's id and when, nothing of the account. |  |
+
+### The platform plane
+
+| Table | Holds | What | Why it exists while machines sleep | Gone with the account | Also seen by |
+|---|---|---|---|---|---|
+| `billing` | metadata | Who pays: Stripe's customer and subscription ids, the seat item, the status. | A plan holds with every machine off, and Stripe's webhooks come whenever. | yes: a team's go when the team does. An account with a paid plan cancels it before it can be deleted. | PostHog, Stripe |
+| `reported` | metadata | How many hosted sandbox minutes have gone to Stripe. | Minutes are reported hourly, whether or not anyone's machine is up. | yes | Stripe |
+| `usage` | metadata | Bytes relayed per account per day, for the free plan's monthly allowance. | The month's allowance counts across every machine's sleeps. | yes |  |
+| `chat_rooms` | **plaintext** | A chat room: a team's channel and its name, a DM, or the thread on a pane or a session. | People talk with every machine asleep. | partly: its DMs, the threads on its machines and its archives go, and the rooms of teams that go with it; it's taken off the rest. |  |
+| `chat_members` | metadata | A DM's two people, and an archive's readers. | People talk with every machine asleep. | yes |  |
+| `chat_messages` | **plaintext** | A chat message, in plain text, with the lines its author quoted from a pane and who it mentions. | People talk with every machine asleep. | partly: those in its rooms that go, go; the rest stay blank, with no author, and it's taken out of mentions. |  |
+| `chat_fts` | **plaintext** | The full-text index of chat messages and their quotes (SQLite FTS5). | Control searches chat itself, with every machine asleep. | partly: as chat_messages: it's rebuilt from them, and merged when an account goes so blanked words leave it. |  |
+| `chat_reads` | metadata | A person's read mark in a room, and whether they muted it. | Unread counts and pushes, with every machine asleep. | yes |  |
+| `chat_readers` | metadata | Who may read the thread on a pane or a session, as its machine last said. | A pane's thread stays readable while its machine sleeps. | partly: its machines' rows go, and it's taken off the rest. |  |
+| `doc_links` | metadata | A Shared Doc link: its id, the machine that shared it, its version, size and parts, and how often it opened. | A shared Doc opens while the machine that shared it sleeps. | yes |  |
+| `doc_link_parts` | ciphertext | A Shared Doc's snapshot, in parts, encrypted to the key in the link's fragment. | A shared Doc opens while the machine that shared it sleeps. | yes |  |
+| `cloud_agents` | **plaintext** | A cloud agent's definition: its name, instructions, skills, MCP servers and the names of the secrets it uses. | Cloud workspaces and runs work with every machine off. | yes | Managoat |
+| `cloud_runs` | **plaintext** | A cloud run: the agent, model, repository and prompt it ran with, its state, and its result. | Cloud workspaces and runs work with every machine off. | yes | Managoat |
+| `cloud_secrets` | **plaintext** | A cloud secret's name and value, sealed with a key control holds apart from the database; control opens it to put it in a Cloud workspace's vault. | Cloud workspaces and runs work with every machine off. | yes | Managoat |
+| `cloud_run_secrets` | **plaintext** | The secrets a cloud run started with, sealed as cloud_secrets are. | Cloud workspaces and runs work with every machine off. | yes | Managoat |
+| `cloud_jobs` | **plaintext** | The worker's job for a run, a Cloud workspace or a tab: what it was asked (the spec), Managoat's ids, its lease. | Control's worker drives Cloud workspaces with every machine off. | yes | Managoat |
+| `cloud_requests` | **plaintext** | What an agent in the cloud asks someone to approve, and the answer. | An agent in the cloud asks while every machine is off. | yes | Managoat |
+| `cloud_notifications` | metadata | Whether a push about an approval went out yet, and when to try again. | An agent in the cloud asks while every machine is off. | yes |  |
+| `cloud_events` | **plaintext** | A cloud conversation's transcript: prompts, replies, tool calls and results, as Managoat sent them. | Transcripts are read with every machine off. | yes | Managoat |
+| `cloud_workspaces` | **plaintext** | A Cloud workspace: its name, its spec (repositories, packages, setup script, environment variables, networking, secret names), its status and errors. | Cloud workspaces work with every machine off. | yes: its Managoat resources go first: deleting is refused until they have. | Managoat |
+| `cloud_workspace_specs` | **plaintext** | The spec a Cloud workspace's environment revision was saved as (the newest few). | Cloud workspaces work with every machine off. | yes | Managoat |
+| `cloud_tabs` | **plaintext** | A tab in a Cloud workspace: the agent, runtime, model and prompt it opened with, its status. | Cloud workspaces work with every machine off. | yes | Managoat |
+| `projects` | metadata | A project: its id, the team or account it belongs to, its name, and whether it's the default one. | Cloud workspaces, team channels and cloud secrets belong to one, and they exist with every machine asleep. | partly: its personal project goes, and the default projects of teams that go with it; other teams' stay. |  |
+| `team_members` | metadata | Who is in each team as its latest signed roster says: account, role, name. A copy for platform queries; the signed roster stays the authority over machines. | What's shared with a team on the platform (its channels, later its projects) needs its members while every machine is asleep. | yes |  |
+| `grants` | metadata | A grant: a subject (a machine), a power (cloud.drive) over a scope (an account or a project), who gave it, when, and when it was revoked. | Control checks it on the Cloud workspace routes, which work with every other machine asleep. | yes: grants to its machines, over it, or that it gave. |  |
+
+### Who else sees it
+
+- **Litestream's bucket:** Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. Cloud secrets are there sealed, and their key isn't.
+- **Managoat:** Managoat runs Cloud workspaces and cloud runs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals.
+- **PostHog:** PostHog gets product events, when control has a key for it: account, team and machine ids, a machine's version, OS and arch, plans, Labs flags and counts. No names, logins, addresses or content.
+- **Sprites:** Sprites hosts hosted sandboxes: it knows each one's VM.
+- **GitHub:** GitHub signs people in: it knows the identities control keeps for it.
+- **Stripe:** Stripe bills, when control has a key for it: it holds the customers and subscriptions control keeps ids for, and gets sandbox minutes.
+
+### Never stored
+
+- private keys of any device or machine: Noise, signing, passkeys
+- terminal bytes, snapshots, logs, scrollback; the lines of a pane nobody quoted into chat
+- link keys (a link's fragment), and Shared Docs' keys
+- the push payloads machines send, in the clear
+- a person's own credentials: GitHub's OAuth token (used once at sign-in), forge tokens
+
+<!-- End of what `just control-tables` writes. -->
 
 Logs follow the same rule: nothing a daemon sends inside a stream is
 logged, and chat's text isn't logged either.

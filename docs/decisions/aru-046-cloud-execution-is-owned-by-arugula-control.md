@@ -58,7 +58,11 @@ Old saved agent blocks remain readable without reconnecting. Definitions
 can be imported explicitly into account-scoped cloud agents; old remote
 conversations are not transferred. Local agents and their permission rules
 remain machine-owned. Cloud processing is separate from the encrypted
-terminal relay.
+terminal relay: Cloud workspaces, their transcripts and cloud secrets are
+on the platform plane ("Two planes, two trust rules", #1122), listed in
+`crates/control/tables.toml`, and each belongs to a project ("The project
+is the unit of platform sharing"), its owner's personal one until people
+can choose.
 
 Where: `crates/control/src/cloud/`, `crates/control/src/db/cloud.rs`,
 `web/src/ui/cloud.tsx`, `web/src/ui/cloud-workspaces.tsx`,
