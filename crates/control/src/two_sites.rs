@@ -26,7 +26,7 @@ async fn control(tweak: impl FnOnce(&mut App)) -> Control {
     let mut app = App::for_tests(NEW);
     app.cfg.sites.push(Site::new(OLD).unwrap());
     tweak(&mut app);
-    let app = Arc::new(app);
+    let app = app.start();
     let svc = crate::router(app.clone()).into_make_service_with_connect_info::<SocketAddr>();
     tokio::spawn(async move { axum::serve(l, svc).await.unwrap() });
     let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();

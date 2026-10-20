@@ -1,0 +1,31 @@
+[package]
+name = "arugula-platform"
+# The workspace's version: it becomes the `arugula-platform` binary (M140).
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Arugula control's platform: chat, Cloud and billing, behind the hub"
+
+[dependencies]
+anyhow = { workspace = true }
+arugula-control-common = { workspace = true }
+arugula-e2e = { workspace = true }
+axum = { workspace = true }
+futures-util = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["full"], optional = true }
+
+[features]
+# The contract tests every `HubPort` keeps (`contract`): control runs them
+# against its in-process port, and M140 against the HTTP one.
+contract = ["dep:tokio"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+
+[lints]
+workspace = true

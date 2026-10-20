@@ -3,7 +3,7 @@
 //! service of our own, whose messages are decrypted here as a browser
 //! would), once each, saying only that something waits.
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, now_ms,
@@ -137,7 +137,7 @@ async fn waiting_devices_and_requests_push_their_owners() {
     let (mut phone, host) = Phone::subscribe(&app, "a1jake", &jake, 7).await;
     let (mut ada_phone, ada_host) = Phone::subscribe(&app, "a2ada", &ada, 8).await;
     app.cfg.push_hosts = vec![host, ada_host];
-    let app = Arc::new(app);
+    let app = app.start();
 
     // A new browser asks into Jake's account: his phone hears, once.
     let asking = Cert::new(&DeviceKeys::generate(), "a1jake", Kind::Browser, "Safari on iPhone");
@@ -239,7 +239,7 @@ async fn a_new_share_offer_pushes_the_person_offered_once() {
     let (mut ada_phone, ada_host) = Phone::subscribe(&app, "a2ada", &ada, 8).await;
     let (mut bo_phone, bo_host) = Phone::subscribe(&app, "a3bo", &bo, 9).await;
     app.cfg.push_hosts = vec![ada_host, bo_host];
-    let app = Arc::new(app);
+    let app = app.start();
     let cert = Cert::new(&DeviceKeys::generate(), "a1jake", Kind::Daemon, "geek");
     app.db.put_device(&cert, true, now_ms()).unwrap();
     app.db.put_daemon("a1jake", &cert.device, "geek", &[]).unwrap();

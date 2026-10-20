@@ -234,7 +234,7 @@ mod tests {
         let base = format!("http://{}", l.local_addr().unwrap());
         let mut app = App::for_tests(&base);
         app.analytics = Analytics::start("phc_test".into(), &host, reqwest::Client::new());
-        let app = Arc::new(app);
+        let app = app.start();
         let svc = crate::router(app.clone()).into_make_service_with_connect_info::<SocketAddr>();
         tokio::spawn(async move { axum::serve(l, svc).await.unwrap() });
         Control { app, base, http: reqwest::Client::new(), got }

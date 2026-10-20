@@ -1,0 +1,30 @@
+[package]
+name = "arugula-control-common"
+# The workspace's version: control and the platform rebuild on a bump
+# anyway, and product analytics report it (`$lib_version`).
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "What Arugula control's hub and platform both need: the database opener, API errors, rate limits, analytics and the signed principal"
+
+[dependencies]
+anyhow = { workspace = true }
+arugula-e2e = { workspace = true }
+axum = { workspace = true }
+base64 = { workspace = true }
+hmac = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+hex = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+
+[lints]
+workspace = true

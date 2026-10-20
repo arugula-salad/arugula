@@ -182,7 +182,7 @@ async fn webhooks_poke_only_subscribed_daemons_of_allowed_accounts() {
         &api,
         forge::parse_pem(&pem).unwrap(),
     ));
-    let app = Arc::new(app);
+    let app = app.start();
     // Jake signed in with GitHub; a stranger did too; someone else only
     // with a passkey.
     let now = now_ms();

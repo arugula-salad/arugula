@@ -34,6 +34,7 @@ mod forge;
 mod forge_wire;
 mod grants;
 mod guest_jump;
+mod hub_port;
 mod labs_flags;
 mod limit;
 mod passkey;
@@ -67,7 +68,6 @@ use axum::{
 };
 use clap::Parser;
 use rust_embed::Embed;
-use serde_json::json;
 use tracing::info;
 
 #[derive(Parser, Debug)]
@@ -359,6 +359,36 @@ pub struct App {
     pub chat: chat::Hub,
     /// Shared Docs: the disk guard and the open counts (#1064).
     pub docs: doc_links::Docs,
+    /// The platform (#1153), in process: chat, Cloud and billing move into
+    /// it (M137-M139), and it reaches the hub only through `hub_port`.
+    pub platform: Arc<arugula_platform::Platform>,
+    /// The platform's view of the hub, attached to this app by
+    /// [`App::start`].
+    pub hub_port: Arc<hub_port::InProcess>,
+}
+
+impl App {
+    /// The app in its `Arc`, with the platform's `HubPort` attached to it.
+    pub fn start(self) -> Arc<Self> {
+        let app = Arc::new(self);
+        app.hub_port.attach(Arc::downgrade(&app));
+        app
+    }
+}
+
+/// The platform in process, on its own connection to `db` (memory for
+/// tests), and the `HubPort` it reaches the hub through, attached by
+/// [`App::start`].
+fn platform(
+    db: arugula_platform::db::Db,
+    public_url: &str,
+    http: &reqwest::Client,
+    analytics: &analytics::Analytics,
+) -> (Arc<arugula_platform::Platform>, Arc<hub_port::InProcess>) {
+    let hub = Arc::new(hub_port::InProcess::default());
+    let cfg = arugula_platform::Config { public_url: public_url.to_owned() };
+    let p = arugula_platform::Platform::new(cfg, db, hub.clone(), http.clone(), analytics.clone());
+    (Arc::new(p), hub)
 }
 
 #[cfg(test)]
@@ -367,6 +397,9 @@ impl App {
     pub fn for_tests(public_url: &str) -> Self {
         let db = db::Db::memory();
         let vapid = push::Vapid::load(&db).unwrap();
+        let http = reqwest::Client::new();
+        let (platform, hub_port) =
+            platform(arugula_platform::db::Db::memory(), public_url, &http, &analytics::Analytics::default());
         App {
             cfg: Config {
                 push_hosts: vec![],
@@ -380,7 +413,7 @@ impl App {
                 static_dir: None,
             },
             db,
-            http: reqwest::Client::new(),
+            http,
             relay: Default::default(),
             passkeys: Default::default(),
             limits: limit::Limits::new(None),
@@ -399,61 +432,15 @@ impl App {
             analytics: Default::default(),
             chat: Default::default(),
             docs: Default::default(),
+            platform,
+            hub_port,
         }
     }
 }
 
-/// An API error: `{"error": "..."}` with a status, and a `reason` code
-/// where a client acts on which refusal it was (#327).
-#[derive(Debug)]
-pub struct ApiError(StatusCode, String, Option<&'static str>);
-
-pub fn err(status: StatusCode, msg: &str) -> ApiError {
-    ApiError(status, msg.to_owned(), None)
-}
-
-/// An error with a reason code beside the sentence.
-pub fn refusal(status: StatusCode, reason: &'static str, msg: &str) -> ApiError {
-    ApiError(status, msg.to_owned(), Some(reason))
-}
-
-impl From<anyhow::Error> for ApiError {
-    fn from(e: anyhow::Error) -> Self {
-        tracing::warn!(error = %e, "internal error");
-        ApiError(StatusCode::INTERNAL_SERVER_ERROR, "something went wrong".into(), None)
-    }
-}
-
-impl From<serde_json::Error> for ApiError {
-    fn from(e: serde_json::Error) -> Self {
-        anyhow::Error::from(e).into()
-    }
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        match self.2 {
-            Some(reason) => (self.0, Json(json!({ "error": self.1, "reason": reason }))).into_response(),
-            None => (self.0, Json(json!({ "error": self.1 }))).into_response(),
-        }
-    }
-}
-
-/// `YYYY-MM-DD` (UTC) for a time in ms, for daily meters.
-pub fn day(ms: u64) -> String {
-    let days = (ms / 86_400_000) as i64;
-    // Civil from days (Howard Hinnant's algorithm).
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + i64::from(m <= 2);
-    format!("{y:04}-{m:02}-{d:02}")
-}
+// API errors, typed answers and daily meters are shared with the
+// platform (`arugula-control-common`).
+pub use arugula_control_common::{ApiError, day, err, refusal, reply};
 
 /// Every route control answers on its own site. routes.toml lists each one
 /// with the process that answers it, hub or platform (#1152), and its test
@@ -621,8 +608,12 @@ impl Routes {
 }
 
 pub fn router(app: Arc<App>) -> Router {
+    // The platform's routes, behind the gate that says who's asking.
+    let platform = arugula_platform::router(app.platform.clone())
+        .layer(axum::middleware::from_fn_with_state(app.clone(), hub_port::gate));
     routes()
         .router
+        .merge(platform)
         .fallback(asset)
         .layer(axum::middleware::from_fn_with_state(app.clone(), analytics::requests))
         .layer(axum::middleware::from_fn_with_state(app.clone(), account::note_agent))
@@ -654,11 +645,6 @@ async fn moved(
         return axum::response::Redirect::permanent(&format!("{}{pq}", app.cfg.public_url)).into_response();
     }
     next.run(req).await
-}
-
-/// A typed answer, as JSON.
-pub fn reply<T: serde::Serialize>(answer: &T) -> Result<Json<serde_json::Value>, ApiError> {
-    Ok(Json(serde_json::to_value(answer).map_err(anyhow::Error::from)?))
 }
 
 async fn control_json(
@@ -971,7 +957,10 @@ async fn run() -> anyhow::Result<()> {
         }),
         None => None,
     };
-    let app = Arc::new(App {
+    // A second connection to the same file: the platform never reads the
+    // hub's tables (#1153).
+    let (platform, hub_port) = platform(arugula_platform::db::Db::open(&a.db)?, &public_url, &http, &analytics);
+    let app = App {
         cfg: Config {
             push_hosts: a.push_hosts,
             relay_free_bytes: a.relay_free_mb * 1_000_000,
@@ -1009,7 +998,10 @@ async fn run() -> anyhow::Result<()> {
         chat: Default::default(),
         // The database's directory, whose disk shared Docs fill.
         docs: doc_links::Docs::at(db_dir),
-    });
+        platform,
+        hub_port,
+    }
+    .start();
     if let (Some(l), Some(j)) = (guest_listener, &app.jump) {
         info!(addr = %l.local_addr()?, host = %j.host, port = j.port, "guest ssh jump host");
         tokio::spawn(guest_jump::serve(app.clone(), l));
@@ -1056,6 +1048,10 @@ async fn run() -> anyhow::Result<()> {
                     Ok(n) if n > 0 => info!(sessions = n, "pruned expired sessions"),
                     Ok(_) => {}
                     Err(e) => tracing::warn!(error = %e, "pruning"),
+                }
+                // The platform's change feed keeps a week (`db::changes`).
+                if let Err(e) = a2.db.prune_changes(arugula_e2e::now_ms()) {
+                    tracing::warn!(error = %e, "pruning the change feed");
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
             }
@@ -1158,12 +1154,5 @@ mod tests {
         assert!(b(Some("sk_test"), None).is_err(), "a key alone doesn't start");
         let on = b(Some("sk_test"), Some("whsec")).unwrap().unwrap();
         assert_eq!((on.webhook_secret.as_str(), on.api.as_str()), ("whsec", "https://api.stripe.com"));
-    }
-
-    #[test]
-    fn days() {
-        assert_eq!(super::day(0), "1970-01-01");
-        assert_eq!(super::day(1_790_000_000_000), "2026-09-21");
-        assert_eq!(super::day(951_782_400_000), "2000-02-29");
     }
 }

@@ -66,7 +66,7 @@ async fn control(tweak: impl FnOnce(&mut App)) -> Control {
     app.cfg.block_domain = Some(DOMAIN.into());
     app.cfg.static_dir = Some(files.0.to_owned());
     tweak(&mut app);
-    let app = Arc::new(app);
+    let app = app.start();
     let svc = crate::router(app.clone()).into_make_service_with_connect_info::<SocketAddr>();
     tokio::spawn(async move { axum::serve(l, svc).await.unwrap() });
     let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();

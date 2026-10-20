@@ -175,8 +175,9 @@ mod tests {
             }),
         );
         let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        let mut app = crate::cloud::tests::test_app();
-        Arc::get_mut(&mut app).unwrap().cfg.push_hosts.push(address.to_string());
+        let mut app = crate::cloud::tests::unstarted_app();
+        app.cfg.push_hosts.push(address.to_string());
+        let app = app.start();
         let device = DeviceKeys::generate();
         let mut cert = Cert::new(&device, "a", Kind::Browser, "test browser");
         cert.sign_with(&device);

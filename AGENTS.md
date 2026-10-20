@@ -41,8 +41,13 @@ Each has a `README.md` with where to start reading.
   around `arugula-mux`, wired together in `main.rs`.
 - `crates/cli`: `arugula`, the CLI. It doesn't link `arugula-vt`, so it
   builds without libghostty and Zig.
-- `crates/control`: Arugula control: accounts, devices, the directory and the
-  relay.
+- `crates/control`: Arugula control's hub: accounts, devices, the directory
+  and the relay. It runs the platform in process for now.
+- `crates/platform`: control's platform (#1150): chat, Cloud and billing
+  move here. It reaches the hub only through `HubPort`, and the hub reaches
+  it through `PlatformPort`.
+- `crates/control-common`: what the hub and the platform both use: the SQLite
+  opener, API errors, rate limits, analytics and the signed principal.
 - `crates/control-wire`: the enrolment, routing, relay, push and TURN messages
   between daemons and control (and the CLI's join), one type each, so both
   sides build from the same definition.

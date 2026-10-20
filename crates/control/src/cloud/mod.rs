@@ -327,6 +327,11 @@ pub(crate) mod tests {
     use super::*;
 
     pub(crate) fn test_app() -> Arc<App> {
+        unstarted_app().start()
+    }
+
+    /// [`test_app`] before it's started, to change first.
+    pub(crate) fn unstarted_app() -> App {
         let db = crate::db::Db::memory();
         let now = arugula_e2e::now_ms();
         for id in ["a", "b", "c"] {
@@ -346,7 +351,7 @@ pub(crate) mod tests {
                 CloudModel { runtime: "codex".into(), model: "openai/test-model".into() },
             ],
         });
-        Arc::new(app)
+        app
     }
 
     #[test]

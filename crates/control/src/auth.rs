@@ -217,7 +217,7 @@ impl Replays {
 /// The outcome of checking a request's daemon signature, for
 /// [`DaemonAuth`] to hand over.
 #[derive(Clone)]
-struct Signed(Result<Cert, (StatusCode, String)>);
+pub(crate) struct Signed(pub(crate) Result<Cert, (StatusCode, String)>);
 
 /// Checks `x-arugula-auth` on any request that has one, with its body.
 pub async fn verify_daemon(
