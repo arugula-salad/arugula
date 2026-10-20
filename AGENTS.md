@@ -217,4 +217,12 @@ touch a module anyway, replace its leading "M43:" tag with a plain name.
 
 ## Decisions
 
-[DECISIONS.md](DECISIONS.md): the decisions that still constrain the code.
+The decisions that still constrain the code are chant decision records, one
+file each in [docs/decisions/](docs/decisions/) (`aru-001` …), indexed by
+section in [DECISIONS.md](DECISIONS.md). A reference to `DECISIONS.md "Some
+title"` names the record with that title. Before you change one of these,
+read its record; if you change it, change the record in the same PR (its
+body, and `constrains` when the code it names moves), and run `just
+decisions` to rewrite the index, which `just check` checks. A new decision
+is a new record with the next id. `chant workspace records --current` lists
+them, and `chant workspace check` validates them against the kind.

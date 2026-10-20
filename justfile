@@ -54,6 +54,11 @@ web:
 proto-ts mode="write":
     {{ if mode == "write" { "ARUGULA_WRITE_TS=1" } else { "" } }} cargo test -q -p arugula-proto --features ts ts::
 
+# Write DECISIONS.md, the index of the decision records in docs/decisions/.
+# Without `write`, check it's current.
+decisions mode="write":
+    node scripts/decisions-index.mjs {{ if mode == "write" { "" } else { "--check" } }}
+
 # Release build of everything.
 build: web
     {{cargo}} build --release
@@ -650,6 +655,7 @@ mux-guard:
 # What CI runs.
 check: test mux-guard
     just proto-ts check
+    just decisions check
     scripts/check-binaries
     {{cargo}} fmt --all --check
     {{cargo}} clippy --workspace --all-targets -- -D warnings
