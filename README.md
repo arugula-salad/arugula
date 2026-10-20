@@ -106,7 +106,8 @@ For working on Arugula itself:
 - [docs/testing.md](docs/testing.md): the test suites.
 - [docs/control-e2e.md](docs/control-e2e.md): how control's end-to-end encryption keeps it out of
   your terminals.
-- [DECISIONS.md](DECISIONS.md): the decisions that still hold.
+- [DECISIONS.md](DECISIONS.md): the decisions that still hold, an index of the records in
+  [docs/decisions/](docs/decisions/).
 - [docs/managoat.md](docs/managoat.md): managed cloud agents, run through Arugula control on
   Managoat, and what became of the daemon's own Managoat integration.
 - [docs/platform-features.md](docs/platform-features.md): which agent platform features (ACP, MCP,

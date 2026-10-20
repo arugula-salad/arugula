@@ -3,6 +3,10 @@
   "schema": 1,
   "minReader": "0.108.0",
   "members": [],
+  "records": [{ "kind": "docs/decisions/decision.kind.mjs" }],
+  "writeScope": {
+    "agent": { "records": { "decision": ["new", "review"] } }
+  },
   "ci": {
     "green": {
       "branch": "main",
