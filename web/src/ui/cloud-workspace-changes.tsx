@@ -6,7 +6,7 @@
 // Refresh. Nothing polls: a read can keep a provider's machine awake.
 
 import { useEffect, useState } from "preact/hooks";
-import { cloudApi as api, cloudWorkspaces, type CloudWorkspace } from "../cloud";
+import { cloudWorkspaces, useCloudApi, type CloudTab, type CloudWorkspace } from "../cloud";
 
 type GitChange = { path: string; index: string; worktree: string; renamed_from?: string | null };
 type GitStatus = { path: string; repo_root: string; branch: string | null; entries: GitChange[]; truncated: boolean };
@@ -50,14 +50,17 @@ const query = (params: Record<string, string>) => new URLSearchParams(params).to
 /** Whether the machine can be read now without waking it. */
 const cloudWorkspaceReadable = (w: CloudWorkspace) => w.status === "ready" && w.sandbox_status !== "suspended";
 
-export function CloudWorkspaceChanges({ w, first }: { w: CloudWorkspace; first?: string }) {
+/** `tabs`: the workspace's tabs, where they aren't in the `cloudWorkspaces`
+ * store (a Cloud workspace block's, #1117). */
+export function CloudWorkspaceChanges({ w, first, tabs }: { w: CloudWorkspace; first?: string; tabs?: CloudTab[] }) {
+  const api = useCloudApi();
   const mounts = w.saved_spec.repositories.map((r) => r.mount ?? "").filter(Boolean);
   // The repository holding `first` (a tab's cwd) first.
   const holds = (m: string) => !!first && (first === m || first.startsWith(`${m}/`));
   mounts.sort((a, b) => Number(holds(b)) - Number(holds(a)));
   const readable = cloudWorkspaceReadable(w);
   // Each tab's status: a turn that ends is when files change.
-  const turns = (cloudWorkspaces.tabs.get(w.id) ?? []).map((t) => `${t.id}:${t.status === "running" ? "running" : "rest"}`).join();
+  const turns = (tabs ?? cloudWorkspaces.tabs.get(w.id) ?? []).map((t) => `${t.id}:${t.status === "running" ? "running" : "rest"}`).join();
   const [repos, setRepos] = useState<RepositoryChanges[]>([]);
   const [loading, setLoading] = useState(false);
   const [asked, setAsked] = useState(0);

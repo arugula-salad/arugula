@@ -885,6 +885,7 @@ const SHOW: &[Kind] = &[
         flag: None,
     },
     super::ops::kind::<ConversationOpen>(),
+    super::cloud::SHOW,
     Kind {
         name: "app",
         description: "One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.",
@@ -1870,6 +1871,10 @@ impl<'a> Call<'a> {
                 Err(e) => Err(e),
             },
             ("show", Some("conversation")) => super::ops::call::<ConversationOpen>(self, args).await,
+            ("show", Some("cloud_workspace")) => match parse(args) {
+                Ok(a) => self.show_cloud_workspace(a).await,
+                Err(e) => Err(e),
+            },
             ("show", Some("app")) => match parse(args) {
                 Ok(a) => self.open_app(a).await,
                 Err(e) => Err(e),
@@ -2786,7 +2791,7 @@ impl<'a> Call<'a> {
     }
 
     /// Beside `beside`, or the agent itself; on its machine.
-    async fn beside(&self, beside: Option<&PaneArg>) -> Result<(Option<PaneId>, Option<u32>), String> {
+    pub(super) async fn beside(&self, beside: Option<&PaneArg>) -> Result<(Option<PaneId>, Option<u32>), String> {
         let beside = match (beside.map(PaneArg::id).transpose()?, self.own_pane()) {
             (Some(b), _) => Some(b),
             (None, own) => own,
@@ -3517,7 +3522,7 @@ impl Call<'_> {
         Err(format!("no invite {id} of yours (invite_person returns one)"))
     }
 
-    async fn open(&self, req: OpenRequest) -> Result<PaneId, String> {
+    pub(super) async fn open(&self, req: OpenRequest) -> Result<PaneId, String> {
         confine(self.on_machine().await?, open_lands_on_machine(&req))?;
         match self.app.mux.api(|r| Api::Open(req, None, r)).await {
             Some(Ok(b)) => {
@@ -4350,7 +4355,9 @@ mod tests {
         }
         // An error names only the kinds that are listed.
         let e = route("show", json!({ "kind": "terminal" }), fl(false)).err().unwrap();
-        assert!(e.contains("port") && !e.contains("managoat") && !e.contains("workspace"), "{e}");
+        // (`cloud_workspace` is listed: it isn't the Labs `workspace`.)
+        let named = |k: &str| e.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').any(|w| w == k);
+        assert!(named("port") && named("cloud_workspace") && !e.contains("managoat") && !named("workspace"), "{e}");
         let every: Vec<&str> = all_defs().iter().map(|d| d.name).collect();
         for name in CHAT_TOOLS {
             assert!(!every.contains(&name), "{name} is an agent's again");

@@ -946,6 +946,10 @@ pub enum BlockType {
     /// with every tool off, in a folder the daemon owns, and no repo, shell
     /// or MCP. Config `{agent: claude, model?, title?, prompt?}`.
     Chat,
+    /// One of the machine owner's Cloud workspaces in control (#1117): its
+    /// status and tabs, read from control as this machine, and a tab's
+    /// transcript. Config `{cloud_workspace, tab?}`.
+    CloudWorkspace,
     /// A type a newer daemon has and this build doesn't know: its state
     /// still parses. Nothing opens one, and the web client's types leave
     /// it out.

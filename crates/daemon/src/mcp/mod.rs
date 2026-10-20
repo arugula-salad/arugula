@@ -296,7 +296,8 @@ cloud and read_cloud for the user's Cloud workspaces in Arugula control (agents 
 list kind cloud_workspaces lists them, and you act as the user there), \
 history for what happened before (kind output: what panes printed). Output is paged: pass next_offset \
 back as offset. show's kinds: port (a dev server in a browser block beside its terminal), changes (a \
-diff), file (at a line), pr, issue, conversation (a Claude Code conversation, to continue or fork); show \
+diff), file (at a line), pr, issue, conversation (a Claude Code conversation, to continue or fork), \
+cloud_workspace (one of the user's Cloud workspaces, its tabs and transcripts); show \
 one instead of describing it, and wait (until idle or needs_input) instead of polling output. \
 Claude Code hooks put your questions (arugula ask), permission prompts (arugula hook, which anyone allowed can \
 answer), follow-ups (arugula inbox) and attention on cards; without them your questions stay in the terminal. \

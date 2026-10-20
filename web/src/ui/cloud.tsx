@@ -1,7 +1,7 @@
 import { AgentMessage } from "../blocks/agent-message";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
-import { cloudApi as api, cloudPanes, cloudTerminal as terminal, useCloudPanes, type CloudAgent as Agent, type CloudRun as Run, type PastCloudTab } from "../cloud";
+import { cloudApi as api, cloudPanes, cloudTerminal as terminal, useCloudApi, useCloudPanes, type CloudAgent as Agent, type CloudRun as Run, type PastCloudTab } from "../cloud";
 type Block = { kind: string; body?: unknown; summary?: string; name?: string; request_id?: string; options?: { optionId: string; name?: string }[]; schema?: { properties?: Record<string, { type?: string; title?: string; enum?: string[] }>; required?: string[] } };
 export type Event = { id: number; kind?: string; stage?: string; state?: string; data?: string; blocks?: Block[] };
 
@@ -162,13 +162,14 @@ function SecretEditor({ names, refresh }: { names: string[]; refresh: () => Prom
  * (`workspaces/<id>/tabs/<tab>`). Polling stops once `ended` says so and
  * the transcript is read to its end. */
 export function useCloudConversation<T>(path: string, ended: (item: T) => boolean) {
+  const call = useCloudApi();
   const [item, setItem] = useState<T | null>(null); const [events, setEvents] = useState<Event[]>([]); const [error, setError] = useState(""); const [answered, setAnswered] = useState<Record<string, string>>({}); const [pending, setPending] = useState<string[]>([]);
   const cursor = useRef(0);
   useEffect(() => {
     let active = true, timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const [r, page, requests] = await Promise.all([api<T>(path), api<{ events: Event[] }>(`${path}/events?after=${cursor.current}`), api<{ requests: Block[] }>(`${path}/requests`)]);
+        const [r, page, requests] = await Promise.all([call<T>(path), call<{ events: Event[] }>(`${path}/events?after=${cursor.current}`), call<{ requests: Block[] }>(`${path}/requests`)]);
         if (!active) return;
         setItem(r); setPending(requests.requests.flatMap((r) => r.request_id ? [r.request_id] : []));
         if (page.events.length) { cursor.current = Math.max(...page.events.map((e) => e.id)); setEvents((old) => [...old, ...page.events]); }
@@ -180,7 +181,7 @@ export function useCloudConversation<T>(path: string, ended: (item: T) => boolea
   // What each request was answered with here: the option's id, or the
   // form's action.
   const answer = async (request: string, body: { option_id?: string; action?: string }) => {
-    await api(`${path}/requests/${encodeURIComponent(request)}`, "POST", body);
+    await call(`${path}/requests/${encodeURIComponent(request)}`, "POST", body);
     setAnswered((old) => ({ ...old, [request]: body.option_id ?? body.action ?? "answered" }));
   };
   return { item, events, error, setError, pending, answered, answer };

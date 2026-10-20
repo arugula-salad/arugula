@@ -16,6 +16,7 @@ mod block_channel;
 mod browser;
 mod callers;
 mod chat_import;
+mod cloud_workspace;
 use arugula_mux::classify;
 mod control;
 // Windows panes on a pseudoconsole (M56).
@@ -711,6 +712,7 @@ fn kinds(
     forges::kinds(&mut kinds);
     kinds.add(BlockType::Invite, invite::card::InviteKind(invite.clone()));
     kinds.add(BlockType::Doc, docs::DocKind);
+    kinds.add(BlockType::CloudWorkspace, cloud_workspace::CloudWorkspaceKind);
     labs::kinds(&mut kinds, invite);
     kinds
 }
@@ -953,6 +955,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     );
     // Doc blocks share through control (#1066).
     docs::link::init(control.clone());
+    // So do Cloud workspace blocks read theirs (#1117).
+    cloud_workspace::init(control.clone());
     // M40: forge blocks' live updates (control's GitHub App, hooks here).
     forges::start(state_dir.clone(), Some(&control), direct_urls.clone());
     // Claude Code's IDE (M28): its relay keeps the connections.
@@ -1174,6 +1178,7 @@ mod tests {
             BlockType::Agents,
             BlockType::Doc,
             BlockType::Chat,
+            BlockType::CloudWorkspace,
             BlockType::Unknown,
         ];
         // A new type is a compile error here until it is listed above.
@@ -1193,6 +1198,7 @@ mod tests {
                 | BlockType::Agents
                 | BlockType::Doc
                 | BlockType::Chat
+                | BlockType::CloudWorkspace
                 | BlockType::Unknown => {}
             }
             let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);

@@ -63,7 +63,11 @@ in a new one made from the repository you give it. The header shows the
 state and *Delete*, which names the tabs it ends; closed tabs, and those
 of deleted Cloud workspaces, stay readable under *Past tabs*. Cloud runs (a fresh
 checkout per agent) are retired: past ones stay readable, with their
-downloads, under *Past runs* in Cloud agents.
+downloads, under *Past runs* in Cloud agents. An agent can also put one
+of your Cloud workspaces beside its pane, on any machine joined to control,
+as a **Cloud workspace block** (MCP `show` kind `cloud_workspace`): its
+overview and a tab per agent, to read, prompt, answer and interrupt there,
+and *Open* to go to it ([managoat.md](managoat.md)).
 
 While the connection is down the workspace says so: it shows what it last
 heard, claims nothing is working or running, and turns off what would

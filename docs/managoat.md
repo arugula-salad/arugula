@@ -71,7 +71,27 @@ kinds `cloud_workspaces`, `cloud_tabs` and `cloud_agents`; `read_cloud`
 git status and the setup log); `cloud` (create one, open a tab, prompt it
 and wait for its turn, interrupt, answer, close a tab, rebuild, retry);
 and `wait` with `cloud_workspace` and `tab`. `capabilities` says whether
-they reach (`control.cloud`). The daemon calls control's `/api/cloud/...`
+they reach (`control.cloud`). Without a `path`, `read_cloud` kinds
+`git_status` and `diff` read the workspace's first repository (its mount,
+as built), and the summary names the others; kind `files` lists the
+machine's home.
+
+`show` kind `cloud_workspace` (#1117), with `cloud_workspace` and
+optionally `tab`, puts one in front of the user as a **Cloud workspace
+block** beside the agent's pane. Control's page can't be framed, so the
+block isn't a frame: while someone looks at it, the daemon reads the
+workspace and its tabs from control (as above, every 3 seconds) and the
+block draws them with control's own views: an *Overview* (status,
+repositories, tabs, Changes, and the setup log when setup failed) and a
+tab per agent, with its transcript, its approvals and questions to
+answer, the prompt box, *Interrupt* and *Changes*. Those reads and writes
+go through the block's `cloud` method, which the daemon sends to control
+as the machine, and which reaches only that workspace's routes (and the
+agent and model lists). An editor of the session can use it, as anyone
+who may run things there can drive the owner's Cloud workspaces; a viewer
+sees the status and tabs only. On control's page the block's *Open* shows
+the workspace in *Cloud workspaces* when it's the signed-in person's;
+elsewhere *Open in control* is a link to it. The daemon calls control's `/api/cloud/...`
 routes signed with its own key, and control acts as the machine's account,
 the owner. So **anyone who may run things on a machine, a teammate with
 run rights or a guest's agent there, can drive the owner's Cloud
