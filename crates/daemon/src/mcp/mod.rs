@@ -304,7 +304,7 @@ answer), follow-ups (arugula inbox) and attention on cards; without them your qu
 Run each `arugula ...` command on its own, not in a pipeline or an `&&` chain, so the allow rules match it.";
 
 /// What the `docs` flag adds: the `doc` tool is listed only where it is on.
-const DOC_INSTRUCTIONS: &str = "doc to build a report, plan or write-up the user watches fill in beside your pane, ";
+const DOC_INSTRUCTIONS: &str = "doc to build a report, plan or write-up the user watches fill in beside your pane (when they want to show it to someone, ask with share: the user decides), ";
 
 /// The server's instructions: without the `docs` flag, they leave out the
 /// Doc. Chat isn't an agent's (#1095): nothing of it is here.

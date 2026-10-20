@@ -30,6 +30,7 @@ mod conversations;
 mod crash;
 mod dialout;
 mod doc;
+mod doc_share_ask;
 #[cfg(feature = "editor")]
 mod editor_swarm;
 #[cfg(feature = "editor")]

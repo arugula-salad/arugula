@@ -52,8 +52,10 @@ export function TermAsk({ client, id, ask }: { client: Client; id: PaneId; ask: 
   // #234: an agent's invite is the owner's alone to send or decline. M79:
   // so is a task from another person's agent (and the daemon checks it's
   // this machine's own account).
+  // #1067: so is a Doc's share card (the daemon refuses anyone else).
   const invite = ask.source === "invite";
-  const ownersOnly = invite || ask.source === "a2a";
+  const doc = ask.source === "doc";
+  const ownersOnly = invite || doc || ask.source === "a2a";
   const can = ownersOnly ? !client.state?.roles : mayAnswer(client, id);
   // M35: a question raised on a block names who asks ("hud asks").
   const who = ask.agent ?? "Claude Code";
@@ -82,7 +84,13 @@ export function TermAsk({ client, id, ask }: { client: Client; id: PaneId; ask: 
         <div class="ask" data-ask={ask.id}>
           <p class="ask-message">{ask.questions?.[0]?.question ?? ask.message}</p>
           <p class="ask-viewer">
-            {invite ? "Only the session's owner sends or declines an invite." : ask.source === "a2a" ? "Only this machine's owner allows a task." : VIEWER_NOTE}
+            {invite
+              ? "Only the session's owner sends or declines an invite."
+              : doc
+                ? "Only the owner can share this Doc."
+                : ask.source === "a2a"
+                  ? "Only this machine's owner allows a task."
+                  : VIEWER_NOTE}
           </p>
         </div>
       ) : (

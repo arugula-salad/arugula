@@ -262,6 +262,8 @@ function FormCard({ ask, actions }: { ask: Ask; actions: AskActions }) {
   return (
     <>
       <div class="ask-message">{ask.message}</div>
+      {/* #1067: a Doc's share card says what sharing means, under its question. */}
+      {ask.source === "doc" && ask.schema?.description && <div class="ask-desc">{ask.schema.description}</div>}
       {props.map(([key, f]) => {
         const title = f.title ?? key;
         const opts = choices(f);
@@ -359,7 +361,15 @@ function FormCard({ ask, actions }: { ask: Ask; actions: AskActions }) {
         actions={ask.source === "invite" ? { ...actions, decline: () => actions.answer({ decline: true, ...(filled(values.reason) ? { reason: values.reason } : {}) }) } : actions}
         submit={submit}
         disabled={!ready}
-        labels={ask.source === "forge" ? { submit: "Send", decline: "Drop" } : ask.source === "invite" ? { submit: "Invite", decline: "Decline" } : undefined}
+        labels={
+          ask.source === "forge"
+            ? { submit: "Send", decline: "Drop" }
+            : ask.source === "invite"
+              ? { submit: "Invite", decline: "Decline" }
+              : ask.source === "doc"
+                ? { submit: "Share", decline: "Not now" }
+                : undefined
+        }
       />
     </>
   );
