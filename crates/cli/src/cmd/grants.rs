@@ -14,8 +14,9 @@ use crate::util::print_json;
 pub enum GrantsCmd {
     /// Your machines' grants, live and revoked.
     Ls,
-    /// Take a machine's cloud.drive grant back: its agents can't drive your
-    /// Cloud workspaces until it's restored.
+    /// Take a machine's cloud.drive grant back.
+    ///
+    /// Its agents can't drive your Cloud workspaces until it's restored.
     Revoke {
         /// The machine: its name or id.
         machine: String,
