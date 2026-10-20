@@ -12,6 +12,11 @@ with its plane, what it holds and who else sees it. A test fails when a
 table isn't there: a new table gets a row, and `just control-tables`
 rewrites "What control stores" in docs/control-e2e.md from it.
 
+Every route control registers is listed in [routes.toml](routes.toml), with
+the process that answers it once control is split (hub or platform, #1150),
+what it checks and who calls it. A test fails when a route isn't there: a
+new route gets a row.
+
 Depends on `arugula-e2e` and `arugula-control-wire` (the messages it
 shares with daemons and the CLI).
 
