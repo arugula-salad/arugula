@@ -15,7 +15,8 @@
 # --local-only, so it needs Docker). `deploy` leaves a newer release alone:
 # re-running an old tag's job doesn't take control back a version. The app
 # and its URL come from packaging/control/fly.toml; Fly's token is
-# FLY_API_TOKEN, a deploy token for the app.
+# FLY_API_TOKEN, a deploy token for the app. It calls `flyctl`, not `fly`:
+# setup-flyctl's tarball has no `fly` link (v0.53.0's deploy died on it).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 toml=packaging/control/fly.toml
@@ -25,7 +26,7 @@ url=$(sed -n 's/^ *ARUGULA_CONTROL_URL = "\(.*\)"/\1/p' "$toml")
 
 # The image label each of the app's machines runs, one a line.
 running() {
-  fly status -a "$app" --json |
+  flyctl status -a "$app" --json |
     jq -r '.Machines[] | select(.config.metadata.fly_process_group == "app") | .image_ref.tag'
 }
 
@@ -33,7 +34,7 @@ running() {
 # TAG's image with its checks passing. Says what it saw when not.
 check_once() {
   local tag=$1 st
-  st=$(fly status -a "$app" --json) || { echo "fly status failed"; return 1; }
+  st=$(flyctl status -a "$app" --json) || { echo "fly status failed"; return 1; }
   if ! jq -e --arg t "$tag" '
       [.Machines[] | select(.config.metadata.fly_process_group == "app")] as $m
       | ($m | length) > 0
@@ -83,7 +84,7 @@ deploy() {
   trap "rm -rf '$ctx'" EXIT
   cp "$dir/arugula-control" "$dir/arugulad" packaging/control/Dockerfile "$toml" "$ctx"/
   chmod +x "$ctx/arugula-control" "$ctx/arugulad"
-  (cd "$ctx" && fly deploy --local-only --ha=false --image-label "$tag")
+  (cd "$ctx" && flyctl deploy --local-only --ha=false --image-label "$tag")
   check "$tag"
 }
 
