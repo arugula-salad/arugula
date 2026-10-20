@@ -124,7 +124,9 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
 - **Build it** with `just static` (`target/x86_64-unknown-linux-musl/release/arugula-control`).
   - The web client is built into the binary.
   - `--static-dir web/dist` serves a local build instead.
-- **The hosted one** is `packaging/control/` on Fly: `just control-deploy`.
+- **The hosted one** is `packaging/control/` on Fly. Each release tag
+  deploys it ("Deploys" below); `just control-deploy` deploys from a
+  laptop.
 
 - **Relay limits per account**, so one account can't take the whole
   machine (0 turns each off):
@@ -231,6 +233,50 @@ with the `sqlite3` binary on the volume:
 ```
 fly ssh console -a illogical-control -C "/data/sqlite3 -readonly -header -column /data/control.db \"SELECT COALESCE(version,'unknown') AS version, COUNT(*) AS daemons, strftime('%Y-%m-%d %H:%M', MIN(last_seen)/1000, 'unixepoch') AS oldest_last_seen, strftime('%Y-%m-%d %H:%M', MAX(last_seen)/1000, 'unixepoch') AS newest_last_seen FROM daemons WHERE last_seen >= (strftime('%s','now') - 30*86400)*1000 GROUP BY version ORDER BY daemons DESC\""
 ```
+
+### Deploys
+
+Each release tag deploys control (M133, #1129). It's automatic, with no
+approval step.
+
+- **The `control` job** in `.github/workflows/release.yml` runs as soon
+  as the `linux` job has built the tag's static binaries. It doesn't wait
+  for macOS, Windows or the release to be published.
+- **The image** is built on GitHub's runner the way `just control-deploy`
+  builds it: `packaging/control/Dockerfile` around `arugula-control` and
+  `arugulad`, with `fly deploy --local-only`. It's labelled with the tag,
+  so `fly releases -a illogical-control` shows
+  `registry.fly.io/illogical-control:vX.Y.Z`.
+- **After the deploy,** `scripts/ci-control-deploy` checks that
+  `https://control.arugula.io/control.json` answers and that every machine
+  runs the tag's image with its health check passing. If either fails,
+  the job fails. To run the same check by hand:
+  `scripts/ci-control-deploy check vX.Y.Z`.
+- **One deploy at a time.** A tag's deploy waits for the one before.
+  With a third tag, the one waiting is dropped, since the newer tag
+  deploys anyway.
+- **Re-running an older tag's job** doesn't take control back: if a newer
+  release is already running, the job says so and deploys nothing.
+- **The token** is the repository secret `FLY_API_TOKEN`, a deploy token
+  for this app only. Without it the job fails and says so; control isn't
+  deployed until it's set and the job is re-run. The one set on
+  2026-10-20 is named `github-release-arugula-v2` and expires in 2046
+  (`fly tokens list -a illogical-control`). To replace it, make a new one
+  (`-x` sets a shorter expiry), then revoke the old:
+
+  ```
+  fly tokens create deploy -a illogical-control -n github-release -x 8760h
+  gh secret set FLY_API_TOKEN -R arugula-salad/arugula
+  ```
+
+- **Hotfixes:** `just control-deploy` builds and deploys from your
+  checkout. Its image is labelled `deployment-…`, not a version. The next
+  tag deploys over it. Don't run it while a tag's `control` job is
+  deploying: the two don't wait for each other.
+- **Rolling back:** since a newer release stays (above), re-running an
+  older tag's job won't do it. Deploy the older tag's image instead, from
+  `packaging/control/`:
+  `fly deploy --image registry.fly.io/illogical-control:vX.Y.Z`.
 
 ### Capacity
 

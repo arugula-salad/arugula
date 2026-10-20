@@ -2,7 +2,8 @@
 # macOS (arm64, and x86_64 cross-compiled for Intel Macs) binaries, and a
 # zip of arugulad and arugula for Windows (install.ps1's), attach them
 # to the tag's release with SHA256SUMS, publish it as latest, bump the
-# Homebrew formula, and send the editor extension to the marketplaces. No
+# Homebrew formula, send the editor extension to the marketplaces, and
+# deploy the hosted control from the x86_64 static build (M133). No
 # desktop app: it has its own release, app-v* tags (app-release.yml, #393),
 # and the daemon updates itself (#391).
 name: release
@@ -35,6 +36,15 @@ jobs:
       - run: just bootstrap
       - run: scripts/release check-version "$GITHUB_REF_NAME"
       - run: just static x86_64
+      # Control's binaries, for the control job's image (a tar keeps
+      # them executable).
+      - run: tar -cf "$RUNNER_TEMP/control-binaries.tar" -C "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" arugula-control arugulad
+      - uses: actions/upload-artifact@v4
+        with:
+          name: control-binaries
+          path: ${{ runner.temp }}/control-binaries.tar
+          retention-days: 7
+          compression-level: 1
       - run: just static aarch64
       - run: just dist
       # The editor extension, from the daemon that carries it (#529).
@@ -111,6 +121,50 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_KEY: ${{ secrets.HOMEBREW_TAP_KEY }}
+
+  # The hosted control (control.arugula.io, M133 #1129), from the tag's
+  # own static build, as soon as linux has built it: automatic, with no
+  # approval step (Jake, 2026-10-20). `just control-deploy` stays, for
+  # hotfixes. scripts/ci-control-deploy builds the image here as that
+  # recipe does (fly deploy --local-only: packaging/control's Dockerfile
+  # around the binaries), labels it with the tag so `fly releases` names
+  # it, and fails unless /control.json answers and every machine runs the
+  # tag's image. A re-run of an older tag leaves a newer one running.
+  # FLY_API_TOKEN is a deploy token for illogical-control; without it the
+  # job fails. One deploy at a time: a tag's waits for the one before (a
+  # third tag replaces the one waiting; GitHub keeps one pending per
+  # group). GitHub's runner: Docker of its own.
+  control:
+    needs: linux
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: control-deploy
+      cancel-in-progress: false
+    steps:
+      - name: FLY_API_TOKEN is set
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::error::FLY_API_TOKEN isn't set: control wasn't deployed. Make a deploy token (fly tokens create deploy -a illogical-control), set it as the repository secret FLY_API_TOKEN, and re-run this job."
+            exit 1
+          fi
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: control-binaries
+          path: ${{ runner.temp }}/control
+      - run: tar -xf "$RUNNER_TEMP/control/control-binaries.tar" -C "$RUNNER_TEMP/control"
+      # master on 2026-04-08 (Node 24; the 1.5 tag is Node 20), and the
+      # flyctl `just control-deploy` was last run with.
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+        with:
+          version: 0.4.104
+      - run: scripts/ci-control-deploy deploy "$GITHUB_REF_NAME" "$RUNNER_TEMP/control"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
   # The editor extension as arugula.arugula-editor (#529), once the
   # release is out. A version that's already there is skipped, so most

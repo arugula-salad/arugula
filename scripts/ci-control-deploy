@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Deploys the hosted control from a release tag (M133, #1129): release.yml's
+# `control` job runs it. `just control-deploy` is the same deploy from a
+# laptop, for hotfixes.
+#
+#   ci-control-deploy deploy TAG DIR   deploy DIR's arugula-control and
+#                                      arugulad (x86_64 musl, `just static`)
+#                                      as packaging/control's image, labelled
+#                                      TAG, then `check` it
+#   ci-control-deploy check TAG        control answers /control.json, and
+#                                      every machine runs TAG's image with
+#                                      its health check passing (read-only)
+#
+# The image is built here, as `just control-deploy` builds it (fly deploy
+# --local-only, so it needs Docker). `deploy` leaves a newer release alone:
+# re-running an old tag's job doesn't take control back a version. The app
+# and its URL come from packaging/control/fly.toml; Fly's token is
+# FLY_API_TOKEN, a deploy token for the app.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+toml=packaging/control/fly.toml
+app=$(sed -n 's/^app = "\(.*\)"/\1/p' "$toml")
+url=$(sed -n 's/^ *ARUGULA_CONTROL_URL = "\(.*\)"/\1/p' "$toml")
+[ -n "$app" ] && [ -n "$url" ] || { echo "no app or ARUGULA_CONTROL_URL in $toml" >&2; exit 1; }
+
+# The image label each of the app's machines runs, one a line.
+running() {
+  fly status -a "$app" --json |
+    jq -r '.Machines[] | select(.config.metadata.fly_process_group == "app") | .image_ref.tag'
+}
+
+# Once: control.json answers as control, and every machine is started on
+# TAG's image with its checks passing. Says what it saw when not.
+check_once() {
+  local tag=$1 st
+  st=$(fly status -a "$app" --json) || { echo "fly status failed"; return 1; }
+  if ! jq -e --arg t "$tag" '
+      [.Machines[] | select(.config.metadata.fly_process_group == "app")] as $m
+      | ($m | length) > 0
+        and all($m[]; .state == "started" and .image_ref.tag == $t
+                      and all(.checks[]?; .status == "passing"))' <<<"$st" >/dev/null; then
+    jq -r '.Machines[] | "machine \(.id): \(.state), image \(.image_ref.tag), checks \([.checks[]?.status] | join(","))"' <<<"$st"
+    return 1
+  fi
+  # Fly's health check (fly.toml), from outside, through the proxy.
+  curl -fsS --max-time 10 "$url/control.json" | jq -e '.control == true' >/dev/null ||
+    { echo "$url/control.json didn't answer as control"; return 1; }
+}
+
+# Two minutes for the machines to settle: fly deploy has already waited for
+# the health check, so the first try usually passes.
+check() {
+  local tag=${1:?usage: ci-control-deploy check TAG}
+  for _ in $(seq 1 12); do
+    if check_once "$tag"; then
+      echo "control at $url runs $tag"
+      return 0
+    fi
+    sleep 10
+  done
+  echo "::error::control isn't running $tag after its deploy (above: what fly status and $url/control.json said)"
+  return 1
+}
+
+deploy() {
+  local tag=${1:?usage: ci-control-deploy deploy TAG DIR} dir=${2:?usage: ci-control-deploy deploy TAG DIR}
+  if [ -z "${FLY_API_TOKEN:-}" ]; then
+    echo "::error::FLY_API_TOKEN isn't set: control wasn't deployed. Make a deploy token (fly tokens create deploy -a $app) and set it as the repository secret FLY_API_TOKEN, then re-run this job."
+    return 1
+  fi
+  # A newer release already running (a re-run of an older tag's job) stays.
+  # A hotfix's label (deployment-...) isn't a version, so a tag deploys over it.
+  local now
+  now=$(running | sort -V | tail -n 1)
+  if [[ $now =~ ^v[0-9] ]] && [ "$now" != "$tag" ] &&
+    [ "$(printf '%s\n%s\n' "$tag" "$now" | sort -V | tail -n 1)" = "$now" ]; then
+    echo "::notice::control already runs $now, newer than $tag: not deployed"
+    return 0
+  fi
+  local ctx
+  ctx=$(mktemp -d)
+  # shellcheck disable=SC2064 # $ctx now, not at exit
+  trap "rm -rf '$ctx'" EXIT
+  cp "$dir/arugula-control" "$dir/arugulad" packaging/control/Dockerfile "$toml" "$ctx"/
+  chmod +x "$ctx/arugula-control" "$ctx/arugulad"
+  (cd "$ctx" && fly deploy --local-only --ha=false --image-label "$tag")
+  check "$tag"
+}
+
+case ${1:-} in
+  deploy) shift; deploy "$@" ;;
+  check) shift; check "$@" ;;
+  *) sed -n '5,12p' "$0" >&2; exit 2 ;;
+esac
