@@ -129,8 +129,11 @@ test("the share page's chunks are the Doc renderer and nothing of the app", asyn
   console.log(`doc.html loads: ${[...seen].join(", ")}`);
   // The entry and the renderer (and the modulepreload polyfill Vite adds).
   expect(names.sort()).toEqual(["doc", "doc-render", "modulepreload-polyfill"]);
-  // Styles only: the app's stylesheet and the page's own.
-  expect([...html.matchAll(/rel="stylesheet"[^>]*href="([^"]+)"/g)].map((m) => m[1]!.replace(/-[\w-]{8}\.css$/, "")).sort()).toEqual(["/assets/doc", "/assets/style"]);
+  // Styles only: the page's own, with the app's stylesheet inside it (a
+  // chunk of its own would be shared with the app and reorder its cascade).
+  expect([...html.matchAll(/rel="stylesheet"[^>]*href="([^"]+)"/g)].map((m) => m[1]!.replace(/-[\w-]{8}\.css$/, ""))).toEqual(["/assets/doc"]);
+  const index = readFileSync(join(dist, "index.html"), "utf8");
+  expect(index, "the app's own CSS stays the app's").not.toMatch(/assets\/style-/);
   // No icon request, no beacon, no other page's script.
   expect(html).toContain('<link rel="icon" href="data:,"');
   expect(html).toContain('<meta name="referrer" content="no-referrer"');
