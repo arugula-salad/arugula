@@ -54,7 +54,10 @@ use std::{
 };
 
 use anyhow::{Context, bail};
-use arugula_control_wire as wire;
+use arugula_control_wire::{
+    self as wire,
+    maintenance::{self, Patience},
+};
 use arugula_core::Role;
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Revocation, Trust,
@@ -874,19 +877,52 @@ impl Control {
     }
 
     /// POST JSON to control, signed as this machine (M124), if it's in
-    /// control: its answer, or what it said when it refused.
+    /// control: its answer, or what it said when it refused. It waits out
+    /// a maintenance window (M141) for up to five minutes.
     pub async fn post_signed<T: serde::de::DeserializeOwned>(
         &self,
         path: &str,
         body: &impl Serialize,
     ) -> anyhow::Result<T> {
         let e = self.enrolled().ok_or_else(|| anyhow::anyhow!("this machine isn't in control"))?;
-        let res = self.post_json(&e, path, body).send().await?;
-        if !res.status().is_success() {
-            let status = res.status().as_u16();
-            return Err(Answered(status, control_said(res).await).into());
+        let (status, got) =
+            self.patiently("POST", path, Some(Patience::AGENT), || self.post_json(&e, path, body)).await?;
+        if !(200..300).contains(&status) {
+            return Err(Answered(status, said(status, &got)).into());
         }
-        Ok(res.json().await?)
+        Ok(serde_json::from_slice(&got)?)
+    }
+
+    /// Send a request to control and read its answer, waiting out a
+    /// maintenance window (M141) for as long as `patience` lasts (`None`:
+    /// not at all). `build` makes the request afresh for each try, so each
+    /// is signed afresh: a signature's nonce counts once. Which 503s are
+    /// sent again is [`maintenance::may_retry`]'s: control's maintenance
+    /// one for any method, since its gateway refused it unprocessed.
+    async fn patiently(
+        &self,
+        method: &str,
+        path: &str,
+        patience: Option<Patience>,
+        build: impl Fn() -> reqwest::RequestBuilder,
+    ) -> reqwest::Result<(u16, Vec<u8>)> {
+        let mut waits = patience.map(maintenance::Waits::new);
+        loop {
+            let res = build().send().await?;
+            let status = res.status().as_u16();
+            let asked = res.headers().get(reqwest::header::RETRY_AFTER).and_then(|v| v.to_str().ok());
+            let asked = maintenance::retry_after(asked);
+            let got = res.bytes().await.map(|b| b.to_vec()).unwrap_or_default();
+            if !maintenance::may_retry(method, status, &got) {
+                return Ok((status, got));
+            }
+            let Some(wait) = waits.as_mut().and_then(|w| w.next(asked)) else { return Ok((status, got)) };
+            // Said once a call, not every try.
+            if waits.as_ref().is_some_and(|w| w.waited() == wait) {
+                info!(path, status, wait = wait.as_secs(), "control is busy (maintenance, most likely): trying again");
+            }
+            tokio::time::sleep(wait).await;
+        }
     }
 
     /// The account this machine belongs to, while it's in control.
@@ -1524,27 +1560,59 @@ impl Control {
     /// A call to control's Cloud workspace routes (`/api/cloud/...`) as
     /// this machine (#1094): signed with its key, so control acts as its
     /// account, the machine's owner. The error is control's own words, or
-    /// what to do about it, for an agent to read.
+    /// what to do about it, for an agent to read. An agent's call: it waits
+    /// out a maintenance window (M141) for up to five minutes.
     pub async fn cloud(
         &self,
         method: reqwest::Method,
         path_and_query: &str,
         body: Option<&serde_json::Value>,
     ) -> Result<serde_json::Value, CloudRefused> {
+        self.cloud_with(Some(Patience::AGENT), method, path_and_query, body).await
+    }
+
+    /// [`cloud`](Self::cloud) without waiting out a maintenance window,
+    /// which it says as [`CloudRefused::Maintenance`]: for a Cloud workspace
+    /// block, which reads again every few seconds anyway and whose clicks
+    /// shouldn't hang, and for `capabilities`, which answers in seconds.
+    pub async fn cloud_now(
+        &self,
+        method: reqwest::Method,
+        path_and_query: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value, CloudRefused> {
+        self.cloud_with(None, method, path_and_query, body).await
+    }
+
+    async fn cloud_with(
+        &self,
+        patience: Option<Patience>,
+        method: reqwest::Method,
+        path_and_query: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<serde_json::Value, CloudRefused> {
         let e = self.enrolled().ok_or(CloudRefused::NotJoined)?;
         let bytes = body.map(|b| serde_json::to_vec(b).unwrap_or_default()).unwrap_or_default();
-        let mut req = self
-            .http
-            .request(method.clone(), format!("{}{path_and_query}", e.saved.url))
-            .header(AUTH, self.sign(&e, method.as_str(), path_and_query, &bytes));
-        if body.is_some() {
-            req = req.header(reqwest::header::CONTENT_TYPE, "application/json").body(bytes);
-        }
-        let res = req.send().await.map_err(|e| CloudRefused::Unreachable(e.to_string()))?;
-        let status = res.status().as_u16();
-        let v: serde_json::Value = res.json().await.unwrap_or_default();
+        let build = || {
+            let req = self
+                .http
+                .request(method.clone(), format!("{}{path_and_query}", e.saved.url))
+                .header(AUTH, self.sign(&e, method.as_str(), path_and_query, &bytes));
+            match body {
+                Some(_) => req.header(reqwest::header::CONTENT_TYPE, "application/json").body(bytes.clone()),
+                None => req,
+            }
+        };
+        let (status, got) = self
+            .patiently(method.as_str(), path_and_query, patience, build)
+            .await
+            .map_err(|e| CloudRefused::Unreachable(e.to_string()))?;
+        let v: serde_json::Value = serde_json::from_slice(&got).unwrap_or_default();
         if (200..300).contains(&status) {
             return Ok(v);
+        }
+        if maintenance::is_maintenance(status, &got) {
+            return Err(CloudRefused::Maintenance);
         }
         let said = v["error"].as_str().map_or_else(|| format!("control answered {status}"), str::to_owned);
         Err(match (status, said.as_str()) {
@@ -1896,6 +1964,9 @@ pub enum CloudRefused {
     OldControl,
     /// What control said, and its reason code (a refusal's).
     Said { status: u16, said: String, reason: Option<String> },
+    /// Control's platform is down for a maintenance window (M141), and it
+    /// outlasted the call's patience.
+    Maintenance,
 }
 
 impl std::fmt::Display for CloudRefused {
@@ -1910,6 +1981,7 @@ impl std::fmt::Display for CloudRefused {
                 "this Arugula control doesn't let machines drive Cloud workspaces yet (it's older than this machine's Arugula); use control's web page",
             ),
             CloudRefused::Said { said, .. } => write!(f, "control says: {said}"),
+            CloudRefused::Maintenance => f.write_str(maintenance::MAINTENANCE_SAID),
         }
     }
 }
@@ -1918,11 +1990,18 @@ impl std::fmt::Display for CloudRefused {
 
 /// What control said, as a sentence: its `{"error": …}` if it sent one.
 async fn control_said(res: reqwest::Response) -> String {
-    let status = res.status();
-    let body = res.text().await.unwrap_or_default();
-    match serde_json::from_str::<serde_json::Value>(&body).ok().and_then(|v| v["error"].as_str().map(str::to_owned)) {
+    let status = res.status().as_u16();
+    said(status, &res.bytes().await.unwrap_or_default())
+}
+
+/// [`control_said`], from an answer already read.
+fn said(status: u16, body: &[u8]) -> String {
+    match serde_json::from_slice::<serde_json::Value>(body).ok().and_then(|v| v["error"].as_str().map(str::to_owned)) {
         Some(e) => format!("control says: {e}"),
-        None => format!("control answered {status}"),
+        None => format!(
+            "control answered {}",
+            reqwest::StatusCode::from_u16(status).map_or(status.to_string(), |s| s.to_string())
+        ),
     }
 }
 
@@ -2746,6 +2825,81 @@ pub(crate) mod tests {
         assert_eq!(status, 404);
         assert_eq!(c.doc_viewer().await.unwrap(), "https://docs.test");
         assert_eq!(hits.load(Ordering::SeqCst), 2, "asked again after a refusal");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// M141: control's maintenance 503 is waited out, for any method, each
+    /// try signed afresh; another 503 is sent again only for a GET; a call
+    /// that doesn't wait says so calmly.
+    #[tokio::test]
+    async fn a_maintenance_window_is_waited_out() {
+        use axum::{
+            Json, Router,
+            http::{HeaderMap, StatusCode, header},
+            response::IntoResponse,
+            routing::{get, post},
+        };
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let (hits, plain) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+        let nonces = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+        let (h, n) = (hits.clone(), nonces.clone());
+        // Down for the first two tries of each call, then up.
+        let window = move |headers: HeaderMap| {
+            let (h, n) = (h.clone(), n.clone());
+            async move {
+                let auth = headers[AUTH].to_str().unwrap().to_owned();
+                assert!(n.lock().unwrap().insert(auth), "each try is signed afresh");
+                if h.fetch_add(1, Ordering::SeqCst) % 3 < 2 {
+                    let down = Json(serde_json::json!({ "error": "down for maintenance", "reason": "maintenance" }));
+                    return (StatusCode::SERVICE_UNAVAILABLE, [(header::RETRY_AFTER, "0")], down).into_response();
+                }
+                Json(serde_json::json!({ "ok": true })).into_response()
+            }
+        };
+        let p = plain.clone();
+        let app = Router::new()
+            .route("/api/cloud/models", get(window.clone()))
+            .route("/api/cloud/workspaces", post(window))
+            .route(
+                "/api/cloud/agents",
+                post(move || {
+                    p.fetch_add(1, Ordering::SeqCst);
+                    async { (StatusCode::SERVICE_UNAVAILABLE, "no healthy upstream") }
+                }),
+            );
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(l, app).await });
+        let dir = std::env::temp_dir().join(format!("arugula-maintenance-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let c = joined_at(&dir, &url);
+        let quick = Patience {
+            floor: Duration::from_millis(10),
+            per_wait: Duration::from_millis(50),
+            total: Duration::from_secs(5),
+        };
+        use reqwest::Method;
+        let got = c.cloud_with(Some(quick), Method::GET, "/api/cloud/models", None).await.unwrap();
+        assert_eq!(got["ok"], true);
+        let body = serde_json::json!({ "name": "w" });
+        let got = c.cloud_with(Some(quick), Method::POST, "/api/cloud/workspaces", Some(&body)).await.unwrap();
+        assert_eq!((got["ok"].as_bool(), hits.load(Ordering::SeqCst)), (Some(true), 6), "a POST too");
+        // Not waiting: said at once, in words an agent or a person can take.
+        let e = c.cloud_now(Method::GET, "/api/cloud/models", None).await.unwrap_err();
+        assert_eq!(e, CloudRefused::Maintenance);
+        assert!(e.to_string().contains("briefly down for maintenance"), "{e}");
+        // Out of patience: the same.
+        let short = Patience { total: Duration::from_millis(10), ..quick };
+        hits.store(0, Ordering::SeqCst);
+        assert_eq!(
+            c.cloud_with(Some(short), Method::GET, "/api/cloud/models", None).await,
+            Err(CloudRefused::Maintenance)
+        );
+        // Some other 503 to a POST may have done its work: not sent again.
+        let e = c.cloud_with(Some(quick), Method::POST, "/api/cloud/agents", Some(&body)).await.unwrap_err();
+        assert!(matches!(e, CloudRefused::Said { status: 503, .. }), "{e:?}");
+        assert_eq!(plain.load(Ordering::SeqCst), 1);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

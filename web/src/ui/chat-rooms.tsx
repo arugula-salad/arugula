@@ -14,6 +14,7 @@ import { chat, type ChatStore } from "../chat-store";
 import type { ChatRoom } from "../proto";
 import type { Team } from "../control";
 import { AppBar } from "./app-bar";
+import { MaintenanceNote } from "./maintenance-note";
 import { getControlSession } from "./people";
 import { getFleet } from "./hosts";
 import { usePhone, useSubscribe } from "./hooks";
@@ -325,6 +326,7 @@ export function RoomsView({ client, route, store }: { client: Client; route: Cha
       <AppBar client={client} at="chat" all>
         <SearchField route={route} />
       </AppBar>
+      <MaintenanceNote />
       <RoomSwitcher rooms={order} />
       <div class="chat-body">
         <aside class="chat-side">

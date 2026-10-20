@@ -165,16 +165,20 @@ export function useCloudConversation<T>(path: string, ended: (item: T) => boolea
   const call = useCloudApi();
   const [item, setItem] = useState<T | null>(null); const [events, setEvents] = useState<Event[]>([]); const [error, setError] = useState(""); const [answered, setAnswered] = useState<Record<string, string>>({}); const [pending, setPending] = useState<string[]>([]);
   const cursor = useRef(0);
+  // What the poll last failed with, cleared once it reads again (a
+  // maintenance window over, M141); an answer's failure stays.
+  const failed = useRef("");
   useEffect(() => {
     let active = true, timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
         const [r, page, requests] = await Promise.all([call<T>(path), call<{ events: Event[] }>(`${path}/events?after=${cursor.current}`), call<{ requests: Block[] }>(`${path}/requests`)]);
         if (!active) return;
+        if (failed.current) { const was = failed.current; failed.current = ""; setError((e) => (e === was ? "" : e)); }
         setItem(r); setPending(requests.requests.flatMap((r) => r.request_id ? [r.request_id] : []));
         if (page.events.length) { cursor.current = Math.max(...page.events.map((e) => e.id)); setEvents((old) => [...old, ...page.events]); }
         if (!ended(r) || page.events.length === 1000) timer = setTimeout(() => void poll(), page.events.length === 1000 ? 0 : 2000);
-      } catch (e) { if (active) { setError((e as Error).message); timer = setTimeout(() => void poll(), 5000); } }
+      } catch (e) { if (active) { failed.current = (e as Error).message; setError(failed.current); timer = setTimeout(() => void poll(), 5000); } }
     };
     void poll(); return () => { active = false; clearTimeout(timer); };
   }, [path]);

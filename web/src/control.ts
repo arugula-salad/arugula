@@ -30,6 +30,7 @@ import {
 import { newKeyPair } from "./e2e/noise.ts";
 import type { E2ETarget } from "./client";
 import { desktopApp } from "./desktop";
+import { platformFetch, refusalOf } from "./maintenance";
 import { automated, counting, startCounting, stopCounting, type PageCounts } from "./telemetry";
 import {
   follows,
@@ -346,14 +347,14 @@ export type LabsFlags = {
   dev?: boolean;
 };
 
-export async function api<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
+export async function api<T>(path: string, body?: unknown, send: (path: string, init: RequestInit) => Promise<Response> = fetch): Promise<T> {
+  const res = await send(path, {
     method: body === undefined ? "GET" : "POST",
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const j = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new HttpError(res.status, j.error ?? `HTTP ${res.status}`, j as Record<string, unknown>);
+  if (!res.ok) throw new HttpError(res.status, refusalOf(res.status, j as { error?: string; reason?: string }, `HTTP ${res.status}`), j as Record<string, unknown>);
   return j;
 }
 
@@ -1380,12 +1381,13 @@ export class ControlSession {
   } | null = null;
 
   async loadBilling() {
-    this.billing = await api<NonNullable<ControlSession["billing"]>>("/api/billing").catch(() => null);
+    // Billing is the platform's: a maintenance window (M141) is waited out.
+    this.billing = await api<NonNullable<ControlSession["billing"]>>("/api/billing", undefined, platformFetch).catch(() => null);
   }
 
   /** Off to Stripe Checkout to upgrade (a team, or this account). */
   async upgrade(team?: string) {
-    const r = await api<{ url: string }>("/api/billing/checkout", { team });
+    const r = await api<{ url: string }>("/api/billing/checkout", { team }, platformFetch);
     location.href = r.url;
   }
 

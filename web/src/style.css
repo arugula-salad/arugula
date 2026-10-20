@@ -10758,6 +10758,11 @@ html[data-workspace="new"] .thread-panel {
   font-size: 12px;
 }
 
+/* M141: a maintenance window is announced and short: calmer than stale. */
+.maintenance-note {
+  background: color-mix(in srgb, var(--info) 12%, var(--surface));
+}
+
 .ws-group-stale {
   font-weight: 400;
 }

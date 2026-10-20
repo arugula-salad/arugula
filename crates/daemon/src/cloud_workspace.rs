@@ -42,8 +42,10 @@ pub trait Remote: Send + Sync {
 }
 
 impl Remote for crate::control::Control {
+    // Not waiting out a maintenance window (M141): the block says so, calmly,
+    // and its next read (3s on) or click tries again.
     fn call(&self, method: Method, path: String, body: Option<Value>) -> BoxFuture<'_, Result<Value, String>> {
-        Box::pin(async move { self.cloud(method, &path, body.as_ref()).await.map_err(|e| e.to_string()) })
+        Box::pin(async move { self.cloud_now(method, &path, body.as_ref()).await.map_err(|e| e.to_string()) })
     }
 
     fn link(&self, workspace: &str, tab: Option<&str>) -> Option<String> {

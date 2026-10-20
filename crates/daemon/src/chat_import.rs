@@ -82,9 +82,11 @@ impl Sync {
             Ok(None) => {}
             Err(e) => {
                 let why = e.to_string();
-                // Chat off for this machine in control, or a control from
-                // before it: tried again after the next refresh, quietly.
-                let quiet = e.downcast_ref::<Answered>().is_some_and(|a| matches!(a.0, 403..=405));
+                // Chat off for this machine in control, a control from
+                // before it, or a maintenance window longer than
+                // `post_signed` waits (M141): tried again after the next
+                // refresh, quietly.
+                let quiet = e.downcast_ref::<Answered>().is_some_and(|a| matches!(a.0, 403..=405 | 503));
                 if self.said.as_deref() != Some(why.as_str()) {
                     if quiet {
                         info!(why, "control doesn't take this machine's threads yet");

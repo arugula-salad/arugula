@@ -33,6 +33,7 @@ import { GettingStartedLayer, useFirstRun } from "./welcome";
 import { machineSettingsItems } from "./commands";
 import { PaletteLayer } from "./palette";
 import { ControlBanner } from "./control-state";
+import { MaintenanceNote } from "./maintenance-note";
 import { AgentsNudge } from "./agents-setup";
 import { useWorkspaceKeys } from "./keys";
 import { connection, ContextHeader } from "./shell/context-header";
@@ -192,6 +193,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
                 </div>
               )}
               <ControlBanner client={client} />
+              <MaintenanceNote />
               <NewMachineNote />
               <AgentsNudge client={client} />
               {tab && !cloud && !cloudWs && !overviewOpen && <PaneToolbar client={client} tab={tab} />}
@@ -220,6 +222,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {phone && cloudWs?.workspace && <div class="cloud-phone-tabs"><CloudWorkspaceTabStrip /></div>}
       {phone && !cloudWs && cloud && <div class="tabbar cloud-phone-tabs" role="tablist">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudTabs /></div>}
       {state && <ControlBanner client={client} />}
+      <MaintenanceNote />
       {state && <NewMachineNote />}
       {state && <AgentsNudge client={client} />}
       {main}

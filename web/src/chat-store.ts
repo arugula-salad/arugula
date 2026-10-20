@@ -23,9 +23,11 @@ import type {
   ChatRooms,
   ChatTargetKind,
 } from "./proto";
+import { platformFetch, refusalOf } from "./maintenance";
 
 /** A refusal from control's chat API: its status, and `reason`
- * (`chat_off`) when it gave one. */
+ * (`chat_off`, or `maintenance` for a window that outlasted the wait,
+ * M141) when it gave one. */
 export class ChatError extends Error {
   constructor(
     readonly status: number,
@@ -37,14 +39,14 @@ export class ChatError extends Error {
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await platformFetch(path, {
     method,
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "same-origin",
   });
   const j = (await res.json().catch(() => ({}))) as T & { error?: string; reason?: string };
-  if (!res.ok) throw new ChatError(res.status, j.error ?? `HTTP ${res.status}`, j.reason);
+  if (!res.ok) throw new ChatError(res.status, refusalOf(res.status, j, `HTTP ${res.status}`), j.reason);
   return j;
 }
 
@@ -118,14 +120,17 @@ export class ChatStore {
   /** Ask control whether chat is on (and load the rooms if it is). */
   async check() {
     clearTimeout(this.probe);
+    let failed = false;
     try {
       await this.loadRooms();
       if (!this.es) this.listen();
     } catch (e) {
       if (e instanceof ChatError && (e.reason === "chat_off" || e.status === 401 || e.status === 404)) this.turnOff();
-      // Control didn't answer: as it was.
+      // Control didn't answer, or a maintenance window (M141) outlasted
+      // the wait: as it was, and ask again soon, the live stream too.
+      else failed = true;
     }
-    if (this.on !== true) this.probe = window.setTimeout(() => void this.check(), 60_000);
+    if (this.on !== true || failed) this.probe = window.setTimeout(() => void this.check(), failed ? 15_000 : 60_000);
   }
 
   private turnOff() {
@@ -172,7 +177,8 @@ export class ChatStore {
     };
     es.onerror = () => {
       // EventSource reconnects by itself (with Last-Event-ID); a refusal
-      // (chat turned off, signed out) closes it for good: ask again.
+      // (chat turned off, signed out, a maintenance window's 503) closes
+      // it for good: ask again, which waits a window out before listening.
       if (es.readyState === EventSource.CLOSED && this.es === es) {
         this.es = null;
         this.stream = null;
