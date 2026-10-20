@@ -1,0 +1,508 @@
+# Every table and view in control's database, and what it holds
+# ("Two planes, two trust rules", aru-071). A test (`tables::` in
+# src/db/tables.rs) builds a fresh database and fails when a table isn't
+# here, or this names one that isn't there. "What control stores" in
+# docs/control-e2e.md is written from this file: `just control-tables`.
+#
+# Each table:
+# - `plane`: `machine` (what control needs to route and check: it can't
+#   read what moves between a client and a machine) or `platform` (what has
+#   to exist while every machine is asleep).
+# - `holds`:
+#   - `metadata`: ids, names, addresses, times, counts, public keys and
+#     signed statements;
+#   - `ciphertext`: encrypted to keys control never holds;
+#   - `plaintext`: what people wrote, or a secret control can read. A value
+#     control encrypts with a key of its own counts as plaintext.
+# - `what`: what a row is, for the doc.
+# - `why_asleep`: why it has to exist while machines are asleep. Platform
+#   plane only; empty on the machine plane.
+# - `with_account`: what deleting an account (`Db::delete_account`) does
+#   to its rows: `deleted`; `partly` (some go, some stay: `note` says which);
+#   `kept` (`note` says why and for how long); `none` (nothing of any
+#   account in it).
+# - `seen_by`: the third parties (`[parties]` below) that see its rows, or
+#   the facts in them. Every table has `litestream`: it copies the whole file.
+#
+# SQLite's own tables (`sqlite_%`) and an FTS5 table's shadow tables
+# (`chat_fts_data` ...) aren't listed: they're the listed table's.
+
+# What control never holds, for the doc.
+never = [
+    "private keys of any device or machine: Noise, signing, passkeys",
+    "terminal bytes, snapshots, logs, scrollback; the lines of a pane nobody quoted into chat",
+    "link keys (a link's fragment), and Shared Docs' keys",
+    "the push payloads machines send, in the clear",
+    "a person's own credentials: GitHub's OAuth token (used once at sign-in), forge tokens",
+]
+
+# Who else sees what control holds, for the doc.
+[parties.litestream]
+name = "Litestream's bucket"
+sees = "Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. Cloud secrets are there sealed, and their key isn't."
+
+[parties.managoat]
+name = "Managoat"
+sees = "Managoat runs Cloud workspaces and cloud runs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals."
+
+[parties.posthog]
+name = "PostHog"
+sees = "PostHog gets product events, when control has a key for it: account, team and machine ids, a machine's version, OS and arch, plans, Labs flags and counts. No names, logins, addresses or content."
+
+[parties.sprites]
+name = "Sprites"
+sees = "Sprites hosts hosted sandboxes: it knows each one's VM."
+
+[parties.github]
+name = "GitHub"
+sees = "GitHub signs people in: it knows the identities control keeps for it."
+
+[parties.stripe]
+name = "Stripe"
+sees = "Stripe bills, when control has a key for it: it holds the customers and subscriptions control keeps ids for, and gets sandbox minutes."
+
+# ---- the machine plane: accounts, devices, the directory, teams
+
+[[table]]
+name = "accounts"
+plane = "machine"
+holds = "metadata"
+what = "An account: its id, its root device, its display name, and its answer about page telemetry."
+with_account = "deleted"
+seen_by = ["litestream", "posthog"]
+
+[[table]]
+name = "identities"
+plane = "machine"
+holds = "metadata"
+what = "A sign-in identity: the provider, its id for the person, and their login."
+with_account = "deleted"
+seen_by = ["litestream", "github"]
+
+[[table]]
+name = "sessions"
+plane = "machine"
+holds = "metadata"
+what = "A sign-in session: a hash of its token, the browser's User-Agent, its device, when it ends."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "passkeys"
+plane = "machine"
+holds = "metadata"
+what = "A passkey's public key, its sign count, what keeps it, the browser that added it, whether it gives PRF."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "devices"
+plane = "machine"
+holds = "metadata"
+what = "A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "turned_down"
+plane = "machine"
+holds = "metadata"
+what = "Which device turned a waiting device down, and when."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "revocations"
+plane = "machine"
+holds = "metadata"
+what = "A signed revocation of a device's or machine's key."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "joins"
+plane = "machine"
+holds = "metadata"
+what = "A machine asking to join: its certificate, a hash of its poll token, its addresses, the approval."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "daemons"
+plane = "machine"
+holds = "metadata"
+what = "The directory: a joined machine's id, name, addresses, team, last seen, and the version, OS and arch it runs."
+with_account = "deleted"
+seen_by = ["litestream", "posthog"]
+
+[[table]]
+name = "daemon_access"
+plane = "machine"
+holds = "metadata"
+what = "The accounts a machine says it lets in, for routing (the machine checks for itself)."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "daemon_agent_access"
+plane = "machine"
+holds = "metadata"
+what = "The accounts whose machines a machine lets in for its agents, for routing."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "daemon_offers"
+plane = "machine"
+holds = "metadata"
+what = "A machine shared with an account that hasn't said yes yet."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "daemon_offer_pushes"
+plane = "machine"
+holds = "metadata"
+what = "When an account was last pushed about a shared machine."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "share_answers"
+plane = "machine"
+holds = "metadata"
+what = "An account's yes or no to a machine shared with it."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "daemon_links"
+plane = "machine"
+holds = "metadata"
+what = "Until when a machine has a live share link, so control routes link guests to it."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "sandboxes"
+plane = "machine"
+holds = "metadata"
+what = "A hosted sandbox: its VM's id, the device that asked, a hash of its join ticket, its state."
+with_account = "deleted"
+seen_by = ["litestream", "sprites"]
+
+[[table]]
+name = "push_subs"
+plane = "machine"
+holds = "metadata"
+what = "A browser's signed push subscription: the push service's endpoint and the keys pushes are encrypted to."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "settings"
+plane = "machine"
+holds = "plaintext"
+what = "Control's own VAPID key pair, which signs the pushes it sends."
+with_account = "none"
+seen_by = ["litestream"]
+
+[[table]]
+name = "notices"
+plane = "machine"
+holds = "metadata"
+what = "A notice for an account with no push, made from names control holds (\"Ada left Acme\")."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "labs_flags"
+plane = "machine"
+holds = "metadata"
+what = "The Labs flags an account or a team turned on for its machines."
+with_account = "deleted"
+note = "A team's go when the team does."
+seen_by = ["litestream", "posthog"]
+
+[[table]]
+name = "teams"
+plane = "machine"
+holds = "metadata"
+what = "A team: its id, name, founder and founder's root, and whether it's locked."
+with_account = "partly"
+note = "The teams it founded, or that nobody else is left in, go with it; the rest stay."
+seen_by = ["litestream", "posthog"]
+
+[[table]]
+name = "rosters"
+plane = "machine"
+holds = "metadata"
+what = "A team's signed roster, every version: who's in it and their roles."
+with_account = "partly"
+note = "A disbanded team's go; in a team that stays, it's in the signed roster until an owner signs a new one."
+seen_by = ["litestream"]
+
+[[table]]
+name = "invites"
+plane = "machine"
+holds = "metadata"
+what = "An Ask me first invite: a hash of its code, the team, the role, its expiry, the owner's signed invite."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "presigned_invites"
+plane = "machine"
+holds = "metadata"
+what = "A one-time invite an owner's device signed, waiting to be used."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "team_requests"
+plane = "machine"
+holds = "metadata"
+what = "Someone asking to join a team: their account, root, name, the role, the invite and its proof."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "daemon_watches"
+plane = "machine"
+holds = "metadata"
+what = "A machine that checks a team's rosters because a session was shared with it."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "retained_certs"
+plane = "machine"
+holds = "metadata"
+what = "A deleted account's device certificates and revocations, to check teams' signed history it signed."
+with_account = "kept"
+note = "Made when the account goes, if a team that stays has its signatures; gone once no such team is left."
+seen_by = ["litestream"]
+
+[[table]]
+name = "retained_for"
+plane = "machine"
+holds = "metadata"
+what = "Which teams a deleted account's certificates are kept for."
+with_account = "kept"
+note = "As retained_certs."
+seen_by = ["litestream"]
+
+[[table]]
+name = "gone_daemons"
+plane = "machine"
+holds = "metadata"
+what = "A hash of each machine of a deleted account, so one asking again is told why."
+with_account = "kept"
+note = "Made when the account goes: a hash of the machine's id and when, nothing of the account."
+seen_by = ["litestream"]
+
+# ---- the platform plane: what has to exist while every machine is asleep
+
+[[table]]
+name = "billing"
+plane = "platform"
+holds = "metadata"
+what = "Who pays: Stripe's customer and subscription ids, the seat item, the status."
+why_asleep = "A plan holds with every machine off, and Stripe's webhooks come whenever."
+with_account = "deleted"
+note = "A team's go when the team does. An account with a paid plan cancels it before it can be deleted."
+seen_by = ["litestream", "stripe", "posthog"]
+
+[[table]]
+name = "reported"
+plane = "platform"
+holds = "metadata"
+what = "How many hosted sandbox minutes have gone to Stripe."
+why_asleep = "Minutes are reported hourly, whether or not anyone's machine is up."
+with_account = "deleted"
+seen_by = ["litestream", "stripe"]
+
+[[table]]
+name = "usage"
+plane = "platform"
+holds = "metadata"
+what = "Bytes relayed per account per day, for the free plan's monthly allowance."
+why_asleep = "The month's allowance counts across every machine's sleeps."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_rooms"
+plane = "platform"
+holds = "plaintext"
+what = "A chat room: a team's channel and its name, a DM, or the thread on a pane or a session."
+why_asleep = "People talk with every machine asleep."
+with_account = "partly"
+note = "Its DMs, the threads on its machines and its archives go, and the rooms of teams that go with it; it's taken off the rest."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_members"
+plane = "platform"
+holds = "metadata"
+what = "A DM's two people, and an archive's readers."
+why_asleep = "People talk with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_messages"
+plane = "platform"
+holds = "plaintext"
+what = "A chat message, in plain text, with the lines its author quoted from a pane and who it mentions."
+why_asleep = "People talk with every machine asleep."
+with_account = "partly"
+note = "Those in its rooms that go, go; the rest stay blank, with no author, and it's taken out of mentions."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_fts"
+plane = "platform"
+holds = "plaintext"
+what = "The full-text index of chat messages and their quotes (SQLite FTS5)."
+why_asleep = "Control searches chat itself, with every machine asleep."
+with_account = "partly"
+note = "As chat_messages: it's rebuilt from them, and merged when an account goes so blanked words leave it."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_reads"
+plane = "platform"
+holds = "metadata"
+what = "A person's read mark in a room, and whether they muted it."
+why_asleep = "Unread counts and pushes, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_readers"
+plane = "platform"
+holds = "metadata"
+what = "Who may read the thread on a pane or a session, as its machine last said."
+why_asleep = "A pane's thread stays readable while its machine sleeps."
+with_account = "partly"
+note = "Its machines' rows go, and it's taken off the rest."
+seen_by = ["litestream"]
+
+[[table]]
+name = "doc_links"
+plane = "platform"
+holds = "metadata"
+what = "A Shared Doc link: its id, the machine that shared it, its version, size and parts, and how often it opened."
+why_asleep = "A shared Doc opens while the machine that shared it sleeps."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "doc_link_parts"
+plane = "platform"
+holds = "ciphertext"
+what = "A Shared Doc's snapshot, in parts, encrypted to the key in the link's fragment."
+why_asleep = "A shared Doc opens while the machine that shared it sleeps."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "cloud_agents"
+plane = "platform"
+holds = "plaintext"
+what = "A cloud agent's definition: its name, instructions, skills, MCP servers and the names of the secrets it uses."
+why_asleep = "Cloud workspaces and runs work with every machine off."
+with_account = "deleted"
+seen_by = ["litestream", "managoat"]
+
+[[table]]
+name = "cloud_runs"
+plane = "platform"
+holds = "plaintext"
+what = "A cloud run: the agent, model, repository and prompt it ran with, its state, and its result."
+why_asleep = "Cloud workspaces and runs work with every machine off."
+with_account = "deleted"
+seen_by = ["litestream", "managoat"]
+
+[[table]]
+name = "cloud_secrets"
+plane = "platform"
+holds = "plaintext"
+what = "A cloud secret's name and value, sealed with a key control holds apart from the database; control opens it to put it in a Cloud workspace's vault."
+why_asleep = "Cloud workspaces and runs work with every machine off."
+with_account = "deleted"
+seen_by = ["litestream", "managoat"]
+
+[[table]]
+name = "cloud_run_secrets"
+plane = "platform"
+holds = "plaintext"
+what = "The secrets a cloud run started with, sealed as cloud_secrets are."
+why_asleep = "Cloud workspaces and runs work with every machine off."
+with_account = "deleted"
+seen_by = ["litestream", "managoat"]
+
+[[table]]
+name = "cloud_jobs"
+plane = "platform"
+holds = "plaintext"
+what = "The worker's job for a run, a Cloud workspace or a tab: what it was asked (the spec), Managoat's ids, its lease."
+why_asleep = "Control's worker drives Cloud workspaces with every machine off."
+with_account = "deleted"
+seen_by = ["litestream", "managoat"]
+
+[[table]]
+name = "cloud_requests"
+plane = "platform"
+holds = "plaintext"
+what = "What an agent in the cloud asks someone to approve, and the answer."
+why_asleep = "An agent in the cloud asks while every machine is off."
+with_account = "deleted"
+seen_by = ["litestream", "managoat"]
+
+[[table]]
+name = "cloud_notifications"
+plane = "platform"
+holds = "metadata"
+what = "Whether a push about an approval went out yet, and when to try again."
+why_asleep = "An agent in the cloud asks while every machine is off."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "cloud_events"
+plane = "platform"
+holds = "plaintext"
+what = "A cloud conversation's transcript: prompts, replies, tool calls and results, as Managoat sent them."
+why_asleep = "Transcripts are read with every machine off."
+with_account = "deleted"
+seen_by = ["litestream", "managoat"]
+
+[[table]]
+name = "cloud_workspaces"
+plane = "platform"
+holds = "plaintext"
+what = "A Cloud workspace: its name, its spec (repositories, packages, setup script, environment variables, networking, secret names), its status and errors."
+why_asleep = "Cloud workspaces work with every machine off."
+with_account = "deleted"
+note = "Its Managoat resources go first: deleting is refused until they have."
+seen_by = ["litestream", "managoat"]
+
+[[table]]
+name = "cloud_workspace_specs"
+plane = "platform"
+holds = "plaintext"
+what = "The spec a Cloud workspace's environment revision was saved as (the newest few)."
+why_asleep = "Cloud workspaces work with every machine off."
+with_account = "deleted"
+seen_by = ["litestream", "managoat"]
+
+[[table]]
+name = "cloud_tabs"
+plane = "platform"
+holds = "plaintext"
+what = "A tab in a Cloud workspace: the agent, runtime, model and prompt it opened with, its status."
+why_asleep = "Cloud workspaces work with every machine off."
+with_account = "deleted"
+seen_by = ["litestream", "managoat"]

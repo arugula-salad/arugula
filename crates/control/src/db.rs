@@ -9,6 +9,8 @@
 pub mod chat;
 pub mod cloud;
 pub mod doc_links;
+#[cfg(test)]
+mod tables;
 
 use std::{path::Path, sync::Mutex};
 
