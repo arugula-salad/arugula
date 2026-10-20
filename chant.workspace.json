@@ -2,7 +2,9 @@
   "name": "arugula",
   "schema": 1,
   "minReader": "0.108.0",
-  "members": [],
+  "members": [
+    { "name": "ops", "dir": "ops", "kind": "chant" }
+  ],
   "ci": {
     "green": {
       "branch": "main",

@@ -1,0 +1,13 @@
+{
+  "name": "arugula-ops",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Arugula's chant ops: the release, behind Jake's approval (docs/development.md#releasing).",
+  "scripts": {
+    "release": "chant run release"
+  },
+  "dependencies": {
+    "@intentius/chant": "0.108.1"
+  }
+}

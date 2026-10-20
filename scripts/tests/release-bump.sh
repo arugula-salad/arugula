@@ -97,8 +97,33 @@ has "minor: the dry run says so too" "main has no docs/releases/0.2.0.md"
 run 1 "a commit that isn't green" bump "$four" --dry-run
 run 2 "an unknown flag" bump --force
 
-# The app first: only crates/desktop moves, and main merges it.
-run 0 "release app-v0.2.0" bump minor --app
+# `plan` (chant's release op, ops/) says what bump would release, as JSON,
+# and the commit on stdout. Without notes on main it drafts them and fails.
+field() { python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$tmp/plan.json" "$1"; }
+run 0 "plan" plan --out "$tmp/plan.json"
+has "plan: says what" "v0.1.1: 0.1.0 -> 0.1.1 on ${two:0:12}"
+if [ "$(tail -1 "$tmp/out")" = "$two" ] && [ "$(field commit)" = "$two" ] && [ "$(field tag)" = v0.1.1 ] &&
+  [ "$(field notesBlob)" = "$(git rev-parse "$notes:docs/releases/0.1.1.md")" ]; then ok "plan: the commit, the tag and the notes"
+else bad "plan: $(cat "$tmp/plan.json")"; fi
+if [ -z "$(remote refs/tags/v0.1.1)" ]; then ok "plan: nothing pushed"; else bad "plan pushed v0.1.1"; fi
+run 1 "plan minor: no notes on main" plan minor --out "$tmp/plan-minor.json"
+has "plan minor: drafts them" "a draft from the commits since"
+if grep -qx -- "- two" dist/release/0.2.0.md && ! grep -q -- "- four" dist/release/0.2.0.md; then ok "plan minor: the draft lists the commits"
+else bad "plan minor's draft: $(cat dist/release/0.2.0.md)"; fi
+rm -rf dist
+# bump --plan releases only what the plan says.
+python3 -I -c 'import json, sys; p = json.load(open(sys.argv[1])); p["tag"] = "v0.1.9"; json.dump(p, open(sys.argv[2], "w"))' "$tmp/plan.json" "$tmp/plan-tag.json"
+run 1 "bump --plan: another tag" bump --plan "$tmp/plan-tag.json"
+has "another tag: says so" "the approved plan is v0.1.9, but this would release v0.1.1"
+python3 -I -c 'import json, sys; p = json.load(open(sys.argv[1])); p["notesBlob"] = "0" * 40; json.dump(p, open(sys.argv[2], "w"))' "$tmp/plan.json" "$tmp/plan-notes.json"
+run 1 "bump --plan: other notes" bump --plan "$tmp/plan-notes.json"
+has "other notes: says so" "changed since the plan was approved"
+run 2 "bump --plan and a commit" bump --plan "$tmp/plan.json" "$two"
+if [ -z "$(remote refs/tags/v0.1.1)" ] && [ -z "$(remote refs/tags/v0.1.9)" ]; then ok "refused plans: nothing pushed"; else bad "a refused plan pushed a tag"; fi
+
+# The app first, from a plan: only crates/desktop moves, and main merges it.
+run 0 "plan app-v0.2.0" plan minor --app --out "$tmp/plan.json"
+run 0 "release app-v0.2.0" bump --plan "$tmp/plan.json"
 tag=$(git rev-parse "app-v0.2.0^{commit}")
 if [ "$(git rev-parse "$tag^")" = "$two" ]; then ok "app-v0.2.0 is a bump on two"; else bad "app-v0.2.0's parent isn't two"; fi
 if [ "$(remote refs/tags/app-v0.2.0)" = "$(git rev-parse app-v0.2.0)" ]; then ok "app-v0.2.0 pushed"; else bad "app-v0.2.0 isn't on the forge"; fi

@@ -42,6 +42,13 @@
 #                                  and push the tag with main, the bump merged
 #                                  into it (#524). --dry-run makes the bump in a
 #                                  throwaway worktree, shows it, and stops.
+#                                  --plan FILE: release what `plan` wrote, or
+#                                  stop if that's no longer what it would do.
+#   release plan [patch|minor|major] [--app] [COMMIT] [--out FILE]
+#                                  what `bump` would release, as JSON (chant's
+#                                  release op binds its gate to it, ops/);
+#                                  drafts missing notes into dist/release/
+#   release watch TAG|--plan FILE  follow the release workflow TAG started
 #
 # GH_TOKEN (upload, sums) writes releases (in CI, the job token with
 # contents: write; by hand, your gh login); HOMEBREW_TAP_KEY (homebrew) is
@@ -279,6 +286,76 @@ apply_bump() {
   fi
 }
 
+# release_args ARGS...: bump's and plan's arguments, into part, lane,
+# commit, dry, plan_in (--plan FILE) and plan_out (--out FILE).
+release_args() {
+  part=patch lane=daemon commit='' dry=0 plan_in='' plan_out=''
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      major|minor|patch) part=$1 ;;
+      --app) lane=app ;;
+      --dry-run|-n) dry=1 ;;
+      --plan) plan_in=${2:?--plan FILE}; shift ;;
+      --out) plan_out=${2:?--out FILE}; shift ;;
+      -*) echo "release: unknown flag $1" >&2; exit 2 ;;
+      *) if [ -n "$commit" ]; then echo "release: two commits ($commit, $1)" >&2; exit 2; fi; commit=$1 ;;
+    esac
+    shift
+  done
+}
+
+# plan_get FILE KEY: one field of the plan `plan` wrote.
+plan_get() {
+  python3 -I -c 'import json, sys; v = json.load(open(sys.argv[1])).get(sys.argv[2]); print("" if v is None else v)' "$1" "$2"
+}
+
+# is_green SHA, against the ci/ tags `resolve` read.
+is_green() {
+  case "$ci" in *"refs/tags/ci/revoked/$1"*) return 1 ;; *"refs/tags/ci/green/$1"*) return 0 ;; *) return 1 ;; esac
+}
+
+# resolve: what `bump` releases for part, lane and commit, read from GitHub.
+# Sets main, sha (the green commit), at_sha and at_main (the lane's version
+# at each), cur, new, tag, notes, title, prefix and last (the lane's newest
+# release as "VERSION SHA", or empty). Refuses a commit that isn't green or
+# is already released, and a tag that exists.
+resolve() {
+  git fetch -q "$url" main
+  main=$(git rev-parse FETCH_HEAD)
+  # The ci/ tags, read once.
+  ci=$(git ls-remote "$url" 'refs/tags/ci/*') || { echo "can't read the ci/ tags at $url" >&2; exit 1; }
+  if [ -n "$commit" ]; then
+    sha=$(git rev-parse --verify -q "$commit^{commit}") || { echo "$commit isn't a commit here" >&2; exit 1; }
+    git merge-base --is-ancestor "$sha" "$main" || { echo "${sha:0:12} isn't on main" >&2; exit 1; }
+    is_green "$sha" || { echo "${sha:0:12} has no ci/green tag, or has a ci/revoked one" >&2; exit 1; }
+  else
+    sha='' skipped=0
+    for c in $(git rev-list --first-parent --max-count 200 "$main"); do
+      if is_green "$c"; then sha=$c; break; fi
+      skipped=$((skipped + 1))
+    done
+    [ -n "$sha" ] || { echo "no commit among main's last 200 has a ci/green tag without a ci/revoked one" >&2; exit 1; }
+    [ "$skipped" = 0 ] || echo "$skipped newer commit(s) on main aren't green yet" >&2
+  fi
+  # From the higher of the green commit's version and main's: main may
+  # already carry a bump that hasn't gone green.
+  at_sha=$(version_at "$sha" "$lane") at_main=$(version_at "$main" "$lane")
+  cur=$(printf '%s\n' "$at_sha" "$at_main" | sort -V | tail -1)
+  new=$(next_version "$cur" "$part")
+  if [ "$lane" = app ]; then tag=app-v$new notes=docs/releases/app-$new.md title="Arugula app $new"
+  else tag=v$new notes=docs/releases/$new.md title="Arugula $new"; fi
+  if [ -n "$(git ls-remote "$url" "refs/tags/$tag")" ]; then echo "$tag already exists" >&2; exit 1; fi
+  # Not a commit this lane already released.
+  prefix=${tag%"$new"}
+  last=$(git ls-remote "$url" "refs/tags/$prefix*" | sed -n "s|^\([0-9a-f]*\)	refs/tags/$prefix\([0-9.]*\)^{}\$|\2 \1|p" | sort -V | tail -1)
+  if [ -n "$last" ]; then
+    git fetch -q "$url" "${last#* }" 2>/dev/null || git fetch -q "$url" "refs/tags/$prefix${last% *}"
+    if git merge-base --is-ancestor "$sha" "${last#* }"; then
+      echo "${sha:0:12} is already released in $prefix${last% *}" >&2; exit 1
+    fi
+  fi
+}
+
 version() { mise exec -- cargo pkgid -p arugulad | sed 's/.*[#@]//'; }
 
 case "${1:-}" in
@@ -305,53 +382,20 @@ case "${1:-}" in
     # release needn't wait for its bump to pass CI (#524), like chant's `just
     # release`. The tag's commit only bumps versions, which check-green lets
     # through on its parent's ci/green tag. main gets the bump merged in.
+    # --plan FILE releases what `plan` wrote there (chant's release op, once
+    # approved), and stops if that isn't what it would release now.
     shift
-    part=patch lane=daemon commit='' dry=0
-    for a in "$@"; do
-      case "$a" in
-        major|minor|patch) part=$a ;;
-        --app) lane=app ;;
-        --dry-run|-n) dry=1 ;;
-        -*) echo "release bump: unknown flag $a" >&2; exit 2 ;;
-        *) if [ -n "$commit" ]; then echo "release bump: two commits ($commit, $a)" >&2; exit 2; fi; commit=$a ;;
-      esac
-    done
-    git fetch -q "$url" main
-    main=$(git rev-parse FETCH_HEAD)
-    # The ci/ tags, read once.
-    ci=$(git ls-remote "$url" 'refs/tags/ci/*') || { echo "can't read the ci/ tags at $url" >&2; exit 1; }
-    is_green() {
-      case "$ci" in *"refs/tags/ci/revoked/$1"*) return 1 ;; *"refs/tags/ci/green/$1"*) return 0 ;; *) return 1 ;; esac
-    }
-    if [ -n "$commit" ]; then
-      sha=$(git rev-parse --verify -q "$commit^{commit}") || { echo "$commit isn't a commit here" >&2; exit 1; }
-      git merge-base --is-ancestor "$sha" "$main" || { echo "${sha:0:12} isn't on main" >&2; exit 1; }
-      is_green "$sha" || { echo "${sha:0:12} has no ci/green tag, or has a ci/revoked one" >&2; exit 1; }
-    else
-      sha='' skipped=0
-      for c in $(git rev-list --first-parent --max-count 200 "$main"); do
-        if is_green "$c"; then sha=$c; break; fi
-        skipped=$((skipped + 1))
-      done
-      [ -n "$sha" ] || { echo "no commit among main's last 200 has a ci/green tag without a ci/revoked one" >&2; exit 1; }
-      [ "$skipped" = 0 ] || echo "$skipped newer commit(s) on main aren't green yet"
+    release_args "$@"
+    if [ -n "$plan_in" ]; then
+      [ -z "$commit" ] || { echo "release bump: --plan names its own commit" >&2; exit 2; }
+      lane=$(plan_get "$plan_in" lane) part=$(plan_get "$plan_in" part) commit=$(plan_get "$plan_in" commit)
     fi
-    # From the higher of the green commit's version and main's: main may
-    # already carry a bump that hasn't gone green.
-    at_sha=$(version_at "$sha" "$lane") at_main=$(version_at "$main" "$lane")
-    cur=$(printf '%s\n' "$at_sha" "$at_main" | sort -V | tail -1)
-    new=$(next_version "$cur" "$part")
-    if [ "$lane" = app ]; then tag=app-v$new notes=docs/releases/app-$new.md title="Arugula app $new"
-    else tag=v$new notes=docs/releases/$new.md title="Arugula $new"; fi
-    if [ -n "$(git ls-remote "$url" "refs/tags/$tag")" ]; then echo "$tag already exists" >&2; exit 1; fi
-    # Not a commit this lane already released.
-    prefix=${tag%"$new"}
-    last=$(git ls-remote "$url" "refs/tags/$prefix*" | sed -n "s|^\([0-9a-f]*\)	refs/tags/$prefix\([0-9.]*\)^{}\$|\2 \1|p" | sort -V | tail -1)
-    if [ -n "$last" ]; then
-      git fetch -q "$url" "${last#* }" 2>/dev/null || git fetch -q "$url" "refs/tags/$prefix${last% *}"
-      if git merge-base --is-ancestor "$sha" "${last#* }"; then
-        echo "${sha:0:12} is already released in $prefix${last% *}" >&2; exit 1
-      fi
+    resolve
+    if [ -n "$plan_in" ]; then
+      [ "$tag" = "$(plan_get "$plan_in" tag)" ] \
+        || { echo "the approved plan is $(plan_get "$plan_in" tag), but this would release $tag: run the op again for a fresh plan" >&2; exit 1; }
+      [ "$(git rev-parse -q --verify "$main:$notes" || true)" = "$(plan_get "$plan_in" notesBlob)" ] \
+        || { echo "$notes on main changed since the plan was approved: run the op again for a fresh plan" >&2; exit 1; }
     fi
     # The notes come from main, where they can land without waiting for CI.
     # A dry run goes on without them, to show the rest.
@@ -409,6 +453,67 @@ case "${1:-}" in
       exit 1
     fi
     echo "pushed $tag (${bumped:0:12}) and main ($(git rev-parse --short=12 HEAD))"
+    ;;
+  plan)
+    # What `bump` would release, as JSON (chant's release op, ops/, binds its
+    # approve-release gate to it): the lane, the part, the green commit and
+    # its subject, the version it moves from, the new version and tag, and
+    # the notes on main (their path and blob, so editing them needs a fresh
+    # approval). Into --out FILE, and the commit to stdout. With no notes on
+    # main it drafts them from the commits since the lane's last release into
+    # dist/release/, says so, and fails.
+    shift
+    release_args "$@"
+    resolve
+    if ! git cat-file -e "$main:$notes" 2>/dev/null; then
+      top=$(git rev-parse --show-toplevel)
+      mkdir -p "$top/dist/release"
+      draft=$top/dist/release/${notes##*/}
+      # Each commit's subject (a PR's title), less the releases' own.
+      range=$sha
+      if [ -n "$last" ]; then range=${last#* }..$sha; fi
+      {
+        printf '# %s\n\n' "$title"
+        git log --first-parent --no-merges --max-count 200 --format='- %s' "$range" | grep -v '^- Release notes' || true
+      } >"$draft"
+      echo "main has no $notes: a draft from the commits since ${last:+$prefix${last% *}} is in $draft; edit it, merge it to main, and run this again" >&2
+      exit 1
+    fi
+    json=$(python3 -I - "$lane" "$part" "$sha" "$(git log -1 --format=%s "$sha")" "$cur" "$new" "$tag" "$notes" "$(git rev-parse "$main:$notes")" <<'PY'
+import json, sys
+k = ["lane", "part", "commit", "subject", "from", "version", "tag", "notes", "notesBlob"]
+print(json.dumps(dict(zip(k, sys.argv[1:])), indent=2, sort_keys=True))
+PY
+)
+    if [ -n "$plan_out" ]; then mkdir -p "$(dirname "$plan_out")" && printf '%s\n' "$json" >"$plan_out"; else printf '%s\n' "$json" >&2; fi
+    echo "$tag: $cur -> $new on ${sha:0:12} ($(git log -1 --format=%s "$sha"))" >&2
+    echo "$sha"
+    ;;
+  watch)
+    # Follow the release workflow a tag started (release.yml for v*,
+    # app-release.yml for app-v*) until it ends, and fail with it. TAG, or
+    # --plan FILE for the tag a plan names. Nothing to follow when the
+    # repository isn't on GitHub (scripts/tests, a scratch forge).
+    if [ "${2:-}" = --plan ]; then tag=$(plan_get "${3:?--plan FILE}" tag); else tag=${2:?release watch TAG}; fi
+    case "$url" in https://github.com/*) ;; *) echo "$url isn't GitHub: no workflow to follow for $tag"; exit 0 ;; esac
+    case "$tag" in app-v*) wf=app-release.yml ;; *) wf=release.yml ;; esac
+    say() { echo "$*"; if [ -n "${CHANT_RUN_ACTIVITY:-}" ]; then echo "$*" >>"$CHANT_RUN_ACTIVITY"; fi; }
+    id=''
+    for _ in $(seq 30); do
+      id=$(gh run list -R "$repo" -w "$wf" -b "$tag" -L 1 --json databaseId --jq '.[0].databaseId // empty')
+      [ -n "$id" ] && break
+      sleep 10
+    done
+    [ -n "$id" ] || { echo "no $wf run for $tag after 5 minutes" >&2; exit 1; }
+    say "$wf for $tag: https://github.com/$repo/actions/runs/$id"
+    while :; do
+      st=$(gh run view "$id" -R "$repo" --json status,conclusion --jq '.status + " " + .conclusion')
+      case "$st" in "completed "*) break ;; esac
+      say "$wf for $tag: ${st% }"
+      sleep 60
+    done
+    say "$wf for $tag: $st"
+    [ "$st" = "completed success" ] || { echo "rerun its failed jobs: gh run rerun $id -R $repo --failed" >&2; exit 1; }
     ;;
   sidecars)
     # From the latest daemon release (releases/latest), which this app then
@@ -559,7 +664,7 @@ PY
     echo "formula bumped to $v"
     ;;
   *)
-    sed -n '2,44p' "$0" >&2
+    sed -n '2,51p' "$0" >&2
     exit 2
     ;;
 esac

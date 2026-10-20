@@ -364,6 +364,14 @@ fmt-check:
 release *args:
     scripts/release bump {{args}}
 
+# The same release behind Jake's approval: chant's release op
+# (ops/src/release.op.ts) plans it and stops at its approve-release gate
+# (exit 3), which Arugula's workspace block shows as attention to approve;
+# run it again with the same arguments to cut (docs/development.md).
+# just release-op [patch|minor|major] [--app] [COMMIT]
+release-op *args:
+    cd ops && npm ci --silent --prefer-offline && RELEASE_ARGS="{{args}}" npx chant run release
+
 # The newest commits on main that passed CI (their ci/green tags), newest
 # first; a tag CI revoked since is gone here too.
 green n="20":

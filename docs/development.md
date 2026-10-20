@@ -261,6 +261,47 @@ nothing is pushed and you run it again. `just release COMMIT` releases an
 older green commit on main instead. `scripts/tests/release-bump.sh` (`just
 test-scripts`) runs it against a local repository.
 
+**Behind an approval.** `just release-op` (with `minor`, `major`,
+`--app` or a COMMIT, as `just release` takes them) is the same release as
+a [chant](https://intentius.io/chant) op, `ops/src/release.op.ts` in the
+workspace's `ops` member, so an agent can start a release and only Jake can
+let it through:
+
+```mermaid
+flowchart LR
+  P["Prep: scripts/release plan<br/>green commit, version, notes on main"] --> G{"approve-release<br/>bound to the plan"}
+  G -- "Approve (Arugula's block, the phone,<br/>or chant approve)" --> R["run it again"]
+  R --> C["Cut: scripts/release bump --plan<br/>tag, push, release ledger"]
+  C --> S["Ship: scripts/release watch<br/>release.yml or app-release.yml"]
+```
+
+1. **Prep** runs `scripts/release plan`: the commit, the version and the
+   notes `just release` would use, as JSON in `dist/release/plan.json`,
+   which chant keeps as a plan named by its digest (`ops/dist/plans/`).
+   With no notes on main it writes a draft from the commits since the
+   lane's last release to `dist/release/X.Y.Z.md` and stops: edit it,
+   merge it, and run it again.
+2. **Approve:** the run stops at the `approve-release` gate and exits 3.
+   Arugula's workspace block on this checkout shows it as attention
+   ("ops: release waits at gate approve-release"), and *Approve* there or
+   on the phone runs `chant approve release approve-release` as you;
+   `chant approve` by hand in `ops/` does the same. The approval is for
+   that plan only: if main gets a newer green commit, the notes change or
+   the arguments differ, the next run plans again and asks again.
+3. **Cut:** run `just release-op` again with the same arguments. It walks
+   through the gate and runs `scripts/release bump --plan`, which is `just
+   release` for the commit the plan names, refusing if that would now make
+   another tag or the notes changed. Then it records the release on
+   chant's release ledger.
+4. **Ship:** `scripts/release watch` follows the tag's release workflow
+   until it ends, and fails with it (rerun its failed jobs, then the
+   release is out: running the op again finds the commit released).
+
+The gate records live on the `chant/lifecycle` branch, which chant pushes
+to `origin` after each run and approval, with the approver's name. A
+control deploy isn't part of it: that stays `just control-deploy`, asked
+for each time.
+
 `scripts/release` (`check-version`, `sums`, `publish`, `homebrew` for the
 daemon; `check-app-version`, `sidecars`, `app-upload`, `app-publish` for the
 app) checks that `releases/latest` is still a daemon release after each
