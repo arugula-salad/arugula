@@ -74,5 +74,15 @@ page follows the list with the launch (#213).
 
 A third plane, the substrate (compute providers behind one interface), comes
 in later steps and holds nothing of its own here.
+
+Planes are trust rules, not processes. Since step 2 (#1150) control runs as
+two processes, a hub and a platform ("Control is two processes: a hub and a
+platform"), and they don't line up with the planes exactly. The hub holds
+the machine plane (the relay, devices, rosters) and identity, and also some
+platform-plane data: Shared Docs and doc links stay with the hub's doc
+origins. The platform process holds the rest of the platform plane: chat,
+Cloud workspaces and their transcripts, cloud secrets, billing, projects
+and grants. `tables.toml` says both for each table: `plane` for the trust
+rule and `process` for who holds it.
 Where: `crates/control/tables.toml`, `crates/control/src/db.rs`, `crates/control/src/db/`, `docs/control-e2e.md`.
 From: #1122 (platform roadmap, step 1), M127 (#1123), M128 (#1124).

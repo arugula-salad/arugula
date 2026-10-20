@@ -63,6 +63,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-024](docs/decisions/aru-024-a-guest-types-on-your-machine-only-by-trust-or-in-a-vm.md): A guest types on your machine only by trust, or in a VM
 - [aru-025](docs/decisions/aru-025-only-the-owner-s-agent-reaches-panes-over-ssh.md): Only the owner's agent reaches panes over ssh
 - [aru-073](docs/decisions/aru-073-grants-not-impersonation.md): Grants, not impersonation
+- [aru-078](docs/decisions/aru-078-the-hub-stays-the-identity-provider-passkeys-are.md): The hub stays the identity provider; passkeys are bound to control.arugula.io
 
 ## Clients
 
@@ -112,6 +113,9 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-071](docs/decisions/aru-071-two-planes-two-trust-rules.md): Two planes, two trust rules
 - [aru-072](docs/decisions/aru-072-the-project-is-the-unit-of-platform-sharing.md): The project is the unit of platform sharing
 - [aru-074](docs/decisions/aru-074-one-vocabulary-project-with-prj-ids.md): One vocabulary: Project, with prj_ ids
+- [aru-075](docs/decisions/aru-075-control-is-two-processes-a-hub-and-a-platform.md): Control is two processes: a hub and a platform
+- [aru-076](docs/decisions/aru-076-platform-paths-stay-on-control-arugula-io-forever.md): Platform paths stay on control.arugula.io forever, behind the hub's gateway
+- [aru-077](docs/decisions/aru-077-the-platform-s-database-is-fly-managed-postgres.md): The platform's database is Fly Managed Postgres, moved in announced windows
 
 ## Build and release
 
