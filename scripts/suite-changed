@@ -4,7 +4,9 @@
 # them reads (#868): the docs' prose, spikes, the notes at the top, the
 # issue templates, the Mac release's signing and the desktop app, whose
 # own jobs ask scripts/app-changed. Its dist stays in: the journey specs
-# read signin.html. Same answers as scripts/changed: 0 run, 1 skip.
+# read signin.html. So does docs/control-e2e.md: control's tables test
+# checks its generated "What control stores" (M128). Same answers as
+# scripts/changed: 0 run, 1 skip.
 #
 #   scripts/suite-changed BEFORE
 set -euo pipefail
@@ -13,4 +15,5 @@ here="$(dirname "$0")"
   ':(exclude,glob)docs/**/*.md' ':(exclude)spikes' \
   ':(exclude)DECISIONS.md' ':(exclude)AGENTS.md' ':(exclude)CLAUDE.md' ':(exclude)CONTRIBUTING.md' ':(exclude)SECURITY.md' \
   ':(exclude).github/ISSUE_TEMPLATE' ':(exclude)scripts/macos-sign' ':(exclude)crates/desktop' && exit 0
-exec "$here/changed" "the specs' copy of the app's pages" "${1:-}" crates/desktop/dist
+"$here/changed" "the specs' copy of the app's pages" "${1:-}" crates/desktop/dist && exit 0
+exec "$here/changed" "control's generated docs" "${1:-}" docs/control-e2e.md
