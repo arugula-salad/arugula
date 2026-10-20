@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS cloud_secrets (
     account TEXT NOT NULL,
     name TEXT NOT NULL,
     sealed BLOB NOT NULL,
+    project_id TEXT,
     PRIMARY KEY(account,name)
 );
 CREATE TABLE IF NOT EXISTS cloud_run_secrets (
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS cloud_events (
 -- (M120); `rebuild_error` says why the last one queued didn't happen, and
 -- `rebuilds` counts the ones Managoat took. `setup_step` is the step a
 -- setup is running, while it's `provisioning` (Managoat v0.39.0).
+-- `project_id` is its owner's personal project (M129), as for a secret.
 CREATE TABLE IF NOT EXISTS cloud_workspaces (
     id TEXT PRIMARY KEY,
     account TEXT NOT NULL,
@@ -113,6 +115,7 @@ CREATE TABLE IF NOT EXISTS cloud_workspaces (
     rebuild_error TEXT,
     rebuilds INTEGER NOT NULL DEFAULT 0,
     setup_step TEXT,
+    project_id TEXT,
     UNIQUE(account, request_key)
 );
 CREATE INDEX IF NOT EXISTS cloud_workspaces_owner ON cloud_workspaces(account, created);
@@ -951,9 +954,12 @@ impl Db {
         Ok(q.query_map([account], |r| r.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?)
     }
     pub fn put_cloud_secret(&self, account: &str, name: &str, sealed: &[u8]) -> Result<()> {
-        let conn = self.c();
-        require_account(&conn, account)?;
-        conn.execute("INSERT INTO cloud_secrets(account,name,sealed) VALUES(?1,?2,?3) ON CONFLICT(account,name) DO UPDATE SET sealed=excluded.sealed",params![account,name,sealed])?;
+        let mut conn = self.c();
+        let tx = conn.transaction()?;
+        require_account(&tx, account)?;
+        let project = super::projects::personal_project(&tx, account, arugula_e2e::now_ms())?;
+        tx.execute("INSERT INTO cloud_secrets(account,name,sealed,project_id) VALUES(?1,?2,?3,?4) ON CONFLICT(account,name) DO UPDATE SET sealed=excluded.sealed",params![account,name,sealed,project])?;
+        tx.commit()?;
         Ok(())
     }
     pub fn delete_cloud_secret(&self, account: &str, name: &str) -> Result<()> {
@@ -1270,9 +1276,10 @@ impl Db {
             }
         }
         let id = format!("cw_{}", hex::encode(arugula_e2e::random::<16>()));
+        let project = super::projects::personal_project(&tx, account, now)?;
         tx.execute(
-            "INSERT INTO cloud_workspaces(id,account,request_key,name,saved_spec,created) VALUES(?1,?2,?3,?4,?5,?6)",
-            params![id, account, request_key, spec.name, serde_json::to_string(spec)?, now],
+            "INSERT INTO cloud_workspaces(id,account,request_key,name,saved_spec,created,project_id) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![id, account, request_key, spec.name, serde_json::to_string(spec)?, now, project],
         )?;
         tx.execute(
             "INSERT INTO cloud_jobs(id,kind,body) VALUES(?1,'cloud_workspace',?2)",

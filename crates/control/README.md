@@ -15,3 +15,7 @@ serves blocks' own origins under `--block-domain` (M50), with their
 scripts from `web/src/block/`. `src/chat.rs` (with `src/db/chat.rs`) is
 chat (M122): a team's channels, DMs and threads about panes, which control
 holds in plain text, the one exception to "metadata only".
+`src/db/projects.rs` holds the platform plane's nouns (#1122): projects,
+which Cloud workspaces, team channels and cloud secrets belong to,
+`team_members` (a projection of each signed roster, never read for machine
+access) and grants.
