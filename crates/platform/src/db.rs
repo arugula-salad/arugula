@@ -6,8 +6,8 @@
 //! the platform's tests, whose database is its own.
 //!
 //! Each feature brings its own tables and queries as it moves in (Cloud's
-//! from `crates/control/src/db/cloud.rs`, chat's from `db/chat.rs`), and
-//! flips their `process` in `crates/control/tables.toml` to `platform`.
+//! in [`cloud`], M137; chat's from `db/chat.rs`), and flips their
+//! `process` in `crates/control/tables.toml` to `platform`.
 
 use std::{
     path::Path,
@@ -18,13 +18,14 @@ use arugula_control_common::sqlite;
 use rusqlite::Connection;
 
 pub mod billing;
+pub mod cloud;
 
 pub struct Db {
     conn: Mutex<Connection>,
 }
 
 /// The platform's tables, made if they aren't there: each feature's own.
-const SCHEMA: &[&str] = &[billing::SCHEMA];
+const SCHEMA: &[&str] = &[billing::SCHEMA, cloud::SCHEMA];
 
 impl Db {
     /// The database at `path`: in process, the hub's file.
@@ -33,6 +34,7 @@ impl Db {
         for schema in SCHEMA {
             conn.execute_batch(schema)?;
         }
+        cloud::migrate(&conn)?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -43,6 +45,7 @@ impl Db {
         for schema in SCHEMA {
             conn.execute_batch(schema).expect("the platform's schema");
         }
+        cloud::migrate(&conn).expect("the platform's schema");
         Self { conn: Mutex::new(conn) }
     }
 

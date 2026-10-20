@@ -13,7 +13,6 @@ path = "src/main.rs"
 [dependencies]
 aes-gcm = { workspace = true }
 hkdf = { workspace = true }
-chacha20poly1305 = "0.10.1"
 anyhow = { workspace = true }
 aws-lc-rs = "1.18.1"
 axum = { workspace = true, features = ["ws"] }

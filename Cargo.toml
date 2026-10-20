@@ -18,6 +18,7 @@ repository = "https://github.com/arugula-salad/arugula"
 # The versions every crate shares; a crate adds its own features, `optional`
 # and (for the Unix and Windows tables) its target with
 # `dep = { workspace = true, ... }`.
+arugula-cloud-wire = { path = "crates/cloud-wire" }
 arugula-control-common = { path = "crates/control-common" }
 arugula-control-wire = { path = "crates/control-wire" }
 arugula-core = { path = "crates/core" }

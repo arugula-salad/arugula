@@ -468,7 +468,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "cloud_agents"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "A cloud agent's definition: its name, instructions, skills, MCP servers and the names of the secrets it uses."
 why_asleep = "Cloud workspaces and runs work with every machine off."
@@ -478,7 +478,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_runs"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "A cloud run: the agent, model, repository and prompt it ran with, its state, and its result."
 why_asleep = "Cloud workspaces and runs work with every machine off."
@@ -488,7 +488,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_secrets"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "A cloud secret's name and value, sealed with a key control holds apart from the database; control opens it to put it in a Cloud workspace's vault."
 why_asleep = "Cloud workspaces and runs work with every machine off."
@@ -498,7 +498,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_run_secrets"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "The secrets a cloud run started with, sealed as cloud_secrets are."
 why_asleep = "Cloud workspaces and runs work with every machine off."
@@ -508,7 +508,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_jobs"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "The worker's job for a run, a Cloud workspace or a tab: what it was asked (the spec), Managoat's ids, its lease."
 why_asleep = "Control's worker drives Cloud workspaces with every machine off."
@@ -518,7 +518,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_requests"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "What an agent in the cloud asks someone to approve, and the answer."
 why_asleep = "An agent in the cloud asks while every machine is off."
@@ -528,7 +528,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_notifications"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "metadata"
 what = "Whether a push about an approval went out yet, and when to try again."
 why_asleep = "An agent in the cloud asks while every machine is off."
@@ -538,7 +538,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "cloud_events"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "A cloud conversation's transcript: prompts, replies, tool calls and results, as Managoat sent them."
 why_asleep = "Transcripts are read with every machine off."
@@ -548,7 +548,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_workspaces"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "A Cloud workspace: its name, its spec (repositories, packages, setup script, environment variables, networking, secret names), its status and errors."
 why_asleep = "Cloud workspaces work with every machine off."
@@ -559,7 +559,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_workspace_specs"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "The spec a Cloud workspace's environment revision was saved as (the newest few)."
 why_asleep = "Cloud workspaces work with every machine off."
@@ -569,7 +569,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_tabs"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "A tab in a Cloud workspace: the agent, runtime, model and prompt it opened with, its status."
 why_asleep = "Cloud workspaces work with every machine off."

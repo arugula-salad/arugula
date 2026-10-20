@@ -5,11 +5,9 @@
 //! only ever sends these GETs. Every lookup is the caller's own: another
 //! account's id is 404.
 use super::{enabled, provider::ReadRefusal};
-use crate::{
-    ApiError, App,
-    auth::{CloudDriver, Session},
-    err, refusal,
-};
+use crate::{Platform, auth::Person, cloud::CloudDriver};
+use arugula_cloud_wire::{CloudSetupLog, CloudSetupStep};
+use arugula_control_common::{ApiError, err, refusal};
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -61,7 +59,7 @@ pub struct GitStatusQuery {
 
 /// A directory listing: `{path, entries: [{name, type, size}], truncated}`.
 pub async fn files(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
     Query(q): Query<FilesQuery>,
@@ -73,7 +71,7 @@ pub async fn files(
 
 /// One file, redacted: `{path, size, truncated, encoding, content}`.
 pub async fn file(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
     Query(q): Query<FileQuery>,
@@ -87,7 +85,7 @@ pub async fn file(
 /// `git diff` of the repository holding `path`, redacted:
 /// `{path, repo_root, staged, ref, diff, truncated}`.
 pub async fn diff(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
     Query(q): Query<DiffQuery>,
@@ -111,7 +109,7 @@ pub async fn diff(
 /// `{path, repo_root, branch, untracked, entries: [{path, index, worktree,
 /// renamed_from}], truncated}`.
 pub async fn git_status(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
     Query(q): Query<GitStatusQuery>,
@@ -142,7 +140,7 @@ pub async fn git_status(
 /// Managoat keeps it, not the machine, so it reads while the machine is
 /// failed, lost or parked, and never wakes it.
 pub async fn setup_log(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
@@ -163,31 +161,36 @@ pub async fn setup_log(
 }
 
 /// Only the documented fields of a setup log: no ids, nothing Managoat adds.
-pub(super) fn setup_log_fields(value: &Value) -> Value {
+pub(super) fn setup_log_fields(value: &Value) -> Option<CloudSetupLog> {
     if !value.is_object() {
-        return Value::Null;
+        return None;
     }
-    let pick = |v: &Value, fields: &[&str]| -> Map<String, Value> {
-        fields.iter().filter_map(|f| v.get(*f).map(|x| ((*f).to_owned(), x.clone()))).collect()
-    };
-    let mut log = pick(value, &["status", "step", "started_at", "finished_at"]);
-    let steps: Vec<Value> = value["steps"]
+    let pick = |v: &Value, field: &str| v.get(field).cloned();
+    let steps = value["steps"]
         .as_array()
         .map(|steps| {
             steps
                 .iter()
                 .filter(|s| s.is_object())
-                .map(|s| {
-                    Value::Object(pick(
-                        s,
-                        &["step", "status", "started_at", "finished_at", "output", "omitted_lines", "omitted_bytes"],
-                    ))
+                .map(|s| CloudSetupStep {
+                    finished_at: pick(s, "finished_at"),
+                    omitted_bytes: pick(s, "omitted_bytes"),
+                    omitted_lines: pick(s, "omitted_lines"),
+                    output: pick(s, "output"),
+                    started_at: pick(s, "started_at"),
+                    status: pick(s, "status"),
+                    step: pick(s, "step"),
                 })
                 .collect()
         })
         .unwrap_or_default();
-    log.insert("steps".into(), Value::Array(steps));
-    Value::Object(log)
+    Some(CloudSetupLog {
+        finished_at: pick(value, "finished_at"),
+        started_at: pick(value, "started_at"),
+        status: pick(value, "status"),
+        step: pick(value, "step"),
+        steps,
+    })
 }
 
 /// Managoat confines the path to the machine's roots; control only refuses
@@ -211,8 +214,8 @@ fn push_max_bytes(query: &mut Vec<(&'static str, String)>, max_bytes: Option<u64
 }
 
 async fn read(
-    app: &App,
-    session: &Session,
+    app: &Platform,
+    session: &Person,
     id: &str,
     read: &str,
     query: Vec<(&'static str, String)>,

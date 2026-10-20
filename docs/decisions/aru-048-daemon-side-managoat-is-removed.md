@@ -22,7 +22,7 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-18"
 reviews: []
 constrains:
-  - "path:crates/control/src/cloud"
+  - "path:crates/platform/src/cloud"
   - "path:crates/daemon/src/agent/defs.rs"
   - "path:crates/daemon/src/agent/mod.rs"
   - "path:crates/daemon/src/review/mod.rs"
@@ -43,7 +43,7 @@ link, recipes run on Managoat (from the Agents page, the agents block,
 conversation's sandbox, `arugula managoat`, MCP's Managoat kinds, and the
 per-machine default for Managoat approvals) was retired by "Cloud execution
 is owned by Arugula control" (above) and taken out on 2026-10-18, Jake's
-decision. Control's own Managoat adapter (`crates/control/src/cloud/`) is
+decision. Control's own Managoat adapter (`crates/platform/src/cloud/`) is
 separate and stays. This ends "Fountain is a headless backend, and Arugula
 is its UI" (#942, 2026-10-15), and with it the entries on the daemon's
 sign-in, the account view's cards, recipes on Managoat and the rename's

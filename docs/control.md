@@ -18,7 +18,7 @@ and writes go the same way.
 Cloud workspaces through the agents there.** That was decided, not
 overlooked. A daemon can't change a Cloud workspace's settings, delete one,
 or reach secrets, the agent library or past tabs; those stay a person's
-(`auth::CloudDriver` in `crates/control/src/auth.rs`).
+(`cloud::CloudDriver` in `crates/platform/src/cloud/mod.rs`).
 
 **That power is a grant (M130, #1126).** Every machine joined to an account
 holds a `cloud.drive` grant over it: machines joined before M130 got one

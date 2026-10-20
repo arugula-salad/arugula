@@ -23,7 +23,6 @@ mod census;
 mod chat;
 #[cfg(test)]
 mod chat_wire;
-mod cloud;
 mod db;
 mod doc_links;
 #[cfg(test)]
@@ -160,36 +159,10 @@ struct Args {
     #[arg(long, default_value_t = 2, env = "ARUGULA_SANDBOX_QUOTA")]
     sandbox_quota: usize,
 
-    /// Managed cloud agents. Credentials are held only by control.
-    #[arg(long, env = "ARUGULA_MANAGOAT_URL", default_value = "https://managoat.com")]
-    cloud_provider_url: String,
-    #[arg(long, env = "ARUGULA_MANAGOAT_API_KEY", hide_env_values = true)]
-    cloud_provider_key: Option<String>,
-    /// Separate 32-byte hex encryption key for user cloud secrets. Back up with deployment secrets.
-    #[arg(long, env = "ARUGULA_CLOUD_SECRET_KEY", hide_env_values = true)]
-    cloud_secret_key: Option<String>,
-    /// Limited beta allowlist; empty disables access for all accounts.
-    #[arg(long, env = "ARUGULA_CLOUD_ACCOUNTS", value_delimiter = ',')]
-    cloud_accounts: Vec<String>,
-    /// Platform-funded model, required when cloud execution is configured
-    /// and ARUGULA_CLOUD_MODELS is unset.
-    #[arg(long, env = "ARUGULA_CLOUD_MODEL")]
-    cloud_model: Option<String>,
-    #[arg(long, env = "ARUGULA_CLOUD_RUNTIME", default_value = "claude", value_parser = ["claude", "codex", "gemini"])]
-    cloud_runtime: String,
-    /// What a Cloud workspace's tabs may run on: `runtime:model` pairs,
-    /// comma-separated, the first the default. Unset, it's
-    /// ARUGULA_CLOUD_RUNTIME:ARUGULA_CLOUD_MODEL.
-    #[arg(long, env = "ARUGULA_CLOUD_MODELS", value_delimiter = ',')]
-    cloud_models: Vec<String>,
-    /// Retired with Cloud runs (S40, decision 10): still parsed, so an old
-    /// deploy starts, and do nothing but say so.
-    #[arg(long, env = "ARUGULA_CLOUD_DAILY_RUNS", hide = true)]
-    cloud_daily_runs: Option<String>,
-    #[arg(long, env = "ARUGULA_CLOUD_CONCURRENT_RUNS", hide = true)]
-    cloud_concurrent_runs: Option<String>,
-    #[arg(long, env = "ARUGULA_CLOUD_RUN_MINUTES", hide = true)]
-    cloud_run_minutes: Option<String>,
+    /// Cloud workspaces: their flags and env vars are the platform's
+    /// (M137), with the names they always had.
+    #[command(flatten)]
+    cloud: arugula_platform::cloud::Args,
 
     /// Billing (M22): a Stripe secret key turns it on (STRIPE_SECRET_KEY);
     /// webhooks are checked with STRIPE_WEBHOOK_SECRET.
@@ -339,7 +312,6 @@ pub struct App {
     pub limits: limit::Limits,
     pub vapid: push::Vapid,
     pub hosted: Option<sandboxes::Hosted>,
-    pub cloud: Option<cloud::Cloud>,
     /// The GitHub App (M40), and daemons' subscriptions to its webhooks.
     pub github_app: Option<forge::GithubApp>,
     pub forge: forge::Watches,
@@ -385,12 +357,14 @@ fn platform(
     db: arugula_platform::db::Db,
     cfg: arugula_platform::Config,
     stripe: Option<arugula_platform::billing::Stripe>,
+    cloud: Option<arugula_platform::cloud::Cloud>,
     http: &reqwest::Client,
     analytics: &analytics::Analytics,
 ) -> (Arc<arugula_platform::Platform>, Arc<hub_port::InProcess>) {
     let hub = Arc::new(hub_port::InProcess::default());
     let mut p = arugula_platform::Platform::new(cfg, db, hub.clone(), http.clone(), analytics.clone());
     p.stripe = stripe;
+    p.cloud = cloud;
     (Arc::new(p), hub)
 }
 
@@ -407,7 +381,7 @@ impl App {
             relay_free_bytes: 0,
         };
         let (platform, hub_port) =
-            platform(arugula_platform::db::Db::memory(), cfg, None, &http, &analytics::Analytics::default());
+            platform(arugula_platform::db::Db::memory(), cfg, None, None, &http, &analytics::Analytics::default());
         App {
             cfg: Config {
                 push_hosts: vec![],
@@ -428,7 +402,6 @@ impl App {
             limits: limit::Limits::new(None),
             vapid,
             hosted: None,
-            cloud: None,
             github_app: None,
             forge: Default::default(),
             app_logins: Default::default(),
@@ -540,43 +513,8 @@ fn routes() -> Routes {
         .route("/api/push/unsubscribe", post(push::unsubscribe))
         .route(wire::PUSH_SUBS, get(push::daemon_subs))
         .route(wire::PUSH, post(push::daemon_send))
-        .route("/api/cloud/secrets", get(cloud::list_secrets))
-        .route("/api/cloud/secrets/{name}", axum::routing::put(cloud::put_secret).delete(cloud::delete_secret))
-        // Past runs (S40, decision 10): read only. Nothing starts, cancels or
-        // answers a run any more.
-        .route("/api/cloud/runs", get(cloud::runs))
-        .route("/api/cloud/runs/{id}", get(cloud::run))
-        .route("/api/cloud/runs/{id}/requests", get(cloud::requests))
-        .route("/api/cloud/runs/{id}/events", get(cloud::events))
-        .route("/api/cloud/workspaces", get(cloud::workspaces::list).post(cloud::workspaces::create))
-        .route(
-            "/api/cloud/workspaces/{id}",
-            get(cloud::workspaces::show).patch(cloud::workspaces::update).delete(cloud::workspaces::delete),
-        )
-        .route("/api/cloud/workspaces/{id}/files", get(cloud::files::files))
-        .route("/api/cloud/workspaces/{id}/file", get(cloud::files::file))
-        .route("/api/cloud/workspaces/{id}/diff", get(cloud::files::diff))
-        .route("/api/cloud/workspaces/{id}/git-status", get(cloud::files::git_status))
-        .route("/api/cloud/workspaces/{id}/setup-log", get(cloud::files::setup_log))
-        .route("/api/cloud/workspaces/{id}/tabs", get(cloud::tabs::list).post(cloud::tabs::open))
-        .route("/api/cloud/workspaces/{id}/tabs/{tab}", get(cloud::tabs::show).delete(cloud::tabs::close))
-        .route("/api/cloud/workspaces/{id}/tabs/{tab}/prompt", post(cloud::tabs::prompt))
-        .route("/api/cloud/workspaces/{id}/tabs/{tab}/interrupt", post(cloud::tabs::interrupt))
-        .route("/api/cloud/workspaces/{id}/tabs/{tab}/events", get(cloud::tabs::events))
-        .route("/api/cloud/workspaces/{id}/tabs/{tab}/requests", get(cloud::tabs::requests))
-        .route("/api/cloud/workspaces/{id}/tabs/{tab}/requests/{request}", post(cloud::tabs::answer))
-        .route("/api/cloud/workspaces/{id}/rebuild", post(cloud::rebuild::rebuild).delete(cloud::rebuild::cancel))
-        .route("/api/cloud/workspaces/{id}/retry", post(cloud::rebuild::retry))
-        .route("/api/cloud/past-tabs", get(cloud::tabs::past))
-        .route("/api/cloud/past-tabs/{tab}", get(cloud::tabs::past_show))
-        .route("/api/cloud/past-tabs/{tab}/events", get(cloud::tabs::past_events))
-        .route("/api/cloud/past-tabs/{tab}/requests", get(cloud::tabs::past_requests))
-        .route("/api/cloud/models", get(cloud::models))
         .route("/api/grants", get(grants::list).post(grants::give))
         .route("/api/grants/{id}/revoke", post(grants::revoke))
-        .route("/api/cloud/import", post(cloud::migration::import))
-        .route("/api/cloud/agents", get(cloud::catalog).post(cloud::create_agent))
-        .route("/api/cloud/agents/{id}", axum::routing::put(cloud::update_agent).delete(cloud::delete_agent))
         .route("/api/doc-links", get(doc_links::list))
         .route("/api/doc-links/quota", get(doc_links::quota))
         .route("/api/doc-links/{id}", axum::routing::delete(doc_links::remove))
@@ -943,24 +881,7 @@ async fn run() -> anyhow::Result<()> {
         Some(d) => info!(domain = %d, "blocks served at b-<key>.{d}"),
         None => info!("no ARUGULA_CONTROL_BLOCK_DOMAIN: blocks aren't served through control"),
     }
-    for (name, set) in [
-        ("ARUGULA_CLOUD_DAILY_RUNS", a.cloud_daily_runs.is_some()),
-        ("ARUGULA_CLOUD_CONCURRENT_RUNS", a.cloud_concurrent_runs.is_some()),
-        ("ARUGULA_CLOUD_RUN_MINUTES", a.cloud_run_minutes.is_some()),
-    ] {
-        if set {
-            tracing::warn!("{name} does nothing: Cloud runs were retired, and Cloud workspaces have no caps");
-        }
-    }
-    let cloud = match a.cloud_provider_key.filter(|k| !k.is_empty()) {
-        Some(key) => Some(cloud::Cloud {
-            secret_cipher: a.cloud_secret_key.as_deref().map(cloud::secrets::SecretCipher::new).transpose()?,
-            provider: cloud::provider::Provider::new(&a.cloud_provider_url, key)?,
-            accounts: a.cloud_accounts,
-            models: cloud::configured_models(a.cloud_model, a.cloud_runtime, &a.cloud_models)?,
-        }),
-        None => None,
-    };
+    let cloud = a.cloud.cloud()?;
     // A second connection to the same file: the platform never reads the
     // hub's tables (#1153).
     let billing = stripe.is_some();
@@ -969,7 +890,7 @@ async fn run() -> anyhow::Result<()> {
         sites: sites.iter().map(|s| s.url.clone()).collect(),
         relay_free_bytes: a.relay_free_mb * 1_000_000,
     };
-    let (platform, hub_port) = platform(arugula_platform::db::Db::open(&a.db)?, cfg, stripe, &http, &analytics);
+    let (platform, hub_port) = platform(arugula_platform::db::Db::open(&a.db)?, cfg, stripe, cloud, &http, &analytics);
     let app = App {
         cfg: Config {
             push_hosts: a.push_hosts,
@@ -995,7 +916,6 @@ async fn run() -> anyhow::Result<()> {
         limits: limit::Limits::new(a.trust_proxy_header),
         vapid,
         hosted,
-        cloud,
         github_app,
         forge: Default::default(),
         app_logins: Default::default(),
@@ -1020,10 +940,7 @@ async fn run() -> anyhow::Result<()> {
     if app.github_app.is_some() {
         tokio::spawn(forge::heartbeat(app.clone(), std::time::Duration::from_secs(a.forge_heartbeat_secs.max(1))));
     }
-    if app.cloud.is_some() {
-        cloud::worker::start(app.clone());
-        cloud::notifications::start(app.clone());
-    }
+    arugula_platform::cloud::start(&app.platform);
     if app.cfg.billing {
         let p = app.platform.clone();
         tokio::spawn(async move {
@@ -1142,8 +1059,8 @@ mod tests {
             "30",
         ])
         .unwrap();
-        assert_eq!(a.cloud_daily_runs.as_deref(), Some("10"));
-        assert!(a.cloud_concurrent_runs.is_some() && a.cloud_run_minutes.is_some());
+        assert_eq!(a.cloud.cloud_daily_runs.as_deref(), Some("10"));
+        assert!(a.cloud.cloud_concurrent_runs.is_some() && a.cloud.cloud_run_minutes.is_some());
         let help = <super::Args as clap::CommandFactory>::command().render_help().to_string();
         assert!(!help.contains("daily-runs"), "{help}");
     }

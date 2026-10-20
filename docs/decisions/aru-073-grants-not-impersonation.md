@@ -42,7 +42,7 @@ decided_on: "2026-10-20"
 reviews: []
 constrains:
   - "path:crates/control/src/auth.rs"
-  - "path:crates/control/src/cloud"
+  - "path:crates/platform/src/cloud"
   - "path:crates/control/src/db"
 ---
 
@@ -68,5 +68,5 @@ CLI.
 Grants are per machine because the daemon signs every MCP call as itself:
 control can tell machines apart, not the agents on one. Narrowing a grant to
 the owner's own agents needs a daemon release and is a later step.
-Where: `crates/control/src/db/` (`grants`), `crates/control/src/auth.rs`, `crates/control/src/cloud/`.
+Where: `crates/control/src/db/` (`grants`), `crates/control/src/auth.rs`, `crates/platform/src/cloud/`.
 From: #1094, #1122, M130 (#1126).

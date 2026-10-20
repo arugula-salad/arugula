@@ -1,8 +1,8 @@
 //! Control's database (SQLite). Terminal service records are metadata: accounts,
 //! sign-in identities, sessions, device certificates (public keys),
 //! revocations, pending joins, the directory and byte counts. Nothing a
-//! daemon sends inside a channel ever reaches it. Managed cloud execution also
-//! stores agent definitions, prompts, results, and encrypted credential snapshots.
+//! daemon sends inside a channel ever reaches it. Managed cloud execution is
+//! the platform's (M137, `arugula_platform::db::cloud`).
 //! Chat (M122, `chat`) is held here in plain text: rooms, messages and the
 //! lines people quote from panes, never the rest of a pane.
 //! Projects, team members and grants (`projects`, #1122) are the platform
@@ -10,7 +10,6 @@
 
 pub mod changes;
 pub mod chat;
-pub mod cloud;
 pub mod doc_links;
 pub mod projects;
 #[cfg(test)]
@@ -356,7 +355,6 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // #1095: agents are out of chat, and the conversation an offer named
     // (#857) with them.
     conn.execute_batch("DROP TABLE IF EXISTS daemon_offer_reasons")?;
-    cloud::migrate(conn)?;
     Ok(())
 }
 
@@ -543,7 +541,6 @@ impl Db {
             |r| r.get(0),
         )?;
         conn.execute_batch(SCHEMA)?;
-        conn.execute_batch(cloud::SCHEMA)?;
         conn.execute_batch(chat::SCHEMA)?;
         conn.execute_batch(doc_links::SCHEMA)?;
         conn.execute_batch(projects::SCHEMA)?;
@@ -560,7 +557,6 @@ impl Db {
     pub fn memory() -> Self {
         let conn = arugula_control_common::sqlite::memory();
         conn.execute_batch(SCHEMA).unwrap();
-        conn.execute_batch(cloud::SCHEMA).unwrap();
         conn.execute_batch(chat::SCHEMA).unwrap();
         conn.execute_batch(doc_links::SCHEMA).unwrap();
         conn.execute_batch(projects::SCHEMA).unwrap();
@@ -2183,40 +2179,12 @@ impl Db {
 
     /// Delete an account and everything that's only its, in one
     /// transaction. Returns its machines' ids (to hang up on). What the
-    /// platform holds of it (billing's) goes after, through
+    /// platform holds of it (billing's and Cloud's) goes after, through
     /// `PlatformPort::account_deleted`.
     pub fn delete_account(&self, e: &Erase) -> anyhow::Result<Vec<String>> {
         let a = e.account;
         let mut c = self.c();
         let tx = c.transaction()?;
-        let active: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM cloud_runs WHERE account=?1 AND state NOT IN ('completed','failed','cancelled','expired'))", [a], |r| r.get(0))?;
-        anyhow::ensure!(!active, "wait for your cloud runs to finish stopping before deleting your account");
-        // Its Managoat resources go first (`Db::delete_cloud_workspaces`).
-        let live: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM cloud_workspaces WHERE account=?1 AND deleted IS NULL)",
-            [a],
-            |r| r.get(0),
-        )?;
-        anyhow::ensure!(!live, "wait for your Cloud workspaces to be deleted before deleting your account");
-        let open: bool =
-            tx.query_row("SELECT EXISTS(SELECT 1 FROM cloud_tabs WHERE account=?1 AND closed IS NULL)", [a], |r| {
-                r.get(0)
-            })?;
-        anyhow::ensure!(!open, "wait for your Cloud workspaces to be deleted before deleting your account");
-        tx.execute("DELETE FROM cloud_run_secrets WHERE run IN (SELECT id FROM cloud_runs WHERE account=?1)", [a])?;
-        for table in ["cloud_requests", "cloud_notifications", "cloud_events"] {
-            tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), [a])?;
-        }
-        tx.execute(
-            "DELETE FROM cloud_jobs WHERE id IN (SELECT id FROM cloud_runs WHERE account=?1 UNION SELECT id FROM cloud_workspaces WHERE account=?1 UNION SELECT id FROM cloud_tabs WHERE account=?1)",
-            [a],
-        )?;
-        for table in
-            ["cloud_runs", "cloud_tabs", "cloud_workspace_specs", "cloud_workspaces", "cloud_agents", "cloud_secrets"]
-        {
-            tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), [a])?;
-        }
-
         let daemons: Vec<String> = {
             let mut q = tx.prepare("SELECT id FROM daemons WHERE account = ?1")?;
             q.query_map(params![a], |r| r.get(0))?.collect::<Result<_, _>>()?

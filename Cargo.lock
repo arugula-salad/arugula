@@ -184,6 +184,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arugula-cloud-wire"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ts-rs",
+]
+
+[[package]]
 name = "arugula-control"
 version = "0.53.2"
 dependencies = [
@@ -197,7 +206,6 @@ dependencies = [
  "aws-lc-rs",
  "axum",
  "base64 0.23.1",
- "chacha20poly1305",
  "ciborium",
  "clap",
  "ed25519-dalek",
@@ -312,9 +320,12 @@ name = "arugula-platform"
 version = "0.53.2"
 dependencies = [
  "anyhow",
+ "arugula-cloud-wire",
  "arugula-control-common",
  "arugula-e2e",
  "axum",
+ "chacha20poly1305",
+ "clap",
  "futures-util",
  "hex",
  "hmac",
@@ -332,6 +343,7 @@ dependencies = [
 name = "arugula-proto"
 version = "0.0.0"
 dependencies = [
+ "arugula-cloud-wire",
  "arugula-control-wire",
  "arugula-core",
  "getrandom 0.4.3",

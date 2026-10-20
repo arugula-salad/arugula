@@ -107,6 +107,20 @@ pub trait HubPort: Send + Sync {
     /// What changed in the hub after `after` (a [`Change::seq`]), oldest
     /// first, at most `limit` of them: the platform's caches follow this.
     fn changes(&self, after: u64, limit: u32) -> BoxFuture<'_, HubResult<ChangePage>>;
+
+    /// The account's personal project (M129), which its Cloud workspaces
+    /// and cloud secrets belong to: made if it has none yet, the same one
+    /// every time after. `None` when there's no such account, which is how
+    /// Cloud tells an account that's gone (M137). Projects stay in the hub
+    /// until they move to the platform.
+    fn personal_project<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<String>>>;
+
+    /// Whether this machine holds a live `cloud.drive` grant over
+    /// `account` (M130, "Grants, not impersonation"): what the Cloud
+    /// workspace routes check of a daemon (M137). Every machine that joins
+    /// an account gets one, in the join's own transaction, so grants stay in
+    /// the hub until they move to the platform with projects.
+    fn can_drive_cloud<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, HubResult<bool>>;
 }
 
 /// An account, with its names.

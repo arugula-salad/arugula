@@ -66,6 +66,12 @@ bps: number,
 last_ms: number, };
 
 /**
+ * User-editable agent definition. Model funding and execution credentials are
+ * supplied by control, not accepted as user-selected provider configuration.
+ */
+export type AgentDefinition = { name: string, instructions: string, mcp_servers: Record<string, unknown>, skills: Array<Skill>, secret_names: Array<string>, };
+
+/**
  * The agent working on an issue, and what it made.
  */
 export type AgentLink = { branch: string, 
@@ -406,6 +412,126 @@ export type ClientMsg = { "type": "attach", panes: Array<AttachPane>, zstd?: boo
  * is attached. Kept so older clients and daemons still agree.
  */
 kitty_keys?: boolean, } | { "type": "ack", pane: number, offset: number, } | { "type": "detach", panes: Array<number>, } | { "type": "view", tab: number, cols: number, rows: number, zoom: number | null, claim: boolean, typed?: boolean, } | { "type": "intent", id: number | null, intent: Intent, } | { "type": "pane", pane: number, op: PaneOp, } | { "type": "focus", pane: number | null, } | { "type": "ping", id: number, } | { "type": "subscribe", summary: boolean, } | { "type": "follow", pane: number, on: boolean, } | { "type": "block_patches" } | { "type": "hand", tools: Array<HandTool>, name?: string, } | { "type": "hand_reply", id: number, result?: unknown, error?: string, };
+
+export type CloudAgent = { id: string, version: number, definition: AgentDefinition, curated: boolean, };
+
+/**
+ * A runtime and model a tab may run on (S40, decision 4).
+ */
+export type CloudModel = { runtime: string, model: string, };
+
+export type CloudRun = { id: string, spec: RunSpec, state: string, created: number, deadline: number, result: Record<string, unknown> | null, };
+
+/**
+ * What a Cloud workspace's last setup printed, step by step, redacted by
+ * Managoat: only the fields Managoat documents, each as Managoat sent it
+ * and left out when it sent none. The fields are in the order control
+ * always wrote them (by name).
+ */
+export type CloudSetupLog = { finished_at?: string | null, started_at?: string | null, status?: string, step?: string | null, steps: Array<CloudSetupStep>, };
+
+/**
+ * One step of a [`CloudSetupLog`].
+ */
+export type CloudSetupStep = { finished_at?: string | null, omitted_bytes?: number, omitted_lines?: number, output?: string, started_at?: string | null, status?: string, step: string, };
+
+/**
+ * A tab as the account sees it: one conversation in a Cloud workspace.
+ */
+export type CloudTab = { id: string, cloud_workspace: string, agent_id: string, agent_name: string, runtime: string, model: string, cwd: string, 
+/**
+ * `opening` until its conversation is launched, then the
+ * conversation's (`pending`, `running`, `idle`, `failed`, `terminated`)
+ * or `needs_input`; `closing` once closed; `failed` too when Managoat
+ * refused to open it.
+ */
+status: string, error: string | null, 
+/**
+ * Opened with a first prompt while the Cloud workspace sets up: the
+ * prompt waits in Managoat until setup ends.
+ */
+waiting_for_setup: boolean, created: number, };
+
+/**
+ * `GET /api/cloud/workspaces/{id}/tabs`: a Cloud workspace's open tabs.
+ */
+export type CloudTabs = { cloud_tabs: Array<CloudTab>, };
+
+/**
+ * A Cloud workspace as the account sees it. Its Managoat ids stay in
+ * control.
+ */
+export type CloudWorkspace = { id: string, name: string, saved_spec: CloudWorkspaceSpec, built_spec: CloudWorkspaceSpec | null, 
+/**
+ * Managoat's `provisioning`, `ready` or `failed`, or `deleting`.
+ */
+status: "provisioning" | "ready" | "failed" | "deleting", sandbox_status: "pending" | "starting" | "ready" | "suspended" | null, 
+/**
+ * The step its setup is running (`machine`, `packages`,
+ * `repositories`, `setup_script`…) while it's `provisioning`.
+ */
+setup_step: string | null, error: string | null, revision: string | null, built_from_revision: string | null, stale: boolean, changed_fields: Array<string>, 
+/**
+ * What a rebuild would change (`pending_changes`).
+ */
+pending: Array<CloudWorkspaceChange>, 
+/**
+ * False from a settings save until Managoat has them.
+ */
+settings_applied: boolean, 
+/**
+ * A rebuild or retry waits for Managoat to have a machine free.
+ */
+rebuild_queued: boolean, 
+/**
+ * Why the last one that waited didn't happen.
+ */
+rebuild_error: string | null, created: number, };
+
+/**
+ * A saved setting the machine wasn't built with: `before` from
+ * `built_spec` (null when that isn't known), `after` from `saved_spec`.
+ */
+export type CloudWorkspaceChange = { field: string, before: unknown, after: unknown, };
+
+export type CloudWorkspaceNetworking = { 
+/**
+ * `unrestricted` or `limited`.
+ */
+type: "unrestricted" | "limited", allowed_hosts?: Array<string>, };
+
+/**
+ * Managoat installs `apt` and `npm` packages; other toolchains go in the
+ * setup script.
+ */
+export type CloudWorkspacePackages = { apt?: Array<string>, npm?: Array<string>, };
+
+export type CloudWorkspaceRepository = { url: string, ref?: string, 
+/**
+ * `/home/sprite/<repository name>` when left out.
+ */
+mount?: string, 
+/**
+ * The secret the clone authenticates with, kept in the vault.
+ */
+secret?: string | null, };
+
+/**
+ * What a Cloud workspace's machine is built from, as the user saved it: it
+ * becomes the environment control keeps for the Cloud workspace. Secret
+ * values stay in the account's secret store; this only names them.
+ */
+export type CloudWorkspaceSpec = { name: string, repositories: Array<CloudWorkspaceRepository>, packages: CloudWorkspacePackages, setup_script?: string, setup_timeout_seconds?: number | null, env_vars?: Record<string, string>, networking?: CloudWorkspaceNetworking | null, 
+/**
+ * The account's secrets the vault holds besides the repositories' own.
+ */
+secrets?: Array<string>, };
+
+/**
+ * `GET /api/cloud/workspaces`: the account's Cloud workspaces that aren't
+ * deleted yet, newest first.
+ */
+export type CloudWorkspaces = { cloud_workspaces: Array<CloudWorkspace>, };
 
 /**
  * A command the shell integration reported.
@@ -1546,6 +1672,16 @@ editor?: EditorInfo | null, };
 export type PaneOp = { "op": "set_policy", policy: Policy, } | { "op": "purge" } | { "op": "set_integration", on: boolean, } | { "op": "attention", state: Attention, } | { "op": "take_control" } | { "op": "request_control" } | { "op": "give_control", to: string, } | { "op": "release_control" } | { "op": "set_pair", on: boolean, } | { "op": "request_trust" } | { "op": "grant_trust", to: string, minutes: number, } | { "op": "revoke_trust", to: string, } | { "op": "set_private", on: boolean, };
 
 /**
+ * A closed tab, read only: its conversation and agent are gone, its
+ * transcript is kept. Its Cloud workspace may be deleted too.
+ */
+export type PastCloudTab = { id: string, cloud_workspace: string, cloud_workspace_name: string, 
+/**
+ * Its Cloud workspace was deleted (the tab ended with it).
+ */
+cloud_workspace_deleted: boolean, agent_name: string, runtime: string, model: string, cwd: string, created: number, closed: number, };
+
+/**
  * A pinned file against the tree read (chant's asset `state`).
  */
 export type PinState = "pinned" | "drifted" | "missing" | "stale";
@@ -1805,6 +1941,12 @@ from_pane?: number | null, };
 export type RunResponse = { pane: number, };
 
 /**
+ * Immutable launch snapshot. Changing an agent later cannot change a queued run.
+ * Credentials belong in the secret store, never in this record.
+ */
+export type RunSpec = { agent_id: string, agent_version: number, agent: AgentDefinition, model: string, runtime: string, repository: string, git_ref: string, repository_secret?: string | null, prompt: string, };
+
+/**
  * Control messages from the server.
  */
 export type ServerMsg = { "type": "hello", version: string, client: number, state: State, } | { "type": "state", state: State, } | { "type": "size", pane: number, cols: number, rows: number, } | { "type": "resync", pane: number, } | { "type": "error", id: number | null, message: string, } | { "type": "block", block: number, state: unknown, } | { "type": "pong", id: number, } | { "type": "notice", message: string, } | { "type": "control_request", pane: number, who: string, name: string, } | { "type": "trust_request", pane: number, who: string, name: string, } | { "type": "delta", delta: Delta, } | { "type": "follow", pane: number, msg: FollowMsg, } | { "type": "hand_call", id: number, tool: string, args: Record<string, unknown>, from: string, };
@@ -1833,6 +1975,8 @@ export type ShareRequest = { pane: number,
  * Seconds until it expires [default: an hour; at most a week].
  */
 ttl_secs?: number | null, };
+
+export type Skill = { name: string, content: string, };
 
 /**
  * A split's area and how long each child is along the split's direction,

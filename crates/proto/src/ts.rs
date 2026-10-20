@@ -102,6 +102,18 @@ fn generate() -> String {
         c.visit::<ChatOpen>();
         c.visit::<ChatLive>();
     }
+    // Cloud workspaces (M137): what control's `/api/cloud/` answers with.
+    {
+        use arugula_cloud_wire::*;
+        c.visit::<CloudWorkspaces>();
+        c.visit::<CloudWorkspace>();
+        c.visit::<CloudSetupLog>();
+        c.visit::<CloudTabs>();
+        c.visit::<PastCloudTab>();
+        c.visit::<CloudModel>();
+        c.visit::<CloudAgent>();
+        c.visit::<CloudRun>();
+    }
     c.decls.sort();
     let mut out = String::from(
         "// Generated from crates/proto by `just proto-ts`: don't edit. Change the\n\

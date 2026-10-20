@@ -1,11 +1,11 @@
 //! One-time import of a legacy provider agent into an account-owned definition.
 //! Only a read uses the old credential; execution always uses platform funding.
 use crate::{
-    ApiError, App,
-    auth::Session,
-    db::cloud::{AgentDefinition, Skill},
-    err,
+    Platform,
+    auth::Person,
+    db::cloud::{AgentDefinition, AgentRules, Skill},
 };
+use arugula_control_common::{ApiError, err};
 use axum::{Json, extract::State, http::StatusCode};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -19,8 +19,8 @@ pub struct Import {
 }
 
 pub async fn import(
-    State(app): State<Arc<App>>,
-    session: Session,
+    State(app): State<Arc<Platform>>,
+    session: Person,
     Json(input): Json<Import>,
 ) -> Result<Json<Value>, ApiError> {
     let cloud = super::enabled(&app, &session.account)?;
@@ -34,6 +34,7 @@ pub async fn import(
         .await
         .map_err(|_| err(StatusCode::BAD_GATEWAY, "could not read the old agent; check its ID and credential"))?;
     let (definition, warnings) = convert(&source)?;
+    super::require_account(&app, &session.account).await?;
     let agent = app.db.create_cloud_agent(&session.account, definition)?;
     app.analytics.capture(&session.account, "cloud agent imported", json!({ "warnings": warnings.len() }));
     Ok(Json(json!({"agent":agent,"warnings":warnings})))

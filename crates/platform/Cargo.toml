@@ -9,28 +9,30 @@ description = "Arugula control's platform: chat, Cloud and billing, behind the h
 
 [dependencies]
 anyhow = { workspace = true }
+arugula-cloud-wire = { workspace = true }
 arugula-control-common = { workspace = true }
 arugula-e2e = { workspace = true }
 axum = { workspace = true }
+# Cloud secrets, sealed with ARUGULA_CLOUD_SECRET_KEY.
+chacha20poly1305 = "0.10.1"
+# Cloud's flags and their env vars, which control takes too.
+clap = { workspace = true, features = ["derive", "env"] }
 futures-util = { workspace = true }
 hex = { workspace = true }
 hmac = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["rustls", "json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-tokio = { workspace = true, features = ["full"], optional = true }
+tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 url = { workspace = true }
 
 [features]
 # The contract tests every `HubPort` keeps (`contract`): control runs them
 # against its in-process port, and M140 against the HTTP one.
-contract = ["dep:tokio"]
-
-[dev-dependencies]
-tokio = { workspace = true, features = ["full"] }
+contract = []
 
 [lints]
 workspace = true

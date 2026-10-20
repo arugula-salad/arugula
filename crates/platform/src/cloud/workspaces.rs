@@ -4,22 +4,27 @@
 //! Every lookup is the caller's own: another account's id is 404.
 use super::enabled;
 use crate::{
-    ApiError, App,
-    auth::{CloudDriver, Session},
-    db::cloud::{CloudWorkspace, CloudWorkspaceSpec},
-    err,
+    Platform,
+    auth::Person,
+    cloud::CloudDriver,
+    db::cloud::{CloudWorkspace, CloudWorkspaceSpec, SpecRules},
 };
+use arugula_cloud_wire::CloudWorkspaces;
+use arugula_control_common::{ApiError, err};
 use axum::{
     Json,
     extract::{Path, State},
     http::StatusCode,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use std::sync::Arc;
 
-pub async fn list(State(app): State<Arc<App>>, CloudDriver(session): CloudDriver) -> Result<Json<Value>, ApiError> {
-    Ok(Json(json!({"cloud_workspaces": app.db.cloud_workspaces(&session.account)?})))
+pub async fn list(
+    State(app): State<Arc<Platform>>,
+    CloudDriver(session): CloudDriver,
+) -> Result<Json<CloudWorkspaces>, ApiError> {
+    Ok(Json(CloudWorkspaces { cloud_workspaces: app.db.cloud_workspaces(&session.account)? }))
 }
 
 #[derive(Deserialize)]
@@ -30,7 +35,7 @@ pub struct Create {
 }
 
 pub async fn create(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Json(mut input): Json<Create>,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
@@ -39,9 +44,10 @@ pub async fn create(
     if !input.spec.secret_names().is_empty() && cloud.secret_cipher.is_none() {
         return Err(err(StatusCode::SERVICE_UNAVAILABLE, "cloud secrets are not configured"));
     }
+    let project = super::personal_project(&app, &session.account).await?;
     let created = app
         .db
-        .create_cloud_workspace(&session.account, &input.request_key, &input.spec, arugula_e2e::now_ms())
+        .create_cloud_workspace(&session.account, &project, &input.request_key, &input.spec, arugula_e2e::now_ms())
         .map_err(|e| match e.to_string().as_str() {
             "required cloud secret is missing" => {
                 err(StatusCode::UNPROCESSABLE_ENTITY, "connect every secret it names before creating it")
@@ -64,7 +70,7 @@ pub async fn create(
 }
 
 pub async fn show(
-    State(app): State<Arc<App>>,
+    State(app): State<Arc<Platform>>,
     CloudDriver(session): CloudDriver,
     Path(id): Path<String>,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
@@ -74,8 +80,8 @@ pub async fn show(
 /// Ends its conversations and destroys its machine, then its vault and
 /// environment, in the worker. The answer says `deleting`.
 pub async fn delete(
-    State(app): State<Arc<App>>,
-    session: Session,
+    State(app): State<Arc<Platform>>,
+    session: Person,
     Path(id): Path<String>,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
     found(&app, &session, &id)?;
@@ -96,8 +102,8 @@ pub struct Update {
 /// would change. A save Managoat didn't get yet says `settings_applied:
 /// false`, and the worker sends it again.
 pub async fn update(
-    State(app): State<Arc<App>>,
-    session: Session,
+    State(app): State<Arc<Platform>>,
+    session: Person,
     Path(id): Path<String>,
     Json(mut input): Json<Update>,
 ) -> Result<Json<CloudWorkspace>, ApiError> {
@@ -162,7 +168,7 @@ impl Drop for Sending {
 }
 
 /// The worker, on a live Cloud workspace: send a save Managoat didn't get.
-pub(super) async fn resend_settings(app: &App, id: &str) {
+pub(super) async fn resend_settings(app: &Platform, id: &str) {
     let Some(_sending) = Sending::take(id) else {
         return;
     };
@@ -175,7 +181,7 @@ pub(super) async fn resend_settings(app: &App, id: &str) {
 /// put and delete the vault's secrets, then read whether the machine is now
 /// behind. False when Managoat refused the environment, and the saved
 /// settings went back to the ones it has. Every step can be sent again.
-async fn send_settings(app: &App, id: &str) -> anyhow::Result<bool> {
+async fn send_settings(app: &Platform, id: &str) -> anyhow::Result<bool> {
     use anyhow::Context;
     let cloud = app.cloud.as_ref().context("cloud is disabled")?;
     let Some(s) = app.db.unsent_cloud_workspace_settings(id)? else {
@@ -227,22 +233,26 @@ async fn send_settings(app: &App, id: &str) -> anyhow::Result<bool> {
     Ok(true)
 }
 
-fn found(app: &App, session: &Session, id: &str) -> Result<CloudWorkspace, ApiError> {
+fn found(app: &Platform, session: &Person, id: &str) -> Result<CloudWorkspace, ApiError> {
     app.db.cloud_workspace(&session.account, id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "cloud workspace not found"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[tokio::test]
     async fn another_accounts_cloud_workspace_is_not_found_on_every_route() {
         let app = crate::cloud::tests::test_app();
         let cipher = app.cloud.as_ref().unwrap().secret_cipher.as_ref().unwrap();
-        app.db.put_cloud_secret("a", "GITHUB_TOKEN", &cipher.seal("a", "GITHUB_TOKEN", "token").unwrap()).unwrap();
+        app.db
+            .put_cloud_secret("a", "prj_a", "GITHUB_TOKEN", &cipher.seal("a", "GITHUB_TOKEN", "token").unwrap())
+            .unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}/api/cloud/workspaces", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move { axum::serve(listener, crate::router(app)).await.unwrap() });
+        let server =
+            tokio::spawn(async move { axum::serve(listener, crate::cloud::tests::router(app)).await.unwrap() });
         let client = reqwest::Client::new();
         let (a, b, c) = ("ilg_session=session-a", "ilg_session=session-b", "ilg_session=session-c");
         let body = json!({"request_key":"one","spec":{
@@ -318,38 +328,23 @@ mod tests {
         server.abort();
     }
 
-    /// A daemon joined to an account.
-    fn daemon(app: &App, account: &str) -> arugula_e2e::DeviceKeys {
-        let keys = arugula_e2e::DeviceKeys::generate();
-        let cert = arugula_e2e::Cert::new(&keys, account, arugula_e2e::Kind::Daemon, "geek");
-        app.db.put_device(&cert, true, arugula_e2e::now_ms()).unwrap();
-        app.db.put_daemon(account, &cert.device, "geek", &[]).unwrap();
-        keys
-    }
-
-    fn signed(keys: &arugula_e2e::DeviceKeys, method: &str, path: &str, body: &[u8]) -> String {
-        let ms = arugula_e2e::now_ms();
-        let nonce = hex::encode(arugula_e2e::random::<16>());
-        let msg = crate::auth::daemon_auth_message_v2(method, path, ms, &nonce, body);
-        format!("v2 {} {ms} {nonce} {}", keys.id(), hex::encode(keys.signature(msg.as_bytes())))
-    }
-
     /// #1094: a daemon drives its own account's Cloud workspaces (for the
     /// agents on its machine) and reaches no one else's; settings, secrets,
     /// deleting and the agent library stay a person's.
     #[tokio::test]
     async fn a_daemon_drives_its_accounts_cloud_workspaces_only() {
-        let app = crate::cloud::tests::test_app();
-        let (da, db) = (daemon(&app, "a"), daemon(&app, "b"));
+        let hub = Arc::new(crate::cloud::tests::TestHub::default());
+        let app = crate::cloud::tests::unstarted_app_with(hub.clone()).start();
+        let (da, db) = (format!("a {}", hub.daemon("a", "geek")), format!("b {}", hub.daemon("b", "geek")));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move { axum::serve(listener, crate::router(app)).await.unwrap() });
+        let server =
+            tokio::spawn(async move { axum::serve(listener, crate::cloud::tests::router(app)).await.unwrap() });
         let client = reqwest::Client::new();
-        let call = |keys: &arugula_e2e::DeviceKeys, method: &str, path: &str, body: Option<Value>| {
+        let call = |daemon: &str, method: &str, path: &str, body: Option<Value>| {
             let bytes = body.map(|b| serde_json::to_vec(&b).unwrap()).unwrap_or_default();
-            let mut req = client
-                .request(method.parse().unwrap(), format!("{base}{path}"))
-                .header("x-arugula-auth", signed(keys, method, path, &bytes));
+            let mut req =
+                client.request(method.parse().unwrap(), format!("{base}{path}")).header("x-test-daemon", daemon);
             if !bytes.is_empty() {
                 req = req.header("content-type", "application/json").body(bytes);
             }
@@ -424,14 +419,6 @@ mod tests {
             assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path}: {said}");
         }
         assert_eq!(call(&da, "GET", &format!("/api/cloud/workspaces/{id}"), None).await.1["status"], "provisioning");
-
-        // A daemon's signature for a route still covers that request only.
-        let path = "/api/cloud/workspaces";
-        let h = signed(&da, "GET", path, b"");
-        let ok = client.get(format!("{base}{path}")).header("x-arugula-auth", &h).send().await.unwrap();
-        assert_eq!(ok.status(), StatusCode::OK);
-        let again = client.get(format!("{base}{path}")).header("x-arugula-auth", &h).send().await.unwrap();
-        assert_eq!(again.status(), StatusCode::UNAUTHORIZED);
         server.abort();
     }
 }
