@@ -6,7 +6,8 @@
 //!
 //! They live in control, not on this machine: each call is control's
 //! `/api/cloud/...` route, signed with this machine's key, so control acts
-//! as the machine's owner ([`Control::cloud`](crate::control::Control::cloud)).
+//! as the machine's owner ([`Control::cloud`](crate::control::Control::cloud)),
+//! which waits out a maintenance window (M141) for up to five minutes.
 //! Whoever may run things here (a teammate with run rights, a guest's
 //! agent) drives the owner's Cloud workspaces through it. That was decided
 //! (Jake, 2026-10-19), and docs/control.md says so.
@@ -521,7 +522,7 @@ impl Call<'_> {
         use super::results::CloudReach;
         let asked = tokio::time::timeout(
             Duration::from_secs(3),
-            self.app().control.cloud(Method::GET, "/api/cloud/models", None),
+            self.app().control.cloud_now(Method::GET, "/api/cloud/models", None),
         );
         match asked.await {
             Ok(Ok(_)) => CloudReach {

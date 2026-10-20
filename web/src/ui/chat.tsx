@@ -7,7 +7,9 @@
 
 import type { Client } from "../client";
 import { chat } from "../chat-store";
+import { maintenance, MAINTENANCE_SAID } from "../maintenance";
 import { AppBar } from "./app-bar";
+import { useSubscribe } from "./hooks";
 import { chatRoute, useChatTick } from "./places";
 import { RoomsView, useChat } from "./chat-rooms";
 
@@ -22,12 +24,16 @@ export function ChatPage({ client }: { client: Client }) {
 
 /** Chat with no chat in control: where it went, and how to get it. */
 function ChatNeedsControl({ client }: { client: Client }) {
+  useSubscribe((fn) => maintenance.subscribe(fn));
   return (
     <div class="chat" data-chat data-chat-needs-control>
       <AppBar client={client} at="chat" all />
       <div class="chat-body">
         <div class="chat-thread chat-empty">
-          {chat.signedIn ? (
+          {maintenance.down ? (
+            // A maintenance window (M141) before chat first loaded: not off.
+            <p data-maintenance-note>{MAINTENANCE_SAID}</p>
+          ) : chat.signedIn ? (
             <p>
               Chat is off for you in control. Turn on Chat in control's Labs (yours, or a team owner's for the team) to
               talk in your teams' channels, in messages, and on each pane and session. This machine's old threads come

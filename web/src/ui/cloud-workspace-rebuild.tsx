@@ -7,18 +7,20 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { cloudWorkspaceRoute, cloudWorkspaces, useCloudPanes, type CloudTab, type CloudWorkspace } from "../cloud";
+import { platformFetch, refusalOf } from "../maintenance";
 
 /** A tab status Managoat counts as a turn running (or about to). */
 const MID_TURN = ["pending", "running", "needs_input"];
 const tabName = (t: CloudTab) => `${t.agent_name} · ${t.runtime}`;
 
-/** POST (or DELETE) to control, keeping the refusal's reason. */
+/** POST (or DELETE) to control, keeping the refusal's reason. A
+ * maintenance window (M141) is waited out. */
 async function post(path: string, body: unknown, method = "POST"): Promise<{ error?: string; reason?: string }> {
   try {
-    const r = await fetch(`/api/cloud/${path}`, { method, credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const r = await platformFetch(`/api/cloud/${path}`, { method, credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     if (r.ok) return {};
     const value = await r.json().catch(() => ({}));
-    return { error: value.error ?? `Request failed (${r.status})`, reason: value.reason };
+    return { error: refusalOf(r.status, value), reason: value.reason };
   } catch (e) {
     return { error: (e as Error).message };
   }

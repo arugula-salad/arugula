@@ -44,7 +44,7 @@ use std::{
 };
 
 use anyhow::{Context, bail};
-use arugula_control_wire as wire;
+use arugula_control_wire::{self as wire, maintenance};
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Revocation, Trust,
     cert::{join_proof_body, request_auth},
@@ -56,7 +56,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tungstenite::{Message, WebSocket};
 
-use crate::http::{Stream, Target, Url, send_on};
+use crate::http::{Stream, Target, Url, json_answer, send_on};
 
 const KEY_FILE: &str = "cli-key";
 const STATE_FILE: &str = "cli-control.json";
@@ -121,21 +121,40 @@ impl Enrolled {
         Url::parse(&self.url)
     }
 
-    /// A request to control, signed with this CLI's key.
+    /// A request to control, signed with this CLI's key. It waits out a
+    /// maintenance window on control's chat and Cloud routes (M141, `grants`
+    /// is one) for up to five minutes, saying so on stderr; which 503s are
+    /// sent again is [`maintenance::may_retry`]'s.
     pub(crate) fn api(&self, method: &str, path: &str, body: Option<&Value>) -> anyhow::Result<Value> {
         let bytes = body.map(|b| b.to_string()).unwrap_or_default();
-        let auth = request_auth(&self.keys, method, path, bytes.as_bytes());
         let u = self.url()?;
-        let res = send_on(
-            u.connect(Some(Duration::from_secs(10)))?,
-            method,
-            path,
-            &u.authority,
-            &[("Content-Type", "application/json"), ("x-arugula-auth", &auth)],
-            bytes.as_bytes(),
-        )
-        .with_context(|| format!("asking control at {}", self.url))?;
-        res.json().map_err(|e| e.context(format!("control at {}", self.url)))
+        let mut waits = maintenance::Waits::new(maintenance::Patience::AGENT);
+        loop {
+            // Signed afresh each try: a signature's nonce counts once.
+            let auth = request_auth(&self.keys, method, path, bytes.as_bytes());
+            let res = send_on(
+                u.connect(Some(Duration::from_secs(10)))?,
+                method,
+                path,
+                &u.authority,
+                &[("Content-Type", "application/json"), ("x-arugula-auth", &auth)],
+                bytes.as_bytes(),
+            )
+            .with_context(|| format!("asking control at {}", self.url))?;
+            let (status, asked) = (res.status, maintenance::retry_after(res.header("retry-after")));
+            let got = res.bytes().with_context(|| format!("reading control at {}", self.url))?;
+            if maintenance::may_retry(method, status, &got)
+                && let Some(wait) = waits.next(asked)
+            {
+                eprintln!("arugula: control is busy (maintenance, most likely): trying again in {}s", wait.as_secs());
+                std::thread::sleep(wait);
+                continue;
+            }
+            if maintenance::is_maintenance(status, &got) {
+                bail!("{}", maintenance::MAINTENANCE_SAID);
+            }
+            return json_answer(status, got).map_err(|e| e.context(format!("control at {}", self.url)));
+        }
     }
 
     /// The machines control lists: the account's own, and its teams' and
@@ -928,6 +947,58 @@ mod tests {
         assert_eq!(parse_fingerprint("1A2B-3c4d-5e6f-7a8b").unwrap(), "1a2b3c4d5e6f7a8b");
         assert!(parse_fingerprint("1a2b").is_err());
         assert!(parse_fingerprint("zzzz-3c4d-5e6f-7a8b").is_err());
+    }
+
+    /// M141: control's maintenance 503 is waited out, even for a POST, and
+    /// each try is signed afresh; another 503 to a POST isn't sent again.
+    #[test]
+    fn a_maintenance_window_is_waited_out() {
+        use std::net::TcpListener;
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        let answers = ["503 Service Unavailable\r\nRetry-After: 0", "200 OK", "503 Service Unavailable"];
+        let bodies = [r#"{"error":"down for maintenance","reason":"maintenance"}"#, r#"{"grants":[]}"#, "no upstream"];
+        let server = std::thread::spawn(move || {
+            let mut auths = Vec::new();
+            for (head, body) in answers.iter().zip(bodies) {
+                let (sock, _) = l.accept().unwrap();
+                let mut r = BufReader::new(sock.try_clone().unwrap());
+                let mut len = 0;
+                loop {
+                    let mut line = String::new();
+                    r.read_line(&mut line).unwrap();
+                    let lower = line.to_ascii_lowercase();
+                    if let Some(v) = lower.strip_prefix("content-length:") {
+                        len = v.trim().parse().unwrap();
+                    }
+                    if let Some(v) = lower.strip_prefix("x-arugula-auth:") {
+                        auths.push(v.trim().to_owned());
+                    }
+                    if line.trim().is_empty() {
+                        break;
+                    }
+                }
+                r.read_exact(&mut vec![0; len]).unwrap();
+                let mut sock = sock;
+                write!(sock, "HTTP/1.1 {head}\r\nContent-Length: {}\r\n\r\n{body}", body.len()).unwrap();
+            }
+            auths
+        });
+        let keys = DeviceKeys::generate();
+        let e = Enrolled {
+            url,
+            cert: Cert::new(&keys, "a", Kind::Cli, "cli"),
+            trust: Trust { account: "a".into(), root: String::new() },
+            pins: BTreeMap::new(),
+            keys,
+        };
+        let restore = json!({ "daemon": "d1", "power": "cloud.drive" });
+        assert_eq!(e.api("POST", "/api/grants", Some(&restore)).unwrap(), json!({ "grants": [] }));
+        let err = e.api("POST", "/api/grants", Some(&restore)).unwrap_err();
+        assert!(format!("{err:#}").contains("no upstream"), "{err:#}");
+        let auths = server.join().unwrap();
+        assert_eq!(auths.len(), 3, "the plain 503 asked once");
+        assert_ne!(auths[0], auths[1], "signed afresh");
     }
 
     #[test]

@@ -525,6 +525,17 @@ impl Read for Response {
     }
 }
 
+/// An answer already read, as [`Response::json`] takes it: the body as
+/// JSON, or the API's error as an error.
+pub fn json_answer(status: u16, body: Vec<u8>) -> anyhow::Result<serde_json::Value> {
+    let text = String::from_utf8(body).map_err(|e| anyhow::anyhow!("the answer isn't text: {e}"))?;
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text));
+    if !(200..300).contains(&status) {
+        bail!("{}", v.get("error").and_then(|e| e.as_str()).unwrap_or(&v.to_string()));
+    }
+    Ok(v)
+}
+
 impl Response {
     /// A header's value (`name` in lowercase).
     pub fn header(&self, name: &str) -> Option<&str> {
@@ -546,12 +557,7 @@ impl Response {
     /// The body as JSON, or the API's error as an error.
     pub fn json(self) -> anyhow::Result<serde_json::Value> {
         let status = self.status;
-        let text = self.text()?;
-        let v: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text));
-        if !(200..300).contains(&status) {
-            bail!("{}", v.get("error").and_then(|e| e.as_str()).unwrap_or(&v.to_string()));
-        }
-        Ok(v)
+        json_answer(status, self.bytes()?)
     }
 
     /// The body as a `T` (a type from `arugula_proto::api`), or the API's

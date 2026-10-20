@@ -5,14 +5,16 @@
 import { createContext } from "preact";
 import { useContext, useEffect, useState } from "preact/hooks";
 import type { FleetPane } from "./fleet";
+import { maintenance, platformFetch, refusalOf } from "./maintenance";
 export type Definition = { name: string; instructions: string; mcp_servers: Record<string, unknown>; skills: { name: string; content: string }[]; secret_names: string[] };
 export type CloudAgent = { id: string; version: number; curated: boolean; definition: Definition };
 export type CloudRun = { id: string; state: string; created: number; spec: { agent_id: string; prompt: string; repository: string; git_ref: string; repository_secret?: string | null; agent: Definition }; result: Record<string, unknown> | null };
 export const cloudTerminal = (run: CloudRun) => ["completed", "failed", "cancelled", "expired"].includes(run.state);
+/** Control's `/api/cloud/`, waiting out a maintenance window (M141). */
 export async function cloudApi<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-  const r = await fetch(`/api/cloud/${path}`, { method, credentials: "same-origin", headers: body === undefined ? {} : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const value = await r.json();
-  if (!r.ok) throw new Error(value.error ?? `Request failed (${r.status})`);
+  const r = await platformFetch(`/api/cloud/${path}`, { method, credentials: "same-origin", headers: body === undefined ? {} : { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const value = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(refusalOf(r.status, value));
   return value as T;
 }
 /** How a Cloud workspace view reaches control's `/api/cloud/`: on
@@ -36,10 +38,12 @@ export const cloudPanes = {
   connect(account: string) {
     this.account = account; this.enabled = false;
     forgetOpenedRuns();
-    let active = true;
-    if (account) void cloudApi("agents").then(() => { if (active) { this.enabled = true; changed(); } }, () => {});
+    let active = true, timer: ReturnType<typeof setTimeout>;
+    // Asked again after a maintenance window (M141) that outlasted the wait.
+    const ask = () => void cloudApi("agents").then(() => { if (active) { this.enabled = true; changed(); } }, () => { if (active && maintenance.down) timer = setTimeout(ask, 15_000); });
+    if (account) ask();
     changed();
-    return () => { active = false; this.account = ""; this.enabled = false; changed(); };
+    return () => { active = false; clearTimeout(timer); this.account = ""; this.enabled = false; changed(); };
   },
 };
 /** Runs opened as panes were once remembered per account
@@ -168,8 +172,12 @@ export const cloudWorkspaces = {
         this.list = v.cloud_workspaces; this.tabs = new Map(v.cloud_workspaces.map((w, i) => [w.id, tabs[i]])); this.error = ""; this.loaded = true;
       } catch (e) {
         if (!active) return;
+        this.loaded = true;
+        // A maintenance window (M141) that outlasted the wait: what was read
+        // stays, the page's note says why, and it asks again soon.
+        if (maintenance.down) wait = 10000;
         // Not in the beta, or no cloud here: ask seldom.
-        this.error = (e as Error).message; this.loaded = true; wait = 15000;
+        else { this.error = (e as Error).message; wait = 15000; }
       } finally { running = false; }
       changed();
       if (active) timer = setTimeout(() => void poll(), again ? 0 : wait);
