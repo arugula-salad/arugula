@@ -62,7 +62,10 @@ terminal relay: Cloud workspaces, their transcripts and cloud secrets are
 on the platform plane ("Two planes, two trust rules", #1122), listed in
 `crates/control/tables.toml`, and each belongs to a project ("The project
 is the unit of platform sharing"), its owner's personal one until people
-can choose.
+can choose. Within control, Cloud is the platform process's ("Control is two
+processes: a hub and a platform", #1150): the worker, its leases, Managoat
+and cloud secrets move there (M137), and the hub's gateway keeps the Cloud
+paths on `control.arugula.io`.
 
 Where: `crates/control/src/cloud/`, `crates/control/src/db/cloud.rs`,
 `web/src/ui/cloud.tsx`, `web/src/ui/cloud-workspaces.tsx`,
