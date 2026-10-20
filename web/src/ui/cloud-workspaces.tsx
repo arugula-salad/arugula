@@ -7,8 +7,8 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
-  cloudApi as api, cloudPanes, cloudTabAttention, cloudWorkspaceMounts, cloudWorkspaceRoute, cloudWorkspaces, cloudWorkspaceState, setupStepName, useCloudPanes,
-  type CloudAgent, type CloudModel, type CloudSetupLog, type CloudTab, type CloudWorkspace, type CloudWorkspaceSpec, type PastCloudTab,
+  cloudApi as api, cloudPanes, cloudTabAttention, useCloudApi, cloudWorkspaceMounts, cloudWorkspaceRoute, cloudWorkspaces, cloudWorkspaceState, setupStepName, useCloudPanes,
+  type CloudAgent, type CloudModel, type CloudSetupLog as SetupLog, type CloudTab, type CloudWorkspace, type CloudWorkspaceSpec, type PastCloudTab,
 } from "../cloud";
 import { ConfirmRemove } from "./confirm";
 import { CloudTranscript, useCloudConversation } from "./cloud";
@@ -315,8 +315,9 @@ function CloudWorkspaceFailure({ w }: { w: CloudWorkspace }) {
 /** Show setup log asked for it: once it's read, bring it into view. */
 let scrollToLog = false;
 
-function CloudSetupLog({ w }: { w: CloudWorkspace }) {
-  const [log, setLog] = useState<CloudSetupLog | null | undefined>(undefined);
+export function CloudSetupLog({ w }: { w: CloudWorkspace }) {
+  const api = useCloudApi();
+  const [log, setLog] = useState<SetupLog | null | undefined>(undefined);
   const [error, setError] = useState("");
   const shown = useRef<HTMLDetailsElement>(null);
   useEffect(() => {
@@ -326,7 +327,7 @@ function CloudSetupLog({ w }: { w: CloudWorkspace }) {
   }, [log]);
   const read = () => {
     setError("");
-    void api<{ log: CloudSetupLog | null }>(`workspaces/${w.id}/setup-log`).then((v) => setLog(v.log), (e: Error) => setError(e.message));
+    void api<{ log: SetupLog | null }>(`workspaces/${w.id}/setup-log`).then((v) => setLog(v.log), (e: Error) => setError(e.message));
   };
   return (
     <details class="cloud-setup-log" data-cloud-setup-log ref={shown} onToggle={(e) => { if (e.currentTarget.open) read(); }}>
@@ -429,7 +430,8 @@ function CloudWorkspaceHome({ w }: { w: CloudWorkspace }) {
 
 const TAB_STATUS: Record<string, string> = { opening: "Opening", pending: "Starting", running: "Working", idle: "Idle", needs_input: "Needs you", failed: "Failed", terminated: "Ended", closing: "Closing" };
 
-function CloudTabView({ w, tab, id }: { w: CloudWorkspace; tab?: CloudTab; id: string }) {
+export function CloudTabView({ w, tab, id, tabs }: { w: CloudWorkspace; tab?: CloudTab; id: string; tabs?: CloudTab[] }) {
+  const api = useCloudApi();
   const path = `workspaces/${w.id}/tabs/${id}`;
   const { item, events, error, setError, pending, answered, answer } = useCloudConversation<CloudTab>(path, () => false);
   const t = item ?? tab;
@@ -459,7 +461,7 @@ function CloudTabView({ w, tab, id }: { w: CloudWorkspace; tab?: CloudTab; id: s
       {t.waiting_for_setup && <p class="agent-note" data-waiting-for-setup>Waiting for the Cloud workspace to finish setting up; the first prompt starts then.</p>}
       {t.error && <p role="alert" class="control-error">{t.error}</p>}
       {error && <p role="alert">{error}</p>}
-      {changes && <div class="cloud-tab-changes"><CloudWorkspaceChanges w={w} first={t.cwd} /></div>}
+      {changes && <div class="cloud-tab-changes"><CloudWorkspaceChanges w={w} first={t.cwd} tabs={tabs} /></div>}
       <CloudTranscript events={events} pending={pending} answered={answered} ended={ended} answer={answer} setError={setError} />
       {!ended && t.status !== "opening" && (
         <form class="cloud-form cloud-tab-prompt" onSubmit={send}>

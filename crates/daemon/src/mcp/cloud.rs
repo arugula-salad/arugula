@@ -20,6 +20,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::time::Instant;
 
+use arugula_proto::{BlockType, api::OpenRequest};
+
 use super::tools::{Call, Kind, NoArgs, Out, done};
 
 /// How often a wait on a tab asks control: control reads a busy tab from
@@ -63,7 +65,8 @@ pub struct CloudEventsArgs {
 pub struct CloudPathArgs {
     /// The Cloud workspace's id (cw_…, from list kind cloud_workspaces).
     pub cloud_workspace: String,
-    /// A path on its machine (default its first repository, or /home/sprite).
+    /// A path on its machine. Default: for git_status, its first
+    /// repository's mount; for files, its home (/home/sprite).
     #[serde(default)]
     pub path: Option<String>,
 }
@@ -83,7 +86,8 @@ pub struct CloudFileArgs {
 pub struct CloudDiffArgs {
     /// The Cloud workspace's id (cw_…, from list kind cloud_workspaces).
     pub cloud_workspace: String,
-    /// A path on its machine (default its first repository, or /home/sprite).
+    /// A path in a repository on its machine (default its first
+    /// repository's mount).
     #[serde(default)]
     pub path: Option<String>,
     /// Only what's staged.
@@ -201,7 +205,27 @@ pub struct CloudRebuildArgs {
     pub interrupt: bool,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct ShowCloudArgs {
+    /// The Cloud workspace's id (cw_…, from list kind cloud_workspaces).
+    pub cloud_workspace: String,
+    /// One of its tabs to open it on (cwc_…, from list kind cloud_tabs).
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
+    #[serde(default)]
+    pub beside: Option<super::tools::PaneArg>,
+}
+
 // ---------------------------------------------------------------- kinds
+
+/// `show`'s Cloud workspace block.
+pub(crate) const SHOW: Kind = Kind {
+    name: "cloud_workspace",
+    description: "One of the user's Cloud workspaces (list kind cloud_workspaces) as a block: its status and tabs, a tab's transcript with what it asks, a prompt box, and the changes on its machine, kept up to date from Arugula control while the user looks. With tab: open on that tab. The user can prompt, answer and interrupt its tabs there. Returns its status and tabs.",
+    schema: schema_for_type::<ShowCloudArgs>,
+    flag: None,
+};
 
 /// `list`'s Cloud workspace kinds.
 pub(crate) const LIST_WORKSPACES: Kind = Kind {
@@ -253,13 +277,13 @@ pub(crate) const READ: &[Kind] = &[
     },
     Kind {
         name: "diff",
-        description: "git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted.",
+        description: "git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).",
         schema: schema_for_type::<CloudDiffArgs>,
         flag: None,
     },
     Kind {
         name: "git_status",
-        description: "git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files.",
+        description: "git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).",
         schema: schema_for_type::<CloudPathArgs>,
         flag: None,
     },
@@ -325,17 +349,7 @@ pub(crate) const DRIVE: &[Kind] = &[
 
 // ---------------------------------------------------------------- calls
 
-/// An id as control makes them (`cw_…`, `cwc_…`), so nothing else reaches
-/// its path.
-fn id(what: &str, prefix: &str, s: &str) -> Result<String, String> {
-    let s = s.trim();
-    match s.strip_prefix(prefix) {
-        Some(hex) if !hex.is_empty() && hex.len() <= 64 && hex.bytes().all(|c| c.is_ascii_hexdigit()) => {
-            Ok(s.to_owned())
-        }
-        _ => Err(format!("{s:?} isn't a {what} id: they look like {prefix}… (from list kind {what}s)")),
-    }
-}
+use crate::cloud_workspace::id;
 
 fn workspace_path(workspace: &str) -> Result<String, String> {
     Ok(format!("/api/cloud/workspaces/{}", id("cloud_workspace", "cw_", workspace)?))
@@ -448,6 +462,35 @@ pub(crate) fn transcript(events: &[Value], max: usize) -> (String, Option<u64>, 
     (out, last, false)
 }
 
+/// Where a Cloud workspace's repositories are on its machine, in order: as
+/// it was built (a repository saved since isn't on its disk until a
+/// rebuild), else as saved. One without a mount is at /home/sprite/<name>.
+fn mounts(w: &Value) -> Vec<String> {
+    let spec = if w["built_spec"].is_object() { &w["built_spec"] } else { &w["saved_spec"] };
+    spec["repositories"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| match r["mount"].as_str().filter(|m| !m.is_empty()) {
+            Some(m) => Some(m.to_owned()),
+            None => {
+                let url = r["url"].as_str()?.trim_end_matches('/');
+                let name = url.rsplit('/').next()?.trim_end_matches(".git");
+                (!name.is_empty()).then(|| format!("/home/sprite/{name}"))
+            }
+        })
+        .collect()
+}
+
+/// What a summary adds when git_status or diff read the first repository
+/// for want of a path, and there are others.
+fn others_note(others: &[String]) -> String {
+    match others {
+        [] => String::new(),
+        _ => format!(" (its first repository; also {}: pass path for those)", others.join(", ")),
+    }
+}
+
 /// What a wait on a tab waits for.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum TabUntil {
@@ -468,10 +511,8 @@ impl Call<'_> {
     }
 
     /// Control's page for a Cloud workspace (or one of its tabs).
-    fn cloud_link(&self, workspace: &str, tab: Option<&str>) -> Option<String> {
-        let e = self.app().control.enrolled()?;
-        let tab = tab.map(|t| format!("/{t}")).unwrap_or_default();
-        Some(format!("{}/#cloud-ws={workspace}{tab}", e.saved.url.trim_end_matches('/')))
+    pub(super) fn cloud_link(&self, workspace: &str, tab: Option<&str>) -> Option<String> {
+        crate::cloud_workspace::Remote::link(&*self.app().control, workspace, tab)
     }
 
     /// Whether agents here can drive the owner's Cloud workspaces, for
@@ -578,7 +619,66 @@ impl Call<'_> {
         done(summary, json!({ "agents": agents, "models": models }))
     }
 
+    // ------------------------------------------------------------ show
+
+    /// `show` kind `cloud_workspace`: the block, once control says the
+    /// workspace (and tab) are there.
+    pub(crate) async fn show_cloud_workspace(&self, a: ShowCloudArgs) -> Out {
+        let workspace = id("cloud_workspace", "cw_", &a.cloud_workspace)?;
+        let tab = a.tab.as_deref().map(|t| id("cloud_tab", "cwc_", t)).transpose()?;
+        // Asked first, so a workspace that isn't there (or a control that
+        // can't be reached) opens nothing.
+        let w = self.cloud_get(&workspace_path(&workspace)?).await?;
+        let tabs = self.cloud_get(&format!("{}/tabs", workspace_path(&workspace)?)).await?;
+        let tabs = tabs["cloud_tabs"].as_array().cloned().unwrap_or_default();
+        if let Some(t) = &tab
+            && !tabs.iter().any(|x| x["id"] == t.as_str())
+        {
+            return Err(format!("{workspace} has no open tab {t} (list kind cloud_tabs lists them)"));
+        }
+        let (beside, _) = self.beside(a.beside.as_ref()).await?;
+        let req = OpenRequest {
+            kind: BlockType::CloudWorkspace,
+            config: json!({ "cloud_workspace": workspace, "tab": tab }),
+            split: beside,
+            from_pane: beside,
+            local: true,
+            ..Default::default()
+        };
+        let block = self.open(req).await?;
+        let name = w["name"].as_str().unwrap_or("?");
+        let on = tab.as_deref().map(|t| format!(" on tab {t}")).unwrap_or_default();
+        done(
+            format!(
+                "Cloud workspace {name} ({workspace}, {}) in block %{block}{on}: {} tab(s)",
+                w["status"].as_str().unwrap_or("?"),
+                tabs.len()
+            ),
+            json!({
+                "block": block, "cloud_workspace": workspace, "name": name, "status": w["status"],
+                "tab": tab, "tabs": tabs, "link": self.cloud_link(&workspace, tab.as_deref()),
+            }),
+        )
+    }
+
     // ------------------------------------------------------------ read
+
+    /// The path git_status and diff read: the one given, else the
+    /// workspace's first repository, and the other repositories then. With
+    /// no path, control looks in the machine's home, which is no repository.
+    async fn repository_path(&self, workspace: &str, path: Option<String>) -> Result<(String, Vec<String>), String> {
+        if let Some(p) = path.filter(|p| !p.trim().is_empty()) {
+            return Ok((p, vec![]));
+        }
+        let w = self.cloud_get(&workspace_path(workspace)?).await?;
+        let mut all = mounts(&w).into_iter();
+        match all.next() {
+            Some(first) => Ok((first, all.collect())),
+            None => Err(format!(
+                "{workspace} has no repositories: give path, a directory in a git repository on its machine"
+            )),
+        }
+    }
 
     pub(crate) async fn read_cloud(&self, kind: &str, args: Value) -> Out {
         use super::tools::parse;
@@ -616,7 +716,14 @@ impl Call<'_> {
             "files" | "git_status" => {
                 let a: CloudPathArgs = parse(args)?;
                 let route = if kind == "files" { "files" } else { "git-status" };
-                let path = format!("{}/{route}{}", workspace_path(&a.cloud_workspace)?, query(&[("path", a.path)]));
+                let (at, others) = match kind {
+                    "files" => (a.path, vec![]),
+                    _ => {
+                        let (p, others) = self.repository_path(&a.cloud_workspace, a.path).await?;
+                        (Some(p), others)
+                    }
+                };
+                let path = format!("{}/{route}{}", workspace_path(&a.cloud_workspace)?, query(&[("path", at)]));
                 let v = self.cloud_get(&path).await?;
                 let n = v["entries"].as_array().map_or(0, Vec::len);
                 let summary = match kind {
@@ -624,9 +731,10 @@ impl Call<'_> {
                         format!("{}: {n} entr{}", v["path"].as_str().unwrap_or("?"), if n == 1 { "y" } else { "ies" })
                     }
                     _ => format!(
-                        "{} on {}: {n} changed or untracked",
+                        "{} on {}: {n} changed or untracked{}",
                         v["repo_root"].as_str().unwrap_or("?"),
-                        v["branch"].as_str().unwrap_or("a detached HEAD")
+                        v["branch"].as_str().unwrap_or("a detached HEAD"),
+                        others_note(&others)
                     ),
                 };
                 done(summary, v)
@@ -655,11 +763,12 @@ impl Call<'_> {
             "diff" => {
                 let a: CloudDiffArgs = parse(args)?;
                 let max = max_chars(a.max_chars);
+                let (at, others) = self.repository_path(&a.cloud_workspace, a.path).await?;
                 let path = format!(
                     "{}/diff{}",
                     workspace_path(&a.cloud_workspace)?,
                     query(&[
-                        ("path", a.path),
+                        ("path", Some(at)),
                         ("staged", a.staged.then(|| "true".to_owned())),
                         ("ref", a.git_ref),
                         ("max_bytes", Some(max.to_string())),
@@ -671,11 +780,16 @@ impl Call<'_> {
                 v["diff"] = json!(text);
                 v["truncated"] = json!(truncated);
                 let summary = match text.is_empty() {
-                    true => format!("No changes in {}.", v["repo_root"].as_str().unwrap_or("its repository")),
-                    false => format!(
-                        "The diff of {}{}",
+                    true => format!(
+                        "No changes in {}{}.",
                         v["repo_root"].as_str().unwrap_or("its repository"),
-                        if truncated { " (cut short)" } else { "" }
+                        others_note(&others)
+                    ),
+                    false => format!(
+                        "The diff of {}{}{}",
+                        v["repo_root"].as_str().unwrap_or("its repository"),
+                        if truncated { " (cut short)" } else { "" },
+                        others_note(&others)
                     ),
                 };
                 done(summary, v)
@@ -967,6 +1081,25 @@ mod tests {
         assert!(tab_path("cw_ab", "cwc_ab?x=1").is_err());
         assert_eq!(query(&[("path", Some("/home/sprite/a b".into())), ("ref", None)]), "?path=%2Fhome%2Fsprite%2Fa+b");
         assert_eq!(query(&[("path", None)]), "");
+    }
+
+    /// #1117's live check: without a path, git_status and diff read the
+    /// first repository, not the machine's home (no repository there).
+    #[test]
+    fn git_reads_default_to_the_first_repository() {
+        let w = json!({
+            "saved_spec": { "repositories": [{ "url": "https://github.com/a/new.git", "mount": "/home/sprite/new" }] },
+            "built_spec": { "repositories": [
+                { "url": "https://github.com/jhgaylor/jhgaylor.github.io", "mount": "/home/sprite/jhgaylor.github.io" },
+                { "url": "https://github.com/a/tools.git/" },
+            ] },
+        });
+        assert_eq!(mounts(&w), ["/home/sprite/jhgaylor.github.io", "/home/sprite/tools"]);
+        // Not built yet: as saved.
+        assert_eq!(mounts(&json!({ "saved_spec": w["saved_spec"], "built_spec": null })), ["/home/sprite/new"]);
+        assert!(mounts(&json!({ "saved_spec": { "repositories": [] } })).is_empty());
+        assert_eq!(others_note(&[]), "");
+        assert!(others_note(&["/home/sprite/tools".into()]).contains("also /home/sprite/tools: pass path"));
     }
 
     #[test]

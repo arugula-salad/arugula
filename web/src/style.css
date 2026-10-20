@@ -10827,3 +10827,14 @@ html[data-workspace="new"] .thread-panel {
 .cloud-changes-content { max-height: 480px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .cloud-tab-changes { padding: 8px 12px; max-height: 50%; overflow: auto; flex-shrink: 0; border-bottom: 1px solid var(--divider); }
 .cloud-ws-view button.link { padding: 0; border: none; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
+
+/* A Cloud workspace block (#1117): control mode's views in a block. */
+.cloud-ws-block .review-body.cloud-ws-view { display: flex; flex-direction: column; }
+.cloud-ws-block .cloud-ws-block-note { padding: 16px; }
+.cloud-ws-block .review-bar a.browser-open { padding: 3px 8px; font-size: 12px; text-decoration: none; }
+/* Its tabs: Overview, then each agent's, under the bar. */
+.cloud-ws-block .cloud-tabstrip { flex: none; overflow-x: auto; padding: 0 6px; border-bottom: 1px solid var(--divider); }
+.cloud-ws-block .cloud-tabstrip .tabbar { display: flex; }
+.cloud-ws-block .cloud-tabstrip .tab { display: flex; align-items: center; gap: 6px; padding: 6px 10px; white-space: nowrap; color: var(--dim); border-bottom: 2px solid transparent; cursor: pointer; }
+.cloud-ws-block .cloud-tabstrip .tab:hover { color: var(--fg); }
+.cloud-ws-block .cloud-tabstrip .tab.selected { color: var(--fg); border-bottom-color: var(--accent); }

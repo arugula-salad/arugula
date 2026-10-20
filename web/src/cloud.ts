@@ -2,7 +2,8 @@
 // content and authorization always come from control, independently of any
 // daemon. Cloud runs are retired (S40, M119): past ones stay readable at
 // `#cloud=run_…`, and Cloud workspaces (below) are where agents run now.
-import { useEffect, useState } from "preact/hooks";
+import { createContext } from "preact";
+import { useContext, useEffect, useState } from "preact/hooks";
 import type { FleetPane } from "./fleet";
 export type Definition = { name: string; instructions: string; mcp_servers: Record<string, unknown>; skills: { name: string; content: string }[]; secret_names: string[] };
 export type CloudAgent = { id: string; version: number; curated: boolean; definition: Definition };
@@ -14,6 +15,12 @@ export async function cloudApi<T>(path: string, method = "GET", body?: unknown):
   if (!r.ok) throw new Error(value.error ?? `Request failed (${r.status})`);
   return value as T;
 }
+/** How a Cloud workspace view reaches control's `/api/cloud/`: on
+ * control's page, `cloudApi` itself; in a Cloud workspace block (#1117),
+ * the block's `cloud` method, which the daemon sends on as the machine. */
+export type CloudApi = <T>(path: string, method?: string, body?: unknown) => Promise<T>;
+export const CloudApiContext = createContext<CloudApi>(cloudApi);
+export const useCloudApi = () => useContext(CloudApiContext);
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 /** The shown past run (`#cloud=run_…`) or past tab (`#cloud=cwc_…`). */

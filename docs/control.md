@@ -11,7 +11,9 @@ Control takes a daemon's signature on the Cloud workspace and tab routes
 tabs, prompts, interrupts, answers, rebuild and retry, and the agent and
 model lists) and scopes it to the daemon's account, as it would that
 account's own session. The agents on that machine drive those Cloud
-workspaces through MCP ([managoat.md](managoat.md#cloud-workspaces)).
+workspaces through MCP ([managoat.md](managoat.md#cloud-workspaces)), and
+can put one beside a pane as a Cloud workspace block (#1117), whose reads
+and writes go the same way.
 **A teammate with run rights on a machine can therefore drive its owner's
 Cloud workspaces through the agents there.** That was decided, not
 overlooked. A daemon can't change a Cloud workspace's settings, delete one,
