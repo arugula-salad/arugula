@@ -206,6 +206,11 @@ impl Doc {
             if arugula_mux::labs::flag(&self.link.state_dir, arugula_proto::flags::DOCS).is_err() {
                 return;
             }
+            // A card whose day is up (restored after a long stop) is never
+            // shown: `expire` lapses it, with no notification for it.
+            if now_ms() >= at + ttl().as_millis() as u64 {
+                return;
+            }
             let by = match &*self.card.asked.lock().unwrap() {
                 Some(a) if a.at_ms == at && a.outcome == Outcome::Waiting => a.by.clone(),
                 _ => return,
