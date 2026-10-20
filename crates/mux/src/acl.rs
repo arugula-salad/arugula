@@ -294,7 +294,6 @@ impl Acl {
         grant.from.as_ref().map(|_| grant.at)
     }
 
-
     /// Whether this principal may connect at all.
     pub fn knows(&self, p: &Principal) -> bool {
         if p.is_owner()

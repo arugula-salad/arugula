@@ -174,7 +174,7 @@ function Sheet({ client, close }: { client: Client; close: () => void }) {
           <button data-open-swarm onClick={act(openSwarm)}>
             Swarm
           </button>
-          {hasChat() && (
+          {hasChat(client) && (
             <button data-open-chat onClick={act(() => openChat())}>
               Chat
             </button>

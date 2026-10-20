@@ -21,7 +21,7 @@ Each feature has a flag, off on a new install:
 
 | Flag | Turns on |
 | --- | --- |
-| `chat` | Threads on panes and sessions, conversations, and the chat page |
+| `chat` | The chat page (chat itself is control's), and bringing old threads into control |
 | `vms` | VM tabs and panes, machines and the sandboxes page |
 | `studio` | Studio app blocks |
 | `workspaces` | Chant workspace blocks |
@@ -43,7 +43,7 @@ one isn't made.
 
 | Flag | What is refused without it |
 | --- | --- |
-| `chat` | `/api/threads/…` (get, post, read), `/api/convs…`, an invite from a thread |
+| `chat` | Nothing on the machine: it shows the Chat page, and, joined to control, brings old threads into it (see [Threads and chat](#threads-and-chat)) |
 | `vms` | `/api/machines`, `/api/sandboxes`, a new VM pane or tab, a borrowed sandbox (`run --sandbox`), *Share machine with tab* |
 | `studio` | `/api/studio…`, app blocks, `show` kind `app` |
 | `workspaces` | chant workspace blocks |
@@ -81,7 +81,8 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
 
 - **Per machine.** They're read by the machine that serves the page, so every
   machine you want a feature on needs its own. Someone you share a session
-  with sees chat on your machine if it has it on, and not otherwise.
+  with sees VMs or studio apps on your machine if it has them on, and not
+  otherwise. Chat is control's and follows control's flag.
 - **No restart.** The daemon reads the flags whenever it's asked.
 - **Each feature still needs its own setup.** Studio needs a link, VMs a
   sandbox provider, guest ssh its listener; a flag lets its
@@ -106,7 +107,7 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
   refused without their flag. Chat has no MCP tools: agents are out of chat
   (#1095).
 - **Web client:** `Client.has("vms" | "studio")` and
-  `hasLabs()`/`hasThreads()` in `web/src/client.ts`: VM panes and tabs,
+  `hasLabs()` and `flag(name)` in `web/src/client.ts`: VM panes and tabs,
   *Sandboxes…*, *Split (local)* and a VM tab's *Machine* items, studio
   apps, *Open as workspace*, *Invite over ssh…*, threads, chat,
   and the swarm's city, hive and timeline themes
@@ -159,141 +160,57 @@ one, as after a lost machine.
 
 ## Threads and chat
 
-Chat is on for a machine that has labs. The file belongs to the machine,
-so on a team every team machine needs one. Someone you share a session on
-a machine with labs with sees chat there; on a machine without it, nobody
-does.
+Chat is control's (#978, DECISIONS.md "Chat lives in control, in plain
+text"): a team's channels and DMs, and a thread about each pane and each
+session, held by control so they work with every machine asleep. It's
+behind control's own `chat` flag, the account's or a team's
+(`POST /api/flags`); the API is under `/api/chat`
+(`crates/control/src/chat.rs`), and the page reads it in
+`web/src/chat-store.ts`, `web/src/ui/chat-rooms.tsx` and
+`web/src/ui/room.tsx`.
 
-**Chat in control (M122, #978).** Chat is moving into control: a team's
-channels and DMs, and the threads about panes, held by control in plain
-text so they work with every machine asleep (DECISIONS.md "Chat lives in
-control, in plain text"). It's behind control's own `chat` flag, the
-account's or a team's (`POST /api/flags`), not the machine's. M122 is
-control's side only (the API under `/api/chat`, `crates/control/src/chat.rs`).
-Since M123, control's page reads chat from control when that flag is on:
-the Chat page lists the team's channels and DMs, then the threads on panes
-and sessions by machine; *Thread* on a pane opens its room beside it; a
-quote's chip opens the pane only for someone who may reach its machine;
-pushes open `#chat=<room>` (`web/src/chat-store.ts`, `web/src/ui/room.tsx`,
-`web/src/ui/chat-rooms.tsx`). Since M124, a machine in control with the
-flag on brings its old threads and conversations in by itself (its
-`threads/` becomes `threads.imported/`); an older one is marked "Update to
-bring its threads into chat" under Devices and machines. With control's
-flag off, or on a page a machine serves, what follows is the machine's own
-chat.
+**No machine keeps chat (M125).** A machine's `chat` flag does two things
+now:
+- With it, the page shows *Chat* even when control's chat isn't there: on
+  a page the machine serves, or with control's flag off. That page says
+  chat needs control, and how to turn it on (S41 decision 7). The tailnet
+  stays first class for terminals, not for chat.
+- Joined to control, with control's flag on too, it brings the threads and
+  conversations an older daemon kept (`<state>/threads/`) into control
+  once, then renames the folder `threads.imported/` (M124,
+  `crates/daemon/src/chat_import.rs`). A machine that skipped the release
+  with the import still does this. Not joined, the folder stays where it
+  is, unread. An older daemon is marked "Update to bring its threads into
+  chat" under Devices and machines.
 
-- **Threads on panes and sessions**. Every pane and every session has
-  a thread where the people working on it talk: *Thread* in a pane's menu,
-  *Session thread* in the session menu, or the bubble on a pane. Messages
-  arrive live on every window and phone. The machine that owns the pane
-  keeps them (`<state>/threads/`), so they survive restarts and upgrades,
-  outlive the pane, show up in `search`, and never pass through control
-  unencrypted. Watchers read and drivers post. A private pane's thread is
-  its owner's, and someone shared "from now" sees messages from then on.
-  Each person has their own unread count: on the pane's bubble, a dot on
-  the session button, and a folded corner in the swarm. `@name` notifies someone, on
-  their phone too (a tap opens the thread; team members are reached
-  whether or not they're connected). *Quote selection in thread* posts terminal output as a
-  quote that stays readable after the pane scrolls; clicking it jumps back
-  to the output. Only an `@` that reached someone is marked in the thread;
-  one that reached no one (a name nobody here who can read the thread has)
-  stays plain and the poster, and no one else, is told so under the
-  message.
-- **Agents are out of chat** (#1095). Threads and conversations are
-  people's: no agent reads or posts in them, `@agent`, `@claude` and
-  `@lead` are text like any other `@` (they name nobody), and a
-  conversation links no panes and has no lead. A message an agent posted
-  before, or a link's event, reads as the text it was kept with. Agents
-  come back into chat once it's control's (#978), through the grants #959
-  and #1002 work out.
-- **Conversations** (#855). A thread of its own, not about one pane or
-  session: *New conversation* (the + by *Channels* on the chat page) asks
-  for a title and keeps it on the machine you're on, or another of yours
-  that's online (its home; it's there while that machine is). You own it.
-  ⓘ shows its members; *Add people…* adds someone by name or id, from now
-  on or with its history, and tells them on their phone: someone who can
-  already reach that machine, a teammate (listed under *Teammates*), or
-  anyone on Arugula by their login. Someone who couldn't reach the machine
-  can once they're in, for its conversations only: control routes them to
-  it, and they see the conversations they're in there and nothing else.
-  The invite and the members list both say what membership means: members
-  see every terminal line quoted in it. Members read and post whatever their role
-  in the machine's sessions; they can leave, and only you rename it, take
-  people out or delete it. Unread counts, @mentions (a push whose tap opens
-  the conversation), Activity and search work as for any thread. An @ of
-  someone who can reach the machine but isn't in it offers to add them.
-- **An @ of someone who can't see the thread offers to invite them**. When you, the owner, write "@sam look" and Sam is someone this
-  machine knows (shared with elsewhere, or on a roster it checked) but
-  can't read that thread, the composer says "Sam can't see this. Invite
-  them?" in place of the "nobody" note. One click is the invite, as a
-  viewer, with your message as its note: Sam's push opens that thread.
-  By default Sam sees that message and what follows in that thread only;
-  *Share the whole thread* gives that thread's history instead. Either
-  way every other thread of the session starts at the invite, like any
-  "from now" share, and a later role change keeps what Sam could read.
-  Nobody else's post is offered anything, so an @ never tells an editor
-  who exists.
-- **Chat: every thread in one place.** *Chat* (beside *Panes* and *Swarm*
-  in the bar, the phone's sheet, or the command palette; `/#chat`) is a
-  page of its own, laid out like a team chat. On the left: *Activity*,
-  *Channels* (the conversations you're in, from
-  every machine), then each machine's sessions as channels with
-  each pane's thread under its session, newest first, unread in bold and
-  @mentions counted. Fold a machine away, show only what's unread, or drag
-  the sidebar wider; the browser remembers. The panes stay as they were
-  under the page; *Panes*, or Back, returns to them.
-  - **Messages** carry the poster's picture, run together under one
-    heading, and have a line between days and a red *New* line at the
-    first one you hadn't read. Text takes a little
-    Markdown: `code`, fenced code blocks, **bold**, *italic*, links and
-    @mentions (yours stand out); anything else, HTML included, stays text.
-    Hover a message to quote it in your reply, copy a link to it (the link
-    opens the thread at that message), or go to its pane.
-  - **Writing:** Enter sends, Shift+Enter makes a new line, and @ offers
-    the people here. An unsent message
-    waits in its thread while you look at another.
-  - **The header** says where the thread is and what its pane is doing,
-    who's in it, and has *Go to pane* (or *Go to
-    session*). ⓘ opens details: the pane's screen, live (or each of the
-    session's panes), and the people.
-  - **Getting around:** the search field in the bar searches every thread
-    on every machine you can read as you type. *Activity* lists messages
-    that mention you, and what needs you. Ctrl/Cmd+K jumps to a
-    channel by name. Alt+↑/↓ moves between channels, Alt+Shift+↑/↓ between
-    unread ones, and Shift+Esc marks everything read.
+What the daemon still does for chat is say who may read each pane's and
+session's thread (`POST /api/daemon/chat/readers`, from
+`crates/mux/src/mux/chat_readers.rs`): the same people as the pane or
+session, a private pane's only its owner, a "from now" share from when it
+was made. Control holds the messages; the machine decides who reads them.
 
-### Who sees threads, and where they live
-
-Every pane and every session has a thread: *Thread* in a pane's
-menu, *Session thread* in the session menu, or the bubble on a pane.
-
-- **Who sees what:** the same people as the pane or session. Watchers read;
-  drivers and owners post. A private pane's thread is its owner's (on a
-  team machine, the team's owners'). Someone you shared with "from now"
-  sees messages from then on.
-- **Where it lives:** on the machine that runs the pane, like its output.
-  Control relays it encrypted, as it does the terminal.
-- **@name** notifies them, on their phone too, whether or not they're
-  connected (team members included); tapping it opens the thread. **@agent**
-  is text: agents are out of chat.
-- **@name of someone who can't see it:** if you own the machine and it
-  knows them (shared with elsewhere, or on a team roster it checked), the
-  composer offers to invite them. They see your message and what follows
-  in that thread, or the whole thread if you choose; no other thread's
-  past.
-- *Quote selection in thread* (pane menu) posts what you selected in the
-  terminal; clicking the quote jumps back to it.
-- **Conversations** are different: their people are their own. The owner
-  and the members they added read and post, members from when they were
-  added unless added with its history, whatever their role in the
-  machine's sessions. A conversation lives on its home machine, in
-  `<state>/threads/conv-<id>.json` (its title and members) beside its
-  messages, and never in control. Members see what's quoted in it; a pane
-  itself, its terminal and its own thread, stays with the people it's
-  shared with.
-- **Someone outside your teams** added to a conversation is asked first,
-  with control's share offer, and accepting lists the machine with only its
-  conversations.
+- **Threads on panes and sessions.** *Thread* in a pane's menu, *Session
+  thread* in the session menu, or the bubble on a pane opens its room
+  beside the panes (the whole screen on a phone). *Quote selection in
+  thread* copies the selected output into the message, so it reads with
+  the machine asleep; its chip opens the pane only for someone who may
+  reach the machine. Unread counts show on the pane's bubble and the
+  session button.
+- **The Chat page** (*Chat* beside *Panes* and *Swarm*, the phone's sheet,
+  the command palette, or `/#chat`): the team's channels and DMs, then the
+  threads on panes and sessions by machine. *Activity* lists what mentions
+  you; the search field searches every room you can read, in control.
+  `@name` notifies them, on
+  their phone too, and a tap opens the room at the message
+  (`#chat=<room>&msg=N`).
+- **Agents are out of chat** (#1095): no agent reads or posts, and `@agent`
+  is text. They come back only through the grants #959 and #1002 work out.
+- **Conversations** (#855) were rooms of their own on one machine. Brought
+  into control they're read-only archives (S41 decision 3); a new one is a
+  channel or a DM.
+- **Gone with the machine's store:** an `@` of someone who can't read the
+  thread no longer offers to invite them (#297), and `search` and MCP
+  `history` find terminal output only.
 
 ## Chant workspaces
 

@@ -260,8 +260,13 @@ test("setting the flag on the running daemon brings it all back, with no restart
   const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
   await ready(page, pane);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.hasLabs())).toBe(true);
-  // Chat is control's (M125): a machine on its own has none, Labs or not.
-  await expect(page.locator("[data-open-chat]")).toHaveCount(0);
+  // Chat is control's (M125): a machine on its own has none, and its Chat
+  // page says so (S41 decision 7).
+  await page.locator("[data-open-chat]").click();
+  await expect(page.locator("[data-chat-needs-control]")).toContainText("Chat needs control");
+  await expect(page.locator(".thread-badge")).toHaveCount(0);
+  await open(page);
+  await ready(page, pane);
   // Now the Labs chunk was fetched, since this machine has them.
   expect(asked.filter((u) => LABS_CHUNK.test(u)).length).toBeGreaterThan(0);
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });

@@ -822,14 +822,18 @@ kept until deleted: an author or an owner deletes one (its number stays,
 empty); deleting an account deletes its DMs and its machines' threads and
 blanks its messages elsewhere; a team that goes with its founder takes its
 rooms. It's behind control's `chat` Labs flag, the account's or a team's.
-Agents aren't in chat (M121); a machine with no control has no chat.
+Agents aren't in chat (M121); a machine with no control has no chat
+(decision 7): since M125 no daemon keeps threads, and a page without
+control's chat (a machine's own page, or control's flag off) shows a Chat
+page that says chat needs control, when the machine's own `chat` flag is on.
 Where: `crates/control/src/chat.rs`, `crates/control/src/db/chat.rs`, `crates/control-wire/src/chat.rs`.
 From: [S41](spikes/s41-chat-in-control/README.md) (decisions 1–10, all as recommended), M122 (#1096).
 
-Until M125 removes the store, the daemon still keeps its own pane and session
-threads in `<state>/threads/` for pages from before, with the pane's access
-rules, and its M81 conversations as below. M124 brings them into control
-once: a daemon in control with `chat` on posts them signed as itself
+The daemon kept its own pane and session threads (M61) and its M81
+conversations in `<state>/threads/` until M125 took the store out (with its
+API, `ServerMsg::Thread`, `State.threads`, thread hits in `/api/search`,
+the thread ACL floors, its mention pushes and the invite from a thread,
+#297). M124 brings them into control once: a daemon in control with `chat` on posts them signed as itself
 (`POST /api/daemon/chat/import`), then moves `threads/` to
 `threads.imported/` so a second start, or an older daemon after a
 downgrade, has none. Old messages keep their numbers, or go before a room's
@@ -843,16 +847,19 @@ keeps control's reader lists current. A session's viewer stays read-only
 (Jake, 2026-10-19): their reader entry says `watching`, so the room isn't
 writable for them and a post is refused (403, `watching`). A daemon from before says no
 `chat-import` in its features, and control's page tells its owner "Update
-to bring its threads into chat". Where: `crates/daemon/src/chat_import.rs`,
-`crates/mux/src/mux/chat_import.rs`, `chat::daemon_import` in control.
+to bring its threads into chat". The import stays after the store went
+(decision 9): it reads the old files from disk itself, so a machine that
+skips the release with the import still brings its threads in, and one not
+in control leaves them on disk, unread. Where: `crates/daemon/src/chat_import.rs`,
+`crates/mux/src/mux/chat_readers.rs`, `chat::daemon_import` in control.
 
-A conversation (#855) is a third kind of thread beside them, not a pane or
-session thread moved: those stay as they are, because their access, unread
-marks, invites and push are all the pane's. A conversation has a global id
-(`ConvId`, `c-` and 32 hex digits) and lives on its home machine, the one it
-was made on, never in control: its record in `<state>/threads/conv-<id>.json`
-and its timeline in `conv-<id>.jsonl`, with read marks in the shared
-`reads.json`. Its people are the record's, not a session's: the owner
+A conversation (#855, until M125) was a third kind of thread beside them, not
+a pane or session thread moved. It had a global id (`ConvId`, `c-` and 32
+hex digits) and lived on its home machine, the one it was made on, never in
+control: its record in `<state>/threads/conv-<id>.json` and its timeline in
+`conv-<id>.jsonl` (which is what M124's import reads), with read marks in
+the shared `reads.json`. The rest of this paragraph is what it was; in
+control it's a read-only archive room. Its people are the record's, not a session's: the owner
 (`Owner`) and members (`Editor`), each reading from when they joined unless
 added with history. Only the machine's owners make one (Jake, 2026-10-13);
 only its owner renames, deletes, adds and takes out; a member may leave.
@@ -864,13 +871,13 @@ as a share would, but for its conversations only: they have no role in its
 sessions. Members see what's quoted in it; a pane itself, its terminal and
 its own thread, stays with the people it's shared with. A conversation links
 no panes and has no lead: agents are out of chat (#1095, below).
-Where: `crates/mux/src/labs/threads.rs`, `crates/mux/src/labs/convs.rs`, `crates/mux/src/mux/thread_ops.rs`, `crates/daemon/src/ops/convs.rs`, `crates/mux/src/labs/calls.rs`, `crates/daemon/src/control.rs` (`Acl::reach` in `others`).
+Where (until M125): `crates/mux/src/labs/threads.rs`, `crates/mux/src/labs/convs.rs`, `crates/mux/src/mux/thread_ops.rs`, `crates/daemon/src/ops/convs.rs`, `crates/daemon/src/control.rs` (`Acl::reach` in `others`).
 From: [Talk track](docs/plan-archive.md#talk-track-s30-m61m64-added-2026-10-05), [M61](docs/plan-archive.md#m61-threads-on-panes-and-sessions-240), [S36](spikes/s36-conversations/README.md) q1 and q4, M81 (#855), M82 (#856), M121 (#1095).
 
 ### Agents are out of chat
 Threads and conversations are people's (Jake, 2026-10-19, S41 decisions 8
 and 9). No agent reads or posts in them: MCP has no `read_thread` or
-`post_thread`, and the thread operations refuse a call through MCP. `@agent`,
+`post_thread` (and since M125 the daemon has no thread operations). `@agent`,
 `@claude` and `@lead` are text like any other `@`, and reach no one. A
 conversation has no links to panes, no grants on them, no events or cards
 in its timeline and no lead (M82–M85 are removed, with `conv-grants.json`
@@ -879,10 +886,12 @@ the owner's teams gets control's plain share offer. Old messages an agent
 posted, or a link's events, read as the text they were kept with. Agents
 come back into chat only through the grants #959 and #1002 work out, once
 chat is control's (#978), not through the daemon's thread store.
-Where: `crates/daemon/src/ops/threads.rs` (`person`), `crates/mux/src/mux/thread_ops.rs` (`thread_post`), `crates/daemon/src/mcp/tools.rs` (the tool list).
+Where: `crates/daemon/src/mcp/tools.rs` (the tool list), control's `crates/control/src/chat.rs`.
 From: [S41](spikes/s41-chat-in-control/README.md) q7 and decisions 8 and 9, M121 (#1095).
 
 ### Chat calls the owner by a short name; ledgers keep their login
+Superseded by M125 for chat: the daemon names nobody in chat any more, and
+control calls people by their account. Ledgers still keep the full login.
 On a machine's own page the owner's name was their tailnet login, an email,
 so chat wrote `@jake@example.com`, while control's page (and the page's own
 headers) said "jake" (#889). In threads and conversations the owner is now
@@ -894,7 +903,7 @@ it still reaches them
 login (`name_of`): a gate's actor, which chant records, and a forge write's
 sender. Rejected: shortening `name_of` itself, which changed what chant and
 the forge ledgers record.
-Where: `crates/mux/src/mux/who_may.rs` (`chat_name_of`, `short_name`), `crates/mux/src/mux/outside.rs` (`People::owner_login`), `crates/mux/src/mux/thread_ops.rs`.
+Where (until M125): `crates/mux/src/mux/who_may.rs` (`chat_name_of`, `short_name`), `crates/mux/src/mux/outside.rs` (`People::owner_login`), `crates/mux/src/mux/thread_ops.rs`.
 From: #889 (M85's live run, #859).
 
 ## Federation and control
@@ -1096,7 +1105,8 @@ removed", below.)
 - **`HostFeatures` says which.** `labs` is now "any flag on", and `flags`
   names those that are. A page on a daemon from before reads `labs` for every
   flag, which is what it meant there. `Client.flag(name)` is the page's one
-  question; `has()` and `hasThreads()` stand as they were.
+  question; `has()` stands as it was (`hasThreads()` went with the
+  daemon's threads in M125).
 - **Developer settings, unlocked first.** The owner's dialog (session menu,
   palette, the phone's sheet) has a switch per flag and applies it without a
   reload: the Labs chunk loads when a flag first needs it. The menus offer it
@@ -1114,11 +1124,11 @@ called the route, named the MCP tool or typed the hidden command. Now
 everything about the feature follows the flag (#347):
 - **Operations** name their flag (`Op::FLAG`), and `ops::flagged` refuses
   one by every way in, HTTP and MCP by name alike, as a 404 that says how to
-  turn it on. That is the route list: threads (chat); machines and
+  turn it on. That is the route list: threads (chat, until M125); machines and
   sandboxes (vms); studio; ssh guests (guest-ssh); Fountain's agents and
   sign-in until #942's F5 (since removed). The
   A2A routes (agents) and the forge webhooks already did; an invite from a
-  thread asks `chat` too.
+  thread asked `chat` too, until M125 took it out.
 - **Block types** a flag owns (the agent catalog, app, workspace) are
   wrapped (`labs::Flagged`) so a new one is refused. (Fountain's block,
   and an agent block that was a Fountain agent, checked `fountain` until
@@ -1128,8 +1138,8 @@ everything about the feature follows the flag (#347):
 - **The mux** checks `vms` before it makes or borrows a machine or shares
   one with a tab.
 - **What was made with the flag on stays.** A block restored at start-up
-  isn't asked (as a Forgejo block wasn't), threads stay on disk and in the
-  page's state, a VM pane in a saved layout comes back. Turning a flag off
+  isn't asked (as a Forgejo block wasn't), old threads stay on disk (until
+  control's chat imports them), a VM pane in a saved layout comes back. Turning a flag off
   stops new use; it doesn't destroy anything, so on again finds it all.
 - **One sentence, from the daemon.** `labs::flag` / `flag_off` in the mux
   say "X is a Labs feature that's off on this machine: its owner turns it

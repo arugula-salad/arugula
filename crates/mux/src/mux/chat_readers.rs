@@ -22,7 +22,9 @@ impl Daemon {
             .map(|t| {
                 let readers = people
                     .iter()
-                    .filter_map(|p| self.chat_role(p, t).map(|(role, from)| (p.id().to_owned(), from, role < Role::Editor)))
+                    .filter_map(|p| {
+                        self.chat_role(p, t).map(|(role, from)| (p.id().to_owned(), from, role < Role::Editor))
+                    })
                     .collect();
                 (t, readers)
             })

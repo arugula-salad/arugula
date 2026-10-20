@@ -656,15 +656,7 @@ mod tests {
                 "output_offset": 0 }], "total": 1 }),
         );
         same(
-            Hits {
-                hits: vec![Hit {
-                    pane: 2,
-                    open: false,
-                    offset: 4,
-                    command: Some("ls".into()),
-                    line: "l".into(),
-                }],
-            },
+            Hits { hits: vec![Hit { pane: 2, open: false, offset: 4, command: Some("ls".into()), line: "l".into() }] },
             json!({ "hits": [{ "pane": 2, "open": false, "offset": 4, "command": "ls",
                 "line": "l" }] }),
         );

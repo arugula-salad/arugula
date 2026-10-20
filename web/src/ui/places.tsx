@@ -88,10 +88,12 @@ export function openRoom(room: string, msg?: number) {
   else changed();
 }
 
-/** Whether this page has chat: control's (M123), when its `chat` flag is
- * on for this account. No machine keeps threads of its own (M125). */
-export function hasChat(): boolean {
-  return !!chatStore();
+/** Whether this page offers chat: control's (M123), when its `chat` flag
+ * is on for this account; or, on a machine with the `chat` Labs flag but
+ * no chat in control, the Chat page that says chat is control's now. No
+ * machine keeps threads of its own (M125, S41 decision 7). */
+export function hasChat(client?: Client): boolean {
+  return !!chatStore() || !!client?.flag("chat");
 }
 
 export function closeChat() {
@@ -203,7 +205,7 @@ export function Places({ client, at }: { client: Client; at: Place }) {
           Machines
         </button>
       )}
-      {hasChat() && (
+      {hasChat(client) && (
         <button
           class={at === "chat" ? "place here" : "place"}
           title="Chat: your teams' channels, messages and threads"

@@ -740,7 +740,6 @@ impl Daemon {
             .map(|c| Presence {
                 client: c.client,
                 who: c.principal.id().to_owned(),
-                chat: c.acting.as_ref().map(|a| a.id().to_owned()),
                 name: c.name.clone().unwrap_or_else(|| self.name_of(&c.principal)),
                 pic: match &c.principal {
                     Principal::User { pic, .. } => pic.clone(),

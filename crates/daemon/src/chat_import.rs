@@ -523,8 +523,11 @@ mod tests {
                 + "{\"id\": 2, \"at\"",
         )
         .unwrap();
-        std::fs::write(dir.join("session-2.jsonl"), line(json!({ "id": 1, "at": 2, "who": "owner", "name": "J", "text": "s" })))
-            .unwrap();
+        std::fs::write(
+            dir.join("session-2.jsonl"),
+            line(json!({ "id": 1, "at": 2, "who": "owner", "name": "J", "text": "s" })),
+        )
+        .unwrap();
         std::fs::write(dir.join("reads.json"), "{}").unwrap();
         let id = "c-0000000000000000000000000000000a";
         std::fs::write(
@@ -534,8 +537,11 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        std::fs::write(dir.join(format!("conv-{id}.jsonl")), line(json!({ "id": 1, "at": 7, "who": "owner", "name": "J", "text": "c" })))
-            .unwrap();
+        std::fs::write(
+            dir.join(format!("conv-{id}.jsonl")),
+            line(json!({ "id": 1, "at": 7, "who": "owner", "name": "J", "text": "c" })),
+        )
+        .unwrap();
         let e = Export::read(&state);
         let got: Vec<(ChatTarget, usize)> = e.threads.iter().map(|(t, m)| (*t, m.len())).collect();
         assert_eq!(got, [(ChatTarget::Pane(4), 1), (ChatTarget::Session(2), 1)]);

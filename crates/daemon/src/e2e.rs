@@ -201,14 +201,7 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
         Some((device.device.clone(), device.name.clone())),
     );
     app.mux.send(Cmd::Connect {
-        sub: Subscriber {
-            client,
-            data: data_tx,
-            ctrl: ctrl_tx,
-            principal: principal.clone(),
-            acting: principal.is_owner().then(|| app.control.co_owner_of(&device.account)).flatten(),
-            name,
-        },
+        sub: Subscriber { client, data: data_tx, ctrl: ctrl_tx, principal: principal.clone(), name },
     });
     // The callers drop this future when the socket's reader ends first,
     // which is how most channels end: leave the mux and the hands then too.

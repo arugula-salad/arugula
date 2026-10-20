@@ -79,8 +79,6 @@ pub mod sandbox;
 pub mod sprites;
 #[cfg(feature = "labs")]
 pub mod tea;
-// Chat (M61) is the core's: `arugula_mux::labs::threads`, with the mux's
-// handling in `mux/thread_ops.rs` (twins in `mux/labs_off.rs`).
 #[cfg(feature = "labs")]
 pub mod wearing;
 #[cfg(feature = "labs")]

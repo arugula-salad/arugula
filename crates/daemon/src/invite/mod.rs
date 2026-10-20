@@ -232,8 +232,7 @@ pub async fn run(app: &App, b: InviteRequest, drafted: Option<&Drafted>) -> Resu
                 None => return Err(no(StatusCode::NOT_FOUND, "no such session")),
             }
         };
-        let set =
-            app.acl.set_full(b.session, &person.id, &person.name, Some(want), "owner", from, person.root.clone());
+        let set = app.acl.set_full(b.session, &person.id, &person.name, Some(want), "owner", from, person.root.clone());
         if let Err(e) = set {
             return Err(no(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
         }

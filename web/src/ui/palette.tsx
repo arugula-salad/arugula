@@ -19,6 +19,7 @@ import { useWorkspaceDir } from "../blocks";
 import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
 import { closeChat, closeOverview, hasChat, isChatOpen, openChat, openChatView, openOverview, overviewRoute } from "./places";
 import { cloudPanes } from "../cloud";
+import { chatStore } from "../chat-store";
 import { showSession } from "./shell/session-sidebar";
 import { SearchIcon, PanesIcon, SettingsIcon, SessionsIcon, ChatIcon, SwarmIcon } from "./shell/icons";
 import { paneName } from "./shell/overview";
@@ -214,7 +215,7 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   const wanting = state.panes.filter((p) => p.attention === "needs_input").map((p) => p.id);
   const next: PaneId | undefined = wanting.find((p) => p > (pane ?? -1)) ?? wanting[0];
   out.push({ key: "Swarm/open", group: "Swarm", label: "Open the swarm", run: openSwarm });
-  if (hasChat()) out.push({ key: "Chat/open", group: "Chat", label: "Open chat: every thread", run: () => openChat() });
+  if (hasChat(client)) out.push({ key: "Chat/open", group: "Chat", label: "Open chat: every thread", run: () => openChat() });
   out.push({
     key: "Swarm/next",
     group: "Swarm",
@@ -273,9 +274,9 @@ function places(client: Client, phone: boolean): Command[] {
     }
   }
   if (at !== "swarm") go("swarm", "Go to Swarm", openSwarm);
-  if (hasChat()) {
+  if (hasChat(client)) {
     if (at !== "chat") go("chat", "Go to Chat", () => openChat());
-    go("activity", "Chat: Activity, what needs you", () => openChatView("activity"));
+    if (chatStore()) go("activity", "Chat: Activity, what needs you", () => openChatView("activity"));
   }
   if (client.flag("agents") && !client.state?.roles) {
     go("recipes", "Agents: Recipes", () => openAgentsPage("recipes"));

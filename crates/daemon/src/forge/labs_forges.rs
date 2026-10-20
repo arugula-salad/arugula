@@ -1,8 +1,7 @@
 //! What a forge block does to reach Forgejo and GitLab, which are Labs
 //! (#457): a Forgejo block's `tea` login and its adapter, and GitLab's
 //! connection through `glab`. It sits here, and not in `labs/`, because it
-//! is the block's own methods and needs its private fields (as the
-//! multiplexer's `thread_ops.rs` does). Only a build with Labs has this
+//! is the block's own methods and needs its private fields. Only a build with Labs has this
 //! file; `mod.rs` has the twins, which answer that the build lacks them.
 
 use std::sync::Arc;

@@ -37,7 +37,7 @@ function usePlace(client: Client): Place {
 export function Rail({ client }: { client: Client }) {
   const at = usePlace(client);
   const { open } = useSidebar();
-  const threads = hasChat();
+  const threads = hasChat(client);
   const { n, mention } = threads ? chatUnread() : { n: 0, mention: false };
   // As places.tsx decides: the machine owner's, with the Labs flag.
   const agents = client.flag("agents") && !client.state?.roles;

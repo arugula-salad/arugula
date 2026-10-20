@@ -45,7 +45,6 @@ pub fn flag(_state_dir: &std::path::Path, _flag: &str) -> Result<(), String> {
     Ok(())
 }
 
-
 /// Why a request that needs VM panes can't have them: `why` when there is
 /// no provider here, and that this build has no VMs when it was built without
 /// Labs.
