@@ -43,7 +43,7 @@ sees = "Litestream copies the whole database to a bucket (Cloudflare R2, for the
 
 [parties.managoat]
 name = "Managoat"
-sees = "Managoat runs Cloud workspaces and cloud runs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals."
+sees = "Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals."
 
 [parties.posthog]
 name = "PostHog"

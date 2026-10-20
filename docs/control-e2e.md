@@ -1067,7 +1067,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 ### Who else sees it
 
 - **Litestream's bucket:** Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. Cloud secrets are there sealed, and their key isn't.
-- **Managoat:** Managoat runs Cloud workspaces and cloud runs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals.
+- **Managoat:** Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals.
 - **PostHog:** PostHog gets product events, when control has a key for it: account, team and machine ids, a machine's version, OS and arch, plans, Labs flags and counts. No names, logins, addresses or content.
 - **Sprites:** Sprites hosts hosted sandboxes: it knows each one's VM.
 - **GitHub:** GitHub signs people in: it knows the identities control keeps for it.
