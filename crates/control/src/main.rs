@@ -43,6 +43,8 @@ mod push_notices;
 mod relay;
 mod roots;
 #[cfg(test)]
+mod routes;
+#[cfg(test)]
 mod routing_wire;
 mod sandboxes;
 mod sprites;
@@ -453,8 +455,11 @@ pub fn day(ms: u64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
-pub fn router(app: Arc<App>) -> Router {
-    Router::new()
+/// Every route control answers on its own site. routes.toml lists each one
+/// with the process that answers it, hub or platform (#1152), and its test
+/// (routes.rs) reads the paths from here.
+fn routes() -> Routes {
+    Routes::default()
         .route(wire::CONTROL_JSON, get(control_json))
         .route("/auth/github", get(auth::github_start))
         .route("/auth/github/callback", get(auth::github_callback))
@@ -596,6 +601,28 @@ pub fn router(app: Arc<App>) -> Router {
         .route(wire::RELAY_DIAL, get(relay::dial))
         .route("/api/relay/c/{id}", get(relay::client))
         .route("/api/relay/m", get(relay::many))
+}
+
+/// A router that notes its paths too, for routes.toml's test.
+#[derive(Default)]
+struct Routes {
+    router: Router<Arc<App>>,
+    #[cfg(test)]
+    paths: Vec<&'static str>,
+}
+
+impl Routes {
+    fn route(mut self, path: &'static str, methods: axum::routing::MethodRouter<Arc<App>>) -> Self {
+        #[cfg(test)]
+        self.paths.push(path);
+        self.router = self.router.route(path, methods);
+        self
+    }
+}
+
+pub fn router(app: Arc<App>) -> Router {
+    routes()
+        .router
         .fallback(asset)
         .layer(axum::middleware::from_fn_with_state(app.clone(), analytics::requests))
         .layer(axum::middleware::from_fn_with_state(app.clone(), account::note_agent))

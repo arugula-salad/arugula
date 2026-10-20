@@ -1,0 +1,1132 @@
+# Every route control registers (`routes()` in src/main.rs), and which
+# process answers it once control is split into a hub and a platform
+# (platform step 2, #1150). A test (`routes::` in src/routes.rs) fails when
+# the router has a route that isn't here, or this lists one it doesn't, or
+# lists one twice.
+#
+# Each route, one per method and path:
+# - `method`: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, or `ANY` (every
+#   method, one handler). A `GET` also answers `HEAD`.
+# - `path`: as registered, with axum's `{param}` and `{*rest}`. A path from
+#   arugula-control-wire is written out, with its constant in a comment.
+# - `process`: `hub` (identity, devices, rosters, the relay, push, block and
+#   doc origins, forge and telemetry: it deploys rarely) or `platform` (chat,
+#   Cloud, billing, grants: it deploys as often as it likes). Every path
+#   stays on control's own site whichever answers it: the hub is the
+#   gateway for the platform's.
+# - `auth`: what control checks before it acts:
+#   - `public`: nothing (some are rate-limited; `note` says what stands in);
+#   - `session`: a signed-in person, by their cookie, or a CLI device by its
+#     signature (`auth::Session`);
+#   - `daemon`: an enrolled daemon's signature (`auth::DaemonAuth`);
+#   - `daemon_optional`: a daemon's signature when there is one, and nothing
+#     otherwise;
+#   - `session_or_daemon`: either (`auth::Reacher`, `doc_links::Caller`);
+#   - `cloud_driver`: a session, or a daemon whose account gave it a live
+#     `cloud.drive` grant (`auth::CloudDriver`);
+#   - `sign_in`: a sign-in under way (GitHub's OAuth state, a passkey's
+#     challenge);
+#   - `join_proof`: a machine's key proving it holds the key it asks to join
+#     with, before it has an account;
+#   - `poll_token`: the token a join handed out;
+#   - `app_ticket`: the desktop app's sign-in ticket, its grant and verifier;
+#   - `webhook`: the provider's signature on the body.
+# - `clients`: who calls it: `page` (control's web page, in a browser or the
+#   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
+#   `app` (the desktop app's own code), `browser` (a browser following a
+#   link or a redirect, with no page of control's), `github` and `stripe`
+#   (their webhooks), `operator` (by hand).
+# - `note`: anything the rest doesn't say.
+#
+# Not routes, so not here: what a block's origin or the docs origin is
+# answered with (`blocks::split`, before any route: the hub's, as block and
+# doc origins are), and control's page itself (the fallback, `asset`).
+
+# ---- hub: what control is, and signing in
+
+[[route]]
+method = "GET"
+path = "/control.json"  # wire::CONTROL_JSON
+process = "hub"
+auth = "public"
+clients = ["page", "daemon", "cli", "app"]
+
+[[route]]
+method = "GET"
+path = "/auth/github"
+process = "hub"
+auth = "sign_in"
+clients = ["page", "app"]
+
+[[route]]
+method = "GET"
+path = "/auth/github/callback"
+process = "hub"
+auth = "sign_in"
+clients = ["browser"]
+note = "GitHub sends the browser back here: the URL is set on the GitHub OAuth app, so the path never changes."
+
+[[route]]
+method = "POST"
+path = "/auth/logout"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/auth/app"
+process = "hub"
+auth = "public"
+clients = ["app"]
+note = "The desktop app asks for a ticket (M48); rate-limited."
+
+[[route]]
+method = "POST"
+path = "/auth/app/{id}/redeem"
+process = "hub"
+auth = "app_ticket"
+clients = ["page"]
+note = "Control's page in the app's webview, with the ticket's grant and verifier."
+
+[[route]]
+method = "GET"
+path = "/api/app-login/{id}"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/app-login/{id}/allow"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/auth/passkey/register"
+process = "hub"
+auth = "sign_in"
+clients = ["page"]
+note = "A new account's first passkey, or one more for the session's account."
+
+[[route]]
+method = "POST"
+path = "/auth/passkey/register/finish"
+process = "hub"
+auth = "sign_in"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/auth/passkey/login"
+process = "hub"
+auth = "sign_in"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/auth/passkey/login/finish"
+process = "hub"
+auth = "sign_in"
+clients = ["page"]
+
+# ---- hub: the account
+
+[[route]]
+method = "GET"
+path = "/api/me"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/me/name"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/me/sessions"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/me/sessions/end-all"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/me/sessions/device"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/me/sessions/{id}/end"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/me/passkeys"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/me/passkeys/{id}/remove"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/me/delete"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "What deleting would delete."
+
+[[route]]
+method = "POST"
+path = "/api/me/delete"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Hub, as identity is, but it deletes platform rows too (Cloud workspaces, chat, billing): once they move, the hub has to ask the platform."
+
+[[route]]
+method = "POST"
+path = "/api/me/notices/{id}/seen"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+# ---- hub: devices, joins and trust
+
+[[route]]
+method = "GET"
+path = "/api/devices"
+process = "hub"
+auth = "session"
+clients = ["page", "cli"]
+
+[[route]]
+method = "POST"
+path = "/api/devices"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/devices/{id}"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/devices/{id}/approve"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/devices/{id}/pin"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/devices/{id}/reject"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/revocations"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/recovery"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/join"  # wire::JOIN
+process = "hub"
+auth = "join_proof"
+clients = ["daemon", "cli"]
+note = "No account yet: the machine's key signs a proof, and a person approves the code it shows."
+
+[[route]]
+method = "GET"
+path = "/api/join/{code}"  # wire::JOIN_POLL
+process = "hub"
+auth = "poll_token"
+clients = ["daemon", "cli"]
+note = "With the token the join handed out."
+
+[[route]]
+method = "GET"
+path = "/api/joins/{code}"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/joins/{code}/approve"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/joins/{code}/reject"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/daemons/{id}/team"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/daemon/trust"  # wire::TRUST
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/daemon/leave"  # wire::LEAVE
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+# ---- hub: telemetry
+
+[[route]]
+method = "POST"
+path = "/api/telemetry"  # wire::telemetry::TELEMETRY
+process = "hub"
+auth = "daemon_optional"
+clients = ["daemon"]
+note = "Signed by a joined daemon, unsigned from one that isn't (M100)."
+
+[[route]]
+method = "GET"
+path = "/api/me/telemetry"  # wire::telemetry::ME_TELEMETRY
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/me/telemetry"  # wire::telemetry::ME_TELEMETRY
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/telemetry/page"  # wire::telemetry::PAGE
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+# ---- hub: the directory, people, shares, flags and teams
+
+[[route]]
+method = "GET"
+path = "/api/directory"
+process = "hub"
+auth = "session_or_daemon"
+clients = ["page", "daemon", "cli"]
+
+[[route]]
+method = "POST"
+path = "/api/shares/{daemon}"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/people"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/flags"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/flags"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/teams"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/teams"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/teams/{id}/roster"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/teams/{id}/invites"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/teams/{id}/presigned"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "DELETE"
+path = "/api/teams/{id}/presigned/{key}"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/teams/{id}/requests/{account}/reject"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/teams/{id}/lock"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/invites/{team}/{code}"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/invites/{team}/{code}/accept"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/invites/{team}/{code}/preview"
+process = "hub"
+auth = "public"
+clients = ["page"]
+note = "Before signing in: the invite's code is in the path. Rate-limited."
+
+[[route]]
+method = "GET"
+path = "/api/presigned/{team}/{key}"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/presigned/{team}/{key}/preview"
+process = "hub"
+auth = "public"
+clients = ["page"]
+note = "Before signing in: the invite's key is in the path. Rate-limited."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/team"  # wire::TEAM
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/daemon/peers"  # wire::PEERS
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/daemon/teams"  # wire::TEAMS
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/daemon/access"  # wire::ACCESS
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+# ---- hub: push
+
+[[route]]
+method = "POST"
+path = "/api/push/subscribe"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/push/unsubscribe"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/daemon/push-subs"  # wire::PUSH_SUBS
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/daemon/push"  # wire::PUSH
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+# ---- hub: Shared Docs
+
+[[route]]
+method = "GET"
+path = "/api/doc-links"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/doc-links/quota"
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "DELETE"
+path = "/api/doc-links/{id}"
+process = "hub"
+auth = "session_or_daemon"
+clients = ["page", "daemon"]
+note = "A machine unshares what it made; a person, any of the account's."
+
+[[route]]
+method = "PUT"
+path = "/api/doc-links/{id}/v/{ver}/parts/{n}"
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/doc-links/{id}/v/{ver}/commit"
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "ANY"
+path = "/d/{*rest}"
+process = "hub"
+auth = "public"
+clients = ["browser"]
+note = "The viewer where there's no block domain: anyone with the link. The key is in the fragment, which never reaches control."
+
+# ---- hub: hosted sandboxes
+
+[[route]]
+method = "GET"
+path = "/api/sandboxes"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Hosted sandboxes stay in the hub for now: a candidate for the platform in step 5."
+
+[[route]]
+method = "POST"
+path = "/api/sandboxes"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Hosted sandboxes stay in the hub for now: a candidate for the platform in step 5."
+
+[[route]]
+method = "DELETE"
+path = "/api/sandboxes/{id}"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Hosted sandboxes stay in the hub for now: a candidate for the platform in step 5."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/sandbox-done"  # wire::SANDBOX_DONE
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+note = "Hosted sandboxes stay in the hub for now: a candidate for the platform in step 5."
+
+# ---- hub: forge
+
+[[route]]
+method = "POST"
+path = "/github/webhook"
+process = "hub"
+auth = "webhook"
+clients = ["github"]
+note = "GitHub's signature. The URL is set on the GitHub App, so the path never changes."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/github/token"
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+# ---- hub: the relay
+
+[[route]]
+method = "GET"
+path = "/api/relay/link/{id}"
+process = "hub"
+auth = "public"
+clients = ["page"]
+note = "A read-only link's viewer (M19): no account; the daemon checks the link's key. Rate-limited."
+
+[[route]]
+method = "GET"
+path = "/api/relay/dial"  # wire::RELAY_DIAL
+process = "hub"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/relay/c/{id}"
+process = "hub"
+auth = "session_or_daemon"
+clients = ["page", "daemon", "cli"]
+
+[[route]]
+method = "GET"
+path = "/api/relay/m"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+# ---- platform: chat
+
+[[route]]
+method = "GET"
+path = "/api/chat"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/chat/live"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/chat/live/open"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/chat/search"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/chat/targets"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/chat/teams/{team}/channels"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/chat/teams/{team}/dms"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/chat/rooms/{id}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PATCH"
+path = "/api/chat/rooms/{id}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/chat/rooms/{id}/messages"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/messages"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PATCH"
+path = "/api/chat/rooms/{id}/messages/{seq}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "DELETE"
+path = "/api/chat/rooms/{id}/messages/{seq}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/read"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/mute"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/daemon/chat/readers"  # wire::chat::CHAT_READERS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/daemon/chat/import"  # wire::chat::CHAT_IMPORT
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+
+# ---- platform: Cloud
+
+[[route]]
+method = "GET"
+path = "/api/cloud/secrets"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PUT"
+path = "/api/cloud/secrets/{name}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "DELETE"
+path = "/api/cloud/secrets/{name}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/runs"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Past runs (S40): read only."
+
+[[route]]
+method = "GET"
+path = "/api/cloud/runs/{id}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Past runs (S40): read only."
+
+[[route]]
+method = "GET"
+path = "/api/cloud/runs/{id}/requests"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Past runs (S40): read only."
+
+[[route]]
+method = "GET"
+path = "/api/cloud/runs/{id}/events"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Past runs (S40): read only."
+
+[[route]]
+method = "GET"
+path = "/api/cloud/workspaces"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/cloud/workspaces"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/workspaces/{id}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "PATCH"
+path = "/api/cloud/workspaces/{id}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "DELETE"
+path = "/api/cloud/workspaces/{id}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/workspaces/{id}/files"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/workspaces/{id}/file"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/workspaces/{id}/diff"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/workspaces/{id}/git-status"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/workspaces/{id}/setup-log"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/workspaces/{id}/tabs"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/cloud/workspaces/{id}/tabs"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/workspaces/{id}/tabs/{tab}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "DELETE"
+path = "/api/cloud/workspaces/{id}/tabs/{tab}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/cloud/workspaces/{id}/tabs/{tab}/prompt"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/cloud/workspaces/{id}/tabs/{tab}/interrupt"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/workspaces/{id}/tabs/{tab}/events"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/workspaces/{id}/tabs/{tab}/requests"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/cloud/workspaces/{id}/tabs/{tab}/requests/{request}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/cloud/workspaces/{id}/rebuild"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "DELETE"
+path = "/api/cloud/workspaces/{id}/rebuild"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/cloud/workspaces/{id}/retry"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/past-tabs"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/past-tabs/{tab}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/past-tabs/{tab}/events"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/past-tabs/{tab}/requests"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/models"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/cloud/import"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/cloud/agents"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/cloud/agents"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PUT"
+path = "/api/cloud/agents/{id}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "DELETE"
+path = "/api/cloud/agents/{id}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+# ---- platform: grants
+
+[[route]]
+method = "GET"
+path = "/api/grants"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+
+[[route]]
+method = "POST"
+path = "/api/grants"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+
+[[route]]
+method = "POST"
+path = "/api/grants/{id}/revoke"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+
+# ---- platform: billing
+
+[[route]]
+method = "GET"
+path = "/api/billing"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/billing/checkout"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/billing/report"
+process = "platform"
+auth = "session"
+clients = ["operator"]
+note = "Billing's owners on this control: report usage now rather than on the hour."
+
+[[route]]
+method = "POST"
+path = "/api/stripe/webhook"
+process = "platform"
+auth = "webhook"
+clients = ["stripe"]
+note = "Stripe's signature. The URL is set in Stripe's dashboard, so the path never changes."
