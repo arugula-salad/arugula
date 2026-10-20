@@ -351,7 +351,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "billing"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "metadata"
 what = "Who pays: Stripe's customer and subscription ids, the seat item, the status."
 why_asleep = "A plan holds with every machine off, and Stripe's webhooks come whenever."
@@ -362,13 +362,15 @@ seen_by = ["litestream", "stripe", "posthog"]
 [[table]]
 name = "reported"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "metadata"
 what = "How many hosted sandbox minutes have gone to Stripe."
 why_asleep = "Minutes are reported hourly, whether or not anyone's machine is up."
 with_account = "deleted"
 seen_by = ["litestream", "stripe"]
 
+# The hub's, though it's billing's meter: the relay writes it, and billing
+# reads it through `HubPort::meters` (M139).
 [[table]]
 name = "usage"
 plane = "platform"

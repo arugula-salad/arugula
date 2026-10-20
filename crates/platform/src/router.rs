@@ -6,15 +6,22 @@
 
 use std::sync::Arc;
 
-use axum::{Router, routing::MethodRouter};
+use axum::{
+    Router,
+    routing::{MethodRouter, get, post},
+};
 
-use crate::Platform;
+use crate::{Platform, billing};
 
-/// Every route the platform answers. None yet: Cloud's, chat's and
-/// billing's move here from `routes()` in `crates/control/src/main.rs`
-/// (M137–M139), with the same paths and methods.
+/// Every route the platform answers. Each moved here from `routes()` in
+/// `crates/control/src/main.rs` with the same path and methods: billing's
+/// (M139), then Cloud's and chat's (M137, M138).
 fn routes() -> Routes {
     Routes::default()
+        .route("/api/billing", get(billing::status))
+        .route("/api/billing/checkout", post(billing::checkout))
+        .route("/api/billing/report", post(billing::report_now))
+        .route("/api/stripe/webhook", post(billing::webhook))
 }
 
 /// The platform's router, for any state the hub's router has (the
@@ -36,7 +43,6 @@ struct Routes {
 }
 
 impl Routes {
-    #[expect(dead_code, reason = "M137-M139 add the first routes")]
     fn route(mut self, path: &'static str, methods: MethodRouter<Arc<Platform>>) -> Self {
         self.paths.push(path);
         self.router = self.router.route(path, methods);

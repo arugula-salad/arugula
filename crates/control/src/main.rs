@@ -16,7 +16,6 @@ mod api;
 mod app_login;
 mod auth;
 mod backup;
-mod billing;
 mod blocks;
 #[cfg(test)]
 mod blocks_wire;
@@ -38,6 +37,7 @@ mod hub_port;
 mod labs_flags;
 mod limit;
 mod passkey;
+mod plans;
 mod push;
 #[cfg(test)]
 mod push_notices;
@@ -276,6 +276,9 @@ pub struct Github {
 pub struct Config {
     pub push_hosts: Vec<String>,
     pub relay_free_bytes: u64,
+    /// Billing is on (there's a Stripe key): the platform bills, and the
+    /// relay's free allowance replaces its daily cap (`plans`).
+    pub billing: bool,
     pub public_url: String,
     /// `public_url`'s origin, as browsers send it.
     pub origin: String,
@@ -336,7 +339,6 @@ pub struct App {
     pub limits: limit::Limits,
     pub vapid: push::Vapid,
     pub hosted: Option<sandboxes::Hosted>,
-    pub stripe: Option<billing::Stripe>,
     pub cloud: Option<cloud::Cloud>,
     /// The GitHub App (M40), and daemons' subscriptions to its webhooks.
     pub github_app: Option<forge::GithubApp>,
@@ -381,13 +383,14 @@ impl App {
 /// [`App::start`].
 fn platform(
     db: arugula_platform::db::Db,
-    public_url: &str,
+    cfg: arugula_platform::Config,
+    stripe: Option<arugula_platform::billing::Stripe>,
     http: &reqwest::Client,
     analytics: &analytics::Analytics,
 ) -> (Arc<arugula_platform::Platform>, Arc<hub_port::InProcess>) {
     let hub = Arc::new(hub_port::InProcess::default());
-    let cfg = arugula_platform::Config { public_url: public_url.to_owned() };
-    let p = arugula_platform::Platform::new(cfg, db, hub.clone(), http.clone(), analytics.clone());
+    let mut p = arugula_platform::Platform::new(cfg, db, hub.clone(), http.clone(), analytics.clone());
+    p.stripe = stripe;
     (Arc::new(p), hub)
 }
 
@@ -398,12 +401,18 @@ impl App {
         let db = db::Db::memory();
         let vapid = push::Vapid::load(&db).unwrap();
         let http = reqwest::Client::new();
+        let cfg = arugula_platform::Config {
+            public_url: public_url.into(),
+            sites: vec![public_url.into()],
+            relay_free_bytes: 0,
+        };
         let (platform, hub_port) =
-            platform(arugula_platform::db::Db::memory(), public_url, &http, &analytics::Analytics::default());
+            platform(arugula_platform::db::Db::memory(), cfg, None, &http, &analytics::Analytics::default());
         App {
             cfg: Config {
                 push_hosts: vec![],
                 relay_free_bytes: 0,
+                billing: false,
                 public_url: public_url.into(),
                 origin: origin_of(public_url).unwrap(),
                 sites: vec![Site::new(public_url).unwrap()],
@@ -419,7 +428,6 @@ impl App {
             limits: limit::Limits::new(None),
             vapid,
             hosted: None,
-            stripe: None,
             cloud: None,
             github_app: None,
             forge: Default::default(),
@@ -579,10 +587,6 @@ fn routes() -> Routes {
         .route("/api/sandboxes", get(sandboxes::list).post(sandboxes::create))
         .route("/api/sandboxes/{id}", axum::routing::delete(sandboxes::delete))
         .route(wire::SANDBOX_DONE, post(sandboxes::done))
-        .route("/api/billing", get(billing::status))
-        .route("/api/billing/checkout", post(billing::checkout))
-        .route("/api/billing/report", post(billing::report_now))
-        .route("/api/stripe/webhook", post(billing::webhook))
         .route("/github/webhook", post(forge::webhook))
         .route("/api/daemon/github/token", post(forge::daemon_token))
         .route(wire::RELAY_DIAL, get(relay::dial))
@@ -776,12 +780,12 @@ fn billing_from(
     seat_price: String,
     minutes_price: String,
     minutes_event: String,
-) -> anyhow::Result<Option<billing::Stripe>> {
+) -> anyhow::Result<Option<arugula_platform::billing::Stripe>> {
     let Some(secret) = secret else { return Ok(None) };
     let Some(webhook_secret) = webhook_secret else {
         anyhow::bail!("STRIPE_SECRET_KEY is set but STRIPE_WEBHOOK_SECRET isn't: billing needs both");
     };
-    Ok(Some(billing::Stripe {
+    Ok(Some(arugula_platform::billing::Stripe {
         api: api.trim_end_matches('/').to_owned(),
         secret,
         webhook_secret,
@@ -959,11 +963,18 @@ async fn run() -> anyhow::Result<()> {
     };
     // A second connection to the same file: the platform never reads the
     // hub's tables (#1153).
-    let (platform, hub_port) = platform(arugula_platform::db::Db::open(&a.db)?, &public_url, &http, &analytics);
+    let billing = stripe.is_some();
+    let cfg = arugula_platform::Config {
+        public_url: public_url.clone(),
+        sites: sites.iter().map(|s| s.url.clone()).collect(),
+        relay_free_bytes: a.relay_free_mb * 1_000_000,
+    };
+    let (platform, hub_port) = platform(arugula_platform::db::Db::open(&a.db)?, cfg, stripe, &http, &analytics);
     let app = App {
         cfg: Config {
             push_hosts: a.push_hosts,
             relay_free_bytes: a.relay_free_mb * 1_000_000,
+            billing,
             origin: origin_of(&public_url)?,
             sites,
             also_redirect: a.also_redirect,
@@ -984,7 +995,6 @@ async fn run() -> anyhow::Result<()> {
         limits: limit::Limits::new(a.trust_proxy_header),
         vapid,
         hosted,
-        stripe,
         cloud,
         github_app,
         forge: Default::default(),
@@ -1014,12 +1024,12 @@ async fn run() -> anyhow::Result<()> {
         cloud::worker::start(app.clone());
         cloud::notifications::start(app.clone());
     }
-    if app.stripe.is_some() {
-        let a2 = app.clone();
+    if app.cfg.billing {
+        let p = app.platform.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
-                billing::report_usage(&a2).await;
+                arugula_platform::billing::report_usage(&p).await;
             }
         });
     }

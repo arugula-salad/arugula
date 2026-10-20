@@ -375,7 +375,7 @@ async fn relay(app: Arc<App>, origin_key: String, req: Request) -> Response {
     let Some(seat) = take_seat(&app, &daemon, &origin_key) else {
         return plain(StatusCode::TOO_MANY_REQUESTS, "too many connections to this block or machine at once");
     };
-    let ticket = match app.relay.admit_block(&app.db, &owner, app.stripe.is_some()) {
+    let ticket = match app.relay.admit_block(&app.db, &owner, app.cfg.billing) {
         Ok(t) => t,
         Err(crate::relay::Refused::Full) => {
             // A browser can't read a refused upgrade's status: it gets the
@@ -391,7 +391,7 @@ async fn relay(app: Arc<App>, origin_key: String, req: Request) -> Response {
         }
     };
     let Ok(stream) = mux.open() else { return plain(StatusCode::NOT_FOUND, UNREACHABLE) };
-    let slow = crate::billing::relay_standing(&app, &owner).is_ok_and(|(_, _, slow)| slow);
+    let slow = crate::plans::relay_standing(&app, &owner).await.is_ok_and(|(_, _, slow)| slow);
     let deadlines = app.blocks.deadlines;
     up.max_message_size(MAX_WIRE).read_buffer_size(CLIENT_READ_BUFFER).on_upgrade(move |ws| async move {
         let _seat = seat;

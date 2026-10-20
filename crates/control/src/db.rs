@@ -190,18 +190,6 @@ CREATE TABLE IF NOT EXISTS sandboxes (
     deleted INTEGER,
     daemon TEXT
 );
-CREATE TABLE IF NOT EXISTS billing (
-    owner TEXT PRIMARY KEY,
-    customer TEXT,
-    subscription TEXT,
-    status TEXT NOT NULL,
-    seat_item TEXT,
-    updated INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS reported (
-    account TEXT PRIMARY KEY,
-    minutes INTEGER NOT NULL
-);
 CREATE TABLE IF NOT EXISTS usage (
     account TEXT NOT NULL,
     day TEXT NOT NULL,
@@ -391,20 +379,6 @@ pub struct Team {
     pub founder: String,
     pub founder_root: String,
     pub locked: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct BillingRow {
-    pub customer: Option<String>,
-    pub subscription: Option<String>,
-    pub status: String,
-    pub seat_item: Option<String>,
-}
-
-impl BillingRow {
-    pub fn active(&self) -> bool {
-        matches!(self.status.as_str(), "active" | "trialing" | "past_due")
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1964,47 +1938,7 @@ impl Db {
             .optional()?)
     }
 
-    // ---- billing (M22)
-
-    pub fn billing(&self, owner: &str) -> anyhow::Result<Option<BillingRow>> {
-        Ok(self
-            .c()
-            .query_row(
-                "SELECT customer, subscription, status, seat_item FROM billing WHERE owner = ?1",
-                params![owner],
-                |r| {
-                    Ok(BillingRow {
-                        customer: r.get(0)?,
-                        subscription: r.get(1)?,
-                        status: r.get(2)?,
-                        seat_item: r.get(3)?,
-                    })
-                },
-            )
-            .optional()?)
-    }
-
-    pub fn set_billing(
-        &self,
-        owner: &str,
-        customer: Option<&str>,
-        subscription: Option<&str>,
-        status: &str,
-        now: u64,
-    ) -> anyhow::Result<()> {
-        self.c().execute(
-            "INSERT INTO billing (owner, customer, subscription, status, updated) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT (owner) DO UPDATE SET customer = COALESCE(excluded.customer, customer),
-               subscription = COALESCE(excluded.subscription, subscription), status = excluded.status, updated = excluded.updated",
-            params![owner, customer, subscription, status, now],
-        )?;
-        Ok(())
-    }
-
-    pub fn set_seat_item(&self, owner: &str, item: &str) -> anyhow::Result<()> {
-        self.c().execute("UPDATE billing SET seat_item = ?2 WHERE owner = ?1", params![owner, item])?;
-        Ok(())
-    }
+    // ---- billing's meters (M22): billing itself is the platform's (M139)
 
     /// Relay bytes this month (`YYYY-MM`).
     pub fn relay_bytes_month(&self, account: &str, month: &str) -> anyhow::Result<u64> {
@@ -2021,20 +1955,6 @@ impl Db {
         let mut q = c.prepare("SELECT DISTINCT account FROM sandboxes")?;
         let rows = q.query_map([], |r| r.get(0))?;
         Ok(rows.collect::<Result<_, _>>()?)
-    }
-
-    pub fn reported_minutes(&self, account: &str) -> anyhow::Result<u64> {
-        Ok(self
-            .c()
-            .query_row("SELECT minutes FROM reported WHERE account = ?1", params![account], |r| r.get(0))
-            .optional()?
-            .unwrap_or(0))
-    }
-
-    pub fn set_reported_minutes(&self, account: &str, minutes: u64) -> anyhow::Result<()> {
-        self.c()
-            .execute("INSERT OR REPLACE INTO reported (account, minutes) VALUES (?1, ?2)", params![account, minutes])?;
-        Ok(())
     }
 
     // ---- hosted sandboxes (M20)
@@ -2262,7 +2182,9 @@ impl Db {
     }
 
     /// Delete an account and everything that's only its, in one
-    /// transaction. Returns its machines' ids (to hang up on).
+    /// transaction. Returns its machines' ids (to hang up on). What the
+    /// platform holds of it (billing's) goes after, through
+    /// `PlatformPort::account_deleted`.
     pub fn delete_account(&self, e: &Erase) -> anyhow::Result<Vec<String>> {
         let a = e.account;
         let mut c = self.c();
@@ -2350,7 +2272,6 @@ impl Db {
                 "DELETE FROM team_requests WHERE team = ?1",
                 "DELETE FROM daemon_watches WHERE team = ?1",
                 "DELETE FROM retained_for WHERE team = ?1",
-                "DELETE FROM billing WHERE owner = 'team:' || ?1",
                 "DELETE FROM labs_flags WHERE owner = 'team:' || ?1",
                 "UPDATE daemons SET team = NULL, moved = NULL WHERE team = ?1",
                 "UPDATE joins SET team = NULL, team_sig = NULL WHERE team = ?1",
@@ -2401,9 +2322,7 @@ impl Db {
             "DELETE FROM push_subs WHERE account = ?1",
             "DELETE FROM notices WHERE account = ?1",
             "DELETE FROM sandboxes WHERE account = ?1",
-            "DELETE FROM billing WHERE owner = 'account:' || ?1",
             "DELETE FROM labs_flags WHERE owner = 'account:' || ?1",
-            "DELETE FROM reported WHERE account = ?1",
             "DELETE FROM usage WHERE account = ?1",
             "DELETE FROM team_requests WHERE account = ?1",
             "DELETE FROM invites WHERE by_account = ?1",

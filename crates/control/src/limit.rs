@@ -33,11 +33,6 @@ pub const ENROLLS: (&str, usize) = ("enroll", 30);
 pub const TEAMS: (&str, usize) = ("team", 20);
 /// Invite links made, per account.
 pub const TEAM_INVITES: (&str, usize) = ("team-invite", 120);
-/// Checkout pages asked for, per account.
-pub const CHECKOUTS: (&str, usize) = ("checkout", 20);
-/// Usage reports asked for, per account and all together.
-pub const REPORTS: (&str, usize) = ("report", 6);
-pub const ALL_REPORTS: (&str, usize) = ("report-all", 30);
 /// `forge.watch` messages, per daemon.
 pub const FORGE_WATCHES: (&str, usize) = ("forge-watch", 120);
 /// Repositories looked up at GitHub for the first time in a while (not

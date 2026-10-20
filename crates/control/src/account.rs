@@ -34,6 +34,7 @@ use arugula_e2e::{
     now_ms,
     team::{Roster, TeamRole},
 };
+use arugula_platform::PlatformPort;
 use axum::{
     Json,
     extract::{Path, State},
@@ -203,7 +204,8 @@ pub struct Plan {
     pub disband: Vec<(String, String, usize)>,
     /// Teams it must leave first, and why: refuse until then.
     pub blockers: Vec<String>,
-    /// Plans it pays for: refuse until cancelled.
+    /// Plans it pays for: refuse until cancelled. Billing is the
+    /// platform's, so [`pays`] fills this in.
     pub pays: Vec<String>,
     /// Teams whose history its devices signed: keep its certificates.
     pub retain_for: Vec<String>,
@@ -224,9 +226,6 @@ pub fn plan(app: &App, account: &str) -> anyhow::Result<Plan> {
     if app.db.active_cloud_runs(account)? > 0 {
         p.blockers.push("Wait for your cloud runs to finish stopping before deleting your account. A run holding changes that couldn't be saved needs them recovered first.".into());
     }
-    if app.db.billing(&format!("account:{account}"))?.is_some_and(|b| b.active()) {
-        p.pays.push("your own plan".into());
-    }
     for team in app.db.team_ids()? {
         let Some(t) = app.db.team(&team)? else { continue };
         let rosters: Vec<Roster> =
@@ -235,9 +234,6 @@ pub fn plan(app: &App, account: &str) -> anyhow::Result<Plan> {
         let role = latest.member(account).map(|m| m.role);
         let others: Vec<_> = latest.members.iter().filter(|m| m.account != account).collect();
         if t.founder == account || (role.is_some() && others.is_empty()) {
-            if app.db.billing(&format!("team:{team}"))?.is_some_and(|b| b.active()) {
-                p.pays.push(format!("the team plan of {}", t.name));
-            }
             p.disband.push((team, t.name, others.len()));
             continue;
         }
@@ -265,9 +261,30 @@ pub fn plan(app: &App, account: &str) -> anyhow::Result<Plan> {
     Ok(p)
 }
 
+/// The plans an account pays for, which it cancels before it goes: its
+/// own, and those of the teams it would disband. Billing is the
+/// platform's (M139), so it says which are active.
+pub async fn pays(app: &App, account: &str, p: &Plan) -> anyhow::Result<Vec<String>> {
+    let own = format!("account:{account}");
+    let mut owners = vec![own.clone()];
+    owners.extend(p.disband.iter().map(|(t, _, _)| format!("team:{t}")));
+    let active = app.platform.active_plans(&owners).await?;
+    let mut out: Vec<String> = Vec::new();
+    if active.contains(&own) {
+        out.push("your own plan".into());
+    }
+    for (t, name, _) in &p.disband {
+        if active.contains(&format!("team:{t}")) {
+            out.push(format!("the team plan of {name}"));
+        }
+    }
+    Ok(out)
+}
+
 /// `GET /api/me/delete`: what deleting this account would do.
 pub async fn preview(State(app): State<Arc<App>>, s: Session) -> R {
-    let p = plan(&app, &s.account)?;
+    let mut p = plan(&app, &s.account)?;
+    p.pays = pays(&app, &s.account, &p).await?;
     let machines = app.db.daemons(&s.account)?.len();
     let vms = app.db.sandboxes(&s.account)?.iter().filter(|x| x.deleted.is_none()).count();
     Ok(Json(json!({
@@ -296,7 +313,8 @@ pub async fn delete(State(app): State<Arc<App>>, s: Session, Json(b): Json<Confi
 }
 
 pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Result<(), ApiError> {
-    let p = plan(app, account)?;
+    let mut p = plan(app, account)?;
+    p.pays = pays(app, account, &p).await?;
     if !typed.trim().eq_ignore_ascii_case(p.confirm.trim()) {
         return Err(err(StatusCode::BAD_REQUEST, &format!("type {} to confirm", p.confirm)));
     }
@@ -354,6 +372,15 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
     // Its DMs go with it (M122): the other people's pages hear so.
     let dms: Vec<String> = app.db.chat_rooms_member(account)?.into_iter().map(|r| r.id).collect();
     let daemons = app.db.delete_account(&crate::db::Erase { account, disband: &disband, retain_for: &p.retain_for })?;
+    // Then the platform's rows of it: billing's (M139).
+    let deleted = arugula_platform::Deleted {
+        account: account.to_owned(),
+        machines: daemons.clone(),
+        disbanded: disband.clone(),
+    };
+    if let Err(e) = app.platform.account_deleted(&deleted).await {
+        warn!(error = %e, "the platform couldn't erase a deleted account");
+    }
     for d in &daemons {
         app.relay.drop_daemon(d);
     }
@@ -529,8 +556,24 @@ mod tests {
         assert_eq!(p.confirm, "alice");
         assert_eq!(p.disband.iter().map(|d| d.0.as_str()).collect::<Vec<_>>(), ["t1"]);
         assert!(p.blockers.is_empty() && p.pays.is_empty() && p.retain_for.is_empty());
+        // Billing's rows are the platform's (M139): the team she founded
+        // pays, so she cancels first.
+        let billing = &app.platform.db;
+        billing.set_billing("account:acct-alice", Some("cus_a"), Some("sub_a"), "canceled", 1).unwrap();
+        billing.set_billing("team:t1", Some("cus_t1"), Some("sub_t1"), "active", 1).unwrap();
+        billing.set_billing("team:t2", Some("cus_t2"), Some("sub_t2"), "active", 1).unwrap();
+        billing.set_reported_minutes("acct-alice", 3).unwrap();
+        assert_eq!(pays(&app, "acct-alice", &p).await.unwrap(), ["the team plan of team t1"]);
+        let e = delete_account(&app, "acct-alice", "alice").await.unwrap_err();
+        assert_eq!((e.0, e.1.as_str()), (StatusCode::CONFLICT, "cancel the team plan of team t1 first"));
+        billing.set_billing("team:t1", None, None, "canceled", 2).unwrap();
         assert!(delete_account(&app, "acct-alice", "bob").await.is_err(), "the wrong word");
         delete_account(&app, "acct-alice", " Alice ").await.unwrap();
+        // The platform forgot her and her team's plan, and kept Bob's team's.
+        assert!(billing.billing("account:acct-alice").unwrap().is_none());
+        assert!(billing.billing("team:t1").unwrap().is_none());
+        assert_eq!(billing.reported_minutes("acct-alice").unwrap(), 0);
+        assert!(billing.billing("team:t2").unwrap().is_some());
 
         assert_eq!(app.db.mentions("acct-alice"), Vec::<String>::new());
         assert_eq!(app.db.mentions(&ac.device), Vec::<String>::new());

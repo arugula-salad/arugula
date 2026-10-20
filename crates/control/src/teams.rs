@@ -24,6 +24,7 @@ use arugula_e2e::{
     Cert, Revocation, Trust,
     team::{AccountCerts, AskInvite, Invite, Roster, TeamPin, TeamRole},
 };
+use arugula_platform::PlatformPort;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -410,8 +411,10 @@ pub async fn set_roster(
         );
     }
     app.analytics.group(&s.account, &team, json!({ "members": b.roster.members.len(), "owners": owners }));
-    // A team pays per seat (M22).
-    crate::billing::sync_seats(&app, &team, b.roster.members.len()).await;
+    // A team pays per seat (M22): billing, on the platform, follows.
+    if let Err(e) = app.platform.roster_changed(&team).await {
+        tracing::warn!(team, error = %e, "can't tell billing the roster changed");
+    }
     Ok(Json(json!({ "version": b.roster.version })))
 }
 

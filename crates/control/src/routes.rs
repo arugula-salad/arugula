@@ -19,7 +19,6 @@ struct List {
 struct Route {
     method: String,
     path: String,
-    #[expect(dead_code, reason = "parsed to check it's one of the two")]
     process: Process,
     auth: Auth,
     clients: Vec<Client>,
@@ -28,7 +27,7 @@ struct Route {
     note: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum Process {
     Hub,
@@ -134,4 +133,22 @@ async fn every_route_is_listed_once() {
         missing.is_empty() && extra.is_empty(),
         "crates/control/routes.toml doesn't match the router.\nRegistered, not listed:{missing}\nListed, not registered:{extra}"
     );
+}
+
+/// What the platform's router answers is listed as the platform's (#1152),
+/// Stripe's webhook among them (M139).
+#[test]
+fn the_platform_answers_platform_routes() {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("routes.toml");
+    let list: List = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let platform = arugula_platform::paths();
+    assert!(platform.contains(&"/api/stripe/webhook"), "Stripe's webhook is the platform's");
+    for r in list.route.iter().filter(|r| platform.contains(&r.path.as_str())) {
+        assert!(
+            r.process == Process::Platform,
+            "routes.toml: {} {}: the platform answers it, so `process = \"platform\"`",
+            r.method,
+            r.path
+        );
+    }
 }
