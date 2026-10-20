@@ -41,7 +41,11 @@ Every client-to-daemon stream through control is one Noise channel
 (`Noise_IK_25519_AESGCM_SHA256`), on the relay and on direct paths from
 control's page, with one channel per viewer so revoking closes it. A page a
 daemon serves itself still uses plain `/ws`, inside the tailnet's WireGuard.
-The exception is chat (M122, "Chat lives in control, in plain text"):
+This is the machine plane's rule ("Two planes, two trust rules", #1122):
+"can't read" covers terminal bytes, pane content and machine keys. The
+platform plane holds plaintext for what has to exist while every machine is
+asleep, and only what `crates/control/tables.toml` lists. Chat is one case
+of it (M122, "Chat lives in control, in plain text"):
 control reads a team's chat, and the lines someone chooses to quote from a
 pane into it. A pane's output, input and scrollback stay end to end.
 Where: `crates/e2e/src/channel.rs`, `crates/control/src/relay.rs`, `crates/daemon/src/e2e.rs`.
