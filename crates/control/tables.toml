@@ -8,6 +8,12 @@
 # - `plane`: `machine` (what control needs to route and check: it can't
 #   read what moves between a client and a machine) or `platform` (what has
 #   to exist while every machine is asleep).
+# - `process`: which of control's two processes owns it ("Control is two
+#   processes: a hub and a platform", #1150): `hub` or `platform`. Every
+#   table is the hub's until its feature moves (M137-M139 flip theirs); a
+#   platform table is read only by the platform, through its own database
+#   handle, and the hub reaches it only through `PlatformPort`. Not the
+#   same as the plane: Shared Docs are platform-plane data the hub holds.
 # - `holds`:
 #   - `metadata`: ids, names, addresses, times, counts, public keys and
 #     signed statements;
@@ -66,6 +72,7 @@ sees = "Stripe bills, when control has a key for it: it holds the customers and 
 [[table]]
 name = "accounts"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "An account: its id, its root device, its display name, and its answer about page telemetry."
 with_account = "deleted"
@@ -74,6 +81,7 @@ seen_by = ["litestream", "posthog"]
 [[table]]
 name = "identities"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A sign-in identity: the provider, its id for the person, and their login."
 with_account = "deleted"
@@ -82,6 +90,7 @@ seen_by = ["litestream", "github"]
 [[table]]
 name = "sessions"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A sign-in session: a hash of its token, the browser's User-Agent, its device, when it ends."
 with_account = "deleted"
@@ -90,6 +99,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "passkeys"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A passkey's public key, its sign count, what keeps it, the browser that added it, whether it gives PRF."
 with_account = "deleted"
@@ -98,6 +108,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "devices"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval."
 with_account = "deleted"
@@ -106,6 +117,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "turned_down"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "Which device turned a waiting device down, and when."
 with_account = "deleted"
@@ -114,6 +126,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "revocations"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A signed revocation of a device's or machine's key."
 with_account = "deleted"
@@ -122,6 +135,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "joins"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A machine asking to join: its certificate, a hash of its poll token, its addresses, the approval."
 with_account = "deleted"
@@ -130,6 +144,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "daemons"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "The directory: a joined machine's id, name, addresses, team, last seen, and the version, OS and arch it runs."
 with_account = "deleted"
@@ -138,6 +153,7 @@ seen_by = ["litestream", "posthog"]
 [[table]]
 name = "daemon_access"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "The accounts a machine says it lets in, for routing (the machine checks for itself)."
 with_account = "deleted"
@@ -146,6 +162,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "daemon_agent_access"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "The accounts whose machines a machine lets in for its agents, for routing."
 with_account = "deleted"
@@ -154,6 +171,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "daemon_offers"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A machine shared with an account that hasn't said yes yet."
 with_account = "deleted"
@@ -162,6 +180,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "daemon_offer_pushes"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "When an account was last pushed about a shared machine."
 with_account = "deleted"
@@ -170,6 +189,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "share_answers"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "An account's yes or no to a machine shared with it."
 with_account = "deleted"
@@ -178,6 +198,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "daemon_links"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "Until when a machine has a live share link, so control routes link guests to it."
 with_account = "deleted"
@@ -186,6 +207,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "sandboxes"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A hosted sandbox: its VM's id, the device that asked, a hash of its join ticket, its state."
 with_account = "deleted"
@@ -194,6 +216,7 @@ seen_by = ["litestream", "sprites"]
 [[table]]
 name = "push_subs"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A browser's signed push subscription: the push service's endpoint and the keys pushes are encrypted to."
 with_account = "deleted"
@@ -202,6 +225,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "settings"
 plane = "machine"
+process = "hub"
 holds = "plaintext"
 what = "Control's own VAPID key pair, which signs the pushes it sends."
 with_account = "none"
@@ -210,6 +234,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "notices"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A notice for an account with no push, made from names control holds (\"Ada left Acme\")."
 with_account = "deleted"
@@ -218,6 +243,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "labs_flags"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "The Labs flags an account or a team turned on for its machines."
 with_account = "deleted"
@@ -227,6 +253,7 @@ seen_by = ["litestream", "posthog"]
 [[table]]
 name = "teams"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A team: its id, name, founder and founder's root, and whether it's locked."
 with_account = "partly"
@@ -236,6 +263,7 @@ seen_by = ["litestream", "posthog"]
 [[table]]
 name = "rosters"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A team's signed roster, every version: who's in it and their roles."
 with_account = "partly"
@@ -245,6 +273,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "invites"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "An Ask me first invite: a hash of its code, the team, the role, its expiry, the owner's signed invite."
 with_account = "deleted"
@@ -253,6 +282,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "presigned_invites"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A one-time invite an owner's device signed, waiting to be used."
 with_account = "deleted"
@@ -261,6 +291,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "team_requests"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "Someone asking to join a team: their account, root, name, the role, the invite and its proof."
 with_account = "deleted"
@@ -269,6 +300,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "daemon_watches"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A machine that checks a team's rosters because a session was shared with it."
 with_account = "deleted"
@@ -277,6 +309,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "retained_certs"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A deleted account's device certificates and revocations, to check teams' signed history it signed."
 with_account = "kept"
@@ -286,6 +319,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "retained_for"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "Which teams a deleted account's certificates are kept for."
 with_account = "kept"
@@ -295,10 +329,21 @@ seen_by = ["litestream"]
 [[table]]
 name = "gone_daemons"
 plane = "machine"
+process = "hub"
 holds = "metadata"
 what = "A hash of each machine of a deleted account, so one asking again is told why."
 with_account = "kept"
 note = "Made when the account goes: a hash of the machine's id and when, nothing of the account."
+seen_by = ["litestream"]
+
+[[table]]
+name = "hub_changes"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "The hub's outbox for the platform (#1153): a change to an account's name, a revoked device, a roster or a lock, a machine joining, moving, leaving or being shared, or a Labs flag, by kind, the id it's about and when. Kept a week, and at most the newest 100,000."
+with_account = "deleted"
+note = "Every change naming the account, its devices, its machines and the teams it disbands goes, and its deletion is one change that names nobody."
 seen_by = ["litestream"]
 
 # ---- the platform plane: what has to exist while every machine is asleep
@@ -306,6 +351,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "billing"
 plane = "platform"
+process = "hub"
 holds = "metadata"
 what = "Who pays: Stripe's customer and subscription ids, the seat item, the status."
 why_asleep = "A plan holds with every machine off, and Stripe's webhooks come whenever."
@@ -316,6 +362,7 @@ seen_by = ["litestream", "stripe", "posthog"]
 [[table]]
 name = "reported"
 plane = "platform"
+process = "hub"
 holds = "metadata"
 what = "How many hosted sandbox minutes have gone to Stripe."
 why_asleep = "Minutes are reported hourly, whether or not anyone's machine is up."
@@ -325,6 +372,7 @@ seen_by = ["litestream", "stripe"]
 [[table]]
 name = "usage"
 plane = "platform"
+process = "hub"
 holds = "metadata"
 what = "Bytes relayed per account per day, for the free plan's monthly allowance."
 why_asleep = "The month's allowance counts across every machine's sleeps."
@@ -334,6 +382,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "chat_rooms"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "A chat room: a team's channel and its name, a DM, or the thread on a pane or a session."
 why_asleep = "People talk with every machine asleep."
@@ -344,6 +393,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "chat_members"
 plane = "platform"
+process = "hub"
 holds = "metadata"
 what = "A DM's two people, and an archive's readers."
 why_asleep = "People talk with every machine asleep."
@@ -353,6 +403,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "chat_messages"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "A chat message, in plain text, with the lines its author quoted from a pane and who it mentions."
 why_asleep = "People talk with every machine asleep."
@@ -363,6 +414,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "chat_fts"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "The full-text index of chat messages and their quotes (SQLite FTS5)."
 why_asleep = "Control searches chat itself, with every machine asleep."
@@ -373,6 +425,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "chat_reads"
 plane = "platform"
+process = "hub"
 holds = "metadata"
 what = "A person's read mark in a room, and whether they muted it."
 why_asleep = "Unread counts and pushes, with every machine asleep."
@@ -382,6 +435,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "chat_readers"
 plane = "platform"
+process = "hub"
 holds = "metadata"
 what = "Who may read the thread on a pane or a session, as its machine last said."
 why_asleep = "A pane's thread stays readable while its machine sleeps."
@@ -392,6 +446,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "doc_links"
 plane = "platform"
+process = "hub"
 holds = "metadata"
 what = "A Shared Doc link: its id, the machine that shared it, its version, size and parts, and how often it opened."
 why_asleep = "A shared Doc opens while the machine that shared it sleeps."
@@ -401,6 +456,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "doc_link_parts"
 plane = "platform"
+process = "hub"
 holds = "ciphertext"
 what = "A Shared Doc's snapshot, in parts, encrypted to the key in the link's fragment."
 why_asleep = "A shared Doc opens while the machine that shared it sleeps."
@@ -410,6 +466,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "cloud_agents"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "A cloud agent's definition: its name, instructions, skills, MCP servers and the names of the secrets it uses."
 why_asleep = "Cloud workspaces and runs work with every machine off."
@@ -419,6 +476,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_runs"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "A cloud run: the agent, model, repository and prompt it ran with, its state, and its result."
 why_asleep = "Cloud workspaces and runs work with every machine off."
@@ -428,6 +486,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_secrets"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "A cloud secret's name and value, sealed with a key control holds apart from the database; control opens it to put it in a Cloud workspace's vault."
 why_asleep = "Cloud workspaces and runs work with every machine off."
@@ -437,6 +496,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_run_secrets"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "The secrets a cloud run started with, sealed as cloud_secrets are."
 why_asleep = "Cloud workspaces and runs work with every machine off."
@@ -446,6 +506,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_jobs"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "The worker's job for a run, a Cloud workspace or a tab: what it was asked (the spec), Managoat's ids, its lease."
 why_asleep = "Control's worker drives Cloud workspaces with every machine off."
@@ -455,6 +516,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_requests"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "What an agent in the cloud asks someone to approve, and the answer."
 why_asleep = "An agent in the cloud asks while every machine is off."
@@ -464,6 +526,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_notifications"
 plane = "platform"
+process = "hub"
 holds = "metadata"
 what = "Whether a push about an approval went out yet, and when to try again."
 why_asleep = "An agent in the cloud asks while every machine is off."
@@ -473,6 +536,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "cloud_events"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "A cloud conversation's transcript: prompts, replies, tool calls and results, as Managoat sent them."
 why_asleep = "Transcripts are read with every machine off."
@@ -482,6 +546,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_workspaces"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "A Cloud workspace: its name, its spec (repositories, packages, setup script, environment variables, networking, secret names), its status and errors."
 why_asleep = "Cloud workspaces work with every machine off."
@@ -492,6 +557,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_workspace_specs"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "The spec a Cloud workspace's environment revision was saved as (the newest few)."
 why_asleep = "Cloud workspaces work with every machine off."
@@ -501,6 +567,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "cloud_tabs"
 plane = "platform"
+process = "hub"
 holds = "plaintext"
 what = "A tab in a Cloud workspace: the agent, runtime, model and prompt it opened with, its status."
 why_asleep = "Cloud workspaces work with every machine off."
@@ -510,6 +577,7 @@ seen_by = ["litestream", "managoat"]
 [[table]]
 name = "projects"
 plane = "platform"
+process = "hub"
 holds = "metadata"
 what = "A project: its id, the team or account it belongs to, its name, and whether it's the default one."
 why_asleep = "Cloud workspaces, team channels and cloud secrets belong to one, and they exist with every machine asleep."
@@ -520,6 +588,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "team_members"
 plane = "platform"
+process = "hub"
 holds = "metadata"
 what = "Who is in each team as its latest signed roster says: account, role, name. A copy for platform queries; the signed roster stays the authority over machines."
 why_asleep = "What's shared with a team on the platform (its channels, later its projects) needs its members while every machine is asleep."
@@ -529,6 +598,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "grants"
 plane = "platform"
+process = "hub"
 holds = "metadata"
 what = "A grant: a subject (a machine), a power (cloud.drive) over a scope (an account or a project), who gave it, when, and when it was revoked."
 why_asleep = "Control checks it on the Cloud workspace routes, which work with every other machine asleep."

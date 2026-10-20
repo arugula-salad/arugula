@@ -29,6 +29,10 @@ struct Party {
 struct Table {
     name: String,
     plane: Plane,
+    /// Not in the doc: which process holds a table is how control runs,
+    /// not what it stores.
+    #[expect(dead_code, reason = "parsed to check it's one of the two")]
+    process: Process,
     holds: Holds,
     what: String,
     #[serde(default)]
@@ -43,6 +47,14 @@ struct Table {
 #[serde(rename_all = "lowercase")]
 enum Plane {
     Machine,
+    Platform,
+}
+
+/// Which of control's two processes owns it (#1150).
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Process {
+    Hub,
     Platform,
 }
 
@@ -146,7 +158,7 @@ fn every_table_is_listed() {
         let _ = write!(
             wrong,
             "\n{n} isn't listed. Add a row (the header says what each field means):\n\n\
-             [[table]]\nname = \"{n}\"\nplane = \"machine or platform\"\nholds = \"metadata, ciphertext or plaintext\"\n\
+             [[table]]\nname = \"{n}\"\nplane = \"machine or platform\"\nprocess = \"hub or platform\"\nholds = \"metadata, ciphertext or plaintext\"\n\
              what = \"...\"\nwhy_asleep = \"... (the platform plane only)\"\nwith_account = \"deleted, partly, kept or none\"\n\
              seen_by = [\"litestream\"]\n"
         );

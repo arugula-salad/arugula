@@ -1,6 +1,7 @@
 //! The route list (`crates/control/routes.toml`, #1152): every route the
 //! router registers is listed, once, with the process that answers it, and
-//! nothing else is. The paths come from `routes()` itself; their methods
+//! nothing else is. The paths come from `routes()` itself, and the
+//! platform's from `arugula_platform::paths()`; their methods
 //! from the router, which says in `Allow` what a path takes when it's asked
 //! with a method nothing takes.
 use std::collections::BTreeSet;
@@ -93,7 +94,9 @@ fn probe_path(path: &str) -> String {
 
 /// Every method and path the router answers.
 async fn registered() -> BTreeSet<(String, String)> {
-    let paths = crate::routes().paths;
+    // The hub's, and the platform's it mounts (#1153).
+    let mut paths = crate::routes().paths;
+    paths.extend(arugula_platform::paths());
     let mut once = BTreeSet::new();
     for p in &paths {
         assert!(once.insert(*p), "{p} is registered by two `.route` calls: make it one");

@@ -6,8 +6,9 @@
 //! Chat (M122, `chat`) is held here in plain text: rooms, messages and the
 //! lines people quote from panes, never the rest of a pane.
 //! Projects, team members and grants (`projects`, #1122) are the platform
-//! plane's nouns.
+//! plane's nouns. `changes` is the outbox the platform follows (#1153).
 
+pub mod changes;
 pub mod chat;
 pub mod cloud;
 pub mod doc_links;
@@ -17,8 +18,9 @@ mod tables;
 
 use std::{path::Path, sync::Mutex};
 
-use anyhow::Context;
 use arugula_e2e::{Cert, Kind, Revocation};
+use arugula_platform::hub::ChangeKind;
+use changes::changed;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
@@ -558,11 +560,9 @@ fn cert_of(s: String) -> rusqlite::Result<Cert> {
 
 impl Db {
     pub fn open(path: &Path) -> anyhow::Result<Self> {
-        let conn = Connection::open(path).with_context(|| format!("opening {}", path.display()))?;
-        // Litestream (#174) takes the write lock now and then to checkpoint.
-        conn.busy_timeout(std::time::Duration::from_secs(5))?;
-        conn.pragma_update(None, "journal_mode", "WAL")?;
-        conn.pragma_update(None, "foreign_keys", "ON")?;
+        // WAL, foreign keys, and a wait for the lock: in process the
+        // platform has a second connection to this file (#1153).
+        let conn = arugula_control_common::sqlite::open(path)?;
         let answers_before: bool = conn.query_row(
             "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'share_answers')",
             [],
@@ -573,6 +573,7 @@ impl Db {
         conn.execute_batch(chat::SCHEMA)?;
         conn.execute_batch(doc_links::SCHEMA)?;
         conn.execute_batch(projects::SCHEMA)?;
+        conn.execute_batch(changes::SCHEMA)?;
         migrate(&conn)?;
         chat::migrate(&conn)?;
         projects::migrate(&conn, arugula_e2e::now_ms())?;
@@ -583,12 +584,13 @@ impl Db {
     }
 
     pub fn memory() -> Self {
-        let conn = Connection::open_in_memory().unwrap();
+        let conn = arugula_control_common::sqlite::memory();
         conn.execute_batch(SCHEMA).unwrap();
         conn.execute_batch(cloud::SCHEMA).unwrap();
         conn.execute_batch(chat::SCHEMA).unwrap();
         conn.execute_batch(doc_links::SCHEMA).unwrap();
         conn.execute_batch(projects::SCHEMA).unwrap();
+        conn.execute_batch(changes::SCHEMA).unwrap();
         migrate(&conn).unwrap();
         chat::migrate(&conn).unwrap();
         projects::migrate(&conn, arugula_e2e::now_ms()).unwrap();
@@ -610,8 +612,9 @@ impl Db {
         new_id: &str,
         now: u64,
     ) -> anyhow::Result<String> {
-        let c = self.c();
-        let found: Option<String> = c
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let found: Option<String> = tx
             .query_row(
                 "SELECT account FROM identities WHERE provider = ?1 AND subject = ?2",
                 params![provider, subject],
@@ -619,17 +622,23 @@ impl Db {
             )
             .optional()?;
         if let Some(a) = found {
-            c.execute(
-                "UPDATE identities SET login = ?3 WHERE provider = ?1 AND subject = ?2",
+            // A new login can be its name (`Db::account`).
+            if tx.execute(
+                "UPDATE identities SET login = ?3 WHERE provider = ?1 AND subject = ?2 AND login IS NOT ?3",
                 params![provider, subject, login],
-            )?;
+            )? > 0
+            {
+                changed(&tx, ChangeKind::AccountName, &a)?;
+            }
+            tx.commit()?;
             return Ok(a);
         }
-        c.execute("INSERT INTO accounts (id, root, created) VALUES (?1, NULL, ?2)", params![new_id, now])?;
-        c.execute(
+        tx.execute("INSERT INTO accounts (id, root, created) VALUES (?1, NULL, ?2)", params![new_id, now])?;
+        tx.execute(
             "INSERT INTO identities (provider, subject, account, login) VALUES (?1, ?2, ?3, ?4)",
             params![provider, subject, new_id, login],
         )?;
+        tx.commit()?;
         Ok(new_id.to_owned())
     }
 
@@ -663,7 +672,12 @@ impl Db {
 
     /// The account's display name (#102).
     pub fn set_name(&self, account: &str, name: &str) -> anyhow::Result<()> {
-        self.c().execute("UPDATE accounts SET name = ?2 WHERE id = ?1", params![account, name])?;
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        if tx.execute("UPDATE accounts SET name = ?2 WHERE id = ?1 AND name IS NOT ?2", params![account, name])? > 0 {
+            changed(&tx, ChangeKind::AccountName, account)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -1004,20 +1018,28 @@ impl Db {
     }
 
     pub fn add_revocation(&self, r: &Revocation) -> anyhow::Result<()> {
-        self.c().execute(
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute(
             "INSERT INTO revocations (account, device, body) VALUES (?1, ?2, ?3)",
             params![r.account, r.device, serde_json::to_string(r)?],
         )?;
+        changed(&tx, ChangeKind::DeviceRevoked, &r.device)?;
+        tx.commit()?;
         Ok(())
     }
 
     /// A revocation of a machine of `r.account`'s own (a `daemons` row of
     /// that account when it was revoked): see [`Db::revoked`].
     pub fn add_machine_revocation(&self, r: &Revocation) -> anyhow::Result<()> {
-        self.c().execute(
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute(
             "INSERT INTO revocations (account, device, body, machine) VALUES (?1, ?2, ?3, 1)",
             params![r.account, r.device, serde_json::to_string(r)?],
         )?;
+        changed(&tx, ChangeKind::DeviceRevoked, &r.device)?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -1298,11 +1320,19 @@ impl Db {
     // ---- the directory
 
     pub fn put_daemon(&self, account: &str, id: &str, name: &str, urls: &[String]) -> anyhow::Result<()> {
-        self.c().execute(
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let was: Option<String> =
+            tx.query_row("SELECT name FROM daemons WHERE id = ?1", params![id], |r| r.get(0)).optional()?;
+        tx.execute(
             "INSERT INTO daemons (id, account, name, urls, last_seen) VALUES (?1, ?2, ?3, ?4, NULL)
              ON CONFLICT (id) DO UPDATE SET name = excluded.name, urls = excluded.urls",
             params![id, account, name, serde_json::to_string(urls)?],
         )?;
+        if was.as_deref() != Some(name) {
+            changed(&tx, ChangeKind::DaemonJoined, id)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -1337,22 +1367,26 @@ impl Db {
     }
 
     pub fn drop_daemon(&self, id: &str) -> anyhow::Result<()> {
-        let c = self.c();
-        c.execute("DELETE FROM daemons WHERE id = ?1", params![id])?;
-        c.execute("DELETE FROM devices WHERE id = ?1 AND kind = 'daemon'", params![id])?;
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        if tx.execute("DELETE FROM daemons WHERE id = ?1", params![id])? > 0 {
+            changed(&tx, ChangeKind::DaemonLeft, id)?;
+        }
+        tx.execute("DELETE FROM devices WHERE id = ?1 AND kind = 'daemon'", params![id])?;
         // What it shared, and the answers: a machine that joins again (to
         // another account, say) asks again.
-        c.execute("DELETE FROM daemon_access WHERE daemon = ?1", params![id])?;
-        c.execute("DELETE FROM daemon_agent_access WHERE daemon = ?1", params![id])?;
-        c.execute("DELETE FROM daemon_links WHERE daemon = ?1", params![id])?;
-        c.execute("DELETE FROM daemon_offers WHERE daemon = ?1", params![id])?;
-        c.execute("DELETE FROM daemon_offer_pushes WHERE daemon = ?1", params![id])?;
-        c.execute("DELETE FROM share_answers WHERE daemon = ?1", params![id])?;
-        c.execute("DELETE FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1", params![id])?;
+        tx.execute("DELETE FROM daemon_access WHERE daemon = ?1", params![id])?;
+        tx.execute("DELETE FROM daemon_agent_access WHERE daemon = ?1", params![id])?;
+        tx.execute("DELETE FROM daemon_links WHERE daemon = ?1", params![id])?;
+        tx.execute("DELETE FROM daemon_offers WHERE daemon = ?1", params![id])?;
+        tx.execute("DELETE FROM daemon_offer_pushes WHERE daemon = ?1", params![id])?;
+        tx.execute("DELETE FROM share_answers WHERE daemon = ?1", params![id])?;
+        tx.execute("DELETE FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1", params![id])?;
         // The Docs it shared: a link needs its machine's say to change, and
         // the machine is gone.
-        c.execute("DELETE FROM doc_link_parts WHERE id IN (SELECT id FROM doc_links WHERE daemon = ?1)", params![id])?;
-        c.execute("DELETE FROM doc_links WHERE daemon = ?1", params![id])?;
+        tx.execute("DELETE FROM doc_link_parts WHERE id IN (SELECT id FROM doc_links WHERE daemon = ?1)", params![id])?;
+        tx.execute("DELETE FROM doc_links WHERE daemon = ?1", params![id])?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -1440,10 +1474,23 @@ impl Db {
     }
 
     pub fn answer_share(&self, account: &str, daemon: &str, accepted: bool, now: u64) -> anyhow::Result<()> {
-        self.c().execute(
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let was: Option<bool> = tx
+            .query_row(
+                "SELECT accepted FROM share_answers WHERE account = ?1 AND daemon = ?2",
+                params![account, daemon],
+                |r| r.get(0),
+            )
+            .optional()?;
+        tx.execute(
             "INSERT OR REPLACE INTO share_answers (account, daemon, accepted, at) VALUES (?1, ?2, ?3, ?4)",
             params![account, daemon, accepted, now],
         )?;
+        if was != Some(accepted) {
+            changed(&tx, ChangeKind::DaemonAccess, daemon)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -1488,6 +1535,7 @@ impl Db {
         )?;
         projects::project_roster(&tx, &t.id)?;
         projects::team_project(&tx, &t.id, now)?;
+        changed(&tx, ChangeKind::TeamRoster, &t.id)?;
         tx.commit()?;
         Ok(())
     }
@@ -1508,7 +1556,12 @@ impl Db {
     }
 
     pub fn set_locked(&self, team: &str, locked: bool) -> anyhow::Result<()> {
-        self.c().execute("UPDATE teams SET locked = ?2 WHERE id = ?1", params![team, locked])?;
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        if tx.execute("UPDATE teams SET locked = ?2 WHERE id = ?1 AND locked IS NOT ?2", params![team, locked])? > 0 {
+            changed(&tx, ChangeKind::TeamLocked, team)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -1525,6 +1578,7 @@ impl Db {
             tx.execute("UPDATE teams SET name = ?2 WHERE id = ?1", params![team, name])?;
         }
         projects::project_roster(&tx, team)?;
+        changed(&tx, ChangeKind::TeamRoster, team)?;
         tx.commit()?;
         Ok(())
     }
@@ -1708,14 +1762,24 @@ impl Db {
     }
 
     pub fn set_daemon_team(&self, daemon: &str, team: &str) -> anyhow::Result<()> {
-        self.c().execute("UPDATE daemons SET team = ?2 WHERE id = ?1", params![daemon, team])?;
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        if tx.execute("UPDATE daemons SET team = ?2 WHERE id = ?1 AND team IS NOT ?2", params![daemon, team])? > 0 {
+            changed(&tx, ChangeKind::DaemonMoved, daemon)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
     /// A machine moved after it joined: its team (none for its account)
     /// and the signed move its daemon checks.
     pub fn move_daemon(&self, daemon: &str, team: Option<&str>, moved: &str) -> anyhow::Result<()> {
-        self.c().execute("UPDATE daemons SET team = ?2, moved = ?3 WHERE id = ?1", params![daemon, team, moved])?;
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        if tx.execute("UPDATE daemons SET team = ?2, moved = ?3 WHERE id = ?1", params![daemon, team, moved])? > 0 {
+            changed(&tx, ChangeKind::DaemonMoved, daemon)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -1798,9 +1862,17 @@ impl Db {
     pub fn set_access(&self, daemon: &str, accounts: &[String], links_until: Option<u64>) -> anyhow::Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
+        let was: std::collections::BTreeSet<String> = {
+            let mut q = tx.prepare("SELECT account FROM daemon_access WHERE daemon = ?1")?;
+            q.query_map(params![daemon], |r| r.get(0))?.collect::<Result<_, _>>()?
+        };
         tx.execute("DELETE FROM daemon_access WHERE daemon = ?1", params![daemon])?;
         for a in accounts {
             tx.execute("INSERT OR IGNORE INTO daemon_access (daemon, account) VALUES (?1, ?2)", params![daemon, a])?;
+        }
+        // Daemons send the whole list again and again: only a new one is news.
+        if was != accounts.iter().cloned().collect::<std::collections::BTreeSet<_>>() {
+            changed(&tx, ChangeKind::DaemonAccess, daemon)?;
         }
         match links_until {
             Some(u) => {
@@ -2096,15 +2168,20 @@ impl Db {
 
     /// Sets one (`None` unsets it); `true` if that changed anything.
     pub fn set_labs_flag(&self, owner: &str, name: &str, on: Option<bool>) -> anyhow::Result<bool> {
-        let c = self.c();
+        let mut c = self.c();
+        let tx = c.transaction()?;
         let n = match on {
-            Some(on) => c.execute(
+            Some(on) => tx.execute(
                 "INSERT INTO labs_flags (owner, name, turned_on) VALUES (?1, ?2, ?3)
                  ON CONFLICT (owner, name) DO UPDATE SET turned_on = ?3 WHERE turned_on != ?3",
                 params![owner, name, on],
             )?,
-            None => c.execute("DELETE FROM labs_flags WHERE owner = ?1 AND name = ?2", params![owner, name])?,
+            None => tx.execute("DELETE FROM labs_flags WHERE owner = ?1 AND name = ?2", params![owner, name])?,
         };
+        if n > 0 {
+            changed(&tx, ChangeKind::LabsFlag, owner)?;
+        }
+        tx.commit()?;
         Ok(n > 0)
     }
 
@@ -2222,6 +2299,28 @@ impl Db {
             let mut q = tx.prepare("SELECT id FROM daemons WHERE account = ?1")?;
             q.query_map(params![a], |r| r.get(0))?.collect::<Result<_, _>>()?
         };
+        // The outbox forgets it too (#173): every change naming the
+        // account, its devices, its machines or the teams it disbands goes,
+        // and the deletion names nobody.
+        let mut named: std::collections::HashSet<String> = [a.to_owned(), format!("account:{a}")].into();
+        {
+            let mut q = tx.prepare("SELECT id FROM devices WHERE account = ?1")?;
+            named.extend(q.query_map(params![a], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?);
+        }
+        named.extend(daemons.iter().cloned());
+        let mut moved: Vec<String> = Vec::new();
+        for t in e.disband {
+            named.insert(t.clone());
+            named.insert(format!("team:{t}"));
+            let mut q = tx.prepare("SELECT id FROM daemons WHERE team = ?1 AND account != ?2")?;
+            moved.extend(q.query_map(params![t, a], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?);
+        }
+        changes::forget(&tx, &named)?;
+        // Others' machines in a team it disbands are their own now.
+        for d in &moved {
+            changed(&tx, ChangeKind::DaemonMoved, d)?;
+        }
+        changed(&tx, ChangeKind::AccountDeleted, "")?;
         if !e.retain_for.is_empty() {
             // Only devices that can sign: what a roster's signature chains to.
             let certs: Vec<Cert> = {

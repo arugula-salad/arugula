@@ -14,7 +14,7 @@ Arugula is MIT OR Apache-2.0. Its binaries include the software below.
 - **The web client** bundles npm packages: xterm.js, preact, fzstd and three.js (below). three.js draws the swarm's city and loads only when that theme is picked.
 - **Rust crates**, by license:
 
-- Apache License 2.0 (258)
+- Apache License 2.0 (260)
 - MIT License (59)
 - Unicode License v3 (19)
 - BSD 3-Clause "New" or "Revised" License (11)
@@ -5649,11 +5649,13 @@ Used by:
 - [libghostty-vt 0.2.1](https://github.com/uzaaft/libghostty-rs)
 - [arugula 0.53.2](https://github.com/arugula-salad/arugula)
 - [arugula-control 0.53.2](https://github.com/arugula-salad/arugula)
+- [arugula-control-common 0.53.2](https://github.com/arugula-salad/arugula)
 - [arugula-control-wire 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-core 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad 0.53.2](https://github.com/arugula-salad/arugula)
 - [arugula-e2e 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-mux 0.0.0](https://github.com/arugula-salad/arugula)
+- [arugula-platform 0.53.2](https://github.com/arugula-salad/arugula)
 - [arugula-proto 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-testkit 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-vt 0.0.0](https://github.com/arugula-salad/arugula)

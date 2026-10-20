@@ -7,8 +7,16 @@ Docs, billing). Terminal bytes travel end to end between a device and a
 daemon ([docs/control-e2e.md](../../docs/control-e2e.md), [docs.arugula.io/control](https://docs.arugula.io/control/)). Running
 and operating it: [docs/control-ops.md](../../docs/control-ops.md).
 
+Control is becoming two processes (#1150): this crate is the hub, and
+`crates/platform` the platform, which runs in process for now
+(`App::platform`). The platform reaches the hub only through `HubPort`,
+whose in-process side is `src/hub_port.rs` (with `gate`, which tells the
+platform's routes who's asking), and follows the hub through its outbox
+(`src/db/changes.rs`). Build an `App` with `App::start`, which attaches the
+platform's `HubPort` to it.
+
 Every table control's database has is listed in [tables.toml](tables.toml),
-with its plane, what it holds and who else sees it. A test fails when a
+with its plane, which process owns it, what it holds and who else sees it. A test fails when a
 table isn't there: a new table gets a row, and `just control-tables`
 rewrites "What control stores" in docs/control-e2e.md from it.
 
@@ -17,8 +25,9 @@ the process that answers it once control is split (hub or platform, #1150),
 what it checks and who calls it. A test fails when a route isn't there: a
 new route gets a row.
 
-Depends on `arugula-e2e` and `arugula-control-wire` (the messages it
-shares with daemons and the CLI).
+Depends on `arugula-e2e`, `arugula-control-wire` (the messages it shares
+with daemons and the CLI), `arugula-control-common` (what it shares with the
+platform) and `arugula-platform`.
 
 Start with `src/main.rs`, then `src/api.rs` (devices, approvals, daemons
 joining, the directory) and `src/relay.rs` (the relay). `src/blocks.rs`

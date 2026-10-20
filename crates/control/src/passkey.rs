@@ -455,7 +455,7 @@ mod tests {
         let mut h = HeaderMap::new();
         h.insert(header::ORIGIN, app.cfg.origin.parse().unwrap());
         let opts = register_start(
-            State(Arc::new(app)),
+            State(app.start()),
             ConnectInfo("127.0.0.1:1".parse().unwrap()),
             h,
             Some(Json(Start { name: Some("Sam Stranger".into()) })),
@@ -471,7 +471,7 @@ mod tests {
     #[tokio::test]
     async fn rs256_registers_and_signs_in() {
         use aws_lc_rs::{rand::SystemRandom, rsa::KeySize, signature::RSA_PKCS1_SHA256};
-        let app = Arc::new(App::for_tests("http://control.test"));
+        let app = App::for_tests("http://control.test").start();
         let mut h = HeaderMap::new();
         h.insert(header::ORIGIN, app.cfg.origin.parse().unwrap());
         h.insert(header::USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140.0".parse().unwrap());
@@ -556,7 +556,7 @@ mod tests {
         use aws_lc_rs::{rand::SystemRandom, rsa::KeySize, signature::RSA_PKCS1_SHA256};
         let mut app = App::for_tests("http://control.test");
         app.cfg.sites.push(crate::Site::new("http://old.test").unwrap());
-        let app = Arc::new(app);
+        let app = app.start();
         let at = |host: &str| {
             let mut h = HeaderMap::new();
             h.insert(header::HOST, host.parse().unwrap());

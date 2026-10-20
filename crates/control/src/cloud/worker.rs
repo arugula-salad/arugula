@@ -952,10 +952,9 @@ mod tests {
         let base = format!("http://{}", listener.local_addr().unwrap());
         let router = Router::new().fallback(handle).with_state(fake.clone());
         let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        let mut app = crate::cloud::tests::test_app();
-        Arc::get_mut(&mut app).unwrap().cloud.as_mut().unwrap().provider =
-            crate::cloud::provider::Provider::new(&base, "mock-key".into()).unwrap();
-        (app, fake, server)
+        let mut app = crate::cloud::tests::unstarted_app();
+        app.cloud.as_mut().unwrap().provider = crate::cloud::provider::Provider::new(&base, "mock-key".into()).unwrap();
+        (app.start(), fake, server)
     }
 
     fn cloud_workspace(app: &App) -> crate::db::cloud::CloudWorkspace {

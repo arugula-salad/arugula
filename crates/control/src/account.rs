@@ -398,7 +398,7 @@ mod tests {
     use crate::db::{Db, Team};
 
     fn app() -> Arc<App> {
-        Arc::new(App::for_tests("http://control.test"))
+        App::for_tests("http://control.test").start()
     }
 
     /// An account (signed in with GitHub as `login`) with its first device.
