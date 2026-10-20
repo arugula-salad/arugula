@@ -394,6 +394,10 @@ fn nobody_but_the_owner_answers_the_card_by_any_route() {
     let (status, _, text) = w.d.tcp("POST", &format!("/api/panes/{doc}/ask"), &agent, Some(&own));
     assert_eq!(status, 403, "{text}");
 
+    let permit = json!({ "tool_name": "Bash", "tool_input": { "command": "ls" } }).to_string();
+    let (status, _, text) = w.d.tcp("POST", &format!("/api/panes/{doc}/permit"), &agent, Some(&permit));
+    assert_eq!(status, 403, "{text}");
+
     // None of it changed anything: the same card, nothing uploaded, and the
     // ask still waiting.
     w.settle();
