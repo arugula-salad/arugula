@@ -20,6 +20,7 @@ mod billing;
 mod blocks;
 #[cfg(test)]
 mod blocks_wire;
+mod census;
 mod chat;
 #[cfg(test)]
 mod chat_wire;
@@ -799,6 +800,12 @@ fn github_app(a: &Args) -> anyhow::Result<Option<forge::GithubApp>> {
 }
 
 fn main() -> anyhow::Result<()> {
+    // `arugula-control census`: an operator's read-only look at the
+    // database (census.rs), with no server.
+    let mut argv = std::env::args().skip(1).peekable();
+    if argv.peek().is_some_and(|a| a == "census") {
+        return census::run(argv.skip(1));
+    }
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
 }
 
