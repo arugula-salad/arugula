@@ -20,7 +20,7 @@
 import { E2ESocket } from "./e2e/channel.ts";
 import type { ActRequest } from "./proto";
 import { existingKeys, loadWorkerDirectory } from "./e2e/keys.ts";
-import { chatTap, convTap, shareUrl, tapThread, tapUrl, withShare } from "./tap.ts";
+import { chatTap, shareUrl, tapUrl, withShare } from "./tap.ts";
 
 /** The parts of a service worker's global scope used here (the project's
  * types are the page's). */
@@ -104,8 +104,6 @@ interface Msg {
   control?: boolean;
   /** M123: control's chat: the room and message a push is about. */
   chat?: { room: string; seq: number };
-  /** M61: an @mention in this thread (`pane-7`, `session-2`). */
-  thread?: string;
 }
 
 sw.addEventListener("push", (event: PushEvent) => {
@@ -155,7 +153,7 @@ sw.addEventListener("push", (event: PushEvent) => {
       icon: "/icon.svg",
       requireInteraction: !!(approve || ask || gate || point || msg.cloud_run || msg.cloud_tab),
       actions,
-      data: { cloud_run: msg.cloud_run, cloud_workspace: msg.cloud_workspace, cloud_tab: msg.cloud_tab, pane: msg.pane, daemon: msg.daemon, thread: msg.thread, chat: msg.chat, approve, ask, reason, control: msg.control === true },
+      data: { cloud_run: msg.cloud_run, cloud_workspace: msg.cloud_workspace, cloud_tab: msg.cloud_tab, pane: msg.pane, daemon: msg.daemon, chat: msg.chat, approve, ask, reason, control: msg.control === true },
     } as NotificationOptions),
   );
 });
@@ -334,33 +332,14 @@ sw.addEventListener("notificationclick", (event: ClickEvent) => {
     );
     return;
   }
-  // A conversation (#855): no pane; the chat page opens it on its home.
-  const conv = convTap(data);
-  if (conv) {
-    event.waitUntil(
-      (async () => {
-        const wins = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
-        for (const w of wins) {
-          if (w.focus) {
-            w.postMessage({ type: "open-chat", thread: data.thread, daemon: data.daemon });
-            return w.focus();
-          }
-        }
-        return sw.clients.openWindow(conv);
-      })(),
-    );
-    return;
-  }
-  // A tap: open the pane (its card shows over it), or the card, or the
-  // thread (tapUrl).
-  const thread = tapThread(data.thread);
+  // A tap: open the pane (its card shows over it), or the card (tapUrl).
   const url = tapUrl(data);
   event.waitUntil(
     (async () => {
       const wins = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const w of wins) {
         if (w.focus) {
-          w.postMessage({ type: data.reason ? "open-card" : "open-pane", pane, daemon: data.daemon, thread });
+          w.postMessage({ type: data.reason ? "open-card" : "open-pane", pane, daemon: data.daemon });
           return w.focus();
         }
       }

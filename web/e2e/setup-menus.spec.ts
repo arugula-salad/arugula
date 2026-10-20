@@ -48,7 +48,6 @@ test("menus offer only what this machine is set up for", async ({ page }) => {
     blocks: false,
     vms: false,
     studio: false,
-    threads: true,
     // Not joined to a control with a block domain (#150).
     block_channels: false,
     // `labs` in flags.json is every flag (#665).

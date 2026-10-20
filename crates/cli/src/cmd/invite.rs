@@ -80,9 +80,6 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         history,
         drive_minutes: drive,
         root,
-        thread: None,
-        msg: None,
-        whole_thread: false,
     };
     let (v, raw) = call_raw::<InviteSend>(&sock, &(), &body)?;
     if json_out {

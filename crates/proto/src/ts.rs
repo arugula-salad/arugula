@@ -12,7 +12,7 @@ use crate::{
     api::{
         ActRequest, ActResponse, GuestInvite, GuestInviteRequest, InviteRequest, Invited, NotifyPref, NotifyRequest,
         OpenConversationRequest, OpenConversationResponse, OpenRequest, OpenResponse, RunRequest, RunResponse, Share,
-        ShareRequest, TeamPins, TeamPinsRequest, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest,
+        ShareRequest, TeamPins, TeamPinsRequest,
     },
     flags::{FlagInfo, FlagSetRequest},
     forge::ForgeState,
@@ -63,14 +63,6 @@ fn generate() -> String {
     c.visit::<crate::telemetry::TelemetryNoteRequest>();
     c.visit::<ControlState>();
     c.visit::<HostInfo>();
-    c.visit::<ThreadMessages>();
-    c.visit::<ThreadPostRequest>();
-    c.visit::<ThreadReadRequest>();
-    c.visit::<ThreadPosted>();
-    c.visit::<crate::api::ConvCreateRequest>();
-    c.visit::<crate::api::ConvRenameRequest>();
-    c.visit::<crate::api::ConvMemberRequest>();
-    c.visit::<crate::api::ConvMemberRemoveRequest>();
     c.visit::<InviteRequest>();
     c.visit::<Invited>();
     c.visit::<RunRequest>();
@@ -117,10 +109,6 @@ fn generate() -> String {
     for a in ALIASES {
         out.push_str(&format!("export type {a} = number;\n"));
     }
-    out.push_str(&format!(
-        "\nexport const CONV_MEMBERS_SEE = {};\n",
-        serde_json::to_string(crate::CONV_MEMBERS_SEE).expect("a string")
-    ));
     for (_, decl) in &c.decls {
         out.push('\n');
         out.push_str(decl);

@@ -4,7 +4,7 @@ import { cloudFleet, cloudPanes, cloudWorkspaceRoute, cloudWorkspaces, useCloudP
 
 import { OPS, opPath } from "./ops";
 import { setLending } from "./hand";
-import { parseThreadKey, type TeamPins, type TeamPinsRequest } from "./proto";
+import { type TeamPins, type TeamPinsRequest } from "./proto";
 import { render } from "preact";
 import "./style.css";
 import "./shell-chrome.css";
@@ -33,8 +33,7 @@ import { fakeSwarm } from "./swarm/fake";
 import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
 import { setupDesktop } from "./desktop";
 import { installKeys } from "./ui/keys";
-import { openThread } from "./ui/threads";
-import { openChat, useChatOpen } from "./ui/places";
+import { useChatOpen } from "./ui/places";
 import { chat } from "./chat-store";
 import { openDeveloper } from "./ui/developer";
 import { openGettingStarted, type Section } from "./ui/welcome";
@@ -381,10 +380,9 @@ if (!linkTarget) {
 }
 
 
-// Opened from a notification (`#pane=N`, with `&thread=pane-N` for an
-// @mention, M61), or told to by the service worker. Notifications come
-// from the home daemon, so show it first.
-const openPane = (pane: number, daemon?: string, thread?: string, share = false) => {
+// Opened from a notification (`#pane=N`), or told to by the service
+// worker. Notifications come from the home daemon, so show it first.
+const openPane = (pane: number, daemon?: string, share = false) => {
   // From a notification through control: that daemon's host first.
   const host = daemon ? directory.list?.hosts.find((h) => h.id === daemon)?.name : undefined;
   if (host) directory.select(host);
@@ -393,15 +391,6 @@ const openPane = (pane: number, daemon?: string, thread?: string, share = false)
     if (!client.info(pane)) return false;
     client.setActive(pane);
     if (share) shareFrom(pane);
-    const t = /^(pane|session)-(\d+)$/.exec(thread ?? "");
-    // Only where the machine has threads, which it says in its features:
-    // read them first, so a cold load doesn't open a thread nobody sees.
-    if (t) {
-      const c = client;
-      void c.loadFeatures().then(() => {
-        if (c.hasThreads()) openThread(c, t[1] === "pane" ? { pane: Number(t[2]) } : { session: Number(t[2]) });
-      });
-    }
     return true;
   };
   untilShown(go);
@@ -414,12 +403,14 @@ const openPane = (pane: number, daemon?: string, thread?: string, share = false)
 // A pane opened on the home daemon from elsewhere (a sandbox shell).
 window.addEventListener("arugula:open-pane", (e) => openPane((e as CustomEvent<number>).detail));
 // A push's Share (#237) adds `&share`: the share picker opens over it.
-const fromHash = /^#pane=(?:([0-9a-f]+)\.)?(\d+)(?:&thread=((?:pane|session)-\d+))?(&share)?$/.exec(location.hash);
+// An older daemon's mention push (before M125) adds `&thread=…`: the pane
+// opens, and its room is in chat.
+const fromHash = /^#pane=(?:([0-9a-f]+)\.)?(\d+)(?:&thread=(?:pane|session)-\d+)?(&share)?$/.exec(location.hash);
 if (fromHash) {
-  const [, daemon, pane, thread, share] = fromHash;
+  const [, daemon, pane, share] = fromHash;
   // A notification through control names its daemon: once its host is in
   // the list, open the pane there.
-  const go = () => openPane(Number(pane), daemon, thread, !!share);
+  const go = () => openPane(Number(pane), daemon, !!share);
   if (daemon && !directory.find?.(directory.list?.hosts.find((h) => h.id === daemon)?.name ?? "")) {
     const off = directory.subscribe(() => {
       if (directory.list?.hosts.some((h) => h.id === daemon)) {
@@ -430,28 +421,7 @@ if (fromHash) {
   } else go();
   history.replaceState(null, "", "/");
 }
-// A conversation's notification (#855): `#chat=conv-…&host=DAEMON`, the
-// chat page on its home machine. Through control `host` is its daemon's id,
-// which waits for control's list; pushed by the daemon itself, its home is
-// this page's.
-const openConv = (thread: string, daemon?: string) => {
-  const target = parseThreadKey(thread);
-  if (!target) return;
-  const go = () => {
-    const host = daemon ? directory.list?.hosts.find((h) => h.id === daemon)?.name : (directory.home ?? directory.current);
-    if (host === undefined) return false;
-    openChat(host, target);
-    return true;
-  };
-  if (!go()) {
-    const off = directory.subscribe(() => {
-      if (go()) off();
-    });
-  }
-};
-const fromChatTap = /^#chat=(conv-c-[0-9a-f]{32})(?:&host=([0-9a-f]+))?$/.exec(location.hash);
-if (fromChatTap) openConv(fromChatTap[1], fromChatTap[2]);
-if (!linkTarget) void registerWorker(openPane, openConv);
+if (!linkTarget) void registerWorker(openPane);
 
 // The desktop app's notification when control drops this machine, and its
 // Daemon menu (#325): Join… and Join again… open Getting started at the

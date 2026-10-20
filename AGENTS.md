@@ -74,10 +74,10 @@ nothing marked `mux:` names the edge or the block kinds.
 - **The mux:** `mux/` (`mux:`, with `block.rs`, `history.rs`
   and `agentenv.rs`): the task that owns the layout, the
   panes and every client (`mod.rs`), with one file per area: `attention.rs`,
-  `clients.rs`, `blocks.rs`, `api_calls.rs`, `who_may.rs`, `thread_ops.rs`,
+  `clients.rs`, `blocks.rs`, `api_calls.rs`, `who_may.rs`, `chat_readers.rs`,
   `machines.rs`, `info.rs`, `config.rs`, and the traits it calls out
-  through, `outside.rs` (`thread_ops.rs` is Labs; `labs_off.rs` has its
-  twins). Next to it: threads on panes (`mux:labs/threads.rs`), and, in the
+  through, `outside.rs`. Chat is control's (M125): the mux only lists who
+  reads each pane's and session's thread (`chat_readers.rs`), and, in the
   daemon,
   gates waiting for a person (`gate.rs`), hands (`hand.rs`), Web Push
   (`push.rs`).
@@ -155,10 +155,7 @@ code in or out: it lives in `crates/daemon/src/labs/`, and core reaches it
 only through the surface in `labs/mod.rs`, which explains the pattern. Studio apps, chant workspaces, and VMs (the Sprites adapter, machines, resident
 daemons, the provider tunnel and the tailnet sandbox supervisor) and guest ssh
 (`labs/guest_ssh.rs`; `russh` is an optional dependency, and a build without
-Labs answers `/api/guests` with 501), and chat (`crates/mux/src/labs/threads.rs`, with the mux's handling in
-`crates/mux/src/mux/thread_ops.rs`, which needs `Daemon`'s fields; a build
-without Labs answers the thread routes with 501 and never touches the
-state dir's `threads/`), and the Forgejo and GitLab forges
+Labs answers `/api/guests` with 501), and the Forgejo and GitLab forges
 (`labs/forgejo.rs`, `labs/gitlab.rs`, `labs/tea.rs`, `labs/forge_live.rs`,
 and `forge/labs_forges.rs`, the block's own connecting, which needs its
 fields; GitHub's PR and issue blocks are core, and `labs::forge_allowed`

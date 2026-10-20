@@ -17,7 +17,7 @@ use std::{
 };
 
 use arugula_core::{PaneId, Role, SessionId};
-use arugula_proto::{ThreadTarget, api::NotifyPref};
+use arugula_proto::api::NotifyPref;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -81,20 +81,6 @@ pub struct Grant {
     pub key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires: Option<u64>,
-    /// An invite from a thread (#297): in that one thread, a "from now"
-    /// share reads from here instead. Every other thread starts at `at`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thread_from: Option<ThreadFrom>,
-}
-
-/// Where one thread starts for someone invited into it (#297): the message
-/// that mentioned them, or (`from: 0`) the whole thread.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ThreadFrom {
-    /// `pane-N` or `session-N`.
-    pub thread: String,
-    /// The first message's `at` (ms); 0 for all of it.
-    pub from: u64,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -117,20 +103,6 @@ pub struct Acl {
     /// id; in `notify.json`.
     notify_path: PathBuf,
     notify: RwLock<BTreeMap<String, NotifyPref>>,
-    /// People who reach this machine only by being in a conversation here
-    /// (#856), with their account's root: the mux sets it from the
-    /// conversations' members, and control's refresh lets their devices in.
-    reach: RwLock<Vec<Reach>>,
-}
-
-/// Someone a conversation's membership lets reach this machine (#856).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Reach {
-    /// `account:<id>`.
-    pub principal: String,
-    pub name: String,
-    /// The root their account's devices chain to.
-    pub root: String,
 }
 
 impl Acl {
@@ -153,23 +125,7 @@ impl Acl {
             shared_teams: Default::default(),
             notify_path,
             notify: RwLock::new(notify),
-            reach: Default::default(),
         }
-    }
-
-    /// Who reaches this machine by being in a conversation here (#856).
-    pub fn reach(&self) -> Vec<Reach> {
-        self.reach.read().unwrap().clone()
-    }
-
-    /// Set them (the mux, from the conversations); true if that changed.
-    pub fn set_reach(&self, reach: Vec<Reach>) -> bool {
-        let mut r = self.reach.write().unwrap();
-        if *r == reach {
-            return false;
-        }
-        *r = reach;
-        true
     }
 
     /// Someone's role on a session, by principal id (`owner`, or a grant's).
@@ -301,7 +257,6 @@ impl Acl {
             root: None,
             key: Some(key.to_owned()),
             expires: Some(expires),
-            thread_from: None,
         });
         let file = File { grants: g.clone() };
         drop(g);
@@ -339,26 +294,11 @@ impl Acl {
         grant.from.as_ref().map(|_| grant.at)
     }
 
-    /// For a "from now" share (M13): when it was made. Thread messages
-    /// (M61) from before it aren't theirs to read either, but for the one
-    /// thread they were invited into (#297): there, from its exception.
-    pub fn thread_floor(&self, p: &Principal, session: SessionId, thread: ThreadTarget) -> Option<u64> {
-        let Principal::User { id, .. } = p else { return None };
-        let g = self.grants.read().unwrap();
-        let grant = g.iter().find(|g| g.session == session && &g.principal == id)?;
-        grant.from.as_ref()?;
-        match &grant.thread_from {
-            Some(t) if t.thread == thread.key() => Some(t.from),
-            _ => Some(grant.at),
-        }
-    }
-
     /// Whether this principal may connect at all.
     pub fn knows(&self, p: &Principal) -> bool {
         if p.is_owner()
             || self.grants.read().unwrap().iter().any(|g| g.principal == p.id())
             || self.team_role(p).is_some()
-            || self.reach.read().unwrap().iter().any(|r| r.principal == p.id())
         {
             return true;
         }
@@ -399,12 +339,11 @@ impl Acl {
         by: &str,
         from: Option<BTreeMap<PaneId, u64>>,
     ) -> std::io::Result<()> {
-        self.set_full(session, principal, name, role, by, from, None, None)
+        self.set_full(session, principal, name, role, by, from, None)
     }
 
-    /// With the root an `account:` principal's devices chain back to, and
-    /// for a new grant from a thread's invite (#297), where that thread
-    /// starts for them. A grant held keeps its own.
+    /// With the root an `account:` principal's devices chain back to. A
+    /// grant held keeps its own.
     #[allow(clippy::too_many_arguments)]
     pub fn set_full(
         &self,
@@ -415,22 +354,17 @@ impl Acl {
         by: &str,
         from: Option<BTreeMap<PaneId, u64>>,
         root: Option<String>,
-        thread_from: Option<ThreadFrom>,
     ) -> std::io::Result<()> {
         let mut g = self.grants.write().unwrap();
         let before = g.clone();
         let old = g.iter().find(|x| x.session == session && x.principal == principal).cloned();
         let kept = old.as_ref().and_then(|x| x.from.clone());
-        // A role change keeps when the grant began (it's the thread floor of
-        // a "from now" share); a first grant, or one made after a revoke,
-        // begins now.
+        // A role change keeps when the grant began (where a "from now"
+        // share's thread in control's chat starts); a first grant, or one
+        // made after a revoke, begins now.
         let at = match &old {
             Some(x) if from.is_none() => x.at,
             _ => now_ms(),
-        };
-        let thread_from = match &old {
-            Some(x) => x.thread_from.clone(),
-            None => thread_from,
         };
         let root = root.or_else(|| old.and_then(|x| x.root));
         g.retain(|x| !(x.session == session && x.principal == principal));
@@ -446,7 +380,6 @@ impl Acl {
                 root,
                 key: None,
                 expires: None,
-                thread_from,
             });
         }
         if let Err(e) = write_atomic(&self.path, &serde_json::to_vec_pretty(&File { grants: g.clone() }).unwrap()) {
@@ -528,8 +461,8 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
-    /// A role change keeps when a grant began (a "from now" share's thread
-    /// floor); a grant made again after a revoke begins now.
+    /// A role change keeps when a grant began (where a "from now" share's
+    /// threads start); a grant made again after a revoke begins now.
     #[test]
     fn a_role_change_keeps_when_the_grant_began() {
         let dir = std::env::temp_dir().join(format!("arugula-acl-at-{}", std::process::id()));
@@ -538,45 +471,16 @@ mod tests {
         let acl = Acl::open(&dir);
         let from: BTreeMap<PaneId, u64> = [(1, 5)].into();
         acl.set_from(3, alice.id(), "alice", Some(Role::Viewer), "owner", Some(from.clone())).unwrap();
-        let first = acl.thread_floor(&alice, 3, ThreadTarget::Session(3)).unwrap();
+        let first = acl.share_at(&alice, 3).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(5));
         acl.set(3, alice.id(), "alice", Some(Role::Editor), "owner").unwrap();
         assert_eq!(acl.role(&alice, 3), Some(Role::Editor));
-        assert_eq!(acl.thread_floor(&alice, 3, ThreadTarget::Session(3)), Some(first));
+        assert_eq!(acl.share_at(&alice, 3), Some(first));
         assert_eq!(acl.floor(&alice, 3, 1), Some(5));
         acl.set(3, alice.id(), "alice", None, "owner").unwrap();
         std::thread::sleep(std::time::Duration::from_millis(5));
         acl.set_from(3, alice.id(), "alice", Some(Role::Viewer), "owner", Some(from)).unwrap();
-        assert!(acl.thread_floor(&alice, 3, ThreadTarget::Session(3)).unwrap() > first);
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    /// An invite from a thread (#297) opens that thread from its message
-    /// and no other; a role change keeps it, a held grant isn't given one,
-    /// and a share with history has no floor anywhere.
-    #[test]
-    fn a_thread_exception_is_that_threads_alone_and_outlives_a_role_change() {
-        let dir = std::env::temp_dir().join(format!("arugula-acl-thread-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let sam = Principal::tailnet("sam@example.com");
-        let acl = Acl::open(&dir);
-        let from: BTreeMap<PaneId, u64> = [(1, 5)].into();
-        let here = ThreadFrom { thread: "pane-1".into(), from: 42 };
-        acl.set_full(3, sam.id(), "sam", Some(Role::Viewer), "owner", Some(from.clone()), None, Some(here.clone()))
-            .unwrap();
-        let at = acl.thread_floor(&sam, 3, ThreadTarget::Session(3)).unwrap();
-        assert!(at > 42);
-        assert_eq!(acl.thread_floor(&sam, 3, ThreadTarget::Pane(1)), Some(42));
-        assert_eq!(acl.thread_floor(&sam, 3, ThreadTarget::Pane(2)), Some(at));
-        // A role change keeps it; one given to a grant held is ignored.
-        let other = ThreadFrom { thread: "pane-2".into(), from: 0 };
-        acl.set_full(3, sam.id(), "sam", Some(Role::Editor), "owner", None, None, Some(other.clone())).unwrap();
-        assert_eq!(acl.thread_floor(&sam, 3, ThreadTarget::Pane(1)), Some(42));
-        assert_eq!(acl.thread_floor(&sam, 3, ThreadTarget::Pane(2)), Some(at));
-        assert_eq!(Acl::open(&dir).thread_floor(&sam, 3, ThreadTarget::Pane(1)), Some(42), "it's kept on disk");
-        // With history: no floor at all.
-        acl.set_full(5, sam.id(), "sam", Some(Role::Viewer), "owner", None, None, Some(other)).unwrap();
-        assert_eq!(acl.thread_floor(&sam, 5, ThreadTarget::Pane(1)), None);
+        assert!(acl.share_at(&alice, 3).unwrap() > first);
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

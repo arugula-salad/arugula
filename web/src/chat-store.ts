@@ -3,8 +3,8 @@
 // messages the page has fetched, and one live stream (SSE) that says what
 // changed. Only on control's page, and only while control's `chat` flag is
 // on for the account; the page asks `GET /api/chat`, which says 403
-// `chat_off` otherwise. While it's off, the page keeps reading the
-// machines' own threads (until M125 takes them out).
+// `chat_off` otherwise. While it's off there is no chat: no machine keeps
+// threads of its own (M125), and the Chat page says chat is control's.
 //
 // No machine has to be up for any of it: a pane's quote is copied into
 // the message, and its chip says whether it opens for this reader.
@@ -88,6 +88,11 @@ export class ChatStore {
   private probe: number | undefined;
   private roomsTimer: number | undefined;
   private started = false;
+
+  /** Whether control has signed this page in (so chat is only off). */
+  get signedIn(): boolean {
+    return this.started;
+  }
 
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);

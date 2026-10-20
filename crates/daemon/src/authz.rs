@@ -111,8 +111,6 @@ fn policy(method: &Method, path: &str) -> Policy {
         // `Owner` here, and may not answer).
         ["api", "a2a", "tasks", _, "consent"] => Policy::Owner,
         ["api", "a2a", "agents", ..] => Policy::Handler,
-        // M61: the mux checks each thread (a pane's, or a session's).
-        ["api", "threads", ..] => Policy::Handler,
         // M112: the handlers keep to the panes each person may read (and
         // from where a "from now" share starts); synced hosts are the owner's.
         ["api", "history" | "events"] if get => Policy::Handler,

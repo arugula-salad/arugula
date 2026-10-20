@@ -23,8 +23,6 @@ import {
   type HostFeatures,
   type HostInfo,
   type Intent,
-  type InviteRequest,
-  type Invited,
   type NotifyPref,
   type NotifyRequest,
   type OpenConversationRequest,
@@ -43,21 +41,6 @@ import {
   type State,
   type TabId,
   type TabView,
-  type ThreadMessages,
-  type ThreadMsg,
-  type ThreadPostRequest,
-  type ThreadPosted,
-  type ThreadReadRequest,
-  type ThreadSummary,
-  type ThreadTarget,
-  threadKey,
-  type Unreached,
-  type Invitable,
-  type ConvCreateRequest,
-  type ConvMemberRemoveRequest,
-  type ConvMemberRequest,
-  type ConvRenameRequest,
-  type Conversation,
 } from "./proto";
 import { decompress } from "fzstd";
 import { SCROLLBACK, TerminalView } from "./terminal-view";
@@ -585,160 +568,9 @@ export class Client {
     return this.state?.presence?.find((p) => p.client === this.clientId)?.who ?? "owner";
   }
 
-  /** This client's id in chat (#935): `me()`, but for a team's other owner,
-   * who has the owner's rights, their own account. */
-  chatMe(): string {
-    const p = this.state?.presence?.find((p) => p.client === this.clientId);
-    return p?.chat ?? p?.who ?? "owner";
-  }
-
-  // ---- threads
-
-  private threadListeners = new Map<string, Set<(m: ThreadMsg) => void>>();
-
-  /** A thread as this person has it, if it has messages (and this machine
-   *  has labs: without them nothing here shows threads, however many there
-   *  are). */
-  thread(t: ThreadTarget): ThreadSummary | undefined {
-    if (!this.hasThreads()) return undefined;
-    const key = threadKey(t);
-    return this.state?.threads?.find((x) => threadKey(x.target) === key);
-  }
-
-  /** New messages in a thread, as they come. */
-  onThread(t: ThreadTarget, fn: (m: ThreadMsg) => void): () => void {
-    const key = threadKey(t);
-    let set = this.threadListeners.get(key);
-    if (!set) this.threadListeners.set(key, (set = new Set()));
-    set.add(fn);
-    return () => set.delete(fn);
-  }
-
-  async loadThread(t: ThreadTarget): Promise<ThreadMsg[]> {
-    const r = await this.request(OPS["thread.get"].method, opPath("thread.get", { target: threadKey(t) }));
-    if (!r.ok) throw new Error((await r.json<{ error?: string }>().catch(() => ({ error: undefined }))).error ?? `HTTP ${r.status}`);
-    return (await r.json<ThreadMessages>()).messages;
-  }
-
-  /** Post in a thread: the message, the `@`s that reached no one, and for
-   *  the owner whom of those they may invite (#297). */
-  async postThread(
-    t: ThreadTarget,
-    text: string,
-    quote?: { pane: PaneId; text: string },
-  ): Promise<{ message: ThreadMsg; unreached: Unreached[]; invitable: Invitable[] }> {
-    const r = await this.request(OPS["thread.post"].method, opPath("thread.post", { target: threadKey(t) }), { text, quote } satisfies ThreadPostRequest);
-    if (!r.ok) throw new Error((await r.json<{ error?: string }>().catch(() => ({ error: undefined }))).error ?? `HTTP ${r.status}`);
-    const body = await r.json<ThreadPosted>();
-    return { message: body.message, unreached: body.unreached ?? [], invitable: body.invitable ?? [] };
-  }
-
-  /** Invite someone a message named into its thread (#297), as a viewer:
-   *  they see that message and what follows there, or the whole thread.
-   *  In a conversation (#855) they're added to it, from now on or with its
-   *  history. What to tell the owner about it. */
-  async inviteToThread(t: ThreadTarget, who: string, msg: ThreadMsg, wholeThread: boolean): Promise<string> {
-    if ("conv" in t) {
-      const c = await this.addConvMember(t.conv, who, wholeThread);
-      const m = c.members.find((x) => x.who === who);
-      return `${(m?.name ?? who).split("@")[0]} is in, and was told what members can do`;
-    }
-    const session = "session" in t ? t.session : this.sessionOfPane(t.pane);
-    if (session === null) throw new Error("that pane is gone");
-    const r = await this.request(OPS["invite.send"].method, opPath("invite.send"), {
-      session,
-      who,
-      role: "viewer",
-      thread: threadKey(t),
-      msg: msg.id,
-      whole_thread: wholeThread,
-      note: msg.text,
-    } satisfies InviteRequest);
-    const body = await r.json<Partial<Invited> & { error?: string }>().catch(() => null);
-    if (!r.ok || !body?.delivery) throw new Error(body?.error ?? `HTTP ${r.status}`);
-    const n = (body.grant?.name ?? who).split("@")[0];
-    const why = body.reason ? `: ${body.reason}` : "";
-    if (body.delivery === "sent") return `${n} is in, and was notified`;
-    if (body.delivery === "pending") return `${n} is in, and will be notified${why}`;
-    return `${n} is in, but wasn't notified${why}`;
-  }
-
-  // ---- conversations (#855)
-
-  /** The conversations kept here that this person is in (with labs). */
-  convs(): Conversation[] {
-    return this.hasThreads() ? (this.state?.convs ?? []) : [];
-  }
-
-  conv(id: string): Conversation | undefined {
-    return this.convs().find((c) => c.id === id);
-  }
-
-  /** Whether this person owns this machine: who makes conversations here. */
+  /** Whether this person owns this machine. */
   ownsMachine(): boolean {
     return !this.state?.roles;
-  }
-
-  private async convCall<T>(res: Promise<ApiResponse>): Promise<T> {
-    return (await this.convOk(res)).json<T>();
-  }
-
-  private async convOk(res: Promise<ApiResponse>): Promise<ApiResponse> {
-    const r = await res;
-    if (!r.ok) {
-      const why = (await r.json<{ error?: string }>().catch(() => ({ error: undefined }))).error ?? `HTTP ${r.status}`;
-      // Its status too: a card's answer refused with 409 means its ask is gone (#887).
-      throw Object.assign(new Error(why), { status: r.status });
-    }
-    return r;
-  }
-
-  createConv(title: string): Promise<Conversation> {
-    return this.convCall(this.request(OPS["conv.create"].method, opPath("conv.create"), { title } satisfies ConvCreateRequest));
-  }
-
-  renameConv(id: string, title: string): Promise<Conversation> {
-    return this.convCall(this.request(OPS["conv.rename"].method, opPath("conv.rename", { id }), { title } satisfies ConvRenameRequest));
-  }
-
-  deleteConv(id: string): Promise<unknown> {
-    return this.convCall(this.request(OPS["conv.delete"].method, opPath("conv.delete", { id })));
-  }
-
-  /** Add someone (an id, or a name as an `@` gives it), from now on or
-   *  with its history. `reach` (#856): for an `account:` who doesn't reach
-   *  this machine yet, their name and the root this browser pinned for
-   *  them: being a member lets them in. */
-  addConvMember(id: string, who: string, history: boolean, reach?: { name: string; root: string }): Promise<Conversation> {
-    return this.convCall(
-      this.request(OPS["conv.member_add"].method, opPath("conv.member_add", { id }), {
-        who,
-        history,
-        name: reach?.name ?? null,
-        root: reach?.root ?? null,
-      } satisfies ConvMemberRequest),
-    );
-  }
-
-  /** Take someone out (its owner), or leave (yourself). */
-  removeConvMember(id: string, who: string): Promise<Conversation> {
-    return this.convCall(
-      this.request(OPS["conv.member_remove"].method, opPath("conv.member_remove", { id }), { who } satisfies ConvMemberRemoveRequest),
-    );
-  }
-
-  markThreadRead(t: ThreadTarget, upto: number) {
-    const s = this.thread(t);
-    if (!s || (!s.unread && !s.mention)) return;
-    void this.request(OPS["thread.read"].method, opPath("thread.read", { target: threadKey(t) }), { upto } satisfies ThreadReadRequest).catch(() => {});
-  }
-
-  /** Whether this person may post in a thread (drivers and owners; in a
-   *  conversation, everyone in it). */
-  mayPost(t: ThreadTarget): boolean {
-    if ("conv" in t) return !!this.conv(t.conv);
-    const session = "session" in t ? t.session : this.sessionOfTab(this.tabOfPane(t.pane)?.id ?? -1);
-    return this.role(session ?? null) !== "viewer";
   }
 
   /** The session a pane is in. */
@@ -888,12 +720,6 @@ export class Client {
    * so the menus offer them. */
   hasDev(): boolean {
     return this.features?.dev === true;
-  }
-
-  /** Whether this machine keeps threads: labs, and a daemon that has them.
-   * Unknown means no. */
-  hasThreads(): boolean {
-    return this.hasLabs() && this.features?.threads === true;
   }
 
   /** POST to the API; a failure shows as a toast. */
@@ -1387,9 +1213,6 @@ export class Client {
       case "follow":
         for (const fn of this.editorFollows.get(msg.pane) ?? []) fn(msg.msg);
         break;
-      case "thread":
-        for (const fn of this.threadListeners.get(threadKey(msg.target)) ?? []) fn(msg.msg);
-        break;
       case "block": {
         const b = this.blocks.get(msg.block);
         let state = msg.state;
@@ -1434,8 +1257,6 @@ export class Client {
       panes: [...byId.values()].sort((a, b) => a.id - b.id),
       machines: d.machines ?? old.machines,
       presence: d.presence ?? old.presence,
-      threads: d.threads ?? old.threads,
-      convs: d.convs ?? old.convs,
     };
     if (added || d.gone?.length) return this.applyState(state, false);
     this.state = state;

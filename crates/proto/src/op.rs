@@ -84,21 +84,6 @@ impl PathArgs for usize {
     }
 }
 
-/// A thread's target, `pane-7`, `session-2` or `conv-c-…`
-/// (`/api/threads/{target}`).
-impl PathArgs for crate::ThreadTarget {
-    fn fill(&self, template: &str) -> String {
-        fill_hole(template, &self.key())
-    }
-}
-
-/// A conversation, `c-…` (`/api/convs/{id}`).
-impl PathArgs for crate::ConvId {
-    fn fill(&self, template: &str) -> String {
-        fill_hole(template, self)
-    }
-}
-
 /// `template` with its `{…}` replaced by `value`.
 fn fill_hole(template: &str, value: &dyn std::fmt::Display) -> String {
     match (template.find('{'), template.find('}')) {
@@ -171,18 +156,6 @@ impl Request for crate::api::ConversationsQuery {}
 impl Request for crate::api::OpenConversationRequest {}
 
 impl Request for crate::api::Subscription {}
-
-impl Request for crate::api::ThreadPostRequest {}
-
-impl Request for crate::api::ThreadReadRequest {}
-
-impl Request for crate::api::ConvCreateRequest {}
-
-impl Request for crate::api::ConvRenameRequest {}
-
-impl Request for crate::api::ConvMemberRequest {}
-
-impl Request for crate::api::ConvMemberRemoveRequest {}
 
 impl Request for crate::api::NotifyRequest {}
 
@@ -317,14 +290,6 @@ macro_rules! every_op {
         $m!($crate::op::ops::PushTest);
         $m!($crate::op::ops::NotifyGet);
         $m!($crate::op::ops::NotifySet);
-        $m!($crate::op::ops::ThreadGet);
-        $m!($crate::op::ops::ThreadPost);
-        $m!($crate::op::ops::ThreadRead);
-        $m!($crate::op::ops::ConvCreate);
-        $m!($crate::op::ops::ConvRename);
-        $m!($crate::op::ops::ConvDelete);
-        $m!($crate::op::ops::ConvMemberAdd);
-        $m!($crate::op::ops::ConvMemberRemove);
         // #578 part a: fs, hosts, setup.
         $m!($crate::op::ops::FsListGet);
         $m!($crate::op::ops::FsStatGet);
@@ -381,17 +346,15 @@ pub mod ops {
     use crate::{
         Machine, PaneId,
         api::{
-            AclSetRequest, Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConvCreateRequest,
-            ConvMemberRemoveRequest, ConvMemberRequest, ConvRenameRequest, ConversationList, ConversationsQuery,
-            DetectionAnswer, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest, GuestInvite,
-            GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned, InboxAnswer,
-            InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest, MouseRequest,
-            NotifyPref, NotifyRequest, OpenConversationRequest, OpenConversationResponse, PaneDiff, PaneSummary,
-            PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
+            AclSetRequest, Adapters, AgentsInventory, AskAnswer, AskRequest, AttentionRequest, ConversationList,
+            ConversationsQuery, DetectionAnswer, DriverEntry, Empty, FollowUpRequest, FollowedUp, FollowerLinkRequest,
+            GuestInvite, GuestInviteRequest, IdeDiffs, IdeDiffsRequest, IdeInfo, IdeMentionRequest, IdeMentioned,
+            InboxAnswer, InstallAdapterRequest, InviteRequest, Invited, KeysRequest, LinkRequest, McpTokenRequest,
+            MouseRequest, NotifyPref, NotifyRequest, OpenConversationRequest, OpenConversationResponse, PaneDiff,
+            PaneSummary, PermitAnswer, PermitRequest, Ports, PortsQuery, Process, PromptRequest, PromptResult, PushKey,
             PushSubscriptions, Rules, RunResponse, SendRequest, Share, ShareRequest, ShellEnv, SigninLink, StudioApps,
             StudioLoggedIn, StudioLoginRequest, StudioStatus, Subscription, SyncedHost, SyncedRotated, TeamPins,
-            TeamPinsRequest, ThreadMessages, ThreadPostRequest, ThreadPosted, ThreadReadRequest, TokenInfo,
-            WaitRequest, WaitResult, WithdrawRequest,
+            TeamPinsRequest, TokenInfo, WaitRequest, WaitResult, WithdrawRequest,
         },
         flags::{FlagInfo, FlagSetRequest},
         hosts::{Demoted, Host, PromoteRequest, SandboxList},
@@ -928,126 +891,6 @@ pub mod ops {
         type Path = ();
         type Req = OpenConversationRequest;
         type Res = OpenConversationResponse;
-    }
-
-    /// `GET /api/threads/{target}` (M61): a thread's messages, as the caller
-    /// may read them. The mux checks each thread.
-    pub struct ThreadGet;
-
-    impl Op for ThreadGet {
-        const NAME: &'static str = "thread.get";
-        const METHOD: Method = Method::Get;
-        const PATH: &'static str = "/api/threads/{target}";
-        const ACCESS: Access = Access::Handler;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = crate::ThreadTarget;
-        type Req = Empty;
-        type Res = ThreadMessages;
-    }
-
-    /// `POST /api/threads/{target}` (M61): post in a thread. People's only:
-    /// an `@agent` in it is text (#1095).
-    pub struct ThreadPost;
-
-    impl Op for ThreadPost {
-        const NAME: &'static str = "thread.post";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/threads/{target}";
-        const ACCESS: Access = Access::Handler;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = crate::ThreadTarget;
-        type Req = ThreadPostRequest;
-        type Res = ThreadPosted;
-    }
-
-    /// `POST /api/threads/{target}/read`: the caller has read a thread up to
-    /// a message.
-    pub struct ThreadRead;
-
-    impl Op for ThreadRead {
-        const NAME: &'static str = "thread.read";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/threads/{target}/read";
-        const ACCESS: Access = Access::Handler;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = crate::ThreadTarget;
-        type Req = ThreadReadRequest;
-        type Res = Empty;
-    }
-
-    /// `POST /api/convs` (#855): a conversation of its own, kept here (its
-    /// home), owned by the machine's owner who makes it.
-    pub struct ConvCreate;
-
-    impl Op for ConvCreate {
-        const NAME: &'static str = "conv.create";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/convs";
-        const ACCESS: Access = Access::Owner;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = ();
-        type Req = ConvCreateRequest;
-        type Res = crate::Conversation;
-    }
-
-    /// `POST /api/convs/{id}/rename`: a conversation's new title (its
-    /// owner's). The mux checks against the record.
-    pub struct ConvRename;
-
-    impl Op for ConvRename {
-        const NAME: &'static str = "conv.rename";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/convs/{id}/rename";
-        const ACCESS: Access = Access::Handler;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = crate::ConvId;
-        type Req = ConvRenameRequest;
-        type Res = crate::Conversation;
-    }
-
-    /// `DELETE /api/convs/{id}`: a conversation and its timeline, gone (its
-    /// owner's).
-    pub struct ConvDelete;
-
-    impl Op for ConvDelete {
-        const NAME: &'static str = "conv.delete";
-        const METHOD: Method = Method::Delete;
-        const PATH: &'static str = "/api/convs/{id}";
-        const ACCESS: Access = Access::Handler;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = crate::ConvId;
-        type Req = Empty;
-        type Res = Empty;
-    }
-
-    /// `POST /api/convs/{id}/members`: add someone who can reach this
-    /// machine (its owner's), and tell them.
-    pub struct ConvMemberAdd;
-
-    impl Op for ConvMemberAdd {
-        const NAME: &'static str = "conv.member_add";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/convs/{id}/members";
-        const ACCESS: Access = Access::Handler;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = crate::ConvId;
-        type Req = ConvMemberRequest;
-        type Res = crate::Conversation;
-    }
-
-    /// `POST /api/convs/{id}/members/remove`: take a member out (its
-    /// owner), or leave it (a member).
-    pub struct ConvMemberRemove;
-
-    impl Op for ConvMemberRemove {
-        const NAME: &'static str = "conv.member_remove";
-        const METHOD: Method = Method::Post;
-        const PATH: &'static str = "/api/convs/{id}/members/remove";
-        const ACCESS: Access = Access::Handler;
-        const FLAG: Option<&'static str> = Some(crate::flags::CHAT);
-        type Path = crate::ConvId;
-        type Req = ConvMemberRemoveRequest;
-        type Res = crate::Conversation;
     }
 
     /// `GET /api/machines`: the machines panes run on (`arugula machines`).
@@ -1810,13 +1653,6 @@ mod tests {
         assert_eq!(ops::MachineReset::path(&4), "/api/machines/4/reset");
         assert_eq!(ops::AdapterInstall::path(&"claude".to_owned()), "/api/agents/adapters/claude/install");
         assert_eq!(1u32.fill("/api/sessions/{id}/secrets"), "/api/sessions/1/secrets");
-        assert_eq!(crate::ThreadTarget::Session(2).fill("/api/threads/{target}"), "/api/threads/session-2");
-        let conv = crate::ConvId([0xab; 16]);
-        assert_eq!(
-            crate::ThreadTarget::Conv(conv).fill("/api/threads/{target}"),
-            format!("/api/threads/conv-c-{}", "ab".repeat(16))
-        );
-        assert_eq!(ops::ConvRename::path(&conv), format!("/api/convs/c-{}/rename", "ab".repeat(16)));
         assert!(crate::api::Empty::without_body().is_some());
     }
 }

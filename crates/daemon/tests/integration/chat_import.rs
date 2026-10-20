@@ -175,13 +175,8 @@ fn a_daemon_brings_its_threads_into_control_once() {
     // Who reads the live panes' and sessions' threads came with it.
     assert!(body["readers"].as_array().is_some_and(|r| !r.is_empty()), "{body}");
 
-    // The store is empty now: the page shows no threads from the machine.
-    let left: Vec<_> = std::fs::read_dir(d.state.join("threads"))
-        .unwrap()
-        .flatten()
-        .filter(|e| e.file_name().to_string_lossy().ends_with(".jsonl"))
-        .collect();
-    assert!(left.is_empty(), "{left:?}");
+    // Nothing is left to import (M125: the daemon keeps no store of its own).
+    assert!(!d.state.join("threads").exists());
 
     // The reader lists stay current: sharing a session with alex's account
     // tells control he reads its thread, and with carol's as a viewer that

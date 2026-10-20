@@ -291,16 +291,6 @@ impl Enrolled {
                 others.push((c, Principal::User { id: g.principal.clone(), name: name.clone(), pic: None }));
             }
         }
-        // #856: people a conversation here lets in by being in it, from the
-        // root its owner's browser pinned (or a roster here names).
-        for r in acl.reach() {
-            let Some(account) = r.principal.strip_prefix("account:") else { continue };
-            let Some(p) = saved.peers.get(account) else { continue };
-            let t = Trust { account: account.to_owned(), root: r.root.clone() }.evaluate(&p.certs, &p.revocations);
-            for c in t.devices.into_values().filter(|c| c.kind.connects()) {
-                others.push((c, Principal::User { id: r.principal.clone(), name: r.name.clone(), pic: None }));
-            }
-        }
         // Teams sessions were shared with (M30): their members, as people.
         let mut shared_roles: HashMap<String, HashMap<String, Role>> = HashMap::new();
         for (team, t) in &saved.shared_teams {
@@ -1068,12 +1058,6 @@ impl Control {
         out
     }
 
-    /// Who `account` is in chat, if they're a team's other owner here
-    /// (#935): they get in as `Owner`, and post and read as themselves.
-    pub fn co_owner_of(&self, account: &str) -> Option<Principal> {
-        self.enrolled()?.co_owner(account)
-    }
-
     /// The team's other owners (#386), by account: they get in as the
     /// owner, but each is someone to @mention.
     #[cfg_attr(not(feature = "labs"), allow(dead_code))]
@@ -1307,16 +1291,9 @@ impl Control {
             saved.locked = t.locked;
         }
 
-        // People sessions here are shared with, and (#856) those a
-        // conversation here lets in.
-        let accounts: Vec<String> = self
-            .acl
-            .list()
-            .iter()
-            .map(|g| g.principal.clone())
-            .chain(self.acl.reach().into_iter().map(|r| r.principal))
-            .filter_map(|p| p.strip_prefix("account:").map(str::to_owned))
-            .collect();
+        // People sessions here are shared with.
+        let accounts: Vec<String> =
+            self.acl.list().iter().filter_map(|g| g.principal.strip_prefix("account:").map(str::to_owned)).collect();
         // The account's own login comes with them (M30): what to call it.
         let own = saved.cert.account.clone();
         let mut peers: BTreeMap<String, PeerCerts> = self
@@ -2635,16 +2612,6 @@ impl crate::mux::People for Control {
     fn sandbox_done(self: Arc<Self>) {
         Control::sandbox_done(&self)
     }
-
-    /// One person's machine: its account's login, as `e2e.rs` names its
-    /// owner through control. A team's machine has several owners, so not.
-    fn owner_login(&self) -> Option<String> {
-        if Control::is_team(self) {
-            return None;
-        }
-        let e = self.enrolled()?;
-        self.name_of_account(&e.saved.cert.account)
-    }
 }
 
 #[cfg(test)]
@@ -3105,7 +3072,7 @@ pub(crate) mod tests {
         /// The owner shares session 1 with Bea, as `account:b1`.
         fn grant(&self) {
             let root = self.bea.id();
-            self.acl.set_full(1, "account:b1", "bea", Some(Role::Editor), "owner", None, Some(root), None).unwrap();
+            self.acl.set_full(1, "account:b1", "bea", Some(Role::Editor), "owner", None, Some(root)).unwrap();
         }
 
         /// What Bea's phone got, decrypted as a browser would (RFC 8291).
@@ -3779,12 +3746,6 @@ pub(crate) mod tests {
 
         let ids: Vec<_> = c.co_owners().iter().map(|p| (p.id().to_owned(), c_name(p))).collect();
         assert_eq!(ids, [("account:o".to_owned(), "Olive".to_owned())], "not this machine's own, nor an editor");
-        // #935: who a team owner's device is in chat; this machine's own account and an editor aren't.
-        assert_eq!(
-            c.co_owner_of("o").map(|p| (p.id().to_owned(), c_name(&p))),
-            Some(("account:o".into(), "Olive".into()))
-        );
-        assert!(c.co_owner_of("m").is_none() && c.co_owner_of("e").is_none() && c.co_owner_of("zz").is_none());
         assert!(c.owns_here("o") && c.owns_here("m") && !c.owns_here("e"));
         assert!(c.is_me("m") && !c.is_me("o"));
         assert!(c.reaches("account:o") && c.reaches("account:e") && !c.reaches("account:m"));

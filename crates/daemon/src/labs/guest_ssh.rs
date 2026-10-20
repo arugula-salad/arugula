@@ -818,14 +818,7 @@ async fn attach(
     let by = Driver { who: who.clone(), name: g.label.clone() };
     let (data, mut data_rx) = client_queue();
     let (ctrl, mut ctrl_rx) = mpsc::unbounded_channel();
-    let sub = Subscriber {
-        client,
-        data,
-        ctrl,
-        principal: crate::acl::Principal::Owner,
-        acting: None,
-        name: Some(g.label.clone()),
-    };
+    let sub = Subscriber { client, data, ctrl, principal: crate::acl::Principal::Owner, name: Some(g.label.clone()) };
     let want = Want { history: Some(HISTORY), ..Default::default() };
     handle.attach_with(sub.clone(), want);
     guests.count(g.id, 1);

@@ -65,7 +65,8 @@ move with the core, or it can't compile:
 
 **The access model.** The mux uses `acl::Principal` (12 files) and
 `acl::Acl` through `Config.acl`: `role`, `floor`, `team_role`, `notifies`,
-`record`, `forget_session`, `list` and `thread_floor`. They answer who sees
+`record`, `forget_session`, `list` and `share_at` (`thread_floor` until
+M125 took the daemon's thread store out). They answer who sees
 which pane, and they filter each person's `State`.
 
 **Files.** `fs::Scope` sits in `Daemon.fs`, `BlockEnv.fs` and
@@ -139,7 +140,9 @@ and `labs::stop_beholds`. pane.rs calls `labs::machine_start`. Seventeen
 
 - `Block::wrote_run`, `BlockCtx::block` and `BlockCtx::update_reason`;
 - `Api::GuestInput`, `Api::GuestSize` and `Api::GuestLeft`;
-- `mux/thread_ops.rs`, with its twins in `mux/labs_off.rs`.
+- `mux/thread_ops.rs`, with its twins in `mux/labs_off.rs` (both gone
+  since M125: chat is control's, and the mux only lists who reads each
+  pane's and session's thread, in `mux/chat_readers.rs`).
 
 The other direction matters as much. Integrations reach the core through
 `MuxHandle` (`send`, `api`, `events`, and the fields `store`, `provider`,
@@ -150,8 +153,8 @@ The other direction matters as much. Integrations reach the core through
 sites) and `store::now_ms` (33) are used everywhere.
 
 `Daemon` itself is private to `mux/`. No integration touches its fields
-directly. They reach them through the mux's own files: `thread_ops.rs`
-for chat, `attention.rs` for the IDE, and
+directly. They reach them through the mux's own files: `chat_readers.rs`
+for chat (`thread_ops.rs` before M125), `attention.rs` for the IDE, and
 `api_calls.rs` and `who_may.rs` for editors.
 
 ## The line

@@ -79,8 +79,6 @@ pub mod sandbox;
 pub mod sprites;
 #[cfg(feature = "labs")]
 pub mod tea;
-// Chat (M61) is the core's: `arugula_mux::labs::threads`, with the mux's
-// handling in `mux/thread_ops.rs` (twins in `mux/labs_off.rs`).
 #[cfg(feature = "labs")]
 pub mod wearing;
 #[cfg(feature = "labs")]
@@ -98,7 +96,7 @@ pub const BUILT: bool = cfg!(feature = "labs");
 
 #[cfg(feature = "forge")]
 use arugula_mux::labs::flag_off_as;
-pub use arugula_mux::labs::{flag, not_built, thread_names};
+pub use arugula_mux::labs::{flag, not_built};
 
 /// The Labs flags that are on here: none in a build without Labs, else
 /// what the machine's state directory says (read on each call).
@@ -473,18 +471,6 @@ mod sandboxes_off {
 
 #[cfg(not(feature = "labs"))]
 pub use sandboxes_off::{SandboxFailed, sandbox_demote, sandbox_promote, sandboxes};
-
-/// Whether chat is in this build: `Ok`, or the refusal for a request that
-/// needs it.
-#[cfg(feature = "labs")]
-pub fn chat() -> Result<(), String> {
-    Ok(())
-}
-
-#[cfg(not(feature = "labs"))]
-pub fn chat() -> Result<(), String> {
-    Err(not_built("Chat"))
-}
 
 /// Sets up the studio token store (M35) at start-up. A build without Labs
 /// has no studio: a file given with `--studio` is ignored, with a warning.

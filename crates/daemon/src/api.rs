@@ -20,12 +20,11 @@ use arugula_proto::{
         RunResponse, SecretFinding, SendRequest, WaitRequest, WaitResult,
     },
     op::ops::{
-        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConvCreate, ConvDelete, ConvMemberAdd,
-        ConvMemberRemove, ConvRename, ConversationOpen, ConversationsList, FlagSet, FlagsList, ListPanes, MachineReset,
-        MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf,
-        PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PanePorts, PaneProcess, PanePrompt,
-        PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet,
-        ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet, ThreadGet, ThreadPost, ThreadRead,
+        AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConversationOpen, ConversationsList,
+        FlagSet, FlagsList, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw,
+        PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox, PaneKeys, PaneMouse,
+        PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet, PushSubscribe, PushTest,
+        RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
     },
 };
 use axum::{
@@ -71,14 +70,6 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/panes/{id}/hook", post(hook))
         .op::<PaneInbox>()
         .op::<PaneFollowUp>()
-        .op::<ThreadGet>()
-        .op::<ThreadPost>()
-        .op::<ThreadRead>()
-        .op::<ConvCreate>()
-        .op::<ConvRename>()
-        .op::<ConvDelete>()
-        .op::<ConvMemberAdd>()
-        .op::<ConvMemberRemove>()
         .op::<ClosePane>()
         .route("/api/panes/{id}/capture", get(capture))
         .op::<PaneProcess>()
@@ -174,10 +165,7 @@ fn tap(pane: PaneHandle, from: u64) -> Tap {
     let client = NEXT_TAP.fetch_add(1, Ordering::Relaxed);
     let (data, rx) = crate::pane::client_queue();
     let (ctrl, _ctrl) = mpsc::unbounded_channel();
-    pane.attach(
-        Subscriber { client, data, ctrl, principal: crate::acl::Principal::Owner, name: None, acting: None },
-        Some(from),
-    );
+    pane.attach(Subscriber { client, data, ctrl, principal: crate::acl::Principal::Owner, name: None }, Some(from));
     Tap { pane, client, rx, _ctrl }
 }
 

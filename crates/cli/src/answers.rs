@@ -285,13 +285,10 @@ fn request_bodies_are_what_the_json_was() {
             history: false,
             drive_minutes: Some(10),
             root: None,
-            thread: None,
-            msg: None,
-            whole_thread: false,
         },
         json!({ "session": 1, "who": "sam", "role": "editor", "pane": 3, "history": false, "drive_minutes": 10,
                 "note": null, "root": null }),
-        &[("thread", Value::Null), ("msg", Value::Null), ("whole_thread", json!(false))],
+        &[],
     );
     body(ShareRequest { pane: 3, ttl_secs: Some(60) }, json!({ "pane": 3, "ttl_secs": 60 }), &[]);
     body(

@@ -113,9 +113,9 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   const tab = client.tabView();
   // M73: the chat page covers the panes, which stay laid out under it (so
   // their terminals keep their size) but can't be reached.
-  // M123: control's chat needs no machine up.
+  // M123: chat is control's, and needs no machine up.
   useSubscribe((fn) => chat.subscribe(fn));
-  const chatOpen = useChatOpen() && (!!state || !!chatStore()) && hasChat(client);
+  const chatOpen = useChatOpen() && hasChat(client);
   const controlChat = chatOpen && !!chatStore();
   const overviewOpen = ws && !!overview && !!state && !cloud && !cloudWs;
   const main = (
@@ -135,7 +135,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <MenuLayer />
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
-      {(state || chatStore()) && <InLabs on={hasChat(client)}>{(l) => <l.ChatPage client={client} />}</InLabs>}
+      {hasChat(client) && <InLabs on>{(l) => <l.ChatPage client={client} />}</InLabs>}
       {state && <AgentsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
@@ -225,7 +225,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <MenuLayer />
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
-      {(state || chatStore()) && <InLabs on={hasChat(client)}>{(l) => <l.ChatPage client={client} />}</InLabs>}
+      {hasChat(client) && <InLabs on>{(l) => <l.ChatPage client={client} />}</InLabs>}
       {state && <AgentsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>

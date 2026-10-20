@@ -8,8 +8,6 @@ export type NodeId = number;
 export type ClientId = number;
 export type MachineId = number;
 
-export const CONV_MEMBERS_SEE = "Members see every terminal line quoted in it.";
-
 /**
  * `POST /api/attention/act`: do something about one pane's reason, or
  * several at once ("allow all 3", "dismiss all 11"). Each pane needs
@@ -474,90 +472,6 @@ dropped_ms?: number,
 code?: string, approve?: string, };
 
 /**
- * `POST /api/convs` (#855): a new conversation here, owned by whoever
- * makes it.
- */
-export type ConvCreateRequest = { title: string, };
-
-/**
- * A conversation's id (#855): 16 random bytes, written `c-` and 32 hex
- * digits, a string on the wire (JavaScript never sees a 128-bit number).
- * Global without asking anyone: the home machine isn't part of it. `Copy`,
- * so [`ThreadTarget`] stays `Copy`.
- */
-export type ConvId = string;
-
-/**
- * Someone in a conversation who isn't its owner: they read and post.
- */
-export type ConvMember = { 
-/**
- * Their principal id (`account:…`, `tailnet:…`).
- */
-who: string, name: string, 
-/**
- * When they were added (ms): they read from here on, unless `history`.
- */
-joined: number, 
-/**
- * Added "with history": they read the whole conversation.
- */
-history?: boolean, 
-/**
- * The root their account's devices chain to, for someone who reaches
- * this machine only by being a member (#856): their devices are let in,
- * and control routes them here, while they're in it.
- */
-root?: string, };
-
-/**
- * `POST /api/convs/{id}/members/remove`: take someone out (the owner), or
- * leave (a member, naming themselves).
- */
-export type ConvMemberRemoveRequest = { who: string, };
-
-/**
- * `POST /api/convs/{id}/members`: add someone, by principal id or by a name
- * the way an `@` names them, reading from now on or, `history`, all of it.
- */
-export type ConvMemberRequest = { who: string, history?: boolean | null, 
-/**
- * For an `account:` who doesn't reach this machine yet (#856): what to
- * call them, and their account's root, as the owner's browser pinned
- * it. Being a member then lets them in, for its conversations only.
- */
-name?: string | null, root?: string | null, };
-
-/**
- * `POST /api/convs/{id}/rename`: its new title.
- */
-export type ConvRenameRequest = { title: string, };
-
-/**
- * A conversation (#855): a thread of its own, kept on its home machine in
- * `<state>/threads/conv-<id>.json` beside its timeline. Its people are
- * its record's, not a session's: the owner, and the members they added.
- */
-export type Conversation = { id: ConvId, title: string, 
-/**
- * Its owner's principal id on the home machine (`owner`): who renames
- * and deletes it and adds and removes members.
- */
-owner: string, 
-/**
- * The owner's name when it was made.
- */
-owner_name: string, 
-/**
- * Everyone else in it, in the order they were added.
- */
-members: Array<ConvMember>, 
-/**
- * When it was made (ms since the epoch).
- */
-created: number, };
-
-/**
  * An editor's debug session.
  */
 export type DebugState = { 
@@ -594,10 +508,10 @@ closed: boolean, };
  * Changes to the last [`State`]: each pane in `panes` is `{id, ...}` with
  * only the fields that changed (a field set to `null` went back to its
  * default, absent); `gone` panes left this client's view. `machines` and
- * `presence` (and `threads`, `convs`) are whole when present. Anything else (sessions, tabs,
- * options, roles) changes with a new `State`.
+ * `presence` are whole when present. Anything else (sessions, tabs, options,
+ * roles) changes with a new `State`.
  */
-export type Delta = { panes?: Array<{ id: PaneId } & Partial<PaneInfo>>, gone?: Array<number>, machines?: Array<Machine> | null, presence?: Array<Presence> | null, threads?: Array<ThreadSummary> | null, convs?: Array<Conversation> | null, };
+export type Delta = { panes?: Array<{ id: PaneId } & Partial<PaneInfo>>, gone?: Array<number>, machines?: Array<Machine> | null, presence?: Array<Presence> | null, };
 
 /**
  * Diagnostic counts: errors, warnings, information.
@@ -1123,11 +1037,6 @@ vms: boolean,
  */
 studio: boolean, 
 /**
- * Threads on panes and sessions: the `chat` flag. Older daemons leave it
- * out, and pages hide threads there.
- */
-threads?: boolean, 
-/**
  * The names of the Labs flags that are on, whatever else each needs
  * (a login, a provider). `None` from a daemon before #665: see `labs`.
  */
@@ -1170,20 +1079,6 @@ features?: HostFeatures, };
 export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
 
 /**
- * Someone the owner's `@token` named who can't read the thread (#297):
- * theirs to invite.
- */
-export type Invitable = { token: string, 
-/**
- * `tailnet:<login>` or `account:<id>`.
- */
-who: string, name: string, 
-/**
- * Another principal taken to be them (a login by their name).
- */
-merged?: string, };
-
-/**
  * How an invite's push went: `sent` once a subscription took it,
  * `pending` while control can't reach them yet, else `unreachable`.
  */
@@ -1221,14 +1116,7 @@ drive_minutes?: number | null,
  * For an `account:` no grant or pin vouches for: their root device,
  * whose fingerprint the owner checked with them.
  */
-root?: string | null, 
-/**
- * From a thread's mention (#297): the thread (`pane-N`, `session-N`)
- * it opens, the one a "from now" share reads from `msg` on (the
- * message that mentioned them), or all of with `whole_thread`. Other
- * threads start at the share, as ever.
- */
-thread?: string | null, msg?: number | null, whole_thread?: boolean | null, };
+root?: string | null, };
 
 /**
  * What an invite answers.
@@ -1692,13 +1580,7 @@ export type Presence = { client: number,
 /**
  * Principal id: one person's clients share it.
  */
-who: string, name: string, 
-/**
- * What chat calls them when that isn't `who` (#935): a team's other
- * owner is the owner by `who`, whose rights they have, and
- * `account:<id>` here, whose messages and reads are theirs.
- */
-chat?: string, pic?: string, 
+who: string, name: string, pic?: string, 
 /**
  * The tab it shows, and the pane it's focused on.
  */
@@ -1726,12 +1608,6 @@ name: string, };
  * Which forge.
  */
 export type Provider = "forgejo" | "github" | "gitlab";
-
-/**
- * Output quoted in a thread message: kept as text, so it stays readable
- * after the pane scrolls or closes.
- */
-export type Quote = { pane: number, text: string, };
 
 /**
  * GitHub's rate limit as last heard, and any backing off (M38).
@@ -1926,7 +1802,7 @@ export type RunResponse = { pane: number, };
 /**
  * Control messages from the server.
  */
-export type ServerMsg = { "type": "hello", version: string, client: number, state: State, } | { "type": "state", state: State, } | { "type": "size", pane: number, cols: number, rows: number, } | { "type": "resync", pane: number, } | { "type": "error", id: number | null, message: string, } | { "type": "block", block: number, state: unknown, } | { "type": "pong", id: number, } | { "type": "notice", message: string, } | { "type": "control_request", pane: number, who: string, name: string, } | { "type": "trust_request", pane: number, who: string, name: string, } | { "type": "delta", delta: Delta, } | { "type": "follow", pane: number, msg: FollowMsg, } | { "type": "thread", target: ThreadTarget, msg: ThreadMsg, } | { "type": "hand_call", id: number, tool: string, args: Record<string, unknown>, from: string, };
+export type ServerMsg = { "type": "hello", version: string, client: number, state: State, } | { "type": "state", state: State, } | { "type": "size", pane: number, cols: number, rows: number, } | { "type": "resync", pane: number, } | { "type": "error", id: number | null, message: string, } | { "type": "block", block: number, state: unknown, } | { "type": "pong", id: number, } | { "type": "notice", message: string, } | { "type": "control_request", pane: number, who: string, name: string, } | { "type": "trust_request", pane: number, who: string, name: string, } | { "type": "delta", delta: Delta, } | { "type": "follow", pane: number, msg: FollowMsg, } | { "type": "hand_call", id: number, tool: string, args: Record<string, unknown>, from: string, };
 
 export type Session = { id: number, name: string, tabs: Array<number>, };
 
@@ -1998,16 +1874,7 @@ roles?: Array<[number, Role]> | null,
  * Who else is here and where they're looking (M13), within what this
  * client sees.
  */
-presence?: Array<Presence>, 
-/**
- * The threads (M61) this person may read that have messages, with how
- * many they haven't read.
- */
-threads?: Array<ThreadSummary>, 
-/**
- * The conversations (#855) kept here that this person is in.
- */
-convs?: Array<Conversation>, };
+presence?: Array<Presence>, };
 
 export type TabView = { id: number, name: string | null, root: Node, cols: number, rows: number, owner: number | null, zoom: number | null, 
 /**
@@ -2081,95 +1948,6 @@ export type TelemetrySetRequest = { on: boolean, via?: string, };
  * Why telemetry is on or off here.
  */
 export type TelemetryWhy = "yes" | "not_asked" | "no" | "do_not_track" | "env" | "ci" | "test";
-
-/**
- * `GET /api/threads/…`: a thread's messages, as the caller may read them.
- */
-export type ThreadMessages = { target: ThreadTarget, messages: Array<ThreadMsg>, };
-
-/**
- * One message in a thread (M61).
- */
-export type ThreadMsg = { 
-/**
- * 1, 2, 3, ... within its thread.
- */
-id: number, 
-/**
- * When it was posted (ms since the epoch).
- */
-at: number, 
-/**
- * Who posted it: a principal id (`owner`, `tailnet:…`, `account:…`).
- */
-who: string, name: string, 
-/**
- * M74: the poster's picture when they posted, if they have one.
- */
-pic?: string, text: string, 
-/**
- * Terminal output it quotes.
- */
-quote?: Quote, 
-/**
- * Principal ids it @mentions.
- */
-mentions?: Array<string>, 
-/**
- * The `@` tokens (lowercase) that reached someone, each one naming a
- * person in `mentions`. The page marks only these; an `@word` that
- * reached no one stays plain.
- */
-landed?: Array<string>, };
-
-/**
- * `POST /api/threads/…`: a message, with output it quotes.
- */
-export type ThreadPostRequest = { text?: string | null, quote?: Quote | null, };
-
-/**
- * What a post answers. `invitable` only in the owner's answer (#297), so
- * nobody else's says who exists.
- */
-export type ThreadPosted = { message: ThreadMsg, unreached: Array<Unreached>, invitable?: Array<Invitable>, };
-
-/**
- * `POST /api/threads/…/read`: the caller has read up to that message.
- */
-export type ThreadReadRequest = { upto: number, };
-
-/**
- * A thread as one person has it (M61).
- */
-export type ThreadSummary = { target: ThreadTarget, 
-/**
- * The newest message's id and time.
- */
-last: number, at: number, 
-/**
- * Messages from others they haven't read.
- */
-unread?: number, 
-/**
- * One of those mentions them.
- */
-mention?: boolean, };
-
-/**
- * What a thread (M61) is about: a pane, a session, or nothing but itself:
- * a conversation (#855), with members of its own, kept on its home machine.
- */
-export type ThreadTarget = { "pane": number } | { "session": number } | { "conv": ConvId };
-
-/**
- * An `@` in a post that reached no one, for the poster alone.
- */
-export type Unreached = { token: string, why: UnreachedWhy, };
-
-/**
- * Why an `@` in a post reached no one.
- */
-export type UnreachedWhy = "nobody";
 
 /**
  * What a pane is busy with (M23), for drawing and grouping it without
@@ -2296,11 +2074,6 @@ export const OPS = {
   "adapters.list": { method: "GET", path: "/api/agents/adapters" },
   "agents.get": { method: "GET", path: "/api/hosts/self/agents" },
   "agents.refresh": { method: "POST", path: "/api/hosts/self/agents/refresh" },
-  "conv.create": { method: "POST", path: "/api/convs" },
-  "conv.delete": { method: "DELETE", path: "/api/convs/{id}" },
-  "conv.member_add": { method: "POST", path: "/api/convs/{id}/members" },
-  "conv.member_remove": { method: "POST", path: "/api/convs/{id}/members/remove" },
-  "conv.rename": { method: "POST", path: "/api/convs/{id}/rename" },
   "conversation.open": { method: "POST", path: "/api/conversations/open" },
   "conversations.list": { method: "GET", path: "/api/conversations" },
   "flag.set": { method: "PUT", path: "/api/flags/{name}" },
@@ -2383,16 +2156,13 @@ export const OPS = {
   "telemetry.get": { method: "GET", path: "/api/telemetry" },
   "telemetry.note": { method: "POST", path: "/api/telemetry/note" },
   "telemetry.set": { method: "PUT", path: "/api/telemetry" },
-  "thread.get": { method: "GET", path: "/api/threads/{target}" },
-  "thread.post": { method: "POST", path: "/api/threads/{target}" },
-  "thread.read": { method: "POST", path: "/api/threads/{target}/read" },
 } as const;
 
 export type OpName = keyof typeof OPS;
 
 /** The Labs flags (`arugula_proto::flags::FLAGS`), in order. */
 export const FLAGS = [
-  { name: "chat", title: "Chat", about: "Threads on panes and sessions, and the chat page.", default: false, local_only: false },
+  { name: "chat", title: "Chat", about: "The chat page, which needs control. Brings this machine's old threads into it.", default: false, local_only: false },
   { name: "vms", title: "VMs and sandboxes", about: "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider.", default: false, local_only: false },
   { name: "studio", title: "Studio apps", about: "Studio app blocks. Needs a linked studio.", default: false, local_only: false },
   { name: "workspaces", title: "Chant workspaces", about: "Chant workspace blocks.", default: false, local_only: false },

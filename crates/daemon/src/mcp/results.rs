@@ -5,7 +5,7 @@
 //! TypeScript client deserializes them, so they derive `Serialize`, and
 //! `JsonSchema` where a tool lists them as its `outputSchema` (#580: the
 //! tools that always answer with one of them; see `tools::output_schema`).
-//! Where a result is an API type already (`PromptResult`, `ThreadMsg`,
+//! Where a result is an API type already (`PromptResult`,
 //! `ForgeWant`, `Draft`, `Ask`, `AppInfo`…) it is that type, so the tool and
 //! the API can't drift. The JSON of each is what the old `json!` literal
 //! wrote: a field is skipped only where the old code left the key out, and an
@@ -207,7 +207,6 @@ pub struct Hit {
     pub open: bool,
     pub offset: u64,
     pub command: Option<String>,
-    pub thread: Option<String>,
     pub line: String,
 }
 
@@ -657,17 +656,8 @@ mod tests {
                 "output_offset": 0 }], "total": 1 }),
         );
         same(
-            Hits {
-                hits: vec![Hit {
-                    pane: 2,
-                    open: false,
-                    offset: 4,
-                    command: Some("ls".into()),
-                    thread: None,
-                    line: "l".into(),
-                }],
-            },
-            json!({ "hits": [{ "pane": 2, "open": false, "offset": 4, "command": "ls", "thread": null,
+            Hits { hits: vec![Hit { pane: 2, open: false, offset: 4, command: Some("ls".into()), line: "l".into() }] },
+            json!({ "hits": [{ "pane": 2, "open": false, "offset": 4, "command": "ls",
                 "line": "l" }] }),
         );
     }

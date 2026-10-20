@@ -74,7 +74,8 @@ pub const CONTROL_FILE: &str = "flags.control.json";
 /// flag in [`FLAGS`].
 pub const LABS: &str = "labs";
 
-/// Threads on panes and sessions, and the chat page.
+/// The chat page, which is control's (M125): and, joined to control, this
+/// machine's old threads brought into it (M124).
 pub const CHAT: &str = "chat";
 /// VM tabs and panes, machines and the sandboxes page.
 pub const VMS: &str = "vms";
@@ -121,7 +122,7 @@ const fn local_row(name: &'static str, title: &'static str, about: &'static str)
 
 /// Every flag there is. A new one is a row here.
 pub const FLAGS: &[Flag] = &[
-    row(CHAT, "Chat", "Threads on panes and sessions, and the chat page."),
+    row(CHAT, "Chat", "The chat page, which needs control. Brings this machine's old threads into it."),
     row(VMS, "VMs and sandboxes", "VM tabs and panes, machines and the sandboxes page. Needs a sandbox provider."),
     row(STUDIO, "Studio apps", "Studio app blocks. Needs a linked studio."),
     row(WORKSPACES, "Chant workspaces", "Chant workspace blocks."),

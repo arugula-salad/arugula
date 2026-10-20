@@ -39,12 +39,9 @@ fn set(state: &Path, flag: &str, on: bool) {
 }
 
 /// Each flag, and requests that are its feature's: a route, or a block.
-fn requests(pane: u64) -> Vec<(&'static str, &'static str, String, Option<Value>)> {
+fn requests() -> Vec<(&'static str, &'static str, String, Option<Value>)> {
     let block = |kind: &str, config: Value| Some(json!({ "type": kind, "config": config, "local": true }));
     vec![
-        ("chat", "GET", format!("/api/threads/pane-{pane}"), None),
-        ("chat", "POST", format!("/api/threads/pane-{pane}"), Some(json!({ "text": "hi" }))),
-        ("chat", "POST", format!("/api/threads/pane-{pane}/read"), Some(json!({ "upto": 1 }))),
         ("vms", "GET", "/api/machines".into(), None),
         ("vms", "POST", "/api/machines/1/reset".into(), Some(json!({}))),
         ("vms", "GET", "/api/sandboxes".into(), None),
@@ -70,9 +67,8 @@ fn requests(pane: u64) -> Vec<(&'static str, &'static str, String, Option<Value>
 #[test]
 fn each_flag_gates_its_routes_and_blocks_both_ways() {
     let d = daemon("flag-gates");
-    let pane = d.get("/api/panes")[0]["id"].as_u64().unwrap();
     let off = |what: &str| {
-        for (flag, method, path, body) in requests(pane) {
+        for (flag, method, path, body) in requests() {
             let (status, text) = d.raw(method, &path, body.clone());
             assert!((400..500).contains(&status), "{what}: {method} {path} {body:?}: {status} {text}");
             assert!(text.contains(&hint(flag)), "{what}: {method} {path} {body:?}: {text}");
@@ -80,7 +76,7 @@ fn each_flag_gates_its_routes_and_blocks_both_ways() {
     };
     // A new install: every flag off.
     off("by default");
-    for (flag, method, path, body) in requests(pane) {
+    for (flag, method, path, body) in requests() {
         set(&d.state, flag, true);
         let (_, text) = d.raw(method, &path, body.clone());
         assert!(!text.contains("arugulad flags"), "{flag} on: {method} {path} {body:?}: {text}");

@@ -168,7 +168,6 @@ test("each flag turns on its own feature and no other", async ({ page }) => {
  * the gate, in their own words, and nothing starts. (The swarm's
  * views have no route.) */
 const GATED: [Flag, string, string, unknown][] = [
-  ["chat", "GET", "/api/threads/pane-1", undefined],
   ["vms", "GET", "/api/machines", undefined],
   ["vms", "GET", "/api/sandboxes", undefined],
   ["studio", "GET", "/api/studio", undefined],
