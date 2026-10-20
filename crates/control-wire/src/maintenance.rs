@@ -7,9 +7,9 @@
 //! The hub's gateway answers that 503 before it forwards anything to the
 //! platform, so a request refused with [`MAINTENANCE`] wasn't processed:
 //! it's safe to send again whatever its method, a `POST` that makes
-//! something included. Any other 503 (a proxy's while control restarts,
-//! say) may have come after the work was done, so only a safe method
-//! (`GET`, `HEAD`) is sent again on one.
+//! something included. Any other 503 is the answer: control gives one for
+//! what won't change in a few minutes (Cloud or its secrets not configured
+//! here), and waiting five minutes on it only hides it.
 //!
 //! [`Waits`] is how long a client waits between tries: what `Retry-After`
 //! asks, kept between [`Patience::floor`] and [`Patience::per_wait`], or a
@@ -89,11 +89,11 @@ pub fn is_maintenance(status: u16, body: &[u8]) -> bool {
         && serde_json::from_slice::<serde_json::Value>(body).is_ok_and(|v| v["reason"].as_str() == Some(MAINTENANCE))
 }
 
-/// Whether an answer may be tried again: control's maintenance 503 for any
-/// method (the gateway refused it unprocessed), any other 503 only for a
-/// safe one.
-pub fn may_retry(method: &str, status: u16, body: &[u8]) -> bool {
-    status == 503 && (is_maintenance(status, body) || matches!(method, "GET" | "HEAD"))
+/// Whether an answer may be tried again: only control's maintenance 503,
+/// for any method (the gateway refused it unprocessed). `method` is kept
+/// for callers; no other 503 is waited out.
+pub fn may_retry(_method: &str, status: u16, body: &[u8]) -> bool {
+    is_maintenance(status, body)
 }
 
 #[cfg(test)]
@@ -138,7 +138,7 @@ mod tests {
         assert!(is_maintenance(503, m));
         assert!(!is_maintenance(500, m) && !is_maintenance(503, other) && !is_maintenance(503, b"<html>"));
         assert!(may_retry("POST", 503, m) && may_retry("DELETE", 503, m));
-        assert!(may_retry("GET", 503, b"") && may_retry("GET", 503, other));
+        assert!(!may_retry("GET", 503, b"") && !may_retry("GET", 503, other), "control's own 503s are answers");
         assert!(!may_retry("POST", 503, other) && !may_retry("POST", 503, b""));
         assert!(!may_retry("GET", 502, m) && !may_retry("GET", 429, b""));
         assert_eq!(retry_after(Some(" 12 ")), Some(S(12)));
