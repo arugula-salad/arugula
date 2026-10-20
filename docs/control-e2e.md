@@ -993,10 +993,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 51 tables in two planes ("Two planes, two trust rules"):
+Control's database has 54 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (29 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (22 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, and Cloud workspaces. Control reads most of it, and says so here.
+- **The platform plane** (25 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, and Cloud workspaces. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1060,6 +1060,9 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `cloud_workspaces` | **plaintext** | A Cloud workspace: its name, its spec (repositories, packages, setup script, environment variables, networking, secret names), its status and errors. | Cloud workspaces work with every machine off. | yes: its Managoat resources go first: deleting is refused until they have. | Managoat |
 | `cloud_workspace_specs` | **plaintext** | The spec a Cloud workspace's environment revision was saved as (the newest few). | Cloud workspaces work with every machine off. | yes | Managoat |
 | `cloud_tabs` | **plaintext** | A tab in a Cloud workspace: the agent, runtime, model and prompt it opened with, its status. | Cloud workspaces work with every machine off. | yes | Managoat |
+| `projects` | metadata | A project: its id, the team or account it belongs to, its name, and whether it's the default one. | Cloud workspaces, team channels and cloud secrets belong to one, and they exist with every machine asleep. | partly: its personal project goes, and the default projects of teams that go with it; other teams' stay. |  |
+| `team_members` | metadata | Who is in each team as its latest signed roster says: account, role, name. A copy for platform queries; the signed roster stays the authority over machines. | What's shared with a team on the platform (its channels, later its projects) needs its members while every machine is asleep. | yes |  |
+| `grants` | metadata | A grant: a subject (a machine), a power (cloud.drive) over a scope (an account or a project), who gave it, when, and when it was revoked. | Control checks it on the Cloud workspace routes, which work with every other machine asleep. | yes: grants to its machines, over it, or that it gave. |  |
 
 ### Who else sees it
 

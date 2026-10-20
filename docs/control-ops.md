@@ -288,6 +288,38 @@ To turn it on:
 
 Fly's own daily volume snapshots (kept 5 days) still run.
 
+### Checking a migration on a copy
+
+Control migrates its database every time it opens it. To see what a new
+version does to production's data before deploying it, restore a copy as
+above to `/tmp/control.db`, then open it with the new build and stop it
+once it's listening (on another port, with nothing else set):
+
+```
+arugula-control --db /tmp/control.db --listen 127.0.0.1:7699
+```
+
+**Projects (M129, #1125).** Every team has one default project, and every
+Cloud workspace, team channel and cloud secret has a project; DMs, pane
+threads and archives have none. Each of these prints nothing when it holds:
+
+```
+sqlite3 /tmp/control.db <<'EOF'
+SELECT 'team without one default', t.id FROM teams t
+  WHERE (SELECT count(*) FROM projects p WHERE p.team_id = t.id AND p.is_default = 1) != 1;
+SELECT 'workspace without a project', id FROM cloud_workspaces WHERE project_id IS NULL;
+SELECT 'team channel without a project', id, scope FROM chat_rooms
+  WHERE kind = 'channel' AND scope LIKE 'team:%' AND project_id IS NULL;
+SELECT 'secret without a project', account, name FROM cloud_secrets WHERE project_id IS NULL;
+SELECT 'room in a project that should not be', id, kind FROM chat_rooms
+  WHERE project_id IS NOT NULL AND NOT (kind = 'channel' AND scope LIKE 'team:%');
+EOF
+```
+
+A team channel whose team is gone would show up here as one without a
+project: control drops a team's rooms with the team, so there shouldn't be
+any.
+
 ### Product analytics (PostHog)
 
 Control sends product events to PostHog when it has a project API key

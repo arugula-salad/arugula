@@ -506,3 +506,32 @@ what = "A tab in a Cloud workspace: the agent, runtime, model and prompt it open
 why_asleep = "Cloud workspaces work with every machine off."
 with_account = "deleted"
 seen_by = ["litestream", "managoat"]
+
+[[table]]
+name = "projects"
+plane = "platform"
+holds = "metadata"
+what = "A project: its id, the team or account it belongs to, its name, and whether it's the default one."
+why_asleep = "Cloud workspaces, team channels and cloud secrets belong to one, and they exist with every machine asleep."
+with_account = "partly"
+note = "Its personal project goes, and the default projects of teams that go with it; other teams' stay."
+seen_by = ["litestream"]
+
+[[table]]
+name = "team_members"
+plane = "platform"
+holds = "metadata"
+what = "Who is in each team as its latest signed roster says: account, role, name. A copy for platform queries; the signed roster stays the authority over machines."
+why_asleep = "What's shared with a team on the platform (its channels, later its projects) needs its members while every machine is asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "grants"
+plane = "platform"
+holds = "metadata"
+what = "A grant: a subject (a machine), a power (cloud.drive) over a scope (an account or a project), who gave it, when, and when it was revoked."
+why_asleep = "Control checks it on the Cloud workspace routes, which work with every other machine asleep."
+with_account = "deleted"
+note = "Grants to its machines, over it, or that it gave."
+seen_by = ["litestream"]
