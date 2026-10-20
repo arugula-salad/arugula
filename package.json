@@ -1,0 +1,9 @@
+{
+  "name": "arugula-workspace",
+  "private": true,
+  "license": "MIT OR Apache-2.0",
+  "description": "The chant that reads chant.workspace.json: `npm install` here puts it at node_modules/.bin/chant, where Arugula's workspace block looks.",
+  "devDependencies": {
+    "@intentius/chant": "0.108.1"
+  }
+}
