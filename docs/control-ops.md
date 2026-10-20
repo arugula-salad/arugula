@@ -161,7 +161,7 @@ The hosted control is one Fly machine (`packaging/control/fly.toml`):
 its WAL, Litestream's working files, and Shared Docs' ciphertext, which
 can reach 200 MB per account (below). A volume can grow but never
 shrink, so it was made 10 GB once rather than grown a step at a time.
-It was made at 1 GB; extending it is:
+It was made at 1 GB and extended on 2026-10-20 (M132) with:
 
 ```
 fly volumes list -a illogical-control      # the id: vol_r68lmz2doox9myd4
@@ -204,9 +204,11 @@ Read, but they do nothing: `ARUGULA_CLOUD_DAILY_RUNS`,
 were retired; control still parses them so an old deploy starts, and
 logs that they do nothing.
 
-Not read by anything: `ILLOGICAL_SANDBOX_ACCOUNTS`. The code reads
-`ARUGULA_SANDBOX_ACCOUNTS`, so renaming it would turn hosted sandboxes on
-for the accounts it lists.
+Unset on 2026-10-20 (M132), their values kept in Infisical under
+`/illogical/control`: `ILLOGICAL_SANDBOX_ACCOUNTS`, which nothing read (the
+code reads `ARUGULA_SANDBOX_ACCOUNTS`, so renaming it would have turned
+hosted sandboxes on for the accounts it listed), and `ARUGULA_CLOUD_MODEL`
+and `ARUGULA_CLOUD_RUNTIME`, stale with `ARUGULA_CLOUD_MODELS` set.
 
 ### Daemon census
 
