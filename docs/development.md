@@ -19,6 +19,13 @@ builds static Linux binaries (musl, with Zig as the C compiler);
 `just static aarch64` builds them for arm64. `just dist` makes the
 release tarballs in `dist/`.
 
+The repository is a chant workspace too (`chant.workspace.json`: its
+members, decision records and CI's green tags). `npm install` at the root
+installs the chant it pins (`package.json`) at `node_modules/.bin/chant`,
+which is where a workspace block opened on the checkout looks for it
+([labs.md](labs.md#chant-workspaces)). Nothing else needs it: the build and
+the web client don't.
+
 ## Working on it
 
 What a new install hides until its flag is on (`arugulad flags chat on`, one
