@@ -63,5 +63,11 @@ noticing. The step 1 census (#1128) found daemons from before 0.43 through
 **Never move a route that an old daemon or app calls.** Every route says
 which process serves it (`process` in `crates/control/routes.toml`, M135),
 and the gateway is built from that list.
+
+A page origin isn't a platform address. Since step 3 (#1171) the platform
+page is on `app.arugula.io` ("The platform page is on app.arugula.io, not on
+the keys' origin"), and that host points at the hub, which routes it to the
+platform by `Host`. The platform still has no public address, and every
+platform path on `control.arugula.io` keeps working for old daemons and apps.
 Where: `crates/control/src/auth.rs` (`check_daemon`, `daemon_auth_message_v2`), `crates/control/routes.toml`, `crates/control/src/main.rs`.
 From: #1150, #1128 (census), M134 (#1151), M135 (#1152), M140 (#1157).

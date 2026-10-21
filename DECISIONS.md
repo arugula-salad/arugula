@@ -64,6 +64,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-025](docs/decisions/aru-025-only-the-owner-s-agent-reaches-panes-over-ssh.md): Only the owner's agent reaches panes over ssh
 - [aru-073](docs/decisions/aru-073-grants-not-impersonation.md): Grants, not impersonation
 - [aru-078](docs/decisions/aru-078-the-hub-stays-the-identity-provider-passkeys-are.md): The hub stays the identity provider; passkeys are bound to control.arugula.io
+- [aru-080](docs/decisions/aru-080-the-hub-signs-people-in-to-the-platform-page.md): The hub signs people in to the platform page
 
 ## Clients
 
@@ -75,6 +76,10 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-031](docs/decisions/aru-031-the-desktop-app-is-a-window-and-a-supervisor-the-daemon.md): The desktop app is a window and a supervisor; the daemon stays a service
 - [aru-032](docs/decisions/aru-032-clients-run-ssh-daemons-don-t.md): Clients run ssh; daemons don't
 - [aru-033](docs/decisions/aru-033-on-a-computer-one-workspace-a-phone-keeps-its-own.md): On a computer, one workspace; a phone keeps its own
+- [aru-079](docs/decisions/aru-079-the-platform-page-is-on-app-arugula-io-not-on-th.md): The platform page is on app.arugula.io, not on the keys' origin
+- [aru-081](docs/decisions/aru-081-push-stays-on-the-hub-s-app-a-push-opens-the-pla.md): Push stays on the hub's app; a push opens the platform page
+- [aru-082](docs/decisions/aru-082-platform-urls-are-ids-with-cosmetic-slugs.md): Platform URLs are ids with cosmetic slugs
+- [aru-083](docs/decisions/aru-083-secrets-stay-in-fragments.md): Secrets stay in fragments
 
 ## Agents and blocks
 
