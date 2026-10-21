@@ -70,6 +70,9 @@ export interface ControlInfo {
   /** Blocks get origins of their own, `https://b-<site_key>.<this>` (M50);
    * absent when control doesn't serve blocks. */
   block_domain?: string;
+  /** The platform page's origin (M151, `https://app.arugula.io`); null or
+   * absent when control doesn't serve it. */
+  platform?: string | null;
 }
 
 /** On a URL control is moving away from (#507): a line at the top saying

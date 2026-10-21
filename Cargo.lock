@@ -348,6 +348,7 @@ dependencies = [
  "hmac",
  "reqwest",
  "rusqlite",
+ "rust-embed",
  "serde",
  "serde_json",
  "sha2 0.11.0",

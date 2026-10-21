@@ -4,7 +4,9 @@
 //! forwards each platform route here with a principal header signed with
 //! the key both share (`ARUGULA_PLATFORM_KEY`), and the platform calls the
 //! hub's internal API (`HubPort` over HTTP) with the same key. Without a
-//! valid header it answers nothing but its health check.
+//! valid header it answers nothing but its health check. The platform page
+//! (M151) is its too: the hub forwards the page's GETs on `app.arugula.io`
+//! here, signed like the rest.
 //!
 //! `arugula-control --platform in-process` (the default) runs the same
 //! code inside the hub instead; that's the rollback (docs/control-ops.md).
@@ -84,6 +86,12 @@ struct Args {
     /// path in the bucket (`platform` unless LITESTREAM_PATH says).
     #[command(flatten)]
     backup: arugula_control_common::backup::Litestream,
+
+    /// Serve the platform page from this directory instead of the built-in
+    /// copy (development). The hub forwards the page's GETs on its
+    /// `--platform-host` here (M151).
+    #[arg(long)]
+    static_dir: Option<PathBuf>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -158,11 +166,14 @@ async fn run() -> anyhow::Result<()> {
             arugula_platform::router(p.clone())
                 .layer(axum::middleware::from_fn_with_state(key.clone(), remote::vouched)),
         )
-        .merge(remote::serve_platform(port, key))
+        .merge(remote::serve_platform(port, key.clone()))
         // Fly's health check: the only thing answered without the hub. A
         // machine that can't reach its database answers 503, so a rolling
         // deploy (M144: two machines) stops at it rather than going on.
-        .route("/platform.json", get(health).with_state(p.clone()));
+        .route("/platform.json", get(health).with_state(p.clone()))
+        // Anything else is the platform page (M151), for the page GETs the
+        // hub forwards from its platform host, and only for those.
+        .merge(arugula_platform::page::behind_hub(arugula_platform::page::Page::new(a.static_dir), key));
     info!(listen = %l.local_addr()?, hub = %a.hub, "Arugula platform");
     let serve = axum::serve(l, app);
     tokio::select! {

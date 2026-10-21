@@ -122,6 +122,11 @@ pub struct ControlInfo {
     /// `<doc_viewer>/<id>#k=<key>`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc_viewer: Option<String>,
+    /// The platform page's origin (M151, `https://app.arugula.io`), where
+    /// projects, chat and Cloud workspaces are. `None`: control doesn't
+    /// serve it.
+    #[serde(default)]
+    pub platform: Option<String>,
 }
 
 /// Just the signature version from `/control.json`, for a daemon deciding

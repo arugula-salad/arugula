@@ -32,6 +32,8 @@ hex = { workspace = true }
 hmac = { workspace = true }
 reqwest = { workspace = true, features = ["rustls", "json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
+# The platform page's build (web/dist-platform, M151), embedded.
+rust-embed = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -45,6 +47,10 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }
 
 [features]
+# Embed web/dist-platform even in a debug build (rust-embed reads it from
+# the source tree at run time otherwise), as control's `debug-embed` does
+# web/dist; control's turns this on too.
+debug-embed = ["rust-embed/debug-embed"]
 # The contract tests every `HubPort` keeps (`contract`): control runs them
 # against its in-process port, and M140 against the HTTP one.
 contract = []
