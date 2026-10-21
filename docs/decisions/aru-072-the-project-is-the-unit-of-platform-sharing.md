@@ -67,5 +67,7 @@ never read for machine access.
 
 Step 1 adds the rows and backfills them, and nothing reads `project_id` yet,
 so behaviour doesn't change.
-Where: `crates/control/src/db/` (`projects`, `team_members`, `project_id`).
+Where: `crates/platform/src/db/projects.rs` (`projects`, `team_members`),
+`crates/platform/src/projects.rs`, and `project_id` on Cloud's and chat's
+tables (`crates/platform/src/db/`).
 From: #1122, M129 (#1125).

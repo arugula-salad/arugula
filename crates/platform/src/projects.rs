@@ -15,7 +15,10 @@
 //!   joins again starts with a new one.
 //! - A gap (changes pruned before the platform read them), a kind it doesn't
 //!   know, and its first read ever: [`reconcile`], which asks the hub about
-//!   every team and machine the platform holds something of.
+//!   every team and machine the platform holds something of. The first read
+//!   ever (no `hub_feed` row yet) only logs the grants it would drop and
+//!   keeps them ([`Reconcile::Report`]): grants are dropped this way only
+//!   from the second start on.
 //!
 //! An account's deletion reaches these tables through
 //! `PlatformPort::account_deleted`, not the feed (its change names nobody).
@@ -61,14 +64,14 @@ pub async fn team_project(app: &Platform, team: &str) -> HubResult<Option<String
 }
 
 /// Apply the hub's change feed from where this last got to, to its end.
-/// The first read ever starts at the newest change and reconciles. Whether
-/// it applied anything.
+/// The first read ever starts at the newest change and reconciles without
+/// dropping a grant ([`Reconcile::Report`]). Whether it applied anything.
 pub async fn follow(app: &Platform) -> HubResult<bool> {
     // One reader at a time: the tick, or a check catching up.
     let _one = app.feed.lock().await;
     let Some(mut at) = app.db.feed_after()? else {
         let last = app.hub.changes(0, 0).await?.last;
-        reconcile(app).await?;
+        reconcile(app, Reconcile::Report).await?;
         app.db.set_feed_after(last)?;
         return Ok(true);
     };
@@ -76,7 +79,7 @@ pub async fn follow(app: &Platform) -> HubResult<bool> {
     loop {
         let page = app.hub.changes(at, PAGE).await?;
         if page.gap {
-            reconcile(app).await?;
+            reconcile(app, Reconcile::Drop).await?;
             applied = true;
         }
         for c in &page.changes {
@@ -109,7 +112,7 @@ async fn apply(app: &Platform, c: &Change) -> HubResult<()> {
             }
         }
         DaemonLeft => app.db.machine_left(&c.subject, c.at)?,
-        Unknown => reconcile(app).await?,
+        Unknown => reconcile(app, Reconcile::Drop).await?,
         // Nothing here follows a name, a revoked device (the hub refuses
         // its calls), a lock, a move (a machine's grant is over its owner's
         // account, wherever it is), a share or a flag. An account's deletion
@@ -119,12 +122,26 @@ async fn apply(app: &Platform, c: &Change) -> HubResult<()> {
     Ok(())
 }
 
+/// What [`reconcile`] does with a grant of a machine that isn't its
+/// account's any more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reconcile {
+    /// Log it (account, machine, grant) at warn and keep it: the follower's
+    /// very first start, before it has read the feed even once, so a
+    /// mistake in the first re-check can't revoke anyone.
+    Report,
+    /// Drop it: a gap, or a kind this build doesn't know, from the second
+    /// start on.
+    Drop,
+}
+
 /// What the feed may have missed: every team the platform holds something
 /// of gets its projection again (one that's gone is left to its account's
-/// deletion), and grants of a machine that isn't its account's any more go.
-/// A machine that left and joined again while the feed was missed keeps a
-/// revoked grant; its owner can give it back.
-pub async fn reconcile(app: &Platform) -> HubResult<()> {
+/// deletion), and grants of a machine that isn't its account's any more go
+/// (or, with [`Reconcile::Report`], are logged and kept). A machine that
+/// left and joined again while the feed was missed keeps a revoked grant;
+/// its owner can give it back.
+pub async fn reconcile(app: &Platform, grants: Reconcile) -> HubResult<()> {
     let teams = app.db.known_teams()?;
     for chunk in teams.chunks(PAGE as usize) {
         for t in app.hub.teams(chunk).await? {
@@ -136,8 +153,19 @@ pub async fn reconcile(app: &Platform) -> HubResult<()> {
         let ids: Vec<String> = chunk.iter().map(|(d, _)| d.clone()).collect();
         let joined = app.hub.daemons(&ids).await?;
         for (daemon, account) in chunk {
-            if !joined.iter().any(|d| &d.id == daemon && &d.account == account) {
-                app.db.drop_machine_grants(daemon, account)?;
+            if joined.iter().any(|d| &d.id == daemon && &d.account == account) {
+                continue;
+            }
+            match grants {
+                Reconcile::Drop => app.db.drop_machine_grants(daemon, account)?,
+                Reconcile::Report => {
+                    for g in app.db.grants(account)?.iter().filter(|g| &g.subject_id == daemon) {
+                        tracing::warn!(
+                            %account, %daemon, grant = %g.id,
+                            "the first re-check of grants would drop this grant (its machine isn't the account's); kept"
+                        );
+                    }
+                }
             }
         }
     }
@@ -244,9 +272,37 @@ mod tests {
         app.db.grant_on_join("gone", "alice", 1).unwrap();
         hub.daemon("box", "bob", None);
         app.db.grant_on_join("box", "bob", 1).unwrap();
-        reconcile(&app).await.unwrap();
+        reconcile(&app, Reconcile::Drop).await.unwrap();
         assert_eq!(app.db.cloud_drive("gone", "alice").unwrap(), None, "not a joined machine");
         assert_eq!(app.db.cloud_drive("box", "bob").unwrap(), Some(true));
+    }
+
+    /// The follower's very first start (no `hub_feed` row) re-checks every
+    /// team and machine but drops no grant, even one whose machine isn't
+    /// joined: it's logged and kept. From the second start on, a gap's
+    /// re-check drops it.
+    #[tokio::test]
+    async fn the_first_start_keeps_every_grant() {
+        let hub = Arc::new(TestHub::default());
+        hub.team("t1", &[("alice", TeamRole::Owner)]);
+        hub.daemon("box", "alice", None);
+        let app = app(&hub);
+        app.db.grant_on_join("box", "alice", 1).unwrap();
+        app.db.grant_on_join("gone", "alice", 1).unwrap();
+        app.db.project_roster(&app.hub.teams(&["t1".into()]).await.unwrap()[0], 1).unwrap();
+        hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor)]);
+        assert_eq!(app.db.feed_after().unwrap(), None, "never started");
+
+        follow(&app).await.unwrap();
+        assert!(app.db.feed_after().unwrap().is_some());
+        assert_eq!(app.db.cloud_drive("gone", "alice").unwrap(), Some(true), "logged and kept");
+        assert_eq!(app.db.cloud_drive("box", "alice").unwrap(), Some(true));
+        assert_eq!(members(&app, "t1"), ["alice owner 2", "bob editor 2"], "the teams were re-checked");
+
+        // From the second start on, a re-check drops it.
+        reconcile(&app, Reconcile::Drop).await.unwrap();
+        assert_eq!(app.db.cloud_drive("gone", "alice").unwrap(), None);
+        assert_eq!(app.db.cloud_drive("box", "alice").unwrap(), Some(true));
     }
 
     /// Team channels from a database before M129 get their team's default
