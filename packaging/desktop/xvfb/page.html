@@ -1,0 +1,56 @@
+<!doctype html>
+<!-- The stand-in control's pages (fake-control.py --pages, platform.sh):
+     control's, the platform page's and the lookalikes'. It reports that it
+     loaded, then polls for commands and reports what they did:
+       go URL     location.assign(URL)
+       link URL   shows a target=_blank link to URL at 100,200 (300x100),
+                  for a click (WebKit opens no window from a script
+                  without one)
+       call NAME  the Tauri window's NAME() (minimize, toggleMaximize,
+                  close), as the client's titlebar calls them
+                  (web/src/shared/desktop.ts's tauriWindow)
+       ping       reports pong -->
+<meta charset="utf-8">
+<title>stand-in</title>
+<body style="margin:0;background:#334;color:#eee;font:16px sans-serif">
+<p style="margin:80px" id="where"></p>
+<script>
+  const say = (what, more = {}) => {
+    const q = new URLSearchParams({ what, origin: location.origin, path: location.pathname, ...more });
+    return fetch("/report?" + q).catch(() => {});
+  };
+  document.getElementById("where").textContent = location.href;
+  say("loaded", { tauri: String(!!window.__TAURI__?.window?.getCurrentWindow) });
+  async function run(line) {
+    const [cmd, arg] = line.trim().split(/\s+/);
+    if (cmd === "go") location.assign(arg);
+    else if (cmd === "link") {
+      let a = document.getElementById("link");
+      if (!a) {
+        a = document.createElement("a");
+        a.id = "link";
+        a.target = "_blank";
+        a.style.cssText = "position:fixed;left:100px;top:200px;width:300px;height:100px;display:block;background:#686;color:#fff";
+        document.body.appendChild(a);
+      }
+      a.href = a.textContent = arg;
+      say("link", { to: arg });
+    }
+    else if (cmd === "ping") say("pong");
+    else if (cmd === "call") {
+      try {
+        await window.__TAURI__.window.getCurrentWindow()[arg]();
+        say("call-ok", { cmd: arg });
+      } catch (e) {
+        say("call-err", { cmd: arg, err: String(e).replace(/\s+/g, "_") });
+      }
+    }
+  }
+  setInterval(async () => {
+    try {
+      const r = await fetch("/cmd?path=" + encodeURIComponent(location.pathname), { cache: "no-store" });
+      if (r.status === 200) run(await r.text());
+    } catch {}
+  }, 300);
+</script>
+</body>

@@ -312,8 +312,10 @@ desktop-macos arch="" *tauri_args="":
 # packaging/desktop/xvfb's tests against a static daemon: `join` (#204,
 # test.sh, with a stand-in control), `app` (app.sh: keys, the titlebar,
 # arugula:// links, the global hotkey, a right-click in Nautilus opens a
-# tab) and `stale` (#317, stale.sh: a 0.8.0 daemon, stopped or running,
-# gets the setup page and is left alone). Needs podman or docker; the
+# tab), `stale` (#317, stale.sh: a 0.8.0 daemon, stopped or running,
+# gets the setup page and is left alone) and `platform` (M157,
+# platform.sh: control's platform page stays in the window and its window
+# controls work there; lookalikes go to the browser). Needs podman or docker; the
 # container runs the host's architecture (aarch64 under Docker Desktop on
 # a Mac). `just desktop-xvfb app keys` runs one claim.
 #
@@ -323,7 +325,7 @@ desktop-macos arch="" *tauri_args="":
 # pull the test image from, tagged by what it's built from, in place of
 # building it (6 min on a fresh runner); built when the pull fails, and
 # pushed there too with ARUGULA_DESKTOP_IMAGE_PUSH=1.
-desktop-xvfb *tests="join app stale":
+desktop-xvfb *tests="join app stale platform":
     #!/usr/bin/env bash
     set -euo pipefail
     root={{justfile_directory()}}
