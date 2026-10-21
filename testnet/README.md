@@ -23,6 +23,7 @@ just testnet test control platform # M140: chat and Cloud through control's own 
 ARUGULA_TESTNET_PLATFORM=out just testnet up control  # the platform out of process (M140)
 just testnet test control platform-restart  # out of process: a relayed session outlives a platform restart
 just testnet measure control   # M140: platform routes' latency, in process vs out
+testnet/window.sh              # M141: the first window's runbook, rehearsed, both rollbacks too
 just testnet up tailnet        # headscale and two Tailscale nodes
 just testnet measure tailnet   # S28: ssh against the tailnet path
 testnet/selfupdate.sh OLD NEW  # #391: the daemon updates itself (two `just static` builds)
@@ -168,6 +169,42 @@ each after a warm-up, in whichever way the stack runs the platform. Each
 run is kept in `testnet/.measure-<stack>/` (which `down` leaves); with
 both ways measured it compares their p95s and fails over M140's 20 ms
 gate.
+
+## M141's window, rehearsed
+
+`testnet/window.sh` runs the first window's runbook (docs/control-ops.md,
+"The first window") against the `control` profile, with `window.yaml`
+added to compose.yaml: control and the platform keep their databases in
+the state directory (bind mounts, as the host's user, so they outlive the
+recreations that stand in for Fly secret changes), Cloud is on in both
+with a fake Managoat (`fakes-serve.ts --managoat`, reached through a
+loopback sidecar since Cloud takes plain http only on loopback), and the
+platform starts held (`ARUGULA_PLATFORM_PAUSED=1`). In order:
+
+1. a person with two channels of messages, a read mark, a cloud secret, a
+   Cloud workspace that names it and a tab with a turn (`window.ts seed`);
+2. the notice (`arugula-control notice post`), as the page gets it;
+3. a trial copy carried to the platform, whose secrets open there;
+4. the window: maintenance on with `--pause`, `platform copy` on control,
+   `docker cp` for `fly ssh sftp`, `copy` on the platform, the three
+   checksums equal (both copies and control's tables after), the secrets
+   open; control flipped to the platform, the platform let go,
+   maintenance off;
+5. post-checks (`window.ts check`, the `platform` claim);
+6. the rollback within the window: the platform held, control back in
+   process on its own copies, unchanged by the time out of process;
+7. the window again, over the platform's earlier copy (`--replace`), then
+   new work: a message, a turn, and a workspace whose secret the platform
+   decrypted for Managoat, the value seeded before the window
+   (`fakes-serve.ts` tells its SHA-256 on 9005);
+8. the rollback after the window: the platform's file copied back over
+   control's copies, control in process, the new work there.
+
+It stops at the first thing that doesn't hold. The transcript is in
+`.state/window/transcript.txt`; the stack stays up for a look, and
+`just testnet down` removes it (and the state directory with the
+databases). With another stack running, give it its own
+`COMPOSE_PROJECT_NAME` and ports (Conventions, below).
 
 ## Conventions
 

@@ -255,6 +255,51 @@ fn the_hub_names_no_platform_table() {
     assert!(found.is_empty(), "the hub's code names the platform's tables:\n{}", found.join("\n"));
 }
 
+/// What a window copies (`arugula_platform::window`, M141) is every
+/// `process = "platform"` table but `platform_migrations`, which each
+/// file's own migration runner keeps, and `chat_fts`, an index rebuilt
+/// from the copied messages.
+#[test]
+fn a_window_copies_every_platform_table() {
+    let m = manifest();
+    let mut listed: Vec<String> = m
+        .table
+        .iter()
+        .filter(|t| t.process == Process::Platform && t.name != "platform_migrations" && t.name != "chat_fts")
+        .map(|t| t.name.clone())
+        .collect();
+    listed.sort();
+    let mut copied = arugula_platform::window::tables();
+    copied.sort();
+    assert_eq!(copied, listed);
+}
+
+/// After M141's window the hub's file keeps its copies of the platform's
+/// tables, read-only, for 14 days as the rollback (#1158). The hub never
+/// writes them: opening its database (its schema code and its start-up
+/// sweeps) and deleting an account named all through them leave every
+/// row as it was, by the window's own checksums.
+#[test]
+fn the_hub_leaves_the_platforms_old_copies_alone() {
+    let path = std::env::temp_dir().join(format!("arugula-copies-{}.db", hex::encode(arugula_e2e::random::<16>())));
+    {
+        let _hub = Db::open(&path).unwrap();
+        arugula_platform::window::sample(&arugula_platform::db::Db::open(&path).unwrap());
+    }
+    let before = arugula_platform::window::checksums(&path).unwrap();
+    assert!(before.iter().map(|t| t.1).sum::<u64>() >= 10);
+    {
+        let hub = Db::open(&path).unwrap();
+        hub.c().execute("INSERT INTO accounts (id, created) VALUES ('acct-a', 1)", []).unwrap();
+        hub.delete_account(&super::Erase { account: "acct-a", disband: &[], retain_for: &[] }).unwrap();
+    }
+    drop(Db::open(&path).unwrap());
+    assert_eq!(arugula_platform::window::checksums(&path).unwrap(), before);
+    for ext in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+    }
+}
+
 fn party_names(m: &Manifest, t: &Table) -> String {
     let names: Vec<&str> = PARTIES
         .iter()
