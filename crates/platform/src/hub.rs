@@ -121,21 +121,38 @@ pub trait HubPort: Send + Sync {
     /// The account's personal project (M129), which its Cloud workspaces
     /// and cloud secrets belong to: made if it has none yet, the same one
     /// every time after. `None` when there's no such account, which is how
-    /// Cloud tells an account that's gone (M137). Projects stay in the hub
-    /// until they move to the platform.
+    /// Cloud tells an account that's gone (M137).
+    ///
+    /// **Unused by the platform from step 2's projects move on:** projects
+    /// are the platform's own (`crate::projects::personal_project`). It
+    /// stays because this trait only grows; the in-process hub answers it
+    /// from the platform's projects, and no platform from that version on
+    /// calls it, so M140's HTTP hub needn't serve it.
     fn personal_project<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<String>>>;
 
     /// Whether this machine holds a live `cloud.drive` grant over
     /// `account` (M130, "Grants, not impersonation"): what the Cloud
-    /// workspace routes check of a daemon (M137). Every machine that joins
-    /// an account gets one, in the join's own transaction, so grants stay in
-    /// the hub until they move to the platform with projects.
+    /// workspace routes check of a daemon (M137).
+    ///
+    /// **Unused by the platform from step 2's projects move on:** grants
+    /// are the platform's own (`crate::grants::can_drive_cloud`), and a
+    /// machine's joining reaches them through [`changes`]. It stays because
+    /// this trait only grows; the in-process hub answers it from the
+    /// platform's grants, and M140's HTTP hub needn't serve it.
+    ///
+    /// [`changes`]: HubPort::changes
     fn can_drive_cloud<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, HubResult<bool>>;
 
     /// The team's default project (M129), which its chat channels belong
     /// to: made if it has none yet, the same one every time after. `None`
-    /// when there's no such team (M138). Projects stay in the hub until
-    /// they move to the platform.
+    /// when there's no such team (M138).
+    ///
+    /// **Unused by the platform from step 2's projects move on**
+    /// (`crate::projects::team_project`), as [`personal_project`]: it
+    /// stays, the in-process hub answers it from the platform's projects,
+    /// and M140's HTTP hub needn't serve it.
+    ///
+    /// [`personal_project`]: HubPort::personal_project
     fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>>;
 }
 

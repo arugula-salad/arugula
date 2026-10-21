@@ -2,8 +2,8 @@
 //! index, and who may read each pane's or session's thread as its daemon
 //! last said. Who sees what is decided in `crate::chat`; this is storage.
 //! The platform's since M138: it moved here from control's `db/chat.rs`,
-//! and never joins a hub table (a team channel's project comes from
-//! `HubPort::team_project`). FTS5 stays until M143 ports it to Postgres.
+//! and never joins a hub table (a team channel's project is the team's
+//! default one, `crate::projects::team_project`). FTS5 stays until M143 ports it to Postgres.
 //!
 //! - A room's `scope` is what it belongs to, and what deleting takes it
 //!   with: `team:<id>` (a channel or a DM), `machine:<id>` (the thread on a
@@ -261,8 +261,8 @@ impl Db {
     }
 
     /// A new room, with its members (a DM's two people), in `project`: a
-    /// team's channel belongs to the team's default project (the hub's,
-    /// `HubPort::team_project`); DMs and threads to none. Fails with
+    /// team's channel belongs to the team's default project
+    /// (`crate::projects::team_project`); DMs and threads to none. Fails with
     /// [`super::Taken`] for a channel name or a pane's room already there.
     pub fn add_chat_room(&self, room: &Room, members: &[&str], project: Option<&str>) -> Result<()> {
         let mut c = self.c();

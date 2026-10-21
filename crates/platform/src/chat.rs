@@ -908,8 +908,8 @@ pub async fn new_channel(
     }
     app.limits.check_account(CHAT_ROOMS, &s.account)?;
     let room = Room { name, ..room };
-    // The team's default project, which the hub keeps.
-    let project = app.hub.team_project(&team).await?;
+    // The team's default project (made the first time).
+    let project = crate::projects::team_project(&app, &team).await?;
     app.db.add_chat_room(&room, &[], project.as_deref()).map_err(|e| {
         if e.is::<Taken>() { err(StatusCode::CONFLICT, "there's a channel by that name") } else { e.into() }
     })?;

@@ -32,7 +32,8 @@ mod doc_links_wire;
 mod forge;
 #[cfg(test)]
 mod forge_wire;
-mod grants;
+#[cfg(test)]
+mod grants_wire;
 mod guest_jump;
 mod hub_port;
 mod labs_flags;
@@ -333,8 +334,9 @@ pub struct App {
     pub analytics: analytics::Analytics,
     /// Shared Docs: the disk guard and the open counts (#1064).
     pub docs: doc_links::Docs,
-    /// The platform (#1153), in process: chat, Cloud and billing moved into
-    /// it (M137-M139), and it reaches the hub only through `hub_port`.
+    /// The platform (#1153), in process: chat, Cloud, billing, projects and
+    /// grants moved into it (M137-M139, step 2), and it reaches the hub only
+    /// through `hub_port`.
     pub platform: Arc<arugula_platform::Platform>,
     /// The platform's view of the hub, attached to this app by
     /// [`App::start`].
@@ -498,8 +500,6 @@ fn routes() -> Routes {
         .route("/api/push/unsubscribe", post(push::unsubscribe))
         .route(wire::PUSH_SUBS, get(push::daemon_subs))
         .route(wire::PUSH, post(push::daemon_send))
-        .route("/api/grants", get(grants::list).post(grants::give))
-        .route("/api/grants/{id}/revoke", post(grants::revoke))
         .route("/api/doc-links", get(doc_links::list))
         .route("/api/doc-links/quota", get(doc_links::quota))
         .route("/api/doc-links/{id}", axum::routing::delete(doc_links::remove))
@@ -925,8 +925,10 @@ async fn run() -> anyhow::Result<()> {
         tokio::spawn(forge::heartbeat(app.clone(), std::time::Duration::from_secs(a.forge_heartbeat_secs.max(1))));
     }
     arugula_platform::cloud::start(&app.platform);
-    // Chat follows the hub's change feed (M138).
+    // Chat follows the hub's change feed (M138), and so do projects and
+    // grants: a machine that joins gets its `cloud.drive` grant from it.
     arugula_platform::chat::start(&app.platform);
+    arugula_platform::projects::start(&app.platform);
     if app.cfg.billing {
         let p = app.platform.clone();
         tokio::spawn(async move {

@@ -115,7 +115,7 @@ pub fn start(app: &Arc<Platform>) {
 /// through it; that was decided, not overlooked. Since M130 (#1126) the
 /// daemon needs a live `cloud.drive` grant over its account ("Grants, not
 /// impersonation"): every joined machine has one until its owner revokes
-/// it, and the hub keeps them (`HubPort::can_drive_cloud`). Who's asking is
+/// it, kept by the platform ([`crate::grants::can_drive_cloud`]). Who's asking is
 /// the hub's to say (the gate), with a person's same-origin check. Only the
 /// Cloud workspace and tab routes take one: settings, secrets, deleting and
 /// the agent library stay a person's ([`Person`]).
@@ -141,7 +141,7 @@ impl FromRequestParts<Arc<Platform>> for CloudDriver {
             }
             Principal::Daemon { account, daemon } => (account, daemon),
         };
-        if !app.hub.can_drive_cloud(&daemon, &account).await? {
+        if !crate::grants::can_drive_cloud(app, &daemon, &account).await? {
             let name = app.hub.daemons(std::slice::from_ref(&daemon)).await?.pop().map_or(daemon.clone(), |d| d.name);
             tracing::warn!(what = "cloud_drive", %account, %daemon, why = "no live cloud.drive grant", "refused");
             return Err(err(StatusCode::FORBIDDEN, &no_cloud_drive(&name)));
@@ -151,10 +151,12 @@ impl FromRequestParts<Arc<Platform>> for CloudDriver {
 }
 
 /// The account's personal project, which its Cloud workspaces and cloud
-/// secrets belong to (M129): the hub makes it the first time. An account
-/// that's gone is refused as it always was (a 500: nobody should be asking).
+/// secrets belong to (M129), made the first time. An account that's gone
+/// is refused as it always was (a 500: nobody should be asking).
 async fn personal_project(app: &Platform, account: &str) -> Result<String, ApiError> {
-    Ok(app.hub.personal_project(account).await?.ok_or_else(|| anyhow::anyhow!("account no longer exists"))?)
+    Ok(crate::projects::personal_project(app, account)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("account no longer exists"))?)
 }
 
 /// That the account is still there, before keeping anything of its.
@@ -476,16 +478,14 @@ pub(crate) mod tests {
     };
 
     /// The hub, as far as Cloud asks it: accounts `a`, `b` and `c`, the
-    /// machines joined to them (each with `cloud.drive` until it's revoked),
-    /// and the pushes it was asked for. Control's own port keeps the same
-    /// contract (`contract`, run in `hub_port`), and the tests of the whole
-    /// path through it are control's (`grants`).
+    /// machines joined to them (whose `cloud.drive` grants are the
+    /// platform's own), and the pushes it was asked for. Control's own port
+    /// keeps the same contract (`contract`, run in `hub_port`), and the
+    /// tests of the whole path through it are control's (`grants_wire`).
     pub(crate) struct TestHub {
         pub accounts: Mutex<BTreeSet<String>>,
         /// Machine id → (account, name).
         pub daemons: Mutex<BTreeMap<String, (String, String)>>,
-        /// Machines whose grant was revoked.
-        pub revoked: Mutex<BTreeSet<String>>,
         /// What each push said, to whom, and how it was to go.
         pub pushes: Mutex<Vec<(String, Value)>>,
         pub options: Mutex<Vec<PushOptions>>,
@@ -498,7 +498,6 @@ pub(crate) mod tests {
             TestHub {
                 accounts: Mutex::new(["a", "b", "c"].map(String::from).into()),
                 daemons: Default::default(),
-                revoked: Default::default(),
                 pushes: Default::default(),
                 options: Default::default(),
                 pushed: Mutex::new(Pushed { sent: 1, gone: 0, failed: 0 }),
@@ -589,7 +588,7 @@ pub(crate) mod tests {
         }
         fn can_drive_cloud<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, HubResult<bool>> {
             let mine = self.daemons.lock().unwrap().get(daemon).is_some_and(|(a, _)| a == account);
-            done(mine && !self.revoked.lock().unwrap().contains(daemon))
+            done(mine)
         }
         fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
             done(Some(format!("prj_{team}")))

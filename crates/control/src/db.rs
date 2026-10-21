@@ -4,12 +4,13 @@
 //! daemon sends inside a channel ever reaches it. Managed cloud execution is
 //! the platform's (M137, `arugula_platform::db::cloud`).
 //! Chat (M122) is the platform's too (M138, `arugula_platform::db::chat`).
-//! Projects, team members and grants (`projects`, #1122) are the platform
-//! plane's nouns. `changes` is the outbox the platform follows (#1153).
+//! Projects, team members and grants (#1122) are the platform's too
+//! (`arugula_platform::db::projects`): no query here names them. `changes`
+//! is the outbox the platform follows (#1153), and how a machine's joining
+//! reaches its grant.
 
 pub mod changes;
 pub mod doc_links;
-pub mod projects;
 #[cfg(test)]
 mod tables;
 
@@ -540,10 +541,8 @@ impl Db {
         )?;
         conn.execute_batch(SCHEMA)?;
         conn.execute_batch(doc_links::SCHEMA)?;
-        conn.execute_batch(projects::SCHEMA)?;
         conn.execute_batch(changes::SCHEMA)?;
         migrate(&conn)?;
-        projects::migrate(&conn, arugula_e2e::now_ms())?;
         if !answers_before {
             grandfather_shares(&conn)?;
         }
@@ -554,10 +553,8 @@ impl Db {
         let conn = arugula_control_common::sqlite::memory();
         conn.execute_batch(SCHEMA).unwrap();
         conn.execute_batch(doc_links::SCHEMA).unwrap();
-        conn.execute_batch(projects::SCHEMA).unwrap();
         conn.execute_batch(changes::SCHEMA).unwrap();
         migrate(&conn).unwrap();
-        projects::migrate(&conn, arugula_e2e::now_ms()).unwrap();
         Self { conn: Mutex::new(conn) }
     }
 
@@ -897,10 +894,6 @@ impl Db {
         )?;
         // Asking again (or being approved) clears a turn-down.
         tx.execute("DELETE FROM turned_down WHERE account = ?1 AND device = ?2", params![cert.account, cert.device])?;
-        // A machine joining an account drives its Cloud workspaces (M130).
-        if approved && cert.kind == Kind::Daemon {
-            projects::grant_on_join(&tx, &cert.device, &cert.account, now)?;
-        }
         if approved && cert.approver == cert.device {
             tx.execute(
                 "UPDATE accounts SET root = ?2 WHERE id = ?1 AND root IS NULL",
@@ -1345,7 +1338,6 @@ impl Db {
         tx.execute("DELETE FROM daemon_offers WHERE daemon = ?1", params![id])?;
         tx.execute("DELETE FROM daemon_offer_pushes WHERE daemon = ?1", params![id])?;
         tx.execute("DELETE FROM share_answers WHERE daemon = ?1", params![id])?;
-        tx.execute("DELETE FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1", params![id])?;
         // The Docs it shared: a link needs its machine's say to change, and
         // the machine is gone.
         tx.execute("DELETE FROM doc_link_parts WHERE id IN (SELECT id FROM doc_links WHERE daemon = ?1)", params![id])?;
@@ -1497,8 +1489,6 @@ impl Db {
             "INSERT INTO rosters (team, version, body) VALUES (?1, ?2, ?3)",
             params![t.id, roster_version, roster],
         )?;
-        projects::project_roster(&tx, &t.id)?;
-        projects::team_project(&tx, &t.id, now)?;
         changed(&tx, ChangeKind::TeamRoster, &t.id)?;
         tx.commit()?;
         Ok(())
@@ -1529,8 +1519,8 @@ impl Db {
         Ok(())
     }
 
-    /// Fails with [`Taken`] when that version is already there.
-    /// `team_members` follows in the same transaction.
+    /// Fails with [`Taken`] when that version is already there. The
+    /// platform's `team_members` follows it through the change feed.
     pub fn add_roster(&self, team: &str, version: u64, body: &str) -> anyhow::Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
@@ -1541,7 +1531,6 @@ impl Db {
         {
             tx.execute("UPDATE teams SET name = ?2 WHERE id = ?1", params![team, name])?;
         }
-        projects::project_roster(&tx, team)?;
         changed(&tx, ChangeKind::TeamRoster, team)?;
         tx.commit()?;
         Ok(())
@@ -2173,8 +2162,8 @@ impl Db {
 
     /// Delete an account and everything that's only its, in one
     /// transaction. Returns its machines' ids (to hang up on). What the
-    /// platform holds of it (billing's, chat's and Cloud's) goes after,
-    /// through `PlatformPort::account_deleted`.
+    /// platform holds of it (billing's, chat's, Cloud's, projects and
+    /// grants) goes after, through `PlatformPort::account_deleted`.
     pub fn delete_account(&self, e: &Erase) -> anyhow::Result<Vec<String>> {
         let a = e.account;
         let mut c = self.c();
@@ -2242,7 +2231,6 @@ impl Db {
                 tx.execute(sql, params![t])?;
             }
         }
-        projects::erase_account(&tx, a, &daemons, e.disband)?;
         // Certificates kept for teams that are gone now.
         tx.execute("DELETE FROM retained_certs WHERE account NOT IN (SELECT account FROM retained_for)", [])?;
         for d in &daemons {

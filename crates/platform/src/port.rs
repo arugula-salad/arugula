@@ -50,7 +50,7 @@ pub struct Deleted {
 /// In process. Billing (M139) answers `active_plans`, `roster_changed`
 /// and its part of `account_deleted`; Cloud (M137) `delete_blockers` and
 /// its part of `account_deleted`; chat (M138) `chat_on` and its part of
-/// `account_deleted`.
+/// `account_deleted`; projects and grants their part of `account_deleted`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         Box::pin(async move {
@@ -64,6 +64,7 @@ impl PlatformPort for Platform {
             let mut c = self.db.c();
             let tx = c.transaction()?;
             db::billing::erase_account(&tx, deleted)?;
+            db::projects::erase_account(&tx, deleted)?;
             let rooms = crate::chat::erase_account(&tx, deleted)?;
             tx.commit()?;
             drop(c);

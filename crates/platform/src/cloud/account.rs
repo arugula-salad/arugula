@@ -105,6 +105,6 @@ mod tests {
         // Nothing more is kept for it: the hub says it's gone.
         assert!(crate::cloud::personal_project(&app, "a").await.is_err());
         assert!(crate::cloud::require_account(&app, "a").await.is_err());
-        assert_eq!(crate::cloud::personal_project(&app, "b").await.unwrap(), "prj_b");
+        assert!(crate::cloud::personal_project(&app, "b").await.unwrap().starts_with("prj_"));
     }
 }

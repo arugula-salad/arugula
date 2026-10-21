@@ -37,7 +37,8 @@ threads about panes, which control holds in plain text) is the platform's
 since M138 (`crates/platform/src/chat.rs`); `src/chat_wire.rs` tests it
 through this hub's gate and `hub_port::InProcess`, and `src/chat_bench.rs`
 times `GET /api/chat` by hand.
-`src/db/projects.rs` holds the platform plane's nouns (#1122): projects,
-which Cloud workspaces, team channels and cloud secrets belong to,
-`team_members` (a projection of each signed roster, never read for machine
-access) and grants.
+The platform plane's nouns (#1122), projects, `team_members` and grants,
+are the platform's since step 2 (`crates/platform/src/db/projects.rs`,
+`projects.rs` and `grants.rs`): no hub query names them
+(`db::tables::the_hub_names_no_platform_table`). `src/grants_wire.rs` tests
+grants through this hub's gate.

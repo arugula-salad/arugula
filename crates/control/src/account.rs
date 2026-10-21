@@ -503,6 +503,10 @@ mod tests {
     #[tokio::test]
     async fn deleting_an_account_leaves_nothing_of_it() {
         let app = app();
+        // The platform follows the hub's change feed from here on: projects,
+        // team members and grants (step 2).
+        let platform = &app.platform;
+        arugula_platform::projects::follow(platform).await.unwrap();
         let (ak, ac) = person(&app, "acct-alice", "alice");
         let (bk, bc) = person(&app, "acct-bob", "bob");
         let box1 = machine(&app, "acct-alice", &ak, "box");
@@ -586,6 +590,21 @@ mod tests {
         say("th", "acct-bob", &[]);
         say("ch", "acct-alice", &[]);
         say("ch", "acct-bob", &["acct-alice".into()]);
+        // Projects, team members and grants are the platform's too: both
+        // teams' projections and default projects, her personal project,
+        // and both machines' grants, from the feed.
+        arugula_platform::projects::follow(platform).await.unwrap();
+        arugula_platform::projects::personal_project(platform, "acct-alice").await.unwrap().unwrap();
+        // (Through the platform's own calls: no hub source names its tables.)
+        let db = &platform.db;
+        let t2 = db.team_default_project("t2").unwrap();
+        assert!(db.team_default_project("t1").unwrap().is_some() && t2.is_some());
+        assert!(db.mentions("acct-alice").contains(&"team_members.account_id".to_owned()));
+        assert!(db.mentions("acct-alice").contains(&"projects.account_id".to_owned()));
+        assert_eq!(
+            (db.cloud_drive(&box1, "acct-alice").unwrap(), db.cloud_drive(&bobs, "acct-bob").unwrap()),
+            (Some(true), Some(true))
+        );
         assert_eq!(pays(&app, "acct-alice", &p).await.unwrap(), ["the team plan of team t1"]);
         let e = delete_account(&app, "acct-alice", "alice").await.unwrap_err();
         assert_eq!((e.0, e.1.as_str()), (StatusCode::CONFLICT, "cancel the team plan of team t1 first"));
@@ -602,6 +621,13 @@ mod tests {
         assert_eq!(chat.chat_message("ch", 1).unwrap().unwrap().author, "");
         assert_eq!(chat.mentions("acct-alice"), Vec::<String>::new());
         assert_eq!(chat.mentions(&box1), Vec::<String>::new());
+        // Projects, team members and grants: hers and her team's went, Bob's
+        // stayed.
+        assert_eq!(db.mentions("t1"), Vec::<String>::new());
+        assert_eq!(db.cloud_drive(&box1, "acct-alice").unwrap(), None);
+        assert!(db.mentions("acct-bob").contains(&"team_members.account_id".to_owned()));
+        assert_eq!(db.team_default_project("t2").unwrap(), t2);
+        assert_eq!(db.cloud_drive(&bobs, "acct-bob").unwrap(), Some(true));
 
         assert_eq!(app.db.mentions("acct-alice"), Vec::<String>::new());
         assert_eq!(app.db.mentions(&ac.device), Vec::<String>::new());

@@ -210,6 +210,51 @@ fn each_process_makes_its_own_tables() {
     assert!(both.is_empty(), "the hub still makes the platform's {both:?}");
 }
 
+/// No hub source names a platform table in SQL (#1150): the hub reaches
+/// what the platform holds only through `PlatformPort`. Beside
+/// [`each_process_makes_its_own_tables`], which proves the hub's database
+/// has none of them, this catches a query no test runs. A name counts when
+/// it follows `FROM`, `INTO`, `UPDATE`, `JOIN`, `TABLE` or `EXISTS`.
+#[test]
+fn the_hub_names_no_platform_table() {
+    fn sources(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
+        for e in std::fs::read_dir(dir).unwrap() {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                sources(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                out.push(p);
+            }
+        }
+    }
+    let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let m = manifest();
+    let platform: Vec<&str> =
+        m.table.iter().filter(|t| t.process == Process::Platform).map(|t| t.name.as_str()).collect();
+    let mut files = Vec::new();
+    sources(&root().join("crates/control/src"), &mut files);
+    let mut found = Vec::new();
+    for f in files {
+        let text = std::fs::read_to_string(&f).unwrap();
+        for name in &platform {
+            for (at, _) in text.match_indices(name) {
+                let after = text[at + name.len()..].chars().next();
+                let before = text[..at].trim_end();
+                if after.is_some_and(ident) || before.len() == text[..at].len() {
+                    continue;
+                }
+                let word: String =
+                    before.chars().rev().take_while(|c| ident(*c)).collect::<Vec<_>>().into_iter().rev().collect();
+                if ["FROM", "INTO", "UPDATE", "JOIN", "TABLE", "EXISTS"].contains(&word.as_str()) {
+                    let line = text[..at].lines().count();
+                    found.push(format!("{}:{line}: {word} {name}", f.strip_prefix(root()).unwrap().display()));
+                }
+            }
+        }
+    }
+    assert!(found.is_empty(), "the hub's code names the platform's tables:\n{}", found.join("\n"));
+}
+
 fn party_names(m: &Manifest, t: &Table) -> String {
     let names: Vec<&str> = PARTIES
         .iter()

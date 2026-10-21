@@ -239,16 +239,20 @@ impl HubPort for InProcess {
         Box::pin(async move { self.app()?.db.changes(after, limit) })
     }
 
+    // Projects and grants are the platform's now, and the platform no
+    // longer asks these three (`HubPort` only grows, so they stay). The hub
+    // holds neither, so in process it answers from the platform's own.
+
     fn personal_project<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
-        Box::pin(async move { self.app()?.db.personal_project(account, arugula_e2e::now_ms()) })
+        Box::pin(async move { arugula_platform::projects::personal_project(&self.app()?.platform, account).await })
     }
 
     fn can_drive_cloud<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, HubResult<bool>> {
-        Box::pin(async move { self.app()?.db.can_drive_cloud(daemon, account) })
+        Box::pin(async move { arugula_platform::grants::can_drive_cloud(&self.app()?.platform, daemon, account).await })
     }
 
     fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
-        Box::pin(async move { self.app()?.db.team_project(team, arugula_e2e::now_ms()) })
+        Box::pin(async move { arugula_platform::projects::team_project(&self.app()?.platform, team).await })
     }
 }
 
@@ -510,9 +514,11 @@ mod tests {
         }
 
         fn revoke_cloud_drive(&self, account: &str, daemon: &str) -> anyhow::Result<()> {
-            for g in self.app.db.grants(account)? {
+            // The platform's grants, as `arugula grants revoke` reaches them.
+            let db = &self.app.platform.db;
+            for g in db.grants(account)? {
                 if g.subject_id == daemon {
-                    self.app.db.revoke_grant(account, &g.id, arugula_e2e::now_ms())?;
+                    db.revoke_grant(account, &g.id, arugula_e2e::now_ms())?;
                 }
             }
             Ok(())

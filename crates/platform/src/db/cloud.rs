@@ -769,8 +769,8 @@ impl Db {
         let mut q = conn.prepare("SELECT name FROM cloud_secrets WHERE account=?1 ORDER BY name")?;
         Ok(q.query_map([account], |r| r.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?)
     }
-    /// Keep a sealed secret in the account's personal `project` (M129,
-    /// which the hub gives: `HubPort::personal_project`).
+    /// Keep a sealed secret in the account's personal `project` (M129:
+    /// `crate::projects::personal_project`).
     pub fn put_cloud_secret(&self, account: &str, project: &str, name: &str, sealed: &[u8]) -> Result<()> {
         self.c().execute("INSERT INTO cloud_secrets(account,name,sealed,project_id) VALUES(?1,?2,?3,?4) ON CONFLICT(account,name) DO UPDATE SET sealed=excluded.sealed",params![account,name,sealed,project])?;
         Ok(())

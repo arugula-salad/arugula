@@ -11,7 +11,9 @@ Today it runs inside the hub's process. Billing has moved in (M139:
 (M137: `src/cloud/`, its tables in `src/db/cloud.rs`, its flags in
 `cloud::Args`, its API types in `arugula-cloud-wire`) and chat (M138:
 `src/chat.rs`, its tables in `src/db/chat.rs`, its API types in
-`arugula-control-wire`). M140 runs it as its own process behind the hub.
+`arugula-control-wire`), and then projects and grants (`src/projects.rs`
+and `src/grants.rs`, their tables in `src/db/projects.rs`). M140 runs it as
+its own process behind the hub.
 
 Start with `src/lib.rs`, then:
 - `src/hub.rs`: `HubPort`, everything the platform asks the hub, and the
@@ -23,6 +25,8 @@ Start with `src/lib.rs`, then:
   the hub's file).
 - `src/cache.rs`: the hub's answers chat asks for, kept and dropped as the
   hub's change feed names them (a feed tick plus a cache tick, `DELAY`).
+- `src/projects.rs`: projects and team members, and the feed follower that
+  keeps them and grants (from where it got to, in `hub_feed`).
 - `src/router.rs`: its routes, which the hub mounts.
 - `src/contract.rs` (feature `contract`): the tests every `HubPort` passes.
   Control runs them against its in-process port (`hub_port.rs`).

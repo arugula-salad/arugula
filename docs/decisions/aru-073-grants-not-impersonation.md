@@ -68,5 +68,5 @@ CLI.
 Grants are per machine because the daemon signs every MCP call as itself:
 control can tell machines apart, not the agents on one. Narrowing a grant to
 the owner's own agents needs a daemon release and is a later step.
-Where: `crates/control/src/db/` (`grants`), `crates/control/src/auth.rs`, `crates/platform/src/cloud/`.
+Where: `crates/platform/src/db/projects.rs` (`grants`), `crates/platform/src/grants.rs`, `crates/platform/src/cloud/` (`CloudDriver`).
 From: #1094, #1122, M130 (#1126).
