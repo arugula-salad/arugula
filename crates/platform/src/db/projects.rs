@@ -26,18 +26,24 @@
 //! platform's migrations (`migrations/sqlite`), which also ran M129's
 //! backfill one last time (`0003_personal_projects.sql`).
 
-use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
-use super::Db;
+use super::{
+    Db,
+    sql::{Optional as _, Row, Sql, params},
+};
 use crate::{Deleted, hub::Team};
 
-/// What a project's id looks like: `prj_` and 32 hex characters, beside
-/// `cw_` for Cloud workspaces.
-const NEW_ID_SQL: &str = "'prj_' || lower(hex(randomblob(16)))";
+/// A new project's id: `prj_` and 32 hex characters, beside `cw_` for
+/// Cloud workspaces.
+fn new_id() -> String {
+    format!("prj_{}", hex::encode(arugula_e2e::random::<16>()))
+}
 
-/// A grant's id: `grt_` and 32 hex characters.
-const NEW_GRANT_SQL: &str = "'grt_' || lower(hex(randomblob(16)))";
+/// A new grant's id: `grt_` and 32 hex characters.
+fn new_grant() -> String {
+    format!("grt_{}", hex::encode(arugula_e2e::random::<16>()))
+}
 
 /// A machine's power to drive its owner's Cloud workspaces (aru-047), over
 /// the owner's account.
@@ -47,29 +53,27 @@ pub const CLOUD_DRIVE: &str = "cloud.drive";
 const READER: &str = "projects";
 
 /// A team's default project, made now (named `name`) if it has none.
-fn team_project(c: &Connection, team: &str, name: &str, now: u64) -> rusqlite::Result<String> {
+fn team_project(c: &impl Sql, team: &str, name: &str, now: u64) -> anyhow::Result<String> {
     c.execute(
-        &format!(
-            "INSERT INTO projects (id, team_id, name, is_default, created_at)
-             SELECT {NEW_ID_SQL}, ?1, ?2, 1, ?3
-             WHERE NOT EXISTS (SELECT 1 FROM projects WHERE team_id = ?1 AND is_default = 1)"
-        ),
-        params![team, name, now],
+        "INSERT INTO projects (id, team_id, name, is_default, created_at)
+         SELECT ?4, ?1, ?2, TRUE, ?3
+         WHERE NOT EXISTS (SELECT 1 FROM projects WHERE team_id = ?1 AND is_default = TRUE)
+         ON CONFLICT DO NOTHING",
+        params![team, name, now, new_id()],
     )?;
-    c.query_row("SELECT id FROM projects WHERE team_id = ?1 AND is_default = 1", [team], |r| r.get(0))
+    c.query_row("SELECT id FROM projects WHERE team_id = ?1 AND is_default = TRUE", params![team], |r| r.get(0))
 }
 
 /// An account's personal project, made now if it has none.
-fn personal_project(c: &Connection, account: &str, now: u64) -> rusqlite::Result<String> {
+fn personal_project(c: &impl Sql, account: &str, now: u64) -> anyhow::Result<String> {
     c.execute(
-        &format!(
-            "INSERT INTO projects (id, account_id, name, is_default, created_at)
-             SELECT {NEW_ID_SQL}, ?1, 'Personal', 1, ?2
-             WHERE NOT EXISTS (SELECT 1 FROM projects WHERE account_id = ?1 AND is_default = 1)"
-        ),
-        params![account, now],
+        "INSERT INTO projects (id, account_id, name, is_default, created_at)
+         SELECT ?3, ?1, 'Personal', TRUE, ?2
+         WHERE NOT EXISTS (SELECT 1 FROM projects WHERE account_id = ?1 AND is_default = TRUE)
+         ON CONFLICT DO NOTHING",
+        params![account, now, new_id()],
     )?;
-    c.query_row("SELECT id FROM projects WHERE account_id = ?1 AND is_default = 1", [account], |r| r.get(0))
+    c.query_row("SELECT id FROM projects WHERE account_id = ?1 AND is_default = TRUE", params![account], |r| r.get(0))
 }
 
 /// A grant, with its machine's name for people.
@@ -92,7 +96,7 @@ pub struct Grant {
 const GRANT_COLUMNS: &str =
     "id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at, revoked_at";
 
-fn grant_row(r: &rusqlite::Row) -> rusqlite::Result<Grant> {
+fn grant_row(r: &Row) -> anyhow::Result<Grant> {
     Ok(Grant {
         id: r.get(0)?,
         subject_kind: r.get(1)?,
@@ -112,22 +116,21 @@ impl Db {
     /// Cloud workspaces and cloud secrets belong to. The caller has checked
     /// that the account is there ([`crate::projects::personal_project`]).
     pub fn personal_project(&self, account: &str, now: u64) -> anyhow::Result<String> {
-        Ok(personal_project(&self.c(), account, now)?)
+        personal_project(&self.c(), account, now)
     }
 
     /// A team's default project, if it has one yet.
     pub fn team_default_project(&self, team: &str) -> anyhow::Result<Option<String>> {
-        Ok(self
-            .c()
-            .query_row("SELECT id FROM projects WHERE team_id = ?1 AND is_default = 1", [team], |r| r.get(0))
-            .optional()?)
+        self.c()
+            .query_row("SELECT id FROM projects WHERE team_id = ?1 AND is_default = TRUE", params![team], |r| r.get(0))
+            .optional()
     }
 
     /// A team's default project, made now if it has none (named `name`):
     /// what its chat channels belong to. The caller has checked that the
     /// team is there ([`crate::projects::team_project`]).
     pub fn team_project(&self, team: &str, name: &str, now: u64) -> anyhow::Result<String> {
-        Ok(team_project(&self.c(), team, name, now)?)
+        team_project(&self.c(), team, name, now)
     }
 
     /// Rewrite a team's `team_members` from its latest roster, as the hub
@@ -136,11 +139,13 @@ impl Db {
     pub fn project_roster(&self, team: &Team, now: u64) -> anyhow::Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
-        tx.execute("DELETE FROM team_members WHERE team_id = ?1", [&team.id])?;
+        tx.execute("DELETE FROM team_members WHERE team_id = ?1", params![team.id])?;
         for m in &team.members {
             tx.execute(
-                "INSERT OR REPLACE INTO team_members (team_id, account_id, role, name, roster_version)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO team_members (team_id, account_id, role, name, roster_version)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT (team_id, account_id) DO UPDATE SET role = excluded.role, name = excluded.name,
+                     roster_version = excluded.roster_version",
                 params![team.id, m.account, m.role.as_str(), m.name, team.version],
             )?;
         }
@@ -152,24 +157,24 @@ impl Db {
     /// Every team the platform holds something of: a projection, a project,
     /// or a team channel.
     pub fn known_teams(&self) -> anyhow::Result<Vec<String>> {
-        let c = self.c();
-        let mut q = c.prepare(
+        self.c().query_map(
             "SELECT team_id FROM team_members UNION SELECT team_id FROM projects WHERE team_id IS NOT NULL
              UNION SELECT substr(scope, 6) FROM chat_rooms WHERE kind = 'channel' AND scope LIKE 'team:%'
              ORDER BY 1",
-        )?;
-        Ok(q.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+            params![],
+            |r| r.get(0),
+        )
     }
 
     /// The teams whose channels have no project yet (a database from before
     /// M129).
     pub fn unattached_team_channels(&self) -> anyhow::Result<Vec<String>> {
-        let c = self.c();
-        let mut q = c.prepare(
+        self.c().query_map(
             "SELECT DISTINCT substr(scope, 6) FROM chat_rooms
              WHERE project_id IS NULL AND kind = 'channel' AND scope LIKE 'team:%' ORDER BY 1",
-        )?;
-        Ok(q.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+            params![],
+            |r| r.get(0),
+        )
     }
 
     /// A team's channels with no project get `project`.
@@ -187,14 +192,15 @@ impl Db {
     /// grant over it, `Some(false)` when every one it had was revoked, and
     /// `None` when it never had one (a machine that just joined).
     pub fn cloud_drive(&self, daemon: &str, account: &str) -> anyhow::Result<Option<bool>> {
-        Ok(self.c().query_row(
+        self.c().query_row(
             &format!(
-                "SELECT max(revoked_at IS NULL) FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1
+                "SELECT max(CASE WHEN revoked_at IS NULL THEN 1 ELSE 0 END) FROM grants
+                 WHERE subject_kind = 'daemon' AND subject_id = ?1
                      AND power = '{CLOUD_DRIVE}' AND scope_kind = 'account' AND scope_id = ?2"
             ),
             params![daemon, account],
-            |r| r.get::<_, Option<bool>>(0),
-        )?)
+            |r| r.get::<Option<bool>>(0),
+        )
     }
 
     /// A machine joined to `account` gets `cloud.drive` over it, unless it
@@ -204,11 +210,12 @@ impl Db {
         Ok(self.c().execute(
             &format!(
                 "INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
-                 SELECT {NEW_GRANT_SQL}, 'daemon', ?1, '{CLOUD_DRIVE}', 'account', ?2, ?2, ?3
+                 SELECT ?4, 'daemon', ?1, '{CLOUD_DRIVE}', 'account', ?2, ?2, ?3
                  WHERE NOT EXISTS (SELECT 1 FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1
-                     AND power = '{CLOUD_DRIVE}' AND scope_kind = 'account' AND scope_id = ?2)"
+                     AND power = '{CLOUD_DRIVE}' AND scope_kind = 'account' AND scope_id = ?2)
+                 ON CONFLICT DO NOTHING"
             ),
-            params![daemon, account, now],
+            params![daemon, account, now, new_grant()],
         )? > 0)
     }
 
@@ -225,12 +232,12 @@ impl Db {
 
     /// Every machine that holds a grant, with the account it's over.
     pub fn granted_machines(&self) -> anyhow::Result<Vec<(String, String)>> {
-        let c = self.c();
-        let mut q = c.prepare(
+        self.c().query_map(
             "SELECT DISTINCT subject_id, scope_id FROM grants WHERE subject_kind = 'daemon' AND scope_kind = 'account'
              ORDER BY 1, 2",
-        )?;
-        Ok(q.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?)
+            params![],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
     }
 
     /// Every grant of a machine over an account goes: it isn't that
@@ -247,15 +254,17 @@ impl Db {
     /// The grants over an account, live and revoked, oldest machine row
     /// first; [`crate::grants::list`] puts them in order by machine name.
     pub fn grants(&self, account: &str) -> anyhow::Result<Vec<Grant>> {
-        let c = self.c();
-        let mut q = c.prepare(&format!(
-            "SELECT {GRANT_COLUMNS} FROM grants WHERE scope_kind = 'account' AND scope_id = ?1
-             ORDER BY subject_id, created_at DESC, id"
-        ))?;
-        Ok(q.query_map([account], grant_row)?.collect::<rusqlite::Result<_>>()?)
+        self.c().query_map(
+            &format!(
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE scope_kind = 'account' AND scope_id = ?1
+                 ORDER BY subject_id, created_at DESC, id"
+            ),
+            params![account],
+            grant_row,
+        )
     }
 
-    fn grant(c: &Connection, account: &str, id: &str) -> rusqlite::Result<Option<Grant>> {
+    fn grant(c: &impl Sql, account: &str, id: &str) -> anyhow::Result<Option<Grant>> {
         c.query_row(
             &format!("SELECT {GRANT_COLUMNS} FROM grants WHERE id = ?1 AND scope_kind = 'account' AND scope_id = ?2"),
             params![id, account],
@@ -273,7 +282,7 @@ impl Db {
              AND revoked_at IS NULL",
             params![id, account, now],
         )?;
-        Ok(Self::grant(&c, account, id)?)
+        Self::grant(&c, account, id)
     }
 
     /// Give one of the account's own machines `cloud.drive` over it again,
@@ -298,9 +307,9 @@ impl Db {
             None => tx.query_row(
                 &format!(
                     "INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
-                     VALUES ({NEW_GRANT_SQL}, 'daemon', ?1, '{CLOUD_DRIVE}', 'account', ?2, ?3, ?4) RETURNING id"
+                     VALUES (?5, 'daemon', ?1, '{CLOUD_DRIVE}', 'account', ?2, ?3, ?4) RETURNING id"
                 ),
-                params![daemon, account, by, now],
+                params![daemon, account, by, now, new_grant()],
                 |r| r.get(0),
             )?,
         };
@@ -311,7 +320,7 @@ impl Db {
 
     /// The last hub change applied here; `None` before the first read.
     pub fn feed_after(&self) -> anyhow::Result<Option<u64>> {
-        Ok(self.c().query_row("SELECT seq FROM hub_feed WHERE reader = ?1", [READER], |r| r.get(0)).optional()?)
+        self.c().query_row("SELECT seq FROM hub_feed WHERE reader = ?1", params![READER], |r| r.get(0)).optional()
     }
 
     pub fn set_feed_after(&self, seq: u64) -> anyhow::Result<()> {
@@ -327,28 +336,31 @@ impl Db {
 /// `account_deleted` transaction: its personal projects, its place in every
 /// team's projection, the disbanded teams' projects and projections, and
 /// grants to its machines, over it, or that it gave.
-pub(crate) fn erase_account(c: &Connection, d: &Deleted) -> rusqlite::Result<()> {
+pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> anyhow::Result<()> {
     let account = &d.account;
-    c.execute("DELETE FROM projects WHERE account_id = ?1", [account])?;
-    c.execute("DELETE FROM team_members WHERE account_id = ?1", [account])?;
+    c.execute("DELETE FROM projects WHERE account_id = ?1", params![account])?;
+    c.execute("DELETE FROM team_members WHERE account_id = ?1", params![account])?;
     for t in &d.disbanded {
-        c.execute("DELETE FROM projects WHERE team_id = ?1", [t])?;
-        c.execute("DELETE FROM team_members WHERE team_id = ?1", [t])?;
+        c.execute("DELETE FROM projects WHERE team_id = ?1", params![t])?;
+        c.execute("DELETE FROM team_members WHERE team_id = ?1", params![t])?;
     }
     c.execute(
         "DELETE FROM grants WHERE granted_by = ?1 OR (scope_kind = 'account' AND scope_id = ?1)
          OR (scope_kind = 'project' AND scope_id NOT IN (SELECT id FROM projects))",
-        [account],
+        params![account],
     )?;
     for m in &d.machines {
-        c.execute("DELETE FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1", [m])?;
+        c.execute("DELETE FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1", params![m])?;
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::Db;
+    use super::super::{
+        Db,
+        sql::{Sql, Value, params},
+    };
     use crate::Deleted;
     use rusqlite::Connection;
 
@@ -369,20 +381,25 @@ mod tests {
         conn
     }
 
-    fn dump(conn: &Connection, sql: &str) -> Vec<Vec<Option<String>>> {
-        let mut q = conn.prepare(sql).unwrap();
-        let n = q.column_count();
-        let text = |v: rusqlite::types::Value| match v {
-            rusqlite::types::Value::Null => None,
-            rusqlite::types::Value::Integer(i) => Some(i.to_string()),
-            rusqlite::types::Value::Text(t) => Some(t),
+    fn dump(conn: &impl Sql, sql: &str) -> Vec<Vec<Option<String>>> {
+        let text = |v: Value| match v {
+            Value::Null => None,
+            Value::Int(i) => Some(i.to_string()),
+            Value::Text(t) => Some(t),
             v => Some(format!("{v:?}")),
         };
-        q.query_map([], |r| (0..n).map(|i| r.get(i).map(text)).collect()).unwrap().map(Result::unwrap).collect()
+        conn.query_map(sql, params![], |r| {
+            let mut row = Vec::new();
+            while let Ok(v) = r.get::<Value>(row.len()) {
+                row.push(text(v));
+            }
+            Ok(row)
+        })
+        .unwrap()
     }
 
-    fn count(conn: &Connection, sql: &str) -> u64 {
-        conn.query_row(sql, [], |r| r.get(0)).unwrap()
+    fn count(conn: &impl Sql, sql: &str) -> u64 {
+        conn.query_row(sql, params![], |r| r.get(0)).unwrap()
     }
 
     /// What the platform backfilled on its own (M129), now its last
@@ -430,12 +447,12 @@ mod tests {
 
     #[test]
     fn a_project_belongs_to_one_owner_with_one_default() {
-        let db = Db::memory();
+        let db = Db::test();
         let c = db.c();
         let insert = |id: &str, team: Option<&str>, account: Option<&str>, default: bool| {
             c.execute(
                 "INSERT INTO projects (id, team_id, account_id, name, is_default, created_at) VALUES (?1, ?2, ?3, 'x', ?4, 0)",
-                rusqlite::params![id, team, account, default],
+                params![id, team, account, default],
             )
         };
         assert!(insert("prj_both", Some("t"), Some("a"), false).is_err());
@@ -450,7 +467,7 @@ mod tests {
     /// name it's given then.
     #[test]
     fn a_default_project_is_made_once() {
-        let db = Db::memory();
+        let db = Db::test();
         let personal = db.personal_project("bob", 1).unwrap();
         assert_eq!(db.personal_project("bob", 2).unwrap(), personal);
         assert_eq!(db.team_default_project("t1").unwrap(), None);
@@ -467,7 +484,7 @@ mod tests {
     /// what it had from before it left.
     #[test]
     fn a_machine_gets_one_grant_and_loses_it_when_it_leaves() {
-        let db = Db::memory();
+        let db = Db::test();
         assert_eq!(db.cloud_drive("geek", "alice").unwrap(), None, "never had one");
         assert!(db.grant_on_join("geek", "alice", 10).unwrap());
         assert!(!db.grant_on_join("geek", "alice", 11).unwrap(), "once");
@@ -498,7 +515,7 @@ mod tests {
     fn deleting_an_account_takes_its_projects_and_grants() {
         use crate::hub::{Member, Team};
         use arugula_e2e::team::TeamRole;
-        let db = Db::memory();
+        let db = Db::test();
         let team = |id: &str, members: &[(&str, TeamRole)]| Team {
             id: id.into(),
             name: id.into(),

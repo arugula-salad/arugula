@@ -24,7 +24,11 @@ Start with `src/lib.rs`, then:
 - `src/auth.rs`: who's asking, as the hub found out, and the extractors
   that answer as control's `Session` and `DaemonAuth` do.
 - `src/db.rs`: its own database handle (in process, a second connection to
-  the hub's file).
+  the hub's file; on Postgres with `ARUGULA_PLATFORM_DATABASE_URL`, M143).
+- `src/db/sql.rs`: how a query runs on either SQLite or Postgres (written
+  once, with SQLite's `?N`; the few that differ ask the dialect), and
+  `src/db/pg.rs`: the Postgres pool behind it. `just
+  test-platform-postgres` runs the suite on Postgres.
 - `migrations/` and `src/db/migrate.rs`: its schema, as numbered
   migrations per SQL dialect (M142), and the runner that applies them and
   adopts a database made before them.

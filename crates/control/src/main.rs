@@ -172,6 +172,11 @@ struct Args {
     #[command(flatten)]
     cloud: arugula_platform::cloud::Args,
 
+    /// The platform's own database (M143): `postgres://` puts it on
+    /// Postgres. Without it, a second connection to `--db`, as always.
+    #[command(flatten)]
+    platform_db: arugula_platform::db::Args,
+
     /// Billing (M22): its flags and env vars are the platform's (M140),
     /// with the names they always had. The hub only needs to know it's on.
     #[command(flatten)]
@@ -879,7 +884,7 @@ async fn run() -> anyhow::Result<()> {
             relay_free_bytes: a.relay_free_mb * 1_000_000,
         };
         info!("the platform runs in process");
-        platform(arugula_platform::db::Db::open(&a.db)?, cfg, stripe, cloud, &http, &analytics)
+        platform(a.platform_db.open(&a.db)?, cfg, stripe, cloud, &http, &analytics)
     } else {
         // The platform is its own process: this hub is its gateway (M140).
         let key = platform_key.clone().context("--platform is a URL, so ARUGULA_PLATFORM_KEY is needed")?;

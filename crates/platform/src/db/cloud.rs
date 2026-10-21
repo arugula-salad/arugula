@@ -2,13 +2,16 @@
 //! authorization boundary: every lookup is scoped to the owning account.
 //! The tables, with notes on their columns, are made by the platform's
 //! migrations (`migrations/sqlite`).
-use super::Db;
-use anyhow::{Result, bail};
+use super::{
+    Db,
+    migrate::Dialect,
+    sql::{Optional as _, Row, Sql as _, params},
+};
+use anyhow::{Context as _, Result, bail};
 pub use arugula_cloud_wire::{
     AgentDefinition, CloudAgent, CloudRun, CloudTab, CloudWorkspace, CloudWorkspaceChange, CloudWorkspaceNetworking,
     CloudWorkspacePackages, CloudWorkspaceRepository, CloudWorkspaceSpec, PastCloudTab, RunSpec, Skill,
 };
-use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 /// What control checks of an agent's definition before keeping it.
@@ -397,12 +400,11 @@ pub struct CloudTabJob {
 
 const CLOUD_TAB_COLUMNS: &str = "t.id,t.cloud_workspace,t.spec,t.status,t.error,t.started,t.created,w.status";
 
-fn cloud_tab_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(CloudTab, CloudTabSpec, bool)> {
-    let spec: CloudTabSpec = serde_json::from_str(&r.get::<_, String>(2)?)
-        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e)))?;
+fn cloud_tab_row(r: &Row) -> Result<(CloudTab, CloudTabSpec, bool)> {
+    let spec: CloudTabSpec = serde_json::from_str(&r.get::<String>(2)?)?;
     let status: String = r.get(3)?;
     let started: bool = r.get(5)?;
-    let setting_up = r.get::<_, String>(7)? == "provisioning";
+    let setting_up = r.get::<String>(7)? == "provisioning";
     let waiting_for_setup = spec.prompt.is_some()
         && !started
         && setting_up
@@ -423,9 +425,8 @@ fn cloud_tab_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(CloudTab, CloudTabS
     Ok((tab, spec, started))
 }
 
-fn past_cloud_tab_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<PastCloudTab> {
-    let spec: CloudTabSpec = serde_json::from_str(&r.get::<_, String>(4)?)
-        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e)))?;
+fn past_cloud_tab_row(r: &Row) -> Result<PastCloudTab> {
+    let spec: CloudTabSpec = serde_json::from_str(&r.get::<String>(4)?)?;
     Ok(PastCloudTab {
         id: r.get(0)?,
         cloud_workspace: r.get(1)?,
@@ -442,15 +443,14 @@ fn past_cloud_tab_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<PastCloudTab> {
 
 const CLOUD_WORKSPACE_COLUMNS: &str = "id,name,saved_spec,built_spec,status,sandbox_status,error,revision,built_from_revision,stale,changed_fields,created,settings_applied,rebuild,rebuild_error,setup_step";
 
-fn cloud_workspace_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CloudWorkspace> {
-    fn decode<T: serde::de::DeserializeOwned>(i: usize, s: &str) -> rusqlite::Result<T> {
-        serde_json::from_str(s)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(i, rusqlite::types::Type::Text, Box::new(e)))
+fn cloud_workspace_row(r: &Row) -> Result<CloudWorkspace> {
+    fn decode<T: serde::de::DeserializeOwned>(i: usize, s: &str) -> Result<T> {
+        serde_json::from_str(s).with_context(|| format!("column {i}"))
     }
-    let saved_spec: CloudWorkspaceSpec = decode(2, &r.get::<_, String>(2)?)?;
-    let built_spec: Option<CloudWorkspaceSpec> = r.get::<_, Option<String>>(3)?.map(|s| decode(3, &s)).transpose()?;
+    let saved_spec: CloudWorkspaceSpec = decode(2, &r.get::<String>(2)?)?;
+    let built_spec: Option<CloudWorkspaceSpec> = r.get::<Option<String>>(3)?.map(|s| decode(3, &s)).transpose()?;
     let stale: bool = r.get(9)?;
-    let changed_fields: Vec<String> = decode(10, &r.get::<_, String>(10)?)?;
+    let changed_fields: Vec<String> = decode(10, &r.get::<String>(10)?)?;
     Ok(CloudWorkspace {
         id: r.get(0)?,
         name: r.get(1)?,
@@ -466,44 +466,52 @@ fn cloud_workspace_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CloudWorkspace
         changed_fields,
         created: r.get(11)?,
         settings_applied: r.get(12)?,
-        rebuild_queued: r.get::<_, Option<String>>(13)?.is_some(),
+        rebuild_queued: r.get::<Option<String>>(13)?.is_some(),
         rebuild_error: r.get(14)?,
         setup_step: r.get(15)?,
     })
 }
 
-fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CloudRun> {
-    let decode = |s: String| {
-        serde_json::from_str(&s)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))
-    };
+fn row(r: &Row) -> Result<CloudRun> {
+    let decode = |s: String| serde_json::from_str(&s);
     let spec: String = r.get(1)?;
-    let spec = serde_json::from_str(&spec)
-        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e)))?;
+    let spec = serde_json::from_str(&spec)?;
     Ok(CloudRun {
         id: r.get(0)?,
         spec,
         state: r.get(2)?,
         created: r.get(3)?,
         deadline: r.get(4)?,
-        result: r.get::<_, Option<String>>(5)?.map(decode).transpose()?,
+        result: r.get::<Option<String>>(5)?.map(decode).transpose()?,
     })
 }
 
 impl Db {
     pub fn active_cloud_runs(&self, account: &str) -> Result<u64> {
-        Ok(self.c().query_row("SELECT count(*) FROM cloud_runs WHERE account=?1 AND state NOT IN ('completed','failed','cancelled','expired')", [account], |r| r.get(0))?)
+        self.c().query_row("SELECT count(*) FROM cloud_runs WHERE account=?1 AND state NOT IN ('completed','failed','cancelled','expired')", params![account], |r| r.get(0))
     }
 
     pub fn cloud_secret_names(&self, account: &str) -> Result<Vec<String>> {
-        let conn = self.c();
-        let mut q = conn.prepare("SELECT name FROM cloud_secrets WHERE account=?1 ORDER BY name")?;
-        Ok(q.query_map([account], |r| r.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?)
+        self.c()
+            .query_map("SELECT name FROM cloud_secrets WHERE account=?1 ORDER BY name", params![account], |r| r.get(0))
     }
     /// Keep a sealed secret in the account's personal `project` (M129:
     /// `crate::projects::personal_project`).
     pub fn put_cloud_secret(&self, account: &str, project: &str, name: &str, sealed: &[u8]) -> Result<()> {
-        self.c().execute("INSERT INTO cloud_secrets(account,name,sealed,project_id) VALUES(?1,?2,?3,?4) ON CONFLICT(account,name) DO UPDATE SET sealed=excluded.sealed",params![account,name,sealed,project])?;
+        // Keyed by account on SQLite, by project on Postgres (M143): the
+        // same row, as an account's secrets are in its personal project.
+        let c = self.c();
+        let key = match c.dialect() {
+            Dialect::Sqlite => "account,name",
+            Dialect::Postgres => "project_id,name",
+        };
+        c.execute(
+            &format!(
+                "INSERT INTO cloud_secrets(account,name,sealed,project_id) VALUES(?1,?2,?3,?4)
+                 ON CONFLICT({key}) DO UPDATE SET sealed=excluded.sealed"
+            ),
+            params![account, name, sealed, project],
+        )?;
         Ok(())
     }
     pub fn delete_cloud_secret(&self, account: &str, name: &str) -> Result<()> {
@@ -511,16 +519,19 @@ impl Db {
         Ok(())
     }
     pub fn cloud_agents(&self, account: &str) -> Result<Vec<CloudAgent>> {
-        let conn = self.c();
-        let mut q =
-            conn.prepare("SELECT id,version,definition FROM cloud_agents WHERE account=?1 AND archived=0 ORDER BY id")?;
-        let rows =
-            q.query_map([account], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u64>(1)?, r.get::<_, String>(2)?)))?;
-        rows.map(|r| {
-            let (id, version, body) = r?;
-            Ok(CloudAgent { id, version, definition: serde_json::from_str(&body)?, curated: false })
-        })
-        .collect()
+        self.c().query_map(
+            "SELECT id,version,definition FROM cloud_agents WHERE account=?1 AND archived=FALSE ORDER BY id",
+            params![account],
+            |r| {
+                let body: String = r.get(2)?;
+                Ok(CloudAgent {
+                    id: r.get(0)?,
+                    version: r.get(1)?,
+                    definition: serde_json::from_str(&body)?,
+                    curated: false,
+                })
+            },
+        )
     }
 
     pub fn create_cloud_agent(&self, account: &str, definition: AgentDefinition) -> Result<CloudAgent> {
@@ -532,9 +543,12 @@ impl Db {
             curated: false,
         };
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let count: u64 =
-            tx.query_row("SELECT count(*) FROM cloud_agents WHERE account=?1 AND archived=0", [account], |r| r.get(0))?;
+        let tx = conn.immediate()?;
+        let count: u64 = tx.query_row(
+            "SELECT count(*) FROM cloud_agents WHERE account=?1 AND archived=FALSE",
+            params![account],
+            |r| r.get(0),
+        )?;
         if count >= 100 {
             bail!("custom agent limit reached");
         }
@@ -555,12 +569,12 @@ impl Db {
         definition: &AgentDefinition,
     ) -> Result<bool> {
         definition.validate()?;
-        Ok(self.c().execute("UPDATE cloud_agents SET definition=?1,version=version+1 WHERE account=?2 AND id=?3 AND version=?4 AND archived=0", params![serde_json::to_string(definition)?, account, id, version])? == 1)
+        Ok(self.c().execute("UPDATE cloud_agents SET definition=?1,version=version+1 WHERE account=?2 AND id=?3 AND version=?4 AND archived=FALSE", params![serde_json::to_string(definition)?, account, id, version])? == 1)
     }
 
     pub fn archive_cloud_agent(&self, account: &str, id: &str) -> Result<bool> {
         Ok(self.c().execute(
-            "UPDATE cloud_agents SET archived=1 WHERE account=?1 AND id=?2 AND archived=0",
+            "UPDATE cloud_agents SET archived=TRUE WHERE account=?1 AND id=?2 AND archived=FALSE",
             params![account, id],
         )? == 1)
     }
@@ -591,29 +605,32 @@ impl Db {
     }
 
     pub fn cloud_runs(&self, account: &str) -> Result<Vec<CloudRun>> {
-        let conn = self.c();
-        let mut q = conn.prepare("SELECT id,spec,state,created,deadline,result FROM cloud_runs WHERE account=?1 ORDER BY created DESC LIMIT 100")?;
-        Ok(q.query_map([account], row)?.collect::<rusqlite::Result<Vec<_>>>()?)
+        self.c().query_map(
+            "SELECT id,spec,state,created,deadline,result FROM cloud_runs WHERE account=?1 ORDER BY created DESC LIMIT 100",
+            params![account],
+            row,
+        )
     }
 
     /// A conversation's events: a run's or a tab's.
     pub fn cloud_events(&self, account: &str, id: &str, after: u64) -> Result<Vec<serde_json::Value>> {
-        let conn = self.c();
-        let mut q = conn.prepare("SELECT body FROM cloud_events WHERE account=?1 AND conversation=?2 AND cursor>?3 ORDER BY cursor LIMIT 1000")?;
-        let rows = q.query_map(params![account, id, after], |r| r.get::<_, String>(0))?;
-        rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
+        self.c().query_map(
+            "SELECT body FROM cloud_events WHERE account=?1 AND conversation=?2 AND cursor>?3 ORDER BY cursor LIMIT 1000",
+            params![account, id, after],
+            |r| Ok(serde_json::from_str(&r.get::<String>(0)?)?),
+        )
     }
 
     pub fn cloud_requests(&self, account: &str, conversation: &str) -> Result<Vec<serde_json::Value>> {
-        let conn = self.c();
-        let mut q =
-            conn.prepare("SELECT body FROM cloud_requests WHERE account=?1 AND conversation=?2 AND pending=1")?;
-        let rows = q.query_map(params![account, conversation], |r| r.get::<_, String>(0))?;
-        rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
+        self.c().query_map(
+            "SELECT body FROM cloud_requests WHERE account=?1 AND conversation=?2 AND pending=TRUE",
+            params![account, conversation],
+            |r| Ok(serde_json::from_str(&r.get::<String>(0)?)?),
+        )
     }
     pub fn resolve_cloud_request(&self, account: &str, conversation: &str, request: &str) -> Result<()> {
         self.c().execute(
-            "UPDATE cloud_requests SET pending=0 WHERE account=?1 AND conversation=?2 AND id=?3",
+            "UPDATE cloud_requests SET pending=FALSE WHERE account=?1 AND conversation=?2 AND id=?3",
             params![account, conversation, request],
         )?;
         Ok(())
@@ -621,22 +638,23 @@ impl Db {
     /// Undelivered pushes: (account, conversation, request, and the Cloud
     /// workspace when the conversation is a tab).
     pub fn cloud_notifications(&self, now: u64) -> Result<Vec<CloudNotification>> {
-        let conn = self.c();
-        let mut q = conn.prepare(
+        // `rowid`: in the order they were made (on Postgres, a column of
+        // that name).
+        self.c().query_map(
             "SELECT n.account,n.conversation,n.request,t.cloud_workspace FROM cloud_notifications n
              JOIN cloud_requests q ON q.conversation=n.conversation AND q.id=n.request
              LEFT JOIN cloud_tabs t ON t.id=n.conversation
-             WHERE n.delivered=0 AND n.next_attempt<=?1 AND q.pending=1 ORDER BY n.next_attempt,n.rowid LIMIT 20",
-        )?;
-        Ok(q.query_map([now], |r| {
-            Ok(CloudNotification {
-                account: r.get(0)?,
-                conversation: r.get(1)?,
-                request: r.get(2)?,
-                cloud_workspace: r.get(3)?,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?)
+             WHERE n.delivered=FALSE AND n.next_attempt<=?1 AND q.pending=TRUE ORDER BY n.next_attempt,n.rowid LIMIT 20",
+            params![now],
+            |r| {
+                Ok(CloudNotification {
+                    account: r.get(0)?,
+                    conversation: r.get(1)?,
+                    request: r.get(2)?,
+                    cloud_workspace: r.get(3)?,
+                })
+            },
+        )
     }
     pub fn cloud_notification_result(
         &self,
@@ -655,8 +673,8 @@ impl Db {
     /// Claim a bounded unit of work, not the lifetime of the remote run.
     pub fn claim_cloud_job(&self, now: u64) -> Result<Option<Job>> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let found = tx.query_row("SELECT r.id,r.spec,r.state,r.created,r.deadline,r.result,r.account,j.body FROM cloud_runs r JOIN cloud_jobs j ON j.id=r.id WHERE r.state NOT IN ('completed','failed','cancelled','expired') AND j.lease_until<=?1 ORDER BY j.lease_until,r.created LIMIT 1", [now], |r| Ok((row(r)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?))).optional()?;
+        let tx = conn.immediate()?;
+        let found = tx.query_row("SELECT r.id,r.spec,r.state,r.created,r.deadline,r.result,r.account,j.body FROM cloud_runs r JOIN cloud_jobs j ON j.id=r.id WHERE r.state NOT IN ('completed','failed','cancelled','expired') AND j.lease_until<=?1 ORDER BY j.lease_until,r.created LIMIT 1", params![now], |r| Ok((row(r)?,r.get::<String>(6)?,r.get::<String>(7)?))).optional()?;
         let Some((run, account, body)) = found else {
             return Ok(None);
         };
@@ -675,7 +693,7 @@ impl Db {
         release_at: Option<u64>,
     ) -> Result<()> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let changed = tx.execute(
             "UPDATE cloud_jobs SET body=?1,lease_until=COALESCE(?2,lease_until) WHERE id=?3 AND lease=?4",
             params![serde_json::to_string(&job.execution)?, release_at, job.run.id, job.lease],
@@ -688,10 +706,10 @@ impl Db {
             params![state, result.map(serde_json::to_string).transpose()?, job.execution.conversation, job.run.id],
         )?;
         if matches!(state, "saving_results" | "cleaning_up" | "completed" | "failed" | "cancelled" | "expired") {
-            tx.execute("UPDATE cloud_requests SET pending=0 WHERE conversation=?1", [&job.run.id])?;
+            tx.execute("UPDATE cloud_requests SET pending=FALSE WHERE conversation=?1", params![&job.run.id])?;
         }
         if matches!(state, "completed" | "failed" | "cancelled" | "expired") {
-            tx.execute("DELETE FROM cloud_run_secrets WHERE run=?1", [&job.run.id])?;
+            tx.execute("DELETE FROM cloud_run_secrets WHERE run=?1", params![&job.run.id])?;
         }
         tx.commit()?;
         Ok(())
@@ -713,7 +731,7 @@ impl Db {
         events: &[serde_json::Value],
     ) -> Result<()> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let owns: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM cloud_jobs WHERE id=?1 AND lease=?2)",
             params![id, lease],
@@ -725,7 +743,7 @@ impl Db {
         for event in events {
             let cursor = event["id"].as_u64().ok_or_else(|| anyhow::anyhow!("invalid cloud event cursor"))?;
             let inserted = tx.execute(
-                "INSERT OR IGNORE INTO cloud_events(conversation,account,cursor,body) VALUES(?1,?2,?3,?4)",
+                "INSERT INTO cloud_events(conversation,account,cursor,body) VALUES(?1,?2,?3,?4) ON CONFLICT DO NOTHING",
                 params![id, account, cursor, serde_json::to_string(event)?],
             )?;
             if inserted == 0 {
@@ -737,11 +755,11 @@ impl Db {
                         && let Some(request) = block["request_id"].as_str()
                     {
                         tx.execute(
-                            "INSERT OR IGNORE INTO cloud_requests(conversation,account,id,body) VALUES(?1,?2,?3,?4)",
+                            "INSERT INTO cloud_requests(conversation,account,id,body) VALUES(?1,?2,?3,?4) ON CONFLICT DO NOTHING",
                             params![id, account, request, serde_json::to_string(block)?],
                         )?;
                         tx.execute(
-                            "INSERT OR IGNORE INTO cloud_notifications(conversation,account,request) VALUES(?1,?2,?3)",
+                            "INSERT INTO cloud_notifications(conversation,account,request) VALUES(?1,?2,?3) ON CONFLICT DO NOTHING",
                             params![id, account, request],
                         )?;
                     }
@@ -754,13 +772,13 @@ impl Db {
                     .unwrap_or_else(|| event["data"].clone());
                 if let Some(request) = data["request_id"].as_str().or_else(|| data["requestId"].as_str()) {
                     tx.execute(
-                        "UPDATE cloud_requests SET pending=0 WHERE conversation=?1 AND id=?2",
+                        "UPDATE cloud_requests SET pending=FALSE WHERE conversation=?1 AND id=?2",
                         params![id, request],
                     )?;
                 }
             }
             if event["stage"] == "turn" && matches!(event["state"].as_str(), Some("done" | "failed")) {
-                tx.execute("UPDATE cloud_requests SET pending=0 WHERE conversation=?1", [id])?;
+                tx.execute("UPDATE cloud_requests SET pending=FALSE WHERE conversation=?1", params![id])?;
             }
         }
         tx.commit()?;
@@ -768,14 +786,13 @@ impl Db {
     }
 
     pub fn cloud_run(&self, account: &str, id: &str) -> Result<Option<CloudRun>> {
-        Ok(self
-            .c()
+        self.c()
             .query_row(
                 "SELECT id,spec,state,created,deadline,result FROM cloud_runs WHERE account=?1 AND id=?2",
                 params![account, id],
                 row,
             )
-            .optional()?)
+            .optional()
     }
 }
 
@@ -795,7 +812,7 @@ impl Db {
             bail!("invalid request key");
         }
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let existing = tx
             .query_row(
                 &format!("SELECT {CLOUD_WORKSPACE_COLUMNS} FROM cloud_workspaces WHERE account=?1 AND request_key=?2"),
@@ -830,7 +847,7 @@ impl Db {
         )?;
         let created = tx.query_row(
             &format!("SELECT {CLOUD_WORKSPACE_COLUMNS} FROM cloud_workspaces WHERE id=?1"),
-            [&id],
+            params![&id],
             cloud_workspace_row,
         )?;
         tx.commit()?;
@@ -839,15 +856,17 @@ impl Db {
 
     /// The account's Cloud workspaces that aren't deleted yet, newest first.
     pub fn cloud_workspaces(&self, account: &str) -> Result<Vec<CloudWorkspace>> {
-        let conn = self.c();
-        let mut q = conn.prepare(&format!(
-            "SELECT {CLOUD_WORKSPACE_COLUMNS} FROM cloud_workspaces WHERE account=?1 AND deleted IS NULL ORDER BY created DESC, id"
-        ))?;
-        Ok(q.query_map([account], cloud_workspace_row)?.collect::<rusqlite::Result<Vec<_>>>()?)
+        self.c().query_map(
+            &format!(
+                "SELECT {CLOUD_WORKSPACE_COLUMNS} FROM cloud_workspaces WHERE account=?1 AND deleted IS NULL ORDER BY created DESC, id"
+            ),
+            params![account],
+            cloud_workspace_row,
+        )
     }
 
     pub fn cloud_workspace(&self, account: &str, id: &str) -> Result<Option<CloudWorkspace>> {
-        Ok(self
+        self
             .c()
             .query_row(
                 &format!(
@@ -856,7 +875,7 @@ impl Db {
                 params![account, id],
                 cloud_workspace_row,
             )
-            .optional()?)
+            .optional()
     }
 
     /// The Managoat workspace behind one of the account's Cloud workspaces,
@@ -868,7 +887,7 @@ impl Db {
                 "SELECT provider_id FROM cloud_workspaces
                  WHERE account=?1 AND id=?2 AND deleted IS NULL AND status!='deleting'",
                 params![account, id],
-                |r| r.get::<_, Option<String>>(0),
+                |r| r.get::<Option<String>>(0),
             )
             .optional()?
             .flatten())
@@ -877,19 +896,19 @@ impl Db {
     /// Ask the worker to delete it. Saying so again is harmless.
     pub fn delete_cloud_workspace(&self, account: &str, id: &str) -> Result<bool> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let changed = tx.execute(
             "UPDATE cloud_workspaces SET status='deleting' WHERE account=?1 AND id=?2 AND deleted IS NULL",
             params![account, id],
         )?;
-        tx.execute("UPDATE cloud_jobs SET cancel=1 WHERE id=?1 AND kind='cloud_workspace'", [id])?;
+        tx.execute("UPDATE cloud_jobs SET cancel=TRUE WHERE id=?1 AND kind='cloud_workspace'", params![id])?;
         // Managoat ends its conversations; each tab's agent goes with its tab.
         tx.execute(
             "UPDATE cloud_tabs SET status='closing' WHERE account=?1 AND cloud_workspace=?2 AND closed IS NULL",
             params![account, id],
         )?;
         tx.execute(
-            "UPDATE cloud_jobs SET cancel=1 WHERE kind='cloud_tab' AND id IN (SELECT id FROM cloud_tabs WHERE account=?1 AND cloud_workspace=?2)",
+            "UPDATE cloud_jobs SET cancel=TRUE WHERE kind='cloud_tab' AND id IN (SELECT id FROM cloud_tabs WHERE account=?1 AND cloud_workspace=?2)",
             params![account, id],
         )?;
         tx.commit()?;
@@ -911,7 +930,7 @@ impl Db {
         let live: bool = self.c().query_row(
             "SELECT EXISTS(SELECT 1 FROM cloud_workspaces WHERE account=?1 AND deleted IS NULL)
                  OR EXISTS(SELECT 1 FROM cloud_tabs WHERE account=?1 AND closed IS NULL)",
-            [account],
+            params![account],
             |r| r.get(0),
         )?;
         Ok(!live)
@@ -924,25 +943,27 @@ impl Db {
     pub fn erase_cloud_account(&self, a: &str) -> Result<Vec<String>> {
         let mut c = self.c();
         let tx = c.transaction()?;
-        let left: Vec<String> = {
-            let mut q = tx.prepare(
-                "SELECT id FROM cloud_workspaces WHERE account=?1 AND deleted IS NULL
-                 UNION ALL SELECT id FROM cloud_tabs WHERE account=?1 AND closed IS NULL",
-            )?;
-            q.query_map([a], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
-        };
-        tx.execute("DELETE FROM cloud_run_secrets WHERE run IN (SELECT id FROM cloud_runs WHERE account=?1)", [a])?;
+        let left: Vec<String> = tx.query_map(
+            "SELECT id FROM cloud_workspaces WHERE account=?1 AND deleted IS NULL
+             UNION ALL SELECT id FROM cloud_tabs WHERE account=?1 AND closed IS NULL",
+            params![a],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "DELETE FROM cloud_run_secrets WHERE run IN (SELECT id FROM cloud_runs WHERE account=?1)",
+            params![a],
+        )?;
         for table in ["cloud_requests", "cloud_notifications", "cloud_events"] {
-            tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), [a])?;
+            tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), params![a])?;
         }
         tx.execute(
             "DELETE FROM cloud_jobs WHERE id IN (SELECT id FROM cloud_runs WHERE account=?1 UNION SELECT id FROM cloud_workspaces WHERE account=?1 UNION SELECT id FROM cloud_tabs WHERE account=?1)",
-            [a],
+            params![a],
         )?;
         for table in
             ["cloud_runs", "cloud_tabs", "cloud_workspace_specs", "cloud_workspaces", "cloud_agents", "cloud_secrets"]
         {
-            tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), [a])?;
+            tx.execute(&format!("DELETE FROM {table} WHERE account=?1"), params![a])?;
         }
         tx.commit()?;
         Ok(left)
@@ -950,7 +971,7 @@ impl Db {
 
     pub fn claim_cloud_workspace_job(&self, now: u64) -> Result<Option<CloudWorkspaceJob>> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let columns = CLOUD_WORKSPACE_COLUMNS.split(',').map(|c| format!("w.{c}")).collect::<Vec<_>>().join(",");
         let found = tx
             .query_row(
@@ -958,15 +979,15 @@ impl Db {
                     "SELECT {columns},w.account,w.saved_revision,j.body,j.cancel,w.rebuilds FROM cloud_workspaces w JOIN cloud_jobs j ON j.id=w.id
                      WHERE j.kind='cloud_workspace' AND w.deleted IS NULL AND j.lease_until<=?1 ORDER BY j.lease_until,w.created LIMIT 1"
                 ),
-                [now],
+                params![now],
                 |r| {
                     Ok((
                         cloud_workspace_row(r)?,
-                        r.get::<_, String>(16)?,
-                        r.get::<_, Option<String>>(17)?,
-                        r.get::<_, String>(18)?,
-                        r.get::<_, bool>(19)?,
-                        r.get::<_, u64>(20)?,
+                        r.get::<String>(16)?,
+                        r.get::<Option<String>>(17)?,
+                        r.get::<String>(18)?,
+                        r.get::<bool>(19)?,
+                        r.get::<u64>(20)?,
                     ))
                 },
             )
@@ -998,7 +1019,7 @@ impl Db {
     /// claimed: the rebuild's answer is newer.
     pub fn checkpoint_cloud_workspace_job(&self, job: &CloudWorkspaceJob, release_at: Option<u64>) -> Result<()> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let changed = tx.execute(
             "UPDATE cloud_jobs SET body=?1,lease_until=COALESCE(?2,lease_until) WHERE id=?3 AND lease=?4",
             params![serde_json::to_string(&job.execution)?, release_at, job.cloud_workspace.id, job.lease],
@@ -1009,12 +1030,12 @@ impl Db {
         let w = &job.cloud_workspace;
         tx.execute(
             "UPDATE cloud_workspaces SET
-                 status=CASE WHEN (SELECT cancel FROM cloud_jobs WHERE id=?1)=1 THEN 'deleting' ELSE ?2 END,
+                 status=CASE WHEN (SELECT cancel FROM cloud_jobs WHERE id=?1) THEN 'deleting' ELSE ?2 END,
                  sandbox_status=?3, error=?4, revision=?5, built_from_revision=?6, stale=?7, changed_fields=?8,
                  environment=?9, vault=?10, provider_id=?11, saved_revision=COALESCE(saved_revision,?12), setup_step=?14,
-                 built_spec=CASE WHEN ?2='ready' AND ?6 IS NOT NULL THEN COALESCE(
+                 built_spec=CASE WHEN ?2='ready' AND CAST(?6 AS TEXT) IS NOT NULL THEN COALESCE(
                      (SELECT spec FROM cloud_workspace_specs WHERE cloud_workspace=?1 AND revision=?6),
-                     CASE WHEN settings_applied=1 AND ?6=COALESCE(saved_revision,?12) THEN saved_spec END,
+                     CASE WHEN settings_applied=TRUE AND ?6=COALESCE(saved_revision,?12) THEN saved_spec END,
                      built_spec) ELSE built_spec END
              WHERE id=?1 AND rebuilds=?13",
             params![
@@ -1042,7 +1063,7 @@ impl Db {
     /// the job.
     pub fn finish_cloud_workspace_delete(&self, job: &CloudWorkspaceJob, now: u64) -> Result<()> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         if tx.execute("DELETE FROM cloud_jobs WHERE id=?1 AND lease=?2", params![job.cloud_workspace.id, job.lease])?
             != 1
         {
@@ -1052,19 +1073,18 @@ impl Db {
             "UPDATE cloud_workspaces SET status='deleted',deleted=?1,environment=NULL,vault=NULL,provider_id=NULL WHERE id=?2",
             params![now, job.cloud_workspace.id],
         )?;
-        tx.execute("DELETE FROM cloud_workspace_specs WHERE cloud_workspace=?1", [&job.cloud_workspace.id])?;
+        tx.execute("DELETE FROM cloud_workspace_specs WHERE cloud_workspace=?1", params![&job.cloud_workspace.id])?;
         tx.commit()?;
         Ok(())
     }
 
     /// One sealed secret of the account's, read when the vault is filled.
     pub fn cloud_secret(&self, account: &str, name: &str) -> Result<Option<Vec<u8>>> {
-        Ok(self
-            .c()
+        self.c()
             .query_row("SELECT sealed FROM cloud_secrets WHERE account=?1 AND name=?2", params![account, name], |r| {
                 r.get(0)
             })
-            .optional()?)
+            .optional()
     }
 }
 
@@ -1094,7 +1114,7 @@ impl Db {
         now: u64,
     ) -> Result<bool> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         type Row = (String, Option<String>, Option<String>, String, Option<String>, bool, Option<String>);
         let found: Option<Row> = tx
             .query_row(
@@ -1131,7 +1151,7 @@ impl Db {
         // building it.
         if let (true, Some(revision)) = (applied, &saved_revision) {
             tx.execute(
-                "INSERT OR IGNORE INTO cloud_workspace_specs(cloud_workspace,account,revision,spec,saved) VALUES(?1,?2,?3,?4,?5)",
+                "INSERT INTO cloud_workspace_specs(cloud_workspace,account,revision,spec,saved) VALUES(?1,?2,?3,?4,?5) ON CONFLICT DO NOTHING",
                 params![id, account, revision, saved, now],
             )?;
         }
@@ -1140,7 +1160,7 @@ impl Db {
             None => serde_json::to_string(&before.secret_names())?,
         };
         tx.execute(
-            "UPDATE cloud_workspaces SET saved_spec=?1,name=?2,settings_applied=0,vault_secrets=?3 WHERE id=?4",
+            "UPDATE cloud_workspaces SET saved_spec=?1,name=?2,settings_applied=FALSE,vault_secrets=?3 WHERE id=?4",
             params![serde_json::to_string(spec)?, spec.name, vault_secrets, id],
         )?;
         tx.commit()?;
@@ -1153,17 +1173,17 @@ impl Db {
             .c()
             .query_row(
                 "SELECT account,saved_spec,environment,vault,provider_id,vault_secrets FROM cloud_workspaces
-                 WHERE id=?1 AND deleted IS NULL AND status!='deleting' AND settings_applied=0
+                 WHERE id=?1 AND deleted IS NULL AND status!='deleting' AND settings_applied=FALSE
                    AND environment IS NOT NULL AND vault IS NOT NULL AND provider_id IS NOT NULL",
-                [id],
+                params![id],
                 |r| {
                     Ok((
-                        r.get::<_, String>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, String>(3)?,
-                        r.get::<_, String>(4)?,
-                        r.get::<_, Option<String>>(5)?,
+                        r.get::<String>(0)?,
+                        r.get::<String>(1)?,
+                        r.get::<String>(2)?,
+                        r.get::<String>(3)?,
+                        r.get::<String>(4)?,
+                        r.get::<Option<String>>(5)?,
                     ))
                 },
             )
@@ -1199,25 +1219,26 @@ impl Db {
         now: u64,
     ) -> Result<()> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let saved = serde_json::to_string(spec)?;
         let changed = tx.execute(
-            "UPDATE cloud_workspaces SET settings_applied=1,saved_revision=COALESCE(?1,saved_revision)
+            "UPDATE cloud_workspaces SET settings_applied=TRUE,saved_revision=COALESCE(?1,saved_revision)
              WHERE id=?2 AND saved_spec=?3 AND deleted IS NULL",
             params![revision, id, saved],
         )?;
         if let (1, Some(revision)) = (changed, revision) {
             tx.execute(
-                "INSERT OR REPLACE INTO cloud_workspace_specs(cloud_workspace,account,revision,spec,saved)
-                 SELECT id,account,?2,?3,?4 FROM cloud_workspaces WHERE id=?1",
+                "INSERT INTO cloud_workspace_specs(cloud_workspace,account,revision,spec,saved)
+                 SELECT id,account,?2,?3,?4 FROM cloud_workspaces WHERE id=?1
+                 ON CONFLICT(cloud_workspace,revision) DO UPDATE SET account=excluded.account,spec=excluded.spec,saved=excluded.saved",
                 params![id, revision, saved, now],
             )?;
             tx.execute(
                 "DELETE FROM cloud_workspace_specs WHERE cloud_workspace=?1
-                   AND revision IS NOT (SELECT built_from_revision FROM cloud_workspaces WHERE id=?1)
+                   AND revision IS DISTINCT FROM (SELECT built_from_revision FROM cloud_workspaces WHERE id=?1)
                    AND revision NOT IN (SELECT revision FROM cloud_workspace_specs WHERE cloud_workspace=?1
                                         ORDER BY saved DESC, rowid DESC LIMIT 10)",
-                [id],
+                params![id],
             )?;
         }
         tx.commit()?;
@@ -1227,12 +1248,19 @@ impl Db {
     /// Managoat refused the settings: go back to the ones it has. False
     /// when those aren't known.
     pub fn refused_cloud_workspace_settings(&self, id: &str) -> Result<bool> {
-        let changed = self.c().execute(
-            "UPDATE cloud_workspaces SET settings_applied=1,
-                 saved_spec=(SELECT spec FROM cloud_workspace_specs s WHERE s.cloud_workspace=?1 AND s.revision=saved_revision),
-                 name=(SELECT json_extract(spec,'$.name') FROM cloud_workspace_specs s WHERE s.cloud_workspace=?1 AND s.revision=saved_revision)
-             WHERE id=?1 AND EXISTS(SELECT 1 FROM cloud_workspace_specs s WHERE s.cloud_workspace=?1 AND s.revision=saved_revision)",
-            [id],
+        let c = self.c();
+        let name = match c.dialect() {
+            Dialect::Sqlite => "json_extract(spec,'$.name')",
+            Dialect::Postgres => "spec::jsonb->>'name'",
+        };
+        let changed = c.execute(
+            &format!(
+                "UPDATE cloud_workspaces SET settings_applied=TRUE,
+                     saved_spec=(SELECT spec FROM cloud_workspace_specs s WHERE s.cloud_workspace=?1 AND s.revision=saved_revision),
+                     name=(SELECT {name} FROM cloud_workspace_specs s WHERE s.cloud_workspace=?1 AND s.revision=saved_revision)
+                 WHERE id=?1 AND EXISTS(SELECT 1 FROM cloud_workspace_specs s WHERE s.cloud_workspace=?1 AND s.revision=saved_revision)"
+            ),
+            params![id],
         )?;
         Ok(changed == 1)
     }
@@ -1261,7 +1289,7 @@ impl Db {
 impl Db {
     /// The Cloud workspace and its Managoat workspace, once there is one.
     pub fn cloud_workspace_machine(&self, account: &str, id: &str) -> Result<Option<(CloudWorkspace, Option<String>)>> {
-        Ok(self
+        self
             .c()
             .query_row(
                 &format!(
@@ -1270,7 +1298,7 @@ impl Db {
                 params![account, id],
                 |r| Ok((cloud_workspace_row(r)?, r.get(16)?)),
             )
-            .optional()?)
+            .optional()
     }
 
     /// Managoat took a rebuild or a retry, and `w` is what it answered: the
@@ -1307,7 +1335,9 @@ impl Db {
     pub fn queued_cloud_workspace_rebuild(&self, id: &str) -> Result<Option<CloudWorkspaceRebuild>> {
         let queued: Option<Option<String>> = self
             .c()
-            .query_row("SELECT rebuild FROM cloud_workspaces WHERE id=?1 AND deleted IS NULL", [id], |r| r.get(0))
+            .query_row("SELECT rebuild FROM cloud_workspaces WHERE id=?1 AND deleted IS NULL", params![id], |r| {
+                r.get(0)
+            })
             .optional()?;
         Ok(queued.flatten().map(|q| serde_json::from_str(&q)).transpose()?)
     }
@@ -1318,9 +1348,11 @@ impl Db {
     /// was taken already: control stopped while sending it.
     pub fn claim_cloud_workspace_rebuild(&self, id: &str) -> Result<Option<(CloudWorkspaceRebuild, bool)>> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let queued: Option<Option<String>> = tx
-            .query_row("SELECT rebuild FROM cloud_workspaces WHERE id=?1 AND deleted IS NULL", [id], |r| r.get(0))
+            .query_row("SELECT rebuild FROM cloud_workspaces WHERE id=?1 AND deleted IS NULL", params![id], |r| {
+                r.get(0)
+            })
             .optional()?;
         let Some(mut asked) =
             queued.flatten().map(|q| serde_json::from_str::<CloudWorkspaceRebuild>(&q)).transpose()?
@@ -1348,7 +1380,7 @@ impl Db {
     /// up has too.
     pub fn cancel_cloud_workspace_rebuild(&self, account: &str, id: &str) -> Result<CancelledRebuild> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let found: Option<(Option<String>, String)> = tx
             .query_row(
                 "SELECT rebuild,status FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL",
@@ -1365,7 +1397,7 @@ impl Db {
         if asked.sending {
             return Ok(CancelledRebuild::Started);
         }
-        tx.execute("UPDATE cloud_workspaces SET rebuild=NULL,rebuild_error=NULL WHERE id=?1", [id])?;
+        tx.execute("UPDATE cloud_workspaces SET rebuild=NULL,rebuild_error=NULL WHERE id=?1", params![id])?;
         tx.commit()?;
         Ok(CancelledRebuild::Cancelled)
     }
@@ -1387,16 +1419,14 @@ impl Db {
         cloud_workspace: &str,
         conversations: &[String],
     ) -> Result<Vec<String>> {
-        let conn = self.c();
-        let mut q = conn.prepare(
+        let rows = self.c().query_map(
             "SELECT provider_id,spec FROM cloud_tabs
              WHERE account=?1 AND cloud_workspace=?2 AND closed IS NULL AND provider_id IS NOT NULL ORDER BY created,id",
+            params![account, cloud_workspace],
+            |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?)),
         )?;
-        let rows =
-            q.query_map(params![account, cloud_workspace], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
         let mut names = vec![];
-        for row in rows {
-            let (conversation, spec) = row?;
+        for (conversation, spec) in rows {
             if conversations.contains(&conversation) {
                 let spec: CloudTabSpec = serde_json::from_str(&spec)?;
                 names.push(format!("{} · {}", spec.agent.name, spec.runtime));
@@ -1422,7 +1452,7 @@ impl Db {
             bail!("invalid request key");
         }
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let existing = tx
             .query_row(
                 &format!(
@@ -1465,7 +1495,7 @@ impl Db {
             &format!(
                 "SELECT {CLOUD_TAB_COLUMNS} FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace WHERE t.id=?1"
             ),
-            [&id],
+            params![&id],
             cloud_tab_row,
         )?;
         tx.commit()?;
@@ -1474,18 +1504,18 @@ impl Db {
 
     /// A Cloud workspace's tabs that aren't closed yet, oldest first.
     pub fn cloud_tabs(&self, account: &str, cloud_workspace: &str) -> Result<Vec<CloudTab>> {
-        let conn = self.c();
-        let mut q = conn.prepare(&format!(
-            "SELECT {CLOUD_TAB_COLUMNS} FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace
-             WHERE t.account=?1 AND t.cloud_workspace=?2 AND t.closed IS NULL ORDER BY t.created, t.id"
-        ))?;
-        Ok(q.query_map(params![account, cloud_workspace], |r| cloud_tab_row(r).map(|(tab, _, _)| tab))?
-            .collect::<rusqlite::Result<Vec<_>>>()?)
+        self.c().query_map(
+            &format!(
+                "SELECT {CLOUD_TAB_COLUMNS} FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace
+                 WHERE t.account=?1 AND t.cloud_workspace=?2 AND t.closed IS NULL ORDER BY t.created, t.id"
+            ),
+            params![account, cloud_workspace],
+            |r| cloud_tab_row(r).map(|(tab, _, _)| tab),
+        )
     }
 
     pub fn cloud_tab(&self, account: &str, cloud_workspace: &str, tab: &str) -> Result<Option<CloudTab>> {
-        Ok(self
-            .c()
+        self.c()
             .query_row(
                 &format!(
                     "SELECT {CLOUD_TAB_COLUMNS} FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace
@@ -1494,25 +1524,23 @@ impl Db {
                 params![account, cloud_workspace, tab],
                 |r| cloud_tab_row(r).map(|(tab, _, _)| tab),
             )
-            .optional()?)
+            .optional()
     }
 
     /// The account's closed tabs, newest closed first: what a closed tab or
     /// a deleted Cloud workspace leaves to read.
     pub fn past_cloud_tabs(&self, account: &str) -> Result<Vec<PastCloudTab>> {
-        let conn = self.c();
-        let mut q = conn.prepare(
+        self.c().query_map(
             "SELECT t.id,t.cloud_workspace,w.name,w.deleted IS NOT NULL,t.spec,t.created,t.closed
              FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace
              WHERE t.account=?1 AND t.closed IS NOT NULL ORDER BY t.closed DESC, t.id",
-        )?;
-        let rows = q.query_map([account], past_cloud_tab_row)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+            params![account],
+            past_cloud_tab_row,
+        )
     }
 
     pub fn past_cloud_tab(&self, account: &str, tab: &str) -> Result<Option<PastCloudTab>> {
-        Ok(self
-            .c()
+        self.c()
             .query_row(
                 "SELECT t.id,t.cloud_workspace,w.name,w.deleted IS NOT NULL,t.spec,t.created,t.closed
                  FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace
@@ -1520,7 +1548,7 @@ impl Db {
                 params![account, tab],
                 past_cloud_tab_row,
             )
-            .optional()?)
+            .optional()
     }
 
     /// The Managoat conversation of a tab that's open and launched.
@@ -1529,9 +1557,9 @@ impl Db {
             .c()
             .query_row(
                 "SELECT t.provider_id FROM cloud_tabs t JOIN cloud_jobs j ON j.id=t.id
-                 WHERE t.account=?1 AND t.cloud_workspace=?2 AND t.id=?3 AND t.closed IS NULL AND j.cancel=0",
+                 WHERE t.account=?1 AND t.cloud_workspace=?2 AND t.id=?3 AND t.closed IS NULL AND j.cancel=FALSE",
                 params![account, cloud_workspace, tab],
-                |r| r.get::<_, Option<String>>(0),
+                |r| r.get::<Option<String>>(0),
             )
             .optional()?
             .flatten())
@@ -1551,12 +1579,12 @@ impl Db {
         gone: bool,
     ) -> Result<bool> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let changed = tx.execute(
             "UPDATE cloud_tabs SET relaunch=?4,status='opening',error=NULL
              WHERE account=?1 AND cloud_workspace=?2 AND id=?3 AND closed IS NULL AND provider_id IS NOT NULL
                AND relaunch IS NULL AND (status='failed' OR ?5)
-               AND EXISTS(SELECT 1 FROM cloud_jobs WHERE id=?3 AND cancel=0)",
+               AND EXISTS(SELECT 1 FROM cloud_jobs WHERE id=?3 AND cancel=FALSE)",
             params![account, cloud_workspace, tab, prompt, gone],
         )?;
         tx.commit()?;
@@ -1566,29 +1594,29 @@ impl Db {
     /// Ask the worker to close it. Saying so again is harmless.
     pub fn close_cloud_tab(&self, account: &str, cloud_workspace: &str, tab: &str) -> Result<bool> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let changed = tx.execute(
             "UPDATE cloud_tabs SET status='closing' WHERE account=?1 AND cloud_workspace=?2 AND id=?3 AND closed IS NULL",
             params![account, cloud_workspace, tab],
         )?;
-        tx.execute("UPDATE cloud_jobs SET cancel=1 WHERE id=?1 AND kind='cloud_tab'", [tab])?;
-        tx.execute("UPDATE cloud_requests SET pending=0 WHERE conversation=?1", [tab])?;
+        tx.execute("UPDATE cloud_jobs SET cancel=TRUE WHERE id=?1 AND kind='cloud_tab'", params![tab])?;
+        tx.execute("UPDATE cloud_requests SET pending=FALSE WHERE conversation=?1", params![tab])?;
         tx.commit()?;
         Ok(changed == 1)
     }
 
     /// How many of a Cloud workspace's tabs still have a Managoat agent.
     pub fn open_cloud_tabs(&self, cloud_workspace: &str) -> Result<u64> {
-        Ok(self.c().query_row(
+        self.c().query_row(
             "SELECT count(*) FROM cloud_tabs WHERE cloud_workspace=?1 AND closed IS NULL",
-            [cloud_workspace],
+            params![cloud_workspace],
             |r| r.get(0),
-        )?)
+        )
     }
 
     pub fn claim_cloud_tab_job(&self, now: u64) -> Result<Option<CloudTabJob>> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let found = tx
             .query_row(
                 &format!(
@@ -1596,15 +1624,15 @@ impl Db {
                      FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace JOIN cloud_jobs j ON j.id=t.id
                      WHERE j.kind='cloud_tab' AND t.closed IS NULL AND j.lease_until<=?1 ORDER BY j.lease_until,t.created LIMIT 1"
                 ),
-                [now],
+                params![now],
                 |r| {
                     Ok((
                         cloud_tab_row(r)?,
-                        r.get::<_, String>(8)?,
-                        r.get::<_, String>(9)?,
-                        r.get::<_, bool>(10)?,
+                        r.get::<String>(8)?,
+                        r.get::<String>(9)?,
+                        r.get::<bool>(10)?,
                         (r.get(11)?, r.get(12)?, r.get(13)?),
-                        r.get::<_, Option<String>>(14)?,
+                        r.get::<Option<String>>(14)?,
                     ))
                 },
             )
@@ -1636,7 +1664,7 @@ impl Db {
     /// status `closing`, and a tab that's closing or has ended asks nothing.
     pub fn checkpoint_cloud_tab_job(&self, job: &CloudTabJob, release_at: Option<u64>) -> Result<()> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         let changed = tx.execute(
             "UPDATE cloud_jobs SET body=?1,lease_until=COALESCE(?2,lease_until) WHERE id=?3 AND lease=?4",
             params![serde_json::to_string(&job.execution)?, release_at, job.tab.id, job.lease],
@@ -1646,7 +1674,7 @@ impl Db {
         }
         tx.execute(
             "UPDATE cloud_tabs SET
-                 status=CASE WHEN (SELECT cancel FROM cloud_jobs WHERE id=?1)=1 THEN 'closing'
+                 status=CASE WHEN (SELECT cancel FROM cloud_jobs WHERE id=?1) THEN 'closing'
                              WHEN relaunch IS NOT NULL AND NOT (?7 AND relaunch=?6) THEN 'opening' ELSE ?2 END,
                  error=CASE WHEN relaunch IS NOT NULL AND NOT (?7 AND relaunch=?6) THEN NULL ELSE ?3 END,
                  started=?4, provider_id=?5,
@@ -1663,7 +1691,7 @@ impl Db {
             ],
         )?;
         if job.closing || matches!(job.tab.status.as_str(), "failed" | "terminated") {
-            tx.execute("UPDATE cloud_requests SET pending=0 WHERE conversation=?1", [&job.tab.id])?;
+            tx.execute("UPDATE cloud_requests SET pending=FALSE WHERE conversation=?1", params![&job.tab.id])?;
         }
         tx.commit()?;
         Ok(())
@@ -1673,12 +1701,12 @@ impl Db {
     /// stays readable to control) and end the job.
     pub fn finish_cloud_tab_close(&self, job: &CloudTabJob, now: u64) -> Result<()> {
         let mut conn = self.c();
-        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let tx = conn.immediate()?;
         if tx.execute("DELETE FROM cloud_jobs WHERE id=?1 AND lease=?2", params![job.tab.id, job.lease])? != 1 {
             bail!("cloud job lease lost");
         }
         tx.execute("UPDATE cloud_tabs SET status='closed',closed=?1 WHERE id=?2", params![now, job.tab.id])?;
-        tx.execute("UPDATE cloud_requests SET pending=0 WHERE conversation=?1", [&job.tab.id])?;
+        tx.execute("UPDATE cloud_requests SET pending=FALSE WHERE conversation=?1", params![&job.tab.id])?;
         tx.commit()?;
         Ok(())
     }
@@ -1688,7 +1716,7 @@ impl Db {
 mod tests {
     use super::*;
     fn test_db() -> Db {
-        Db::memory()
+        Db::test()
     }
 
     fn spec() -> RunSpec {
@@ -1738,9 +1766,9 @@ mod tests {
         db.finish_cloud_workspace_delete(&job, 1).unwrap();
         assert!(db.cloud_workspaces_gone("a").unwrap());
         assert_eq!(db.erase_cloud_account("a").unwrap(), Vec::<String>::new());
-        let rows: u64 = db.c().query_row("SELECT count(*) FROM cloud_workspaces", [], |r| r.get(0)).unwrap();
+        let rows: u64 = db.c().query_row("SELECT count(*) FROM cloud_workspaces", params![], |r| r.get(0)).unwrap();
         assert_eq!(rows, 1);
-        let jobs: u64 = db.c().query_row("SELECT count(*) FROM cloud_jobs", [], |r| r.get(0)).unwrap();
+        let jobs: u64 = db.c().query_row("SELECT count(*) FROM cloud_jobs", params![], |r| r.get(0)).unwrap();
         assert_eq!(jobs, 1);
         assert_eq!(db.cloud_workspace("b", &kept.id).unwrap().unwrap().status, "provisioning");
     }
@@ -1801,7 +1829,9 @@ mod tests {
     fn account_erasure_waits_for_tabs_and_takes_their_events() {
         let db = test_db();
         let w = db.create_cloud_workspace("a", "prj_a", "erase", &cloud_workspace_spec(), 0).unwrap();
-        db.c().execute("UPDATE cloud_workspaces SET status='ready',provider_id='ws1' WHERE id=?1", [&w.id]).unwrap();
+        db.c()
+            .execute("UPDATE cloud_workspaces SET status='ready',provider_id='ws1' WHERE id=?1", params![&w.id])
+            .unwrap();
         let spec = CloudTabSpec {
             agent_id: "agent_test".into(),
             agent_version: 1,
@@ -1814,7 +1844,10 @@ mod tests {
         assert!(db.create_cloud_tab("b", &w.id, "tab", &spec, 0).is_err(), "another account's");
         let tab = db.create_cloud_tab("a", &w.id, "tab", &spec, 0).unwrap();
         db.c()
-            .execute("INSERT INTO cloud_events(conversation,account,cursor,body) VALUES(?1,'a',1,'{}')", [&tab.id])
+            .execute(
+                "INSERT INTO cloud_events(conversation,account,cursor,body) VALUES(?1,'a',1,'{}')",
+                params![&tab.id],
+            )
             .unwrap();
         // Deleting the Cloud workspace closes its tabs.
         db.delete_cloud_workspaces("a").unwrap();
@@ -1838,7 +1871,8 @@ mod tests {
         db.erase_cloud_account("a").unwrap();
         assert!(db.past_cloud_tabs("a").unwrap().is_empty());
         for table in ["cloud_tabs", "cloud_events", "cloud_jobs", "cloud_workspaces"] {
-            let count: u64 = db.c().query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap();
+            let count: u64 =
+                db.c().query_row(&format!("SELECT count(*) FROM {table}"), params![], |r| r.get(0)).unwrap();
             assert_eq!(count, 0, "{table}");
         }
     }
@@ -1883,12 +1917,12 @@ mod tests {
         // Populate every child table so this catches incomplete erasure and
         // foreign-key ordering, including already-delivered notifications.
         for sql in [
-            "INSERT INTO cloud_run_secrets(run,name,sealed) VALUES(?1,'TOKEN',X'01')",
+            "INSERT INTO cloud_run_secrets(run,name,sealed) VALUES(?1,'TOKEN','x')",
             "INSERT INTO cloud_requests(conversation,account,id,body) VALUES(?1,'a','approval','{}')",
             "INSERT INTO cloud_notifications(conversation,account,request) VALUES(?1,'a','approval')",
             "INSERT INTO cloud_events(conversation,account,cursor,body) VALUES(?1,'a',1,'{}')",
         ] {
-            db.c().execute(sql, [&run.id]).unwrap();
+            db.c().execute(sql, params![&run.id]).unwrap();
         }
         assert_eq!(db.active_cloud_runs("a").unwrap(), 0);
         db.erase_cloud_account("a").unwrap();
@@ -1901,7 +1935,8 @@ mod tests {
             "cloud_notifications",
             "cloud_events",
         ] {
-            let count: u64 = db.c().query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap();
+            let count: u64 =
+                db.c().query_row(&format!("SELECT count(*) FROM {table}"), params![], |r| r.get(0)).unwrap();
             assert_eq!(count, 0, "{table}");
         }
         assert!(db.cloud_secret_names("a").unwrap().is_empty());

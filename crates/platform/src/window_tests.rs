@@ -54,7 +54,7 @@ fn the_tables_are_the_platforms_own() {
     );
     let db = crate::db::Db::memory();
     let auto: i64 = db
-        .c()
+        .sqlite()
         .query_row("SELECT count(*) FROM sqlite_master WHERE sql LIKE '%AUTOINCREMENT%'", [], |r| r.get(0))
         .unwrap();
     assert_eq!(auto, 0);
@@ -149,7 +149,7 @@ fn copying_back_replaces_the_hubs_old_copies() {
     copy(&hub, &platform, false).unwrap();
     {
         let db = crate::db::Db::open(&platform).unwrap();
-        db.c()
+        db.sqlite()
             .execute_batch(
                 "INSERT INTO chat_messages (id, room, seq, author, at, text) VALUES (41, 'r2', 2, 'acct-a', 50, 'after the window');
                  UPDATE chat_rooms SET last_seq = 2 WHERE id = 'r2';",

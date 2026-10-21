@@ -55,7 +55,7 @@ const FTS: &str = "chat_fts";
 /// and their shadow tables, which are indexes.
 pub fn tables() -> Vec<String> {
     let db = crate::db::Db::memory();
-    let c = db.c();
+    let c = db.sqlite();
     let rows: Vec<(String, String)> = c
         .prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table' ORDER BY rowid")
         .unwrap()
@@ -161,7 +161,7 @@ pub fn copy(from: &Path, to: &Path, replace: bool) -> anyhow::Result<Report> {
     // `platform_migrations`: a new file gets every migration, an old one
     // whatever it lacks.
     let db = crate::db::Db::open(to).with_context(|| format!("opening {}", to.display()))?;
-    let mut c = db.c();
+    let mut c = db.sqlite();
     // Foreign keys hold in the source; rows go in table by table.
     c.pragma_update(None, "foreign_keys", "OFF")?;
     c.execute("ATTACH ?1 AS src", [read_only_uri(from)?]).with_context(|| format!("attaching {}", from.display()))?;
@@ -473,7 +473,7 @@ pub const SAMPLE_KEY: &str = "01010101010101010101010101010101010101010101010101
 #[cfg(any(test, feature = "contract"))]
 pub fn sample(db: &crate::db::Db) {
     let cipher = crate::cloud::secrets::SecretCipher::new(SAMPLE_KEY).unwrap();
-    let c = db.c();
+    let c = db.sqlite();
     c.execute_batch(
         "INSERT INTO projects (id, team_id, account_id, name, is_default, created_at)
              VALUES ('prj_t', 'team-1', NULL, 'acme', 1, 5), ('prj_a', NULL, 'acct-a', 'Personal', 1, 6);

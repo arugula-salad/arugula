@@ -209,6 +209,7 @@ pub fn start(app: &Arc<Platform>) {
 
 #[cfg(test)]
 mod tests {
+    use crate::db::Sql as _;
     use std::sync::Arc;
 
     use arugula_e2e::team::TeamRole;
@@ -219,15 +220,18 @@ mod tests {
     /// The platform over a hub of the test's own.
     fn app(hub: &Arc<TestHub>) -> Arc<Platform> {
         let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
-        Arc::new(Platform::new(cfg, crate::db::Db::memory(), hub.clone(), reqwest::Client::new(), Default::default()))
+        Arc::new(Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default()))
     }
 
     fn members(app: &Platform, team: &str) -> Vec<String> {
-        let c = app.db.c();
-        let mut q = c
-            .prepare("SELECT account_id || ' ' || role || ' ' || roster_version FROM team_members WHERE team_id = ?1 ORDER BY 1")
-            .unwrap();
-        q.query_map([team], |r| r.get(0)).unwrap().map(Result::unwrap).collect()
+        app.db
+            .c()
+            .query_map(
+                "SELECT account_id || ' ' || role || ' ' || roster_version FROM team_members WHERE team_id = ?1 ORDER BY 1",
+                crate::db::sql::params![team],
+                |r| r.get(0),
+            )
+            .unwrap()
     }
 
     /// A roster the feed brings rewrites the team's projection and gives
@@ -335,7 +339,10 @@ mod tests {
         attach_team_channels(&app).await.unwrap();
         let project = app.db.team_default_project("t1").unwrap().unwrap();
         let of = |id: &str| -> Option<String> {
-            app.db.c().query_row("SELECT project_id FROM chat_rooms WHERE id = ?1", [id], |r| r.get(0)).unwrap()
+            app.db
+                .c()
+                .query_row("SELECT project_id FROM chat_rooms WHERE id = ?1", crate::db::sql::params![id], |r| r.get(0))
+                .unwrap()
         };
         assert_eq!(
             (of("c1"), of("c2"), of("d1")),

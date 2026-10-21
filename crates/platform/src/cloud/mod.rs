@@ -614,7 +614,7 @@ pub(crate) mod tests {
     /// [`unstarted_app`], with a hub the test looks at.
     pub(crate) fn unstarted_app_with(hub: Arc<TestHub>) -> Platform {
         let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
-        let mut app = Platform::new(cfg, crate::db::Db::memory(), hub, reqwest::Client::new(), Default::default());
+        let mut app = Platform::new(cfg, crate::db::Db::test(), hub, reqwest::Client::new(), Default::default());
         app.cloud = Some(Cloud {
             secret_cipher: Some(secrets::SecretCipher::new(&"01".repeat(32)).unwrap()),
             provider: provider::Provider::new("https://provider.example", "platform-key".into()).unwrap(),

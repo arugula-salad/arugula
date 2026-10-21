@@ -6,8 +6,10 @@ is adopted.
 
 - `sqlite/`: SQLite, for the platform in process, self-hosted control and
   tests.
-- `postgres/`: Postgres (M143), written where the two must differ, such as
-  chat's search (FTS5 here, `tsvector` there).
+- `postgres/`: Postgres (M143: hosted control), SQLite's in Postgres's
+  words, such as chat's search (FTS5 here, `tsvector` there), `BIGINT` and
+  `BOOLEAN` for SQLite's integers, and `COLLATE pg_c_utf8` text. A version
+  with nothing to do on Postgres is a file of comments.
 
 Rules:
 - A file is `NNNN_name.sql`, numbered from `0001` with no gaps, and listed
