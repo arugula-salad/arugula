@@ -23,6 +23,9 @@ Start with `src/lib.rs`, then:
   that answer as control's `Session` and `DaemonAuth` do.
 - `src/db.rs`: its own database handle (in process, a second connection to
   the hub's file).
+- `migrations/` and `src/db/migrate.rs`: its schema, as numbered
+  migrations per SQL dialect (M142), and the runner that applies them and
+  adopts a database made before them.
 - `src/cache.rs`: the hub's answers chat asks for, kept and dropped as the
   hub's change feed names them (a feed tick plus a cache tick, `DELAY`).
 - `src/projects.rs`: projects and team members, and the feed follower that

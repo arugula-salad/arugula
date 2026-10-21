@@ -5,54 +5,50 @@
 //! [`HubPort`](crate::HubPort), so a query here that names one fails in
 //! the platform's tests, whose database is its own.
 //!
-//! Each feature brings its own tables and queries as it moves in (billing's
-//! in [`billing`], M139; Cloud's in [`cloud`], M137; chat's in [`chat`],
-//! M138; projects, team members and grants in [`projects`]), and flips
-//! their `process` in `crates/control/tables.toml` to `platform`.
+//! Each feature brings its own queries as it moves in (billing's in
+//! [`billing`], M139; Cloud's in [`cloud`], M137; chat's in [`chat`], M138;
+//! projects, team members and grants in [`projects`]), and flips their
+//! `process` in `crates/control/tables.toml` to `platform`. Their tables
+//! are made and changed only by numbered migrations ([`migrate`], M142).
 
 use std::{
     path::Path,
     sync::{Mutex, MutexGuard},
 };
 
+use anyhow::Context as _;
 use arugula_control_common::sqlite;
 use rusqlite::Connection;
 
 pub mod billing;
 pub mod chat;
 pub mod cloud;
+mod legacy;
+pub mod migrate;
 pub mod projects;
 
 pub struct Db {
     conn: Mutex<Connection>,
 }
 
-/// The platform's tables, made if they aren't there: each feature's own.
-const SCHEMA: &[&str] = &[billing::SCHEMA, chat::SCHEMA, cloud::SCHEMA, projects::SCHEMA];
-
 impl Db {
-    /// The database at `path`: in process, the hub's file.
+    /// The database at `path` (in process, the hub's file), brought up to
+    /// the latest migration ([`migrate`]): a database made before
+    /// migrations is adopted, and one this build can't run on is refused.
     pub fn open(path: &Path) -> anyhow::Result<Self> {
-        let conn = sqlite::open(path)?;
-        for schema in SCHEMA {
-            conn.execute_batch(schema)?;
+        let mut conn = sqlite::open(path)?;
+        let report = migrate::run(&mut conn).context("the platform's schema")?;
+        if report != migrate::Report::default() {
+            tracing::info!(adopted = report.adopted, upgraded = report.upgraded, ran = ?report.ran, "the platform's schema");
         }
-        chat::migrate(&conn)?;
-        cloud::migrate(&conn)?;
-        projects::migrate(&conn, arugula_e2e::now_ms())?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 
     /// A database of its own in memory, for tests: nothing of the hub's is
     /// in it.
     pub fn memory() -> Self {
-        let conn = sqlite::memory();
-        for schema in SCHEMA {
-            conn.execute_batch(schema).expect("the platform's schema");
-        }
-        chat::migrate(&conn).expect("the platform's schema");
-        cloud::migrate(&conn).expect("the platform's schema");
-        projects::migrate(&conn, arugula_e2e::now_ms()).expect("the platform's schema");
+        let mut conn = sqlite::memory();
+        migrate::run(&mut conn).expect("the platform's schema");
         Self { conn: Mutex::new(conn) }
     }
 
@@ -66,7 +62,7 @@ impl Db {
     pub fn mentions(&self, needle: &str) -> Vec<String> {
         let c = self.c();
         let tables: Vec<String> = c
-            .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name != 'platform_migrations'")
             .unwrap()
             .query_map([], |r| r.get(0))
             .unwrap()

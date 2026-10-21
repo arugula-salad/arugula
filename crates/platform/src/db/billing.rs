@@ -1,29 +1,13 @@
 //! Billing's tables (M22, the platform's since M139): who pays, and the
 //! sandbox minutes already reported to Stripe. The meters themselves
 //! (relayed bytes in `usage`, sandbox minutes from `sandboxes`) stay the
-//! hub's, which writes them, and come through `HubPort::meters`.
+//! hub's, which writes them, and come through `HubPort::meters`. The
+//! tables are made by the platform's migrations (`migrations/sqlite`).
 
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::Db;
 use crate::Deleted;
-
-/// Made if they aren't there. In process they're already in the hub's
-/// file, where they were made before M139.
-pub(super) const SCHEMA: &str = "
-CREATE TABLE IF NOT EXISTS billing (
-    owner TEXT PRIMARY KEY,
-    customer TEXT,
-    subscription TEXT,
-    status TEXT NOT NULL,
-    seat_item TEXT,
-    updated INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS reported (
-    account TEXT PRIMARY KEY,
-    minutes INTEGER NOT NULL
-);
-";
 
 pub struct BillingRow {
     pub customer: Option<String>,
