@@ -547,6 +547,24 @@ pub enum ForgeLive {
     Polling,
 }
 
+/// M172: a GitHub block on a repo linked to a project in Arugula control
+/// is a pin onto the platform's PR or issue ("The daemon's forge reader
+/// stays for unlinked repos; linked repos' blocks are pins", aru-087): it
+/// shows what the platform's mirror says, and this machine doesn't read
+/// GitHub for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ForgePin {
+    pub kind: ItemKind,
+    /// The platform's id for it: `fi_` and 32 hex characters.
+    pub global_id: String,
+    /// Why the platform couldn't be read just now, while what it said last
+    /// is shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub stale: Option<String>,
+}
+
 /// A forge block's state: the PR or issue, what it wants of you, the agent's
 /// drafts, and how it's kept current.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -602,6 +620,9 @@ pub struct ForgeState {
     pub live_heard_ms: Option<u64>,
     /// A webhook this daemon made is on the repository.
     pub hook: bool,
+    /// M172: it's the platform's item, read through Arugula control.
+    #[serde(default)]
+    pub pin: Option<ForgePin>,
 }
 
 // ------------------------------------------------------------- the methods

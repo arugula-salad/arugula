@@ -34,11 +34,13 @@ use reqwest::Method;
 
 use crate::control::CloudRefused;
 
-/// A repo linked for this machine's owner: its project, and GitHub's id.
+/// A repo linked for this machine's owner: its project, GitHub's id, and
+/// the owner's GitHub login (M172; none from a control before it).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Link {
     pub project: String,
     pub repo_id: u64,
+    pub login: Option<String>,
 }
 
 /// How long the platform's word on a repo is used.
@@ -81,7 +83,7 @@ async fn ask_link(repo: &str) -> Result<Option<Link>, String> {
         Ok(v) => {
             let r: ForgeRepo = serde_json::from_value(v).map_err(|e| format!("the platform's answer: {e}"))?;
             Ok(match (r.linked, r.project, r.repo_id) {
-                (true, Some(project), Some(repo_id)) => Some(Link { project, repo_id }),
+                (true, Some(project), Some(repo_id)) => Some(Link { project, repo_id, login: r.login }),
                 _ => None,
             })
         }
@@ -102,7 +104,7 @@ pub enum Failed {
     NotLinked,
 }
 
-fn failed(e: CloudRefused) -> Failed {
+pub(super) fn failed(e: CloudRefused) -> Failed {
     match e {
         CloudRefused::Said { status: 404, .. } => Failed::NotLinked,
         CloudRefused::Said { status: 400 | 409, said, .. } => Failed::Refused(said),

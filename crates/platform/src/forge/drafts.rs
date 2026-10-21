@@ -359,6 +359,7 @@ pub async fn repo(
         out.linked = true;
         out.project = Some(link.project_id);
         out.repo_id = Some(link.repo_id);
+        out.login = v.github.as_ref().map(|u| u.login.clone());
     } else if let Some((_, why)) =
         c.withheld.iter().find(|(_, w)| !matches!(w, Withheld::NotMember | Withheld::Unlinked))
     {

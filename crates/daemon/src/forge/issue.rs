@@ -318,11 +318,25 @@ impl ForgeBlock {
     /// block joins the tab, beside the agent.
     async fn find_pr(&self, a: &Arc<dyn Adapter>, repo: &str) {
         let Some(link) = self.config.lock().unwrap().link.clone().filter(|l| l.pr.is_none()) else { return };
-        let pr = match a.pr_by_head(repo, &link.branch).await {
-            Ok(Some(pr)) => pr,
-            Ok(None) => return,
-            Err(e) => return warn!(pane = self.ctx.id, error = %e, "looking for the agent's PR"),
-        };
+        match a.pr_by_head(repo, &link.branch).await {
+            Ok(Some(pr)) => self.found_pr(link, pr).await,
+            Ok(None) => {}
+            Err(e) => warn!(pane = self.ctx.id, error = %e, "looking for the agent's PR"),
+        }
+    }
+
+    /// M172: [`find_pr`](Self::find_pr) on a pinned issue, in the mirror.
+    pub(super) async fn find_pinned_pr(&self, on: &super::platform::Link, repo: &str) {
+        let Some(link) = self.config.lock().unwrap().link.clone().filter(|l| l.pr.is_none()) else { return };
+        match super::pin::pr_by_head(on, repo, &link.branch).await {
+            Ok(Some(pr)) => self.found_pr(link, pr).await,
+            Ok(None) => {}
+            Err(e) => warn!(pane = self.ctx.id, error = ?e, "looking for the agent's PR in the mirror"),
+        }
+    }
+
+    /// The agent's PR is here: its block joins the tab, once.
+    async fn found_pr(&self, link: AgentLink, pr: model::Linked) {
         // Once: marked before the block opens.
         if let Some(l) = self.config.lock().unwrap().link.as_mut() {
             l.pr = Some(pr.number);

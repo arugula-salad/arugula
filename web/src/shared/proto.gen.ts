@@ -911,6 +911,24 @@ export type ForgeLive = "webhook" | "polling";
 export type ForgeLogin = { name: string, url: string, user: string, };
 
 /**
+ * M172: a GitHub block on a repo linked to a project in Arugula control
+ * is a pin onto the platform's PR or issue ("The daemon's forge reader
+ * stays for unlinked repos; linked repos' blocks are pins", aru-087): it
+ * shows what the platform's mirror says, and this machine doesn't read
+ * GitHub for it.
+ */
+export type ForgePin = { kind: ItemKind, 
+/**
+ * The platform's id for it: `fi_` and 32 hex characters.
+ */
+global_id: string, 
+/**
+ * Why the platform couldn't be read just now, while what it said last
+ * is shown.
+ */
+stale?: string, };
+
+/**
  * A forge block's state: the PR or issue, what it wants of you, the agent's
  * drafts, and how it's kept current.
  */
@@ -980,7 +998,11 @@ live_heard_ms: number | null,
 /**
  * A webhook this daemon made is on the repository.
  */
-hook: boolean, };
+hook: boolean, 
+/**
+ * M172: it's the platform's item, read through Arugula control.
+ */
+pin: ForgePin | null, };
 
 /**
  * A body, a comment, a review's text or a review comment.

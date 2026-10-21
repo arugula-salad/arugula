@@ -38,6 +38,11 @@
 //! ones go there, and the block shows the platform's. Dropping one there
 //! discards it; sending one is the platform's (M168).
 //!
+//! **Pins** (M172, [`pin`]): a GitHub block on a repo linked for its owner
+//! reads the platform's mirror, not GitHub, and keeps `pin: {kind,
+//! global_id}` in its config. Unlinked repos, Forgejo, GitLab and a machine
+//! outside control read as above.
+//!
 //! **The log** (`blocks/%N/`): the timeline's events as JSON lines, and
 //! every write as a command with who did it, so `history` and `search`
 //! find a PR's comments beside the work.
@@ -63,6 +68,7 @@ pub mod live;
 #[cfg(feature = "labs")]
 mod labs_forges;
 pub mod login;
+pub mod pin;
 pub mod platform;
 pub mod shadow;
 // The normalized model (M160: the GitHub crate's, which Forgejo and GitLab
@@ -84,7 +90,8 @@ use arugula_proto::{
     ask::{Ask, AskKind},
     forge::{
         AgentLink, AgentStarted, ChangesAsked, CheckedOut, Diffed, Draft, DraftStatus, Drafted, Drafts, ForgeLive,
-        ForgeState, ForgeWant, ForgeWantKind, NewIssue, RateLimit, Refreshed, Rerun, ReviewEvent, Write, Written,
+        ForgePin, ForgeState, ForgeWant, ForgeWantKind, NewIssue, RateLimit, Refreshed, Rerun, ReviewEvent, Write,
+        Written,
     },
 };
 use futures_util::future::BoxFuture;
@@ -342,6 +349,10 @@ struct Config {
     /// M37: a new issue (`number` 0 until it's on the forge).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     new: Option<NewIssue>,
+    /// M172: the platform's item it's pinned to, on a linked repo: read
+    /// from there after a restart, not from GitHub.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pin: Option<ForgePin>,
 }
 
 /// A draft the platform took (M170): the block's id for it, and the
@@ -350,6 +361,15 @@ struct Config {
 struct Uploaded {
     id: String,
     draft: String,
+}
+
+/// M172: how a pin stands with the platform.
+#[derive(Default)]
+struct Pinned {
+    /// Since when the platform couldn't be reached, while it can't.
+    down_since: Option<std::time::Instant>,
+    /// When to look again for an item the mirror didn't have.
+    look_again: Option<std::time::Instant>,
 }
 
 /// M170: what the block knows of the platform's drafts, on a linked repo.
@@ -392,6 +412,8 @@ pub struct ForgeBlock {
     /// M170: the platform's drafts, and one sync with it at a time.
     platform: Mutex<OnPlatform>,
     syncing: tokio::sync::Mutex<()>,
+    /// M172: the pin's standing.
+    pinned: Mutex<Pinned>,
     restored_mark: i64,
     /// The review gate raised now, for the card that approves it.
     gate: Mutex<Option<Gate>>,
@@ -470,6 +492,7 @@ impl ForgeBlock {
             next_draft: std::sync::atomic::AtomicU64::new(now_ms()),
             platform: Mutex::default(),
             syncing: tokio::sync::Mutex::new(()),
+            pinned: Mutex::default(),
         });
         b.sync_drafts();
         live::register(Arc::downgrade(&b));
@@ -678,6 +701,8 @@ impl ForgeBlock {
         self.raise_draft().await;
         loop {
             let (fast, slow) = intervals();
+            // M172: a pin reads the platform, not GitHub: at half the rate.
+            let fast = if self.state.lock().unwrap().pin.is_some() { fast * 2 } else { fast };
             let wants = self.raised.lock().unwrap().as_ref().is_some_and(|(_, h)| !h.is_empty());
             let (p, host, repo, _) = self.live_key();
             let healthy = live::fresh(&live::key(p, &host, &repo));
@@ -729,6 +754,10 @@ impl ForgeBlock {
         let (repo, number) = self.repo();
         // M37: a new issue isn't on the forge yet: nothing to read.
         if number == 0 {
+            return;
+        }
+        // M172: a linked repo's item is the platform's.
+        if self.read_pinned().await {
             return;
         }
         let a = match self.connect().await {
@@ -1417,6 +1446,155 @@ impl ForgeBlock {
         }
     }
 
+    // ------------------------------------------------------------ pins (M172)
+
+    /// Whether this machine pins blocks: not while it reports its blocks'
+    /// own attention for M171's shadow period, which is held up against
+    /// GitHub's answers, not the mirror's.
+    fn pins() -> bool {
+        shadow::every(std::env::var("ARUGULA_INBOX_SHADOW").ok().as_deref()).is_none()
+    }
+
+    /// Read a block on a linked repo from the platform ([`pin`]'s docs):
+    /// `false` when GitHub's reader reads it instead.
+    async fn read_pinned(&self) -> bool {
+        if !self.on_github() || !Self::pins() {
+            return false;
+        }
+        let (repo, number) = self.repo();
+        let (kind, pinned) = {
+            let c = self.config.lock().unwrap();
+            (c.kind, c.pin.clone())
+        };
+        let link = match platform::link(&repo).await {
+            Ok(Some(l)) => l,
+            Ok(None) => {
+                self.unpin("its repo isn't linked for you in Arugula control");
+                return false;
+            }
+            Err(why) => return self.platform_down(why),
+        };
+        let id = match pinned {
+            Some(p) => p.global_id,
+            None => {
+                if self.pinned.lock().unwrap().look_again.is_some_and(|t| t > std::time::Instant::now()) {
+                    return false;
+                }
+                let found = pin::resolve(&repo, number, kind).await;
+                let id = found.as_ref().ok().cloned().flatten();
+                if id.is_none() {
+                    // Not in the mirror (yet), or no answer: GitHub's for now.
+                    let again = if found.is_ok() { pin::LOOK_AGAIN } else { Duration::from_secs(60) };
+                    self.pinned.lock().unwrap().look_again = Some(std::time::Instant::now() + again);
+                }
+                match id {
+                    Some(id) => id,
+                    None => return false,
+                }
+            }
+        };
+        match pin::read(&id, kind).await {
+            Ok(r) => {
+                self.show_pinned(&link, id, &r).await;
+                true
+            }
+            Err(platform::Failed::NotLinked) => {
+                platform::forget(&repo);
+                self.unpin("Arugula control doesn't have it for you any more");
+                false
+            }
+            Err(platform::Failed::Later(why) | platform::Failed::Refused(why)) => self.platform_down(why),
+        }
+    }
+
+    /// What the platform has, as the block's state.
+    async fn show_pinned(&self, link: &platform::Link, id: String, r: &pin::Read) {
+        let kind = self.config.lock().unwrap().kind;
+        let pin = ForgePin { kind, global_id: id, stale: None };
+        if self.config.lock().unwrap().pin.as_ref() != Some(&pin) {
+            info!(pane = self.ctx.id, item = pin.global_id, "forge block pinned to the platform's item");
+            crate::review::log(&self.ctx, &json!({ "e": "pinned", "item": pin.global_id }));
+            self.config.lock().unwrap().pin = Some(pin.clone());
+        }
+        self.pinned.lock().unwrap().down_since = None;
+        // "You", as the platform knows the owner on GitHub (without teams).
+        if self.you.lock().unwrap().is_none()
+            && let Some(login) = link.login.clone()
+        {
+            self.state.lock().unwrap().me = Some(login.clone());
+            *self.you.lock().unwrap() = Some(Me { login, teams: vec![] });
+        }
+        // GitHub's reader reads whole when it's back.
+        *self.fingerprint.lock().unwrap() = None;
+        let (pr, issue) = match kind {
+            ItemKind::Pr => (Some(pin::pr(r)), None),
+            ItemKind::Issue => (None, Some(pin::issue(r))),
+        };
+        let mark = self.config.lock().unwrap().log_mark;
+        let events = pr.as_ref().map(|p| &p.events).or(issue.as_ref().map(|i| &i.events));
+        let new: Vec<Event> = events.into_iter().flatten().filter(|e| e.at > mark).cloned().collect();
+        self.log_events(&new);
+        let first = {
+            let mut st = self.state.lock().unwrap();
+            let first = st.pr.is_none() && st.issue.is_none();
+            st.loading = false;
+            st.error = None;
+            st.polls += 1;
+            st.reads += 1;
+            st.updated_ms = now_ms();
+            st.read_only = None;
+            st.rate = None;
+            st.rerun = pr.as_ref().and_then(pin::rerun);
+            st.pr = pr;
+            st.issue = issue;
+            st.pin = Some(pin);
+            first
+        };
+        if kind == ItemKind::Issue {
+            let (repo, _) = self.repo();
+            self.find_pinned_pr(link, &repo).await;
+        }
+        self.after_read(first);
+    }
+
+    /// The platform couldn't be reached: a pin shows what it said last,
+    /// marked stale, for [`pin::STALE`]. With nothing of it shown (or after
+    /// that), `false`: GitHub's reader reads it until the platform answers.
+    fn platform_down(&self, why: String) -> bool {
+        let since = *self.pinned.lock().unwrap().down_since.get_or_insert_with(std::time::Instant::now);
+        let mut st = self.state.lock().unwrap();
+        if let Some(p) = st.pin.as_mut()
+            && since.elapsed() < pin::STALE
+        {
+            if p.stale.as_deref() != Some(why.as_str()) {
+                warn!(pane = self.ctx.id, why, "can't read the platform: the block shows what it said last");
+                p.stale = Some(why);
+                drop(st);
+                self.ctx.changed();
+            }
+            return true;
+        }
+        if st.pin.take().is_some() {
+            warn!(pane = self.ctx.id, why, "can't read the platform: reading GitHub until it's back");
+            // Who you are, with your teams, is GitHub's word again.
+            *self.you.lock().unwrap() = None;
+        }
+        false
+    }
+
+    /// The platform says it isn't linked (for the owner) now: the block
+    /// reads GitHub again.
+    fn unpin(&self, why: &str) {
+        let had = self.config.lock().unwrap().pin.take();
+        if self.state.lock().unwrap().pin.take().is_some() {
+            *self.you.lock().unwrap() = None;
+        }
+        if let Some(p) = had {
+            info!(pane = self.ctx.id, item = p.global_id, why, "forge block unpinned: reading GitHub");
+            crate::review::log(&self.ctx, &json!({ "e": "unpinned", "item": p.global_id, "why": why }));
+        }
+    }
+
     // ------------------------------------------------------------ the code
 
     /// Fetch the PR's head into the person's clone and make (or update) a
@@ -1679,6 +1857,12 @@ impl Block for ForgeBlock {
             (None, None, None) => format!("{}#{}\nreading…\n", st.repo, st.number),
         };
         out.push_str(&issue::text(&st));
+        if let Some(p) = &st.pin {
+            out.push_str(&format!("read through Arugula control ({}), not from GitHub\n", p.global_id));
+            if let Some(why) = &p.stale {
+                out.push_str(&format!("as it said last: {why}\n"));
+            }
+        }
         let live = self.standing();
         out.push_str(&match &live.why {
             Some(w) => format!("live: {} ({w})\n", live.live),

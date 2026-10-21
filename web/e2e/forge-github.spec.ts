@@ -93,6 +93,9 @@ test("red check runs on your GitHub PR rerun from the block", async ({ page }) =
   await expect(el.locator("[data-check]")).toHaveCount(11);
   await expect(el.locator('[data-want="failed"]')).toContainText("3 checks failed: build (ubuntu-latest)");
   await expect(el.locator(".forge-meta")).toContainText("as jhgaylor (gh on");
+  // M172: the reader's, not a pin (forge-pin.spec.ts): it says how it polls.
+  await expect(el.locator("[data-forge-pin]")).toHaveCount(0);
+  await expect(el.locator(".forge-polls")).toContainText("polls");
   // On the rail too, with a rerun.
   await expect
     .poll(() => page.evaluate((b) => window.__arugula.client.info(b)?.reason?.actions ?? [], block))

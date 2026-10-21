@@ -56,6 +56,8 @@ mod forge_issues;
 mod forge_labs_off;
 #[cfg(feature = "forge")]
 mod forge_live;
+#[cfg(all(unix, feature = "forge"))]
+mod forge_pins;
 #[cfg(feature = "forge")]
 mod forges_github_real;
 #[cfg(feature = "labs")]

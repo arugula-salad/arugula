@@ -12,6 +12,10 @@
 // draft is answered on the card over the block (the daemon's ask): edit
 // the text and Send, or Drop. Everything drawn comes from the daemon's
 // state, so a shared session's viewers see the same, without the buttons.
+// M172: on a repo linked in Arugula control the block is a pin (`s.pin`):
+// the daemon reads the platform's mirror, not GitHub, and the block looks
+// the same, less what the mirror doesn't keep (the description, comments'
+// text), and says where it's read.
 
 import { render, type ComponentChildren } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
@@ -161,9 +165,16 @@ function Timeline({ events, s }: { events: ForgeEvent[]; s: ForgeState }) {
  * block is narrow). */
 function Cols({ s, body, side }: { s: ForgeState; body: string; side: ComponentChildren[] }) {
   const sides = side.filter(Boolean);
+  const none = s.pin ? (
+    <p class="dim" data-forge-pin-body>
+      The description and comments stay on GitHub: Arugula control keeps who did what, not what they wrote.
+    </p>
+  ) : (
+    <p class="dim">No description.</p>
+  );
   return (
     <div class={sides.length ? "forge-cols forge-two" : "forge-cols"}>
-      <div class="forge-main">{body.trim() ? <Body text={body} s={s} description /> : <p class="dim">No description.</p>}</div>
+      <div class="forge-main">{body.trim() ? <Body text={body} s={s} description /> : none}</div>
       {sides.length > 0 && <div class="forge-side">{sides}</div>}
     </div>
   );
@@ -172,10 +183,16 @@ function Cols({ s, body, side }: { s: ForgeState; body: string; side: ComponentC
 /** The actions, held at the foot of the scrolling body, and the polls line;
  * with no actions the line just ends the body. */
 function Foot({ s, buttons }: { s: ForgeState; buttons: ComponentChildren }) {
-  const polls = (
+  const live = s.live && ` · ${s.live === "webhook" ? `live (${s.live_via === "github-app" ? "GitHub App" : "webhook"})` : "polling"}`;
+  const polls = s.pin ? (
+    <p class="dim ws-note forge-polls" data-forge-live-state data-forge-pin-read title={s.pin.stale ?? s.live_why ?? undefined}>
+      read through Arugula control {ago(s.updated_ms)}
+      {s.pin.stale ? " · can't reach it now: as it said last" : live}
+    </p>
+  ) : (
     <p class="dim ws-note forge-polls" data-forge-live-state title={s.live_why ?? undefined}>
       {s.polls} polls, {s.reads} full reads · read {ago(s.updated_ms)}
-      {s.live && ` · ${s.live === "webhook" ? `live (${s.live_via === "github-app" ? "GitHub App" : "webhook"})` : "polling"}`}
+      {live}
     </p>
   );
   if (!buttons) return polls;
@@ -225,6 +242,16 @@ function Chips({ pr }: { pr: Pr }) {
 }
 
 const linkedState = (st: string) => <span class={`ws-tag forge-state ${st}`}>{st}</span>;
+
+/** M172: the bar's word that the block is the platform's item. */
+function PinTag({ s }: { s: ForgeState }) {
+  if (!s.pin) return null;
+  return (
+    <span class="ws-tag forge-pin" data-forge-pin={s.pin.global_id} title="Read from Arugula control's mirror of this linked repo: this machine doesn't poll GitHub for it">
+      control
+    </span>
+  );
+}
 
 /** M37: an issue, the agent on it, and a new issue's draft. */
 function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState }) {
@@ -279,6 +306,7 @@ function IssueBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeSta
           {it?.title}
         </span>
         {it && <span class={`ws-tag forge-state ${it.state}`} data-issue-state={it.state}>{it.state}</span>}
+        <PinTag s={s} />
         {it && (
           <a class="dim forge-link" href={it.url} target="_blank" rel="noopener">
             open ↗
@@ -682,6 +710,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
           {it?.title}
         </span>
         {state && <span class={`ws-tag forge-state ${state}`} data-pr-state={state}>{state}</span>}
+        <PinTag s={s} />
         {it && (
           <a class="dim forge-link" href={it.url} target="_blank" rel="noopener">
             open ↗
@@ -726,7 +755,7 @@ function PrBlock({ client, id, s }: { client: Client; id: PaneId; s: ForgeState 
             <div class="dim forge-meta">
               {it.author} wants to merge <code>{it.head.repo && it.head.repo !== s.repo ? `${it.head.repo}:` : ""}{it.head.branch}</code> into <code>{it.base.branch}</code>
               {" · "}
-              {s.login && `as ${s.me ?? "?"} (${gitlab ? s.login.replace(/^glab:/, "glab, ") : s.provider === "github" ? `gh on ${s.login}` : `tea login ${s.login}`})`}
+              {s.pin ? `as ${s.me ?? "?"} on GitHub` : s.login && `as ${s.me ?? "?"} (${gitlab ? s.login.replace(/^glab:/, "glab, ") : s.provider === "github" ? `gh on ${s.login}` : `tea login ${s.login}`})`}
               {!s.login && s.read_only && "anonymously, read-only"}
               {it.labels.length > 0 && " · "}
               {it.labels.map((l) => (
