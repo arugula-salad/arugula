@@ -38,8 +38,8 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-19"
 reviews: []
 constrains:
-  - "path:crates/control/src/chat.rs"
-  - "path:crates/control/src/db/chat.rs"
+  - "path:crates/platform/src/chat.rs"
+  - "path:crates/platform/src/db/chat.rs"
   - "path:crates/control-wire/src/chat.rs"
   - "path:crates/daemon/src/chat_import.rs"
   - "path:crates/mux/src/mux/chat_readers.rs"
@@ -57,7 +57,13 @@ A team's channels belong to its default project ("The project is the unit
 of platform sharing"); DMs and pane or session threads belong to no project.
 Within control, chat is the platform process's ("Control is two processes: a
 hub and a platform", #1150, M138); push stays the hub's, and the platform
-asks it through `HubPort`. Control numbers messages per
+asks it through `HubPort` (`push_with`, to every subscription the account
+has, as chat's pushes always went). Who is in which team, which machine is
+whose and who may reach it come from the hub too, kept by the platform and
+dropped as the hub's change feed names them: a roster, lock, machine,
+share or flag change reaches chat within a feed tick plus a cache tick
+(`arugula_platform::cache::DELAY`, 11 s at most, about a second in
+practice). Control numbers messages per
 room, keeps read marks, resolves mentions against who sees the room, pushes
 (who, where and the first 200 characters), searches with SQLite FTS5, and
 tells open pages over one Server-Sent Events stream each (`Last-Event-ID`
@@ -76,7 +82,7 @@ Agents aren't in chat (M121); a machine with no control has no chat
 (decision 7): since M125 no daemon keeps threads, and a page without
 control's chat (a machine's own page, or control's flag off) shows a Chat
 page that says chat needs control, when the machine's own `chat` flag is on.
-Where: `crates/control/src/chat.rs`, `crates/control/src/db/chat.rs`, `crates/control-wire/src/chat.rs`.
+Where: `crates/platform/src/chat.rs`, `crates/platform/src/db/chat.rs`, `crates/platform/src/cache.rs`, `crates/control-wire/src/chat.rs`.
 From: [S41](spikes/s41-chat-in-control/README.md) (decisions 1–10, all as recommended), M122 (#1096).
 
 The daemon kept its own pane and session threads (M61) and its M81
@@ -101,7 +107,7 @@ to bring its threads into chat". The import stays after the store went
 (decision 9): it reads the old files from disk itself, so a machine that
 skips the release with the import still brings its threads in, and one not
 in control leaves them on disk, unread. Where: `crates/daemon/src/chat_import.rs`,
-`crates/mux/src/mux/chat_readers.rs`, `chat::daemon_import` in control.
+`crates/mux/src/mux/chat_readers.rs`, `chat::daemon_import` in the platform.
 
 A conversation (#855, until M125) was a third kind of thread beside them, not
 a pane or session thread moved. It had a global id (`ConvId`, `c-` and 32

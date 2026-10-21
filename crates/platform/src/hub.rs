@@ -91,6 +91,16 @@ pub trait HubPort: Send + Sync {
     /// push services' answers.
     fn push<'a>(&'a self, account: &'a str, message: &'a serde_json::Value) -> BoxFuture<'a, HubResult<Pushed>>;
 
+    /// [`push`](HubPort::push), with how long a push service keeps it for
+    /// a device that's away, and which subscriptions it goes to (M138).
+    /// `push_with(a, m, PushOptions::default())` is `push(a, m)`.
+    fn push_with<'a>(
+        &'a self,
+        account: &'a str,
+        message: &'a serde_json::Value,
+        options: PushOptions,
+    ) -> BoxFuture<'a, HubResult<Pushed>>;
+
     /// The Labs flags each owner set (`account:ID` or `team:ID`), by owner
     /// and then by name. An owner that set none is left out.
     fn labs_flags<'a>(&'a self, owners: &'a [String]) -> BoxFuture<'a, HubResult<BTreeMap<String, Flags>>>;
@@ -121,6 +131,47 @@ pub trait HubPort: Send + Sync {
     /// an account gets one, in the join's own transaction, so grants stay in
     /// the hub until they move to the platform with projects.
     fn can_drive_cloud<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, HubResult<bool>>;
+
+    /// The team's default project (M129), which its chat channels belong
+    /// to: made if it has none yet, the same one every time after. `None`
+    /// when there's no such team (M138). Projects stay in the hub until
+    /// they move to the platform.
+    fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>>;
+}
+
+/// How a push goes ([`HubPort::push_with`]). The default is what
+/// [`HubPort::push`] does.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PushOptions {
+    /// How long a push service keeps it for a device that's away (its
+    /// `TTL`, at most a day): `None` is the hub's own, an hour. Cloud's
+    /// approvals keep five minutes.
+    #[serde(default, with = "secs")]
+    pub ttl: Option<std::time::Duration>,
+    /// Every push subscription the account has, as control's own notices
+    /// go, rather than only those signed by one of its approved devices
+    /// that isn't revoked. Chat's pushes go this way, as they always have
+    /// (M122).
+    #[serde(default)]
+    pub any_subscription: bool,
+}
+
+/// A TTL on the wire: whole seconds.
+mod secs {
+    use std::time::Duration;
+
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(d: &Option<Duration>, s: S) -> Result<S::Ok, S::Error> {
+        match d {
+            Some(d) => s.serialize_some(&d.as_secs()),
+            None => s.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
+        Ok(Option::<u64>::deserialize(d)?.map(Duration::from_secs))
+    }
 }
 
 /// An account, with its names.
@@ -327,6 +378,14 @@ mod tests {
         }
         assert_eq!(serde_json::from_str::<ChangeKind>("\"team.renamed\"").unwrap(), ChangeKind::Unknown);
         assert_eq!(ChangeKind::parse("team.renamed"), ChangeKind::Unknown);
+    }
+
+    #[test]
+    fn push_options_on_the_wire() {
+        let o = PushOptions { ttl: Some(std::time::Duration::from_secs(300)), any_subscription: true };
+        assert_eq!(serde_json::to_value(o).unwrap(), serde_json::json!({ "ttl": 300, "any_subscription": true }));
+        assert_eq!(serde_json::from_str::<PushOptions>("{}").unwrap(), PushOptions::default());
+        assert_eq!(serde_json::from_value::<PushOptions>(serde_json::to_value(o).unwrap()).unwrap(), o);
     }
 
     #[test]

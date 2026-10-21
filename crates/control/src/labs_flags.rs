@@ -118,9 +118,9 @@ pub async fn set(State(app): State<Arc<App>>, s: Session, Json(b): Json<Set>) ->
         return Err(err(StatusCode::BAD_REQUEST, "too many flags"));
     }
     if app.db.set_labs_flag(&owner, &b.name, b.on)? {
+        // Control's own chat is behind its `chat` flag (M122): the platform
+        // hears of it from the change feed.
         app.relay.nudge(&daemons);
-        // Control's own chat is behind its `chat` flag (M122).
-        app.chat.changed();
     }
     let props = json!({ "flag": b.name, "on": b.on });
     match &b.team {

@@ -5,9 +5,10 @@
 //! [`HubPort`](crate::HubPort), so a query here that names one fails in
 //! the platform's tests, whose database is its own.
 //!
-//! Each feature brings its own tables and queries as it moves in (Cloud's
-//! in [`cloud`], M137; chat's from `db/chat.rs`), and flips their
-//! `process` in `crates/control/tables.toml` to `platform`.
+//! Each feature brings its own tables and queries as it moves in (billing's
+//! in [`billing`], M139; Cloud's in [`cloud`], M137; chat's in [`chat`],
+//! M138), and flips their `process` in `crates/control/tables.toml` to
+//! `platform`.
 
 use std::{
     path::Path,
@@ -18,6 +19,7 @@ use arugula_control_common::sqlite;
 use rusqlite::Connection;
 
 pub mod billing;
+pub mod chat;
 pub mod cloud;
 
 pub struct Db {
@@ -25,7 +27,7 @@ pub struct Db {
 }
 
 /// The platform's tables, made if they aren't there: each feature's own.
-const SCHEMA: &[&str] = &[billing::SCHEMA, cloud::SCHEMA];
+const SCHEMA: &[&str] = &[billing::SCHEMA, chat::SCHEMA, cloud::SCHEMA];
 
 impl Db {
     /// The database at `path`: in process, the hub's file.
@@ -34,6 +36,7 @@ impl Db {
         for schema in SCHEMA {
             conn.execute_batch(schema)?;
         }
+        chat::migrate(&conn)?;
         cloud::migrate(&conn)?;
         Ok(Self { conn: Mutex::new(conn) })
     }
@@ -45,12 +48,70 @@ impl Db {
         for schema in SCHEMA {
             conn.execute_batch(schema).expect("the platform's schema");
         }
+        chat::migrate(&conn).expect("the platform's schema");
         cloud::migrate(&conn).expect("the platform's schema");
         Self { conn: Mutex::new(conn) }
     }
 
     pub fn c(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().unwrap()
+    }
+
+    /// Every column of every table here that has `needle` in it, as
+    /// `table.column` (tests: nothing of a deleted account is left).
+    #[cfg(any(test, feature = "contract"))]
+    pub fn mentions(&self, needle: &str) -> Vec<String> {
+        let c = self.c();
+        let tables: Vec<String> = c
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let mut out = Vec::new();
+        for t in tables {
+            let cols: Vec<String> = c
+                .prepare(&format!("PRAGMA table_info({t})"))
+                .unwrap()
+                .query_map([], |r| r.get(1))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            for col in cols {
+                let n: u64 = c
+                    .query_row(
+                        &format!("SELECT COUNT(*) FROM {t} WHERE CAST({col} AS TEXT) LIKE '%' || ?1 || '%'"),
+                        [needle],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                if n > 0 {
+                    out.push(format!("{t}.{col}"));
+                }
+            }
+        }
+        out
+    }
+}
+
+/// A row that's already there (a unique key), as opposed to anything else
+/// going wrong.
+#[derive(Debug)]
+pub struct Taken;
+
+impl std::fmt::Display for Taken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("already there")
+    }
+}
+
+impl std::error::Error for Taken {}
+
+fn taken(e: rusqlite::Error) -> anyhow::Error {
+    match e {
+        rusqlite::Error::SqliteFailure(f, _) if f.code == rusqlite::ErrorCode::ConstraintViolation => Taken.into(),
+        e => e.into(),
     }
 }
 

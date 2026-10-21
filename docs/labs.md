@@ -165,7 +165,8 @@ text"): a team's channels and DMs, and a thread about each pane and each
 session, held by control so they work with every machine asleep. It's
 behind control's own `chat` flag, the account's or a team's
 (`POST /api/flags`); the API is under `/api/chat`
-(`crates/control/src/chat.rs`), and the page reads it in
+(`crates/platform/src/chat.rs`, control's platform since M138), and the
+page reads it in
 `web/src/chat-store.ts`, `web/src/ui/chat-rooms.tsx` and
 `web/src/ui/room.tsx`.
 

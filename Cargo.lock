@@ -322,6 +322,7 @@ dependencies = [
  "anyhow",
  "arugula-cloud-wire",
  "arugula-control-common",
+ "arugula-control-wire",
  "arugula-e2e",
  "axum",
  "chacha20poly1305",

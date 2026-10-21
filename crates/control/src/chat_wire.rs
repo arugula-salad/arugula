@@ -1,6 +1,10 @@
 //! Chat held by control (M122), over HTTP as pages and machines use it,
 //! with no daemon running: S41's flow, then who sees what, mentions,
-//! pushes, search, read marks, the live stream, and deletion.
+//! pushes, search, read marks, the live stream, and deletion. Chat is the
+//! platform's (M138): these go through the hub's gate to it, and it asks
+//! the hub through the in-process `HubPort`. What a test changes in the hub
+//! directly reaches chat through the change feed: [`Rig::settle`] reads it,
+//! as the platform's next feed tick would.
 
 use std::time::Duration;
 
@@ -180,6 +184,12 @@ impl Rig {
     async fn readers(&self, machine: &DeviceKeys, body: Value) -> (u16, Value) {
         self.c.daemon_post(machine, arugula_control_wire::chat::CHAT_READERS, &body).await
     }
+
+    /// What the test changed in the hub reaches chat: the platform reads the
+    /// change feed now, as its next tick would.
+    async fn settle(&self) {
+        arugula_platform::cache::catch_up(&self.c.app.platform).await.unwrap();
+    }
 }
 
 #[tokio::test]
@@ -204,6 +214,7 @@ async fn the_spike_flow_runs_with_every_machine_asleep() {
     let (st, v) = r.call(&r.sam, "GET", "/api/chat", None).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some("chat_off")));
     r.c.app.db.set_labs_flag("account:a3sam", "chat", Some(true)).unwrap();
+    r.settle().await;
     assert!(r.rooms(&r.sam).await.is_empty());
 
     let mut alex_live = Live::open(&r.c, &r.alex, None).await;
@@ -423,6 +434,7 @@ async fn reader_lists_decide_who_reads_a_panes_thread() {
     // A list names only accounts control would route there anyway: sam,
     // in no team with box-a, isn't let in by being listed.
     r.c.app.db.set_labs_flag("account:a3sam", "chat", Some(true)).unwrap();
+    r.settle().await;
     r.readers(
         &r.box_a,
         json!({ "targets": [{ "kind": "session", "target": "1", "readers": [{ "account": "a3sam" }] }] }),
@@ -438,6 +450,7 @@ async fn reader_lists_decide_who_reads_a_panes_thread() {
     // A machine whose account and team have chat off isn't heard.
     let sams_box = daemon(&r.c.app, "a3sam", "sams-box");
     r.c.app.db.set_labs_flag("account:a3sam", "chat", Some(false)).unwrap();
+    r.settle().await;
     let (st, v) = r.readers(&sams_box, json!({ "targets": [] })).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some("chat_off")));
     let _ = &r.carol_keys;
@@ -506,6 +519,7 @@ async fn leaving_the_team_and_deleting_the_account_take_its_chat() {
     );
     r.c.app.db.add_roster(TEAM, 2, &serde_json::to_string(&v2).unwrap()).unwrap();
     r.c.app.db.set_labs_flag("account:a2alex", "chat", Some(true)).unwrap();
+    r.settle().await;
     assert_eq!(r.call(&r.alex, "GET", &format!("/api/chat/rooms/{dm}"), None).await.0, 404);
     assert_eq!(r.call(&r.alex, "GET", &format!("/api/chat/rooms/{general}"), None).await.0, 404);
     assert_eq!(r.room_in_list(&r.jake, &dm).await["writable"], false);
@@ -519,8 +533,9 @@ async fn leaving_the_team_and_deleting_the_account_take_its_chat() {
     // his messages elsewhere are blank and nobody's.
     let (st, v) = r.call(&r.alex, "POST", "/api/me/delete", Some(json!({ "confirm": "alex" }))).await;
     assert_eq!(st, 200, "{v}");
-    assert!(r.c.app.db.chat_room(&dm).unwrap().is_none());
-    assert!(r.c.app.db.chat_room(&bth).unwrap().is_none());
+    let chat = &r.c.app.platform.db;
+    assert!(chat.chat_room(&dm).unwrap().is_none());
+    assert!(chat.chat_room(&bth).unwrap().is_none());
     let ms = r.messages(&r.jake, &general).await;
     assert_eq!(
         (ms[0]["author"].as_str(), ms[0]["name"].as_str(), ms[0]["text"].as_str(), ms[0]["deleted"].is_u64()),
@@ -528,8 +543,55 @@ async fn leaving_the_team_and_deleting_the_account_take_its_chat() {
     );
     assert_eq!(ms[1]["mentions"], json!([]));
     assert_eq!(r.search(&r.jake, "quoted").await, []);
-    let left: Vec<String> = r.c.app.db.mentions("a2alex").into_iter().filter(|t| t.starts_with("chat")).collect();
+    let left = chat.mentions("a2alex");
     assert!(left.is_empty(), "{left:?}");
+    assert!(chat.mentions(&r.box_b.id()).is_empty(), "nor of its machine");
+}
+
+/// A roster change reaches chat within the delay the docs give
+/// (`arugula_platform::cache::DELAY`: a feed tick plus a cache tick),
+/// carried by nothing but the platform's own feed tick: jake takes alex out
+/// of acme through the roster's route, and #general goes for alex.
+#[tokio::test]
+async fn a_roster_change_reaches_chat_within_the_documented_delay() {
+    use arugula_platform::cache::{CACHE_TICK, DELAY};
+    let r = rig().await;
+    arugula_platform::chat::start(&r.c.app.platform);
+    let general = r.channel(&r.jake, "general").await;
+    // Chat stays on for alex out of acme; he has #general, and chat keeps
+    // what the hub said of acme.
+    r.c.app.db.set_labs_flag("account:a2alex", "chat", Some(true)).unwrap();
+    r.settle().await;
+    let room = format!("/api/chat/rooms/{general}");
+    assert_eq!(r.call(&r.alex, "GET", &room, None).await.0, 200);
+
+    let v2 = roster(
+        TEAM,
+        2,
+        vec![member("a1jake", &r.jake_keys, TeamRole::Owner), member("a4carol", &r.carol_keys, TeamRole::Viewer)],
+        &r.jake_keys,
+    );
+    let (st, v) = r.call(&r.jake, "POST", &format!("/api/teams/{TEAM}/roster"), Some(json!({ "roster": v2 }))).await;
+    assert_eq!(st, 200, "{v}");
+    let changed = std::time::Instant::now();
+    loop {
+        let st = r.call(&r.alex, "GET", &room, None).await.0;
+        if st == 404 {
+            break;
+        }
+        assert_eq!(st, 200);
+        assert!(
+            changed.elapsed() <= DELAY,
+            "alex still sees #general {:?} after the roster changed",
+            changed.elapsed()
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let took = changed.elapsed();
+    eprintln!("a roster change reached chat in {took:?} (documented: at most {DELAY:?})");
+    assert!(took <= DELAY, "{took:?}");
+    // The feed carried it, not the cache running out.
+    assert!(took < CACHE_TICK, "{took:?}");
 }
 
 /// A message as a machine kept it, for an import.
@@ -661,6 +723,7 @@ async fn a_machines_old_threads_come_in_once_with_their_numbers_authors_and_quot
         r.call(&r.alex, "POST", &format!("/api/chat/rooms/{ar}/messages"), Some(json!({ "text": "hi" }))).await;
     assert_eq!(st, 409);
     r.c.app.db.set_labs_flag("account:a3sam", "chat", Some(true)).unwrap();
+    r.settle().await;
     assert_eq!(r.call(&r.sam, "GET", &format!("/api/chat/rooms/{ar}"), None).await.0, 404);
 
     // Sent again: nothing new. A later part of a thread lands after the
@@ -678,6 +741,7 @@ async fn a_machines_old_threads_come_in_once_with_their_numbers_authors_and_quot
     // A machine with chat off isn't heard; nor is a target that isn't one.
     let sams_box = daemon(&r.c.app, "a3sam", "sams-box");
     r.c.app.db.set_labs_flag("account:a3sam", "chat", Some(false)).unwrap();
+    r.settle().await;
     let (st, v) = r.import(&sams_box, &body).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some("chat_off")));
     let bad = json!({ "threads": [{ "kind": "pane", "target": "two words", "messages": [] }] });
@@ -701,6 +765,7 @@ async fn controls_page_says_which_machines_to_update_for_chat() {
     // Only with chat on.
     r.c.app.db.set_daemon_features(&r.box_a.id(), "").unwrap();
     r.c.app.db.set_labs_flag(&format!("team:{TEAM}"), "chat", Some(false)).unwrap();
+    r.settle().await;
     let dir = r.ok(&r.jake, "GET", "/api/directory", None).await;
     assert_eq!(update(&dir, &r.box_a.id()), None);
 }

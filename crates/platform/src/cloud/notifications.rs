@@ -1,9 +1,9 @@
 //! Durable, at-least-once Web Push for cloud approvals. Repeated deliveries
 //! use the same notification tag. Cloud payloads are distinct from opaque
 //! terminal notifications and contain no prompt or secret values.
-use crate::Platform;
 #[cfg(test)]
 use crate::hub::Pushed;
+use crate::{Platform, hub::PushOptions};
 use anyhow::Result;
 use std::sync::Arc;
 
@@ -18,7 +18,11 @@ pub fn start(app: Arc<Platform>) {
     });
 }
 
-/// Each approval push still to send, through the hub (`HubPort::push`,
+/// How long a push service keeps an approval for a device that's away:
+/// five minutes, as Cloud's own pushes did before the hub sent them.
+const APPROVAL: PushOptions = PushOptions { ttl: Some(std::time::Duration::from_secs(300)), any_subscription: false };
+
+/// Each approval push still to send, through the hub (`HubPort::push_with`,
 /// which holds the VAPID key and the subscriptions): delivered once no
 /// push service failed it, else tried again in 30 s.
 async fn tick(app: &Platform) -> Result<()> {
@@ -31,7 +35,7 @@ async fn tick_at(app: &Platform, now: u64) -> Result<()> {
             Some(cloud_workspace) => Target::Tab { cloud_workspace, tab: &n.conversation },
             None => Target::Run(&n.conversation),
         };
-        let delivered = match app.hub.push(&n.account, &payload(target)).await {
+        let delivered = match app.hub.push_with(&n.account, &payload(target), APPROVAL).await {
             Ok(pushed) => pushed.failed == 0,
             Err(error) => {
                 tracing::warn!(%error, "the hub didn't push a cloud approval");
@@ -101,6 +105,7 @@ mod tests {
         assert_eq!(pushes(), 2, "delivered");
         let (to, said) = hub.pushes.lock().unwrap()[0].clone();
         assert_eq!(to, "a");
+        assert_eq!(*hub.options.lock().unwrap(), [APPROVAL; 2], "five minutes, to approved devices only");
         assert_eq!(said, payload(Target::Run(&run.id)));
         assert!(!said.to_string().contains("secret prompt") && !said.to_string().contains("allow?"));
         assert_eq!(

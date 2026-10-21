@@ -204,7 +204,7 @@ path = "/api/me/delete"
 process = "hub"
 auth = "session"
 clients = ["page"]
-note = "Hub, as identity is, but it deletes platform rows too (Cloud workspaces, chat, billing): once they move, the hub has to ask the platform."
+note = "Hub, as identity is; the platform's rows (Cloud workspaces, chat, billing) go after, through PlatformPort::account_deleted."
 
 [[route]]
 method = "POST"

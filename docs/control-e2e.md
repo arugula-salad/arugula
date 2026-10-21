@@ -984,6 +984,13 @@ sleeps, and control pushes and searches them itself.
 - **Live:** `GET /api/chat/live`, Server-Sent Events over HTTP with the
   session cookie, not the relay: chat isn't relay traffic, and works with no
   machine up.
+- **When a roster changes:** chat is control's platform process (M138), and
+  learns who is in which team, which machine is whose, who may reach it and
+  which flags are on from the hub, keeping the answers until the hub's
+  change feed names them. A roster, lock, machine, share or flag change
+  reaches who sees what within a feed tick plus a cache tick (1 s + 10 s:
+  11 s at most, about a second in practice, `arugula_platform::cache`).
+  Deleting an account reaches it at once.
 - **Kept until deleted** (S41 decision 6): an author or an owner deletes a
   message; deleting an account deletes its DMs and its machines' threads
   and blanks its messages elsewhere; a disbanded team's rooms go with it.

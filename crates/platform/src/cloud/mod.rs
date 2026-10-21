@@ -466,7 +466,9 @@ pub(crate) mod tests {
     use super::*;
 
     use crate::auth::{Asked, Credential};
-    use crate::hub::{Account, ChangePage, Daemon, Flags, HubPort, HubResult, Meter, Pushed, Resolved, Team};
+    use crate::hub::{
+        Account, ChangePage, Daemon, Flags, HubPort, HubResult, Meter, PushOptions, Pushed, Resolved, Team,
+    };
     use futures_util::future::BoxFuture;
     use std::{
         collections::{BTreeMap, BTreeSet},
@@ -484,8 +486,9 @@ pub(crate) mod tests {
         pub daemons: Mutex<BTreeMap<String, (String, String)>>,
         /// Machines whose grant was revoked.
         pub revoked: Mutex<BTreeSet<String>>,
-        /// What each push said, to whom.
+        /// What each push said, to whom, and how it was to go.
         pub pushes: Mutex<Vec<(String, Value)>>,
+        pub options: Mutex<Vec<PushOptions>>,
         /// How every push goes.
         pub pushed: Mutex<Pushed>,
     }
@@ -497,6 +500,7 @@ pub(crate) mod tests {
                 daemons: Default::default(),
                 revoked: Default::default(),
                 pushes: Default::default(),
+                options: Default::default(),
                 pushed: Mutex::new(Pushed { sent: 1, gone: 0, failed: 0 }),
             }
         }
@@ -555,7 +559,16 @@ pub(crate) mod tests {
             done(vec![])
         }
         fn push<'a>(&'a self, account: &'a str, message: &'a Value) -> BoxFuture<'a, HubResult<Pushed>> {
+            self.push_with(account, message, PushOptions::default())
+        }
+        fn push_with<'a>(
+            &'a self,
+            account: &'a str,
+            message: &'a Value,
+            options: PushOptions,
+        ) -> BoxFuture<'a, HubResult<Pushed>> {
             self.pushes.lock().unwrap().push((account.into(), message.clone()));
+            self.options.lock().unwrap().push(options);
             done(*self.pushed.lock().unwrap())
         }
         fn labs_flags<'a>(&'a self, _: &'a [String]) -> BoxFuture<'a, HubResult<BTreeMap<String, Flags>>> {
@@ -577,6 +590,9 @@ pub(crate) mod tests {
         fn can_drive_cloud<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, HubResult<bool>> {
             let mine = self.daemons.lock().unwrap().get(daemon).is_some_and(|(a, _)| a == account);
             done(mine && !self.revoked.lock().unwrap().contains(daemon))
+        }
+        fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+            done(Some(format!("prj_{team}")))
         }
     }
 

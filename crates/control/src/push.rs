@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use arugula_control_wire::{PushAnswer, PushRequest, PushSubs};
 use arugula_e2e::{now_ms, push::PushSub};
-use arugula_platform::hub::Pushed;
+use arugula_platform::hub::{PushOptions, Pushed};
 use axum::{Json, extract::State, http::StatusCode};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use p256::{
@@ -255,19 +255,26 @@ async fn send_own(app: &App, sub: &PushSub, msg: &[u8]) -> Result<(), ApiError> 
     Ok(())
 }
 
-/// Push `msg` to an account's devices for the platform (`HubPort::push`):
-/// each subscription signed by one of its approved devices that isn't
-/// revoked, encrypted here as control's own notices are. Waits for each
-/// push service, and says what they did.
-pub(crate) async fn push_account(app: &App, account: &str, msg: &[u8]) -> anyhow::Result<Pushed> {
+/// Push `msg` to an account's devices for the platform (`HubPort::push`,
+/// `HubPort::push_with`): each subscription signed by one of its approved
+/// devices that isn't revoked, or with `any_subscription` every one it has
+/// (as [`notify_with`] does, for chat's pushes), encrypted here as control's
+/// own notices are, kept by a push service for `ttl` (an hour by default).
+/// Waits for each push service, and says what they did.
+pub(crate) async fn push_account(app: &App, account: &str, msg: &[u8], options: PushOptions) -> anyhow::Result<Pushed> {
     let revoked: std::collections::HashSet<String> =
         app.db.revocations(account)?.into_iter().map(|r| r.device).collect();
+    let ttl = options.ttl.map_or(HOUR, |t| u32::try_from(t.as_secs()).unwrap_or(u32::MAX));
     let mut out = Pushed::default();
     for value in app.db.push_subs(account)? {
         let Ok(sub) = serde_json::from_value::<PushSub>(value) else { continue };
-        let Some((cert, true)) = app.db.device(account, &sub.device)? else { continue };
-        if !sub.signed_by(&cert) || revoked.contains(&sub.device) || !allowed_endpoint(app, &sub.endpoint) {
-            continue;
+        // Every one, as `notify_with` sends them: each was checked when it
+        // was stored (`subscribe`).
+        if !options.any_subscription {
+            let Some((cert, true)) = app.db.device(account, &sub.device)? else { continue };
+            if !sub.signed_by(&cert) || revoked.contains(&sub.device) || !allowed_endpoint(app, &sub.endpoint) {
+                continue;
+            }
         }
         let sent = async {
             app.limits.check_all(crate::limit::PUSHES)?;
@@ -276,7 +283,7 @@ pub(crate) async fn push_account(app: &App, account: &str, msg: &[u8]) -> anyhow
             let body =
                 arugula_e2e::push::encrypt(msg, &ua, &auth, &arugula_e2e::push::ephemeral(), &arugula_e2e::random())
                     .map_err(|e| err(StatusCode::BAD_REQUEST, &e.to_string()))?;
-            post(app, &sub.endpoint, body, HOUR, Some("high")).await
+            post(app, &sub.endpoint, body, ttl, Some("high")).await
         };
         match sent.await {
             Ok(404 | 410) => out.gone += 1,

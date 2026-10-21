@@ -86,10 +86,10 @@ const ATTACHED: [&str; 3] = ["cloud_workspaces", "chat_rooms", "cloud_secrets"];
 /// channels the right one. Runs on every start; with nothing to do, it
 /// changes nothing.
 ///
-/// Cloud's tables are the platform's (M137), made by its own connection
-/// after this one: a table that isn't there yet (a fresh database) is
-/// skipped, and the platform gives each new row its project itself
-/// (`HubPort::personal_project`).
+/// Cloud's and chat's tables are the platform's (M137, M138), made by its
+/// own connection after this one: a table that isn't there yet (a fresh
+/// database) is skipped, and the platform gives each new row its project
+/// itself (`HubPort::personal_project`, `HubPort::team_project`).
 pub(super) fn migrate(conn: &Connection, now: u64) -> rusqlite::Result<()> {
     let mut attached = Vec::new();
     for table in ATTACHED {
@@ -280,6 +280,21 @@ impl Db {
             return Ok(None);
         }
         let id = personal_project(&tx, account, now)?;
+        tx.commit()?;
+        Ok(Some(id))
+    }
+
+    /// A team's default project, made now if it has none: what its chat
+    /// channels belong to, for the platform (`HubPort::team_project`,
+    /// M138). `None`: no such team.
+    pub fn team_project(&self, team: &str, now: u64) -> anyhow::Result<Option<String>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let there: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM teams WHERE id = ?1)", [team], |r| r.get(0))?;
+        if !there {
+            return Ok(None);
+        }
+        let id = team_project(&tx, team, now)?;
         tx.commit()?;
         Ok(Some(id))
     }
@@ -582,7 +597,7 @@ mod tests {
 
     #[test]
     fn new_rows_get_a_project_and_the_projection_follows_rosters() {
-        use crate::db::{Team, chat::Room};
+        use crate::db::Team;
         let db = Db::memory();
         for a in ["alice", "bob"] {
             db.account_for("test", a, a, a, 1).unwrap();
@@ -615,25 +630,13 @@ mod tests {
         db.add_roster("t1", 3, &members(&[("bob", "owner")])).unwrap();
         assert_eq!(projected(), ["bob owner 3"]);
 
-        // The team got its default project when it was made.
+        // The team got its default project when it was made: what its chat
+        // channels go to (through `HubPort::team_project`).
         let team_project = super::team_project(&db.c(), "t1", 2).unwrap();
         assert_eq!(count(&db.c(), "SELECT count(*) FROM projects WHERE team_id = 't1'"), 1);
-        let room = |id: &str, scope: &str, kind: &str| Room {
-            id: id.into(),
-            scope: scope.into(),
-            kind: kind.into(),
-            name: id.into(),
-            machine: None,
-            target: None,
-            created_by: "alice".into(),
-            created: 1,
-            archived: None,
-            last_seq: 0,
-        };
-        db.add_chat_room(&room("c1", "team:t1", "channel"), &[]).unwrap();
-        db.add_chat_room(&room("d1", "team:t1", "dm"), &["alice", "bob"]).unwrap();
-        let rooms = dump(&db.c(), "SELECT id, project_id FROM chat_rooms ORDER BY id");
-        assert_eq!(rooms, [vec![Some("c1".into()), Some(team_project)], vec![Some("d1".into()), None]]);
+        assert_eq!(db.team_project("t1", 3).unwrap(), Some(team_project));
+        assert_eq!(count(&db.c(), "SELECT count(*) FROM projects WHERE team_id = 't1'"), 1);
+        assert_eq!(db.team_project("t-none", 3).unwrap(), None, "no such team");
 
         // An account's personal project (what its Cloud workspaces and
         // secrets go to, through `HubPort::personal_project`) is made once,

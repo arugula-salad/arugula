@@ -7,10 +7,11 @@ because the relay stays in the hub (`arugula-control`), which is also the
 gateway for every platform path.
 
 Today it runs inside the hub's process. Billing has moved in (M139:
-`src/billing.rs`, its tables in `src/db/billing.rs`), and so has Cloud
+`src/billing.rs`, its tables in `src/db/billing.rs`), and so have Cloud
 (M137: `src/cloud/`, its tables in `src/db/cloud.rs`, its flags in
-`cloud::Args`, its API types in `arugula-cloud-wire`); chat (M138) follows,
-into `src/chat.rs`. M140 runs it as its own process behind the hub.
+`cloud::Args`, its API types in `arugula-cloud-wire`) and chat (M138:
+`src/chat.rs`, its tables in `src/db/chat.rs`, its API types in
+`arugula-control-wire`). M140 runs it as its own process behind the hub.
 
 Start with `src/lib.rs`, then:
 - `src/hub.rs`: `HubPort`, everything the platform asks the hub, and the
@@ -20,9 +21,11 @@ Start with `src/lib.rs`, then:
   that answer as control's `Session` and `DaemonAuth` do.
 - `src/db.rs`: its own database handle (in process, a second connection to
   the hub's file).
+- `src/cache.rs`: the hub's answers chat asks for, kept and dropped as the
+  hub's change feed names them (a feed tick plus a cache tick, `DELAY`).
 - `src/router.rs`: its routes, which the hub mounts.
 - `src/contract.rs` (feature `contract`): the tests every `HubPort` passes.
   Control runs them against its in-process port (`hub_port.rs`).
 
-Depends on `arugula-control-common`, `arugula-cloud-wire` and
-`arugula-e2e`, never on `arugula-control`.
+Depends on `arugula-control-common`, `arugula-cloud-wire`,
+`arugula-control-wire` and `arugula-e2e`, never on `arugula-control`.

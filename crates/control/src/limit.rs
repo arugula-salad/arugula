@@ -50,15 +50,3 @@ pub const INSTALL_REPORTS: (&str, usize) = ("install-report", 30);
 /// Control's page's reports (M104), per account: one a minute from each
 /// open page, and one as it closes, so a few tabs' worth.
 pub const PAGE_REPORTS: (&str, usize) = ("page-report", 300);
-/// Chat (M122). Posts are counted per minute ([`Limits::check_account_per_minute`]):
-/// one account's, and everyone's together, a brake on the database.
-pub const CHAT_POSTS: (&str, usize) = ("chat-post", 60);
-pub const ALL_CHAT_POSTS: (&str, usize) = ("chat-post-all", 6_000);
-/// Channels, DMs and pane threads made, per account, per hour.
-pub const CHAT_ROOMS: (&str, usize) = ("chat-room", 120);
-/// Searches, per account, per hour.
-pub const CHAT_SEARCHES: (&str, usize) = ("chat-search", 600);
-/// Reader lists a daemon sends, per hour.
-pub const CHAT_READERS: (&str, usize) = ("chat-readers", 600);
-/// Imports of a machine's old threads (M124), per hour: a big one comes in parts.
-pub const CHAT_IMPORTS: (&str, usize) = ("chat-imports", 120);

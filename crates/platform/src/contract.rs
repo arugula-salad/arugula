@@ -12,7 +12,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use arugula_control_common::Principal;
 use arugula_e2e::team::TeamRole;
 
-use crate::hub::{Account, Change, ChangeKind, Daemon, HubPort, Meter, Pushed};
+use crate::hub::{Account, Change, ChangeKind, Daemon, HubPort, Meter, PushOptions, Pushed};
 
 /// The hub behind a port, seeded the way the hub writes it.
 pub trait Fixture: Send + Sync {
@@ -53,6 +53,11 @@ pub trait Fixture: Send + Sync {
     fn subscribe(&self, account: &str, gone: bool) -> anyhow::Result<()>;
     /// How many pushes the fixture's push service took.
     fn pushes(&self) -> usize;
+    /// A push subscription of one of the account's devices, at the
+    /// fixture's push service, and then the account revokes that device.
+    fn subscribe_revoked(&self, account: &str) -> anyhow::Result<()>;
+    /// The `TTL` the last push the fixture's push service took asked for.
+    fn last_ttl(&self) -> Option<u32>;
     /// The hub's prune of its change feed, as it would run at `now` (ms).
     fn prune_changes(&self, now: u64) -> anyhow::Result<()>;
     /// A machine that joins the account the way a daemon does, approved,
@@ -72,7 +77,9 @@ pub async fn run(f: &dyn Fixture) {
     flags(f).await;
     meters(f).await;
     push(f).await;
+    push_options(f).await;
     cloud(f).await;
+    projects(f).await;
     // Last: it prunes the feed.
     changes(f).await;
 }
@@ -313,6 +320,47 @@ async fn push(f: &dyn Fixture) {
     f.subscribe("acct-pv", true).unwrap();
     assert_eq!(hub.push("acct-pv", &msg).await.unwrap(), Pushed { sent: 0, gone: 1, failed: 0 });
     assert_eq!(hub.push("acct-pv", &msg).await.unwrap(), Pushed::default(), "a subscription that's gone is forgotten");
+}
+
+/// `push_with` (M138): how long a push service keeps it, and whether it
+/// goes to every subscription (chat's) or only those of approved devices
+/// that aren't revoked (`push`'s, and Cloud's).
+async fn push_options(f: &dyn Fixture) {
+    let hub = f.hub();
+    f.account("acct-po", "po", "").unwrap();
+    f.subscribe_revoked("acct-po").unwrap();
+    let msg = serde_json::json!({ "title": "jake mentioned you in #general", "body": "hi", "tag": "chat-r1" });
+    assert_eq!(hub.push("acct-po", &msg).await.unwrap(), Pushed::default(), "a revoked device hears nothing");
+    let none = hub.push_with("acct-po", &msg, PushOptions::default()).await.unwrap();
+    assert_eq!(none, Pushed::default(), "the default is push's");
+
+    let before = f.pushes();
+    let every = PushOptions { ttl: None, any_subscription: true };
+    assert_eq!(hub.push_with("acct-po", &msg, every).await.unwrap(), Pushed { sent: 1, gone: 0, failed: 0 });
+    assert_eq!((f.pushes(), f.last_ttl()), (before + 1, Some(3600)), "every subscription, with the hub's hour");
+    let five = std::time::Duration::from_secs(300);
+    let short = PushOptions { ttl: Some(five), any_subscription: true };
+    assert_eq!(hub.push_with("acct-po", &msg, short).await.unwrap().sent, 1);
+    assert_eq!(f.last_ttl(), Some(300), "the TTL asked for");
+
+    f.subscribe("acct-po", false).unwrap();
+    let approved = PushOptions { ttl: Some(five), any_subscription: false };
+    assert_eq!(hub.push_with("acct-po", &msg, approved).await.unwrap(), Pushed { sent: 1, gone: 0, failed: 0 });
+    assert_eq!(f.last_ttl(), Some(300), "Cloud's approvals: five minutes, approved devices only");
+    assert_eq!(hub.push("acct-po", &msg).await.unwrap().sent, 1);
+    assert_eq!(f.last_ttl(), Some(3600));
+}
+
+/// What chat asks of projects (M138): a team's default project.
+async fn projects(f: &dyn Fixture) {
+    let hub = f.hub();
+    f.account("acct-pj", "pj", "").unwrap();
+    f.roster("t-pj", "Pj", "acct-pj", &[("acct-pj", TeamRole::Owner)]).unwrap();
+    let project = hub.team_project("t-pj").await.unwrap().expect("a team has one");
+    assert!(project.starts_with("prj_"), "{project}");
+    assert_eq!(hub.team_project("t-pj").await.unwrap(), Some(project.clone()), "the same one after");
+    assert_ne!(hub.personal_project("acct-pj").await.unwrap(), Some(project), "not its founder's own");
+    assert_eq!(hub.team_project("t-none").await.unwrap(), None, "no such team");
 }
 
 /// What Cloud asks (M137): an account's personal project, and a machine's

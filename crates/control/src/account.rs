@@ -368,10 +368,10 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
         ));
     }
     let disband: Vec<String> = p.disband.iter().map(|(t, _, _)| t.clone()).collect();
-    // Its DMs go with it (M122): the other people's pages hear so.
-    let dms: Vec<String> = app.db.chat_rooms_member(account)?.into_iter().map(|r| r.id).collect();
     let daemons = app.db.delete_account(&crate::db::Erase { account, disband: &disband, retain_for: &p.retain_for })?;
-    // Then the platform's rows of it: billing's (M139) and Cloud's (M137).
+    // Then the platform's rows of it: billing's (M139), chat's (M138: its
+    // DMs, its machines' threads, the disbanded teams' rooms, and its name
+    // on the rest, which open pages hear of) and Cloud's (M137).
     let deleted = arugula_platform::Deleted {
         account: account.to_owned(),
         machines: daemons.clone(),
@@ -384,10 +384,6 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
         app.relay.drop_daemon(d);
     }
     app.relay.account_gone(account);
-    for r in &dms {
-        app.chat.room(r);
-    }
-    app.chat.changed();
     // The team's machines that stay (someone else's, now personal) were
     // relaying for its members: hang those connections up now (#206).
     hang_up.retain(|d| !daemons.contains(d));
@@ -562,6 +558,34 @@ mod tests {
         billing.set_billing("team:t1", Some("cus_t1"), Some("sub_t1"), "active", 1).unwrap();
         billing.set_billing("team:t2", Some("cus_t2"), Some("sub_t2"), "active", 1).unwrap();
         billing.set_reported_minutes("acct-alice", 3).unwrap();
+        // Chat's rows are the platform's too (M138): a DM with Bob in his
+        // team, a thread on her machine, and a message in his team's
+        // channel that mentions her.
+        use arugula_platform::db::chat::{NewMessage, Room};
+        let chat = &app.platform.db;
+        let room = |id: &str, scope: &str, kind: &str, machine: Option<&str>| Room {
+            id: id.into(),
+            scope: scope.into(),
+            kind: kind.into(),
+            name: id.into(),
+            machine: machine.map(Into::into),
+            target: machine.map(|_| "1".into()),
+            created_by: "acct-alice".into(),
+            created: 1,
+            archived: None,
+            last_seq: 0,
+        };
+        chat.add_chat_room(&room("dm", "team:t2", "dm", None), &["acct-alice", "acct-bob"], None).unwrap();
+        chat.add_chat_room(&room("th", &format!("machine:{box1}"), "pane", Some(&box1)), &[], None).unwrap();
+        chat.add_chat_room(&room("ch", "team:t2", "channel", None), &[], Some("prj_t2")).unwrap();
+        let say = |room: &str, author: &str, mentions: &[String]| {
+            let m = NewMessage { author, at: 1, text: "hi", quote: None, ref_machine: None, ref_pane: None, mentions };
+            chat.add_chat_message(room, &m).unwrap();
+        };
+        say("dm", "acct-alice", &[]);
+        say("th", "acct-bob", &[]);
+        say("ch", "acct-alice", &[]);
+        say("ch", "acct-bob", &["acct-alice".into()]);
         assert_eq!(pays(&app, "acct-alice", &p).await.unwrap(), ["the team plan of team t1"]);
         let e = delete_account(&app, "acct-alice", "alice").await.unwrap_err();
         assert_eq!((e.0, e.1.as_str()), (StatusCode::CONFLICT, "cancel the team plan of team t1 first"));
@@ -573,6 +597,11 @@ mod tests {
         assert!(billing.billing("team:t1").unwrap().is_none());
         assert_eq!(billing.reported_minutes("acct-alice").unwrap(), 0);
         assert!(billing.billing("team:t2").unwrap().is_some());
+        // Chat took her DM and her machine's thread, and her name off the rest.
+        assert!(chat.chat_room("dm").unwrap().is_none() && chat.chat_room("th").unwrap().is_none());
+        assert_eq!(chat.chat_message("ch", 1).unwrap().unwrap().author, "");
+        assert_eq!(chat.mentions("acct-alice"), Vec::<String>::new());
+        assert_eq!(chat.mentions(&box1), Vec::<String>::new());
 
         assert_eq!(app.db.mentions("acct-alice"), Vec::<String>::new());
         assert_eq!(app.db.mentions(&ac.device), Vec::<String>::new());
