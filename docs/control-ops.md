@@ -113,6 +113,43 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
   only `/<id>`, `/<id>/data/meta`, `/<id>/data/<n>` and `/assets/…`; with a
   block domain, `/d/` on control's origin is a 404. `/control.json` says
   where (`doc_links`, `doc_viewer`). More under "Shared Docs" below.
+- **The platform page's host** (M151, optional): `--platform-host`
+  (`ARUGULA_PLATFORM_HOST`, `app.arugula.io` for the hosted one) is where
+  people use projects, chat and Cloud workspaces, on an origin apart from
+  the shell's, which holds the device keys ("The platform page is on
+  app.arugula.io, not on the keys' origin"). Off when unset, and then
+  nothing changes on any host.
+  - A bare host name. Control refuses to start with one of its own sites,
+    or a name under the block domain.
+  - Its DNS points at **the hub**, never at the platform, which still has
+    no public address: the hub routes the host to it by `Host`
+    (`crates/control/src/platform_host.rs`). On Fly that's a name and a
+    certificate on the hub's app (`fly certs add app.arugula.io -a
+    illogical-control`); the DNS record itself is M158.
+  - On that host control answers only the platform's routes (those
+    `routes.toml` gives `process = "platform"`, exactly as on control's
+    own site) and the platform page: any other GET or HEAD is the page's
+    `index.html` or one of its files (`web/dist-platform`, embedded in the
+    platform crate). Everything of the hub's (`/api/…`, `/auth/…`,
+    `/github/…`, `/.well-known/…`, `/d/…`, `/control.json`), the
+    platform's `/platform.json` and `/internal/…`, and every WebSocket is
+    a 404.
+  - With the platform in process the hub serves the page itself; out of
+    process it forwards the page's GETs to the platform, signed like every
+    forwarded call, and the platform serves its own embedded copy. Its
+    page ships with the platform, not with a daemon release.
+  - Every answer there has the platform page's own CSP (its own scripts
+    and styles, `connect-src 'self'`, no `unsafe-eval`, no frames either
+    way), `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, HSTS
+    and `Cross-Origin-Opener-Policy: same-origin`, and no `Set-Cookie`.
+    The hub drops any cookie a request brings there: its session is
+    control's site's alone. Until M152 signs people in to it, the
+    platform's routes there answer 401.
+  - `/control.json` says where it is (`platform`: the page's origin, with
+    the public URL's scheme and port; `null` without one).
+  - `--platform-static-dir` (control's, platform in process) and
+    `--static-dir` (`arugula-platform`'s) serve a local build instead, as
+    `just dev-control` does on `app.localhost`.
 - **Billing** (optional) needs both `STRIPE_SECRET_KEY` and
   `STRIPE_WEBHOOK_SECRET`; with the key alone control doesn't start.
 - **Behind a proxy** that passes the client's address in a header, use

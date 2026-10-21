@@ -96,6 +96,16 @@
 #           answers Cloud's and billing's routes. Broken: the maintenance
 #           switch on (`arugula-control maintenance on`, and off
 #           afterwards), so every platform route answers 503.
+#   platform-page
+#           The platform page on its own host (M151), through control's
+#           port, whichever process the platform is in: any page path is
+#           its index.html and its script its own, under the page's CSP;
+#           a platform route answers there (401: nobody's signed in there
+#           until M152) and the hub's routes and /control.json are 404s,
+#           with no cookie set; control's own site still serves the shell
+#           under its own CSP, and its /control.json says where the
+#           platform page is. Broken: asking a host control wasn't given
+#           (app2.control.test), which gets the shell.
 #   platform-restart
 #           Only with the platform out of process: a relayed session to a
 #           box's pane stays open while the platform's container restarts,
@@ -131,7 +141,7 @@ PROFILE="${1:-ssh}"; shift || true
 CFG="$STATE/ssh_config"
 BREAK="${BREAK:-}"
 SSH_CLAIMS="login jump no-route bare bytes agent linger"
-CONTROL_CLAIMS="signin reach relay unreachable cli team platform"
+CONTROL_CLAIMS="signin reach relay unreachable cli team platform platform-page"
 
 need_docker
 
@@ -586,6 +596,42 @@ claim_platform() {
   plat chat > "$WORK/platform.json" || rc=1
   if [ -n "$BREAK" ]; then maintenance off > /dev/null; sleep 2; fi
   [ "$rc" = 0 ] || { note "platform: chat and Cloud through control:"; cat "$WORK/platform.json" >&2; }
+  return "$rc"
+}
+
+# The platform page on its own host (M151). Every answer there has the
+# page's headers and no Set-Cookie.
+claim_platform_page() {
+  local host="${PLATFORM_HOST:-app.control.test}" ctl="${CONTROL_URL#http://}" port="$ARUGULA_TESTNET_CONTROL_PORT" rc=0 js p
+  local csp="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+  [ -z "$BREAK" ] || host=app2.control.test
+  # GET $2 with Host $1: its status, its headers in $WORK/h, its body in $WORK/b.
+  pp_at() { curl -sS -o "$WORK/b" -D "$WORK/h" -H "Host: $1" -w '%{http_code}' "http://127.0.0.1:$port$2"; }
+  pp_hdr() { sed -n "s/^$1: //Ip" "$WORK/h" | tr -d '\r'; }
+  pp_platforms() {
+    [ "$(pp_hdr content-security-policy)" = "$csp" ] && [ "$(pp_hdr x-frame-options)" = DENY ] &&
+      [ "$(pp_hdr cross-origin-opener-policy)" = same-origin ] && ! grep -qi '^set-cookie:' "$WORK/h"
+  }
+  # Status $1 for path $2 on the platform's host, with its headers.
+  pp_answers() { [ "$(pp_at "$host" "$2")" = "$1" ] && pp_platforms; }
+  pp_page() { pp_answers 200 "$1" && grep -q 'id="root"' "$WORK/b"; }
+  pp_script() { [ -n "$1" ] && pp_answers 200 "$1" && [ "$(pp_hdr content-type)" = text/javascript ]; }
+  # Control's own site, as it was: the shell, under control's CSP.
+  pp_shell() { [ "$(pp_at "$ctl" /)" = 200 ] && pp_hdr content-security-policy | grep -q "connect-src 'self' wss:" && ! grep -q "$1" "$WORK/b"; }
+  pp_says() { [ "$(pp_at "$ctl" /control.json)" = 200 ] && grep -q "\"platform\":\"http://${PLATFORM_HOST:-app.control.test}:8080\"" "$WORK/b"; }
+  for p in / /p/prj_8f2k-testnet/chat/ch_3j9-general /settings; do
+    pp_page "$p" || { note "platform-page: $host$p isn't the platform page: $(head -c 300 "$WORK/h")"; rc=1; }
+  done
+  js="$(sed -n 's/.*<script type="module" crossorigin src="\([^"]*\)".*/\1/p' "$WORK/b" | head -1)"
+  pp_script "$js" || { note "platform-page: its script (${js:-none}) isn't served"; rc=1; }
+  pp_answers 404 /assets/gone.js || { note "platform-page: a missing asset isn't a 404"; rc=1; }
+  pp_answers 401 /api/projects || { note "platform-page: /api/projects isn't the platform's 401"; rc=1; }
+  for p in /api/me /api/devices /control.json /auth/github; do
+    pp_answers 404 "$p" || { note "platform-page: $p answers on $host"; rc=1; }
+  done
+  pp_shell "${js:-no script}" || { note "platform-page: control's own page changed"; rc=1; }
+  pp_says || { note "platform-page: /control.json doesn't say where the platform page is: $(cat "$WORK/b")"; rc=1; }
+  [ "$rc" != 0 ] || note "platform-page: $host serves the platform page ($js), and control.json says so"
   return "$rc"
 }
 

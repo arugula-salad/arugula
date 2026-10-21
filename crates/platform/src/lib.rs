@@ -14,6 +14,8 @@
 //!   account, whether one pays, whether chat is on for it).
 //! - [`auth`] is who's asking, as the hub found out: a [`Principal`].
 //! - [`router()`] is the platform's routes, which the hub mounts in process.
+//! - [`page`] is the platform page (M150's build), which the hub serves on
+//!   the platform's own host, `app.arugula.io` (M151).
 //!
 //! Billing moved in first (M139), then Cloud ([`cloud`], M137), then chat
 //! ([`chat`], M138), which follows the hub's change feed through [`cache`],
@@ -42,6 +44,7 @@ pub mod grants;
 pub mod hub;
 #[cfg(test)]
 mod hub_calls_tests;
+pub mod page;
 mod port;
 pub mod projects;
 pub mod remote;

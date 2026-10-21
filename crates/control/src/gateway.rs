@@ -164,13 +164,19 @@ struct Listed {
     process: String,
 }
 
+/// Every platform route in `routes.toml`, one per method and path, as
+/// `(method, path)`: `ANY` for every method.
+pub fn listed_platform_routes() -> Vec<(String, String)> {
+    let list: List = toml::from_str(include_str!("../routes.toml")).expect("routes.toml parses (routes::)");
+    list.route.into_iter().filter(|r| r.process == "platform").map(|r| (r.method, r.path)).collect()
+}
+
 /// Every platform route in `routes.toml`, by path, with the methods
 /// each takes (`None`: every method).
 pub fn platform_routes() -> Vec<(String, Option<MethodFilter>)> {
-    let list: List = toml::from_str(include_str!("../routes.toml")).expect("routes.toml parses (routes::)");
     let mut out: Vec<(String, Option<MethodFilter>)> = Vec::new();
-    for r in list.route.into_iter().filter(|r| r.process == "platform") {
-        let m = match r.method.as_str() {
+    for (method, path) in listed_platform_routes() {
+        let m = match method.as_str() {
             "GET" => Some(MethodFilter::GET),
             "POST" => Some(MethodFilter::POST),
             "PUT" => Some(MethodFilter::PUT),
@@ -178,10 +184,10 @@ pub fn platform_routes() -> Vec<(String, Option<MethodFilter>)> {
             "DELETE" => Some(MethodFilter::DELETE),
             _ => None,
         };
-        match out.iter_mut().find(|(p, _)| *p == r.path) {
+        match out.iter_mut().find(|(p, _)| *p == path) {
             Some((_, Some(have))) => *have = m.map_or(*have, |m| have.or(m)),
             Some((_, None)) => {}
-            None => out.push((r.path, m)),
+            None => out.push((path, m)),
         }
     }
     out
@@ -305,8 +311,10 @@ fn server_timing(from: &HeaderMap, up: Duration, gw: Duration) -> String {
     parts.join(", ")
 }
 
-/// One platform route, forwarded.
-async fn forward(State(app): State<Arc<App>>, req: Request) -> Response {
+/// One platform route, forwarded; and out of process, a page GET on the
+/// platform's host (`platform_host`), which the platform answers with its
+/// page.
+pub(crate) async fn forward(State(app): State<Arc<App>>, req: Request) -> Response {
     let PlatformAt::Remote(r) = &app.platform else {
         return ApiError(StatusCode::INTERNAL_SERVER_ERROR, "the platform is in process".into(), None).into_response();
     };

@@ -37,6 +37,11 @@
 //                      none with DEV_CONTROL_HOST=localhost]: ports and
 //                      editors on the machines open in control's page,
 //                      at http://b-<key>.<domain>:PORT. Empty for none.
+//   DEV_CONTROL_PLATFORM_HOST
+//                      the platform page's host (M151) [default:
+//                      app.localhost, which Chrome sends to loopback]: the
+//                      platform page, rebuilt on every change like the
+//                      shell, at http://<host>:PORT. Empty for none.
 //   DEV_CONTROL_APPROVE_BROWSERS=0
 //                      the device leaves browsers alone: one that signs in
 //                      stays waiting, not yet a device (for the waiting
@@ -85,6 +90,8 @@ const port = Number(process.env.DEV_CONTROL_PORT ?? 7690);
 const login = process.env.DEV_CONTROL_LOGIN ?? userInfo().username;
 // A block domain can't be a parent or child of control's host.
 const blockDomain = process.env.DEV_CONTROL_BLOCK_DOMAIN ?? (host === "localhost" ? "" : "blocks.localhost");
+// Never one of control's own hosts, nor under the block domain.
+const platformHost = process.env.DEV_CONTROL_PLATFORM_HOST ?? "app.localhost";
 const logins = (process.env.DEV_CONTROL_LOGINS ?? "").split(",").map((l) => l.trim()).filter(Boolean);
 const labs = process.env.DEV_CONTROL_LABS !== "0";
 const approveAll = process.env.DEV_CONTROL_APPROVE_BROWSERS !== "0";
@@ -98,6 +105,8 @@ const base = `http://${host}:${port}`;
 const direct = `http://127.0.0.1:${port}`;
 const via = { [base]: direct };
 const web = join(dir, "web");
+/** The platform page's build (M151), which control serves on its host. */
+const platformWeb = join(dir, "platform-web");
 
 const procs: ChildProcess[] = [];
 let github: Server | undefined;
@@ -144,18 +153,34 @@ async function webBuild() {
   // Blocks' own scripts (M50), built once like the worker.
   for (const mode of ["boot", "sw", "shim"])
     execFileSync("npx", ["vite", "build", "--logLevel", "error", "--config", "vite.block.config.ts", "--mode", mode, "--outDir", join(web, "block")], { stdio: "inherit" });
-  const watch = spawn("npx", ["vite", "build", "--watch", "--emptyOutDir", "false", "--outDir", web], { stdio: ["ignore", "pipe", "inherit"], detached: true });
+  const shell = watchBuild("web", ["--outDir", web]);
+  // The platform page (M151), beside it: its sign-in link goes to this
+  // control, not to a `control.` beside `app.`.
+  const platform = platformHost
+    ? watchBuild("platform page", ["--config", "vite.platform.config.ts", "--outDir", platformWeb], { VITE_CONTROL_ORIGIN: base })
+    : Promise.resolve();
+  await Promise.all([shell, platform]);
+}
+
+/** `vite build --watch` with `args`, ready once it's built the first time,
+ * then saying so on each rebuild. */
+function watchBuild(what: string, args: string[], env: Record<string, string> = {}): Promise<void> {
+  const watch = spawn("npx", ["vite", "build", "--watch", "--emptyOutDir", "false", ...args], {
+    stdio: ["ignore", "pipe", "inherit"],
+    detached: true,
+    env: { ...process.env, ...env },
+  });
   procs.push(watch);
   let first = true;
-  await new Promise<void>((ready) => {
+  return new Promise<void>((ready) => {
     watch.stdout!.on("data", (d: Buffer) => {
       if (!/built in/.test(d.toString())) return;
       if (first) {
         first = false;
         ready();
-      } else log(`web rebuilt ${new Date().toLocaleTimeString()}: reload the page`);
+      } else log(`${what} rebuilt ${new Date().toLocaleTimeString()}: reload the page`);
     });
-    watch.on("exit", (c) => fail(`vite build --watch exited (${c})`));
+    watch.on("exit", (c) => fail(`vite build --watch (${what}) exited (${c})`));
   });
 }
 
@@ -193,6 +218,7 @@ async function startControl() {
       ...["--static-dir", web, "--github-client-id", "dev", "--github-client-secret", "dev"],
       ...["--github-url", gh, "--github-api", gh],
       ...(blockDomain ? ["--block-domain", blockDomain] : []),
+      ...(platformHost ? ["--platform-host", platformHost, "--platform-static-dir", platformWeb] : []),
       ...(cloud ? await cloudFlags() : []),
     ],
     { stdio: ["ignore", "ignore", "inherit"], detached: true },
@@ -437,6 +463,7 @@ console.log(`
 dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DEV_CONTROL_HOST=localhost)" : ""}
   Sign in with GitHub (the fake one signs you in as ${login}${logins.length ? `, or asks: ${[login, ...logins].join(", ")}` : ""});
   ${approveAll ? `${login}'s browsers are approved (press It matches: the account is ${fingerprint(d.root)})` : `${login}'s browsers stay waiting to be approved (DEV_CONTROL_APPROVE_BROWSERS=0)`}. Machines: ${machines.join(", ")}${labs ? ", with Labs" : ""}.
+  ${platformHost ? `The platform page (M151): http://${platformHost}:${port} (Chrome sends *.localhost to loopback; nobody's signed in there until M152).` : "No platform page (DEV_CONTROL_PLATFORM_HOST is empty)."}
   ${blockDomain ? `Ports and editors open on b-<key>.${blockDomain} (Chrome; DEV_CONTROL_BLOCK_DOMAIN= for none; the block scripts aren't rebuilt on change).` : "No block domain: ports and editors are off on the machines."}
   ${cloud ? "Cloud is on, with a fake Managoat: Cloud workspaces app, api and web, and a past run." : "No Cloud (DEV_CONTROL_CLOUD=1 for Cloud workspaces with a fake Managoat)."}
   ${chatOn ? `Chat is on: team Acme (${[login, ...chatPeople.map((o) => o.login)].join(", ")}) with #general${chatPeople.length ? " and a DM" : ""}; ${chatPeople.length ? `${chatPeople.map((o) => o.login).join(", ")}'s browsers are approved by their own devices.` : "DEV_CONTROL_LOGINS=sam for a second person."}` : "No chat in control (DEV_CONTROL_CHAT=1: team Acme with chat on)."}

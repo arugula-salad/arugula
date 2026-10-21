@@ -59,4 +59,6 @@ hkdf = { workspace = true }
 # Embed web/dist even in a debug build (rust-embed reads it from the source
 # tree at run time otherwise): CI's e2e shards run binaries built in another
 # job's checkout.
-debug-embed = ["rust-embed/debug-embed"]
+# The platform page's build too (web/dist-platform, M151), which an
+# in-process platform serves.
+debug-embed = ["rust-embed/debug-embed", "arugula-platform/debug-embed"]

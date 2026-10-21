@@ -321,12 +321,16 @@ fn control_json_is_what_control_says() {
         "control": true, "url": "https://control.example", "github": true, "passkeys": true,
         "vapid": "BKey", "github_app": null, "daemon_auth": 2, "cli_join": 1, "join_secret": 1, "device_secret": 1,
         "guest_ssh": { "host": "jump.example", "port": 22, "known_hosts": "jump.example ssh-ed25519 AAAA", "fingerprint": "SHA256:x" },
+        "platform": "https://app.example",
     });
     let c = round::<ControlInfo>(full.clone());
     assert_eq!(c.guest_ssh.unwrap().port, 22);
+    assert_eq!(c.platform.as_deref(), Some("https://app.example"));
     let mut bare = full;
     bare["guest_ssh"] = Value::Null;
     bare["github_app"] = json!("slug");
+    // Without a platform page (M151) it's said, as null.
+    bare["platform"] = Value::Null;
     round::<ControlInfo>(bare);
 }
 
@@ -348,6 +352,8 @@ fn an_older_controls_control_json_parses() {
     assert!(old.doc_links.is_none() && old.doc_viewer.is_none());
     assert!(serde_json::to_value(&old).unwrap().get("doc_links").is_none());
     assert!(serde_json::to_value(&old).unwrap().get("doc_viewer").is_none());
+    // An older control says nothing of the platform page's host (M151).
+    assert!(old.platform.is_none());
 }
 
 /// A machine or the CLI reads only `join_secret` to decide on a secret

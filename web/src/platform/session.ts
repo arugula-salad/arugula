@@ -11,11 +11,15 @@ import { platformFetch, refusalOf } from "../shared/maintenance";
 
 export type { PlatformProject };
 
-/** The hub's page, where people sign in and where the shell is: `control.`
- * beside `app.`, else what the dev recipe says, else this origin. */
+/** The hub's page, where people sign in and where the shell is: what the
+ * dev recipes say (`just dev-control` serves this page on app.localhost
+ * beside a control on 127.0.0.1), else `control.` beside `app.`, else this
+ * origin. */
 export function controlOrigin(): string {
+  const dev = import.meta.env.VITE_CONTROL_ORIGIN as string | undefined;
+  if (dev) return dev;
   if (location.hostname.startsWith("app.")) return location.origin.replace("//app.", "//control.");
-  return (import.meta.env.VITE_CONTROL_ORIGIN as string | undefined) || location.origin;
+  return location.origin;
 }
 
 const listeners = new Set<() => void>();

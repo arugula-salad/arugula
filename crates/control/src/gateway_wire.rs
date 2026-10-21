@@ -14,6 +14,7 @@ use arugula_e2e::now_ms;
 use arugula_platform::{
     Platform, PlatformPort,
     cloud::{Cloud, CloudModel, provider::Provider, secrets::SecretCipher},
+    page,
     remote::{self, HttpHub},
 };
 use axum::{
@@ -31,6 +32,13 @@ use crate::{
     gateway::{PlatformAt, Remote},
     routing_wire::{daemon, session, v2},
 };
+
+/// The platform page's host in these tests.
+const APP: &str = "app.control.test";
+
+/// The platform's stand-in page build, one for the run.
+static PAGE: std::sync::LazyLock<crate::platform_host_wire::Files> =
+    std::sync::LazyLock::new(|| crate::platform_host_wire::Files::page("platform"));
 
 fn key() -> PrincipalKey {
     PrincipalKey::new(&[5; 32]).unwrap()
@@ -51,6 +59,8 @@ fn serve_hub(app: &Arc<App>, l: tokio::net::TcpListener) {
 async fn hub(platform: &str) -> (Arc<App>, String) {
     let mut app = App::for_tests("http://control.test");
     app.platform = PlatformAt::Remote(Remote::new(platform, key()).unwrap());
+    // The platform page's host (M151).
+    app.cfg.platform_host = crate::platform_host::parse(APP, "http://control.test", &app.cfg.sites, None).unwrap();
     let app = app.start();
     let (l, base) = listener().await;
     serve_hub(&app, l);
@@ -104,9 +114,12 @@ pub(crate) async fn split_on(
     });
     let p = Arc::new(p);
     let port: Arc<dyn PlatformPort> = p.clone();
+    // As the binary's: the routes, the internal API and the page (M151),
+    // a stand-in build of it.
     let router = Router::new()
         .merge(arugula_platform::router(p.clone()).layer(axum::middleware::from_fn_with_state(key(), remote::vouched)))
-        .merge(remote::serve_platform(port, key()));
+        .merge(remote::serve_platform(port, key()))
+        .merge(page::behind_hub(page::Page::new(Some(PAGE.0.clone())), key()));
     tokio::spawn(async move { axum::serve(platform_l, router).await });
     let (app, base) = hub(&platform_base).await;
     let a2 = app.clone();
@@ -461,4 +474,44 @@ async fn a_deletion_the_platform_missed_is_told_again() {
     assert_eq!(s.hub.db.untold_deletions().unwrap().len(), 1);
     assert_eq!(crate::account::tell_untold(&s.hub).await, 1);
     assert!(s.hub.db.untold_deletions().unwrap().is_empty(), "taken, and forgotten");
+}
+
+/// Out of process, the platform page's host is answered by the platform:
+/// a page GET is forwarded with the hub's signed principal header and
+/// served from the platform's own build, under the page's headers; a
+/// platform route reaches the platform (nobody signed in there yet), and
+/// nothing of the hub's or the platform's own answers.
+#[tokio::test]
+async fn the_platform_page_comes_from_the_platform() {
+    use crate::platform_host_wire::Answer;
+    let s = split().await;
+    let http = reqwest::Client::new();
+    let get = |m: reqwest::Method, path: &str| {
+        let r = http
+            .request(m, format!("{}{path}", s.base))
+            .header("host", APP)
+            .header("cookie", "ilg_session=session-a")
+            .send();
+        async move { Answer::of(r.await.unwrap()).await }
+    };
+    for path in ["/", "/p/prj_8f2k-arugula/chat/ch_1", "/p/prj_1/workspaces/cw_1/files"] {
+        let a = get(reqwest::Method::GET, path).await;
+        assert_eq!(a.status, 200, "{path}: {}", a.body);
+        assert!(a.body.contains("<title>platform</title>"), "{path}");
+        assert!(a.is_the_platforms(), "{path}: {:?}", a.headers);
+    }
+    let a = get(reqwest::Method::GET, "/assets/app-1.js").await;
+    assert_eq!((a.status, a.body.as_str()), (200, "// platform"));
+    assert_eq!(a.header("cache-control"), "public, max-age=31536000, immutable");
+    assert_eq!(get(reqwest::Method::GET, "/assets/gone.js").await.status, 404);
+    let a = get(reqwest::Method::GET, "/api/projects").await;
+    assert_eq!((a.status, a.is_the_platforms()), (401, true), "{}", a.body);
+    for path in ["/api/me", "/control.json", "/platform.json", "/auth/github"] {
+        let a = get(reqwest::Method::GET, path).await;
+        assert_eq!((a.status, a.is_the_platforms()), (404, true), "{path}");
+    }
+    assert_eq!(get(reqwest::Method::POST, "/p/x").await.status, 405);
+    // Control's own site is still the hub's.
+    let r = http.get(format!("{}/api/projects", s.base)).header("cookie", "ilg_session=session-a").send().await;
+    assert_eq!(r.unwrap().status(), 200);
 }

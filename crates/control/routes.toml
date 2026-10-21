@@ -39,7 +39,9 @@
 #
 # Not routes, so not here: what a block's origin or the docs origin is
 # answered with (`blocks::split`, before any route: the hub's, as block and
-# doc origins are), and control's page itself (the fallback, `asset`).
+# doc origins are), the platform page on its own host (`platform_host::split`,
+# M151, which lets only this list's platform routes through there), and
+# control's page itself (the fallback, `asset`).
 
 # ---- hub: what control is, and signing in
 

@@ -120,6 +120,10 @@ services:
       ARUGULA_PLATFORM: ${ARUGULA_TESTNET_PLATFORM_URL:-in-process}
       ARUGULA_PLATFORM_KEY: &platform-key 7e577e577e577e577e577e577e577e577e577e577e577e577e577e577e577e57
       ARUGULA_CONTROL_INTERNAL_LISTEN: 0.0.0.0:7691
+      # The platform page's own host (M151), served through control on its
+      # port as app.arugula.io is: the host asks for it by name (`Host:`),
+      # whichever process the platform is in.
+      ARUGULA_PLATFORM_HOST: app.control.test
     volumes:
       - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
     tmpfs: [/var/lib/arugula-control]

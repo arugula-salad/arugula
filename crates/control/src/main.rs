@@ -47,6 +47,9 @@ mod maintenance;
 mod notice;
 mod passkey;
 mod plans;
+mod platform_host;
+#[cfg(test)]
+mod platform_host_wire;
 mod push;
 #[cfg(test)]
 mod push_notices;
@@ -110,6 +113,20 @@ struct Args {
     /// certificate pointed here. Off when unset (docs/control-ops.md).
     #[arg(long, env = "ARUGULA_CONTROL_BLOCK_DOMAIN")]
     block_domain: Option<String>,
+
+    /// Serve the platform page on this host (M151: `app.arugula.io`; dev
+    /// `app.localhost`), a bare host name whose DNS points here: the hub
+    /// answers it with the platform's page and routes, and nothing of its
+    /// own. Never one of control's own sites, nor under the block domain.
+    /// Off when unset (docs/control-ops.md, "The platform page's host").
+    #[arg(long, env = "ARUGULA_PLATFORM_HOST")]
+    platform_host: Option<String>,
+
+    /// Serve the platform page from this directory instead of the built-in
+    /// copy (development), with the platform in process. Out of process the
+    /// platform serves its own (its `--static-dir`).
+    #[arg(long)]
+    platform_static_dir: Option<PathBuf>,
 
     /// The SQLite database.
     #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
@@ -284,6 +301,10 @@ pub struct Config {
     pub also_redirect: bool,
     /// Blocks' origins are `b-<key>.<this>` (M50, `blocks.rs`).
     pub block_domain: Option<String>,
+    /// The platform page's host (M151, `platform_host.rs`), and where its
+    /// files come from when the platform is in process.
+    pub platform_host: Option<platform_host::PlatformHost>,
+    pub platform_page: arugula_platform::page::Page,
     pub github: Option<Github>,
     pub static_dir: Option<PathBuf>,
 }
@@ -418,6 +439,8 @@ impl App {
                 sites: vec![Site::new(public_url).unwrap()],
                 also_redirect: false,
                 block_domain: None,
+                platform_host: None,
+                platform_page: Default::default(),
                 github: None,
                 static_dir: None,
             },
@@ -573,8 +596,11 @@ pub fn router(app: Arc<App>) -> Router {
         .layer(axum::middleware::from_fn_with_state(app.clone(), moved))
         .layer(axum::middleware::from_fn_with_state(app.clone(), auth::verify_daemon))
         .layer(axum::middleware::map_response_with_state(app.clone(), headers))
-        // Outermost: a block's origin never reaches anything above (M50).
+        // A block's origin never reaches anything above (M50).
         .layer(axum::middleware::from_fn_with_state(app.clone(), blocks::split))
+        // Outermost: the platform page's host reaches only the platform's
+        // routes and its page (M151).
+        .layer(axum::middleware::from_fn_with_state(app.clone(), platform_host::split))
         .with_state(app)
 }
 
@@ -638,6 +664,8 @@ async fn control_json(
         // Shared Docs (#1064), and where they are opened.
         doc_links: Some(1),
         doc_viewer: Some(doc_links::viewer_url(&app.cfg.public_url, app.cfg.block_domain.as_deref())),
+        // Where the platform page is (M151), when it has a host.
+        platform: app.cfg.platform_host.as_ref().map(|p| p.origin.clone()),
     })
 }
 
@@ -873,6 +901,12 @@ async fn run() -> anyhow::Result<()> {
         Some(d) => info!(domain = %d, "blocks served at b-<key>.{d}"),
         None => info!("no ARUGULA_CONTROL_BLOCK_DOMAIN: blocks aren't served through control"),
     }
+    let platform_host =
+        platform_host::parse(a.platform_host.as_deref().unwrap_or(""), &public_url, &sites, block_domain.as_deref())?;
+    match &platform_host {
+        Some(p) => info!(host = %p.host, origin = %p.origin, "the platform page is served at its host"),
+        None => info!("no ARUGULA_PLATFORM_HOST: the platform page isn't served"),
+    }
     let billing = stripe.is_some();
     let platform_key = set(a.platform_key.clone())
         .map(|k| arugula_control_common::principal::PrincipalKey::from_hex(&k))
@@ -896,6 +930,9 @@ async fn run() -> anyhow::Result<()> {
         let remote = gateway::Remote::new(&a.platform, key)?;
         (gateway::PlatformAt::Remote(remote), Arc::new(hub_port::InProcess::default()))
     };
+    if a.platform_static_dir.is_some() && platform.local().is_none() {
+        tracing::warn!("--platform-static-dir is for a platform in process: out of process it serves its own page");
+    }
     // The hub's internal API, for an out-of-process platform.
     let internal_listen = match (a.internal_listen, &platform) {
         (Some(at), _) => Some(at),
@@ -921,6 +958,8 @@ async fn run() -> anyhow::Result<()> {
             sites,
             also_redirect: a.also_redirect,
             block_domain,
+            platform_host,
+            platform_page: arugula_platform::page::Page::new(a.platform_static_dir),
             public_url,
             github,
             static_dir: a.static_dir,
