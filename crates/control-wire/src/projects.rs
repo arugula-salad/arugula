@@ -93,6 +93,20 @@ pub struct LinkedRepo {
     pub unlinked_at: Option<u64>,
     /// When its rows go, unless it's linked again first.
     pub purge_after: Option<u64>,
+    /// The project mirrors its PRs' and issues' bodies and comments (M166).
+    #[serde(default)]
+    pub mirror_content: bool,
+}
+
+/// `PATCH /api/projects/{project}/repos/{owner}/{name}` (M166): a linked
+/// repo's settings; the answer is its [`LinkedRepo`]. `mirror_content`
+/// on keeps its PRs' and issues' bodies and comments on the platform
+/// (search finds their text); off deletes them at once. Turning it on
+/// takes what linking takes: a member who maintains the repo on GitHub.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct RepoSettings {
+    pub mirror_content: bool,
 }
 
 /// `POST /api/projects/{project}/repos`: link `OWNER/NAME`. A project
@@ -110,7 +124,8 @@ pub struct LinkRepo {
 /// from its linked repos, last updated first, each checked against the
 /// reader's own GitHub access. A query narrows it: `repo` (`OWNER/NAME`),
 /// `kind` (`pr`, `issue`), `state` (`open`, `closed`, `merged`), `author`
-/// and `review_requested` (GitHub logins), `q` (text in the title) and
+/// and `review_requested` (GitHub logins), `q` (text in the title, or in
+/// the body, comments and reviews of a repo that mirrors content) and
 /// `limit` (at most 200, 100 by default).
 pub const PROJECT_ITEMS: &str = "/api/projects/{project}/items";
 
@@ -121,6 +136,11 @@ pub const PROJECT_ITEMS: &str = "/api/projects/{project}/items";
 pub const FORGE_ITEM: &str = "/api/forge/items/{id}";
 pub const FORGE_ITEM_CHECKS: &str = "/api/forge/items/{id}/checks";
 pub const FORGE_ITEM_EVENTS: &str = "/api/forge/items/{id}/events";
+/// `GET /api/forge/items/{id}/content` (M166): its body, comments, reviews'
+/// text and review comments ([`ForgeContent`]), through the same check:
+/// from GitHub (kept a few minutes in memory), or from the mirror for a
+/// repo whose project mirrors content.
+pub const FORGE_ITEM_CONTENT: &str = "/api/forge/items/{id}/content";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -213,4 +233,38 @@ pub struct ForgeEvent {
     /// A review's state (`approved`, `changes_requested`, `commented`).
     pub review_state: Option<String>,
     pub at: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ForgeContent {
+    pub item: String,
+    /// `github` (read now, or a few minutes ago) or `mirror`.
+    pub from: String,
+    pub body: Option<ForgeText>,
+    /// Comments, reviews' text and review comments, oldest first. A review
+    /// comment's thread is the ones whose `reply_to` is its `id`.
+    pub comments: Vec<ForgeText>,
+}
+
+/// A body, a comment, a review's text or a review comment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ForgeText {
+    /// `body`, `comment`, `review` or `review_comment`.
+    pub kind: String,
+    /// GitHub's id: the PR's or issue's for a body.
+    pub id: u64,
+    /// A GitHub login.
+    pub author: Option<String>,
+    /// Markdown, as GitHub has it.
+    pub body: String,
+    /// A review comment's file and line.
+    pub path: Option<String>,
+    pub line: Option<u64>,
+    /// The review comment it answers.
+    pub reply_to: Option<u64>,
+    /// GitHub's times, in milliseconds.
+    pub created_at: u64,
+    pub updated_at: u64,
 }

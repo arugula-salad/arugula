@@ -69,7 +69,8 @@ pub struct ItemsQuery {
     pub state: Option<String>,
     pub author: Option<String>,
     pub review_requested: Option<String>,
-    /// Text in the title: the list's search.
+    /// Text in the title, or in a mirrored body or comment (M166): the
+    /// list's search.
     pub q: Option<String>,
     pub limit: Option<u32>,
 }
@@ -96,7 +97,7 @@ pub async fn list(
         state: q.state.as_deref(),
         author: q.author.as_deref(),
         review_requested: q.review_requested.as_deref(),
-        title: q.q.as_deref(),
+        text: q.q.as_deref(),
         limit: q.limit.unwrap_or(DEFAULT).clamp(1, MOST),
     };
     let name = |id: u64| repos.iter().find(|r| r.repo_id == id).map_or("", |r| r.full_name.as_str());

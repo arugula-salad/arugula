@@ -32,6 +32,8 @@
 //! - **The mirror** (M164): a linked repo's webhooks write its rows
 //!   ([`ingest`]), and one leased poller per repo backfills and reconciles
 //!   them ([`poller`]), within a rate budget; [`stats`] are its numbers.
+//! - **Bodies and comments** ([`content`], M166): fetched on read and kept
+//!   a few minutes in memory, or mirrored for a project that opts in.
 //!
 //! First-time lookups at GitHub are rate-limited per account
 //! ([`FORGE_LOOKUPS`], counted here).
@@ -46,6 +48,9 @@ use tracing::info;
 use crate::Platform;
 
 mod app;
+pub mod content;
+#[cfg(test)]
+mod content_tests;
 pub mod ingest;
 #[cfg(test)]
 mod ingest_tests;

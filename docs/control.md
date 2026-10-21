@@ -72,3 +72,18 @@ rows (items, checks, events, content, drafts and inbox rows) go within a day
 (`purge_after`, `crates/platform/src/forge/links.rs`) unless it's linked
 again to the same project first. Linking it to another project instead
 purges the old project's rows at once.
+
+**Bodies and comments (M166, #1212).** The platform keeps a linked repo's
+PRs and issues as metadata. Opening one (`GET
+/api/forge/items/{id}/content`) reads its body, comments, reviews' text
+and review comments from GitHub, after the same viewer check as every
+read, with a read-only token minted for the reader. They're kept about 3
+minutes in memory on that machine, never in the database, and a webhook
+for the item drops them. A project can mirror a repo's content instead:
+on its settings page, or `PATCH /api/projects/{project}/repos/{owner}/{name}`
+with `{"mirror_content": true}`. Turning it on takes what linking takes (a
+member who maintains the repo on GitHub). Then webhooks and the poller
+keep the bodies and comments in `forge_content`, reads come from there,
+and the project's search (`q`) finds their text. Turning it off (any member
+who may change links) deletes them at once. Unlinking, or the App being
+uninstalled, purges them within a day.

@@ -38,6 +38,10 @@
 //!   installation's events would, so the purge follows. A sweep of the
 //!   App's installations every [`SWEEP_EVERY`] does the same for an
 //!   uninstall whose webhook never came ([`sweep`]).
+//! - **Content** (M166): for a repo whose project mirrors it, each item
+//!   a list's page names is fetched whole (body, comments, reviews' text,
+//!   review comments) and replaces what `forge_content` had of it.
+//!   Turning mirroring on makes the next turn a backfill.
 //! - **Unlinking** stops a turn at its next read or write (`Db::mirror`
 //!   and `Db::renew_poll` check the link), and M163's purge waits for the
 //!   lease to run out.
@@ -52,7 +56,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{info, warn};
 
-use super::{Caller, GithubApp, Purpose, Repo, ingest};
+use super::{Caller, GithubApp, Purpose, Repo, content, ingest};
 use crate::{
     Platform,
     db::{
@@ -83,14 +87,17 @@ const TICK: Duration = Duration::from_secs(5);
 /// Most pages of one item's reviews, or one head's checks.
 const SMALL_PAGES: usize = 10;
 
-/// Installation tokens for the one repo, read only (`Purpose::Ingest`).
-struct IngestTokens<'p> {
-    p: &'p Platform,
-    installation: u64,
-    repo_id: u64,
+/// Installation tokens for the one repo, read only: the poller's
+/// (`Purpose::Ingest`, for `platform`), or a person's read (M166).
+pub(super) struct RepoTokens<'p> {
+    pub p: &'p Platform,
+    pub caller: &'p str,
+    pub purpose: Purpose,
+    pub installation: u64,
+    pub repo_id: u64,
 }
 
-impl TokenSource for IngestTokens<'_> {
+impl TokenSource for RepoTokens<'_> {
     fn token<'a>(
         &'a self,
         _repo: &'a str,
@@ -98,14 +105,14 @@ impl TokenSource for IngestTokens<'_> {
         _fresh: bool,
     ) -> BoxFuture<'a, Result<Option<Token>, String>> {
         Box::pin(async move {
-            // The poller only reads.
+            // Only reads.
             if purpose != GhPurpose::Read {
                 return Ok(None);
             }
             let gh = self.p.github.as_ref().ok_or(super::NO_APP)?;
-            let caller = Caller::of(self.p, "platform");
+            let caller = Caller::of(self.p, self.caller);
             let t = gh
-                .read_token(&caller, self.installation, Repo::Id(self.repo_id), Purpose::Ingest)
+                .read_token(&caller, self.installation, Repo::Id(self.repo_id), self.purpose)
                 .await
                 .map_err(|e| format!("{e:#}"))?;
             Ok(Some(Token { secret: t.secret().to_owned(), login: None }))
@@ -168,7 +175,7 @@ type List = (String, Option<u64>, bool);
 struct Poll<'p> {
     p: &'p Platform,
     job: PollJob,
-    gh: Github<IngestTokens<'p>>,
+    gh: Github<RepoTokens<'p>>,
     /// Count drift from GitHub changes since then (the last reconcile),
     /// when this is a reconcile after one since linking.
     drift_from: Option<u64>,
@@ -391,18 +398,60 @@ impl<'p> Poll<'p> {
                 }
                 values.push(v);
             }
-            if prs {
+            let numbers: Vec<u64> = if prs {
                 let rows: Vec<ItemRow> = values.iter().filter_map(|v| ingest::pr_row(id, &name, v)).collect();
                 let numbers: Vec<u64> = rows.iter().map(|r| r.number).collect();
                 self.write(&rows, &[], &[], Source::Pushed)?;
                 self.reviews(&numbers, Source::Pushed).await?;
+                numbers
             } else {
                 let rows: Vec<ItemRow> = values.iter().filter_map(|v| ingest::issue_row(id, v)).collect();
                 self.write(&rows, &[], &[], Source::Pushed)?;
-            }
+                rows.iter().map(|r| r.number).collect()
+            };
+            self.content(&numbers, prs).await?;
             next = n.filter(|_| !done);
         }
         Ok(None)
+    }
+
+    /// For a repo that mirrors content (M166): each of these items, whole,
+    /// in place of what the mirror kept. Through a client of its own, so no
+    /// ETag cache keeps the bodies. One that can't be read is left for the
+    /// next turn (a read fetches it meanwhile).
+    async fn content(&mut self, numbers: &[u64], prs: bool) -> Result<(), Stop> {
+        let id = self.job.repo_id;
+        if numbers.is_empty() || !self.p.db.linked_repo(id)?.is_some_and(|l| l.mirror_content) {
+            return Ok(());
+        }
+        let Some(gh) = &self.p.github else { return Err(Stop::Lost) };
+        let tokens = RepoTokens {
+            p: self.p,
+            caller: "platform",
+            purpose: Purpose::Ingest,
+            installation: self.job.installation_id,
+            repo_id: id,
+        };
+        let client = Github::new(&gh.api, self.p.http.clone(), tokens);
+        for n in numbers {
+            self.may_read()?;
+            let fetched = content::fetch(&client, &self.job.full_name, id, *n, prs).await;
+            let r = client.rate();
+            gh.ingest.stats.heard(self.job.installation_id, r.limit, r.remaining, r.reset);
+            match fetched {
+                Ok(rows) => self.tx(|tx| {
+                    if crate::db::content::mirrors(tx, id)? {
+                        crate::db::content::replace_item(tx, id, *n, &rows)?;
+                    }
+                    Ok(())
+                })?,
+                // GitHub's message and the path: never a body.
+                Err(e) => {
+                    warn!(repo = id, number = n, error = format!("{e:#}"), "forge mirror: reading an item's content")
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The lists a backfill or a reconcile reads, in order.
@@ -543,7 +592,13 @@ pub async fn tick(p: &Platform, now: u64) -> anyhow::Result<Option<Turn>> {
     let Some(gh) = &p.github else { return Ok(None) };
     let Some(job) = p.db.claim_poll(now, gh.ingest.settings.every_ms)? else { return Ok(None) };
     let repo = job.repo_id;
-    let tokens = IngestTokens { p, installation: job.installation_id, repo_id: repo };
+    let tokens = RepoTokens {
+        p,
+        caller: "platform",
+        purpose: Purpose::Ingest,
+        installation: job.installation_id,
+        repo_id: repo,
+    };
     let client = Github::new(&gh.api, p.http.clone(), tokens).with_cache(gh.ingest.etags(job.installation_id));
     // Drift only counts in a reconcile whose last one was since linking (a
     // repo linked again missed its webhooks while it wasn't), from then on.

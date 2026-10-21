@@ -60,7 +60,7 @@ pub const PURGE_EVERY: Duration = Duration::from_secs(600);
 /// What `{project}` may be instead of an id: the caller's personal one.
 const PERSONAL: &str = "personal";
 
-fn wire(r: &rows::LinkedRepo) -> LinkedRepo {
+pub(super) fn wire(r: &rows::LinkedRepo) -> LinkedRepo {
     LinkedRepo {
         repo_id: r.repo_id,
         full_name: r.full_name.clone(),
@@ -69,6 +69,7 @@ fn wire(r: &rows::LinkedRepo) -> LinkedRepo {
         linked_at: r.linked_at,
         unlinked_at: r.unlinked_at,
         purge_after: r.purge_after,
+        mirror_content: r.mirror_content,
     }
 }
 
@@ -98,7 +99,7 @@ pub(super) async fn membership(
 }
 
 /// A member who may change what's linked: not a team's viewer.
-async fn changer(app: &Platform, account: &str, asked: &str) -> Result<String, ApiError> {
+pub(super) async fn changer(app: &Platform, account: &str, asked: &str) -> Result<String, ApiError> {
     let (project, role) = membership(app, account, asked, true).await?;
     if role == TeamRole::Viewer {
         return Err(err(StatusCode::FORBIDDEN, "a viewer can't change a project's linked repos"));
@@ -169,6 +170,7 @@ pub async fn link(
         linked_at: 0,
         unlinked_at: None,
         purge_after: None,
+        mirror_content: false,
     };
     let i = Installation {
         id: install.id,

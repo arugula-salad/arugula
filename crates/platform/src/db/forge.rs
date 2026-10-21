@@ -35,10 +35,12 @@ pub struct LinkedRepo {
     pub linked_at: u64,
     pub unlinked_at: Option<u64>,
     pub purge_after: Option<u64>,
+    /// The project mirrors its bodies and comments (M166).
+    pub mirror_content: bool,
 }
 
-const LINK_COLUMNS: &str =
-    "repo_id, full_name, private, project_id, installation_id, linked_by, linked_at, unlinked_at, purge_after";
+const LINK_COLUMNS: &str = "repo_id, full_name, private, project_id, installation_id, linked_by, linked_at, \
+                            unlinked_at, purge_after, mirror_content";
 
 fn link_row(r: &Row) -> anyhow::Result<LinkedRepo> {
     Ok(LinkedRepo {
@@ -51,6 +53,7 @@ fn link_row(r: &Row) -> anyhow::Result<LinkedRepo> {
         linked_at: r.get(6)?,
         unlinked_at: r.get(7)?,
         purge_after: r.get(8)?,
+        mirror_content: r.get(9)?,
     })
 }
 
@@ -496,8 +499,9 @@ pub struct ForgeEvent {
 }
 
 /// What a list of items is narrowed to. Each is matched without regard to
-/// ASCII case, the same on both databases ([`fold`]); `title` is text
-/// anywhere in the title (the list's search).
+/// ASCII case, the same on both databases ([`fold`]); `text` is text
+/// anywhere in the title or, for a repo that mirrors content (M166), in its
+/// body, comments and reviews (the list's search).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ItemFilter<'a> {
     pub kind: Option<&'a str>,
@@ -505,7 +509,7 @@ pub struct ItemFilter<'a> {
     pub author: Option<&'a str>,
     /// A login among the requested reviewers.
     pub review_requested: Option<&'a str>,
-    pub title: Option<&'a str>,
+    pub text: Option<&'a str>,
     pub limit: u32,
 }
 
@@ -605,9 +609,17 @@ impl Db {
             });
             args.push(login.to_ascii_lowercase());
         }
-        if let Some(t) = f.title.filter(|t| !t.trim().is_empty()) {
-            wh.push(format!(r"{} LIKE ? ESCAPE '\'", fold(&c, "i.title")));
-            args.push(like_anywhere(t.trim()));
+        if let Some(t) = f.text.filter(|t| !t.trim().is_empty()) {
+            // Content only of a repo that mirrors it: turning it off takes
+            // the rows, and this holds while that commits.
+            wh.push(format!(
+                r"({} LIKE ? ESCAPE '\' OR EXISTS (SELECT 1 FROM forge_content c
+                     JOIN linked_repos l ON l.repo_id = c.repo_id AND l.mirror_content = TRUE
+                     WHERE c.repo_id = i.repo_id AND c.number = i.number AND {} LIKE ? ESCAPE '\'))",
+                fold(&c, "i.title"),
+                fold(&c, "c.body")
+            ));
+            args.extend([like_anywhere(t.trim()), like_anywhere(t.trim())]);
         }
         c.query_map(
             &format!(
@@ -856,6 +868,7 @@ mod tests {
             linked_at: 0,
             unlinked_at: None,
             purge_after: None,
+            mirror_content: false,
         }
     }
 
