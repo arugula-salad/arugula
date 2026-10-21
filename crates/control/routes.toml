@@ -1219,6 +1219,62 @@ auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
 note = "A PR's or issue's body and comments (M166), after the viewer check: from GitHub, kept a few minutes in memory, or from the mirror for a project that opted in."
 
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/drafts"  # wire::projects::PROJECT_DRAFTS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "A project's drafts on linked repos (M170), through the viewer check on each draft's repo."
+
+[[route]]
+method = "GET"
+path = "/api/forge/items/{id}/drafts"  # wire::projects::FORGE_ITEM_DRAFTS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "A PR's or issue's drafts (M170), through the viewer check."
+
+[[route]]
+method = "GET"
+path = "/api/forge/drafts"  # wire::projects::FORGE_DRAFTS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "The reader's own drafts (M170), on repos they may still read."
+
+[[route]]
+method = "POST"
+path = "/api/forge/drafts"  # wire::projects::FORGE_DRAFTS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "Makes a draft (M170): a person's own, or an agent's from its owner's machine, which the row names. A machine's import_key makes a second upload answer with the first. Rate-limited per account. Nothing is sent: that's a person's action (M168)."
+
+[[route]]
+method = "GET"
+path = "/api/forge/drafts/{id}"  # wire::projects::FORGE_DRAFT
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "One draft (M170), through the viewer check: one the reader may not read is a 404."
+
+[[route]]
+method = "POST"
+path = "/api/forge/drafts/{id}/discard"  # wire::projects::FORGE_DRAFT_DISCARD
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "Discards a draft (M170): its author, or anyone the viewer check lets read it."
+
+[[route]]
+method = "GET"
+path = "/api/forge/repos/{owner}/{name}"  # wire::projects::FORGE_REPO
+process = "platform"
+auth = "cloud_driver"
+clients = ["daemon"]
+note = "Whether a repo is linked to a project the reader may read it in (M170): a daemon keeps its blocks' drafts there when it is. Always a 200; another project's repo is no linked repo."
+
 # ---- platform: billing
 
 [[route]]

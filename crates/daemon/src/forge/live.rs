@@ -139,6 +139,12 @@ pub fn init(state_dir: PathBuf, control: Option<&Arc<Control>>, urls: Vec<String
     });
 }
 
+/// Control, while this daemon is in one: where linked repos' drafts are
+/// kept (M170, [`super::platform`]).
+pub fn control() -> Option<Arc<Control>> {
+    hub()?.control.as_ref()?.upgrade()
+}
+
 /// The `forge.watch` messages for control's socket.
 pub fn watch_messages() -> Option<tokio::sync::watch::Receiver<Option<String>>> {
     hub().map(|h| h.watch.subscribe())

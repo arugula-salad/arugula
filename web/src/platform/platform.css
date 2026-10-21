@@ -171,3 +171,40 @@
   margin: 4px 0 8px;
   font-size: 13px;
 }
+
+/* Drafts waiting on a project's linked repos (M170). */
+.platform-drafts li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.platform-drafts li > :not(.platform-draft-discard) {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.platform-draft-head {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.platform-draft-kind {
+  margin-right: 6px;
+  font-weight: 600;
+}
+
+.platform-draft-body {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.platform-draft-discard {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: center;
+}

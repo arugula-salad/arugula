@@ -867,6 +867,39 @@ from: string, body: ForgeText | null,
  */
 comments: Array<ForgeText>, };
 
+export type ForgeDraft = { 
+/**
+ * The platform's id: `dft_` and 32 hex characters.
+ */
+id: string, project: string, 
+/**
+ * `OWNER/NAME`.
+ */
+repo: string, repo_id: number, number: number | null, 
+/**
+ * The mirrored item it's on, and its title, when the mirror has it.
+ */
+item: string | null, item_title: string | null, 
+/**
+ * `comment`, `review` or `issue`.
+ */
+kind: string, event: string | null, title: string | null, body: string, 
+/**
+ * `waiting`, `sent`, `discarded` or `failed`.
+ */
+state: string, 
+/**
+ * The person it's for: an account id.
+ */
+author: string, 
+/**
+ * The agent that wrote it, and the machine it was on (an id, and its
+ * name when the machine is still there).
+ */
+agent: string | null, machine: string | null, machine_name: string | null, created_at: number, updated_at: number, sent_at: number | null, sent_url: string | null, error: string | null, };
+
+export type ForgeDrafts = { drafts: Array<ForgeDraft>, };
+
 /**
  * M40: how the block hears of changes.
  */

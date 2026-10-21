@@ -36,7 +36,7 @@ use crate::{
 /// Items: `fi_a1` "secret plan" (a PR on 77, bob asked to review),
 /// `fi_a2` "public fix" (an issue on 88), `fi_b1` "eve's secret" (a PR on
 /// 99). The team's project id, and eve's.
-async fn world(hub: &TestHub, gh: &Shared, app: &Platform) -> (String, String) {
+pub(super) async fn world(hub: &TestHub, gh: &Shared, app: &Platform) -> (String, String) {
     hub.github("alice", 1001, "alice-gh");
     hub.github("bob", 1002, "bob-gh");
     hub.github("eve", 1005, "eve-gh");

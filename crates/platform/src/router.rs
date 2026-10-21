@@ -17,7 +17,8 @@ use crate::{Platform, billing, chat, cloud, forge, grants, projects};
 /// `crates/control/src/main.rs` with the same path and methods: billing's
 /// (M139), Cloud's (M137), chat's (M138), then grants'; the platform
 /// page's own (M150); the GitHub App's webhook (M161); linked repos
-/// (M163); and their items, each read checked against the viewer (M165).
+/// (M163); their items, each read checked against the viewer (M165); and
+/// drafts on them (M170).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -86,6 +87,12 @@ fn routes() -> Routes {
         .route(arugula_control_wire::projects::FORGE_ITEM_CHECKS, get(forge::items::checks))
         .route(arugula_control_wire::projects::FORGE_ITEM_EVENTS, get(forge::items::events))
         .route(arugula_control_wire::projects::FORGE_ITEM_CONTENT, get(forge::content::get))
+        .route(arugula_control_wire::projects::PROJECT_DRAFTS, get(forge::drafts::project))
+        .route(arugula_control_wire::projects::FORGE_ITEM_DRAFTS, get(forge::drafts::item))
+        .route(arugula_control_wire::projects::FORGE_DRAFTS, get(forge::drafts::mine).post(forge::drafts::create))
+        .route(arugula_control_wire::projects::FORGE_DRAFT, get(forge::drafts::get))
+        .route(arugula_control_wire::projects::FORGE_DRAFT_DISCARD, post(forge::drafts::discard))
+        .route(arugula_control_wire::projects::FORGE_REPO, get(forge::drafts::repo))
         .route("/github/webhook", post(forge::webhook))
 }
 

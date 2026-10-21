@@ -268,3 +268,149 @@ pub struct ForgeText {
     pub created_at: u64,
     pub updated_at: u64,
 }
+
+/// `GET /api/forge/repos/{owner}/{name}` (M170): whether a GitHub repo is
+/// linked to a project the reader may read it in, so a machine keeps its
+/// blocks' drafts for it on the platform. Always a 200: `linked: false`
+/// for a repo nobody linked, one linked to a project the reader isn't in,
+/// and one they may not read (then `why`, as [`WithheldRepo`]'s, when it's
+/// their project's).
+pub const FORGE_REPO: &str = "/api/forge/repos/{owner}/{name}";
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ForgeRepo {
+    /// `OWNER/NAME`, as asked.
+    pub repo: String,
+    pub linked: bool,
+    /// The project it's linked to, when it's linked for the reader.
+    #[serde(default)]
+    pub project: Option<String>,
+    /// GitHub's id for it, likewise.
+    #[serde(default)]
+    pub repo_id: Option<u64>,
+    #[serde(default)]
+    pub why: Option<String>,
+}
+
+/// Drafts (M170): a comment, a review or a new issue on a linked repo,
+/// written by a person or by an agent on their machine, waiting for a
+/// person to send it (M168). A draft is read by the people who may read
+/// its repo's items (M165) in the repo's project; its author or any of
+/// them may discard it.
+///
+/// - `POST /api/forge/drafts` ([`NewDraft`]) makes one, answered
+///   [`DraftCreated`]. `GET` lists the reader's own, across projects.
+/// - `GET /api/forge/drafts/{id}`: one ([`ForgeDraft`]); `POST
+///   /api/forge/drafts/{id}/discard` discards it.
+/// - `GET /api/projects/{project}/drafts`: a project's, and `GET
+///   /api/forge/items/{id}/drafts` an item's.
+///
+/// Every list ([`ForgeDrafts`]) is the waiting ones, oldest first, unless
+/// the query says `state` (`waiting`, `sent`, `discarded`, `failed` or
+/// `all`); a project's takes `repo` (`OWNER/NAME`), `number` and `mine`
+/// too.
+pub const FORGE_DRAFTS: &str = "/api/forge/drafts";
+pub const FORGE_DRAFT: &str = "/api/forge/drafts/{id}";
+pub const FORGE_DRAFT_DISCARD: &str = "/api/forge/drafts/{id}/discard";
+pub const PROJECT_DRAFTS: &str = "/api/projects/{project}/drafts";
+pub const FORGE_ITEM_DRAFTS: &str = "/api/forge/items/{id}/drafts";
+
+/// The longest body a draft takes: GitHub's own limit for a comment.
+pub const MAX_DRAFT_BODY: usize = 65_536;
+
+/// A draft to make. From a person (their own), or from a machine (an
+/// agent's on it, for its owner: the platform records the machine, and
+/// `agent` names the agent).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NewDraft {
+    /// `OWNER/NAME`: a repo linked to a project the author is in.
+    pub repo: String,
+    /// The PR or issue; `None` for a new issue.
+    #[serde(default)]
+    pub number: Option<u64>,
+    /// `comment`, `review` or `issue`.
+    pub kind: String,
+    /// A review's: `COMMENT`, `APPROVE` or `REQUEST_CHANGES`.
+    #[serde(default)]
+    pub event: Option<String>,
+    /// A new issue's.
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub body: String,
+    /// The agent that wrote it (`mcp:claude-code`), from a machine.
+    #[serde(default)]
+    pub agent: Option<String>,
+    /// A machine's own id for a draft it kept and now uploads: the same
+    /// key makes no second draft, and is answered with the first. Only a
+    /// machine gives one.
+    #[serde(default)]
+    pub import_key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DraftCreated {
+    pub draft: ForgeDraft,
+    /// False when an `import_key` named one made before.
+    pub created: bool,
+}
+
+/// What `POST /api/forge/drafts/{id}/discard` answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DraftDiscarded {
+    pub id: String,
+    /// `discarded`.
+    pub state: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ForgeDrafts {
+    pub drafts: Vec<ForgeDraft>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ForgeDraft {
+    /// The platform's id: `dft_` and 32 hex characters.
+    pub id: String,
+    pub project: String,
+    /// `OWNER/NAME`.
+    pub repo: String,
+    pub repo_id: u64,
+    pub number: Option<u64>,
+    /// The mirrored item it's on, and its title, when the mirror has it.
+    #[serde(default)]
+    pub item: Option<String>,
+    #[serde(default)]
+    pub item_title: Option<String>,
+    /// `comment`, `review` or `issue`.
+    pub kind: String,
+    pub event: Option<String>,
+    pub title: Option<String>,
+    pub body: String,
+    /// `waiting`, `sent`, `discarded` or `failed`.
+    pub state: String,
+    /// The person it's for: an account id.
+    pub author: String,
+    /// The agent that wrote it, and the machine it was on (an id, and its
+    /// name when the machine is still there).
+    #[serde(default)]
+    pub agent: Option<String>,
+    #[serde(default)]
+    pub machine: Option<String>,
+    #[serde(default)]
+    pub machine_name: Option<String>,
+    pub created_at: u64,
+    pub updated_at: u64,
+    #[serde(default)]
+    pub sent_at: Option<u64>,
+    #[serde(default)]
+    pub sent_url: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}

@@ -34,6 +34,9 @@
 //!   them ([`poller`]), within a rate budget; [`stats`] are its numbers.
 //! - **Bodies and comments** ([`content`], M166): fetched on read and kept
 //!   a few minutes in memory, or mirrored for a project that opts in.
+//! - **Drafts** ([`drafts`], M170): comments, reviews and new issues on
+//!   linked repos that people and their agents wrote, read through the
+//!   same check, and a machine's drafts brought in once.
 //!
 //! First-time lookups at GitHub are rate-limited per account
 //! ([`FORGE_LOOKUPS`], counted here).
@@ -51,6 +54,9 @@ mod app;
 pub mod content;
 #[cfg(test)]
 mod content_tests;
+pub mod drafts;
+#[cfg(test)]
+mod drafts_tests;
 pub mod ingest;
 #[cfg(test)]
 mod ingest_tests;
