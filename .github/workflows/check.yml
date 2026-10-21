@@ -7,7 +7,8 @@
 #     weekly), the desktop app (when the push
 #     changes it: scripts/app-changed), and notices;
 #   - test: `just test` (the Rust tests under nextest), built beside static
-#     and run once static's binaries are in (scripts/ci-wait-job);
+#     and run once static's binaries are in (scripts/ci-wait-job), then the
+#     platform's again on Postgres (`just test-platform-postgres`, M143);
 #   - core: the daemon and the CLI without Labs (`just check-core`, #452);
 #   - testnet: the test stack's claims (ssh, then control);
 #   - e2e: the Playwright specs in six shards; stack: those on the test
@@ -261,6 +262,11 @@ jobs:
         env:
           # The service tests run, or fail (testkit's user_manager).
           ARUGULA_REQUIRE_SYSTEMD: "1"
+      # The platform's suite again, on Postgres (M143): a postgres:17
+      # container on the pod's Docker (its dind sidecar), reached as the
+      # test stack is, rather than a `services:` container.
+      - name: The platform on Postgres
+        run: just test-platform-postgres
       - name: sccache's hits
         if: always() && env.RUSTC_WRAPPER == 'sccache'
         run: sccache --show-stats
