@@ -11,6 +11,12 @@ const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 addEventListener("popstate", changed);
 
+/** Hear every change of route (the page's own and Back's). */
+export function onRoute(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => void listeners.delete(fn);
+}
+
 /** The route the page is at. */
 export const current = (): Route => parse(location.pathname, location.search);
 

@@ -6,6 +6,7 @@
 
 import { chat } from "../../shared/chat-store";
 import { cloudWorkspaces, cloudWorkspaceState } from "../../shared/cloud";
+import { newCloudWorkspace } from "../cloud/workspaces";
 import { MsgAvatar } from "../../shared/chat/avatar";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { names, roomPath } from "../links";
@@ -52,11 +53,18 @@ export function ProjectHome({ id }: { id: string }) {
           </ul>
           {!p.team && (
             <>
-              <h2>Cloud workspaces</h2>
+              <h2>
+                <a href={pathOf({ page: "workspaces", project: p.id }, names)} onClick={(e) => follow(e, pathOf({ page: "workspaces", project: p.id }, names))}>
+                  Cloud workspaces
+                </a>{" "}
+                <button class="chat-new" title="New Cloud workspace" aria-label="New Cloud workspace" data-project-new-workspace onClick={() => newCloudWorkspace()}>
+                  +
+                </button>
+              </h2>
               {cloudWorkspaces.loaded && workspaces.length === 0 && <p class="dim">None yet.</p>}
               <ul class="platform-list" data-project-workspaces>
                 {workspaces.map((w) => {
-                  const to = pathOf({ page: "workspace", project: p.id, workspace: w.id }, (x) => (x === w.id ? w.name : names(x)));
+                  const to = pathOf({ page: "workspace", project: p.id, workspace: w.id }, names);
                   return (
                     <li key={w.id}>
                       <a href={to} data-project-workspace={w.id} onClick={(e) => follow(e, to)}>

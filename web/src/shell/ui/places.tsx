@@ -11,6 +11,7 @@ import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
 import { chat, chatStore, ROOM_ID } from "../../shared/chat-store";
+import { openPlatform, platformOrigin } from "../platform-links";
 import type { ChatRoute } from "../../shared/chat/route";
 
 // ---- the route
@@ -47,6 +48,8 @@ function safeDecode(s: string): string {
 /** Activity, or search results for `q` (M75). */
 export function openChatView(view: "activity" | "search", q = "") {
   closeThread();
+  // M153: chat is on the platform page when control has one.
+  if (platformOrigin()) return openPlatform("/chat");
   const hash = view === "activity" ? "chat=activity" : `chat=search/${encodeURIComponent(q)}`;
   if (location.hash === `#${hash}`) return changed();
   // Typing in search replaces the entry, so Back doesn't step through it.
@@ -69,6 +72,7 @@ export function useChatOpen(): boolean {
 
 export function openChat() {
   closeThread();
+  if (platformOrigin()) return openPlatform("/chat");
   if (location.hash !== "#chat") location.hash = "chat";
   else changed();
 }
@@ -76,6 +80,7 @@ export function openChat() {
 /** M123: a room in control's chat, at message `msg`. */
 export function openRoom(room: string, msg?: number) {
   closeThread();
+  if (platformOrigin()) return openPlatform(`/chat/${room}${msg !== undefined ? `?msg=${msg}` : ""}`);
   const hash = `chat=${room}${msg !== undefined ? `&msg=${msg}` : ""}`;
   if (location.hash !== `#${hash}`) location.hash = hash;
   else changed();

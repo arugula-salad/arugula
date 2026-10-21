@@ -29,7 +29,7 @@ test("each route parses", () => {
 });
 
 test("anything else is missing, never a guess", () => {
-  for (const p of ["/p", "/p/arugula", `/p/${P}/nope`, "/dm/sam", `/p/${P}/workspaces/app`, `/p/${P}/workspaces/cw_0123abcd/tab`, "/settings/x", "/chat"]) {
+  for (const p of ["/p", "/p/arugula", `/p/${P}/nope`, "/dm/sam", `/p/${P}/workspaces/app`, `/p/${P}/workspaces/cw_0123abcd/tab`, "/settings/x", "/chats"]) {
     assert.equal(parse(p).page, "missing", p);
   }
   assert.equal(parse(`/p/${P}/chat/ch_0123456789abcdef`, "?msg=x").msg, undefined);
@@ -61,4 +61,25 @@ test("slugs", () => {
   assert.ok(slugOf("x".repeat(100)).length <= 40);
   assert.equal(idOf("cw_00ff-anything-at-all"), "cw_00ff");
   assert.equal(idOf("cw_zz"), null);
+});
+
+test("Cloud's list and past runs and tabs", () => {
+  assert.deepEqual(parse(`/p/${P}/workspaces`), { page: "workspaces", project: P });
+  assert.deepEqual(parse(`/p/${P}/past/run_00ff11ee`), { page: "past", project: P, id: "run_00ff11ee" });
+  assert.deepEqual(parse(`/p/${P}/past/cwc_00ff11ee`), { page: "past", project: P, id: "cwc_00ff11ee" });
+  assert.equal(parse(`/p/${P}/past/cw_00ff11ee`).page, "missing");
+  for (const r of [{ page: "workspaces", project: P }, { page: "past", project: P, id: "run_00ff11ee" }]) assert.deepEqual(parse(pathOf(r)), r);
+});
+
+test("id-only addresses, for links that don't know the project", () => {
+  assert.deepEqual(parse("/chat"), { page: "find", what: "chat" });
+  assert.deepEqual(parse("/chat/ch_0123456789abcdef", "?msg=7"), { page: "find", what: "chat", room: "ch_0123456789abcdef", msg: 7 });
+  assert.deepEqual(parse("/workspaces"), { page: "find", what: "workspaces" });
+  assert.deepEqual(parse("/workspaces/cw_0123abcd/cwc_4567ef01"), { page: "find", what: "workspaces", workspace: "cw_0123abcd", tab: "cwc_4567ef01" });
+  assert.deepEqual(parse("/past/run_00ff11ee"), { page: "find", what: "past", id: "run_00ff11ee" });
+  for (const p of ["/chat/general", "/workspaces/app", "/past/cw_00ff", "/chat/a/b"]) assert.equal(parse(p).page, "missing", p);
+  for (const r of [{ page: "find", what: "chat", room: "ch_0123456789abcdef", msg: 7 }, { page: "find", what: "workspaces", workspace: "cw_0123abcd" }, { page: "find", what: "past", id: "cwc_00ff" }]) {
+    const [p, q] = pathOf(r).split("?");
+    assert.deepEqual(parse(p, q ? `?${q}` : ""), r);
+  }
 });

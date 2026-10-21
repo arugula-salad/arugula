@@ -5,8 +5,9 @@
 
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { cloudPanes, cloudRoute, cloudWorkspaceRoute } from "../../../shared/cloud";
+import { cloudPanes, cloudRoute, cloudWorkspaceRoute, cloudWorkspaces } from "../../../shared/cloud";
 import { CloudWorkspacesGroup } from "../../../platform/cloud/workspaces";
+import { openPlatform, platformOrigin } from "../../platform-links";
 import { paneIds, type Client } from "../../client";
 import { directory } from "../../hosts";
 import type { Attention, PaneInfo, Session, SessionId, TabId } from "../../../shared/proto";
@@ -267,7 +268,8 @@ export function SessionSidebar({
         )}
       </div>
       </>}
-      <CloudWorkspacesGroup enabled={cloudPanes.enabled} />
+      {/* M153: Cloud workspaces are on the platform page, when control has one. */}
+      {platformOrigin() ? <CloudWorkspacesLink enabled={cloudPanes.enabled} /> : <CloudWorkspacesGroup enabled={cloudPanes.enabled} />}
       {!narrow && <Resizer width={width} />}
     </aside>
   );
@@ -441,5 +443,21 @@ export function SessionButton({
         <span class="caret" aria-hidden="true">▾</span>
       </button>
     </span>
+  );
+}
+
+/** M153: Cloud workspaces aren't the shell's sessions any more: they're on
+ * the platform page, and this opens them there. */
+function CloudWorkspacesLink({ enabled }: { enabled: boolean }) {
+  const n = cloudWorkspaces.list.length;
+  if (!enabled && !n) return null;
+  return (
+    <div class="ws-cloud-group" data-cloud-workspaces-link>
+      <h3 class="ws-group cloud">
+        <a class="ws-group-open" href={`${platformOrigin()}/workspaces`} title="Your Cloud workspaces, on the platform page" onClick={(e) => (e.preventDefault(), openPlatform("/workspaces"))}>
+          Cloud workspaces <span class="ws-group-count">{n}</span> ↗
+        </a>
+      </h3>
+    </div>
   );
 }

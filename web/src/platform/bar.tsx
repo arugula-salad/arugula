@@ -57,7 +57,7 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
       </button>
       <nav class="places" aria-label="Places">
         {project && (
-          <Place to={pathOf({ page: "project", project }, names)} here={r.page === "project" || r.page === "workspace"} data="home">
+          <Place to={pathOf({ page: "project", project }, names)} here={r.page === "project" || r.page === "workspaces" || r.page === "workspace" || r.page === "past"} data="home">
             Project
           </Place>
         )}

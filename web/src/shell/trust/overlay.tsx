@@ -9,6 +9,7 @@
 // they never see the control session (M149).
 
 import { useEffect, useState } from "preact/hooks";
+import { openPlatform, platformOrigin } from "../platform-links";
 import { CloudAgents } from "../../platform/settings/cloud-agents";
 import { Plan } from "../../platform/settings/plan";
 import { TelemetryAsk } from "../../platform/settings/telemetry";
@@ -146,9 +147,10 @@ export function accountItems(s: ControlSession, docs = false): MenuItem[] {
     { label: "Devices and machines…", run: openPanel("devices") },
     // #1066: follows the `docs` flag of the machine shown.
     ...(docs ? [{ label: "Shared Docs…", run: openPanel("shared-docs") } as MenuItem] : []),
-    { label: "Cloud agents…", run: openPanel("cloud") },
+    // M153: the platform page's, when control has one.
+    { label: "Cloud agents…", run: platformOrigin() ? () => openPlatform("/agents") : openPanel("cloud") },
     { label: "Add a phone or browser…", run: openPanel("add-device") },
     { label: "Sign-in and account…", run: openPanel("account") },
-    ...(s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: openPanel("plan") }] : []),
+    ...(s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: platformOrigin() ? () => openPlatform("/settings") : openPanel("plan") }] : []),
   ];
 }

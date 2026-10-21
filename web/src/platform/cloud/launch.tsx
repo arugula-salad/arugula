@@ -5,7 +5,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
-  cloudWorkspaceMounts, cloudWorkspaces, cloudWorkspaceState, useCloudPanes,
+  cloudWorkspaceMounts, cloudWorkspaceRoute, cloudWorkspaces, cloudWorkspaceState, useCloudPanes,
   type CloudAgent, type CloudModel, type CloudTab, type CloudWorkspace, type CloudWorkspaceSpec,
 } from "../../shared/cloud";
 import { useCloudApi } from "../../shared/platform-api";
@@ -33,7 +33,7 @@ export function CloudAgentLaunch({ close, choice }: { close: () => void; choice:
   // Until one is picked: the shown Cloud workspace, else the newest, else
   // a new one (following the list as it loads).
   const [chosen, setWhere] = useState<string | null>(null);
-  const shown = cloudWorkspaces.find(location.hash.match(/^#cloud-ws=(cw_[0-9a-f]+)/)?.[1] ?? null);
+  const shown = cloudWorkspaces.find(cloudWorkspaceRoute()?.workspace ?? null);
   const where = chosen ?? (shown && usable(shown) ? shown.id : list[0]?.id ?? NEW);
   const [repository, setRepository] = useState("");
   const [gitRef, setGitRef] = useState("");

@@ -12,9 +12,20 @@
 //   /p/:project/chat/activity      Activity
 //   /p/:project/chat/search?q=…    search
 //   /dm/:room                      a direct message
+//   /p/:project/workspaces         its Cloud workspaces
 //   /p/:project/workspaces/:id     a Cloud workspace (`/:tab` for a tab)
+//   /p/:project/past/:id           a past run (`run_…`) or a closed tab
+//                                  (`cwc_…`), read only
 //   /agents                        the cloud agent library
 //   /settings                      account settings
+//
+// And addresses that name only an id, for links from places that don't
+// know its project (the shell, an old link, a push): the page finds the
+// project once it knows the reader's, and puts the full path in their place.
+//
+//   /chat, /chat/:room             chat (the first team's), a room in it
+//   /workspaces, /workspaces/:id[/:tab], /past/:id
+//                                  the reader's own Cloud workspaces
 //
 // Routes for the inbox, issues and changes wait for steps 4 and 6 rather
 // than shipping empty.
@@ -24,9 +35,15 @@ export type Route =
   | { page: "project"; project: string }
   | { page: "chat"; project: string; room?: string; msg?: number; view?: "activity" | "search"; q?: string }
   | { page: "dm"; room: string; msg?: number }
+  | { page: "workspaces"; project: string }
   | { page: "workspace"; project: string; workspace: string; tab?: string }
+  | { page: "past"; project: string; id: string }
   | { page: "agents" }
   | { page: "settings" }
+  /** An id-only address, to be put where it belongs (`resolve`). */
+  | { page: "find"; what: "chat"; room?: string; msg?: number }
+  | { page: "find"; what: "workspaces"; workspace?: string; tab?: string }
+  | { page: "find"; what: "past"; id: string }
   | { page: "missing"; path: string };
 
 /** An id at the front of a path segment, before its slug: `prj_8f2k`,
@@ -74,6 +91,21 @@ export function parse(path: string, search = ""): Route {
   if (parts.length === 0) return { page: "home" };
   if (parts.length === 1 && parts[0] === "agents") return { page: "agents" };
   if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
+  if (parts[0] === "chat" && parts.length <= 2) {
+    if (parts.length === 1) return { page: "find", what: "chat" };
+    const room = idOf(parts[1]);
+    return room ? { page: "find", what: "chat", room, ...msg } : missing;
+  }
+  if (parts[0] === "workspaces" && parts.length <= 3) {
+    const workspace = parts[1] === undefined ? undefined : idOf(parts[1]);
+    const tab = parts[2] === undefined ? undefined : idOf(parts[2]);
+    if (workspace === null || tab === null) return missing;
+    return { page: "find", what: "workspaces", ...(workspace ? { workspace } : {}), ...(tab ? { tab } : {}) };
+  }
+  if (parts[0] === "past" && parts.length === 2) {
+    const id = idOf(parts[1]);
+    return id && /^(run|cwc)_/.test(id) ? { page: "find", what: "past", id } : missing;
+  }
   if (parts[0] === "dm" && parts.length === 2) {
     const room = idOf(parts[1]);
     return room ? { page: "dm", room, ...msg } : missing;
@@ -88,6 +120,11 @@ export function parse(path: string, search = ""): Route {
     if (parts.length === 4 && parts[3] === "search") return { page: "chat", project, view: "search", q: q.get("q") ?? "" };
     const room = parts.length === 4 ? idOf(parts[3]) : null;
     return room ? { page: "chat", project, room, ...msg } : missing;
+  }
+  if (parts[2] === "workspaces" && parts.length === 3) return { page: "workspaces", project };
+  if (parts[2] === "past" && parts.length === 4) {
+    const id = idOf(parts[3]);
+    return id && /^(run|cwc)_/.test(id) ? { page: "past", project, id } : missing;
   }
   if (parts[2] === "workspaces" && (parts.length === 4 || parts.length === 5)) {
     const workspace = idOf(parts[3]);
@@ -118,12 +155,20 @@ export function pathOf(r: Route, names: Names = () => null): string {
     }
     case "dm":
       return `/dm/${s(r.room)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
+    case "workspaces":
+      return `/p/${s(r.project)}/workspaces`;
     case "workspace":
       return `/p/${s(r.project)}/workspaces/${s(r.workspace)}${r.tab ? `/${s(r.tab)}` : ""}`;
+    case "past":
+      return `/p/${s(r.project)}/past/${s(r.id)}`;
     case "agents":
       return "/agents";
     case "settings":
       return "/settings";
+    case "find":
+      if (r.what === "chat") return r.room ? `/chat/${s(r.room)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}` : "/chat";
+      if (r.what === "past") return `/past/${s(r.id)}`;
+      return `/workspaces${r.workspace ? `/${s(r.workspace)}${r.tab ? `/${s(r.tab)}` : ""}` : ""}`;
     case "missing":
       return r.path;
   }

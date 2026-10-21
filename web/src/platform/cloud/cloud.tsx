@@ -1,7 +1,7 @@
 import { AgentMessage } from "../../shared/agent-message";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
-import { cloudPanes, cloudTerminal as terminal, useCloudPanes, type CloudAgent as Agent, type CloudRun as Run, type PastCloudTab } from "../../shared/cloud";
+import { cloudPanes, cloudTerminal as terminal, cloudWorkspaces, useCloudPanes, type CloudAgent as Agent, type CloudRun as Run, type PastCloudTab } from "../../shared/cloud";
 import { useCloudApi } from "../../shared/platform-api";
 type Block = { kind: string; body?: unknown; summary?: string; name?: string; request_id?: string; options?: { optionId: string; name?: string }[]; schema?: { properties?: Record<string, { type?: string; title?: string; enum?: string[] }>; required?: string[] } };
 export type Event = { id: number; kind?: string; stage?: string; state?: string; data?: string; blocks?: Block[] };
@@ -92,7 +92,7 @@ export function CloudPanel({ close, notify }: { close: () => void; notify?: () =
   return <div class="cloud-panel">
     <div class="prompt-buttons"><h2>Cloud agents</h2><button onClick={close}>Close</button></div>
     <p>Agents run in Cloud workspaces: a machine in the cloud with your repositories on it. <b>New agent</b> → <b>Cloud</b> opens one there, and so does <b>+ Agent</b> in a Cloud workspace.</p>
-    {!unavailable && <p><button data-open-cloud-workspaces onClick={() => { close(); location.hash = "cloud-ws"; }}>Cloud workspaces</button></p>}
+    {!unavailable && <p><button data-open-cloud-workspaces onClick={() => { close(); cloudWorkspaces.open(); }}>Cloud workspaces</button></p>}
     {notify && <button onClick={() => void notify().then((state) => { if (state !== "on") setError(state === "denied" ? "Notifications are blocked in browser settings." : "Notifications are unavailable in this browser."); }, (e: Error) => setError(e.message))}>Notify me when an agent needs input</button>}
     <p class="dim">{unavailable || "Limited beta"}</p>
     <p class="dim">Cloud execution processes your prompts, repository, selected secrets, and results. Terminal connections remain end-to-end encrypted.</p>
