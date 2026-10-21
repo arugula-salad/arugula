@@ -10,7 +10,7 @@ import { useSubscribe } from "../../../shared/ui/hooks";
 import { getFleet, HostButton, hostMenuShown, machineState } from "../hosts";
 import { PeopleBar, shareSession } from "../people";
 import { UpdateChip } from "../update";
-import { WindowButtons } from "../window-buttons";
+import { WindowButtons } from "../../../shared/ui/window-buttons";
 import type { Renaming } from "./rename-input";
 import { SessionButton } from "./session-sidebar";
 import { AttentionBell } from "./attention-drawer";

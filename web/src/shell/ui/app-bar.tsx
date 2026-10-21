@@ -14,7 +14,7 @@ import { settingsItems } from "./commands";
 import { ariaKeys, keyHint } from "./keys";
 import { openPalette } from "./palette";
 import { UpdateChip } from "./update";
-import { WindowButtons } from "./window-buttons";
+import { WindowButtons } from "../../shared/ui/window-buttons";
 import { countView } from "../../shared/telemetry";
 import { SearchIcon } from "./shell/icons";
 

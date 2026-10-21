@@ -6,6 +6,7 @@
 import type { ComponentChildren } from "preact";
 import { useSubscribe } from "../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../shared/ui/menu";
+import { WindowButtons } from "../shared/ui/window-buttons";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signOut } from "./signin";
@@ -86,6 +87,8 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
           <span class="account-login">{me.login || me.name}</span> <span class="caret">▾</span>
         </button>
       )}
+      {/* In the desktop app on Linux the bar is the titlebar (M157). */}
+      <WindowButtons />
     </header>
   );
 }
