@@ -248,7 +248,7 @@ async fn a_joined_machine_drives_its_owners_cloud_workspaces() {
     let b = join_body(&keys, true);
     let r: Value = c.http.post(format!("{}/api/join", c.base)).json(&b).send().await.unwrap().json().await.unwrap();
     let code = r["code"].as_str().unwrap().to_owned();
-    let p = &c.app.platform;
+    let p = c.app.platform.inner();
     let id = keys.id();
     let drives = || arugula_platform::grants::can_drive_cloud(p, &id, "a1");
     assert!(!drives().await.unwrap(), "not before it's approved");

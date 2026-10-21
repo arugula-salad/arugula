@@ -194,7 +194,11 @@ pub fn start(app: &Arc<Platform>) {
         }
         loop {
             let Some(p) = app.upgrade() else { return };
-            if let Err(e) = follow(&p).await {
+            // Held with the rest of the background work for a window: it
+            // writes grants and `hub_feed`, which a window copies.
+            if !p.is_paused()
+                && let Err(e) = follow(&p).await
+            {
                 tracing::warn!(error = %e, "the platform couldn't apply the hub's change feed to projects and grants");
             }
             drop(p);

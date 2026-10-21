@@ -14,6 +14,10 @@ a hub and a platform", #1150): the hub (`arugula-control`) and the platform
 - `analytics`: the PostHog client. In process the platform shares the hub's
   queue; on its own it starts one with the same key.
 - `principal`: who is asking (`Principal`), and the HMAC-signed header the
-  hub forwards it in once the platform is its own process (M140).
+  hub's gateway forwards it in once the platform is its own process
+  (M140): a `Vouch`, which is a principal, a refusal or nobody.
+- `internal`: how the hub's and the platform's calls to each other are
+  signed with the same key (M140), each call good once.
+- `roots`: outgoing TLS roots, the system's or the bundled ones.
 
 It knows nothing of either side's state: no `App`, no tables.

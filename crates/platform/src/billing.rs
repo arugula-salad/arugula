@@ -44,6 +44,68 @@ const CHECKOUTS: (&str, usize) = ("checkout", 20);
 const REPORTS: (&str, usize) = ("report", 6);
 const ALL_REPORTS: (&str, usize) = ("report-all", 30);
 
+/// Billing's flags and their env vars. They moved here from control's
+/// with the same names (M140), so a deploy's secrets don't change: control
+/// takes them (`#[command(flatten)]`; the hub only needs to know billing is
+/// on), and so does the platform's own binary.
+#[derive(clap::Args, Debug, Clone)]
+#[group(id = "billing")]
+pub struct Args {
+    /// Billing (M22): a Stripe secret key turns it on (STRIPE_SECRET_KEY);
+    /// webhooks are checked with STRIPE_WEBHOOK_SECRET.
+    #[arg(long, env = "STRIPE_SECRET_KEY", hide_env_values = true)]
+    pub stripe_secret: Option<String>,
+    #[arg(long, env = "STRIPE_WEBHOOK_SECRET", hide_env_values = true)]
+    pub stripe_webhook_secret: Option<String>,
+    #[arg(long, default_value = "https://api.stripe.com", env = "ARUGULA_STRIPE_API")]
+    pub stripe_api: String,
+    /// The per-seat price, and the metered price and meter event for
+    /// sandbox minutes.
+    #[arg(long, env = "ARUGULA_STRIPE_SEAT_PRICE", default_value = "")]
+    pub stripe_seat_price: String,
+    #[arg(long, env = "ARUGULA_STRIPE_MINUTES_PRICE", default_value = "")]
+    pub stripe_minutes_price: String,
+    #[arg(long, env = "ARUGULA_STRIPE_MINUTES_EVENT", default_value = "sandbox_minutes")]
+    pub stripe_minutes_event: String,
+}
+
+impl Args {
+    /// Billing, if there's a Stripe key: never without the webhook secret,
+    /// which is all that tells Stripe's events from anyone's.
+    pub fn stripe(self) -> anyhow::Result<Option<Stripe>> {
+        let set = |v: Option<String>| v.filter(|s| !s.is_empty());
+        let Some(secret) = set(self.stripe_secret) else { return Ok(None) };
+        let Some(webhook_secret) = set(self.stripe_webhook_secret) else {
+            anyhow::bail!("STRIPE_SECRET_KEY is set but STRIPE_WEBHOOK_SECRET isn't: billing needs both");
+        };
+        Ok(Some(Stripe {
+            api: self.stripe_api.trim_end_matches('/').to_owned(),
+            secret,
+            webhook_secret,
+            seat_price: self.stripe_seat_price,
+            minutes_price: self.stripe_minutes_price,
+            minutes_event: self.stripe_minutes_event,
+        }))
+    }
+}
+
+/// The hourly usage report, while billing is on, except while background
+/// work is held ([`Platform::paused`]).
+pub fn start(p: &Arc<Platform>) {
+    if p.stripe.is_none() {
+        return;
+    }
+    let p = p.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+            if !p.is_paused() {
+                report_usage(&p).await;
+            }
+        }
+    });
+}
+
 pub struct Stripe {
     pub api: String,
     pub secret: String,
@@ -379,6 +441,26 @@ mod tests {
     use hmac::{KeyInit, Mac};
 
     use super::*;
+
+    #[test]
+    fn billing_needs_its_webhook_secret() {
+        let b = |s: Option<&str>, w: Option<&str>| {
+            Args {
+                stripe_secret: s.map(Into::into),
+                stripe_webhook_secret: w.map(Into::into),
+                stripe_api: "https://api.stripe.com/".into(),
+                stripe_seat_price: String::new(),
+                stripe_minutes_price: String::new(),
+                stripe_minutes_event: String::new(),
+            }
+            .stripe()
+        };
+        assert!(b(None, None).unwrap().is_none(), "off without a key");
+        assert!(b(Some(""), None).unwrap().is_none(), "an empty key is none");
+        assert!(b(Some("sk_test"), None).is_err(), "a key alone doesn't start");
+        let on = b(Some("sk_test"), Some("whsec")).unwrap().unwrap();
+        assert_eq!((on.webhook_secret.as_str(), on.api.as_str()), ("whsec", "https://api.stripe.com"));
+    }
 
     #[test]
     fn webhook_signatures() {

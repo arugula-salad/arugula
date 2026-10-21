@@ -4,14 +4,17 @@
 //! answer errors in the same JSON, count rate limits and send product
 //! analytics the same way, and agree on who is asking (`Principal`, and the
 //! signed header the hub forwards it in once the platform is its own
-//! process, M140).
+//! process, M140), and how the two sign the calls between them
+//! (`internal`).
 //!
 //! Nothing here knows about either side's state: no `App`, no tables.
 
 pub mod analytics;
 pub mod error;
+pub mod internal;
 pub mod limit;
 pub mod principal;
+pub mod roots;
 pub mod sqlite;
 
 pub use error::{ApiError, err, refusal, reply};

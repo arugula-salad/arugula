@@ -4,7 +4,10 @@
 #
 #   testnet/up.sh ssh       bastion, box-bare, box-systemd and git (see README.md)
 #   testnet/up.sh control   the same, and arugula-control with its fakes;
-#                           needs this tree's static binaries (`just static`)
+#                           needs this tree's static binaries (`just static`).
+#                           ARUGULA_TESTNET_PLATFORM=out runs control's
+#                           platform out of process (M140): the `platform`
+#                           service, with control as its gateway
 #   testnet/up.sh tailnet   headscale, ts-box and ts-client (S28's comparison)
 #
 # Makes the stack's keys in testnet/.state (.state-<name> for another
@@ -31,7 +34,14 @@ need_docker
 
 case "$PROFILE" in
   ssh) boxes="bastion box-bare box-systemd git"; profiles="--profile ssh" ;;
-  control) boxes="bastion box-bare box-systemd git"; profiles="--profile ssh --profile control" ;;
+  control)
+    boxes="bastion box-bare box-systemd git"; profiles="--profile ssh --profile control"
+    # Control's platform out of process (M140), or in it (the default).
+    case "${ARUGULA_TESTNET_PLATFORM:-in}" in
+      out) profiles="$profiles --profile platform"; export ARUGULA_TESTNET_PLATFORM_URL=http://platform:7700 ;;
+      in) unset ARUGULA_TESTNET_PLATFORM_URL ;;
+      *) echo "ARUGULA_TESTNET_PLATFORM is in or out" >&2; exit 2 ;;
+    esac ;;
   tailnet) boxes="ts-box ts-client"; profiles="--profile tailnet" ;;
   *) echo "usage: testnet/up.sh ssh|control|tailnet" >&2; exit 2 ;;
 esac
@@ -113,13 +123,16 @@ export ARUGULA_TESTNET_SSH_PORT=$PORT
 export ARUGULA_TESTNET_CONTROL_PORT=$cport
 export ARUGULA_TESTNET_FAKES_PORT=${ARUGULA_TESTNET_FAKES_PORT:-22981}
 export ARUGULA_TESTNET_GUEST_SSH_PORT=${ARUGULA_TESTNET_GUEST_SSH_PORT:-22982}
+# Where control's platform runs (M140): in (its process) or out (the
+# platform service).
+export ARUGULA_TESTNET_PLATFORM=${ARUGULA_TESTNET_PLATFORM:-in}
 ENV
   for _ in $(seq 1 40); do
     curl -fsS "http://127.0.0.1:$cport/control.json" >/dev/null 2>&1 && break
     sleep 0.5
   done
   curl -fsS "http://127.0.0.1:$cport/control.json" >/dev/null || die "control did not answer on 127.0.0.1:$cport"
-  log "control: http://$net.10:8080 (127.0.0.1:$cport from here)"
+  log "control: http://$net.10:8080 (127.0.0.1:$cport from here), platform ${ARUGULA_TESTNET_PLATFORM:-in} of process"
 fi
 
 if [ "$PROFILE" = tailnet ]; then

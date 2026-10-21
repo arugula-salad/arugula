@@ -377,9 +377,7 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
         machines: daemons.clone(),
         disbanded: disband.clone(),
     };
-    if let Err(e) = app.platform.account_deleted(&deleted).await {
-        warn!(error = %e, "the platform couldn't erase a deleted account");
-    }
+    tell_platform(app, &deleted).await;
     for d in &daemons {
         app.relay.drop_daemon(d);
     }
@@ -407,6 +405,61 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
         json!({ "machines": daemons.len(), "teams_disbanded": disband.len(), "teams_left": p.tell.len() }),
     );
     Ok(())
+}
+
+/// Tell the platform an account is gone; once it says it erased its part,
+/// the hub forgets the deletion. If it can't be told now (out of process
+/// and away), [`start_telling`] tries again.
+async fn tell_platform(app: &App, deleted: &arugula_platform::Deleted) -> bool {
+    match app.platform.account_deleted(deleted).await {
+        Ok(()) => match app.db.told_deletion(&deleted.account) {
+            Ok(()) => true,
+            Err(e) => {
+                warn!(error = %e, "forgetting a deletion the platform was told of");
+                false
+            }
+        },
+        Err(e) => {
+            warn!(error = format!("{e:#}"), "the platform couldn't erase a deleted account yet; trying again");
+            false
+        }
+    }
+}
+
+/// How often deletions the platform hasn't confirmed are sent again.
+const TELL_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Every [`TELL_EVERY`], tell the platform of each deletion it hasn't
+/// confirmed yet (`untold_deletions`, M140): taking one twice changes
+/// nothing for it.
+pub fn start_telling(app: Arc<App>) {
+    tokio::spawn(async move {
+        loop {
+            tell_untold(&app).await;
+            tokio::time::sleep(TELL_EVERY).await;
+        }
+    });
+}
+
+/// One round of [`start_telling`]: how many were told.
+pub async fn tell_untold(app: &App) -> usize {
+    let untold = match app.db.untold_deletions() {
+        Ok(u) => u,
+        Err(e) => {
+            warn!(error = %e, "reading the deletions the platform hasn't been told of");
+            return 0;
+        }
+    };
+    let mut told = 0;
+    for d in &untold {
+        if tell_platform(app, d).await {
+            told += 1;
+        }
+    }
+    if told > 0 {
+        info!(told, left = untold.len() - told, "told the platform of deleted accounts");
+    }
+    told
 }
 
 #[cfg(test)]
@@ -505,7 +558,7 @@ mod tests {
         let app = app();
         // The platform follows the hub's change feed from here on: projects,
         // team members and grants (step 2).
-        let platform = &app.platform;
+        let platform = app.platform.inner();
         arugula_platform::projects::follow(platform).await.unwrap();
         let (ak, ac) = person(&app, "acct-alice", "alice");
         let (bk, bc) = person(&app, "acct-bob", "bob");
@@ -557,7 +610,7 @@ mod tests {
         assert!(p.blockers.is_empty() && p.pays.is_empty() && p.retain_for.is_empty());
         // Billing's rows are the platform's (M139): the team she founded
         // pays, so she cancels first.
-        let billing = &app.platform.db;
+        let billing = &app.platform.inner().db;
         billing.set_billing("account:acct-alice", Some("cus_a"), Some("sub_a"), "canceled", 1).unwrap();
         billing.set_billing("team:t1", Some("cus_t1"), Some("sub_t1"), "active", 1).unwrap();
         billing.set_billing("team:t2", Some("cus_t2"), Some("sub_t2"), "active", 1).unwrap();
@@ -566,7 +619,7 @@ mod tests {
         // team, a thread on her machine, and a message in his team's
         // channel that mentions her.
         use arugula_platform::db::chat::{NewMessage, Room};
-        let chat = &app.platform.db;
+        let chat = &app.platform.inner().db;
         let room = |id: &str, scope: &str, kind: &str, machine: Option<&str>| Room {
             id: id.into(),
             scope: scope.into(),

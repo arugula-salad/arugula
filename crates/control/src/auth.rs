@@ -36,9 +36,12 @@ use crate::{ApiError, App, err};
 pub const SESSION_COOKIE: &str = "ilg_session";
 const STATE_COOKIE: &str = "ilg_oauth";
 const SESSION_DAYS: u64 = 30;
+/// The header a device or daemon signs its requests in.
+pub const AUTH_HEADER: &str = "x-arugula-auth";
+
 /// The signature header.
 pub fn auth_header(headers: &HeaderMap) -> Option<&HeaderValue> {
-    headers.get("x-arugula-auth")
+    headers.get(AUTH_HEADER)
 }
 const SKEW_MS: u64 = 5 * 60 * 1000;
 

@@ -7,13 +7,19 @@ Docs, billing). Terminal bytes travel end to end between a device and a
 daemon ([docs/control-e2e.md](../../docs/control-e2e.md), [docs.arugula.io/control](https://docs.arugula.io/control/)). Running
 and operating it: [docs/control-ops.md](../../docs/control-ops.md).
 
-Control is becoming two processes (#1150): this crate is the hub, and
-`crates/platform` the platform, which runs in process for now
-(`App::platform`). The platform reaches the hub only through `HubPort`,
-whose in-process side is `src/hub_port.rs` (with `gate`, which tells the
-platform's routes who's asking), and follows the hub through its outbox
-(`src/db/changes.rs`). Build an `App` with `App::start`, which attaches the
-platform's `HubPort` to it.
+Control is two processes (#1150): this crate is the hub, and
+`crates/platform` the platform, which runs in this process
+(`--platform in-process`, the default) or as its own behind this hub's
+gateway (M140, `src/gateway.rs`: `App::platform` is a `PlatformAt`). The
+platform reaches the hub only through `HubPort`, whose in-process side is
+`src/hub_port.rs` (with `who` and `gate`, which tell the platform's routes
+who's asking), served over HTTP on the hub's internal listener
+(`src/internal.rs`), and follows the hub through its outbox
+(`src/db/changes.rs`). `src/maintenance.rs` is the switch that answers
+every platform route with 503 for a window (M141), and `src/db/platform.rs`
+what the hub keeps about the platform. `src/gateway_wire.rs` tests the
+gateway over real sockets. Build an `App` with `App::start`, which
+attaches the platform's `HubPort` to it.
 
 Every table control's database has is listed in [tables.toml](tables.toml),
 with its plane, which process owns it, what it holds and who else sees it. A test fails when a

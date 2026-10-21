@@ -11,6 +11,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 need_docker
 
-docker compose -f "$HERE/compose.yaml" --profile ssh --profile control --profile tailnet down -v --remove-orphans
+docker compose -f "$HERE/compose.yaml" --profile ssh --profile control --profile platform --profile tailnet down -v --remove-orphans
 rm -rf "$STATE"
 echo "$TESTNET removed"

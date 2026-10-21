@@ -30,7 +30,7 @@ arugula-e2e = { workspace = true }
 arugula-platform = { workspace = true }
 libc = "0.2.189"
 p256 = { workspace = true, features = ["ecdh", "ecdsa"] }
-reqwest = { workspace = true, features = ["rustls", "json"] }
+reqwest = { workspace = true, features = ["rustls", "json", "stream"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
 russh = { workspace = true, features = ["aws-lc-rs"] }
 rust-embed = { workspace = true, features = ["mime-guess"] }
@@ -38,11 +38,12 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+# routes.toml, which the gateway forwards the platform's routes from.
+toml = { version = "1.1.8", default-features = false, features = ["std", "parse", "serde"] }
 tokio-tungstenite = { workspace = true, features = ["rustls-tls-native-roots"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }
-webpki-root-certs = { workspace = true }
 
 [lints]
 workspace = true
@@ -53,7 +54,6 @@ aes-gcm = { workspace = true }
 arugula-platform = { workspace = true, features = ["contract"] }
 hkdf = { workspace = true }
 # tables.toml, the table manifest (src/db/tables.rs).
-toml = { version = "1.1.8", default-features = false, features = ["std", "parse", "serde"] }
 
 [features]
 # Embed web/dist even in a debug build (rust-embed reads it from the source

@@ -127,7 +127,7 @@ mod tests {
         let (stripe, calls) = fake_stripe().await;
         let c = control(|app| {
             app.cfg.billing = true;
-            let p = Arc::get_mut(&mut app.platform).expect("not started yet");
+            let p = app.platform.inner_mut();
             p.stripe = Some(arugula_platform::billing::Stripe {
                 api: stripe.clone(),
                 secret: "sk_test".into(),
@@ -188,7 +188,7 @@ mod tests {
         let done = json!({ "type": "checkout.session.completed", "data": { "object": {
             "customer": "cus_1", "subscription": "sub_1", "metadata": { "owner": format!("team:{team}") } } } });
         assert_eq!(hook(done).await.unwrap().status(), 200);
-        assert!(c.app.platform.db.billing(&format!("team:{team}")).unwrap().unwrap().active());
+        assert!(c.app.platform.inner().db.billing(&format!("team:{team}")).unwrap().unwrap().active());
         assert!(paid(&c.app, "acct-own").await.unwrap(), "the hub sees the team's plan");
         assert!(!relay_standing(&c.app, "acct-own").await.unwrap().2, "a paying account isn't slowed");
         let (_, b) = c.as_person(&cookie, "GET", "/api/billing", None).await;

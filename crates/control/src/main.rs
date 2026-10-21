@@ -32,12 +32,17 @@ mod doc_links_wire;
 mod forge;
 #[cfg(test)]
 mod forge_wire;
+mod gateway;
+#[cfg(test)]
+mod gateway_wire;
 #[cfg(test)]
 mod grants_wire;
 mod guest_jump;
 mod hub_port;
+mod internal;
 mod labs_flags;
 mod limit;
+mod maintenance;
 mod passkey;
 mod plans;
 mod push;
@@ -167,22 +172,28 @@ struct Args {
     #[command(flatten)]
     cloud: arugula_platform::cloud::Args,
 
-    /// Billing (M22): a Stripe secret key turns it on (STRIPE_SECRET_KEY);
-    /// webhooks are checked with STRIPE_WEBHOOK_SECRET.
-    #[arg(long, env = "STRIPE_SECRET_KEY", hide_env_values = true)]
-    stripe_secret: Option<String>,
-    #[arg(long, env = "STRIPE_WEBHOOK_SECRET", hide_env_values = true)]
-    stripe_webhook_secret: Option<String>,
-    #[arg(long, default_value = "https://api.stripe.com", env = "ARUGULA_STRIPE_API")]
-    stripe_api: String,
-    /// The per-seat price, and the metered price and meter event for
-    /// sandbox minutes.
-    #[arg(long, env = "ARUGULA_STRIPE_SEAT_PRICE", default_value = "")]
-    stripe_seat_price: String,
-    #[arg(long, env = "ARUGULA_STRIPE_MINUTES_PRICE", default_value = "")]
-    stripe_minutes_price: String,
-    #[arg(long, env = "ARUGULA_STRIPE_MINUTES_EVENT", default_value = "sandbox_minutes")]
-    stripe_minutes_event: String,
+    /// Billing (M22): its flags and env vars are the platform's (M140),
+    /// with the names they always had. The hub only needs to know it's on.
+    #[command(flatten)]
+    billing: arugula_platform::billing::Args,
+
+    /// Where the platform runs (#1150): `in-process`, inside this hub (the
+    /// default, and the rollback), or the URL of an `arugula-platform` on
+    /// the private network (`http://arugula-platform.internal:7700`), which
+    /// this hub then forwards every platform route to as its gateway.
+    #[arg(long, default_value = "in-process", env = "ARUGULA_PLATFORM")]
+    platform: String,
+
+    /// The key the hub and an out-of-process platform share (hex, at least
+    /// 32 bytes): principals and the calls between them are signed with it.
+    #[arg(long, env = "ARUGULA_PLATFORM_KEY", hide_env_values = true)]
+    platform_key: Option<String>,
+
+    /// Where the hub answers the platform's calls (`HubPort` over HTTP), on
+    /// the private network only: never a public port. Defaults to
+    /// `[::]:7691` with an out-of-process platform, and is off otherwise.
+    #[arg(long, env = "ARUGULA_CONTROL_INTERNAL_LISTEN")]
+    internal_listen: Option<SocketAddr>,
     /// Free relay traffic per account per month, in MB (with billing on).
     #[arg(long, default_value_t = 10_000, env = "ARUGULA_RELAY_FREE_MB")]
     relay_free_mb: u64,
@@ -334,10 +345,14 @@ pub struct App {
     pub analytics: analytics::Analytics,
     /// Shared Docs: the disk guard and the open counts (#1064).
     pub docs: doc_links::Docs,
-    /// The platform (#1153), in process: chat, Cloud, billing, projects and
-    /// grants moved into it (M137-M139, step 2), and it reaches the hub only
-    /// through `hub_port`.
-    pub platform: Arc<arugula_platform::Platform>,
+    /// The platform (#1153): chat, Cloud, billing, projects and grants
+    /// moved into it (M137-M139, step 2), and it reaches the hub only
+    /// through `hub_port`. In this process, or its own behind this hub's
+    /// gateway (M140).
+    pub platform: gateway::PlatformAt,
+    /// The maintenance switch (M141): while it's on, every platform route
+    /// answers 503 before anything is forwarded.
+    pub maintenance: maintenance::Switch,
     /// The platform's view of the hub, attached to this app by
     /// [`App::start`].
     pub hub_port: Arc<hub_port::InProcess>,
@@ -362,12 +377,12 @@ fn platform(
     cloud: Option<arugula_platform::cloud::Cloud>,
     http: &reqwest::Client,
     analytics: &analytics::Analytics,
-) -> (Arc<arugula_platform::Platform>, Arc<hub_port::InProcess>) {
+) -> (gateway::PlatformAt, Arc<hub_port::InProcess>) {
     let hub = Arc::new(hub_port::InProcess::default());
     let mut p = arugula_platform::Platform::new(cfg, db, hub.clone(), http.clone(), analytics.clone());
     p.stripe = stripe;
     p.cloud = cloud;
-    (Arc::new(p), hub)
+    (gateway::PlatformAt::InProcess(Arc::new(p)), hub)
 }
 
 #[cfg(test)]
@@ -415,6 +430,7 @@ impl App {
             analytics: Default::default(),
             docs: Default::default(),
             platform,
+            maintenance: Default::default(),
             hub_port,
         }
     }
@@ -535,9 +551,10 @@ impl Routes {
 }
 
 pub fn router(app: Arc<App>) -> Router {
-    // The platform's routes, behind the gate that says who's asking.
-    let platform = arugula_platform::router(app.platform.clone())
-        .layer(axum::middleware::from_fn_with_state(app.clone(), hub_port::gate));
+    // The platform's routes: in process behind the gate that says who's
+    // asking, or forwarded to it (M140); either way behind the maintenance
+    // switch.
+    let platform = gateway::router(&app);
     routes()
         .router
         .merge(platform)
@@ -694,30 +711,6 @@ pub fn origin_of(url: &str) -> anyhow::Result<String> {
     Ok(u.origin().ascii_serialization())
 }
 
-/// Billing, if there's a Stripe key: never without the webhook secret,
-/// which is all that tells Stripe's events from anyone's.
-fn billing_from(
-    secret: Option<String>,
-    webhook_secret: Option<String>,
-    api: String,
-    seat_price: String,
-    minutes_price: String,
-    minutes_event: String,
-) -> anyhow::Result<Option<arugula_platform::billing::Stripe>> {
-    let Some(secret) = secret else { return Ok(None) };
-    let Some(webhook_secret) = webhook_secret else {
-        anyhow::bail!("STRIPE_SECRET_KEY is set but STRIPE_WEBHOOK_SECRET isn't: billing needs both");
-    };
-    Ok(Some(arugula_platform::billing::Stripe {
-        api: api.trim_end_matches('/').to_owned(),
-        secret,
-        webhook_secret,
-        seat_price,
-        minutes_price,
-        minutes_event,
-    }))
-}
-
 /// The GitHub App from its id and key, if both are given.
 fn github_app(a: &Args) -> anyhow::Result<Option<forge::GithubApp>> {
     let Some(id) = a.github_app_id.clone().filter(|s| !s.is_empty()) else {
@@ -741,10 +734,14 @@ fn github_app(a: &Args) -> anyhow::Result<Option<forge::GithubApp>> {
 
 fn main() -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
-    // database (census.rs), with no server.
+    // database (census.rs), with no server. `maintenance`: the switch
+    // (maintenance.rs), set in the database the running hub reads.
     let mut argv = std::env::args().skip(1).peekable();
     if argv.peek().is_some_and(|a| a == "census") {
         return census::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "maintenance") {
+        return maintenance::run(argv.skip(1));
     }
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
 }
@@ -824,14 +821,7 @@ async fn run() -> anyhow::Result<()> {
         }),
         None => None,
     };
-    let stripe = billing_from(
-        set(a.stripe_secret),
-        set(a.stripe_webhook_secret),
-        a.stripe_api,
-        a.stripe_seat_price,
-        a.stripe_minutes_price,
-        a.stripe_minutes_event,
-    )?;
+    let stripe = a.billing.stripe()?;
     // The guests' jump host: bound now, so its port is known.
     let guest_ssh = match a.guest_ssh {
         Some(addr) => {
@@ -866,16 +856,45 @@ async fn run() -> anyhow::Result<()> {
         Some(d) => info!(domain = %d, "blocks served at b-<key>.{d}"),
         None => info!("no ARUGULA_CONTROL_BLOCK_DOMAIN: blocks aren't served through control"),
     }
-    let cloud = a.cloud.cloud()?;
-    // A second connection to the same file: the platform never reads the
-    // hub's tables (#1153).
     let billing = stripe.is_some();
-    let cfg = arugula_platform::Config {
-        public_url: public_url.clone(),
-        sites: sites.iter().map(|s| s.url.clone()).collect(),
-        relay_free_bytes: a.relay_free_mb * 1_000_000,
+    let platform_key = set(a.platform_key.clone())
+        .map(|k| arugula_control_common::principal::PrincipalKey::from_hex(&k))
+        .transpose()
+        .context("ARUGULA_PLATFORM_KEY")?;
+    let (platform, hub_port) = if a.platform == "in-process" {
+        // A second connection to the same file: the platform never reads
+        // the hub's tables (#1153).
+        let cloud = a.cloud.cloud()?;
+        let cfg = arugula_platform::Config {
+            public_url: public_url.clone(),
+            sites: sites.iter().map(|s| s.url.clone()).collect(),
+            relay_free_bytes: a.relay_free_mb * 1_000_000,
+        };
+        info!("the platform runs in process");
+        platform(arugula_platform::db::Db::open(&a.db)?, cfg, stripe, cloud, &http, &analytics)
+    } else {
+        // The platform is its own process: this hub is its gateway (M140).
+        let key = platform_key.clone().context("--platform is a URL, so ARUGULA_PLATFORM_KEY is needed")?;
+        info!(at = %a.platform, "the platform runs out of process, behind this hub's gateway");
+        let remote = gateway::Remote::new(&a.platform, key)?;
+        (gateway::PlatformAt::Remote(remote), Arc::new(hub_port::InProcess::default()))
     };
-    let (platform, hub_port) = platform(arugula_platform::db::Db::open(&a.db)?, cfg, stripe, cloud, &http, &analytics);
+    // The hub's internal API, for an out-of-process platform.
+    let internal_listen = match (a.internal_listen, &platform) {
+        (Some(at), _) => Some(at),
+        (None, gateway::PlatformAt::Remote(_)) => Some("[::]:7691".parse()?),
+        (None, gateway::PlatformAt::InProcess(_)) => None,
+    };
+    let internal_listener = match internal_listen {
+        Some(at) => {
+            let key = platform_key.clone().context("the internal listener needs ARUGULA_PLATFORM_KEY")?;
+            let l = tokio::net::TcpListener::bind(at)
+                .await
+                .with_context(|| format!("listening for the platform on {at}"))?;
+            Some((l, key))
+        }
+        None => None,
+    };
     let app = App {
         cfg: Config {
             push_hosts: a.push_hosts,
@@ -913,9 +932,18 @@ async fn run() -> anyhow::Result<()> {
         // The database's directory, whose disk shared Docs fill.
         docs: doc_links::Docs::at(db_dir),
         platform,
+        maintenance: Default::default(),
         hub_port,
     }
     .start();
+    if let Some((l, key)) = internal_listener {
+        info!(addr = %l.local_addr()?, "the hub's internal API, for the platform");
+        tokio::spawn(internal::serve(app.clone(), l, key));
+    }
+    // The maintenance switch, as the database says (M141).
+    maintenance::start(app.clone());
+    // Deleted accounts the platform hasn't erased yet (M140).
+    account::start_telling(app.clone());
     if let (Some(l), Some(j)) = (guest_listener, &app.jump) {
         info!(addr = %l.local_addr()?, host = %j.host, port = j.port, "guest ssh jump host");
         tokio::spawn(guest_jump::serve(app.clone(), l));
@@ -924,19 +952,15 @@ async fn run() -> anyhow::Result<()> {
     if app.github_app.is_some() {
         tokio::spawn(forge::heartbeat(app.clone(), std::time::Duration::from_secs(a.forge_heartbeat_secs.max(1))));
     }
-    arugula_platform::cloud::start(&app.platform);
-    // Chat follows the hub's change feed (M138), and so do projects and
-    // grants: a machine that joins gets its `cloud.drive` grant from it.
-    arugula_platform::chat::start(&app.platform);
-    arugula_platform::projects::start(&app.platform);
-    if app.cfg.billing {
-        let p = app.platform.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
-                arugula_platform::billing::report_usage(&p).await;
-            }
-        });
+    // The platform's background work, when it's in process; out of
+    // process its own binary runs it.
+    if let Some(p) = app.platform.local() {
+        arugula_platform::cloud::start(p);
+        // Chat follows the hub's change feed (M138), and so do projects and
+        // grants: a machine that joins gets its `cloud.drive` grant from it.
+        arugula_platform::chat::start(p);
+        arugula_platform::projects::start(p);
+        arugula_platform::billing::start(p);
     }
     // Shared Docs' open counts reach the database.
     {
@@ -1051,23 +1075,5 @@ mod tests {
         assert!(a.cloud.cloud_concurrent_runs.is_some() && a.cloud.cloud_run_minutes.is_some());
         let help = <super::Args as clap::CommandFactory>::command().render_help().to_string();
         assert!(!help.contains("daily-runs"), "{help}");
-    }
-
-    #[test]
-    fn billing_needs_its_webhook_secret() {
-        let b = |s: Option<&str>, w: Option<&str>| {
-            super::billing_from(
-                s.map(Into::into),
-                w.map(Into::into),
-                "https://api.stripe.com/".into(),
-                String::new(),
-                String::new(),
-                String::new(),
-            )
-        };
-        assert!(b(None, None).unwrap().is_none(), "off without a key");
-        assert!(b(Some("sk_test"), None).is_err(), "a key alone doesn't start");
-        let on = b(Some("sk_test"), Some("whsec")).unwrap().unwrap();
-        assert_eq!((on.webhook_secret.as_str(), on.api.as_str()), ("whsec", "https://api.stripe.com"));
     }
 }

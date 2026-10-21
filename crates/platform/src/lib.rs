@@ -15,11 +15,12 @@
 //! - [`auth`] is who's asking, as the hub found out: a [`Principal`].
 //! - [`router()`] is the platform's routes, which the hub mounts in process.
 //!
-//! Today it runs inside the hub's process. Billing moved in first (M139),
-//! then Cloud ([`cloud`], M137), then chat ([`chat`], M138), which follows
-//! the hub's change feed through [`cache`], then projects and grants
-//! ([`projects`], [`grants`]), which follow it too. M140 runs it as its own
-//! process behind the hub.
+//! Billing moved in first (M139), then Cloud ([`cloud`], M137), then chat
+//! ([`chat`], M138), which follows the hub's change feed through [`cache`],
+//! then projects and grants ([`projects`], [`grants`]), which follow it
+//! too. It runs inside the hub's process (`--platform in-process`, the
+//! default) or as its own, the `arugula-platform` binary (M140), behind the
+//! hub's gateway: then both ports go over the private network ([`remote`]).
 //!
 //! [`Principal`]: arugula_control_common::Principal
 
@@ -41,6 +42,7 @@ pub mod grants;
 pub mod hub;
 mod port;
 pub mod projects;
+pub mod remote;
 mod router;
 
 pub use hub::HubPort;
@@ -100,6 +102,19 @@ pub struct Platform {
     /// Held while [`projects::follow`] applies the hub's change feed to
     /// projects and grants: one reader at a time.
     pub feed: tokio::sync::Mutex<()>,
+    /// Background work held for a window (M141): the cloud worker, Cloud's
+    /// approval pushes, billing's usage reports and the projects and grants
+    /// feed follower wait while it's set, so
+    /// the platform's tables hold still while they're copied. Requests are
+    /// held by the hub's maintenance switch, not this.
+    pub paused: std::sync::atomic::AtomicBool,
+}
+
+impl Platform {
+    /// Whether background work is held ([`Platform::paused`]).
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 impl Platform {
@@ -116,6 +131,7 @@ impl Platform {
             chat: Default::default(),
             cache: Default::default(),
             feed: Default::default(),
+            paused: Default::default(),
         }
     }
 }
