@@ -103,7 +103,7 @@ async fn permission(State(h): State<Shared>, Path((o, r, login)): Path<(String, 
     Json(json!({ "permission": permission, "role_name": role, "user": { "id": id, "login": login } })).into_response()
 }
 
-async fn fake_github(h: Shared) -> String {
+pub(super) async fn fake_github(h: Shared) -> String {
     let r = Router::new()
         .route("/repos/{o}/{r}/installation", get(installation))
         .route("/app/installations/{id}/access_tokens", post(token))
@@ -116,7 +116,7 @@ async fn fake_github(h: Shared) -> String {
     base
 }
 
-fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
+pub(super) fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
     let k = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa2048).unwrap();
     let der = AsDer::<aws_lc_rs::encoding::Pkcs8V1Der>::as_der(&k).unwrap();
     aws_lc_rs::rsa::KeyPair::from_pkcs8(der.as_ref()).unwrap()

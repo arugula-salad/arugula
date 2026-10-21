@@ -12,17 +12,23 @@
 //! - **A public repo:** any member.
 //! - **A private repo:** only if GitHub says this person has access, by
 //!   their numeric GitHub id (the hub's: they signed in with GitHub), asked
-//!   with a read token ([`GithubApp::may_now`], [`Purpose::Read`]). A member
+//!   with a read token ([`GithubApp::may`], [`Purpose::Read`]). A member
 //!   who didn't sign in with GitHub sees nothing private.
 //!
 //! **Kept answers.** GitHub's answers are kept [`KEEP_MS`] (10 minutes) in
-//! `forge_access`, so every machine of the platform gives the same one.
+//! `forge_access`, so every machine of the platform gives the same one
+//! ([`access`]: daemons' live updates and hosted boxes' tokens ask the
+//! same way). Answers and drops are timed by the database's clock, never
+//! a machine's.
 //! The App's `member`, `membership`, `organization`, `repository`, `team`,
 //! `team_add` and installation events ([`event`]) drop the answers they
 //! could change, for the repo, the owner or the person, on every machine
 //! (`forge_access_drops`). An answer asked before a drop is never used
 //! after it, even one that came back from GitHub after the drop: a
-//! removed collaborator is cut off at the next event.
+//! removed collaborator is cut off at the next event. Those events need
+//! the App subscribed to them, and organization **Members: read**
+//! (`docs/control-ops.md`). Any payload with a repository marks a linked
+//! repo private when GitHub says it is.
 //!
 //! **Hard to go around.** [`check`] is the only maker of a [`Readable`]
 //! (its fields are private here), and every `Db` function that returns
@@ -47,7 +53,6 @@
 use std::{collections::HashMap, sync::Arc};
 
 use arugula_control_common::ApiError;
-use arugula_e2e::now_ms;
 use axum::{extract::FromRequestParts, http::StatusCode, http::request::Parts};
 use serde_json::Value;
 use tracing::info;
@@ -163,15 +168,14 @@ async fn member(app: &Platform, account: &str, project: &str) -> Result<bool, Ap
 /// The one viewer check (module docs): which of `repos` the viewer may
 /// read now.
 pub async fn check(app: &Platform, v: &Viewer, repos: &[LinkedRepo]) -> Result<Checked, ApiError> {
-    let now = now_ms();
     let kept = match &v.github {
-        Some(u) => app.db.kept_access(u.id, now.saturating_sub(KEEP_MS))?,
+        Some(u) => app.db.kept_access(u.id, KEEP_MS)?,
         None => HashMap::new(),
     };
     let mut members: HashMap<&str, bool> = HashMap::new();
     let mut readable = Vec::new();
     let mut withheld = Vec::new();
-    let mut ask = Vec::new();
+    let mut asks = Vec::new();
     for r in repos {
         if r.unlinked_at.is_some() {
             withheld.push((r.repo_id, Withheld::Unlinked));
@@ -193,17 +197,20 @@ pub async fn check(app: &Platform, v: &Viewer, repos: &[LinkedRepo]) -> Result<C
             withheld.push((r.repo_id, Withheld::NoGithub));
             continue;
         };
-        match (kept.get(&r.repo_id), &app.github) {
-            (Some(true), _) => readable.push(r.repo_id),
-            (Some(false), _) => withheld.push((r.repo_id, Withheld::NoAccess)),
+        match (kept.get(&r.full_name.to_lowercase()), &app.github) {
+            (Some(None), _) => readable.push(r.repo_id),
+            (Some(Some(_)), _) => withheld.push((r.repo_id, Withheld::NoAccess)),
             (None, None) => withheld.push((r.repo_id, Withheld::NoApp)),
-            (None, Some(gh)) => ask.push(github_says(app, gh, &v.account, user, r)),
+            (None, Some(gh)) => {
+                asks.push(async move { (r.repo_id, ask(app, gh, &v.account, user, &r.full_name, true).await) });
+            }
         }
     }
-    for (repo_id, says) in futures_util::future::join_all(ask).await {
+    for (repo_id, says) in futures_util::future::join_all(asks).await {
         match says? {
-            None => readable.push(repo_id),
-            Some(why) => withheld.push((repo_id, why)),
+            Access::Yes => readable.push(repo_id),
+            Access::No(_) => withheld.push((repo_id, Withheld::NoAccess)),
+            Access::Busy => withheld.push((repo_id, Withheld::Busy)),
         }
     }
     readable.sort_unstable();
@@ -211,23 +218,59 @@ pub async fn check(app: &Platform, v: &Viewer, repos: &[LinkedRepo]) -> Result<C
     Ok(Checked { readable: Readable { repos: readable }, withheld })
 }
 
-/// Ask GitHub whether `user` has access to a private repo now, and keep
-/// the answer, as of before it asked. `None` when they do.
-async fn github_says(
+/// What GitHub says of a person's access to a repository.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Access {
+    Yes,
+    /// Why not, for the person.
+    No(String),
+    /// Not asked about lately, and the account asked about too many
+    /// ([`FORGE_LOOKUPS`]).
+    Busy,
+}
+
+/// Whether GitHub gives `user` access to `repo` (`OWNER/NAME`): the answer
+/// kept in the database (asked less than [`KEEP_MS`] ago and not dropped
+/// since), or asked now and kept. The one way the platform asks: the
+/// viewer check, daemons' live updates (`forge::standing`) and hosted
+/// boxes' tokens (`forge::token`), so a drop on any machine reaches them
+/// all. `limit`: a repository not kept counts against the account's
+/// [`FORGE_LOOKUPS`].
+pub async fn access(
     app: &Platform,
     gh: &GithubApp,
     account: &str,
     user: &GithubUser,
-    r: &LinkedRepo,
-) -> (u64, anyhow::Result<Option<Withheld>>) {
-    if app.limits.check_account(FORGE_LOOKUPS, account).is_err() {
-        return (r.repo_id, Ok(Some(Withheld::Busy)));
+    repo: &str,
+    limit: bool,
+) -> anyhow::Result<Access> {
+    if let Some(why) = app.db.kept_access(user.id, KEEP_MS)?.remove(&repo.to_lowercase()) {
+        return Ok(why.map_or(Access::Yes, Access::No));
     }
-    let asked = now_ms();
-    let yes = gh.may_now(&Caller::of(app, account), user, &r.full_name).await.is_ok();
-    let owner = r.full_name.split('/').next().unwrap_or_default();
-    let kept = app.db.keep_access(user.id, r.repo_id, owner, yes, asked);
-    (r.repo_id, kept.map(|()| (!yes).then_some(Withheld::NoAccess)))
+    ask(app, gh, account, user, repo, limit).await
+}
+
+/// Ask GitHub now ([`GithubApp::may`], with a read token) and keep the
+/// answer, timed by the database's clock before asking: a drop that comes
+/// while it asks wins.
+async fn ask(
+    app: &Platform,
+    gh: &GithubApp,
+    account: &str,
+    user: &GithubUser,
+    repo: &str,
+    limit: bool,
+) -> anyhow::Result<Access> {
+    if limit && app.limits.check_account(FORGE_LOOKUPS, account).is_err() {
+        return Ok(Access::Busy);
+    }
+    let asked = app.db.clock_ms()?;
+    let why = gh.may(&Caller::of(app, account), user, repo).await.err();
+    if let Some(why) = &why {
+        info!(repo, why, "no access to a repository");
+    }
+    app.db.keep_access(user.id, repo, why.as_deref(), asked)?;
+    Ok(why.map_or(Access::Yes, Access::No))
 }
 
 /// The readable repos of one item, and its repo: what a read of an item
@@ -257,75 +300,78 @@ pub async fn title_readers(app: &Platform, item: &str, accounts: &[String]) -> R
 }
 
 /// What an event of the App's could change about who may read a repo, as
-/// drops: by repo, owner or person. Nothing for any other event.
+/// drops: by repo (`owner/name`, and what it was called before a rename
+/// or a transfer), owner or person. Nothing for any other event.
 fn drops(event: &str, v: &Value) -> Vec<(AccessScope, String)> {
     let mut out = Vec::new();
     let mut add = |scope, s: Option<String>| {
         if let Some(s) = s.filter(|s| !s.is_empty()) {
-            out.push((scope, s));
+            out.push((scope, s.to_lowercase()));
         }
     };
     let id = |v: &Value| v.as_u64().map(|n| n.to_string());
-    let login = |v: &Value| v.as_str().map(str::to_lowercase);
+    let text = |v: &Value| v.as_str().map(str::to_owned);
+    let repo = &v["repository"];
+    let (owner, name) = (repo["owner"]["login"].as_str(), repo["name"].as_str());
+    let was = |owner: Option<&str>, name: Option<&str>| Some(format!("{}/{}", owner?, name?));
     match event {
         // A collaborator added, removed or changed; a repo made private or
         // public, renamed, transferred, archived or deleted.
         "member" | "repository" => {
-            add(AccessScope::Repo, id(&v["repository"]["id"]));
+            add(AccessScope::Repo, text(&repo["full_name"]));
+            add(AccessScope::Repo, was(owner, v["changes"]["repository"]["name"]["from"].as_str()));
+            let from = &v["changes"]["owner"]["from"];
+            let old = from["user"]["login"].as_str().or(from["organization"]["login"].as_str());
+            add(AccessScope::Repo, was(old, name));
             add(AccessScope::Person, id(&v["member"]["id"]));
         }
         // Someone joined or left a team or an organization; a team's repos
         // changed; an organization renamed or deleted.
         "membership" | "organization" | "team" | "team_add" => {
-            add(AccessScope::Owner, login(&v["organization"]["login"]));
-            add(AccessScope::Owner, login(&v["changes"]["login"]["from"]));
+            add(AccessScope::Owner, text(&v["organization"]["login"]));
+            add(AccessScope::Owner, text(&v["changes"]["login"]["from"]));
             add(AccessScope::Person, id(&v["member"]["id"]));
             add(AccessScope::Person, id(&v["membership"]["user"]["id"]));
-            add(AccessScope::Repo, id(&v["repository"]["id"]));
+            add(AccessScope::Repo, text(&repo["full_name"]));
         }
         "installation" | "installation_repositories" => {
-            add(AccessScope::Owner, login(&v["installation"]["account"]["login"]));
+            add(AccessScope::Owner, text(&v["installation"]["account"]["login"]));
         }
         _ => {}
     }
     out
 }
 
-/// A webhook's event (M161's handler): drop the access answers it could
-/// change, on every machine, and the App's own (`standing`'s); and a
-/// linked repo made private or public says so from now on.
-pub fn event(app: &Platform, event: &str, v: &Value, now: u64) -> anyhow::Result<()> {
-    let drops = drops(event, v);
-    if drops.is_empty() {
-        return Ok(());
-    }
-    if event == "repository"
-        && let (Some(repo_id), Some(private)) = (
-            v["repository"]["id"].as_u64(),
-            match v["action"].as_str() {
-                Some("privatized") => Some(true),
-                Some("publicized") => Some(false),
-                _ => None,
-            },
-        )
-        && app.db.set_repo_private(repo_id, private)?
+/// A webhook's event (M161's handler), whatever it is:
+/// - **A repository made private** is private here at once: every payload
+///   that carries a repository says whether it's private, a pull request's
+///   or a check's as much as `repository`'s own. Only `repository`'s
+///   `publicized` makes a linked repo public again, so an older delivery
+///   taken late never opens one up (M164's reconcile catches up the rest).
+/// - **What changes who may read a repo** drops the access answers it
+///   could change, on every machine ([`drops`]).
+pub fn event(app: &Platform, event: &str, v: &Value) -> anyhow::Result<()> {
+    let repo_id = v["repository"]["id"].as_u64();
+    if let Some(id) = repo_id
+        && v["repository"]["private"].as_bool() == Some(true)
+        && app.db.set_repo_private(id, true)?
     {
-        info!(repo = repo_id, private, "a linked repo's visibility changed");
+        info!(repo = id, event, "a linked repo is private now");
     }
+    if let Some(id) = repo_id
+        && event == "repository"
+        && v["action"].as_str() == Some("publicized")
+        && app.db.set_repo_private(id, false)?
+    {
+        info!(repo = id, "a linked repo is public now");
+    }
+    let drops = drops(event, v);
     for (scope, subject) in &drops {
-        app.db.drop_access(*scope, subject, now)?;
+        app.db.drop_access(*scope, subject)?;
     }
-    if let Some(gh) = &app.github {
-        let repo = v["repository"]["full_name"].as_str().map(str::to_lowercase);
-        gh.forget_where(|user, name| {
-            drops.iter().any(|(scope, s)| match scope {
-                AccessScope::Repo => repo.as_deref() == Some(name),
-                AccessScope::Owner => name.split('/').next() == Some(s.as_str()),
-                AccessScope::Person => user.to_string() == *s,
-            })
-        });
+    if !drops.is_empty() {
+        info!(event, drops = drops.len(), "dropped kept GitHub access answers");
     }
-    info!(event, drops = drops.len(), "dropped kept GitHub access answers");
     Ok(())
 }
 
@@ -339,7 +385,22 @@ mod tests {
     fn what_each_event_drops() {
         let member = json!({ "action": "removed", "member": { "id": 1002, "login": "bob-gh" },
             "repository": { "id": 77, "full_name": "acme/app" } });
-        assert_eq!(drops("member", &member), [(AccessScope::Repo, "77".into()), (AccessScope::Person, "1002".into())]);
+        assert_eq!(
+            drops("member", &member),
+            [(AccessScope::Repo, "acme/app".into()), (AccessScope::Person, "1002".into())]
+        );
+        let moved = json!({ "action": "renamed", "repository": { "id": 77, "full_name": "Acme/App2", "name": "App2",
+            "owner": { "login": "Acme" } }, "changes": { "repository": { "name": { "from": "app" } } } });
+        assert_eq!(
+            drops("repository", &moved),
+            [(AccessScope::Repo, "acme/app2".into()), (AccessScope::Repo, "acme/app".into())]
+        );
+        let moved = json!({ "action": "transferred", "repository": { "id": 77, "full_name": "beta/app", "name": "app",
+            "owner": { "login": "beta" } }, "changes": { "owner": { "from": { "organization": { "login": "acme" } } } } });
+        assert_eq!(
+            drops("repository", &moved),
+            [(AccessScope::Repo, "beta/app".into()), (AccessScope::Repo, "acme/app".into())]
+        );
         let org = json!({ "action": "member_removed", "organization": { "login": "Acme" },
             "membership": { "user": { "id": 1002 } } });
         assert_eq!(

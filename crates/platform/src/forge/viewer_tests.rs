@@ -10,7 +10,8 @@ use arugula_e2e::team::TeamRole;
 use serde_json::{Value, json};
 
 use super::{
-    links_tests::{Shared, hook, serve},
+    GithubApp, GithubUser,
+    links_tests::{SECRET, Shared, fake_github, hook, serve, throwaway_key},
     viewer::{self, KEEP_MS},
 };
 use crate::{
@@ -296,13 +297,40 @@ async fn leak_repo_made_private() {
     let (gh, app, base) = serve(&hub).await;
     let (_, _) = world(&hub, &gh, &app).await;
     assert_eq!(reads(&base, "carol", "fi_a2").await, OK);
-    let ev = |action: &str| json!({ "action": action, "repository": { "id": 88, "full_name": "acme/site" } });
-    assert_eq!(hook(&base, "repository", "r1", &ev("privatized")).await, 202);
+    let ev = |action: &str, private: bool| json!({ "action": action, "repository": { "id": 88, "full_name": "acme/site", "private": private } });
+    assert_eq!(hook(&base, "repository", "r1", &ev("privatized", true)).await, 202);
     assert!(app.db.linked_repo(88).unwrap().unwrap().private);
     assert_eq!(reads(&base, "carol", "fi_a2").await, GONE);
     assert_eq!(reads(&base, "bob", "fi_a2").await, GONE, "GitHub lists him on acme/app only");
-    assert_eq!(hook(&base, "repository", "r2", &ev("publicized")).await, 202);
+    assert_eq!(hook(&base, "repository", "r2", &ev("publicized", false)).await, 202);
     assert_eq!(reads(&base, "carol", "fi_a2").await, OK);
+}
+
+/// A repo linked while public and made private is private here from the
+/// next payload of any kind that carries it (the App isn't always told
+/// `repository` events); a late one that says public doesn't open it up.
+#[tokio::test]
+async fn leak_repo_made_private_seen_on_any_payload() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    let (team, _) = world(&hub, &gh, &app).await;
+    let pr = |private: bool| {
+        json!({ "action": "opened", "number": 4, "pull_request": { "number": 4 },
+            "repository": { "id": 88, "full_name": "acme/site", "private": private } })
+    };
+    assert_eq!(hook(&base, "pull_request", "p1", &pr(false)).await, 202);
+    assert_eq!(reads(&base, "carol", "fi_a2").await, OK);
+    let check = json!({ "action": "completed", "check_run": { "pull_requests": [] },
+        "repository": { "id": 88, "full_name": "acme/site", "private": true } });
+    assert_eq!(hook(&base, "check_run", "c1", &check).await, 202);
+    assert!(app.db.linked_repo(88).unwrap().unwrap().private);
+    assert_eq!(reads(&base, "carol", "fi_a2").await, GONE);
+    let (_, ids, v) = listed(&base, "bob", &team, "?q=public").await;
+    assert!(ids.is_empty(), "{v}");
+    assert_eq!(hook(&base, "pull_request", "p2", &pr(false)).await, 202);
+    assert!(app.db.linked_repo(88).unwrap().unwrap().private, "only `publicized` opens it");
+    assert_eq!(reads(&base, "carol", "fi_a2").await, GONE);
+    assert_eq!(reads(&base, "alice", "fi_a2").await, GONE, "the App isn't installed on acme/site: GitHub says no");
 }
 
 /// Push and inbox titles go only to those who may read the item.
@@ -377,44 +405,136 @@ async fn filters_narrow_a_list() {
     assert_eq!(s, 404);
 }
 
-/// A kept answer is used for 10 minutes, unless a drop for its repo, its
-/// owner or its person came at or after it was asked: even one that came
-/// back from GitHub after the drop (another machine's, mid-ask).
+/// A kept answer is used for 10 minutes by the database's clock, unless
+/// a drop for its repo, its owner or its person came at or after it was
+/// asked: even one that came back from GitHub after the drop (another
+/// machine's, mid-ask).
 #[test]
 fn kept_answers_and_drops() {
     let db = Db::test();
-    let kept = |since| db.kept_access(1002, since).unwrap();
-    db.keep_access(1002, 77, "Acme", true, 1_000).unwrap();
-    db.keep_access(1002, 99, "eve-gh", false, 1_000).unwrap();
-    assert_eq!(kept(0).len(), 2);
-    assert!(kept(1_001).is_empty(), "too old");
+    let kept = || db.kept_access(1002, KEEP_MS).unwrap();
+    let tick = || std::thread::sleep(std::time::Duration::from_millis(3));
+    let now = db.clock_ms().unwrap();
+    assert!(now.abs_diff(arugula_e2e::now_ms()) < 60_000, "milliseconds since the epoch: {now}");
+    db.keep_access(1002, "Acme/App", None, now).unwrap();
+    db.keep_access(1002, "eve-gh/x", Some("not a collaborator"), now).unwrap();
+    db.keep_access(1002, "old/one", None, now - KEEP_MS - 1).unwrap();
+    assert_eq!(kept().len(), 2, "{:?}", kept());
+    assert_eq!(kept().get("acme/app"), Some(&None));
+    assert_eq!(kept().get("eve-gh/x"), Some(&Some("not a collaborator".into())));
 
-    db.drop_access(AccessScope::Repo, "77", 1_000).unwrap();
-    assert_eq!(kept(0).get(&77), None, "a drop at the same time wins");
-    assert_eq!(kept(0).get(&99), Some(&false));
+    tick();
+    db.drop_access(AccessScope::Repo, "ACME/app").unwrap();
+    assert_eq!(kept().get("acme/app"), None);
+    assert!(kept().contains_key("eve-gh/x"));
     // Asked before the drop, answered after it: never used.
-    db.keep_access(1002, 77, "acme", true, 900).unwrap();
-    assert_eq!(kept(0).get(&77), None);
-    db.keep_access(1002, 77, "acme", true, 1_100).unwrap();
-    assert_eq!(kept(0).get(&77), Some(&true));
+    db.keep_access(1002, "acme/app", None, now + 1).unwrap();
+    assert_eq!(kept().get("acme/app"), None);
+    tick();
+    let later = db.clock_ms().unwrap();
+    db.keep_access(1002, "acme/app", None, later).unwrap();
+    assert_eq!(kept().get("acme/app"), Some(&None));
     // An older answer doesn't replace a newer one.
-    db.keep_access(1002, 77, "acme", false, 1_050).unwrap();
-    assert_eq!(kept(0).get(&77), Some(&true));
+    db.keep_access(1002, "acme/app", Some("no"), later - 1).unwrap();
+    assert_eq!(kept().get("acme/app"), Some(&None));
 
-    db.drop_access(AccessScope::Owner, "ACME", 1_200).unwrap();
-    assert_eq!(kept(0).get(&77), None);
-    db.keep_access(1002, 77, "acme", true, 1_300).unwrap();
-    db.drop_access(AccessScope::Person, "1002", 1_400).unwrap();
-    assert!(kept(0).is_empty());
-    // A drop never moves back.
-    db.drop_access(AccessScope::Person, "1002", 10).unwrap();
-    db.keep_access(1002, 77, "acme", true, 1_350).unwrap();
-    assert!(kept(0).is_empty());
+    tick();
+    db.drop_access(AccessScope::Owner, "ACME").unwrap();
+    assert_eq!(kept().get("acme/app"), None);
+    tick();
+    db.keep_access(1002, "acme/app", None, db.clock_ms().unwrap()).unwrap();
+    tick();
+    db.drop_access(AccessScope::Person, "1002").unwrap();
+    assert!(kept().is_empty());
+    assert_eq!(db.prune_access(KEEP_MS).unwrap(), 1, "the old answer");
+    tick();
+    assert_eq!(db.prune_access(0).unwrap(), 2 + 3, "the rest, and the drops");
+}
 
-    // Both answers and two drops are past keeping; the person's drop at
-    // 1_400 a moment later.
-    assert_eq!(db.prune_access(1_400 + KEEP_MS, KEEP_MS).unwrap(), 4);
-    assert_eq!(db.prune_access(1_401 + KEEP_MS, KEEP_MS).unwrap(), 1);
+/// A platform on `db` with the App, against the fake GitHub at `api`.
+fn platform(db: Db, hub: &Arc<TestHub>, api: &str) -> Platform {
+    let mut p = Platform::new(Default::default(), db, hub.clone(), reqwest::Client::new(), Default::default());
+    p.github = Some(GithubApp::new("1".into(), "arugula-test".into(), SECRET.into(), api, throwaway_key()));
+    p
+}
+
+/// What a hosted box of bob's is answered for a token to `acme/app`: 200
+/// or the refusal's status.
+async fn bob_token(p: &Platform, bob: &GithubUser) -> u16 {
+    match super::token(p, "bob", Some(bob), "acme/app").await.unwrap() {
+        super::TokenAnswer::Token(_) => 200,
+        super::TokenAnswer::Refused { status, .. } => status,
+    }
+}
+
+/// Whether bob's daemon gets live updates for `acme/app`.
+async fn bob_live(p: &Platform, bob: &GithubUser) -> bool {
+    super::standing(p, "bob", Some(bob), &["acme/app".to_owned()], false).await[0].live
+}
+
+/// Two machines on one database: a drop taken by one refuses the other's
+/// next token and live updates, though that one asked GitHub itself and
+/// was told yes a moment before.
+#[tokio::test]
+async fn leak_a_token_on_another_machine_after_a_drop() {
+    let hub = Arc::new(TestHub::default());
+    let gh: Shared = Arc::default();
+    let api = fake_github(gh.clone()).await;
+    {
+        let mut g = gh.lock().unwrap();
+        g.installed.insert("acme/app".into(), (9, 500, "acme".into()));
+        g.roles.insert(("acme/app".into(), "bob-gh".into()), ("write".into(), 1002));
+    }
+    let bob = GithubUser { id: 1002, login: "bob-gh".into() };
+    // Postgres's second pool on the same schema, or a SQLite file opened
+    // twice.
+    let first = Db::test();
+    let file = std::env::temp_dir().join(format!("m165-{}.db", hex::encode(arugula_e2e::random::<8>())));
+    let (a, b) = match first.second() {
+        Some(other) => (first, other),
+        None => (Db::open(&file).unwrap(), Db::open(&file).unwrap()),
+    };
+    let (a, b) = (platform(a, &hub, &api), platform(b, &hub, &api));
+    assert_eq!(bob_token(&b, &bob).await, 200);
+    assert!(bob_live(&b, &bob).await);
+    assert_eq!(gh.lock().unwrap().asked, 1, "asked once");
+    assert_eq!(bob_token(&a, &bob).await, 200, "the first machine uses the second's answer");
+    assert_eq!(gh.lock().unwrap().asked, 1);
+
+    // Removed on GitHub, and the event lands on the first machine.
+    gh.lock().unwrap().roles.remove(&("acme/app".to_owned(), "bob-gh".to_owned()));
+    let removed = json!({ "action": "removed", "member": { "id": 1002 },
+        "repository": { "id": 77, "full_name": "acme/app", "name": "app", "owner": { "login": "acme" } } });
+    viewer::event(&a, "member", &removed).unwrap();
+    assert_eq!(bob_token(&b, &bob).await, 403);
+    assert!(!bob_live(&b, &bob).await);
+    assert_eq!(bob_token(&a, &bob).await, 403);
+    drop((a, b));
+    let _ = std::fs::remove_file(&file);
+}
+
+/// A row whose reviewers aren't a JSON list matches no reviewer and
+/// doesn't fail the list; and a title is matched by ASCII case the same
+/// on SQLite and Postgres.
+#[test]
+fn a_bad_row_never_fails_a_list() {
+    let db = Db::test();
+    db.c()
+        .execute_batch(
+            r#"INSERT INTO forge_items (id, repo_id, number, kind, state, title, reviewers, created_at, updated_at, synced_at)
+               VALUES ('fi_1', 1, 1, 'pr', 'open', 'École', '{"login": "bob-gh"}', 1, 3, 1),
+                      ('fi_2', 1, 2, 'pr', 'open', 'two', '"bob-gh"', 1, 2, 1),
+                      ('fi_3', 1, 3, 'pr', 'open', 'three', '["Bob-GH"]', 1, 1, 1);"#,
+        )
+        .unwrap();
+    let r = viewer::Readable::of_repos(vec![1]);
+    let ids = |f: ItemFilter<'_>| {
+        db.forge_items(&r, &ItemFilter { limit: 10, ..f }).unwrap().into_iter().map(|i| i.id).collect::<Vec<_>>()
+    };
+    assert_eq!(ids(ItemFilter { review_requested: Some("bob-gh"), ..Default::default() }), ["fi_3"]);
+    assert_eq!(ids(ItemFilter::default()).len(), 3);
+    assert_eq!(ids(ItemFilter { title: Some("ÉCOLE"), ..Default::default() }), ["fi_1"]);
+    assert!(ids(ItemFilter { title: Some("école"), ..Default::default() }).is_empty(), "É is folded on neither");
 }
 
 /// The guarded reads return rows of a readable repo only.

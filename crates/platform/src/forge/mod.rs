@@ -9,7 +9,9 @@
 //! - **Who may hear about a repository** ([`standing`]): the account signed
 //!   in to control with GitHub, the App is installed where the repository
 //!   lives, and that installation is the person's own account, or GitHub
-//!   says they're a collaborator on it ([`GithubApp::may`]). Both by the
+//!   says they're a collaborator on it ([`GithubApp::may`], kept by
+//!   [`viewer::access`] in the database, which GitHub's events drop on
+//!   every machine). Both by the
 //!   person's numeric GitHub id. The hub asks it for each daemon's
 //!   `forge.watch` and heartbeat (`PlatformPort::forge_standing`): it keeps
 //!   the subscriptions, which live as long as a daemon's relay socket.
@@ -33,7 +35,6 @@
 
 use std::sync::Arc;
 
-use arugula_control_common::ApiError;
 use arugula_control_wire::forge::{GithubToken, Standing};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -168,13 +169,17 @@ pub async fn standing(
         let why = match (&p.github, github) {
             (None, _) => Some(format!("{NO_APP}: the block polls")),
             (Some(_), None) => Some("sign in to control with GitHub for live updates from GitHub".to_owned()),
-            (Some(gh), Some(u)) => {
-                if fresh && !gh.knows(u, repo) && p.limits.check_account(FORGE_LOOKUPS, account).is_err() {
+            (Some(gh), Some(u)) => match viewer::access(p, gh, account, u, repo, fresh).await {
+                Ok(viewer::Access::Yes) => None,
+                Ok(viewer::Access::No(why)) => Some(why),
+                Ok(viewer::Access::Busy) => {
                     Some("too many repositories asked about lately: live updates resume within the hour".to_owned())
-                } else {
-                    gh.may(&Caller::of(p, account), u, repo).await.err()
                 }
-            }
+                Err(e) => {
+                    tracing::warn!(error = format!("{e:#}"), "checking access to a repository");
+                    Some("couldn't check your access to it".to_owned())
+                }
+            },
         };
         out.push(Standing { repo: repo.clone(), live: why.is_none(), why });
     }
@@ -191,8 +196,8 @@ pub enum TokenAnswer {
     Refused { status: u16, error: String },
 }
 
-/// A read-only installation token for `repo`, for an account the App lets
-/// hear about it ([`GithubApp::may`]).
+/// A read-only installation token for `repo`, for an account GitHub gives
+/// access to it ([`viewer::access`]: kept answers every machine drops).
 pub async fn token(
     p: &Platform,
     account: &str,
@@ -208,15 +213,19 @@ pub async fn token(
     let Some(user) = github else {
         return refused(StatusCode::FORBIDDEN, "sign in to control with GitHub to read GitHub through its App");
     };
-    if !gh.knows(user, repo)
-        && let Err(ApiError(status, error, _)) = p.limits.check_account(FORGE_LOOKUPS, account)
-    {
-        return refused(status, &error);
+    match viewer::access(p, gh, account, user, repo, true).await? {
+        viewer::Access::Yes => {}
+        viewer::Access::No(why) => return refused(StatusCode::FORBIDDEN, &why),
+        viewer::Access::Busy => {
+            return refused(
+                StatusCode::TOO_MANY_REQUESTS,
+                "too many repositories asked about lately: try within the hour",
+            );
+        }
     }
     let caller = Caller::of(p, account);
-    let install = match gh.may(&caller, user, repo).await {
-        Ok(i) => i,
-        Err(why) => return refused(StatusCode::FORBIDDEN, &why),
+    let Some(install) = gh.installation(&p.http, repo).await? else {
+        return refused(StatusCode::FORBIDDEN, &format!("the GitHub App {} isn't installed for {repo}", gh.slug));
     };
     // It leaves the platform: logged for this account even from the cache.
     let t = gh.hand_out(&caller, install.id, Repo::Name(repo)).await?;
@@ -253,7 +262,7 @@ pub fn start(p: &Arc<Platform>) {
                     Ok(_) => {}
                     Err(e) => tracing::warn!(error = %e, "pruning GitHub token mints"),
                 }
-                if let Err(e) = p.db.prune_access(arugula_e2e::now_ms(), viewer::KEEP_MS) {
+                if let Err(e) = p.db.prune_access(viewer::KEEP_MS) {
                     tracing::warn!(error = %e, "pruning kept GitHub access answers");
                 }
             }

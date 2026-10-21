@@ -1,6 +1,7 @@
 //! The GitHub App itself (M40, the platform's since M161): its JWT, where
-//! it's installed, installation tokens, and who may hear about a
-//! repository through it ([`GithubApp::may`]).
+//! it's installed, installation tokens, and whether a person may hear
+//! about a repository through it ([`GithubApp::may`], asked every time:
+//! the answers are kept in the platform's database, `forge::viewer`).
 //!
 //! **Tokens** (M167, aru-085). [`GithubApp::mint`] is the only code that
 //! asks GitHub for an installation token. Each one names one repository and
@@ -62,7 +63,7 @@ use crate::db::{
     forge::{MintKind, NewMint},
 };
 
-/// How long an answer about an installation or a person's access holds.
+/// How long an answer about an installation holds.
 const KEEP: Duration = Duration::from_secs(600);
 
 /// What a read token may do: read, and nothing else.
@@ -311,9 +312,6 @@ pub struct GithubUser {
     pub login: String,
 }
 
-/// When a person's access was looked at, and the answer.
-type Access = (Instant, Result<Install, String>);
-
 pub struct GithubApp {
     pub id: String,
     pub slug: String,
@@ -322,7 +320,6 @@ pub struct GithubApp {
     pub api: String,
     key: KeyPair,
     installs: Mutex<HashMap<String, (Instant, Option<Install>)>>,
-    access: Mutex<HashMap<(u64, String), Access>>,
     /// Read tokens by (installation, repository), until five minutes
     /// before they expire. Only read tokens: a write token is never kept.
     reads: Mutex<HashMap<(u64, String), ReadToken>>,
@@ -382,7 +379,6 @@ impl GithubApp {
             api: api.trim_end_matches('/').to_owned(),
             key,
             installs: Mutex::default(),
-            access: Mutex::default(),
             reads: Mutex::default(),
         }
     }
@@ -566,33 +562,12 @@ impl GithubApp {
         Ok((t, v["expires_at"].as_str().unwrap_or_default().to_owned(), repo_id))
     }
 
-    /// Whether the answer for this person and repository is at hand.
-    pub fn knows(&self, user: &GithubUser, repo: &str) -> bool {
-        let k = (user.id, repo.to_ascii_lowercase());
-        self.access.lock().unwrap().get(&k).is_some_and(|(at, _)| at.elapsed() < KEEP)
-    }
-
-    /// Whether `user` may hear about `repo` through the App: the
-    /// installation that covers it, or why not.
+    /// Whether `user` may hear about `repo` through the App, asked of
+    /// GitHub now: the installation that covers it, or why not. Never
+    /// kept here: `forge::viewer::access` keeps the answers in the
+    /// platform's database, where GitHub's events drop them on every
+    /// machine.
     pub async fn may(&self, c: &Caller<'_>, user: &GithubUser, repo: &str) -> Result<Install, String> {
-        let k = (user.id, repo.to_ascii_lowercase());
-        if let Some((at, r)) = self.access.lock().unwrap().get(&k)
-            && at.elapsed() < KEEP
-        {
-            return r.clone();
-        }
-        let r = self.may_now(c, user, repo).await;
-        if let Err(e) = &r {
-            info!(repo, why = e, "no live updates for a repository");
-        }
-        self.access.lock().unwrap().insert(k, (Instant::now(), r.clone()));
-        r
-    }
-
-    /// [`may`](Self::may), asked of GitHub now and not kept here: the
-    /// viewer check (M165) keeps its answers in the platform's database,
-    /// where every machine drops them on GitHub's events.
-    pub async fn may_now(&self, c: &Caller<'_>, user: &GithubUser, repo: &str) -> Result<Install, String> {
         let login = user.login.as_str();
         let owner = repo.split('/').next().unwrap_or_default();
         let install = match self.installation(c.http, repo).await {
@@ -698,17 +673,9 @@ impl GithubApp {
         Ok(RepoRole { id, full_name: full_name.to_owned(), private: r["private"].as_bool().unwrap_or(true), role })
     }
 
-    /// Access answers kept here that `gone` picks, by GitHub id and
-    /// repository (`OWNER/NAME` in lower case): GitHub said who may see
-    /// them changed (M165).
-    pub fn forget_where(&self, gone: impl Fn(u64, &str) -> bool) {
-        self.access.lock().unwrap().retain(|(user, repo), _| !gone(*user, repo));
-    }
-
     /// Installations changed (an install, a repository added or removed).
     pub fn forget(&self) {
         self.installs.lock().unwrap().clear();
-        self.access.lock().unwrap().clear();
     }
 }
 

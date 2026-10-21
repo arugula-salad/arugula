@@ -496,7 +496,8 @@ pub struct ForgeEvent {
 }
 
 /// What a list of items is narrowed to. Each is matched without regard to
-/// case; `title` is text anywhere in the title (the list's search).
+/// ASCII case, the same on both databases ([`fold`]); `title` is text
+/// anywhere in the title (the list's search).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ItemFilter<'a> {
     pub kind: Option<&'a str>,
@@ -518,7 +519,7 @@ fn repos_in(r: &Readable) -> String {
 /// taken as themselves.
 fn like_anywhere(text: &str) -> String {
     let mut s = String::from("%");
-    for c in text.to_lowercase().chars() {
+    for c in text.to_ascii_lowercase().chars() {
         if matches!(c, '%' | '_' | '\\') {
             s.push('\\');
         }
@@ -528,10 +529,29 @@ fn like_anywhere(text: &str) -> String {
     s
 }
 
+/// `expr` with ASCII letters in lower case and nothing else changed, as
+/// SQLite's `lower` does (Postgres's folds every letter), so a filter
+/// matches the same on both. Its value is folded in Rust the same way.
+fn fold(c: &impl Sql, expr: &str) -> String {
+    match c.dialect() {
+        Dialect::Sqlite => format!("lower({expr})"),
+        Dialect::Postgres => format!("translate({expr}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')"),
+    }
+}
+
+/// The database's clock, in milliseconds, as SQL: what every machine's
+/// access answers and drops are timed by, so their clocks never matter.
+fn clock(c: &impl Sql) -> &'static str {
+    match c.dialect() {
+        Dialect::Sqlite => "CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)",
+        Dialect::Postgres => "CAST(floor(extract(epoch FROM clock_timestamp()) * 1000) AS BIGINT)",
+    }
+}
+
 /// What drops kept access answers ([`Db::drop_access`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessScope {
-    /// A repo, by GitHub's id.
+    /// A repo, by `owner/name`.
     Repo,
     /// Every repo of a user or an organization, by login.
     Owner,
@@ -560,26 +580,33 @@ impl Db {
         let mut args: Vec<String> = Vec::new();
         let mut eq = |col: &str, v: Option<&str>| {
             if let Some(v) = v {
-                wh.push(format!("lower({col}) = lower(?)"));
-                args.push(v.to_owned());
+                wh.push(format!("{} = ?", fold(&c, col)));
+                args.push(v.to_ascii_lowercase());
             }
         };
         eq("i.kind", f.kind);
         eq("i.state", f.state);
         eq("i.author_login", f.author);
         if let Some(login) = f.review_requested {
+            // A row whose reviewers aren't a JSON list matches nothing,
+            // rather than failing the whole list.
             wh.push(match c.dialect() {
-                Dialect::Sqlite => "EXISTS (SELECT 1 FROM json_each(i.reviewers) WHERE lower(value) = lower(?))".into(),
-                Dialect::Postgres => {
-                    "EXISTS (SELECT 1 FROM jsonb_array_elements_text(CAST(i.reviewers AS jsonb)) AS r(v) \
-                     WHERE lower(r.v) = lower(?))"
-                        .into()
-                }
+                Dialect::Sqlite => format!(
+                    "CASE WHEN json_valid(i.reviewers) AND json_type(i.reviewers) = 'array' THEN EXISTS (
+                         SELECT 1 FROM json_each(i.reviewers) WHERE {} = ?) ELSE FALSE END",
+                    fold(&c, "value")
+                ),
+                Dialect::Postgres => format!(
+                    "CASE WHEN jsonb_typeof(CAST(i.reviewers AS jsonb)) = 'array' THEN EXISTS (
+                         SELECT 1 FROM jsonb_array_elements_text(CAST(i.reviewers AS jsonb)) AS r(v) WHERE {} = ?)
+                     ELSE FALSE END",
+                    fold(&c, "r.v")
+                ),
             });
-            args.push(login.to_owned());
+            args.push(login.to_ascii_lowercase());
         }
         if let Some(t) = f.title.filter(|t| !t.trim().is_empty()) {
-            wh.push(r"lower(i.title) LIKE ? ESCAPE '\'".into());
+            wh.push(format!(r"{} LIKE ? ESCAPE '\'", fold(&c, "i.title")));
             args.push(like_anywhere(t.trim()));
         }
         c.query_map(
@@ -650,71 +677,88 @@ impl Db {
         )
     }
 
-    /// What GitHub said about a person's access to private repos, asked at
-    /// `since` or later and not dropped since: by repo, yes or no.
-    pub fn kept_access(&self, github_id: u64, since: u64) -> anyhow::Result<HashMap<u64, bool>> {
-        let rows = self.c().query_map(
-            "SELECT a.repo_id, a.allowed FROM forge_access a
-             WHERE a.github_id = ?1 AND a.asked_at >= ?2 AND NOT EXISTS (
-                 SELECT 1 FROM forge_access_drops d WHERE d.at >= a.asked_at AND (
-                     (d.scope = 'repo' AND d.subject = CAST(a.repo_id AS TEXT))
-                     OR (d.scope = 'owner' AND d.subject = a.owner)
-                     OR (d.scope = 'person' AND d.subject = CAST(a.github_id AS TEXT))))",
-            params![github_id, since],
+    /// The database's clock now, in milliseconds: when a person's access
+    /// is asked ([`Db::keep_access`]), so a drop on another machine is
+    /// timed by the same clock.
+    pub fn clock_ms(&self) -> anyhow::Result<u64> {
+        let c = self.c();
+        c.query_row(&format!("SELECT {}", clock(&c)), params![], |r| r.get(0))
+    }
+
+    /// What GitHub said about a person's access, asked less than `keep` ago
+    /// by the database's clock and not dropped since: by `owner/name` (in
+    /// lower case), why not, or `None` for access.
+    pub fn kept_access(&self, github_id: u64, keep: u64) -> anyhow::Result<HashMap<String, Option<String>>> {
+        let c = self.c();
+        let rows = c.query_map(
+            &format!(
+                "SELECT a.repo, a.why FROM forge_access a
+                 WHERE a.github_id = ?1 AND a.asked_at > {} - ?2 AND NOT EXISTS (
+                     SELECT 1 FROM forge_access_drops d WHERE d.at >= a.asked_at AND (
+                         (d.scope = 'repo' AND d.subject = a.repo)
+                         OR (d.scope = 'owner' AND d.subject = a.owner)
+                         OR (d.scope = 'person' AND d.subject = CAST(a.github_id AS TEXT))))",
+                clock(&c)
+            ),
+            params![github_id, keep],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
         Ok(rows.into_iter().collect())
     }
 
-    /// Keep GitHub's answer, asked at `asked_at`, unless a newer one is
-    /// kept already.
-    pub fn keep_access(
-        &self,
-        github_id: u64,
-        repo_id: u64,
-        owner: &str,
-        allowed: bool,
-        asked_at: u64,
-    ) -> anyhow::Result<()> {
+    /// Keep GitHub's answer for a person on `owner/name` (`why` not, or
+    /// `None`), asked at `asked_at` ([`Db::clock_ms`]), unless a newer one
+    /// is kept already.
+    pub fn keep_access(&self, github_id: u64, repo: &str, why: Option<&str>, asked_at: u64) -> anyhow::Result<()> {
+        let repo = repo.to_lowercase();
+        let owner = repo.split('/').next().unwrap_or_default().to_owned();
         self.c().execute(
-            "INSERT INTO forge_access (github_id, repo_id, owner, allowed, asked_at) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT (github_id, repo_id) DO UPDATE SET owner = ?3, allowed = ?4, asked_at = ?5
+            "INSERT INTO forge_access (github_id, repo, owner, why, asked_at) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (github_id, repo) DO UPDATE SET owner = ?3, why = ?4, asked_at = ?5
              WHERE forge_access.asked_at <= ?5",
-            params![github_id, repo_id, owner.to_lowercase(), allowed, asked_at],
+            params![github_id, repo, owner, why, asked_at],
         )?;
         Ok(())
     }
 
-    /// Drop every answer asked at `at` or before for a repo (its id), an
-    /// owner (a login) or a person (a GitHub id), on every machine.
-    pub fn drop_access(&self, scope: AccessScope, subject: &str, at: u64) -> anyhow::Result<()> {
+    /// Drop every answer asked until now (the database's clock) for a repo
+    /// (`owner/name`), an owner (a login) or a person (a GitHub id), on
+    /// every machine.
+    pub fn drop_access(&self, scope: AccessScope, subject: &str) -> anyhow::Result<()> {
         let scope = match scope {
             AccessScope::Repo => "repo",
             AccessScope::Owner => "owner",
             AccessScope::Person => "person",
         };
-        self.c().execute(
-            "INSERT INTO forge_access_drops (scope, subject, at) VALUES (?1, ?2, ?3)
-             ON CONFLICT (scope, subject) DO UPDATE SET at = CASE WHEN forge_access_drops.at > ?3
-                 THEN forge_access_drops.at ELSE ?3 END",
-            params![scope, subject.to_lowercase(), at],
+        let c = self.c();
+        c.execute(
+            &format!(
+                "INSERT INTO forge_access_drops (scope, subject, at) VALUES (?1, ?2, {})
+                 ON CONFLICT (scope, subject) DO UPDATE SET at = CASE WHEN forge_access_drops.at > excluded.at
+                     THEN forge_access_drops.at ELSE excluded.at END",
+                clock(&c)
+            ),
+            params![scope, subject.to_lowercase()],
         )?;
         Ok(())
     }
 
-    /// Forget answers and drops older than `keep`: how many went.
-    pub fn prune_access(&self, now: u64, keep: u64) -> anyhow::Result<usize> {
-        let before = now.saturating_sub(keep);
+    /// Forget answers and drops older than `keep` by the database's
+    /// clock: how many went.
+    pub fn prune_access(&self, keep: u64) -> anyhow::Result<usize> {
         let c = self.c();
-        Ok(c.execute("DELETE FROM forge_access WHERE asked_at < ?1", params![before])?
-            + c.execute("DELETE FROM forge_access_drops WHERE at < ?1", params![before])?)
+        let now = clock(&c);
+        Ok(c.execute(&format!("DELETE FROM forge_access WHERE asked_at < {now} - ?1"), params![keep])?
+            + c.execute(&format!("DELETE FROM forge_access_drops WHERE at < {now} - ?1"), params![keep])?)
     }
 
     /// GitHub says a repo was made private or public: a linked one says so
-    /// from now on. Whether one was linked.
+    /// from now on. Whether a link changed.
     pub fn set_repo_private(&self, repo_id: u64, private: bool) -> anyhow::Result<bool> {
-        let n =
-            self.c().execute("UPDATE linked_repos SET private = ?1 WHERE repo_id = ?2", params![private, repo_id])?;
+        let n = self.c().execute(
+            "UPDATE linked_repos SET private = ?1 WHERE repo_id = ?2 AND private != ?1",
+            params![private, repo_id],
+        )?;
         Ok(n > 0)
     }
 }

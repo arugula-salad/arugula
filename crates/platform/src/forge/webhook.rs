@@ -118,8 +118,8 @@ pub async fn webhook(State(p): State<Arc<Platform>>, headers: HeaderMap, body: B
             return err(StatusCode::INTERNAL_SERVER_ERROR, "couldn't keep the installation's change").into_response();
         }
     }
-    // M165: what changes who may read a repo drops the answers kept.
-    if let Err(e) = super::viewer::event(&p, &event, &v, now_ms()) {
+    // M165: a repo made private, and what changes who may read one.
+    if let Err(e) = super::viewer::event(&p, &event, &v) {
         warn!(%event, %delivery, error = format!("{e:#}"), "dropping kept GitHub access answers");
         let _ = p.db.forget_delivery(&delivery);
         return err(StatusCode::INTERNAL_SERVER_ERROR, "couldn't drop kept access answers").into_response();
