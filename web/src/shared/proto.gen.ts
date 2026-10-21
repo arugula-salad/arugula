@@ -825,6 +825,17 @@ commits?: number, force?: boolean, };
 
 export type EventKind = "commented" | "review_comment" | "reviewed" | "review_requested" | "review_request_removed" | "review_dismissed" | "pushed" | "labeled" | "assigned" | "renamed" | "referenced" | "merged" | "closed" | "reopened" | "branch_deleted" | "milestone" | "mentioned" | "other";
 
+export type ExportedIssue = { issue: NativeIssue, events: Array<IssueEvent>, 
+/**
+ * Oldest first; deleted ones left out.
+ */
+comments: Array<IssueComment>, };
+
+/**
+ * Someone an export names, with what they're called now.
+ */
+export type ExportedPerson = { account: string, name: string, };
+
 /**
  * `GET /api/flags`: one row per flag (the `flags.list` operation).
  */
@@ -1467,6 +1478,178 @@ drive: boolean | null, };
  */
 export type Issue = { item: Item, events: Array<Event>, linked: Array<Linked>, };
 
+/**
+ * A comment on an issue: a message in its thread.
+ */
+export type IssueComment = { 
+/**
+ * Its number in the thread.
+ */
+seq: number, 
+/**
+ * The account that wrote it, or "" once it's deleted.
+ */
+author: string, agent: ChatAgent | null, at: number, text: string, 
+/**
+ * Lines it quoted from a pane.
+ */
+quote: string | null, edited: number | null, };
+
+/**
+ * An event on an issue's timeline.
+ */
+export type IssueEvent = { 
+/**
+ * Orders an issue's events.
+ */
+id: number, 
+/**
+ * `opened`, `edited`, `closed`, `reopened`, `labelled`, `unlabelled`,
+ * `assigned`, `unassigned` or `exported`.
+ */
+kind: string, 
+/**
+ * The account that did it (an agent's owner's), or "" once it's
+ * deleted.
+ */
+actor: string, agent: ChatAgent | null, at: number, 
+/**
+ * `edited`: `title` (the old one) and/or `body: true`; `closed`:
+ * `reason`; `labelled`/`unlabelled`: `label`;
+ * `assigned`/`unassigned`: `assignee`; `exported`: `repo`, `number`.
+ */
+detail: Record<string, unknown>, };
+
+export type IssueEvents = { issue: string, 
+/**
+ * Oldest first.
+ */
+events: Array<IssueEvent>, };
+
+/**
+ * Every issue in a project, by number, with its timeline and comments.
+ */
+export type IssueExport = { project: string, project_name: string, exported_at: number, issues: Array<ExportedIssue>, 
+/**
+ * Everyone it names (authors, actors, assignees, commenters).
+ */
+people: Array<ExportedPerson>, };
+
+/**
+ * `GET /api/projects/{project}/issues/export?format=`: `json` (when not
+ * given) or `md`.
+ */
+export type IssueExportQuery = { format: string | null, };
+
+/**
+ * Where an issue was exported to on GitHub (M205).
+ */
+export type IssueGithub = { 
+/**
+ * `owner/name`.
+ */
+repo: string, number: number, };
+
+/**
+ * Where a project's "new issue" goes.
+ */
+export type IssueHome = { project: string, 
+/**
+ * `native` (the platform's own issues) or `github` (its linked repo).
+ */
+home: string, 
+/**
+ * Someone chose it; otherwise it's the default: `github` while the
+ * project has a linked repo, `native` when it has none.
+ */
+chosen: boolean, 
+/**
+ * The project's linked repos (`owner/name`).
+ */
+repos: Array<string>, 
+/**
+ * How many native issues it has.
+ */
+native_issues: number, 
+/**
+ * It has issues in both places: native ones and a linked repo. The
+ * page says so.
+ */
+both: boolean, };
+
+/**
+ * `PUT /api/projects/{project}/issue-home`: `native`, `github` (only with
+ * a linked repo), or `None` for the default again.
+ */
+export type IssueHomeChange = { home: string | null, };
+
+export type IssueList = { 
+/**
+ * The project's id (`personal` resolved).
+ */
+project: string, 
+/**
+ * Newest (highest number) first.
+ */
+issues: Array<NativeIssue>, 
+/**
+ * There are more past the last one (`before` its number).
+ */
+more: boolean, };
+
+/**
+ * A change to an issue's labels or assignees: the whole list, or some
+ * added or taken off.
+ */
+export type IssueListEdit = { "set": Array<string> } | { "add": Array<string> } | { "remove": Array<string> };
+
+/**
+ * `PATCH /api/issues/{id}`: what's given changes.
+ */
+export type IssuePatch = { title: string | null, body: string | null, 
+/**
+ * `open` or `closed`.
+ */
+state: string | null, 
+/**
+ * Why it's closed (with `state: closed`): `completed` (when not
+ * given), `not_planned` or `duplicate`.
+ */
+reason: string | null, labels: IssueListEdit | null, assignees: IssueListEdit | null, };
+
+/**
+ * What a patch made of the issue, and the events it wrote (none when
+ * nothing changed).
+ */
+export type IssuePatched = { issue: NativeIssue, events: Array<IssueEvent>, };
+
+/**
+ * `GET /api/projects/{project}/issues`'s query. Each that's given narrows
+ * the list.
+ */
+export type IssueQuery = { 
+/**
+ * `open` (when not given), `closed` or `all`.
+ */
+state: string | null, 
+/**
+ * Labels, comma-separated: issues with every one.
+ */
+labels: string | null, assignee: string | null, author: string | null, 
+/**
+ * Search words, in the title or the body: each one (`dep*`: a word
+ * starting with `dep`).
+ */
+q: string | null, 
+/**
+ * Issues numbered below this: the next page.
+ */
+before: number | null, 
+/**
+ * At most this many (default 50, at most 200).
+ */
+limit: number | null, };
+
 export type Item = { kind: ItemKind, number: number, url: string, title: string, body: string, 
 /**
  * The author's login.
@@ -1658,6 +1841,37 @@ runs_note: string | null,
  */
 ms: number | null, };
 
+export type NativeIssue = { 
+/**
+ * `iss_` and 32 hex characters.
+ */
+id: string, project: string, 
+/**
+ * Its number in the project.
+ */
+number: number, title: string, body: string, 
+/**
+ * `open` or `closed`.
+ */
+state: string, 
+/**
+ * A closed one's: `completed`, `not_planned` or `duplicate`.
+ */
+close_reason: string | null, 
+/**
+ * The account that opened it (an agent's owner's), or "" once it's
+ * deleted.
+ */
+author: string, 
+/**
+ * The agent that opened it for its owner.
+ */
+agent: ChatAgent | null, labels: Array<string>, 
+/**
+ * Accounts.
+ */
+assignees: Array<string>, github: IssueGithub | null, created_at: number, updated_at: number, closed_at: number | null, };
+
 /**
  * A new issue, before and after it reached the forge.
  */
@@ -1683,6 +1897,12 @@ pane?: number,
  * drafts again (`revised_ms`).
  */
 asked?: ChangesAsked, };
+
+export type NewNativeIssue = { title: string, body: string, labels: Array<string>, 
+/**
+ * Accounts, each a member of the project.
+ */
+assignees: Array<string>, };
 
 export type Node = { "type": "pane", pane: number, } | { "type": "split", id: number, dir: Dir, children: Array<Child>, };
 

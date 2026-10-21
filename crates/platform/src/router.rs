@@ -11,6 +11,8 @@ use axum::{
     routing::{MethodRouter, get, post},
 };
 
+use arugula_control_wire::issues;
+
 use crate::{Platform, billing, chat, cloud, forge, grants, projects};
 
 /// Every route the platform answers. Each moved here from `routes()` in
@@ -18,7 +20,7 @@ use crate::{Platform, billing, chat, cloud, forge, grants, projects};
 /// (M139), Cloud's (M137), chat's (M138), then grants'; the platform
 /// page's own (M150); the GitHub App's webhook (M161); linked repos
 /// (M163); their items, each read checked against the viewer (M165);
-/// drafts on them (M170); and the inbox (M171).
+/// drafts on them (M170); the inbox (M171); and native issues' (M195).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -99,6 +101,13 @@ fn routes() -> Routes {
         .route(arugula_control_wire::projects::INBOX, get(forge::inbox::list))
         .route(arugula_control_wire::projects::INBOX_SHADOW, post(forge::inbox::shadow))
         .route(arugula_control_wire::projects::INBOX_ITEM, post(forge::inbox::mark))
+        // Native issues (M195).
+        .route(issues::PROJECT_ISSUES, get(crate::issues::list_route).post(crate::issues::create_route))
+        .route(issues::PROJECT_ISSUES_EXPORT, get(crate::issues::export_route))
+        .route(issues::PROJECT_ISSUE, get(crate::issues::by_number_route))
+        .route(issues::PROJECT_ISSUE_HOME, get(crate::issues::home_route).put(crate::issues::set_home_route))
+        .route(issues::ISSUE, get(crate::issues::get_route).patch(crate::issues::patch_route))
+        .route(issues::ISSUE_EVENTS, get(crate::issues::events_route))
         .route("/github/webhook", post(forge::webhook))
 }
 

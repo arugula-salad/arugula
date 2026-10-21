@@ -1327,6 +1327,84 @@ auth = "daemon"
 clients = ["daemon"]
 note = "An opted-in machine's forge blocks' attention, items and reasons without titles (M171's shadow period): compared with the owner's inbox and logged, nothing returned but counts. Rate-limited per account."
 
+# ---- platform: native issues (M195, platform step 6)
+# A project's own issues, for its members: a team's owners and editors
+# change them, its viewers read them; anyone else gets 404. Behind chat's
+# Labs flag, as their threads (object threads, M196) are. `{project}` is a
+# project's id or `personal`.
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/issues"  # wire::issues::PROJECT_ISSUES
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A page of a project's issues, newest first, filtered by state, labels, assignee, author and search words."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/issues"  # wire::issues::PROJECT_ISSUES
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Opens an issue, numbered in the project: owners and editors."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/issues/export"  # wire::issues::PROJECT_ISSUES_EXPORT
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Every issue in a project with its timeline and comments, as JSON or Markdown: any member."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/issues/{number}"  # wire::issues::PROJECT_ISSUE
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "One of a project's issues by its number."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/issue-home"  # wire::issues::PROJECT_ISSUE_HOME
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Where a project's new issues go (native or its linked GitHub repo), and whether it has issues in both places."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/issue-home"  # wire::issues::PROJECT_ISSUE_HOME
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Chooses a project's issue home, or the default again: owners and editors; GitHub only with a linked repo."
+
+[[route]]
+method = "GET"
+path = "/api/issues/{id}"  # wire::issues::ISSUE
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "One issue by its id, for its project's members."
+
+[[route]]
+method = "PATCH"
+path = "/api/issues/{id}"  # wire::issues::ISSUE
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Changes an issue's title, body, state, labels or assignees, writing its timeline: owners and editors."
+
+[[route]]
+method = "GET"
+path = "/api/issues/{id}/events"  # wire::issues::ISSUE_EVENTS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "An issue's timeline."
+
 # ---- platform: billing
 
 [[route]]
