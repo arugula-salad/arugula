@@ -91,6 +91,22 @@ impl FromRequestParts<Arc<App>> for Session {
             Some(Signed(Err((status, msg)))) => return Err(err(*status, msg)),
             None => {}
         }
+        // M152: on the platform page's host, its own session: from the
+        // platform page alone, by the cookie the hub set there.
+        if crate::platform_host::on_platform_host(app, &parts.headers) {
+            let origin = parts.headers.get(header::ORIGIN).and_then(|o| o.to_str().ok());
+            if (parts.method != Method::GET || origin.is_some())
+                && origin != crate::app_signin::platform_origin(app).as_deref()
+            {
+                return Err(err(StatusCode::FORBIDDEN, "cross-origin request refused"));
+            }
+            let account = crate::app_signin::account(app, &parts.headers)?
+                .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in first"))?;
+            if let Some(a) = parts.extensions.get::<crate::analytics::Asker>() {
+                a.set(&account);
+            }
+            return Ok(Session { account });
+        }
         let upgrade = parts.headers.contains_key(header::UPGRADE);
         if parts.method != Method::GET || upgrade {
             let origin = parts.headers.get(header::ORIGIN).and_then(|o| o.to_str().ok());

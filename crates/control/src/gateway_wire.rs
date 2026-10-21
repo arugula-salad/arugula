@@ -515,3 +515,47 @@ async fn the_platform_page_comes_from_the_platform() {
     let r = http.get(format!("{}/api/projects", s.base)).header("cookie", "ilg_session=session-a").send().await;
     assert_eq!(r.unwrap().status(), 200);
 }
+
+/// Out of process (M152): signed in on control's page, the platform page's
+/// sign-in gives a session on its host, and the gateway answers the
+/// platform's routes there as that account; signing out on the hub ends it.
+#[tokio::test]
+async fn the_platform_page_signs_in_through_the_hub() {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    let s = split().await;
+    let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+    let verifier = "v".repeat(43);
+    let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier.as_bytes()));
+    let back = "http://app.control.test/";
+    let q = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("return", back)
+        .append_pair("challenge", &challenge)
+        .append_pair("state", "state-0123456789ab")
+        .finish();
+    let r = http
+        .get(format!("{}/signin/platform?{q}", s.base))
+        .header("cookie", "ilg_session=session-a")
+        .send()
+        .await
+        .unwrap();
+    let st = r.status().as_u16();
+    let at = r.headers().get("location").and_then(|v| v.to_str().ok()).unwrap_or("").to_owned();
+    assert_eq!(st, 303, "{at} {}", r.text().await.unwrap_or_default());
+    let code = at.split("#code=").nth(1).unwrap().split('&').next().unwrap().to_owned();
+    let r = http
+        .post(format!("{}/api/app/session", s.base))
+        .header("host", APP)
+        .header("origin", "http://app.control.test")
+        .json(&serde_json::json!({ "code": code, "verifier": verifier, "return": back }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 204);
+    let cookie = r.headers()["set-cookie"].to_str().unwrap().split(';').next().unwrap().to_owned();
+    let projects = || http.get(format!("{}/api/projects", s.base)).header("host", APP).header("cookie", &cookie).send();
+    let (st, v) = answer(projects().await.unwrap()).await;
+    assert_eq!((st, &v["me"]["account"]), (200, &serde_json::json!("a")), "{v}");
+    s.hub.db.drop_sessions("a").unwrap();
+    assert_eq!(projects().await.unwrap().status().as_u16(), 401);
+}

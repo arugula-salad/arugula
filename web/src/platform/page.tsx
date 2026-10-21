@@ -9,6 +9,7 @@ import { PlatformBar } from "./bar";
 import { names } from "./links";
 import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
+import { signIn } from "./signin";
 import { toasts } from "./toast";
 import { AgentsPage } from "./pages/agents";
 import { ChatPage } from "./pages/chat";
@@ -66,11 +67,10 @@ function SignIn() {
         <section class="platform-section">
           <h1>Arugula</h1>
           <p>
-            Sign in on{" "}
-            <a href={controlOrigin()} data-sign-in>
-              control's page
-            </a>
-            , then come back here.
+            <button class="primary" data-sign-in onClick={() => void signIn(controlOrigin())}>
+              Sign in
+            </button>{" "}
+            <span class="dim">on control's page, where your passkeys are; it brings you back here.</span>
           </p>
         </section>
       </main>

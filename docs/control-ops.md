@@ -141,10 +141,17 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
   - Every answer there has the platform page's own CSP (its own scripts
     and styles, `connect-src 'self'`, no `unsafe-eval`, no frames either
     way), `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, HSTS
-    and `Cross-Origin-Opener-Policy: same-origin`, and no `Set-Cookie`.
-    The hub drops any cookie a request brings there: its session is
-    control's site's alone. Until M152 signs people in to it, the
-    platform's routes there answer 401.
+    and `Cross-Origin-Opener-Policy: same-origin`, and no `Set-Cookie`
+    but that host's own session's. The hub drops any cookie a request
+    brings there but that one: its own session is control's site's alone.
+  - Signing in there (M152, "The hub signs people in to the platform
+    page", `crates/control/src/app_signin.rs`): the page sends a visitor
+    to `/signin/platform` on control's site, which redirects back with a
+    one-time code (a minute, single use, bound to the return address and a
+    PKCE verifier), and the page swaps it at `POST /api/app/session` on its
+    own host for a host-only session (`__Host-arugula_app`). The hub keeps
+    those sessions (`app_sessions`): each ends with the hub session it was
+    made from, at once. `POST /api/app/signout` signs that page out alone.
   - `/control.json` says where it is (`platform`: the page's origin, with
     the public URL's scheme and port; `null` without one).
   - `--platform-static-dir` (control's, platform in process) and

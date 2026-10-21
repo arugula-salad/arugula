@@ -15,6 +15,9 @@ mod account;
 mod analytics;
 mod api;
 mod app_login;
+mod app_signin;
+#[cfg(test)]
+mod app_signin_wire;
 mod auth;
 mod blocks;
 #[cfg(test)]
@@ -353,6 +356,8 @@ pub struct App {
     pub http: reqwest::Client,
     pub relay: relay::Relay,
     pub passkeys: passkey::Challenges,
+    /// The platform page's sign-in codes not yet swapped (M152).
+    pub app_codes: app_signin::Codes,
     pub limits: limit::Limits,
     pub vapid: push::Vapid,
     pub hosted: Option<sandboxes::Hosted>,
@@ -448,6 +453,7 @@ impl App {
             http,
             relay: Default::default(),
             passkeys: Default::default(),
+            app_codes: Default::default(),
             limits: limit::Limits::new(None),
             vapid,
             hosted: None,
@@ -481,6 +487,11 @@ fn routes() -> Routes {
         .route("/auth/github", get(auth::github_start))
         .route("/auth/github/callback", get(auth::github_callback))
         .route("/auth/logout", post(auth::logout))
+        // The platform page's sign-in (M152): the code on control's site,
+        // the swap and signing out on the platform page's.
+        .route("/signin/platform", get(app_signin::start))
+        .route(app_signin::APP_SESSION, post(app_signin::swap))
+        .route(app_signin::APP_SIGNOUT, post(app_signin::signout))
         .route("/auth/app", post(app_login::ask))
         .route("/auth/app/{id}/redeem", post(app_login::redeem))
         .route("/api/app-login/{id}", get(app_login::show))
@@ -973,6 +984,7 @@ async fn run() -> anyhow::Result<()> {
             total: a.relay_max_total,
         }),
         passkeys: Default::default(),
+        app_codes: Default::default(),
         limits: limit::Limits::new(a.trust_proxy_header),
         vapid,
         hosted,

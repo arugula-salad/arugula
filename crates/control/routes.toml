@@ -74,6 +74,36 @@ process = "hub"
 auth = "session"
 clients = ["page"]
 
+# The platform page's sign-in (M152, "The hub signs people in to the
+# platform page"): a one-time code for the platform page's host from the
+# hub's own session (or control's page to sign in first), then the swap
+# for that host's session, and signing out there. The swap and the sign-out
+# answer only on the platform page's host (`platform_host::split`).
+
+[[route]]
+method = "GET"
+path = "/signin/platform"
+process = "hub"
+auth = "session"
+clients = ["browser"]
+note = "Without a session it sends the browser to control's page to sign in, and back here."
+
+[[route]]
+method = "POST"
+path = "/api/app/session"  # app_signin::APP_SESSION
+process = "hub"
+auth = "sign_in"
+clients = ["page"]
+note = "The platform page's: a code from /signin/platform, single use and a minute old at most, its PKCE verifier and the address it came back to."
+
+[[route]]
+method = "POST"
+path = "/api/app/signout"  # app_signin::APP_SIGNOUT
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "The platform page's own session, on its host."
+
 [[route]]
 method = "POST"
 path = "/auth/app"
