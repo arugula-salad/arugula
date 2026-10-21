@@ -11,7 +11,8 @@
 //!
 //! Each feature brings its own queries as it moves in (billing's in
 //! [`billing`], M139; Cloud's in [`cloud`], M137; chat's in [`chat`], M138;
-//! projects, team members and grants in [`projects`]), and flips their
+//! projects, team members and grants in [`projects`]; the forge mirror in
+//! [`forge`], M162), and flips their
 //! `process` in `crates/control/tables.toml` to `platform`. Their tables
 //! are made and changed only by numbered migrations ([`migrate`], M142).
 
@@ -27,6 +28,7 @@ use rusqlite::Connection;
 pub mod billing;
 pub mod chat;
 pub mod cloud;
+pub mod forge;
 mod legacy;
 pub mod migrate;
 pub mod pg;
