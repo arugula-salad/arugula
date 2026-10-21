@@ -289,6 +289,21 @@ impl HubPort for Timed {
     fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<crate::forge::GithubUser>>> {
         timed!(self.0.github_user(account))
     }
+    fn send_authorization<'a>(
+        &'a self,
+        account: &'a str,
+        draft: &'a str,
+        back: &'a str,
+    ) -> BoxFuture<'a, HubResult<String>> {
+        timed!(self.0.send_authorization(account, draft, back))
+    }
+    fn daemon_op<'a>(
+        &'a self,
+        daemon: &'a str,
+        op: &'a arugula_control_wire::forge::DaemonOp,
+    ) -> BoxFuture<'a, HubResult<arugula_control_wire::forge::OpAnswer>> {
+        timed!(self.0.daemon_op(daemon, op))
+    }
 }
 
 #[cfg(test)]

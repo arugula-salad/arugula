@@ -58,6 +58,9 @@ mod forge_labs_off;
 mod forge_live;
 #[cfg(all(unix, feature = "forge"))]
 mod forge_pins;
+// M168: control asks a machine to send a person's draft.
+#[cfg(all(unix, feature = "forge"))]
+mod forge_send_op;
 #[cfg(feature = "forge")]
 mod forges_github_real;
 #[cfg(feature = "labs")]

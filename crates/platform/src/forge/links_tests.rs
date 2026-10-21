@@ -42,6 +42,13 @@ pub(super) struct Gh {
     pub(super) roles: BTreeMap<(String, String), (String, u64)>,
     /// How many times a person's permission was asked.
     pub(super) asked: usize,
+    /// User tokens, and whose GitHub id each is (M168).
+    pub(super) users: BTreeMap<String, u64>,
+    /// What was posted as a person: the path, the `Authorization` header
+    /// and the body.
+    pub(super) posted: Vec<(String, String, Value)>,
+    /// A status every post is refused with, while set.
+    pub(super) refuse: Option<u16>,
 }
 
 pub(super) type Shared = Arc<Mutex<Gh>>;
@@ -103,8 +110,41 @@ async fn permission(State(h): State<Shared>, Path((o, r, login)): Path<(String, 
     Json(json!({ "permission": permission, "role_name": role, "user": { "id": id, "login": login } })).into_response()
 }
 
+fn bearer(headers: &axum::http::HeaderMap) -> String {
+    headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned()
+}
+
+async fn user(State(h): State<Shared>, headers: axum::http::HeaderMap) -> Response {
+    let token = bearer(&headers).trim_start_matches("Bearer ").to_owned();
+    match h.lock().unwrap().users.get(&token) {
+        Some(id) => Json(json!({ "id": id, "login": format!("user-{id}") })).into_response(),
+        None => StatusCode::UNAUTHORIZED.into_response(),
+    }
+}
+
+/// A comment, a review or an issue, as the token's person.
+async fn post_as(
+    State(h): State<Shared>,
+    uri: axum::http::Uri,
+    headers: axum::http::HeaderMap,
+    Json(b): Json<Value>,
+) -> Response {
+    let mut h = h.lock().unwrap();
+    let path = uri.path().to_owned();
+    h.posted.push((path.clone(), bearer(&headers), b));
+    if let Some(s) = h.refuse {
+        let status = StatusCode::from_u16(s).unwrap();
+        return (status, Json(json!({ "message": "Resource not accessible by integration" }))).into_response();
+    }
+    Json(json!({ "number": 12, "html_url": format!("https://github.com{path}#posted") })).into_response()
+}
+
 pub(super) async fn fake_github(h: Shared) -> String {
     let r = Router::new()
+        .route("/user", get(user))
+        .route("/repos/{o}/{r}/issues/{n}/comments", post(post_as))
+        .route("/repos/{o}/{r}/pulls/{n}/reviews", post(post_as))
+        .route("/repos/{o}/{r}/issues", post(post_as))
         .route("/repos/{o}/{r}/installation", get(installation))
         .route("/app/installations/{id}/access_tokens", post(token))
         .route("/repos/{o}/{r}", get(repo))

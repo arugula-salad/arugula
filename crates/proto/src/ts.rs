@@ -116,6 +116,9 @@ fn generate() -> String {
     c.visit::<arugula_control_wire::projects::Inbox>();
     c.visit::<arugula_control_wire::projects::InboxMark>();
     c.visit::<arugula_control_wire::projects::InboxMarked>();
+    // Sending one as the person (M168).
+    c.visit::<arugula_control_wire::projects::SendDraft>();
+    c.visit::<arugula_control_wire::projects::DraftSent>();
     // Cloud workspaces (M137): what control's `/api/cloud/` answers with.
     {
         use arugula_cloud_wire::*;

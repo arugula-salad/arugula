@@ -718,3 +718,56 @@ async fn real_app_reads() {
     let v: Value = r.json().await.unwrap();
     println!("GET repos/{repo}/pulls/{pr}: {status}: {:?} ({}), head {}", v["title"], v["state"], v["head"]["sha"]);
 }
+
+/// M168: the hub asks a machine a typed op over its relay socket and waits
+/// for its answer. One that never said it knows the op is `Unknown`,
+/// unasked; one not connected is `Offline`; another daemon can't answer
+/// someone else's ask.
+#[tokio::test]
+async fn a_machine_answers_an_op_it_said_it_knows() {
+    use arugula_control_wire::forge::{DaemonOp, ForgeSend, OpAnswer};
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", l.local_addr().unwrap());
+    let app = App::for_tests(&base).start();
+    let svc = crate::router(app.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    tokio::spawn(async move { axum::serve(l, svc).await.unwrap() });
+    let op = DaemonOp::ForgeSend(ForgeSend { draft: "dft_1".into(), account: "a1".into(), ..Default::default() });
+
+    let (new, old, other) = (daemon(&app, "a1", "new"), daemon(&app, "a1", "old"), daemon(&app, "a2", "theirs"));
+    assert_eq!(app.relay.ask(&new.id(), &op).await, OpAnswer::Offline);
+    let mut s = dial(&base, &new).await;
+    let mut o = dial(&base, &old).await;
+    let mut t = dial(&base, &other).await;
+    s.send(Message::Text(json!({ "t": "ops", "ops": ["forge.send"] }).to_string().into())).await.unwrap();
+    for _ in 0..100 {
+        if !app.relay.ops_of(&new.id()).is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(app.relay.ops_of(&new.id()), ["forge.send"]);
+    assert_eq!(app.relay.ask(&old.id(), &op).await, OpAnswer::Unknown, "it never said");
+    let ask = {
+        let (app, id, op) = (app.clone(), new.id(), op.clone());
+        tokio::spawn(async move { app.relay.ask(&id, &op).await })
+    };
+    let m = loop {
+        let m = text(&mut s, 3000).await.expect("the ask");
+        if m["t"] == "op" && m["op"]["draft"] == "dft_1" {
+            break m;
+        }
+    };
+    assert_eq!(m["op"]["op"], "forge.send");
+    let id = m["id"].as_str().unwrap().to_owned();
+    // Another machine answering it changes nothing.
+    t.send(Message::Text(json!({ "t": "op.done", "id": id, "answer": { "answer": "done" } }).to_string().into()))
+        .await
+        .unwrap();
+    s.send(Message::Text(
+        json!({ "t": "op.done", "id": id, "answer": { "answer": "done", "url": "u" } }).to_string().into(),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(ask.await.unwrap(), OpAnswer::Done { url: Some("u".into()) });
+    drop((o.close(None).await, t.close(None).await));
+}

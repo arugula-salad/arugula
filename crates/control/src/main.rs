@@ -32,6 +32,7 @@ mod doc_links;
 #[cfg(test)]
 mod doc_links_wire;
 mod forge;
+mod forge_send;
 #[cfg(test)]
 mod forge_wire;
 mod gateway;
@@ -302,6 +303,10 @@ pub struct Config {
     pub platform_host: Option<platform_host::PlatformHost>,
     pub platform_page: arugula_platform::page::Page,
     pub github: Option<Github>,
+    /// The GitHub App's own OAuth client (`GITHUB_APP_CLIENT_ID`/`SECRET`):
+    /// a person's send runs its user authorization (M168), whichever
+    /// client signs people in.
+    pub github_app_client: Option<Github>,
     pub static_dir: Option<PathBuf>,
 }
 
@@ -351,6 +356,8 @@ pub struct App {
     pub passkeys: passkey::Challenges,
     /// The platform page's sign-in codes not yet swapped (M152).
     pub app_codes: app_signin::Codes,
+    /// GitHub authorizations under way for a person's send (M168).
+    pub sends: forge_send::Starts,
     pub limits: limit::Limits,
     pub vapid: push::Vapid,
     pub hosted: Option<sandboxes::Hosted>,
@@ -450,6 +457,7 @@ impl App {
                 platform_host: None,
                 platform_page: Default::default(),
                 github: None,
+                github_app_client: None,
                 static_dir: None,
             },
             db,
@@ -457,6 +465,7 @@ impl App {
             relay: Default::default(),
             passkeys: Default::default(),
             app_codes: Default::default(),
+            sends: Default::default(),
             limits: limit::Limits::new(None),
             vapid,
             hosted: None,
@@ -822,6 +831,12 @@ async fn run() -> anyhow::Result<()> {
         (Some(i), Some(s)) => (Some(i), Some(s)),
         _ => (set(a.github_app_client_id.clone()), set(a.github_app_client_secret.clone())),
     };
+    let github_app_client = match (set(a.github_app_client_id.clone()), set(a.github_app_client_secret.clone())) {
+        (Some(client_id), Some(client_secret)) => {
+            Some(Github { client_id, client_secret, url: a.github_url.clone(), api: a.github_api.clone() })
+        }
+        _ => None,
+    };
     let github = match (client_id, client_secret) {
         (Some(client_id), Some(client_secret)) => {
             Some(Github { client_id, client_secret, url: a.github_url.clone(), api: a.github_api.clone() })
@@ -961,6 +976,7 @@ async fn run() -> anyhow::Result<()> {
             platform_page: arugula_platform::page::Page::new(a.platform_static_dir),
             public_url,
             github,
+            github_app_client,
             static_dir: a.static_dir,
         },
         db,
@@ -973,6 +989,7 @@ async fn run() -> anyhow::Result<()> {
         }),
         passkeys: Default::default(),
         app_codes: Default::default(),
+        sends: Default::default(),
         limits: limit::Limits::new(a.trust_proxy_header),
         vapid,
         hosted,

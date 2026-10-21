@@ -164,6 +164,15 @@ pub(super) fn blocks() -> Vec<Arc<ForgeBlock>> {
     bs.iter().filter_map(Weak::upgrade).collect()
 }
 
+/// The open block on a github.com PR or issue, if there is one.
+pub(crate) fn block_on(repo: &str, number: u64) -> Option<Arc<ForgeBlock>> {
+    let k = key(Provider::Github, "github.com", repo);
+    blocks().into_iter().find(|b| {
+        let (p, h, r, n) = b.live_key();
+        key(p, &h, &r) == k && n == number
+    })
+}
+
 /// The github.com repositories with blocks open, told to control when the
 /// set changes.
 pub fn resubscribe() {

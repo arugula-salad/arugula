@@ -99,8 +99,11 @@ does. Reads (`pr.get`, `issue.get`, `item.list`, `checks.get`) and drafts
 same viewer check as the routes above (M165), for a person or a machine with
 a live `cloud.drive` grant (for its owner). Sends (`draft.send`,
 `pr.comment`, `pr.review`, `issue.create`, `issue.comment`) are a person's
-only: a machine is refused (403, `reason: "agents_draft"`), and until M168
-a person is told sending isn't available yet (501, `reason: "not_yet"`).
+only: a machine is refused (403, `reason: "agents_draft"`). A person's goes
+out as them through one of their machines (M168, below): a terminal has no
+browser for GitHub's authorization. A comment, review or issue that isn't a
+draft yet is made one first, so one that can't go now waits as a draft, and
+the refusal names it.
 The inbox (M171): `inbox.list` reads the reader's (a person's, or a
 machine's for its owner), and `inbox.mark` marks an item's entries seen or
 done, a person's only (a machine is refused, 403).
@@ -154,3 +157,45 @@ arugula forge done acme/app#7             # seen likewise; --reason, --undo
 Run by an agent (`CLAUDECODE` or `AI_AGENT` set), the CLI's comment,
 review and new issue are drafts, and `draft send` is refused. `%N` instead
 of `OWNER/REPO#N` still writes to that block.
+
+**Sending as the person (M168, #1214; aru-085).** A draft on a linked repo
+goes out on GitHub as its person, never as `arugula[bot]`, so a review
+counts as theirs. Only its own person sends it (a person, or their CLI
+device); a machine is refused whatever grants it holds, so an agent's draft
+waits for its person ("Agents draft, people send", aru-041). A send holds
+the draft for up to two minutes (`sending` on the wire), so the phone and a
+block's card at once never post it twice. Two ways, then a clear refusal:
+1. **A one-use user token.** The platform page's *Send* asks `POST
+   /api/forge/drafts/{id}/send` with `via: "browser"`, and opens the page
+   it answers: GitHub's authorization of the App, run by the hub (it owns
+   the App's OAuth client). It's silent once the person has authorized the
+   App, which signing in with GitHub did. GitHub comes back to the hub's
+   own `/auth/github/callback` with a state `send.<nonce>` (random, kept in
+   the hub's memory ten minutes, good once, for that account's session on
+   control's site). The hub swaps the code for a user token and hands it to
+   the platform over the signed internal API (`PlatformPort::send_draft`).
+   The platform logs the mint (`github_token_mints`, kind `user`, never the
+   token), checks `GET /user` is the account's own GitHub id, and makes the
+   one call: the comment, review or issue. The hub then revokes the token
+   (`DELETE /applications/{client_id}/token`) and sends the browser back to
+   the platform page with `?draft_send=<id>`, which shows what became of it.
+   The token is never stored, logged, cached or put in a URL. No App
+   setting changes: it's the callback sign-in already uses.
+2. **Their machine.** With no browser hop (the CLI, the hub without the
+   App's client, GitHub declining, or a token that may not write there),
+   the platform asks the person's own machines on control's relay, the one
+   that drafted it first, to send it with their own `gh` login: the typed
+   op `forge.send` (`arugula_control_wire::forge::DaemonOp`), relayed by
+   the hub (`HubPort::daemon_op`). A daemon says which ops it knows when it
+   connects; one too old to say is skipped, as is one without a `gh` login,
+   for the next. A daemon that doesn't answer within 20 s may have sent it,
+   so the draft is `failed` (to check and send again), not tried elsewhere.
+3. **Otherwise** it's refused (409, `reason: "no_way"`): "Open this on a
+   device to send, or wake a machine." The draft waits, saying so. GitHub
+   refusing it leaves it `failed` (502, `reason: "github_refused"`), to send
+   again.
+
+A block's card on a linked repo sends a platform draft from its machine
+with the owner's login, as its own drafts go, and tells the platform
+(`POST /api/forge/drafts/{id}/machine`: `start`, then `sent` or `failed`).
+

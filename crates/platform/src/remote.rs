@@ -38,12 +38,15 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use tracing::Instrument as _;
 
-use arugula_control_wire::forge::{Poke, Standing};
+use arugula_control_wire::forge::{DaemonOp, OpAnswer, Poke, Standing};
 
 use crate::{
     Deleted, PlatformPort,
     auth::Asked,
-    forge::{GithubUser, TokenAnswer},
+    forge::{
+        GithubUser, TokenAnswer,
+        send::{Outcome, UserToken},
+    },
     hub::{Account, ChangePage, Daemon, Flags, HubPort, HubResult, Meter, PushOptions, Pushed, Resolved, Team},
 };
 
@@ -214,6 +217,28 @@ struct TokenArgs {
     repo: String,
 }
 
+#[derive(Serialize, Deserialize)]
+struct SendAuthArgs {
+    account: String,
+    draft: String,
+    back: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct OpArgs {
+    daemon: String,
+    op: DaemonOp,
+}
+
+/// The user token crosses inside the signed call's body, never logged.
+#[derive(Serialize, Deserialize)]
+struct SendArgs {
+    account: String,
+    draft: String,
+    #[serde(default)]
+    token: Option<UserToken>,
+}
+
 fn ids(v: &[String]) -> IdsArgs {
     IdsArgs { ids: v.to_vec() }
 }
@@ -313,6 +338,20 @@ impl HubPort for HttpHub {
     fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<GithubUser>>> {
         Box::pin(self.0.call("github_user", AccountArgs { account: account.to_owned() }))
     }
+
+    fn send_authorization<'a>(
+        &'a self,
+        account: &'a str,
+        draft: &'a str,
+        back: &'a str,
+    ) -> BoxFuture<'a, HubResult<String>> {
+        let a = SendAuthArgs { account: account.to_owned(), draft: draft.to_owned(), back: back.to_owned() };
+        Box::pin(self.0.call("send_authorization", a))
+    }
+
+    fn daemon_op<'a>(&'a self, daemon: &'a str, op: &'a DaemonOp) -> BoxFuture<'a, HubResult<OpAnswer>> {
+        Box::pin(self.0.call("daemon_op", OpArgs { daemon: daemon.to_owned(), op: op.clone() }))
+    }
 }
 
 /// What one side's internal API answers with: the port it serves, and
@@ -394,6 +433,14 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "team_project" => answer(hub.team_project(&args::<TeamArgs>(&body)?.team).await?)?,
             "forge_pokes" => answer(hub.forge_pokes(&args::<PokesArgs>(&body)?.pokes).await?)?,
             "github_user" => answer(hub.github_user(&args::<AccountArgs>(&body)?.account).await?)?,
+            "send_authorization" => {
+                let a: SendAuthArgs = args(&body)?;
+                answer(hub.send_authorization(&a.account, &a.draft, &a.back).await?)?
+            }
+            "daemon_op" => {
+                let a: OpArgs = args(&body)?;
+                answer(hub.daemon_op(&a.daemon, &a.op).await?)?
+            }
             _ => return Ok(None),
         }))
     }
@@ -468,6 +515,16 @@ impl PlatformPort for HttpPlatform {
         let a = TokenArgs { account: account.to_owned(), github: github.cloned(), repo: repo.to_owned() };
         Box::pin(self.0.call("github_token", a))
     }
+
+    fn send_draft<'a>(
+        &'a self,
+        account: &'a str,
+        draft: &'a str,
+        token: Option<UserToken>,
+    ) -> BoxFuture<'a, anyhow::Result<Outcome>> {
+        let a = SendArgs { account: account.to_owned(), draft: draft.to_owned(), token };
+        Box::pin(self.0.call("send_draft", a))
+    }
 }
 
 /// The platform's internal API: every `PlatformPort` method of `port`,
@@ -509,6 +566,10 @@ async fn platform_call(
             "github_token" => {
                 let a: TokenArgs = args(&body)?;
                 answer(p.github_token(&a.account, a.github.as_ref(), &a.repo).await?)?
+            }
+            "send_draft" => {
+                let a: SendArgs = args(&body)?;
+                answer(p.send_draft(&a.account, &a.draft, a.token).await?)?
             }
             _ => return Ok(None),
         }))

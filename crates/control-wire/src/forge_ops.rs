@@ -19,7 +19,9 @@
 //! M165's viewer check, as the routes they're built on. Sends
 //! ([`Op::sends`]) are a person's only: "agents draft, people send"
 //! (aru-041), so a machine is refused (403, `agents_draft`). Sending is
-//! M168's: until it's built, a send is a 501 with `reason: "not_yet"`.
+//! M168's: a person's goes out as them through one of their machines, and
+//! a send with no way to go is a 409 with `reason: "no_way"` (it waits as a
+//! draft). `NOT_YET` was the 501 before M168, kept for old callers.
 //! MCP lists no send.
 //!
 //! The inbox (M171): `inbox.list` reads the reader's, and `inbox.mark`

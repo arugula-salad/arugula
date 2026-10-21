@@ -36,7 +36,9 @@
 //! On a GitHub repo linked to a project in control (M170, [`platform`]),
 //! drafts are the platform's rows: the block's go up once, an agent's new
 //! ones go there, and the block shows the platform's. Dropping one there
-//! discards it; sending one is the platform's (M168).
+//! discards it; sending one from the card (M168) goes out with the owner's
+//! login, as the block's own do, and the platform hears it. Control may
+//! also ask this machine to send one of its owner's drafts ([`send_op`]).
 //!
 //! **Pins** (M172, [`pin`]): a GitHub block on a repo linked for its owner
 //! reads the platform's mirror, not GitHub, and keeps `pin: {kind,
@@ -70,6 +72,7 @@ mod labs_forges;
 pub mod login;
 pub mod pin;
 pub mod platform;
+pub mod send_op;
 pub mod shadow;
 // The normalized model (M160: the GitHub crate's, which Forgejo and GitLab
 // map onto too).
@@ -131,9 +134,6 @@ const LINKED: Duration = Duration::from_secs(30);
 /// again, at most, and how many uploads its config notes.
 const REREAD: Duration = Duration::from_secs(10);
 const UPLOADED: usize = 50;
-/// What a platform draft's card says when a person sends it from a block:
-/// sending is the platform's (M168), which isn't here yet.
-const PLATFORM_SENDS: &str = "a draft on a linked repo is sent through Arugula control, which can't send yet: send it on GitHub, then drop it here";
 
 // ---------------------------------------------------------------- adapters
 
@@ -1078,6 +1078,21 @@ impl ForgeBlock {
             _ => a.write(&repo, number, w).await,
         }
         .map_err(|e| e.to_string());
+        self.log_write(w, by, drafted, &r);
+        let sent = r?;
+        self.state.lock().unwrap().said = Some(format!("{} by {}", sent.said, by.unwrap_or("the owner")));
+        // What it changed, read now.
+        if let Some(me) = self.me.upgrade() {
+            self.ctx.rt.spawn(async move { me.read(true).await });
+        }
+        Ok(sent)
+    }
+
+    /// A write in the block's log, as a command with who did it (and who
+    /// drafted it): one this block sent, or (M168) one control asked this
+    /// machine to send on its item.
+    pub(crate) fn log_write(&self, w: &Write, by: Option<&str>, drafted: Option<&str>, r: &Result<Sent, String>) {
+        let (repo, number) = self.repo();
         let ok = r.is_ok();
         let url = r.as_ref().ok().and_then(|s| s.url.clone());
         let err = r.as_ref().err().cloned();
@@ -1106,13 +1121,18 @@ impl ForgeBlock {
             );
             let _ = l.record(at, crate::store::Event::End { at_ms: now_ms(), exit: Some(if ok { 0 } else { 1 }) });
         }
-        let sent = r?;
-        self.state.lock().unwrap().said = Some(format!("{} by {}", sent.said, by.unwrap_or("the owner")));
-        // What it changed, read now.
+    }
+
+    /// A draft of this item's was sent on GitHub somewhere else (M168: as
+    /// control asked this machine): its log says so, and it reads again.
+    pub(crate) fn sent_elsewhere(&self, w: &Write, by: &str, drafted: Option<&str>, r: &Result<Sent, String>) {
+        self.log_write(w, Some(by), drafted, r);
+        if let Ok(sent) = r {
+            self.state.lock().unwrap().said = Some(format!("{} by {by}", sent.said));
+        }
         if let Some(me) = self.me.upgrade() {
             self.ctx.rt.spawn(async move { me.read(true).await });
         }
-        Ok(sent)
     }
 
     /// The state's drafts: the waiting ones (from config, then the
@@ -1407,13 +1427,12 @@ impl ForgeBlock {
     }
 
     /// A person answered a platform draft's card. Dropping it discards it
-    /// there. Sending it is the platform's (M168), not this machine's yet:
-    /// the card says so, and the draft waits.
+    /// there. Sending it (M168) goes out from here with the owner's login,
+    /// as the block's own drafts do, and the platform hears it: it holds the
+    /// draft first, so a send from the phone at once can't post it twice.
     async fn settle_on_platform(&self, id: &str, reply: AskReply, by: Option<String>) {
         match reply {
-            AskReply::Answer(_) => {
-                self.platform.lock().unwrap().errors.insert(id.to_owned(), PLATFORM_SENDS.into());
-            }
+            AskReply::Answer(content) => self.send_on_platform(id, &content, by).await,
             AskReply::Decline => match platform::discard(id).await {
                 Ok(()) => {
                     crate::review::log(&self.ctx, &json!({ "e": "dropped", "id": id, "by": by }));
@@ -1592,6 +1611,46 @@ impl ForgeBlock {
         if let Some(p) = had {
             info!(pane = self.ctx.id, item = p.global_id, why, "forge block unpinned: reading GitHub");
             crate::review::log(&self.ctx, &json!({ "e": "unpinned", "item": p.global_id, "why": why }));
+        }
+    }
+
+    /// Send a platform draft from its card (M168): the platform holds it,
+    /// it goes out with the owner's login, and the platform hears how it
+    /// went. Where it can't, the card says why and the draft waits.
+    async fn send_on_platform(&self, id: &str, content: &Value, by: Option<String>) {
+        let found = {
+            let p = self.platform.lock().unwrap();
+            p.drafts.iter().find(|d| d.id == id).and_then(|d| platform::shown(d, "a person", None))
+        };
+        let Some(d) = found else { return };
+        let w = edited(&d.write, content);
+        if let Err(e) = platform::sending(id, "start", None, None).await {
+            warn!(pane = self.ctx.id, id, error = e, "the platform won't let this machine send the draft");
+            self.platform.lock().unwrap().errors.insert(id.to_owned(), e);
+            return;
+        }
+        match self.send(&w, by.as_deref(), Some(&d.by)).await {
+            Ok(sent) => {
+                info!(pane = self.ctx.id, id, by, "a platform draft sent");
+                if let Err(e) = platform::sending(id, "sent", sent.url.as_deref(), None).await {
+                    warn!(pane = self.ctx.id, id, error = e, "the platform didn't hear the draft was sent");
+                }
+                self.platform.lock().unwrap().drafts.retain(|x| x.id != id);
+                self.settled(Draft {
+                    write: w,
+                    status: DraftStatus::Sent,
+                    settled_by: by,
+                    settled_ms: Some(now_ms()),
+                    url: sent.url,
+                    error: None,
+                    ..d
+                });
+            }
+            Err(e) => {
+                warn!(pane = self.ctx.id, id, error = e, "a platform draft not sent");
+                let _ = platform::sending(id, "failed", None, Some(&e)).await;
+                self.platform.lock().unwrap().errors.insert(id.to_owned(), e);
+            }
         }
     }
 

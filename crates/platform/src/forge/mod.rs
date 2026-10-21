@@ -40,6 +40,8 @@
 //! - **The inbox** ([`inbox`], M171): what each member's items want of
 //!   them, worked out from the mirror's rows as ingest writes them, pushed,
 //!   and read through the same check.
+//! - **Sends** ([`send`], M168): a person sends a draft as themselves, with
+//!   a one-use user token or through one of their machines.
 //!
 //! First-time lookups at GitHub are rate-limited per account
 //! ([`FORGE_LOOKUPS`], counted here).
@@ -74,6 +76,9 @@ pub mod ops;
 #[cfg(test)]
 mod ops_tests;
 pub mod poller;
+pub mod send;
+#[cfg(test)]
+mod send_tests;
 pub mod stats;
 pub mod viewer;
 #[cfg(test)]

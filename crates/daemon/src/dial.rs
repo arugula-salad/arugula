@@ -466,6 +466,8 @@ async fn connect_once(opts: &PeerOpts, accept: &mpsc::UnboundedSender<DuplexStre
 pub struct Texts<'a> {
     pub on_text: &'a (dyn Fn(&str) + Send + Sync),
     pub out: Vec<tokio::sync::watch::Receiver<Option<String>>>,
+    /// Messages to send each in turn, none dropped (M168: ops' answers).
+    pub queue: Option<mpsc::UnboundedReceiver<String>>,
 }
 
 /// The host end of a mux over `ws`: streams the other end opens go to
@@ -497,6 +499,16 @@ pub async fn serve_mux(
                             return;
                         }
                         if w.changed().await.is_err() {
+                            return;
+                        }
+                    }
+                }));
+            }
+            if let Some(mut q) = t.queue {
+                let say_tx = say_tx.clone();
+                sayers.push(tokio::spawn(async move {
+                    while let Some(m) = q.recv().await {
+                        if say_tx.send(m).is_err() {
                             return;
                         }
                     }

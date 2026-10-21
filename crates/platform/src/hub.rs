@@ -35,7 +35,7 @@
 use std::collections::BTreeMap;
 
 use arugula_control_common::Principal;
-use arugula_control_wire::forge::Poke;
+use arugula_control_wire::forge::{DaemonOp, OpAnswer, Poke};
 use arugula_e2e::team::TeamRole;
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
@@ -175,6 +175,32 @@ pub trait HubPort: Send + Sync {
     fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<GithubUser>>> {
         let _ = account;
         Box::pin(async { anyhow::bail!("this hub doesn't say GitHub identities") })
+    }
+
+    /// GitHub's authorization of the App for a person's send (M168): the
+    /// hub keeps what it's for (the account, the draft, and the platform
+    /// page's path to come back to) for a few minutes, for one use, and
+    /// answers GitHub's page to send the browser to. GitHub comes back to
+    /// the hub's `/auth/github/callback`, which sends the draft with the
+    /// user token (`PlatformPort::send_draft`). A hub from before M168, or
+    /// one without the App's client, can't.
+    fn send_authorization<'a>(
+        &'a self,
+        account: &'a str,
+        draft: &'a str,
+        back: &'a str,
+    ) -> BoxFuture<'a, HubResult<String>> {
+        let _ = (account, draft, back);
+        Box::pin(async { anyhow::bail!("this hub can't authorize a send with GitHub") })
+    }
+
+    /// Ask a machine to do a typed op over its relay socket (M168), and wait
+    /// for its answer: `Offline` when it isn't on the relay or doesn't
+    /// answer in time, `Unknown` when it never said it knows the op. A hub
+    /// from before M168 can't.
+    fn daemon_op<'a>(&'a self, daemon: &'a str, op: &'a DaemonOp) -> BoxFuture<'a, HubResult<OpAnswer>> {
+        let _ = (daemon, op);
+        Box::pin(async { anyhow::bail!("this hub can't ask machines to do ops") })
     }
 }
 

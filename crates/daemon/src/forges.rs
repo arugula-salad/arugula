@@ -131,3 +131,39 @@ pub async fn linked(st: &arugula_proto::forge::ForgeState) -> bool {
 pub async fn linked(_st: &arugula_proto::forge::ForgeState) -> bool {
     false
 }
+
+/// `{"t": "ops"}` for control's socket (M168): the typed ops this machine
+/// does when control asks, none without the forge.
+pub fn ops_message() -> tokio::sync::watch::Receiver<Option<String>> {
+    let ops = arugula_control_wire::forge::Ops {
+        ops: if BUILT { arugula_control_wire::forge::Ops::ours().ops } else { vec![] },
+        ..Default::default()
+    };
+    tokio::sync::watch::channel(serde_json::to_string(&ops).ok()).1
+}
+
+/// A text control's socket sent, if it asks an op of this machine (M168):
+/// whether it was one. The op runs on its own, and its answer goes to
+/// `answers`.
+pub fn op_from_control(
+    app: &std::sync::Arc<crate::server::App>,
+    text: &str,
+    answers: &tokio::sync::mpsc::UnboundedSender<String>,
+) -> bool {
+    use arugula_control_wire::forge::{DaemonOp, OpAsk, OpDone};
+    let Ok(ask) = serde_json::from_str::<OpAsk>(text) else { return false };
+    let (app, answers) = (app.clone(), answers.clone());
+    tokio::spawn(async move {
+        let answer = match ask.op {
+            #[cfg(feature = "forge")]
+            DaemonOp::ForgeSend(s) => crate::forge::send_op::forge_send(&app, s).await,
+            #[cfg(not(feature = "forge"))]
+            DaemonOp::ForgeSend(_) => {
+                let _ = &app;
+                arugula_control_wire::forge::OpAnswer::Unknown
+            }
+        };
+        let _ = answers.send(serde_json::to_string(&OpDone::new(ask.id, answer)).unwrap_or_default());
+    });
+    true
+}

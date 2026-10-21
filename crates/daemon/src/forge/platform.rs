@@ -16,6 +16,9 @@
 //! - **An agent's new draft goes to the platform** instead of the block.
 //! - **The block shows the platform's drafts** for its item, read again
 //!   every little while.
+//! - **Its card sends one** (M168) with the owner's login, holding it on
+//!   the platform first ([`sending`]), so a send from the phone at the same
+//!   time can't post it twice; the platform hears how it went.
 //!
 //! When the platform can't be reached, or refuses, drafts stay in
 //! `layout.json` and are tried again later: none is ever dropped before the
@@ -28,7 +31,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use arugula_control_wire::projects::{DraftCreated, ForgeDraft, ForgeDrafts, ForgeRepo, NewDraft};
+use arugula_control_wire::projects::{DraftCreated, ForgeDraft, ForgeDrafts, ForgeRepo, MachineSending, NewDraft};
 use arugula_proto::forge::{Draft, DraftStatus, ReviewEvent, Write};
 use reqwest::Method;
 
@@ -175,6 +178,25 @@ pub async fn discard(id: &str) -> Result<(), String> {
         .await
         .map(drop)
         .map_err(|e| e.to_string())
+}
+
+/// Tell the platform this machine sends one of its owner's drafts from a
+/// block's card (M168): `start` holds it, then `sent` (with its URL) or
+/// `failed` (with why). `Err`: why not, for the card.
+pub async fn sending(id: &str, step: &str, url: Option<&str>, error: Option<&str>) -> Result<(), String> {
+    let control = super::live::control().ok_or("not in Arugula control any more")?;
+    let body = serde_json::to_value(MachineSending {
+        step: step.into(),
+        url: url.map(Into::into),
+        error: error.map(Into::into),
+    })
+    .map_err(|e| e.to_string())?;
+    control.cloud_now(Method::POST, &format!("/api/forge/drafts/{id}/machine"), Some(&body)).await.map(drop).map_err(
+        |e| match e {
+            CloudRefused::Said { said, .. } => said,
+            e => e.to_string(),
+        },
+    )
 }
 
 /// A platform draft as the block shows it, `by` the agent that wrote it,

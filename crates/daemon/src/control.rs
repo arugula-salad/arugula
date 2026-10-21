@@ -1937,16 +1937,19 @@ async fn relay_once(
         l.seen_ms = Some(now_ms());
     });
     // M40: forge subscriptions out, pokes and heartbeats in. M65: guest
-    // routes out, control's answers in.
+    // routes out, control's answers in. M168: the ops this machine knows
+    // out, control's asks in, and their answers out.
     let guests = app.guests.clone();
+    let (answers, queue) = mpsc::unbounded_channel();
+    let ops_app = app.clone();
     let on_text = move |t: &str| {
-        if !guests.heard_from_control(t) {
+        if !guests.heard_from_control(t) && !crate::forges::op_from_control(&ops_app, t, &answers) {
             crate::forges::from_control(t);
         }
     };
-    let mut out = vec![app.guests.routes_messages()];
+    let mut out = vec![app.guests.routes_messages(), crate::forges::ops_message()];
     out.extend(crate::forges::watch_messages());
-    let texts = crate::dial::Texts { on_text: &on_text, out };
+    let texts = crate::dial::Texts { on_text: &on_text, out, queue: Some(queue) };
     crate::dial::serve_mux(ws, accept, Some(raw), Some(&control.nudge), Some(texts)).await
 }
 

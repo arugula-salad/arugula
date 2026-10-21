@@ -161,3 +161,128 @@ impl std::fmt::Debug for GithubToken {
             .finish()
     }
 }
+
+// ---------------------------------------------------------------- ops on a machine
+
+tag!(
+    /// `"ops"`.
+    OpsTag = "ops"
+);
+tag!(
+    /// `"op"`.
+    OpTag = "op"
+);
+tag!(
+    /// `"op.done"`.
+    OpDoneTag = "op.done"
+);
+
+/// The typed ops this build's daemon does when control asks (M168).
+pub const OPS: &[&str] = &["forge.send"];
+
+/// `{"t": "ops", "ops": [...]}`, daemon to control, on connecting: the
+/// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
+/// answers [`OpAnswer::Unknown`] for it without asking.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Ops {
+    pub t: OpsTag,
+    #[serde(default)]
+    pub ops: Vec<String>,
+}
+
+impl Ops {
+    /// What this build knows.
+    pub fn ours() -> Self {
+        Ops { t: OpsTag, ops: OPS.iter().map(|s| (*s).to_owned()).collect() }
+    }
+}
+
+/// `{"t": "op", "id": ..., "op": {...}}`, control to daemon: do this and
+/// answer with an [`OpDone`] of the same `id`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpAsk {
+    pub t: OpTag,
+    pub id: String,
+    pub op: DaemonOp,
+}
+
+impl OpAsk {
+    pub fn new(id: String, op: DaemonOp) -> Self {
+        OpAsk { t: OpTag, id, op }
+    }
+}
+
+/// `{"t": "op.done", "id": ..., "answer": {...}}`, daemon to control.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpDone {
+    pub t: OpDoneTag,
+    pub id: String,
+    pub answer: OpAnswer,
+}
+
+impl OpDone {
+    pub fn new(id: String, answer: OpAnswer) -> Self {
+        OpDone { t: OpDoneTag, id, answer }
+    }
+}
+
+/// An op control asks a machine for, by its name (`op`). Only the platform
+/// asks, through the hub, and only for a person's own action.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op")]
+pub enum DaemonOp {
+    /// Send a draft on a linked repo as the machine's owner, with their own
+    /// `gh` login, because the person pressed Send (M168).
+    #[serde(rename = "forge.send")]
+    ForgeSend(ForgeSend),
+}
+
+impl DaemonOp {
+    pub fn name(&self) -> &'static str {
+        match self {
+            DaemonOp::ForgeSend(_) => "forge.send",
+        }
+    }
+}
+
+/// A draft to send: what it is and where it goes. `account` is its person,
+/// who must be the machine's owner.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgeSend {
+    /// The platform's draft id.
+    pub draft: String,
+    pub account: String,
+    /// `OWNER/NAME` on github.com.
+    pub repo: String,
+    /// The PR or issue; `None` for a new issue.
+    #[serde(default)]
+    pub number: Option<u64>,
+    /// `comment`, `review` or `issue`.
+    pub kind: String,
+    /// A review's: `COMMENT`, `APPROVE` or `REQUEST_CHANGES`.
+    #[serde(default)]
+    pub event: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub body: String,
+}
+
+/// How a machine (or control, for it) answered an op.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "answer", rename_all = "snake_case")]
+pub enum OpAnswer {
+    /// Done: what it made on the forge, when it says.
+    Done {
+        #[serde(default)]
+        url: Option<String>,
+    },
+    /// The forge refused it, or the call failed: the person's to see.
+    Failed { error: String },
+    /// This machine can't (no `gh` login, not its owner's): ask another.
+    Cant { why: String },
+    /// It doesn't know the op (a daemon from before it).
+    Unknown,
+    /// It isn't on control's relay now, or didn't answer in time.
+    Offline,
+}
