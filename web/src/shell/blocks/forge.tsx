@@ -23,12 +23,13 @@ import type { Client } from "../client";
 import type { Draft, Event as ForgeEvent, ForgeState, PaneId, Pr } from "../../shared/proto";
 import { Markdown } from "../../shared/ui/markdown";
 import { askText } from "../../shared/ui/menu";
+import { isNativeIssue, NativeIssueBlock, nativeIssueText, nativeIssueTitle, type NativeIssueState } from "./native-issue";
 import { registerBlock, type BlockView } from "./view";
 
 /** "Open pull request…": a link, OWNER/REPO#N, or N in `dir`'s repository,
  * beside `split` or in a new tab of `session`. */
 export async function openPr(client: Client, where: { split?: PaneId; session?: number; dir?: string | null }) {
-  const pr = await askText("Open a pull request", "", "a link, OWNER/REPO#N, or N in this repository");
+  const pr = await askText("Open a pull request", "", "a link, OWNER/REPO#N, N in this repository, or a project's iss_…");
   if (!pr?.trim()) return;
   const place = where.split !== undefined ? { split: where.split, from_pane: where.split } : { session: where.session !== undefined ? String(where.session) : undefined };
   await client.openBlock({ type: "forge", config: { pr: pr.trim(), dir: where.dir ?? undefined }, local: true, ...place }, "couldn't open the pull request");
@@ -36,7 +37,7 @@ export async function openPr(client: Client, where: { split?: PaneId; session?: 
 
 /** "Open issue…": as `openPr`, for an issue. */
 export async function openIssue(client: Client, where: { split?: PaneId; session?: number; dir?: string | null }) {
-  const issue = await askText("Open an issue", "", "a link, OWNER/REPO#N, or N in this repository");
+  const issue = await askText("Open an issue", "", "a link, OWNER/REPO#N, N in this repository, or a project's iss_…");
   if (!issue?.trim()) return;
   const place = where.split !== undefined ? { split: where.split, from_pane: where.split } : { session: where.session !== undefined ? String(where.session) : undefined };
   await client.openBlock({ type: "forge", config: { issue: issue.trim(), dir: where.dir ?? undefined }, local: true, ...place }, "couldn't open the issue");
@@ -900,19 +901,26 @@ function plain(s: ForgeState | null): string {
 registerBlock("forge", (client, id): BlockView => {
   const host = document.createElement("div");
   host.className = "block block-forge";
-  let state: ForgeState | null = null;
-  const draw = () => render(<ForgeBlock client={client} id={id} s={state} />, host);
+  // M203: a project's own issue is a forge block too, drawn by the
+  // platform page's issue view.
+  let state: ForgeState | NativeIssueState | null = null;
+  const draw = () => render(isNativeIssue(state) ? <NativeIssueBlock s={state} refresh={() => void client.api(`/api/blocks/${id}/call/refresh`, {})} /> : <ForgeBlock client={client} id={id} s={state} />, host);
   draw();
   const off = client.subscribe(draw);
   return {
     host,
     setVisible: (v) => (host.style.display = v ? "" : "none"),
     update: (s) => {
-      state = s as ForgeState;
+      state = s as ForgeState | NativeIssueState;
       draw();
     },
-    title: () => (state?.number === 0 ? `${state.repo} new issue` : `${state?.repo ?? (state?.kind === "issue" ? "issue" : "pull request")}#${state?.number ?? ""}`),
-    text: () => plain(state),
+    title: () =>
+      isNativeIssue(state)
+        ? nativeIssueTitle(state)
+        : state?.number === 0
+          ? `${state.repo} new issue`
+          : `${state?.repo ?? (state?.kind === "issue" ? "issue" : "pull request")}#${state?.number ?? ""}`,
+    text: () => (isNativeIssue(state) ? nativeIssueText(state) : plain(state)),
     focus: () => host.querySelector<HTMLElement>("button")?.focus(),
     dispose: () => {
       off();

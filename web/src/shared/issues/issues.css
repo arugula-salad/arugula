@@ -1,0 +1,426 @@
+/* Native issues (M201, M203): the platform page's list and new issue,
+   and one issue with its timeline and thread in a column, which the
+   shell's issue blocks draw too (shared/issues/view.tsx). Chips, tags and
+   the thread are the forge blocks' and chat's (../style.css). */
+
+.issues-head,
+.issue-meta,
+.issues-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.issues-head h1 {
+  flex: 1;
+  margin: 0;
+}
+
+.issues-head {
+  margin-bottom: 16px;
+}
+
+.platform-section a.primary {
+  color: var(--on-color);
+  text-decoration: none;
+}
+
+.issues-export,
+.issues-filter,
+.issues-states button,
+.issue-action {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.issues-filter.on,
+.issues-states button[aria-pressed="true"] {
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.issues-states {
+  display: flex;
+}
+
+.issues-states button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.issues-states button:last-child {
+  margin-left: -1px;
+  border-radius: 0 6px 6px 0;
+}
+
+.issues-search {
+  flex: 1;
+  min-width: 140px;
+}
+
+.issues-search,
+.issue-form input:not([type="checkbox"]),
+.issue-form textarea,
+.issue-title-edit input {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--raised-hover);
+  border-radius: 6px;
+  background: var(--letterbox);
+  color: var(--fg);
+  font: inherit;
+}
+
+.issue-form textarea {
+  height: auto;
+  min-height: 8em;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.issues-note {
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: 6px;
+  color: var(--warn);
+}
+
+.issues-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+}
+
+.issues-list:empty {
+  display: none;
+}
+
+.issue-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.issue-row + .issue-row {
+  border-top: 1px solid var(--divider);
+}
+
+.issue-row-main {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.platform-section a.issue-row-title {
+  margin-right: 6px;
+  color: var(--fg);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.platform-section a.issue-row-title:hover {
+  color: var(--accent);
+}
+
+.issue-row-meta {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.issue-row-who {
+  display: flex;
+  gap: 2px;
+}
+
+.issue-row-who .msg-avatar,
+.issue-side .msg-avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+}
+
+.issue-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.issue-dot.closed {
+  background: var(--danger);
+}
+
+.ws-tag.issue-label {
+  margin-right: 4px;
+  border: 1px solid var(--divider);
+  background: var(--surface);
+  color: var(--subtle);
+}
+
+button.ws-tag.issue-label:hover {
+  border-color: var(--accent);
+}
+
+.issues-home {
+  margin-top: 28px;
+  padding-top: 4px;
+  border-top: 1px solid var(--divider);
+}
+
+.issues-home .control-confirm {
+  display: block;
+  padding: 3px 0;
+}
+
+.issue-back {
+  margin: 0 0 8px;
+}
+
+.issue-head h1 {
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+
+.issue-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.issue-split {
+  display: flex;
+}
+
+.issue-split .issue-action:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.issue-split .issue-action:last-child {
+  margin-left: -1px;
+  padding: 0 7px;
+  border-radius: 0 6px 6px 0;
+}
+
+.issue-action.small {
+  height: 22px;
+  margin-left: auto;
+  padding: 0 7px;
+  font-size: 12px;
+  font-weight: normal;
+}
+
+.issue-title-edit {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.issue-title-edit input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  font-size: 16px;
+}
+
+.issue-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  gap: 24px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--divider);
+}
+
+.issue-side {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.issue-main {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+
+.issue-side-part h3 {
+  display: flex;
+  align-items: center;
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.issue-side-part + .issue-side-part {
+  margin-top: 16px;
+}
+
+.issue-side-part p {
+  margin: 0;
+}
+
+.issue-post {
+  display: grid;
+  grid-template-columns: var(--msg-gutter, 36px) minmax(0, 1fr);
+  column-gap: 8px;
+}
+
+.issue-post .thread-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.issue-text {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* The thread is part of the page: the page scrolls, and the box to write
+   in stays at its foot. */
+.issue-thread {
+  margin-top: 8px;
+}
+
+.issue-thread .thread-list {
+  flex: none;
+  overflow: visible;
+  padding: 0;
+}
+
+.issue-thread .thread-msg {
+  margin: 0;
+  padding: 2px 0;
+}
+
+.issue-thread .room-agents {
+  margin-top: 12px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+}
+
+.issue-thread .thread-compose {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin-top: 8px;
+  padding: 8px 0 calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--bg);
+}
+
+.issue-thread .thread-note {
+  border-top: 0;
+  padding: 10px 0;
+}
+
+.issue-event {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 10px 0;
+  color: var(--subtle);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.issue-event-mark {
+  flex: none;
+  width: var(--msg-gutter, 36px);
+  text-align: center;
+  color: var(--dim);
+}
+
+.issue-event.closed .issue-event-mark {
+  color: var(--danger);
+}
+
+.issue-event.reopened .issue-event-mark {
+  color: var(--ok);
+}
+
+.issue-event b {
+  color: var(--fg);
+}
+
+.issue-form {
+  display: grid;
+  gap: 12px;
+  max-width: 680px;
+}
+
+.issue-form label {
+  display: grid;
+  gap: 5px;
+}
+
+.issue-form label.control-confirm {
+  display: block;
+}
+
+.issue-assignees {
+  margin: 0;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+}
+
+.issue-cancel {
+  align-self: center;
+  margin-right: 8px;
+}
+
+/* An issue in a narrow place (a phone, a block in a split): its labels
+   and assignees sit above its text, side by side. */
+.issue-page {
+  container: issue / inline-size;
+}
+
+@container issue (max-width: 700px) {
+  .issue-cols {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 16px;
+  }
+
+  .issue-side {
+    display: contents;
+  }
+
+  .issue-side-part + .issue-side-part {
+    margin-top: 0;
+  }
+
+  .issue-main {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .issue-actions {
+    margin-left: 0;
+  }
+}
+
+/* What a read says when the platform can't be reached, and where the
+   issue was read from (an issue block's foot). */
+.issue-stale {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.issue-foot {
+  margin: 12px 0 0;
+  font-size: 12px;
+}

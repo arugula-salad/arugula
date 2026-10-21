@@ -198,7 +198,7 @@ export type ChatKind = "channel" | "dm" | "pane" | "session" | "archive" | "obje
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "resync", };
 
 /**
  * A message as the reader sees it.

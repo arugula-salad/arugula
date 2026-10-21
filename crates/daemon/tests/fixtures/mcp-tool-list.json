@@ -1152,7 +1152,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- cloud_workspace {cloud_workspace, beside?, tab?}: One of the user's Cloud workspaces (list kind cloud_workspaces) as a block: its status and tabs, a tab's transcript with what it asks, a prompt box, and the changes on its machine, kept up to date from Arugula control while the user looks. With tab: open on that tab. The user can prompt, answer and interrupt its tabs there. Returns its status and tabs.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- cloud_workspace {cloud_workspace, beside?, tab?}: One of the user's Cloud workspaces (list kind cloud_workspaces) as a block: its status and tabs, a tab's transcript with what it asks, a prompt box, and the changes on its machine, kept up to date from Arugula control while the user looks. With tab: open on that tab. The user can prompt, answer and interrupt its tabs there. Returns its status and tabs.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -1206,7 +1206,7 @@
             "type": "string"
           },
           "issue": {
-            "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository).",
+            "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository). A project's own issue on Arugula control: iss_…,\nor #N with project, in a clone of a repo linked to a project whose\nissues are native, or outside any clone (the user's personal\nproject's).",
             "type": "string"
           },
           "kind": {
@@ -1250,6 +1250,14 @@
           "pr": {
             "description": "pr: The pull request: its link (a Forgejo PR's or a GitLab MR's),\nOWNER/REPO#N, GROUP/PROJECT!N (GitLab), or N (in dir's repository).",
             "type": "string"
+          },
+          "project": {
+            "default": null,
+            "description": "issue: A project on Arugula control (its id, or personal): #N is its own\nissue N.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "repo": {
             "default": null,
@@ -4450,7 +4458,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- cloud_workspace {cloud_workspace, beside?, tab?}: One of the user's Cloud workspaces (list kind cloud_workspaces) as a block: its status and tabs, a tab's transcript with what it asks, a prompt box, and the changes on its machine, kept up to date from Arugula control while the user looks. With tab: open on that tab. The user can prompt, answer and interrupt its tabs there. Returns its status and tabs.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- cloud_workspace {cloud_workspace, beside?, tab?}: One of the user's Cloud workspaces (list kind cloud_workspaces) as a block: its status and tabs, a tab's transcript with what it asks, a prompt box, and the changes on its machine, kept up to date from Arugula control while the user looks. With tab: open on that tab. The user can prompt, answer and interrupt its tabs there. Returns its status and tabs.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -4528,7 +4536,7 @@
             "type": "string"
           },
           "issue": {
-            "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository).",
+            "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository). A project's own issue on Arugula control: iss_…,\nor #N with project, in a clone of a repo linked to a project whose\nissues are native, or outside any clone (the user's personal\nproject's).",
             "type": "string"
           },
           "kind": {
@@ -4582,6 +4590,14 @@
             "default": {},
             "description": "workspace: Editors' chant principals, by their Arugula name\n({\"sam\": \"github:sam-h\"}), for gates an editor approves.",
             "type": "object"
+          },
+          "project": {
+            "default": null,
+            "description": "issue: A project on Arugula control (its id, or personal): #N is its own\nissue N.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "repo": {
             "default": null,
@@ -7797,7 +7813,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- cloud_workspace {cloud_workspace, beside?, tab?}: One of the user's Cloud workspaces (list kind cloud_workspaces) as a block: its status and tabs, a tab's transcript with what it asks, a prompt box, and the changes on its machine, kept up to date from Arugula control while the user looks. With tab: open on that tab. The user can prompt, answer and interrupt its tabs there. Returns its status and tabs.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- cloud_workspace {cloud_workspace, beside?, tab?}: One of the user's Cloud workspaces (list kind cloud_workspaces) as a block: its status and tabs, a tab's transcript with what it asks, a prompt box, and the changes on its machine, kept up to date from Arugula control while the user looks. With tab: open on that tab. The user can prompt, answer and interrupt its tabs there. Returns its status and tabs.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -7851,7 +7867,7 @@
             "type": "string"
           },
           "issue": {
-            "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository).",
+            "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository). A project's own issue on Arugula control: iss_…,\nor #N with project, in a clone of a repo linked to a project whose\nissues are native, or outside any clone (the user's personal\nproject's).",
             "type": "string"
           },
           "kind": {
@@ -7895,6 +7911,14 @@
           "pr": {
             "description": "pr: The pull request: its link (a Forgejo PR's or a GitLab MR's),\nOWNER/REPO#N, GROUP/PROJECT!N (GitLab), or N (in dir's repository).",
             "type": "string"
+          },
+          "project": {
+            "default": null,
+            "description": "issue: A project on Arugula control (its id, or personal): #N is its own\nissue N.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "repo": {
             "default": null,
@@ -11095,7 +11119,7 @@
         "readOnlyHint": false,
         "title": "Show the user a block"
       },
-      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- cloud_workspace {cloud_workspace, beside?, tab?}: One of the user's Cloud workspaces (list kind cloud_workspaces) as a block: its status and tabs, a tab's transcript with what it asks, a prompt box, and the changes on its machine, kept up to date from Arugula control while the user looks. With tab: open on that tab. The user can prompt, answer and interrupt its tabs there. Returns its status and tabs.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
+      "description": "Show the user something as a block beside a pane (beside; default the caller's own pane), instead of describing it. kind says what.\n- port {port, beside?, path?}: A browser block on a port of the machine a pane runs on (a dev server), beside that pane, so the user sees it next to its terminal.\n- changes {beside?, repo?, rev_a?, rev_b?}: A diff block: what changed in a pane's git repository (the working tree against HEAD, or against rev_a, or rev_a..rev_b), as a file list with +/- the user can open to hunks and files, live while they look. Returns the files; read_output on the block gives the unified diff.\n- file {path, beside?, line?}: A file block: a file on a pane's machine, read-only, scrolled to a line and followed live, for the user to look at.\n- pr {pr, beside?, dir?}: A pull request on the user's Forgejo or GitHub, or a GitLab merge request: its checks, reviews and timeline, read with the user's own tea, gh (or glab) login, and what it waits on them for (a review asked of them, red checks, changes requested) as attention on the phone and the swarm. Returns the PR as text; draft writes to it.\n- issue {issue, beside?, dir?, project?}: An issue on the user's Forgejo or GitHub: its labels, assignees, the pull requests that refer to it and its timeline, read with the user's own tea or gh login; one assigned to them or mentioning them is attention on the phone and the swarm. From the block the user can start an agent on it in a worktree of its own. Returns the issue as text.\n- conversation {id, beside?, then?}: A Claude Code conversation (list kind conversations) as an agent block, stopped, with its transcript; then: continue (refused while it's open somewhere else) or fork (a new session with its history; the original is left alone). send_input to the block goes on.\n- cloud_workspace {cloud_workspace, beside?, tab?}: One of the user's Cloud workspaces (list kind cloud_workspaces) as a block: its status and tabs, a tab's transcript with what it asks, a prompt box, and the changes on its machine, kept up to date from Arugula control while the user looks. With tab: open on that tab. The user can prompt, answer and interrupt its tabs there. Returns its status and tabs.\n- app {app?, beside?}: One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.\n- workspace {dir, actor?, beside?, env?, principals?}: A chant workspace block: its members as cards (open a shell, an agent or the changes in one), its records, and the gates waiting for a person, which the user can approve there and which show as attention on the phone and the swarm. Read through the workspace's own chant. Returns its members and the gates waiting.",
       "inputSchema": {
         "$defs": {
           "ConversationThen": {
@@ -11173,7 +11197,7 @@
             "type": "string"
           },
           "issue": {
-            "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository).",
+            "description": "issue: The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in\ndir's repository). A project's own issue on Arugula control: iss_…,\nor #N with project, in a clone of a repo linked to a project whose\nissues are native, or outside any clone (the user's personal\nproject's).",
             "type": "string"
           },
           "kind": {
@@ -11227,6 +11251,14 @@
             "default": {},
             "description": "workspace: Editors' chant principals, by their Arugula name\n({\"sam\": \"github:sam-h\"}), for gates an editor approves.",
             "type": "object"
+          },
+          "project": {
+            "default": null,
+            "description": "issue: A project on Arugula control (its id, or personal): #N is its own\nissue N.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "repo": {
             "default": null,

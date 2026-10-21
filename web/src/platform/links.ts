@@ -3,7 +3,7 @@
 
 import { chat } from "../shared/chat-store";
 import { cloudWorkspaces } from "../shared/cloud";
-import { issues } from "./issues/store";
+import { issues } from "../shared/issues/store";
 import { current, pathOf, type Route } from "./router";
 import { session } from "./session";
 

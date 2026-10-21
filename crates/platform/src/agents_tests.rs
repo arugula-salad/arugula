@@ -265,3 +265,46 @@ async fn an_agent_comments_on_a_native_issue() {
     assert_eq!(agent_object_room(&app, &geek(), THREADS_POST, &later.id).await.unwrap_err().2, off);
     assert_eq!(app.db.chat_room_on(&format!("project:{t}"), &later.id).unwrap(), None);
 }
+
+/// A call signed by a's machine geek.
+async fn as_geek(base: &str, path: &str) -> (u16, Value) {
+    let r = reqwest::Client::new().get(format!("{base}{path}")).header("x-test-daemon", "a geek").send().await.unwrap();
+    (r.status().as_u16(), r.json().await.unwrap_or_default())
+}
+
+/// A machine reads a native issue for its owner (M203's pinned issue
+/// blocks): refused saying how without `threads.read` over the project,
+/// then by id or by number; another team's issue isn't there, and a revoke
+/// stops the next read.
+#[tokio::test]
+async fn a_machine_reads_its_owners_issue_with_a_grant() {
+    let (_hub, app, base, t, u) = seeded().await;
+    let issue = |project: &str| {
+        let n = NewIssue { project, title: "the canary fails", body: "on deploy", labels: &[], assignees: &[] };
+        app.db.create_issue(&n, Actor::person("a"), 1).unwrap().unwrap()
+    };
+    let ours = issue(&t);
+    let theirs = issue(&u);
+    let by_id = format!("/api/daemon/issues/{}", ours.id);
+    let (st, v) = as_geek(&base, &by_id).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(AGENT_UNGRANTED)), "{v}");
+    assert!(v["error"].as_str().unwrap().contains("threads.read"), "{v}");
+    assert_eq!(as_geek(&base, &format!("/api/daemon/issues/{}", theirs.id)).await.0, 404, "u's isn't a's");
+
+    let (st, g) =
+        call(&base, "a", "POST", "/api/grants", give("geek", THREADS_READ, json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{g}");
+    let (st, v) = as_geek(&base, &by_id).await;
+    assert_eq!((st, &v["title"], &v["number"]), (200, &json!("the canary fails"), &json!(1)), "{v}");
+    let (st, v) = as_geek(&base, &format!("/api/daemon/projects/{t}/issues/1")).await;
+    assert_eq!((st, &v["id"]), (200, &json!(ours.id)), "{v}");
+    assert_eq!(as_geek(&base, &format!("/api/daemon/projects/{u}/issues/1")).await.0, 404);
+    assert_eq!(as_geek(&base, "/api/daemon/issues/iss_00000000000000000000000000000000").await.0, 404);
+    // Only as a machine: a person's session isn't one.
+    assert_eq!(call(&base, "a", "GET", &by_id, None).await.0, 401);
+
+    let (st, _) = call(&base, "a", "POST", &format!("/api/grants/{}/revoke", g["id"].as_str().unwrap()), None).await;
+    assert_eq!(st, 200);
+    assert_eq!(as_geek(&base, &by_id).await.0, 403, "revoked: the next read is refused");
+}

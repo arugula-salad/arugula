@@ -12,8 +12,9 @@ import { chat } from "../../shared/chat-store";
 import { MsgAvatar } from "../../shared/chat/avatar";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
-import { issues, type IssueFilter } from "../issues/store";
-import { ago, githubNewIssue, labelsOf, stateLabel, whoLabel } from "../issues/text";
+import { issues, type IssueFilter } from "../../shared/issues/store";
+import { ago, githubNewIssue, labelsOf, stateLabel, whoLabel } from "../../shared/issues/text";
+import { LabelChip } from "../../shared/issues/view";
 import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
@@ -55,27 +56,6 @@ export function IssuesOff() {
       <h1>Issues</h1>
       <p class="dim">Issues come with chat, which is off for you. A team owner turns it on in the team's Labs, on control's page.</p>
     </section>
-  );
-}
-
-/** A label, as a chip. */
-export function LabelChip({ label, onClick }: { label: string; onClick?: (e: MouseEvent) => void }) {
-  return onClick ? (
-    <button type="button" class="ws-tag issue-label" data-issue-label={label} onClick={onClick}>
-      {label}
-    </button>
-  ) : (
-    <span class="ws-tag issue-label" data-issue-label={label}>
-      {label}
-    </span>
-  );
-}
-
-export function StateTag({ i }: { i: Pick<NativeIssue, "state" | "close_reason"> }) {
-  return (
-    <span class={`ws-tag forge-state ${i.state === "closed" ? "closed" : "open"}`} data-issue-state={i.state}>
-      {stateLabel(i)}
-    </span>
   );
 }
 

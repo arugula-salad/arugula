@@ -3,7 +3,7 @@
 // and what a list asks the platform for. Plain functions, for the page
 // and its tests (scripts/issues.test.mjs).
 
-import type { ChatAgent, IssueEvent, NativeIssue } from "../../shared/proto";
+import type { ChatAgent, IssueEvent, NativeIssue } from "../proto";
 
 /** An account's name now, or null for someone the page doesn't know. */
 export type NameOf = (account: string) => string | null | undefined;

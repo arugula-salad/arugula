@@ -887,6 +887,18 @@ impl Hub {
         self.publish(db, ChatLive::Room { room: room.to_owned() }, None);
     }
 
+    /// The object `target`'s thread is on changed (M203): pages showing
+    /// it read it again. Nothing when nobody has made its thread.
+    pub fn object_changed(&self, db: &Db, scope: &str, target: &str) {
+        match db.chat_room_on(scope, target) {
+            Ok(Some(room)) => {
+                self.publish(db, ChatLive::Object { room: room.id, target: target.to_owned() }, None);
+            }
+            Ok(None) => {}
+            Err(e) => tracing::warn!(error = %e, "chat: finding an object's thread"),
+        }
+    }
+
     fn id(&self, n: u64) -> String {
         format!("{EPOCH}-{n}")
     }
@@ -1007,9 +1019,10 @@ impl Live {
                 self.refresh().await;
                 was || self.rooms.contains(room)
             }
-            ChatLive::Message { room, .. } | ChatLive::Changed { room, .. } | ChatLive::Read { room, .. } => {
-                self.rooms.contains(room)
-            }
+            ChatLive::Message { room, .. }
+            | ChatLive::Changed { room, .. }
+            | ChatLive::Read { room, .. }
+            | ChatLive::Object { room, .. } => self.rooms.contains(room),
             ChatLive::Hello { .. } | ChatLive::Resync {} => true,
         };
         ok.then(|| Event::default().id(self.app().chat.id(out.n)).data(data(&out.ev)))

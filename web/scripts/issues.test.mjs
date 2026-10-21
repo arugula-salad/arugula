@@ -3,7 +3,7 @@
 // routes' paths. Run with `node --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ago, eventLine, githubNewIssue, labelsOf, queryOf, reasonLabel, stateLabel, whoLabel } from "../src/platform/issues/text.ts";
+import { ago, eventLine, githubNewIssue, labelsOf, queryOf, reasonLabel, stateLabel, whoLabel } from "../src/shared/issues/text.ts";
 
 import { parse, pathOf } from "../src/platform/paths.ts";
 

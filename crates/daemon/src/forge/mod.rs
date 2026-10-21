@@ -45,6 +45,9 @@
 //! global_id}` in its config. Unlinked repos, Forgejo, GitLab and a machine
 //! outside control read as above.
 //!
+//! **Native issues** (M203, [`native`]): a project's own issue on the
+//! platform (`iss_…`) is a block of its own kind, pinned to it.
+//!
 //! **The log** (`blocks/%N/`): the timeline's events as JSON lines, and
 //! every write as a command with who did it, so `history` and `search`
 //! find a PR's comments beside the work.
@@ -70,6 +73,7 @@ pub mod live;
 #[cfg(feature = "labs")]
 mod labs_forges;
 pub mod login;
+pub mod native;
 pub mod pin;
 pub mod platform;
 pub mod send_op;
@@ -421,6 +425,10 @@ pub struct ForgeBlock {
 
 impl ForgeBlock {
     pub fn create(ctx: BlockCtx, config: Value) -> Result<Arc<dyn Block>, String> {
+        // M203: a project's own issue is a pin onto the platform's.
+        if native::pinned(&config).is_some() {
+            return native::NativeIssue::create(ctx, config);
+        }
         let mut config: Config = serde_json::from_value(config).map_err(|e| format!("forge config: {e}"))?;
         // Forgejo's and GitLab's are Labs'. One saved while Labs was on is
         // still brought back, as unavailable, and reads again when it is.
@@ -2091,6 +2099,10 @@ impl ForgeBlock {
 /// is refused where Labs is off (see [`crate::labs::forge_allowed`]), asked
 /// of the result so no default or fallback of [`resolve_config`] gets round it.
 pub async fn open_config(c: &Value, state_dir: &Path) -> Result<Value, String> {
+    // M203: a project's own issue (`iss_…`, or `#N` in a project).
+    if let Some(out) = native::open_config(c).await? {
+        return Ok(out);
+    }
     let out = resolve_for(c, crate::labs::on(state_dir, arugula_proto::flags::FORGES)).await?;
     let provider = serde_json::from_value::<Provider>(out["provider"].clone()).unwrap_or_default();
     crate::labs::forge_allowed(provider, state_dir)?;

@@ -405,6 +405,10 @@ pub async fn change(
     let old = issue;
     let (issue, events) = app.db.patch_issue(id, &patch, by, now_ms())?.ok_or_else(no_issue)?;
     crate::inbox::issue_changed(app, by, &old, &issue).await;
+    // Pages showing it (its thread's readers) read it again (M203).
+    if !events.is_empty() {
+        app.chat.object_changed(&app.db, &format!("project:{}", issue.project), &issue.id);
+    }
     Ok(wire::IssuePatched {
         issue: issues_wire(app, &[issue]).await?.remove(0),
         events: events_wire(app, &events).await?,

@@ -58,6 +58,9 @@ mod forge_labs_off;
 mod forge_live;
 #[cfg(all(unix, feature = "forge"))]
 mod forge_pins;
+// M203: a project's own issue as a pinned issue block.
+#[cfg(all(unix, feature = "forge"))]
+mod issue_pins;
 // M168: control asks a machine to send a person's draft.
 #[cfg(all(unix, feature = "forge"))]
 mod forge_send_op;

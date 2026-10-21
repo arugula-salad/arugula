@@ -102,6 +102,25 @@ export class ChatStore {
     return () => void this.listeners.delete(fn);
   }
 
+  /** Who wants to hear that what an object's thread is on changed (M203:
+   * a native issue), by its id. */
+  private objects = new Map<string, Set<() => void>>();
+
+  /** Call `fn` when what `target`'s thread is on changes, or the stream
+   * comes back after missing what might have. */
+  onObject(target: string, fn: () => void): () => void {
+    const fns = this.objects.get(target) ?? new Set<() => void>();
+    this.objects.set(target, fns.add(fn));
+    return () => {
+      fns.delete(fn);
+      if (!fns.size) this.objects.delete(target);
+    };
+  }
+
+  private objectChanged(target?: string) {
+    for (const [t, fns] of this.objects) if (target === undefined || t === target) fns.forEach((fn) => fn());
+  }
+
   private emit() {
     for (const fn of [...this.listeners]) fn();
   }
@@ -196,6 +215,10 @@ export class ChatStore {
         // Anything missed while there was no stream.
         this.roomsSoon();
         for (const room of this.loaded.keys()) void this.newer(room);
+        this.objectChanged();
+        return;
+      case "object":
+        this.objectChanged(ev.target);
         return;
       case "message":
         this.roomsSoon();
@@ -219,6 +242,7 @@ export class ChatStore {
         this.roomsSoon();
         return;
       case "resync":
+        this.objectChanged();
         this.loaded.clear();
         this.detail.clear();
         this.roomsSoon();

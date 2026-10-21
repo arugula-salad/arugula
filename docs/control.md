@@ -158,6 +158,24 @@ until sends are the platform's (M168). A machine reporting for M171's
 shadow period (`ARUGULA_INBOX_SHADOW`) doesn't pin, so its report stays
 GitHub's word.
 
+**Native issue pins (M203, #1274).** A project's own issue opens as an
+issue block too: `show` kind issue with `iss_…`, or `#N` in the current
+project (`project`, else the project a clone's GitHub repo is linked to
+when its issues are native, else your personal one outside a clone; in a
+clone otherwise, `#N` is still the forge's), and `arugula open iss_…` or
+`arugula open '#12'` (the current project, as `arugula issue` finds it).
+The block is a pin, `pin: {kind: "issue", global_id}` in `layout.json`,
+and it draws the platform page's issue view. On control's page it reads
+and writes as the person looking, with its thread, and updates live: a
+change to an issue reaches the pages showing its thread as an `object`
+event on chat's stream. The daemon reads it too, as the machine for its
+owner, through M200's `GET /api/daemon/issues/{id}`, so only with the
+machine's `threads.read` grant over the project (what it reads, its
+agents read: `read_forge` on the block is M200's read). It reads again
+every minute while the block is drawn, and at once when a page showing it
+hears it changed. The platform can't be reached: the block shows what it
+said last, and says so. Without a grant, it says how to give one.
+
 ```
 arugula pr view acme/app#7                # no block; also `issue view`
 arugula pr list acme/app --state open     # or --project; also `issue list`

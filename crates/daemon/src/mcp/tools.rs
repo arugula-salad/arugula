@@ -94,6 +94,9 @@ struct ForgeOpen {
     /// The agent's own pane (a new issue's draft), for *Ask for changes*.
     #[serde(skip_serializing_if = "Option::is_none")]
     pane: Option<PaneId>,
+    /// A project's own issue's project (M203): `#N` is its issue then.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project: Option<String>,
 }
 
 /// A pane or block: `7` or `"%7"`.
@@ -628,8 +631,15 @@ pub struct OpenPrArgs {
 #[derive(Deserialize, JsonSchema)]
 pub struct OpenIssueArgs {
     /// The issue: its link (GitHub's or Forgejo's), OWNER/REPO#N, or N (in
-    /// dir's repository).
+    /// dir's repository). A project's own issue on Arugula control: iss_…,
+    /// or #N with project, in a clone of a repo linked to a project whose
+    /// issues are native, or outside any clone (the user's personal
+    /// project's).
     pub issue: String,
+    /// A project on Arugula control (its id, or personal): #N is its own
+    /// issue N.
+    #[serde(default)]
+    pub project: Option<String>,
     /// A clone of the repository on this host (absolute): what N means,
     /// and where the user's "Agent on this" makes its worktree.
     #[serde(default)]
@@ -1986,7 +1996,8 @@ impl<'a> Call<'a> {
             },
             ("show", Some("issue")) => match parse::<OpenIssueArgs>(args) {
                 Ok(a) => {
-                    self.open_forge(ForgeOpen { issue: Some(a.issue), ..Default::default() }, a.dir, a.beside).await
+                    let what = ForgeOpen { issue: Some(a.issue), project: a.project, ..Default::default() };
+                    self.open_forge(what, a.dir, a.beside).await
                 }
                 Err(e) => Err(e),
             },
@@ -3364,6 +3375,14 @@ impl Call<'_> {
             (None, Some(b)) if host.is_none() => self.readable(b).await?.info.cwd,
             _ => None,
         };
+        // M203: `#N` in a clone of a repo linked to a project whose issues
+        // are native (its issue home) is that project's own issue.
+        if what.project.is_none()
+            && let (Some(i), Some(d)) = (what.issue.as_deref(), dir.as_deref())
+            && i.trim().starts_with('#')
+        {
+            what.project = self.native_home_of(d).await;
+        }
         what.dir = dir;
         let config = crate::forges::open_config(
             &serde_json::to_value(&what).map_err(|e| e.to_string())?,
@@ -3390,6 +3409,19 @@ impl Call<'_> {
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         };
+        if let Some(n) = native(&b) {
+            // M203: a project's own issue. Kept open even when this
+            // machine may not read it: the user reads it as themselves.
+            let can = match n["error"].as_str() {
+                Some(e) => format!(": your person sees it; you can't read it ({e})"),
+                None => String::new(),
+            };
+            let line = b.text().lines().next().unwrap_or_default().to_owned();
+            return done(
+                format!("Issue block %{block}: {line}{can}"),
+                results::ForgeOpened { block, text: b.text(), wants: vec![] },
+            );
+        }
         let st = forge_state(&b)?;
         let what = if st.kind == ItemKind::Issue { "Issue" } else { "PR" };
         if let Some(e) = &st.error {
@@ -3451,6 +3483,23 @@ impl Call<'_> {
             return done(summary, read);
         }
         let (id, b) = self.forge(&a.block).await?;
+        // M203: a project's own issue's block reads as the issue does
+        // (M200), with this machine's threads.read grant.
+        if let Some(n) = native(&b) {
+            let issue = n["pin"]["global_id"].as_str().unwrap_or_default().to_owned();
+            let (summary, v) = self.read_native(&issue, None).await?;
+            let text = v["text"].as_str().unwrap_or_default().to_owned();
+            let read = results::ForgeRead {
+                block: Some(id),
+                text,
+                wants: vec![],
+                drafts: vec![],
+                error: None,
+                platform: None,
+                native: Some(v),
+            };
+            return done(format!("Block %{id}: {summary}"), read);
+        }
         let st = forge_state(&b)?;
         let what = if st.kind == ItemKind::Issue { "Issue" } else { "PR" };
         let mut summary = format!("{what} block %{id}: {}#{}", st.repo, st.number);
@@ -4048,6 +4097,11 @@ fn write_call(write: &Write) -> (String, Value) {
 }
 
 /// A forge block's state, as the block's view has it.
+/// A project's own issue's block state (M203), if it's one.
+fn native(b: &Arc<dyn crate::block::Block>) -> Option<Value> {
+    Some(b.state()).filter(|s| s["native"] == true)
+}
+
 fn forge_state(b: &Arc<dyn crate::block::Block>) -> Result<ForgeState, String> {
     serde_json::from_value(b.state()).map_err(|e| format!("the forge block's state: {e}"))
 }
