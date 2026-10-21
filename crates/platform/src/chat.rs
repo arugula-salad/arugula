@@ -73,7 +73,7 @@ use crate::{
     cache,
     db::{
         Taken,
-        chat::{Message, NewMessage, OldMessage, Page, Room, Search},
+        chat::{Message, NewMessage, OldMessage, Page, Room, Search, Word},
     },
     hub::{Account, Daemon, Flags, PushOptions, Team},
 };
@@ -1333,9 +1333,10 @@ pub async fn read(
 /// What a search box's words ask for.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Asked {
-    /// FTS5, each word a phrase (`"mean"`), or a prefix (`"mea"*`), so its
-    /// syntax isn't the person's to type.
-    fts: Option<String>,
+    /// The words a message has (`mea*`: a word starting with `mea`), as
+    /// text: no search syntax is the person's to type
+    /// (`db::chat::fts5_query`, `db::chat::tsquery`).
+    words: Vec<Word>,
     channel: Option<String>,
     from: Option<String>,
     has_quote: bool,
@@ -1343,7 +1344,6 @@ struct Asked {
 
 fn parse_search(q: &str) -> Asked {
     let mut a = Asked::default();
-    let mut words = Vec::new();
     for tok in q.split_whitespace() {
         if let Some(c) = tok.strip_prefix("in:") {
             a.channel = Some(c.trim_start_matches('#').to_lowercase());
@@ -1353,14 +1353,11 @@ fn parse_search(q: &str) -> Asked {
             a.has_quote = true;
         } else {
             let prefix = tok.ends_with('*');
-            let w: String = tok.trim_end_matches('*').chars().filter(|c| *c != '"').collect();
-            if !w.is_empty() {
-                words.push(if prefix { format!("\"{w}\"*") } else { format!("\"{w}\"") });
+            let text: String = tok.trim_end_matches('*').chars().filter(|c| *c != '"').collect();
+            if !text.is_empty() {
+                a.words.push(Word { text, prefix });
             }
         }
-    }
-    if !words.is_empty() {
-        a.fts = Some(words.join(" "));
     }
     a
 }
@@ -1370,7 +1367,7 @@ fn parse_search(q: &str) -> Asked {
 pub async fn search(State(app): State<Arc<Platform>>, s: Person, Query(q): Query<ChatSearchQuery>) -> J<ChatFound> {
     gate(&app, &s.account).await?;
     let asked = parse_search(&q.q);
-    if asked.fts.is_none() && asked.channel.is_none() && asked.from.is_none() && !asked.has_quote {
+    if asked.words.is_empty() && asked.channel.is_none() && asked.from.is_none() && !asked.has_quote {
         return Ok(Json(ChatFound { found: vec![] }));
     }
     app.limits.check_account(CHAT_SEARCHES, &s.account)?;
@@ -1402,7 +1399,7 @@ pub async fn search(State(app): State<Arc<Platform>>, s: Person, Query(q): Query
     let rooms: Vec<String> = floors.keys().cloned().collect();
     let hits = app.db.chat_search(
         &rooms,
-        &Search { fts: asked.fts.as_deref(), author: author.as_deref(), has_quote: asked.has_quote },
+        &Search { words: &asked.words, author: author.as_deref(), has_quote: asked.has_quote },
         SEARCH_HITS,
     )?;
     let hits: Vec<&Message> = hits.iter().filter(|m| floors.get(&m.room).is_some_and(|from| m.at >= *from)).collect();
@@ -1703,11 +1700,12 @@ pub async fn daemon_import(
 /// transaction (`PlatformPort::account_deleted`): its DMs (both sides),
 /// the threads on its machines, the rooms of the teams it disbanded, and
 /// its name on everything else. The rooms that go, for open pages.
-pub(crate) fn erase_account(tx: &rusqlite::Transaction, deleted: &crate::Deleted) -> anyhow::Result<Vec<String>> {
-    let dms: Vec<String> = {
-        let mut q = tx.prepare("SELECT room FROM chat_members WHERE account = ?1")?;
-        q.query_map([&deleted.account], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?
-    };
+pub(crate) fn erase_account(tx: &impl crate::db::Sql, deleted: &crate::Deleted) -> anyhow::Result<Vec<String>> {
+    let dms: Vec<String> = tx.query_map(
+        "SELECT room FROM chat_members WHERE account = ?1",
+        crate::db::sql::params![deleted.account],
+        |r| r.get(0),
+    )?;
     crate::db::chat::erase_account(tx, &deleted.account, &deleted.machines, &deleted.disbanded)?;
     Ok(dms)
 }
@@ -1742,18 +1740,27 @@ mod tests {
 
     #[test]
     fn search_words_are_phrases_and_filters_come_apart() {
+        let word = |text: &str, prefix| Word { text: text.into(), prefix };
+        let asked = parse_search("mean mea* \"OR\" in:#General from:@Alex has:quote");
         assert_eq!(
-            parse_search("mean mea* \"OR\" in:#General from:@Alex has:quote"),
+            asked,
             Asked {
-                fts: Some("\"mean\" \"mea\"* \"OR\"".into()),
+                words: vec![word("mean", false), word("mea", true), word("OR", false)],
                 channel: Some("general".into()),
                 from: Some("alex".into()),
                 has_quote: true,
             }
         );
         assert_eq!(parse_search("\"\" *"), Asked::default());
-        // FTS5's own syntax is only ever text inside a phrase.
-        assert_eq!(parse_search("a NEAR(b) -c").fts.as_deref(), Some("\"a\" \"NEAR(b)\" \"-c\""));
+        // Search syntax is only ever text: inside a phrase for FTS5, and
+        // letters and digits for Postgres.
+        let words = parse_search("a NEAR(b) -c main.rs* it's").words;
+        assert_eq!(crate::db::chat::fts5_query(&words), "\"a\" \"NEAR(b)\" \"-c\" \"main.rs\"* \"it's\"");
+        assert_eq!(
+            crate::db::chat::tsquery(&words).unwrap(),
+            "'a' & 'NEAR' <-> 'b' & 'c' & 'main' <-> 'rs':* & 'it' <-> 's'"
+        );
+        assert_eq!(crate::db::chat::tsquery(&parse_search("--").words), None);
     }
 
     #[test]

@@ -84,6 +84,9 @@ services:
     image: debian:bookworm-slim
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-control
     hostname: control
+    depends_on:
+      postgres:
+        condition: service_healthy
     command:
       - /opt/arugula/arugula-control
       - --listen=0.0.0.0:8080
@@ -102,6 +105,10 @@ services:
       - --guest-ssh=0.0.0.0:2222
       - --guest-ssh-host=127.0.0.1:${ARUGULA_TESTNET_GUEST_SSH_PORT:-22982}
     environment:
+      # The platform on the `postgres` service's Postgres (M143) when the
+      # stack is brought up with ARUGULA_TESTNET_POSTGRES=1; on control's
+      # own file otherwise, as always.
+      ARUGULA_PLATFORM_DATABASE_URL: ${ARUGULA_TESTNET_POSTGRES:+postgres://postgres:testnet@postgres:5432/platform}
       RUST_LOG: arugula_control=debug
       STRIPE_SECRET_KEY: sk_test_testnet
       STRIPE_WEBHOOK_SECRET: whsec_testnet
@@ -135,6 +142,9 @@ services:
     image: debian:bookworm-slim
     container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-platform
     hostname: platform
+    depends_on:
+      postgres:
+        condition: service_healthy
     command:
       - /opt/arugula/arugula-platform
       - --listen=0.0.0.0:7700
@@ -145,12 +155,34 @@ services:
       - --stripe-seat-price=price_seat
       - --stripe-minutes-price=price_min
     environment:
+      # On `postgres` with ARUGULA_TESTNET_POSTGRES=1 (M143), as control's.
+      ARUGULA_PLATFORM_DATABASE_URL: ${ARUGULA_TESTNET_POSTGRES:+postgres://postgres:testnet@postgres:5432/platform}
       RUST_LOG: arugula_platform=debug
       STRIPE_SECRET_KEY: sk_test_testnet
       STRIPE_WEBHOOK_SECRET: whsec_testnet
       ARUGULA_PLATFORM_KEY: *platform-key
     volumes:
       - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
+    networks: [outer]
+
+  # The platform's Postgres (M143): 17, as hosted control's Fly Managed
+  # Postgres. Control's platform uses it with ARUGULA_TESTNET_POSTGRES=1 (in
+  # process, or out of it: `platform` takes the same URL). Only they reach
+  # it, on the outer network; its data is in memory, so `down` forgets it.
+  postgres:
+    profiles: [control]
+    image: postgres:17-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-postgres
+    hostname: postgres
+    environment:
+      POSTGRES_PASSWORD: testnet
+      POSTGRES_DB: platform
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      # Over TCP: its first start answers on the socket while it sets up.
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, postgres, -d, platform]
+      interval: 1s
+      retries: 60
     networks: [outer]
 
   # The fakes control-smoke uses (web/fixtures/fakes.ts): GitHub sign-in on

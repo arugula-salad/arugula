@@ -19,11 +19,15 @@ arugula-control-common = { workspace = true }
 arugula-control-wire = { workspace = true }
 arugula-e2e = { workspace = true }
 axum = { workspace = true }
+# Postgres parameters as tokio-postgres writes them (M143).
+bytes = "1.12.1"
 # Cloud secrets, sealed with ARUGULA_CLOUD_SECRET_KEY.
 chacha20poly1305 = "0.10.1"
 # Cloud's flags and their env vars, which control takes too.
 clap = { workspace = true, features = ["derive", "env"] }
 futures-util = { workspace = true }
+# Waiting for a Postgres answer from synchronous code (`db/pg.rs`).
+futures-executor = "0.3.34"
 hex = { workspace = true }
 hmac = { workspace = true }
 reqwest = { workspace = true, features = ["rustls", "json"] }
@@ -32,6 +36,10 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+# The platform on Postgres (M143): plain Postgres, no extensions, over the
+# private network (no TLS). Not sqlx: its SQLite driver can't share a build
+# with rusqlite, and this needs only the Postgres half.
+tokio-postgres = "0.7.18"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }

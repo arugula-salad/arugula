@@ -202,7 +202,7 @@ fn each_process_makes_its_own_tables() {
                 .is_some_and(|s| ["_data", "_idx", "_content", "_docsize", "_config"].contains(&s))
         })
     };
-    let mut platform = names(&arugula_platform::db::Db::memory().c());
+    let mut platform = names(&arugula_platform::db::Db::memory().sqlite());
     platform.retain(|n| !shadow(n));
     assert_eq!(platform, listed, "tables.toml's `process = \"platform\"` rows are what the platform makes");
     let hub = names(&Db::memory().c());

@@ -4,9 +4,9 @@
 //! - Each migration is a file, `migrations/<dialect>/NNNN_name.sql` in this
 //!   crate, listed below. A version means the same change in every
 //!   dialect: SQLite here (in process, self-hosted, tests), and Postgres
-//!   (M143), whose set is written where the two must differ (FTS5 against
-//!   `tsvector`). [`pending`] is the same for both; only running them is
-//!   the dialect's.
+//!   (M143: hosted control), whose set is written where the two must
+//!   differ (FTS5 against `tsvector`). [`pending`] is the same for both;
+//!   only running them is the dialect's ([`run`], [`run_postgres`]).
 //! - `platform_migrations` records each one applied, with its checksum and
 //!   whether it's additive. A shipped migration is never edited: a changed
 //!   checksum stops the platform at start.
@@ -121,8 +121,29 @@ const SQLITE: &[Migration] = &[
     },
 ];
 
-/// Postgres's, from M143: the same versions and names as [`SQLITE`].
-const POSTGRES: &[Migration] = &[];
+/// Postgres's (M143): the same versions, names and `additive` flags as
+/// [`SQLITE`]. Its baseline is SQLite's in Postgres's words, and a version
+/// with nothing to do on Postgres is a file of comments.
+const POSTGRES: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "baseline",
+        sql: include_str!("../../migrations/postgres/0001_baseline.sql"),
+        additive: false,
+    },
+    Migration {
+        version: 2,
+        name: "hub_feed",
+        sql: include_str!("../../migrations/postgres/0002_hub_feed.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 3,
+        name: "personal_projects",
+        sql: include_str!("../../migrations/postgres/0003_personal_projects.sql"),
+        additive: true,
+    },
+];
 
 /// The runner's own table, made before anything else.
 pub const TABLE: &str = "platform_migrations";
@@ -134,6 +155,16 @@ const MAKE_TABLE: &str = "CREATE TABLE IF NOT EXISTS platform_migrations (
     applied_at INTEGER NOT NULL,
     adopted INTEGER NOT NULL DEFAULT 0,
     additive INTEGER NOT NULL DEFAULT 0
+)";
+
+/// [`MAKE_TABLE`] on Postgres.
+const MAKE_TABLE_POSTGRES: &str = "CREATE TABLE IF NOT EXISTS platform_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    applied_at BIGINT NOT NULL,
+    adopted BOOLEAN NOT NULL DEFAULT FALSE,
+    additive BOOLEAN NOT NULL DEFAULT FALSE
 )";
 
 /// A migration a database records as applied.
@@ -219,6 +250,33 @@ fn run_set(conn: &mut Connection, set: &[Migration], to: u32) -> anyhow::Result<
     }
     tx.commit()?;
     Ok(report)
+}
+
+/// Brings the Postgres database on `c` up to the latest migration (M143),
+/// in one transaction under the platform's write lock, so two machines
+/// starting together (M144) take turns. The versions run. Nothing is
+/// adopted: Postgres starts empty, and M145 copies rows into it.
+pub fn run_postgres(c: &mut super::Conn) -> anyhow::Result<Vec<u32>> {
+    use super::sql::{Sql as _, params};
+    let set = Dialect::Postgres.migrations();
+    let tx = c.transaction()?;
+    tx.execute_batch(MAKE_TABLE_POSTGRES)?;
+    let applied =
+        tx.query_map("SELECT version, checksum, additive FROM platform_migrations ORDER BY version", params![], |r| {
+            Ok(Applied { version: r.get(0)?, checksum: r.get(1)?, additive: r.get(2)? })
+        })?;
+    let mut ran = Vec::new();
+    for m in pending(set, &applied)? {
+        tx.execute_batch(m.sql).with_context(|| format!("running migration {} on Postgres", m.file()))?;
+        tx.execute(
+            "INSERT INTO platform_migrations (version, name, checksum, applied_at, adopted, additive)
+             VALUES (?1, ?2, ?3, ?4, FALSE, ?5)",
+            params![m.version, m.name, m.checksum(), arugula_e2e::now_ms(), m.additive],
+        )?;
+        ran.push(m.version);
+    }
+    tx.commit()?;
+    Ok(ran)
 }
 
 fn applied(c: &Connection) -> rusqlite::Result<Vec<Applied>> {

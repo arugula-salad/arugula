@@ -41,6 +41,7 @@ pub(crate) fn account_deleted(app: &Platform, account: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::db::Sql as _;
     use std::sync::Arc;
 
     use crate::{
@@ -97,7 +98,11 @@ mod tests {
             let n: u64 = app
                 .db
                 .c()
-                .query_row(&format!("SELECT count(*) FROM {table} WHERE account = 'a'"), [], |r| r.get(0))
+                .query_row(
+                    &format!("SELECT count(*) FROM {table} WHERE account = 'a'"),
+                    crate::db::sql::params![],
+                    |r| r.get(0),
+                )
                 .unwrap();
             assert_eq!(n, 0, "{table}");
         }

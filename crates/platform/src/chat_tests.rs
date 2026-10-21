@@ -227,7 +227,7 @@ impl HubPort for TestHub {
 /// (`ilg_session=session-<account>`), and its address.
 async fn serve(hub: Arc<TestHub>) -> (Arc<Platform>, String) {
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
-    let app = Arc::new(Platform::new(cfg, crate::db::Db::memory(), hub, reqwest::Client::new(), Default::default()));
+    let app = Arc::new(Platform::new(cfg, crate::db::Db::test(), hub, reqwest::Client::new(), Default::default()));
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
     let router = crate::cloud::tests::router(app.clone());

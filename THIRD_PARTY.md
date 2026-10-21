@@ -14,9 +14,9 @@ Arugula is MIT OR Apache-2.0. Its binaries include the software below.
 - **The web client** bundles npm packages: xterm.js, preact, fzstd and three.js (below). three.js draws the swarm's city and loads only when that theme is picked.
 - **Rust crates**, by license:
 
-- Apache License 2.0 (265)
-- MIT License (60)
-- Unicode License v3 (19)
+- Apache License 2.0 (279)
+- MIT License (62)
+- Unicode License v3 (20)
 - BSD 3-Clause "New" or "Revised" License (11)
 - ISC License (5)
 - Community Data License Agreement Permissive 2.0 (1)
@@ -449,7 +449,9 @@ Used by:
 Used by:
 - [cmov 0.5.4](https://github.com/RustCrypto/utils)
 - [ctutils 0.4.2](https://github.com/RustCrypto/utils)
+- [siphasher 1.0.4](https://github.com/jedisct1/rust-siphash)
 - [sse-stream 0.2.6](https://github.com/4t145/sse-stream/)
+- [tinyvec 1.13.3](https://github.com/Lokathor/tinyvec)
 - [utf8_iter 1.0.4](https://github.com/hsivonen/utf8_iter)
 - [zeroize 1.9.0](https://github.com/RustCrypto/utils)
 
@@ -1521,10 +1523,12 @@ Used by:
 - [anstyle-query 1.1.5](https://github.com/rust-cli/anstyle.git)
 - [anstyle 1.0.14](https://github.com/rust-cli/anstyle.git)
 - [colorchoice 1.0.5](https://github.com/rust-cli/anstyle.git)
+- [fallible-iterator 0.2.0](https://github.com/sfackler/rust-fallible-iterator)
 - [fallible-iterator 0.3.0](https://github.com/sfackler/rust-fallible-iterator)
 - [fallible-streaming-iterator 0.1.9](https://github.com/sfackler/fallible-streaming-iterator)
 - [hex 0.4.3](https://github.com/KokaKiwi/rust-hex)
 - [is_terminal_polyfill 1.70.2](https://github.com/polyfill-rs/is_terminal_polyfill)
+- [stringprep 0.1.5](https://github.com/sfackler/rust-stringprep)
 
 ```
                                  Apache License
@@ -3465,6 +3469,8 @@ Used by:
 - [parking_lot 0.12.5](https://github.com/Amanieu/parking_lot)
 - [parking_lot_core 0.9.12](https://github.com/Amanieu/parking_lot)
 - [percent-encoding 2.3.2](https://github.com/servo/rust-url/)
+- [postgres-protocol 0.6.12](https://github.com/rust-postgres/rust-postgres)
+- [postgres-types 0.2.14](https://github.com/rust-postgres/rust-postgres)
 - [regex-automata 0.4.18](https://github.com/rust-lang/regex)
 - [regex-syntax 0.8.11](https://github.com/rust-lang/regex)
 - [regex 1.13.1](https://github.com/rust-lang/regex)
@@ -3479,9 +3485,13 @@ Used by:
 - [socket2 0.6.5](https://github.com/rust-lang/socket2)
 - [stable_deref_trait 1.2.1](https://github.com/storyyeller/stable_deref_trait)
 - [thread_local 1.1.10](https://github.com/Amanieu/thread_local-rs)
+- [tokio-postgres 0.7.18](https://github.com/rust-postgres/rust-postgres)
 - [tungstenite 0.29.0](https://github.com/snapview/tungstenite-rs)
 - [tungstenite 0.30.0](https://github.com/snapview/tungstenite-rs)
 - [unicase 2.9.0](https://github.com/seanmonstar/unicase)
+- [unicode-bidi 0.3.18](https://github.com/servo/unicode-bidi)
+- [unicode-normalization 0.1.26](https://github.com/unicode-rs/unicode-normalization)
+- [unicode-properties 0.1.4](https://github.com/unicode-rs/unicode-properties)
 - [url 2.5.8](https://github.com/servo/rust-url)
 - [uuid 1.26.1](https://github.com/uuid-rs/uuid)
 - [x509-parser 0.18.1](https://github.com/rusticata/x509-parser.git)
@@ -4575,6 +4585,7 @@ Used by:
 - [inout 0.1.4](https://github.com/RustCrypto/utils)
 - [inout 0.2.2](https://github.com/RustCrypto/utils)
 - [keccak 0.2.2](https://github.com/RustCrypto/sponges)
+- [md-5 0.11.0](https://github.com/RustCrypto/hashes)
 - [ml-kem 0.3.2](https://github.com/RustCrypto/KEMs)
 - [module-lattice 0.2.3](https://github.com/RustCrypto/KEMs)
 - [opaque-debug 0.3.1](https://github.com/RustCrypto/utils)
@@ -5679,6 +5690,8 @@ Used by:
 - [libc 0.2.189](https://github.com/rust-lang/libc)
 - [md5 0.8.1](https://github.com/stainless-steel/md5)
 - [num-conv 0.2.2](https://github.com/jhpratt/num-conv)
+- [objc2-core-foundation 0.3.2](https://github.com/madsmtm/objc2)
+- [objc2-system-configuration 0.3.2](https://github.com/madsmtm/objc2)
 - [pastey 0.2.3](https://github.com/as1100k/pastey)
 - [pin-project-lite 0.2.17](https://github.com/taiki-e/pin-project-lite)
 - [proc-macro2-diagnostics 0.10.1](https://github.com/SergioBenitez/proc-macro2-diagnostics)
@@ -5715,6 +5728,7 @@ Used by:
 - [time 0.3.55](https://github.com/time-rs/time)
 - [unicode-ident 1.0.26](https://github.com/dtolnay/unicode-ident)
 - [utf8parse 0.2.2](https://github.com/alacritty/vte)
+- [whoami 2.1.3](https://github.com/ardaku/whoami)
 
 ```
 Apache License
@@ -7397,6 +7411,36 @@ SOFTWARE.
 ## MIT License
 
 Used by:
+- [phf 0.13.1](https://github.com/rust-phf/rust-phf)
+- [phf_shared 0.13.1](https://github.com/rust-phf/rust-phf)
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
 - [aho-corasick 1.1.5](https://github.com/BurntSushi/aho-corasick)
 - [byteorder 1.5.0](https://github.com/BurntSushi/byteorder)
 - [memchr 2.8.3](https://github.com/BurntSushi/memchr)
@@ -7740,6 +7784,7 @@ SOFTWARE.
 
 Used by:
 - [unicode-ident 1.0.26](https://github.com/dtolnay/unicode-ident)
+- [unicode-normalization 0.1.26](https://github.com/unicode-rs/unicode-normalization)
 
 ```
 UNICODE LICENSE V3

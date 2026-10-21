@@ -64,6 +64,10 @@ struct Args {
     #[arg(long, env = "ARUGULA_PLATFORM_PAUSED", value_parser = clap::builder::FalseyValueParser::new())]
     paused: bool,
 
+    /// Postgres instead of `--db` (M143): `ARUGULA_PLATFORM_DATABASE_URL`.
+    #[command(flatten)]
+    database: arugula_platform::db::Args,
+
     #[command(flatten)]
     cloud: arugula_platform::cloud::Args,
 
@@ -118,11 +122,17 @@ async fn run() -> anyhow::Result<()> {
     // The hub's backup is under `control`: two databases replicating to one
     // path would ruin both.
     anyhow::ensure!(a.backup.path.as_deref() != Some("control"), "LITESTREAM_PATH=control is the hub's backup");
-    let backup = arugula_control_common::backup::Backup::new(&a.backup, &a.db, "platform")?;
+    // Litestream backs up the SQLite file; Postgres has its own backups
+    // (M145's nightly dump).
+    let backup = match a.database.postgres() {
+        true => None,
+        false => arugula_control_common::backup::Backup::new(&a.backup, &a.db, "platform")?,
+    };
     if let Some(b) = &backup {
         b.restore_if_missing().await?;
     }
-    let db = arugula_platform::db::Db::open(&a.db).with_context(|| format!("opening {}", a.db.display()))?;
+    let db =
+        a.database.open(&a.db).with_context(|| format!("opening the platform's database (else {})", a.db.display()))?;
     if let Some(b) = &backup {
         b.replicate();
     }

@@ -4,9 +4,10 @@
 //! hub's, which writes them, and come through `HubPort::meters`. The
 //! tables are made by the platform's migrations (`migrations/sqlite`).
 
-use rusqlite::{Connection, OptionalExtension, params};
-
-use super::Db;
+use super::{
+    Db,
+    sql::{Optional as _, Sql, params},
+};
 use crate::Deleted;
 
 pub struct BillingRow {
@@ -24,8 +25,7 @@ impl BillingRow {
 
 impl Db {
     pub fn billing(&self, owner: &str) -> anyhow::Result<Option<BillingRow>> {
-        Ok(self
-            .c()
+        self.c()
             .query_row(
                 "SELECT customer, subscription, status, seat_item FROM billing WHERE owner = ?1",
                 params![owner],
@@ -38,7 +38,7 @@ impl Db {
                     })
                 },
             )
-            .optional()?)
+            .optional()
     }
 
     pub fn set_billing(
@@ -51,8 +51,8 @@ impl Db {
     ) -> anyhow::Result<()> {
         self.c().execute(
             "INSERT INTO billing (owner, customer, subscription, status, updated) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT (owner) DO UPDATE SET customer = COALESCE(excluded.customer, customer),
-               subscription = COALESCE(excluded.subscription, subscription), status = excluded.status, updated = excluded.updated",
+             ON CONFLICT (owner) DO UPDATE SET customer = COALESCE(excluded.customer, billing.customer),
+               subscription = COALESCE(excluded.subscription, billing.subscription), status = excluded.status, updated = excluded.updated",
             params![owner, customer, subscription, status, now],
         )?;
         Ok(())
@@ -84,8 +84,11 @@ impl Db {
     }
 
     pub fn set_reported_minutes(&self, account: &str, minutes: u64) -> anyhow::Result<()> {
-        self.c()
-            .execute("INSERT OR REPLACE INTO reported (account, minutes) VALUES (?1, ?2)", params![account, minutes])?;
+        self.c().execute(
+            "INSERT INTO reported (account, minutes) VALUES (?1, ?2)
+             ON CONFLICT (account) DO UPDATE SET minutes = excluded.minutes",
+            params![account, minutes],
+        )?;
         Ok(())
     }
 }
@@ -93,7 +96,7 @@ impl Db {
 /// An account is gone: its plan, the plans of the teams it disbanded, and
 /// what was reported of its minutes. A plan still active never gets here:
 /// the account cancels it first (`active_plans`).
-pub(crate) fn erase_account(c: &Connection, d: &Deleted) -> anyhow::Result<()> {
+pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> anyhow::Result<()> {
     for t in &d.disbanded {
         c.execute("DELETE FROM billing WHERE owner = 'team:' || ?1", params![t])?;
     }
@@ -112,7 +115,7 @@ mod tests {
 
     #[test]
     fn plans_are_active_while_stripe_says_so() {
-        let db = Db::memory();
+        let db = Db::test();
         db.set_billing("account:a", Some("cus_a"), None, "none", 1).unwrap();
         assert!(db.active_plans(&ids(&["account:a"])).unwrap().is_empty(), "a customer isn't a plan");
         db.set_billing("account:a", None, Some("sub_a"), "active", 2).unwrap();
@@ -133,7 +136,7 @@ mod tests {
     /// the teams it disbanded; twice changes nothing.
     #[test]
     fn an_account_takes_its_billing() {
-        let db = Db::memory();
+        let db = Db::test();
         db.set_billing("account:a", Some("cus_a"), Some("sub_a"), "canceled", 1).unwrap();
         db.set_billing("team:t", Some("cus_t"), Some("sub_t"), "canceled", 1).unwrap();
         db.set_billing("team:kept", Some("cus_k"), Some("sub_k"), "active", 1).unwrap();

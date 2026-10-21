@@ -935,6 +935,20 @@ a database with a migration the build doesn't know that isn't additive stops
 the start with the reason, and leaves the file as it was. Rolling back past
 additive migrations is fine; past one that isn't, restore the database too.
 
+**The platform on Postgres (M143).** `ARUGULA_PLATFORM_DATABASE_URL`
+(`--platform-database-url`), a `postgres://` URL, puts the platform's
+tables in Postgres instead of control's file; unset, nothing changes. It
+runs `crates/platform/migrations/postgres/` the same way, in one
+transaction under an advisory lock, and logs `the platform's schema, on
+Postgres` with what it ran; there's nothing to adopt, since Postgres starts
+empty and M145 copies the rows in. Point it at the cluster's direct address
+(`direct.<id>.flympg.net`), not the PgBouncer one: the platform keeps
+prepared statements per connection and takes advisory locks, which a pooler
+in transaction mode breaks. It speaks plain TCP over the private network
+(add `?sslmode=disable` if the URL asks for TLS). Text is `COLLATE
+pg_c_utf8`, which needs Postgres 17. Hosted control doesn't use it until
+M145's window.
+
 **Projects (M129, #1125).** Every team has one default project, and every
 Cloud workspace, team channel and cloud secret has a project; DMs, pane
 threads and archives have none. Teams are the hub's; projects, Cloud and

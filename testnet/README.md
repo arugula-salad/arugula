@@ -45,7 +45,7 @@ not run. CI never sets it. The claims expect fresh boxes: after installing anyth
 | Profile | Services | Status | For |
 |---|---|---|---|
 | `ssh` | `bastion`, `box-bare`, `box-systemd`, `git` | validated | S28, M51, M52's install step, #26 |
-| `control` | `ssh`'s, and `control`, `fakes`; `platform` too with `ARUGULA_TESTNET_PLATFORM=out` | validated | M52's join, the relay, a box with no way out, the platform out of process (M140) |
+| `control` | `ssh`'s, and `control`, `fakes`, `postgres`; `platform` too with `ARUGULA_TESTNET_PLATFORM=out` | validated | M52's join, the relay, a box with no way out, the platform out of process (M140) and on Postgres (M143) |
 | `tailnet` | `headscale`, `ts-box`, `ts-client` | validated | S28's tailnet comparison |
 
 The relay is part of `control`, and Forgejo and GitLab have a stack of
@@ -111,6 +111,10 @@ Everything in `ssh`, and:
   control-smoke` uses: GitHub sign-in (published on `127.0.0.1:22981`,
   `ARUGULA_TESTNET_FAKES_PORT`, for the browser's redirect), Stripe and a
   Web Push endpoint. Only control talks to the last two.
+- `postgres`: Postgres 17, as hosted control's Fly Managed Postgres (M143),
+  reached only by control, its data in memory. Control's platform uses it
+  when the stack comes up with `ARUGULA_TESTNET_POSTGRES=1` (`just testnet
+  up control` with it set), and keeps to control's own file otherwise.
 
 - `platform` (only with `ARUGULA_TESTNET_PLATFORM=out` at `up`): this
   tree's `arugula-platform` from the same static build, on the outer

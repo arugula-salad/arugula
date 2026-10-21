@@ -431,6 +431,24 @@ test-run:
     {{cargo}} test --workspace --doc
     just e2e-interop control-smoke
 
+# The platform's suite on Postgres (M143), as hosted control runs it: a
+# postgres:17 container of its own on a free port, removed after. The same
+# tests as on SQLite (`Db::test`); check.yml's test job runs it after
+# `test-run`, on what test-build built.
+test-platform-postgres:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    name="arugula-platform-pg-$$"
+    docker run -d --rm --name "$name" -e POSTGRES_PASSWORD=platform -p 127.0.0.1::5432 \
+        postgres:17 -c max_connections=500 >/dev/null
+    trap 'docker rm -f "$name" >/dev/null' EXIT
+    port=$(docker port "$name" 5432/tcp | head -1 | sed 's/.*://')
+    # Over TCP: the image's first start answers on its socket only while it
+    # sets itself up.
+    for _ in $(seq 120); do docker exec "$name" pg_isready -h 127.0.0.1 -U postgres -q && break; sleep 0.5; done
+    ARUGULA_TEST_POSTGRES_URL="postgres://postgres:platform@127.0.0.1:$port/postgres" \
+        {{cargo}} nextest run --workspace -E 'package(arugula-platform)'
+
 # Control end to end without a browser: sign in (fake GitHub), enroll,
 # join a daemon, reach it through the relay and directly.
 control-smoke:
