@@ -131,6 +131,12 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0005_forge_mirror.sql"),
         additive: true,
     },
+    Migration {
+        version: 6,
+        name: "forge_access",
+        sql: include_str!("../../migrations/sqlite/0006_forge_access.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -165,6 +171,12 @@ const POSTGRES: &[Migration] = &[
         version: 5,
         name: "forge_mirror",
         sql: include_str!("../../migrations/postgres/0005_forge_mirror.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 6,
+        name: "forge_access",
+        sql: include_str!("../../migrations/postgres/0006_forge_access.sql"),
         additive: true,
     },
 ];

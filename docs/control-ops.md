@@ -44,10 +44,18 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
   → GitHub Apps*):
   - **Permissions:** read for metadata, contents, checks, commit
     statuses and actions; read and write for issues and pull requests
-    (M167: write is only for sending a person's draft, below).
+    (M167: write is only for sending a person's draft, below); and the
+    organization permission **Members: read** (M165: GitHub sends the
+    member, membership, organization and team events only with it).
   - **Events:** pull request, pull request review, pull request review
     comment, issues, issue comment, check run, check suite, status,
-    workflow run.
+    workflow run; and (M165) member, membership, organization,
+    repository, team and team add. These six change who may read a
+    repository: the platform drops the access answers it keeps (10
+    minutes) when one comes, so a removed collaborator is cut off at
+    once rather than within 10 minutes. Without them, that's how long it
+    takes. Any event that carries a repository also marks a linked repo
+    private when GitHub says it is.
   - **Webhook URL** `https://control.example.com/github/webhook`, with a
     secret. **Callback URL** `https://control.example.com/auth/github/callback`
     if it also signs people in.
@@ -601,6 +609,31 @@ that has it. Do the test App first, then the real one:
    *Read and write*, and nothing else changed. Until an installer
    approves, sends to their repositories fall back to a machine (M168),
    and reads carry on as before.
+
+**The App's access events** (M165, #1211). A separate change, with its
+own approval: the App subscribes to the events that change who may read
+a repository, and gains the organization permission **Members: read**,
+which the member, membership, organization and team events need. Until an
+installer approves, a removed collaborator keeps reading a private
+repo's items for up to 10 minutes after their access goes (the kept
+answer's age), rather than until the next event; nothing else changes.
+Do the test App first, then the real one:
+
+1. **The test App** (`arugula-forge-tests`): on its permissions page
+   (the link above), under *Organization permissions*, set **Members**
+   to *Read-only*. Under *Subscribe to events*, tick **Member**,
+   **Membership**, **Organization**, **Repository**, **Team** and
+   **Team add** (where GitHub lists it). Leave everything else as it
+   is, save, and confirm the prompt that installers will be asked.
+2. Approve it on the test installation (the organization's *Review
+   request*, an org owner).
+3. Check: remove a collaborator from `forge-tests` on GitHub and look
+   for a `member` delivery in the App's *Advanced → Recent Deliveries*,
+   answered 202.
+4. **The real App** (`illogical-by-arugula`): the same permission and
+   events. GitHub emails every installer to approve; a user account's
+   installation has no organization members, and approving changes
+   nothing else for it.
 
 **Making the app** (once, before M141). It lives in `iad`, beside its
 Managed Postgres, which Fly doesn't offer in `ewr`; the hub stays in `ewr`,

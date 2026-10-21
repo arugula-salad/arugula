@@ -3,8 +3,11 @@
 //! their queries come with the features that write them (M161 deliveries,
 //! M163 links, M164 items, M167 mints, M170 drafts, M171 the inbox). So
 //! far: the webhook's deliveries (M161), the token log (M167), an
-//! account's deletion, and linked repos, the App's installations and the
-//! purge (M163).
+//! account's deletion, linked repos, the App's installations and the
+//! purge (M163), and reads of items, checks and events, each through the
+//! viewer check's [`Readable`], with the access answers it keeps (M165).
+
+use std::collections::HashMap;
 
 use serde::Serialize;
 
@@ -13,7 +16,7 @@ use super::{
     migrate::Dialect,
     sql::{Optional as _, Row, Sql, params},
 };
-use crate::Deleted;
+use crate::{Deleted, forge::viewer::Readable};
 
 /// How long an unlinked repo's rows stay before the purge takes them
 /// (M163): "everything is purged within 24 hours of an uninstall", and the
@@ -418,6 +421,346 @@ fn upsert_link(
         link_row,
     )?;
     Ok((repo.project_id == l.project_id).then_some(repo))
+}
+
+/// A PR or an issue as the mirror keeps it (M164 writes them): never its
+/// body. `labels`, `assignees` and `reviewers` are JSON lists of names and
+/// logins, as stored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForgeItem {
+    pub id: String,
+    pub repo_id: u64,
+    pub number: u64,
+    pub kind: String,
+    pub state: String,
+    pub title: String,
+    pub labels: String,
+    pub author_login: Option<String>,
+    pub author_id: Option<u64>,
+    pub assignees: String,
+    pub reviewers: String,
+    pub draft: bool,
+    pub merge_state: Option<String>,
+    pub head_ref: Option<String>,
+    pub head_sha: Option<String>,
+    pub base_ref: Option<String>,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
+const ITEM_COLUMNS: &str = "i.id, i.repo_id, i.number, i.kind, i.state, i.title, i.labels, i.author_login, i.author_id, \
+     i.assignees, i.reviewers, i.draft, i.merge_state, i.head_ref, i.head_sha, i.base_ref, i.created_at, i.updated_at";
+
+fn item_row(r: &Row) -> anyhow::Result<ForgeItem> {
+    Ok(ForgeItem {
+        id: r.get(0)?,
+        repo_id: r.get(1)?,
+        number: r.get(2)?,
+        kind: r.get(3)?,
+        state: r.get(4)?,
+        title: r.get(5)?,
+        labels: r.get(6)?,
+        author_login: r.get(7)?,
+        author_id: r.get(8)?,
+        assignees: r.get(9)?,
+        reviewers: r.get(10)?,
+        draft: r.get(11)?,
+        merge_state: r.get(12)?,
+        head_ref: r.get(13)?,
+        head_sha: r.get(14)?,
+        base_ref: r.get(15)?,
+        created_at: r.get(16)?,
+        updated_at: r.get(17)?,
+    })
+}
+
+/// A check run or commit status on a head commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForgeCheck {
+    pub kind: String,
+    pub name: String,
+    pub status: String,
+    pub conclusion: Option<String>,
+    pub url: Option<String>,
+    pub updated_at: u64,
+}
+
+/// What happened to an item, as metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForgeEvent {
+    pub id: String,
+    pub kind: String,
+    pub actor_login: Option<String>,
+    pub review_state: Option<String>,
+    pub at: u64,
+}
+
+/// What a list of items is narrowed to. Each is matched without regard to
+/// ASCII case, the same on both databases ([`fold`]); `title` is text
+/// anywhere in the title (the list's search).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ItemFilter<'a> {
+    pub kind: Option<&'a str>,
+    pub state: Option<&'a str>,
+    pub author: Option<&'a str>,
+    /// A login among the requested reviewers.
+    pub review_requested: Option<&'a str>,
+    pub title: Option<&'a str>,
+    pub limit: u32,
+}
+
+/// `IN (...)` of the repos a [`Readable`] holds: GitHub's ids, numbers the
+/// platform keeps, so written into the statement.
+fn repos_in(r: &Readable) -> String {
+    r.repos().iter().map(u64::to_string).collect::<Vec<_>>().join(", ")
+}
+
+/// `%text%` for `LIKE ... ESCAPE '\'`, with the text's own `%`, `_` and `\`
+/// taken as themselves.
+fn like_anywhere(text: &str) -> String {
+    let mut s = String::from("%");
+    for c in text.to_ascii_lowercase().chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            s.push('\\');
+        }
+        s.push(c);
+    }
+    s.push('%');
+    s
+}
+
+/// `expr` with ASCII letters in lower case and nothing else changed, as
+/// SQLite's `lower` does (Postgres's folds every letter), so a filter
+/// matches the same on both. Its value is folded in Rust the same way.
+fn fold(c: &impl Sql, expr: &str) -> String {
+    match c.dialect() {
+        Dialect::Sqlite => format!("lower({expr})"),
+        Dialect::Postgres => format!("translate({expr}, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')"),
+    }
+}
+
+/// The database's clock, in milliseconds, as SQL: what every machine's
+/// access answers and drops are timed by, so their clocks never matter.
+fn clock(c: &impl Sql) -> &'static str {
+    match c.dialect() {
+        Dialect::Sqlite => "CAST((julianday('now') - 2440587.5) * 86400000.0 AS INTEGER)",
+        Dialect::Postgres => "CAST(floor(extract(epoch FROM clock_timestamp()) * 1000) AS BIGINT)",
+    }
+}
+
+/// What drops kept access answers ([`Db::drop_access`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessScope {
+    /// A repo, by `owner/name`.
+    Repo,
+    /// Every repo of a user or an organization, by login.
+    Owner,
+    /// A person's answers, by GitHub id.
+    Person,
+}
+
+/// Forge reads (M165): every one that returns a forge row takes the
+/// [`Readable`] the viewer check made, and returns rows of its repos only.
+/// Nothing else here reads `forge_items`, `forge_checks` or `forge_events`
+/// for a person.
+impl Db {
+    /// The repo an item is in, and nothing else of it: what the viewer
+    /// check needs to decide on it.
+    pub fn forge_item_repo(&self, id: &str) -> anyhow::Result<Option<u64>> {
+        self.c().query_row("SELECT repo_id FROM forge_items WHERE id = ?1", params![id], |r| r.get(0)).optional()
+    }
+
+    /// The items of the readable repos that match, last updated first.
+    pub fn forge_items(&self, r: &Readable, f: &ItemFilter<'_>) -> anyhow::Result<Vec<ForgeItem>> {
+        if r.repos().is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        let mut wh = vec![format!("i.repo_id IN ({})", repos_in(r))];
+        let mut args: Vec<String> = Vec::new();
+        let mut eq = |col: &str, v: Option<&str>| {
+            if let Some(v) = v {
+                wh.push(format!("{} = ?", fold(&c, col)));
+                args.push(v.to_ascii_lowercase());
+            }
+        };
+        eq("i.kind", f.kind);
+        eq("i.state", f.state);
+        eq("i.author_login", f.author);
+        if let Some(login) = f.review_requested {
+            // A row whose reviewers aren't a JSON list matches nothing,
+            // rather than failing the whole list.
+            wh.push(match c.dialect() {
+                Dialect::Sqlite => format!(
+                    "CASE WHEN json_valid(i.reviewers) AND json_type(i.reviewers) = 'array' THEN EXISTS (
+                         SELECT 1 FROM json_each(i.reviewers) WHERE {} = ?) ELSE FALSE END",
+                    fold(&c, "value")
+                ),
+                Dialect::Postgres => format!(
+                    "CASE WHEN jsonb_typeof(CAST(i.reviewers AS jsonb)) = 'array' THEN EXISTS (
+                         SELECT 1 FROM jsonb_array_elements_text(CAST(i.reviewers AS jsonb)) AS r(v) WHERE {} = ?)
+                     ELSE FALSE END",
+                    fold(&c, "r.v")
+                ),
+            });
+            args.push(login.to_ascii_lowercase());
+        }
+        if let Some(t) = f.title.filter(|t| !t.trim().is_empty()) {
+            wh.push(format!(r"{} LIKE ? ESCAPE '\'", fold(&c, "i.title")));
+            args.push(like_anywhere(t.trim()));
+        }
+        c.query_map(
+            &format!(
+                "SELECT {ITEM_COLUMNS} FROM forge_items i WHERE {} ORDER BY i.updated_at DESC, i.id LIMIT {}",
+                wh.join(" AND "),
+                f.limit
+            ),
+            &super::sql::list(&args),
+            item_row,
+        )
+    }
+
+    /// One item, if it's in a readable repo.
+    pub fn forge_item(&self, r: &Readable, id: &str) -> anyhow::Result<Option<ForgeItem>> {
+        if r.repos().is_empty() {
+            return Ok(None);
+        }
+        self.c()
+            .query_row(
+                &format!("SELECT {ITEM_COLUMNS} FROM forge_items i WHERE i.id = ?1 AND i.repo_id IN ({})", repos_in(r)),
+                params![id],
+                item_row,
+            )
+            .optional()
+    }
+
+    /// A readable repo's checks on a head commit, by name.
+    pub fn forge_checks(&self, r: &Readable, repo_id: u64, head_sha: &str) -> anyhow::Result<Vec<ForgeCheck>> {
+        if !r.has(repo_id) {
+            return Ok(vec![]);
+        }
+        self.c().query_map(
+            "SELECT kind, name, status, conclusion, url, updated_at FROM forge_checks
+             WHERE repo_id = ?1 AND head_sha = ?2 ORDER BY name, kind",
+            params![repo_id, head_sha],
+            |r| {
+                Ok(ForgeCheck {
+                    kind: r.get(0)?,
+                    name: r.get(1)?,
+                    status: r.get(2)?,
+                    conclusion: r.get(3)?,
+                    url: r.get(4)?,
+                    updated_at: r.get(5)?,
+                })
+            },
+        )
+    }
+
+    /// What happened to a readable repo's item, oldest first.
+    pub fn forge_events(&self, r: &Readable, repo_id: u64, number: u64) -> anyhow::Result<Vec<ForgeEvent>> {
+        if !r.has(repo_id) {
+            return Ok(vec![]);
+        }
+        self.c().query_map(
+            "SELECT id, kind, actor_login, review_state, at FROM forge_events
+             WHERE repo_id = ?1 AND number = ?2 ORDER BY at, id",
+            params![repo_id, number],
+            |r| {
+                Ok(ForgeEvent {
+                    id: r.get(0)?,
+                    kind: r.get(1)?,
+                    actor_login: r.get(2)?,
+                    review_state: r.get(3)?,
+                    at: r.get(4)?,
+                })
+            },
+        )
+    }
+
+    /// The database's clock now, in milliseconds: when a person's access
+    /// is asked ([`Db::keep_access`]), so a drop on another machine is
+    /// timed by the same clock.
+    pub fn clock_ms(&self) -> anyhow::Result<u64> {
+        let c = self.c();
+        c.query_row(&format!("SELECT {}", clock(&c)), params![], |r| r.get(0))
+    }
+
+    /// What GitHub said about a person's access, asked less than `keep` ago
+    /// by the database's clock and not dropped since: by `owner/name` (in
+    /// lower case), why not, or `None` for access.
+    pub fn kept_access(&self, github_id: u64, keep: u64) -> anyhow::Result<HashMap<String, Option<String>>> {
+        let c = self.c();
+        let rows = c.query_map(
+            &format!(
+                "SELECT a.repo, a.why FROM forge_access a
+                 WHERE a.github_id = ?1 AND a.asked_at > {} - ?2 AND NOT EXISTS (
+                     SELECT 1 FROM forge_access_drops d WHERE d.at >= a.asked_at AND (
+                         (d.scope = 'repo' AND d.subject = a.repo)
+                         OR (d.scope = 'owner' AND d.subject = a.owner)
+                         OR (d.scope = 'person' AND d.subject = CAST(a.github_id AS TEXT))))",
+                clock(&c)
+            ),
+            params![github_id, keep],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        Ok(rows.into_iter().collect())
+    }
+
+    /// Keep GitHub's answer for a person on `owner/name` (`why` not, or
+    /// `None`), asked at `asked_at` ([`Db::clock_ms`]), unless a newer one
+    /// is kept already.
+    pub fn keep_access(&self, github_id: u64, repo: &str, why: Option<&str>, asked_at: u64) -> anyhow::Result<()> {
+        let repo = repo.to_lowercase();
+        let owner = repo.split('/').next().unwrap_or_default().to_owned();
+        self.c().execute(
+            "INSERT INTO forge_access (github_id, repo, owner, why, asked_at) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (github_id, repo) DO UPDATE SET owner = ?3, why = ?4, asked_at = ?5
+             WHERE forge_access.asked_at <= ?5",
+            params![github_id, repo, owner, why, asked_at],
+        )?;
+        Ok(())
+    }
+
+    /// Drop every answer asked until now (the database's clock) for a repo
+    /// (`owner/name`), an owner (a login) or a person (a GitHub id), on
+    /// every machine.
+    pub fn drop_access(&self, scope: AccessScope, subject: &str) -> anyhow::Result<()> {
+        let scope = match scope {
+            AccessScope::Repo => "repo",
+            AccessScope::Owner => "owner",
+            AccessScope::Person => "person",
+        };
+        let c = self.c();
+        c.execute(
+            &format!(
+                "INSERT INTO forge_access_drops (scope, subject, at) VALUES (?1, ?2, {})
+                 ON CONFLICT (scope, subject) DO UPDATE SET at = CASE WHEN forge_access_drops.at > excluded.at
+                     THEN forge_access_drops.at ELSE excluded.at END",
+                clock(&c)
+            ),
+            params![scope, subject.to_lowercase()],
+        )?;
+        Ok(())
+    }
+
+    /// Forget answers and drops older than `keep` by the database's
+    /// clock: how many went.
+    pub fn prune_access(&self, keep: u64) -> anyhow::Result<usize> {
+        let c = self.c();
+        let now = clock(&c);
+        Ok(c.execute(&format!("DELETE FROM forge_access WHERE asked_at < {now} - ?1"), params![keep])?
+            + c.execute(&format!("DELETE FROM forge_access_drops WHERE at < {now} - ?1"), params![keep])?)
+    }
+
+    /// GitHub says a repo was made private or public: a linked one says so
+    /// from now on. Whether a link changed.
+    pub fn set_repo_private(&self, repo_id: u64, private: bool) -> anyhow::Result<bool> {
+        let n = self.c().execute(
+            "UPDATE linked_repos SET private = ?1 WHERE repo_id = ?2 AND private != ?1",
+            params![private, repo_id],
+        )?;
+        Ok(n > 0)
+    }
 }
 
 /// An installation as GitHub says it now, not suspended or deleted.
