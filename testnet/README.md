@@ -23,6 +23,7 @@ just testnet test control platform # M140: chat and Cloud through control's own 
 just testnet test control platform-page # M151: the platform page on app.control.test
 ARUGULA_TESTNET_PLATFORM=out just testnet up control  # the platform out of process (M140)
 just testnet test control platform-restart  # out of process: a relayed session outlives a platform restart
+just testnet test control github-webhook    # out of process: the GitHub App's webhook lands on the platform (M161)
 ARUGULA_TESTNET_PLATFORM=two just testnet up control  # two platform machines on Postgres (M144)
 just testnet test control platform-fanout platform-handover  # chat and Cloud across the two
 just testnet measure control   # M140: platform routes' latency, in process vs out
@@ -181,6 +182,7 @@ The `control` profile's:
 | `platform` | chat and Cloud through control's own site, whichever process answers (M140): a person turns chat on, makes a team and a channel, posts, reads it back and hears its event on the live stream; the platform answers Cloud's and billing's routes (`testnet/platform.ts chat`) | the maintenance switch on (`arugula-control maintenance on`), so every platform route answers 503 |
 | `platform-page` | the platform page on its own host (M151), `app.control.test` through control's port, in process or out: page paths are its `index.html` and its script its own, under its CSP with no cookie set; `/api/projects` answers there (401 until M152) and the hub's routes and `/control.json` are 404s; control's own site still serves the shell under its own CSP, and its `/control.json` says `platform` | asking for `app2.control.test`, a host control wasn't given: the shell answers |
 | `platform-restart` | only out of process: a relayed session to box-systemd's pane stays open while the `platform` container restarts, a marker round-tripping on the same socket before and after (`testnet/platform.ts hold`) | control's container restarted instead, which holds the relay |
+| `github-webhook` | only out of process (M161): a GitHub webhook signed with the App's secret, posted to control's site, lands on the platform (202, its delivery in the platform's log), is a duplicate when sent again, and still one after the `platform` container restarts | signed with another secret, so it's refused |
 | `platform-fanout` | only with two machines (M144): both answer their health check on the database and exactly one leads; a live stream held on each hears a message posted through the other; a page that dropped from one resumes on the other from its `Last-Event-ID`, without a resync (`testnet/platform.ts fanout`) | `platform2` on a file of its own (`ARUGULA_TESTNET_PLATFORM2_DB` empty): two machines that share no database |
 | `platform-handover` | only with two machines: the fake Managoat holds a Cloud workspace's read, so the machine that claimed its job holds it mid-step; that machine is killed; the other takes the job once its lease (120 s) runs out, not before and within seconds after, and sets the workspace up; the killed one is started again (`testnet/platform.ts handover`) | the other machine paused too, so nothing takes the job |
 

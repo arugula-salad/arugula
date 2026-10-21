@@ -57,7 +57,13 @@ fn serve_hub(app: &Arc<App>, l: tokio::net::TcpListener) {
 
 /// A hub whose platform is at `platform`: its public address.
 async fn hub(platform: &str) -> (Arc<App>, String) {
+    hub_with(platform, None).await
+}
+
+/// [`hub`], with the GitHub App's slug (M161: the App is the platform's).
+async fn hub_with(platform: &str, github_app: Option<String>) -> (Arc<App>, String) {
     let mut app = App::for_tests("http://control.test");
+    app.github_app = github_app;
     app.platform = PlatformAt::Remote(Remote::new(platform, key()).unwrap());
     // The platform page's host (M151).
     app.cfg.platform_host = crate::platform_host::parse(APP, "http://control.test", &app.cfg.sites, None).unwrap();
@@ -93,6 +99,16 @@ pub(crate) async fn split_on(
     db: arugula_platform::db::Db,
     wrap: impl FnOnce(Arc<dyn arugula_platform::HubPort>) -> Arc<dyn arugula_platform::HubPort>,
 ) -> Split {
+    split_github(db, wrap, None).await
+}
+
+/// [`split_on`], with the GitHub App on the platform and its slug on the
+/// hub (M161, `forge_wire`).
+pub(crate) async fn split_github(
+    db: arugula_platform::db::Db,
+    wrap: impl FnOnce(Arc<dyn arugula_platform::HubPort>) -> Arc<dyn arugula_platform::HubPort>,
+    github: Option<arugula_platform::forge::GithubApp>,
+) -> Split {
     let (internal_l, internal) = listener().await;
     let (platform_l, platform_base) = listener().await;
     let mut p = Platform::new(
@@ -112,6 +128,8 @@ pub(crate) async fn split_on(
         accounts: vec!["a".into()],
         models: vec![CloudModel { runtime: "claude".into(), model: "anthropic/test-model".into() }],
     });
+    let slug = github.as_ref().map(|g| g.slug.clone());
+    p.github = github;
     let p = Arc::new(p);
     let port: Arc<dyn PlatformPort> = p.clone();
     // As the binary's: the routes, the internal API and the page (M151),
@@ -121,7 +139,7 @@ pub(crate) async fn split_on(
         .merge(remote::serve_platform(port, key()))
         .merge(page::behind_hub(page::Page::new(Some(PAGE.0.clone())), key()));
     tokio::spawn(async move { axum::serve(platform_l, router).await });
-    let (app, base) = hub(&platform_base).await;
+    let (app, base) = hub_with(&platform_base, slug).await;
     let a2 = app.clone();
     tokio::spawn(async move { axum::serve(internal_l, crate::internal::router(&a2, key())).await });
     let now = now_ms();

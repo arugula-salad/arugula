@@ -60,11 +60,21 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     `fly secrets set GITHUB_APP_ID=… GITHUB_APP_SLUG=… GITHUB_APP_CLIENT_ID=… GITHUB_APP_CLIENT_SECRET=… GITHUB_APP_WEBHOOK_SECRET=… GITHUB_APP_PRIVATE_KEY="$(cat app.pem)"`.
   - With no `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`, the App's client id
     and secret sign people in with GitHub.
-  - **What control keeps of a webhook:** the signature is checked
-    (HMAC-SHA256, constant time), the delivery id deduplicated, and only
-    `{provider, host, repo, number?, event, delivery}` goes to daemons,
-    over their relay sockets. Its log has the event, delivery, repository
-    and how many daemons heard; never the payload.
+  - **Which process reads which** (M161): signing in is the hub's, and the
+    App itself (its webhook, key, access checks and tokens) is the
+    platform's. With the platform in process (the default) one config
+    has them all. With it out of process, the platform takes
+    `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_WEBHOOK_SECRET` and
+    the private key, and the hub `GITHUB_APP_ID`, `GITHUB_APP_SLUG` (it
+    tells daemons there's an App), `GITHUB_APP_CLIENT_ID` and
+    `GITHUB_APP_CLIENT_SECRET` ("The GitHub App's secrets" below).
+  - **What control keeps of a webhook:** the platform checks the signature
+    (HMAC-SHA256, constant time) and records the delivery id for 7 days
+    (`github_webhook_deliveries`), so a redelivery is known after a
+    restart. Only `{provider, host, repo, number?, event, delivery}` goes
+    to daemons: the hub relays it over their relay sockets. The logs have
+    the event, delivery, repository and how many daemons heard; never the
+    payload.
   - **Who hears what:** a daemon's account must have signed in with GitHub,
     and the App's installation for the repository must be that GitHub
     user's, or GitHub must list them as a collaborator on it (asked with
@@ -74,8 +84,8 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     poll. A machine watches at most 200 repositories and an account 400.
   - **Hosted boxes** ask `POST /api/daemon/github/token {repo}` (signed as
     the daemon) for an installation token scoped to that repository with
-    read-only permissions; control keeps one until five minutes before it
-    expires.
+    read-only permissions; control (the platform, which the hub asks)
+    keeps one until five minutes before it expires.
 - **Blocks through control** (M50, optional): `--block-domain`
   (`ARUGULA_CONTROL_BLOCK_DOMAIN`, `arugula.run` for the hosted one) gives
   each block an origin of its own, `b-<key>.<domain>`, so a port or editor
@@ -248,10 +258,16 @@ Infisical (project `arugula`, env `prod`), then `fly secrets unset` it.
 The rest of control's settings are in `fly.toml`'s `[env]`.
 
 - `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`,
-  `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_WEBHOOK_SECRET`,
-  `GITHUB_APP_PRIVATE_KEY`: the GitHub App (`main.rs`). Its client id and
-  secret also sign people in, since `GITHUB_CLIENT_ID` and
-  `GITHUB_CLIENT_SECRET` aren't set.
+  `GITHUB_APP_CLIENT_SECRET`: the GitHub App, as far as the hub needs it
+  (`main.rs`). Its client id and secret sign people in, since
+  `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` aren't set; its id and
+  slug say there's an App.
+- `GITHUB_APP_WEBHOOK_SECRET`, `GITHUB_APP_PRIVATE_KEY`: the App's webhook
+  and key, read here only while the platform runs in process. They're
+  `arugula-platform`'s from M161 ("The GitHub App's secrets" below); the
+  hub's copies stay only as long as a rollback to in process, or to a
+  release before M161, may need them, and the hub logs at start that
+  they're unused.
 - `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT` (`backup.rs`), and
   `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` (checked by
   `backup.rs`, read by Litestream from the environment it inherits).
@@ -349,9 +365,10 @@ approval step.
 
 Control is two processes ("Control is two processes: a hub and a
 platform", #1150): the hub (`arugula-control`: identity, devices, rosters,
-the relay, push, block and doc origins, the jump host, forge, telemetry)
-and the platform (`arugula-platform`: chat, Cloud, billing, projects and
-grants). The platform runs in one of two ways, from the same binaries:
+the relay, push, block and doc origins, the jump host, daemons' forge
+subscriptions and pokes, telemetry) and the platform (`arugula-platform`:
+chat, Cloud, billing, projects and grants, and the GitHub App's webhook
+and key, M161). The platform runs in one of two ways, from the same binaries:
 
 - **In process** (`ARUGULA_PLATFORM=in-process`, the default, and the
   rollback): inside the hub, as one Fly app. Production runs this way
@@ -461,6 +478,85 @@ all of them are additive (M142, "Checking a migration on a copy" below);
 past one that isn't, restore `platform.db` too. A platform
 deploy restarts no relay socket; pages' chat streams reconnect and
 resync.
+
+**The GitHub App's secrets** (M161, #1207). The App's webhook still comes
+to `control.arugula.io/github/webhook` (nothing changes on GitHub): the
+hub's gateway forwards it to the platform, which checks the signature,
+records the delivery (`github_webhook_deliveries`, 7 days, pruned hourly)
+and hands the pokes back to the hub (`HubPort::forge_pokes`), which relays
+them to daemons as before. The hub's `forge.watch` answers and
+`/api/daemon/github/token` ask the platform (`PlatformPort::forge_standing`,
+`github_token`); the token crosses the private network in the answer,
+signed like every internal call, and is never logged.
+
+| Secret | `illogical-control` (hub) | `arugula-platform` |
+|---|---|---|
+| `GITHUB_APP_ID`, `GITHUB_APP_SLUG` | yes: there's an App, and its slug for daemons | yes |
+| `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | yes: sign-in with GitHub | no |
+| `GITHUB_APP_WEBHOOK_SECRET`, `GITHUB_APP_PRIVATE_KEY` | only for a rollback (below) | yes |
+
+The runbook, once, for the first release with M161. Its tag deploys the
+platform first, then the hub; from the hub's restart on, the webhook goes
+to the platform. So the platform must have the App's secrets **before**
+that tag. Nothing here is printed.
+
+1. **Stage the App's four secrets on `arugula-platform`**, copied from
+   the hub's running process (as "The platform's secrets" in M141's runbook below: `secrets-check` names
+   its pid N). `--stage` restarts nothing; the tag's deploy takes them.
+
+   ```
+   hub()  { fly ssh console -q -a illogical-control -C "/arugula-control $*" | tr -d '\r'; }
+   hub platform secrets-check --db /data/control.db        # note N
+   fly ssh sftp get /proc/N/environ hub.environ -a illogical-control
+   python3 -I - hub.environ <<'PY' | fly secrets import --stage -a arugula-platform
+   import sys
+   want = ["GITHUB_APP_ID", "GITHUB_APP_SLUG", "GITHUB_APP_WEBHOOK_SECRET", "GITHUB_APP_PRIVATE_KEY"]
+   raw = open(sys.argv[1], "rb").read()
+   if not raw:
+       sys.exit("hub.environ is empty: sftp read /proc as 0 bytes. Don't guess values; stop and ask.")
+   env = dict(kv.split("=", 1) for kv in raw.decode().split("\0") if "=" in kv)
+   missing = [k for k in want if not env.get(k)]
+   if missing:
+       sys.exit("not in the hub's environment: " + ", ".join(missing))
+   for k in want:
+       # The PEM's newlines as \n, which the platform reads back (parse_pem).
+       print(f"{k}={env[k].replace(chr(10), chr(92) + 'n')}")
+   PY
+   shred -u hub.environ
+   fly secrets list -a arugula-platform     # the four names, digests only
+   ```
+
+   Infisical (`arugula` prod) has the same values if the hub's process
+   can't be read.
+2. **Leave the hub's secrets as they are.** `illogical-control` keeps
+   `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID` and
+   `GITHUB_APP_CLIENT_SECRET` for good (sign-in; the id and slug say
+   there's an App), and `GITHUB_APP_WEBHOOK_SECRET` and
+   `GITHUB_APP_PRIVATE_KEY` for now: a rollback to in process, or to a hub
+   from before M161, answers the webhook itself and needs them.
+3. **Release.** The tag deploys `arugula-platform`, then
+   `illogical-control` (release.yml's `platform`, then `control`).
+4. **Check.**
+   - `fly logs -a arugula-platform` shows `GitHub App` at start, and no
+     `no GITHUB_APP_ID` warning.
+   - In the App's settings (Advanced, Recent Deliveries), redeliver a
+     recent delivery: `202`, and the platform's log has `webhook handed to
+     the hub` with its delivery id. Redeliver it again: `200`,
+     `{"duplicate":true}`.
+   - A machine with a PR block open still hears pokes (its block says
+     live).
+5. **Later**, once no rollback past M161 or to in process is planned,
+   take the hub's copies away (a restart):
+   `fly secrets unset -a illogical-control GITHUB_APP_WEBHOOK_SECRET GITHUB_APP_PRIVATE_KEY`.
+
+If the platform starts without the App, it warns at start (`no
+GITHUB_APP_ID`), and every webhook is refused with 503 and `this control
+has no GitHub App: the platform has no GitHub App key`, logged as an error
+on the platform and as `the platform answered with an error` on the hub.
+GitHub keeps the failed deliveries, to redeliver once the secrets are set
+(then restart the platform). The hub also logs an error when daemons'
+watches or tokens find the platform without an App while it has
+`GITHUB_APP_ID`. Daemons' blocks poll meanwhile.
 
 **Making the app** (once, before M141). It lives in `iad`, beside its
 Managed Postgres, which Fly doesn't offer in `ewr`; the hub stays in `ewr`,
@@ -757,7 +853,8 @@ takes them.
 Not copied: `ARUGULA_CLOUD_DAILY_RUNS`, `ARUGULA_CLOUD_CONCURRENT_RUNS` and
 `ARUGULA_CLOUD_RUN_MINUTES` (the run caps were retired; the platform would
 only log that they do nothing), the Stripe pair (billing is off), and
-everything that's the hub's own (`GITHUB_APP_*`, `SPRITES_TOKEN`).
+everything that's the hub's own (`GITHUB_APP_*`, which M161 later split:
+"The GitHub App's secrets"; `SPRITES_TOKEN`).
 `LITESTREAM_PATH` stays unset (it defaults to `platform`; the platform
 refuses `control`, the hub's).
 

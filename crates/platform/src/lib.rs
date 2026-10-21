@@ -2,9 +2,10 @@
 //! platform", #1150): chat, Cloud and billing, and step 1's projects and
 //! grants, which deploy as often as they like without dropping a relayed
 //! terminal. The hub (`arugula-control`) keeps identity, devices, rosters,
-//! the relay, push, block and doc origins, the jump host, forge and
-//! telemetry, and stays the gateway: every platform path stays on control's
-//! own site ("Platform paths stay on control.arugula.io forever").
+//! the relay, push, block and doc origins, the jump host, daemons' forge
+//! subscriptions and pokes (until M174) and telemetry, and stays the
+//! gateway: every platform path stays on control's own site ("Platform
+//! paths stay on control.arugula.io forever").
 //!
 //! The seam:
 //! - [`HubPort`] is everything the platform asks the hub. The platform
@@ -20,7 +21,7 @@
 //! Billing moved in first (M139), then Cloud ([`cloud`], M137), then chat
 //! ([`chat`], M138), which follows the hub's change feed through [`cache`],
 //! then projects and grants ([`projects`], [`grants`]), which follow it
-//! too. It runs inside the hub's process (`--platform in-process`, the
+//! too, then the GitHub App's webhook and key ([`forge`], M161). It runs inside the hub's process (`--platform in-process`, the
 //! default) or as its own, the `arugula-platform` binary (M140), behind the
 //! hub's gateway: then both ports go over the private network ([`remote`]).
 //!
@@ -40,6 +41,7 @@ pub mod cloud;
 #[cfg(feature = "contract")]
 pub mod contract;
 pub mod db;
+pub mod forge;
 pub mod grants;
 pub mod hub;
 #[cfg(test)]
@@ -103,6 +105,9 @@ pub struct Platform {
     pub stripe: Option<billing::Stripe>,
     /// Cloud workspaces (M137), when this control has a Managoat key.
     pub cloud: Option<cloud::Cloud>,
+    /// The GitHub App (M40, here since M161), when this control has its id
+    /// and key: its webhook, `may()` and installation tokens.
+    pub github: Option<forge::GithubApp>,
     /// Chat's live streams and recent events (M122, here since M138).
     pub chat: chat::Hub,
     /// The hub's answers chat asks for, following its change feed (M138).
@@ -181,6 +186,7 @@ impl Platform {
             analytics,
             stripe: None,
             cloud: None,
+            github: None,
             chat,
             cache: Default::default(),
             feed: Default::default(),

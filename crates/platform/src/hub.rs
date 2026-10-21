@@ -3,8 +3,8 @@
 //!
 //! The platform never reads a hub table. Who someone is, their name, their
 //! teams, which machine is whose and who may reach it, Labs flags, billing's
-//! meters, push, and what changed since it last looked all come through
-//! this trait. In process it's `hub_port::InProcess` in `arugula-control`,
+//! meters, push, relaying forge pokes, and what changed since it last
+//! looked all come through this trait. In process it's `hub_port::InProcess` in `arugula-control`,
 //! over the hub's own state; once the platform is its own process (M140)
 //! it's the same calls over the private network, checked by the same
 //! contract tests (`contract`, with the `contract` feature).
@@ -35,6 +35,7 @@
 use std::collections::BTreeMap;
 
 use arugula_control_common::Principal;
+use arugula_control_wire::forge::Poke;
 use arugula_e2e::team::TeamRole;
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
@@ -154,6 +155,16 @@ pub trait HubPort: Send + Sync {
     ///
     /// [`personal_project`]: HubPort::personal_project
     fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>>;
+
+    /// Relay a GitHub webhook's pokes (M161) to the daemons watching each
+    /// repository over their relay sockets, as `forge.poke` messages, the
+    /// same bytes as before the webhook moved: how many messages went. The
+    /// hub keeps the subscriptions, and this, until M174 retires the relay.
+    /// A hub from before M161 doesn't have it.
+    fn forge_pokes<'a>(&'a self, pokes: &'a [Poke]) -> BoxFuture<'a, HubResult<u32>> {
+        let _ = pokes;
+        Box::pin(async { anyhow::bail!("this hub doesn't relay forge pokes") })
+    }
 }
 
 /// How a push goes ([`HubPort::push_with`]). The default is what

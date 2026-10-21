@@ -42,7 +42,13 @@ use arugula_control_common::{
     ApiError, internal,
     principal::{self, NotVouched, PrincipalKey, Vouch},
 };
-use arugula_platform::{Deleted, Platform, PlatformPort, auth::Asked, remote::HttpPlatform};
+use arugula_control_wire::forge::Standing;
+use arugula_platform::{
+    Deleted, Platform, PlatformPort,
+    auth::Asked,
+    forge::{GithubUser, TokenAnswer},
+    remote::HttpPlatform,
+};
 use axum::{
     Router,
     body::Body,
@@ -118,6 +124,25 @@ impl PlatformPort for PlatformAt {
 
     fn roster_changed<'a>(&'a self, team: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
         self.port().roster_changed(team)
+    }
+
+    fn forge_standing<'a>(
+        &'a self,
+        account: &'a str,
+        github: Option<&'a GithubUser>,
+        repos: &'a [String],
+        fresh: bool,
+    ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>> {
+        self.port().forge_standing(account, github, repos, fresh)
+    }
+
+    fn github_token<'a>(
+        &'a self,
+        account: &'a str,
+        github: Option<&'a GithubUser>,
+        repo: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<TokenAnswer>> {
+        self.port().github_token(account, github, repo)
     }
 }
 
@@ -394,6 +419,11 @@ pub(crate) async fn forward(State(app): State<Arc<App>>, req: Request) -> Respon
         platform = %timing,
         "forwarded"
     );
+    // A platform that answers with its own error (a webhook it can't take,
+    // say: M161) is in the hub's log too, by the same request id.
+    if res.status().is_server_error() {
+        warn!(%request, path = parts.uri.path(), status = res.status().as_u16(), "the platform answered with an error");
+    }
     if let Some(h) = out.headers_mut() {
         for (k, v) in res.headers() {
             if !hop(k) && k.as_str() != SERVER_TIMING {

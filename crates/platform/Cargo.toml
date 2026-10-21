@@ -18,7 +18,10 @@ arugula-control-common = { workspace = true }
 # Chat's wire types (M138), which daemons and the page share.
 arugula-control-wire = { workspace = true }
 arugula-e2e = { workspace = true }
+# The GitHub App's JWT (RS256), the platform's since M161.
+aws-lc-rs = "1.18.1"
 axum = { workspace = true }
+base64 = { workspace = true }
 # Postgres parameters as tokio-postgres writes them (M143).
 bytes = "1.12.1"
 # Cloud secrets, sealed with ARUGULA_CLOUD_SECRET_KEY.

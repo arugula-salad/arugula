@@ -68,6 +68,11 @@ mkdir -p "$STATE"
 for b in $boxes; do
   [ -f "$STATE/${b}_host_ed25519" ] || ssh-keygen -q -t ed25519 -N '' -C "$b" -f "$STATE/${b}_host_ed25519"
 done
+# The platform's throwaway GitHub App key (M161: compose.yaml), PEM.
+if [ ! -f "$STATE/github-app.pem" ]; then
+  ssh-keygen -q -t rsa -b 2048 -m PEM -N '' -C github-app -f "$STATE/github-app.pem"
+  rm -f "$STATE/github-app.pem.pub"
+fi
 # Every profile's hosts, so bringing up one profile doesn't drop another's.
 : > "$STATE/known_hosts.new"
 for k in "$STATE"/*_host_ed25519.pub; do

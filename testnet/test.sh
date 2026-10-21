@@ -112,6 +112,13 @@
 #           a marker round-tripping on the same socket before and after.
 #           Broken: control's container restarts instead, which holds the
 #           relay.
+#   github-webhook
+#           Only with the platform out of process (M161): a GitHub webhook
+#           signed with the App's secret, posted to control's own site,
+#           lands on the platform (202, and the platform logs its delivery);
+#           sent again it's a duplicate, and still one after the platform's
+#           container restarts (the delivery is in its database, not its
+#           memory). Broken: signed with another secret, so it's refused.
 #   platform-fanout
 #           Only with two platform machines (ARUGULA_TESTNET_PLATFORM=two,
 #           M144): both answer their health check on the database and
@@ -158,7 +165,7 @@ if [ "$PROFILE" = control ]; then
   # A platform of its own to restart, only out of process; two of them to
   # share chat and Cloud (M144).
   case "${ARUGULA_TESTNET_PLATFORM:-in}" in
-    out) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart" ;;
+    out) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart github-webhook" ;;
     two) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart platform-fanout platform-handover" ;;
   esac
   [ "$PROFILE" != control ] || CLAIMS="$CONTROL_CLAIMS"
@@ -644,6 +651,40 @@ claim_platform_restart() {
   join_box "$box" "$fp" || return 1
   plat hold "$box" "$restart" > "$WORK/hold.json" || { note "platform-restart: the relayed session didn't hold"; return 1; }
   note "platform-restart: $(cat "$WORK/hold.json")"
+}
+
+# A pull_request webhook for a repository nobody watches, signed with
+# `secret`, to control's site: the status, the answer in $WORK/hook.json.
+hook() {
+  local body sig
+  body='{"action":"opened","repository":{"full_name":"testnet/nobody"},"pull_request":{"number":1}}'
+  sig="sha256=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$2" -r | cut -d' ' -f1)"
+  curl -s -o "$WORK/hook.json" -w '%{http_code}' -X POST "http://127.0.0.1:$ARUGULA_TESTNET_CONTROL_PORT/github/webhook" \
+    -H 'content-type: application/json' -H 'x-github-event: pull_request' -H "x-github-delivery: $1" \
+    -H "x-hub-signature-256: $sig" --data-binary "$body"
+}
+
+# Whether the last hook was taken as one already seen.
+duplicate() { if [ "$1" = 200 ]; then grep -q '"duplicate":true' "$WORK/hook.json"; else return 1; fi; }
+
+claim_github_webhook() {
+  local d="testnet-$$-$RANDOM" secret=whsec-github-testnet st=""
+  [ -z "$BREAK" ] || secret=not-the-apps-secret
+  st="$(hook "$d" "$secret")"
+  [ "$st" = 202 ] || { note "github-webhook: $st $(cat "$WORK/hook.json")"; return 1; }
+  # The log is coloured: the delivery id and the line's words, not `delivery=`.
+  docker logs "$TESTNET-platform" 2>&1 | grep "webhook handed to the hub" | grep -q "$d" ||
+    { note "github-webhook: the platform didn't log delivery $d"; return 1; }
+  st="$(hook "$d" "$secret")"
+  duplicate "$st" || { note "github-webhook: sent again: $st $(cat "$WORK/hook.json")"; return 1; }
+  docker restart "$TESTNET-platform" >/dev/null
+  # Until the platform answers again, control's gateway says 503.
+  for _ in $(seq 1 60); do
+    st="$(hook "$d" "$secret")"
+    case "$st" in 502|503) sleep 0.5 ;; *) break ;; esac
+  done
+  duplicate "$st" || { note "github-webhook: after the platform's restart: $st $(cat "$WORK/hook.json")"; return 1; }
+  note "github-webhook: $d landed on the platform, and was known again after its restart"
 }
 
 # platform2 recreated, on Postgres or (BREAK=1) a file of its own.

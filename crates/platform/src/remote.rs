@@ -38,9 +38,12 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use tracing::Instrument as _;
 
+use arugula_control_wire::forge::{Poke, Standing};
+
 use crate::{
     Deleted, PlatformPort,
     auth::Asked,
+    forge::{GithubUser, TokenAnswer},
     hub::{Account, ChangePage, Daemon, Flags, HubPort, HubResult, Meter, PushOptions, Pushed, Resolved, Team},
 };
 
@@ -191,6 +194,26 @@ struct DeletedArgs {
 #[derive(Serialize, Deserialize, Default)]
 struct NoArgs {}
 
+#[derive(Serialize, Deserialize)]
+struct PokesArgs {
+    pokes: Vec<Poke>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StandingArgs {
+    account: String,
+    github: Option<GithubUser>,
+    repos: Vec<String>,
+    fresh: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TokenArgs {
+    account: String,
+    github: Option<GithubUser>,
+    repo: String,
+}
+
 fn ids(v: &[String]) -> IdsArgs {
     IdsArgs { ids: v.to_vec() }
 }
@@ -282,6 +305,10 @@ impl HubPort for HttpHub {
     fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
         Box::pin(self.0.call("team_project", TeamArgs { team: team.to_owned() }))
     }
+
+    fn forge_pokes<'a>(&'a self, pokes: &'a [Poke]) -> BoxFuture<'a, HubResult<u32>> {
+        Box::pin(self.0.call("forge_pokes", PokesArgs { pokes: pokes.to_vec() }))
+    }
 }
 
 /// What one side's internal API answers with: the port it serves, and
@@ -361,6 +388,7 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
                 answer(hub.can_drive_cloud(&a.daemon, &a.account).await?)?
             }
             "team_project" => answer(hub.team_project(&args::<TeamArgs>(&body)?.team).await?)?,
+            "forge_pokes" => answer(hub.forge_pokes(&args::<PokesArgs>(&body)?.pokes).await?)?,
             _ => return Ok(None),
         }))
     }
@@ -414,6 +442,27 @@ impl PlatformPort for HttpPlatform {
             Ok(())
         })
     }
+
+    fn forge_standing<'a>(
+        &'a self,
+        account: &'a str,
+        github: Option<&'a GithubUser>,
+        repos: &'a [String],
+        fresh: bool,
+    ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>> {
+        let a = StandingArgs { account: account.to_owned(), github: github.cloned(), repos: repos.to_vec(), fresh };
+        Box::pin(self.0.call("forge_standing", a))
+    }
+
+    fn github_token<'a>(
+        &'a self,
+        account: &'a str,
+        github: Option<&'a GithubUser>,
+        repo: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<TokenAnswer>> {
+        let a = TokenArgs { account: account.to_owned(), github: github.cloned(), repo: repo.to_owned() };
+        Box::pin(self.0.call("github_token", a))
+    }
 }
 
 /// The platform's internal API: every `PlatformPort` method of `port`,
@@ -447,6 +496,14 @@ async fn platform_call(
             "roster_changed" => {
                 p.roster_changed(&args::<TeamArgs>(&body)?.team).await?;
                 answer(serde_json::json!({}))?
+            }
+            "forge_standing" => {
+                let a: StandingArgs = args(&body)?;
+                answer(p.forge_standing(&a.account, a.github.as_ref(), &a.repos, a.fresh).await?)?
+            }
+            "github_token" => {
+                let a: TokenArgs = args(&body)?;
+                answer(p.github_token(&a.account, a.github.as_ref(), &a.repo).await?)?
             }
             _ => return Ok(None),
         }))
@@ -608,6 +665,23 @@ mod tests {
             }
             fn roster_changed<'a>(&'a self, _: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
                 Box::pin(async { Ok(()) })
+            }
+            fn forge_standing<'a>(
+                &'a self,
+                _: &'a str,
+                _: Option<&'a GithubUser>,
+                _: &'a [String],
+                _: bool,
+            ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>> {
+                Box::pin(async { Ok(vec![]) })
+            }
+            fn github_token<'a>(
+                &'a self,
+                _: &'a str,
+                _: Option<&'a GithubUser>,
+                _: &'a str,
+            ) -> BoxFuture<'a, anyhow::Result<TokenAnswer>> {
+                Box::pin(async { Ok(TokenAnswer::Refused { status: 404, error: "no App".into() }) })
             }
         }
         let base = serve(serve_platform(Arc::new(Plans), key())).await;
