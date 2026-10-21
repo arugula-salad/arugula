@@ -65,6 +65,8 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-073](docs/decisions/aru-073-grants-not-impersonation.md): Grants, not impersonation
 - [aru-078](docs/decisions/aru-078-the-hub-stays-the-identity-provider-passkeys-are.md): The hub stays the identity provider; passkeys are bound to control.arugula.io
 - [aru-080](docs/decisions/aru-080-the-hub-signs-people-in-to-the-platform-page.md): The hub signs people in to the platform page
+- [aru-085](docs/decisions/aru-085-sending-as-a-person-uses-a-one-use-user-token-fa.md): Sending as a person uses a one-use user token, falling back to their machine
+- [aru-086](docs/decisions/aru-086-private-items-are-shown-per-viewer-by-their-own.md): Private items are shown per viewer, by their own GitHub access
 
 ## Clients
 
@@ -103,6 +105,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-051](docs/decisions/aru-051-chat-lives-in-control-in-plain-text-terminal-content-doesn-t.md): Chat lives in control, in plain text; terminal content doesn't
 - [aru-052](docs/decisions/aru-052-agents-are-out-of-chat.md): Agents are out of chat
 - [aru-053](docs/decisions/aru-053-chat-calls-the-owner-by-a-short-name-ledgers-keep-their.md): Chat calls the owner by a short name; ledgers keep their login
+- [aru-087](docs/decisions/aru-087-the-daemon-s-forge-reader-stays-for-unlinked-rep.md): The daemon's forge reader stays for unlinked repos; linked repos' blocks are pins
 
 ## Federation and control
 
@@ -121,6 +124,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-075](docs/decisions/aru-075-control-is-two-processes-a-hub-and-a-platform.md): Control is two processes: a hub and a platform
 - [aru-076](docs/decisions/aru-076-platform-paths-stay-on-control-arugula-io-forever.md): Platform paths stay on control.arugula.io forever, behind the hub's gateway
 - [aru-077](docs/decisions/aru-077-the-platform-s-database-is-fly-managed-postgres.md): The platform's database is Fly Managed Postgres, moved in announced windows
+- [aru-084](docs/decisions/aru-084-the-platform-mirrors-linked-github-repos-metadat.md): The platform mirrors linked GitHub repos: metadata, with content opt-in
 
 ## Build and release
 

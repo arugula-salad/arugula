@@ -24,6 +24,12 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/blob/main/docs/plan-archive.md#m36-forgejo-pull-request-blocks-88"
   - title: "#457"
     url: "https://github.com/arugula-salad/arugula/issues/457"
+  - title: "#1204"
+    url: "https://github.com/arugula-salad/arugula/issues/1204"
+  - title: "#1205"
+    url: "https://github.com/arugula-salad/arugula/issues/1205"
+  - title: "#1214"
+    url: "https://github.com/arugula-salad/arugula/issues/1214"
 decided_by: "jhgaylor"
 decided_on: "2026-10-06"
 reviews: []
@@ -39,5 +45,15 @@ agent's write (comment, approve, merge, close) becomes a draft on the block;
 the owner or an editor sends it, as themselves. Freshness is conditional
 polling, with webhooks relayed by control's GitHub App. Launch ships GitHub PR
 blocks only; the other providers move into Labs (#457, not yet built).
+
+Since step 4 (#1204) the platform can send too. For a repo linked to a
+project, a person's send goes through the platform with a one-use GitHub App
+user token, dropped after the one call, or through one of their online
+machines with `gh` ("Sending as a person uses a one-use user token, falling
+back to their machine"). The platform stores no forge tokens either. Drafts
+on linked repos are platform rows, and blocks on them are pins ("The
+daemon's forge reader stays for unlinked repos; linked repos' blocks are
+pins"). "Agents draft, people send" still holds: a send is always a person's
+action, and no grant makes an agent a sender.
 Where: `crates/daemon/src/forge/`.
-From: [Forge track](docs/plan-archive.md#forge-track-s23-m36m40-added-2026-10-02), [M36](docs/plan-archive.md#m36-forgejo-pull-request-blocks-88), #457.
+From: [Forge track](docs/plan-archive.md#forge-track-s23-m36m40-added-2026-10-02), [M36](docs/plan-archive.md#m36-forgejo-pull-request-blocks-88), #457, #1204 (step 4), M159 (#1205), M168 (#1214).
