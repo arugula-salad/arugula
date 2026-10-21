@@ -5,6 +5,12 @@
 //! Not a CI check (timings flake): run it by hand, on this commit and on
 //! the one before a change to how the platform asks the hub, and compare.
 //!
+//! Three columns per route: **warm** (requests back to back), **every
+//! 30 s** (the cache's clock moved on 30 s before each request, with the
+//! change feed read throughout, as on a quiet control), and **cache
+//! dropped** (everything asked again: what every 30 s cost before the
+//! cache kept what the feed covers).
+//!
 //! `cargo test -p arugula-control --release -- --ignored --nocapture hub_latency_bench`
 
 use std::{
@@ -141,6 +147,9 @@ async fn hub_latency_bench() {
         };
         s.platform.db.add_chat_room(&room, &[], None).unwrap();
     }
+    // The platform's change-feed follower, as `arugula-platform` runs it.
+    arugula_platform::chat::start(&s.platform);
+    arugula_platform::cache::catch_up(&s.platform).await.unwrap();
     let cookie = session(&s.hub, "a0");
     let http = reqwest::Client::new();
     let get = |path: &'static str| {
@@ -158,11 +167,18 @@ async fn hub_latency_bench() {
             get(path).await;
         }
         let mut said = format!("{path:24}");
-        for cold in [false, true] {
+        for (column, how) in [("warm", 0), ("every 30 s", 1), ("cache dropped", 2)] {
             let mut took = Vec::with_capacity(ROUNDS);
             for _ in 0..ROUNDS {
-                if cold {
-                    s.platform.cache.drop_all();
+                match how {
+                    1 => {
+                        // 30 s on, and the feed read just now, as the
+                        // follower does every second.
+                        s.platform.cache.advance(Duration::from_secs(30));
+                        arugula_platform::cache::catch_up(&s.platform).await.unwrap();
+                    }
+                    2 => s.platform.cache.drop_all(),
+                    _ => {}
                 }
                 let t = Instant::now();
                 get(path).await;
@@ -170,12 +186,7 @@ async fn hub_latency_bench() {
             }
             took.sort();
             let at = |q: f64| took[((took.len() as f64 * q) as usize).min(took.len() - 1)].as_secs_f64() * 1e3;
-            said += &format!(
-                "  {}: p50 {:6.2} ms, p95 {:6.2} ms",
-                if cold { "cache dropped" } else { "warm" },
-                at(0.5),
-                at(0.95)
-            );
+            said += &format!("  {column}: p50 {:6.2} ms, p95 {:6.2} ms", at(0.5), at(0.95));
         }
         lines.push(said);
     }

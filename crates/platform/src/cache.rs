@@ -15,28 +15,50 @@
 //! machine that left isn't given a new one from what was kept before it
 //! left.
 //!
+//! **How long an answer is kept.** Two kinds:
+//! - **What the feed covers** (teams and their rosters, which teams an
+//!   account is in, machines, accounts and their names, whom a word names,
+//!   Labs flags, the machines an account might reach and whether it may):
+//!   for as long as the feed is read. Every hub write that changes one of
+//!   these writes a change in the same transaction (the outbox,
+//!   `arugula-control`'s `db/changes.rs`), so an answer is right until a
+//!   change names it. While the last feed read that worked began less than
+//!   [`GRACE`] ago, these are kept however old they are.
+//! - **What it doesn't** (billing's meters: the feed says nothing of
+//!   usage): at most [`CACHE_TICK`]. So is everything else while the feed
+//!   isn't being read.
+//!
+//! Each map holds at most [`CAP`] answers; past that the least recently
+//! used quarter goes.
+//!
 //! **How fast a change reaches it** (the delay chat's docs give): at most
-//! [`DELAY`], a feed tick plus a cache tick.
+//! [`DELAY`], a feed tick plus a cache tick, and within [`GRACE`] for
+//! anything the feed covers while it's read.
 //! - [`follow`] reads the feed every [`FEED_TICK`] and drops whatever each
 //!   change names (a team's roster or lock, a machine joining, moving,
-//!   leaving or being shared, a flag, a name). So a change the hub writes to
-//!   the feed usually reaches chat within one feed tick.
-//! - Nothing is kept longer than [`CACHE_TICK`]. That bounds what the feed
-//!   can't say (a share that runs out at its time) and a feed the platform
-//!   couldn't read for a while.
-//! - `account.deleted`, a kind this build doesn't know, and a gap (changes
-//!   pruned before they were read) drop everything.
+//!   leaving or being shared, a flag, a name).
+//! - A covered answer is only trusted past [`CACHE_TICK`] while a feed read
+//!   that began less than [`GRACE`] ago worked: a change made after that
+//!   read began is either in the next read or past the grace. If the feed
+//!   can't be read for longer than [`GRACE`], everything is dropped, and
+//!   until it can, nothing is kept past [`CACHE_TICK`].
+//! - `account.deleted`, a kind this build doesn't know, a gap (changes
+//!   pruned before they were read) and a feed that went backwards (the
+//!   hub's outbox replaced) drop everything.
 //!
 //! A lookup that was already asking the hub when something was dropped
-//! doesn't keep what it was told (the cache's epoch moved), so a drop is
-//! never undone by an answer from before it.
+//! doesn't keep what it was told (the cache's epoch moved, checked under
+//! the same lock as the write), so a drop is never undone by an answer from
+//! before it.
+//!
+//! [`follow`]: Cache::follow
 
 use std::{
     collections::{HashMap, HashSet},
     hash::Hash,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -46,66 +68,126 @@ use crate::{
     hub::{Account, Change, ChangeKind, Daemon, Flags, HubPort, HubResult, Meter, Team},
 };
 
-/// How often [`follow`] reads the hub's change feed.
+/// How often [`start`] reads the hub's change feed.
 pub const FEED_TICK: Duration = Duration::from_secs(1);
-/// The longest any answer is kept.
+/// The longest an answer the feed doesn't cover is kept, and any answer
+/// while the feed isn't being read.
 pub const CACHE_TICK: Duration = Duration::from_secs(10);
+/// How long after the last feed read that worked began the feed still
+/// counts as read: two feed ticks.
+pub const GRACE: Duration = Duration::from_secs(2 * FEED_TICK.as_secs());
 /// The most a change in the hub takes to reach the platform's answers: a
 /// feed tick plus a cache tick.
 pub const DELAY: Duration = Duration::from_secs(FEED_TICK.as_secs() + CACHE_TICK.as_secs());
+/// The most answers each map keeps.
+pub const CAP: usize = 20_000;
 /// Changes read from the feed at a time.
 const PAGE: u32 = 500;
 
-/// Answers by key, each with when it was asked for.
-struct Map<K, V>(Mutex<HashMap<K, (V, Instant)>>);
+/// Whether the feed covers a map's answers.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kept {
+    /// For as long as the feed is read.
+    Feed,
+    /// At most the cache's tick.
+    Tick,
+}
 
-impl<K, V> Default for Map<K, V> {
-    fn default() -> Self {
-        Map(Mutex::new(HashMap::new()))
-    }
+struct Entry<V> {
+    value: V,
+    /// When it was asked for.
+    at: Instant,
+    /// When it was last read.
+    used: Instant,
+}
+
+/// Answers by key.
+struct Map<K, V> {
+    kept: Kept,
+    cap: usize,
+    m: Mutex<HashMap<K, Entry<V>>>,
 }
 
 impl<K: Eq + Hash + Clone, V: Clone> Map<K, V> {
-    /// What's kept for each key, fresh enough, and the keys with nothing.
-    fn get<'a>(&self, keys: impl IntoIterator<Item = &'a K>, ttl: Duration) -> (Vec<(K, V)>, Vec<K>)
+    fn new(kept: Kept) -> Self {
+        Map { kept, cap: CAP, m: Mutex::new(HashMap::new()) }
+    }
+
+    /// What's kept for each key, fresh enough, and the keys with nothing:
+    /// fresh is younger than `ttl`, or, for what the feed covers, any age
+    /// while `read` (the feed is being read).
+    fn get<'a>(
+        &self,
+        keys: impl IntoIterator<Item = &'a K>,
+        now: Instant,
+        ttl: Duration,
+        read: bool,
+    ) -> (Vec<(K, V)>, Vec<K>)
     where
         K: 'a,
     {
-        let m = self.0.lock().unwrap();
+        let long = read && self.kept == Kept::Feed;
+        let mut m = self.m.lock().unwrap();
         let (mut hit, mut miss) = (Vec::new(), Vec::new());
         for k in keys {
-            match m.get(k) {
-                Some((v, at)) if at.elapsed() < ttl => hit.push((k.clone(), v.clone())),
+            match m.get_mut(k) {
+                Some(e) if long || now.saturating_duration_since(e.at) < ttl => {
+                    e.used = now;
+                    hit.push((k.clone(), e.value.clone()));
+                }
                 _ => miss.push(k.clone()),
             }
         }
         (hit, miss)
     }
 
-    fn put(&self, entries: impl IntoIterator<Item = (K, V)>, at: Instant) {
-        let mut m = self.0.lock().unwrap();
-        if m.len() > 50_000 {
-            m.clear();
+    /// Keep these, asked for `at`, if `still` holds under the map's lock
+    /// (nothing was dropped since they were asked for).
+    fn put(&self, entries: impl IntoIterator<Item = (K, V)>, at: Instant, now: Instant, still: impl FnOnce() -> bool) {
+        let mut m = self.m.lock().unwrap();
+        if !still() {
+            return;
         }
-        m.extend(entries.into_iter().map(|(k, v)| (k, (v, at))));
+        m.extend(entries.into_iter().map(|(k, value)| (k, Entry { value, at, used: now })));
+        if m.len() > self.cap {
+            // The least recently used quarter goes.
+            let keep = self.cap - self.cap / 4;
+            let mut used: Vec<Instant> = m.values().map(|e| e.used).collect();
+            let cut = m.len() - keep;
+            let (_, oldest, _) = used.select_nth_unstable(cut - 1);
+            let oldest = *oldest;
+            m.retain(|_, e| e.used > oldest);
+        }
     }
 
     fn forget(&self, k: &K) {
-        self.0.lock().unwrap().remove(k);
+        self.m.lock().unwrap().remove(k);
     }
 
     fn clear(&self) {
-        self.0.lock().unwrap().clear();
+        self.m.lock().unwrap().clear();
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.m.lock().unwrap().len()
     }
 }
 
 /// The hub's answers the platform asks for, by what they answer.
 pub struct Cache {
     ttl: Duration,
+    /// How far tests and benches moved this cache's clock ([`Cache::advance`]), ms.
+    skew: AtomicU64,
     /// Moves on every drop: an answer asked for before it isn't kept.
     epoch: AtomicU64,
     /// The last change read from the feed; `None` before the first read.
     after: tokio::sync::Mutex<Option<u64>>,
+    /// When the last feed read that worked began; `None` before the first.
+    read_from: Mutex<Option<Instant>>,
+    /// Everything was dropped for a feed that couldn't be read, and it
+    /// hasn't been read since.
+    dropped_unread: AtomicBool,
     teams: Map<String, Option<Team>>,
     teams_of: Map<String, Vec<String>>,
     daemons: Map<String, Option<Daemon>>,
@@ -128,22 +210,43 @@ impl Default for Cache {
 }
 
 impl Cache {
-    /// A cache that keeps each answer at most `ttl`.
+    /// A cache that keeps what the feed doesn't cover at most `ttl`.
     pub fn new(ttl: Duration) -> Self {
         Cache {
             ttl,
+            skew: AtomicU64::new(0),
             epoch: AtomicU64::new(0),
             after: tokio::sync::Mutex::new(None),
-            teams: Map::default(),
-            teams_of: Map::default(),
-            daemons: Map::default(),
-            accounts: Map::default(),
-            called: Map::default(),
-            flags: Map::default(),
-            machines_for: Map::default(),
-            reach: Map::default(),
-            meters: Map::default(),
+            read_from: Mutex::new(None),
+            dropped_unread: AtomicBool::new(false),
+            teams: Map::new(Kept::Feed),
+            teams_of: Map::new(Kept::Feed),
+            daemons: Map::new(Kept::Feed),
+            accounts: Map::new(Kept::Feed),
+            called: Map::new(Kept::Feed),
+            flags: Map::new(Kept::Feed),
+            machines_for: Map::new(Kept::Feed),
+            reach: Map::new(Kept::Feed),
+            meters: Map::new(Kept::Tick),
         }
+    }
+
+    /// The cache's clock.
+    fn now(&self) -> Instant {
+        Instant::now() + Duration::from_millis(self.skew.load(Ordering::SeqCst))
+    }
+
+    /// Move this cache's clock on by `by`, as if that long had passed: for
+    /// tests and benches, which can't wait for it. Nothing else reads it.
+    pub fn advance(&self, by: Duration) {
+        self.skew.fetch_add(by.as_millis() as u64, Ordering::SeqCst);
+    }
+
+    /// Whether the feed counts as read now: a read that worked began less
+    /// than [`GRACE`] ago.
+    pub fn feed_read(&self) -> bool {
+        let now = self.now();
+        self.read_from.lock().unwrap().is_some_and(|t| now.saturating_duration_since(t) < GRACE)
     }
 
     /// Asks the hub for what `get` didn't have (everything, when `now`), and
@@ -158,15 +261,14 @@ impl Cache {
     where
         F: Future<Output = HubResult<Vec<(K, V)>>>,
     {
-        let (mut hit, miss) = if now { (vec![], keys.to_vec()) } else { map.get(keys, self.ttl) };
+        let (mut hit, miss) =
+            if now { (vec![], keys.to_vec()) } else { map.get(keys, self.now(), self.ttl, self.feed_read()) };
         if miss.is_empty() {
             return Ok(hit);
         }
-        let (epoch, at) = (self.epoch.load(Ordering::SeqCst), Instant::now());
+        let (epoch, at) = (self.epoch.load(Ordering::SeqCst), self.now());
         let got = ask(miss).await?;
-        if self.epoch.load(Ordering::SeqCst) == epoch {
-            map.put(got.iter().cloned(), at);
-        }
+        map.put(got.iter().cloned(), at, self.now(), || self.epoch.load(Ordering::SeqCst) == epoch);
         hit.extend(got);
         Ok(hit)
     }
@@ -457,8 +559,31 @@ impl Cache {
     /// Read the feed to its end and forget what it names. The first read
     /// starts at the newest change and forgets everything kept before it.
     /// Whether anything read may change who sees what.
+    ///
+    /// A read that works keeps what the feed covers trusted for [`GRACE`]
+    /// from when it began. One that fails once the feed hasn't been read
+    /// for [`GRACE`] drops everything.
     pub async fn follow(&self, hub: &dyn HubPort) -> HubResult<bool> {
         let mut after = self.after.lock().await;
+        let began = self.now();
+        match self.read(hub, &mut after).await {
+            Ok(moved) => {
+                let mut from = self.read_from.lock().unwrap();
+                *from = Some(from.map_or(began, |t| t.max(began)));
+                self.dropped_unread.store(false, Ordering::SeqCst);
+                Ok(moved)
+            }
+            Err(e) => {
+                if !self.feed_read() && !self.dropped_unread.swap(true, Ordering::SeqCst) {
+                    tracing::warn!("the hub's change feed hasn't been read for {GRACE:?}: dropping what's kept");
+                    self.drop_all();
+                }
+                Err(e)
+            }
+        }
+    }
+
+    async fn read(&self, hub: &dyn HubPort, after: &mut Option<u64>) -> HubResult<bool> {
         let Some(mut at) = *after else {
             let page = hub.changes(0, 0).await?;
             *after = Some(page.last);
@@ -468,6 +593,14 @@ impl Cache {
         let mut moved = false;
         loop {
             let page = hub.changes(at, PAGE).await?;
+            if page.last < at {
+                // The feed went backwards (the hub's outbox was replaced):
+                // nothing read before means anything now.
+                self.drop_all();
+                at = page.last;
+                moved = true;
+                break;
+            }
             if page.gap {
                 self.drop_all();
                 moved = true;
@@ -488,17 +621,21 @@ impl Cache {
 }
 
 /// Follow the hub's feed every [`FEED_TICK`] while the platform runs; open
-/// chat pages re-read their rooms when a change may move them.
+/// chat pages re-read their rooms when a change may move them. Reads start
+/// a tick apart (not a tick after the last one ended), so a read that works
+/// lands well within [`GRACE`] of the one before.
 pub fn start(app: &Arc<Platform>) {
     let app = Arc::downgrade(app);
     tokio::spawn(async move {
+        let mut tick = tokio::time::interval(FEED_TICK);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
+            tick.tick().await;
             let Some(p) = app.upgrade() else { return };
             if let Err(e) = catch_up(&p).await {
                 tracing::warn!(error = %e, "the platform couldn't read the hub's change feed");
             }
             drop(p);
-            tokio::time::sleep(FEED_TICK).await;
         }
     });
 }
@@ -603,8 +740,155 @@ mod tests {
         assert_eq!(hub.calls(), calls + 1, "asked again");
     }
 
+    /// The feed read every tick for `secs` seconds of the cache's clock.
+    async fn read_for(cache: &Cache, hub: &TestHub, secs: u64) {
+        for _ in 0..secs {
+            cache.advance(FEED_TICK);
+            cache.follow(hub).await.unwrap();
+        }
+    }
+
+    /// What the feed covers is kept however old while the feed is read;
+    /// what it doesn't (meters) still runs out at the cache's tick.
+    #[tokio::test]
+    async fn what_the_feed_covers_is_kept_while_it_is_read() {
+        let hub = TestHub::default();
+        hub.team("t1", &[("a", TeamRole::Owner)]);
+        hub.daemon("m1", "a", Some("t1"));
+        let cache = Cache::default();
+        cache.follow(&hub).await.unwrap();
+        let ask = async || {
+            cache.team(&hub, "t1").await.unwrap();
+            cache.teams_of(&hub, "a").await.unwrap();
+            cache.daemons(&hub, &["m1".to_owned()]).await.unwrap();
+            cache.accounts(&hub, &["a".to_owned()]).await.unwrap();
+            cache.accounts_called(&hub, "a").await.unwrap();
+            cache.flags(&hub, &["team:t1".to_owned()]).await.unwrap();
+            cache.machines_for(&hub, "a").await.unwrap();
+            cache.may_reach(&hub, "a", &["m1".to_owned()]).await.unwrap();
+        };
+        ask().await;
+        cache.meters(&hub, &["a".to_owned()], 1, 2).await.unwrap();
+        let calls = hub.calls();
+        read_for(&cache, &hub, 30).await;
+        ask().await;
+        assert_eq!(hub.calls(), calls, "30 s on, the feed read throughout: kept");
+        cache.meters(&hub, &["a".to_owned()], 1, 2).await.unwrap();
+        assert_eq!(hub.calls(), calls + 1, "meters ran out at the cache's tick");
+    }
+
+    /// A feed that can't be read: within the grace, what's kept is kept;
+    /// past it, everything goes, and until it's read again nothing is kept
+    /// past the cache's tick. A follower that stopped without failing
+    /// leaves the same: nothing trusted past the cache's tick.
+    #[tokio::test]
+    async fn a_feed_that_cant_be_read_drops_everything() {
+        let hub = TestHub::default();
+        hub.team("t1", &[("a", TeamRole::Owner)]);
+        let cache = Cache::default();
+        cache.follow(&hub).await.unwrap();
+        cache.team(&hub, "t1").await.unwrap();
+        read_for(&cache, &hub, 20).await;
+        let calls = hub.calls();
+        hub.feed_down(true);
+        cache.advance(FEED_TICK);
+        assert!(cache.follow(&hub).await.is_err());
+        cache.team(&hub, "t1").await.unwrap();
+        assert_eq!(hub.calls(), calls, "within the grace: kept");
+        cache.advance(FEED_TICK);
+        assert!(cache.follow(&hub).await.is_err());
+        assert!(!cache.feed_read());
+        cache.team(&hub, "t1").await.unwrap();
+        assert_eq!(hub.calls(), calls + 1, "past the grace: dropped");
+        cache.advance(CACHE_TICK - FEED_TICK);
+        cache.team(&hub, "t1").await.unwrap();
+        assert_eq!(hub.calls(), calls + 1, "kept a cache tick while it's down");
+        cache.advance(FEED_TICK);
+        cache.team(&hub, "t1").await.unwrap();
+        assert_eq!(hub.calls(), calls + 2, "and no longer");
+
+        // Read again: kept for as long as it's read.
+        hub.feed_down(false);
+        cache.follow(&hub).await.unwrap();
+        read_for(&cache, &hub, 30).await;
+        cache.team(&hub, "t1").await.unwrap();
+        assert_eq!(hub.calls(), calls + 2);
+        // A follower that stopped: trusted only a cache tick.
+        cache.advance(CACHE_TICK);
+        cache.team(&hub, "t1").await.unwrap();
+        assert_eq!(hub.calls(), calls + 3);
+    }
+
+    /// A gap, or a feed that went backwards (the hub's outbox replaced),
+    /// drops everything.
+    #[tokio::test]
+    async fn a_gap_or_a_feed_gone_backwards_drops_everything() {
+        let hub = TestHub::default();
+        hub.team("t1", &[("a", TeamRole::Owner)]);
+        hub.team("t1", &[("a", TeamRole::Owner)]);
+        let cache = Cache::default();
+        cache.follow(&hub).await.unwrap();
+        cache.team(&hub, "t1").await.unwrap();
+        let calls = hub.calls();
+        hub.gap();
+        assert!(cache.follow(&hub).await.unwrap(), "a gap moves who sees what");
+        cache.team(&hub, "t1").await.unwrap();
+        assert_eq!(hub.calls(), calls + 1, "asked again");
+
+        let other = TestHub::default();
+        other.team("t1", &[("a", TeamRole::Owner)]);
+        assert!(cache.follow(&other).await.unwrap(), "back from 2 to 1");
+        let calls = other.calls();
+        cache.team(&other, "t1").await.unwrap();
+        assert_eq!(other.calls(), calls + 1, "asked again");
+        other.team("t1", &[("b", TeamRole::Owner)]);
+        cache.follow(&other).await.unwrap();
+        let t = cache.team(&other, "t1").await.unwrap().unwrap();
+        assert_eq!(t.members[0].account, "b", "and followed from where it is now");
+    }
+
+    /// A share that ends reaches the hub as `daemon.access` (the machine
+    /// sends its new list): the feed carries it, whatever its age.
+    #[tokio::test]
+    async fn a_share_that_ends_is_dropped_through_the_feed() {
+        let hub = TestHub::default();
+        hub.daemon("m1", "a", None);
+        hub.share("m1", "c", true);
+        let cache = Cache::default();
+        cache.follow(&hub).await.unwrap();
+        let m1 = ["m1".to_owned()];
+        assert_eq!(cache.may_reach(&hub, "c", &m1).await.unwrap().len(), 1);
+        assert_eq!(cache.machines_for(&hub, "c").await.unwrap(), m1);
+        read_for(&cache, &hub, 30).await;
+        hub.share("m1", "c", false);
+        assert!(cache.follow(&hub).await.unwrap());
+        assert!(cache.may_reach(&hub, "c", &m1).await.unwrap().is_empty());
+        assert!(cache.machines_for(&hub, "c").await.unwrap().is_empty());
+    }
+
+    /// Each map keeps at most its cap: past it, the least recently used
+    /// quarter goes.
+    #[test]
+    fn a_full_map_forgets_the_least_recently_used() {
+        let mut map: Map<u32, u32> = Map::new(Kept::Feed);
+        map.cap = 8;
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        for k in 0..8 {
+            map.put([(k, k)], at(0), at(k as u64), || true);
+        }
+        // 0 and 1 read since: 2, 3 and 4 are the least recently used.
+        map.get(&[0, 1], at(10), CACHE_TICK, true);
+        map.put([(8, 8)], at(11), at(11), || true);
+        assert_eq!(map.len(), 6);
+        let (hit, miss) = map.get(&[0, 1, 2, 3, 4, 5, 6, 7, 8], at(12), CACHE_TICK, true);
+        assert_eq!(hit.len(), 6);
+        assert_eq!(miss, [2, 3, 4]);
+    }
+
     #[test]
     fn the_delay_is_a_feed_tick_plus_a_cache_tick() {
         assert_eq!(DELAY, FEED_TICK + CACHE_TICK);
+        assert!(GRACE < CACHE_TICK, "what the feed covers reaches the platform sooner than the rest");
     }
 }

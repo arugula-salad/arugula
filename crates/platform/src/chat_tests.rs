@@ -6,7 +6,10 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
@@ -33,6 +36,10 @@ use crate::{
 pub(crate) struct TestHub {
     state: Mutex<State>,
     calls: Mutex<BTreeMap<&'static str, usize>>,
+    /// Its change feed fails while set.
+    feed_down: AtomicBool,
+    /// Its next feed page says changes were pruned unread.
+    gap_next: AtomicBool,
 }
 
 #[derive(Default)]
@@ -105,6 +112,30 @@ impl TestHub {
     pub(crate) fn leave(&self, id: &str) {
         self.state.lock().unwrap().daemons.remove(id);
         self.change(ChangeKind::DaemonLeft, id);
+    }
+
+    /// Share a machine with an account, or stop.
+    pub(crate) fn share(&self, machine: &str, account: &str, on: bool) {
+        {
+            let mut s = self.state.lock().unwrap();
+            let k = (machine.to_owned(), account.to_owned());
+            if on {
+                s.shared.insert(k);
+            } else {
+                s.shared.remove(&k);
+            }
+        }
+        self.change(ChangeKind::DaemonAccess, machine);
+    }
+
+    /// Its change feed fails from now on, or works again.
+    pub(crate) fn feed_down(&self, down: bool) {
+        self.feed_down.store(down, Ordering::SeqCst);
+    }
+
+    /// Its next feed page says changes were pruned before they were read.
+    pub(crate) fn gap(&self) {
+        self.gap_next.store(true, Ordering::SeqCst);
     }
 
     pub(crate) fn flag(&self, owner: &str, on: bool) {
@@ -217,9 +248,13 @@ impl HubPort for TestHub {
         done(vec![])
     }
     fn changes(&self, after: u64, limit: u32) -> BoxFuture<'_, HubResult<ChangePage>> {
+        if self.feed_down.load(Ordering::SeqCst) {
+            return Box::pin(async { Err(anyhow::anyhow!("the feed is down")) });
+        }
+        let gap = self.gap_next.swap(false, Ordering::SeqCst);
         let s = self.state.lock().unwrap();
         let changes = s.changes.iter().filter(|c| c.seq > after).take(limit as usize).cloned().collect();
-        done(ChangePage { changes, last: s.changes.len() as u64, gap: false })
+        done(ChangePage { changes, last: s.changes.len() as u64, gap })
     }
     fn personal_project<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
         self.called("personal_project");

@@ -603,6 +603,9 @@ impl Db {
             "INSERT INTO identities (provider, subject, account, login) VALUES (?1, ?2, ?3, ?4)",
             params![provider, subject, new_id, login],
         )?;
+        // A new account is a name the platform may have kept as nobody's
+        // (`accounts`, chat's `from:`): it's news too.
+        changed(&tx, ChangeKind::AccountName, new_id)?;
         tx.commit()?;
         Ok(new_id.to_owned())
     }

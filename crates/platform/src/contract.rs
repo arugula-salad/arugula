@@ -431,6 +431,8 @@ async fn changes(f: &dyn Fixture) {
         seen,
         [
             (AccountName, "acct-fx"),
+            (AccountName, "acct-fy"),
+            (AccountName, "acct-fx"),
             (TeamRoster, "t-fx"),
             (TeamLocked, "t-fx"),
             (DaemonJoined, "dmn-fx"),
@@ -440,7 +442,7 @@ async fn changes(f: &dyn Fixture) {
             (DeviceRevoked, cli.as_str()),
             (DaemonLeft, "dmn-fx"),
         ],
-        "each change once, in order; making an account, and setting what's already set, aren't changes"
+        "each change once, in order (making an account is one: its name is new); setting what's already set isn't"
     );
     assert!(got.windows(2).all(|w| w[0].seq < w[1].seq), "seq increases");
     assert!(got.iter().all(|c| c.seq > start && c.at > 0));

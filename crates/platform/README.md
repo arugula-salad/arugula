@@ -34,7 +34,9 @@ Start with `src/lib.rs`, then:
   adopts a database made before them.
 - `src/cache.rs`: the hub's answers the platform asks for (chat, grants,
   projects, billing, Cloud), kept and dropped as the hub's change feed
-  names them (a feed tick plus a cache tick, `DELAY`). Every read of the
+  names them: what the feed covers for as long as it's read, billing's
+  meters a cache tick (a change arrives within a feed tick plus a cache
+  tick, `DELAY`, and within `GRACE` while the feed is read). Every read of the
   hub's data goes through it, so a request makes no hub round trip once
   it's warm; a refusal may ask again (`*_now`), and a grant is only written
   on the hub's word. `src/hub_calls_tests.rs` holds routes to that.

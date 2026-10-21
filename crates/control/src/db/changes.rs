@@ -1,8 +1,15 @@
 //! The hub's outbox (#1153): one row for each change the platform's caches
-//! follow (an account's name or its deletion, a revoked device, a roster or
-//! a lock, a machine joining, moving, leaving or being shared, a Labs
-//! flag), written in the same transaction as the change, and read by the
-//! platform through `HubPort::changes`. Its kinds are `ChangeKind`'s.
+//! follow (a new account, an account's name or its deletion, a revoked
+//! device, a roster or a lock, a machine joining, moving, leaving or being
+//! shared, a Labs flag), written in the same transaction as the change, and
+//! read by the platform through `HubPort::changes`. Its kinds are
+//! `ChangeKind`'s.
+//!
+//! **Every write that changes what `HubPort` answers writes a row here**:
+//! the platform keeps those answers for as long as it reads this feed, not
+//! for a fixed time (`arugula_platform::cache`), so a write without its row
+//! would be stale there until something else drops it. Only billing's
+//! meters aren't covered (the platform keeps them a cache tick).
 //!
 //! `seq` is AUTOINCREMENT, so it's never reused, even after the newest rows
 //! are pruned. Rows go after [`KEEP_MS`], and beyond the newest
