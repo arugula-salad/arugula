@@ -710,10 +710,18 @@ pub fn start(app: &Arc<Platform>) {
     });
 }
 
+/// The longest a call waits for [`fresh`]'s read of the feed (a hub call
+/// takes milliseconds) before it's answered from what's kept, as when the
+/// read fails: a slow hub costs a call this at most, not the internal
+/// client's 30 s. The follower reads the feed again within a tick.
+pub const FRESH_WAIT: Duration = Duration::from_millis(250);
+
 /// Every platform call: if the hub had written a change the cache hasn't
 /// read ([`SEQ_HEADER`]), read the feed before answering. One hub call, and
 /// only after something changed; a call with no header (tests) or a cache
-/// that's caught up costs nothing.
+/// that's caught up costs nothing. At most [`FRESH_WAIT`]: a read cut short
+/// leaves the cache where it was, having only dropped what it read (the
+/// next read reads those changes again).
 pub async fn fresh(
     axum::extract::State(app): axum::extract::State<Arc<Platform>>,
     req: axum::extract::Request,
@@ -722,9 +730,14 @@ pub async fn fresh(
     let seq = req.headers().get(SEQ_HEADER).and_then(|v| v.to_str().ok()?.parse::<u64>().ok());
     if let Some(seq) = seq
         && app.cache.behind(seq)
-        && let Err(e) = catch_up_past(&app, Some(seq)).await
     {
-        tracing::warn!(error = %e, "the platform couldn't read the hub's change feed before a call");
+        match tokio::time::timeout(FRESH_WAIT, catch_up_past(&app, Some(seq))).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => tracing::warn!(error = %e, "the platform couldn't read the hub's change feed before a call"),
+            Err(_) => tracing::warn!(
+                "the hub's change feed took over {FRESH_WAIT:?} to read before a call: answering from what's kept"
+            ),
+        }
     }
     next.run(req).await
 }

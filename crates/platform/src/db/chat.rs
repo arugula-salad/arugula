@@ -163,6 +163,33 @@ fn marks(n: usize) -> String {
     vec!["?"; n].join(",")
 }
 
+/// `col` is one of the texts in the JSON array that parameter `?n` holds:
+/// one statement, prepared once, however long the list (a page of rooms'
+/// reads, below), where `IN (?, ?, …)` is a statement for each length.
+fn in_json(c: &impl Sql, col: &str, n: u8) -> String {
+    match c.dialect() {
+        Dialect::Sqlite => format!("{col} IN (SELECT value FROM json_each(?{n}))"),
+        Dialect::Postgres => format!("{col} IN (SELECT jsonb_array_elements_text(CAST(?{n} AS jsonb)))"),
+    }
+}
+
+/// A list as the JSON array [`in_json`] takes.
+fn json_list<T: AsRef<str>>(v: &[T]) -> Result<String> {
+    Ok(serde_json::to_string(&v.iter().map(AsRef::as_ref).collect::<Vec<_>>())?)
+}
+
+/// What a page of rooms needs for its unread counts, per room
+/// ([`Db::chat_unread_in`]).
+pub struct UnreadAsk<'a> {
+    pub room: &'a str,
+    /// The reader's mark.
+    pub read: i64,
+    /// From when they see the room (ms).
+    pub from: u64,
+}
+
+type Readers = std::collections::HashMap<(String, String, String), Vec<ChatReader>>;
+
 /// The words as an FTS5 query: each a phrase (`"mean"`), or a prefix
 /// (`"mea"*`), so FTS5's syntax is only ever text inside one.
 pub fn fts5_query(words: &[Word]) -> String {
@@ -259,42 +286,22 @@ impl Db {
         Ok(())
     }
 
-    /// Channels and DMs in these scopes, and the threads on these machines.
-    pub fn chat_rooms_in(&self, scopes: &[String], machines: &[String]) -> Result<Vec<Room>> {
+    /// Every room in these scopes (team channels and DMs), on these
+    /// machines (pane and session threads), or with `account` a member of
+    /// it by row (its DMs and archives), each once, in no particular order.
+    /// One statement: a chat list's first.
+    pub fn chat_rooms_seen(&self, scopes: &[String], machines: &[String], account: &str) -> Result<Vec<Room>> {
         let c = self.c();
-        let mut out = Vec::new();
-        if !scopes.is_empty() {
-            out.extend(c.query_map(
-                &format!(
-                    "SELECT {ROOM_COLS} FROM chat_rooms WHERE scope IN ({}) ORDER BY created",
-                    marks(scopes.len())
-                ),
-                &list(scopes),
-                room_row,
-            )?);
-        }
-        if !machines.is_empty() {
-            out.extend(c.query_map(
-                &format!(
-                    "SELECT {ROOM_COLS} FROM chat_rooms WHERE machine IN ({}) ORDER BY created",
-                    marks(machines.len())
-                ),
-                &list(machines),
-                room_row,
-            )?);
-        }
-        out.dedup_by(|a, b| a.id == b.id);
-        Ok(out)
-    }
-
-    /// Rooms an account is a member of by row: its DMs and archives.
-    pub fn chat_rooms_member(&self, account: &str) -> Result<Vec<Room>> {
-        self.c().query_map(
+        c.query_map(
             &format!(
-                "SELECT {ROOM_COLS} FROM chat_rooms WHERE id IN (SELECT room FROM chat_members WHERE account = ?1)
-                 ORDER BY created"
+                // A UNION, not ORs: each part keeps its index.
+                "SELECT {ROOM_COLS} FROM chat_rooms WHERE {}
+                 UNION SELECT {ROOM_COLS} FROM chat_rooms WHERE {}
+                 UNION SELECT {ROOM_COLS} FROM chat_rooms WHERE id IN (SELECT room FROM chat_members WHERE account = ?3)",
+                in_json(&c, "scope", 1),
+                in_json(&c, "machine", 2)
             ),
-            params![account],
+            params![json_list(scopes)?, json_list(machines)?, account],
             room_row,
         )
     }
@@ -630,6 +637,21 @@ impl Db {
             .unwrap_or((0, false)))
     }
 
+    /// [`chat_mark`](Self::chat_mark) for a page of rooms, in one
+    /// statement: the rooms with a mark (the rest are `(0, false)`).
+    pub fn chat_marks(&self, rooms: &[&str], account: &str) -> Result<std::collections::HashMap<String, (i64, bool)>> {
+        if rooms.is_empty() {
+            return Ok(Default::default());
+        }
+        let c = self.c();
+        let rows = c.query_map(
+            &format!("SELECT room, seq, muted FROM chat_reads WHERE account = ?1 AND {}", in_json(&c, "room", 2)),
+            params![account, json_list(rooms)?],
+            |r| Ok((r.get::<String>(0)?, (r.get(1)?, r.get(2)?))),
+        )?;
+        Ok(rows.into_iter().collect())
+    }
+
     /// Move a read mark forward (never back). Whether it moved.
     pub fn set_chat_read(&self, room: &str, account: &str, seq: i64) -> Result<bool> {
         Ok(self.c().execute(
@@ -666,6 +688,50 @@ impl Db {
             params![room, read, account, from],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
+    }
+
+    /// [`chat_unread`](Self::chat_unread) for a page of rooms, each with
+    /// its own mark and floor, in one statement: (unread, mentions) by room.
+    pub fn chat_unread_in(
+        &self,
+        account: &str,
+        rooms: &[UnreadAsk<'_>],
+    ) -> Result<std::collections::HashMap<String, (u64, u64)>> {
+        if rooms.is_empty() {
+            return Ok(Default::default());
+        }
+        let c = self.c();
+        let asks = serde_json::to_string(
+            &rooms
+                .iter()
+                .map(|a| serde_json::json!({"room": a.room, "since": a.read, "floor": a.from}))
+                .collect::<Vec<_>>(),
+        )?;
+        // The keys are the columns' names (`jsonb_to_recordset` matches by name).
+        let (want, mentioned) = match c.dialect() {
+            Dialect::Sqlite => (
+                "SELECT json_extract(value, '$.room') AS room, json_extract(value, '$.since') AS since,
+                     json_extract(value, '$.floor') AS floor FROM json_each(?2)",
+                "EXISTS (SELECT 1 FROM json_each(m.mentions) WHERE value = ?1)",
+            ),
+            Dialect::Postgres => (
+                "SELECT * FROM jsonb_to_recordset(CAST(?2 AS jsonb)) AS w(room text, since bigint, floor bigint)",
+                "EXISTS (SELECT 1 FROM jsonb_array_elements_text(m.mentions::jsonb) v WHERE v = ?1)",
+            ),
+        };
+        let rows = c.query_map(
+            &format!(
+                "SELECT w.room, count(m.seq),
+                     CAST(coalesce(sum(CASE WHEN m.seq IS NOT NULL AND {mentioned} THEN 1 ELSE 0 END), 0) AS BIGINT)
+                 FROM ({want}) w
+                 LEFT JOIN chat_messages m ON m.room = w.room AND m.seq > w.since AND m.author != ?1
+                     AND m.deleted IS NULL AND m.at >= w.floor AND m.imported_id IS NULL
+                 GROUP BY w.room"
+            ),
+            params![account, asks],
+            |r| Ok((r.get::<String>(0)?, (r.get(1)?, r.get(2)?))),
+        )?;
+        Ok(rows.into_iter().collect())
     }
 
     /// Messages in these rooms that match, newest first.
@@ -718,6 +784,42 @@ impl Db {
             )
             .optional()?;
         Ok(body.map(|b| serde_json::from_str(&b)).transpose()?)
+    }
+
+    /// Every pane's and session's readers on these machines, as their
+    /// daemons last said, in one statement: by (machine, kind, target). A
+    /// target with no row isn't there.
+    pub fn chat_readers_on(&self, machines: &[String]) -> Result<Readers> {
+        if machines.is_empty() {
+            return Ok(Default::default());
+        }
+        let c = self.c();
+        let rows = c.query_map(
+            &format!("SELECT machine, kind, target, readers FROM chat_readers WHERE {}", in_json(&c, "machine", 1)),
+            params![json_list(machines)?],
+            |r| Ok(((r.get(0)?, r.get(1)?, r.get(2)?), r.get::<String>(3)?)),
+        )?;
+        rows.into_iter().map(|(k, body)| Ok((k, serde_json::from_str(&body)?))).collect()
+    }
+
+    /// [`chat_members`](Self::chat_members) for a page of rooms, in one
+    /// statement: by room, each in account order (a room with none isn't
+    /// there).
+    pub fn chat_members_of(&self, rooms: &[&str]) -> Result<std::collections::HashMap<String, Vec<String>>> {
+        let mut out: std::collections::HashMap<String, Vec<String>> = Default::default();
+        if rooms.is_empty() {
+            return Ok(out);
+        }
+        let c = self.c();
+        let rows = c.query_map(
+            &format!("SELECT room, account FROM chat_members WHERE {} ORDER BY room, account", in_json(&c, "room", 1)),
+            params![json_list(rooms)?],
+            |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?)),
+        )?;
+        for (room, account) in rows {
+            out.entry(room).or_default().push(account);
+        }
+        Ok(out)
     }
 
     pub fn set_chat_readers(

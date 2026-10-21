@@ -40,6 +40,8 @@ pub(crate) struct TestHub {
     feed_down: AtomicBool,
     /// Its next feed page says changes were pruned unread.
     gap_next: AtomicBool,
+    /// Its change feed takes 5 s to answer while set.
+    pub(crate) feed_slow: AtomicBool,
 }
 
 #[derive(Default)]
@@ -250,6 +252,12 @@ impl HubPort for TestHub {
     fn changes(&self, after: u64, limit: u32) -> BoxFuture<'_, HubResult<ChangePage>> {
         if self.feed_down.load(Ordering::SeqCst) {
             return Box::pin(async { Err(anyhow::anyhow!("the feed is down")) });
+        }
+        if self.feed_slow.load(Ordering::SeqCst) {
+            return Box::pin(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                Err(anyhow::anyhow!("the feed was slow"))
+            });
         }
         let gap = self.gap_next.swap(false, Ordering::SeqCst);
         let s = self.state.lock().unwrap();

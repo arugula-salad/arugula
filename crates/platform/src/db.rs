@@ -131,12 +131,17 @@ impl Db {
     #[cfg(any(test, feature = "contract"))]
     pub fn test() -> Self {
         match std::env::var("ARUGULA_TEST_POSTGRES_URL") {
-            Ok(url) if !url.is_empty() => {
-                let schema = format!("t_{}", hex::encode(arugula_e2e::random::<8>()));
-                Self::postgres(&url, Some(schema)).expect("a test schema on ARUGULA_TEST_POSTGRES_URL")
-            }
+            Ok(url) if !url.is_empty() => Self::test_on(&url),
             _ => Self::memory(),
         }
+    }
+
+    /// A schema of its own on the Postgres at `url`, dropped with it (a
+    /// bench reaching Postgres through a proxy of its own).
+    #[cfg(any(test, feature = "contract"))]
+    pub fn test_on(url: &str) -> Self {
+        let schema = format!("t_{}", hex::encode(arugula_e2e::random::<8>()));
+        Self::postgres(url, Some(schema)).expect("a test schema on the test Postgres")
     }
 
     pub fn dialect(&self) -> migrate::Dialect {
@@ -180,10 +185,10 @@ impl Db {
 
     /// A connection, held until it's dropped ([`sql`]).
     pub fn c(&self) -> Conn<'_> {
-        match &self.backend {
+        crate::timing::waited(|| match &self.backend {
             Backend::Sqlite(c) => Conn(sql::Inner::Sqlite(c.lock().unwrap())),
             Backend::Postgres(p) => Conn(sql::Inner::Postgres(p.lease())),
-        }
+        })
     }
 
     /// SQLite's connection itself, for what only SQLite has (the hub's

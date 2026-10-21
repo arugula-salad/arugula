@@ -102,20 +102,34 @@ async fn named(app: &Platform, mut grants: Vec<Grant>) -> HubResult<Vec<Grant>> 
 /// nothing.
 pub async fn list(State(app): State<Arc<Platform>>, s: Person) -> R {
     let machines = app.cache.machines_for(&*app.hub, &s.account).await?;
+    // One read of the account's grants answers both what to list and which
+    // machines never had one (`Db::cloud_drive`'s `None`), so the steady
+    // state is one statement, not one per machine (a round trip each on
+    // Postgres).
+    let mut rows = app.db.grants(&s.account)?;
+    let had: std::collections::HashSet<&str> = rows
+        .iter()
+        .filter(|g| g.subject_kind == "daemon" && g.power == CLOUD_DRIVE)
+        .map(|g| g.subject_id.as_str())
+        .collect();
     let mut ungranted = vec![];
     for d in app.cache.daemons(&*app.hub, &machines).await?.into_values() {
-        if d.account == s.account && app.db.cloud_drive(&d.id, &d.account)?.is_none() {
+        if d.account == s.account && !had.contains(d.id.as_str()) {
             ungranted.push(d.id);
         }
     }
     if !ungranted.is_empty() {
+        let mut gave = false;
         for d in app.cache.daemons_now(&*app.hub, &ungranted).await?.into_values() {
             if d.account == s.account {
-                app.db.grant_on_join(&d.id, &d.account, now_ms())?;
+                gave |= app.db.grant_on_join(&d.id, &d.account, now_ms())?;
             }
         }
+        if gave {
+            rows = app.db.grants(&s.account)?;
+        }
     }
-    let mut grants = named(&app, app.db.grants(&s.account)?).await?;
+    let mut grants = named(&app, rows).await?;
     grants.sort_by(|a, b| {
         let name = |g: &Grant| g.subject_name.clone().unwrap_or_else(|| g.subject_id.clone());
         (name(a), &a.subject_id, std::cmp::Reverse(a.created_at), &a.id).cmp(&(
