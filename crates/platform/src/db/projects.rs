@@ -304,14 +304,25 @@ impl Db {
             .optional()?;
         let id = match live {
             Some(id) => id,
-            None => tx.query_row(
-                &format!(
-                    "INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
-                     VALUES (?5, 'daemon', ?1, '{CLOUD_DRIVE}', 'account', ?2, ?3, ?4) RETURNING id"
-                ),
-                params![daemon, account, by, now, new_grant()],
-                |r| r.get(0),
-            )?,
+            None => {
+                // A live one given at once on another machine (M144) is the
+                // answer: `grants_live` keeps one.
+                tx.execute(
+                    &format!(
+                        "INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
+                         VALUES (?5, 'daemon', ?1, '{CLOUD_DRIVE}', 'account', ?2, ?3, ?4) ON CONFLICT DO NOTHING"
+                    ),
+                    params![daemon, account, by, now, new_grant()],
+                )?;
+                tx.query_row(
+                    &format!(
+                        "SELECT id FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1 AND power = '{CLOUD_DRIVE}'
+                         AND scope_kind = 'account' AND scope_id = ?2 AND revoked_at IS NULL"
+                    ),
+                    params![daemon, account],
+                    |r| r.get(0),
+                )?
+            }
         };
         let g = Self::grant(&tx, account, &id)?.ok_or_else(|| anyhow::anyhow!("the grant just made is gone"))?;
         tx.commit()?;
@@ -325,7 +336,8 @@ impl Db {
 
     pub fn set_feed_after(&self, seq: u64) -> anyhow::Result<()> {
         self.c().execute(
-            "INSERT INTO hub_feed (reader, seq) VALUES (?1, ?2) ON CONFLICT (reader) DO UPDATE SET seq = excluded.seq",
+            "INSERT INTO hub_feed (reader, seq) VALUES (?1, ?2)
+             ON CONFLICT (reader) DO UPDATE SET seq = excluded.seq WHERE excluded.seq > hub_feed.seq",
             params![READER, seq],
         )?;
         Ok(())
@@ -410,7 +422,7 @@ mod tests {
     fn the_backfill_gives_every_cloud_row_its_personal_project() {
         let mut conn = unattached();
         let ran = super::super::migrate::run(&mut conn).unwrap().ran;
-        assert_eq!(ran, [3]);
+        assert_eq!(ran[0], 3, "{ran:?}");
         assert_eq!(
             dump(&conn, "SELECT account_id, name FROM projects WHERE is_default = 1 ORDER BY 1"),
             [["alice", "Personal"], ["bob", "Personal"], ["dave", "Personal"]]

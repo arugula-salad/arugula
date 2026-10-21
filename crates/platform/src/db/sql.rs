@@ -20,12 +20,13 @@
 //! `last_insert_rowid`), `IS DISTINCT FROM`, `octet_length`, and
 //! `CAST(... AS BIGINT)` round a `sum` that Postgres would make `NUMERIC`.
 //!
-//! Transactions: on SQLite, `BEGIN` or `BEGIN IMMEDIATE`. On Postgres
-//! every transaction takes the platform's write lock first
-//! (`pg_advisory_xact_lock`), so they run one at a time as SQLite's
-//! writers do, on any number of machines; a plain statement runs beside
-//! them. M144 lets the cloud worker's claims pass each other (`SKIP
-//! LOCKED`).
+//! Transactions: on SQLite, `BEGIN` or `BEGIN IMMEDIATE`, one writer at a
+//! time. On Postgres, `BEGIN`: `READ COMMITTED`, with no lock of the
+//! platform's (M144), so two machines' transactions run side by side. A
+//! transaction that reads and then writes on what it read locks the rows
+//! it read ([`Sql::for_update`]); a claim skips rows another holds
+//! (`FOR UPDATE ... SKIP LOCKED`, per dialect where it's written); and an
+//! invariant no row can hold takes a named lock ([`Tx::lock`]).
 
 use std::sync::MutexGuard;
 
@@ -303,6 +304,26 @@ pub trait Sql {
             On::Postgres(s) => session(s)?.batch(sql),
         }
     }
+
+    /// What a `SELECT` in a transaction ends with to lock the rows it
+    /// reads until the transaction ends: ` FOR UPDATE` on Postgres, nothing
+    /// on SQLite, whose `BEGIN IMMEDIATE` already holds every row (M144).
+    fn for_update(&self) -> &'static str {
+        match self.dialect() {
+            Dialect::Sqlite => "",
+            Dialect::Postgres => " FOR UPDATE",
+        }
+    }
+
+    /// Wake the platform's other machines (`pg_notify`, at commit inside a
+    /// transaction): `payload` says what to read again, never what's in it.
+    /// Nothing on SQLite, which is one machine.
+    fn notify(&self, payload: &str) -> Result<()> {
+        match self.on() {
+            On::Sqlite(_) => Ok(()),
+            On::Postgres(s) => session(s)?.notify(payload),
+        }
+    }
 }
 
 fn values(p: &[&dyn Param]) -> Result<Vec<Value>> {
@@ -366,13 +387,15 @@ impl Sql for Conn<'_> {
 
 impl<'a> Conn<'a> {
     /// A transaction. On SQLite it takes the write lock at its first write
-    /// (`BEGIN`); on Postgres at once (see the module's docs).
+    /// (`BEGIN`); on Postgres it takes none (see the module's docs).
     pub fn transaction(&mut self) -> Result<Tx<'_, 'a>> {
         self.begin("BEGIN")
     }
 
     /// A transaction that takes the write lock at once (SQLite's `BEGIN
-    /// IMMEDIATE`): what reads and then writes on what it read.
+    /// IMMEDIATE`): what reads and then writes on what it read. On Postgres
+    /// it's [`transaction`](Self::transaction): such a transaction locks
+    /// the rows it reads ([`Sql::for_update`]).
     pub fn immediate(&mut self) -> Result<Tx<'_, 'a>> {
         self.begin("BEGIN IMMEDIATE")
     }
@@ -393,6 +416,18 @@ pub struct Tx<'t, 'a> {
 }
 
 impl Tx<'_, '_> {
+    /// Hold the lock `name` until this transaction ends, on Postgres
+    /// (`pg_advisory_xact_lock`), where machines' transactions otherwise
+    /// run side by side; nothing on SQLite, whose writers already take
+    /// turns. Only for an invariant no row holds (M144's lock inventory in
+    /// docs/control-ops.md).
+    pub fn lock(&self, name: &str) -> Result<()> {
+        match self.on() {
+            On::Sqlite(_) => Ok(()),
+            On::Postgres(s) => session(s)?.lock(name),
+        }
+    }
+
     pub fn commit(mut self) -> Result<()> {
         self.execute_batch("COMMIT")?;
         self.done = true;

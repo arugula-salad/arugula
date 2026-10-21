@@ -56,6 +56,28 @@ pub struct Message {
     pub imported: Option<String>,
 }
 
+/// How many of chat's live events are kept for pages that resume
+/// (`Last-Event-ID`, M144): a page that missed more resyncs.
+pub const CHAT_EVENTS_KEPT: u64 = 10_000;
+
+/// One of chat's live events, to add (M144): `live` with the event's JSON
+/// in `body` (and `to`, whom only it goes to), or `changed`, empty.
+pub struct NewChatEvent<'a> {
+    pub kind: &'a str,
+    pub body: &'a str,
+    pub to: Option<&'a str>,
+    pub at: u64,
+}
+
+/// One of chat's live events, as kept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatEvent {
+    pub seq: u64,
+    pub kind: String,
+    pub body: String,
+    pub to: Option<String>,
+}
+
 pub struct NewMessage<'a> {
     pub author: &'a str,
     pub at: u64,
@@ -395,6 +417,11 @@ impl Db {
         const PARKED: i64 = -(1 << 50);
         let mut c = self.c();
         let tx = c.transaction()?;
+        // One import or post in the room at a time (M144): both move the
+        // room's row.
+        tx.query_row(&format!("SELECT id FROM chat_rooms WHERE id = ?1{}", tx.for_update()), params![room], |r| {
+            r.get::<String>(0)
+        })?;
         let have: std::collections::HashSet<i64> = tx
             .query_map(
                 "SELECT imported_id FROM chat_messages WHERE room = ?1 AND imported_id IS NOT NULL",
@@ -505,7 +532,7 @@ impl Db {
         let mut c = self.c();
         let tx = c.transaction()?;
         let old: i64 = tx.query_row(
-            "SELECT octet_length(text) FROM chat_messages WHERE room = ?1 AND seq = ?2",
+            &format!("SELECT octet_length(text) FROM chat_messages WHERE room = ?1 AND seq = ?2{}", tx.for_update()),
             params![room, seq],
             |r| r.get(0),
         )?;
@@ -526,7 +553,11 @@ impl Db {
         let mut c = self.c();
         let tx = c.transaction()?;
         let old: i64 = tx.query_row(
-            "SELECT octet_length(text) + coalesce(octet_length(quote), 0) FROM chat_messages WHERE room = ?1 AND seq = ?2",
+            &format!(
+                "SELECT octet_length(text) + coalesce(octet_length(quote), 0) FROM chat_messages
+                 WHERE room = ?1 AND seq = ?2{}",
+                tx.for_update()
+            ),
             params![room, seq],
             |r| r.get(0),
         )?;
@@ -541,6 +572,49 @@ impl Db {
         )?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// Add one of chat's live events (M144), numbered after every other,
+    /// and wake the platform's other machines to read it. One at a time
+    /// (the `chat_events` lock, on Postgres), so they commit in order and
+    /// a reader that has read up to a number never misses an earlier one.
+    pub fn add_chat_event(&self, e: &NewChatEvent) -> Result<u64> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        tx.lock("chat_events")?;
+        let seq: u64 = tx.query_row(
+            "INSERT INTO chat_events (kind, body, to_account, at) VALUES (?1, ?2, ?3, ?4) RETURNING seq",
+            params![e.kind, e.body, e.to, e.at],
+            |r| r.get(0),
+        )?;
+        tx.notify(&format!("chat {seq}"))?;
+        tx.commit()?;
+        Ok(seq)
+    }
+
+    /// Chat's live events after `after`, oldest first, at most `limit`.
+    pub fn chat_events_after(&self, after: u64, limit: u32) -> Result<Vec<ChatEvent>> {
+        self.c().query_map(
+            "SELECT seq, kind, body, to_account FROM chat_events WHERE seq > ?1 ORDER BY seq LIMIT ?2",
+            params![after, limit],
+            |r| Ok(ChatEvent { seq: r.get(0)?, kind: r.get(1)?, body: r.get(2)?, to: r.get(3)? }),
+        )
+    }
+
+    /// The oldest and newest live events kept: `(0, 0)` with none.
+    pub fn chat_event_bounds(&self) -> Result<(u64, u64)> {
+        self.c().query_row("SELECT coalesce(min(seq), 0), coalesce(max(seq), 0) FROM chat_events", params![], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+    }
+
+    /// Keep only the newest [`CHAT_EVENTS_KEPT`] live events (never the
+    /// newest, so a number isn't given twice). How many went.
+    pub fn prune_chat_events(&self) -> Result<usize> {
+        self.c().execute(
+            "DELETE FROM chat_events WHERE seq <= (SELECT max(seq) FROM chat_events) - ?1",
+            params![CHAT_EVENTS_KEPT],
+        )
     }
 
     /// An account's read mark in a room, and whether it's muted.
@@ -724,6 +798,11 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     tx.execute("UPDATE chat_rooms SET created_by = '' WHERE created_by = ?1", params![account])?;
     tx.execute("DELETE FROM chat_reads WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_members WHERE account = ?1", params![account])?;
+    // Its own live events (its read marks) keep their numbers, naming no one.
+    tx.execute(
+        "UPDATE chat_events SET kind = 'changed', body = '', to_account = NULL WHERE to_account = ?1",
+        params![account],
+    )?;
     // Rooms' byte counts after the blanking.
     tx.execute(
         "UPDATE chat_rooms SET bytes = (SELECT CAST(coalesce(sum(octet_length(text) + coalesce(octet_length(quote), 0)), 0) AS BIGINT)

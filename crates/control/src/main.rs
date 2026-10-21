@@ -1021,6 +1021,10 @@ async fn run() -> anyhow::Result<()> {
         r = serve => r?,
         _ = stopping() => info!("stopping"),
     }
+    // An in-process platform's cloud jobs checkpoint before it goes (M144).
+    if let Some(p) = app.platform.local() {
+        p.drain(std::time::Duration::from_secs(5)).await;
+    }
     app.analytics.flush().await;
     app.docs.flush(&app.db);
     // Litestream syncs what's left before control goes.

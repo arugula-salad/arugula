@@ -335,9 +335,10 @@ pub struct ChatOpen {
 
 /// What `GET /api/chat/live` sends, one JSON object per event (no event
 /// names). Every event but `hello` has an id, so `EventSource` resumes
-/// with `Last-Event-ID` after a drop; a stream that can't be resumed (it
-/// fell too far behind, or control restarted) gets `resync`: reload the
-/// rooms.
+/// with `Last-Event-ID` after a drop, on whichever of the platform's
+/// machines it reaches; a stream that can't be resumed (it fell too far
+/// behind, or missed more events than control keeps) gets `resync`: reload
+/// the rooms.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "lowercase")]

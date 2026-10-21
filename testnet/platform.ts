@@ -15,8 +15,23 @@
 //                 on the same socket, which never closes: {held, restart_ms}
 //   measure N     each route's latency, N times after a warm-up, one at a
 //                 time: {routes: {"GET /api/chat": {p50, p95, p99}, ...}}
+//   fanout PORT1 PORT2
+//                 two platform machines on one Postgres (M144), each called
+//                 directly on its published port with a principal signed with
+//                 the stack's key: a stream on each hears a message posted
+//                 through the other, and a page that dropped from one resumes
+//                 on the other from its Last-Event-ID; exactly one leads:
+//                 {room, heard_ms: [1 from 2, 2 from 1], resumed, leader}
+//   handover FAKE_PORT STACK [--break]
+//                 a Cloud workspace's job held mid-step by the machine that
+//                 claimed it (the fake Managoat holds its read), that machine
+//                 killed, and the job taken by the other once its lease runs
+//                 out, then ready; with --break the other is paused too, so
+//                 nothing takes it: {holder, other, lease_left_ms,
+//                 taken_after_lease_ms, ready_ms}
 
 import { execFileSync } from "node:child_process";
+import { createHmac, randomBytes } from "node:crypto";
 import { Device } from "../web/fixtures/device.ts";
 
 const args = process.argv.slice(2);
@@ -170,6 +185,143 @@ async function measure(d: Device, n: number) {
   return { routes: out };
 }
 
+/** The stack's key, which control signs principals with
+ * (compose.yaml's ARUGULA_PLATFORM_KEY). */
+const KEY = Buffer.from(process.env.ARUGULA_TESTNET_PLATFORM_KEY ?? "7e577e577e577e577e577e577e577e577e577e577e577e577e577e577e577e57", "hex");
+
+/** The principal header control's gateway sends with a call (M140): this
+ * person, for this method and path, now. */
+function vouch(method: string, path: string, account: string): string {
+  const json = JSON.stringify({ kind: "person", account });
+  const ms = Date.now();
+  const id = `m144-${randomBytes(6).toString("hex")}`;
+  const tag = createHmac("sha256", KEY).update(`arugula principal v1\n${method}\n${path}\n${ms}\n${id}\n${json}\n`).digest();
+  return `v1 ${ms} ${id} ${Buffer.from(json).toString("base64url")} ${tag.toString("base64url")}`;
+}
+
+/** A live stream held on the platform at `port`, read in the background. */
+async function liveOn(d: Device, port: number, last?: string) {
+  const path = "/api/chat/live";
+  const headers: Record<string, string> = { "x-arugula-principal": vouch("GET", path, d.account) };
+  if (last) headers["last-event-id"] = last;
+  const res = await fetch(`http://127.0.0.1:${port}${path}`, { headers });
+  if (res.status !== 200) throw new Error(`GET ${path} on :${port}: ${res.status} ${await res.text()}`);
+  const stream = { text: "", reader: res.body!.getReader() };
+  (async () => {
+    for (;;) {
+      const { value, done } = await stream.reader.read();
+      if (done) return;
+      stream.text += new TextDecoder().decode(value);
+    }
+  })().catch(() => {});
+  return stream;
+}
+
+async function postOn(d: Device, port: number, room: string, text: string): Promise<number> {
+  const path = `/api/chat/rooms/${room}/messages`;
+  const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+    method: "POST",
+    headers: { "x-arugula-principal": vouch("POST", path, d.account), "content-type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (res.status !== 200) throw new Error(`POST ${path} on :${port}: ${res.status} ${await res.text()}`);
+  return (await res.json()).seq;
+}
+
+async function hears(stream: { text: string }, what: string, ms = 5_000): Promise<number> {
+  const started = Date.now();
+  while (!stream.text.includes(what)) {
+    if (Date.now() - started > ms) throw new Error(`never heard ${what}: ${stream.text.slice(-400)}`);
+    await sleep(10);
+  }
+  return Date.now() - started;
+}
+
+async function fanout(d: Device, ports: number[]) {
+  const health = await Promise.all(ports.map(async (p) => (await fetch(`http://127.0.0.1:${p}/platform.json`)).json()));
+  if (!health.every((h) => h.database === true)) throw new Error(`a machine can't reach its database: ${JSON.stringify(health)}`);
+  const leaders = health.filter((h) => h.leader).length;
+  if (leaders !== 1) throw new Error(`${leaders} machines lead: ${JSON.stringify(health)}`);
+  const room = await channel(d);
+  const event = (seq: number) => `"type":"message","room":"${room}","seq":${seq}`;
+  const heard: number[] = [];
+  for (const [listen, post] of [ports, [...ports].reverse()]) {
+    const s = await liveOn(d, listen);
+    await hears(s, '"type":"hello"');
+    const seq = await postOn(d, post, room, `M144 through :${post}`);
+    heard.push(await hears(s, event(seq)));
+    await s.reader.cancel();
+  }
+  // A page on the first drops; a message goes through the second; the page
+  // comes back on the second with the last id it had.
+  const s = await liveOn(d, ports[0]);
+  await hears(s, '"type":"hello"');
+  const seen = await postOn(d, ports[1], room, "seen");
+  await hears(s, event(seen));
+  const last = s.text.split("\n").filter((l) => l.startsWith("id: ")).pop()!.slice(4);
+  await s.reader.cancel();
+  const missed = await postOn(d, ports[1], room, "missed while away");
+  const back = await liveOn(d, ports[1], last);
+  await hears(back, event(missed));
+  if (back.text.includes('"type":"resync"')) throw new Error(`resynced instead of resuming from ${last}`);
+  await back.reader.cancel();
+  return { room, heard_ms: heard, resumed: last, leader: ports[health.findIndex((h) => h.leader)] };
+}
+
+async function handover(d: Device, fakePort: number, stack: string, broken: boolean) {
+  const names = [`${stack}-platform`, `${stack}-platform2`];
+  const ips = (c: string) =>
+    execFileSync("docker", ["inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}", c]).toString().trim().split(/\s+/);
+  const addrs = Object.fromEntries(names.map((n) => [n, ips(n)]));
+  const whose = (from: string) => names.find((n) => addrs[n].some((a) => a && from.endsWith(a)));
+  const fake = async (path: string, method = "GET") => (await fetch(`http://127.0.0.1:${fakePort}${path}`, { method })).json();
+  const psql = (sql: string) => execFileSync("docker", ["exec", `${stack}-postgres`, "psql", "-U", "postgres", "-d", "platform", "-Atc", sql]).toString().trim();
+  // Each machine reaches the fake through a sidecar in its network
+  // namespace, which a restart of the machine (platform-restart) leaves
+  // behind: join them again first.
+  const sidecar = (n: string) => n.replace(/-platform(2?)$/, "-managoat-platform$1");
+  for (const n of names) execFileSync("docker", ["restart", sidecar(n)], { stdio: "ignore" });
+  await sleep(1000);
+  // Its first read comes a few worker ticks after it's made (environment,
+  // vault, machine first), so the hold is armed in time.
+  const w = await must(d, "POST", "/api/cloud/workspaces", { request_key: `m144-${Date.now()}`, spec: { name: "handover" } });
+  await fake(`/hold?name=${w.id}`, "POST");
+  let held: { from: string; at: number; path: string } | null = null;
+  for (const until = Date.now() + 30_000; !held; await sleep(100)) {
+    if (Date.now() > until) throw new Error("no machine read the workspace");
+    held = (await fake("/held")).held;
+  }
+  const holder = whose(held.from);
+  const other = names.find((n) => n !== holder)!;
+  if (!holder) throw new Error(`the held read came from ${held.from}, neither ${JSON.stringify(addrs)}`);
+  const lease = Number(psql(`SELECT lease_until FROM cloud_jobs WHERE id = '${w.id}'`));
+  const killed = Date.now();
+  if (broken) execFileSync("docker", ["pause", other]);
+  execFileSync("docker", ["kill", holder], { stdio: "ignore" });
+  await fake("/release", "POST");
+  try {
+    let taken: { at: number } | undefined;
+    for (const until = lease + 30_000; !taken; await sleep(200)) {
+      if (Date.now() > until) throw new Error(`nothing took the job in the ${Math.round((until - killed) / 1000)} s after ${holder} died`);
+      const seen: { at: number; from: string; path: string }[] = (await fake(`/held?since=${killed}`)).seen;
+      taken = seen.find((s) => whose(s.from) === other && s.path === held!.path);
+    }
+    if (taken.at < lease - 1_000) throw new Error(`${other} took the job ${lease - taken.at} ms before its lease ran out`);
+    let ready = 0;
+    for (const until = Date.now() + 60_000; !ready; await sleep(500)) {
+      if (Date.now() > until) throw new Error("the workspace never got ready");
+      const r = await must(d, "GET", `/api/cloud/workspaces/${w.id}`);
+      if (r.error) throw new Error(`the workspace: ${r.error}`);
+      if (r.status === "ready") ready = Date.now();
+    }
+    return { workspace: w.id, holder, other, lease_left_ms: lease - killed, taken_after_lease_ms: taken.at - lease, ready_ms: ready - killed };
+  } finally {
+    if (broken) execFileSync("docker", ["unpause", other]);
+    execFileSync("docker", ["start", holder], { stdio: "ignore" });
+    execFileSync("docker", ["restart", sidecar(holder)], { stdio: "ignore" });
+  }
+}
+
 async function main() {
   const d = await Device.load(state);
   switch (cmd) {
@@ -179,8 +331,12 @@ async function main() {
       return hold(d, rest[0], rest[1]);
     case "measure":
       return measure(d, Number(rest[0] ?? 300));
+    case "fanout":
+      return fanout(d, [Number(rest[0]), Number(rest[1])]);
+    case "handover":
+      return handover(d, Number(rest[0]), rest[1], rest.includes("--break"));
     default:
-      throw new Error(`unknown command ${cmd ?? "(none)"}: chat, hold, measure`);
+      throw new Error(`unknown command ${cmd ?? "(none)"}: chat, hold, measure, fanout, handover`);
   }
 }
 

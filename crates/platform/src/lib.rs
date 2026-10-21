@@ -81,7 +81,8 @@ impl Config {
 }
 
 /// The platform: its own database, its view of the hub, and what it keeps
-/// in memory. Each feature that moved in brought its own fields, as `App`
+/// in memory (on each of its machines, M144: what's kept here is that
+/// machine's alone, as docs/control-ops.md lists). Each feature that moved in brought its own fields, as `App`
 /// had them: billing's `stripe`, Cloud's `cloud`, chat's `chat`, and
 /// projects' `feed`.
 pub struct Platform {
@@ -111,6 +112,15 @@ pub struct Platform {
     /// the platform's tables hold still while they're copied. Requests are
     /// held by the hub's maintenance switch, not this.
     pub paused: std::sync::atomic::AtomicBool,
+    /// The platform's other machines, on Postgres (M144): their
+    /// notifications, and whether this machine is the leader
+    /// ([`Platform::is_leader`]). `None` on SQLite: one machine.
+    pub listening: Option<db::Listening>,
+    /// Set when the machine is stopping (a deploy): the cloud worker takes
+    /// no new job, and [`Platform::drain`] waits for the ones it holds.
+    pub stopping: std::sync::atomic::AtomicBool,
+    /// Cloud jobs this machine holds a lease on right now.
+    pub busy: std::sync::atomic::AtomicUsize,
 }
 
 impl Platform {
@@ -118,10 +128,45 @@ impl Platform {
     pub fn is_paused(&self) -> bool {
         self.paused.load(std::sync::atomic::Ordering::Relaxed)
     }
+
+    /// Whether this machine is the platform's leader (M144): the one that
+    /// applies the hub's change feed to projects and grants and reports
+    /// billing's usage. On Postgres, the machine whose listening connection
+    /// holds the `leader` lock (`pg_try_advisory_lock`); another takes it
+    /// within [`db::pg::LEADER_TRY`] of that connection closing. On SQLite,
+    /// always: there's one machine.
+    pub fn is_leader(&self) -> bool {
+        self.listening.as_ref().is_none_or(|l| l.leader.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    /// Whether the machine is stopping ([`Platform::stopping`]).
+    pub fn is_stopping(&self) -> bool {
+        self.stopping.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// The machine is stopping: take no new cloud job, and wait up to
+    /// `within` for the ones held to checkpoint, which hands each back
+    /// within seconds instead of at the end of its lease (M144: a rolling
+    /// deploy's machine hands its jobs to the other).
+    pub async fn drain(&self, within: std::time::Duration) {
+        use std::sync::atomic::Ordering::SeqCst;
+        self.stopping.store(true, SeqCst);
+        let until = std::time::Instant::now() + within;
+        while self.busy.load(SeqCst) > 0 && std::time::Instant::now() < until {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        let left = self.busy.load(SeqCst);
+        if left > 0 {
+            tracing::warn!(jobs = left, "stopping with cloud jobs held: each waits out its lease");
+        }
+    }
 }
 
 impl Platform {
     pub fn new(cfg: Config, db: db::Db, hub: Arc<dyn HubPort>, http: reqwest::Client, analytics: Analytics) -> Self {
+        let chat = chat::Hub::default();
+        chat.start_at(&db);
+        let listening = db.listen();
         Platform {
             cfg,
             db,
@@ -131,10 +176,13 @@ impl Platform {
             analytics,
             stripe: None,
             cloud: None,
-            chat: Default::default(),
+            chat,
             cache: Default::default(),
             feed: Default::default(),
             paused: Default::default(),
+            listening,
+            stopping: Default::default(),
+            busy: Default::default(),
         }
     }
 }

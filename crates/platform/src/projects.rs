@@ -23,6 +23,10 @@
 //! An account's deletion reaches these tables through
 //! `PlatformPort::account_deleted`, not the feed (its change names nobody).
 //!
+//! **Two machines (M144).** Only the leader follows ([`follow`]); every
+//! write it makes is idempotent and checks the hub's current answer, so a
+//! leader that changes hands mid-page repeats nothing harmful.
+//!
 //! The feed is never the only way in: a machine that just joined is never
 //! refused for want of a grant the feed hasn't brought yet
 //! ([`crate::grants::can_drive_cloud`]), and a project is made the first
@@ -72,7 +76,15 @@ pub async fn team_project(app: &Platform, team: &str) -> HubResult<Option<String
 /// Apply the hub's change feed from where this last got to, to its end.
 /// The first read ever starts at the newest change and reconciles without
 /// dropping a grant ([`Reconcile::Report`]). Whether it applied anything.
+///
+/// Only the platform's leader applies it (M144, [`Platform::is_leader`]):
+/// on another machine this does nothing, and the leader brings the change
+/// within a [`FEED_TICK`]. The position only moves forward, so a machine
+/// that led a moment ago can't take it back.
 pub async fn follow(app: &Platform) -> HubResult<bool> {
+    if !app.is_leader() {
+        return Ok(false);
+    }
     // One reader at a time: the tick, or a check catching up.
     let _one = app.feed.lock().await;
     let Some(mut at) = app.db.feed_after()? else {

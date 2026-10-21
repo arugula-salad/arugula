@@ -99,7 +99,8 @@ pub fn start(p: &Arc<Platform>) {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
-            if !p.is_paused() {
+            // Reported by one machine, the platform's leader (M144).
+            if !p.is_paused() && p.is_leader() {
                 report_usage(&p).await;
             }
         }

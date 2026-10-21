@@ -274,8 +274,13 @@ impl HubPort for TestHub {
 /// The platform over `hub`, its chat routes behind a test gate
 /// (`ilg_session=session-<account>`), and its address.
 pub(crate) async fn serve(hub: Arc<TestHub>) -> (Arc<Platform>, String) {
+    serve_on(hub, crate::db::Db::test()).await
+}
+
+/// [`serve`] on `db`.
+async fn serve_on(hub: Arc<TestHub>, db: crate::db::Db) -> (Arc<Platform>, String) {
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
-    let app = Arc::new(Platform::new(cfg, crate::db::Db::test(), hub, reqwest::Client::new(), Default::default()));
+    let app = Arc::new(Platform::new(cfg, db, hub, reqwest::Client::new(), Default::default()));
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
     let router = crate::cloud::tests::router(app.clone());
@@ -398,4 +403,102 @@ async fn a_mention_pushes_through_the_hub_as_chat_always_did() {
         (&msg["tag"], &msg["control"], &msg["chat"]["seq"]),
         (&json!("chat-ch_general"), &json!(true), &json!(1))
     );
+}
+
+/// A live stream's text so far, read in the background.
+fn listen(mut r: reqwest::Response) -> Arc<Mutex<String>> {
+    let heard = Arc::new(Mutex::new(String::new()));
+    let into = heard.clone();
+    tokio::spawn(async move {
+        while let Ok(Some(chunk)) = r.chunk().await {
+            into.lock().unwrap().push_str(&String::from_utf8_lossy(&chunk));
+        }
+    });
+    heard
+}
+
+async fn open_live(base: &str, who: &str, last: Option<&str>) -> Arc<Mutex<String>> {
+    let mut req = reqwest::Client::new()
+        .get(format!("{base}/api/chat/live"))
+        .header("cookie", format!("ilg_session=session-{who}"));
+    if let Some(id) = last {
+        req = req.header("last-event-id", id);
+    }
+    let r = req.send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    listen(r)
+}
+
+/// Until `heard` has `what`, at most `within`; how long it took.
+async fn hears(heard: &Mutex<String>, what: &str, within: Duration) -> Duration {
+    let started = std::time::Instant::now();
+    while !heard.lock().unwrap().contains(what) {
+        assert!(started.elapsed() < within, "never heard {what}: {}", heard.lock().unwrap());
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    started.elapsed()
+}
+
+/// Two machines on one Postgres (M144): a message posted through one
+/// reaches a live stream held by the other, woken by `pg_notify` (well
+/// within the catch-up that would find it anyway), and a page that dropped
+/// from one resumes on the other from its `Last-Event-ID`.
+#[tokio::test]
+async fn a_message_posted_on_one_machine_reaches_a_stream_on_the_other() {
+    let db = crate::db::Db::test();
+    let Some(db_a) = db.second() else { return eprintln!("skipped: two machines need Postgres") };
+    let db_b = db.second().unwrap();
+    let hub = Arc::new(TestHub::default());
+    let (a, base_a) = serve_on(hub.clone(), db_a).await;
+    let (b, base_b) = serve_on(hub.clone(), db_b).await;
+    crate::chat::start(&a);
+    crate::chat::start(&b);
+    seed(&a, &hub);
+
+    let on_b = open_live(&base_b, "b", None).await;
+    hears(&on_b, "\"type\":\"hello\"", Duration::from_secs(5)).await;
+    let (st, v) =
+        call(&base_a, "a", "POST", "/api/chat/rooms/ch_general/messages", Some(json!({ "text": "hi" }))).await;
+    assert_eq!(st, 200, "{v}");
+    let took = hears(&on_b, "\"type\":\"message\",\"room\":\"ch_general\",\"seq\":1", Duration::from_secs(4)).await;
+    assert!(took < crate::chat::CATCH_UP, "woken by the notification, not the catch-up ({took:?})");
+
+    // The page drops after that event, a second message is posted through
+    // b, and the page comes back through a.
+    let text = on_b.lock().unwrap().clone();
+    let id = text.lines().filter_map(|l| l.strip_prefix("id: ")).next_back().expect("an event id").to_owned();
+    assert!(id.starts_with("c-"), "{id}");
+    let (st, _) =
+        call(&base_b, "b", "POST", "/api/chat/rooms/ch_general/messages", Some(json!({ "text": "and" }))).await;
+    assert_eq!(st, 200);
+    let on_a = open_live(&base_a, "b", Some(&id)).await;
+    hears(&on_a, "\"type\":\"message\",\"room\":\"ch_general\",\"seq\":2", Duration::from_secs(4)).await;
+    assert!(!on_a.lock().unwrap().contains("resync"), "resumed, not resynced: {}", on_a.lock().unwrap());
+    assert!(!on_a.lock().unwrap().contains("\"seq\":1}"), "not sent again");
+    // An id from before M144 (one process's numbering) resyncs.
+    let old = open_live(&base_a, "b", Some("19a2b3c4d5e-7")).await;
+    hears(&old, "\"type\":\"resync\"", Duration::from_secs(4)).await;
+}
+
+/// One of two machines leads (M144): it alone applies the hub's feed to
+/// projects and grants, and when its connection closes the other takes
+/// over within a try or two.
+#[tokio::test]
+async fn one_machine_leads_and_the_other_takes_over() {
+    let db = crate::db::Db::test();
+    let Some(db_a) = db.second() else { return eprintln!("skipped: two machines need Postgres") };
+    let hub = Arc::new(TestHub::default());
+    let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
+    let a = Platform::new(cfg.clone(), db_a, hub.clone(), reqwest::Client::new(), Default::default());
+    let b = Platform::new(cfg, db.second().unwrap(), hub.clone(), reqwest::Client::new(), Default::default());
+    assert!(a.is_leader() && !b.is_leader(), "the first to start leads");
+    assert!(!crate::projects::follow(&b).await.unwrap(), "only the leader follows");
+    assert!(crate::projects::follow(&a).await.unwrap());
+    drop(a);
+    let started = std::time::Instant::now();
+    while !b.is_leader() {
+        assert!(started.elapsed() < crate::db::pg::LEADER_TRY * 3, "b never took over");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(crate::projects::follow(&b).await.is_ok());
 }

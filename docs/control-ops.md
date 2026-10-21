@@ -317,8 +317,8 @@ over WireGuard between Fly's hosts), by `.internal` names: the hub calls
 `http://arugula-platform.internal:7700`, the platform calls
 `http://illogical-control.internal:7691`. Not Flycast: Flycast needs a
 private IP and a service in `fly.toml`, and goes through Fly's proxy, an
-extra hop with nothing to balance across one machine. M144 (two platform
-machines) revisits it.
+extra hop with nothing to balance across one machine. With two platform
+machines `.internal` names both ("Two platform machines" below).
 - The hub's internal API listens on its own port, which no `fly.toml`
   service names, so Fly's public proxy never reaches it. It also refuses
   anything carrying `Fly-Forwarded-Port` or `Fly-Client-IP` (the headers
@@ -448,6 +448,103 @@ feed follower), so its tables hold still while they're copied. An
 out-of-process platform is held with `ARUGULA_PLATFORM_PAUSED=1` on its
 own app (`fly secrets set -a arugula-platform ARUGULA_PLATFORM_PAUSED=1`,
 a platform restart, which drops nothing); unset it to resume.
+
+### Two platform machines (M144)
+
+On Postgres the platform runs two machines; on SQLite exactly one
+(`packaging/platform/fly.toml`, "Two modes"). `scripts/ci-platform-deploy`
+refuses to deploy more than one machine without the
+`ARUGULA_PLATFORM_DATABASE_URL` secret, since each would have a database
+of its own. A deploy replaces one machine at a time (`[deploy] strategy =
+"rolling"`), each waiting for `/platform.json`, which answers 503 while the
+machine can't reach its database and says whether it leads
+(`{"database": true, "leader": false, ...}`). A stopping machine takes no
+new Cloud job and waits up to 10 s for the ones it holds to checkpoint, so
+they go to the other machine at once, not when their leases run out.
+
+**What the two share, and how.**
+
+- **Cloud jobs** (runs, Cloud workspaces, tabs): every machine runs four
+  workers. A claim is `SELECT … FOR UPDATE OF j SKIP LOCKED` on Postgres,
+  so two machines never take the same job and neither waits on the
+  other's; the lease (`cloud_jobs.lease`, 120 s) is written only if the job
+  is still free. A machine that dies holding a job leaves it to the other
+  when the lease runs out; every checkpoint checks the lease, so a worker
+  that comes back late can't overwrite its successor.
+- **Chat's live events**: each is a row of `chat_events`, numbered across
+  both machines; `pg_notify` wakes the other machine, which sends its own
+  streams what it hadn't (`chat::Hub::catch_up`), and every machine reads
+  them in every 5 s anyway. The notification carries only the number
+  (`chat <seq>`, far under `NOTIFY`'s 8000 bytes): the machine reads the
+  rows. A page's `Last-Event-ID` is `c-<seq>`, the same on both, so a page
+  that drops resumes on whichever machine it reaches, from the database,
+  while the 10,000 newest are kept; otherwise it resyncs.
+- **The listening connection**: each machine holds one connection of its
+  own, outside its pool of four, for `LISTEN` and the leader's lock. It's
+  made again whenever it's lost (backing off to 10 s), then reads what it
+  missed. Both ends send TCP keepalives, so a machine that vanishes without
+  closing it loses the lock within about a minute.
+- **The leader** is the machine whose listening connection holds
+  `pg_try_advisory_lock` (`leader`): it alone applies the hub's change feed
+  to projects, team members and grants, and reports billing's usage. The
+  other tries for it every 5 s. Everything the follower writes is
+  idempotent and checks the hub's current answer, and `hub_feed` only moves
+  forward, so a moment with two leaders (a cut-off leader that hasn't
+  noticed yet) costs nothing.
+
+Both need the cluster's direct address, not PgBouncer's in transaction
+mode, which can't hold a `LISTEN` or a session's lock.
+
+**Locks** (M143 took one advisory lock in every transaction, so the two
+machines' writes took turns; M144 replaced it). What's left:
+
+| Lock | Where | Why no row can do it |
+|---|---|---|
+| `migrations` (transaction) | `migrate::run_postgres` | two machines starting together run the migrations once |
+| `chat_events` (transaction) | `Db::add_chat_event` | events commit in `seq` order, so a machine that has sent up to N never passes one still uncommitted below it |
+| `leader` (session) | the listening connection | one machine applies the feed and reports usage |
+| `window` (transaction) | `copy --to postgres://` | two copies at once wait for each other |
+
+Row-level instead of the old lock:
+
+| What | How |
+|---|---|
+| Cloud claims | `FOR UPDATE OF j SKIP LOCKED`, and the lease written only `WHERE lease_until <= now` |
+| A worker's checkpoint, finish and events | `WHERE lease = ?` (events: the job's row `FOR UPDATE`), so a reclaim waits for the commit |
+| Saving settings; taking or cancelling a waiting rebuild | the Cloud workspace's row `FOR UPDATE` |
+| Opening a tab while its workspace is deleted | the workspace's row `FOR UPDATE`: the delete waits, or is seen |
+| The same request key on both machines | the key's unique index; the loser reads the winner's |
+| Relaunching a tab that's being closed | `status NOT IN ('closing','closed')`, rechecked on the locked row |
+| Numbering a message | `UPDATE chat_rooms … RETURNING last_seq` (as before) |
+| Editing or deleting a message | the message's row `FOR UPDATE` (the room's byte count) |
+| Importing a machine's old threads | the room's row `FOR UPDATE` |
+| Sending an approval push | each push taken for 30 s (`UPDATE … WHERE next_attempt <= now`) before it's sent |
+| Giving `cloud.drive` back | `grants_live`'s unique index, `ON CONFLICT DO NOTHING`, then read |
+| Default projects, grants on join | unique indexes, `ON CONFLICT DO NOTHING` (as before) |
+| `hub_feed` | only moves forward |
+
+Soft on two machines (each was exact while one writer ran at a time): the
+100 custom agents per account and chat's per-team and per-machine room and
+byte limits can be passed by as many requests as arrive at the same
+moment; a workspace that names a secret deleted at that moment fails to
+fill its vault and says so.
+
+**What each machine keeps to itself:** its rate limits (`Limits`: with
+requests landing on both, an account gets up to twice each limit), its
+cache of the hub's answers (each machine follows the hub's feed, with the
+same `cache::DELAY`), its live streams and their caps (20 per account,
+5,000 in all, per machine), chat's one push per room per person a minute,
+and whether the person has the room open (a page open on the other machine
+doesn't stop a push), and its analytics queue (flushed on stop).
+
+**How the hub reaches them.** `http://arugula-platform.internal:7700`
+names both machines. The gateway's client connects to the first address
+that answers and keeps connections open, so calls tend to stay on one
+machine for a while; a machine that stops leaves the name, and the
+gateway's 5 s connect retry finds the other. Flycast
+(`arugula-platform.flycast`, a private IP and an internal service) would
+spread calls and follow health checks through Fly's proxy; it's a choice
+for M145.
 
 ### The first window (M141)
 
@@ -941,10 +1038,13 @@ tables in Postgres instead of control's file; unset, nothing changes. It
 runs `crates/platform/migrations/postgres/` the same way, in one
 transaction under an advisory lock, and logs `the platform's schema, on
 Postgres` with what it ran; there's nothing to adopt, since Postgres starts
-empty and M145 copies the rows in. Point it at the cluster's direct address
+empty and M145 copies the rows in (`arugula-platform copy --from
+/data/platform.db --to postgres://…`, with portable checksums that
+`checksums --db postgres://…` and `checksums --db FILE --portable` print
+alike). Point it at the cluster's direct address
 (`direct.<id>.flympg.net`), not the PgBouncer one: the platform keeps
-prepared statements per connection and takes advisory locks, which a pooler
-in transaction mode breaks. It speaks plain TCP over the private network
+prepared statements per connection, takes advisory locks and `LISTEN`s
+(M144), which a pooler in transaction mode breaks. It speaks plain TCP over the private network
 (add `?sslmode=disable` if the URL asks for TLS). Text is `COLLATE
 pg_c_utf8`, which needs Postgres 17. Hosted control doesn't use it until
 M145's window.
