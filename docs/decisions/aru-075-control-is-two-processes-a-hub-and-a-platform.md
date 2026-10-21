@@ -37,6 +37,12 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/issues/1151"
   - title: "#1153"
     url: "https://github.com/arugula-salad/arugula/issues/1153"
+  - title: "#1204"
+    url: "https://github.com/arugula-salad/arugula/issues/1204"
+  - title: "#1205"
+    url: "https://github.com/arugula-salad/arugula/issues/1205"
+  - title: "#1207"
+    url: "https://github.com/arugula-salad/arugula/issues/1207"
 decided_by: "jhgaylor"
 decided_on: "2026-10-20"
 reviews: []
@@ -79,5 +85,16 @@ and rosters are the machine plane. In files, the process is the key
 One repo, not two: the platform is `crates/platform` beside `crates/control`
 (rejected in the platform planes review: a repo boundary adds release
 coordination, not isolation).
+
+**The GitHub App moves to the platform** (step 4, #1204). Its webhook, its
+private key and webhook secret, `may()` and installation-token minting move
+from the hub to the platform, which mirrors linked repos ("The platform
+mirrors linked GitHub repos: metadata, with content opt-in"). The webhook
+keeps its address, `control.arugula.io/github/webhook`, forwarded by the
+hub's gateway, and its deliveries are deduped in a table, not in memory.
+Sign-in with GitHub stays on the hub ("The hub stays the identity provider;
+passkeys are bound to control.arugula.io"). The hub's poke relay and
+`/api/daemon/github/token` stay until the relay is retired (M174), and reach
+`may()` and minting through the platform's internal API.
 Where: `crates/control/src/main.rs` (`App`), `crates/platform/`, `crates/control/routes.toml`, `crates/control/tables.toml`.
-From: #1150 (platform roadmap, step 2), M134 (#1151), M136 (#1153).
+From: #1150 (platform roadmap, step 2), M134 (#1151), M136 (#1153), #1204 (step 4), M161 (#1207).
