@@ -27,7 +27,7 @@ fn adapter(provider: Provider, login: &Login, tea: Arc<Tea>) -> Arc<dyn Adapter>
         Provider::Github => {
             let host = login::url_host(&login.url).unwrap_or_default();
             let token = super::github::GhToken::new(tea.runner.clone(), &host);
-            Arc::new(super::github::Github::new(&super::github::api_for(&host), http(), token))
+            Arc::new(super::github::client(&super::github::api_for(&host), token))
         }
         // GitLab connects through glab ([`ForgeBlock::connect_gitlab`]),
         // never a tea login: anything else reads anonymously.

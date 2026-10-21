@@ -294,6 +294,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "arugula-forge-github"
+version = "0.0.0"
+dependencies = [
+ "arugula-proto",
+ "futures-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "arugula-mux"
 version = "0.0.0"
 dependencies = [
@@ -392,6 +404,7 @@ dependencies = [
  "arugula-control-wire",
  "arugula-core",
  "arugula-e2e",
+ "arugula-forge-github",
  "arugula-mux",
  "arugula-proto",
  "arugula-testkit",

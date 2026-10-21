@@ -1,0 +1,23 @@
+[package]
+name = "arugula-forge-github"
+# Not the workspace's version: a release bump would rebuild this crate and
+# everything on it. The binaries carry the release (arugula_core::version).
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Arugula's GitHub reader: GitHub's REST API onto the forge model, with tokens from a TokenSource"
+
+[dependencies]
+# The forge model's types (`arugula_proto::forge`), which the web client's are made from.
+arugula-proto = { workspace = true }
+futures-util = { workspace = true }
+# No TLS of its own: the caller brings the client (its roots, timeout and
+# User-Agent), so this adds only what `.json()` needs.
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+url = { workspace = true }
+
+[lints]
+workspace = true

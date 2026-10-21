@@ -3,14 +3,7 @@
 //! `tea` logins Forgejo reads with are in `labs/tea.rs`.)
 
 /// The host (with a port, if not the scheme's) of a URL.
-pub fn url_host(u: &str) -> Option<String> {
-    let u = url::Url::parse(u).ok()?;
-    let host = u.host_str()?.to_ascii_lowercase();
-    Some(match u.port() {
-        Some(p) => format!("{host}:{p}"),
-        None => host,
-    })
-}
+pub use arugula_forge_github::util::url_host;
 
 /// A git remote's host and repository path (`owner/name`, no `.git`):
 /// `ssh://git@host[:port]/o/r.git`, `git@host:o/r.git` or
