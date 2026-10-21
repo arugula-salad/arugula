@@ -54,6 +54,8 @@ struct State {
     flags: BTreeMap<String, Flags>,
     changes: Vec<Change>,
     pushes: Vec<(String, Value, PushOptions)>,
+    /// Accounts signed in with GitHub, by account.
+    github: BTreeMap<String, crate::forge::GithubUser>,
 }
 
 fn done<'a, T: Send + 'a>(t: T) -> BoxFuture<'a, HubResult<T>> {
@@ -108,6 +110,13 @@ impl TestHub {
             Daemon { id: id.into(), account: account.into(), team: team.map(Into::into), name: format!("{id}-box") },
         );
         self.change(ChangeKind::DaemonJoined, id);
+    }
+
+    /// The account signed in with GitHub as `login`, GitHub's user `id`.
+    pub(crate) fn github(&self, account: &str, id: u64, login: &str) {
+        let mut s = self.state.lock().unwrap();
+        s.accounts.insert(account.into());
+        s.github.insert(account.into(), crate::forge::GithubUser { id, login: login.into() });
     }
 
     /// A machine leaves its account.
@@ -276,6 +285,10 @@ impl HubPort for TestHub {
         self.called("team_project");
         let there = self.state.lock().unwrap().teams.contains_key(team);
         done(there.then(|| format!("prj_{team}")))
+    }
+    fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<crate::forge::GithubUser>>> {
+        self.called("github_user");
+        done(self.state.lock().unwrap().github.get(account).cloned())
     }
 }
 

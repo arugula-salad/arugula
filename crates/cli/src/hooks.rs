@@ -135,6 +135,7 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__invite_person",
     "mcp__arugula__device_call",
     "mcp__arugula__cloud",
+    "mcp__arugula__link_repo",
 ];
 
 #[derive(Subcommand)]

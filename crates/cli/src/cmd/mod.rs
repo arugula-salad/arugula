@@ -33,6 +33,7 @@ pub mod mouse;
 pub mod open;
 pub mod pr;
 pub mod process;
+pub mod project;
 pub mod rerun;
 pub mod rules;
 pub mod run;

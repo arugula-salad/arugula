@@ -26,6 +26,12 @@ test("each route parses", () => {
   assert.deepEqual(parse("/dm/dm_00aa11bb22cc33dd-sam"), { page: "dm", room: "dm_00aa11bb22cc33dd" });
   assert.deepEqual(parse(`/p/${P}/workspaces/cw_0123abcd-app`), { page: "workspace", project: P, workspace: "cw_0123abcd" });
   assert.deepEqual(parse(`/p/${P}/workspaces/cw_0123abcd/cwc_4567ef01`), { page: "workspace", project: P, workspace: "cw_0123abcd", tab: "cwc_4567ef01" });
+  assert.deepEqual(parse(`/p/${P}-x/settings`), { page: "project-settings", project: P });
+  assert.deepEqual(parse(`/p/${P}/settings`, "?link=acme%2Fapp"), { page: "project-settings", project: P, link: "acme/app" });
+  assert.deepEqual(parse(`/p/${P}/settings`, "?link=..%2F..%2Fx"), { page: "project-settings", project: P }, "not a repo");
+  assert.deepEqual(parse("/installed", `?state=${encodeURIComponent(`${P}:acme/app`)}&installation_id=9&setup_action=install`), { page: "installed", project: P, repo: "acme/app" });
+  assert.deepEqual(parse("/installed", "?state=https%3A%2F%2Fevil.example%2F"), { page: "installed" }, "only a project and a repo");
+  assert.deepEqual(parse("/installed"), { page: "installed" });
 });
 
 test("anything else is missing, never a guess", () => {
@@ -43,6 +49,8 @@ test("links carry the current slug, and read back as the same route", () => {
     { page: "chat", project: P, view: "search", q: "has:quote deploy" },
     { page: "dm", room: "dm_00aa11bb22cc33dd" },
     { page: "workspace", project: P, workspace: "cw_0123abcd", tab: "cwc_4567ef01" },
+    { page: "project-settings", project: P, link: "acme/app" },
+    { page: "installed", project: P, repo: "acme/app" },
   ];
   assert.equal(pathOf(routes[1], names), `/p/${P}-arugula-team`);
   assert.equal(pathOf(routes[2], names), `/p/${P}-arugula-team/chat/ch_0123456789abcdef-general?msg=4`);

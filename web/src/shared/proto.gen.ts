@@ -1327,6 +1327,15 @@ token: string | null,
 pane: number | null, };
 
 /**
+ * `POST /api/projects/{project}/repos`: link `OWNER/NAME`. A project
+ * member who is an admin or maintainer of it on GitHub may. When the
+ * GitHub App isn't installed where it lives, the answer is a 409 with
+ * `reason: "install_app"` and `install_url`, GitHub's page to install it,
+ * which brings them back to the project's settings.
+ */
+export type LinkRepo = { repo: string, };
+
+/**
  * M37: a pull request that refers to an issue (from the issue's
  * timeline), or one found by its head branch.
  */
@@ -1335,6 +1344,37 @@ export type Linked = { number: number, title: string, state: ItemState, url: str
  * Its head branch, when the forge said.
  */
 head?: string, };
+
+/**
+ * A repo linked to a project, or unlinked and waiting for the purge.
+ */
+export type LinkedRepo = { 
+/**
+ * GitHub's id for it.
+ */
+repo_id: number, 
+/**
+ * `OWNER/NAME`.
+ */
+full_name: string, private: boolean, 
+/**
+ * Who linked it (an account id), when that account is still there.
+ */
+linked_by: string | null, linked_at: number, 
+/**
+ * When it was unlinked: nothing is read from GitHub for it since.
+ */
+unlinked_at: number | null, 
+/**
+ * When its rows go, unless it's linked again first.
+ */
+purge_after: number | null, };
+
+export type LinkedRepos = { 
+/**
+ * The project's id (`personal` asked is answered with the real one).
+ */
+project: string, repos: Array<LinkedRepo>, };
 
 /**
  * One TCP port something listens on, reachable from loopback.

@@ -104,6 +104,9 @@ fn generate() -> String {
     }
     // The platform page's projects (M150).
     c.visit::<arugula_control_wire::projects::Projects>();
+    // A project's linked repos (M163).
+    c.visit::<arugula_control_wire::projects::LinkedRepos>();
+    c.visit::<arugula_control_wire::projects::LinkRepo>();
     // Cloud workspaces (M137): what control's `/api/cloud/` answers with.
     {
         use arugula_cloud_wire::*;

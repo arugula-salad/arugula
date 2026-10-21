@@ -45,3 +45,30 @@ its grants, and one that joins again gets a new one. Grants live in
 the platform's `grants` table (`crates/platform/src/db/projects.rs`, "Grants,
 not impersonation" in [DECISIONS.md](../DECISIONS.md)), and the routes are
 the platform's behind the hub's gate (`crates/platform/src/grants.rs`).
+
+**Linked repos (M163, #1209).** A GitHub repo is linked to one project, by
+a member of it (the account, for a personal project; a team's owner or
+editor) who is an admin or maintainer of the repo on GitHub. Control checks
+that by the person's numeric GitHub id (from signing in with GitHub),
+through a read-only installation token of its GitHub App. Where the App
+isn't installed for the repo, the answer is a 409 with `reason:
+"install_app"` and GitHub's page to install it, whose `state` is
+`<project>:<owner>/<name>`; the App's setup URL is the platform page's
+`/installed`, which brings the person back to the project's settings with
+the repo filled in. The same machines that drive Cloud workspaces link for
+their owner (a live `cloud.drive` grant), so agents can through MCP
+(`list` kind `linked_repos`, `link_repo`).
+
+```
+arugula project ls                        # your personal project's linked repos
+arugula project link acme/app             # --project <id or name> for another
+arugula project unlink acme/app
+```
+
+Unlinking stops reading GitHub for the repo at once. So does the App's
+installation being deleted or suspended, or the repo being taken out of it
+(its `installation` and `installation_repositories` webhooks). The repo's
+rows (items, checks, events, content, drafts and inbox rows) go within a day
+(`purge_after`, `crates/platform/src/forge/links.rs`) unless it's linked
+again to the same project first. Linking it to another project instead
+purges the old project's rows at once.

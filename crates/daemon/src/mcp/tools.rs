@@ -986,6 +986,7 @@ const LIST: &[Kind] = &[
     super::cloud::LIST_WORKSPACES,
     super::cloud::LIST_TABS,
     super::cloud::LIST_AGENTS,
+    super::repos::LIST_LINKED,
 ];
 
 /// The jobs that work but aren't listed without their Labs flag: they're for
@@ -1396,6 +1397,18 @@ fn all_defs() -> Vec<Def> {
             read_only: false,
             destructive: true,
             idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
+        Def {
+            name: "link_repo",
+            title: "Link a GitHub repo to a project",
+            description: "Link a GitHub repo to one of the user's projects in Arugula control, or unlink it, as the user (the owner of this machine). Linking takes admin or maintain on the repo on GitHub; unlinking purges its rows within a day. list kind linked_repos lists them.",
+            args: Args::Kinds { kinds: table(super::repos::LINK), default: None },
+            read_only: false,
+            destructive: true,
+            idempotent: true,
             open_world: true,
             flag: None,
             output: None,
@@ -1818,6 +1831,14 @@ impl<'a> Call<'a> {
             },
             ("list", Some("cloud_agents")) => match parse::<NoArgs>(args) {
                 Ok(_) => self.list_cloud_agents().await,
+                Err(e) => Err(e),
+            },
+            ("list", Some("linked_repos")) => match parse(args) {
+                Ok(a) => self.list_linked_repos(a).await,
+                Err(e) => Err(e),
+            },
+            ("link_repo", Some(kind @ ("link" | "unlink"))) => match parse(args) {
+                Ok(a) => self.link_repo(kind, a).await,
                 Err(e) => Err(e),
             },
             ("read_cloud", Some(kind)) => self.read_cloud(kind, args).await,
@@ -4222,7 +4243,7 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full, fl(false));
-        assert_eq!(all.len(), 21 - NO_FORGE);
+        assert_eq!(all.len(), 22 - NO_FORGE);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -4363,9 +4384,9 @@ mod tests {
             assert!(!every.contains(&name), "{name} is an agent's again");
             assert!(route(name, json!({}), fl(true)).is_err(), "{name}");
         }
-        assert_eq!(every.len(), 23);
-        assert_eq!(defs(fl(false)).len(), 21 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 23 - NO_FORGE);
+        assert_eq!(every.len(), 24);
+        assert_eq!(defs(fl(false)).len(), 22 - NO_FORGE);
+        assert_eq!(defs(fl(true)).len(), 24 - NO_FORGE);
         assert_eq!(every.len(), defs(fl(false)).len() + 2 + NO_FORGE, "and delegate and doc");
     }
 

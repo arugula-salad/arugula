@@ -309,6 +309,10 @@ impl HubPort for HttpHub {
     fn forge_pokes<'a>(&'a self, pokes: &'a [Poke]) -> BoxFuture<'a, HubResult<u32>> {
         Box::pin(self.0.call("forge_pokes", PokesArgs { pokes: pokes.to_vec() }))
     }
+
+    fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<GithubUser>>> {
+        Box::pin(self.0.call("github_user", AccountArgs { account: account.to_owned() }))
+    }
 }
 
 /// What one side's internal API answers with: the port it serves, and
@@ -389,6 +393,7 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             }
             "team_project" => answer(hub.team_project(&args::<TeamArgs>(&body)?.team).await?)?,
             "forge_pokes" => answer(hub.forge_pokes(&args::<PokesArgs>(&body)?.pokes).await?)?,
+            "github_user" => answer(hub.github_user(&args::<AccountArgs>(&body)?.account).await?)?,
             _ => return Ok(None),
         }))
     }

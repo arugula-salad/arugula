@@ -358,6 +358,16 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::grants::GrantsCmd>,
     },
+    /// A project's linked GitHub repos on Arugula control.
+    ///
+    /// `link OWNER/REPO` links one (you need admin or maintain on it on
+    /// GitHub), `unlink` takes it out, `ls` lists them. `--project` names a
+    /// project by id or name; the default is your personal one. Needs
+    /// `arugula login`.
+    Project {
+        #[command(subcommand)]
+        cmd: cmd::project::ProjectCmd,
+    },
     /// How Arugula is doing on this machine.
     ///
     /// The daemon (its version, the service that runs it, its binary and
@@ -597,6 +607,9 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
     if let Command::Grants { cmd } = cli.cmd {
         return cmd::grants::run(cmd, cli.json);
     }
+    if let Command::Project { cmd } = cli.cmd {
+        return cmd::project::run(cmd, cli.json);
+    }
     if let Command::Bridge { probe } = cli.cmd {
         // On a box, for a client that ssh'd in: this daemon's socket on
         // stdin and stdout.
@@ -693,7 +706,8 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         | Command::Join(_)
         | Command::Login(_)
         | Command::Logout
-        | Command::Grants { .. } => {
+        | Command::Grants { .. }
+        | Command::Project { .. } => {
             unreachable!("handled before connecting")
         }
         Command::Ls => cmd::ls::run(ctx),

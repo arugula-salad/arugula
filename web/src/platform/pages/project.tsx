@@ -24,9 +24,16 @@ export function ProjectHome({ id }: { id: string }) {
   const rooms = chat.on ? chat.rooms.filter((r) => (p.team ? r.team === p.team.id : !r.team) && (r.kind === "channel" || r.kind === "dm")) : [];
   const workspaces = p.team ? [] : cloudWorkspaces.list;
   const chatPath = pathOf({ page: "chat", project: p.id }, names);
+  const settingsPath = pathOf({ page: "project-settings", project: p.id }, names);
   return (
     <section class="platform-section" data-project-home={p.id}>
       <h1>{p.name}</h1>
+      <p>
+        <a href={settingsPath} data-project-settings onClick={(e) => follow(e, settingsPath)}>
+          Project settings
+        </a>
+        <span class="dim"> · linked repos</span>
+      </p>
       <div class="platform-columns">
         <div>
           <h2>

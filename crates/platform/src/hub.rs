@@ -40,6 +40,8 @@ use arugula_e2e::team::TeamRole;
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 
+use crate::forge::GithubUser;
+
 /// What a hub call answers.
 pub type HubResult<T> = anyhow::Result<T>;
 
@@ -164,6 +166,15 @@ pub trait HubPort: Send + Sync {
     fn forge_pokes<'a>(&'a self, pokes: &'a [Poke]) -> BoxFuture<'a, HubResult<u32>> {
         let _ = pokes;
         Box::pin(async { anyhow::bail!("this hub doesn't relay forge pokes") })
+    }
+
+    /// The account's GitHub identity (M163), if it signed in with GitHub:
+    /// its numeric id, which is who it is on GitHub, and the login control
+    /// last saw. `None` for an account that didn't, or isn't there. A hub
+    /// from before M163 doesn't have it.
+    fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<GithubUser>>> {
+        let _ = account;
+        Box::pin(async { anyhow::bail!("this hub doesn't say GitHub identities") })
     }
 }
 

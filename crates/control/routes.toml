@@ -1147,6 +1147,30 @@ process = "platform"
 auth = "session"
 clients = ["page"]
 
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/repos"  # wire::projects::PROJECT_REPOS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "A project's linked GitHub repos (M163), for its members: project metadata, never a forge item."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/repos"  # wire::projects::PROJECT_REPOS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "Links a repo (M163): a member who is an admin or maintainer on GitHub, checked by numeric id through the App's installation token."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/repos/{owner}/{name}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "Unlinks a repo (M163): ingest stops at once, and the purge takes its rows within a day."
+
 # ---- platform: billing
 
 [[route]]

@@ -277,6 +277,29 @@ pub struct Install {
     pub account: String,
     /// That account's numeric id.
     pub account_id: u64,
+    /// `User` or `Organization`.
+    pub account_type: String,
+}
+
+/// A repository as GitHub says it to the App, with what a person may do
+/// on it ([`GithubApp::repo_role`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepoRole {
+    pub id: u64,
+    /// `OWNER/NAME` as GitHub spells it now.
+    pub full_name: String,
+    pub private: bool,
+    /// GitHub's role for the person: `admin`, `maintain`, `write`,
+    /// `triage` or `read`.
+    pub role: String,
+}
+
+impl RepoRole {
+    /// Whether the role may link the repo to a project (M163): an admin or
+    /// a maintainer.
+    pub fn may_link(&self) -> bool {
+        matches!(self.role.as_str(), "admin" | "maintain")
+    }
 }
 
 /// A person by their GitHub identity: the numeric id is who they are, the
@@ -412,6 +435,7 @@ impl GithubApp {
                     id,
                     account: v["account"]["login"].as_str().unwrap_or_default().to_owned(),
                     account_id: v["account"]["id"].as_u64().unwrap_or(0),
+                    account_type: v["account"]["type"].as_str().unwrap_or_default().to_owned(),
                 })
             }
             404 => None,
@@ -606,6 +630,69 @@ impl GithubApp {
             (Some(p), Some(_)) if p != "none" => Ok(install),
             _ => Err(format!("GitHub doesn't list {login} as a collaborator on {repo}")),
         }
+    }
+
+    /// [`installation`](Self::installation), asked of GitHub now: a person
+    /// who just installed the App is waiting on the answer.
+    pub async fn installation_now(&self, http: &reqwest::Client, repo: &str) -> anyhow::Result<Option<Install>> {
+        self.installs.lock().unwrap().remove(&repo.to_ascii_lowercase());
+        self.installation(http, repo).await
+    }
+
+    /// Where a person installs the App (or picks the repos an installation
+    /// has): GitHub's page, with `state`, which GitHub hands back to the
+    /// App's setup URL afterwards.
+    pub fn install_url(&self, state: &str) -> String {
+        let state: String = url::form_urlencoded::byte_serialize(state.as_bytes()).collect();
+        format!("https://github.com/apps/{}/installations/new?state={state}", self.slug)
+    }
+
+    /// `repo` through `install`, and `user`'s role on it, by their numeric
+    /// id: what linking checks (M163). Asked with a read token for the
+    /// repository ([`Purpose::Read`], logged as `c`'s when it's minted).
+    /// `Err` is why not, for the person.
+    pub async fn repo_role(
+        &self,
+        c: &Caller<'_>,
+        install: &Install,
+        user: &GithubUser,
+        repo: &str,
+    ) -> Result<RepoRole, String> {
+        let http = c.http;
+        let token = match self.read_token(c, install.id, Repo::Name(repo), Purpose::Read).await {
+            Ok(t) => t,
+            Err(e) => {
+                warn!(error = %e, "minting a token to check a role");
+                return Err("couldn't check your role on it with the App".into());
+            }
+        };
+        let get = |path: String| {
+            let token = token.secret();
+            async move {
+                let r = self.req(http, reqwest::Method::GET, &path, token).send().await.map_err(|e| e.to_string())?;
+                let ok = r.status().is_success();
+                let v: Value = r.json().await.unwrap_or_default();
+                Ok::<_, String>(ok.then_some(v))
+            }
+        };
+        let Some(r) = get(format!("repos/{repo}")).await? else {
+            return Err(format!("the App can't see {repo}: add it to the App's installation on GitHub"));
+        };
+        let (Some(id), Some(full_name)) = (r["id"].as_u64(), r["full_name"].as_str()) else {
+            return Err(format!("GitHub didn't say what {repo} is"));
+        };
+        let login = &user.login;
+        let p = get(format!("repos/{full_name}/collaborators/{login}/permission")).await?.unwrap_or_default();
+        // The login control knows may belong to someone else by now.
+        if p["user"]["id"].as_u64().is_some_and(|id| id != user.id) {
+            return Err(format!("the GitHub login {login} isn't yours any more: sign in to control with GitHub again"));
+        }
+        let role = match (p["role_name"].as_str(), p["permission"].as_str(), p["user"]["id"].as_u64()) {
+            (Some(r), _, Some(_)) => r.to_owned(),
+            (None, Some(r), Some(_)) => r.to_owned(),
+            _ => return Err(format!("GitHub doesn't list {login} as a collaborator on {full_name}")),
+        };
+        Ok(RepoRole { id, full_name: full_name.to_owned(), private: r["private"].as_bool().unwrap_or(true), role })
     }
 
     /// Installations changed (an install, a repository added or removed).

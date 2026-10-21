@@ -407,6 +407,8 @@ async fn pokes(f: &dyn Fixture) {
     };
     assert_eq!(hub.forge_pokes(&[poke]).await.unwrap(), 0);
     assert_eq!(hub.forge_pokes(&[]).await.unwrap(), 0);
+    // M163: who someone is on GitHub; nobody, for an account that isn't.
+    assert_eq!(hub.github_user("acct-none").await.unwrap(), None);
 }
 
 /// Every change after `after`, a page of `limit` at a time.

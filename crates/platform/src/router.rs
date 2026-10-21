@@ -16,7 +16,8 @@ use crate::{Platform, billing, chat, cloud, forge, grants, projects};
 /// Every route the platform answers. Each moved here from `routes()` in
 /// `crates/control/src/main.rs` with the same path and methods: billing's
 /// (M139), Cloud's (M137), chat's (M138), then grants'; the platform
-/// page's own (M150); and the GitHub App's webhook (M161).
+/// page's own (M150); the GitHub App's webhook (M161); and linked repos
+/// (M163).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -75,6 +76,8 @@ fn routes() -> Routes {
         .route("/api/grants", get(grants::list).post(grants::give))
         .route("/api/grants/{id}/revoke", post(grants::revoke))
         .route(arugula_control_wire::projects::PROJECTS, get(projects::list))
+        .route(arugula_control_wire::projects::PROJECT_REPOS, get(forge::links::list).post(forge::links::link))
+        .route("/api/projects/{project}/repos/{owner}/{name}", axum::routing::delete(forge::links::unlink))
         .route("/github/webhook", post(forge::webhook))
 }
 

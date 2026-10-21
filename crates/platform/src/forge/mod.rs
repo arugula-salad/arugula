@@ -21,6 +21,10 @@
 //! - **Tokens** (M167): one helper mints them all, each for one repository
 //!   with the least it needs, and logs each mint ([`app`]'s docs).
 //!
+//! - **Linked repos** ([`links`], M163): a project's members who maintain
+//!   a repo on GitHub link it to the project; the installation's events
+//!   unlink it, and a purge takes an unlinked repo's rows within a day.
+//!
 //! First-time lookups at GitHub are rate-limited per account
 //! ([`FORGE_LOOKUPS`], counted here).
 
@@ -35,10 +39,13 @@ use tracing::info;
 use crate::Platform;
 
 mod app;
+pub mod links;
+#[cfg(test)]
+mod links_tests;
 mod webhook;
 
 pub use app::{
-    Caller, GithubApp, GithubUser, Install, Purpose, ReadToken, Repo, WriteToken, Writes, epoch_of, parse_pem,
+    Caller, GithubApp, GithubUser, Install, Purpose, ReadToken, Repo, RepoRole, WriteToken, Writes, epoch_of, parse_pem,
 };
 pub use webhook::{pokes, signed, webhook};
 
@@ -216,9 +223,12 @@ pub async fn token(
     }))
 }
 
-/// The forge's background work: webhook deliveries older than a week go,
-/// and the token log's mints older than a year.
+/// The forge's background work: unlinked repos' rows are purged
+/// ([`links::start`], with or without the App: deleting an account
+/// unlinks too), webhook deliveries older than a week go, and the token
+/// log's mints older than a year.
 pub fn start(p: &Arc<Platform>) {
+    links::start(p);
     if p.github.is_none() {
         return;
     }

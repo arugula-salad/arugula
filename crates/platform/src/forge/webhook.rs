@@ -108,10 +108,16 @@ pub async fn webhook(State(p): State<Arc<Platform>>, headers: HeaderMap, body: B
         info!(%delivery, "GitHub pinged the webhook");
         return Json(json!({ "pong": true })).into_response();
     }
+    let v: Value = serde_json::from_slice(&body).unwrap_or_default();
     if event.starts_with("installation") {
         gh.forget();
+        // M163: kept, and what it takes away unlinked.
+        if let Err(e) = super::links::installation_event(&p, &event, &v, now_ms()) {
+            warn!(%event, %delivery, error = format!("{e:#}"), "keeping a GitHub installation's change");
+            let _ = p.db.forget_delivery(&delivery);
+            return err(StatusCode::INTERNAL_SERVER_ERROR, "couldn't keep the installation's change").into_response();
+        }
     }
-    let v: Value = serde_json::from_slice(&body).unwrap_or_default();
     let pokes = pokes(&event, &delivery, &v);
     if pokes.is_empty() {
         return (StatusCode::ACCEPTED, Json(json!({ "relayed": 0 }))).into_response();
