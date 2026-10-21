@@ -11,10 +11,15 @@ use std::time::Duration;
 
 use tracing::warn;
 
-/// An HTTP client with this timeout, verifying with the platform's roots,
-/// or the bundled ones when there are none.
+/// What control says it is to the services it calls. GitHub refuses a
+/// request without a User-Agent (403), and the forge client leaves it to
+/// the caller (`arugula-forge-github`), so every request carries this one.
+pub const USER_AGENT: &str = concat!("arugula-control/", env!("CARGO_PKG_VERSION"));
+
+/// An HTTP client with this timeout and [`USER_AGENT`], verifying with the
+/// platform's roots, or the bundled ones when there are none.
 pub fn client(timeout: Duration) -> anyhow::Result<reqwest::Client> {
-    build(|| reqwest::Client::builder().timeout(timeout))
+    build(|| reqwest::Client::builder().timeout(timeout).user_agent(USER_AGENT))
 }
 
 /// The client `builder` makes, with the platform's roots, or the bundled
@@ -44,5 +49,24 @@ mod tests {
     fn bundled_roots_make_a_client() {
         assert!(webpki_root_certs::TLS_SERVER_ROOT_CERTS.len() > 100);
         bundled(reqwest::Client::builder().timeout(Duration::from_secs(1))).unwrap();
+    }
+
+    /// Every request says who it is: GitHub's API answers 403 without it,
+    /// which the mirror's poller met live (#1210).
+    #[tokio::test]
+    async fn requests_carry_a_user_agent() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", l.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut s, _) = l.accept().await.unwrap();
+            let mut buf = vec![0; 4096];
+            let n = s.read(&mut buf).await.unwrap();
+            s.write_all(b"HTTP/1.1 204 No Content\r\nconnection: close\r\n\r\n").await.unwrap();
+            String::from_utf8_lossy(&buf[..n]).to_ascii_lowercase()
+        });
+        client(Duration::from_secs(5)).unwrap().get(url).send().await.unwrap();
+        let req = server.await.unwrap();
+        assert!(req.contains(&format!("user-agent: {}", USER_AGENT.to_ascii_lowercase())), "{req}");
     }
 }
