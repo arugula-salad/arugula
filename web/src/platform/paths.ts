@@ -24,6 +24,7 @@
 // project once it knows the reader's, and puts the full path in their place.
 //
 //   /chat, /chat/:room             chat (the first team's), a room in it
+//   /chat/activity, /chat/search?q=…
 //   /workspaces, /workspaces/:id[/:tab], /past/:id
 //                                  the reader's own Cloud workspaces
 //
@@ -41,7 +42,7 @@ export type Route =
   | { page: "agents" }
   | { page: "settings" }
   /** An id-only address, to be put where it belongs (`resolve`). */
-  | { page: "find"; what: "chat"; room?: string; msg?: number }
+  | { page: "find"; what: "chat"; room?: string; msg?: number; view?: "activity" | "search"; q?: string }
   | { page: "find"; what: "workspaces"; workspace?: string; tab?: string }
   | { page: "find"; what: "past"; id: string }
   | { page: "missing"; path: string };
@@ -93,6 +94,8 @@ export function parse(path: string, search = ""): Route {
   if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
   if (parts[0] === "chat" && parts.length <= 2) {
     if (parts.length === 1) return { page: "find", what: "chat" };
+    if (parts[1] === "activity") return { page: "find", what: "chat", view: "activity" };
+    if (parts[1] === "search") return { page: "find", what: "chat", view: "search", q: q.get("q") ?? "" };
     const room = idOf(parts[1]);
     return room ? { page: "find", what: "chat", room, ...msg } : missing;
   }
@@ -166,7 +169,11 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "settings":
       return "/settings";
     case "find":
-      if (r.what === "chat") return r.room ? `/chat/${s(r.room)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}` : "/chat";
+      if (r.what === "chat") {
+        if (r.view === "activity") return "/chat/activity";
+        if (r.view === "search") return `/chat/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
+        return r.room ? `/chat/${s(r.room)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}` : "/chat";
+      }
       if (r.what === "past") return `/past/${s(r.id)}`;
       return `/workspaces${r.workspace ? `/${s(r.workspace)}${r.tab ? `/${s(r.tab)}` : ""}` : ""}`;
     case "missing":

@@ -47,7 +47,7 @@ export function resolve(r: Extract<Route, { page: "find" }>): string | null {
       return roomPath(r.room, r.msg);
     }
     const team = session.projects.find((p) => p.team)?.id;
-    return pathOf({ page: "chat", project: team ?? own }, names);
+    return pathOf({ page: "chat", project: team ?? own, ...(r.view ? { view: r.view, q: r.q } : {}) }, names);
   }
   if (r.what === "past") return pathOf({ page: "past", project: own, id: r.id }, names);
   return pathOf(r.workspace ? { page: "workspace", project: own, workspace: r.workspace, ...(r.tab ? { tab: r.tab } : {}) } : { page: "workspaces", project: own }, names);
