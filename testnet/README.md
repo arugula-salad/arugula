@@ -26,6 +26,7 @@ ARUGULA_TESTNET_PLATFORM=two just testnet up control  # two platform machines on
 just testnet test control platform-fanout platform-handover  # chat and Cloud across the two
 just testnet measure control   # M140: platform routes' latency, in process vs out
 testnet/window.sh              # M141: the first window's runbook, rehearsed, both rollbacks too
+testnet/window2.sh             # M145: SQLite to Postgres, two machines, the nightly dump and drill, rollbacks
 just testnet up tailnet        # headscale and two Tailscale nodes
 just testnet measure tailnet   # S28: ssh against the tailnet path
 testnet/selfupdate.sh OLD NEW  # #391: the daemon updates itself (two `just static` builds)
@@ -225,6 +226,50 @@ It stops at the first thing that doesn't hold. The transcript is in
 `just testnet down` removes it (and the state directory with the
 databases). With another stack running, give it its own
 `COMPOSE_PROJECT_NAME` and ports (Conventions, below).
+
+## M145's window, rehearsed
+
+`testnet/window2.sh` runs the second window's runbook (docs/control-ops.md,
+"The second window (M145)") with `window.yaml` and `window2.yaml` added to
+compose.yaml. It starts where production is after M141: control as the
+gateway, the platform out of process on its own file. The platform's
+database is a variable (`ARUGULA_TESTNET_PLATFORM_DATABASE_URL`: empty for
+the file, the `postgres` service's URL after the flip), so recreating the
+container stands in for setting a Fly secret. `platform2` is the second
+machine, and both answer to `platforms`, the stand-in for Flycast. `s3`
+(rclone's S3 server) stands in for R2, and `dump` is the nightly dump's
+image (packaging/platform-dump) around this tree's static binary. In
+order:
+
+1. a person's chat and Cloud, written through the gateway (`window.ts seed`);
+2. the notice;
+3. pre-checks: `migrations` on the file, a timed trial copy into Postgres
+   (the URL handed over as `@/tmp/pg.url`, as `fly ssh sftp put` will),
+   and its secrets open;
+4. the window: maintenance on; the platform paused; portable checksums of
+   the file (`before.txt`); `copy --replace` into Postgres; Postgres's
+   checksums and the file's both equal `before.txt`; secrets open. Then
+   the flip onto Postgres (still paused), a rollback to the untouched file,
+   the flip again, the unpause, and maintenance off;
+5. post-checks, then new work on Postgres, including a secret decrypted
+   for Managoat;
+6. two machines: `platform2` up, exactly one leading, and the hub switched
+   to `platforms`. Both serve: a stream and posts through the gateway, the
+   `platform-fanout` claim, and each machine stopped in turn while the
+   gateway keeps answering;
+7. the first nightly dump (`docker compose run dump`) and the restore
+   drill (`scripts/platform-restore-drill`) against it. A record that lies
+   about one table must fail the drill, and so must a dump with the wrong
+   database password;
+8. rollback after people wrote on Postgres: one machine, the hub back on
+   `platform`, Postgres copied back over the file (checked against a
+   second copy), the platform back on its file, and the new work there.
+
+As with `window.sh`, it stops at the first thing that doesn't hold. The
+transcript is in `.state/window/transcript.txt`. Run it with its own
+`COMPOSE_PROJECT_NAME` and ports, adding `ARUGULA_TESTNET_PLATFORM_PORT`,
+`ARUGULA_TESTNET_PLATFORM2_PORT`, `ARUGULA_TESTNET_MANAGOAT_PORT` and
+`ARUGULA_TESTNET_S3_PORT`, and run `just testnet down` afterwards.
 
 ## Conventions
 

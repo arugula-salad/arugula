@@ -384,7 +384,7 @@ fn running_env(var: &str) -> Option<(u32, String)> {
 
 /// The first words that make either binary run one of these instead of
 /// serving (and `platform`, control's prefix for them).
-pub const COMMANDS: [&str; 4] = ["copy", "checksums", "secrets-check", "platform"];
+pub const COMMANDS: [&str; 5] = ["copy", "checksums", "secrets-check", "migrations", "platform"];
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -420,6 +420,19 @@ enum What {
         /// first window's (rowids and SQLite's types).
         #[arg(long)]
         portable: bool,
+        /// Postgres only: read in the snapshot another session exported
+        /// with `pg_export_snapshot()` (and still holds), as a
+        /// `pg_dump --snapshot` of it does: the nightly dump's record.
+        #[arg(long)]
+        snapshot: Option<String>,
+    },
+    /// The migrations a database has applied, against this build's,
+    /// read-only: whether this build would run any, and refused when it
+    /// can't run on it at all.
+    Migrations {
+        /// A file, or a `postgres://` URL.
+        #[arg(long)]
+        db: Place,
     },
     /// Whether every cloud secret in the database opens with the cloud
     /// secret key: the running server's, else ARUGULA_CLOUD_SECRET_KEY
@@ -444,10 +457,10 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
             let r = portable::copy(&from, &to, replace)?;
             print!("{}", r.render(&from, &to));
         }
-        What::Checksums { db, portable } => {
+        What::Checksums { db, portable, snapshot } => {
             let (sums, kind) = match &db {
-                Place::File(path) if !portable => (checksums(path)?, ""),
-                _ => (portable::checksums(&db)?, ", portable checksums"),
+                Place::File(path) if !portable && snapshot.is_none() => (checksums(path)?, ""),
+                _ => (portable::checksums_in(&db, snapshot.as_deref())?, ", portable checksums"),
             };
             println!("the platform's tables in {db} (read-only{kind})\n");
             println!("{:<24} {:>9}  sha256", "table", "rows");
@@ -455,6 +468,13 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
                 println!("{t:<24} {n:>9}  {s}");
             }
             println!("\n{} tables, {} rows", sums.len(), sums.iter().map(|s| s.1).sum::<u64>());
+        }
+        What::Migrations { db } => {
+            let m = portable::migrations(&db)?;
+            print!("{}", m.render(&db));
+            if !m.pending.is_empty() {
+                bail!("this build would migrate {db}: it's at {}", m.applied.last().map_or(0, |a| a.0));
+            }
         }
         What::SecretsCheck { db } => {
             const VAR: &str = "ARUGULA_CLOUD_SECRET_KEY";

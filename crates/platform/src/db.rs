@@ -109,6 +109,14 @@ impl Db {
         Ok(db)
     }
 
+    /// Postgres at `url` as it is, with no migration run: for the window's
+    /// tools that only read (`checksums`, `secrets-check`, `migrations`;
+    /// M145's nightly dump runs them on the live cluster), which check its
+    /// migrations themselves.
+    pub(crate) fn postgres_as_is(url: &str) -> anyhow::Result<Self> {
+        Ok(Self { backend: Backend::Postgres(Box::new(pg::Pool::connect(url, None)?)) })
+    }
+
     /// A database of its own in memory, for tests: nothing of the hub's is
     /// in it.
     pub fn memory() -> Self {

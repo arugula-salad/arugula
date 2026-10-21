@@ -21,6 +21,11 @@
 //                 tab, and a second workspace that names the secret (the
 //                 platform decrypts it to put it in Managoat's vault):
 //                 {message, workspace}
+//   gateway N SEED
+//                 through control's gateway, as a page has it (M145, two
+//                 machines behind it): a live stream, then N messages posted
+//                 in the first room, each heard on the stream:
+//                 {room, heard, heard_ms}
 
 import { readFileSync } from "node:fs";
 import { Device } from "../web/fixtures/device.ts";
@@ -175,6 +180,35 @@ async function write(d: Device, label: string, s: any) {
   return { message: text, workspace: ws };
 }
 
+async function gateway(d: Device, n: number, s: any) {
+  const room = s.rooms[0];
+  const live = await fetch(d.reach(d.control + "/api/chat/live"), { headers: { cookie: d.cookie, origin: d.control } });
+  if (live.status !== 200) throw new Error(`GET /api/chat/live: ${live.status}`);
+  let heard = "";
+  const reader = live.body!.getReader();
+  (async () => {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      heard += new TextDecoder().decode(value);
+    }
+  })().catch(() => {});
+  await until("the stream's hello", async () => (heard.includes('"type":"hello"') ? true : undefined), 10_000);
+  const ms: number[] = [];
+  for (let i = 1; i <= n; i++) {
+    const posted = Date.now();
+    const sent = await must(d, "POST", `/api/chat/rooms/${room}/messages`, { text: `through the gateway ${i} of ${n}` });
+    const event = `"type":"message","room":"${room}","seq":${sent.seq}`;
+    while (!heard.includes(event)) {
+      if (Date.now() - posted > 10_000) throw new Error(`the live stream didn't carry seq ${sent.seq}: ${heard.slice(-400)}`);
+      await sleep(10);
+    }
+    ms.push(Date.now() - posted);
+  }
+  await reader.cancel();
+  return { room, heard: ms.length, heard_ms: ms };
+}
+
 async function main() {
   const d = await Device.load(state);
   const seeded = () => JSON.parse(readFileSync(rest.at(-1)!, "utf8"));
@@ -191,8 +225,10 @@ async function main() {
     }
     case "write":
       return write(d, rest[0], seeded());
+    case "gateway":
+      return gateway(d, Number(rest[0]), seeded());
     default:
-      throw new Error(`unknown command ${cmd ?? "(none)"}: seed, check, write`);
+      throw new Error(`unknown command ${cmd ?? "(none)"}: seed, check, notice, write, gateway`);
   }
 }
 

@@ -285,3 +285,117 @@ fn a_copy_to_postgres_and_back_matches() {
         .unwrap();
     assert_eq!(rowids, [2, 3], "the rowids queries order by, kept");
 }
+
+/// `migrations` reads what a database has applied without running
+/// anything (M145's drill and nightly dump): a file this build made has
+/// nothing to run; an edited migration is refused; a database that has
+/// never seen the platform is refused.
+#[test]
+fn migrations_reads_what_a_file_applied() {
+    let d = Dir::new();
+    let file = d.at("platform.db");
+    drop(crate::db::Db::open(&file).unwrap());
+    let at = Place::File(file.clone());
+    let m = portable::migrations(&at).unwrap();
+    let known = crate::db::migrate::Dialect::Sqlite.migrations().last().unwrap().version;
+    assert_eq!((m.known, m.pending.clone(), m.ahead.clone()), (known, vec![], vec![]));
+    assert_eq!(m.applied.len() as u32, known);
+    assert!(m.render(&at).contains("nothing to run"), "{}", m.render(&at));
+
+    rusqlite::Connection::open(&file)
+        .unwrap()
+        .execute("UPDATE platform_migrations SET checksum = 'edited' WHERE version = 1", [])
+        .unwrap();
+    let e = portable::migrations(&at).unwrap_err();
+    assert!(format!("{e:#}").contains("has changed since it ran"), "{e:#}");
+
+    let empty = d.at("empty.db");
+    rusqlite::Connection::open(&empty).unwrap().execute_batch("CREATE TABLE t (a)").unwrap();
+    let e = portable::migrations(&Place::File(empty)).unwrap_err();
+    assert!(e.to_string().contains("never started on it"), "{e}");
+}
+
+/// The read-only tools never migrate Postgres: a database behind this
+/// build is refused by `checksums` and `secrets-check`, `migrations` says
+/// what this build would run, and nothing ran (the nightly dump reads the
+/// live cluster with them, M145).
+#[test]
+fn the_read_only_tools_never_migrate_postgres() {
+    let pg = crate::db::Db::test();
+    let Some(url) = pg.test_url() else { return eprintln!("skipped: needs ARUGULA_TEST_POSTGRES_URL") };
+    let at = Place::Postgres(url);
+    let last = crate::db::migrate::Dialect::Postgres.migrations().last().unwrap().version;
+    assert!(portable::migrations(&at).unwrap().pending.is_empty());
+    assert!(portable::checksums(&at).is_ok());
+
+    // As if the database were a migration behind this build.
+    pg.c().execute("DELETE FROM platform_migrations WHERE version = ?1", crate::db::sql::params![last]).unwrap();
+    let m = portable::migrations(&at).unwrap();
+    assert_eq!(m.pending, vec![last]);
+    assert!(m.render(&at).contains("would run"), "{}", m.render(&at));
+    for e in [portable::checksums(&at).unwrap_err(), portable::secrets_open(&at, SAMPLE_KEY).unwrap_err()] {
+        assert!(e.to_string().contains("this tool only reads"), "{e}");
+    }
+    let n: i64 = pg
+        .c()
+        .query_row("SELECT count(*) FROM platform_migrations WHERE version = ?1", crate::db::sql::params![last], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(n, 0, "nothing was migrated");
+}
+
+/// `checksums --snapshot` reads in a snapshot another session exported:
+/// a row written after it doesn't count, as it wouldn't in a
+/// `pg_dump --snapshot` of it (the nightly dump's record, M145).
+#[test]
+fn checksums_in_an_exported_snapshot() {
+    let pg = crate::db::Db::test();
+    let Some(url) = pg.test_url() else { return eprintln!("skipped: needs ARUGULA_TEST_POSTGRES_URL") };
+    let d = Dir::new();
+    let hub = d.at("control.db");
+    hub_file(&hub);
+    rusqlite::Connection::open(&hub)
+        .unwrap()
+        .execute("UPDATE cloud_notifications SET next_attempt = 2 WHERE next_attempt = 2.5", [])
+        .unwrap();
+    let at = Place::Postgres(url);
+    portable::copy(&Place::File(hub), &at, false).unwrap();
+    let before = portable::checksums(&at).unwrap();
+
+    let holder = pg.c();
+    holder.execute_batch("BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY").unwrap();
+    let id: String = holder.query_row("SELECT pg_export_snapshot()", crate::db::sql::params![], |r| r.get(0)).unwrap();
+    pg.c()
+        .execute(
+            "INSERT INTO chat_messages (room, seq, author, at, text) VALUES ('r1', 4, 'acct-a', 30, 'after the snapshot')",
+            crate::db::sql::params![],
+        )
+        .unwrap();
+    assert_ne!(portable::checksums(&at).unwrap(), before, "the new row counts outside the snapshot");
+    assert_eq!(portable::checksums_in(&at, Some(&id)).unwrap(), before, "and not inside it");
+    holder.execute_batch("COMMIT").unwrap();
+
+    let e = portable::checksums_in(&at, Some("1'; DROP TABLE chat_rooms; --")).unwrap_err();
+    assert!(e.to_string().contains("isn't a snapshot id"), "{e}");
+    let e = portable::checksums_in(&Place::File(d.at("control.db")), Some(&id)).unwrap_err();
+    assert!(e.to_string().contains("Postgres's"), "{e}");
+}
+
+/// A Postgres URL can be named without typing it (M145's window): `@FILE`
+/// reads it from a file, `env:NAME` from the environment; neither prints
+/// its password.
+#[test]
+fn a_url_comes_from_a_file_or_the_environment() {
+    let d = Dir::new();
+    let file = d.at("pg.url");
+    std::fs::write(&file, "postgres://fly-user:hunter2@direct.example/fly-db?sslmode=disable\n").unwrap();
+    let at: Place = format!("@{}", file.display()).parse().unwrap();
+    assert_eq!(at, Place::Postgres("postgres://fly-user:hunter2@direct.example/fly-db?sslmode=disable".into()));
+    assert!(!at.to_string().contains("hunter2"), "{at}");
+    std::fs::write(&file, "not a url").unwrap();
+    assert!(format!("@{}", file.display()).parse::<Place>().unwrap_err().contains("doesn't hold"));
+    assert!("@/nowhere/pg.url".parse::<Place>().is_err());
+    assert!("env:ARUGULA_WINDOW_TEST_NO_SUCH_VARIABLE".parse::<Place>().unwrap_err().contains("neither"));
+    assert_eq!("/data/platform.db".parse::<Place>().unwrap(), Place::File("/data/platform.db".into()));
+}
