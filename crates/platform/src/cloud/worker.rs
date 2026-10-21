@@ -8,19 +8,44 @@ use reqwest::Method;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+/// Four workers on each of the platform's machines. A claim leases its job
+/// for [`LEASE_MS`] (M144: on Postgres `FOR UPDATE SKIP LOCKED`, so two
+/// machines never take the same job), and a checkpoint hands it back
+/// within seconds; a machine that dies holding one leaves it to the other
+/// when the lease runs out. A machine that's stopping takes no new job.
 pub fn start(app: Arc<Platform>) {
     for _ in 0..4 {
         let app = app.clone();
         tokio::spawn(async move {
             loop {
-                if !app.is_paused()
-                    && let Err(error) = tick(&app).await
-                {
-                    tracing::warn!(%error, "cloud reconciliation failed");
+                if !app.is_paused() && !app.is_stopping() {
+                    let _held = Busy::new(&app);
+                    if let Err(error) = tick(&app).await {
+                        tracing::warn!(%error, "cloud reconciliation failed");
+                    }
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
         });
+    }
+}
+
+pub use crate::db::cloud::LEASE_MS;
+
+/// Counts a tick in [`Platform::busy`] while it runs, so a stopping machine
+/// waits for it ([`Platform::drain`]).
+struct Busy<'a>(&'a Platform);
+
+impl<'a> Busy<'a> {
+    fn new(app: &'a Platform) -> Self {
+        app.busy.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Self(app)
+    }
+}
+
+impl Drop for Busy<'_> {
+    fn drop(&mut self) {
+        self.0.busy.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 }
 

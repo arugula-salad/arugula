@@ -119,6 +119,12 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0003_personal_projects.sql"),
         additive: true,
     },
+    Migration {
+        version: 4,
+        name: "chat_events",
+        sql: include_str!("../../migrations/sqlite/0004_chat_events.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -141,6 +147,12 @@ const POSTGRES: &[Migration] = &[
         version: 3,
         name: "personal_projects",
         sql: include_str!("../../migrations/postgres/0003_personal_projects.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 4,
+        name: "chat_events",
+        sql: include_str!("../../migrations/postgres/0004_chat_events.sql"),
         additive: true,
     },
 ];
@@ -253,13 +265,14 @@ fn run_set(conn: &mut Connection, set: &[Migration], to: u32) -> anyhow::Result<
 }
 
 /// Brings the Postgres database on `c` up to the latest migration (M143),
-/// in one transaction under the platform's write lock, so two machines
+/// in one transaction holding the `migrations` lock, so two machines
 /// starting together (M144) take turns. The versions run. Nothing is
 /// adopted: Postgres starts empty, and M145 copies rows into it.
 pub fn run_postgres(c: &mut super::Conn) -> anyhow::Result<Vec<u32>> {
     use super::sql::{Sql as _, params};
     let set = Dialect::Postgres.migrations();
     let tx = c.transaction()?;
+    tx.lock("migrations")?;
     tx.execute_batch(MAKE_TABLE_POSTGRES)?;
     let applied =
         tx.query_map("SELECT version, checksum, additive FROM platform_migrations ORDER BY version", params![], |r| {

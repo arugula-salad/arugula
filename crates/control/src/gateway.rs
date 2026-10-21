@@ -27,7 +27,12 @@
 //!
 //! A platform that can't be reached at all (a deploy restarting it) is
 //! tried again for a few seconds, then answered as a maintenance 503: the
-//! call never reached it, so any client may send it again.
+//! call never reached it, so any client may send it again. Through Flycast
+//! (M144: `http://arugula-platform.flycast:7700`, two machines behind Fly's
+//! proxy) the connection is the proxy's, which accepts it even with no
+//! machine to give it to and then closes it unanswered: a `GET` or `HEAD`
+//! closed that way is treated the same, since sending it again is safe.
+//! Anything else closed unanswered is a 502, since it may have arrived.
 
 use std::{sync::Arc, time::Duration};
 
@@ -259,6 +264,19 @@ fn unreachable() -> Response {
     crate::maintenance::answer(UNREACHABLE_RETRY)
 }
 
+/// Whether a call that failed may be sent again as if it never reached the
+/// platform: it couldn't connect, or (a `GET` or `HEAD`, which is safe to
+/// repeat) the connection closed with no answer, as Fly's proxy closes one
+/// it has no healthy machine for.
+fn never_reached(e: &reqwest::Error, method: &reqwest::Method) -> bool {
+    e.is_connect()
+        || (matches!(*method, reqwest::Method::GET | reqwest::Method::HEAD) && e.is_request() && !e.is_timeout())
+}
+
+fn parts_method(m: &axum::http::Method) -> reqwest::Method {
+    reqwest::Method::from_bytes(m.as_str().as_bytes()).unwrap_or(reqwest::Method::GET)
+}
+
 /// One platform route, forwarded.
 async fn forward(State(app): State<Arc<App>>, req: Request) -> Response {
     let PlatformAt::Remote(r) = &app.platform else {
@@ -274,7 +292,7 @@ async fn forward(State(app): State<Arc<App>>, req: Request) -> Response {
     };
     let request = hex::encode(arugula_e2e::random::<8>());
     let pq = parts.uri.path_and_query().map_or_else(|| parts.uri.path().to_owned(), |p| p.as_str().to_owned());
-    let method = reqwest::Method::from_bytes(parts.method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET);
+    let method = parts_method(&parts.method);
     let mut headers = forwarded_headers(&parts.headers);
     crate::hub_port::seq_header(&app, &mut headers);
     let url = format!("{}{pq}", r.base);
@@ -299,7 +317,7 @@ async fn forward(State(app): State<Arc<App>>, req: Request) -> Response {
             sign(&mut headers);
             let res = r.http.request(method.clone(), &url).headers(headers.clone()).body(bytes.clone()).send().await;
             match res {
-                Err(e) if e.is_connect() && started.elapsed() + wait < RECONNECT_FOR => {
+                Err(e) if never_reached(&e, &method) && started.elapsed() + wait < RECONNECT_FOR => {
                     tokio::time::sleep(wait).await;
                     wait = (wait * 2).min(Duration::from_secs(1));
                 }
@@ -313,7 +331,7 @@ async fn forward(State(app): State<Arc<App>>, req: Request) -> Response {
     };
     let res = match sent {
         Ok(res) => res,
-        Err(e) if e.is_connect() => {
+        Err(e) if never_reached(&e, &parts_method(&parts.method)) => {
             warn!(%request, path = parts.uri.path(), error = %e, "the platform can't be reached");
             return unreachable();
         }

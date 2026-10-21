@@ -1010,10 +1010,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 59 tables in two planes ("Two planes, two trust rules"):
+Control's database has 60 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (32 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (27 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, and Cloud workspaces. Control reads most of it, and says so here.
+- **The platform plane** (28 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, and Cloud workspaces. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1066,6 +1066,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `chat_messages` | **plaintext** | A chat message, in plain text, with the lines its author quoted from a pane and who it mentions. | People talk with every machine asleep. | partly: those in its rooms that go, go; the rest stay blank, with no author, and it's taken out of mentions. |  |
 | `chat_fts` | **plaintext** | The full-text index of chat messages and their quotes (SQLite FTS5). | Control searches chat itself, with every machine asleep. | partly: as chat_messages: it's rebuilt from them, and merged when an account goes so blanked words leave it. |  |
 | `chat_reads` | metadata | A person's read mark in a room, and whether they muted it. | Unread counts and pushes, with every machine asleep. | yes |  |
+| `chat_events` | metadata | Chat's live events, numbered (M144): a room and a message number that changed, a read mark that moved (and whose), or that who sees what may have changed. Never a message's text. Every machine of the platform sends its open pages the ones after the last it sent, and a page that dropped resumes from them. The newest 10,000 are kept. | Open pages hear of messages, edits and read marks through control alone, with every machine asleep. | partly: its read marks' events lose its name (they stay as nameless markers, so the numbers hold); events about rooms name no one and go with the oldest. |  |
 | `chat_readers` | metadata | Who may read the thread on a pane or a session, as its machine last said. | A pane's thread stays readable while its machine sleeps. | partly: its machines' rows go, and it's taken off the rest. |  |
 | `doc_links` | metadata | A Shared Doc link: its id, the machine that shared it, its version, size and parts, and how often it opened. | A shared Doc opens while the machine that shared it sleeps. | yes |  |
 | `doc_link_parts` | ciphertext | A Shared Doc's snapshot, in parts, encrypted to the key in the link's fragment. | A shared Doc opens while the machine that shared it sleeps. | yes |  |

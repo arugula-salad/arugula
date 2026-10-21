@@ -151,6 +151,10 @@ export interface FakeManagoatOptions {
   /** A JSON file the state is kept in between runs (dev-control's: control's
    * database outlives the process, so its workspaces must too). */
   file?: string;
+  /** Called with each request before it's answered, and awaited: the
+   * testnet's handover claim holds one (M144). `from` is the caller's
+   * address. */
+  gate?: (method: string, path: string, from: string) => Promise<void>;
 }
 
 /** The environment fields a workspace's setup reads: the workspace is
@@ -246,6 +250,7 @@ export function fakeManagoat(port = 0, host = "127.0.0.1", options: FakeManagoat
     const b = raw.length ? JSON.parse(raw.toString()) : {};
     const url = new URL(req.url!, "http://managoat");
     const path = url.pathname;
+    if (options.gate) await options.gate(req.method!, path, req.socket.remoteAddress ?? "");
     const reply = (data: unknown, status = 200) => {
       save();
       res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify({ data }));

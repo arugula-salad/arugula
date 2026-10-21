@@ -57,6 +57,39 @@ check() {
   return 1
 }
 
+# SQLite is one machine, Postgres two (M144, fly.toml's "Two modes"): more
+# than one machine without ARUGULA_PLATFORM_DATABASE_URL among the app's
+# secrets would be a database per machine, so it isn't deployed. Fly lists
+# secrets' names, never their values; if it won't list them, say so and go on.
+modes() {
+  local n names
+  n=$(flyctl status -a "$app" --json | jq '[.Machines[] | select(.config.metadata.fly_process_group == "app")] | length') || n=0
+  [ "${n:-0}" -gt 1 ] || return 0
+  if ! names=$(flyctl secrets list -a "$app" --json 2>/dev/null | jq -r '.[] | (.Name // .name)'); then
+    echo "::warning::$app runs $n machines, and fly wouldn't list its secrets to check it's on Postgres"
+    return 0
+  fi
+  if ! grep -qx ARUGULA_PLATFORM_DATABASE_URL <<<"$names"; then
+    echo "::error::$app runs $n machines on SQLite (no ARUGULA_PLATFORM_DATABASE_URL): each would have its own database. Scale it to one (fly scale count 1 -a $app), or set the secret first. docs/control-ops.md, \"Two platform machines\"."
+    return 1
+  fi
+}
+
+# The platform has no public address (fly.toml): Flycast needs only a
+# private IPv6. A public one would put its service on the internet, so a
+# deploy stops until it's released (fly ips release ADDRESS -a arugula-platform).
+private() {
+  local ips
+  if ! ips=$(flyctl ips list -a "$app" --json 2>/dev/null); then
+    echo "::warning::fly wouldn't list $app's addresses to check none is public"
+    return 0
+  fi
+  if jq -e '[.[] | select((.Type // .type) != "private_v6")] | length > 0' <<<"$ips" >/dev/null; then
+    echo "::error::$app has a public address: $(jq -r '[.[] | select((.Type // .type) != "private_v6") | (.Address // .address)] | join(", ")' <<<"$ips"). Release it (fly ips release ADDRESS -a $app); only a private IPv6 belongs there."
+    return 1
+  fi
+}
+
 deploy() {
   local tag=${1:?usage: ci-platform-deploy deploy TAG DIR} dir=${2:?usage: ci-platform-deploy deploy TAG DIR}
   if [ -z "${FLY_API_TOKEN:-}" ]; then
@@ -70,13 +103,15 @@ deploy() {
     echo "::notice::$app already runs $now, newer than $tag: not deployed"
     return 0
   fi
+  modes || return 1
+  private || return 1
   local ctx
   ctx=$(mktemp -d)
   # shellcheck disable=SC2064 # $ctx now, not at exit
   trap "rm -rf '$ctx'" EXIT
   cp "$dir/arugula-platform" packaging/platform/Dockerfile "$toml" "$ctx"/
   chmod +x "$ctx/arugula-platform"
-  (cd "$ctx" && flyctl deploy --local-only --ha=false --image-label "$tag")
+  (cd "$ctx" && flyctl deploy --local-only --ha=false --no-public-ips --image-label "$tag")
   check "$tag"
 }
 

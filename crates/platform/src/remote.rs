@@ -376,7 +376,9 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
 
 /// `PlatformPort` over the private network: the hub's view of the
 /// out-of-process platform (`http://arugula-platform.internal:7700` on
-/// Fly).
+/// Fly, or through Flycast from M145, `http://arugula-platform.flycast:7700`:
+/// any of its machines answers, and nothing here depends on which, or on
+/// the caller's address).
 #[derive(Clone)]
 pub struct HttpPlatform(Client);
 

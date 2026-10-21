@@ -22,6 +22,8 @@ just testnet test control team # #254: the CLI reaching a team machine of anothe
 just testnet test control platform # M140: chat and Cloud through control's own site
 ARUGULA_TESTNET_PLATFORM=out just testnet up control  # the platform out of process (M140)
 just testnet test control platform-restart  # out of process: a relayed session outlives a platform restart
+ARUGULA_TESTNET_PLATFORM=two just testnet up control  # two platform machines on Postgres (M144)
+just testnet test control platform-fanout platform-handover  # chat and Cloud across the two
 just testnet measure control   # M140: platform routes' latency, in process vs out
 testnet/window.sh              # M141: the first window's runbook, rehearsed, both rollbacks too
 just testnet up tailnet        # headscale and two Tailscale nodes
@@ -45,7 +47,7 @@ not run. CI never sets it. The claims expect fresh boxes: after installing anyth
 | Profile | Services | Status | For |
 |---|---|---|---|
 | `ssh` | `bastion`, `box-bare`, `box-systemd`, `git` | validated | S28, M51, M52's install step, #26 |
-| `control` | `ssh`'s, and `control`, `fakes`, `postgres`; `platform` too with `ARUGULA_TESTNET_PLATFORM=out` | validated | M52's join, the relay, a box with no way out, the platform out of process (M140) and on Postgres (M143) |
+| `control` | `ssh`'s, and `control`, `fakes`, `postgres`; `platform` too with `ARUGULA_TESTNET_PLATFORM=out`, and `platform2` with `two` | validated | M52's join, the relay, a box with no way out, the platform out of process (M140), on Postgres (M143) and on two machines (M144) |
 | `tailnet` | `headscale`, `ts-box`, `ts-client` | validated | S28's tailnet comparison |
 
 The relay is part of `control`, and Forgejo and GitLab have a stack of
@@ -125,6 +127,18 @@ Everything in `ssh`, and:
   `compose.yaml`). The platform's database is in its container's own
   filesystem, so it outlives `docker restart`. Without the variable the
   platform runs inside control, as it always did: CI's run is that way.
+- `platform2` (only with `ARUGULA_TESTNET_PLATFORM=two` at `up`, which adds
+  [`two.yaml`](two.yaml) and puts both on `postgres`): a second
+  `arugula-platform`, as hosted control runs two from M145 (M144). Control
+  reaches both as `platforms`, a name Docker's DNS answers with both
+  addresses, as Fly's `.internal` does. Each is published on the host
+  (`127.0.0.1:22983` and `22984`, `ARUGULA_TESTNET_PLATFORM_PORT` and
+  `ARUGULA_TESTNET_PLATFORM2_PORT`) only so the claims can call one or the
+  other directly, with a principal signed with the stack's key. Cloud is
+  on in both, with the fake Managoat (`fakes-serve.ts --managoat`, through
+  a loopback sidecar each, as in `window.yaml`), whose control port is
+  published too (`22985`, `ARUGULA_TESTNET_MANAGOAT_PORT`): the handover
+  claim holds a request there and sees which machine sent it.
 
 A person on the host is `web/fixtures/device-cli.ts`, the headless
 approving device ([docs/testing.md](../docs/testing.md#a-device-that-approves-things)): it signs in, enrolls, approves join
@@ -164,6 +178,8 @@ The `control` profile's:
 | `team` | another account's machine (#254): an owner (a second headless device) makes a team and joins box-systemd to it; the CLI's account asks to join and is let in; `arugula hosts` on the bastion lists box-systemd as the owner's, and `--host box-systemd` captures its pane and attaches to it as a team editor, relayed | the CLI pinned a different root for the owner's account first, so control's chain for it is refused |
 | `platform` | chat and Cloud through control's own site, whichever process answers (M140): a person turns chat on, makes a team and a channel, posts, reads it back and hears its event on the live stream; the platform answers Cloud's and billing's routes (`testnet/platform.ts chat`) | the maintenance switch on (`arugula-control maintenance on`), so every platform route answers 503 |
 | `platform-restart` | only out of process: a relayed session to box-systemd's pane stays open while the `platform` container restarts, a marker round-tripping on the same socket before and after (`testnet/platform.ts hold`) | control's container restarted instead, which holds the relay |
+| `platform-fanout` | only with two machines (M144): both answer their health check on the database and exactly one leads; a live stream held on each hears a message posted through the other; a page that dropped from one resumes on the other from its `Last-Event-ID`, without a resync (`testnet/platform.ts fanout`) | `platform2` on a file of its own (`ARUGULA_TESTNET_PLATFORM2_DB` empty): two machines that share no database |
+| `platform-handover` | only with two machines: the fake Managoat holds a Cloud workspace's read, so the machine that claimed its job holds it mid-step; that machine is killed; the other takes the job once its lease (120 s) runs out, not before and within seconds after, and sets the workspace up; the killed one is started again (`testnet/platform.ts handover`) | the other machine paused too, so nothing takes the job |
 
 `just testnet measure control [samples]` (`measure-control.sh`) times a
 few routes from the host as a signed-in person (`GET /api/me` for the

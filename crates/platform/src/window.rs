@@ -29,22 +29,27 @@
 //! nor column order matters. Anything that differs rolls the whole copy
 //! back and nothing is written.
 //!
+//! **Postgres (M145's window):** `copy` from or to a `postgres://` URL, and
+//! `checksums`/`secrets-check` on one, go through [`portable`], whose
+//! checksums both databases give alike.
+//!
 //! **What it refuses:** a target that already holds rows in any of those
 //! tables, unless `--replace` (which empties them first, in the same
 //! transaction); a source that isn't migrated to this build's tables; the
 //! same file on both sides. The source is attached read-only, so it can be
 //! the live hub's database: a copy reads one consistent snapshot of it.
 
-use std::{
-    collections::BTreeSet,
-    fmt::Write as _,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeSet, fmt::Write as _, path::Path};
 
 use anyhow::{Context as _, bail};
 use clap::Parser;
 use rusqlite::{Connection, OpenFlags, TransactionBehavior, types::ValueRef};
 use sha2::{Digest as _, Sha256};
+
+#[path = "window_portable.rs"]
+pub mod portable;
+
+use portable::Place;
 
 /// The FTS5 index over `chat_messages`, rebuilt rather than copied.
 const FTS: &str = "chat_fts";
@@ -389,15 +394,18 @@ struct Args {
 
 #[derive(clap::Subcommand, Debug)]
 enum What {
-    /// Copy the platform's tables from one file to another, and prove it.
+    /// Copy the platform's tables from one database to another, and prove
+    /// it: file to file (the first window), or to or from Postgres (the
+    /// second: portable checksums).
     Copy {
-        /// The file to copy from (the hub's control.db, or a copy of it).
-        /// Opened read-only.
+        /// The file to copy from (the hub's control.db, or a copy of it),
+        /// opened read-only; or a `postgres://` URL.
         #[arg(long)]
-        from: PathBuf,
-        /// The file to copy into, made if it isn't there.
+        from: Place,
+        /// The file to copy into, made if it isn't there; or a
+        /// `postgres://` URL, migrated to this build if it isn't.
         #[arg(long)]
-        to: PathBuf,
+        to: Place,
         /// Delete the target's rows in these tables first. Without it, a
         /// target that holds any is refused.
         #[arg(long)]
@@ -405,15 +413,21 @@ enum What {
     },
     /// Each platform table's row count and checksum, read-only.
     Checksums {
+        /// A file, or a `postgres://` URL (portable checksums).
         #[arg(long)]
-        db: PathBuf,
+        db: Place,
+        /// A file's portable checksums, as Postgres's are, rather than the
+        /// first window's (rowids and SQLite's types).
+        #[arg(long)]
+        portable: bool,
     },
-    /// Whether every cloud secret in the file opens with the cloud secret
-    /// key: the running server's, else ARUGULA_CLOUD_SECRET_KEY here.
-    /// Prints no value.
+    /// Whether every cloud secret in the database opens with the cloud
+    /// secret key: the running server's, else ARUGULA_CLOUD_SECRET_KEY
+    /// here. Prints no value.
     SecretsCheck {
+        /// A file, or a `postgres://` URL.
         #[arg(long)]
-        db: PathBuf,
+        db: Place,
     },
 }
 
@@ -422,13 +436,20 @@ enum What {
 pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()> {
     let a = Args::parse_from(std::iter::once(prog.to_owned()).chain(args));
     match a.what {
-        What::Copy { from, to, replace } => {
+        What::Copy { from: Place::File(from), to: Place::File(to), replace } => {
             let r = copy(&from, &to, replace)?;
             print!("{}", r.render(&from, &to));
         }
-        What::Checksums { db } => {
-            let sums = checksums(&db)?;
-            println!("the platform's tables in {} (read-only)\n", db.display());
+        What::Copy { from, to, replace } => {
+            let r = portable::copy(&from, &to, replace)?;
+            print!("{}", r.render(&from, &to));
+        }
+        What::Checksums { db, portable } => {
+            let (sums, kind) = match &db {
+                Place::File(path) if !portable => (checksums(path)?, ""),
+                _ => (portable::checksums(&db)?, ", portable checksums"),
+            };
+            println!("the platform's tables in {db} (read-only{kind})\n");
             println!("{:<24} {:>9}  sha256", "table", "rows");
             for (t, n, s) in &sums {
                 println!("{t:<24} {n:>9}  {s}");
@@ -444,8 +465,8 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
                     _ => bail!("no {VAR}: neither the running server nor this shell has one"),
                 },
             };
-            let (opened, failed) = secrets_open(&db, &key)?;
-            println!("cloud secrets in {}, with {whose} key:", db.display());
+            let (opened, failed) = portable::secrets_open(&db, &key)?;
+            println!("cloud secrets in {db}, with {whose} key:");
             println!("  {opened} open");
             for (account, name) in &failed {
                 println!("  doesn't open: {account} {name}");

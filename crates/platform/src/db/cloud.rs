@@ -3,9 +3,10 @@
 //! The tables, with notes on their columns, are made by the platform's
 //! migrations (`migrations/sqlite`).
 use super::{
-    Db,
+    Db, Taken,
     migrate::Dialect,
-    sql::{Optional as _, Row, Sql as _, params},
+    sql::{Optional as _, Row, Sql, params},
+    taken,
 };
 use anyhow::{Context as _, Result, bail};
 pub use arugula_cloud_wire::{
@@ -486,6 +487,41 @@ fn row(r: &Row) -> Result<CloudRun> {
     })
 }
 
+/// How long a claim leases its job (`cloud::worker`): what a machine that
+/// dies mid-step costs before another machine takes the job.
+pub const LEASE_MS: u64 = 120_000;
+
+/// What a claim's `SELECT` ends with (M144): on Postgres it locks the job
+/// it finds and passes over any another machine's claim is locking, so two
+/// never take the same job and neither waits for the other. SQLite's
+/// `BEGIN IMMEDIATE` already makes claims take turns.
+fn skip_locked(tx: &impl Sql) -> &'static str {
+    match tx.dialect() {
+        Dialect::Sqlite => "",
+        Dialect::Postgres => " FOR UPDATE OF j SKIP LOCKED",
+    }
+}
+
+/// Lease the job `id` that a claim found free at `now`: a new lease, or
+/// `None` if it isn't free any more.
+fn lease(tx: &impl Sql, id: &str, now: u64) -> Result<Option<String>> {
+    let lease = hex::encode(arugula_e2e::random::<16>());
+    let changed = tx.execute(
+        "UPDATE cloud_jobs SET lease=?1,lease_until=?2 WHERE id=?3 AND lease_until<=?4",
+        params![lease, now + LEASE_MS, id, now],
+    )?;
+    Ok((changed == 1).then_some(lease))
+}
+
+/// `f`, and once more if it was refused for a row that's there already
+/// ([`Taken`]): a create racing the same request key on another machine.
+fn once_more<T>(f: impl Fn() -> Result<T>) -> Result<T> {
+    match f() {
+        Err(e) if e.is::<Taken>() => f(),
+        r => r,
+    }
+}
+
 impl Db {
     pub fn active_cloud_runs(&self, account: &str) -> Result<u64> {
         self.c().query_row("SELECT count(*) FROM cloud_runs WHERE account=?1 AND state NOT IN ('completed','failed','cancelled','expired')", params![account], |r| r.get(0))
@@ -656,6 +692,17 @@ impl Db {
             },
         )
     }
+    /// Take one approval push to send, for `until` (M144): false when
+    /// another machine took it first, or it's not due any more. Each push
+    /// is sent by one machine at a time.
+    pub fn claim_cloud_notification(&self, conversation: &str, request: &str, now: u64, until: u64) -> Result<bool> {
+        Ok(self.c().execute(
+            "UPDATE cloud_notifications SET next_attempt=?4
+             WHERE conversation=?1 AND request=?2 AND delivered=FALSE AND next_attempt<=?3",
+            params![conversation, request, now, until],
+        )? == 1)
+    }
+
     pub fn cloud_notification_result(
         &self,
         conversation: &str,
@@ -674,12 +721,11 @@ impl Db {
     pub fn claim_cloud_job(&self, now: u64) -> Result<Option<Job>> {
         let mut conn = self.c();
         let tx = conn.immediate()?;
-        let found = tx.query_row("SELECT r.id,r.spec,r.state,r.created,r.deadline,r.result,r.account,j.body FROM cloud_runs r JOIN cloud_jobs j ON j.id=r.id WHERE r.state NOT IN ('completed','failed','cancelled','expired') AND j.lease_until<=?1 ORDER BY j.lease_until,r.created LIMIT 1", params![now], |r| Ok((row(r)?,r.get::<String>(6)?,r.get::<String>(7)?))).optional()?;
+        let found = tx.query_row(&format!("SELECT r.id,r.spec,r.state,r.created,r.deadline,r.result,r.account,j.body FROM cloud_runs r JOIN cloud_jobs j ON j.id=r.id WHERE r.state NOT IN ('completed','failed','cancelled','expired') AND j.lease_until<=?1 ORDER BY j.lease_until,r.created LIMIT 1{}", skip_locked(&tx)), params![now], |r| Ok((row(r)?,r.get::<String>(6)?,r.get::<String>(7)?))).optional()?;
         let Some((run, account, body)) = found else {
             return Ok(None);
         };
-        let lease = hex::encode(arugula_e2e::random::<16>());
-        tx.execute("UPDATE cloud_jobs SET lease=?1,lease_until=?2 WHERE id=?3", params![lease, now + 120_000, run.id])?;
+        let Some(lease) = lease(&tx, &run.id, now)? else { return Ok(None) };
         tx.commit()?;
         Ok(Some(Job { run, account, execution: serde_json::from_str(&body)?, lease }))
     }
@@ -732,11 +778,16 @@ impl Db {
     ) -> Result<()> {
         let mut conn = self.c();
         let tx = conn.immediate()?;
-        let owns: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM cloud_jobs WHERE id=?1 AND lease=?2)",
-            params![id, lease],
-            |r| r.get(0),
-        )?;
+        // The job's row, held until this commits, so it isn't claimed
+        // from under this (M144).
+        let owns = tx
+            .query_row(
+                &format!("SELECT id FROM cloud_jobs WHERE id=?1 AND lease=?2{}", tx.for_update()),
+                params![id, lease],
+                |r| r.get::<String>(0),
+            )
+            .optional()?
+            .is_some();
         if !owns {
             bail!("cloud job lease lost");
         }
@@ -811,6 +862,19 @@ impl Db {
         if request_key.is_empty() || request_key.len() > 128 {
             bail!("invalid request key");
         }
+        // The same key at once on two machines: one inserts, and the other,
+        // refused by the key's unique index, finds that one.
+        once_more(|| self.create_cloud_workspace_once(account, project, request_key, spec, now))
+    }
+
+    fn create_cloud_workspace_once(
+        &self,
+        account: &str,
+        project: &str,
+        request_key: &str,
+        spec: &CloudWorkspaceSpec,
+        now: u64,
+    ) -> Result<CloudWorkspace> {
         let mut conn = self.c();
         let tx = conn.immediate()?;
         let existing = tx
@@ -840,7 +904,8 @@ impl Db {
         tx.execute(
             "INSERT INTO cloud_workspaces(id,account,request_key,name,saved_spec,created,project_id) VALUES(?1,?2,?3,?4,?5,?6,?7)",
             params![id, account, request_key, spec.name, serde_json::to_string(spec)?, now, project],
-        )?;
+        )
+        .map_err(taken)?;
         tx.execute(
             "INSERT INTO cloud_jobs(id,kind,body) VALUES(?1,'cloud_workspace',?2)",
             params![id, serde_json::to_string(&CloudWorkspaceExecution::default())?],
@@ -977,7 +1042,8 @@ impl Db {
             .query_row(
                 &format!(
                     "SELECT {columns},w.account,w.saved_revision,j.body,j.cancel,w.rebuilds FROM cloud_workspaces w JOIN cloud_jobs j ON j.id=w.id
-                     WHERE j.kind='cloud_workspace' AND w.deleted IS NULL AND j.lease_until<=?1 ORDER BY j.lease_until,w.created LIMIT 1"
+                     WHERE j.kind='cloud_workspace' AND w.deleted IS NULL AND j.lease_until<=?1 ORDER BY j.lease_until,w.created LIMIT 1{}",
+                    skip_locked(&tx)
                 ),
                 params![now],
                 |r| {
@@ -995,11 +1061,7 @@ impl Db {
         let Some((cloud_workspace, account, saved_revision, body, deleting, rebuilds)) = found else {
             return Ok(None);
         };
-        let lease = hex::encode(arugula_e2e::random::<16>());
-        tx.execute(
-            "UPDATE cloud_jobs SET lease=?1,lease_until=?2 WHERE id=?3",
-            params![lease, now + 120_000, cloud_workspace.id],
-        )?;
+        let Some(lease) = lease(&tx, &cloud_workspace.id, now)? else { return Ok(None) };
         tx.commit()?;
         Ok(Some(CloudWorkspaceJob {
             cloud_workspace,
@@ -1118,8 +1180,11 @@ impl Db {
         type Row = (String, Option<String>, Option<String>, String, Option<String>, bool, Option<String>);
         let found: Option<Row> = tx
             .query_row(
-                "SELECT status,provider_id,vault,saved_spec,saved_revision,settings_applied,vault_secrets
-                 FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL",
+                &format!(
+                    "SELECT status,provider_id,vault,saved_spec,saved_revision,settings_applied,vault_secrets
+                     FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL{}",
+                    tx.for_update()
+                ),
                 params![account, id],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
             )
@@ -1350,9 +1415,11 @@ impl Db {
         let mut conn = self.c();
         let tx = conn.immediate()?;
         let queued: Option<Option<String>> = tx
-            .query_row("SELECT rebuild FROM cloud_workspaces WHERE id=?1 AND deleted IS NULL", params![id], |r| {
-                r.get(0)
-            })
+            .query_row(
+                &format!("SELECT rebuild FROM cloud_workspaces WHERE id=?1 AND deleted IS NULL{}", tx.for_update()),
+                params![id],
+                |r| r.get(0),
+            )
             .optional()?;
         let Some(mut asked) =
             queued.flatten().map(|q| serde_json::from_str::<CloudWorkspaceRebuild>(&q)).transpose()?
@@ -1383,7 +1450,10 @@ impl Db {
         let tx = conn.immediate()?;
         let found: Option<(Option<String>, String)> = tx
             .query_row(
-                "SELECT rebuild,status FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL",
+                &format!(
+                    "SELECT rebuild,status FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL{}",
+                    tx.for_update()
+                ),
                 params![account, id],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -1451,6 +1521,17 @@ impl Db {
         if request_key.is_empty() || request_key.len() > 128 {
             bail!("invalid request key");
         }
+        once_more(|| self.create_cloud_tab_once(account, cloud_workspace, request_key, spec, now))
+    }
+
+    fn create_cloud_tab_once(
+        &self,
+        account: &str,
+        cloud_workspace: &str,
+        request_key: &str,
+        spec: &CloudTabSpec,
+        now: u64,
+    ) -> Result<CloudTab> {
         let mut conn = self.c();
         let tx = conn.immediate()?;
         let existing = tx
@@ -1469,9 +1550,14 @@ impl Db {
             }
             return Ok(tab);
         }
+        // The Cloud workspace's row, held until the tab is in, so a delete
+        // either waits for it or is seen here (M144).
         let found: Option<(String, Option<String>)> = tx
             .query_row(
-                "SELECT status,provider_id FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL",
+                &format!(
+                    "SELECT status,provider_id FROM cloud_workspaces WHERE account=?1 AND id=?2 AND deleted IS NULL{}",
+                    tx.for_update()
+                ),
                 params![account, cloud_workspace],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -1486,7 +1572,8 @@ impl Db {
         tx.execute(
             "INSERT INTO cloud_tabs(id,account,cloud_workspace,request_key,spec,created) VALUES(?1,?2,?3,?4,?5,?6)",
             params![id, account, cloud_workspace, request_key, serde_json::to_string(spec)?, now],
-        )?;
+        )
+        .map_err(taken)?;
         tx.execute(
             "INSERT INTO cloud_jobs(id,kind,body) VALUES(?1,'cloud_tab',?2)",
             params![id, serde_json::to_string(&CloudTabExecution::default())?],
@@ -1583,7 +1670,7 @@ impl Db {
         let changed = tx.execute(
             "UPDATE cloud_tabs SET relaunch=?4,status='opening',error=NULL
              WHERE account=?1 AND cloud_workspace=?2 AND id=?3 AND closed IS NULL AND provider_id IS NOT NULL
-               AND relaunch IS NULL AND (status='failed' OR ?5)
+               AND relaunch IS NULL AND (status='failed' OR ?5) AND status NOT IN ('closing','closed')
                AND EXISTS(SELECT 1 FROM cloud_jobs WHERE id=?3 AND cancel=FALSE)",
             params![account, cloud_workspace, tab, prompt, gone],
         )?;
@@ -1622,7 +1709,8 @@ impl Db {
                 &format!(
                     "SELECT {CLOUD_TAB_COLUMNS},t.account,j.body,j.cancel,w.provider_id,w.environment,w.vault,t.relaunch
                      FROM cloud_tabs t JOIN cloud_workspaces w ON w.id=t.cloud_workspace JOIN cloud_jobs j ON j.id=t.id
-                     WHERE j.kind='cloud_tab' AND t.closed IS NULL AND j.lease_until<=?1 ORDER BY j.lease_until,t.created LIMIT 1"
+                     WHERE j.kind='cloud_tab' AND t.closed IS NULL AND j.lease_until<=?1 ORDER BY j.lease_until,t.created LIMIT 1{}",
+                    skip_locked(&tx)
                 ),
                 params![now],
                 |r| {
@@ -1641,8 +1729,7 @@ impl Db {
         else {
             return Ok(None);
         };
-        let lease = hex::encode(arugula_e2e::random::<16>());
-        tx.execute("UPDATE cloud_jobs SET lease=?1,lease_until=?2 WHERE id=?3", params![lease, now + 120_000, tab.id])?;
+        let Some(lease) = lease(&tx, &tab.id, now)? else { return Ok(None) };
         tx.commit()?;
         Ok(Some(CloudTabJob {
             tab,
@@ -1985,6 +2072,107 @@ mod tests {
         assert!(db.append_cloud_events(&first, &[serde_json::json!({"id":1})]).is_err());
         assert!(db.checkpoint_cloud_job(&second, "running", None, Some(130_000)).is_ok());
         assert_eq!(db.claim_cloud_job(130_000).unwrap().unwrap().run.id, run.id);
+    }
+
+    /// Two handles on one database, as two machines have (M144): on
+    /// Postgres the test's schema twice; on SQLite a file opened twice
+    /// (removed when the guard drops).
+    fn two_machines() -> (Db, Db, Option<std::path::PathBuf>) {
+        let db = test_db();
+        if let Some(other) = db.second() {
+            return (db, other, None);
+        }
+        let path = std::env::temp_dir().join(format!("arugula-two-{}.db", hex::encode(arugula_e2e::random::<8>())));
+        (Db::open(&path).unwrap(), Db::open(&path).unwrap(), Some(path))
+    }
+
+    /// Two machines' workers, four each, claiming at once (M144): every
+    /// run, Cloud workspace and tab job is taken exactly once, and none
+    /// twice, until their leases run out.
+    #[test]
+    fn two_machines_never_claim_the_same_job() {
+        let (a, b, file) = two_machines();
+        let spec_tab = CloudTabSpec {
+            agent_id: "agent_test".into(),
+            agent_version: 1,
+            agent: spec().agent,
+            runtime: "claude".into(),
+            model: "anthropic/test".into(),
+            cwd: "/home/sprite/app".into(),
+            prompt: None,
+        };
+        let mut want = std::collections::BTreeSet::new();
+        for i in 0..12 {
+            want.insert(run(&a, "a", &spec()).id);
+            let w = a.create_cloud_workspace("a", "prj_a", &format!("k{i}"), &cloud_workspace_spec(), i).unwrap();
+            a.c()
+                .execute("UPDATE cloud_workspaces SET status='ready',provider_id='ws' WHERE id=?1", params![&w.id])
+                .unwrap();
+            want.insert(w.id.clone());
+            want.insert(a.create_cloud_tab("a", &w.id, "tab", &spec_tab, i).unwrap().id);
+        }
+        let claimed = std::sync::Mutex::new(Vec::new());
+        std::thread::scope(|scope| {
+            for db in [&a, &b] {
+                for _ in 0..4 {
+                    scope.spawn(|| {
+                        loop {
+                            let mut got = vec![];
+                            got.extend(db.claim_cloud_job(1_000).unwrap().map(|j| j.run.id));
+                            got.extend(db.claim_cloud_workspace_job(1_000).unwrap().map(|j| j.cloud_workspace.id));
+                            got.extend(db.claim_cloud_tab_job(1_000).unwrap().map(|j| j.tab.id));
+                            if got.is_empty() {
+                                return;
+                            }
+                            claimed.lock().unwrap().extend(got);
+                        }
+                    });
+                }
+            }
+        });
+        let claimed = claimed.into_inner().unwrap();
+        let unique: std::collections::BTreeSet<String> = claimed.iter().cloned().collect();
+        assert_eq!(unique.len(), claimed.len(), "a job was claimed twice");
+        assert_eq!(unique, want, "every job, once");
+        // Leased: nobody takes them again until the lease runs out.
+        assert!(b.claim_cloud_workspace_job(1_000 + LEASE_MS - 1).unwrap().is_none());
+        assert!(b.claim_cloud_workspace_job(1_000 + LEASE_MS).unwrap().is_some());
+        drop((a, b));
+        if let Some(f) = file {
+            for ext in ["", "-wal", "-shm"] {
+                let _ = std::fs::remove_file(format!("{}{ext}", f.display()));
+            }
+        }
+    }
+
+    /// On Postgres a claim passes over a job another machine's claim is
+    /// holding, rather than waiting for it (`SKIP LOCKED`).
+    #[test]
+    fn a_claim_passes_over_a_job_another_holds() {
+        let (a, b, _) = two_machines();
+        if a.dialect() != Dialect::Postgres {
+            return;
+        }
+        let first = a.create_cloud_workspace("a", "prj_a", "one", &cloud_workspace_spec(), 0).unwrap();
+        let second = a.create_cloud_workspace("a", "prj_a", "two", &cloud_workspace_spec(), 1).unwrap();
+        let mut c = a.c();
+        let held = c.transaction().unwrap();
+        held.execute(&format!("SELECT id FROM cloud_jobs WHERE id=?1{}", held.for_update()), params![&first.id])
+            .unwrap();
+        let b = std::sync::Arc::new(b);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let claimer = b.clone();
+        std::thread::spawn(move || {
+            let one = claimer.claim_cloud_workspace_job(0).unwrap().map(|j| j.cloud_workspace.id);
+            let two = claimer.claim_cloud_workspace_job(0).unwrap().map(|j| j.cloud_workspace.id);
+            let _ = tx.send((one, two));
+        });
+        let claimed = rx.recv_timeout(std::time::Duration::from_secs(5));
+        drop(held);
+        let (one, two) = claimed.expect("the claim waited for the held job instead of passing over it");
+        assert_eq!(one.as_deref(), Some(second.id.as_str()), "the one nobody holds");
+        assert_eq!(two, None, "the held one is passed over");
+        assert_eq!(b.claim_cloud_workspace_job(0).unwrap().unwrap().cloud_workspace.id, first.id);
     }
 
     #[test]

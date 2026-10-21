@@ -7,7 +7,9 @@
 #                           needs this tree's static binaries (`just static`).
 #                           ARUGULA_TESTNET_PLATFORM=out runs control's
 #                           platform out of process (M140): the `platform`
-#                           service, with control as its gateway
+#                           service, with control as its gateway;
+#                           ARUGULA_TESTNET_PLATFORM=two runs two of them on
+#                           Postgres (M144, two.yaml)
 #   testnet/up.sh tailnet   headscale, ts-box and ts-client (S28's comparison)
 #
 # Makes the stack's keys in testnet/.state (.state-<name> for another
@@ -32,15 +34,21 @@ die() { log "FAIL: $*"; exit 1; }
 
 need_docker
 
+files="-f $HERE/compose.yaml"
 case "$PROFILE" in
   ssh) boxes="bastion box-bare box-systemd git"; profiles="--profile ssh" ;;
   control)
     boxes="bastion box-bare box-systemd git"; profiles="--profile ssh --profile control"
-    # Control's platform out of process (M140), or in it (the default).
+    # Control's platform out of process (M140), twice on Postgres (M144),
+    # or in it (the default).
     case "${ARUGULA_TESTNET_PLATFORM:-in}" in
       out) profiles="$profiles --profile platform"; export ARUGULA_TESTNET_PLATFORM_URL=http://platform:7700 ;;
+      two)
+        files="$files -f $HERE/two.yaml"
+        profiles="$profiles --profile platform --profile two"
+        export ARUGULA_TESTNET_PLATFORM_URL=http://platforms:7700 ARUGULA_TESTNET_POSTGRES=1 ;;
       in) unset ARUGULA_TESTNET_PLATFORM_URL ;;
-      *) echo "ARUGULA_TESTNET_PLATFORM is in or out" >&2; exit 2 ;;
+      *) echo "ARUGULA_TESTNET_PLATFORM is in, out or two" >&2; exit 2 ;;
     esac ;;
   tailnet) boxes="ts-box ts-client"; profiles="--profile tailnet" ;;
   *) echo "usage: testnet/up.sh ssh|control|tailnet" >&2; exit 2 ;;
@@ -104,8 +112,8 @@ if [ "$PROFILE" = tailnet ]; then
   tail -n1 "$STATE/tailnet-authkey.new" > "$STATE/tailnet-authkey" && rm "$STATE/tailnet-authkey.new"
 fi
 
-# shellcheck disable=SC2086 # two words for the control profile
-docker compose -f "$HERE/compose.yaml" $profiles up -d --build --wait >&2
+# shellcheck disable=SC2086 # several words: the files and profiles
+docker compose $files $profiles up -d --build --wait >&2
 
 if [ "$PROFILE" = control ]; then
   # What the control profile's tests need (test.sh reads it): control's
@@ -123,9 +131,15 @@ export ARUGULA_TESTNET_SSH_PORT=$PORT
 export ARUGULA_TESTNET_CONTROL_PORT=$cport
 export ARUGULA_TESTNET_FAKES_PORT=${ARUGULA_TESTNET_FAKES_PORT:-22981}
 export ARUGULA_TESTNET_GUEST_SSH_PORT=${ARUGULA_TESTNET_GUEST_SSH_PORT:-22982}
-# Where control's platform runs (M140): in (its process) or out (the
-# platform service).
+# Where control's platform runs (M140): in (its process), out (the
+# platform service) or two (platform and platform2, on Postgres: M144).
 export ARUGULA_TESTNET_PLATFORM=${ARUGULA_TESTNET_PLATFORM:-in}
+# The compose files and profiles it came up with (a claim that recreates a
+# service needs them).
+export ARUGULA_TESTNET_COMPOSE="$files $profiles"
+export ARUGULA_TESTNET_PLATFORM_PORT=${ARUGULA_TESTNET_PLATFORM_PORT:-22983}
+export ARUGULA_TESTNET_PLATFORM2_PORT=${ARUGULA_TESTNET_PLATFORM2_PORT:-22984}
+export ARUGULA_TESTNET_MANAGOAT_PORT=${ARUGULA_TESTNET_MANAGOAT_PORT:-22985}
 ENV
   for _ in $(seq 1 40); do
     curl -fsS "http://127.0.0.1:$cport/control.json" >/dev/null 2>&1 && break
@@ -157,5 +171,5 @@ for _ in $(seq 1 20); do
 done
 ssh -F "$STATE/ssh_config" -v box-bare true || true
 # shellcheck disable=SC2086
-docker compose -f "$HERE/compose.yaml" $profiles logs --tail=40 >&2 || true
+docker compose $files $profiles logs --tail=40 >&2 || true
 die "box-bare did not answer through the bastion"

@@ -72,8 +72,8 @@ use crate::{
     auth::{Machine, Person},
     cache,
     db::{
-        Taken,
-        chat::{Message, NewMessage, OldMessage, Page, Room, Search, Word},
+        Db, Taken,
+        chat::{Message, NewChatEvent, NewMessage, OldMessage, Page, Room, Search, Word},
     },
     hub::{Account, Daemon, Flags, PushOptions, Team},
 };
@@ -95,8 +95,9 @@ const MAX_SCOPE_BYTES: u64 = 1 << 30;
 const PAGE: u32 = 50;
 const MAX_PAGE: u32 = 200;
 const SEARCH_HITS: u32 = 50;
-/// Live streams: open at once, per account and in all; the events kept
-/// for resuming; how often each re-reads what it may see anyway.
+/// Live streams: open at once, per account and in all (per machine); the
+/// most events one is sent again when it resumes, and its channel's
+/// backlog; how often each re-reads what it may see anyway.
 const STREAMS_PER_ACCOUNT: usize = 20;
 const STREAMS: usize = 5_000;
 const RING: usize = 1_024;
@@ -576,15 +577,26 @@ pub struct Out {
     to: Option<String>,
 }
 
-/// What's open, in memory: the live streams, the last [`RING`] events for
-/// resuming, and when each person was last pushed for each room.
+/// What's open on this machine, in memory: the live streams, and when each
+/// person was last pushed for each room.
+///
+/// **The events aren't kept here (M144).** Each is a row of `chat_events`,
+/// numbered across every machine the platform runs on ([`Hub::publish`]).
+/// A machine sends its streams the rows after the last one it sent
+/// ([`Hub::catch_up`]): when it publishes one itself, when another machine
+/// wakes it (`pg_notify`, heard by [`start`]), and every
+/// [`CATCH_UP`] besides. So a stream hears what was posted through any
+/// machine, and a page that dropped resumes on whichever machine it
+/// reaches next (`Last-Event-ID` is `c-<seq>`), from the database, as long
+/// as the rows it missed are still kept
+/// ([`CHAT_EVENTS_KEPT`](crate::db::chat::CHAT_EVENTS_KEPT)); otherwise it
+/// resyncs.
 pub struct Hub {
-    /// Event ids are `<epoch>-<n>`: a restart starts a new epoch, and a
-    /// page resuming an old one is told to resync.
-    epoch: String,
-    next: AtomicU64,
+    /// The newest event sent to this machine's streams.
+    last: AtomicU64,
+    /// Held while events are read in, so each goes out once, in order.
+    reading: Mutex<()>,
     tx: broadcast::Sender<Arc<Out>>,
-    ring: Mutex<VecDeque<Arc<Out>>>,
     streams: Mutex<HashMap<String, StreamInfo>>,
     /// Moves when who sees what may have changed (a roster, a reader list,
     /// a flag, read from the hub's change feed): each stream re-reads its
@@ -592,6 +604,18 @@ pub struct Hub {
     generation: AtomicU64,
     pushed: Mutex<HashMap<(String, String), u64>>,
 }
+
+/// Event ids are `c-<seq>`, `seq` being the event's row in `chat_events`
+/// (M144), the same on every machine and across restarts. An id from
+/// before (`<epoch>-<n>`, numbered by one process) resyncs.
+const EPOCH: &str = "c";
+
+/// How often a machine reads events in even when nothing woke it: what a
+/// lost notification can cost.
+pub const CATCH_UP: Duration = Duration::from_secs(5);
+
+/// Events read in at a time.
+const EVENTS_PAGE: u32 = 500;
 
 struct StreamInfo {
     account: String,
@@ -601,10 +625,9 @@ struct StreamInfo {
 impl Default for Hub {
     fn default() -> Self {
         Self {
-            epoch: format!("{:x}", now_ms()),
-            next: AtomicU64::new(0),
+            last: AtomicU64::new(0),
+            reading: Mutex::new(()),
             tx: broadcast::channel(RING).0,
-            ring: Mutex::new(VecDeque::new()),
             streams: Mutex::new(HashMap::new()),
             generation: AtomicU64::new(0),
             pushed: Mutex::new(HashMap::new()),
@@ -613,39 +636,119 @@ impl Default for Hub {
 }
 
 impl Hub {
-    fn publish(&self, ev: ChatLive, to: Option<String>) {
-        // Numbered and sent under the ring's lock, so the ring, the numbers
-        // and the channel agree on the order.
-        let mut ring = self.ring.lock().unwrap();
-        let n = self.next.fetch_add(1, Ordering::SeqCst) + 1;
-        let out = Arc::new(Out { n, ev, to });
-        ring.push_back(out.clone());
-        while ring.len() > RING {
-            ring.pop_front();
+    /// Start after the newest event the database has: a machine that
+    /// starts sends its streams only what comes after.
+    pub fn start_at(&self, db: &Db) {
+        match db.chat_event_bounds() {
+            Ok((_, newest)) => self.last.store(newest, Ordering::SeqCst),
+            Err(e) => tracing::warn!(error = %e, "chat: reading the newest live event"),
         }
-        let _ = self.tx.send(out);
     }
 
-    /// Who sees what may have changed: streams re-read their rooms.
+    /// Keep `ev` (for `to` only, if it's someone's) for every machine's
+    /// streams, then send this machine's what's new.
+    fn publish(&self, db: &Db, ev: ChatLive, to: Option<String>) {
+        let body = data(&ev);
+        let e = NewChatEvent { kind: "live", body: &body, to: to.as_deref(), at: now_ms() };
+        if let Err(e) = db.add_chat_event(&e) {
+            tracing::warn!(error = %e, "chat: keeping a live event");
+        }
+        self.catch_up(db);
+    }
+
+    /// Send this machine's streams every event after the last one sent,
+    /// in order: what any machine published since.
+    pub fn catch_up(&self, db: &Db) {
+        let _one = self.reading.lock().unwrap();
+        loop {
+            let page = match db.chat_events_after(self.last.load(Ordering::SeqCst), EVENTS_PAGE) {
+                Ok(p) => p,
+                Err(e) => return tracing::warn!(error = %e, "chat: reading live events"),
+            };
+            for e in &page {
+                match e.kind.as_str() {
+                    "live" => match serde_json::from_str::<ChatLive>(&e.body) {
+                        Ok(ev) => {
+                            if matches!(ev, ChatLive::Room { .. }) {
+                                self.changed();
+                            }
+                            let _ = self.tx.send(Arc::new(Out { n: e.seq, ev, to: e.to.clone() }));
+                        }
+                        Err(err) => {
+                            tracing::warn!(seq = e.seq, error = %err, "chat: a live event this build can't read")
+                        }
+                    },
+                    _ => self.changed(),
+                }
+                self.last.store(e.seq, Ordering::SeqCst);
+            }
+            if page.len() < EVENTS_PAGE as usize {
+                return;
+            }
+        }
+    }
+
+    /// Who sees what may have changed, here: streams re-read their rooms.
+    /// The hub's change feed moves it on every machine, each following it.
     pub fn changed(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
     }
 
-    /// A room appeared, changed or went.
-    pub fn room(&self, room: &str) {
+    /// Who sees what may have changed, through this machine (a reader list,
+    /// an import): every machine's streams re-read their rooms.
+    pub fn changed_everywhere(&self, db: &Db) {
         self.changed();
-        self.publish(ChatLive::Room { room: room.to_owned() }, None);
+        let e = NewChatEvent { kind: "changed", body: "", to: None, at: now_ms() };
+        if let Err(e) = db.add_chat_event(&e) {
+            tracing::warn!(error = %e, "chat: keeping a live event");
+        }
+        self.catch_up(db);
+    }
+
+    /// A room appeared, changed or went.
+    pub fn room(&self, db: &Db, room: &str) {
+        self.changed();
+        self.publish(db, ChatLive::Room { room: room.to_owned() }, None);
     }
 
     fn id(&self, n: u64) -> String {
-        format!("{}-{n}", self.epoch)
+        format!("{EPOCH}-{n}")
+    }
+
+    /// The events a page that last had `id` missed, from the database, to
+    /// send again; `None` when they can't all be: an id from before M144
+    /// or from another database, or more missed than are kept or than
+    /// [`RING`].
+    fn missed(&self, db: &Db, id: &str) -> Option<(u64, Vec<Arc<Out>>)> {
+        let n: u64 = id.strip_prefix(EPOCH)?.strip_prefix('-')?.parse().ok()?;
+        self.catch_up(db);
+        if n > self.last.load(Ordering::SeqCst) {
+            return None;
+        }
+        // Pruned past it: what it missed may be gone.
+        let (oldest, _) = db.chat_event_bounds().ok()?;
+        if oldest > n + 1 {
+            return None;
+        }
+        let rows = db.chat_events_after(n, RING as u32 + 1).ok()?;
+        if rows.len() > RING {
+            return None;
+        }
+        let outs = rows
+            .into_iter()
+            .filter(|r| r.kind == "live")
+            .filter_map(|r| Some(Arc::new(Out { n: r.seq, ev: serde_json::from_str(&r.body).ok()?, to: r.to })))
+            .collect();
+        Some((n, outs))
     }
 
     fn has_open(&self, account: &str, room: &str) -> bool {
         self.streams.lock().unwrap().values().any(|s| s.account == account && s.open.as_deref() == Some(room))
     }
 
-    /// Whether `account` may be pushed for `room` now (and note it).
+    /// Whether `account` may be pushed for `room` now (and note it). Per
+    /// machine (M144): with two, a room's pushes are at most one a
+    /// [`PUSH_GAP_MS`] from each.
     fn may_push(&self, account: &str, room: &str, now: u64) -> bool {
         let mut p = self.pushed.lock().unwrap();
         if p.len() > 50_000 {
@@ -737,7 +840,7 @@ impl Live {
     }
 
     async fn resync(&mut self) -> Event {
-        self.seen = self.app().chat.next.load(Ordering::SeqCst);
+        self.seen = self.app().chat.last.load(Ordering::SeqCst);
         self.refresh().await;
         Event::default().id(self.app().chat.id(self.seen)).data(data(&ChatLive::Resync {}))
     }
@@ -763,15 +866,11 @@ pub async fn live(
         }
         streams.insert(id.clone(), StreamInfo { account: s.account.clone(), open: None });
     }
-    let last = headers
-        .get("last-event-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split_once('-'))
-        .and_then(|(e, n)| Some((e.to_owned(), n.parse::<u64>().ok()?)));
-    // Subscribe first, then look at the ring: whatever is published in
-    // between is in both, and `seen` drops the second copy. A new stream
-    // starts at what was published before it subscribed.
-    let start = app.chat.next.load(Ordering::SeqCst);
+    let last = headers.get("last-event-id").and_then(|v| v.to_str().ok()).map(str::to_owned);
+    // Subscribe first, then read what was missed from the database: what's
+    // published in between is in both, and `seen` drops the second copy. A
+    // new stream starts at what was sent before it subscribed.
+    let start = app.chat.last.load(Ordering::SeqCst);
     let rx = app.chat.tx.subscribe();
     let mut live = Live {
         reg: Registered { app: app.clone(), id: id.clone() },
@@ -785,22 +884,8 @@ pub async fn live(
     };
     live.refresh().await;
     live.pending.push_back(Event::default().data(data(&ChatLive::Hello { stream: id })));
-    let replay: Option<Vec<Arc<Out>>> = {
-        let ring = app.chat.ring.lock().unwrap();
-        let next = app.chat.next.load(Ordering::SeqCst);
-        match &last {
-            Some((epoch, n)) if *epoch == app.chat.epoch && *n <= next => {
-                let whole = match ring.front() {
-                    Some(f) => f.n <= n + 1,
-                    None => *n == next,
-                };
-                whole.then(|| ring.iter().filter(|o| o.n > *n).cloned().collect())
-            }
-            _ => None,
-        }
-    };
-    match (last, replay) {
-        (Some((_, n)), Some(outs)) => {
+    match last.map(|id| app.chat.missed(&app.db, &id)) {
+        Some(Some((n, outs))) => {
             live.seen = n;
             for o in outs {
                 if let Some(ev) = live.deliver(&o).await {
@@ -808,11 +893,11 @@ pub async fn live(
                 }
             }
         }
-        (Some(_), None) => {
+        Some(None) => {
             let ev = live.resync().await;
             live.pending.push_back(ev);
         }
-        (None, _) => live.seen = start,
+        None => live.seen = start,
     }
     let stream = futures_util::stream::unfold(live, |mut live| async move {
         loop {
@@ -913,7 +998,7 @@ pub async fn new_channel(
     app.db.add_chat_room(&room, &[], project.as_deref()).map_err(|e| {
         if e.is::<Taken>() { err(StatusCode::CONFLICT, "there's a channel by that name") } else { e.into() }
     })?;
-    app.chat.room(&room.id);
+    app.chat.room(&app.db, &room.id);
     app.analytics.capture_team(&s.account, &team, "chat channel made", json!({}));
     Ok(Json(listed(&app, &facts, &s.account, &room, 0)?))
 }
@@ -950,7 +1035,7 @@ pub async fn new_dm(
     }
     app.limits.check_account(CHAT_ROOMS, &s.account)?;
     app.db.add_chat_room(&room, &[&s.account, &b.with], None)?;
-    app.chat.room(&room.id);
+    app.chat.room(&app.db, &room.id);
     let facts = Facts::of(&app, Some(&s.account), &[&room]).await?;
     Ok(Json(listed(&app, &facts, &s.account, &room, 0)?))
 }
@@ -995,7 +1080,7 @@ pub async fn open_target(State(app): State<Arc<Platform>>, s: Person, Json(b): J
     }
     app.limits.check_account(CHAT_ROOMS, &s.account)?;
     match app.db.add_chat_room(&room, &[], None) {
-        Ok(()) => app.chat.room(&room.id),
+        Ok(()) => app.chat.room(&app.db, &room.id),
         // Someone made it just now.
         Err(e) if e.is::<Taken>() => {
             let r = app.db.chat_room_for(kind, &b.machine, &b.target)?.ok_or_else(nothing)?;
@@ -1043,7 +1128,7 @@ pub async fn change_room(
     if let Some(archived) = b.archived {
         app.db.archive_chat_room(&room.id, archived.then(now_ms))?;
     }
-    app.chat.room(&room.id);
+    app.chat.room(&app.db, &room.id);
     let room = app.db.chat_room(&room.id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such room"))?;
     Ok(Json(listed(&app, &facts, &s.account, &room, from)?))
 }
@@ -1151,7 +1236,7 @@ pub async fn post(
             mentions: &named,
         },
     )?;
-    app.chat.publish(ChatLive::Message { room: room.id.clone(), seq }, None);
+    app.chat.publish(&app.db, ChatLive::Message { room: room.id.clone(), seq }, None);
     let pushed = push(
         &app,
         &facts,
@@ -1282,7 +1367,7 @@ pub async fn edit(
     app.limits.check_account_per_minute(CHAT_POSTS, &s.account)?;
     let (named, _) = mentions(&app, text, &audience(&app, &room).await?, &s.account).await?;
     app.db.edit_chat_message(&room.id, seq, text, &named, now_ms())?;
-    app.chat.publish(ChatLive::Changed { room: room.id.clone(), seq }, None);
+    app.chat.publish(&app.db, ChatLive::Changed { room: room.id.clone(), seq }, None);
     Ok(Json(shown(&app, &s.account, &message_in(&app, &room, seq)?).await?))
 }
 
@@ -1308,7 +1393,7 @@ pub async fn delete(
     }
     if m.deleted.is_none() {
         app.db.delete_chat_message(&room.id, seq, now_ms())?;
-        app.chat.publish(ChatLive::Changed { room: room.id.clone(), seq }, None);
+        app.chat.publish(&app.db, ChatLive::Changed { room: room.id.clone(), seq }, None);
     }
     Ok(Json(shown(&app, &s.account, &message_in(&app, &room, seq)?).await?))
 }
@@ -1324,7 +1409,7 @@ pub async fn read(
     let (room, from, facts) = room_for(&app, &s.account, &id).await?;
     let seq = b.seq.min(room.last_seq);
     if app.db.set_chat_read(&room.id, &s.account, seq)? {
-        app.chat.publish(ChatLive::Read { room: room.id.clone(), seq }, Some(s.account.clone()));
+        app.chat.publish(&app.db, ChatLive::Read { room: room.id.clone(), seq }, Some(s.account.clone()));
     }
     Ok(Json(listed(&app, &facts, &s.account, &room, from)?))
 }
@@ -1494,9 +1579,9 @@ pub async fn daemon_readers(
     check_reader_lists(&b.targets)?;
     app.limits.check_daemon(CHAT_READERS, &machine)?;
     let rooms = store_readers(&app, &machine, &b.targets)?;
-    app.chat.changed();
+    app.chat.changed_everywhere(&app.db);
     for r in rooms {
-        app.chat.room(&r);
+        app.chat.room(&app.db, &r);
     }
     Ok(Json(ChatReadersStored { stored: b.targets.len() }))
 }
@@ -1689,11 +1774,11 @@ pub async fn daemon_import(
         touched.push(room.id);
     }
 
-    app.chat.changed();
+    app.chat.changed_everywhere(&app.db);
     touched.sort();
     touched.dedup();
     for r in touched {
-        app.chat.room(&r);
+        app.chat.room(&app.db, &r);
     }
     if out.messages > 0 {
         app.analytics.capture(&owner, "chat imported", json!({ "rooms": out.rooms, "messages": out.messages }));
@@ -1722,15 +1807,39 @@ pub(crate) fn erase_account(tx: &impl crate::db::Sql, deleted: &crate::Deleted) 
 pub(crate) fn account_gone(app: &Platform, rooms: &[String]) {
     app.cache.drop_all();
     for r in rooms {
-        app.chat.room(r);
+        app.chat.room(&app.db, r);
     }
-    app.chat.changed();
+    app.chat.changed_everywhere(&app.db);
 }
 
 /// Chat's background work: following the hub's change feed
-/// ([`cache::start`]), which moves who sees what.
+/// ([`cache::start`]), which moves who sees what; sending this machine's
+/// streams the events other machines published (M144: woken by their
+/// `pg_notify`, else every [`CATCH_UP`]); and pruning the oldest events
+/// kept, every minute unless paused (any machine: it's the same delete).
 pub fn start(app: &Arc<Platform>) {
     cache::start(app);
+    let app = Arc::downgrade(app);
+    tokio::spawn(async move {
+        let mut pruned = Instant::now();
+        loop {
+            let Some(p) = app.upgrade() else { return };
+            p.chat.catch_up(&p.db);
+            // Held with the rest of the background work for a window.
+            if pruned.elapsed() >= Duration::from_secs(60) && !p.is_paused() {
+                if let Err(e) = p.db.prune_chat_events() {
+                    tracing::warn!(error = %e, "chat: pruning live events");
+                }
+                pruned = Instant::now();
+            }
+            let heard = p.listening.as_ref().map(|l| l.heard.clone());
+            drop(p);
+            match heard {
+                Some(h) => drop(tokio::time::timeout(CATCH_UP, h.notified()).await),
+                None => tokio::time::sleep(CATCH_UP).await,
+            }
+        }
+    });
 }
 
 #[cfg(test)]

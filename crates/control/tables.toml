@@ -454,6 +454,17 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "chat_events"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Chat's live events, numbered (M144): a room and a message number that changed, a read mark that moved (and whose), or that who sees what may have changed. Never a message's text. Every machine of the platform sends its open pages the ones after the last it sent, and a page that dropped resumes from them. The newest 10,000 are kept."
+why_asleep = "Open pages hear of messages, edits and read marks through control alone, with every machine asleep."
+with_account = "partly"
+note = "Its read marks' events lose its name (they stay as nameless markers, so the numbers hold); events about rooms name no one and go with the oldest."
+seen_by = ["litestream"]
+
+[[table]]
 name = "chat_readers"
 plane = "platform"
 process = "platform"

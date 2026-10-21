@@ -12,22 +12,30 @@
 //! Each connection keeps the statements it has prepared, so a query is
 //! parsed once per connection. That needs Postgres itself or a pooler in
 //! session mode: use the cluster's direct address, not PgBouncer's in
-//! transaction mode (M144's `LISTEN` needs it too).
+//! transaction mode ([`Pool::listen`]'s `LISTEN` needs it too).
+//!
+//! **Two machines (M144).** Nothing here serializes the platform's
+//! transactions any more: each is Postgres's own `READ COMMITTED`, and the
+//! queries that need it lock rows (`FOR UPDATE`, `SKIP LOCKED`) or take a
+//! named lock ([`Session::lock`]) for an invariant rows can't hold.
+//! [`Pool::listen`] is the one connection held for itself: it hears other
+//! machines' notifications (`LISTEN`) and holds the leader's lock.
 
 use std::{
     cell::RefCell,
     collections::HashMap,
     error::Error,
     sync::{
-        Mutex, MutexGuard,
-        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex, MutexGuard,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
+    time::Duration,
 };
 
 use anyhow::{Context as _, Result};
 use bytes::BytesMut;
 use tokio_postgres::{
-    Client, NoTls, Statement,
+    AsyncMessage, Client, NoTls, Statement,
     types::{FromSql, IsNull, ToSql, Type, to_sql_checked},
 };
 
@@ -43,10 +51,9 @@ pub struct Pool {
     /// The schema its tables are in: Postgres's default (`public`), or a
     /// test's own, made if it isn't there.
     schema: Option<String>,
-    /// The key of the platform's write lock (`pg_advisory_xact_lock`):
-    /// one per schema, so tests running side by side don't wait on each
-    /// other.
-    lock: i64,
+    /// What names its locks and its notifications' channel: the schema,
+    /// so tests running side by side don't wait on or hear each other.
+    scope: String,
     /// A test's schema, dropped with the pool.
     scratch: bool,
     slots: Vec<Mutex<Option<Session>>>,
@@ -58,7 +65,7 @@ pub struct Pool {
 /// One connection, and the statements it has prepared.
 pub struct Session {
     client: Client,
-    lock: i64,
+    scope: String,
     statements: RefCell<HashMap<String, Statement>>,
 }
 
@@ -76,6 +83,10 @@ impl Pool {
     pub fn connect(url: &str, schema: Option<String>) -> Result<Self> {
         let mut cfg: tokio_postgres::Config = url.parse().context("the platform's database URL")?;
         cfg.application_name("arugula-platform");
+        Self::connect_cfg(cfg, schema)
+    }
+
+    fn connect_cfg(cfg: tokio_postgres::Config, schema: Option<String>) -> Result<Self> {
         let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::Builder::new().name("platform-pg".into()).spawn(move || {
@@ -89,12 +100,11 @@ impl Pool {
             });
         })?;
         let rt = rx.recv().context("the platform's database thread")??;
-        let lock = lock_key(schema.as_deref().unwrap_or("public"));
         let pool = Self {
             cfg,
             scratch: schema.is_some(),
+            scope: schema.clone().unwrap_or_else(|| "public".into()),
             schema,
-            lock,
             slots: (0..POOL).map(|_| Mutex::new(None)).collect(),
             next: AtomicUsize::new(0),
             rt,
@@ -106,6 +116,21 @@ impl Pool {
         }
         drop(first);
         Ok(pool)
+    }
+
+    /// Another pool on the same database and schema, which leaves the
+    /// schema to this one to drop (tests: two machines on one database).
+    #[cfg(any(test, feature = "contract"))]
+    pub fn second(&self) -> Result<Self> {
+        let mut pool = Self::connect_cfg(self.cfg.clone(), self.schema.clone())?;
+        pool.scratch = false;
+        Ok(pool)
+    }
+
+    /// The schema it's in, when it isn't Postgres's default.
+    #[cfg(any(test, feature = "contract"))]
+    pub fn schema(&self) -> Option<&str> {
+        self.schema.as_deref()
     }
 
     /// A connection: a free one that's open, else a new one in a free
@@ -148,8 +173,131 @@ impl Pool {
                 client.batch_execute(&format!("CREATE SCHEMA IF NOT EXISTS \"{s}\"; SET search_path TO \"{s}\"")),
             )?;
         }
-        Ok(Session { client, lock: self.lock, statements: Default::default() })
+        Ok(Session { client, scope: self.scope.clone(), statements: Default::default() })
     }
+
+    /// The connection held for itself (M144): it `LISTEN`s on the
+    /// platform's channel ([`channel`]) and tries for the leader's lock
+    /// (`pg_try_advisory_lock`, held for as long as this connection is
+    /// open), and is made again whenever it's lost, then again tried for
+    /// the lock every [`LEADER_TRY`]. Each notification, and each
+    /// (re)connection, wakes [`Listening::heard`]: whoever waits on it reads
+    /// what it may have missed. Returns once the first try is over, so a
+    /// machine that can be the leader is one when this returns.
+    ///
+    /// Both ends probe the connection with TCP keepalives, so a leader
+    /// whose machine vanished without closing it loses the lock within
+    /// about a minute, and the other machine takes it; a leader cut off
+    /// stops leading about as soon. The feed follower's writes are
+    /// idempotent, so the moment both think they lead costs nothing.
+    pub fn listen(&self) -> Listening {
+        let listening = Listening { heard: Default::default(), leader: Default::default() };
+        let (mut cfg, scope) = (self.cfg.clone(), self.scope.clone());
+        // This side probes too, so a leader cut off from the database stops
+        // thinking it leads about when the database lets the lock go.
+        cfg.keepalives(true)
+            .keepalives_idle(Duration::from_secs(20))
+            .keepalives_interval(Duration::from_secs(10))
+            .keepalives_retries(3);
+        let (heard, leader) = (listening.heard.clone(), listening.leader.clone());
+        let (first, tried) = std::sync::mpsc::channel::<()>();
+        self.rt.spawn(async move {
+            let mut first = Some(first);
+            let mut wait = Duration::from_millis(250);
+            loop {
+                match listen_once(&cfg, &scope, &heard, &leader, &mut first).await {
+                    Ok(()) => wait = Duration::from_millis(250),
+                    Err(e) => tracing::warn!("the platform's listening connection: {e:#}"),
+                }
+                leader.store(false, Ordering::SeqCst);
+                if let Some(f) = first.take() {
+                    let _ = f.send(());
+                }
+                tokio::time::sleep(wait).await;
+                wait = (wait * 2).min(Duration::from_secs(10));
+            }
+        });
+        let _ = tried.recv_timeout(Duration::from_secs(10));
+        listening
+    }
+}
+
+/// How often a machine that isn't the leader tries for the lock.
+pub const LEADER_TRY: Duration = Duration::from_secs(5);
+
+/// The channel the platform's machines notify each other on, for a
+/// schema: `arugula_platform_public` in production.
+pub fn channel(scope: &str) -> String {
+    format!("arugula_platform_{scope}")
+}
+
+/// What [`Pool::listen`] gives: a wake-up for each notification (they
+/// coalesce: one wake for several), and whether this machine holds the
+/// leader's lock.
+#[derive(Clone)]
+pub struct Listening {
+    pub heard: Arc<tokio::sync::Notify>,
+    pub leader: Arc<AtomicBool>,
+}
+
+/// One listening connection, until it's lost.
+async fn listen_once(
+    cfg: &tokio_postgres::Config,
+    scope: &str,
+    heard: &tokio::sync::Notify,
+    leader: &AtomicBool,
+    first: &mut Option<std::sync::mpsc::Sender<()>>,
+) -> Result<()> {
+    use futures_util::StreamExt as _;
+    let (client, mut connection) = cfg.connect(NoTls).await.context("connecting")?;
+    let (lost_tx, mut lost) = tokio::sync::oneshot::channel::<()>();
+    let wake = Arc::new(tokio::sync::Notify::new());
+    let woke = wake.clone();
+    let driver = tokio::spawn(async move {
+        let mut messages = futures_util::stream::poll_fn(move |cx| connection.poll_message(cx));
+        while let Some(m) = messages.next().await {
+            match m {
+                Ok(AsyncMessage::Notification(_)) => woke.notify_one(),
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!("the platform's listening connection: {e}");
+                    break;
+                }
+            }
+        }
+        let _ = lost_tx.send(());
+    });
+    let setup = format!(
+        "SET application_name = 'arugula-platform listen'; SET tcp_keepalives_idle = 20; \
+         SET tcp_keepalives_interval = 10; SET tcp_keepalives_count = 3; LISTEN \"{}\"",
+        channel(scope)
+    );
+    client.batch_execute(&setup).await.context("LISTEN")?;
+    let key = lock_key(scope, "leader");
+    // Read what was missed while this connection wasn't there.
+    heard.notify_one();
+    let r = async {
+        loop {
+            if !leader.load(Ordering::SeqCst) {
+                let got: bool = client.query_one("SELECT pg_try_advisory_lock($1)", &[&key]).await?.get(0);
+                if got {
+                    tracing::info!("this machine leads the platform's feed follower and reports");
+                }
+                leader.store(got, Ordering::SeqCst);
+            }
+            if let Some(f) = first.take() {
+                let _ = f.send(());
+            }
+            tokio::select! {
+                _ = wake.notified() => heard.notify_one(),
+                _ = tokio::time::sleep(LEADER_TRY) => {}
+                _ = &mut lost => return Ok::<_, anyhow::Error>(()),
+            }
+        }
+    }
+    .await;
+    driver.abort();
+    r
 }
 
 impl Drop for Pool {
@@ -169,10 +317,10 @@ impl Drop for Pool {
     }
 }
 
-/// A stable key for the write lock of a schema (FNV-1a).
-fn lock_key(schema: &str) -> i64 {
+/// A stable key for the lock `name` in a schema (FNV-1a).
+fn lock_key(scope: &str, name: &str) -> i64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in "arugula-platform:".bytes().chain(schema.bytes()) {
+    for b in "arugula-platform:".bytes().chain(scope.bytes()).chain(*b":").chain(name.bytes()) {
         h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3);
     }
     h as i64
@@ -187,10 +335,11 @@ impl Lease<'_> {
         }
     }
 
-    /// Begin a transaction, holding the platform's write lock until it ends.
+    /// Begin a transaction: Postgres's own `READ COMMITTED`, with no lock
+    /// of the platform's (M144; [`Session::lock`] takes one).
     pub fn begin(&self) -> Result<()> {
         let s = self.session().map_err(|e| anyhow::anyhow!("the platform's database: {e:#}"))?;
-        s.batch(&format!("BEGIN; SELECT pg_advisory_xact_lock({})", s.lock))
+        s.batch("BEGIN")
     }
 }
 
@@ -220,6 +369,21 @@ impl Session {
 
     pub fn batch(&self, sql: &str) -> Result<()> {
         Ok(futures_executor::block_on(self.client.batch_execute(sql))?)
+    }
+
+    /// Hold the lock `name` until the transaction ends
+    /// (`pg_advisory_xact_lock`): for an invariant no row holds, such as
+    /// one migration runner at a time.
+    pub fn lock(&self, name: &str) -> Result<()> {
+        self.batch(&format!("SELECT pg_advisory_xact_lock({})", lock_key(&self.scope, name)))
+    }
+
+    /// Tell every machine's [`Pool::listen`] (`pg_notify`): at the
+    /// transaction's commit, or at once outside one. The payload is short
+    /// (`NOTIFY` takes under 8000 bytes): what to read, not what's in it.
+    pub fn notify(&self, payload: &str) -> Result<()> {
+        self.execute("SELECT pg_notify(?1, ?2)", &[Value::Text(channel(&self.scope)), Value::Text(payload.into())])?;
+        Ok(())
     }
 }
 
@@ -256,9 +420,12 @@ impl ToSql for Value {
                 Type::INT2 => i16::from(*b).to_sql(ty, out),
                 _ => Err(format!("a boolean can't go where Postgres wants {ty}").into()),
             },
+            // Never an integer column's: Postgres would read the float's
+            // bits as the integer (M144 found it copying SQLite's 2.5).
             Value::Real(f) => match *ty {
                 Type::FLOAT4 => (*f as f32).to_sql(ty, out),
-                _ => f.to_sql(ty, out),
+                Type::FLOAT8 => f.to_sql(ty, out),
+                _ => Err(format!("a real number can't go where Postgres wants {ty}").into()),
             },
             Value::Text(s) => match *ty {
                 Type::JSONB => {
@@ -269,7 +436,10 @@ impl ToSql for Value {
                 Type::BYTEA => s.as_bytes().to_sql(ty, out),
                 _ => s.as_str().to_sql(ty, out),
             },
-            Value::Blob(b) => b.as_slice().to_sql(ty, out),
+            Value::Blob(b) => match *ty {
+                Type::BYTEA => b.as_slice().to_sql(ty, out),
+                _ => Err(format!("bytes can't go where Postgres wants {ty}").into()),
+            },
         }
     }
 

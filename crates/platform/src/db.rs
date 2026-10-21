@@ -29,10 +29,11 @@ pub mod chat;
 pub mod cloud;
 mod legacy;
 pub mod migrate;
-mod pg;
+pub mod pg;
 pub mod projects;
 pub mod sql;
 
+pub use pg::Listening;
 pub use sql::{Conn, Sql};
 
 /// Where the platform's database is (M143): `--platform-database-url` or
@@ -135,6 +136,38 @@ impl Db {
             Backend::Sqlite(_) => migrate::Dialect::Sqlite,
             Backend::Postgres(_) => migrate::Dialect::Postgres,
         }
+    }
+
+    /// The connection held for listening to the platform's other machines
+    /// and for the leader's lock (M144, [`pg::Pool::listen`]): `None` on
+    /// SQLite, which is one machine, always its own leader.
+    pub fn listen(&self) -> Option<Listening> {
+        match &self.backend {
+            Backend::Sqlite(_) => None,
+            Backend::Postgres(p) => Some(p.listen()),
+        }
+    }
+
+    /// Another handle on this test's database (M144: two machines on one
+    /// database): the same schema on Postgres, which the first handle
+    /// drops; `None` on SQLite in memory, which only one connection sees.
+    #[cfg(any(test, feature = "contract"))]
+    pub fn second(&self) -> Option<Self> {
+        match &self.backend {
+            Backend::Sqlite(_) => None,
+            Backend::Postgres(p) => Some(Self { backend: Backend::Postgres(Box::new(p.second().ok()?)) }),
+        }
+    }
+
+    /// A URL that reaches this test's Postgres schema
+    /// (`ARUGULA_TEST_POSTGRES_URL` with its `search_path`), for what opens
+    /// Postgres by URL (the window's tools); `None` on SQLite.
+    #[cfg(any(test, feature = "contract"))]
+    pub fn test_url(&self) -> Option<String> {
+        let Backend::Postgres(p) = &self.backend else { return None };
+        let url = std::env::var("ARUGULA_TEST_POSTGRES_URL").ok()?;
+        let sep = if url.contains('?') { '&' } else { '?' };
+        Some(format!("{url}{sep}options=-c%20search_path%3D{}", p.schema()?))
     }
 
     /// A connection, held until it's dropped ([`sql`]).

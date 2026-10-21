@@ -158,23 +158,46 @@ async fn run() -> anyhow::Result<()> {
                 .layer(axum::middleware::from_fn_with_state(key.clone(), remote::vouched)),
         )
         .merge(remote::serve_platform(port, key))
-        // Fly's health check: the only thing answered without the hub.
-        .route(
-            "/platform.json",
-            get(|| async { Json(serde_json::json!({ "platform": true, "version": env!("CARGO_PKG_VERSION") })) }),
-        );
+        // Fly's health check: the only thing answered without the hub. A
+        // machine that can't reach its database answers 503, so a rolling
+        // deploy (M144: two machines) stops at it rather than going on.
+        .route("/platform.json", get(health).with_state(p.clone()));
     info!(listen = %l.local_addr()?, hub = %a.hub, "Arugula platform");
     let serve = axum::serve(l, app);
     tokio::select! {
         r = serve => r?,
         _ = stopping() => info!("stopping"),
     }
+    // Cloud jobs this machine holds go back to the other (or to the next
+    // start) as soon as they checkpoint, not when their leases run out.
+    p.drain(std::time::Duration::from_secs(10)).await;
     p.analytics.flush().await;
     // Litestream syncs what's left before the platform goes.
     if let Some(b) = &backup {
         b.stop().await;
     }
     Ok(())
+}
+
+/// `GET /platform.json`: up, its version, its database answering, and
+/// whether it's the platform's leader (M144).
+async fn health(axum::extract::State(p): axum::extract::State<Arc<Platform>>) -> axum::response::Response {
+    use arugula_platform::db::Sql as _;
+    use axum::response::IntoResponse as _;
+    let db = p.db.c().query_row("SELECT 1", &[], |r| r.get::<i64>(0));
+    let body = serde_json::json!({
+        "platform": true,
+        "version": env!("CARGO_PKG_VERSION"),
+        "database": db.is_ok(),
+        "leader": p.is_leader(),
+    });
+    match db {
+        Ok(_) => Json(body).into_response(),
+        Err(e) => {
+            tracing::warn!(error = %e, "health check: the database didn't answer");
+            (axum::http::StatusCode::SERVICE_UNAVAILABLE, Json(body)).into_response()
+        }
+    }
 }
 
 /// SIGTERM (Fly stopping the machine) or Ctrl-C. Windows has only Ctrl-C:

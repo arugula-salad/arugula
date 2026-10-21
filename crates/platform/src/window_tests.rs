@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::db::Sql as _;
 
 /// A directory of its own, removed when dropped.
 struct Dir(PathBuf);
@@ -221,4 +222,66 @@ fn secrets_open_only_with_their_key() {
     assert_eq!(secrets_open(&hub, SAMPLE_KEY).unwrap(), (1, vec![]));
     let wrong = "02".repeat(32);
     assert_eq!(secrets_open(&hub, &wrong).unwrap(), (0, vec![("acct-a".into(), "GITHUB_TOKEN".into())]));
+}
+
+/// The second window's copy (M145), to Postgres and back: every count and
+/// portable checksum the same on both sides, read back alike by
+/// `checksums`; Postgres's identities moved past the copied rows; search
+/// and secrets work there; and what Postgres can't keep as it is (a real
+/// in an integer column) refused, with nothing written.
+#[test]
+fn a_copy_to_postgres_and_back_matches() {
+    let pg = crate::db::Db::test();
+    let Some(url) = pg.test_url() else { return eprintln!("skipped: needs ARUGULA_TEST_POSTGRES_URL") };
+    let d = Dir::new();
+    let hub = d.at("control.db");
+    hub_file(&hub);
+    let (file, to) = (Place::File(hub.clone()), Place::Postgres(url));
+    let refused = portable::copy(&file, &to, false).unwrap_err();
+    assert!(format!("{refused:#}").contains("writing cloud_notifications"), "{refused:#}");
+    let n: u64 =
+        pg.c().query_row("SELECT count(*) FROM chat_messages", crate::db::sql::params![], |r| r.get(0)).unwrap();
+    assert_eq!(n, 0, "nothing was written");
+    rusqlite::Connection::open(&hub)
+        .unwrap()
+        .execute("UPDATE cloud_notifications SET next_attempt = 2 WHERE next_attempt = 2.5", [])
+        .unwrap();
+
+    let r = portable::copy(&file, &to, false).unwrap();
+    assert!(r.tables.iter().all(|t| t.matches()), "{}", r.render(&file, &to));
+    assert_eq!(r.rows(), checksums(&hub).unwrap().iter().map(|t| t.1).sum::<u64>());
+    assert!(r.render(&file, &to).contains("every count and checksum matches"));
+    assert!(!r.render(&file, &to).contains(":m144@") && !to.to_string().contains("m144"), "no password printed");
+    assert_eq!(portable::checksums(&file).unwrap(), portable::checksums(&to).unwrap());
+    let id: i64 = pg
+        .c()
+        .query_row(
+            "INSERT INTO chat_messages (room, seq, author, at, text) VALUES ('r1', 4, 'acct-a', 30, 'after') RETURNING id",
+            crate::db::sql::params![],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(id > 40, "the identity went on past the copied ids: {id}");
+    let words = [crate::db::chat::Word { text: "rehearsal".into(), prefix: false }];
+    let search = crate::db::chat::Search { words: &words, ..Default::default() };
+    let found = pg.chat_search(&["r1".into()], &search, 10).unwrap();
+    assert_eq!(found.len(), 2, "search finds the copied words");
+    assert_eq!(portable::secrets_open(&to, SAMPLE_KEY).unwrap(), (1, vec![]));
+    let again = portable::copy(&file, &to, false).unwrap_err();
+    assert!(again.to_string().contains("already holds"), "{again}");
+
+    // And back, for a rollback after the window: a new file.
+    let back = Place::File(d.at("back.db"));
+    let r = portable::copy(&to, &back, false).unwrap();
+    assert_eq!(r.fts_rows, Some(5), "chat_fts rebuilt there");
+    assert_eq!(portable::checksums(&back).unwrap(), portable::checksums(&to).unwrap());
+    let c = read_only(&d.at("back.db")).unwrap();
+    let rowids: Vec<i64> = c
+        .prepare("SELECT rowid FROM cloud_notifications ORDER BY rowid")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(rowids, [2, 3], "the rowids queries order by, kept");
 }

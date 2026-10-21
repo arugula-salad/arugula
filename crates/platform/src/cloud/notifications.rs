@@ -33,6 +33,11 @@ async fn tick(app: &Platform) -> Result<()> {
 
 async fn tick_at(app: &Platform, now: u64) -> Result<()> {
     for n in app.db.cloud_notifications(now)? {
+        // Taken for 30 s, so the platform's other machine (M144) doesn't
+        // send it too; a push that isn't recorded goes again after that.
+        if !app.db.claim_cloud_notification(&n.conversation, &n.request, now, now + 30_000)? {
+            continue;
+        }
         let target = match &n.cloud_workspace {
             Some(cloud_workspace) => Target::Tab { cloud_workspace, tab: &n.conversation },
             None => Target::Run(&n.conversation),

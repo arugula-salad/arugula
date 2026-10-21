@@ -1,10 +1,22 @@
 # Control's platform (M140, #1157): chat, Cloud, billing, projects and
 # grants, behind the hub's gateway (illogical-control). It has no public
-# address: no [http_service] and no [[services]], so Fly's proxy never
-# forwards to it and no public IP is allocated. The hub reaches it over the
-# private network (6PN) at arugula-platform.internal:7700, and it reaches
-# the hub's internal API at illogical-control.internal:7691. Never
-# `fly ips allocate-*` a public address for it.
+# address. Its one service (M144, [[services]] below) is for Flycast, Fly's
+# proxy on the private network: the hub reaches the platform at
+# http://arugula-platform.flycast:7700, which Fly's proxy spreads across
+# its machines, following their health checks. Flycast needs a PRIVATE IPv6:
+#
+#   fly ips allocate-v6 --private -a arugula-platform
+#
+# Never `fly ips allocate-v4` or a public `allocate-v6`: with a public
+# address the same service would be on the internet (the platform still
+# answers nothing without the hub's signed principal, but it must not be
+# reachable at all). Deploys pass --no-public-ips, and
+# scripts/ci-platform-deploy refuses to deploy while the app has any public
+# address. Before the private IPv6 exists, the hub reaches it at
+# arugula-platform.internal:7700 (6PN, straight to a machine), as it did
+# before M144; the switch is a hub secret in M145's window
+# (docs/control-ops.md). The platform reaches the hub's internal API at
+# illogical-control.internal:7691.
 #
 # Secrets (fly secrets set -a arugula-platform): ARUGULA_PLATFORM_KEY (the
 # same as the hub's), and the platform's own: ARUGULA_MANAGOAT_API_KEY,
@@ -15,13 +27,36 @@
 # (docs/control-ops.md, "The platform" and "Backups"). Each release tag
 # deploys it before the hub (release.yml's `platform` job), once
 # FLY_PLATFORM_API_TOKEN is set; `just platform-deploy` is for hotfixes.
+#
+# Two modes (M144, docs/control-ops.md "Two platform machines"):
+# - SQLite (no ARUGULA_PLATFORM_DATABASE_URL secret): exactly ONE machine.
+#   Its database is the file on its volume; a second machine would have a
+#   volume, and so a database, of its own. ci-platform-deploy refuses to
+#   deploy two machines without the secret.
+# - Postgres (ARUGULA_PLATFORM_DATABASE_URL set, from M145): two machines,
+#   `fly scale count 2`. They share the database, take Cloud jobs with
+#   SKIP LOCKED, tell each other chat's events with LISTEN/NOTIFY, and one
+#   of them leads (the feed follower, usage reports). Neither needs a
+#   volume; the first machine's keeps the SQLite file as the rollback for
+#   14 days, and the second gets an empty one from `fly scale count`,
+#   since every machine mounts what [[mounts]] says. After the 14 days
+#   [[mounts]] can go (a follow-up).
+# A deploy replaces one machine at a time ([deploy]), each waiting for its
+# health check, which answers 503 while the machine can't reach its
+# database; a stopping machine hands its Cloud jobs back before it goes.
 app = "arugula-platform"
 # iad, beside its Managed Postgres (not offered in ewr): the hub stays in
 # ewr, a ~5 ms hop away (Jake, 2026-10-21).
 primary_region = "iad"
-# On a stop, the platform lets Litestream sync one last time (up to 10 s).
+# On a stop, the platform hands back its Cloud jobs (up to 10 s), then
+# lets Litestream sync one last time (up to 10 s, SQLite only).
 kill_signal = "SIGTERM"
-kill_timeout = "15s"
+kill_timeout = "25s"
+
+# One machine at a time, so with two the other serves while each restarts.
+[deploy]
+  strategy = "rolling"
+  max_unavailable = 1
 
 [env]
   # 6PN is IPv6: listen on every address, which only the private network
@@ -36,14 +71,37 @@ kill_timeout = "15s"
   source = "platform_data"
   destination = "/data"
 
-# Machine checks (no service needed): fly deploy waits for them, and
-# scripts/ci-platform-deploy checks they pass.
-[checks]
-  [checks.health]
-    type = "http"
+# Flycast only (see the top): plain TCP on 7700, passed through to the
+# platform as it is, with no handlers (no TLS, no HTTP rewriting, no
+# force_https). It's reachable only at the app's private IPv6, and only
+# once one is allocated. Machines run all the time: chat's live streams and
+# the cloud worker need them up, so nothing stops or starts them on traffic.
+[[services]]
+  protocol = "tcp"
+  internal_port = 7700
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  # Two machines on Postgres (it only matters with auto-stop, which is off).
+  min_machines_running = 2
+
+  [[services.ports]]
     port = 7700
+
+  # Each chat page holds a connection open through the proxy (its live
+  # stream): Fly's default of 25 a machine would refuse the 26th.
+  [services.concurrency]
+    type = "connections"
+    soft_limit = 4000
+    hard_limit = 5000
+
+  # The proxy sends calls only to machines passing it; fly deploy waits for
+  # it, and scripts/ci-platform-deploy checks it passes. /platform.json
+  # answers 503 while the machine can't reach its database.
+  [[services.http_checks]]
+    method = "get"
     path = "/platform.json"
-    interval = "30s"
+    protocol = "http"
+    interval = "15s"
     timeout = "5s"
     grace_period = "10s"
 
