@@ -1,0 +1,135 @@
+/* The platform page (M150): its frame and the lists on its own pages.
+   Everything else (the bar, chat, Cloud workspaces) is shared/style.css,
+   so the platform page and the shell look alike. */
+
+.platform {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.platform-main {
+  flex: 1;
+  overflow: auto;
+}
+
+.platform-bar .platform-project {
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.platform-bar a.place,
+.platform-bar .platform-me {
+  display: flex;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.platform-section {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.platform-section h1 {
+  margin: 0 0 16px;
+  font-size: 20px;
+}
+
+.platform-section h2 {
+  margin: 20px 0 8px;
+  font-size: 14px;
+}
+
+.platform-section a {
+  color: var(--accent);
+}
+
+.platform-cards,
+.platform-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.platform-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.platform-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--raised);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg) !important;
+  text-decoration: none;
+}
+
+.platform-card:hover {
+  border-color: var(--accent);
+}
+
+.platform-list li {
+  padding: 4px 0;
+}
+
+.platform-list .chat-count {
+  margin-left: 6px;
+}
+
+.platform-columns {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 24px;
+}
+
+.platform-members .chat-people span.dim {
+  margin-left: auto;
+}
+
+.platform-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.platform-workspace .tab {
+  color: inherit;
+  text-decoration: none;
+}
+
+.platform-workspace .cloud-ws-view {
+  flex: 1;
+  overflow: auto;
+}
+
+.platform-toast {
+  position: fixed;
+  z-index: 70;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 10px 16px;
+  border: 1px solid var(--raised);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 12px 40px #000a;
+}
+
+@media (max-width: 600px) {
+  .platform-columns {
+    grid-template-columns: 1fr;
+  }
+}

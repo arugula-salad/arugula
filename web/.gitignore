@@ -1,5 +1,7 @@
 node_modules/
 dist/
+dist-platform/
+dist-platform.modules.json
 test-results/
 playwright-report/
 journey-reports/

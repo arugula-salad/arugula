@@ -102,6 +102,8 @@ fn generate() -> String {
         c.visit::<ChatOpen>();
         c.visit::<ChatLive>();
     }
+    // The platform page's projects (M150).
+    c.visit::<arugula_control_wire::projects::Projects>();
     // Cloud workspaces (M137): what control's `/api/cloud/` answers with.
     {
         use arugula_cloud_wire::*;

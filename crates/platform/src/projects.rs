@@ -36,10 +36,14 @@
 
 use std::{sync::Arc, time::Duration};
 
+use arugula_control_common::ApiError;
+use arugula_control_wire::projects::{Me, Project, ProjectMember, ProjectTeam, Projects};
 use arugula_e2e::now_ms;
+use axum::{Json, extract::State};
 
 use crate::{
     Platform,
+    auth::Person,
     hub::{Change, ChangeKind, HubResult},
 };
 
@@ -71,6 +75,44 @@ pub async fn team_project(app: &Platform, team: &str) -> HubResult<Option<String
     };
     let Some(t) = found else { return Ok(None) };
     Ok(Some(app.db.team_project(team, &t.name, now_ms())?))
+}
+
+/// `GET /api/projects` (M150): who's signed in, and their projects for the
+/// platform page (which asks the platform alone, never the hub): their
+/// personal one first, then each team's default one
+/// (made the first time it's asked for, as chat makes it), by name. A team
+/// says the reader's role and its members as the cache keeps the roster: the
+/// page shows them read only and sends roster changes to the shell. A team
+/// that's locked to this reader (`Team::role`) isn't listed.
+pub async fn list(State(app): State<Arc<Platform>>, s: Person) -> Result<Json<Projects>, ApiError> {
+    let mut projects = vec![];
+    if let Some(id) = personal_project(&app, &s.account).await? {
+        projects.push(Project { id, name: "Personal".into(), team: None });
+    }
+    let ids = app.cache.teams_of(&*app.hub, &s.account).await?;
+    let mut teams: Vec<_> = app.cache.teams(&*app.hub, &ids).await?.into_values().collect();
+    teams.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
+    for t in teams {
+        let Some(role) = t.role(&s.account) else { continue };
+        let id = app.db.team_project(&t.id, &t.name, now_ms())?;
+        let members = t
+            .members
+            .iter()
+            .map(|m| ProjectMember { account: m.account.clone(), name: m.name.clone(), role: m.role.as_str().into() })
+            .collect();
+        projects.push(Project {
+            id,
+            name: t.name.clone(),
+            team: Some(ProjectTeam { id: t.id.clone(), name: t.name.clone(), role: role.as_str().into(), members }),
+        });
+    }
+    let me = app.cache.accounts(&*app.hub, std::slice::from_ref(&s.account)).await?.remove(&s.account);
+    let me = Me {
+        account: s.account.clone(),
+        login: me.as_ref().map(|a| a.login.clone()).unwrap_or_default(),
+        name: me.map(|a| a.name).unwrap_or_default(),
+    };
+    Ok(Json(Projects { me, projects }))
 }
 
 /// Apply the hub's change feed from where this last got to, to its end.

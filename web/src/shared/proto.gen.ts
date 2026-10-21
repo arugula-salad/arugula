@@ -1688,6 +1688,35 @@ cloud_workspace_deleted: boolean, agent_name: string, runtime: string, model: st
 export type PinState = "pinned" | "drifted" | "missing" | "stale";
 
 /**
+ * The signed-in person, as the hub knows them.
+ */
+export type PlatformMe = { 
+/**
+ * Control's id for the account.
+ */
+account: string, 
+/**
+ * Its sign-in login (GitHub's), or "".
+ */
+login: string, 
+/**
+ * The name it chose, else its login, else "".
+ */
+name: string, };
+
+export type PlatformProject = { 
+/**
+ * `prj_` and 32 hex characters.
+ */
+id: string, name: string, 
+/**
+ * The team it's the default project of; `None` for the person's own.
+ */
+team: ProjectTeam | null, };
+
+export type PlatformProjects = { me: PlatformMe, projects: Array<PlatformProject>, };
+
+/**
  * One answer a decision point's question takes (#621), from `points
  * --open`: what `points answer --answer` is given, how to show it (`yes`
  * and `no` for a yes-or-no point) and what the points file says it means.
@@ -1745,6 +1774,18 @@ root: string,
  * Its name: the repository its origin names, else its folder's.
  */
 name: string, };
+
+export type ProjectMember = { account: string, 
+/**
+ * What the roster calls them.
+ */
+name: string, role: string, };
+
+export type ProjectTeam = { id: string, name: string, 
+/**
+ * The reader's role in it: `owner`, `editor` or `viewer`.
+ */
+role: string, members: Array<ProjectMember>, };
 
 /**
  * Which forge.

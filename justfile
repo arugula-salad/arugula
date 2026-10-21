@@ -705,6 +705,7 @@ mux-guard:
 # What CI runs.
 check: test mux-guard
     just web-imports
+    cd web && pnpm run paths
     just proto-ts check
     just decisions check
     just control-tables check
@@ -752,6 +753,14 @@ install: build
 dev-control *machines:
     {{cargo}} build -p arugulad -p arugula-control
     cd web && TARGET_DIR="{{target_dir}}/debug" node --experimental-strip-types --no-warnings dev-control.ts {{machines}}
+
+# The platform page (M150) on 127.0.0.1:7691, beside `just dev-control`
+# (run that first): Vite serves it and sends control's paths to 7690. Sign
+# in on control's page; the session cookie is the same host's, so this page
+# is signed in too. DEV_CONTROL_CHAT=1 and DEV_CONTROL_CLOUD=1 on
+# dev-control give it a team's chat and Cloud workspaces to show.
+dev-platform:
+    cd web && pnpm run dev-platform
 
 # A headless Chrome on a page, driven by plain commands, for screenshots:
 # a virtual passkey authenticator (--passkey), a login (--login), a profile
