@@ -1,8 +1,9 @@
 // The window's own buttons, in the bar, for the desktop app on Linux
 // (M46): the app's windows have no decorations there, so the client's bar
 // is the titlebar. macOS keeps its native buttons over the bar's left end.
+// The shell's bars and the platform page's (M157) both draw them.
 
-import { desktopPlatform, tauriWindow } from "../../shared/desktop";
+import { desktopPlatform, tauriWindow } from "../desktop";
 
 export function WindowButtons() {
   const w = desktopPlatform() === "linux" ? tauriWindow() : null;

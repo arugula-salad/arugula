@@ -7,6 +7,7 @@ import { render } from "preact";
 import "../shared/style.css";
 import "./platform.css";
 import { apply as applyAppearance } from "../shared/appearance";
+import { setupDesktop } from "../shared/desktop";
 import { cloudRouteChanged, setCloudRoutes } from "../shared/cloud";
 import { PlatformApiContext } from "../shared/platform-api";
 import { MenuLayer, PromptLayer } from "../shared/ui/menu";
@@ -16,6 +17,9 @@ import { pathRoutes } from "./cloud-routes";
 import { onRoute } from "./router";
 
 applyAppearance();
+// In the desktop app: macOS's buttons over the bar's left end, Linux's
+// own buttons in it (the bar's CSS reads this).
+setupDesktop();
 // Cloud's views open paths here, not the shell's fragments.
 setCloudRoutes(pathRoutes);
 onRoute(cloudRouteChanged);
