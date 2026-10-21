@@ -41,6 +41,11 @@ Start with `src/lib.rs`, then:
 - `src/main.rs`: the `arugula-platform` binary: its database, `HttpHub`,
   the background work (the cloud worker, chat's and grants' feed
   followers, usage reports), and the routes behind `vouched`.
+- `src/window.rs`: a window's tools (M141), in both binaries
+  (`arugula-platform copy|checksums|secrets-check`, and `arugula-control
+  platform …`): copy the platform's tables from one file to another,
+  proven by a count and a checksum per table, and check that cloud secrets
+  open with the running server's key.
 - `src/contract.rs` (feature `contract`): the tests every `HubPort` passes.
   Control runs them against its in-process port and against `HttpHub`
   over its internal API (`hub_port.rs`).

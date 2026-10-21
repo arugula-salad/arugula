@@ -16,7 +16,6 @@ mod analytics;
 mod api;
 mod app_login;
 mod auth;
-mod backup;
 mod blocks;
 #[cfg(test)]
 mod blocks_wire;
@@ -43,6 +42,7 @@ mod internal;
 mod labs_flags;
 mod limit;
 mod maintenance;
+mod notice;
 mod passkey;
 mod plans;
 mod push;
@@ -223,7 +223,7 @@ struct Args {
 
     /// Off-site backup with Litestream (#174).
     #[command(flatten)]
-    backup: backup::Litestream,
+    backup: arugula_control_common::backup::Litestream,
 
     /// Push endpoints allowed besides the browsers' push services, as
     /// host:port (tests).
@@ -736,12 +736,20 @@ fn main() -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
     // database (census.rs), with no server. `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
+    // `notice`: a notice for every account (notice.rs). `platform`: a
+    // window's tools, the platform's own code (`arugula_platform::window`).
     let mut argv = std::env::args().skip(1).peekable();
     if argv.peek().is_some_and(|a| a == "census") {
         return census::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "maintenance") {
         return maintenance::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "notice") {
+        return notice::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "platform") {
+        return arugula_platform::window::run("arugula-control platform", argv.skip(1));
     }
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
 }
@@ -794,7 +802,7 @@ async fn run() -> anyhow::Result<()> {
     if github.is_none() {
         tracing::warn!("no GITHUB_CLIENT_ID/GITHUB_CLIENT_SECRET: GitHub sign-in is off");
     }
-    let backup = backup::Backup::new(&a.backup, &a.db)?;
+    let backup = arugula_control_common::backup::Backup::new(&a.backup, &a.db, "control")?;
     if let Some(b) = &backup {
         b.restore_if_missing().await?;
     }

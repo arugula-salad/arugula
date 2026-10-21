@@ -389,15 +389,15 @@ past one that isn't, restore `platform.db` too. A platform
 deploy restarts no relay socket; pages' chat streams reconnect and
 resync.
 
-**Making the app** (once, before M141):
+**Making the app** (once, before M141). It lives in `iad`, beside its
+Managed Postgres, which Fly doesn't offer in `ewr`; the hub stays in `ewr`,
+about 5 ms away:
 
 ```
 fly apps create arugula-platform -o <org>
-fly volumes create platform_data -a arugula-platform -r ewr -s 3
+fly volumes create platform_data -a arugula-platform -r iad -s 1
 KEY=$(openssl rand -hex 32)            # keep it in Infisical too
-fly secrets set -a arugula-platform --stage ARUGULA_PLATFORM_KEY=$KEY \
-  ARUGULA_MANAGOAT_API_KEY=… ARUGULA_CLOUD_SECRET_KEY=… ARUGULA_CLOUD_ACCOUNTS=… \
-  ARUGULA_CLOUD_MODELS=… POSTHOG_API_KEY=…
+fly secrets set -a arugula-platform --stage ARUGULA_PLATFORM_KEY=$KEY ARUGULA_PLATFORM_PAUSED=1
 fly secrets set -a illogical-control --stage ARUGULA_PLATFORM_KEY=$KEY
 fly tokens create deploy -a arugula-platform -n github-release -x 8760h
 gh secret set FLY_PLATFORM_API_TOKEN -R arugula-salad/arugula
@@ -405,26 +405,29 @@ gh secret set FLY_PLATFORM_API_TOKEN -R arugula-salad/arugula
 
 `--stage` sets a secret without restarting anything; the hub only reads
 `ARUGULA_PLATFORM_KEY` once it runs the platform out of process. The
-cloud secrets must be the hub's own values (`ARUGULA_CLOUD_SECRET_KEY`
-above all: it decrypts every stored cloud secret, so escrow it first,
-M141). The next tag deploys the platform; until M141 it runs with an
+platform's cloud and Litestream secrets are set from the hub's own values
+and Infisical, without printing them, the day before the window ("The
+platform's secrets" in its runbook): `ARUGULA_CLOUD_SECRET_KEY` above
+all, which decrypts every stored cloud secret. The next tag deploys the platform; until M141 it runs with an
 empty database beside the hub, which still runs its own platform in
 process and answers every platform route itself.
 
-**Flipping to out of process** (M141's window writes the full runbook):
-turn the maintenance switch on with `--pause`, copy the platform's tables
-from `control.db` to the platform's `platform.db`, then
+**Flipping to out of process** is M141's window ("The first window"
+below): the maintenance switch on with `--pause`, the platform's tables
+copied from `control.db` to `platform.db` and proven, then
 `fly secrets set -a illogical-control ARUGULA_PLATFORM=http://arugula-platform.internal:7700`.
 That restarts the hub once (relay sockets reconnect on their own), with
-its internal API on `[::]:7691`. Check, then turn the switch off.
+its internal API on `[::]:7691`.
 
-**Rolling back to in process:**
-`fly secrets unset -a illogical-control ARUGULA_PLATFORM` (or set it to
-`in-process`): the hub restarts running its own platform on
+**Rolling back to in process:** hold the platform first
+(`ARUGULA_PLATFORM_PAUSED=1`), so two cloud workers never run on two
+files, then `fly secrets unset -a illogical-control ARUGULA_PLATFORM` (or
+set it to `in-process`): the hub restarts running its own platform on
 `control.db`, migrating its platform tables as the hub's build knows them
-(the same additive-only rule). After M141 that file's platform tables are the 14-day
-read-only copies, so anything written on the platform since is in
-`platform.db`: copy it back first (M141's runbook says how).
+(the same additive-only rule). After M141 that file's platform tables are
+the 14-day read-only copies, so anything written on the platform since is
+in `platform.db`: copy it back first ("Rolling back", in the window's
+runbook).
 
 **The maintenance switch** (M141): every platform route answers `503`,
 `Retry-After: N`, `{"error": "Chat and Cloud are down for maintenance; try again in N seconds.", "reason": "maintenance"}`
@@ -445,6 +448,337 @@ feed follower), so its tables hold still while they're copied. An
 out-of-process platform is held with `ARUGULA_PLATFORM_PAUSED=1` on its
 own app (`fly secrets set -a arugula-platform ARUGULA_PLATFORM_PAUSED=1`,
 a platform restart, which drops nothing); unset it to resume.
+
+### The first window (M141)
+
+The platform's tables move from the hub's `control.db` to the platform's
+own `platform.db`, and the hub starts forwarding to the out-of-process
+platform (#1158). Chat and Cloud answer the maintenance 503 for the few
+minutes it takes; terminals, the relay and sign-in don't notice. Rehearsed
+end to end, both rollbacks too, with `testnet/window.sh`
+([testnet/README.md](../testnet/README.md)).
+
+**The tools.** Both binaries carry the platform's own copy code
+(`crates/platform/src/window.rs`), because the two apps have separate
+volumes and the file has to travel between them, through your laptop,
+with `fly ssh sftp`:
+
+- `copy --from F --to T [--replace]` copies every table the platform's
+  migrations make (`process = "platform"` in `tables.toml`, but
+  `platform_migrations`, which the target's own runner writes when it
+  opens it), rowids kept, in one transaction. It rebuilds `chat_fts` from
+  the copied messages and runs FTS5's `integrity-check`. Then it counts
+  and checksums every table on both sides (SHA-256 over each row's rowid
+  and values in column-name order, the row digests sorted) and commits
+  only if every one matches: otherwise nothing is written. It refuses a
+  target that already holds rows, unless `--replace`, which empties those
+  tables first in the same transaction. The source is opened read-only,
+  so it can be the live `control.db`.
+- `checksums --db F` prints the same counts and checksums, read-only.
+- `secrets-check --db F` opens every cloud secret in F with the running
+  server's `ARUGULA_CLOUD_SECRET_KEY` and says how many open. It prints no
+  value, and names the server's pid.
+
+On the hub they're `/arugula-control platform copy|checksums|secrets-check`,
+on the platform `/arugula-platform copy|checksums|secrets-check`.
+
+**What has to be true first:**
+- A release with M140 (the gateway, the internal API and the switch) and
+  this runbook's tools is deployed to both apps; the platform runs it,
+  held, on an empty `platform.db`. Before this release, the platform
+  refused `ARUGULA_PLATFORM_PAUSED=1` (only `true` was taken) and didn't
+  start.
+- `ARUGULA_CLOUD_SECRET_KEY` is escrowed in Infisical (`arugula` prod,
+  `/illogical/control`), round trip checked. Done 2026-10-20.
+- **The VAPID key stays in the hub's database. Never regenerate it**: that
+  kills every push subscription.
+
+Keep two terminals on the logs through all of it:
+`fly logs -a illogical-control` and `fly logs -a arugula-platform`. The
+commands below use two helpers and a scratch directory; paste these first:
+
+```
+hub()  { fly ssh console -q -a illogical-control -C "/arugula-control $*" | tr -d '\r'; }
+plat() { fly ssh console -q -a arugula-platform -C "/arugula-platform $*" | tr -d '\r'; }
+copied()  { awk 'NF == 6 && $NF == "ok" { print $1, $5 }' "$1" | sort; }   # a copy's checksums
+current() { awk 'NF == 3 && length($3) == 64 { print $1, substr($3, 1, 16) }' "$1" | sort; }   # checksums'
+mkdir -p ~/m141 && cd ~/m141 && umask 077
+```
+
+#### The platform's secrets (a day ahead, staged)
+
+What `arugula-platform` needs besides `ARUGULA_PLATFORM_KEY` and
+`ARUGULA_PLATFORM_PAUSED=1` (both staged on 2026-10-20). `--stage`
+restarts nothing; the platform's next restart (the window's unpause)
+takes them.
+
+| Secret | From |
+|---|---|
+| `ARUGULA_CLOUD_SECRET_KEY` | Infisical (Fly can't read a secret back) |
+| `ARUGULA_MANAGOAT_API_KEY`, `ARUGULA_CLOUD_ACCOUNTS`, `ARUGULA_CLOUD_MODELS`, `POSTHOG_API_KEY` | the hub's running process |
+| `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT`, `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` | the hub's (the same bucket; the platform writes under `platform`, the hub under `control`), or a bucket and token of its own (below) |
+
+Not copied: `ARUGULA_CLOUD_DAILY_RUNS`, `ARUGULA_CLOUD_CONCURRENT_RUNS` and
+`ARUGULA_CLOUD_RUN_MINUTES` (the run caps were retired; the platform would
+only log that they do nothing), the Stripe pair (billing is off), and
+everything that's the hub's own (`GITHUB_APP_*`, `SPRITES_TOKEN`).
+`LITESTREAM_PATH` stays unset (it defaults to `platform`; the platform
+refuses `control`, the hub's).
+
+The cloud key, from Infisical (run where arugula's `.infisical.json` is, or
+add `--projectId`), printing nothing:
+
+```
+printf 'ARUGULA_CLOUD_SECRET_KEY=%s\n' "$(infisical secrets get ARUGULA_CLOUD_SECRET_KEY --env prod --path /illogical/control --plain --silent)" \
+  | fly secrets import --stage -a arugula-platform
+```
+
+The rest from the hub's running process, whose pid `secrets-check` names
+("the running server's (pid N)"): fetch its environment, keep the names
+wanted, and pipe them into Fly. Python prints only what's missing:
+
+```
+hub platform secrets-check --db /data/control.db        # note N; every secret opens
+fly ssh sftp get /proc/N/environ hub.environ -a illogical-control
+python3 -I - hub.environ <<'PY' | fly secrets import --stage -a arugula-platform
+import sys
+want = ["ARUGULA_MANAGOAT_API_KEY", "ARUGULA_CLOUD_ACCOUNTS", "ARUGULA_CLOUD_MODELS", "POSTHOG_API_KEY",
+        "LITESTREAM_BUCKET", "LITESTREAM_ENDPOINT", "LITESTREAM_ACCESS_KEY_ID", "LITESTREAM_SECRET_ACCESS_KEY"]
+raw = open(sys.argv[1], "rb").read()
+if not raw:
+    sys.exit("hub.environ is empty: sftp read /proc as 0 bytes. Don't guess values; stop and ask.")
+env = dict(kv.split("=", 1) for kv in raw.decode().split("\0") if "=" in kv)
+missing = [k for k in want if not env.get(k)]
+if missing:
+    sys.exit("not in the hub's environment: " + ", ".join(missing))
+for k in want:
+    print(f"{k}={env[k]}")
+PY
+shred -u hub.environ
+fly secrets list -a arugula-platform     # names and digests only
+```
+
+For a bucket of its own instead (Cloudflare: *R2 → Create bucket*
+`arugula-platform-backups`, then an *Object Read & Write* token for that
+bucket only), drop the four `LITESTREAM_*` names from `want` and set them
+from Cloudflare with `fly secrets set --stage -a arugula-platform …`.
+
+#### The notice (a day ahead)
+
+Control's notice (#206) is a row per account that the page shows once in a
+dialog until it's dismissed. `notice post` writes one to every account
+there is now; `--from` takes a file (first line the title, the rest the
+body), so nothing has to get through `fly ssh console -C`'s quoting.
+`/tmp` is cleared by the next restart.
+
+```
+cat > notice.txt <<'EOF'
+Chat and Cloud maintenance: <Day> <HH:MM> UTC
+Chat and Cloud will be down for about 15 minutes from <HH:MM> UTC on <Day>, while they move to a server of their own. Terminals, the relay and signing in keep working, and agents' calls wait it out. Afterwards, reload any control page you have open: pages opened before then don't reconnect chat by themselves.
+EOF
+fly ssh sftp put notice.txt /tmp/notice.txt -a illogical-control
+hub notice post --db /data/control.db --from /tmp/notice.txt --dry-run
+hub notice post --db /data/control.db --from /tmp/notice.txt
+hub notice list --db /data/control.db
+```
+
+Moved? `hub notice withdraw --db /data/control.db --from /tmp/notice.txt`
+takes back the ones nobody has dismissed (the same title), then post the
+new time.
+
+#### Pre-checks (an hour before)
+
+```
+fly status -a illogical-control          # every machine on the release's image, checks passing
+fly status -a arugula-platform           # the same; started
+fly logs -a arugula-platform --no-tail | grep -E 'paused|backing up with Litestream|replicating to'
+curl -fsS https://control.arugula.io/control.json
+hub maintenance status --db /data/control.db    # off
+hub platform checksums --db /data/control.db | tee before.txt
+# A trial copy, carried as the window will, timed: its secrets must open with
+# the platform's key (the one from Infisical).
+time hub platform copy --from /data/control.db --to /tmp/trial.db | tee trial.txt
+time fly ssh sftp get /tmp/trial.db trial.db -a illogical-control
+time fly ssh sftp put trial.db /tmp/trial.db -a arugula-platform
+plat secrets-check --db /tmp/trial.db    # "N open", the same N as the hub's
+shred -u trial.db
+```
+
+The trial's timings are the window's copy and carry. Also take a baseline
+of proxied latency, from the page's cookie (devtools → Application →
+Cookies), for after:
+
+```
+COOKIE='session=…'
+for i in $(seq 300); do curl -s -o /dev/null -w '%{time_total}\n' -H "cookie: $COOKIE" \
+  -H 'origin: https://control.arugula.io' https://control.arugula.io/api/chat; done \
+  | sort -n | awk '{ a[NR] = $1 } END { printf "p50 %.0f ms  p95 %.0f ms\n", a[int(NR/2)] * 1000, a[int(NR*0.95)] * 1000 }'
+```
+
+#### The window
+
+1. **Maintenance on, the in-process platform held.** Platform routes answer
+   503 within a second.
+
+   ```
+   hub maintenance on --retry-after 60 --pause --db /data/control.db
+   curl -si https://control.arugula.io/api/chat | head -4     # 503, Retry-After: 60
+   curl -fsS https://control.arugula.io/control.json          # the hub answers
+   ```
+
+2. **Let the worker drain.** A tick in flight finishes its call to
+   Managoat (each times out in 15 s). `sleep 30`. Step 6 proves nothing
+   moved after the copy.
+
+3. **Copy on the hub**, from the live file (read-only) to `/tmp`:
+
+   ```
+   hub platform copy --from /data/control.db --to /tmp/window.db | tee window-hub.txt
+   ```
+
+   It ends `22 tables, N rows: every count and checksum matches`.
+
+4. **Carry it:**
+
+   ```
+   fly ssh sftp get /tmp/window.db window.db -a illogical-control
+   fly ssh sftp put window.db /tmp/window.db -a arugula-platform
+   ```
+
+5. **Copy on the platform** into the running (held) platform's own file:
+
+   ```
+   plat copy --from /tmp/window.db --to /data/platform.db | tee window-platform.txt
+   diff <(copied window-hub.txt) <(copied window-platform.txt) && echo same
+   ```
+
+6. **Nothing changed on the hub since**, and the platform's key opens every
+   secret:
+
+   ```
+   hub platform checksums --db /data/control.db | tee hub-now.txt
+   diff <(copied window-hub.txt) <(current hub-now.txt) && echo unchanged
+   plat secrets-check --db /data/platform.db
+   shred -u window.db
+   ```
+
+   If the hub's tables changed (a write slipped in: an account deleted, a
+   tick that finished late), go back to step 3, and pass `--replace` in
+   step 5.
+
+7. **Flip.** One hub restart; relay sockets reconnect by themselves, and
+   the switch holds across it:
+
+   ```
+   fly secrets set -a illogical-control ARUGULA_PLATFORM=http://arugula-platform.internal:7700
+   hub maintenance status --db /data/control.db               # still on
+   fly logs -a illogical-control --no-tail | grep -E 'runs out of process|internal API'
+   ```
+
+8. **Let the platform go.** One platform restart: it finds the hub's
+   internal API at once, and its worker resumes Managoat's events from
+   their cursor:
+
+   ```
+   fly secrets unset -a arugula-platform ARUGULA_PLATFORM_PAUSED
+   fly logs -a arugula-platform --no-tail | grep -E 'Arugula platform|replicating to|refused'
+   ```
+
+   It shouldn't say `paused` or `refused`. (Flip first, then unpause, so
+   the platform's first unheld start already reaches the hub, and a flip
+   that goes wrong is undone with nothing written to `platform.db`.)
+
+9. **Maintenance off:**
+
+   ```
+   hub maintenance off --db /data/control.db
+   curl -si https://control.arugula.io/api/chat | head -1     # 401: answered, by the platform
+   ```
+
+#### Post-checks
+
+- **Chat:** reload control's page. Chat lists your rooms; a room's
+  messages are there; search finds an old message; post one.
+- **A cloud secret written before the window decrypts after it:** step 6's
+  `secrets-check` opened every one with the platform's key. In use: open a
+  Cloud workspace whose spec names a secret and **Rebuild** it (the
+  platform decrypts the secret into Managoat's vault), or make a new one
+  that names it.
+- **A Cloud workspace turn:** in a Cloud workspace's tab, send a prompt
+  and see the answer.
+- **Push still reaches a phone:** from a second account in a team
+  channel, `@`-mention someone whose phone has control's page closed. The
+  push goes platform → `HubPort` → the hub's VAPID key → the phone.
+- **Agents:** `arugula` MCP's `cloud` tool lists workspaces (daemons with
+  #1166 waited the window out, up to 5 minutes; older ones failed fast
+  with "try again in 60 seconds").
+- **Logs:** nothing `the platform can't be reached`, `refused a call the
+  hub didn't vouch for` or `refused an internal call`.
+- **Backups:** `fly logs -a arugula-platform` shows Litestream's
+  `snapshot complete`.
+- **Latency:** the curl loop above again. #1150's gate is p95 within 20 ms
+  of the baseline; cold chat lists pay 5 to 7 hub calls over 6PN.
+- Post the window's end in the notice's place if you like; the notice
+  already told people to reload.
+
+#### Rolling back
+
+At each point, from where it went wrong:
+
+- **Before step 7** (nothing flipped): `hub maintenance off --db /data/control.db`.
+  The copy only read `control.db`; the hub still runs in process on it. The
+  platform is still held; its file has a copy in it, so the next attempt
+  passes `--replace` in step 5.
+- **Step 7 went wrong** (the hub doesn't come back, or forwards errors):
+  ```
+  fly secrets unset -a illogical-control ARUGULA_PLATFORM     # in process again, on control.db
+  hub maintenance off --db /data/control.db
+  ```
+  The platform hasn't been let go, so nothing was written anywhere.
+- **After step 8, before step 9** (the platform ran, nobody wrote): hold it,
+  then flip back. Its background writes (feed positions, Managoat events)
+  are lost, and redone from older cursors by the hub:
+  ```
+  fly secrets set -a arugula-platform ARUGULA_PLATFORM_PAUSED=1
+  fly secrets unset -a illogical-control ARUGULA_PLATFORM
+  hub maintenance off --db /data/control.db
+  ```
+- **After step 9** (people wrote chat and Cloud on the platform): copy
+  `platform.db` back over the hub's copies first. The hub doesn't touch
+  those tables while it forwards, so the copy back runs beside it:
+  ```
+  hub maintenance on --retry-after 60 --pause --db /data/control.db
+  fly secrets set -a arugula-platform ARUGULA_PLATFORM_PAUSED=1
+  plat copy --from /data/platform.db --to /tmp/back.db | tee back-platform.txt
+  fly ssh sftp get /tmp/back.db back.db -a arugula-platform
+  fly ssh sftp put back.db /tmp/back.db -a illogical-control
+  hub platform copy --from /tmp/back.db --to /data/control.db --replace | tee back-hub.txt
+  diff <(copied back-platform.txt) <(copied back-hub.txt) && echo same
+  fly secrets unset -a illogical-control ARUGULA_PLATFORM
+  hub maintenance off --db /data/control.db
+  shred -u back.db
+  ```
+  Always hold the platform before the hub runs in process again: two
+  cloud workers on two files would both drive Managoat.
+
+#### The 14 days after
+
+The hub's copies of the platform's tables stay in `control.db`, read-only,
+as the rollback: no hub code names a platform table
+(`db::tables::the_hub_names_no_platform_table`), and running out of process
+the hub never opens the platform's schema
+(`the_hub_leaves_the_platforms_old_copies_alone`). To see that they really
+haven't moved, now and then:
+
+```
+hub platform checksums --db /data/control.db > hub-later.txt
+diff <(copied window-hub.txt) <(current hub-later.txt) && echo untouched
+```
+
+Keep the hub's cloud secrets (`ARUGULA_MANAGOAT_API_KEY` …) for the same 14
+days: the in-process rollback needs them. After 14 days a follow-up drops
+the copies and unsets those; the rollback then always copies
+`platform.db` back first.
 
 ### Capacity
 
@@ -509,6 +843,15 @@ with the link. **Control holds ciphertext only and can't read it.**
   needs no `font-src`.
 
 ### Backups (Litestream to Cloudflare R2)
+
+The hub backs up `control.db`, and the platform (M141) its own
+`platform.db`, the same way (`arugula_control_common::backup`): each with
+its own `LITESTREAM_*` secrets, under its own path in the bucket
+(`LITESTREAM_PATH`, `control` and `platform` unless set; the platform
+refuses `control`). The steps below are the hub's; the platform's are the
+same with `-a arugula-platform` ("The platform's secrets", in the window's
+runbook), and its restore recipe has `path: platform` and
+`/data/platform.db`.
 
 Off until its secrets are set;
 then:

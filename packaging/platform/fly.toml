@@ -9,11 +9,17 @@
 # Secrets (fly secrets set -a arugula-platform): ARUGULA_PLATFORM_KEY (the
 # same as the hub's), and the platform's own: ARUGULA_MANAGOAT_API_KEY,
 # ARUGULA_CLOUD_SECRET_KEY, ARUGULA_CLOUD_ACCOUNTS, ARUGULA_CLOUD_MODELS,
-# POSTHOG_API_KEY (docs/control-ops.md, "The platform"). Each release tag
+# POSTHOG_API_KEY; and Litestream's for platform.db's backup,
+# LITESTREAM_BUCKET, LITESTREAM_ENDPOINT, LITESTREAM_ACCESS_KEY_ID,
+# LITESTREAM_SECRET_ACCESS_KEY, under the bucket's `platform` path
+# (docs/control-ops.md, "The platform" and "Backups"). Each release tag
 # deploys it before the hub (release.yml's `platform` job), once
 # FLY_PLATFORM_API_TOKEN is set; `just platform-deploy` is for hotfixes.
 app = "arugula-platform"
-primary_region = "ewr"
+# iad, beside its Managed Postgres (not offered in ewr): the hub stays in
+# ewr, a ~5 ms hop away (Jake, 2026-10-21).
+primary_region = "iad"
+# On a stop, the platform lets Litestream sync one last time (up to 10 s).
 kill_signal = "SIGTERM"
 kill_timeout = "15s"
 

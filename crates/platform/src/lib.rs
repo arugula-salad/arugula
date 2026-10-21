@@ -44,6 +44,7 @@ mod port;
 pub mod projects;
 pub mod remote;
 mod router;
+pub mod window;
 
 pub use hub::HubPort;
 pub use port::{Deleted, PlatformPort};

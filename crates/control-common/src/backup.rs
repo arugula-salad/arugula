@@ -1,20 +1,22 @@
-//! Continuous off-site backup of control's database (#174), with
-//! [Litestream](https://litestream.io) to any S3-compatible store
-//! (the hosted control uses Cloudflare R2).
+//! Continuous off-site backup of a SQLite database (#174), with
+//! [Litestream](https://litestream.io) to any S3-compatible store (the
+//! hosted control uses Cloudflare R2): the hub's `control.db`, and since
+//! M141 the platform's `platform.db`, each under its own path in the
+//! bucket (`LITESTREAM_PATH`, `control` and `platform` unless set).
 //!
-//! Off unless `LITESTREAM_BUCKET` is set. Then, before control opens its
-//! database:
+//! Off unless `LITESTREAM_BUCKET` is set. Then, before the process opens
+//! its database:
 //!
 //! - **No database yet** (a new volume, a lost one): restore the latest
 //!   backup into place, if there is one. A store that can't be reached
 //!   stops control from starting, rather than starting empty and backing
 //!   that up over the real thing.
-//! - **Then** run `litestream replicate` beside control, restarting it if
-//!   it stops, and stop it cleanly (its last sync) when control stops.
+//! - **Then** run `litestream replicate` beside it, restarting it if it
+//!   stops, and stop it cleanly (its last sync) when the process stops.
 //!
 //! The keys go to Litestream in its own environment variables
 //! (`LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`), never in
-//! the config file control writes next to the database.
+//! the config file written next to the database.
 
 use std::{
     path::{Path, PathBuf},
@@ -34,9 +36,10 @@ pub struct Litestream {
     /// unset for AWS S3.
     #[arg(long = "litestream-endpoint", env = "LITESTREAM_ENDPOINT")]
     pub endpoint: Option<String>,
-    /// Where in the bucket.
-    #[arg(long = "litestream-path", env = "LITESTREAM_PATH", default_value = "control")]
-    pub path: String,
+    /// Where in the bucket: unset, the process's own (`control` for the
+    /// hub, `platform` for the platform). Two databases never share one.
+    #[arg(long = "litestream-path", env = "LITESTREAM_PATH")]
+    pub path: Option<String>,
     #[arg(long = "litestream-region", env = "LITESTREAM_REGION", default_value = "auto")]
     pub region: String,
     /// The litestream binary.
@@ -53,12 +56,14 @@ pub struct Backup {
 }
 
 impl Backup {
-    /// From the arguments: `None` when no bucket is set.
-    pub fn new(a: &Litestream, db: &Path) -> anyhow::Result<Option<Self>> {
+    /// From the arguments, `path` in the bucket unless they say: `None`
+    /// when no bucket is set.
+    pub fn new(a: &Litestream, db: &Path, path: &str) -> anyhow::Result<Option<Self>> {
         let Some(bucket) = a.bucket.clone().filter(|b| !b.is_empty()) else {
             info!("no LITESTREAM_BUCKET: the database isn't backed up off-site");
             return Ok(None);
         };
+        let path = a.path.clone().filter(|p| !p.is_empty()).unwrap_or_else(|| path.to_owned());
         for k in ["LITESTREAM_ACCESS_KEY_ID", "LITESTREAM_SECRET_ACCESS_KEY"] {
             if std::env::var(k).map_or(true, |v| v.is_empty()) {
                 anyhow::bail!("LITESTREAM_BUCKET is set but {k} isn't");
@@ -66,10 +71,10 @@ impl Backup {
         }
         let db = std::path::absolute(db)?;
         let config = db.with_file_name("litestream.yml");
-        std::fs::write(&config, config_yaml(&db, &bucket, a))
+        std::fs::write(&config, config_yaml(&db, &bucket, &path, a))
             .with_context(|| format!("writing {}", config.display()))?;
         let bin = if a.bin.exists() { a.bin.clone() } else { PathBuf::from("litestream") };
-        info!(bucket, path = a.path, endpoint = a.endpoint.as_deref().unwrap_or("AWS"), "backing up with Litestream");
+        info!(bucket, path, endpoint = a.endpoint.as_deref().unwrap_or("AWS"), "backing up with Litestream");
         Ok(Some(Self { bin, config, db, child: Default::default(), stopping: Default::default() }))
     }
 
@@ -100,7 +105,7 @@ impl Backup {
         Ok(())
     }
 
-    /// Replicate for as long as control runs.
+    /// Replicate for as long as the process runs.
     pub fn replicate(&self) {
         let (bin, config, child, stopping) =
             (self.bin.clone(), self.config.clone(), self.child.clone(), self.stopping.clone());
@@ -110,8 +115,8 @@ impl Backup {
                     .arg("replicate")
                     .arg("-config")
                     .arg(&config)
-                    // Its own process group: a signal to control's group
-                    // doesn't cut its last sync short; control stops it.
+                    // Its own process group: a signal to ours doesn't cut
+                    // its last sync short; [`Backup::stop`] stops it.
                     .process_group(0)
                     .kill_on_drop(true)
                     .spawn();
@@ -132,7 +137,7 @@ impl Backup {
         });
     }
 
-    /// Control is stopping: let Litestream sync one last time and stop.
+    /// Stopping: let Litestream sync one last time and stop.
     pub async fn stop(&self) {
         self.stopping.store(true, std::sync::atomic::Ordering::SeqCst);
         let Some(pid) = *self.child.lock().unwrap() else { return };
@@ -156,10 +161,10 @@ impl Backup {
 pub const RETENTION_DAYS: u64 = 7;
 
 /// Litestream's config: one database, one S3-compatible replica.
-fn config_yaml(db: &Path, bucket: &str, a: &Litestream) -> String {
+fn config_yaml(db: &Path, bucket: &str, path: &str, a: &Litestream) -> String {
     let q = |s: &str| serde_json::to_string(s).unwrap();
     let mut y = format!(
-        "# Written by arugula-control at start (#174); keys come from the environment.\n\
+        "# Written at start (#174); keys come from the environment.\n\
          # A snapshot a day, each kept a week: what's deleted here is gone from\n\
          # the backup within {RETENTION_DAYS} days (the privacy policy says at most 30).\n\
          snapshot:\n  interval: 24h\n  retention: {}h\n\
@@ -167,7 +172,7 @@ fn config_yaml(db: &Path, bucket: &str, a: &Litestream) -> String {
         RETENTION_DAYS * 24,
         q(&db.to_string_lossy()),
         q(bucket),
-        q(&a.path),
+        q(path),
         q(&a.region),
     );
     if let Some(e) = a.endpoint.as_deref().filter(|e| !e.is_empty()) {
@@ -185,17 +190,18 @@ mod tests {
         let a = Litestream {
             bucket: Some("b".into()),
             endpoint: Some("https://x.r2.cloudflarestorage.com".into()),
-            path: "control".into(),
+            path: None,
             region: "auto".into(),
             bin: "/litestream".into(),
         };
-        let y = config_yaml(Path::new("/data/control.db"), "b", &a);
+        let y = config_yaml(Path::new("/data/control.db"), "b", "control", &a);
         assert!(y.contains("path: \"/data/control.db\""));
+        assert!(y.contains("bucket: \"b\"\n      path: \"control\"\n"), "{y}");
         assert!(y.contains("snapshot:\n  interval: 24h\n  retention: 168h\n"), "{y}");
         const { assert!(RETENTION_DAYS <= 30) };
         assert!(y.contains("endpoint: \"https://x.r2.cloudflarestorage.com\""));
         assert!(!y.to_lowercase().contains("secret"));
         let plain = Litestream { endpoint: None, ..a };
-        assert!(!config_yaml(Path::new("/d.db"), "b", &plain).contains("endpoint"));
+        assert!(!config_yaml(Path::new("/d.db"), "b", "platform", &plain).contains("endpoint"));
     }
 }

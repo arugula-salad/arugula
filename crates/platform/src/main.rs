@@ -59,8 +59,9 @@ struct Args {
     /// Hold background work at start (the cloud worker, Cloud's approval
     /// pushes, billing's usage reports, the projects and grants feed
     /// follower): for a window that copies the platform's tables (M141,
-    /// M145).
-    #[arg(long, env = "ARUGULA_PLATFORM_PAUSED")]
+    /// M145). The variable is on unless it's empty, `0`, `false`, `no` or
+    /// `off`, so the runbook's `ARUGULA_PLATFORM_PAUSED=1` holds it.
+    #[arg(long, env = "ARUGULA_PLATFORM_PAUSED", value_parser = clap::builder::FalseyValueParser::new())]
     paused: bool,
 
     #[command(flatten)]
@@ -74,9 +75,20 @@ struct Args {
     posthog_api_key: Option<String>,
     #[arg(long, default_value = "https://us.i.posthog.com", env = "POSTHOG_HOST")]
     posthog_host: String,
+
+    /// Off-site backup with Litestream (M141), as the hub's, under its own
+    /// path in the bucket (`platform` unless LITESTREAM_PATH says).
+    #[command(flatten)]
+    backup: arugula_control_common::backup::Litestream,
 }
 
 fn main() -> anyhow::Result<()> {
+    // `copy`, `checksums`, `secrets-check`: a window's tools (window.rs,
+    // M141), run on the platform's machine beside the server.
+    let mut argv = std::env::args().skip(1).peekable();
+    if argv.peek().is_some_and(|a| ["copy", "checksums", "secrets-check"].contains(&a.as_str())) {
+        return arugula_platform::window::run("arugula-platform", argv);
+    }
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
 }
 
@@ -103,7 +115,17 @@ async fn run() -> anyhow::Result<()> {
         }
     };
     let hub = Arc::new(remote::HttpHub::new(&a.hub, key.clone())?);
+    // The hub's backup is under `control`: two databases replicating to one
+    // path would ruin both.
+    anyhow::ensure!(a.backup.path.as_deref() != Some("control"), "LITESTREAM_PATH=control is the hub's backup");
+    let backup = arugula_control_common::backup::Backup::new(&a.backup, &a.db, "platform")?;
+    if let Some(b) = &backup {
+        b.restore_if_missing().await?;
+    }
     let db = arugula_platform::db::Db::open(&a.db).with_context(|| format!("opening {}", a.db.display()))?;
+    if let Some(b) = &backup {
+        b.replicate();
+    }
     let mut p = Platform::new(cfg, db, hub, http, analytics);
     p.stripe = a.billing.stripe()?;
     p.cloud = a.cloud.cloud()?;
@@ -138,6 +160,10 @@ async fn run() -> anyhow::Result<()> {
         _ = stopping() => info!("stopping"),
     }
     p.analytics.flush().await;
+    // Litestream syncs what's left before the platform goes.
+    if let Some(b) = &backup {
+        b.stop().await;
+    }
     Ok(())
 }
 
@@ -167,5 +193,29 @@ mod tests {
     fn args() {
         use clap::CommandFactory;
         super::Args::command().debug_assert();
+    }
+
+    /// `ARUGULA_PLATFORM_PAUSED=1`, as the runbook and production's staged
+    /// secret say, holds the platform. Parsed as a plain bool it was
+    /// refused (`true` or `false` only), and the platform didn't start.
+    #[test]
+    fn paused_takes_one_and_zero() {
+        use clap::Parser;
+        let parse = |v: Option<&str>| {
+            // SAFETY: the only test here that sets or reads the variable.
+            unsafe {
+                match v {
+                    Some(v) => std::env::set_var("ARUGULA_PLATFORM_PAUSED", v),
+                    None => std::env::remove_var("ARUGULA_PLATFORM_PAUSED"),
+                }
+            }
+            super::Args::try_parse_from(["arugula-platform", "--hub", "http://hub", "--key", "00"]).unwrap().paused
+        };
+        for (v, want) in [("1", true), ("true", true), ("yes", true), ("0", false), ("false", false), ("", false)] {
+            assert_eq!(parse(Some(v)), want, "{v:?}");
+        }
+        assert!(!parse(None));
+        let flag = super::Args::try_parse_from(["arugula-platform", "--hub", "http://hub", "--key", "00", "--paused"]);
+        assert!(flag.unwrap().paused);
     }
 }
