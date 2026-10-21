@@ -63,6 +63,12 @@ restore is written down in `docs/control-ops.md` and drilled once (M145),
 and Fly is named on the privacy page as a processor. The hub stays on its
 SQLite with Litestream.
 
+**Amended (Jake, 2026-10-21): `iad`, not `ewr`.** Fly Managed Postgres
+isn't offered in `ewr`, so the cluster and the `arugula-platform` app both
+live in `iad` (Ashburn), keeping every query local. The hub, which holds
+the relay, stays in `ewr`; the gateway's hop and `HubPort` calls cross
+about 5 ms of Fly's private network, inside the 20 ms p95 gate.
+
 Data moves in **announced windows, not by dual-write**. There are two:
 - **M141** moves the platform's data out of the hub, still on SQLite;
 - **M145** copies it into Postgres.

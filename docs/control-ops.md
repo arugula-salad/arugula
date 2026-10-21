@@ -389,11 +389,13 @@ past one that isn't, restore `platform.db` too. A platform
 deploy restarts no relay socket; pages' chat streams reconnect and
 resync.
 
-**Making the app** (once, before M141):
+**Making the app** (once, before M141). It lives in `iad`, beside its
+Managed Postgres, which Fly doesn't offer in `ewr`; the hub stays in `ewr`,
+about 5 ms away:
 
 ```
 fly apps create arugula-platform -o <org>
-fly volumes create platform_data -a arugula-platform -r ewr -s 3
+fly volumes create platform_data -a arugula-platform -r iad -s 1
 KEY=$(openssl rand -hex 32)            # keep it in Infisical too
 fly secrets set -a arugula-platform --stage ARUGULA_PLATFORM_KEY=$KEY ARUGULA_PLATFORM_PAUSED=1
 fly secrets set -a illogical-control --stage ARUGULA_PLATFORM_KEY=$KEY
