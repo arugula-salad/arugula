@@ -611,6 +611,9 @@ pub async fn tick(p: &Platform, now: u64) -> anyhow::Result<Option<Turn>> {
     match out {
         Ok(how) => {
             p.db.finish_poll(&job, &how, now)?;
+            // A backfill's items reach the inbox quietly, as do a turn's that
+            // ran out of pages (M171).
+            super::inbox::polled(p, repo, !matches!(how, Finish::Reconciled(false) | Finish::Refetched));
             Ok(Some(match how {
                 Finish::Reconciled(backfill) => {
                     if backfill || fixed > 0 {

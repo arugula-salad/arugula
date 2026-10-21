@@ -466,10 +466,10 @@ pub struct ForgeItem {
     pub updated_at: u64,
 }
 
-const ITEM_COLUMNS: &str = "i.id, i.repo_id, i.number, i.kind, i.state, i.title, i.labels, i.author_login, i.author_id, \
+pub(super) const ITEM_COLUMNS: &str = "i.id, i.repo_id, i.number, i.kind, i.state, i.title, i.labels, i.author_login, i.author_id, \
      i.assignees, i.reviewers, i.draft, i.merge_state, i.head_ref, i.head_sha, i.base_ref, i.created_at, i.updated_at";
 
-fn item_row(r: &Row) -> anyhow::Result<ForgeItem> {
+pub(super) fn item_row(r: &Row) -> anyhow::Result<ForgeItem> {
     Ok(ForgeItem {
         id: r.get(0)?,
         repo_id: r.get(1)?,
@@ -532,7 +532,7 @@ pub struct ItemFilter<'a> {
 
 /// `IN (...)` of the repos a [`Readable`] holds: GitHub's ids, numbers the
 /// platform keeps, so written into the statement.
-fn repos_in(r: &Readable) -> String {
+pub(super) fn repos_in(r: &Readable) -> String {
     r.repos().iter().map(u64::to_string).collect::<Vec<_>>().join(", ")
 }
 

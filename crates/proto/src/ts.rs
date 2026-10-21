@@ -112,6 +112,10 @@ fn generate() -> String {
     c.visit::<arugula_control_wire::projects::ForgeContent>();
     // Drafts on linked repos (M170).
     c.visit::<arugula_control_wire::projects::ForgeDrafts>();
+    // The inbox (M171).
+    c.visit::<arugula_control_wire::projects::Inbox>();
+    c.visit::<arugula_control_wire::projects::InboxMark>();
+    c.visit::<arugula_control_wire::projects::InboxMarked>();
     // Cloud workspaces (M137): what control's `/api/cloud/` answers with.
     {
         use arugula_cloud_wire::*;

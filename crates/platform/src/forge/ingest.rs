@@ -393,6 +393,7 @@ pub fn webhook(p: &Platform, event: &str, delivery: &str, v: &Value, came: Insta
             if let (true, Some((_, rows))) = (w.fixed > 0, &rows) {
                 let event_ms = rows.at.map(|at| arugula_e2e::now_ms().saturating_sub(at));
                 gh.ingest.stats.landed(came.elapsed().as_millis() as u64, event_ms);
+                super::inbox::written(p, repo, &rows);
             }
             debug!(
                 event,

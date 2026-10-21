@@ -15,6 +15,7 @@ import { toasts } from "./toast";
 import { AgentsPage } from "./pages/agents";
 import { ChatPage } from "./pages/chat";
 import { Home } from "./pages/home";
+import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
 import { Installed, ProjectSettings } from "./pages/project-settings";
 import { SettingsPage } from "./pages/settings";
@@ -53,6 +54,8 @@ function body(r: Route) {
       return <WorkspacesPage workspace={r.workspace} />;
     case "past":
       return <PastPage id={r.id} />;
+    case "inbox":
+      return <InboxPage />;
     case "agents":
       return <AgentsPage />;
     case "settings":

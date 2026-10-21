@@ -208,3 +208,57 @@
   grid-row: 1 / span 3;
   align-self: center;
 }
+
+/* The inbox (M171): an entry per item and reason, the item's link on its
+   own line, then what it is, then Seen and Done; unseen ones stand out. */
+.platform-inbox-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.platform-inbox-list li > :not(.platform-inbox-actions) {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.platform-inbox-list li.unseen .platform-inbox-title {
+  font-weight: 600;
+}
+
+.platform-inbox-item {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.platform-inbox-ref {
+  color: var(--dim);
+}
+
+.platform-inbox-title {
+  color: var(--fg);
+}
+
+.platform-inbox-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  display: flex;
+  gap: 12px;
+}
+
+.platform-inbox-actions button {
+  min-height: 32px;
+}
+
+/* A phone's width doesn't hold every place and the account: the bar
+   scrolls sideways rather than cut them off. */
+.platform-bar {
+  overflow-x: auto;
+  scrollbar-width: none;
+}

@@ -20,6 +20,8 @@
 //                                  fills in one to link)
 //   /installed?state=…             back from installing the GitHub App (its
 //                                  setup URL): on to the project's settings
+//   /inbox                         the reader's inbox (M171): items that want
+//                                  something of them, and drafts waiting
 //   /agents                        the cloud agent library
 //   /settings                      account settings
 //
@@ -32,8 +34,7 @@
 //   /workspaces, /workspaces/:id[/:tab], /past/:id
 //                                  the reader's own Cloud workspaces
 //
-// Routes for the inbox, issues and changes wait for steps 4 and 6 rather
-// than shipping empty.
+// Routes for issues and changes wait for step 6 rather than shipping empty.
 
 export type Route =
   | { page: "home" }
@@ -45,6 +46,7 @@ export type Route =
   | { page: "past"; project: string; id: string }
   | { page: "project-settings"; project: string; link?: string }
   | { page: "installed"; project?: string; repo?: string }
+  | { page: "inbox" }
   | { page: "agents" }
   | { page: "settings" }
   /** An id-only address, to be put where it belongs (`resolve`). */
@@ -100,6 +102,7 @@ export function parse(path: string, search = ""): Route {
   const missing: Route = { page: "missing", path };
   if (parts.length === 0) return { page: "home" };
   if (parts.length === 1 && parts[0] === "agents") return { page: "agents" };
+  if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox" };
   if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
   if (parts[0] === "chat" && parts.length <= 2) {
     if (parts.length === 1) return { page: "find", what: "chat" };
@@ -187,6 +190,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/p/${s(r.project)}/settings${r.link ? `?link=${encodeURIComponent(r.link)}` : ""}`;
     case "installed":
       return r.project && r.repo ? `/installed?state=${encodeURIComponent(`${r.project}:${r.repo}`)}` : "/installed";
+    case "inbox":
+      return "/inbox";
     case "agents":
       return "/agents";
     case "settings":

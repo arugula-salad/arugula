@@ -67,6 +67,9 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
             Chat
           </Place>
         )}
+        <Place to="/inbox" here={r.page === "inbox"} data="inbox">
+          Inbox
+        </Place>
         <Place to="/agents" here={r.page === "agents"} data="agents">
           Agents
         </Place>

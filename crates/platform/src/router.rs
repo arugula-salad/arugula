@@ -17,8 +17,8 @@ use crate::{Platform, billing, chat, cloud, forge, grants, projects};
 /// `crates/control/src/main.rs` with the same path and methods: billing's
 /// (M139), Cloud's (M137), chat's (M138), then grants'; the platform
 /// page's own (M150); the GitHub App's webhook (M161); linked repos
-/// (M163); their items, each read checked against the viewer (M165); and
-/// drafts on them (M170).
+/// (M163); their items, each read checked against the viewer (M165);
+/// drafts on them (M170); and the inbox (M171).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -94,6 +94,9 @@ fn routes() -> Routes {
         .route(arugula_control_wire::projects::FORGE_DRAFT_DISCARD, post(forge::drafts::discard))
         .route(arugula_control_wire::projects::FORGE_REPO, get(forge::drafts::repo))
         .route(arugula_control_wire::forge_ops::FORGE_OPS, post(forge::ops::call))
+        .route(arugula_control_wire::projects::INBOX, get(forge::inbox::list))
+        .route(arugula_control_wire::projects::INBOX_SHADOW, post(forge::inbox::shadow))
+        .route(arugula_control_wire::projects::INBOX_ITEM, post(forge::inbox::mark))
         .route("/github/webhook", post(forge::webhook))
 }
 

@@ -17,6 +17,8 @@ test("only the id is read: any slug, or none, lands on the same project", () => 
 test("each route parses", () => {
   assert.deepEqual(parse("/"), { page: "home" });
   assert.deepEqual(parse("/agents"), { page: "agents" });
+  assert.deepEqual(parse("/inbox"), { page: "inbox" });
+  assert.equal(pathOf({ page: "inbox" }), "/inbox");
   assert.deepEqual(parse("/settings"), { page: "settings" });
   assert.deepEqual(parse(`/p/${P}-x/chat`), { page: "chat", project: P });
   assert.deepEqual(parse(`/p/${P}/chat/ch_0123456789abcdef-general`, "?msg=12"), { page: "chat", project: P, room: "ch_0123456789abcdef", msg: 12 });
