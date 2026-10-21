@@ -2,6 +2,7 @@ import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
 import { cloudPanes, cloudWorkspaceRoute, cloudWorkspaces, useCloudPanes } from "../shared/cloud";
 import { cloudFleet } from "./cloud-fleet";
 import { shellPlatformApi } from "./platform-api";
+import { setPlatformOrigin } from "./platform-links";
 import { PlatformApiContext } from "../shared/platform-api";
 // Arugula web client: tabs and splits of terminals owned by the daemon.
 
@@ -54,6 +55,8 @@ const info = await detectControl();
 // Back from signing in with a presigned invite's link (kept off control).
 if (info) restoreInvite();
 if (info) showMoving(info);
+// M153: chat and Cloud workspaces are on the platform page, when control has one.
+setPlatformOrigin(info?.platform);
 const linkMatch = /^#link=([0-9a-f]+)\.([0-9a-f]{64})\.([0-9a-f]{64})\.([0-9a-f]{64})$/.exec(location.hash);
 const session = info && !linkMatch ? new ControlSession(info) : null;
 setControlSession(session);

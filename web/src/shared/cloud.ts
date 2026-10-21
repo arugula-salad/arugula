@@ -26,16 +26,62 @@ export async function cloudApi<T>(path: string, method = "GET", body?: unknown):
 export type CloudApi = <T>(path: string, method?: string, body?: unknown) => Promise<T>;
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
-/** The shown past run (`#cloud=run_…`) or past tab (`#cloud=cwc_…`). */
-export const cloudRoute = () => /^#cloud=((?:run|cwc)_[0-9a-f]+)$/.exec(location.hash)?.[1] ?? null;
+
+/** Where Cloud's views are, by the page's own routes (M153): the shell's
+ * `#cloud=…` and `#cloud-ws…` fragments (`hashRoutes`, the default), or
+ * the platform page's paths, which it sets with `setCloudRoutes`. */
+export interface CloudRoutes {
+  /** The Cloud workspace (and tab) shown, both null for the list; null
+   * when no Cloud workspace view is. */
+  workspace(): { workspace: string | null; tab: string | null } | null;
+  /** The past run (`run_…`) or past tab (`cwc_…`) shown. */
+  past(): string | null;
+  /** Show the list, a workspace, or one of its tabs. */
+  openWorkspace(workspace?: string, tab?: string): void;
+  /** Show a past run or a past tab. */
+  openPast(id: string): void;
+  /** Leave Cloud: back to the machine, or the project. */
+  leave(): void;
+}
+
+/** The shell's: `#cloud=run_…`/`#cloud=cwc_…` for a past run or tab, and
+ * `#cloud-ws`, `#cloud-ws=cw_…`, `#cloud-ws=cw_…/cwc_…`. */
+export const hashRoutes: CloudRoutes = {
+  workspace() {
+    const m = /^#cloud-ws(?:=(cw_[0-9a-f]+)(?:\/(cwc_[0-9a-f]+))?)?$/.exec(location.hash);
+    return m ? { workspace: m[1] ?? null, tab: m[2] ?? null } : null;
+  },
+  past: () => /^#cloud=((?:run|cwc)_[0-9a-f]+)$/.exec(location.hash)?.[1] ?? null,
+  openWorkspace(workspace, tab) {
+    location.hash = workspace ? `cloud-ws=${workspace}${tab ? `/${tab}` : ""}` : "cloud-ws";
+  },
+  openPast(id) {
+    location.hash = `cloud=${id}`;
+  },
+  leave() {
+    if (hashRoutes.past() || hashRoutes.workspace()) history.replaceState(null, "", location.pathname + location.search);
+  },
+};
+
+let routes: CloudRoutes = hashRoutes;
+/** The page's routes for Cloud (the platform page's paths), once, before
+ * anything's drawn. Its own route changes call `cloudRouteChanged`. */
+export function setCloudRoutes(r: CloudRoutes) {
+  routes = r;
+}
+/** Tell Cloud's views the route changed. */
+export const cloudRouteChanged = () => changed();
+
+/** The shown past run or past tab. */
+export const cloudRoute = () => routes.past();
 addEventListener("hashchange", changed);
 export const cloudPanes = {
   account: "", enabled: false,
   subscribe(fn: () => void) { listeners.add(fn); return () => { listeners.delete(fn); }; },
   /** Show a past run or a past tab. */
-  open(id: string) { location.hash = `cloud=${id}`; changed(); },
+  open(id: string) { routes.openPast(id); changed(); },
   /** Back to the machine: leaves a past run or a Cloud workspace. */
-  local() { if (cloudRoute() || cloudWorkspaceRoute()) { history.replaceState(null, "", location.pathname + location.search); changed(); } },
+  local() { if (cloudRoute() || cloudWorkspaceRoute()) { routes.leave(); changed(); } },
   connect(account: string) {
     this.account = account; this.enabled = false;
     forgetOpenedRuns();
@@ -67,8 +113,9 @@ export function useCloudPanes() {
 
 // ---- Cloud workspaces (S40, M116): a session in the shell backed by a
 // Managoat workspace. Control keeps them and their tabs; nothing about them
-// is remembered locally. The route is `#cloud-ws` (the list), or
-// `#cloud-ws=cw_…` with `/cwc_…` for a tab.
+// is remembered locally. The shell's route is `#cloud-ws` (the list), or
+// `#cloud-ws=cw_…` with `/cwc_…` for a tab; the platform page's are paths
+// (`CloudRoutes`).
 
 /** A setup step as people read it: "setup_script" → "setup script". */
 export const setupStepName = (step: string) => step.replaceAll("_", " ");
@@ -79,8 +126,7 @@ export function cloudWorkspaceRebuildBadge(w: CloudWorkspace): string | null {
   return n ? `Rebuild needed · ${n} change${n === 1 ? "" : "s"}` : "Rebuild needed";
 }
 export function cloudWorkspaceRoute(): { workspace: string | null; tab: string | null } | null {
-  const m = /^#cloud-ws(?:=(cw_[0-9a-f]+)(?:\/(cwc_[0-9a-f]+))?)?$/.exec(location.hash);
-  return m ? { workspace: m[1] ?? null, tab: m[2] ?? null } : null;
+  return routes.workspace();
 }
 
 /** What the sidebar and the header say of a Cloud workspace, and its dot. */
@@ -115,7 +161,7 @@ export const cloudWorkspaces = {
   subscribe(fn: () => void) { listeners.add(fn); return () => { listeners.delete(fn); }; },
   find(id: string | null) { return this.list.find((w) => w.id === id); },
   /** Show the list, a Cloud workspace, or one of its tabs. */
-  open(workspace?: string, tab?: string) { location.hash = workspace ? `cloud-ws=${workspace}${tab ? `/${tab}` : ""}` : "cloud-ws"; changed(); },
+  open(workspace?: string, tab?: string) { routes.openWorkspace(workspace, tab); changed(); },
   /** Read again now (after a create, an open or a delete). */
   refresh() { this.poke(); },
   connect(account: string) {

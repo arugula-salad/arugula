@@ -2,6 +2,10 @@
    Everything else (the bar, chat, Cloud workspaces) is shared/style.css,
    so the platform page and the shell look alike. */
 
+#root {
+  height: 100%;
+}
+
 .platform {
   height: 100%;
   display: flex;
@@ -15,19 +19,24 @@
 }
 
 .platform-bar .platform-project {
+  gap: 4px;
   border: 0;
+  border-right: 1px solid var(--divider);
   background: none;
   color: var(--fg);
   font-weight: 600;
   cursor: pointer;
 }
 
-.platform-bar a.place,
-.platform-bar .platform-me {
+.platform-bar a.place {
   display: flex;
   align-items: center;
-  color: inherit;
+  align-self: center;
   text-decoration: none;
+}
+
+.platform-bar a.place:hover {
+  color: var(--fg);
 }
 
 .platform-section {
@@ -101,6 +110,16 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+.platform-ws-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--divider);
 }
 
 .platform-workspace .tab {
