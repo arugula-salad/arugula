@@ -1975,7 +1975,7 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -1986,6 +1986,11 @@
               "string",
               "null"
             ]
+          },
+          "done": {
+            "default": false,
+            "description": "inbox: Include what the user called done.",
+            "type": "boolean"
           },
           "draft": {
             "description": "draft: The draft's id (dft_…).",
@@ -2014,6 +2019,7 @@
               "issue",
               "items",
               "checks",
+              "inbox",
               "drafts",
               "draft"
             ],
@@ -2021,7 +2027,7 @@
           },
           "limit": {
             "default": null,
-            "description": "items: At most this many (default 100, at most 200).",
+            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500).",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -5095,7 +5101,7 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -5106,6 +5112,11 @@
               "string",
               "null"
             ]
+          },
+          "done": {
+            "default": false,
+            "description": "inbox: Include what the user called done.",
+            "type": "boolean"
           },
           "draft": {
             "description": "draft: The draft's id (dft_…).",
@@ -5134,6 +5145,7 @@
               "issue",
               "items",
               "checks",
+              "inbox",
               "drafts",
               "draft"
             ],
@@ -5141,7 +5153,7 @@
           },
           "limit": {
             "default": null,
-            "description": "items: At most this many (default 100, at most 200).",
+            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500).",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -7934,7 +7946,7 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -7945,6 +7957,11 @@
               "string",
               "null"
             ]
+          },
+          "done": {
+            "default": false,
+            "description": "inbox: Include what the user called done.",
+            "type": "boolean"
           },
           "draft": {
             "description": "draft: The draft's id (dft_…).",
@@ -7973,6 +7990,7 @@
               "issue",
               "items",
               "checks",
+              "inbox",
               "drafts",
               "draft"
             ],
@@ -7980,7 +7998,7 @@
           },
           "limit": {
             "default": null,
-            "description": "items: At most this many (default 100, at most 200).",
+            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500).",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -11054,7 +11072,7 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -11065,6 +11083,11 @@
               "string",
               "null"
             ]
+          },
+          "done": {
+            "default": false,
+            "description": "inbox: Include what the user called done.",
+            "type": "boolean"
           },
           "draft": {
             "description": "draft: The draft's id (dft_…).",
@@ -11093,6 +11116,7 @@
               "issue",
               "items",
               "checks",
+              "inbox",
               "drafts",
               "draft"
             ],
@@ -11100,7 +11124,7 @@
           },
           "limit": {
             "default": null,
-            "description": "items: At most this many (default 100, at most 200).",
+            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500).",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -12816,7 +12840,7 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -12827,6 +12851,11 @@
               "string",
               "null"
             ]
+          },
+          "done": {
+            "default": false,
+            "description": "inbox: Include what the user called done.",
+            "type": "boolean"
           },
           "draft": {
             "description": "draft: The draft's id (dft_…).",
@@ -12855,6 +12884,7 @@
               "issue",
               "items",
               "checks",
+              "inbox",
               "drafts",
               "draft"
             ],
@@ -12862,7 +12892,7 @@
           },
           "limit": {
             "default": null,
-            "description": "items: At most this many (default 100, at most 200).",
+            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500).",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -14071,7 +14101,7 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -14082,6 +14112,11 @@
               "string",
               "null"
             ]
+          },
+          "done": {
+            "default": false,
+            "description": "inbox: Include what the user called done.",
+            "type": "boolean"
           },
           "draft": {
             "description": "draft: The draft's id (dft_…).",
@@ -14110,6 +14145,7 @@
               "issue",
               "items",
               "checks",
+              "inbox",
               "drafts",
               "draft"
             ],
@@ -14117,7 +14153,7 @@
           },
           "limit": {
             "default": null,
-            "description": "items: At most this many (default 100, at most 200).",
+            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500).",
             "format": "uint32",
             "minimum": 0,
             "type": [
