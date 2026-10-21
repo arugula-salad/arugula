@@ -37,6 +37,12 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/issues/1122"
   - title: "#1126"
     url: "https://github.com/arugula-salad/arugula/issues/1126"
+  - title: "#1263"
+    url: "https://github.com/arugula-salad/arugula/issues/1263"
+  - title: "#1264"
+    url: "https://github.com/arugula-salad/arugula/issues/1264"
+  - title: "#1268"
+    url: "https://github.com/arugula-salad/arugula/issues/1268"
 decided_by: "jhgaylor"
 decided_on: "2026-10-20"
 reviews: []
@@ -68,5 +74,17 @@ CLI.
 Grants are per machine because the daemon signs every MCP call as itself:
 control can tell machines apart, not the agents on one. Narrowing a grant to
 the owner's own agents needs a daemon release and is a later step.
+
+**Thread and issue powers** (step 6, #1263). Three powers join
+`cloud.drive`, for agents in conversations ("Agents are in conversations"):
+`threads.read` (read rooms and issues in scope), `threads.post` (post
+messages, issue comments included) and `issues.write` (create, edit, close,
+label and assign native issues). Their scope is a project (a team's channels
+are its default project's) or the owner's account (their DMs). Unlike
+`cloud.drive` they're off by default and nothing is backfilled: only the
+machine's owner grants them, per scope, and only over scopes the owner can
+read. A call without one is refused with a message saying how to grant it,
+and a revoke takes effect on the next call. They're still per machine, so
+what an agent writes is labelled with its machine, not the agent.
 Where: `crates/platform/src/db/projects.rs` (`grants`), `crates/platform/src/grants.rs`, `crates/platform/src/cloud/` (`CloudDriver`).
-From: #1094, #1122, M130 (#1126).
+From: #1094, #1122, M130 (#1126), #1263 (step 6), M193 (#1264), M197 (#1268).

@@ -34,6 +34,14 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/issues/856"
   - title: "#1095"
     url: "https://github.com/arugula-salad/arugula/issues/1095"
+  - title: "#1263"
+    url: "https://github.com/arugula-salad/arugula/issues/1263"
+  - title: "#1264"
+    url: "https://github.com/arugula-salad/arugula/issues/1264"
+  - title: "#1267"
+    url: "https://github.com/arugula-salad/arugula/issues/1267"
+  - title: "#1268"
+    url: "https://github.com/arugula-salad/arugula/issues/1268"
 decided_by: "jhgaylor"
 decided_on: "2026-10-19"
 reviews: []
@@ -79,13 +87,25 @@ kept until deleted: an author or an owner deletes one (its number stays,
 empty); deleting an account deletes its DMs and its machines' threads and
 blanks its messages elsewhere; a team that goes with its founder takes its
 rooms. It's behind control's `chat` Labs flag, the account's or a team's.
-Agents aren't in chat (M121); a machine with no control has no chat
+Agents were out of chat from M121 until step 6 (below); a machine with no control has no chat
 (decision 7): since M125 no daemon keeps threads. The Chat page is the
 platform page's (M153); since M155 a page without it (a machine's own page,
 a control with no platform page, or control's flag off) offers no Chat,
 where it used to show a page that said chat needs control.
 Where: `crates/platform/src/chat.rs`, `crates/platform/src/db/chat.rs`, `crates/platform/src/cache.rs`, `crates/control-wire/src/chat.rs`.
 From: [S41](spikes/s41-chat-in-control/README.md) (decisions 1–10, all as recommended), M122 (#1096).
+
+**Since step 6 (#1263) chat stores text agents wrote, under grants**
+("Agents are in conversations", which supersedes "Agents are out of chat").
+An agent posts only where its machine has a `threads.post` grant, given by
+the machine's owner over a scope the owner can read. Its message keeps the
+owner's account as author, with the machine in `agent`, and reads as
+"`<owner>`'s agent on `<machine>`". A room any agent grant reaches says so to
+everyone in it. Agents' text is plain text like the rest, kept and deleted by
+the same rules, and the privacy page says so (M206). Rooms also hang off
+objects now: kind `object`, in a project, read by whoever can see the object
+("Threads hang off any object"). The daemon still keeps no threads.
+From: #1263 (platform roadmap, step 6), M193 (#1264), M196 (#1267), M197 (#1268).
 
 The daemon kept its own pane and session threads (M61) and its M81
 conversations in `<state>/threads/` until M125 took the store out (with its

@@ -30,6 +30,14 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/issues/1205"
   - title: "#1214"
     url: "https://github.com/arugula-salad/arugula/issues/1214"
+  - title: "#1263"
+    url: "https://github.com/arugula-salad/arugula/issues/1263"
+  - title: "#1264"
+    url: "https://github.com/arugula-salad/arugula/issues/1264"
+  - title: "#1271"
+    url: "https://github.com/arugula-salad/arugula/issues/1271"
+  - title: "#1276"
+    url: "https://github.com/arugula-salad/arugula/issues/1276"
 decided_by: "jhgaylor"
 decided_on: "2026-10-06"
 reviews: []
@@ -55,5 +63,17 @@ on linked repos are platform rows, and blocks on them are pins ("The
 daemon's forge reader stays for unlinked repos; linked repos' blocks are
 pins"). "Agents draft, people send" still holds: a send is always a person's
 action, and no grant makes an agent a sender.
+
+**Native issues aren't forge objects** (step 6, #1263). An agent whose
+machine has an `issues.write` grant writes a project's native issues
+directly: it creates, edits, labels, assigns and closes them, and with
+`threads.post` comments on them, labelled as its owner's agent ("A project
+owns numbered issues", "Agents are in conversations"). GitHub writes don't
+change: an agent's comment, review or issue on GitHub is still a draft a
+person sends through "Sending as a person uses a one-use user token, falling
+back to their machine". So is an agent's native comment on an issue exported
+to GitHub, which stays native until it's sent ("Taking custody of issues
+stays reversible"). MCP's tool descriptions say which is which, so an agent
+knows when a person must send.
 Where: `crates/daemon/src/forge/`.
-From: [Forge track](docs/plan-archive.md#forge-track-s23-m36m40-added-2026-10-02), [M36](docs/plan-archive.md#m36-forgejo-pull-request-blocks-88), #457, #1204 (step 4), M159 (#1205), M168 (#1214).
+From: [Forge track](docs/plan-archive.md#forge-track-s23-m36m40-added-2026-10-02), [M36](docs/plan-archive.md#m36-forgejo-pull-request-blocks-88), #457, #1204 (step 4), M159 (#1205), M168 (#1214), #1263 (step 6), M193 (#1264), M200 (#1271), M205 (#1276).
