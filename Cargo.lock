@@ -162,7 +162,7 @@ dependencies = [
 
 [[package]]
 name = "arugula"
-version = "0.56.1"
+version = "0.57.0"
 dependencies = [
  "anyhow",
  "arugula-control-wire",
@@ -194,7 +194,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-control"
-version = "0.56.1"
+version = "0.57.0"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
@@ -232,7 +232,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-control-common"
-version = "0.56.1"
+version = "0.57.0"
 dependencies = [
  "anyhow",
  "arugula-e2e",
@@ -331,7 +331,7 @@ dependencies = [
 
 [[package]]
 name = "arugula-platform"
-version = "0.56.1"
+version = "0.57.0"
 dependencies = [
  "anyhow",
  "arugula-cloud-wire",
@@ -401,7 +401,7 @@ dependencies = [
 
 [[package]]
 name = "arugulad"
-version = "0.56.1"
+version = "0.57.0"
 dependencies = [
  "aes-gcm 0.11.1",
  "anyhow",
