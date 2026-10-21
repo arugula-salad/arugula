@@ -8,8 +8,10 @@
 //! and workflow runs through their `pull_requests`; a status, or a run on a
 //! fork's PR, is repo-wide: no number). The hub relays the pokes to the
 //! daemons watching the repository (`HubPort::forge_pokes`) until M174.
-//! Nothing else of the payload goes anywhere, and only the event, delivery,
-//! repository and count are logged.
+//! Before the pokes, a linked repo's payload writes the forge mirror's
+//! rows (M164, [`super::ingest`]): its metadata, never a body or a
+//! comment's text. Nothing else of the payload goes anywhere, and only the
+//! event, delivery, repository and count are logged.
 
 use std::sync::Arc;
 
@@ -76,6 +78,7 @@ pub fn pokes(event: &str, delivery: &str, v: &Value) -> Vec<Poke> {
 
 /// `POST /github/webhook`: the App's events, handed to the hub as pokes.
 pub async fn webhook(State(p): State<Arc<Platform>>, headers: HeaderMap, body: Bytes) -> Response {
+    let came = std::time::Instant::now();
     let Some(gh) = &p.github else {
         // Never dropped quietly: GitHub records the failure, to redeliver
         // once the App's secrets are set, and the hub's log has it too.
@@ -124,6 +127,8 @@ pub async fn webhook(State(p): State<Arc<Platform>>, headers: HeaderMap, body: B
         let _ = p.db.forget_delivery(&delivery);
         return err(StatusCode::INTERNAL_SERVER_ERROR, "couldn't drop kept access answers").into_response();
     }
+    // M164: a linked repo's rows, before its pokes go.
+    super::ingest::webhook(&p, &event, &delivery, &v, came);
     let pokes = pokes(&event, &delivery, &v);
     if pokes.is_empty() {
         return (StatusCode::ACCEPTED, Json(json!({ "relayed": 0 }))).into_response();

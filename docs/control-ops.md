@@ -635,6 +635,78 @@ Do the test App first, then the real one:
    installation has no organization members, and approving changes
    nothing else for it.
 
+**The forge mirror** (M164, #1210). A linked repo's PRs and issues are
+platform rows (`forge_items`, `forge_checks`, `forge_events`): metadata,
+never a body or a comment's text.
+- **Webhooks write rows.** `pull_request`, `pull_request_review`,
+  `pull_request_review_comment`, `issues`, `issue_comment`, `check_run`
+  and `status` events for a linked repo write its rows in the webhook's
+  own request, before the pokes go. A row is only overwritten by a
+  payload whose GitHub `updated_at` is newer, so a late redelivery
+  changes nothing. GitHub's times are whole seconds: two payloads from
+  the same second that disagree leave the row as it was and put the item
+  (or the head's checks) in `forge_refetch`, which the poller reads again
+  first thing, at once. A commit status is kept for any commit (it may
+  come before its PR's new head); the poller prunes checks on a commit
+  no item has as its head after an hour. An issue deleted or transferred
+  goes, with its events and inbox rows; its drafts stay (M170's). An
+  unlinked repo's events write nothing.
+- **One poller per repo**, leased like Cloud's jobs (`linked_repos.lease`,
+  `FOR UPDATE SKIP LOCKED`: two machines never poll one repo). Its first
+  turn after linking backfills: open PRs and issues, everything updated
+  in the last 90 days, open PRs' checks, and reviews as events. Then it
+  reconciles every 5 minutes (`ARUGULA_FORGE_RECONCILE_MINUTES`): what
+  GitHub lists as updated since the last one, with two minutes' overlap.
+  Every turn also reads the repo itself, keeping `linked_repos.full_name`
+  and `private` current. A turn reads at most 50 list pages; one with
+  more keeps a cursor (`linked_repos.poll_cursor`) and the next turn
+  carries on from it. A row it finds missing or wrong is **drift**: a
+  webhook that never came or failed. It fixes the row, and counts it when
+  GitHub's change came after the last reconcile and more than a minute
+  ago (an old PR's earlier reviews are history, not drift). It logs
+  `forge mirror: drift fixed` with the repo id, the item or check, and
+  the fields (never a title). Its tokens are read-only, for the one repo,
+  logged with purpose `ingest`.
+- **Failures and uninstalls.** A failed turn waits a minute, doubled for
+  each failure in a row (`linked_repos.poll_failures`), up to an hour.
+  When GitHub won't mint a token for the repo (404, 422), or the repo's
+  own read says 404 or 451, the poller asks GitHub about the installation
+  as the App: deleted or suspended unlinks all its repos, otherwise the
+  repo is taken out of it. Either way the purge follows, as if the
+  installation's webhook had come (`forge mirror: gone from the App,
+  unlinked`). The leader also sweeps `GET /app/installations` every 6
+  hours and unlinks installations GitHub no longer lists, or lists as
+  suspended (`forge mirror: swept the App's installations`).
+- **The rate budget.** Each installation's `x-ratelimit-*`, as last
+  heard. The poller leaves 30% of the limit (`ARUGULA_FORGE_RATE_RESERVE`,
+  in percent) for reads on demand and sends: below that it stops its
+  turn, gives the lease up, and the repo waits a minute, until the limit
+  resets.
+
+**Reading the mirror's numbers.** Each platform machine logs them every
+5 minutes, from memory (a restart starts them again):
+
+```sh
+fly logs -a arugula-platform | grep 'forge mirror:'
+```
+
+- `forge mirror: webhook to row`: over the newest 1000 deliveries that
+  wrote a row, `arrival_p50_ms`/`arrival_p95_ms` (from the request
+  reaching the platform to the row's commit) and
+  `event_p50_ms`/`event_p95_ms` (from GitHub's own time for the change,
+  in whole seconds, so up to a second pessimistic). The gate is
+  `event_p95_ms` under 5000.
+- `forge mirror: drift today`: one line per linked repo, its `items`,
+  `drift` fixed today (UTC, this machine's), and `per_thousand`. The gate
+  is under 1 a day; add the machines' counts up, or count the day's
+  `drift fixed` lines, which every machine logs.
+- `forge mirror: rate budget`: one line per installation, `limit`,
+  `remaining`, `used_pct`, `reserve_pct`, and `backing_off` when the
+  poller is leaving the reserve be. `forge mirror: poller left the rate
+  reserve be` is logged each time it does.
+- `forge mirror: poller turn`: a backfill, or a reconcile that fixed
+  rows, with `fixed` and `drift`.
+
 **Making the app** (once, before M141). It lives in `iad`, beside its
 Managed Postgres, which Fly doesn't offer in `ewr`; the hub stays in `ewr`,
 about 5 ms away:
