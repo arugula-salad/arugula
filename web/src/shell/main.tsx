@@ -2,7 +2,8 @@ import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
 import { cloudPanes, cloudWorkspaceRoute, cloudWorkspaces, useCloudPanes } from "../shared/cloud";
 import { cloudFleet } from "./cloud-fleet";
 import { shellPlatformApi } from "./platform-api";
-import { setPlatformOrigin } from "./platform-links";
+import { platformOrigin, setPlatformOrigin } from "./platform-links";
+import { platformPath } from "./fragments";
 import { PlatformApiContext } from "../shared/platform-api";
 // Arugula web client: tabs and splits of terminals owned by the daemon.
 
@@ -57,6 +58,18 @@ if (info) restoreInvite();
 if (info) showMoving(info);
 // M153: chat and Cloud workspaces are on the platform page, when control has one.
 setPlatformOrigin(info?.platform);
+// M154: an old link of the platform's (`#chat…`, `#cloud…`, `#cloud-ws…`)
+// lands on its new page there. Keep this forever (./fragments).
+const moved = platformOrigin() ? platformPath(location.hash) : null;
+if (moved) {
+  location.replace(`${platformOrigin()}${moved}`);
+  await new Promise(() => {});
+}
+// …and one followed on this page, as a hash change.
+addEventListener("hashchange", () => {
+  const to = platformOrigin() ? platformPath(location.hash) : null;
+  if (to) location.replace(`${platformOrigin()}${to}`);
+});
 const linkMatch = /^#link=([0-9a-f]+)\.([0-9a-f]{64})\.([0-9a-f]{64})\.([0-9a-f]{64})$/.exec(location.hash);
 const session = info && !linkMatch ? new ControlSession(info) : null;
 setControlSession(session);
