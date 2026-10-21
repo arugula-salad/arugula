@@ -88,6 +88,7 @@ const READ_RULES: &[&str] = &[
     "mcp__arugula__capabilities",
     "mcp__arugula__history",
     "mcp__arugula__read_forge",
+    "mcp__arugula__forge_read",
     "mcp__arugula__read_invite",
     "mcp__arugula__read_file",
     "mcp__arugula__read_cloud",
@@ -115,6 +116,7 @@ const ACTING_RULES: &[&str] = &[
     "Bash(arugula diff:*)",
     "Bash(arugula pr:*)",
     "Bash(arugula issue:*)",
+    "Bash(arugula draft:*)",
     "Bash(arugula cd:*)",
     "Bash(arugula rerun:*)",
     "Bash(arugula upload:*)",
@@ -132,6 +134,7 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__prompt_agent",
     "mcp__arugula__agent_respond",
     "mcp__arugula__draft",
+    "mcp__arugula__forge_draft",
     "mcp__arugula__invite_person",
     "mcp__arugula__device_call",
     "mcp__arugula__cloud",
@@ -796,14 +799,15 @@ mod tests {
             "mcp__arugula__capabilities",
             "mcp__arugula__history",
             "mcp__arugula__read_forge",
+            "mcp__arugula__forge_read",
             "mcp__arugula__read_invite",
             "mcp__arugula__read_file",
             "mcp__arugula__read_cloud",
         ];
         assert_eq!(READ_RULES, read);
         let acting_cli = [
-            "agent", "run", "send", "keys", "close", "call", "open", "edit", "view", "diff", "pr", "issue", "cd",
-            "rerun", "upload", "mouse", "share", "invite",
+            "agent", "run", "send", "keys", "close", "call", "open", "edit", "view", "diff", "pr", "issue", "draft",
+            "cd", "rerun", "upload", "mouse", "share", "invite",
         ];
         let acting: Vec<&str> = ACTING_RULES.iter().copied().filter(|r| r.starts_with("Bash(")).collect();
         let want: Vec<String> = acting_cli.iter().map(|c| format!("Bash(arugula {c}:*)")).collect();

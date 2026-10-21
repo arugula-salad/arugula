@@ -93,6 +93,7 @@ fn routes() -> Routes {
         .route(arugula_control_wire::projects::FORGE_DRAFT, get(forge::drafts::get))
         .route(arugula_control_wire::projects::FORGE_DRAFT_DISCARD, post(forge::drafts::discard))
         .route(arugula_control_wire::projects::FORGE_REPO, get(forge::drafts::repo))
+        .route(arugula_control_wire::forge_ops::FORGE_OPS, post(forge::ops::call))
         .route("/github/webhook", post(forge::webhook))
 }
 

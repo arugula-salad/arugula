@@ -142,7 +142,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 21 - NO_FORGE);
+    assert_eq!(tools.len(), 24 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
@@ -398,7 +398,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 21 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 24 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -473,7 +473,7 @@ async fn http_with_a_token_until_it_is_revoked() {
         d.post("/api/mcp/tokens", json!({ "name": "watcher", "scope": "read" }))["token"].as_str().unwrap().to_owned();
     let w = http(&d, &ro, Client::named("watcher")).await.unwrap();
     // (read_forge is among the read-only tools only with the forge.)
-    assert_eq!(w.list_all_tools().await.unwrap().len(), 9 - NO_FORGE / 2);
+    assert_eq!(w.list_all_tools().await.unwrap().len(), 10 - NO_FORGE / 2);
     assert!(refused(&w, "run", json!({ "command": "true" })).await.contains("may only read"));
     // Grouped, a write is still a write.
     assert!(refused(&w, "show", json!({ "kind": "port", "port": 1 })).await.contains("may only read"));
@@ -908,7 +908,7 @@ async fn labs_lists_all_the_tools() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 21 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 24 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -916,7 +916,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 23, "{:?}", names(&with));
+        assert_eq!(with.len(), 26, "{:?}", names(&with));
         assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
         assert!(!with.iter().any(|t| t.name == "read_thread" || t.name == "post_thread"), "{:?}", names(&with));
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
@@ -935,13 +935,13 @@ async fn labs_lists_all_the_tools() {
         // of the others' kinds.
         arugula_proto::flags::set(&d.state, "chat", true).unwrap();
         let chat = s.list_all_tools().await.unwrap();
-        assert_eq!(chat.len(), 21, "{:?}", names(&chat));
+        assert_eq!(chat.len(), 24, "{:?}", names(&chat));
         assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
         arugula_proto::flags::set(&d.state, "chat", false).unwrap();
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 21 - NO_FORGE);
+        assert_eq!(without.len(), 24 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -950,7 +950,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 21 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 24 - NO_FORGE, "{:?}", names(&with));
         assert!(!with.iter().any(|t| t.name == "read_thread" || t.name == "post_thread"));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
@@ -1638,5 +1638,224 @@ async fn an_agent_drives_cloud_workspaces_through_control() {
     assert!(cloud.len() > 8, "{signed:?}");
     assert!(cloud.iter().all(|s| s.contains(&format!(" v2 {} ", keys.id()))), "{signed:?}");
     s.cancel().await.unwrap();
+    drop(d);
+}
+
+/// A fake control's platform for M169's forge operations: one linked PR
+/// (`acme/app#1`), drafts kept as rows, sends not built yet (as the
+/// platform answers until M168), and every call as it came, with its
+/// signature.
+#[derive(Clone, Default)]
+struct FakeForge {
+    calls: Arc<std::sync::Mutex<Vec<(String, Value)>>>,
+    drafts: Arc<std::sync::Mutex<Vec<Value>>>,
+}
+
+async fn fake_forge(f: FakeForge) -> String {
+    use axum::{
+        Json, Router,
+        extract::State,
+        http::{HeaderMap, StatusCode},
+        response::{IntoResponse, Response},
+        routing::{get, post},
+    };
+    async fn ops(State(f): State<FakeForge>, h: HeaderMap, Json(b): Json<Value>) -> Response {
+        let auth = h.get("x-arugula-auth").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+        f.calls.lock().unwrap().push((auth, b.clone()));
+        let ok = |result: Value| Json(json!({ "op": b["op"], "v": b["v"], "result": result })).into_response();
+        let no = |status: StatusCode, said: &str| (status, Json(json!({ "error": said }))).into_response();
+        let linked = b["repo"] == "acme/app" && b["number"] == 1;
+        let drafts = f.drafts.lock().unwrap().clone();
+        match b["op"].as_str().unwrap_or_default() {
+            "pr.get" if linked => ok(json!({
+                "item": { "id": "fi_1", "repo": "acme/app", "number": 1, "kind": "pr", "state": "open",
+                          "title": "Fix the thing", "labels": [], "author": "alice-gh", "assignees": [],
+                          "reviewers": ["bob-gh"], "draft": false, "merge_state": null, "head_ref": "fix",
+                          "head_sha": "abc1234def", "base_ref": "main", "created_at": 1, "updated_at": 2 },
+                "events": [{ "id": "fev_1", "kind": "review", "actor": "bob-gh", "review_state": "commented", "at": 1 }],
+                "drafts": drafts,
+            })),
+            "pr.get" | "issue.get" | "checks.get" => {
+                no(StatusCode::NOT_FOUND, "that repo isn't linked to a project you can read it in")
+            }
+            "draft.create" => {
+                let d = json!({
+                    "id": format!("dft_{:032x}", drafts.len() + 1), "project": "prj_1", "repo": b["repo"],
+                    "repo_id": 77, "number": b["number"], "kind": b["kind"], "event": b["event"],
+                    "title": b["title"], "body": b["body"], "state": "waiting", "author": "a1",
+                    "agent": b["agent"], "machine": "m1", "machine_name": "geek", "created_at": 1, "updated_at": 1,
+                });
+                f.drafts.lock().unwrap().push(d.clone());
+                ok(json!({ "draft": d, "created": true }))
+            }
+            "draft.list" => ok(json!({ "drafts": drafts })),
+            "draft.get" => match drafts.into_iter().find(|d| d["id"] == b["draft"]) {
+                Some(d) => ok(d),
+                None => no(StatusCode::NOT_FOUND, "no such draft"),
+            },
+            op => (
+                StatusCode::NOT_IMPLEMENTED,
+                Json(json!({ "error": format!("{op}: sending from Arugula control isn't available yet; a draft waits for it"),
+                             "reason": "not_yet" })),
+            )
+                .into_response(),
+        }
+    }
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .route("/api/forge/ops", post(ops))
+        .route(
+            "/api/forge/repos/{owner}/{name}",
+            get(|| async { Json(json!({ "repo": "acme/app", "linked": true, "project": "prj_1", "repo_id": 77 })) }),
+        )
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// #1215's done-when, up to the send (M168's): an agent with no PR block
+/// open reads a linked PR and drafts a review through MCP, and a person
+/// lists and reads the draft with the CLI, whose send says it isn't built
+/// yet. MCP has no send.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_drafts_on_a_linked_pr_with_no_block_and_a_person_sees_it() {
+    let fake = FakeForge::default();
+    let url = fake_forge(fake.clone()).await;
+    // A `gh` with no login: a block here never reads with the person's own.
+    let bin = std::env::temp_dir().join(format!("arugula-forge-ops-gh-{}", std::process::id()));
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(bin.join("gh"), "#!/bin/sh\nexit 1\n").unwrap();
+    std::fs::set_permissions(bin.join("gh"), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default());
+    let api = format!("{url}/github");
+    let d = Daemon::child_env(
+        &["--wisp-token-file", "/nonexistent"],
+        &[("PATH", path.as_str()), ("ARUGULA_GITHUB_API", api.as_str())],
+    );
+    let s = bridge(&d, Client::named("claude-code")).await;
+
+    // Reads and drafts, never a send.
+    let tools = s.list_all_tools().await.unwrap();
+    assert_eq!(kinds(&tools, "forge_read"), ["pr", "issue", "items", "checks", "drafts", "draft"]);
+    assert_eq!(kinds(&tools, "forge_draft"), ["comment", "review", "issue", "discard"]);
+    assert!(tools.iter().all(|t| !t.name.contains("send") || t.name == "send_input"), "a send tool");
+
+    let said = refused(&s, "forge_read", json!({ "kind": "pr", "item": "acme/app#1" })).await;
+    assert!(said.contains("hasn't joined Arugula control"), "{said}");
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+
+    // No block anywhere: read the PR, as soon as the daemon sees it joined.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let pr = loop {
+        let r = call_raw(&s, "forge_read", json!({ "kind": "pr", "item": "https://github.com/acme/app/pull/1" })).await;
+        if r.is_error != Some(true) {
+            break r.structured_content.unwrap();
+        }
+        assert!(std::time::Instant::now() < deadline, "never joined: {:?}", r.content);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    assert!(pr["summary"].as_str().unwrap().contains("acme/app#1 [pr, open] Fix the thing"), "{pr}");
+    assert_eq!(pr["item"]["id"], "fi_1", "{pr}");
+    let panes = call(&s, "list", json!({ "kind": "panes" })).await;
+    assert!(!panes.to_string().contains("\"forge\""), "no block opened: {panes}");
+
+    let review = json!({ "kind": "review", "item": "acme/app#1", "event": "request_changes", "body": "split it" });
+    let drafted = call(&s, "forge_draft", review).await;
+    let id = drafted["draft"]["id"].as_str().unwrap().to_owned();
+    assert!(drafted["summary"].as_str().unwrap().contains("waits for a person"), "{drafted}");
+    let why = refused(&s, "forge_draft", json!({ "kind": "send", "draft": id })).await;
+    assert!(why.contains("send"), "{why}");
+    let read = call(&s, "forge_read", json!({ "kind": "drafts", "item": "acme/app#1" })).await;
+    assert_eq!(read["drafts"][0]["id"], id.as_str(), "{read}");
+
+    // The old read_forge, on a block of the linked repo: the platform's
+    // item beside the block's own.
+    let block = d.post(
+        "/api/blocks",
+        json!({ "type": "forge", "config": { "pr": "https://github.com/acme/app/pull/1" }, "local": true }),
+    )["block"]
+        .as_u64()
+        .unwrap();
+    let old = call(&s, "read_forge", json!({ "block": block })).await;
+    assert_eq!(old["platform"]["item"]["id"], "fi_1", "{old}");
+    assert_eq!(old["platform"]["drafts"][0]["id"], id.as_str(), "{old}");
+    assert!(old["summary"].as_str().unwrap().contains("linked in Arugula control: fi_1"), "{old}");
+    {
+        let calls = fake.calls.lock().unwrap();
+        let (auth, b) = calls.iter().find(|(_, b)| b["op"] == "draft.create").unwrap();
+        assert_eq!(
+            (b["v"].as_u64(), b["kind"].as_str(), b["event"].as_str(), b["agent"].as_str()),
+            (Some(1), Some("review"), Some("REQUEST_CHANGES"), Some("mcp:claude-code"))
+        );
+        assert!(auth.starts_with(&format!("v2 {} ", keys.id())), "signed as this machine: {auth}");
+    }
+    s.cancel().await.unwrap();
+
+    // A person, with the CLI logged in to the same control.
+    let home = d.state.join("cli-home");
+    let config = home.join("arugula");
+    std::fs::create_dir_all(&config).unwrap();
+    let cli_keys = arugula_e2e::DeviceKeys::load_or_create(&config.join("cli-key")).unwrap();
+    let cli_cert = arugula_e2e::Cert::new(&cli_keys, "a1", arugula_e2e::Kind::Cli, "laptop");
+    let saved = json!({ "url": url, "cert": cli_cert, "trust": { "account": "a1", "root": cli_keys.id() } });
+    std::fs::write(config.join("cli-control.json"), saved.to_string()).unwrap();
+    let bin = cli_bin();
+    let cli = move |args: &[&str], agent: bool| {
+        let mut c = arugula_testkit::command(&bin);
+        c.args(args).env("XDG_CONFIG_HOME", &home).env("ARUGULA_STATE_DIR", home.join("state"));
+        c.env_remove("CLAUDECODE").env_remove("AI_AGENT");
+        if agent {
+            c.env("CLAUDECODE", "1");
+        }
+        let out = c.output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+        (out.status.success(), text)
+    };
+    let run = |args: &'static [&'static str], agent: bool| {
+        let cli = cli.clone();
+        tokio::task::spawn_blocking(move || cli(args, agent))
+    };
+    let (ok, ls) = run(&["draft", "ls"], false).await.unwrap();
+    assert!(ok, "{ls}");
+    assert!(ls.contains(&id) && ls.contains("review (request_changes) on acme/app#1"), "{ls}");
+    assert!(ls.contains("by mcp:claude-code on geek"), "{ls}");
+    let cli2 = cli.clone();
+    let shown_id = id.clone();
+    let (ok, shown) = tokio::task::spawn_blocking(move || cli2(&["draft", "show", &shown_id], false)).await.unwrap();
+    assert!(ok && shown.contains("split it"), "{shown}");
+    let (ok, view) = run(&["pr", "view", "acme/app#1"], false).await.unwrap();
+    assert!(ok && view.contains("Fix the thing") && view.contains("fix (abc1234) → main"), "{view}");
+    assert!(view.contains(&id), "the draft on the PR: {view}");
+    let cli3 = cli.clone();
+    let send_id = id.clone();
+    let (ok, sent) = tokio::task::spawn_blocking(move || cli3(&["draft", "send", &send_id], false)).await.unwrap();
+    assert!(!ok && sent.contains("isn't available yet"), "M168's: {sent}");
+    let cli4 = cli.clone();
+    let (ok, agent) = tokio::task::spawn_blocking(move || cli4(&["draft", "send", &id], true)).await.unwrap();
+    assert!(!ok && agent.contains("an agent doesn't send"), "{agent}");
+    // A comment from the CLI: the person's sends (not built yet), an
+    // agent's is a draft.
+    let (ok, c) = run(&["pr", "comment", "acme/app#1", "lgtm"], true).await.unwrap();
+    assert!(ok && c.contains("waits for a person"), "{c}");
+    let (ok, c) = run(&["pr", "comment", "acme/app#1", "lgtm"], false).await.unwrap();
+    assert!(!ok && c.contains("--draft"), "{c}");
+
+    // Every CLI call was signed with its own key, at version 1.
+    let calls = fake.calls.lock().unwrap();
+    assert!(calls.iter().all(|(_, b)| b["v"] == 1), "{calls:?}");
+    let by_cli = calls.iter().filter(|(a, _)| a.contains(&cli_keys.id())).count();
+    assert!(by_cli >= 6, "{calls:?}");
+    let comment = calls.iter().rev().find(|(_, b)| b["op"] == "draft.create").unwrap();
+    assert_eq!((comment.1["kind"].as_str(), comment.1["agent"].as_str()), (Some("comment"), Some("cli")));
+    assert_eq!(calls.last().unwrap().1["op"], "pr.comment");
     drop(d);
 }

@@ -114,3 +114,19 @@ pub fn watch_messages() -> Option<tokio::sync::watch::Receiver<Option<String>>> 
 pub fn watch_messages() -> Option<tokio::sync::watch::Receiver<Option<String>>> {
     None
 }
+
+/// Whether a forge block's item is on a GitHub repo linked to a project
+/// for this machine's owner (M170's word on it, kept a few minutes): MCP's
+/// `read_forge` reads it from the platform too then (M169).
+#[cfg(feature = "forge")]
+pub async fn linked(st: &arugula_proto::forge::ForgeState) -> bool {
+    st.provider == arugula_proto::forge::Provider::Github
+        && st.number != 0
+        && st.host.as_deref().is_none_or(crate::forge::github::is_github_host)
+        && matches!(crate::forge::platform::link(&st.repo).await, Ok(Some(_)))
+}
+
+#[cfg(not(feature = "forge"))]
+pub async fn linked(_st: &arugula_proto::forge::ForgeState) -> bool {
+    false
+}

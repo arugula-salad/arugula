@@ -525,6 +525,8 @@ pub struct ItemFilter<'a> {
     /// A login among the requested reviewers.
     pub review_requested: Option<&'a str>,
     pub text: Option<&'a str>,
+    /// One PR's or issue's number (M169's `pr.get`).
+    pub number: Option<u64>,
     pub limit: u32,
 }
 
@@ -623,6 +625,10 @@ impl Db {
                 ),
             });
             args.push(login.to_ascii_lowercase());
+        }
+        if let Some(n) = f.number {
+            // A number: written into the statement, as the repo ids are.
+            wh.push(format!("i.number = {n}"));
         }
         if let Some(t) = f.text.filter(|t| !t.trim().is_empty()) {
             // Content only of a repo that mirrors it: turning it off takes

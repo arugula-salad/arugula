@@ -87,3 +87,39 @@ keep the bodies and comments in `forge_content`, reads come from there,
 and the project's search (`q`) finds their text. Turning it off (any member
 who may change links) deletes them at once. Unlinking, or the App being
 uninstalled, purges them within a day.
+
+**Forge operations (M169, #1215).** A linked repo's PRs and issues are read
+and drafted on without a block, or a machine awake: one route, `POST
+/api/forge/ops`, takes a typed operation by name and version (`{"op":
+"pr.get", "v": 1, "repo": "acme/app", "number": 7}`) and answers `{"op",
+"v", "result"}` (`arugula_control_wire::forge_ops`). Each operation has its
+own version; one this control doesn't speak is a 400 that says which it
+does. Reads (`pr.get`, `issue.get`, `item.list`, `checks.get`) and drafts
+(`draft.create`, `draft.list`, `draft.get`, `draft.discard`) go through the
+same viewer check as the routes above (M165), for a person or a machine with
+a live `cloud.drive` grant (for its owner). Sends (`draft.send`,
+`pr.comment`, `pr.review`, `issue.create`, `issue.comment`) are a person's
+only: a machine is refused (403, `reason: "agents_draft"`), and until M168
+a person is told sending isn't available yet (501, `reason: "not_yet"`).
+`inbox.list` comes with the inbox (M171).
+
+Agents use them through MCP: `forge_read` (kinds `pr`, `issue`, `items`,
+`checks`, `drafts`, `draft`) and `forge_draft` (kinds `comment`, `review`,
+`issue`, `discard`). MCP has no send. `read_forge` on a block of a linked
+repo reads the platform's item too (`platform` in its answer), and `draft`
+on one keeps the draft on the platform (M170).
+
+```
+arugula pr view acme/app#7                # no block; also `issue view`
+arugula pr list acme/app --state open     # or --project; also `issue list`
+arugula pr checks acme/app#7
+arugula pr review acme/app#7 approve      # sends as you (M168); --draft keeps a draft
+arugula pr comment acme/app#7 "lgtm"      # likewise `issue comment acme/app#2 ...`
+arugula issue create acme/app -t "Title" -b "Body"
+arugula draft ls                          # your waiting drafts; or OWNER/REPO[#N], --project
+arugula draft show dft_…                  # discard, send
+```
+
+Run by an agent (`CLAUDECODE` or `AI_AGENT` set), the CLI's comment,
+review and new issue are drafts, and `draft send` is refused. `%N` instead
+of `OWNER/REPO#N` still writes to that block.

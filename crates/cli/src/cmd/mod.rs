@@ -16,6 +16,7 @@ pub mod edit;
 pub mod editors;
 pub mod events;
 pub mod export;
+pub mod forge_ops;
 pub mod grants;
 pub mod history;
 pub mod ide;
