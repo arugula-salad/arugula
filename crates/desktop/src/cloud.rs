@@ -112,36 +112,50 @@ pub fn control() -> Option<String> {
     LOCAL.lock().unwrap().as_ref().and_then(|l| l.control.clone())
 }
 
-/// Control's block domain (M50), as its `/control.json` said it, for the
-/// control it was read from: whose block origins stay in the window
-/// (`frames.rs`).
-struct Blocks {
+/// What control's `/control.json` said, for the control it was read from:
+/// its block domain (M50), whose block origins stay in the window
+/// (`frames.rs`), and its platform page's origin (M157), which does too
+/// (`platform.rs`).
+struct Said {
     control: String,
     domain: Option<String>,
+    platform: Option<tauri::Url>,
     read: bool,
     at: Instant,
 }
 
-static BLOCKS: Mutex<Option<Blocks>> = Mutex::new(None);
+static SAID: Mutex<Option<Said>> = Mutex::new(None);
 
-/// How often control's block domain is read again once read, and tried
+/// How often control's `/control.json` is read again once read, and tried
 /// again when it couldn't be.
-const BLOCKS_REREAD: Duration = Duration::from_secs(10 * 60);
-const BLOCKS_RETRY: Duration = Duration::from_secs(30);
+const SAID_REREAD: Duration = Duration::from_secs(10 * 60);
+const SAID_RETRY: Duration = Duration::from_secs(30);
 
 /// The block domain of the control the window may show, if it said one.
 pub fn block_domain() -> Option<String> {
     let c = control()?;
-    BLOCKS.lock().unwrap().as_ref().filter(|b| b.control == c).and_then(|b| b.domain.clone())
+    SAID.lock().unwrap().as_ref().filter(|b| b.control == c).and_then(|b| b.domain.clone())
 }
 
-/// Read control's block domain when it isn't known for this control yet,
-/// or it's time to again. Blocks on the network: for a thread of its own
-/// (`follow_join`'s), never a navigation's.
-pub fn learn_block_domain() {
+/// The platform page's origin of the control the window may show, if it
+/// said one.
+pub fn platform() -> Option<tauri::Url> {
+    platform_of(&control()?)
+}
+
+/// The platform page's origin `control` said, if it's the control last
+/// read: for the one a machine just left, too, until another is read.
+pub fn platform_of(control: &str) -> Option<tauri::Url> {
+    SAID.lock().unwrap().as_ref().filter(|b| b.control == control).and_then(|b| b.platform.clone())
+}
+
+/// Read control's `/control.json` when it isn't known for this control
+/// yet, or it's time to again. Blocks on the network: for a thread of its
+/// own (`follow_join`'s), never a navigation's.
+pub fn learn_control_json() {
     let Some(c) = control() else { return };
-    let due = match &*BLOCKS.lock().unwrap() {
-        Some(b) if b.control == c => b.at.elapsed() >= if b.read { BLOCKS_REREAD } else { BLOCKS_RETRY },
+    let due = match &*SAID.lock().unwrap() {
+        Some(b) if b.control == c => b.at.elapsed() >= if b.read { SAID_REREAD } else { SAID_RETRY },
         _ => true,
     };
     if !due {
@@ -149,17 +163,24 @@ pub fn learn_block_domain() {
     }
     let said =
         agent().get(&format!("{c}/control.json")).call().ok().and_then(|mut r| r.body_mut().read_json::<Value>().ok());
-    let mut blocks = BLOCKS.lock().unwrap();
-    let before = blocks.as_ref().filter(|b| b.control == c).and_then(|b| b.domain.clone());
-    let domain = match &said {
-        Some(v) => v["block_domain"].as_str().and_then(crate::frames::block_domain),
+    let mut known = SAID.lock().unwrap();
+    let before = known.as_ref().filter(|b| b.control == c);
+    let (was_domain, was_platform) = (before.and_then(|b| b.domain.clone()), before.and_then(|b| b.platform.clone()));
+    let (domain, platform) = match &said {
+        Some(v) => (
+            v["block_domain"].as_str().and_then(crate::frames::block_domain),
+            v["platform"].as_str().and_then(crate::platform::origin),
+        ),
         // Not reached this time: what it said before stands.
-        None => before.clone(),
+        None => (was_domain.clone(), was_platform.clone()),
     };
-    if said.is_some() && domain != before {
+    if said.is_some() && domain != was_domain {
         eprintln!("arugula: {c}'s block domain is {}", domain.as_deref().unwrap_or("none"));
     }
-    *blocks = Some(Blocks { control: c, domain, read: said.is_some(), at: Instant::now() });
+    if said.is_some() && platform != was_platform {
+        eprintln!("arugula: {c}'s platform page is {}", platform.as_ref().map_or("none", |p| p.as_str()));
+    }
+    *known = Some(Said { control: c, domain, platform, read: said.is_some(), at: Instant::now() });
 }
 
 /// The app's name as a device: "Arugula app on geek". An AppImage whose
@@ -221,17 +242,24 @@ pub fn app_url(page: &str) -> tauri::Url {
 /// Whether a window showing `url` moves to the new home when the daemon's
 /// control goes from `was` to `now` (#204). Joined: the daemon's own page
 /// (`daemon_page`) gives way to the app's sign-in, or control's page once
-/// signed in. Left, or joined elsewhere: the old control's pages and the
-/// sign-in give way. Anything else (the setup page, another window's
-/// choice) stays.
-pub fn moves(was: Option<&str>, now: Option<&str>, url: &tauri::Url, daemon_page: bool) -> bool {
+/// signed in. Left, or joined elsewhere: the old control's pages, its
+/// platform page (`was_platform`, M157) and the sign-in give way. Anything
+/// else (the setup page, another window's choice) stays.
+pub fn moves(
+    was: Option<&str>,
+    was_platform: Option<&tauri::Url>,
+    now: Option<&str>,
+    url: &tauri::Url,
+    daemon_page: bool,
+) -> bool {
     if was == now {
         return false;
     }
     match was {
         None => daemon_page,
         Some(old) => {
-            let on_old = old.parse::<tauri::Url>().is_ok_and(|c| c.origin() == url.origin());
+            let on_old = old.parse::<tauri::Url>().is_ok_and(|c| c.origin() == url.origin())
+                || crate::platform::is_platform(url, was_platform);
             let signin = matches!(url.host_str(), Some("localhost" | "tauri.localhost"))
                 && matches!(url.scheme(), "tauri" | "http")
                 && url.path() == format!("/{SIGNIN}");
@@ -576,20 +604,27 @@ mod tests {
         let c = Some("https://control.test");
         let daemon = url("http://127.0.0.1:7681/");
         // Joined while the window showed the daemon's page: it moves.
-        assert!(moves(None, c, &daemon, true));
+        assert!(moves(None, None, c, &daemon, true));
         // Nothing changed: nothing moves.
-        assert!(!moves(c, c, &url("https://control.test/"), false));
-        assert!(!moves(None, None, &daemon, true));
+        assert!(!moves(c, None, c, &url("https://control.test/"), false));
+        assert!(!moves(None, None, None, &daemon, true));
         // The setup page and other sites stay put.
-        assert!(!moves(None, c, &url("tauri://localhost/index.html"), false));
-        assert!(!moves(None, c, &url("https://example.com/"), false));
+        assert!(!moves(None, None, c, &url("tauri://localhost/index.html"), false));
+        assert!(!moves(None, None, c, &url("https://example.com/"), false));
         // Left: control's page and the app's sign-in go back home.
-        assert!(moves(c, None, &url("https://control.test/#x"), false));
-        assert!(moves(c, None, &app_url(SIGNIN), false));
-        assert!(moves(c, None, &url("http://tauri.localhost/signin.html"), false));
-        assert!(!moves(c, None, &daemon, true), "already home");
+        assert!(moves(c, None, None, &url("https://control.test/#x"), false));
+        assert!(moves(c, None, None, &app_url(SIGNIN), false));
+        assert!(moves(c, None, None, &url("http://tauri.localhost/signin.html"), false));
+        assert!(!moves(c, None, None, &daemon, true), "already home");
         // Joined elsewhere: off the old control.
-        assert!(moves(c, Some("https://other.test"), &url("https://control.test/"), false));
+        assert!(moves(c, None, Some("https://other.test"), &url("https://control.test/"), false));
+        // Its platform page (M157) too, when it said one; other sites stay.
+        let p = crate::platform::origin("https://app.test");
+        assert!(moves(c, p.as_ref(), None, &url("https://app.test/p/x"), false));
+        assert!(moves(c, p.as_ref(), Some("https://other.test"), &url("https://app.test/"), false));
+        assert!(!moves(c, None, None, &url("https://app.test/"), false), "a platform it never said");
+        assert!(!moves(c, p.as_ref(), None, &url("https://x.app.test/"), false));
+        assert!(!moves(c, p.as_ref(), c, &url("https://app.test/"), false), "nothing changed");
     }
 
     /// #326: a machine control dropped isn't joined, for where the window
@@ -619,9 +654,9 @@ mod tests {
         // Dropped then joined again: the window moves from the daemon's
         // page to the sign-in (or control's page), as for a first join.
         let daemon = url("http://127.0.0.1:7681/");
-        assert!(moves(None, Some("https://control.test"), &daemon, true));
+        assert!(moves(None, None, Some("https://control.test"), &daemon, true));
         // And on the drop, off control's page to the daemon's.
-        assert!(moves(Some("https://control.test"), None, &url("https://control.test/"), false));
+        assert!(moves(Some("https://control.test"), None, None, &url("https://control.test/"), false));
     }
 
     #[test]
