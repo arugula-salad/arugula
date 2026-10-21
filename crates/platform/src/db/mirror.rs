@@ -663,6 +663,7 @@ mod tests {
             linked_at: 0,
             unlinked_at: None,
             purge_after: None,
+            mirror_content: false,
         };
         let i = Installation {
             id: 9,

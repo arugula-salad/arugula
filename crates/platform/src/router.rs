@@ -77,11 +77,15 @@ fn routes() -> Routes {
         .route("/api/grants/{id}/revoke", post(grants::revoke))
         .route(arugula_control_wire::projects::PROJECTS, get(projects::list))
         .route(arugula_control_wire::projects::PROJECT_REPOS, get(forge::links::list).post(forge::links::link))
-        .route("/api/projects/{project}/repos/{owner}/{name}", axum::routing::delete(forge::links::unlink))
+        .route(
+            "/api/projects/{project}/repos/{owner}/{name}",
+            axum::routing::delete(forge::links::unlink).patch(forge::content::settings),
+        )
         .route(arugula_control_wire::projects::PROJECT_ITEMS, get(forge::items::list))
         .route(arugula_control_wire::projects::FORGE_ITEM, get(forge::items::get))
         .route(arugula_control_wire::projects::FORGE_ITEM_CHECKS, get(forge::items::checks))
         .route(arugula_control_wire::projects::FORGE_ITEM_EVENTS, get(forge::items::events))
+        .route(arugula_control_wire::projects::FORGE_ITEM_CONTENT, get(forge::content::get))
         .route("/github/webhook", post(forge::webhook))
 }
 

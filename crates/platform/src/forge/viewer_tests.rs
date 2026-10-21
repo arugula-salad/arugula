@@ -533,8 +533,8 @@ fn a_bad_row_never_fails_a_list() {
     };
     assert_eq!(ids(ItemFilter { review_requested: Some("bob-gh"), ..Default::default() }), ["fi_3"]);
     assert_eq!(ids(ItemFilter::default()).len(), 3);
-    assert_eq!(ids(ItemFilter { title: Some("ÉCOLE"), ..Default::default() }), ["fi_1"]);
-    assert!(ids(ItemFilter { title: Some("école"), ..Default::default() }).is_empty(), "É is folded on neither");
+    assert_eq!(ids(ItemFilter { text: Some("ÉCOLE"), ..Default::default() }), ["fi_1"]);
+    assert!(ids(ItemFilter { text: Some("école"), ..Default::default() }).is_empty(), "É is folded on neither");
 }
 
 /// The guarded reads return rows of a readable repo only.

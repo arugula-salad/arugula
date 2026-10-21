@@ -682,6 +682,19 @@ never a body or a comment's text.
   in percent) for reads on demand and sends: below that it stops its
   turn, gives the lease up, and the repo waits a minute, until the limit
   resets.
+- **Bodies and comments** (M166, #1212) aren't rows unless a project
+  turns on content mirroring for the repo. Opening an item reads them from
+  GitHub (tokens with purpose `read`, for the reader), kept about 3
+  minutes in each machine's memory; webhooks for the item drop them on
+  every machine (`forge_items.content_rev`). Each account fetches at most
+  300 an hour, and only an installation with none of its limit left is
+  refused. With mirroring on, webhooks and the poller write
+  `forge_content` (the next turn after turning it on is a backfill), and
+  turning it off deletes the rows in the same transaction. No log line
+  holds a body or a comment: content paths log repo ids, numbers and
+  counts, and a failed write's error is cut before Postgres's `DETAIL`
+  (which would show the row). The nightly dump logs only table names, row
+  counts and checksums.
 
 **Reading the mirror's numbers.** Each platform machine logs them every
 5 minutes, from memory (a restart starts them again):

@@ -7,9 +7,11 @@
 //! parse code where it fits (an item); checks and events keep GitHub's own
 //! words and times.
 //!
-//! - **Metadata only.** Never a body, a review's text or a comment's: a
-//!   comment is an event that one was made. A project that mirrors content
-//!   gets it from M166, not here.
+//! - **Metadata only** in these rows. Never a body, a review's text or a
+//!   comment's: a comment is an event that one was made. The same webhook
+//!   bumps the item's `content_rev` (the read cache's stamp), and writes
+//!   its content to `forge_content` only for a repo that mirrors it
+//!   ([`super::content`], M166).
 //! - **Out of order** (`db::mirror`): a row is only overwritten by a
 //!   payload whose GitHub time is newer; one from the same second that
 //!   disagrees is read again by the poller.
@@ -363,15 +365,32 @@ pub fn write(tx: &impl crate::db::sql::Sql, rows: &Rows, now: u64) -> anyhow::Re
 }
 
 /// A webhook's rows, for a linked repo, that came at `came`: written,
-/// and the time it took counted when one was new or changed.
+/// and the time it took counted when one was new or changed. Its content
+/// changes (M166) in the same transaction, and what this machine's read
+/// cache kept of the item goes.
 pub fn webhook(p: &Platform, event: &str, delivery: &str, v: &Value, came: Instant) {
     let Some(gh) = &p.github else { return };
-    let Some((repo, rows)) = rows(event, v) else { return };
+    let rows = rows(event, v);
+    let content = super::content::changes(event, v);
+    let Some(repo) = rows.as_ref().map(|(r, _)| *r).or(content.as_ref().map(|c| c.repo)) else { return };
     let now = arugula_e2e::now_ms();
-    match p.db.mirror(repo, None, |tx| write(tx, &rows, now)) {
+    let wrote = p.db.mirror(repo, None, |tx| {
+        let w = match &rows {
+            Some((_, r)) => write(tx, r, now)?,
+            None => Written::default(),
+        };
+        if let Some(c) = &content {
+            super::content::write(tx, c)?;
+        }
+        Ok(w)
+    });
+    if let Some(c) = &content {
+        gh.bodies.forget(c.repo, c.number);
+    }
+    match wrote {
         Ok(None) => {}
         Ok(Some(w)) => {
-            if w.fixed > 0 {
+            if let (true, Some((_, rows))) = (w.fixed > 0, &rows) {
                 let event_ms = rows.at.map(|at| arugula_e2e::now_ms().saturating_sub(at));
                 gh.ingest.stats.landed(came.elapsed().as_millis() as u64, event_ms);
             }

@@ -1172,6 +1172,14 @@ clients = ["page", "cli", "daemon"]
 note = "Unlinks a repo (M163): ingest stops at once, and the purge takes its rows within a day."
 
 [[route]]
+method = "PATCH"
+path = "/api/projects/{project}/repos/{owner}/{name}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "A linked repo's settings (M166): content mirroring on (a member who maintains it on GitHub) or off (its content rows go at once)."
+
+[[route]]
 method = "GET"
 path = "/api/projects/{project}/items"  # wire::projects::PROJECT_ITEMS
 process = "platform"
@@ -1202,6 +1210,14 @@ process = "platform"
 auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
 note = "What happened to a PR or issue (M165), through the viewer check."
+
+[[route]]
+method = "GET"
+path = "/api/forge/items/{id}/content"  # wire::projects::FORGE_ITEM_CONTENT
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "A PR's or issue's body and comments (M166), after the viewer check: from GitHub, kept a few minutes in memory, or from the mirror for a project that opted in."
 
 # ---- platform: billing
 

@@ -28,6 +28,7 @@ use rusqlite::Connection;
 pub mod billing;
 pub mod chat;
 pub mod cloud;
+pub mod content;
 pub mod forge;
 mod legacy;
 pub mod migrate;

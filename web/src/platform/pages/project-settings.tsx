@@ -2,7 +2,8 @@
 // GitHub repos: who links one is a member who maintains it on GitHub, and
 // the platform checks that. Where the GitHub App isn't installed, linking
 // sends the person to GitHub to install it, and GitHub sends them back to
-// `/installed`, which comes here with the repo filled in.
+// `/installed`, which comes here with the repo filled in. Each linked repo
+// has a switch for content mirroring (M166), with what turning it on means.
 
 import { useEffect, useState } from "preact/hooks";
 import type { LinkedRepo, LinkedRepos } from "../../shared/proto.gen";
@@ -78,6 +79,12 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
         A linked GitHub repo's pull requests and issues live here, for the project's members. Linking one takes admin or maintain on it on GitHub. Unlinking stops reading
         it at once, and what was read of it goes within a day.
       </p>
+      <p class="dim" data-mirror-notice>
+        Bodies and comments are read from GitHub when someone opens a PR or issue, and kept a few minutes in memory. Keeping a repo's here
+        means the platform holds the bodies, comments and review comments of its pull requests and issues, so the project can search
+        their text. They stay until you turn this off (they're deleted at once) or unlink the repo, and they're deleted within 24 hours of
+        the GitHub App being uninstalled. People sometimes paste secrets into comments. Turning it on takes admin or maintain on GitHub.
+      </p>
       {repos?.length === 0 && <p class="dim">None yet.</p>}
       <ul class="platform-list" data-linked-repos>
         {(repos ?? []).map((r) => (
@@ -94,14 +101,29 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
                 )}
               </>
             ) : (
-              changes && (
-                <>
-                  {" "}
-                  <button class="control-linkish" data-unlink={r.full_name} disabled={busy} onClick={() => act(() => call("DELETE", `${base}/${r.full_name}`))}>
-                    Unlink
-                  </button>
-                </>
-              )
+              <>
+                {changes && (
+                  <>
+                    {" "}
+                    <button class="control-linkish" data-unlink={r.full_name} disabled={busy} onClick={() => act(() => call("DELETE", `${base}/${r.full_name}`))}>
+                      Unlink
+                    </button>
+                  </>
+                )}
+                <label class="platform-mirror">
+                  <input
+                    type="checkbox"
+                    data-mirror-content={r.full_name}
+                    checked={r.mirror_content}
+                    disabled={busy || !changes}
+                    onChange={(e) => {
+                      const on = e.currentTarget.checked;
+                      void act(() => call("PATCH", `${base}/${r.full_name}`, { mirror_content: on }));
+                    }}
+                  />{" "}
+                  Keep its bodies and comments here
+                </label>
+              </>
             )}
           </li>
         ))}

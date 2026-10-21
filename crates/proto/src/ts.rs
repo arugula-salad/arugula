@@ -107,6 +107,9 @@ fn generate() -> String {
     // A project's linked repos (M163).
     c.visit::<arugula_control_wire::projects::LinkedRepos>();
     c.visit::<arugula_control_wire::projects::LinkRepo>();
+    // Content mirroring, and bodies on read (M166).
+    c.visit::<arugula_control_wire::projects::RepoSettings>();
+    c.visit::<arugula_control_wire::projects::ForgeContent>();
     // Cloud workspaces (M137): what control's `/api/cloud/` answers with.
     {
         use arugula_cloud_wire::*;

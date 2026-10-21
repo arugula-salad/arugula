@@ -326,6 +326,8 @@ pub struct GithubApp {
     /// The forge mirror on this machine (M164): the poller's settings,
     /// the numbers, and each installation's ETags.
     pub ingest: super::ingest::Ingest,
+    /// Content read from GitHub for people, for a few minutes (M166).
+    pub bodies: super::content::Cache,
 }
 
 /// An RSA private key from PEM (PKCS#1 `RSA PRIVATE KEY`, as GitHub hands
@@ -384,6 +386,7 @@ impl GithubApp {
             installs: Mutex::default(),
             reads: Mutex::default(),
             ingest: Default::default(),
+            bodies: Default::default(),
         }
     }
 
