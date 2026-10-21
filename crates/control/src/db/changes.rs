@@ -1,8 +1,15 @@
 //! The hub's outbox (#1153): one row for each change the platform's caches
-//! follow (an account's name or its deletion, a revoked device, a roster or
-//! a lock, a machine joining, moving, leaving or being shared, a Labs
-//! flag), written in the same transaction as the change, and read by the
-//! platform through `HubPort::changes`. Its kinds are `ChangeKind`'s.
+//! follow (a new account, an account's name or its deletion, a revoked
+//! device, a roster or a lock, a machine joining, moving, leaving or being
+//! shared, a Labs flag), written in the same transaction as the change, and
+//! read by the platform through `HubPort::changes`. Its kinds are
+//! `ChangeKind`'s.
+//!
+//! **Every write that changes what `HubPort` answers writes a row here**:
+//! the platform keeps those answers for as long as it reads this feed, not
+//! for a fixed time (`arugula_platform::cache`), so a write without its row
+//! would be stale there until something else drops it. Only billing's
+//! meters aren't covered (the platform keeps them a cache tick).
 //!
 //! `seq` is AUTOINCREMENT, so it's never reused, even after the newest rows
 //! are pruned. Rows go after [`KEEP_MS`], and beyond the newest
@@ -73,6 +80,17 @@ impl Db {
         let oldest: Option<u64> = c.query_row("SELECT min(seq) FROM hub_changes", [], |r| r.get(0))?;
         let gap = after.saturating_add(1) < oldest.unwrap_or(last + 1);
         Ok(ChangePage { changes, last, gap })
+    }
+
+    /// The newest change written (0 for none): what the hub tells the
+    /// platform with each call (`arugula_platform::cache::SEQ_HEADER`), so
+    /// a call after a write reads it.
+    pub fn last_change(&self) -> anyhow::Result<u64> {
+        Ok(self.c().query_row(
+            "SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name = 'hub_changes'), 0)",
+            [],
+            |r| r.get(0),
+        )?)
     }
 
     /// Drop changes older than [`KEEP_MS`] and beyond the newest

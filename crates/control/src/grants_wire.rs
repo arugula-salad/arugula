@@ -239,3 +239,60 @@ async fn a_machine_that_joins_again_starts_with_a_new_grant() {
     assert!(grants[0]["live"] == true && grants[0]["id"] != id.as_str());
     server.abort();
 }
+
+/// Read your writes (control-smoke's "the team upgraded"): a team made, or
+/// a machine joined, in the hub is in the platform's very next answer,
+/// though the platform had already answered for the account and no feed
+/// tick has run. A second team and a second machine too, whose account the
+/// cache already kept a list for. In process and out (the gateway).
+#[tokio::test]
+async fn the_platform_reads_the_hubs_writes_at_once() {
+    use arugula_e2e::team::TeamRole;
+
+    use crate::routing_wire::{member, roster};
+    for remote in [false, true] {
+        let (app, base, _keep) = if remote {
+            let s = crate::gateway_wire::split().await;
+            (s.hub, s.base, None)
+        } else {
+            let app = cloud_app();
+            let (base, server) = serve(app.clone()).await;
+            (app, base, Some(server))
+        };
+        let get = |path: &'static str| {
+            let base = base.clone();
+            async move {
+                let (st, v) = person(&base, "a", "GET", path, None).await;
+                assert_eq!(st, StatusCode::OK, "{path}: {v}");
+                v
+            }
+        };
+        let teams = |v: &Value| v["teams"].as_array().unwrap().len();
+        let names = |v: &Value| {
+            let mut n: Vec<String> =
+                v["grants"].as_array().unwrap().iter().map(|g| g["subject"]["name"].as_str().unwrap().into()).collect();
+            n.sort();
+            n
+        };
+        assert_eq!(teams(&get("/api/billing").await), 0, "remote {remote}");
+        assert_eq!(names(&get("/api/grants").await), Vec::<String>::new());
+
+        let keys = DeviceKeys::generate();
+        for (i, id) in ["0123456789abcdef", "fedcba9876543210"].into_iter().enumerate() {
+            let r = roster(id, 1, vec![member("a", &keys, TeamRole::Owner)], &keys);
+            let t = crate::db::Team {
+                id: id.into(),
+                name: format!("team {i}"),
+                founder: "a".into(),
+                founder_root: keys.id(),
+                locked: false,
+            };
+            app.db.add_team(&t, 1, &serde_json::to_string(&r).unwrap(), now_ms()).unwrap();
+            assert_eq!(teams(&get("/api/billing").await), i + 1, "team {i} made, remote {remote}");
+        }
+        daemon(&app, "a", "box-1");
+        assert_eq!(names(&get("/api/grants").await), ["box-1"], "remote {remote}");
+        daemon(&app, "a", "box-2");
+        assert_eq!(names(&get("/api/grants").await), ["box-1", "box-2"], "remote {remote}");
+    }
+}

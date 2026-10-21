@@ -307,7 +307,8 @@ pub struct Change {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ChangeKind {
     /// An account's name (subject: the account), its display name or the
-    /// login it signs in with.
+    /// login it signs in with, or a new account (whose name and login are
+    /// new).
     #[serde(rename = "account.name")]
     AccountName,
     /// An account was deleted. The subject is "": nothing of a deleted

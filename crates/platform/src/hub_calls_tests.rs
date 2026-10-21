@@ -6,7 +6,10 @@
 //!
 //! They also hold what the cache mustn't break: a machine that just joined
 //! isn't refused, a machine that left gets no new grant from a stale answer,
-//! and a member who left a team is out once the feed says so.
+//! and a member who left a team is out once the feed says so. And what it
+//! keeps for a quiet control: 30 s on, with the feed read throughout, a
+//! request still asks nothing (but billing's meters), while a feed outage
+//! or gap drops everything (`cache`'s top says why that's safe).
 
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -133,4 +136,139 @@ async fn a_member_who_left_is_out_of_billing_once_the_feed_says_so() {
     crate::cache::catch_up(&app).await.unwrap();
     let (_, v) = counted(&hub, &base, "b", "/api/billing").await;
     assert_eq!(teams(&v), 0, "b left t: {v}");
+}
+
+/// The feed read every tick for `secs` seconds of the cache's clock, as
+/// the platform's follower does.
+async fn read_for(app: &crate::Platform, secs: u64) {
+    for _ in 0..secs {
+        app.cache.advance(crate::cache::FEED_TICK);
+        crate::cache::catch_up(app).await.unwrap();
+    }
+}
+
+const ROUTES: [(&str, &str); 5] = [
+    ("a", "/api/grants"),
+    ("b", "/api/chat"),
+    ("a", "/api/cloud/workspaces"),
+    ("a", "/api/billing"),
+    ("b", "/api/chat/search?q=from%3Aa%20hello"),
+];
+
+/// Most of a quiet control's requests come more than a cache tick apart.
+/// While the feed is read, what it covers is kept however old: 30 s on, a
+/// repeat request asks the hub nothing but billing's meters, which the feed
+/// doesn't cover and so run out at the cache's tick.
+#[tokio::test]
+async fn thirty_seconds_later_a_request_still_asks_the_hub_nothing() {
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    seed(&app, &hub);
+    crate::cache::catch_up(&app).await.unwrap();
+    for (who, path) in ROUTES {
+        counted(&hub, &base, who, path).await;
+    }
+    read_for(&app, 30).await;
+    let mut asked = BTreeMap::new();
+    for (who, path) in ROUTES {
+        let (made, _) = counted(&hub, &base, who, path).await;
+        if !made.is_empty() {
+            asked.insert(path, made);
+        }
+    }
+    assert_eq!(asked, BTreeMap::from([("/api/billing", BTreeMap::from([("meters", 1)]))]));
+}
+
+/// A member taken out of a team is out once the feed is read, however long
+/// the cache had kept the team: the feed carries it, within a feed tick.
+#[tokio::test]
+async fn a_roster_removal_still_revokes_through_the_feed() {
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    seed(&app, &hub);
+    // Chat stays on for b out of t.
+    hub.flag("account:b", true);
+    crate::cache::catch_up(&app).await.unwrap();
+    let general = |v: &Value| v["rooms"].as_array().unwrap().iter().any(|r| r["id"] == "ch_general");
+    let (_, v) = counted(&hub, &base, "b", "/api/chat").await;
+    assert!(general(&v), "{v}");
+    read_for(&app, 30).await;
+    hub.team("t", &[("a", TeamRole::Owner)]);
+    let (made, v) = counted(&hub, &base, "b", "/api/chat").await;
+    assert!(made.is_empty() && general(&v), "until the feed is read: {made:?}");
+    // The follower's next tick.
+    read_for(&app, 1).await;
+    let (_, v) = counted(&hub, &base, "b", "/api/chat").await;
+    assert!(!general(&v), "b left t: {v}");
+    let (_, v) = counted(&hub, &base, "b", "/api/billing").await;
+    assert_eq!(v["teams"].as_array().unwrap().len(), 0, "{v}");
+}
+
+/// A feed that can't be read: what's kept is kept for the grace, then
+/// everything goes, so a member taken out during the outage is out within
+/// the documented delay.
+#[tokio::test]
+async fn a_feed_outage_drops_everything() {
+    use crate::cache::{DELAY, FEED_TICK, GRACE};
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    seed(&app, &hub);
+    // Chat stays on for b out of t.
+    hub.flag("account:b", true);
+    crate::cache::catch_up(&app).await.unwrap();
+    let general = |v: &Value| v["rooms"].as_array().unwrap().iter().any(|r| r["id"] == "ch_general");
+    counted(&hub, &base, "b", "/api/chat").await;
+    read_for(&app, 30).await;
+    hub.feed_down(true);
+    hub.team("t", &[("a", TeamRole::Owner)]);
+    let mut waited = std::time::Duration::ZERO;
+    loop {
+        app.cache.advance(FEED_TICK);
+        waited += FEED_TICK;
+        assert!(crate::cache::catch_up(&app).await.is_err());
+        let (made, v) = counted(&hub, &base, "b", "/api/chat").await;
+        if !general(&v) {
+            assert!(!made.is_empty(), "asked the hub again");
+            break;
+        }
+        assert!(made.is_empty(), "within the grace, kept: {made:?}");
+        assert!(waited < GRACE, "still in after {waited:?}");
+    }
+    assert!(waited <= GRACE && GRACE <= DELAY);
+}
+
+/// A gap in the feed (changes pruned before they were read) drops
+/// everything.
+#[tokio::test]
+async fn a_feed_gap_drops_everything() {
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    seed(&app, &hub);
+    crate::cache::catch_up(&app).await.unwrap();
+    counted(&hub, &base, "a", "/api/grants").await;
+    let (made, _) = counted(&hub, &base, "a", "/api/grants").await;
+    assert!(made.is_empty());
+    hub.gap();
+    crate::cache::catch_up(&app).await.unwrap();
+    let (made, _) = counted(&hub, &base, "a", "/api/grants").await;
+    assert!(!made.is_empty(), "asked again after a gap");
+}
+
+/// What the feed doesn't cover still runs out on time with the feed read
+/// throughout: billing's meters are asked again after a cache tick, and
+/// nothing else is.
+#[tokio::test]
+async fn what_the_feed_cant_say_still_runs_out_on_time() {
+    use crate::cache::CACHE_TICK;
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    seed(&app, &hub);
+    crate::cache::catch_up(&app).await.unwrap();
+    counted(&hub, &base, "a", "/api/billing").await;
+    read_for(&app, CACHE_TICK.as_secs() - 1).await;
+    let (made, _) = counted(&hub, &base, "a", "/api/billing").await;
+    assert_eq!(made, BTreeMap::new(), "within the cache's tick");
+    read_for(&app, 1).await;
+    let (made, _) = counted(&hub, &base, "a", "/api/billing").await;
+    assert_eq!(made, BTreeMap::from([("meters", 1)]), "at it");
 }

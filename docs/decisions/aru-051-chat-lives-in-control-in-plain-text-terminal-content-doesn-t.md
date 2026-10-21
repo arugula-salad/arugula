@@ -60,10 +60,11 @@ hub and a platform", #1150, M138); push stays the hub's, and the platform
 asks it through `HubPort` (`push_with`, to every subscription the account
 has, as chat's pushes always went). Who is in which team, which machine is
 whose and who may reach it come from the hub too, kept by the platform and
-dropped as the hub's change feed names them: a roster, lock, machine,
-share or flag change reaches chat within a feed tick plus a cache tick
-(`arugula_platform::cache::DELAY`, 11 s at most, about a second in
-practice). Control numbers messages per
+dropped as the hub's change feed names them (kept for as long as the
+feed is read): a roster, lock, machine, share or flag change reaches chat
+within a feed tick plus a cache tick (`arugula_platform::cache::DELAY`,
+11 s at most, about a second in practice, and 2 s at most while the feed
+is read). Control numbers messages per
 room, keeps read marks, resolves mentions against who sees the room, pushes
 (who, where and the first 200 characters), searches with SQLite FTS5, and
 tells open pages over one Server-Sent Events stream each (`Last-Event-ID`

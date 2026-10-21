@@ -15,7 +15,9 @@
 //! 3. drops what the platform mustn't see or mustn't trust from a client:
 //!    the cookie, the signature, any principal or internal header;
 //! 4. forwards the call with what it found signed into the principal
-//!    header (`arugula_control_common::principal`), the method, path,
+//!    header (`arugula_control_common::principal`), the hub's newest change
+//!    (`arugula_platform::cache::SEQ_HEADER`, so a call after a write reads
+//!    it), the method, path,
 //!    query and body untouched (a daemon's signature covers the body), the
 //!    Host header too (billing's checkout goes back to the site it came
 //!    from);
@@ -274,6 +276,7 @@ async fn forward(State(app): State<Arc<App>>, req: Request) -> Response {
     let pq = parts.uri.path_and_query().map_or_else(|| parts.uri.path().to_owned(), |p| p.as_str().to_owned());
     let method = reqwest::Method::from_bytes(parts.method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET);
     let mut headers = forwarded_headers(&parts.headers);
+    crate::hub_port::seq_header(&app, &mut headers);
     let url = format!("{}{pq}", r.base);
     let small = parts
         .headers

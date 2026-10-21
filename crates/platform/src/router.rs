@@ -78,7 +78,12 @@ fn routes() -> Routes {
 /// The platform's router, for any state the hub's router has (the
 /// platform's own is applied here).
 pub fn router<S: Clone + Send + Sync + 'static>(platform: Arc<Platform>) -> Router<S> {
-    routes().router.with_state(platform)
+    // A call after a write in the hub reads the feed first (read your
+    // writes: `cache::fresh`).
+    routes()
+        .router
+        .layer(axum::middleware::from_fn_with_state(platform.clone(), crate::cache::fresh))
+        .with_state(platform)
 }
 
 /// The paths [`router`] registers, for routes.toml's test.

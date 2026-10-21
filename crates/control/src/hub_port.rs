@@ -311,7 +311,21 @@ pub async fn gate(State(app): State<Arc<App>>, req: Request, next: Next) -> Resp
     if let Some(a) = who(&app, &mut parts).await {
         parts.extensions.insert(a);
     }
+    seq_header(&app, &mut parts.headers);
     next.run(Request::from_parts(parts, body)).await
+}
+
+/// The hub's newest change on a call it passes to the platform, in place of
+/// any a client sent (`arugula_platform::cache::SEQ_HEADER`): a call after
+/// a write reads it, without waiting for the platform's feed tick.
+pub fn seq_header(app: &App, headers: &mut axum::http::HeaderMap) {
+    headers.remove(arugula_platform::cache::SEQ_HEADER);
+    match app.db.last_change() {
+        Ok(seq) => {
+            headers.insert(arugula_platform::cache::SEQ_HEADER, seq.into());
+        }
+        Err(e) => tracing::warn!(error = %e, "can't read the newest change for the platform"),
+    }
 }
 
 #[cfg(test)]
