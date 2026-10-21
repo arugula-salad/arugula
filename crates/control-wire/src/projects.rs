@@ -398,7 +398,8 @@ pub struct ForgeDraft {
     pub event: Option<String>,
     pub title: Option<String>,
     pub body: String,
-    /// `waiting`, `sent`, `discarded` or `failed`.
+    /// `waiting`, `sending` (a send holds it, M168), `sent`, `discarded`
+    /// or `failed`.
     pub state: String,
     /// The person it's for: an account id.
     pub author: String,
@@ -530,4 +531,61 @@ pub struct ShadowCompared {
     pub compared: u32,
     pub agree: u32,
     pub disagree: u32,
+}
+
+/// `POST /api/forge/drafts/{id}/send` ([`SendDraft`], M168): a person sends
+/// a waiting (or failed) draft of their own, as themselves on GitHub: a
+/// person or a CLI device, never a machine ("Agents draft, people send").
+/// `via: "browser"` answers with `authorize`, GitHub's page to open in the
+/// person's browser, which comes back to control and sends with a one-use
+/// user token; `via: "machine"` (the default) sends it now through one of
+/// their online machines, with `gh`. With neither, it's refused with
+/// [`NO_WAY`] and the draft waits, saying so.
+pub const FORGE_DRAFT_SEND: &str = "/api/forge/drafts/{id}/send";
+
+/// `POST /api/forge/drafts/{id}/machine` ([`MachineSending`]): a machine
+/// sends one of its owner's drafts with `gh` because a person answered its
+/// block's card (M168), and says so: `start` holds the draft while it
+/// sends, then `sent` or `failed`. Answered with the draft. Nothing is sent
+/// by the platform here.
+pub const FORGE_DRAFT_MACHINE: &str = "/api/forge/drafts/{id}/machine";
+
+/// What a send that has no way to go says (M168).
+pub const NO_WAY: &str = "Open this on a device to send, or wake a machine.";
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SendDraft {
+    /// `browser` or `machine` (the default).
+    #[serde(default)]
+    pub via: Option<String>,
+    /// For `browser`: the platform page's path to come back to.
+    #[serde(default)]
+    pub back: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct DraftSent {
+    pub draft: ForgeDraft,
+    /// `via: "browser"`: GitHub's page to open; the draft isn't sent yet.
+    #[serde(default)]
+    pub authorize: Option<String>,
+    /// How it went: `token` (as the person, through GitHub's authorization)
+    /// or `machine`.
+    #[serde(default)]
+    pub via: Option<String>,
+    /// The machine's name, when one sent it.
+    #[serde(default)]
+    pub machine: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MachineSending {
+    /// `start`, `sent` or `failed`.
+    pub step: String,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
 }

@@ -8,8 +8,9 @@
 //!
 //! A person's comment, review or new issue sends; run by an agent
 //! (CLAUDECODE or AI_AGENT set), or with `--draft`, it's a draft that waits
-//! for a person. Sending from control is M168's: until then a send says it
-//! isn't available yet.
+//! for a person. A send goes out as the person through one of their
+//! machines with `gh` (M168: a terminal has no browser for GitHub's
+//! authorization); with none awake it's refused and waits as a draft.
 
 use anyhow::bail;
 use arugula_control_wire::{

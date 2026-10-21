@@ -5,8 +5,10 @@
 //! item or project a call names by `OWNER/NAME` and number.
 //!
 //! - **Versions:** a call for one this platform doesn't speak is a 400.
-//! - **Sends** are a person's (aru-041): a machine is refused, and a
-//!   person is told it isn't built yet (M168).
+//! - **Sends** are a person's (aru-041): a machine is refused. A person's
+//!   goes out as them through one of their machines ([`send`], M168): the
+//!   CLI has no browser for GitHub's authorization. One that isn't a draft
+//!   yet is made one first, so it waits when it can't go.
 //! - **The inbox** (M171): `inbox.list` is `GET /api/inbox`'s, and
 //!   `inbox.mark` a person's, as `POST /api/inbox/{item}` is: a machine is
 //!   refused.
@@ -25,10 +27,13 @@ use axum::{
 use serde::Serialize;
 use serde_json::Value;
 
+use arugula_control_wire::projects::NewDraft;
+
 use super::{
     drafts::{self, Drafter, DraftsQuery},
     inbox,
     items::{self, ItemsQuery},
+    send,
     viewer::{self, Viewer},
 };
 use crate::{
@@ -61,18 +66,15 @@ pub async fn call(
         return Err(err(StatusCode::BAD_REQUEST, &format!("{name} v{v}: this control speaks v{}", op.version())));
     }
     if op.sends() {
-        return Err(match d.machine {
-            Some(_) => refusal(
+        if d.machine.is_some() {
+            return Err(refusal(
                 StatusCode::FORBIDDEN,
                 wire::AGENTS_DRAFT,
                 &format!("{name} sends, and only a person sends: draft it (draft.create) for them to send"),
-            ),
-            None => refusal(
-                StatusCode::NOT_IMPLEMENTED,
-                wire::NOT_YET,
-                &format!("{name}: sending from Arugula control isn't available yet; a draft waits for it"),
-            ),
-        });
+            ));
+        }
+        let sent = sends(&app, d, &op).await?;
+        return answer(&op, v, sent);
     }
     if let (Op::InboxMark(_), Some(_)) = (&op, &d.machine) {
         return Err(err(StatusCode::FORBIDDEN, "inbox.mark is a person's: an agent reads the inbox (inbox.list)"));
@@ -160,6 +162,56 @@ pub async fn call(
         | Op::PrReview(_)
         | Op::IssueCreate(_)
         | Op::IssueComment(_) => Err(err(StatusCode::INTERNAL_SERVER_ERROR, "unreachable")),
+    }
+}
+
+/// A person's send (M168): a draft's, through [`send::send`] by one of
+/// their machines (a CLI has no browser to authorize in). A comment,
+/// review or issue that isn't a draft yet is made one first, so one that
+/// can't go now waits, and the refusal says which.
+async fn sends(app: &Arc<Platform>, d: Drafter, op: &Op) -> Result<wire::Sent, ApiError> {
+    let account = d.account.clone();
+    let new = match op {
+        Op::DraftSend(_) => None,
+        Op::PrComment(c) | Op::IssueComment(c) => Some(NewDraft {
+            repo: c.repo.clone(),
+            number: Some(c.number),
+            kind: "comment".into(),
+            body: c.body.clone(),
+            ..Default::default()
+        }),
+        Op::PrReview(r) => Some(NewDraft {
+            repo: r.repo.clone(),
+            number: Some(r.number),
+            kind: "review".into(),
+            event: Some(r.event.clone()),
+            body: r.body.clone(),
+            ..Default::default()
+        }),
+        Op::IssueCreate(i) => Some(NewDraft {
+            repo: i.repo.clone(),
+            kind: "issue".into(),
+            title: Some(i.title.clone()),
+            body: i.body.clone(),
+            ..Default::default()
+        }),
+        _ => return Err(err(StatusCode::INTERNAL_SERVER_ERROR, "not a send")),
+    };
+    let (id, made) = match (op, new) {
+        (Op::DraftSend(r), _) => (r.draft.clone(), false),
+        (_, Some(new)) => {
+            let Json(made) = drafts::create(State(app.clone()), d, Json(new)).await?;
+            (made.draft.id, true)
+        }
+        _ => return Err(err(StatusCode::INTERNAL_SERVER_ERROR, "not a send")),
+    };
+    match send::send(app, &account, &id, send::How::Machine).await {
+        Ok(s) => Ok(wire::Sent { url: s.draft.sent_url, draft: Some(id) }),
+        Err(ApiError(status, msg, reason)) if made => {
+            let msg = format!("{msg} It waits as draft {id}: `arugula draft send {id}` sends it.");
+            Err(ApiError(status, msg, reason))
+        }
+        Err(e) => Err(e),
     }
 }
 

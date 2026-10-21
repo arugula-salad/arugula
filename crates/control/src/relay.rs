@@ -17,6 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use arugula_control_wire::forge::{DaemonOp, OpAnswer, OpAsk, OpDone, Ops};
 use arugula_e2e::{channel::MAX_WIRE, mux::Mux, now_ms};
 use axum::{
     extract::{
@@ -67,7 +68,14 @@ pub struct Relay {
     /// Every relay socket open, and how many are daemons (#344).
     open: Arc<Open>,
     pub caps: Caps,
+    /// Ops asked of daemons and not answered yet (M168): by the ask's id,
+    /// the daemon asked and where its answer goes.
+    asked: Mutex<HashMap<String, (String, tokio::sync::oneshot::Sender<OpAnswer>)>>,
 }
+
+/// How long a machine has to answer an op: a send runs `gh` and waits for
+/// GitHub.
+const OP_WAIT: Duration = Duration::from_secs(20);
 
 /// The relay's sockets in all, against [`Caps::total`].
 #[derive(Default)]
@@ -193,6 +201,8 @@ struct Live {
     nudge: Arc<tokio::sync::Notify>,
     /// Text messages for the daemon (M40: forge pokes and heartbeats).
     text: tokio::sync::mpsc::UnboundedSender<String>,
+    /// The typed ops it said it knows (M168).
+    ops: Vec<String>,
 }
 
 impl Relay {
@@ -347,6 +357,73 @@ impl Relay {
         }
     }
 
+    /// Ask a connected daemon to do a typed op (M168) and wait for its
+    /// answer. One that isn't connected is `Offline`; one that never said
+    /// it knows the op (`{"t": "ops"}`) is `Unknown`, unasked. One that
+    /// doesn't answer in time may have done it, so it's `Failed`, not
+    /// passed over for another.
+    pub async fn ask(&self, daemon: &str, op: &DaemonOp) -> OpAnswer {
+        let id = hex::encode(arugula_e2e::random::<16>());
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        {
+            let live = self.live.lock().unwrap();
+            let Some(l) = live.get(daemon) else { return OpAnswer::Offline };
+            if !l.ops.iter().any(|o| o == op.name()) {
+                return OpAnswer::Unknown;
+            }
+            self.asked.lock().unwrap().insert(id.clone(), (daemon.to_owned(), tx));
+            let msg = serde_json::to_string(&OpAsk::new(id.clone(), op.clone())).unwrap_or_default();
+            if l.text.send(msg).is_err() {
+                self.asked.lock().unwrap().remove(&id);
+                return OpAnswer::Offline;
+            }
+        }
+        // Forgotten however this ends, a caller that gave up too.
+        struct Forget<'a>(&'a Relay, &'a str);
+        impl Drop for Forget<'_> {
+            fn drop(&mut self) {
+                self.0.asked.lock().unwrap().remove(self.1);
+            }
+        }
+        let _forget = Forget(self, &id);
+        match tokio::time::timeout(OP_WAIT, rx).await {
+            Ok(Ok(a)) => a,
+            Ok(Err(_)) => OpAnswer::Offline,
+            Err(_) => {
+                warn!(%daemon, op = op.name(), "a machine didn't answer an op in time");
+                OpAnswer::Failed {
+                    error: "the machine didn't say whether it did it in time: check GitHub before sending it again"
+                        .into(),
+                }
+            }
+        }
+    }
+
+    /// The ops a connected daemon said it knows.
+    #[cfg(test)]
+    pub fn ops_of(&self, daemon: &str) -> Vec<String> {
+        self.live.lock().unwrap().get(daemon).map(|l| l.ops.clone()).unwrap_or_default()
+    }
+
+    /// A daemon's text about ops (M168), if it is one: the ops it knows,
+    /// or an answer to an ask of its own.
+    pub fn op_text(&self, daemon: &str, text: &str) -> bool {
+        if let Ok(o) = serde_json::from_str::<Ops>(text) {
+            if let Some(l) = self.live.lock().unwrap().get_mut(daemon) {
+                l.ops = o.ops;
+            }
+            return true;
+        }
+        let Ok(done) = serde_json::from_str::<OpDone>(text) else { return false };
+        let mut asked = self.asked.lock().unwrap();
+        if asked.get(&done.id).is_some_and(|(d, _)| d == daemon)
+            && let Some((_, tx)) = asked.remove(&done.id)
+        {
+            let _ = tx.send(done.answer);
+        }
+        true
+    }
+
     /// Hang up on these daemons now, and nudge each as it dials back in
     /// (#206: a team they were in was deleted). Whatever they relayed ends
     /// at once, rather than at their next check of certificates and teams,
@@ -398,13 +475,10 @@ async fn daemon_socket(app: Arc<App>, id: String, ws: WebSocket, ticket: Ticket)
     let nudge = Arc::new(tokio::sync::Notify::new());
     let (text, mut texts) = tokio::sync::mpsc::unbounded_channel::<String>();
     let generation = app.relay.next.fetch_add(1, Ordering::Relaxed);
-    if let Some(old) = app
-        .relay
-        .live
-        .lock()
-        .unwrap()
-        .insert(id.clone(), Live { generation, mux: mux.clone(), stop: stop.clone(), nudge: nudge.clone(), text })
-    {
+    if let Some(old) = app.relay.live.lock().unwrap().insert(
+        id.clone(),
+        Live { generation, mux: mux.clone(), stop: stop.clone(), nudge: nudge.clone(), text, ops: vec![] },
+    ) {
         // A daemon that reconnected: the old socket is dead or about to be.
         old.stop.notify_one();
         old.mux.close();
@@ -434,7 +508,9 @@ async fn daemon_socket(app: Arc<App>, id: String, ws: WebSocket, ticket: Ticket)
                 Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
                 Some(Ok(Message::Text(t))) => {
                     heard = Instant::now();
-                    if !crate::guest_jump::from_daemon(&app, &id, generation, t.as_str()) {
+                    if !crate::guest_jump::from_daemon(&app, &id, generation, t.as_str())
+                        && !app.relay.op_text(&id, t.as_str())
+                    {
                         crate::forge::from_daemon(&app, &id, generation, t.as_str());
                     }
                 }

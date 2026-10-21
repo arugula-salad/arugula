@@ -635,6 +635,25 @@ Do the test App first, then the real one:
    installation has no organization members, and approving changes
    nothing else for it.
 
+**Sending as a person** (M168, #1214; `docs/control.md`). A send's user
+token comes from the App's own OAuth client, which the hub holds
+(`GITHUB_APP_CLIENT_ID`/`SECRET`, as for sign-in), through the App's one
+callback, `/auth/github/callback`: nothing to change in the App's
+settings. A user token can do what both the App and the person may, so
+until an installation approves `issues: write` and `pull_requests: write`
+(above), GitHub refuses its call and the send goes through one of the
+person's machines instead. To follow a send:
+
+```sh
+fly logs -a illogical-control | grep -E "a send's GitHub authorization|a send came back|revoking a send"
+fly logs -a arugula-platform | grep -E "a draft sent as its person|a send failed|no way to send|user token refused"
+```
+
+The logs name the account, the draft and how it went (`via` token or
+machine); never a token or a code. Each user token is a
+`github_token_mints` row with `kind = 'user'` and the purpose
+`send:comment`, `send:review` or `send:issue`.
+
 **The forge mirror** (M164, #1210). A linked repo's PRs and issues are
 platform rows (`forge_items`, `forge_checks`, `forge_events`): metadata,
 never a body or a comment's text.

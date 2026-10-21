@@ -92,6 +92,8 @@ fn routes() -> Routes {
         .route(arugula_control_wire::projects::FORGE_DRAFTS, get(forge::drafts::mine).post(forge::drafts::create))
         .route(arugula_control_wire::projects::FORGE_DRAFT, get(forge::drafts::get))
         .route(arugula_control_wire::projects::FORGE_DRAFT_DISCARD, post(forge::drafts::discard))
+        .route(arugula_control_wire::projects::FORGE_DRAFT_SEND, post(forge::send::route))
+        .route(arugula_control_wire::projects::FORGE_DRAFT_MACHINE, post(forge::send::machine))
         .route(arugula_control_wire::projects::FORGE_REPO, get(forge::drafts::repo))
         .route(arugula_control_wire::forge_ops::FORGE_OPS, post(forge::ops::call))
         .route(arugula_control_wire::projects::INBOX, get(forge::inbox::list))

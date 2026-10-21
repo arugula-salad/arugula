@@ -65,7 +65,7 @@ path = "/auth/github/callback"
 process = "hub"
 auth = "sign_in"
 clients = ["browser"]
-note = "GitHub sends the browser back here: the URL is set on the GitHub OAuth app, so the path never changes."
+note = "GitHub sends the browser back here: the URL is set on the GitHub OAuth app, so the path never changes. A state `send.<nonce>` is a person's send (M168): its user token goes to the platform for one call, then is revoked."
 
 [[route]]
 method = "POST"
@@ -1266,6 +1266,22 @@ process = "platform"
 auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
 note = "Discards a draft (M170): its author, or anyone the viewer check lets read it."
+
+[[route]]
+method = "POST"
+path = "/api/forge/drafts/{id}/send"  # wire::projects::FORGE_DRAFT_SEND
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Sends a draft as its person (M168): GitHub's authorization of the App for a one-use user token (via browser), or one of their machines with gh. A machine is refused (403, agents_draft); with no way it waits (409, no_way)."
+
+[[route]]
+method = "POST"
+path = "/api/forge/drafts/{id}/machine"  # wire::projects::FORGE_DRAFT_MACHINE
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A machine sending its owner's draft from a block's card says so (M168): start holds it, then sent or failed. The platform sends nothing here."
 
 [[route]]
 method = "GET"

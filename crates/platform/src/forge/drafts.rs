@@ -15,7 +15,9 @@
 //!   another's, and a second upload of the same key is answered with the
 //!   first draft: a daemon that crashed before it dropped its copy uploads
 //!   it again and gets the same row.
-//! - **Who discards one:** its author, or anyone who may read it.
+//! - **Who discards one:** its author, or anyone who may read it, but not
+//!   while it's being sent.
+//! - **Who sends one:** its person, as themselves ([`super::send`], M168).
 //! - **Is a repo linked** ([`repo`]): what a daemon asks before it keeps a
 //!   block's drafts here. A repo linked to a project the reader isn't in
 //!   is no linked repo to them.
@@ -75,7 +77,7 @@ impl FromRequestParts<Arc<Platform>> for Drafter {
     }
 }
 
-fn no_draft() -> ApiError {
+pub(super) fn no_draft() -> ApiError {
     err(StatusCode::NOT_FOUND, "no such draft")
 }
 
@@ -85,35 +87,41 @@ fn not_linked(repo: &str) -> ApiError {
 
 /// As the wire says it, with each machine's name where the hub still has
 /// the machine.
-async fn wire_drafts(app: &Platform, rows: Vec<DraftRow>) -> Result<Vec<wire::ForgeDraft>, ApiError> {
+pub(super) async fn wire_drafts(app: &Platform, rows: Vec<DraftRow>) -> Result<Vec<wire::ForgeDraft>, ApiError> {
     let mut ids: Vec<String> = rows.iter().filter_map(|d| d.agent_machine.clone()).collect();
     ids.sort();
     ids.dedup();
     let names = if ids.is_empty() { Default::default() } else { app.cache.daemons(&*app.hub, &ids).await? };
+    let now = now_ms();
     Ok(rows
         .into_iter()
-        .map(|d| wire::ForgeDraft {
-            machine_name: d.agent_machine.as_ref().and_then(|m| names.get(m)).map(|m| m.name.clone()),
-            id: d.id,
-            project: d.project_id,
-            repo: d.full_name,
-            repo_id: d.repo_id,
-            number: d.number,
-            item: d.item,
-            item_title: d.item_title,
-            kind: d.kind,
-            event: d.event,
-            title: d.title,
-            body: d.body,
-            state: d.state,
-            author: d.author,
-            agent: d.agent_name,
-            machine: d.agent_machine,
-            created_at: d.created_at,
-            updated_at: d.updated_at,
-            sent_at: d.sent_at,
-            sent_url: d.sent_url,
-            error: d.error,
+        .map(|d| {
+            // A send holds it (M168): `sending`, with no `sent_at` yet.
+            let sending = d.sending(now);
+            let (state, sent_at) = if sending { ("sending".to_owned(), None) } else { (d.state, d.sent_at) };
+            wire::ForgeDraft {
+                machine_name: d.agent_machine.as_ref().and_then(|m| names.get(m)).map(|m| m.name.clone()),
+                id: d.id,
+                project: d.project_id,
+                repo: d.full_name,
+                repo_id: d.repo_id,
+                number: d.number,
+                item: d.item,
+                item_title: d.item_title,
+                kind: d.kind,
+                event: d.event,
+                title: d.title,
+                body: d.body,
+                state,
+                author: d.author,
+                agent: d.agent_name,
+                machine: d.agent_machine,
+                created_at: d.created_at,
+                updated_at: d.updated_at,
+                sent_at,
+                sent_url: d.sent_url,
+                error: d.error,
+            }
         })
         .collect())
 }
@@ -298,7 +306,7 @@ pub async fn mine(
 }
 
 /// The readable repos of a draft's repo, if the viewer may read it.
-async fn readable(app: &Platform, v: &Viewer, repo_id: u64) -> Result<Option<viewer::Readable>, ApiError> {
+pub(super) async fn readable(app: &Platform, v: &Viewer, repo_id: u64) -> Result<Option<viewer::Readable>, ApiError> {
     let Some(repo) = app.db.linked_repo(repo_id)? else { return Ok(None) };
     let c = viewer::check(app, v, std::slice::from_ref(&repo)).await?;
     Ok(c.readable.has(repo_id).then_some(c.readable))
@@ -331,8 +339,10 @@ pub async fn discard(
         None => return Err(no_draft()),
     };
     let state = app.db.discard_draft(who, &id, now_ms())?.ok_or_else(no_draft)?;
-    if state != "discarded" {
-        return Err(err(StatusCode::CONFLICT, &format!("it's {state}, not waiting")));
+    match state.as_str() {
+        "discarded" => {}
+        "sending" => return Err(err(StatusCode::CONFLICT, "it's being sent")),
+        _ => return Err(err(StatusCode::CONFLICT, &format!("it's {state}, not waiting"))),
     }
     if let Some((repo_id, number)) = app.db.draft_item(&id)? {
         super::inbox::drafted(&app, repo_id, number);

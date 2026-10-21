@@ -181,7 +181,7 @@
   border-bottom: 1px solid var(--divider);
 }
 
-.platform-drafts li > :not(.platform-draft-discard) {
+.platform-drafts li > :not(.platform-draft-actions) {
   grid-column: 1;
   min-width: 0;
 }
@@ -203,10 +203,40 @@
   white-space: nowrap;
 }
 
-.platform-draft-discard {
+.platform-draft-actions {
   grid-column: 2;
-  grid-row: 1 / span 3;
+  grid-row: 1 / span 4;
   align-self: center;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* What became of a send (M168). */
+.platform-send-result {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  margin: 4px 0 8px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+}
+
+.platform-send-result.sent {
+  border-color: var(--ok, var(--divider));
+}
+
+@media (max-width: 520px) {
+  .platform-drafts li {
+    grid-template-columns: 1fr;
+  }
+  .platform-draft-actions {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+  }
 }
 
 /* The inbox (M171): an entry per item and reason, the item's link on its

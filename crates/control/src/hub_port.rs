@@ -279,6 +279,23 @@ impl HubPort for InProcess {
     ) -> BoxFuture<'a, HubResult<Option<arugula_platform::forge::GithubUser>>> {
         Box::pin(async move { crate::forge::github_user(&*self.app()?, account) })
     }
+
+    fn send_authorization<'a>(
+        &'a self,
+        account: &'a str,
+        draft: &'a str,
+        back: &'a str,
+    ) -> BoxFuture<'a, HubResult<String>> {
+        Box::pin(async move { crate::forge_send::authorize(&*self.app()?, account, draft, back) })
+    }
+
+    fn daemon_op<'a>(
+        &'a self,
+        daemon: &'a str,
+        op: &'a arugula_control_wire::forge::DaemonOp,
+    ) -> BoxFuture<'a, HubResult<arugula_control_wire::forge::OpAnswer>> {
+        Box::pin(async move { Ok(self.app()?.relay.ask(daemon, op).await) })
+    }
 }
 
 /// The platform, when it's in this process: what the three calls above

@@ -125,8 +125,8 @@ async fn drafts_by_operation() {
     assert!(ids(&v, "drafts").is_empty(), "{v}");
 }
 
-/// Sends are a person's, and not built yet (M168); versions and names are
-/// checked.
+/// Sends are a person's (M168's `send_tests` send them); versions and
+/// names are checked.
 #[tokio::test]
 async fn sends_and_versions() {
     let hub = Arc::new(TestHub::default());
@@ -144,8 +144,10 @@ async fn sends_and_versions() {
     for (name, args) in sends {
         let (s, v) = machine_op(&base, "alice geek", name, args.clone()).await;
         assert_eq!((s, v["reason"].as_str()), (403, Some("agents_draft")), "{name}: {v}");
+        // A person's goes through one of their machines (M168): none is
+        // awake here, so it's refused and what it says waits as a draft.
         let (s, v) = op(&base, "alice", name, args).await;
-        assert_eq!((s, v["reason"].as_str()), (501, Some("not_yet")), "{name}: {v}");
+        assert!(s == 409 || s == 404, "{name}: {s} {v}");
     }
 
     let at = |v: u64| json!({ "op": "pr.get", "v": v, "repo": "acme/app", "number": 1 });

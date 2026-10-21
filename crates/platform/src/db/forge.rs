@@ -893,6 +893,30 @@ pub enum Discarder<'a> {
     Author(&'a str),
 }
 
+/// How long a send holds its draft (M168): a waiting or failed draft with
+/// `sent_at` set is being sent since then ([`Db::hold_draft`]), and nobody
+/// sends or discards it until the send ends or this has passed (a platform
+/// machine that stopped mid-send lets go of it). The wire says `sending`.
+pub const SENDING_MS: u64 = 2 * 60 * 1000;
+
+/// How a send ended ([`Db::end_send`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendEnd<'a> {
+    /// On GitHub, at this URL when it said.
+    Sent(Option<&'a str>),
+    /// GitHub refused it, or the call failed: `failed`, to send again.
+    Failed(&'a str),
+    /// It didn't go anywhere: `waiting` again, saying why.
+    Waits(&'a str),
+}
+
+impl DraftRow {
+    /// Whether a send holds it now ([`SENDING_MS`]).
+    pub fn sending(&self, now: u64) -> bool {
+        self.state != "sent" && self.sent_at.is_some_and(|at| at + SENDING_MS > now)
+    }
+}
+
 /// Drafts (M170): every read takes the [`Readable`] the viewer check made,
 /// as items' do, and returns drafts on its repos only.
 impl Db {
@@ -1019,21 +1043,97 @@ impl Db {
         };
         let mut c = self.c();
         let tx = c.immediate()?;
-        let mut p: Vec<&dyn super::sql::Param> = vec![&now, &id];
+        // Not while a send holds it (M168): that one is `sending`.
+        let held = now.saturating_sub(SENDING_MS);
+        let mut p: Vec<&dyn super::sql::Param> = vec![&now, &held, &id];
         if let Some(a) = &author {
             p.push(a);
         }
         tx.execute(
             &format!(
-                "UPDATE drafts SET state = 'discarded', updated_at = ? WHERE id = ? AND state IN ('waiting', 'failed') AND {may}"
+                "UPDATE drafts SET state = 'discarded', updated_at = ? WHERE (sent_at IS NULL OR sent_at < ?)
+                 AND id = ? AND state IN ('waiting', 'failed') AND {may}"
             ),
             &p,
         )?;
         let state = tx
-            .query_row(&format!("SELECT state FROM drafts WHERE id = ? AND {may}"), &p[1..], |r| r.get(0))
+            .query_row(
+                &format!(
+                    "SELECT CASE WHEN state <> 'sent' AND sent_at >= ? THEN 'sending' ELSE state END
+                     FROM drafts WHERE id = ? AND {may}"
+                ),
+                &p[1..],
+                |r| r.get(0),
+            )
             .optional()?;
         tx.commit()?;
         Ok(state)
+    }
+}
+
+/// Sends (M168): a send holds its draft while it goes ([`SENDING_MS`]), and
+/// ends it once.
+impl Db {
+    /// Hold an author's waiting (or failed) draft on a readable repo for a
+    /// send: the draft, and the hold (its `sent_at`, which ends it). `None`
+    /// when it isn't theirs, isn't readable, was sent or discarded, or
+    /// another send holds it.
+    pub fn hold_draft(&self, r: &Readable, id: &str, author: &str, now: u64) -> anyhow::Result<Option<DraftRow>> {
+        if r.repos().is_empty() {
+            return Ok(None);
+        }
+        let held = now.saturating_sub(SENDING_MS);
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let n = tx.execute(
+            &format!(
+                "UPDATE drafts SET sent_at = ?1, error = NULL, updated_at = ?1
+                 WHERE id = ?2 AND author = ?3 AND state IN ('waiting', 'failed') AND (sent_at IS NULL OR sent_at < ?4)
+                 AND repo_id IN ({})",
+                repos_in(r)
+            ),
+            params![now, id, author, held],
+        )?;
+        let row = if n == 1 {
+            Some(tx.query_row(
+                &format!("SELECT {DRAFT_COLUMNS} FROM {DRAFT_FROM} WHERE d.id = ?1"),
+                params![id],
+                draft_row,
+            )?)
+        } else {
+            None
+        };
+        tx.commit()?;
+        Ok(row)
+    }
+
+    /// End the send that holds a draft since `held`: the draft after, or
+    /// `None` when that hold isn't its any more (it ran out and another
+    /// send took it).
+    pub fn end_send(&self, id: &str, held: u64, end: SendEnd<'_>, now: u64) -> anyhow::Result<Option<DraftRow>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let (state, sent_at, url, error) = match end {
+            SendEnd::Sent(url) => ("sent", Some(now), url, None),
+            SendEnd::Failed(e) => ("failed", None, None, Some(e)),
+            SendEnd::Waits(e) => ("waiting", None, None, Some(e)),
+        };
+        let n = tx.execute(
+            "UPDATE drafts SET state = ?1, sent_at = ?2, sent_url = ?3, error = ?4, updated_at = ?5
+             WHERE id = ?6 AND sent_at = ?7 AND state IN ('waiting', 'failed')",
+            params![state, sent_at, url, error, now, id, held],
+        )?;
+        let row = if n == 1 {
+            Some(tx.query_row(
+                &format!("SELECT {DRAFT_COLUMNS} FROM {DRAFT_FROM} WHERE d.id = ?1"),
+                params![id],
+                draft_row,
+            )?)
+        } else {
+            None
+        };
+        tx.commit()?;
+        Ok(row)
     }
 }
 

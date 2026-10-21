@@ -15,7 +15,10 @@ use arugula_control_wire::forge::Standing;
 
 use crate::{
     Platform, billing, db,
-    forge::{self, GithubUser, TokenAnswer},
+    forge::{
+        self, GithubUser, TokenAnswer,
+        send::{Outcome, UserToken},
+    },
 };
 
 pub trait PlatformPort: Send + Sync {
@@ -64,6 +67,21 @@ pub trait PlatformPort: Send + Sync {
         github: Option<&'a GithubUser>,
         repo: &'a str,
     ) -> BoxFuture<'a, anyhow::Result<TokenAnswer>>;
+
+    /// Send a person's draft as them (M168), for the hub's GitHub callback:
+    /// with the one-use user token GitHub just gave it, or, with `None` (the
+    /// authorization failed), through one of their machines. The hub
+    /// revokes the token once this answers. A platform from before M168
+    /// doesn't have it.
+    fn send_draft<'a>(
+        &'a self,
+        account: &'a str,
+        draft: &'a str,
+        token: Option<UserToken>,
+    ) -> BoxFuture<'a, anyhow::Result<Outcome>> {
+        let _ = (account, draft, token);
+        Box::pin(async { anyhow::bail!("this platform doesn't send drafts") })
+    }
 }
 
 /// An account the hub deleted.
@@ -81,7 +99,7 @@ pub struct Deleted {
 /// its part of `account_deleted`; chat (M138) `chat_on` and its part of
 /// `account_deleted`; projects and grants, and the forge mirror (M162),
 /// their part of `account_deleted`; the GitHub App (M161) `forge_standing`
-/// and `github_token`.
+/// and `github_token`; sends (M168) `send_draft`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         Box::pin(async move {
@@ -144,5 +162,20 @@ impl PlatformPort for Platform {
         repo: &'a str,
     ) -> BoxFuture<'a, anyhow::Result<TokenAnswer>> {
         Box::pin(forge::token(self, account, github, repo))
+    }
+
+    fn send_draft<'a>(
+        &'a self,
+        account: &'a str,
+        draft: &'a str,
+        token: Option<UserToken>,
+    ) -> BoxFuture<'a, anyhow::Result<Outcome>> {
+        Box::pin(async move {
+            let how = match token {
+                Some(t) => forge::send::How::Token(t),
+                None => forge::send::How::Machine,
+            };
+            Ok(forge::send::send(self, account, draft, how).await.into())
+        })
     }
 }

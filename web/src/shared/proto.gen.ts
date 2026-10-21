@@ -699,6 +699,21 @@ settled_by?: string, settled_ms?: number, url?: string,
  */
 error?: string, } & ({ "method": "comment", body: string, } | { "method": "review", event: ReviewEvent, body?: string, } | { "method": "merge", style?: string, } | { "method": "rerun_checks" } | { "method": "live", on: boolean, });
 
+export type DraftSent = { draft: ForgeDraft, 
+/**
+ * `via: "browser"`: GitHub's page to open; the draft isn't sent yet.
+ */
+authorize: string | null, 
+/**
+ * How it went: `token` (as the person, through GitHub's authorization)
+ * or `machine`.
+ */
+via: string | null, 
+/**
+ * The machine's name, when one sent it.
+ */
+machine: string | null, };
+
 export type DraftStatus = "waiting" | "sent" | "dropped";
 
 /**
@@ -885,7 +900,8 @@ item: string | null, item_title: string | null,
  */
 kind: string, event: string | null, title: string | null, body: string, 
 /**
- * `waiting`, `sent`, `discarded` or `failed`.
+ * `waiting`, `sending` (a send holds it, M168), `sent`, `discarded`
+ * or `failed`.
  */
 state: string, 
 /**
@@ -2187,6 +2203,16 @@ export type RunResponse = { pane: number, };
  * Credentials belong in the secret store, never in this record.
  */
 export type RunSpec = { agent_id: string, agent_version: number, agent: AgentDefinition, model: string, runtime: string, repository: string, git_ref: string, repository_secret?: string | null, prompt: string, };
+
+export type SendDraft = { 
+/**
+ * `browser` or `machine` (the default).
+ */
+via: string | null, 
+/**
+ * For `browser`: the platform page's path to come back to.
+ */
+back: string | null, };
 
 /**
  * Control messages from the server.

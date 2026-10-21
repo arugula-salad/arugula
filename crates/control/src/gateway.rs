@@ -144,6 +144,15 @@ impl PlatformPort for PlatformAt {
     ) -> BoxFuture<'a, anyhow::Result<TokenAnswer>> {
         self.port().github_token(account, github, repo)
     }
+
+    fn send_draft<'a>(
+        &'a self,
+        account: &'a str,
+        draft: &'a str,
+        token: Option<arugula_platform::forge::send::UserToken>,
+    ) -> BoxFuture<'a, anyhow::Result<arugula_platform::forge::send::Outcome>> {
+        self.port().send_draft(account, draft, token)
+    }
 }
 
 /// An out-of-process platform: `PlatformPort` over HTTP, and the way this

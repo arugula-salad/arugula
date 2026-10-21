@@ -54,6 +54,15 @@ export function fakeGithub(port: number, host = "127.0.0.1", user: () => string 
     } else if (u.pathname === "/user") {
       const login = String(req.headers.authorization ?? "").replace(/^(Bearer|token) gho_/, "");
       json({ id: githubId(login), login });
+    } else if (req.method === "POST" && /^\/repos\/[^/]+\/[^/]+\/(issues|pulls)(\/\d+\/(comments|reviews))?$/.test(u.pathname)) {
+      // A person's comment, review or new issue (M168): where it is now.
+      await body(req);
+      const [, , owner, repo, , n] = u.pathname.split("/");
+      json({ number: Number(n) || 1, html_url: `https://github.com/${owner}/${repo}/pull/${n || 1}#issuecomment-1` });
+    } else if (req.method === "DELETE" && /^\/applications\/[^/]+\/token$/.test(u.pathname)) {
+      // A send's user token, revoked (M168).
+      await body(req);
+      res.writeHead(204).end();
     } else res.writeHead(404).end();
   }).listen(port, host);
 }

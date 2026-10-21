@@ -381,9 +381,9 @@ fn unbase64_url(s: &str) -> Option<String> {
 
 #[derive(Deserialize)]
 pub struct Callback {
-    code: Option<String>,
-    state: Option<String>,
-    error: Option<String>,
+    pub(crate) code: Option<String>,
+    pub(crate) state: Option<String>,
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -406,6 +406,10 @@ pub async fn github_callback(
 ) -> Response {
     if let Err(e) = app.limits.check(crate::limit::SIGN_INS, app.limits.client_ip(peer, &headers)) {
         return e.into_response();
+    }
+    // A person's send (M168), not a sign-in.
+    if q.state.as_deref().is_some_and(|s| s.starts_with(crate::forge_send::STATE_PREFIX)) {
+        return crate::forge_send::finish(&app, &headers, q).await;
     }
     match github_finish(&app, &headers, q).await {
         Ok((account, next)) => {
@@ -440,25 +444,7 @@ async fn github_finish(app: &App, headers: &HeaderMap, q: Callback) -> Result<(S
         return Err("state mismatch; try again".into());
     }
     let next = safe_next(unbase64_url(next).as_deref());
-    let form: String = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("client_id", &gh.client_id)
-        .append_pair("client_secret", &gh.client_secret)
-        .append_pair("code", &code)
-        .append_pair("redirect_uri", &callback_url(app, headers))
-        .finish();
-    let tok: TokenResponse = app
-        .http
-        .post(format!("{}/login/oauth/access_token", gh.url))
-        .header(header::ACCEPT, "application/json")
-        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(form)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
-    let access = tok.access_token.ok_or_else(|| tok.error_description.unwrap_or_else(|| "no token".into()))?;
+    let access = exchange(app, gh, &code, &callback_url(app, headers)).await?;
     let user: GithubUser = app
         .http
         .get(format!("{}/user", gh.api))
@@ -480,6 +466,30 @@ async fn github_finish(app: &App, headers: &HeaderMap, q: Callback) -> Result<(S
         .map_err(|e| e.to_string())?;
     app.analytics.signed_in(&account, "github", account == new_id);
     Ok((account, next))
+}
+
+/// GitHub's code for a user token, with `gh`'s client: the token, or why
+/// not. Neither the token nor the code is logged.
+pub(crate) async fn exchange(app: &App, gh: &crate::Github, code: &str, redirect_uri: &str) -> Result<String, String> {
+    let form: String = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("client_id", &gh.client_id)
+        .append_pair("client_secret", &gh.client_secret)
+        .append_pair("code", code)
+        .append_pair("redirect_uri", redirect_uri)
+        .finish();
+    let tok: TokenResponse = app
+        .http
+        .post(format!("{}/login/oauth/access_token", gh.url))
+        .header(header::ACCEPT, "application/json")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(form)
+        .send()
+        .await
+        .map_err(|e| e.without_url().to_string())?
+        .json()
+        .await
+        .map_err(|e| e.without_url().to_string())?;
+    tok.access_token.ok_or_else(|| tok.error_description.unwrap_or_else(|| "no token".into()))
 }
 
 /// A new session for `account`: the Set-Cookie for it.

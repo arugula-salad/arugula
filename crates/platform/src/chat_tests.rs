@@ -58,6 +58,12 @@ struct State {
     github: BTreeMap<String, crate::forge::GithubUser>,
     /// The forge pokes it was handed, to relay.
     pokes: Vec<arugula_control_wire::forge::Poke>,
+    /// What each machine answers an op (M168; else it's away), and the
+    /// ops asked, in order.
+    op_answers: BTreeMap<String, arugula_control_wire::forge::OpAnswer>,
+    ops: Vec<(String, arugula_control_wire::forge::DaemonOp)>,
+    /// It runs GitHub's authorization for a send (M168).
+    authorizes: bool,
 }
 
 fn done<'a, T: Send + 'a>(t: T) -> BoxFuture<'a, HubResult<T>> {
@@ -124,6 +130,21 @@ impl TestHub {
         let mut s = self.state.lock().unwrap();
         s.accounts.insert(account.into());
         s.github.insert(account.into(), crate::forge::GithubUser { id, login: login.into() });
+    }
+
+    /// How a machine answers ops from now on (M168).
+    pub(crate) fn answers_ops(&self, daemon: &str, a: arugula_control_wire::forge::OpAnswer) {
+        self.state.lock().unwrap().op_answers.insert(daemon.into(), a);
+    }
+
+    /// The ops asked of machines, in order.
+    pub(crate) fn ops_asked(&self) -> Vec<(String, arugula_control_wire::forge::DaemonOp)> {
+        self.state.lock().unwrap().ops.clone()
+    }
+
+    /// Whether it runs GitHub's authorization for a send.
+    pub(crate) fn authorizes(&self, on: bool) {
+        self.state.lock().unwrap().authorizes = on;
     }
 
     /// A machine leaves its account.
@@ -302,6 +323,29 @@ impl HubPort for TestHub {
     fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<crate::forge::GithubUser>>> {
         self.called("github_user");
         done(self.state.lock().unwrap().github.get(account).cloned())
+    }
+
+    fn send_authorization<'a>(
+        &'a self,
+        account: &'a str,
+        draft: &'a str,
+        back: &'a str,
+    ) -> BoxFuture<'a, HubResult<String>> {
+        self.called("send_authorization");
+        let on = self.state.lock().unwrap().authorizes;
+        let url = format!("https://github.example/login/oauth/authorize?state=send.{account}.{draft}&back={back}");
+        Box::pin(async move { if on { Ok(url) } else { anyhow::bail!("no App client") } })
+    }
+
+    fn daemon_op<'a>(
+        &'a self,
+        daemon: &'a str,
+        op: &'a arugula_control_wire::forge::DaemonOp,
+    ) -> BoxFuture<'a, HubResult<arugula_control_wire::forge::OpAnswer>> {
+        self.called("daemon_op");
+        let mut s = self.state.lock().unwrap();
+        s.ops.push((daemon.into(), op.clone()));
+        done(s.op_answers.get(daemon).cloned().unwrap_or(arugula_control_wire::forge::OpAnswer::Offline))
     }
 }
 
