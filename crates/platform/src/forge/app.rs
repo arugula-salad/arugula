@@ -323,6 +323,9 @@ pub struct GithubApp {
     /// Read tokens by (installation, repository), until five minutes
     /// before they expire. Only read tokens: a write token is never kept.
     reads: Mutex<HashMap<(u64, String), ReadToken>>,
+    /// The forge mirror on this machine (M164): the poller's settings,
+    /// the numbers, and each installation's ETags.
+    pub ingest: super::ingest::Ingest,
 }
 
 /// An RSA private key from PEM (PKCS#1 `RSA PRIVATE KEY`, as GitHub hands
@@ -380,6 +383,7 @@ impl GithubApp {
             key,
             installs: Mutex::default(),
             reads: Mutex::default(),
+            ingest: Default::default(),
         }
     }
 

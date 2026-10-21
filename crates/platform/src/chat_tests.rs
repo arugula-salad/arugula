@@ -56,6 +56,8 @@ struct State {
     pushes: Vec<(String, Value, PushOptions)>,
     /// Accounts signed in with GitHub, by account.
     github: BTreeMap<String, crate::forge::GithubUser>,
+    /// The forge pokes it was handed, to relay.
+    pokes: Vec<arugula_control_wire::forge::Poke>,
 }
 
 fn done<'a, T: Send + 'a>(t: T) -> BoxFuture<'a, HubResult<T>> {
@@ -113,6 +115,11 @@ impl TestHub {
     }
 
     /// The account signed in with GitHub as `login`, GitHub's user `id`.
+    /// The forge pokes it was handed.
+    pub(crate) fn pokes(&self) -> Vec<arugula_control_wire::forge::Poke> {
+        self.state.lock().unwrap().pokes.clone()
+    }
+
     pub(crate) fn github(&self, account: &str, id: u64, login: &str) {
         let mut s = self.state.lock().unwrap();
         s.accounts.insert(account.into());
@@ -288,6 +295,7 @@ impl HubPort for TestHub {
     }
     fn forge_pokes<'a>(&'a self, pokes: &'a [arugula_control_wire::forge::Poke]) -> BoxFuture<'a, HubResult<u32>> {
         self.called("forge_pokes");
+        self.state.lock().unwrap().pokes.extend_from_slice(pokes);
         done(pokes.len() as u32)
     }
 

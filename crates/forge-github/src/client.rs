@@ -59,12 +59,18 @@ fn merge_method(style: Option<&str>) -> Result<&'static str, String> {
     }
 }
 
+/// A `Link` header's URL for `rel` (`last`, `next`).
+fn link_rel(link: &str, rel: &str) -> Option<String> {
+    let want = format!("rel=\"{rel}\"");
+    link.split(',').find_map(|part| {
+        let (url, r) = part.split_once(';')?;
+        r.contains(&want).then(|| url.trim().trim_start_matches('<').trim_end_matches('>').to_owned())
+    })
+}
+
 /// A `Link` header's `rel="last"` URL.
 fn link_last(link: &str) -> Option<String> {
-    link.split(',').find_map(|part| {
-        let (url, rel) = part.split_once(';')?;
-        rel.contains("rel=\"last\"").then(|| url.trim().trim_start_matches('<').trim_end_matches('>').to_owned())
-    })
+    link_rel(link, "last")
 }
 
 fn with_page(url: &str, page: u64) -> String {
@@ -448,6 +454,20 @@ impl<T: TokenSource> Github<T> {
             .ok_or_else(|| Error::Http(format!("{repo} has no default branch")))
     }
 
+    /// Any GET about `repo`, as GitHub's JSON: what a caller with a path of
+    /// its own reads (the platform's mirror, M164).
+    pub async fn read(&self, repo: &str, path: &str) -> Result<Value, Error> {
+        self.get(repo, path).await
+    }
+
+    /// One page of a list about `repo`, and the next page's URL (`Link:
+    /// rel="next"`), to pass back as `path`.
+    pub async fn page(&self, repo: &str, path: &str) -> Result<(Vec<Value>, Option<String>), Error> {
+        let (v, link) = self.send(reqwest::Method::GET, repo, path, None).await?;
+        let next = link.as_deref().and_then(|l| link_rel(l, "next"));
+        Ok((v.as_array().cloned().unwrap_or_default(), next))
+    }
+
     /// The rate limit as last heard, and any backing off.
     pub fn rate(&self) -> RateLimit {
         let why = self.holding();
@@ -558,6 +578,8 @@ mod tests {
         let link = r#"<https://api.github.com/repositories/1/issues/2/timeline?per_page=100&page=2>; rel="next", <https://api.github.com/repositories/1/issues/2/timeline?per_page=100&page=4>; rel="last""#;
         let last = link_last(link).unwrap();
         assert_eq!(page_of(&last), Some(4));
+        assert_eq!(link_rel(link, "next").as_deref().and_then(page_of), Some(2));
+        assert_eq!(link_rel(link, "prev"), None);
         assert_eq!(page_of(&with_page(&last, 3)), Some(3));
         assert!(with_page(&last, 3).contains("per_page=100"));
     }

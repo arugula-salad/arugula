@@ -31,6 +31,7 @@ pub mod cloud;
 pub mod forge;
 mod legacy;
 pub mod migrate;
+pub mod mirror;
 pub mod pg;
 pub mod projects;
 pub mod sql;

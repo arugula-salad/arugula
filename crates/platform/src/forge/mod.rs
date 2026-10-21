@@ -29,6 +29,9 @@
 //! - **Reading items** ([`viewer`], [`items`], M165): every read of a
 //!   linked repo's items checks the viewer's own access, and GitHub's
 //!   events that change it drop what was kept.
+//! - **The mirror** (M164): a linked repo's webhooks write its rows
+//!   ([`ingest`]), and one leased poller per repo backfills and reconciles
+//!   them ([`poller`]), within a rate budget; [`stats`] are its numbers.
 //!
 //! First-time lookups at GitHub are rate-limited per account
 //! ([`FORGE_LOOKUPS`], counted here).
@@ -43,10 +46,15 @@ use tracing::info;
 use crate::Platform;
 
 mod app;
+pub mod ingest;
+#[cfg(test)]
+mod ingest_tests;
 pub mod items;
 pub mod links;
 #[cfg(test)]
 mod links_tests;
+pub mod poller;
+pub mod stats;
 pub mod viewer;
 #[cfg(test)]
 mod viewer_tests;
@@ -91,6 +99,15 @@ pub struct Args {
     pub github_app_private_key_file: Option<std::path::PathBuf>,
     #[arg(long, env = "GITHUB_APP_PRIVATE_KEY", hide_env_values = true)]
     pub github_app_private_key: Option<String>,
+    /// How often each linked repo's poller reconciles its rows with
+    /// GitHub (M164), in minutes: 5 unless set.
+    #[arg(long, env = "ARUGULA_FORGE_RECONCILE_MINUTES")]
+    pub forge_reconcile_minutes: Option<u64>,
+    /// The share of each installation's GitHub rate limit, in percent,
+    /// that the poller leaves for reads on demand and sends (M164): 30
+    /// unless set.
+    #[arg(long, env = "ARUGULA_FORGE_RATE_RESERVE", value_parser = clap::value_parser!(u8).range(0..=100))]
+    pub forge_rate_reserve: Option<u8>,
 }
 
 impl Args {
@@ -134,7 +151,13 @@ impl Args {
             tracing::warn!("no GITHUB_APP_WEBHOOK_SECRET: every GitHub webhook will be refused");
         }
         info!(app = id, slug = self.github_app_slug, "GitHub App");
-        Ok(Some(GithubApp::new(id.to_owned(), self.github_app_slug.clone(), secret, api, key)))
+        let mut app = GithubApp::new(id.to_owned(), self.github_app_slug.clone(), secret, api, key);
+        let d = ingest::Settings::default();
+        app.ingest.settings = ingest::Settings {
+            every_ms: self.forge_reconcile_minutes.filter(|m| *m > 0).map_or(d.every_ms, |m| m * 60_000),
+            reserve: self.forge_rate_reserve.unwrap_or(d.reserve),
+        };
+        Ok(Some(app))
     }
 }
 
@@ -241,13 +264,15 @@ pub async fn token(
 
 /// The forge's background work: unlinked repos' rows are purged
 /// ([`links::start`], with or without the App: deleting an account
-/// unlinks too), webhook deliveries older than a week go, the token
-/// log's mints older than a year, and access answers no longer used.
+/// unlinks too), linked repos are polled ([`poller::start`]), webhook
+/// deliveries older than a week go, the token log's mints older than a
+/// year, and access answers no longer used.
 pub fn start(p: &Arc<Platform>) {
     links::start(p);
     if p.github.is_none() {
         return;
     }
+    poller::start(p);
     let p = p.clone();
     tokio::spawn(async move {
         loop {
