@@ -171,6 +171,12 @@ export type ChangesAsked = { note: string, by: string, at_ms: number,
 revised_ms?: number, };
 
 /**
+ * The agent that wrote a message (M197): the machine whose grant it acted
+ * through, and its name now. The message's author is the machine's owner.
+ */
+export type ChatAgent = { machine: string, machine_name: string, };
+
+/**
  * `PATCH /api/chat/rooms/{id}/messages/{seq}`: the author's new text.
  */
 export type ChatEdit = { text: string, };
@@ -226,7 +232,12 @@ deleted: number | null,
  * there. Someone with no account here (a tailnet login, an agent) is
  * shown under the machine's owner, by this name.
  */
-imported: string | null, };
+imported: string | null, 
+/**
+ * Written by an agent on the author's machine (M197): shown as
+ * "<name>'s agent on <machine_name>".
+ */
+agent: ChatAgent | null, };
 
 export type ChatMessages = { room: ChatRoom, 
 /**
@@ -375,6 +386,20 @@ archived: boolean,
 writable: boolean, };
 
 /**
+ * A machine whose agents reach a room through its owner's grant (M197).
+ */
+export type ChatRoomAgent = { 
+/**
+ * The owner's account, and their name now.
+ */
+owner: string, owner_name: string, machine: string, machine_name: string, 
+/**
+ * What it may do here: `threads.read`, `threads.post`, and on a
+ * native issue's thread `issues.write`.
+ */
+powers: Array<string>, };
+
+/**
  * `PATCH /api/chat/rooms/{id}`: a channel renamed or archived, by its
  * team's owners.
  */
@@ -383,7 +408,12 @@ export type ChatRoomChange = { name?: string, archived?: boolean, };
 /**
  * `GET /api/chat/rooms/{id}`: a room and who sees it (whom `@` reaches).
  */
-export type ChatRoomDetail = { room: ChatRoom, people: Array<ChatPerson>, };
+export type ChatRoomDetail = { room: ChatRoom, people: Array<ChatPerson>, 
+/**
+ * The agents a live grant lets read or post here (M197), for everyone
+ * in the room to see: "Jake's agents on geek can read and post here".
+ */
+agents: Array<ChatRoomAgent>, };
 
 /**
  * `GET /api/chat`: every room the reader sees.

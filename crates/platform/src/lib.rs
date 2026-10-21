@@ -31,6 +31,8 @@ use std::sync::Arc;
 
 use arugula_control_common::{analytics::Analytics, limit::Limits};
 
+#[cfg(test)]
+mod agents_tests;
 pub mod auth;
 pub mod billing;
 pub mod cache;

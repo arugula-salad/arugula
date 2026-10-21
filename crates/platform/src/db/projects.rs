@@ -49,6 +49,16 @@ fn new_grant() -> String {
 /// the owner's account.
 pub const CLOUD_DRIVE: &str = "cloud.drive";
 
+/// An agent's powers in conversations (M197, platform step 6): a machine's
+/// agents read rooms (and issues) in a scope, post in them (issue comments
+/// too), or write issues there. Over a project (a team's channels are its
+/// default project's) or the owner's account (their DMs). Never given on
+/// join: the machine's owner grants each one ([`crate::grants::give`]).
+pub const THREADS_READ: &str = "threads.read";
+pub const THREADS_POST: &str = "threads.post";
+pub const ISSUES_WRITE: &str = "issues.write";
+pub const AGENT_POWERS: [&str; 3] = [THREADS_READ, THREADS_POST, ISSUES_WRITE];
+
 /// The reader in `hub_feed` that keeps these tables.
 const READER: &str = "projects";
 
@@ -88,6 +98,8 @@ pub struct Grant {
     pub power: String,
     pub scope_kind: String,
     pub scope_id: String,
+    /// A project's name, for a grant over one (the caller fills it in).
+    pub scope_name: Option<String>,
     pub granted_by: String,
     pub created_at: u64,
     pub revoked_at: Option<u64>,
@@ -105,13 +117,31 @@ fn grant_row(r: &Row) -> anyhow::Result<Grant> {
         power: r.get(3)?,
         scope_kind: r.get(4)?,
         scope_id: r.get(5)?,
+        scope_name: None,
         granted_by: r.get(6)?,
         created_at: r.get(7)?,
         revoked_at: r.get(8)?,
     })
 }
 
+/// Whose a project is: a team's, or one account's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectOwner {
+    pub team: Option<String>,
+    pub account: Option<String>,
+    pub name: String,
+}
+
 impl Db {
+    /// Whose a project is, and its name; `None`: no such project.
+    pub fn project_owner(&self, project: &str) -> anyhow::Result<Option<ProjectOwner>> {
+        self.c()
+            .query_row("SELECT team_id, account_id, name FROM projects WHERE id = ?1", params![project], |r| {
+                Ok(ProjectOwner { team: r.get(0)?, account: r.get(1)?, name: r.get(2)? })
+            })
+            .optional()
+    }
+
     /// The account's personal project, made now if it has none: what its
     /// Cloud workspaces and cloud secrets belong to. The caller has checked
     /// that the account is there ([`crate::projects::personal_project`]).
@@ -240,23 +270,24 @@ impl Db {
         )
     }
 
-    /// Every grant of a machine over an account goes: it isn't that
-    /// account's machine any more.
+    /// Every grant of a machine over an account, or that the account gave
+    /// it, goes: it isn't that account's machine any more.
     pub fn drop_machine_grants(&self, daemon: &str, account: &str) -> anyhow::Result<()> {
         self.c().execute(
             "DELETE FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1
-             AND scope_kind = 'account' AND scope_id = ?2",
+             AND ((scope_kind = 'account' AND scope_id = ?2) OR granted_by = ?2)",
             params![daemon, account],
         )?;
         Ok(())
     }
 
-    /// The grants over an account, live and revoked, oldest machine row
+    /// The grants an account manages, live and revoked: those over it, and
+    /// those it gave (its machines' over projects, M197). Oldest machine row
     /// first; [`crate::grants::list`] puts them in order by machine name.
     pub fn grants(&self, account: &str) -> anyhow::Result<Vec<Grant>> {
         self.c().query_map(
             &format!(
-                "SELECT {GRANT_COLUMNS} FROM grants WHERE scope_kind = 'account' AND scope_id = ?1
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE (scope_kind = 'account' AND scope_id = ?1) OR granted_by = ?1
                  ORDER BY subject_id, created_at DESC, id"
             ),
             params![account],
@@ -266,20 +297,23 @@ impl Db {
 
     fn grant(c: &impl Sql, account: &str, id: &str) -> anyhow::Result<Option<Grant>> {
         c.query_row(
-            &format!("SELECT {GRANT_COLUMNS} FROM grants WHERE id = ?1 AND scope_kind = 'account' AND scope_id = ?2"),
+            &format!(
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE id = ?1
+                 AND ((scope_kind = 'account' AND scope_id = ?2) OR granted_by = ?2)"
+            ),
             params![id, account],
             grant_row,
         )
         .optional()
     }
 
-    /// Revoke one of the grants over an account; revoking it again changes
-    /// nothing. `None`: no such grant over it.
+    /// Revoke one of the grants an account manages; revoking it again
+    /// changes nothing. `None`: no such grant of its.
     pub fn revoke_grant(&self, account: &str, id: &str, now: u64) -> anyhow::Result<Option<Grant>> {
         let c = self.c();
         c.execute(
-            "UPDATE grants SET revoked_at = ?3 WHERE id = ?1 AND scope_kind = 'account' AND scope_id = ?2
-             AND revoked_at IS NULL",
+            "UPDATE grants SET revoked_at = ?3 WHERE id = ?1
+             AND ((scope_kind = 'account' AND scope_id = ?2) OR granted_by = ?2) AND revoked_at IS NULL",
             params![id, account, now],
         )?;
         Self::grant(&c, account, id)
@@ -290,43 +324,90 @@ impl Db {
     /// live already is the answer as it is. The caller has checked that it's
     /// the account's machine ([`crate::grants::give`]).
     pub fn give_cloud_drive(&self, account: &str, daemon: &str, by: &str, now: u64) -> anyhow::Result<Grant> {
+        self.give_grant(daemon, CLOUD_DRIVE, ("account", account), by, now)
+    }
+
+    /// Give a machine `power` over a scope (`("project", id)` or
+    /// `("account", id)`), granted by `by`, as a new grant. One that's live
+    /// already is the answer as it is. The caller has checked that it's
+    /// `by`'s machine, and that `by` reads the scope
+    /// ([`crate::grants::give`]).
+    pub fn give_grant(
+        &self,
+        daemon: &str,
+        power: &str,
+        (scope_kind, scope_id): (&str, &str),
+        by: &str,
+        now: u64,
+    ) -> anyhow::Result<Grant> {
         let mut c = self.c();
         let tx = c.transaction()?;
-        let live: Option<String> = tx
-            .query_row(
-                &format!(
-                    "SELECT id FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1 AND power = '{CLOUD_DRIVE}'
-                     AND scope_kind = 'account' AND scope_id = ?2 AND revoked_at IS NULL"
-                ),
-                params![daemon, account],
-                |r| r.get(0),
-            )
-            .optional()?;
-        let id = match live {
-            Some(id) => id,
-            None => {
-                // A live one given at once on another machine (M144) is the
-                // answer: `grants_live` keeps one.
-                tx.execute(
-                    &format!(
-                        "INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
-                         VALUES (?5, 'daemon', ?1, '{CLOUD_DRIVE}', 'account', ?2, ?3, ?4) ON CONFLICT DO NOTHING"
-                    ),
-                    params![daemon, account, by, now, new_grant()],
-                )?;
-                tx.query_row(
-                    &format!(
-                        "SELECT id FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1 AND power = '{CLOUD_DRIVE}'
-                         AND scope_kind = 'account' AND scope_id = ?2 AND revoked_at IS NULL"
-                    ),
-                    params![daemon, account],
-                    |r| r.get(0),
-                )?
-            }
-        };
-        let g = Self::grant(&tx, account, &id)?.ok_or_else(|| anyhow::anyhow!("the grant just made is gone"))?;
+        // A live one given at once on another machine (M144) is the
+        // answer: `grants_live` keeps one.
+        tx.execute(
+            "INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
+             SELECT ?7, 'daemon', ?1, ?2, ?3, ?4, ?5, ?6
+             WHERE NOT EXISTS (SELECT 1 FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1 AND power = ?2
+                 AND scope_kind = ?3 AND scope_id = ?4 AND revoked_at IS NULL)
+             ON CONFLICT DO NOTHING",
+            params![daemon, power, scope_kind, scope_id, by, now, new_grant()],
+        )?;
+        let g = tx.query_row(
+            &format!(
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1 AND power = ?2
+                 AND scope_kind = ?3 AND scope_id = ?4 AND revoked_at IS NULL"
+            ),
+            params![daemon, power, scope_kind, scope_id],
+            grant_row,
+        )?;
         tx.commit()?;
         Ok(g)
+    }
+
+    /// A machine's live grant of `power` over a scope that `by` gave, if it
+    /// has one: read on every use, so a revoked one refuses the next call
+    /// ([`crate::grants::agent_may`]).
+    pub fn live_grant(
+        &self,
+        daemon: &str,
+        power: &str,
+        (scope_kind, scope_id): (&str, &str),
+        by: &str,
+    ) -> anyhow::Result<Option<Grant>> {
+        self.c()
+            .query_row(
+                &format!(
+                    "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1 AND power = ?2
+                     AND scope_kind = ?3 AND scope_id = ?4 AND granted_by = ?5 AND revoked_at IS NULL"
+                ),
+                params![daemon, power, scope_kind, scope_id, by],
+                grant_row,
+            )
+            .optional()
+    }
+
+    /// The live agent grants (threads and issues, M197) over any of these
+    /// scopes: who to disclose in a room they reach.
+    pub fn agent_grants_over(&self, scopes: &[(&str, &str)]) -> anyhow::Result<Vec<Grant>> {
+        if scopes.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        let mut args: Vec<String> = AGENT_POWERS.iter().map(|p| (*p).to_owned()).collect();
+        let mut ors = vec![];
+        for (kind, id) in scopes {
+            ors.push("(scope_kind = ? AND scope_id = ?)");
+            args.extend([(*kind).to_owned(), (*id).to_owned()]);
+        }
+        c.query_map(
+            &format!(
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = 'daemon' AND revoked_at IS NULL
+                 AND power IN (?, ?, ?) AND ({}) ORDER BY granted_by, subject_id, power",
+                ors.join(" OR ")
+            ),
+            &super::sql::list(&args),
+            grant_row,
+        )
     }
 
     /// The last hub change applied here; `None` before the first read.
@@ -518,6 +599,55 @@ mod tests {
         assert_eq!(left, std::slice::from_ref(&again.id));
         db.machine_left("geek", 40).unwrap();
         assert_eq!(db.cloud_drive("geek", "alice").unwrap(), None);
+    }
+
+    /// An agent's grant (M197): none until its owner gives one, one live
+    /// per power and scope, listed and revoked by the owner who gave it,
+    /// read live on every use, and gone with the machine.
+    #[test]
+    fn an_agent_grant_is_given_listed_revoked_and_dropped() {
+        use super::{THREADS_POST, THREADS_READ};
+        let db = Db::test();
+        let team = db.team_project("t1", "one", 1).unwrap();
+        let over = ("project", team.as_str());
+        assert!(db.grant_on_join("geek", "alice", 1).unwrap());
+        assert_eq!(db.live_grant("geek", THREADS_POST, over, "alice").unwrap(), None, "off by default");
+        assert!(db.agent_grants_over(&[over]).unwrap().is_empty());
+        let g = db.give_grant("geek", THREADS_POST, over, "alice", 10).unwrap();
+        assert_eq!(
+            (g.power.as_str(), g.scope_kind.as_str(), g.granted_by.as_str()),
+            (THREADS_POST, "project", "alice")
+        );
+        assert_eq!(
+            db.give_grant("geek", THREADS_POST, over, "alice", 11).unwrap().id,
+            g.id,
+            "a live one is the answer"
+        );
+        assert_eq!(db.live_grant("geek", THREADS_POST, over, "alice").unwrap().map(|g| g.id), Some(g.id.clone()));
+        assert_eq!(db.live_grant("geek", THREADS_POST, over, "bob").unwrap(), None, "only as its giver gave it");
+        assert_eq!(db.live_grant("geek", THREADS_READ, over, "alice").unwrap(), None, "one power at a time");
+        let dms = db.give_grant("geek", THREADS_READ, ("account", "alice"), "alice", 12).unwrap();
+        let listed: Vec<_> = db.grants("alice").unwrap().into_iter().map(|g| g.power).collect();
+        assert_eq!(listed.len(), 3, "cloud.drive, and both agent grants: {listed:?}");
+        assert!(db.grants("bob").unwrap().is_empty());
+        assert_eq!(db.agent_grants_over(&[over, ("account", "alice")]).unwrap().len(), 2, "not cloud.drive");
+        assert_eq!(db.revoke_grant("bob", &g.id, 20).unwrap(), None, "not bob's to revoke");
+        assert!(db.revoke_grant("alice", &g.id, 20).unwrap().unwrap().revoked_at.is_some());
+        assert_eq!(db.live_grant("geek", THREADS_POST, over, "alice").unwrap(), None, "the next use is refused");
+        assert_eq!(db.agent_grants_over(&[over]).unwrap(), vec![]);
+        let again = db.give_grant("geek", THREADS_POST, over, "alice", 30).unwrap();
+        assert_ne!(again.id, g.id, "giving it back is a new grant");
+
+        // geek isn't alice's any more: everything she gave it goes.
+        db.drop_machine_grants("geek", "alice").unwrap();
+        assert!(db.grants("alice").unwrap().is_empty(), "{:?}", db.grants("alice").unwrap());
+        assert_eq!(db.live_grant("geek", THREADS_READ, ("account", "alice"), "alice").unwrap(), None);
+        assert_ne!(dms.id, "");
+        assert_eq!(
+            db.project_owner(&team).unwrap().map(|o| (o.team, o.account, o.name)),
+            Some((Some("t1".into()), None, "one".into()))
+        );
+        assert_eq!(db.project_owner("prj_none").unwrap(), None);
     }
 
     /// Deleting an account takes its personal project, its place in teams'

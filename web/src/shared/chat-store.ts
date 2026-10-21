@@ -19,6 +19,7 @@ import type {
   ChatPost,
   ChatPosted,
   ChatRoom,
+  ChatRoomAgent,
   ChatRoomDetail,
   ChatRooms,
   ChatTargetKind,
@@ -289,6 +290,12 @@ export class ChatStore {
     return this.detail.get(id)?.people ?? [];
   }
 
+  /** The machines whose agents a grant lets read or post in a room (M197),
+   * as loaded (empty until it is). */
+  agents(id: string): ChatRoomAgent[] {
+    return this.detail.get(id)?.agents ?? [];
+  }
+
   private took(room: ChatRoom) {
     const i = this.rooms.findIndex((r) => r.id === room.id);
     this.rooms = i < 0 ? [...this.rooms, room] : this.rooms.map((r) => (r.id === room.id ? room : r));
@@ -439,9 +446,9 @@ export class ChatStore {
     return call<ChatFound>("GET", `/api/chat/search?q=${enc(q)}${team ? `&team=${enc(team)}` : ""}`);
   }
 
-  /** Whether a message is mine. */
+  /** Whether a message is mine: written by me, not by my agent (M197). */
   mine(m: ChatMessage): boolean {
-    return !!m.author && m.author === this.me;
+    return !!m.author && m.author === this.me && !m.agent;
   }
 
   /** Whether an `@word` names me. */

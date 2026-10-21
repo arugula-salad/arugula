@@ -16,10 +16,23 @@
 //!
 //! Only a person (a signed-in browser, or a CLI device) manages grants: a
 //! machine's signature isn't a [`Person`], so it can't give itself one.
+//!
+//! **Agents in conversations (M197, platform step 6).** Three more powers,
+//! `threads.read`, `threads.post` and `issues.write`, over a project (a
+//! team's channels are its default project's; an object's thread and a
+//! native issue are their project's) or the owner's own account (their
+//! DMs). Unlike `cloud.drive` they're never given on join: the machine's
+//! owner gives each one, over a scope they read themselves ([`give`]). The
+//! routes an agent calls ask [`agent_may`] every time, which reads the grant
+//! and checks again that the owner still reads its scope, so an agent never
+//! reaches more than its owner: a revoked grant refuses the next call, and
+//! one whose owner left the team stops within [`cache::DELAY`].
+//!
+//! [`cache::DELAY`]: crate::cache::DELAY
 
 use std::sync::Arc;
 
-use arugula_control_common::{ApiError, err};
+use arugula_control_common::{ApiError, err, refusal};
 use arugula_e2e::now_ms;
 use axum::{
     Json,
@@ -31,19 +44,126 @@ use serde_json::{Value, json};
 
 use crate::{
     Platform,
-    auth::Person,
-    db::projects::{CLOUD_DRIVE, Grant},
+    auth::{Machine, Person},
+    db::projects::{AGENT_POWERS, CLOUD_DRIVE, Grant, ISSUES_WRITE},
     hub::HubResult,
 };
 
 type R = Result<Json<Value>, ApiError>;
+
+/// Why an agent was refused ([`agent_may`]): it has no live grant, or its
+/// owner doesn't read the scope (any more).
+pub const AGENT_UNGRANTED: &str = "agent_ungranted";
+
+/// Where an agent's grant reaches: a project, or its owner's account (their
+/// DMs).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentScope {
+    Project(String),
+    Account(String),
+}
+
+impl AgentScope {
+    fn row(&self) -> (&'static str, &str) {
+        match self {
+            AgentScope::Project(id) => ("project", id),
+            AgentScope::Account(id) => ("account", id),
+        }
+    }
+}
+
+/// An agent let act ([`agent_may`]): its machine, the machine's name now,
+/// and its owner, whose account is the author of what it writes (with the
+/// machine beside it, labelled "<owner>'s agent on <machine>").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentPrincipal {
+    pub machine: String,
+    pub machine_name: String,
+    pub owner: String,
+}
+
+/// What a scope is called, if `owner` reads it now: their own account
+/// ("your DMs"), their personal project, or a project of a team they're in
+/// (a locked team's owners only). `now`: ask the hub, not the cache (to
+/// write a grant on the hub's word).
+pub(crate) async fn owner_reads(
+    app: &Platform,
+    owner: &str,
+    scope: &AgentScope,
+    now: bool,
+) -> HubResult<Option<String>> {
+    match scope {
+        AgentScope::Account(a) => Ok((a == owner).then(|| "your DMs".to_owned())),
+        AgentScope::Project(p) => {
+            let Some(o) = app.db.project_owner(p)? else { return Ok(None) };
+            if let Some(a) = &o.account {
+                return Ok((a == owner).then_some(o.name));
+            }
+            let Some(team) = &o.team else { return Ok(None) };
+            let t =
+                if now { app.cache.team_now(&*app.hub, team).await? } else { app.cache.team(&*app.hub, team).await? };
+            Ok(t.filter(|t| t.role(owner).is_some()).map(|t| t.name))
+        }
+    }
+}
+
+/// How the owner gives this grant, for a refusal.
+fn how_to_grant(machine_name: &str, power: &str, scope: &AgentScope, scope_name: &str) -> String {
+    let flag = match scope {
+        AgentScope::Project(p) => format!("--project {p}"),
+        AgentScope::Account(_) => "--dms".to_owned(),
+    };
+    format!(
+        "its owner gives it with `arugula grants add {machine_name} {power} {flag}`, or turns on {machine_name} for \
+         {scope_name} under Settings, Agents in conversations, on the platform page"
+    )
+}
+
+/// Whether the agents on `machine` may use `power` over `scope`: a live
+/// grant its owner gave, over a scope the owner reads now. Asked on every
+/// call an agent makes: the grant is read from the database each time (a
+/// revoked one refuses the very next call), and the owner's reach comes
+/// from the cache, which hears of a roster change within
+/// [`cache::DELAY`](crate::cache::DELAY). A refusal (403,
+/// [`AGENT_UNGRANTED`]) names the machine and says how to grant it.
+pub async fn agent_may(
+    app: &Platform,
+    machine: &Machine,
+    power: &str,
+    scope: &AgentScope,
+) -> Result<AgentPrincipal, ApiError> {
+    if !AGENT_POWERS.contains(&power) || (power == ISSUES_WRITE && matches!(scope, AgentScope::Account(_))) {
+        return Err(err(StatusCode::BAD_REQUEST, &format!("{power} isn't a power over that")));
+    }
+    let owner = &machine.account;
+    let machine_name = app
+        .cache
+        .daemons(&*app.hub, std::slice::from_ref(&machine.daemon))
+        .await?
+        .remove(&machine.daemon)
+        .map_or_else(|| machine.daemon.clone(), |d| d.name);
+    let refused = |why: String| refusal(StatusCode::FORBIDDEN, AGENT_UNGRANTED, &why);
+    let Some(scope_name) = owner_reads(app, owner, scope, false).await? else {
+        return Err(refused(format!(
+            "{machine_name}'s agents can't reach that: its owner doesn't read it, and an agent never reaches more \
+             than its owner"
+        )));
+    };
+    if app.db.live_grant(&machine.daemon, power, scope.row(), owner)?.is_none() {
+        return Err(refused(format!(
+            "{machine_name} has no {power} grant over {scope_name}: {}",
+            how_to_grant(&machine_name, power, scope, &scope_name)
+        )));
+    }
+    Ok(AgentPrincipal { machine: machine.daemon.clone(), machine_name, owner: owner.clone() })
+}
 
 fn wire(g: &Grant) -> Value {
     json!({
         "id": g.id,
         "subject": { "kind": g.subject_kind, "id": g.subject_id, "name": g.subject_name },
         "power": g.power,
-        "scope": { "kind": g.scope_kind, "id": g.scope_id },
+        "scope": { "kind": g.scope_kind, "id": g.scope_id, "name": g.scope_name },
         "granted_by": g.granted_by,
         "created_at": g.created_at,
         "revoked_at": g.revoked_at,
@@ -81,14 +201,22 @@ pub async fn can_drive_cloud(app: &Platform, daemon: &str, account: &str) -> Hub
 }
 
 /// Machine names for these grants, from the hub's directory (as the cache
-/// keeps it).
+/// keeps it), and project names for those over a project.
 async fn named(app: &Platform, mut grants: Vec<Grant>) -> HubResult<Vec<Grant>> {
     let mut ids: Vec<String> = grants.iter().map(|g| g.subject_id.clone()).collect();
     ids.sort();
     ids.dedup();
     let daemons = app.cache.daemons(&*app.hub, &ids).await?;
+    let mut projects = std::collections::HashMap::new();
     for g in &mut grants {
         g.subject_name = daemons.get(&g.subject_id).map(|d| d.name.clone());
+        if g.scope_kind == "project" {
+            if !projects.contains_key(&g.scope_id) {
+                let name = app.db.project_owner(&g.scope_id)?.map(|o| o.name);
+                projects.insert(g.scope_id.clone(), name);
+            }
+            g.scope_name = projects[&g.scope_id].clone();
+        }
     }
     Ok(grants)
 }
@@ -156,14 +284,47 @@ pub struct Give {
     /// The machine (its id).
     daemon: String,
     power: String,
+    /// An agent power's scope: a project, or `account` (the giver's DMs).
+    #[serde(default)]
+    scope: Option<GiveScope>,
 }
 
-/// `POST /api/grants {daemon, power}`: give one of the account's machines
-/// `cloud.drive` again, as a new grant. One it holds already is the answer.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum GiveScope {
+    Project { id: String },
+    Account,
+}
+
+/// `POST /api/grants {daemon, power, scope?}`: give one of the account's
+/// machines a power, as a new grant. One it holds already is the answer.
+/// `cloud.drive` is over the account (no scope); `threads.read`,
+/// `threads.post` and `issues.write` take a scope, `{kind: "project", id}`
+/// for a project the giver reads, or `{kind: "account"}` for their DMs
+/// (threads only).
 pub async fn give(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Give>) -> R {
-    if b.power != CLOUD_DRIVE {
-        return Err(err(StatusCode::BAD_REQUEST, "the one power there is to give is cloud.drive"));
-    }
+    let scope = match (b.power.as_str(), b.scope) {
+        (CLOUD_DRIVE, None) => None,
+        (CLOUD_DRIVE, Some(_)) => {
+            return Err(err(StatusCode::BAD_REQUEST, "cloud.drive is over your account: no scope"));
+        }
+        (p, Some(scope)) if AGENT_POWERS.contains(&p) => Some(match scope {
+            GiveScope::Project { id } => AgentScope::Project(id),
+            GiveScope::Account if p == ISSUES_WRITE => {
+                return Err(err(StatusCode::BAD_REQUEST, "issues.write is over a project, not your DMs"));
+            }
+            GiveScope::Account => AgentScope::Account(s.account.clone()),
+        }),
+        (p, None) if AGENT_POWERS.contains(&p) => {
+            return Err(err(StatusCode::BAD_REQUEST, "an agent's power is over a project or your DMs: say which"));
+        }
+        _ => {
+            return Err(err(
+                StatusCode::BAD_REQUEST,
+                "the powers there are to give are cloud.drive, threads.read, threads.post and issues.write",
+            ));
+        }
+    };
     // A grant is written on the hub's word, never on a kept answer.
     let mine = app
         .cache
@@ -174,7 +335,16 @@ pub async fn give(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Giv
     if !mine {
         return Err(err(StatusCode::NOT_FOUND, "not a machine on this account"));
     }
-    let g = app.db.give_cloud_drive(&s.account, &b.daemon, &s.account, now_ms())?;
+    let g = match scope {
+        None => app.db.give_cloud_drive(&s.account, &b.daemon, &s.account, now_ms())?,
+        Some(scope) => {
+            // Only over what the giver reads, on the hub's word.
+            if owner_reads(&app, &s.account, &scope, true).await?.is_none() {
+                return Err(err(StatusCode::FORBIDDEN, "you can only give your machine what you can read yourself"));
+            }
+            app.db.give_grant(&b.daemon, &b.power, scope.row(), &s.account, now_ms())?
+        }
+    };
     let g = named(&app, vec![g]).await?.remove(0);
     Ok(Json(wire(&g)))
 }

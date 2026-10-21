@@ -10838,3 +10838,44 @@ html[data-workspace="new"] .thread-panel {
 .cloud-ws-block .cloud-tabstrip .tab { display: flex; align-items: center; gap: 6px; padding: 6px 10px; white-space: nowrap; color: var(--dim); border-bottom: 2px solid transparent; cursor: pointer; }
 .cloud-ws-block .cloud-tabstrip .tab:hover { color: var(--fg); }
 .cloud-ws-block .cloud-tabstrip .tab.selected { color: var(--fg); border-bottom-color: var(--accent); }
+
+/* An agent's message (M197): its owner's, labelled "<owner>'s agent on
+   <machine>", set apart with its own rule and badge; and the line a room
+   shows when an agent grant reaches it. */
+.thread-msg.by-agent .msg-body {
+  border-left: 2px solid var(--teal);
+  padding-left: 8px;
+}
+
+.thread-msg.by-agent .thread-name,
+.chat-hit-text.by-agent > b {
+  color: var(--teal);
+}
+
+.thread-msg.by-agent .msg-avatar {
+  border-radius: 50%;
+}
+
+.msg-badge.agent-badge {
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--teal);
+  color: var(--teal);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.room-agents {
+  flex: none;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--divider);
+  color: var(--teal);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.room-agents p {
+  margin: 0;
+}

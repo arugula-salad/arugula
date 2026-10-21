@@ -636,7 +636,16 @@ mod tests {
         chat.add_chat_room(&room("th", &format!("machine:{box1}"), "pane", Some(&box1)), &[], None).unwrap();
         chat.add_chat_room(&room("ch", "team:t2", "channel", None), &[], Some("prj_t2")).unwrap();
         let say = |room: &str, author: &str, mentions: &[String]| {
-            let m = NewMessage { author, at: 1, text: "hi", quote: None, ref_machine: None, ref_pane: None, mentions };
+            let m = NewMessage {
+                author,
+                at: 1,
+                text: "hi",
+                quote: None,
+                ref_machine: None,
+                ref_pane: None,
+                mentions,
+                agent: None,
+            };
             chat.add_chat_message(room, &m).unwrap();
         };
         say("dm", "acct-alice", &[]);

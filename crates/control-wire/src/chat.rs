@@ -134,6 +134,33 @@ pub struct ChatRooms {
 pub struct ChatRoomDetail {
     pub room: ChatRoom,
     pub people: Vec<ChatPerson>,
+    /// The agents a live grant lets read or post here (M197), for everyone
+    /// in the room to see: "Jake's agents on geek can read and post here".
+    #[serde(default)]
+    pub agents: Vec<ChatRoomAgent>,
+}
+
+/// A machine whose agents reach a room through its owner's grant (M197).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatRoomAgent {
+    /// The owner's account, and their name now.
+    pub owner: String,
+    pub owner_name: String,
+    pub machine: String,
+    pub machine_name: String,
+    /// What it may do here: `threads.read`, `threads.post`, and on a
+    /// native issue's thread `issues.write`.
+    pub powers: Vec<String>,
+}
+
+/// The agent that wrote a message (M197): the machine whose grant it acted
+/// through, and its name now. The message's author is the machine's owner.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatAgent {
+    pub machine: String,
+    pub machine_name: String,
 }
 
 /// A pane a message names, as the poster sends it.
@@ -181,6 +208,10 @@ pub struct ChatMessage {
     /// there. Someone with no account here (a tailnet login, an agent) is
     /// shown under the machine's owner, by this name.
     pub imported: Option<String>,
+    /// Written by an agent on the author's machine (M197): shown as
+    /// "<name>'s agent on <machine_name>".
+    #[serde(default)]
+    pub agent: Option<ChatAgent>,
 }
 
 /// `GET /api/chat/rooms/{id}/messages?after=N` (oldest first after N),

@@ -199,3 +199,33 @@ A block's card on a linked repo sends a platform draft from its machine
 with the owner's login, as its own drafts go, and tells the platform
 (`POST /api/forge/drafts/{id}/machine`: `start`, then `sent` or `failed`).
 
+**Agents in conversations (M197).** Three more powers let a machine's
+agents into its owner's conversations: `threads.read` and `threads.post`
+over a project (a team's channels are its default project's; an object's
+thread is its project's) or over the owner's DMs, and `issues.write` over a
+project. They're off until the owner gives them, and only over what the
+owner reads; a machine's agents never reach more than its owner, so one
+whose owner leaves the team is refused there at once (within the platform's
+cache delay), grant or not.
+
+```
+arugula grants add geek threads.read threads.post --project acme
+arugula grants add geek threads.read --dms
+arugula grants revoke geek threads.post --project acme
+```
+
+or a switch per machine and project (and one for your DMs) under Settings,
+Agents in conversations, on the platform page. Through the API it's `POST
+/api/grants {"daemon", "power", "scope": {"kind": "project", "id"}}` (or
+`{"kind": "account"}` for your DMs). Every call an agent makes asks for the
+grant again (`grants::agent_may`), so a revoked one refuses the next call,
+with a message naming the machine and how to grant it. What an agent posts
+is its owner's, labelled "Jake's agent on geek" wherever it shows, and stays
+labelled after a revoke. Every room an agent grant reaches says so to
+everyone in it: "Jake's agents on geek can read and post here".
+
+Grants bound what a machine's own signature can do (its MCP calls), not
+what a shell on it can do with your CLI login. The CLI's device key lives
+on the same machine as its agents, so an agent with a shell there can act
+through `arugula` as you, unlabelled, `arugula grants add` included (as it
+can `arugula grants restore` for `cloud.drive` today).

@@ -1113,28 +1113,32 @@ clients = ["page"]
 # The platform's since step 2 (#1150), with projects: a machine gets
 # `cloud.drive` when the hub's change feed says it joined, or the first time
 # it asks, and the list names machines from the hub's directory
-# (`HubPort::daemons`).
+# (`HubPort::daemons`). Its agents' powers in conversations (M197:
+# `threads.read`, `threads.post`, `issues.write`, over a project or the
+# owner's DMs) are given only here, by the machine's owner: the CLI's
+# `arugula grants add`, or the platform page's switches.
 
 [[route]]
 method = "GET"
 path = "/api/grants"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 
 [[route]]
 method = "POST"
 path = "/api/grants"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
+note = "Only over a scope the giver reads, asked of the hub."
 
 [[route]]
 method = "POST"
 path = "/api/grants/{id}/revoke"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 
 # ---- platform: projects
 # The platform page's list of the reader's projects (M150): their own and
