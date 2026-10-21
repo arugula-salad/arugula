@@ -22,62 +22,15 @@
 //! - `hub_feed` is how far the platform has applied the hub's change feed
 //!   to these tables.
 //!
-//! Nothing reads `project_id` yet (M129).
+//! Nothing reads `project_id` yet (M129). The tables are made by the
+//! platform's migrations (`migrations/sqlite`), which also ran M129's
+//! backfill one last time (`0003_personal_projects.sql`).
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 
 use super::Db;
 use crate::{Deleted, hub::Team};
-
-pub(super) const SCHEMA: &str = "
-CREATE TABLE IF NOT EXISTS projects (
-    id TEXT PRIMARY KEY,
-    team_id TEXT,
-    account_id TEXT,
-    name TEXT NOT NULL,
-    is_default INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    CHECK ((team_id IS NULL) != (account_id IS NULL))
-);
-CREATE UNIQUE INDEX IF NOT EXISTS projects_team_default ON projects (team_id)
-    WHERE is_default = 1 AND team_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS projects_account_default ON projects (account_id)
-    WHERE is_default = 1 AND account_id IS NOT NULL;
--- The members of each team's latest roster that still have an account.
-CREATE TABLE IF NOT EXISTS team_members (
-    team_id TEXT NOT NULL,
-    account_id TEXT NOT NULL,
-    role TEXT NOT NULL,
-    name TEXT NOT NULL,
-    roster_version INTEGER NOT NULL,
-    PRIMARY KEY (team_id, account_id)
-);
-CREATE INDEX IF NOT EXISTS team_members_account ON team_members (account_id);
--- `subject_kind` is 'daemon' for now, `power` 'cloud.drive', and the scope
--- a project or an account. `granted_by` is the account that granted it.
--- One live grant per subject, power and scope; a revoked one keeps its row.
-CREATE TABLE IF NOT EXISTS grants (
-    id TEXT PRIMARY KEY,
-    subject_kind TEXT NOT NULL,
-    subject_id TEXT NOT NULL,
-    power TEXT NOT NULL,
-    scope_kind TEXT NOT NULL CHECK (scope_kind IN ('project', 'account')),
-    scope_id TEXT NOT NULL,
-    granted_by TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    revoked_at INTEGER
-);
-CREATE UNIQUE INDEX IF NOT EXISTS grants_live ON grants (subject_kind, subject_id, power, scope_kind, scope_id)
-    WHERE revoked_at IS NULL;
-CREATE INDEX IF NOT EXISTS grants_scope ON grants (scope_kind, scope_id);
--- The last change of the hub's feed (`HubPort::changes`) applied to the
--- tables above, by the reader that applied it.
-CREATE TABLE IF NOT EXISTS hub_feed (
-    reader TEXT PRIMARY KEY,
-    seq INTEGER NOT NULL
-);
-";
 
 /// What a project's id looks like: `prj_` and 32 hex characters, beside
 /// `cw_` for Cloud workspaces.
@@ -90,57 +43,8 @@ const NEW_GRANT_SQL: &str = "'grt_' || lower(hex(randomblob(16)))";
 /// the owner's account.
 pub const CLOUD_DRIVE: &str = "cloud.drive";
 
-/// The tables that carry a `project_id`.
-const ATTACHED: [&str; 3] = ["cloud_workspaces", "chat_rooms", "cloud_secrets"];
-
 /// The reader in `hub_feed` that keeps these tables.
 const READER: &str = "projects";
-
-/// `project_id` on the tables that hang off a project, and the part of the
-/// backfill (M129) the platform can do on its own: every account with Cloud
-/// workspaces or cloud secrets gets its personal project, and those rows
-/// get it. Runs on every start, after Cloud's and chat's tables are made;
-/// with nothing to do, it changes nothing.
-///
-/// Team channels need their team's name from the hub, so the platform
-/// attaches those once it's running ([`crate::projects::start`]), and a
-/// team's default project is made when the feed says its roster changed or
-/// the first time it's needed.
-pub(super) fn migrate(conn: &Connection, now: u64) -> rusqlite::Result<()> {
-    for table in ATTACHED {
-        let has: bool = conn.query_row(
-            &format!("SELECT EXISTS(SELECT 1 FROM pragma_table_info('{table}') WHERE name='project_id')"),
-            [],
-            |r| r.get(0),
-        )?;
-        if !has {
-            conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN project_id TEXT"))?;
-        }
-        conn.execute_batch(&format!("CREATE INDEX IF NOT EXISTS {table}_project ON {table} (project_id)"))?;
-    }
-    let tx = conn.unchecked_transaction()?;
-    tx.execute(
-        &format!(
-            "INSERT INTO projects (id, account_id, name, is_default, created_at)
-             SELECT {NEW_ID_SQL}, o.account, 'Personal', 1, ?1
-             FROM (SELECT account FROM cloud_workspaces WHERE project_id IS NULL
-                   UNION SELECT account FROM cloud_secrets WHERE project_id IS NULL) o
-             WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.account_id = o.account AND p.is_default = 1)"
-        ),
-        [now],
-    )?;
-    for table in ["cloud_workspaces", "cloud_secrets"] {
-        tx.execute(
-            &format!(
-                "UPDATE {table} SET project_id = (SELECT p.id FROM projects p
-                     WHERE p.account_id = {table}.account AND p.is_default = 1)
-                 WHERE project_id IS NULL"
-            ),
-            [],
-        )?;
-    }
-    tx.commit()
-}
 
 /// A team's default project, made now (named `name`) if it has none.
 fn team_project(c: &Connection, team: &str, name: &str, now: u64) -> rusqlite::Result<String> {
@@ -448,21 +352,20 @@ mod tests {
     use crate::Deleted;
     use rusqlite::Connection;
 
-    /// A database in the shape before M129: the tables a project hangs off
-    /// with no `project_id`, and no projects.
-    fn old_shape() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
+    /// A database as a build before the backfill's migration left it,
+    /// with Cloud rows and a team channel that have no project.
+    fn unattached() -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        super::super::migrate::run_to(&mut conn, 2).unwrap();
         conn.execute_batch(
-            "CREATE TABLE cloud_workspaces (id TEXT PRIMARY KEY, account TEXT NOT NULL, created INTEGER NOT NULL);
-             CREATE TABLE cloud_secrets (account TEXT NOT NULL, name TEXT NOT NULL, sealed BLOB NOT NULL,
-                 PRIMARY KEY(account,name));
-             CREATE TABLE chat_rooms (id TEXT PRIMARY KEY, scope TEXT NOT NULL, kind TEXT NOT NULL);
-             INSERT INTO cloud_workspaces VALUES ('cw_1', 'alice', 1), ('cw_2', 'alice', 2), ('cw_3', 'bob', 3);
-             INSERT INTO cloud_secrets VALUES ('alice', 'A', x'00'), ('dave', 'D', x'00');
-             INSERT INTO chat_rooms VALUES ('c1', 'team:t1', 'channel'), ('d1', 'team:t1', 'dm');",
+            "INSERT INTO cloud_workspaces (id, account, request_key, name, saved_spec, created)
+                 VALUES ('cw_1', 'alice', 'k1', 'one', '{}', 1), ('cw_2', 'alice', 'k2', 'two', '{}', 2),
+                        ('cw_3', 'bob', 'k3', 'three', '{}', 3);
+             INSERT INTO cloud_secrets (account, name, sealed) VALUES ('alice', 'A', x'00'), ('dave', 'D', x'00');
+             INSERT INTO chat_rooms (id, scope, kind, created_by, created)
+                 VALUES ('c1', 'team:t1', 'channel', 'alice', 1), ('d1', 'team:t1', 'dm', 'alice', 1);",
         )
         .unwrap();
-        conn.execute_batch(super::SCHEMA).unwrap();
         conn
     }
 
@@ -482,14 +385,15 @@ mod tests {
         conn.query_row(sql, [], |r| r.get(0)).unwrap()
     }
 
-    /// What the platform backfills on its own (M129): every account with
-    /// Cloud rows gets its personal project and those rows get it. Team
-    /// channels wait for their team's name from the hub
-    /// (`projects::start`).
+    /// What the platform backfilled on its own (M129), now its last
+    /// migration's: every account with Cloud rows gets its personal project
+    /// and those rows get it. Team channels wait for their team's name from
+    /// the hub (`projects::start`).
     #[test]
     fn the_backfill_gives_every_cloud_row_its_personal_project() {
-        let conn = old_shape();
-        super::migrate(&conn, 5).unwrap();
+        let mut conn = unattached();
+        let ran = super::super::migrate::run(&mut conn).unwrap().ran;
+        assert_eq!(ran, [3]);
         assert_eq!(
             dump(&conn, "SELECT account_id, name FROM projects WHERE is_default = 1 ORDER BY 1"),
             [["alice", "Personal"], ["bob", "Personal"], ["dave", "Personal"]]
@@ -512,17 +416,16 @@ mod tests {
             of("SELECT name, project_id FROM cloud_secrets ORDER BY name"),
             [Some(project("alice")), Some(project("dave"))]
         );
-        assert_eq!(
-            of("SELECT id, project_id FROM chat_rooms ORDER BY id"),
-            [None, None],
-            "a column, not yet a project"
-        );
+        assert_eq!(of("SELECT id, project_id FROM chat_rooms ORDER BY id"), [None, None], "not done here");
 
-        // Again: nothing changes.
+        // Again, as it ran on every start before: nothing changes.
         let all = "SELECT * FROM projects ORDER BY id";
         let before = dump(&conn, all);
-        super::migrate(&conn, 9).unwrap();
+        let backfill = super::super::migrate::Dialect::Sqlite.migrations()[2];
+        assert_eq!(backfill.name, "personal_projects");
+        conn.execute_batch(backfill.sql).unwrap();
         assert_eq!(dump(&conn, all), before);
+        assert_eq!(super::super::migrate::run(&mut conn).unwrap(), Default::default());
     }
 
     #[test]

@@ -1000,10 +1000,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 56 tables in two planes ("Two planes, two trust rules"):
+Control's database has 57 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (30 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (26 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, and Cloud workspaces. Control reads most of it, and says so here.
+- **The platform plane** (27 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, and Cloud workspaces. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1072,6 +1072,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `team_members` | metadata | Who is in each team as its latest signed roster says: account, role, name. A copy for platform queries, following the hub's change feed; the signed roster stays the authority over machines. | What's shared with a team on the platform (its channels, later its projects) needs its members while every machine is asleep. | yes |  |
 | `grants` | metadata | A grant: a subject (a machine), a power (cloud.drive) over a scope (an account or a project), who gave it, when, and when it was revoked. | Control checks it on the Cloud workspace routes, which work with every other machine asleep. | yes: grants to its machines, over it, or that it gave. |  |
 | `hub_feed` | metadata | How far the platform has applied the hub's change feed to projects, team members and grants: the last change's number. | A machine's joining or leaving reaches its grant through the feed, whether or not any machine is up. | nothing of one |  |
+| `platform_migrations` | metadata | Which of the platform's numbered migrations (M142) its database has: each one's number, name, checksum and when it ran, or that it was found already in place on a database made before migrations. | The platform checks its tables are the shape its code expects before it serves anything, whether or not any machine is up. | nothing of one |  |
 
 ### Who else sees it
 

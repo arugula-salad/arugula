@@ -617,3 +617,13 @@ what = "How far the platform has applied the hub's change feed to projects, team
 why_asleep = "A machine's joining or leaving reaches its grant through the feed, whether or not any machine is up."
 with_account = "none"
 seen_by = ["litestream"]
+
+[[table]]
+name = "platform_migrations"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Which of the platform's numbered migrations (M142) its database has: each one's number, name, checksum and when it ran, or that it was found already in place on a database made before migrations."
+why_asleep = "The platform checks its tables are the shape its code expects before it serves anything, whether or not any machine is up."
+with_account = "none"
+seen_by = ["litestream"]

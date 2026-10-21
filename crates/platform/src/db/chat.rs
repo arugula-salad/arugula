@@ -3,7 +3,8 @@
 //! last said. Who sees what is decided in `crate::chat`; this is storage.
 //! The platform's since M138: it moved here from control's `db/chat.rs`,
 //! and never joins a hub table (a team channel's project is the team's
-//! default one, `crate::projects::team_project`). FTS5 stays until M143 ports it to Postgres.
+//! default one, `crate::projects::team_project`). FTS5 stays until M143 ports it to Postgres. The tables, with notes on
+//! their columns, are made by the platform's migrations (`migrations/sqlite`).
 //!
 //! - A room's `scope` is what it belongs to, and what deleting takes it
 //!   with: `team:<id>` (a channel or a DM), `machine:<id>` (the thread on a
@@ -19,105 +20,6 @@ use arugula_control_wire::chat::ChatReader;
 use rusqlite::{OptionalExtension, Transaction, params, params_from_iter};
 
 use super::{Db, taken};
-
-pub const SCHEMA: &str = "
-CREATE TABLE IF NOT EXISTS chat_rooms (
-    id TEXT PRIMARY KEY,
-    scope TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    name TEXT NOT NULL DEFAULT '',
-    machine TEXT,
-    target TEXT,
-    created_by TEXT NOT NULL,
-    created INTEGER NOT NULL,
-    archived INTEGER,
-    last_seq INTEGER NOT NULL DEFAULT 0,
-    -- The text and quotes it holds, for the team's cap.
-    bytes INTEGER NOT NULL DEFAULT 0,
-    -- A team channel's project (the team's default); NULL for the rest.
-    project_id TEXT
-);
-CREATE INDEX IF NOT EXISTS chat_rooms_scope ON chat_rooms (scope);
-CREATE UNIQUE INDEX IF NOT EXISTS chat_rooms_target ON chat_rooms (kind, machine, target) WHERE machine IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS chat_rooms_channel ON chat_rooms (scope, name) WHERE kind = 'channel';
--- A DM's two people (and an archive's readers, M124, each from `from_ms`).
--- A channel's people are its team's roster, and a pane's are its reader
--- list: not rows here.
-CREATE TABLE IF NOT EXISTS chat_members (
-    room TEXT NOT NULL,
-    account TEXT NOT NULL,
-    from_ms INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (room, account)
-);
-CREATE INDEX IF NOT EXISTS chat_members_account ON chat_members (account);
--- `id` is the FTS index's rowid: an INTEGER PRIMARY KEY, so VACUUM keeps it.
-CREATE TABLE IF NOT EXISTS chat_messages (
-    id INTEGER PRIMARY KEY,
-    room TEXT NOT NULL,
-    seq INTEGER NOT NULL,
-    author TEXT NOT NULL,
-    at INTEGER NOT NULL,
-    text TEXT NOT NULL,
-    quote TEXT,
-    ref_machine TEXT,
-    ref_pane TEXT,
-    mentions TEXT NOT NULL DEFAULT '[]',
-    edited INTEGER,
-    deleted INTEGER,
-    imported TEXT,
-    -- Its number on the machine it was brought in from (M124).
-    imported_id INTEGER,
-    UNIQUE (room, seq)
-);
-CREATE INDEX IF NOT EXISTS chat_messages_author ON chat_messages (author);
-CREATE VIRTUAL TABLE IF NOT EXISTS chat_fts USING fts5 (text, quote, content='chat_messages', content_rowid='id');
-CREATE TRIGGER IF NOT EXISTS chat_fts_insert AFTER INSERT ON chat_messages BEGIN
-    INSERT INTO chat_fts (rowid, text, quote) VALUES (new.id, new.text, coalesce(new.quote, ''));
-END;
-CREATE TRIGGER IF NOT EXISTS chat_fts_delete AFTER DELETE ON chat_messages BEGIN
-    INSERT INTO chat_fts (chat_fts, rowid, text, quote) VALUES ('delete', old.id, old.text, coalesce(old.quote, ''));
-END;
-CREATE TRIGGER IF NOT EXISTS chat_fts_update AFTER UPDATE OF text, quote ON chat_messages BEGIN
-    INSERT INTO chat_fts (chat_fts, rowid, text, quote) VALUES ('delete', old.id, old.text, coalesce(old.quote, ''));
-    INSERT INTO chat_fts (rowid, text, quote) VALUES (new.id, new.text, coalesce(new.quote, ''));
-END;
--- A person's read mark in a room (it only moves forward), and whether
--- they turned its pushes off.
-CREATE TABLE IF NOT EXISTS chat_reads (
-    room TEXT NOT NULL,
-    account TEXT NOT NULL,
-    seq INTEGER NOT NULL DEFAULT 0,
-    muted INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (room, account)
-);
-CREATE INDEX IF NOT EXISTS chat_reads_account ON chat_reads (account);
--- Who may read the thread on a pane or session, as its machine last said
--- (S41 decision 2): `readers` is a JSON list of `ChatReader`.
-CREATE TABLE IF NOT EXISTS chat_readers (
-    machine TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    target TEXT NOT NULL,
-    readers TEXT NOT NULL,
-    at INTEGER NOT NULL,
-    PRIMARY KEY (machine, kind, target)
-);
-";
-
-/// Columns M124 added to M122's tables, for a database made before them.
-pub fn migrate(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
-    let has = |table: &str, col: &str| -> rusqlite::Result<bool> {
-        let mut q = conn.prepare(&format!("PRAGMA table_info({table})"))?;
-        let names: Vec<String> = q.query_map([], |r| r.get(1))?.collect::<Result<_, _>>()?;
-        Ok(names.iter().any(|n| n == col))
-    };
-    if !has("chat_members", "from_ms")? {
-        conn.execute_batch("ALTER TABLE chat_members ADD COLUMN from_ms INTEGER NOT NULL DEFAULT 0")?;
-    }
-    if !has("chat_messages", "imported_id")? {
-        conn.execute_batch("ALTER TABLE chat_messages ADD COLUMN imported_id INTEGER")?;
-    }
-    Ok(())
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Room {
