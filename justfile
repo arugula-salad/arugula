@@ -49,6 +49,12 @@ build-cache:
 web:
     cd web && pnpm run build
 
+# The web client's import rule (M148): platform/ never reaches the key code,
+# the daemon client, control's trust client or the fleet, and shared/
+# imports neither side. `just web` checks it too; this also runs its tests.
+web-imports:
+    cd web && pnpm run imports
+
 # Write the web client's wire types (web/src/shared/proto.gen.ts) from
 # crates/proto. Without `write`, check they're current, as CI does.
 proto-ts mode="write":
@@ -698,6 +704,7 @@ mux-guard:
 
 # What CI runs.
 check: test mux-guard
+    just web-imports
     just proto-ts check
     just decisions check
     just control-tables check

@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-css.mjs src/shared/style.css src/shell/shell-chrome.css src/shell/pane-chrome.css src/shell/interaction-chrome.css src/shell/block-chrome.css && tsc --noEmit && vite build && vite build --config vite.sw.config.ts && vite build --config vite.block.config.ts --mode boot && vite build --config vite.block.config.ts --mode sw && vite build --config vite.block.config.ts --mode shim",
-    "typecheck": "tsc --noEmit"
+    "build": "node scripts/check-imports.mjs && node scripts/check-css.mjs src/shared/style.css src/shell/shell-chrome.css src/shell/pane-chrome.css src/shell/interaction-chrome.css src/shell/block-chrome.css && tsc --noEmit && vite build && vite build --config vite.sw.config.ts && vite build --config vite.block.config.ts --mode boot && vite build --config vite.block.config.ts --mode sw && vite build --config vite.block.config.ts --mode shim",
+    "typecheck": "tsc --noEmit",
+    "imports": "node scripts/check-imports.mjs && node --test --test-reporter=dot scripts/check-imports.test.mjs"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.5",
