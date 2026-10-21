@@ -1,12 +1,13 @@
 // `/p/:project`: a project's home (M150): its channels and direct
-// messages, its Cloud workspaces, and who's in its team. Membership shows
-// read only: rosters change in the shell, signed by a device ("The platform
-// page is on app.arugula.io, not on the keys' origin"), so the link goes
-// there.
+// messages, its Cloud workspaces, its drafts waiting on linked repos
+// (M170), and who's in its team. Membership shows read only: rosters
+// change in the shell, signed by a device ("The platform page is on
+// app.arugula.io, not on the keys' origin"), so the link goes there.
 
 import { chat } from "../../shared/chat-store";
 import { cloudWorkspaces, cloudWorkspaceState } from "../../shared/cloud";
 import { newCloudWorkspace } from "../cloud/workspaces";
+import { ProjectDrafts } from "../drafts";
 import { MsgAvatar } from "../../shared/chat/avatar";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { names, roomPath } from "../links";
@@ -25,6 +26,8 @@ export function ProjectHome({ id }: { id: string }) {
   const workspaces = p.team ? [] : cloudWorkspaces.list;
   const chatPath = pathOf({ page: "chat", project: p.id }, names);
   const settingsPath = pathOf({ page: "project-settings", project: p.id }, names);
+  const nameOf = (account: string) =>
+    account === session.me?.account ? "you" : (p.team?.members.find((m) => m.account === account)?.name ?? "someone who left");
   return (
     <section class="platform-section" data-project-home={p.id}>
       <h1>{p.name}</h1>
@@ -36,6 +39,7 @@ export function ProjectHome({ id }: { id: string }) {
       </p>
       <div class="platform-columns">
         <div>
+          <ProjectDrafts project={p.id} nameOf={nameOf} />
           <h2>
             <a href={chatPath} onClick={(e) => follow(e, chatPath)}>
               Chat

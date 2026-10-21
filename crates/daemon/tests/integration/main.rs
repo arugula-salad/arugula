@@ -43,6 +43,9 @@ mod chat_import;
 mod flag_gates;
 #[cfg(feature = "labs")]
 mod forge;
+// M170: drafts on a linked repo go up to the platform.
+#[cfg(all(unix, feature = "forge"))]
+mod forge_drafts;
 #[cfg(feature = "forge")]
 mod forge_github;
 #[cfg(feature = "labs")]

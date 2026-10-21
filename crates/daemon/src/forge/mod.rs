@@ -33,6 +33,10 @@
 //! answer. It posts with the owner's login, and the draft and the log say
 //! who sent it. "Agents draft, people send" holds on Arugula's own
 //! surfaces; an agent on the person's account can still run `tea` itself.
+//! On a GitHub repo linked to a project in control (M170, [`platform`]),
+//! drafts are the platform's rows: the block's go up once, an agent's new
+//! ones go there, and the block shows the platform's. Dropping one there
+//! discards it; sending one is the platform's (M168).
 //!
 //! **The log** (`blocks/%N/`): the timeline's events as JSON lines, and
 //! every write as a command with who did it, so `history` and `search`
@@ -59,6 +63,7 @@ pub mod live;
 #[cfg(feature = "labs")]
 mod labs_forges;
 pub mod login;
+pub mod platform;
 // The normalized model (M160: the GitHub crate's, which Forgejo and GitLab
 // map onto too).
 pub use arugula_forge_github::model;
@@ -114,6 +119,13 @@ const SLOW: Duration = Duration::from_secs(180);
 const SETTLED: usize = 20;
 /// How often an issue an agent works on looks for its PR (M37).
 const LINKED: Duration = Duration::from_secs(30);
+/// M170: how often a block on a linked repo reads the platform's drafts
+/// again, at most, and how many uploads its config notes.
+const REREAD: Duration = Duration::from_secs(10);
+const UPLOADED: usize = 50;
+/// What a platform draft's card says when a person sends it from a block:
+/// sending is the platform's (M168), which isn't here yet.
+const PLATFORM_SENDS: &str = "a draft on a linked repo is sent through Arugula control, which can't send yet: send it on GitHub, then drop it here";
 
 // ---------------------------------------------------------------- adapters
 
@@ -319,12 +331,40 @@ struct Config {
     log_mark: i64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     drafts: Vec<Draft>,
+    /// M170: drafts that went up to the platform (a linked repo's), and
+    /// the platform's id for each: the newest [`UPLOADED`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    uploaded: Vec<Uploaded>,
     /// M37: the agent working on this issue, its branch, and its PR.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     link: Option<AgentLink>,
     /// M37: a new issue (`number` 0 until it's on the forge).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     new: Option<NewIssue>,
+}
+
+/// A draft the platform took (M170): the block's id for it, and the
+/// platform's.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Uploaded {
+    id: String,
+    draft: String,
+}
+
+/// M170: what the block knows of the platform's drafts, on a linked repo.
+#[derive(Default)]
+struct OnPlatform {
+    /// Its link, while the repo's drafts are the platform's.
+    link: Option<platform::Link>,
+    /// The platform's waiting drafts on this item, as last read.
+    drafts: Vec<arugula_control_wire::projects::ForgeDraft>,
+    read: Option<std::time::Instant>,
+    /// Why sending or dropping one here failed, by its id.
+    errors: std::collections::HashMap<String, String>,
+    /// The block's own drafts the platform refused: they stay here.
+    refused: HashSet<String>,
+    /// What was last logged, so a failure is said once.
+    said: Option<String>,
 }
 
 pub struct ForgeBlock {
@@ -348,6 +388,9 @@ pub struct ForgeBlock {
     relook: tokio::sync::Notify,
     reading: tokio::sync::Mutex<()>,
     next_draft: std::sync::atomic::AtomicU64,
+    /// M170: the platform's drafts, and one sync with it at a time.
+    platform: Mutex<OnPlatform>,
+    syncing: tokio::sync::Mutex<()>,
     restored_mark: i64,
     /// The review gate raised now, for the card that approves it.
     gate: Mutex<Option<Gate>>,
@@ -424,6 +467,8 @@ impl ForgeBlock {
             relook: tokio::sync::Notify::new(),
             reading: tokio::sync::Mutex::new(()),
             next_draft: std::sync::atomic::AtomicU64::new(now_ms()),
+            platform: Mutex::default(),
+            syncing: tokio::sync::Mutex::new(()),
         });
         b.sync_drafts();
         live::register(Arc::downgrade(&b));
@@ -587,6 +632,7 @@ impl ForgeBlock {
     async fn run(self: Arc<Self>) {
         self.start_new().await;
         self.read(true).await;
+        self.sync_platform(true).await;
         self.raise_draft().await;
         loop {
             let (fast, slow) = intervals();
@@ -618,6 +664,7 @@ impl ForgeBlock {
                 break;
             }
             self.read(false).await;
+            self.sync_platform(false).await;
         }
     }
 
@@ -921,13 +968,21 @@ impl ForgeBlock {
                 url: None,
                 error: None,
             };
-            self.config.lock().unwrap().drafts.push(d);
+            // M170: on a linked repo the platform keeps it; when it can't
+            // be reached, the block does, and it goes up later.
+            let id = match self.draft_on_platform(&d).await {
+                Some(on) => on,
+                None => {
+                    self.config.lock().unwrap().drafts.push(d);
+                    id
+                }
+            };
             self.sync_drafts();
             self.ctx.changed();
             if let Some(me) = self.me.upgrade() {
                 self.ctx.rt.spawn(async move { me.raise_draft().await });
             }
-            let waiting = self.config.lock().unwrap().drafts.len();
+            let waiting = self.state.lock().unwrap().drafts.iter().filter(|d| d.status == DraftStatus::Waiting).count();
             return to_value(Drafted {
                 draft: id,
                 status: DraftStatus::Waiting,
@@ -989,10 +1044,11 @@ impl ForgeBlock {
         Ok(sent)
     }
 
-    /// The state's drafts: the waiting ones (from config), then the newest
-    /// settled ones.
+    /// The state's drafts: the waiting ones (from config, then the
+    /// platform's on a linked repo), then the newest settled ones.
     fn sync_drafts(&self) {
-        let waiting = self.config.lock().unwrap().drafts.clone();
+        let mut waiting = self.config.lock().unwrap().drafts.clone();
+        waiting.extend(self.platform_drafts());
         let mut st = self.state.lock().unwrap();
         let settled: Vec<Draft> = st.drafts.iter().filter(|d| d.status != DraftStatus::Waiting).cloned().collect();
         st.drafts = waiting;
@@ -1010,7 +1066,8 @@ impl ForgeBlock {
         if self.asking.lock().unwrap().is_some() || self.live.closed() {
             return;
         }
-        let Some(d) = self.config.lock().unwrap().drafts.first().cloned() else { return };
+        let first = self.state.lock().unwrap().drafts.iter().find(|d| d.status == DraftStatus::Waiting).cloned();
+        let Some(d) = first else { return };
         let (repo, number) = self.repo();
         let ask = draft_ask(&d, &repo, number);
         match self.ctx.ask(ask).await {
@@ -1036,8 +1093,14 @@ impl ForgeBlock {
             }
             *asking = None;
         }
-        let Some(d) = self.config.lock().unwrap().drafts.iter().find(|d| d.id == id).cloned() else { return };
         let name = by.as_ref().map(|b| b.name.clone());
+        let Some(d) = self.config.lock().unwrap().drafts.iter().find(|d| d.id == id).cloned() else {
+            // The platform's (M170).
+            if platform::is_platform_id(id) {
+                self.settle_on_platform(id, reply, name).await;
+            }
+            return;
+        };
         match reply {
             AskReply::Answer(content) => {
                 let w = edited(&d.write, &content);
@@ -1084,6 +1147,232 @@ impl ForgeBlock {
     fn settled(&self, d: Draft) {
         self.config.lock().unwrap().drafts.retain(|x| x.id != d.id);
         self.state.lock().unwrap().drafts.push(d);
+    }
+
+    // ------------------------------------------------------------ the platform's drafts (M170)
+
+    /// Whether its drafts may be the platform's: a PR or issue on
+    /// github.com, on the forge already ([`platform`]'s docs).
+    fn on_github(&self) -> bool {
+        let (p, host, _, number) = self.live_key();
+        p == Provider::Github && host == "github.com" && number != 0
+    }
+
+    /// The platform's waiting drafts on this item, as the block shows them.
+    fn platform_drafts(&self) -> Vec<Draft> {
+        let control = live::control();
+        let p = self.platform.lock().unwrap();
+        if p.link.is_none() {
+            return vec![];
+        }
+        p.drafts
+            .iter()
+            .filter(|d| d.state == "waiting")
+            .filter_map(|d| {
+                let author = control.as_ref().and_then(|c| c.name_of_account(&d.author));
+                platform::shown(d, author.as_deref().unwrap_or("a person"), p.errors.get(&d.id).cloned())
+            })
+            .collect()
+    }
+
+    /// Log a failure to sync once, not every poll.
+    fn say_once(&self, why: String) {
+        let mut p = self.platform.lock().unwrap();
+        if p.said.as_deref() != Some(why.as_str()) {
+            warn!(pane = self.ctx.id, why, "drafts stay on the block for now");
+            p.said = Some(why);
+        }
+    }
+
+    /// Bring the block's waiting drafts up to the platform, once, when the
+    /// repo is linked, and read the platform's (again every little while,
+    /// or now when `force`).
+    async fn sync_platform(&self, force: bool) {
+        if !self.on_github() || self.live.closed() {
+            return;
+        }
+        let _one = self.syncing.lock().await;
+        let (repo, number) = self.repo();
+        let link = match platform::link(&repo).await {
+            Ok(l) => l,
+            Err(why) => return self.say_once(why),
+        };
+        let Some(link) = link else {
+            // Not linked (any more): the block's drafts are all there are.
+            let had = {
+                let mut p = self.platform.lock().unwrap();
+                let had = p.link.is_some();
+                p.link = None;
+                p.drafts.clear();
+                had
+            };
+            if had {
+                self.off_card_if_gone();
+                self.sync_drafts();
+                self.ctx.changed();
+                self.raise_draft().await;
+            }
+            return;
+        };
+        self.platform.lock().unwrap().link = Some(link.clone());
+        let mut changed = false;
+        let waiting: Vec<Draft> = {
+            let refused = self.platform.lock().unwrap().refused.clone();
+            self.config.lock().unwrap().drafts.iter().filter(|d| !refused.contains(&d.id)).cloned().collect()
+        };
+        for d in waiting {
+            let Some(new) = platform::new_draft(&repo, number, &d) else { continue };
+            match platform::create(&new).await {
+                Ok(got) => {
+                    self.uploaded(&d.id, got);
+                    changed = true;
+                }
+                Err(platform::Failed::Refused(why)) => {
+                    warn!(pane = self.ctx.id, id = d.id, why, "the platform won't take a draft: it stays on the block");
+                    self.platform.lock().unwrap().refused.insert(d.id.clone());
+                }
+                Err(platform::Failed::NotLinked) => {
+                    platform::forget(&repo);
+                    break;
+                }
+                Err(platform::Failed::Later(why)) => {
+                    self.say_once(why);
+                    break;
+                }
+            }
+        }
+        let stale = self.platform.lock().unwrap().read.is_none_or(|t| t.elapsed() >= REREAD);
+        if force || changed || stale {
+            match platform::list(&link, &repo, number).await {
+                Ok(list) => {
+                    let mut p = self.platform.lock().unwrap();
+                    p.read = Some(std::time::Instant::now());
+                    p.errors.retain(|id, _| list.iter().any(|d| d.id == *id));
+                    changed |= p.drafts != list;
+                    p.drafts = list;
+                    p.said = None;
+                }
+                Err(platform::Failed::NotLinked) => platform::forget(&repo),
+                Err(platform::Failed::Later(why) | platform::Failed::Refused(why)) => self.say_once(why),
+            }
+        }
+        if changed {
+            self.off_card_if_gone();
+            self.sync_drafts();
+            self.ctx.changed();
+            self.raise_draft().await;
+        }
+    }
+
+    /// A platform draft on the card that isn't waiting there any more
+    /// (sent or discarded elsewhere, or the repo unlinked) leaves the card.
+    fn off_card_if_gone(&self) {
+        let gone = {
+            let p = self.platform.lock().unwrap();
+            let mut asking = self.asking.lock().unwrap();
+            let gone = asking.as_ref().is_some_and(|(id, _)| {
+                platform::is_platform_id(id)
+                    && (p.link.is_none() || !p.drafts.iter().any(|d| d.id == *id && d.state == "waiting"))
+            });
+            if gone { asking.take() } else { None }
+        };
+        if let Some((id, token)) = gone {
+            self.ctx.withdraw(&id, token);
+        }
+    }
+
+    /// The platform has a draft the block kept: the block's copy goes (off
+    /// the card, if it's there), noted in its config.
+    fn uploaded(&self, id: &str, got: arugula_control_wire::projects::ForgeDraft) {
+        let on_card = {
+            let mut asking = self.asking.lock().unwrap();
+            if asking.as_ref().is_some_and(|(a, _)| a == id) { asking.take() } else { None }
+        };
+        if let Some((a, token)) = on_card {
+            self.ctx.withdraw(&a, token);
+        }
+        info!(pane = self.ctx.id, id, draft = got.id, "a draft went up to the platform");
+        crate::review::log(&self.ctx, &json!({ "e": "uploaded", "id": id, "draft": got.id }));
+        {
+            let mut c = self.config.lock().unwrap();
+            c.drafts.retain(|d| d.id != id);
+            c.uploaded.push(Uploaded { id: id.to_owned(), draft: got.id.clone() });
+            let over = c.uploaded.len().saturating_sub(UPLOADED);
+            c.uploaded.drain(..over);
+        }
+        let mut p = self.platform.lock().unwrap();
+        if !p.drafts.iter().any(|d| d.id == got.id) {
+            p.drafts.push(got);
+        }
+    }
+
+    /// An agent's new draft, on the platform when the repo is linked: its
+    /// id there. `None` keeps it on the block (to go up later, if the
+    /// platform couldn't be reached).
+    async fn draft_on_platform(&self, d: &Draft) -> Option<String> {
+        if !self.on_github() {
+            return None;
+        }
+        let (repo, number) = self.repo();
+        let link = platform::link(&repo).await.ok().flatten()?;
+        let new = platform::new_draft(&repo, number, d)?;
+        match platform::create(&new).await {
+            Ok(got) => {
+                let id = got.id.clone();
+                let mut p = self.platform.lock().unwrap();
+                p.link = Some(link);
+                p.drafts.push(got);
+                Some(id)
+            }
+            Err(platform::Failed::NotLinked) => {
+                platform::forget(&repo);
+                None
+            }
+            Err(platform::Failed::Later(why) | platform::Failed::Refused(why)) => {
+                self.say_once(why);
+                None
+            }
+        }
+    }
+
+    /// A person answered a platform draft's card. Dropping it discards it
+    /// there. Sending it is the platform's (M168), not this machine's yet:
+    /// the card says so, and the draft waits.
+    async fn settle_on_platform(&self, id: &str, reply: AskReply, by: Option<String>) {
+        match reply {
+            AskReply::Answer(_) => {
+                self.platform.lock().unwrap().errors.insert(id.to_owned(), PLATFORM_SENDS.into());
+            }
+            AskReply::Decline => match platform::discard(id).await {
+                Ok(()) => {
+                    crate::review::log(&self.ctx, &json!({ "e": "dropped", "id": id, "by": by }));
+                    let d = {
+                        let mut p = self.platform.lock().unwrap();
+                        let i = p.drafts.iter().position(|d| d.id == id);
+                        i.map(|i| p.drafts.remove(i))
+                    };
+                    if let Some(d) = d.as_ref().and_then(|d| platform::shown(d, "a person", None)) {
+                        self.settled(Draft {
+                            status: DraftStatus::Dropped,
+                            settled_by: by,
+                            settled_ms: Some(now_ms()),
+                            ..d
+                        });
+                    }
+                }
+                Err(e) => {
+                    warn!(pane = self.ctx.id, id, error = e, "can't drop the draft on the platform");
+                    self.platform.lock().unwrap().errors.insert(id.to_owned(), format!("dropping it failed: {e}"));
+                }
+            },
+            _ => {}
+        }
+        self.sync_drafts();
+        self.ctx.changed();
+        self.reassert();
+        if !self.live.closed() {
+            self.raise_draft().await;
+        }
     }
 
     // ------------------------------------------------------------ the code

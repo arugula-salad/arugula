@@ -5,7 +5,8 @@
 //! far: the webhook's deliveries (M161), the token log (M167), an
 //! account's deletion, linked repos, the App's installations and the
 //! purge (M163), and reads of items, checks and events, each through the
-//! viewer check's [`Readable`], with the access answers it keeps (M165).
+//! viewer check's [`Readable`], with the access answers it keeps (M165);
+//! and drafts (M170), read the same way.
 
 use std::collections::HashMap;
 
@@ -264,6 +265,20 @@ impl Db {
             .query_row(
                 &format!("SELECT {LINK_COLUMNS} FROM linked_repos WHERE repo_id = ?1"),
                 params![repo_id],
+                link_row,
+            )
+            .optional()
+    }
+
+    /// A live link, by the repo's name (any case).
+    pub fn linked_repo_named(&self, full_name: &str) -> anyhow::Result<Option<LinkedRepo>> {
+        self.c()
+            .query_row(
+                &format!(
+                    "SELECT {LINK_COLUMNS} FROM linked_repos WHERE lower(full_name) = lower(?1) AND unlinked_at IS NULL
+                     ORDER BY linked_at DESC LIMIT 1"
+                ),
+                params![full_name],
                 link_row,
             )
             .optional()
@@ -772,6 +787,247 @@ impl Db {
             params![private, repo_id],
         )?;
         Ok(n > 0)
+    }
+}
+
+/// A draft (M170): a comment, review or new issue on a linked repo, waiting
+/// for a person to send it. `full_name` is its repo's, and `item` and
+/// `item_title` the mirrored item it's on, when the mirror has it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DraftRow {
+    pub id: String,
+    pub project_id: String,
+    pub author: String,
+    pub agent_name: Option<String>,
+    pub agent_machine: Option<String>,
+    pub repo_id: u64,
+    pub full_name: String,
+    pub number: Option<u64>,
+    pub kind: String,
+    pub event: Option<String>,
+    pub title: Option<String>,
+    pub body: String,
+    pub state: String,
+    pub sent_at: Option<u64>,
+    pub sent_url: Option<String>,
+    pub error: Option<String>,
+    pub created_at: u64,
+    pub updated_at: u64,
+    pub item: Option<String>,
+    pub item_title: Option<String>,
+}
+
+const DRAFT_COLUMNS: &str = "d.id, d.project_id, d.author, d.agent_name, d.agent_machine, d.repo_id, l.full_name, \
+     d.number, d.kind, d.event, d.title, d.body, d.state, d.sent_at, d.sent_url, d.error, d.created_at, d.updated_at, \
+     i.id, i.title";
+
+const DRAFT_FROM: &str = "drafts d JOIN linked_repos l ON l.repo_id = d.repo_id \
+     LEFT JOIN forge_items i ON i.repo_id = d.repo_id AND i.number = d.number";
+
+fn draft_row(r: &Row) -> anyhow::Result<DraftRow> {
+    Ok(DraftRow {
+        id: r.get(0)?,
+        project_id: r.get(1)?,
+        author: r.get(2)?,
+        agent_name: r.get(3)?,
+        agent_machine: r.get(4)?,
+        repo_id: r.get(5)?,
+        full_name: r.get(6)?,
+        number: r.get(7)?,
+        kind: r.get(8)?,
+        event: r.get(9)?,
+        title: r.get(10)?,
+        body: r.get(11)?,
+        state: r.get(12)?,
+        sent_at: r.get(13)?,
+        sent_url: r.get(14)?,
+        error: r.get(15)?,
+        created_at: r.get(16)?,
+        updated_at: r.get(17)?,
+        item: r.get(18)?,
+        item_title: r.get(19)?,
+    })
+}
+
+/// A draft to keep. `import_key`, a machine's own id for one it uploads,
+/// makes a second upload of it answer with the first.
+#[derive(Debug, Clone, Copy)]
+pub struct NewDraftRow<'a> {
+    pub project_id: &'a str,
+    pub author: &'a str,
+    pub agent_name: Option<&'a str>,
+    pub agent_machine: Option<&'a str>,
+    pub repo_id: u64,
+    pub number: Option<u64>,
+    pub kind: &'a str,
+    pub event: Option<&'a str>,
+    pub title: Option<&'a str>,
+    pub body: &'a str,
+    pub import_key: Option<&'a str>,
+    pub now: u64,
+}
+
+/// What a list of drafts is narrowed to, within the readable repos.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DraftFilter<'a> {
+    pub project: Option<&'a str>,
+    pub repo_id: Option<u64>,
+    pub number: Option<u64>,
+    pub author: Option<&'a str>,
+    /// `None`: every state.
+    pub state: Option<&'a str>,
+    pub limit: u32,
+}
+
+/// Who discards a draft: one who may read its repo (the viewer check's
+/// [`Readable`]), or its author, who may whether or not they still can.
+#[derive(Debug, Clone, Copy)]
+pub enum Discarder<'a> {
+    Reader(&'a Readable),
+    Author(&'a str),
+}
+
+/// Drafts (M170): every read takes the [`Readable`] the viewer check made,
+/// as items' do, and returns drafts on its repos only.
+impl Db {
+    /// A draft's repo and author, and nothing else of it: what the viewer
+    /// check needs to decide on it.
+    pub fn draft_target(&self, id: &str) -> anyhow::Result<Option<(u64, String)>> {
+        self.c()
+            .query_row("SELECT repo_id, author FROM drafts WHERE id = ?1", params![id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()
+    }
+
+    /// The repos an account's drafts are on: what a list of its own checks.
+    pub fn draft_repos(&self, author: &str) -> anyhow::Result<Vec<u64>> {
+        self.c().query_map("SELECT DISTINCT repo_id FROM drafts WHERE author = ?1", params![author], |r| r.get(0))
+    }
+
+    /// Keep a draft on a readable repo: it, and whether it's new. One with
+    /// an `import_key` kept before is answered with that one, unless it's
+    /// another author's ([`Taken`](super::Taken)). `None` when the repo
+    /// isn't readable.
+    pub fn add_draft(&self, r: &Readable, d: &NewDraftRow<'_>) -> anyhow::Result<Option<(DraftRow, bool)>> {
+        if !r.has(d.repo_id) {
+            return Ok(None);
+        }
+        let id = format!("dft_{}", hex::encode(arugula_e2e::random::<16>()));
+        let c = self.c();
+        let n = c.execute(
+            "INSERT INTO drafts (id, project_id, author, agent_name, agent_machine, repo_id, number, kind, event, title,
+                 body, import_key, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)
+             ON CONFLICT (import_key) DO NOTHING",
+            params![
+                id,
+                d.project_id,
+                d.author,
+                d.agent_name,
+                d.agent_machine,
+                d.repo_id,
+                d.number,
+                d.kind,
+                d.event,
+                d.title,
+                d.body,
+                d.import_key,
+                d.now
+            ],
+        )?;
+        let row = if n == 1 {
+            c.query_row(&format!("SELECT {DRAFT_COLUMNS} FROM {DRAFT_FROM} WHERE d.id = ?1"), params![id], draft_row)?
+        } else {
+            c.query_row(
+                &format!("SELECT {DRAFT_COLUMNS} FROM {DRAFT_FROM} WHERE d.import_key = ?1"),
+                params![d.import_key],
+                draft_row,
+            )?
+        };
+        if n != 1 && (row.author != d.author || !r.has(row.repo_id)) {
+            return Err(super::Taken.into());
+        }
+        Ok(Some((row, n == 1)))
+    }
+
+    /// The drafts on the readable repos that match, oldest first.
+    pub fn drafts(&self, r: &Readable, f: &DraftFilter<'_>) -> anyhow::Result<Vec<DraftRow>> {
+        if r.repos().is_empty() {
+            return Ok(vec![]);
+        }
+        let mut wh = vec![format!("d.repo_id IN ({})", repos_in(r))];
+        let (project, author, state) = (f.project.unwrap_or(""), f.author.unwrap_or(""), f.state.unwrap_or(""));
+        let mut args: Vec<&dyn super::sql::Param> = Vec::new();
+        if f.project.is_some() {
+            wh.push("d.project_id = ?".into());
+            args.push(&project);
+        }
+        if let Some(repo) = &f.repo_id {
+            wh.push("d.repo_id = ?".into());
+            args.push(repo);
+        }
+        if let Some(number) = &f.number {
+            wh.push("d.number = ?".into());
+            args.push(number);
+        }
+        if f.author.is_some() {
+            wh.push("d.author = ?".into());
+            args.push(&author);
+        }
+        if f.state.is_some() {
+            wh.push("d.state = ?".into());
+            args.push(&state);
+        }
+        self.c().query_map(
+            &format!(
+                "SELECT {DRAFT_COLUMNS} FROM {DRAFT_FROM} WHERE {} ORDER BY d.created_at, d.id LIMIT {}",
+                wh.join(" AND "),
+                f.limit
+            ),
+            &args,
+            draft_row,
+        )
+    }
+
+    /// One draft, if it's on a readable repo.
+    pub fn draft(&self, r: &Readable, id: &str) -> anyhow::Result<Option<DraftRow>> {
+        if r.repos().is_empty() {
+            return Ok(None);
+        }
+        self.c()
+            .query_row(
+                &format!("SELECT {DRAFT_COLUMNS} FROM {DRAFT_FROM} WHERE d.id = ?1 AND d.repo_id IN ({})", repos_in(r)),
+                params![id],
+                draft_row,
+            )
+            .optional()
+    }
+
+    /// Discard a waiting (or failed) draft: its state after, or `None`
+    /// when there's no such draft that `who` may discard. A sent one stays
+    /// sent, and one discarded already stays as it was.
+    pub fn discard_draft(&self, who: Discarder<'_>, id: &str, now: u64) -> anyhow::Result<Option<String>> {
+        let (may, author) = match who {
+            Discarder::Reader(r) if r.repos().is_empty() => return Ok(None),
+            Discarder::Reader(r) => (format!("repo_id IN ({})", repos_in(r)), None),
+            Discarder::Author(a) => ("author = ?".to_owned(), Some(a)),
+        };
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let mut p: Vec<&dyn super::sql::Param> = vec![&now, &id];
+        if let Some(a) = &author {
+            p.push(a);
+        }
+        tx.execute(
+            &format!(
+                "UPDATE drafts SET state = 'discarded', updated_at = ? WHERE id = ? AND state IN ('waiting', 'failed') AND {may}"
+            ),
+            &p,
+        )?;
+        let state = tx
+            .query_row(&format!("SELECT state FROM drafts WHERE id = ? AND {may}"), &p[1..], |r| r.get(0))
+            .optional()?;
+        tx.commit()?;
+        Ok(state)
     }
 }
 

@@ -110,6 +110,8 @@ fn generate() -> String {
     // Content mirroring, and bodies on read (M166).
     c.visit::<arugula_control_wire::projects::RepoSettings>();
     c.visit::<arugula_control_wire::projects::ForgeContent>();
+    // Drafts on linked repos (M170).
+    c.visit::<arugula_control_wire::projects::ForgeDrafts>();
     // Cloud workspaces (M137): what control's `/api/cloud/` answers with.
     {
         use arugula_cloud_wire::*;
