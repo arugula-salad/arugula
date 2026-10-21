@@ -141,8 +141,10 @@ async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// SIGTERM (Fly stopping the machine) or Ctrl-C.
+/// SIGTERM (Fly stopping the machine) or Ctrl-C. Windows has only Ctrl-C:
+/// the crate builds there with the rest of the workspace.
 async fn stopping() {
+    #[cfg(unix)]
     let term = async {
         match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
             Ok(mut s) => {
@@ -151,6 +153,8 @@ async fn stopping() {
             Err(_) => std::future::pending().await,
         }
     };
+    #[cfg(not(unix))]
+    let term = std::future::pending::<()>();
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {},
         _ = term => {},
