@@ -10,6 +10,7 @@ pub mod names;
 pub mod rename;
 pub mod tree;
 pub mod version;
+pub mod worktree;
 
 pub type SessionId = u32;
 pub type TabId = u32;

@@ -23,6 +23,7 @@ pub mod ide;
 pub mod install;
 pub mod invite;
 pub mod issue;
+pub mod issue_native;
 pub mod join;
 pub mod keys;
 pub mod log;
