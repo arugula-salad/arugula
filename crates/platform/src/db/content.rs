@@ -192,12 +192,7 @@ impl Db {
     /// content of what it reads. Off: the repo's content rows go, in the
     /// same transaction. The link and how many rows went, or `None` when
     /// the project has no live link by that name.
-    pub fn set_mirror_content(
-        &self,
-        project: &str,
-        full_name: &str,
-        on: bool,
-    ) -> Result<Option<(LinkedRepo, usize)>> {
+    pub fn set_mirror_content(&self, project: &str, full_name: &str, on: bool) -> Result<Option<(LinkedRepo, usize)>> {
         let mut c = self.c();
         let tx = c.immediate()?;
         let found = tx

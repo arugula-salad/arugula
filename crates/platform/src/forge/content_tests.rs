@@ -119,6 +119,19 @@ async fn repo(Path((o, r)): Path<(String, String)>) -> Response {
     }
 }
 
+async fn repo_read(Path(id): Path<u64>) -> Response {
+    match id {
+        APP => (limits(), Json(json!({ "id": APP, "full_name": "acme/app", "private": true }))).into_response(),
+        SITE => (limits(), Json(json!({ "id": SITE, "full_name": "acme/site", "private": false }))).into_response(),
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn app_installation(Path(id): Path<u64>) -> Response {
+    Json(json!({ "id": id, "account": { "id": 500, "login": "acme", "type": "Organization" }, "suspended_at": null }))
+        .into_response()
+}
+
 async fn permission(State(h): State<Shared>, Path((_, _, login)): Path<(String, String, String)>) -> Response {
     let Some((role, id)) = h.lock().unwrap().roles.get(&login).cloned() else {
         return StatusCode::NOT_FOUND.into_response();
@@ -189,7 +202,9 @@ async fn statuses() -> Response {
 async fn fake_github(h: Shared) -> String {
     let r = Router::new()
         .route("/repos/{o}/{r}/installation", get(installation))
+        .route("/app/installations/{id}", get(app_installation))
         .route("/app/installations/{id}/access_tokens", post(token))
+        .route("/repositories/{id}", get(repo_read))
         .route("/repos/{o}/{r}", get(repo))
         .route("/repos/{o}/{r}/collaborators/{login}/permission", get(permission))
         .route("/repositories/{id}/pulls", get(pulls))
@@ -233,7 +248,13 @@ async fn world() -> World {
     let api = fake_github(gh.clone()).await;
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
     let mut p = Platform::new(cfg, Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
-    p.github = Some(GithubApp::new("1".into(), "arugula-test".into(), super::links_tests::SECRET.into(), &api, throwaway_key()));
+    p.github = Some(GithubApp::new(
+        "1".into(),
+        "arugula-test".into(),
+        super::links_tests::SECRET.into(),
+        &api,
+        throwaway_key(),
+    ));
     let app = Arc::new(p);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
@@ -245,7 +266,12 @@ async fn world() -> World {
     hub.github("dave", 1004, "dave-gh");
     hub.team(
         "t1",
-        &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("carol", TeamRole::Viewer), ("dave", TeamRole::Editor)],
+        &[
+            ("alice", TeamRole::Owner),
+            ("bob", TeamRole::Editor),
+            ("carol", TeamRole::Viewer),
+            ("dave", TeamRole::Editor),
+        ],
     );
     {
         let mut g = gh.lock().unwrap();
@@ -289,20 +315,35 @@ async fn content_webhooks(w: &World, repo: u64, tag: &str) {
     let r = repository(repo);
     let sender = json!({ "login": "alice-gh", "id": 1001 });
     let hooks = [
-        ("pull_request", json!({ "action": "opened", "repository": r, "sender": sender,
-            "pull_request": pr(5, "SECRET-PR-BODY", t) })),
-        ("issues", json!({ "action": "opened", "repository": r, "sender": sender,
-            "issue": issue(6, "SECRET-ISSUE-BODY", t) })),
-        ("issue_comment", json!({ "action": "created", "repository": r, "sender": sender,
-            "issue": { "number": 5, "pull_request": {} }, "comment": comment(900, "SECRET-COMMENT", t) })),
-        ("pull_request_review", json!({ "action": "submitted", "repository": r, "sender": sender,
+        (
+            "pull_request",
+            json!({ "action": "opened", "repository": r, "sender": sender,
+            "pull_request": pr(5, "SECRET-PR-BODY", t) }),
+        ),
+        (
+            "issues",
+            json!({ "action": "opened", "repository": r, "sender": sender,
+            "issue": issue(6, "SECRET-ISSUE-BODY", t) }),
+        ),
+        (
+            "issue_comment",
+            json!({ "action": "created", "repository": r, "sender": sender,
+            "issue": { "number": 5, "pull_request": {} }, "comment": comment(900, "SECRET-COMMENT", t) }),
+        ),
+        (
+            "pull_request_review",
+            json!({ "action": "submitted", "repository": r, "sender": sender,
             "pull_request": pr(5, "SECRET-PR-BODY", t),
             "review": { "id": 901, "state": "COMMENTED", "body": "SECRET-REVIEW", "user": { "login": "bob-gh", "id": 1002 },
-                "submitted_at": iso(t) } })),
-        ("pull_request_review_comment", json!({ "action": "created", "repository": r, "sender": sender,
+                "submitted_at": iso(t) } }),
+        ),
+        (
+            "pull_request_review_comment",
+            json!({ "action": "created", "repository": r, "sender": sender,
             "pull_request": { "number": 5 },
             "comment": { "id": 902, "body": "SECRET-LINE", "path": "src/main.rs", "line": 3,
-                "user": { "login": "bob-gh", "id": 1002 }, "created_at": iso(t), "updated_at": iso(t) } })),
+                "user": { "login": "bob-gh", "id": 1002 }, "created_at": iso(t), "updated_at": iso(t) } }),
+        ),
     ];
     for (n, (event, body)) in hooks.iter().enumerate() {
         assert_eq!(hook(&w.base, event, &format!("{tag}-{repo}-{n}"), body).await, 202, "{event}");
@@ -344,8 +385,14 @@ fn item_id(app: &Platform, repo: u64, number: u64) -> String {
 }
 
 async fn mirror(w: &World, who: &str, repo: &str, on: bool) -> (u16, Value) {
-    call(&w.base, who, "PATCH", &format!("/api/projects/{}/repos/{repo}", w.project), Some(json!({ "mirror_content": on })))
-        .await
+    call(
+        &w.base,
+        who,
+        "PATCH",
+        &format!("/api/projects/{}/repos/{repo}", w.project),
+        Some(json!({ "mirror_content": on })),
+    )
+    .await
 }
 
 async fn content(w: &World, who: &str, item: &str) -> (u16, Value) {
@@ -363,6 +410,36 @@ async fn poll(app: &Platform, now: u64) -> Vec<poller::Turn> {
 
 fn reads(w: &World) -> usize {
     w.gh.lock().unwrap().content_reads
+}
+
+/// Every log line of this test binary, from every thread, at every level:
+/// the platform's tests write `SECRET` text through webhooks, the poller
+/// and the routes, and none of it may be logged.
+fn captured() -> Arc<Mutex<Vec<u8>>> {
+    static LOGS: std::sync::OnceLock<Arc<Mutex<Vec<u8>>>> = std::sync::OnceLock::new();
+    LOGS.get_or_init(|| {
+        #[derive(Clone)]
+        struct Sink(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Sink {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let sink = Sink(logs.clone());
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_ansi(false)
+            .with_writer(move || sink.clone())
+            .finish();
+        tracing::subscriber::set_global_default(subscriber).expect("no other test sets a global subscriber");
+        logs
+    })
+    .clone()
 }
 
 /// Without the opt-in, webhooks and a poll that carry text leave no
@@ -385,9 +462,15 @@ async fn no_opt_in_no_content_rows() {
     let kinds: Vec<&str> = v["comments"].as_array().unwrap().iter().map(|c| c["kind"].as_str().unwrap()).collect();
     assert_eq!(kinds, ["comment", "review", "review_comment", "review_comment"], "{v}");
     let reply = &v["comments"][3];
-    assert_eq!((reply["reply_to"].as_u64(), reply["path"].as_str(), reply["line"].as_u64()), (Some(902), Some("src/main.rs"), Some(3)));
+    assert_eq!(
+        (reply["reply_to"].as_u64(), reply["path"].as_str(), reply["line"].as_u64()),
+        (Some(902), Some("src/main.rs"), Some(3))
+    );
     let (s, v) = content(&w, "bob", &item_id(&w.app, APP, 6)).await;
-    assert_eq!((s, v["body"]["body"].as_str(), v["comments"].as_array().map(Vec::len)), (200, Some("SECRET-ISSUE-BODY"), Some(0)));
+    assert_eq!(
+        (s, v["body"]["body"].as_str(), v["comments"].as_array().map(Vec::len)),
+        (200, Some("SECRET-ISSUE-BODY"), Some(0))
+    );
     assert_eq!(count(&w.app, "SELECT count(*) FROM forge_content"), 0, "a read keeps nothing in the database");
     assert!(w.app.db.mentions("SECRET").is_empty());
 }
@@ -398,27 +481,7 @@ async fn no_opt_in_no_content_rows() {
 /// may change links. And no text reaches the logs on the way.
 #[tokio::test]
 async fn opt_in_then_out() {
-    let logs = Arc::new(Mutex::new(Vec::<u8>::new()));
-    #[derive(Clone)]
-    struct Sink(Arc<Mutex<Vec<u8>>>);
-    impl std::io::Write for Sink {
-        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(b);
-            Ok(b.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-    let sink = Sink(logs.clone());
-    let _log = tracing::subscriber::set_default(
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::TRACE)
-            .with_ansi(false)
-            .with_writer(move || sink.clone())
-            .finish(),
-    );
-
+    let logs = captured();
     let w = world().await;
     on_github(&w, APP);
     // The poller's first turn, before the opt-in: metadata only.
@@ -451,7 +514,8 @@ async fn opt_in_then_out() {
     // Webhooks keep it current: an edit, a new comment, a deletion.
     let t = now_ms() + 2000;
     let r = repository(APP);
-    let edited = json!({ "action": "edited", "repository": r, "sender": {}, "pull_request": pr(5, "SECRET-EDITED", t) });
+    let edited =
+        json!({ "action": "edited", "repository": r, "sender": {}, "pull_request": pr(5, "SECRET-EDITED", t) });
     assert_eq!(hook(&w.base, "pull_request", "e1", &edited).await, 202);
     let new = json!({ "action": "created", "repository": r, "issue": { "number": 5, "pull_request": {} },
         "comment": comment(910, "SECRET-NEW", t) });
@@ -488,8 +552,8 @@ async fn opt_in_then_out() {
     assert_eq!(poll(&w.app, now_ms() + every).await.len(), 2);
     assert_eq!(count(&w.app, "SELECT count(*) FROM forge_content"), 0);
 
-    let log = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
-    assert!(log.contains("content mirroring"), "the logs were captured: {log}");
+    let log = String::from_utf8_lossy(&logs.lock().unwrap()).into_owned();
+    assert!(log.contains("a linked repo's content mirroring"), "the logs were captured: {log}");
     assert!(!log.contains("SECRET"), "{log}");
 }
 

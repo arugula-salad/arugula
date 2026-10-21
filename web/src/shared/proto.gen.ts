@@ -856,6 +856,17 @@ export type FollowMsg = FollowCursor | { open: FollowOpen, } | { edit: FollowEdi
 
 export type FollowOpen = { file: string, version: number, text: string | null, lang?: string, too_big?: boolean, };
 
+export type ForgeContent = { item: string, 
+/**
+ * `github` (read now, or a few minutes ago) or `mirror`.
+ */
+from: string, body: ForgeText | null, 
+/**
+ * Comments, reviews' text and review comments, oldest first. A review
+ * comment's thread is the ones whose `reply_to` is its `id`.
+ */
+comments: Array<ForgeText>, };
+
 /**
  * M40: how the block hears of changes.
  */
@@ -937,6 +948,39 @@ live_heard_ms: number | null,
  * A webhook this daemon made is on the repository.
  */
 hook: boolean, };
+
+/**
+ * A body, a comment, a review's text or a review comment.
+ */
+export type ForgeText = { 
+/**
+ * `body`, `comment`, `review` or `review_comment`.
+ */
+kind: string, 
+/**
+ * GitHub's id: the PR's or issue's for a body.
+ */
+id: number, 
+/**
+ * A GitHub login.
+ */
+author: string | null, 
+/**
+ * Markdown, as GitHub has it.
+ */
+body: string, 
+/**
+ * A review comment's file and line.
+ */
+path: string | null, line: number | null, 
+/**
+ * The review comment it answers.
+ */
+reply_to: number | null, 
+/**
+ * GitHub's times, in milliseconds.
+ */
+created_at: number, updated_at: number, };
 
 /**
  * What it wants of you, as the client draws it.
@@ -1368,7 +1412,11 @@ unlinked_at: number | null,
 /**
  * When its rows go, unless it's linked again first.
  */
-purge_after: number | null, };
+purge_after: number | null, 
+/**
+ * The project mirrors its PRs' and issues' bodies and comments (M166).
+ */
+mirror_content: boolean, };
 
 export type LinkedRepos = { 
 /**
@@ -1926,6 +1974,15 @@ export type Rect = { x: number, y: number, cols: number, rows: number, };
  * list, and the pane's id there.
  */
 export type RemoteRef = { host: string, pane: number, };
+
+/**
+ * `PATCH /api/projects/{project}/repos/{owner}/{name}` (M166): a linked
+ * repo's settings; the answer is its [`LinkedRepo`]. `mirror_content`
+ * on keeps its PRs' and issues' bodies and comments on the platform
+ * (search finds their text); off deletes them at once. Turning it on
+ * takes what linking takes: a member who maintains the repo on GitHub.
+ */
+export type RepoSettings = { mirror_content: boolean, };
 
 /**
  * What the failed checks' rerun is: through the API (`api`: GitLab, as

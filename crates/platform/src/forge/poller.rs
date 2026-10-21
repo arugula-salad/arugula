@@ -446,7 +446,9 @@ impl<'p> Poll<'p> {
                     Ok(())
                 })?,
                 // GitHub's message and the path: never a body.
-                Err(e) => warn!(repo = id, number = n, error = format!("{e:#}"), "forge mirror: reading an item's content"),
+                Err(e) => {
+                    warn!(repo = id, number = n, error = format!("{e:#}"), "forge mirror: reading an item's content")
+                }
             }
         }
         Ok(())
@@ -590,8 +592,13 @@ pub async fn tick(p: &Platform, now: u64) -> anyhow::Result<Option<Turn>> {
     let Some(gh) = &p.github else { return Ok(None) };
     let Some(job) = p.db.claim_poll(now, gh.ingest.settings.every_ms)? else { return Ok(None) };
     let repo = job.repo_id;
-    let tokens =
-        RepoTokens { p, caller: "platform", purpose: Purpose::Ingest, installation: job.installation_id, repo_id: repo };
+    let tokens = RepoTokens {
+        p,
+        caller: "platform",
+        purpose: Purpose::Ingest,
+        installation: job.installation_id,
+        repo_id: repo,
+    };
     let client = Github::new(&gh.api, p.http.clone(), tokens).with_cache(gh.ingest.etags(job.installation_id));
     // Drift only counts in a reconcile whose last one was since linking (a
     // repo linked again missed its webhooks while it wasn't), from then on.

@@ -253,8 +253,9 @@ async fn list<T: TokenSource>(gh: &Github<T>, name: &str, path: &str) -> anyhow:
     let mut next = Some(path.to_owned());
     for _ in 0..PAGES {
         let Some(p) = next.take() else { break };
-        let (page, n) = gh.page(name, &p).await.map_err(|e| anyhow::anyhow!("{}: {e}", path.split('?').next().unwrap_or("")))?;
-        out.extend(page);
+        let (page, n) =
+            gh.page(name, &p).await.map_err(|e| anyhow::anyhow!("{}: {e}", path.split('?').next().unwrap_or("")))?;
+        out.extend(page.as_array().into_iter().flatten().cloned());
         next = n;
     }
     Ok(out)
@@ -415,12 +416,8 @@ async fn maintains(app: &Platform, account: &str, link: &LinkedRepo) -> Result<(
         return Err(err(StatusCode::FORBIDDEN, "sign in to control with GitHub to mirror a GitHub repo's content"));
     };
     app.limits.check_account(super::FORGE_LOOKUPS, account)?;
-    let install = Install {
-        id: link.installation_id,
-        account: String::new(),
-        account_id: 0,
-        account_type: String::new(),
-    };
+    let install =
+        Install { id: link.installation_id, account: String::new(), account_id: 0, account_type: String::new() };
     let role = gh
         .repo_role(&super::Caller::of(app, account), &install, &user, &link.full_name)
         .await
