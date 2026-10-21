@@ -186,8 +186,10 @@ struct Args {
 
     /// Where the platform runs (#1150): `in-process`, inside this hub (the
     /// default, and the rollback), or the URL of an `arugula-platform` on
-    /// the private network (`http://arugula-platform.internal:7700`), which
-    /// this hub then forwards every platform route to as its gateway.
+    /// the private network (`http://arugula-platform.internal:7700`, or
+    /// through Flycast to its machines, `http://arugula-platform.flycast:7700`,
+    /// M144), which this hub then forwards every platform route to as its
+    /// gateway.
     #[arg(long, default_value = "in-process", env = "ARUGULA_PLATFORM")]
     platform: String,
 

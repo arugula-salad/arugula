@@ -292,7 +292,7 @@ grants). The platform runs in one of two ways, from the same binaries:
 - **In process** (`ARUGULA_PLATFORM=in-process`, the default, and the
   rollback): inside the hub, as one Fly app. Production runs this way
   until M141's window.
-- **Out of process** (`ARUGULA_PLATFORM=http://arugula-platform.internal:7700`):
+- **Out of process** (`ARUGULA_PLATFORM=http://arugula-platform.internal:7700`, and through Flycast, `http://arugula-platform.flycast:7700`, from M145):
   its own Fly app, `arugula-platform` (`packaging/platform/fly.toml`), with
   its own volume (`platform_data` at `/data`, `platform.db`). The hub is
   its gateway: every route `crates/control/routes.toml` gives
@@ -306,26 +306,34 @@ grants). The platform runs in one of two ways, from the same binaries:
 | | `illogical-control` (hub) | `arugula-platform` |
 |---|---|---|
 | Image | `packaging/control/Dockerfile` | `packaging/platform/Dockerfile` |
-| Public | `control.arugula.io` (`[http_service]`, 7690) | nothing: no service, no public IP |
+| Public | `control.arugula.io` (`[http_service]`, 7690) | nothing: one service, for Flycast, on a private IPv6 only (M144) |
 | Private | its internal API, `[::]:7691` (`HubPort` for the platform) | `[::]:7700` (the forwarded routes, and `PlatformPort` for the hub) |
 | Volume | `control_data` (10 GB) | `platform_data` |
-| Health | `/control.json` through the proxy | `/platform.json`, a machine check |
+| Health | `/control.json` through the proxy | `/platform.json`, the Flycast service's check |
 | Logs | `fly logs -a illogical-control` | `fly logs -a arugula-platform` |
 
 **How they reach each other.** Over Fly's private network (6PN, carried
-over WireGuard between Fly's hosts), by `.internal` names: the hub calls
-`http://arugula-platform.internal:7700`, the platform calls
-`http://illogical-control.internal:7691`. Not Flycast: Flycast needs a
-private IP and a service in `fly.toml`, and goes through Fly's proxy, an
-extra hop with nothing to balance across one machine. With two platform
-machines `.internal` names both ("Two platform machines" below).
+over WireGuard between Fly's hosts). The platform calls the hub at
+`http://illogical-control.internal:7691`. The hub calls the platform at
+`http://arugula-platform.internal:7700` until M145's window, and from then
+through Flycast, `http://arugula-platform.flycast:7700`: Fly's proxy on the
+private network, which spreads calls across the platform's two machines
+and sends them only to machines passing `/platform.json` ("Two platform
+machines" below).
 - The hub's internal API listens on its own port, which no `fly.toml`
   service names, so Fly's public proxy never reaches it. It also refuses
   anything carrying `Fly-Forwarded-Port` or `Fly-Client-IP` (the headers
   that proxy adds), in case someone ever declares a service for it, and
   every call has to be signed with the shared key.
-- The platform has no service and no public IP. Never
-  `fly ips allocate-v4/v6` for it.
+- The platform's one service (`[[services]]` on 7700, plain TCP, no
+  handlers) is for Flycast, which needs a **private** IPv6:
+  `fly ips allocate-v6 --private -a arugula-platform`. Never
+  `fly ips allocate-v4` or a public `allocate-v6` for it: the service
+  would be on the internet. Deploys pass `--no-public-ips`, and
+  `scripts/ci-platform-deploy` won't deploy while the app has a public
+  address. Fly's proxy passes the TCP through untouched, and the platform
+  trusts no address: only the hub's signed principal (and, for
+  `PlatformPort`, the signed internal call).
 
 **The shared key.** `ARUGULA_PLATFORM_KEY`, a Fly secret on both apps,
 32 random bytes as hex (`openssl rand -hex 32`); keep it in Infisical
@@ -537,14 +545,44 @@ same `cache::DELAY`), its live streams and their caps (20 per account,
 and whether the person has the room open (a page open on the other machine
 doesn't stop a push), and its analytics queue (flushed on stop).
 
-**How the hub reaches them.** `http://arugula-platform.internal:7700`
-names both machines. The gateway's client connects to the first address
-that answers and keeps connections open, so calls tend to stay on one
-machine for a while; a machine that stops leaves the name, and the
-gateway's 5 s connect retry finds the other. Flycast
-(`arugula-platform.flycast`, a private IP and an internal service) would
-spread calls and follow health checks through Fly's proxy; it's a choice
-for M145.
+**How the hub reaches them: Flycast** (Jake, M144). The hub's
+`ARUGULA_PLATFORM` is `http://arugula-platform.flycast:7700`, the app's
+private IPv6 (`fly ips allocate-v6 --private -a arugula-platform`; never a
+public one), where Fly's proxy passes each connection to a machine passing
+its `/platform.json` check. During a rolling deploy the proxy stops
+sending to the machine being replaced. With no healthy machine at all, the
+proxy takes the connection and closes it unanswered: the gateway treats a
+`GET` or `HEAD` closed that way like a platform it can't reach (tried for
+5 s, then the maintenance 503), and anything else as a 502, since it may
+have arrived. `[services.concurrency]` allows 5,000 connections a machine:
+each open chat page holds one (its live stream), and Fly's default of 25
+would refuse the rest. Nothing on either side depends on the caller's
+address. The internal calls' nonces are remembered per machine, so a call
+captured on the private network could be replayed once on the other
+machine within its 60 s; the principal header was never single-use.
+
+Before M145, with one machine on SQLite, the hub calls
+`http://arugula-platform.internal:7700` directly (6PN, no proxy). The
+switch is a step of M145's window ("Switching the hub to Flycast", below).
+
+**Switching the hub to Flycast** (M145's window, after the platform runs
+on Postgres; each step needs Jake's go):
+
+```
+fly ips allocate-v6 --private -a arugula-platform     # once; never a public one
+fly ips list -a arugula-platform                      # only a private_v6
+fly secrets set -a illogical-control ARUGULA_PLATFORM=http://arugula-platform.flycast:7700   # one hub restart
+```
+
+The hub's restart drops relay sockets for a moment, which reconnect on
+their own, as at M141's flip; it's best done inside the window, with the
+maintenance switch on. Check: platform routes answer (a chat list, a Cloud
+list), `fly logs -a arugula-platform` shows calls on both machines, and
+the hub logs no `the platform can't be reached`. **Roll back:**
+`fly secrets set -a illogical-control ARUGULA_PLATFORM=http://arugula-platform.internal:7700`
+(one hub restart). The private IPv6 can stay; it's reachable only on the
+private network. Release it with `fly ips release <address> -a arugula-platform`
+if Flycast is abandoned.
 
 ### The first window (M141)
 

@@ -107,7 +107,8 @@ platform-deploy: static
     ctx=$(mktemp -d)
     trap 'rm -rf "$ctx"' EXIT
     cp {{target_dir}}/x86_64-unknown-linux-musl/release/arugula-platform packaging/platform/Dockerfile packaging/platform/fly.toml "$ctx"/
-    cd "$ctx" && fly deploy --local-only --ha=false
+    # Its service is Flycast's, never public (fly.toml): no public IPs.
+    cd "$ctx" && fly deploy --local-only --ha=false --no-public-ips
 
 # The daemons the hosted control saw in the last 30 days, by version: a
 # read-only look at its database (docs/control-ops.md, "Daemon census").

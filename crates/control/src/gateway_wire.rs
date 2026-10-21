@@ -369,6 +369,39 @@ async fn an_unreachable_platform_is_a_short_maintenance() {
     assert_eq!(http.get(format!("{base}/control.json")).send().await.unwrap().status(), 200);
 }
 
+/// Through Flycast (M144) the platform's address is Fly's proxy, which
+/// takes the connection even with no machine behind it and closes it
+/// unanswered. A `GET` is tried again and then gets the maintenance answer;
+/// a `POST`, which may have arrived, is a 502 at once.
+#[tokio::test]
+async fn a_proxy_with_no_platform_behind_it_is_a_short_maintenance_for_reads() {
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move {
+        while let Ok((c, _)) = l.accept().await {
+            drop(c);
+        }
+    });
+    let (app, base) = hub(&proxy).await;
+    let cookie = session(&app, "acct-a");
+    let http = reqwest::Client::new();
+    let started = std::time::Instant::now();
+    let r = http.get(format!("{base}/api/chat")).header("cookie", &cookie).send().await.unwrap();
+    assert_eq!(r.status(), 503);
+    assert_eq!(r.headers()["retry-after"], "5");
+    assert!(started.elapsed() >= Duration::from_secs(4), "tried again first");
+    let started = std::time::Instant::now();
+    let r = http
+        .post(format!("{base}/api/chat/rooms/r1/messages"))
+        .header("cookie", &cookie)
+        .body("{}")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 502, "a post may have arrived: not sent again");
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
 /// Out of process, deleting an account is two steps: the hub commits, then
 /// tells the platform. A deletion the platform didn't hear of is kept
 /// (`untold_deletions`) and told again until it's taken.
