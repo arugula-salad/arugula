@@ -32,8 +32,12 @@ Start with `src/lib.rs`, then:
 - `migrations/` and `src/db/migrate.rs`: its schema, as numbered
   migrations per SQL dialect (M142), and the runner that applies them and
   adopts a database made before them.
-- `src/cache.rs`: the hub's answers chat asks for, kept and dropped as the
-  hub's change feed names them (a feed tick plus a cache tick, `DELAY`).
+- `src/cache.rs`: the hub's answers the platform asks for (chat, grants,
+  projects, billing, Cloud), kept and dropped as the hub's change feed
+  names them (a feed tick plus a cache tick, `DELAY`). Every read of the
+  hub's data goes through it, so a request makes no hub round trip once
+  it's warm; a refusal may ask again (`*_now`), and a grant is only written
+  on the hub's word. `src/hub_calls_tests.rs` holds routes to that.
 - `src/projects.rs`: projects and team members, and the feed follower that
   keeps them and grants (from where it got to, in `hub_feed`).
 - `src/router.rs`: its routes, which the hub mounts in process.

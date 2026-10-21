@@ -1119,16 +1119,17 @@ pub async fn post(
         return Err(err(StatusCode::BAD_REQUEST, "say something"));
     }
     sizes(text, quote)?;
-    // You name only panes you may reach.
-    if let Some(p) = &b.pane
-        && (!valid_target(&p.pane)
-            || !app
-                .cache
-                .may_reach(&*app.hub, &s.account, std::slice::from_ref(&p.machine))
-                .await?
-                .contains(&p.machine))
-    {
-        return Err(err(StatusCode::FORBIDDEN, "you can't see that pane"));
+    // You name only panes you may reach: as the cache has it, and asked
+    // again before refusing.
+    if let Some(p) = &b.pane {
+        let machine = std::slice::from_ref(&p.machine);
+        let reach = |r: HashSet<String>| r.contains(&p.machine);
+        if !valid_target(&p.pane)
+            || (!reach(app.cache.may_reach(&*app.hub, &s.account, machine).await?)
+                && !reach(app.cache.may_reach_now(&*app.hub, &s.account, machine).await?))
+        {
+            return Err(err(StatusCode::FORBIDDEN, "you can't see that pane"));
+        }
     }
     if app.db.chat_bytes(&room.scope)? + (text.len() + quote.map_or(0, str::len)) as u64 > MAX_SCOPE_BYTES {
         return Err(err(StatusCode::INSUFFICIENT_STORAGE, "this team's chat is full (1 GB): delete some first"));
@@ -1373,7 +1374,7 @@ pub async fn search(State(app): State<Arc<Platform>>, s: Person, Query(q): Query
     app.limits.check_account(CHAT_SEARCHES, &s.account)?;
     let author = match &asked.from {
         // The login's account, else the one account by that name.
-        Some(who) => match app.hub.accounts_called(who).await?.as_slice() {
+        Some(who) => match app.cache.accounts_called(&*app.hub, who).await?.as_slice() {
             [one] => Some(one.id.clone()),
             _ => return Ok(Json(ChatFound { found: vec![] })),
         },
@@ -1427,12 +1428,18 @@ async fn machine_chat_on(app: &Platform, machine: &Daemon) -> anyhow::Result<boo
 /// The calling machine and its owner, if chat is on for it.
 async fn chat_machine(app: &Platform, d: Machine) -> Result<(String, String), ApiError> {
     let machine = d.daemon;
-    let row = app
-        .cache
-        .daemons(&*app.hub, std::slice::from_ref(&machine))
-        .await?
-        .remove(&machine)
-        .ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?;
+    let ids = std::slice::from_ref(&machine);
+    // As the cache has it; a machine it hasn't heard of yet (one that just
+    // joined) is asked about again before it's refused.
+    let row = match app.cache.daemons(&*app.hub, ids).await?.remove(&machine) {
+        Some(row) => row,
+        None => app
+            .cache
+            .daemons_now(&*app.hub, ids)
+            .await?
+            .remove(&machine)
+            .ok_or_else(|| err(StatusCode::NOT_FOUND, "no such machine"))?,
+    };
     if !machine_chat_on(app, &row).await? {
         return Err(refusal(StatusCode::FORBIDDEN, CHAT_OFF, "chat isn't on for this machine's account or team"));
     }

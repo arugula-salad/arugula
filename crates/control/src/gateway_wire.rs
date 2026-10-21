@@ -66,6 +66,14 @@ pub(crate) struct Split {
 /// The hub and a real platform, each its own server; the platform with
 /// Cloud on for account `a`.
 pub(crate) async fn split() -> Split {
+    split_with(|hub| hub).await
+}
+
+/// [`split`], with the platform's `HttpHub` wrapped (`hub_latency_bench`
+/// adds a delay to every hub call, as between two regions).
+pub(crate) async fn split_with(
+    wrap: impl FnOnce(Arc<dyn arugula_platform::HubPort>) -> Arc<dyn arugula_platform::HubPort>,
+) -> Split {
     let (internal_l, internal) = listener().await;
     let (platform_l, platform_base) = listener().await;
     let mut p = Platform::new(
@@ -75,7 +83,7 @@ pub(crate) async fn split() -> Split {
             relay_free_bytes: 0,
         },
         arugula_platform::db::Db::memory(),
-        Arc::new(HttpHub::new(&internal, key()).unwrap()),
+        wrap(Arc::new(HttpHub::new(&internal, key()).unwrap())),
         reqwest::Client::new(),
         Default::default(),
     );
