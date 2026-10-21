@@ -1,0 +1,430 @@
+//! Linking repos to projects (M163) through the platform's own routes,
+//! against a fake GitHub: who may link, installing first, an uninstall
+//! unlinking, and the purge. Runs on SQLite and, with
+//! `ARUGULA_TEST_POSTGRES_URL` (`just test-platform-postgres`), Postgres.
+
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
+
+use arugula_e2e::team::TeamRole;
+use aws_lc_rs::{encoding::AsDer, rsa::KeySize};
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
+use serde_json::{Value, json};
+
+use super::{GithubApp, links};
+use crate::{
+    Platform,
+    chat_tests::{TestHub, call},
+    db::{
+        Sql as _,
+        forge::PURGE_GRACE_MS,
+        sql::{Param, params},
+    },
+};
+
+const SECRET: &str = "whsec-test";
+
+/// What the fake GitHub knows: where the App is installed (repo →
+/// installation, account id, login), each repo's id and privacy, and
+/// each person's role on a repo (repo, login → role, user id).
+#[derive(Default)]
+struct Gh {
+    installed: BTreeMap<String, (u64, u64, String)>,
+    repos: BTreeMap<String, (u64, bool)>,
+    roles: BTreeMap<(String, String), (String, u64)>,
+}
+
+type Shared = Arc<Mutex<Gh>>;
+
+async fn installation(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> Response {
+    match h.lock().unwrap().installed.get(&format!("{o}/{r}")) {
+        Some((id, account, login)) => {
+            Json(json!({ "id": id, "account": { "id": account, "login": login, "type": "Organization" } }))
+                .into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn token(Json(b): Json<Value>) -> Json<Value> {
+    // Read only, for one repository: what the App asks for.
+    assert_eq!(b["permissions"]["metadata"], "read");
+    assert_eq!(b["repositories"].as_array().map(Vec::len), Some(1));
+    Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z" }))
+}
+
+async fn repo(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> Response {
+    let name = format!("{o}/{r}");
+    match h.lock().unwrap().repos.get(&name) {
+        Some((id, private)) => Json(json!({ "id": id, "full_name": name, "private": private })).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn permission(State(h): State<Shared>, Path((o, r, login)): Path<(String, String, String)>) -> Response {
+    let h = h.lock().unwrap();
+    let Some((role, id)) = h.roles.get(&(format!("{o}/{r}"), login.clone())) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let permission = match role.as_str() {
+        "maintain" | "write" | "triage" => "write",
+        r => r,
+    };
+    Json(json!({ "permission": permission, "role_name": role, "user": { "id": id, "login": login } })).into_response()
+}
+
+async fn fake_github(h: Shared) -> String {
+    let r = Router::new()
+        .route("/repos/{o}/{r}/installation", get(installation))
+        .route("/app/installations/{id}/access_tokens", post(token))
+        .route("/repos/{o}/{r}", get(repo))
+        .route("/repos/{o}/{r}/collaborators/{login}/permission", get(permission))
+        .with_state(h);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, r).await.unwrap() });
+    base
+}
+
+fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
+    let k = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa2048).unwrap();
+    let der = AsDer::<aws_lc_rs::encoding::Pkcs8V1Der>::as_der(&k).unwrap();
+    aws_lc_rs::rsa::KeyPair::from_pkcs8(der.as_ref()).unwrap()
+}
+
+/// The platform with the App, over `hub`, against a fake GitHub: its
+/// state, the platform, and the platform's address.
+async fn serve(hub: &Arc<TestHub>) -> (Shared, Arc<Platform>, String) {
+    let gh: Shared = Arc::default();
+    let api = fake_github(gh.clone()).await;
+    let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
+    let mut p = Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
+    p.github = Some(GithubApp::new("1".into(), "arugula-test".into(), SECRET.into(), &api, throwaway_key()));
+    let app = Arc::new(p);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", l.local_addr().unwrap());
+    let router = crate::cloud::tests::router(app.clone());
+    tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
+    (gh, app, base)
+}
+
+/// `acme/app` (repo 77, private), with the App installed on acme
+/// (installation 9), and alice (GitHub 1001) its maintainer.
+fn acme(gh: &Shared, hub: &TestHub) {
+    let mut g = gh.lock().unwrap();
+    g.installed.insert("acme/app".into(), (9, 500, "acme".into()));
+    g.repos.insert("acme/app".into(), (77, true));
+    g.roles.insert(("acme/app".into(), "alice-gh".into()), ("maintain".into(), 1001));
+    hub.github("alice", 1001, "alice-gh");
+}
+
+async fn link(base: &str, who: &str, project: &str, repo: &str) -> (u16, Value) {
+    call(base, who, "POST", &format!("/api/projects/{project}/repos"), Some(json!({ "repo": repo }))).await
+}
+
+async fn hook(base: &str, event: &str, delivery: &str, body: &Value) -> u16 {
+    use hmac::{KeyInit, Mac};
+    let body = body.to_string();
+    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(SECRET.as_bytes()).unwrap();
+    mac.update(body.as_bytes());
+    let sig = format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
+    let r = reqwest::Client::new()
+        .post(format!("{base}/github/webhook"))
+        .header("x-github-event", event)
+        .header("x-github-delivery", delivery)
+        .header("x-hub-signature-256", sig)
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    r.status().as_u16()
+}
+
+fn count(app: &Platform, table: &str, filter: &str, p: &[&dyn Param]) -> u64 {
+    app.db.c().query_row(&format!("SELECT count(*) FROM {table} WHERE {filter}"), p, |r| r.get(0)).unwrap()
+}
+
+/// Rows of every kind the mirror keeps, for a repo: an item, its check,
+/// event, content, a draft on it, and an inbox row.
+fn mirror_rows(app: &Platform, repo: u64, project: &str) {
+    let item = format!("fi_{repo}");
+    let c = app.db.c();
+    c.execute(
+        "INSERT INTO forge_items (id, repo_id, number, kind, state, title, created_at, updated_at, synced_at)
+         VALUES (?1, ?2, 1, 'pr', 'open', 'a title', 1, 1, 1)",
+        params![item, repo],
+    )
+    .unwrap();
+    c.execute(
+        "INSERT INTO forge_checks (repo_id, head_sha, kind, name, status, updated_at) VALUES (?1, 'abc', 'status', 'ci', 'ok', 1)",
+        params![repo],
+    )
+    .unwrap();
+    c.execute(
+        "INSERT INTO forge_events (id, repo_id, number, kind, at) VALUES (?1, ?2, 1, 'review', 1)",
+        params![format!("fev_{repo}"), repo],
+    )
+    .unwrap();
+    c.execute(
+        "INSERT INTO forge_content (repo_id, number, kind, github_id, body, updated_at) VALUES (?1, 1, 'body', 5, 'b', 1)",
+        params![repo],
+    )
+    .unwrap();
+    c.execute(
+        "INSERT INTO drafts (id, project_id, author, repo_id, number, kind, body, created_at, updated_at)
+         VALUES (?1, ?2, 'alice', ?3, 1, 'comment', 'lgtm', 1, 1)",
+        params![format!("dft_{repo}"), project, repo],
+    )
+    .unwrap();
+    c.execute(
+        "INSERT INTO inbox_items (account, item, reason, created_at, updated_at) VALUES ('alice', ?1, 'review_requested', 1, 1)",
+        params![item],
+    )
+    .unwrap();
+}
+
+/// How many rows of each kind the repo has left, its link last.
+fn left(app: &Platform, repo: u64) -> Vec<u64> {
+    let by_repo = |t| count(app, t, "repo_id = ?1", params![repo]);
+    vec![
+        by_repo("forge_items"),
+        by_repo("forge_checks"),
+        by_repo("forge_events"),
+        by_repo("forge_content"),
+        by_repo("drafts"),
+        count(app, "inbox_items", "item = ?1", params![format!("fi_{repo}")]),
+        by_repo("linked_repos"),
+    ]
+}
+
+/// A maintainer links a repo to their own project, and sees it listed;
+/// someone with write or read on it, someone who isn't in the project, a
+/// team's viewer, and an account not signed in with GitHub are refused.
+#[tokio::test]
+async fn a_maintainer_links_and_others_are_refused() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    acme(&gh, &hub);
+    hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("carol", TeamRole::Viewer)]);
+    {
+        let mut g = gh.lock().unwrap();
+        g.roles.insert(("acme/app".into(), "bob-gh".into()), ("write".into(), 1002));
+        g.roles.insert(("acme/app".into(), "carol-gh".into()), ("admin".into(), 1003));
+        g.roles.insert(("acme/app".into(), "dave-gh".into()), ("admin".into(), 1004));
+    }
+    hub.github("bob", 1002, "bob-gh");
+    hub.github("carol", 1003, "carol-gh");
+    hub.github("dave", 1004, "dave-gh");
+
+    let (s, v) = link(&base, "alice", "personal", "acme/app").await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(
+        (v["repo_id"].as_u64(), v["full_name"].as_str(), v["private"].as_bool()),
+        (Some(77), Some("acme/app"), Some(true))
+    );
+    assert_eq!(v["linked_by"], "alice");
+    let (s, listed) = call(&base, "alice", "GET", "/api/projects/personal/repos", None).await;
+    assert_eq!(s, 200);
+    let mine = listed["project"].as_str().unwrap().to_owned();
+    assert!(mine.starts_with("prj_"), "{listed}");
+    assert_eq!(listed["repos"][0]["full_name"], "acme/app");
+    assert_eq!(listed["repos"][0]["unlinked_at"], Value::Null);
+    assert_eq!(count(&app, "github_installations", "installation_id = 9", params![]), 1);
+    // The role was checked with a read token, minted for alice and logged
+    // (M167), never the token itself.
+    assert_eq!(
+        count(&app, "github_token_mints", "caller = 'alice' AND purpose = 'read' AND installation_id = 9", params![]),
+        1
+    );
+    assert!(app.db.mentions("ghs_fake").is_empty());
+
+    // Someone else's project is no project to them, to list or link.
+    hub.github("eve", 1005, "eve-gh");
+    let (s, _) = call(&base, "eve", "GET", &format!("/api/projects/{mine}/repos"), None).await;
+    assert_eq!(s, 404);
+    let (s, _) = link(&base, "eve", &mine, "acme/app").await;
+    assert_eq!(s, 404);
+
+    // A team's project: write on GitHub isn't enough, nor is a viewer's
+    // place in the team, admin or not.
+    let team = crate::projects::team_project(&app, "t1").await.unwrap().unwrap();
+    let (s, v) = link(&base, "bob", &team, "acme/app").await;
+    assert_eq!((s, v["reason"].as_str()), (403, Some("github_role")), "{v}");
+    assert!(v["error"].as_str().unwrap().contains("bob-gh has write"), "{v}");
+    gh.lock().unwrap().roles.insert(("acme/app".into(), "bob-gh".into()), ("read".into(), 1002));
+    app.github.as_ref().unwrap().forget();
+    let (s, _) = link(&base, "bob", &team, "acme/app").await;
+    assert_eq!(s, 403);
+    let (s, v) = link(&base, "carol", &team, "acme/app").await;
+    assert_eq!(s, 403, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("viewer"), "{v}");
+    let (s, listed) = call(&base, "carol", "GET", &format!("/api/projects/{team}/repos"), None).await;
+    assert_eq!((s, listed["repos"].as_array().map(Vec::len)), (200, Some(0)), "a viewer lists");
+    // Someone outside the team, admin on GitHub or not.
+    let (s, _) = link(&base, "dave", &team, "acme/app").await;
+    assert_eq!(s, 404);
+
+    // A GitHub login that changed hands is refused, by id.
+    gh.lock().unwrap().roles.insert(("acme/app".into(), "bob-gh".into()), ("admin".into(), 4242));
+    app.github.as_ref().unwrap().forget();
+    let (s, v) = link(&base, "bob", &team, "acme/app").await;
+    assert_eq!(s, 403);
+    assert!(v["error"].as_str().unwrap().contains("isn't yours any more"), "{v}");
+
+    // Not signed in with GitHub.
+    hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("frank", TeamRole::Editor)]);
+    let (s, v) = link(&base, "frank", &team, "acme/app").await;
+    assert_eq!(s, 403);
+    assert!(v["error"].as_str().unwrap().contains("sign in to control with GitHub"), "{v}");
+
+    // Already linked to alice's own project: not to the team's as well.
+    let (s, v) = link(&base, "alice", &team, "acme/app").await;
+    assert_eq!(s, 409, "{v}");
+    assert_eq!(left(&app, 77)[6], 1);
+}
+
+/// Where the App isn't installed, the answer is GitHub's page to install
+/// it, with a state that brings them back to the project; once it's
+/// installed, the same ask links.
+#[tokio::test]
+async fn install_first() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, _app, base) = serve(&hub).await;
+    acme(&gh, &hub);
+    gh.lock().unwrap().installed.clear();
+    let (s, v) = link(&base, "alice", "personal", "acme/app").await;
+    assert_eq!((s, v["reason"].as_str()), (409, Some("install_app")), "{v}");
+    let url = v["install_url"].as_str().unwrap();
+    assert!(url.starts_with("https://github.com/apps/arugula-test/installations/new?state=prj_"), "{url}");
+    assert!(url.ends_with("%3Aacme%2Fapp"), "{url}");
+    gh.lock().unwrap().installed.insert("acme/app".into(), (9, 500, "acme".into()));
+    let (s, v) = link(&base, "alice", "personal", "acme/app").await;
+    assert_eq!(s, 200, "{v}");
+}
+
+/// An uninstall unlinks the installation's repos at once, and the purge
+/// leaves none of their rows; another installation's repo keeps its own.
+/// A repo taken out of an installation is unlinked too.
+#[tokio::test]
+async fn an_uninstall_unlinks_and_the_purge_leaves_nothing() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    acme(&gh, &hub);
+    {
+        let mut g = gh.lock().unwrap();
+        g.installed.insert("alice-gh/dots".into(), (10, 1001, "alice-gh".into()));
+        g.repos.insert("alice-gh/dots".into(), (88, false));
+        g.roles.insert(("alice-gh/dots".into(), "alice-gh".into()), ("admin".into(), 1001));
+        g.installed.insert("acme/web".into(), (9, 500, "acme".into()));
+        g.repos.insert("acme/web".into(), (99, false));
+        g.roles.insert(("acme/web".into(), "alice-gh".into()), ("admin".into(), 1001));
+    }
+    for r in ["acme/app", "alice-gh/dots", "acme/web"] {
+        assert_eq!(link(&base, "alice", "personal", r).await.0, 200);
+    }
+    let project = app.db.linked_repo(77).unwrap().unwrap().project_id;
+    for r in [77, 88, 99] {
+        mirror_rows(&app, r, &project);
+    }
+
+    // acme/web is taken out of the installation.
+    let removed = json!({ "action": "removed", "installation": { "id": 9, "account": { "id": 500, "login": "acme", "type": "Organization" } },
+        "repositories_removed": [{ "id": 99, "full_name": "acme/web" }] });
+    assert_eq!(hook(&base, "installation_repositories", "d1", &removed).await, 202);
+    assert!(app.db.linked_repo(99).unwrap().unwrap().unlinked_at.is_some());
+    assert!(app.db.linked_repo(77).unwrap().unwrap().unlinked_at.is_none(), "the rest of the installation stays");
+
+    // acme uninstalls the App.
+    let deleted = json!({ "action": "deleted", "installation": { "id": 9, "account": { "id": 500, "login": "acme", "type": "Organization" } } });
+    assert_eq!(hook(&base, "installation", "d2", &deleted).await, 202);
+    let gone = app.db.linked_repo(77).unwrap().unwrap();
+    let now = gone.unlinked_at.expect("unlinked at once");
+    assert_eq!(gone.purge_after, Some(now + PURGE_GRACE_MS));
+    assert!(count(&app, "github_installations", "installation_id = 9 AND deleted_at IS NOT NULL", params![]) == 1);
+    assert!(app.db.linked_repo(88).unwrap().unwrap().unlinked_at.is_none(), "another installation's");
+    let (_, listed) = call(&base, "alice", "GET", "/api/projects/personal/repos", None).await;
+    assert_eq!(listed["repos"].as_array().unwrap().len(), 3, "listed until the purge");
+
+    // Not before it's due (acme/web was taken out first); then nothing
+    // of them.
+    assert_eq!(links::purge(&app, now + PURGE_GRACE_MS - 1).unwrap(), 1);
+    assert_eq!(left(&app, 99), [0; 7]);
+    assert_eq!(left(&app, 77), [1; 7], "not due yet");
+    assert_eq!(links::purge(&app, now + PURGE_GRACE_MS).unwrap(), 1);
+    for r in [77, 99] {
+        assert_eq!(left(&app, r), [0; 7], "repo {r}");
+    }
+    assert_eq!(left(&app, 88), [1; 7], "a linked repo keeps its rows");
+    assert_eq!(links::purge(&app, now + 2 * PURGE_GRACE_MS).unwrap(), 0);
+}
+
+/// Unlinking stops ingest at once and waits for the purge; linking it
+/// again first cancels the purge and keeps its rows. Linking it to
+/// another project instead takes the old project's rows now.
+#[tokio::test]
+async fn linking_again_cancels_the_purge() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    acme(&gh, &hub);
+    hub.team("t1", &[("alice", TeamRole::Owner)]);
+    assert_eq!(link(&base, "alice", "personal", "acme/app").await.0, 200);
+    let mine = app.db.linked_repo(77).unwrap().unwrap().project_id;
+    mirror_rows(&app, 77, &mine);
+
+    let (s, v) = call(&base, "alice", "DELETE", "/api/projects/personal/repos/ACME/app", None).await;
+    assert_eq!(s, 200, "{v}");
+    let purge_after = v["purge_after"].as_u64().unwrap();
+    let (s, _) = call(&base, "alice", "DELETE", "/api/projects/personal/repos/acme/app", None).await;
+    assert_eq!(s, 404, "unlinked already");
+
+    let (s, v) = link(&base, "alice", "personal", "acme/app").await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!((v["unlinked_at"].clone(), v["purge_after"].clone()), (Value::Null, Value::Null));
+    assert_eq!(links::purge(&app, purge_after + 1).unwrap(), 0);
+    assert_eq!(left(&app, 77), [1; 7], "kept");
+
+    // Unlinked from alice's project and linked to the team's: the old
+    // project's rows go now.
+    assert_eq!(call(&base, "alice", "DELETE", "/api/projects/personal/repos/acme/app", None).await.0, 200);
+    let team = crate::projects::team_project(&app, "t1").await.unwrap().unwrap();
+    let (s, v) = link(&base, "alice", &team, "acme/app").await;
+    assert_eq!(s, 200, "{v}");
+    assert_eq!(left(&app, 77), [0, 0, 0, 0, 0, 0, 1]);
+    assert_eq!(app.db.linked_repo(77).unwrap().unwrap().project_id, team);
+}
+
+/// A machine with a live `cloud.drive` grant links for its owner (the
+/// agents on it, through MCP); one whose grant was revoked can't.
+#[tokio::test]
+async fn a_machine_links_for_its_owner_with_its_grant() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    acme(&gh, &hub);
+    hub.daemon("geek", "alice", None);
+    let as_machine = |method: &str, path: &str, body: Option<Value>| {
+        let mut r = reqwest::Client::new()
+            .request(method.parse().unwrap(), format!("{base}{path}"))
+            .header("x-test-daemon", "alice geek");
+        if let Some(b) = body {
+            r = r.json(&b);
+        }
+        async move {
+            let r = r.send().await.unwrap();
+            (r.status().as_u16(), r.json::<Value>().await.unwrap_or_default())
+        }
+    };
+    let (s, v) = as_machine("POST", "/api/projects/personal/repos", Some(json!({ "repo": "acme/app" }))).await;
+    assert_eq!(s, 200, "{v}");
+    let g = app.db.grants("alice").unwrap().remove(0);
+    app.db.revoke_grant("alice", &g.id, 1).unwrap();
+    let (s, _) = as_machine("GET", "/api/projects/personal/repos", None).await;
+    assert_eq!(s, 403);
+}

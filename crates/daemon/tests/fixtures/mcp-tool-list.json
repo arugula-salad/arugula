@@ -610,7 +610,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -640,7 +640,8 @@
               "devices",
               "cloud_workspaces",
               "cloud_tabs",
-              "cloud_agents"
+              "cloud_agents",
+              "linked_repos"
             ],
             "type": "string"
           },
@@ -658,6 +659,14 @@
             "default": false,
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
+          },
+          "project": {
+            "default": null,
+            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "query": {
             "default": null,
@@ -2605,6 +2614,47 @@
       },
       "name": "cloud",
       "title": "Drive a Cloud workspace"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Link a GitHub repo to a project"
+      },
+      "description": "Link a GitHub repo to one of the user's projects in Arugula control, or unlink it, as the user (the owner of this machine). Linking takes admin or maintain on the repo on GitHub; unlinking purges its rows within a day. list kind linked_repos lists them.\n- link {repo, project?}: Link a GitHub repo to one of the user's projects (default their personal one), as the user: they must be an admin or maintainer of it on GitHub. If Arugula's GitHub App isn't installed where it lives, the answer says where the user installs it.\n- unlink {repo, project?}: Unlink a GitHub repo from the project: nothing more is read from GitHub for it, and its rows are purged within a day unless it's linked again first.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "link",
+              "unlink"
+            ],
+            "type": "string"
+          },
+          "project": {
+            "default": null,
+            "description": "The project's id (prj_…). Default: the user's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "description": "The repo on GitHub, OWNER/NAME.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "link_repo",
+      "title": "Link a GitHub repo to a project"
     }
   ],
   "block, labs true": [
@@ -3328,7 +3378,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -3364,7 +3414,8 @@
               "agents",
               "cloud_workspaces",
               "cloud_tabs",
-              "cloud_agents"
+              "cloud_agents",
+              "linked_repos"
             ],
             "type": "string"
           },
@@ -3382,6 +3433,14 @@
             "default": false,
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
+          },
+          "project": {
+            "default": null,
+            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "query": {
             "default": null,
@@ -5494,6 +5553,47 @@
       },
       "name": "cloud",
       "title": "Drive a Cloud workspace"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Link a GitHub repo to a project"
+      },
+      "description": "Link a GitHub repo to one of the user's projects in Arugula control, or unlink it, as the user (the owner of this machine). Linking takes admin or maintain on the repo on GitHub; unlinking purges its rows within a day. list kind linked_repos lists them.\n- link {repo, project?}: Link a GitHub repo to one of the user's projects (default their personal one), as the user: they must be an admin or maintainer of it on GitHub. If Arugula's GitHub App isn't installed where it lives, the answer says where the user installs it.\n- unlink {repo, project?}: Unlink a GitHub repo from the project: nothing more is read from GitHub for it, and its rows are purged within a day unless it's linked again first.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "link",
+              "unlink"
+            ],
+            "type": "string"
+          },
+          "project": {
+            "default": null,
+            "description": "The project's id (prj_…). Default: the user's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "description": "The repo on GitHub, OWNER/NAME.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "link_repo",
+      "title": "Link a GitHub repo to a project"
     }
   ],
   "full, labs false": [
@@ -6107,7 +6207,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -6137,7 +6237,8 @@
               "devices",
               "cloud_workspaces",
               "cloud_tabs",
-              "cloud_agents"
+              "cloud_agents",
+              "linked_repos"
             ],
             "type": "string"
           },
@@ -6155,6 +6256,14 @@
             "default": false,
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
+          },
+          "project": {
+            "default": null,
+            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "query": {
             "default": null,
@@ -8102,6 +8211,47 @@
       },
       "name": "cloud",
       "title": "Drive a Cloud workspace"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Link a GitHub repo to a project"
+      },
+      "description": "Link a GitHub repo to one of the user's projects in Arugula control, or unlink it, as the user (the owner of this machine). Linking takes admin or maintain on the repo on GitHub; unlinking purges its rows within a day. list kind linked_repos lists them.\n- link {repo, project?}: Link a GitHub repo to one of the user's projects (default their personal one), as the user: they must be an admin or maintainer of it on GitHub. If Arugula's GitHub App isn't installed where it lives, the answer says where the user installs it.\n- unlink {repo, project?}: Unlink a GitHub repo from the project: nothing more is read from GitHub for it, and its rows are purged within a day unless it's linked again first.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "link",
+              "unlink"
+            ],
+            "type": "string"
+          },
+          "project": {
+            "default": null,
+            "description": "The project's id (prj_…). Default: the user's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "description": "The repo on GitHub, OWNER/NAME.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "link_repo",
+      "title": "Link a GitHub repo to a project"
     }
   ],
   "full, labs true": [
@@ -8825,7 +8975,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -8861,7 +9011,8 @@
               "agents",
               "cloud_workspaces",
               "cloud_tabs",
-              "cloud_agents"
+              "cloud_agents",
+              "linked_repos"
             ],
             "type": "string"
           },
@@ -8879,6 +9030,14 @@
             "default": false,
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
+          },
+          "project": {
+            "default": null,
+            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "query": {
             "default": null,
@@ -10991,6 +11150,47 @@
       },
       "name": "cloud",
       "title": "Drive a Cloud workspace"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Link a GitHub repo to a project"
+      },
+      "description": "Link a GitHub repo to one of the user's projects in Arugula control, or unlink it, as the user (the owner of this machine). Linking takes admin or maintain on the repo on GitHub; unlinking purges its rows within a day. list kind linked_repos lists them.\n- link {repo, project?}: Link a GitHub repo to one of the user's projects (default their personal one), as the user: they must be an admin or maintainer of it on GitHub. If Arugula's GitHub App isn't installed where it lives, the answer says where the user installs it.\n- unlink {repo, project?}: Unlink a GitHub repo from the project: nothing more is read from GitHub for it, and its rows are purged within a day unless it's linked again first.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "link",
+              "unlink"
+            ],
+            "type": "string"
+          },
+          "project": {
+            "default": null,
+            "description": "The project's id (prj_…). Default: the user's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "description": "The repo on GitHub, OWNER/NAME.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "link_repo",
+      "title": "Link a GitHub repo to a project"
     }
   ],
   "read, labs false": [
@@ -11195,7 +11395,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -11225,7 +11425,8 @@
               "devices",
               "cloud_workspaces",
               "cloud_tabs",
-              "cloud_agents"
+              "cloud_agents",
+              "linked_repos"
             ],
             "type": "string"
           },
@@ -11243,6 +11444,14 @@
             "default": false,
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
+          },
+          "project": {
+            "default": null,
+            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "query": {
             "default": null,
@@ -12321,7 +12530,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -12357,7 +12566,8 @@
               "agents",
               "cloud_workspaces",
               "cloud_tabs",
-              "cloud_agents"
+              "cloud_agents",
+              "linked_repos"
             ],
             "type": "string"
           },
@@ -12375,6 +12585,14 @@
             "default": false,
             "description": "conversations: Only ones open somewhere now.",
             "type": "boolean"
+          },
+          "project": {
+            "default": null,
+            "description": "linked_repos: The project's id (prj_…). Default: the user's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "query": {
             "default": null,

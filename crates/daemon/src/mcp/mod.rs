@@ -33,6 +33,7 @@ mod capabilities;
 mod cloud;
 pub(crate) mod ops;
 pub mod relay;
+mod repos;
 pub(crate) mod results;
 pub mod tokens;
 pub(crate) mod tools;

@@ -16,6 +16,10 @@
 //   /p/:project/workspaces/:id     a Cloud workspace (`/:tab` for a tab)
 //   /p/:project/past/:id           a past run (`run_…`) or a closed tab
 //                                  (`cwc_…`), read only
+//   /p/:project/settings           its settings: linked repos (`?link=OWNER/REPO`
+//                                  fills in one to link)
+//   /installed?state=…             back from installing the GitHub App (its
+//                                  setup URL): on to the project's settings
 //   /agents                        the cloud agent library
 //   /settings                      account settings
 //
@@ -39,6 +43,8 @@ export type Route =
   | { page: "workspaces"; project: string }
   | { page: "workspace"; project: string; workspace: string; tab?: string }
   | { page: "past"; project: string; id: string }
+  | { page: "project-settings"; project: string; link?: string }
+  | { page: "installed"; project?: string; repo?: string }
   | { page: "agents" }
   | { page: "settings" }
   /** An id-only address, to be put where it belongs (`resolve`). */
@@ -50,6 +56,9 @@ export type Route =
 /** An id at the front of a path segment, before its slug: `prj_8f2k`,
  * `ch_…`, `dm_…`, `cw_…`, `cwc_…`. */
 const ID = /^([a-z]{2,3}_[0-9a-f]{4,64})(?:-.*)?$/;
+
+/** `OWNER/NAME` on GitHub. */
+export const REPO = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}$/;
 
 /** The id in a path segment, or null when it doesn't start with one. */
 export function idOf(segment: string): string | null {
@@ -109,6 +118,12 @@ export function parse(path: string, search = ""): Route {
     const id = idOf(parts[1]);
     return id && /^(run|cwc)_/.test(id) ? { page: "find", what: "past", id } : missing;
   }
+  if (parts.length === 1 && parts[0] === "installed") {
+    // The state linking handed GitHub: `<project>:<OWNER/NAME>`.
+    const [p, repo] = (q.get("state") ?? "").split(/:(.*)/s);
+    const project = idOf(p ?? "");
+    return project && repo && REPO.test(repo) ? { page: "installed", project, repo } : { page: "installed" };
+  }
   if (parts[0] === "dm" && parts.length === 2) {
     const room = idOf(parts[1]);
     return room ? { page: "dm", room, ...msg } : missing;
@@ -117,6 +132,10 @@ export function parse(path: string, search = ""): Route {
   const project = idOf(parts[1]);
   if (!project) return missing;
   if (parts.length === 2) return { page: "project", project };
+  if (parts.length === 3 && parts[2] === "settings") {
+    const link = q.get("link");
+    return { page: "project-settings", project, ...(link && REPO.test(link) ? { link } : {}) };
+  }
   if (parts[2] === "chat") {
     if (parts.length === 3) return { page: "chat", project };
     if (parts.length === 4 && parts[3] === "activity") return { page: "chat", project, view: "activity" };
@@ -164,6 +183,10 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/p/${s(r.project)}/workspaces/${s(r.workspace)}${r.tab ? `/${s(r.tab)}` : ""}`;
     case "past":
       return `/p/${s(r.project)}/past/${s(r.id)}`;
+    case "project-settings":
+      return `/p/${s(r.project)}/settings${r.link ? `?link=${encodeURIComponent(r.link)}` : ""}`;
+    case "installed":
+      return r.project && r.repo ? `/installed?state=${encodeURIComponent(`${r.project}:${r.repo}`)}` : "/installed";
     case "agents":
       return "/agents";
     case "settings":

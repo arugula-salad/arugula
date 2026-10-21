@@ -272,6 +272,13 @@ impl HubPort for InProcess {
     fn forge_pokes<'a>(&'a self, pokes: &'a [Poke]) -> BoxFuture<'a, HubResult<u32>> {
         Box::pin(async move { Ok(crate::forge::relay_pokes(&*self.app()?, pokes)) })
     }
+
+    fn github_user<'a>(
+        &'a self,
+        account: &'a str,
+    ) -> BoxFuture<'a, HubResult<Option<arugula_platform::forge::GithubUser>>> {
+        Box::pin(async move { crate::forge::github_user(&*self.app()?, account) })
+    }
 }
 
 /// The platform, when it's in this process: what the three calls above

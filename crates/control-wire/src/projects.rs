@@ -62,3 +62,46 @@ pub struct ProjectMember {
     pub name: String,
     pub role: String,
 }
+
+/// `GET /api/projects/{project}/repos` (M163): the GitHub repos linked to a
+/// project, for its members. `POST` links one ([`LinkRepo`]) and `DELETE
+/// /api/projects/{project}/repos/{owner}/{name}` unlinks it. `{project}` is
+/// a project's id, or `personal` for the caller's own.
+pub const PROJECT_REPOS: &str = "/api/projects/{project}/repos";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LinkedRepos {
+    /// The project's id (`personal` asked is answered with the real one).
+    pub project: String,
+    pub repos: Vec<LinkedRepo>,
+}
+
+/// A repo linked to a project, or unlinked and waiting for the purge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LinkedRepo {
+    /// GitHub's id for it.
+    pub repo_id: u64,
+    /// `OWNER/NAME`.
+    pub full_name: String,
+    pub private: bool,
+    /// Who linked it (an account id), when that account is still there.
+    pub linked_by: Option<String>,
+    pub linked_at: u64,
+    /// When it was unlinked: nothing is read from GitHub for it since.
+    pub unlinked_at: Option<u64>,
+    /// When its rows go, unless it's linked again first.
+    pub purge_after: Option<u64>,
+}
+
+/// `POST /api/projects/{project}/repos`: link `OWNER/NAME`. A project
+/// member who is an admin or maintainer of it on GitHub may. When the
+/// GitHub App isn't installed where it lives, the answer is a 409 with
+/// `reason: "install_app"` and `install_url`, GitHub's page to install it,
+/// which brings them back to the project's settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LinkRepo {
+    pub repo: String,
+}

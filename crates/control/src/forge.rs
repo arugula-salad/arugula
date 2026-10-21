@@ -112,7 +112,7 @@ impl Watches {
 }
 
 /// The account's GitHub identity, if it signed in with GitHub.
-fn github_user(app: &App, account: &str) -> anyhow::Result<Option<GithubUser>> {
+pub(crate) fn github_user(app: &App, account: &str) -> anyhow::Result<Option<GithubUser>> {
     Ok(app.db.github_identity(account)?.and_then(|(id, login)| Some(GithubUser { id: id.parse().ok()?, login })))
 }
 

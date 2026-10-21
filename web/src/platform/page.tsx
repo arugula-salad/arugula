@@ -16,6 +16,7 @@ import { AgentsPage } from "./pages/agents";
 import { ChatPage } from "./pages/chat";
 import { Home } from "./pages/home";
 import { Missing, ProjectHome } from "./pages/project";
+import { Installed, ProjectSettings } from "./pages/project-settings";
 import { SettingsPage } from "./pages/settings";
 import { PastPage, WorkspacesPage } from "./pages/workspace";
 
@@ -44,6 +45,10 @@ function body(r: Route) {
       return <ProjectHome id={r.project} />;
     case "workspaces":
       return <WorkspacesPage />;
+    case "project-settings":
+      return <ProjectSettings id={r.project} link={r.link} />;
+    case "installed":
+      return <Installed project={r.project} repo={r.repo} />;
     case "workspace":
       return <WorkspacesPage workspace={r.workspace} />;
     case "past":

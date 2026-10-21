@@ -152,3 +152,15 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* A project's settings (M163): the repo to link, and its button. */
+.platform-link-repo {
+  display: flex;
+  gap: 8px;
+  max-width: 480px;
+  margin-top: 12px;
+}
+
+.platform-link-repo input {
+  flex: 1;
+}
