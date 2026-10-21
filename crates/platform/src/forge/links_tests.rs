@@ -30,19 +30,21 @@ use crate::{
     },
 };
 
-const SECRET: &str = "whsec-test";
+pub(super) const SECRET: &str = "whsec-test";
 
 /// What the fake GitHub knows: where the App is installed (repo →
 /// installation, account id, login), each repo's id and privacy, and
 /// each person's role on a repo (repo, login → role, user id).
 #[derive(Default)]
-struct Gh {
-    installed: BTreeMap<String, (u64, u64, String)>,
-    repos: BTreeMap<String, (u64, bool)>,
-    roles: BTreeMap<(String, String), (String, u64)>,
+pub(super) struct Gh {
+    pub(super) installed: BTreeMap<String, (u64, u64, String)>,
+    pub(super) repos: BTreeMap<String, (u64, bool)>,
+    pub(super) roles: BTreeMap<(String, String), (String, u64)>,
+    /// How many times a person's permission was asked.
+    pub(super) asked: usize,
 }
 
-type Shared = Arc<Mutex<Gh>>;
+pub(super) type Shared = Arc<Mutex<Gh>>;
 
 async fn installation(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> Response {
     match h.lock().unwrap().installed.get(&format!("{o}/{r}")) {
@@ -89,7 +91,8 @@ async fn repo(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> 
 }
 
 async fn permission(State(h): State<Shared>, Path((o, r, login)): Path<(String, String, String)>) -> Response {
-    let h = h.lock().unwrap();
+    let mut h = h.lock().unwrap();
+    h.asked += 1;
     let Some((role, id)) = h.roles.get(&(format!("{o}/{r}"), login.clone())) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -121,7 +124,7 @@ fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
 
 /// The platform with the App, over `hub`, against a fake GitHub: its
 /// state, the platform, and the platform's address.
-async fn serve(hub: &Arc<TestHub>) -> (Shared, Arc<Platform>, String) {
+pub(super) async fn serve(hub: &Arc<TestHub>) -> (Shared, Arc<Platform>, String) {
     let gh: Shared = Arc::default();
     let api = fake_github(gh.clone()).await;
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
@@ -149,7 +152,7 @@ async fn link(base: &str, who: &str, project: &str, repo: &str) -> (u16, Value) 
     call(base, who, "POST", &format!("/api/projects/{project}/repos"), Some(json!({ "repo": repo }))).await
 }
 
-async fn hook(base: &str, event: &str, delivery: &str, body: &Value) -> u16 {
+pub(super) async fn hook(base: &str, event: &str, delivery: &str, body: &Value) -> u16 {
     use hmac::{KeyInit, Mac};
     let body = body.to_string();
     let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(SECRET.as_bytes()).unwrap();

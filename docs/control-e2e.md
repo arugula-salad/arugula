@@ -1022,10 +1022,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 71 tables in two planes ("Two planes, two trust rules"):
+Control's database has 73 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (33 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (38 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, Cloud workspaces, and linked repos' PRs and issues. Control reads most of it, and says so here.
+- **The platform plane** (40 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, Cloud workspaces, and linked repos' PRs and issues. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1108,6 +1108,8 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `drafts` | **plaintext** | A comment, review or new issue for a linked repo, waiting for a person to send it: the project, the person it's for (and the agent and machine that wrote it, if one did), the target, the text, its state, and where it landed once sent. | A person sends a draft from a phone with every machine asleep. | yes: its drafts, and those in projects that go with it. | GitHub |
 | `inbox_items` | metadata | A member's inbox: an item, why it's there (a review requested, a mention, failed checks), and when it was seen and done. | The inbox is computed and pushed by the platform with every machine asleep. | yes |  |
 | `github_token_mints` | metadata | The audit log of every GitHub token the platform minted: installation or user token, the installation and repo, the permissions, who it was for, what for, and when. Never the token. | Tokens are minted for reads, ingest and sends with every machine asleep. | kept: its mints stay in the audit log, naming it, so a token can be traced after the account goes, for as long as the log keeps a mint: a year, pruned hourly. | GitHub |
+| `forge_access` | metadata | What GitHub said about a person's access to a private linked repo (M165): their numeric GitHub id, the repo's id and owner, yes or no, and when it was asked. Kept 10 minutes, so every machine of the platform gives the same answer. | Private repos' items are read from the platform with every machine asleep, each read checked against the reader's own GitHub access. | kept: an answer names a GitHub id, not an account: it stops being used after 10 minutes, and goes at the next hourly prune. | GitHub |
+| `forge_access_drops` | metadata | When a GitHub event last changed who may read a repo (M165): a repo id, an owner's login or a person's GitHub id, and when. Every `forge_access` answer asked before it is dropped. | GitHub's webhooks arrive whether or not any machine is up, and a removed collaborator is cut off at once on every machine. | nothing of one | GitHub |
 | `platform_migrations` | metadata | Which of the platform's numbered migrations (M142) its database has: each one's number, name, checksum, whether it's additive (older builds may start past it) and when it ran, or that it was found already in place on a database made before migrations. | The platform checks its tables are the shape its code expects before it serves anything, whether or not any machine is up. | nothing of one |  |
 
 ### Who else sees it

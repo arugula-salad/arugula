@@ -105,3 +105,112 @@ pub struct LinkedRepo {
 pub struct LinkRepo {
     pub repo: String,
 }
+
+/// `GET /api/projects/{project}/items` (M165): a project's PRs and issues
+/// from its linked repos, last updated first, each checked against the
+/// reader's own GitHub access. A query narrows it: `repo` (`OWNER/NAME`),
+/// `kind` (`pr`, `issue`), `state` (`open`, `closed`, `merged`), `author`
+/// and `review_requested` (GitHub logins), `q` (text in the title) and
+/// `limit` (at most 200, 100 by default).
+pub const PROJECT_ITEMS: &str = "/api/projects/{project}/items";
+
+/// `GET /api/forge/items/{id}`: one item, [`ForgeItem`]; `/checks` its head
+/// commit's checks ([`ForgeChecks`]) and `/events` what happened to it
+/// ([`ForgeEvents`]). An item the reader may not see is no item at all to
+/// them (404).
+pub const FORGE_ITEM: &str = "/api/forge/items/{id}";
+pub const FORGE_ITEM_CHECKS: &str = "/api/forge/items/{id}/checks";
+pub const FORGE_ITEM_EVENTS: &str = "/api/forge/items/{id}/events";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ForgeItems {
+    /// The project's id (`personal` asked is answered with the real one).
+    pub project: String,
+    pub items: Vec<ForgeItem>,
+    /// The project's linked repos whose items the reader may not see, and
+    /// why: their names are the project's, which its members see anyway.
+    pub withheld: Vec<WithheldRepo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct WithheldRepo {
+    /// `OWNER/NAME`.
+    pub repo: String,
+    /// `no_github` (the reader didn't sign in to control with GitHub),
+    /// `no_access` (GitHub doesn't give them access), `busy` (too many
+    /// lookups lately: it shows again within the hour) or `no_app` (this
+    /// control has no GitHub App to ask with).
+    pub why: String,
+}
+
+/// A PR or an issue, as metadata: never its body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ForgeItem {
+    /// The platform's id: `fi_` and 32 hex characters.
+    pub id: String,
+    /// `OWNER/NAME`.
+    pub repo: String,
+    pub number: u64,
+    /// `pr` or `issue`.
+    pub kind: String,
+    /// `open`, `closed` or `merged`.
+    pub state: String,
+    pub title: String,
+    pub labels: Vec<String>,
+    /// The author's GitHub login.
+    pub author: Option<String>,
+    pub assignees: Vec<String>,
+    /// Requested reviewers' logins.
+    pub reviewers: Vec<String>,
+    pub draft: bool,
+    pub merge_state: Option<String>,
+    pub head_ref: Option<String>,
+    pub head_sha: Option<String>,
+    pub base_ref: Option<String>,
+    /// GitHub's times, in milliseconds.
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ForgeChecks {
+    pub item: String,
+    /// The head commit they're on; `None` for an issue.
+    pub head_sha: Option<String>,
+    pub checks: Vec<ForgeCheck>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ForgeCheck {
+    /// `check_run` or `status`.
+    pub kind: String,
+    pub name: String,
+    pub status: String,
+    pub conclusion: Option<String>,
+    pub url: Option<String>,
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ForgeEvents {
+    pub item: String,
+    pub events: Vec<ForgeEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ForgeEvent {
+    pub id: String,
+    pub kind: String,
+    /// Who did it: a GitHub login.
+    pub actor: Option<String>,
+    /// A review's state (`approved`, `changes_requested`, `commented`).
+    pub review_state: Option<String>,
+    pub at: u64,
+}

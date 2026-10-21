@@ -24,6 +24,9 @@
 //! - **Linked repos** ([`links`], M163): a project's members who maintain
 //!   a repo on GitHub link it to the project; the installation's events
 //!   unlink it, and a purge takes an unlinked repo's rows within a day.
+//! - **Reading items** ([`viewer`], [`items`], M165): every read of a
+//!   linked repo's items checks the viewer's own access, and GitHub's
+//!   events that change it drop what was kept.
 //!
 //! First-time lookups at GitHub are rate-limited per account
 //! ([`FORGE_LOOKUPS`], counted here).
@@ -39,9 +42,13 @@ use tracing::info;
 use crate::Platform;
 
 mod app;
+pub mod items;
 pub mod links;
 #[cfg(test)]
 mod links_tests;
+pub mod viewer;
+#[cfg(test)]
+mod viewer_tests;
 mod webhook;
 
 pub use app::{
@@ -225,8 +232,8 @@ pub async fn token(
 
 /// The forge's background work: unlinked repos' rows are purged
 /// ([`links::start`], with or without the App: deleting an account
-/// unlinks too), webhook deliveries older than a week go, and the token
-/// log's mints older than a year.
+/// unlinks too), webhook deliveries older than a week go, the token
+/// log's mints older than a year, and access answers no longer used.
 pub fn start(p: &Arc<Platform>) {
     links::start(p);
     if p.github.is_none() {
@@ -245,6 +252,9 @@ pub fn start(p: &Arc<Platform>) {
                     Ok(n) if n > 0 => info!(mints = n, "pruned old GitHub token mints"),
                     Ok(_) => {}
                     Err(e) => tracing::warn!(error = %e, "pruning GitHub token mints"),
+                }
+                if let Err(e) = p.db.prune_access(arugula_e2e::now_ms(), viewer::KEEP_MS) {
+                    tracing::warn!(error = %e, "pruning kept GitHub access answers");
                 }
             }
             tokio::time::sleep(PRUNE_EVERY).await;

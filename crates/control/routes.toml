@@ -1171,6 +1171,38 @@ auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
 note = "Unlinks a repo (M163): ingest stops at once, and the purge takes its rows within a day."
 
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/items"  # wire::projects::PROJECT_ITEMS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "A project's PRs and issues (M165): each repo checked against the reader's own GitHub access; a private one only if GitHub says they have it."
+
+[[route]]
+method = "GET"
+path = "/api/forge/items/{id}"  # wire::projects::FORGE_ITEM
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "One PR or issue (M165), through the same viewer check: one the reader may not see is a 404."
+
+[[route]]
+method = "GET"
+path = "/api/forge/items/{id}/checks"  # wire::projects::FORGE_ITEM_CHECKS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "A PR's head commit's checks (M165), through the viewer check."
+
+[[route]]
+method = "GET"
+path = "/api/forge/items/{id}/events"  # wire::projects::FORGE_ITEM_EVENTS
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "What happened to a PR or issue (M165), through the viewer check."
+
 # ---- platform: billing
 
 [[route]]

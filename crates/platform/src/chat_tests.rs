@@ -286,6 +286,11 @@ impl HubPort for TestHub {
         let there = self.state.lock().unwrap().teams.contains_key(team);
         done(there.then(|| format!("prj_{team}")))
     }
+    fn forge_pokes<'a>(&'a self, pokes: &'a [arugula_control_wire::forge::Poke]) -> BoxFuture<'a, HubResult<u32>> {
+        self.called("forge_pokes");
+        done(pokes.len() as u32)
+    }
+
     fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<crate::forge::GithubUser>>> {
         self.called("github_user");
         done(self.state.lock().unwrap().github.get(account).cloned())

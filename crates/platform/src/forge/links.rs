@@ -26,7 +26,8 @@
 //!   over).
 //!
 //! Nothing here reads a forge item: the list is project metadata, for the
-//! project's members, until M165 checks each viewer's own access.
+//! project's members. Items are read through [`super::viewer`] (M165),
+//! which checks each viewer's own access.
 //!
 //! [`GithubApp::repo_role`]: super::GithubApp::repo_role
 //! [`GithubApp::install_url`]: super::GithubApp::install_url
@@ -75,7 +76,12 @@ fn wire(r: &rows::LinkedRepo) -> LinkedRepo {
 /// role in it: its own is an owner's. One it isn't a member of is no
 /// project at all to it. `now`: ask the hub for the team's roster, not the
 /// cache, as for a write.
-async fn membership(app: &Platform, account: &str, asked: &str, now: bool) -> Result<(String, TeamRole), ApiError> {
+pub(super) async fn membership(
+    app: &Platform,
+    account: &str,
+    asked: &str,
+    now: bool,
+) -> Result<(String, TeamRole), ApiError> {
     let none = || err(StatusCode::NOT_FOUND, "no such project");
     if asked == PERSONAL {
         let id = crate::projects::personal_project(app, account).await?.ok_or_else(none)?;

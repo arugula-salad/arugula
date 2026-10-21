@@ -589,7 +589,10 @@ impl GithubApp {
         r
     }
 
-    async fn may_now(&self, c: &Caller<'_>, user: &GithubUser, repo: &str) -> Result<Install, String> {
+    /// [`may`](Self::may), asked of GitHub now and not kept here: the
+    /// viewer check (M165) keeps its answers in the platform's database,
+    /// where every machine drops them on GitHub's events.
+    pub async fn may_now(&self, c: &Caller<'_>, user: &GithubUser, repo: &str) -> Result<Install, String> {
         let login = user.login.as_str();
         let owner = repo.split('/').next().unwrap_or_default();
         let install = match self.installation(c.http, repo).await {
@@ -693,6 +696,13 @@ impl GithubApp {
             _ => return Err(format!("GitHub doesn't list {login} as a collaborator on {full_name}")),
         };
         Ok(RepoRole { id, full_name: full_name.to_owned(), private: r["private"].as_bool().unwrap_or(true), role })
+    }
+
+    /// Access answers kept here that `gone` picks, by GitHub id and
+    /// repository (`OWNER/NAME` in lower case): GitHub said who may see
+    /// them changed (M165).
+    pub fn forget_where(&self, gone: impl Fn(u64, &str) -> bool) {
+        self.access.lock().unwrap().retain(|(user, repo), _| !gone(*user, repo));
     }
 
     /// Installations changed (an install, a repository added or removed).
