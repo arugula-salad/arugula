@@ -82,6 +82,17 @@ impl Db {
         Ok(ChangePage { changes, last, gap })
     }
 
+    /// The newest change written (0 for none): what the hub tells the
+    /// platform with each call (`arugula_platform::cache::SEQ_HEADER`), so
+    /// a call after a write reads it.
+    pub fn last_change(&self) -> anyhow::Result<u64> {
+        Ok(self.c().query_row(
+            "SELECT coalesce((SELECT seq FROM sqlite_sequence WHERE name = 'hub_changes'), 0)",
+            [],
+            |r| r.get(0),
+        )?)
+    }
+
     /// Drop changes older than [`KEEP_MS`] and beyond the newest
     /// [`KEEP_ROWS`]; how many went.
     pub fn prune_changes(&self, now: u64) -> anyhow::Result<usize> {

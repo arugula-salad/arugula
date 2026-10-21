@@ -993,7 +993,10 @@ sleeps, and control pushes and searches them itself.
   and 2 s at most while the feed is read, `arugula_platform::cache`). If
   the feed can't be read for 2 s the platform drops what it kept, and
   until it can, keeps nothing past 10 s; billing's meters, which the feed
-  doesn't cover, are kept 10 s at most.
+  doesn't cover, are kept 10 s at most. A call after a write reads it at
+  once: the hub passes each call on with its newest change, and the
+  platform reads the feed first when it's behind; and an absence (no
+  team, no such machine) is never kept.
   Grants, projects, billing and Cloud read the hub through the same cache,
   so a warm request makes no hub call; a refusal asks the hub again first,
   so a machine that just joined isn't refused. Deleting an account reaches

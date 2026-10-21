@@ -15,6 +15,15 @@
 //! machine that left isn't given a new one from what was kept before it
 //! left.
 //!
+//! **Read your writes.** Only what's there is kept (a team, a machine, an
+//! account, a non-empty list, a "yes"): an absence is asked again every
+//! time, so a team made or a machine joined is never hidden by an answer
+//! from before. And the hub passes every call on with its newest change
+//! ([`SEQ_HEADER`]): when the cache hasn't read that far, the call reads
+//! the feed first ([`fresh`]), so a second team or a second machine shows
+//! at once too. A roster the hub says changed (`roster_changed`) is
+//! dropped there and then.
+//!
 //! **How long an answer is kept.** Two kinds:
 //! - **What the feed covers** (teams and their rosters, which teams an
 //!   account is in, machines, accounts and their names, whom a word names,
@@ -83,6 +92,12 @@ pub const DELAY: Duration = Duration::from_secs(FEED_TICK.as_secs() + CACHE_TICK
 pub const CAP: usize = 20_000;
 /// Changes read from the feed at a time.
 const PAGE: u32 = 500;
+/// The newest change the hub had written when it passed a call on (its
+/// gateway out of process, its gate in process; never a client's). A call
+/// that comes after a write of its own, or anyone's, reads the feed first
+/// when the cache is behind it ([`fresh`]): the platform reads its writes
+/// without waiting for a feed tick.
+pub const SEQ_HEADER: &str = "x-arugula-hub-seq";
 
 /// Whether the feed covers a map's answers.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -104,13 +119,35 @@ struct Entry<V> {
 /// Answers by key.
 struct Map<K, V> {
     kept: Kept,
+    /// Which answers are kept at all: only what's there (a team, a
+    /// machine, a "yes"), never an absence, which a write in the hub may
+    /// have just ended (read your writes).
+    keep: fn(&V) -> bool,
     cap: usize,
     m: Mutex<HashMap<K, Entry<V>>>,
 }
 
+fn any<V>(_: &V) -> bool {
+    true
+}
+
+fn there<T>(v: &Option<T>) -> bool {
+    v.is_some()
+}
+
+// A `Map`'s `keep` is `fn(&V)`, and `V` is the `Vec`.
+#[allow(clippy::ptr_arg)]
+fn some<T>(v: &Vec<T>) -> bool {
+    !v.is_empty()
+}
+
+fn yes(v: &bool) -> bool {
+    *v
+}
+
 impl<K: Eq + Hash + Clone, V: Clone> Map<K, V> {
-    fn new(kept: Kept) -> Self {
-        Map { kept, cap: CAP, m: Mutex::new(HashMap::new()) }
+    fn new(kept: Kept, keep: fn(&V) -> bool) -> Self {
+        Map { kept, keep, cap: CAP, m: Mutex::new(HashMap::new()) }
     }
 
     /// What's kept for each key, fresh enough, and the keys with nothing:
@@ -148,7 +185,8 @@ impl<K: Eq + Hash + Clone, V: Clone> Map<K, V> {
         if !still() {
             return;
         }
-        m.extend(entries.into_iter().map(|(k, value)| (k, Entry { value, at, used: now })));
+        let keep = self.keep;
+        m.extend(entries.into_iter().filter(|(_, v)| keep(v)).map(|(k, value)| (k, Entry { value, at, used: now })));
         if m.len() > self.cap {
             // The least recently used quarter goes.
             let keep = self.cap - self.cap / 4;
@@ -183,6 +221,9 @@ pub struct Cache {
     epoch: AtomicU64,
     /// The last change read from the feed; `None` before the first read.
     after: tokio::sync::Mutex<Option<u64>>,
+    /// The same, plus one, for a look without the lock: 0 before the first
+    /// read.
+    read_to: AtomicU64,
     /// When the last feed read that worked began; `None` before the first.
     read_from: Mutex<Option<Instant>>,
     /// Everything was dropped for a feed that couldn't be read, and it
@@ -217,17 +258,18 @@ impl Cache {
             skew: AtomicU64::new(0),
             epoch: AtomicU64::new(0),
             after: tokio::sync::Mutex::new(None),
+            read_to: AtomicU64::new(0),
             read_from: Mutex::new(None),
             dropped_unread: AtomicBool::new(false),
-            teams: Map::new(Kept::Feed),
-            teams_of: Map::new(Kept::Feed),
-            daemons: Map::new(Kept::Feed),
-            accounts: Map::new(Kept::Feed),
-            called: Map::new(Kept::Feed),
-            flags: Map::new(Kept::Feed),
-            machines_for: Map::new(Kept::Feed),
-            reach: Map::new(Kept::Feed),
-            meters: Map::new(Kept::Tick),
+            teams: Map::new(Kept::Feed, there),
+            teams_of: Map::new(Kept::Feed, some),
+            daemons: Map::new(Kept::Feed, there),
+            accounts: Map::new(Kept::Feed, there),
+            called: Map::new(Kept::Feed, some),
+            flags: Map::new(Kept::Feed, any),
+            machines_for: Map::new(Kept::Feed, some),
+            reach: Map::new(Kept::Feed, yes),
+            meters: Map::new(Kept::Tick, any),
         }
     }
 
@@ -247,6 +289,19 @@ impl Cache {
     pub fn feed_read(&self) -> bool {
         let now = self.now();
         self.read_from.lock().unwrap().is_some_and(|t| now.saturating_duration_since(t) < GRACE)
+    }
+
+    /// Whether the hub has written a change (`seq`, the newest it has, as
+    /// its gateway says in [`SEQ_HEADER`]) this cache hasn't read yet.
+    pub fn behind(&self, seq: u64) -> bool {
+        seq >= self.read_to.load(Ordering::SeqCst)
+    }
+
+    /// A team's roster changed, as the hub just told the platform
+    /// (`PlatformPort::roster_changed`): drop what's kept of it now rather
+    /// than at the next feed tick. Whether it may change who sees what.
+    pub fn team_changed(&self, team: &str) -> bool {
+        self.apply(&Change { seq: 0, at: 0, kind: ChangeKind::TeamRoster, subject: team.to_owned() })
     }
 
     /// Asks the hub for what `get` didn't have (everything, when `now`), and
@@ -564,9 +619,24 @@ impl Cache {
     /// from when it began. One that fails once the feed hasn't been read
     /// for [`GRACE`] drops everything.
     pub async fn follow(&self, hub: &dyn HubPort) -> HubResult<bool> {
+        self.follow_past(hub, None).await
+    }
+
+    /// [`Cache::follow`], unless a read that finished while this one waited
+    /// already got past `seq`.
+    async fn follow_past(&self, hub: &dyn HubPort, seq: Option<u64>) -> HubResult<bool> {
         let mut after = self.after.lock().await;
+        if let (Some(seq), Some(at)) = (seq, *after)
+            && at >= seq
+        {
+            return Ok(false);
+        }
         let began = self.now();
-        match self.read(hub, &mut after).await {
+        let read = self.read(hub, &mut after).await;
+        if let Some(at) = *after {
+            self.read_to.store(at + 1, Ordering::SeqCst);
+        }
+        match read {
             Ok(moved) => {
                 let mut from = self.read_from.lock().unwrap();
                 *from = Some(from.map_or(began, |t| t.max(began)));
@@ -640,9 +710,32 @@ pub fn start(app: &Arc<Platform>) {
     });
 }
 
+/// Every platform call: if the hub had written a change the cache hasn't
+/// read ([`SEQ_HEADER`]), read the feed before answering. One hub call, and
+/// only after something changed; a call with no header (tests) or a cache
+/// that's caught up costs nothing.
+pub async fn fresh(
+    axum::extract::State(app): axum::extract::State<Arc<Platform>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let seq = req.headers().get(SEQ_HEADER).and_then(|v| v.to_str().ok()?.parse::<u64>().ok());
+    if let Some(seq) = seq
+        && app.cache.behind(seq)
+        && let Err(e) = catch_up_past(&app, Some(seq)).await
+    {
+        tracing::warn!(error = %e, "the platform couldn't read the hub's change feed before a call");
+    }
+    next.run(req).await
+}
+
 /// Read the feed now, as a tick would.
 pub async fn catch_up(app: &Platform) -> HubResult<()> {
-    if app.cache.follow(&*app.hub).await? {
+    catch_up_past(app, None).await
+}
+
+async fn catch_up_past(app: &Platform, seq: Option<u64>) -> HubResult<()> {
+    if app.cache.follow_past(&*app.hub, seq).await? {
         app.chat.changed();
     }
     Ok(())
@@ -696,8 +789,7 @@ mod tests {
         assert_eq!(hub.calls(), calls + 1);
     }
 
-    /// `*_now` asks the hub whatever is kept, and keeps what it said: a
-    /// refusal confirmed is a refusal the next lookup needn't ask about.
+    /// `*_now` asks the hub whatever is kept, and keeps what it said.
     #[tokio::test]
     async fn asking_now_asks_and_keeps() {
         let hub = TestHub::default();
@@ -706,7 +798,7 @@ mod tests {
         let ids = ["m1".to_owned()];
         assert!(cache.daemons(&hub, &ids).await.unwrap().is_empty(), "not joined yet");
         hub.daemon("m1", "a", None);
-        assert!(cache.daemons(&hub, &ids).await.unwrap().is_empty(), "kept until the feed says");
+        assert_eq!(cache.daemons(&hub, &ids).await.unwrap()["m1"].account, "a", "an absence isn't kept");
         let calls = hub.calls();
         assert_eq!(cache.daemons_now(&hub, &ids).await.unwrap()["m1"].account, "a");
         assert_eq!(hub.calls(), calls + 1);
@@ -866,11 +958,65 @@ mod tests {
         assert!(cache.machines_for(&hub, "c").await.unwrap().is_empty());
     }
 
+    /// Only what's there is kept: an empty list, a missing id or a "no" is
+    /// asked again every time, so a hub write that just ended it (a team
+    /// made, a machine joined, a share given) is read at once, feed or no
+    /// feed.
+    #[tokio::test]
+    async fn an_absence_is_never_kept() {
+        let hub = TestHub::default();
+        let cache = Cache::default();
+        cache.follow(&hub).await.unwrap();
+        let (m1, a) = (["m1".to_owned()], ["a".to_owned()]);
+        let ask = async || {
+            (
+                cache.teams_of(&hub, "a").await.unwrap().len(),
+                cache.team(&hub, "t1").await.unwrap().is_some(),
+                cache.machines_for(&hub, "a").await.unwrap().len(),
+                cache.may_reach(&hub, "c", &m1).await.unwrap().len(),
+                cache.daemons(&hub, &m1).await.unwrap().len(),
+                cache.accounts(&hub, &a).await.unwrap().len(),
+                cache.accounts_called(&hub, "a").await.unwrap().len(),
+            )
+        };
+        assert_eq!(ask().await, (0, false, 0, 0, 0, 0, 0));
+        let calls = hub.calls();
+        assert_eq!(ask().await, (0, false, 0, 0, 0, 0, 0));
+        assert_eq!(hub.calls(), calls + 7, "every absence asked again");
+        // Written in the hub, and not yet read from the feed.
+        hub.team("t1", &[("a", TeamRole::Owner)]);
+        hub.daemon("m1", "a", Some("t1"));
+        hub.share("m1", "c", true);
+        assert_eq!(ask().await, (1, true, 1, 1, 1, 1, 1), "read at once");
+        let calls = hub.calls();
+        assert_eq!(ask().await, (1, true, 1, 1, 1, 1, 1));
+        assert_eq!(hub.calls(), calls, "and kept");
+    }
+
+    /// The hub telling the platform a roster changed drops the team at
+    /// once; and a cache behind the hub's newest change says so.
+    #[tokio::test]
+    async fn a_roster_the_hub_says_changed_is_dropped_at_once() {
+        let hub = TestHub::default();
+        hub.team("t1", &[("a", TeamRole::Owner), ("b", TeamRole::Editor)]);
+        let cache = Cache::default();
+        assert!(cache.behind(0), "nothing read yet");
+        cache.follow(&hub).await.unwrap();
+        assert!(!cache.behind(1));
+        assert_eq!(cache.teams_of(&hub, "b").await.unwrap(), ["t1"]);
+        hub.team("t1", &[("a", TeamRole::Owner)]);
+        assert!(cache.behind(2), "the hub wrote 2");
+        assert_eq!(cache.teams_of(&hub, "b").await.unwrap(), ["t1"], "kept, until");
+        assert!(cache.team_changed("t1"));
+        assert!(cache.teams_of(&hub, "b").await.unwrap().is_empty());
+        assert_eq!(cache.team(&hub, "t1").await.unwrap().unwrap().members.len(), 1);
+    }
+
     /// Each map keeps at most its cap: past it, the least recently used
     /// quarter goes.
     #[test]
     fn a_full_map_forgets_the_least_recently_used() {
-        let mut map: Map<u32, u32> = Map::new(Kept::Feed);
+        let mut map: Map<u32, u32> = Map::new(Kept::Feed, any);
         map.cap = 8;
         let t0 = Instant::now();
         let at = |s: u64| t0 + Duration::from_secs(s);

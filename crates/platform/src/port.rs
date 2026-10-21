@@ -32,8 +32,9 @@ pub trait PlatformPort: Send + Sync {
     /// Whether chat is on for an account, for the page (`/api/me`).
     fn chat_on<'a>(&'a self, account: &'a str) -> BoxFuture<'a, anyhow::Result<bool>>;
 
-    /// A team's roster changed (the hub just took a new version): billing's
-    /// seats follow it. Waits for Stripe, as the roster's route always has.
+    /// A team's roster changed (the hub just took a new version): what the
+    /// platform kept of the team goes, and billing's seats follow it. Waits
+    /// for Stripe, as the roster's route always has.
     fn roster_changed<'a>(&'a self, team: &'a str) -> BoxFuture<'a, anyhow::Result<()>>;
 }
 
@@ -84,6 +85,12 @@ impl PlatformPort for Platform {
 
     fn roster_changed<'a>(&'a self, team: &'a str) -> BoxFuture<'a, anyhow::Result<()>> {
         Box::pin(async move {
+            // What's kept of the team goes now, not at the next feed tick:
+            // the roster's route answers after this, so its caller reads
+            // the new roster.
+            if self.cache.team_changed(team) {
+                self.chat.changed();
+            }
             billing::sync_seats(self, team).await;
             Ok(())
         })
