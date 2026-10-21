@@ -1330,6 +1330,30 @@ fn all_defs() -> Vec<Def> {
             output: None,
         },
         Def {
+            name: "forge_read",
+            title: "Read a linked repo's PRs and issues",
+            description: "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.",
+            args: Args::Kinds { kinds: table(super::forge_ops::READ), default: None },
+            read_only: true,
+            destructive: false,
+            idempotent: true,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
+        Def {
+            name: "forge_draft",
+            title: "Draft on a linked repo",
+            description: "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it.",
+            args: Args::Kinds { kinds: table(super::forge_ops::DRAFT), default: None },
+            read_only: false,
+            destructive: true,
+            idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
+        Def {
             name: "invite_person",
             title: "Ask to invite a person",
             description: "Ask the user to bring someone into the session you work in (your pane's): a teammate, someone it's shared with, or tailnet:<login>, as a viewer (default) or an editor, with a note saying why. Nothing is shared in an agent's name: it waits as a card beside you that only the session's owner sends (after editing the role or note, if they like) or declines. Only the owner's own agents may ask (not one a guest started). Returns its draft id at once with status waiting; read_invite shows what became of it.",
@@ -1841,6 +1865,7 @@ impl<'a> Call<'a> {
                 Ok(a) => self.link_repo(kind, a).await,
                 Err(e) => Err(e),
             },
+            ("forge_read" | "forge_draft", Some(kind)) => self.forge_ops(name, kind, args).await,
             ("read_cloud", Some(kind)) => self.read_cloud(kind, args).await,
             ("cloud", Some(kind)) => self.drive_cloud(kind, args).await,
             ("delegate", Some(kind @ ("send" | "get" | "answer" | "cancel" | "review" | "apply"))) => match parse(args)
@@ -3332,9 +3357,32 @@ impl Call<'_> {
         let (id, b) = self.forge(&a.block).await?;
         let st = forge_state(&b)?;
         let what = if st.kind == ItemKind::Issue { "Issue" } else { "PR" };
+        let mut summary = format!("{what} block %{id}: {}#{}", st.repo, st.number);
+        // M169: a linked repo's item is the platform's too (forge_read's
+        // pr or issue), read beside the block's own; the block alone if
+        // the platform can't say.
+        let mut platform = None;
+        if crate::forges::linked(&st).await {
+            let at = arugula_control_wire::forge_ops::ItemRef { repo: st.repo.clone(), number: st.number };
+            let op = match st.kind {
+                ItemKind::Issue => arugula_control_wire::forge_ops::Op::IssueGet(at),
+                _ => arugula_control_wire::forge_ops::Op::PrGet(at),
+            };
+            if let Ok(v) = self.forge_op(op).await {
+                summary += &format!(" (linked in Arugula control: {})", v["item"]["id"].as_str().unwrap_or("?"));
+                platform = Some(v);
+            }
+        }
         done(
-            format!("{what} block %{id}: {}#{}", st.repo, st.number),
-            results::ForgeRead { block: id, text: b.text(), wants: st.wants, drafts: st.drafts, error: st.error },
+            summary,
+            results::ForgeRead {
+                block: id,
+                text: b.text(),
+                wants: st.wants,
+                drafts: st.drafts,
+                error: st.error,
+                platform,
+            },
         )
     }
 
@@ -4243,7 +4291,7 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full, fl(false));
-        assert_eq!(all.len(), 22 - NO_FORGE);
+        assert_eq!(all.len(), 24 - NO_FORGE);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -4256,6 +4304,7 @@ mod tests {
             "capabilities",
             "history",
             "read_forge",
+            "forge_read",
             "read_invite",
             "read_file",
             "read_cloud",
@@ -4384,9 +4433,9 @@ mod tests {
             assert!(!every.contains(&name), "{name} is an agent's again");
             assert!(route(name, json!({}), fl(true)).is_err(), "{name}");
         }
-        assert_eq!(every.len(), 24);
-        assert_eq!(defs(fl(false)).len(), 22 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 24 - NO_FORGE);
+        assert_eq!(every.len(), 26);
+        assert_eq!(defs(fl(false)).len(), 24 - NO_FORGE);
+        assert_eq!(defs(fl(true)).len(), 26 - NO_FORGE);
         assert_eq!(every.len(), defs(fl(false)).len() + 2 + NO_FORGE, "and delegate and doc");
     }
 

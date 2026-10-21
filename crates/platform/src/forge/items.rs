@@ -98,6 +98,7 @@ pub async fn list(
         author: q.author.as_deref(),
         review_requested: q.review_requested.as_deref(),
         text: q.q.as_deref(),
+        number: None,
         limit: q.limit.unwrap_or(DEFAULT).clamp(1, MOST),
     };
     let name = |id: u64| repos.iter().find(|r| r.repo_id == id).map_or("", |r| r.full_name.as_str());

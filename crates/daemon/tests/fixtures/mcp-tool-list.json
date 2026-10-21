@@ -1825,6 +1825,9 @@
               "null"
             ]
           },
+          "platform": {
+            "description": "On a repo linked in Arugula control (M169): the platform's item,\nits events and its waiting drafts, as forge_read's pr or issue."
+          },
           "summary": {
             "type": "string"
           },
@@ -1963,6 +1966,184 @@
       },
       "name": "draft",
       "title": "Draft a forge write"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a linked repo's PRs and issues"
+      },
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "author": {
+            "default": null,
+            "description": "items: A GitHub login.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft": {
+            "description": "draft: The draft's id (dft_…).",
+            "type": "string"
+          },
+          "item": {
+            "default": null,
+            "description": "pr, issue, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item_kind": {
+            "default": null,
+            "description": "items: pr or issue.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "pr",
+              "issue",
+              "items",
+              "checks",
+              "drafts",
+              "draft"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "default": null,
+            "description": "items: At most this many (default 100, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "q": {
+            "default": null,
+            "description": "items: Text in the title.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "default": null,
+            "description": "items: One linked repo, OWNER/NAME.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "review_requested": {
+            "default": null,
+            "description": "items: A GitHub login among the requested reviewers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "forge_read",
+      "title": "Read a linked repo's PRs and issues"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Draft on a linked repo"
+      },
+      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
+      "inputSchema": {
+        "$defs": {
+          "Event": {
+            "enum": [
+              "approve",
+              "request_changes",
+              "comment"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "body": {
+            "default": null,
+            "description": "comment: The comment, in markdown. review: The review's text, in markdown (needed unless it approves). issue: In markdown.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft": {
+            "description": "discard: The draft's id (dft_…).",
+            "type": "string"
+          },
+          "event": {
+            "$ref": "#/$defs/Event"
+          },
+          "item": {
+            "description": "comment: The PR or issue: OWNER/NAME#N, or its link on github.com. review: The PR: OWNER/NAME#N, or its link on github.com.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "comment",
+              "review",
+              "issue",
+              "discard"
+            ],
+            "type": "string"
+          },
+          "repo": {
+            "description": "issue: The linked repo, OWNER/NAME.",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "forge_draft",
+      "title": "Draft on a linked repo"
     },
     {
       "annotations": {
@@ -4764,6 +4945,9 @@
               "null"
             ]
           },
+          "platform": {
+            "description": "On a repo linked in Arugula control (M169): the platform's item,\nits events and its waiting drafts, as forge_read's pr or issue."
+          },
           "summary": {
             "type": "string"
           },
@@ -4902,6 +5086,184 @@
       },
       "name": "draft",
       "title": "Draft a forge write"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a linked repo's PRs and issues"
+      },
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "author": {
+            "default": null,
+            "description": "items: A GitHub login.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft": {
+            "description": "draft: The draft's id (dft_…).",
+            "type": "string"
+          },
+          "item": {
+            "default": null,
+            "description": "pr, issue, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item_kind": {
+            "default": null,
+            "description": "items: pr or issue.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "pr",
+              "issue",
+              "items",
+              "checks",
+              "drafts",
+              "draft"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "default": null,
+            "description": "items: At most this many (default 100, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "q": {
+            "default": null,
+            "description": "items: Text in the title.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "default": null,
+            "description": "items: One linked repo, OWNER/NAME.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "review_requested": {
+            "default": null,
+            "description": "items: A GitHub login among the requested reviewers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "forge_read",
+      "title": "Read a linked repo's PRs and issues"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Draft on a linked repo"
+      },
+      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
+      "inputSchema": {
+        "$defs": {
+          "Event": {
+            "enum": [
+              "approve",
+              "request_changes",
+              "comment"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "body": {
+            "default": null,
+            "description": "comment: The comment, in markdown. review: The review's text, in markdown (needed unless it approves). issue: In markdown.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft": {
+            "description": "discard: The draft's id (dft_…).",
+            "type": "string"
+          },
+          "event": {
+            "$ref": "#/$defs/Event"
+          },
+          "item": {
+            "description": "comment: The PR or issue: OWNER/NAME#N, or its link on github.com. review: The PR: OWNER/NAME#N, or its link on github.com.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "comment",
+              "review",
+              "issue",
+              "discard"
+            ],
+            "type": "string"
+          },
+          "repo": {
+            "description": "issue: The linked repo, OWNER/NAME.",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "forge_draft",
+      "title": "Draft on a linked repo"
     },
     {
       "annotations": {
@@ -7422,6 +7784,9 @@
               "null"
             ]
           },
+          "platform": {
+            "description": "On a repo linked in Arugula control (M169): the platform's item,\nits events and its waiting drafts, as forge_read's pr or issue."
+          },
           "summary": {
             "type": "string"
           },
@@ -7560,6 +7925,184 @@
       },
       "name": "draft",
       "title": "Draft a forge write"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a linked repo's PRs and issues"
+      },
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "author": {
+            "default": null,
+            "description": "items: A GitHub login.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft": {
+            "description": "draft: The draft's id (dft_…).",
+            "type": "string"
+          },
+          "item": {
+            "default": null,
+            "description": "pr, issue, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item_kind": {
+            "default": null,
+            "description": "items: pr or issue.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "pr",
+              "issue",
+              "items",
+              "checks",
+              "drafts",
+              "draft"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "default": null,
+            "description": "items: At most this many (default 100, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "q": {
+            "default": null,
+            "description": "items: Text in the title.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "default": null,
+            "description": "items: One linked repo, OWNER/NAME.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "review_requested": {
+            "default": null,
+            "description": "items: A GitHub login among the requested reviewers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "forge_read",
+      "title": "Read a linked repo's PRs and issues"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Draft on a linked repo"
+      },
+      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
+      "inputSchema": {
+        "$defs": {
+          "Event": {
+            "enum": [
+              "approve",
+              "request_changes",
+              "comment"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "body": {
+            "default": null,
+            "description": "comment: The comment, in markdown. review: The review's text, in markdown (needed unless it approves). issue: In markdown.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft": {
+            "description": "discard: The draft's id (dft_…).",
+            "type": "string"
+          },
+          "event": {
+            "$ref": "#/$defs/Event"
+          },
+          "item": {
+            "description": "comment: The PR or issue: OWNER/NAME#N, or its link on github.com. review: The PR: OWNER/NAME#N, or its link on github.com.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "comment",
+              "review",
+              "issue",
+              "discard"
+            ],
+            "type": "string"
+          },
+          "repo": {
+            "description": "issue: The linked repo, OWNER/NAME.",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "forge_draft",
+      "title": "Draft on a linked repo"
     },
     {
       "annotations": {
@@ -10361,6 +10904,9 @@
               "null"
             ]
           },
+          "platform": {
+            "description": "On a repo linked in Arugula control (M169): the platform's item,\nits events and its waiting drafts, as forge_read's pr or issue."
+          },
           "summary": {
             "type": "string"
           },
@@ -10499,6 +11045,184 @@
       },
       "name": "draft",
       "title": "Draft a forge write"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a linked repo's PRs and issues"
+      },
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "author": {
+            "default": null,
+            "description": "items: A GitHub login.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft": {
+            "description": "draft: The draft's id (dft_…).",
+            "type": "string"
+          },
+          "item": {
+            "default": null,
+            "description": "pr, issue, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item_kind": {
+            "default": null,
+            "description": "items: pr or issue.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "pr",
+              "issue",
+              "items",
+              "checks",
+              "drafts",
+              "draft"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "default": null,
+            "description": "items: At most this many (default 100, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "q": {
+            "default": null,
+            "description": "items: Text in the title.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "default": null,
+            "description": "items: One linked repo, OWNER/NAME.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "review_requested": {
+            "default": null,
+            "description": "items: A GitHub login among the requested reviewers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "forge_read",
+      "title": "Read a linked repo's PRs and issues"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Draft on a linked repo"
+      },
+      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
+      "inputSchema": {
+        "$defs": {
+          "Event": {
+            "enum": [
+              "approve",
+              "request_changes",
+              "comment"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "body": {
+            "default": null,
+            "description": "comment: The comment, in markdown. review: The review's text, in markdown (needed unless it approves). issue: In markdown.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft": {
+            "description": "discard: The draft's id (dft_…).",
+            "type": "string"
+          },
+          "event": {
+            "$ref": "#/$defs/Event"
+          },
+          "item": {
+            "description": "comment: The PR or issue: OWNER/NAME#N, or its link on github.com. review: The PR: OWNER/NAME#N, or its link on github.com.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "comment",
+              "review",
+              "issue",
+              "discard"
+            ],
+            "type": "string"
+          },
+          "repo": {
+            "description": "issue: The linked repo, OWNER/NAME.",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "forge_draft",
+      "title": "Draft on a linked repo"
     },
     {
       "annotations": {
@@ -12057,6 +12781,9 @@
               "null"
             ]
           },
+          "platform": {
+            "description": "On a repo linked in Arugula control (M169): the platform's item,\nits events and its waiting drafts, as forge_read's pr or issue."
+          },
           "summary": {
             "type": "string"
           },
@@ -12080,6 +12807,117 @@
         "type": "object"
       },
       "title": "Read a PR or issue block"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a linked repo's PRs and issues"
+      },
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "author": {
+            "default": null,
+            "description": "items: A GitHub login.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft": {
+            "description": "draft: The draft's id (dft_…).",
+            "type": "string"
+          },
+          "item": {
+            "default": null,
+            "description": "pr, issue, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item_kind": {
+            "default": null,
+            "description": "items: pr or issue.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "pr",
+              "issue",
+              "items",
+              "checks",
+              "drafts",
+              "draft"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "default": null,
+            "description": "items: At most this many (default 100, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "q": {
+            "default": null,
+            "description": "items: Text in the title.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "default": null,
+            "description": "items: One linked repo, OWNER/NAME.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "review_requested": {
+            "default": null,
+            "description": "items: A GitHub login among the requested reviewers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "forge_read",
+      "title": "Read a linked repo's PRs and issues"
     },
     {
       "annotations": {
@@ -13198,6 +14036,9 @@
               "null"
             ]
           },
+          "platform": {
+            "description": "On a repo linked in Arugula control (M169): the platform's item,\nits events and its waiting drafts, as forge_read's pr or issue."
+          },
           "summary": {
             "type": "string"
           },
@@ -13221,6 +14062,117 @@
         "type": "object"
       },
       "title": "Read a PR or issue block"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a linked repo's PRs and issues"
+      },
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "author": {
+            "default": null,
+            "description": "items: A GitHub login.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "draft": {
+            "description": "draft: The draft's id (dft_…).",
+            "type": "string"
+          },
+          "item": {
+            "default": null,
+            "description": "pr, issue, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "item_kind": {
+            "default": null,
+            "description": "items: pr or issue.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "pr",
+              "issue",
+              "items",
+              "checks",
+              "drafts",
+              "draft"
+            ],
+            "type": "string"
+          },
+          "limit": {
+            "default": null,
+            "description": "items: At most this many (default 100, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "q": {
+            "default": null,
+            "description": "items: Text in the title.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo": {
+            "default": null,
+            "description": "items: One linked repo, OWNER/NAME.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "review_requested": {
+            "default": null,
+            "description": "items: A GitHub login among the requested reviewers.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "forge_read",
+      "title": "Read a linked repo's PRs and issues"
     },
     {
       "annotations": {

@@ -134,7 +134,10 @@ enum Command {
     /// `OWNER/REPO#N`, `GROUP/PROJECT!N`, or `N` in this directory's repository.
     /// Prints the block, then the PR as text. `pr comment|review|merge|rerun %N`
     /// write to it; run by an agent (CLAUDECODE or AI_AGENT set), a write is a
-    /// draft that waits for a person to send it.
+    /// draft that waits for a person to send it. On a repo linked to a project
+    /// on Arugula control, with no block: `pr view|checks OWNER/REPO#N`, `pr
+    /// list`, and `pr comment|review OWNER/REPO#N` (`--draft` to keep it a
+    /// draft).
     #[command(args_conflicts_with_subcommands = true)]
     Pr(cmd::pr::Args),
     /// Show an issue as a block.
@@ -144,7 +147,9 @@ enum Command {
     /// `N` in this directory's repository. `issue new` opens one (run by an
     /// agent, it's a draft a person sends); `issue comment %N` comments; `issue
     /// agent %N` starts an agent on it in a worktree and branch of its own, in a
-    /// tab with the issue.
+    /// tab with the issue. On a repo linked on Arugula control, with no block:
+    /// `issue view|comment OWNER/REPO#N`, `issue list` and `issue create
+    /// OWNER/REPO`.
     #[command(args_conflicts_with_subcommands = true)]
     Issue(cmd::issue::Args),
     /// Type a pane's failed command again.
@@ -367,6 +372,17 @@ enum Command {
     Project {
         #[command(subcommand)]
         cmd: cmd::project::ProjectCmd,
+    },
+    /// Drafts on your linked repos' PRs and issues, on Arugula control.
+    ///
+    /// Comments, reviews and new issues that you (`--draft`) or your agents
+    /// wrote, waiting for a person to send them: `ls` lists them (on
+    /// `OWNER/REPO#N`, `OWNER/REPO`, a project, or your own), `show` shows
+    /// one, `discard` drops it and `send` sends it as you. Needs `arugula
+    /// login`.
+    Draft {
+        #[command(subcommand)]
+        cmd: cmd::forge_ops::DraftCmd,
     },
     /// How Arugula is doing on this machine.
     ///
@@ -610,6 +626,20 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
     if let Command::Project { cmd } = cli.cmd {
         return cmd::project::run(cmd, cli.json);
     }
+    if let Command::Draft { cmd } = cli.cmd {
+        return cmd::forge_ops::draft(cmd, cli.json);
+    }
+    // A linked repo's PRs and issues on control (M169): no daemon.
+    if let Command::Pr(args) = &cli.cmd
+        && let Some(done) = cmd::pr::on_control(args, cli.json)
+    {
+        return done;
+    }
+    if let Command::Issue(args) = &cli.cmd
+        && let Some(done) = cmd::issue::on_control(args, cli.json)
+    {
+        return done;
+    }
     if let Command::Bridge { probe } = cli.cmd {
         // On a box, for a client that ssh'd in: this daemon's socket on
         // stdin and stdout.
@@ -707,7 +737,8 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         | Command::Login(_)
         | Command::Logout
         | Command::Grants { .. }
-        | Command::Project { .. } => {
+        | Command::Project { .. }
+        | Command::Draft { .. } => {
             unreachable!("handled before connecting")
         }
         Command::Ls => cmd::ls::run(ctx),

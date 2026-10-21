@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod chat;
 pub mod forge;
+pub mod forge_ops;
 pub mod join;
 pub mod maintenance;
 pub mod projects;

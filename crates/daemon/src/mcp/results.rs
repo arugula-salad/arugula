@@ -402,6 +402,10 @@ pub struct ForgeRead {
     pub wants: Vec<ForgeWant>,
     pub drafts: Vec<Draft>,
     pub error: Option<String>,
+    /// On a repo linked in Arugula control (M169): the platform's item,
+    /// its events and its waiting drafts, as forge_read's pr or issue.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<serde_json::Value>,
 }
 
 /// An invite drafted on the user's card.
@@ -713,11 +717,18 @@ mod tests {
             json!({ "block": 5, "text": "t", "wants": [] }),
         );
         shaped(
-            ForgeRead { block: 5, text: "t".into(), wants: vec![], drafts: vec![], error: None },
+            ForgeRead { block: 5, text: "t".into(), wants: vec![], drafts: vec![], error: None, platform: None },
             json!({ "block": 5, "text": "t", "wants": [], "drafts": [], "error": null }),
         );
         shaped(
-            ForgeRead { block: 5, text: "t".into(), wants: vec![], drafts: vec![], error: Some("no".into()) },
+            ForgeRead {
+                block: 5,
+                text: "t".into(),
+                wants: vec![],
+                drafts: vec![],
+                error: Some("no".into()),
+                platform: None,
+            },
             json!({ "block": 5, "text": "t", "wants": [], "drafts": [], "error": "no" }),
         );
         shaped(

@@ -1275,6 +1275,14 @@ auth = "cloud_driver"
 clients = ["daemon"]
 note = "Whether a repo is linked to a project the reader may read it in (M170): a daemon keeps its blocks' drafts there when it is. Always a 200; another project's repo is no linked repo."
 
+[[route]]
+method = "POST"
+path = "/api/forge/ops"  # wire::forge_ops::FORGE_OPS
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Typed forge operations (M169), by name and version: reads and drafts through the routes above and their viewer check. A send is a person's: a machine is refused, and a person told it isn't built yet (M168)."
+
 # ---- platform: billing
 
 [[route]]

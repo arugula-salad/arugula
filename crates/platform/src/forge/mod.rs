@@ -64,6 +64,9 @@ pub mod items;
 pub mod links;
 #[cfg(test)]
 mod links_tests;
+pub mod ops;
+#[cfg(test)]
+mod ops_tests;
 pub mod poller;
 pub mod stats;
 pub mod viewer;
