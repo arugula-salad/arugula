@@ -20,14 +20,17 @@
 #                    (from Infisical unless it's in the environment)
 #   --keep           leave the scratch Postgres running, and say how to reach it
 #
-# R2, read-only: ARUGULA_DRILL_ENDPOINT, ARUGULA_DRILL_BUCKET
-# (illogical-control-backups), ARUGULA_DRILL_PREFIX (platform-pg),
-# ARUGULA_DRILL_ACCESS_KEY_ID, ARUGULA_DRILL_SECRET_ACCESS_KEY: each from the
-# environment, else from Infisical (`arugula` prod, /illogical/control) as
-# ARUGULA_PLATFORM_DUMP_ENDPOINT, ARUGULA_PLATFORM_DUMP_READ_KEY_ID,
-# ARUGULA_PLATFORM_DUMP_READ_SECRET, and the identity as
-# ARUGULA_PLATFORM_DUMP_AGE_KEY. Run it where arugula's .infisical.json is
-# (or set INFISICAL_PROJECT_ID). Nothing secret is printed.
+# R2: ARUGULA_DRILL_ENDPOINT, ARUGULA_DRILL_BUCKET, ARUGULA_DRILL_PREFIX
+# (platform-pg), ARUGULA_DRILL_ACCESS_KEY_ID, ARUGULA_DRILL_SECRET_ACCESS_KEY:
+# each from the environment, else from Infisical (`arugula` prod,
+# /illogical/control) as the dump job names them: ARUGULA_DUMP_ENDPOINT,
+# ARUGULA_DUMP_BUCKET, ARUGULA_DUMP_ACCESS_KEY_ID and
+# ARUGULA_DUMP_SECRET_ACCESS_KEY if they're there, else LITESTREAM_ENDPOINT,
+# LITESTREAM_BUCKET, LITESTREAM_ACCESS_KEY_ID and
+# LITESTREAM_SECRET_ACCESS_KEY (the platform's Litestream token, which the
+# dump uses). The identity is ARUGULA_PLATFORM_DUMP_AGE_KEY. Run it where
+# arugula's .infisical.json is (or set INFISICAL_PROJECT_ID). Nothing secret
+# is printed.
 #
 # Needs docker, age, jq, curl and the aws CLI.
 set -euo pipefail
@@ -53,20 +56,24 @@ done
 infisical_get() {
   local args=(secrets get "$1" --env prod --path /illogical/control --plain --silent)
   [ -z "${INFISICAL_PROJECT_ID:-}" ] || args+=(--projectId "$INFISICAL_PROJECT_ID")
-  infisical "${args[@]}"
+  infisical "${args[@]}" 2>/dev/null
 }
-from() { # VAR INFISICAL_NAME: the environment's, else Infisical's
-  local v=${!1:-}
-  [ -n "$v" ] || v=$(infisical_get "$2") || die "no $1, and Infisical has no $2"
-  [ -n "$v" ] || die "$2 is empty in Infisical"
+from() { # VAR NAME...: the environment's VAR, else the first of Infisical's NAMEs that's set
+  local v=${!1:-} var=$1 name
+  shift
+  for name in "$@"; do
+    [ -z "$v" ] || break
+    v=$(infisical_get "$name") || v=""
+  done
+  [ -n "$v" ] || die "no $var in the environment, and Infisical has none of: $*"
   printf '%s' "$v"
 }
 
-endpoint=$(from ARUGULA_DRILL_ENDPOINT ARUGULA_PLATFORM_DUMP_ENDPOINT)
-bucket=${ARUGULA_DRILL_BUCKET:-illogical-control-backups}
+endpoint=$(from ARUGULA_DRILL_ENDPOINT ARUGULA_DUMP_ENDPOINT LITESTREAM_ENDPOINT)
+bucket=$(from ARUGULA_DRILL_BUCKET ARUGULA_DUMP_BUCKET LITESTREAM_BUCKET)
 prefix=${ARUGULA_DRILL_PREFIX:-platform-pg}
-AWS_ACCESS_KEY_ID=$(from ARUGULA_DRILL_ACCESS_KEY_ID ARUGULA_PLATFORM_DUMP_READ_KEY_ID)
-AWS_SECRET_ACCESS_KEY=$(from ARUGULA_DRILL_SECRET_ACCESS_KEY ARUGULA_PLATFORM_DUMP_READ_SECRET)
+AWS_ACCESS_KEY_ID=$(from ARUGULA_DRILL_ACCESS_KEY_ID ARUGULA_DUMP_ACCESS_KEY_ID LITESTREAM_ACCESS_KEY_ID)
+AWS_SECRET_ACCESS_KEY=$(from ARUGULA_DRILL_SECRET_ACCESS_KEY ARUGULA_DUMP_SECRET_ACCESS_KEY LITESTREAM_SECRET_ACCESS_KEY)
 export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION=auto AWS_DEFAULT_REGION=auto
 s3() { aws --endpoint-url "$endpoint" s3 "$@"; }
 

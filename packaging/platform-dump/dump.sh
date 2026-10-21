@@ -12,9 +12,13 @@
 #   3. pg_dump --format=custom | age -r … → dump.age (no key here opens it)
 #   4. put DUMP.pgdump.age, then DUMP.json (the record), then latest.json
 #   5. read the dump's size back from R2
+#   6. prune: delete the dumps (and their records) older than 30 days, but
+#      never the newest 3, whatever their age, so a stopped clock or a run
+#      of failures can't empty the prefix. A failed prune only logs: the
+#      dump is in
 #
-# Each run logs `platform-dump: ok …` last, or `platform-dump: FAILED …`
-# and exits non-zero (fly logs; the machine's exit code in `fly machine
+# Each run logs `platform-dump: ok …`, or `platform-dump: FAILED …` and
+# exits non-zero (fly logs; the machine's exit code in `fly machine
 # status`). With ARUGULA_DUMP_PING_URL it also pings a dead man's switch
 # (healthchecks.io's convention: URL/start, URL, URL/fail), which notices a
 # run that never happened.
@@ -26,8 +30,9 @@
 #   ARUGULA_DUMP_RECIPIENTS        age public keys (age1…), space- or comma-separated
 #   ARUGULA_DUMP_BUCKET, ARUGULA_DUMP_ENDPOINT, ARUGULA_DUMP_ACCESS_KEY_ID,
 #   ARUGULA_DUMP_SECRET_ACCESS_KEY R2, else the app's LITESTREAM_* (the same bucket)
-#   ARUGULA_DUMP_PREFIX            the objects' prefix (platform-pg), which R2's
-#                                  lifecycle rule expires after 30 days
+#   ARUGULA_DUMP_PREFIX            the objects' prefix (platform-pg)
+#   ARUGULA_DUMP_KEEP_DAYS         prune dumps older than this (30)
+#   ARUGULA_DUMP_KEEP_NEWEST       and never the newest this many (3)
 #   ARUGULA_DUMP_REGION            SigV4's region (auto, R2's)
 #   ARUGULA_DUMP_PLATFORM_URL      the platform's health check, for its version
 #                                  (http://arugula-platform.internal:7700/platform.json)
@@ -62,6 +67,11 @@ key_id=${ARUGULA_DUMP_ACCESS_KEY_ID:-${LITESTREAM_ACCESS_KEY_ID:?no R2 access ke
 secret=${ARUGULA_DUMP_SECRET_ACCESS_KEY:-${LITESTREAM_SECRET_ACCESS_KEY:?no R2 secret access key}}
 prefix=${ARUGULA_DUMP_PREFIX:-platform-pg}
 region=${ARUGULA_DUMP_REGION:-auto}
+keep_days=${ARUGULA_DUMP_KEEP_DAYS:-30}
+keep_newest=${ARUGULA_DUMP_KEEP_NEWEST:-3}
+step="checking the retention"
+[[ $keep_days =~ ^[0-9]+$ && $keep_newest =~ ^[1-9][0-9]*$ ]] ||
+  { log "ARUGULA_DUMP_KEEP_DAYS and ARUGULA_DUMP_KEEP_NEWEST are whole numbers (the newest at least 1)"; exit 2; }
 health=${ARUGULA_DUMP_PLATFORM_URL:-http://arugula-platform.internal:7700/platform.json}
 step="checking the recipients"
 read -r -a recipients <<<"$(tr ',' ' ' <<<"${ARUGULA_DUMP_RECIPIENTS:-}")"
@@ -157,4 +167,43 @@ have=$(s3 -I "${endpoint%/}/$bucket/$object" | tr -d '\r' | awk 'tolower($1) == 
 [ "$have" = "$bytes" ] || { log "R2 holds $have bytes of $object, not $bytes"; exit 1; }
 
 log "ok $object: $bytes bytes, sha256 ${sha:0:16}, $tables tables, $rows rows, migrations up to $(jq '.migrations[-1].version' "$work/record.json"), $(jq .seconds "$work/record.json") s"
+
+# Retention, by the job itself (no lifecycle rule: nothing here can set one).
+# A dump's time is in its name, so the age is the name's, not R2's clock.
+# Every command checks its own result: in a function called from `if`,
+# `set -e` doesn't stop it.
+prune() {
+  local listing="$work/list.xml" token="" keys="$work/keys" stems cutoff n=0 kept old q
+  : > "$keys"
+  while :; do
+    q="list-type=2&prefix=${prefix}%2F"
+    [ -z "$token" ] || q="$q&continuation-token=$(jq -rn --arg t "$token" '$t | @uri')"
+    s3 -o "$listing" -H "x-amz-content-sha256: $(printf '' | sha256sum | cut -d' ' -f1)" \
+      "${endpoint%/}/$bucket?$q" || return 1
+    grep -o '<Key>[^<]*</Key>' "$listing" | sed 's/<[^>]*>//g' >> "$keys" || true
+    grep -q '<IsTruncated>true</IsTruncated>' "$listing" || break
+    token=$(grep -o '<NextContinuationToken>[^<]*</NextContinuationToken>' "$listing" | sed 's/<[^>]*>//g') || return 1
+    [ -n "$token" ] || return 1
+  done
+  # Each dump's stem (prefix/time), newest first; latest.json isn't one.
+  stems=$(grep -E "^$prefix/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6}Z\.(pgdump\.age|json)\$" "$keys" |
+    sed -E 's/\.(pgdump\.age|json)$//' | sort -ru) || true
+  cutoff="$prefix/$(date -u -d "@$(($(date +%s) - keep_days * 86400))" +%Y-%m-%dT%H%M%SZ)" || return 1
+  kept=$(printf '%s\n' "$stems" | grep -c . || true)
+  old=$(printf '%s\n' "$stems" | tail -n +"$((keep_newest + 1))" | awk -v c="$cutoff" 'NF && $0 < c')
+  for stem in $old; do
+    for ext in pgdump.age json; do
+      if grep -qx "$stem.$ext" "$keys"; then
+        s3 -o /dev/null -X DELETE -H "x-amz-content-sha256: $(printf '' | sha256sum | cut -d' ' -f1)" \
+          "${endpoint%/}/$bucket/$stem.$ext" || return 1
+      fi
+    done
+    n=$((n + 1))
+  done
+  log "pruned $n dumps older than $keep_days days; $((kept - n)) kept (never fewer than the newest $keep_newest)"
+}
+step="pruning"
+if ! prune; then
+  log "warning: pruning old dumps failed; this run's dump is in, and the next run tries again"
+fi
 ping "" "$object $bytes bytes $rows rows"

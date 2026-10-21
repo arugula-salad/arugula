@@ -954,9 +954,9 @@ reaches the cluster over 6PN, so nothing passes through a laptop
   is in Infisical (`arugula` prod, `/illogical/control`) and isn't set on
   the app. Don't stage it ahead of time: a deploy between staging and the
   window would start the platform on an empty Postgres.
-- The nightly dump's keys and bucket rule exist ("The nightly dump", below:
-  the age keypair, the lifecycle rule and the drill's read-only token).
-  They're only needed after the window, for step 13.
+- The nightly dump's keys exist ("The nightly dump", below: the age
+  keypair, and the platform's `LITESTREAM_*` escrowed in Infisical for the
+  drill). They're only needed after the window, for step 13.
 
 Keep two terminals on the logs throughout: `fly logs -a illogical-control`
 and `fly logs -a arugula-platform`. Paste these helpers first, where
@@ -1431,8 +1431,11 @@ exits):
    the migrations, and each table's rows and portable checksum. It's not
    encrypted, and it holds counts and hashes, no row's content.
 5. **A check:** it reads the object's size back from R2.
-6. **The last line:** `platform-dump: ok <object>: N bytes, …, T tables,
-   R rows`, or `platform-dump: FAILED at <step>` and a non-zero exit.
+6. **The prune** (below): the dumps older than 30 days go, never the
+   newest 3.
+7. **The log:** `platform-dump: ok <object>: N bytes, …, T tables, R rows`
+   and `platform-dump: pruned …`, or `platform-dump: FAILED at <step>` and
+   a non-zero exit.
 
 **Secrets and settings.**
 - **The database:** `ARUGULA_PLATFORM_DATABASE_URL`, the app's own
@@ -1445,19 +1448,24 @@ exits):
   token of its own.
 - **The recipients:** `ARUGULA_DUMP_RECIPIENTS`, the machine's env (age
   public keys aren't secret). It can take more than one.
-- **Optional:** `ARUGULA_DUMP_PING_URL` (below) and `ARUGULA_DUMP_PREFIX`
-  (`platform-pg`).
+- **Optional:** `ARUGULA_DUMP_PING_URL` (below), `ARUGULA_DUMP_PREFIX`
+  (`platform-pg`), `ARUGULA_DUMP_KEEP_DAYS` (30) and
+  `ARUGULA_DUMP_KEEP_NEWEST` (3).
+- **Decided (lead, 2026-10-21):** R2 through the app's Litestream token,
+  the database as `fly-user` through the app's URL, and one age key, in
+  Infisical. The overrides above stay for if that changes.
 
-**Kept 30 days** by an R2 lifecycle rule on the prefix, not by the job. The
-job only ever puts objects, so it needs no listing or deleting. Cloudflare
-dashboard: *R2 → illogical-control-backups → Settings → Object lifecycle
-rules → Add rule*: name `platform-pg-30-days`, prefix `platform-pg/`, *Delete
-uploaded objects* after 30 days. (Or Wrangler: `npx wrangler r2 bucket
-lifecycle add illogical-control-backups platform-pg-30-days platform-pg/
---expire-days 30`; check `--help`.)
-
-The rule deletes by age, whatever else happens. If the dump stops for 30
-days, nothing is left. That's why a stopped dump has to be noticed.
+**Kept 30 days, by the job itself.** There's no R2 lifecycle rule: setting
+one needs Cloudflare access, which nobody operating this has. After a
+successful upload, the job lists `platform-pg/` (S3 ListObjectsV2, with the
+same SigV4 `curl` it puts with) and deletes each dump and its record whose
+time, in its name, is more than 30 days ago. It **never deletes the newest
+3**, whatever their age, so a stopped clock or a run of failures can't
+empty the prefix. `latest.json` and anything not named like a dump are
+left alone. A prune that fails logs `platform-dump: warning: pruning old
+dumps failed` and the run still exits 0: its dump is in, and the next run
+prunes. This needs list and delete on the bucket, which the Litestream
+token (*Object Read & Write*) has.
 
 **Noticing a failed or missing dump.** Nothing in this repository alerts
 today: "A spend alert" is Fly's billing, and home-cloud's Signal alerts
@@ -1468,12 +1476,13 @@ watch the house. So, in order of effort:
   exit code in `fly machine status <dump id> -a arugula-platform`.
 - **The newest dump's age:** `scripts/platform-restore-drill --age` reads
   `latest.json` and exits 1 past 26 hours.
-- **A dead man's switch,** which also notices a run that never happened:
-  `ARUGULA_DUMP_PING_URL` on the machine. It follows healthchecks.io's
-  convention: `<url>/start`, then `<url>` on success or `<url>/fail` with
-  the failing step. A check with a 1-day period and a few hours' grace
-  emails (or Signals) when no ping arrives. Making that account is the
-  operator's choice; without it, the two checks above are the alarm.
+- **Decided (lead, 2026-10-21): those two, checked by hand.** Run
+  `scripts/platform-restore-drill --age` now and then, and after anything
+  touching the platform's app.
+- **If that changes:** a dead man's switch, which also notices a run that
+  never happened. Set `ARUGULA_DUMP_PING_URL` on the machine. It follows
+  healthchecks.io's convention: `<url>/start`, then `<url>` on success, or
+  `<url>/fail` with the failing step.
 
 **Making it** (once, after the window's flip; the lead's steps):
 
@@ -1492,11 +1501,34 @@ watch the house. So, in order of effort:
    shred -u platform-dump.key
    ```
 
-2. **The lifecycle rule,** as above.
-3. **The drill's token:** *R2 → Manage API tokens → Create*, *Object Read
-   only*, for `illogical-control-backups` only. Into Infisical (same path):
-   `ARUGULA_PLATFORM_DUMP_READ_KEY_ID`, `ARUGULA_PLATFORM_DUMP_READ_SECRET`,
-   and the S3 endpoint as `ARUGULA_PLATFORM_DUMP_ENDPOINT`.
+2. **The platform's Litestream keys into Infisical,** for the drill: it
+   reads R2 with them. Fly can't read a secret back, so take them from the
+   platform's running process, as the first window took the hub's. Python
+   sets them, then checks the round trip, and prints only names:
+
+   ```
+   pid=$(plat secrets-check --db env:ARUGULA_PLATFORM_DATABASE_URL | sed -n 's/.*(pid \([0-9]*\)).*/\1/p')
+   fly ssh sftp get /proc/$pid/environ plat.environ -a arugula-platform ${M:+--machine $M}
+   python3 -I - plat.environ <<'PY'
+   import subprocess, sys
+   want = ["LITESTREAM_ACCESS_KEY_ID", "LITESTREAM_SECRET_ACCESS_KEY", "LITESTREAM_ENDPOINT", "LITESTREAM_BUCKET"]
+   raw = open(sys.argv[1], "rb").read()
+   if not raw:
+       sys.exit("plat.environ is empty: sftp read /proc as 0 bytes. Don't guess values; stop and ask.")
+   env = dict(kv.split("=", 1) for kv in raw.decode().split("\0") if "=" in kv)
+   missing = [k for k in want if not env.get(k)]
+   if missing:
+       sys.exit("not in the platform's environment: " + ", ".join(missing))
+   where = ["--env", "prod", "--path", "/illogical/control"]
+   subprocess.run(["infisical", "secrets", "set", *where, *[f"{k}={env[k]}" for k in want]], check=True, stdout=subprocess.DEVNULL)
+   for k in want:
+       got = subprocess.run(["infisical", "secrets", "get", k, *where, "--plain", "--silent"], capture_output=True, text=True).stdout
+       print(k, "same" if got.strip() == env[k] else "DIFFERS")
+   PY
+   shred -u plat.environ
+   ```
+
+3. **No bucket rule:** the job prunes its own dumps (above).
 4. **The machine,** on the image the release pushed (`ci-platform-deploy`
    pushes `dump-vX.Y.Z` even before the machine exists):
 
@@ -1529,6 +1561,11 @@ GB-month, 30 of them cost nothing to speak of.
 production) restores the newest dump into a scratch `postgres:17` container
 and checks it against the dump's record:
 1. It reads `latest.json`, downloads the object, and checks its sha256.
+   It reaches R2 with the keys the dump uses, from Infisical (`arugula`
+   prod, `/illogical/control`): `LITESTREAM_ENDPOINT`, `LITESTREAM_BUCKET`,
+   `LITESTREAM_ACCESS_KEY_ID` and `LITESTREAM_SECRET_ACCESS_KEY`, escrowed
+   by "Making it" step 2. If a token of its own is ever made,
+   `ARUGULA_DUMP_*` names there come first.
 2. It decrypts it with `ARUGULA_PLATFORM_DUMP_AGE_KEY` from Infisical,
    through a pipe, so the key is never written to disk.
 3. It runs `pg_restore --clean --if-exists` into the container.
@@ -1556,7 +1593,10 @@ month or so, and after any change to the dump.
 
 **Rehearsed** with `testnet/window2.sh` (an S3 store standing in for R2):
 the dump made by hand, the drill passing, and a drill against a record that
-lies about one table failing with that table's `DIFFERS`.
+lies about one table failing with that table's `DIFFERS`. Also the prune:
+old dumps seeded at 35, 40, 45 and 60 days, the next run deleting all but
+the 35-day one (kept as one of the newest 3), and a run whose listing is
+refused logging the failed prune and exiting 0 with its dump in.
 
 **For real, after losing the cluster or its data:**
 - **First choice: Fly's own backups.** `fly mpg backup list

@@ -260,7 +260,10 @@ order:
 7. the first nightly dump (`docker compose run dump`) and the restore
    drill (`scripts/platform-restore-drill`) against it. A record that lies
    about one table must fail the drill, and so must a dump with the wrong
-   database password;
+   database password. Then the job's own retention: old dumps seeded at 35,
+   40, 45 and 60 days, and the next run keeps the newest 3 and deletes the
+   rest older than 30 days; a run whose listing is refused (a `curl` in
+   front of the real one) still exits 0 with its dump in;
 8. rollback after people wrote on Postgres: one machine, the hub back on
    `platform`, Postgres copied back over the file (checked against a
    second copy), the platform back on its file, and the new work there.

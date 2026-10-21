@@ -284,6 +284,38 @@ grep -q DIFFERS "$W/drill-tampered.txt" || die "the drill failed without saying 
 echo "a record that lies: the drill fails: $(grep DIFFERS "$W/drill-tampered.txt")" | record
 s3 rm --only-show-errors s3://backups/platform-pg/tampered.pgdump.age
 s3 rm --only-show-errors s3://backups/platform-pg/tampered.json
+# Retention: the job prunes dumps older than 30 days, never the newest 3.
+# Four old pairs seeded beside this run's first dump; the next run keeps
+# itself, the first dump and the 35-day one (the newest 3), and deletes the
+# rest. Then a prune that fails (the listing refused, by a curl in front of
+# the real one) still leaves the run a success, with its dump in.
+declare -A old
+echo "old" > "$W/old.bin"
+for days in 35 40 45 60; do
+  old[$days]="$(date -u -d "$days days ago" +%Y-%m-%dT%H%M%SZ)"
+  s3 cp --only-show-errors "$W/old.bin" "s3://backups/platform-pg/${old[$days]}.pgdump.age"
+  s3 cp --only-show-errors "$W/old.bin" "s3://backups/platform-pg/${old[$days]}.json"
+done
+dc run --rm dump 2>&1 | grep 'platform-dump: \(ok\|pruned\)' | record
+s3 ls s3://backups/platform-pg/ | awk '{ print $4 }' > "$W/after-prune.txt"
+for t in "${old[40]}" "${old[45]}" "${old[60]}"; do
+  if grep -q "^$t\." "$W/after-prune.txt"; then die "the prune kept $t, older than 30 days and not among the newest 3"; fi
+done
+for ext in pgdump.age json; do
+  grep -q "^${old[35]}.$ext$" "$W/after-prune.txt" || die "the prune deleted ${old[35]}.$ext, one of the newest 3"
+done
+[ "$(grep -c '\.pgdump\.age$' "$W/after-prune.txt")" = 3 ] || die "not 3 dumps after the prune: $(cat "$W/after-prune.txt")"
+echo "retention: 40, 45 and 60 days old deleted; the 35-day one kept as one of the newest 3; 3 dumps left" | record
+cat > "$W/curl" <<'SH'
+#!/bin/sh
+case "$*" in *list-type=2*) echo "curl: (22) the listing refused (rehearsal)" >&2; exit 22 ;; esac
+exec /usr/bin/curl "$@"
+SH
+chmod +x "$W/curl"
+dc run --rm -v "$W/curl:/usr/local/bin/curl:ro" dump > "$W/dump-prune-fails.txt" 2>&1 || die "a failed prune failed the run: $(tail -n 3 "$W/dump-prune-fails.txt")"
+grep -q 'platform-dump: warning: pruning old dumps failed' "$W/dump-prune-fails.txt" || die "a failed prune wasn't logged"
+s3 ls s3://backups/platform-pg/ | grep -c '\.pgdump\.age$' | grep -qx 4 || die "the run whose prune failed didn't put its dump"
+echo "a failed prune: logged, exit 0, its dump in" | record
 # A dump that can't reach its database fails loudly.
 if dc run --rm -e ARUGULA_PLATFORM_DATABASE_URL=postgres://postgres:wrong@postgres:5432/platform dump > "$W/dump-broken.txt" 2>&1; then
   die "a dump with the wrong password succeeded"
