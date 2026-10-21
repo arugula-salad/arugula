@@ -61,7 +61,7 @@ sees = "Sprites hosts hosted sandboxes: it knows each one's VM."
 
 [parties.github]
 name = "GitHub"
-sees = "GitHub signs people in: it knows the identities control keeps for it."
+sees = "GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it sees every token control mints and every draft sent, and it sends the webhooks."
 
 [parties.stripe]
 name = "Stripe"
@@ -647,6 +647,112 @@ what = "How far the platform has applied the hub's change feed to projects, team
 why_asleep = "A machine's joining or leaving reaches its grant through the feed, whether or not any machine is up."
 with_account = "none"
 seen_by = ["litestream"]
+
+# ---- the forge mirror (platform step 4, #1204): linked repos' PRs and
+# issues, through the GitHub App
+
+[[table]]
+name = "github_webhook_deliveries"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Each delivery the GitHub App's webhook took: GitHub's delivery id, the event's name and when it came. Kept 7 days, so a redelivery is recognised after a restart."
+why_asleep = "GitHub's webhooks arrive whether or not any machine is up."
+with_account = "none"
+seen_by = ["litestream", "github"]
+
+[[table]]
+name = "github_installations"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Where the GitHub App is installed: the installation id, the GitHub user or organization (id, login, type), the permissions it was granted, and when it was suspended or deleted."
+why_asleep = "Linked repos are read through the installation with every machine asleep."
+with_account = "none"
+seen_by = ["litestream", "github"]
+
+[[table]]
+name = "linked_repos"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A GitHub repo linked to a project: GitHub's repo id, its name, whether it's private, the installation, who linked it and when, whether the project mirrors its content, when it was unlinked and when its rows are purged, and its poller's lease and last backfill and reconcile."
+why_asleep = "Its PRs and issues are kept current by webhooks and a poller on the platform, and read from it, with every machine asleep."
+with_account = "partly"
+note = "It stops naming the account as who linked it. Repos linked to its personal project are unlinked, and their rows purged within 24 hours; a team project's stay linked."
+seen_by = ["litestream", "github"]
+
+[[table]]
+name = "forge_items"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A linked repo's PR or issue, without its body: number, kind, state, title, labels, author, assignees, requested reviewers, draft, merge state, head and base, and GitHub's times."
+why_asleep = "PRs and issues are listed, searched and put in inboxes from here, with every machine asleep."
+with_account = "none"
+seen_by = ["litestream", "github"]
+
+[[table]]
+name = "forge_checks"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A linked repo's check runs and commit statuses per head commit: name, status, conclusion, link and time."
+why_asleep = "A PR's checks show, and a failure reaches an inbox, with every machine asleep."
+with_account = "none"
+seen_by = ["litestream", "github"]
+
+[[table]]
+name = "forge_events"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "What happened to a linked repo's PR or issue, as metadata: reviews and their state, review requests, state changes, with who and when. No text."
+why_asleep = "Inboxes are computed from them with every machine asleep."
+with_account = "none"
+seen_by = ["litestream", "github"]
+
+[[table]]
+name = "forge_content"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A linked repo's PR and issue bodies, comments and review comments, with author and time. Only for a repo whose project turned on content mirroring; turning it off purges them."
+why_asleep = "A project that opted in searches PR text with every machine asleep."
+with_account = "none"
+seen_by = ["litestream", "github"]
+
+[[table]]
+name = "drafts"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A comment, review or new issue for a linked repo, waiting for a person to send it: the project, the person it's for (and the agent and machine that wrote it, if one did), the target, the text, its state, and where it landed once sent."
+why_asleep = "A person sends a draft from a phone with every machine asleep."
+with_account = "deleted"
+note = "Its drafts, and those in projects that go with it."
+seen_by = ["litestream", "github"]
+
+[[table]]
+name = "inbox_items"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A member's inbox: an item, why it's there (a review requested, a mention, failed checks), and when it was seen and done."
+why_asleep = "The inbox is computed and pushed by the platform with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "github_token_mints"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "The audit log of every GitHub token the platform minted: installation or user token, the installation and repo, the permissions, who it was for, what for, and when. Never the token."
+why_asleep = "Tokens are minted for reads, ingest and sends with every machine asleep."
+with_account = "kept"
+note = "Its mints stay in the audit log, naming it, so a token can be traced after the account goes, for as long as the log is kept (M167 sets that)."
+seen_by = ["litestream", "github"]
 
 [[table]]
 name = "platform_migrations"

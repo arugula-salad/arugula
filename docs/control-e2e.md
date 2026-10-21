@@ -1010,10 +1010,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 60 tables in two planes ("Two planes, two trust rules"):
+Control's database has 70 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (32 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (28 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, and Cloud workspaces. Control reads most of it, and says so here.
+- **The platform plane** (38 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, Cloud workspaces, and linked repos' PRs and issues. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1085,6 +1085,16 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `team_members` | metadata | Who is in each team as its latest signed roster says: account, role, name. A copy for platform queries, following the hub's change feed; the signed roster stays the authority over machines. | What's shared with a team on the platform (its channels, later its projects) needs its members while every machine is asleep. | yes |  |
 | `grants` | metadata | A grant: a subject (a machine), a power (cloud.drive) over a scope (an account or a project), who gave it, when, and when it was revoked. | Control checks it on the Cloud workspace routes, which work with every other machine asleep. | yes: grants to its machines, over it, or that it gave. |  |
 | `hub_feed` | metadata | How far the platform has applied the hub's change feed to projects, team members and grants: the last change's number. | A machine's joining or leaving reaches its grant through the feed, whether or not any machine is up. | nothing of one |  |
+| `github_webhook_deliveries` | metadata | Each delivery the GitHub App's webhook took: GitHub's delivery id, the event's name and when it came. Kept 7 days, so a redelivery is recognised after a restart. | GitHub's webhooks arrive whether or not any machine is up. | nothing of one | GitHub |
+| `github_installations` | metadata | Where the GitHub App is installed: the installation id, the GitHub user or organization (id, login, type), the permissions it was granted, and when it was suspended or deleted. | Linked repos are read through the installation with every machine asleep. | nothing of one | GitHub |
+| `linked_repos` | metadata | A GitHub repo linked to a project: GitHub's repo id, its name, whether it's private, the installation, who linked it and when, whether the project mirrors its content, when it was unlinked and when its rows are purged, and its poller's lease and last backfill and reconcile. | Its PRs and issues are kept current by webhooks and a poller on the platform, and read from it, with every machine asleep. | partly: it stops naming the account as who linked it. Repos linked to its personal project are unlinked, and their rows purged within 24 hours; a team project's stay linked. | GitHub |
+| `forge_items` | **plaintext** | A linked repo's PR or issue, without its body: number, kind, state, title, labels, author, assignees, requested reviewers, draft, merge state, head and base, and GitHub's times. | PRs and issues are listed, searched and put in inboxes from here, with every machine asleep. | nothing of one | GitHub |
+| `forge_checks` | metadata | A linked repo's check runs and commit statuses per head commit: name, status, conclusion, link and time. | A PR's checks show, and a failure reaches an inbox, with every machine asleep. | nothing of one | GitHub |
+| `forge_events` | metadata | What happened to a linked repo's PR or issue, as metadata: reviews and their state, review requests, state changes, with who and when. No text. | Inboxes are computed from them with every machine asleep. | nothing of one | GitHub |
+| `forge_content` | **plaintext** | A linked repo's PR and issue bodies, comments and review comments, with author and time. Only for a repo whose project turned on content mirroring; turning it off purges them. | A project that opted in searches PR text with every machine asleep. | nothing of one | GitHub |
+| `drafts` | **plaintext** | A comment, review or new issue for a linked repo, waiting for a person to send it: the project, the person it's for (and the agent and machine that wrote it, if one did), the target, the text, its state, and where it landed once sent. | A person sends a draft from a phone with every machine asleep. | yes: its drafts, and those in projects that go with it. | GitHub |
+| `inbox_items` | metadata | A member's inbox: an item, why it's there (a review requested, a mention, failed checks), and when it was seen and done. | The inbox is computed and pushed by the platform with every machine asleep. | yes |  |
+| `github_token_mints` | metadata | The audit log of every GitHub token the platform minted: installation or user token, the installation and repo, the permissions, who it was for, what for, and when. Never the token. | Tokens are minted for reads, ingest and sends with every machine asleep. | kept: its mints stay in the audit log, naming it, so a token can be traced after the account goes, for as long as the log is kept (M167 sets that). | GitHub |
 | `platform_migrations` | metadata | Which of the platform's numbered migrations (M142) its database has: each one's number, name, checksum, whether it's additive (older builds may start past it) and when it ran, or that it was found already in place on a database made before migrations. | The platform checks its tables are the shape its code expects before it serves anything, whether or not any machine is up. | nothing of one |  |
 
 ### Who else sees it
@@ -1093,7 +1103,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 - **Managoat:** Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals.
 - **PostHog:** PostHog gets product events, when control has a key for it: account, team and machine ids, a machine's version, OS and arch, plans, Labs flags and counts. No names, logins, addresses or content.
 - **Sprites:** Sprites hosts hosted sandboxes: it knows each one's VM.
-- **GitHub:** GitHub signs people in: it knows the identities control keeps for it.
+- **GitHub:** GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it sees every token control mints and every draft sent, and it sends the webhooks.
 - **Stripe:** Stripe bills, when control has a key for it: it holds the customers and subscriptions control keeps ids for, and gets sandbox minutes.
 
 ### Never stored

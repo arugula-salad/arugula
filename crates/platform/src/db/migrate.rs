@@ -125,6 +125,12 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0004_chat_events.sql"),
         additive: true,
     },
+    Migration {
+        version: 5,
+        name: "forge_mirror",
+        sql: include_str!("../../migrations/sqlite/0005_forge_mirror.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -153,6 +159,12 @@ const POSTGRES: &[Migration] = &[
         version: 4,
         name: "chat_events",
         sql: include_str!("../../migrations/postgres/0004_chat_events.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 5,
+        name: "forge_mirror",
+        sql: include_str!("../../migrations/postgres/0005_forge_mirror.sql"),
         additive: true,
     },
 ];

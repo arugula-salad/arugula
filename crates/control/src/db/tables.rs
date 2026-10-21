@@ -352,7 +352,7 @@ fn render(m: &Manifest) -> String {
     let _ = writeln!(
         s,
         "- **The platform plane** ({} tables) is what has to exist while every machine is asleep: \
-         billing and usage, chat, Shared Docs, and Cloud workspaces. Control reads most of it, \
+         billing and usage, chat, Shared Docs, Cloud workspaces, and linked repos' PRs and issues. Control reads most of it, \
          and says so here.\n",
         count(Plane::Platform)
     );
