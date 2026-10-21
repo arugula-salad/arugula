@@ -88,7 +88,7 @@ jobs:
         run: shellcheck -s sh scripts/install.sh scripts/glibc-floor && shellcheck -s bash scripts/tests/*.sh scripts/dist-pack
       - name: Release scripts and ratchets
         run: just test-scripts
-      - name: The web client's wire types are current (web/src/shared/proto.gen.ts)
+      - name: The web client's wire types are current (web/src/proto.gen.ts)
         run: just proto-ts check
       - name: DECISIONS.md lists the decision records (docs/decisions/)
         run: just decisions check
