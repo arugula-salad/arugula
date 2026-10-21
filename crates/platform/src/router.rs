@@ -20,7 +20,8 @@ use crate::{Platform, billing, chat, cloud, forge, grants, projects};
 /// (M139), Cloud's (M137), chat's (M138), then grants'; the platform
 /// page's own (M150); the GitHub App's webhook (M161); linked repos
 /// (M163); their items, each read checked against the viewer (M165);
-/// drafts on them (M170); the inbox (M171); and native issues' (M195).
+/// drafts on them (M170); the inbox (M171); and native issues' (M195),
+/// for agents too (M200).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -114,6 +115,12 @@ fn routes() -> Routes {
         .route(issues::PROJECT_ISSUE_HOME, get(crate::issues::home_route).put(crate::issues::set_home_route))
         .route(issues::ISSUE, get(crate::issues::get_route).patch(crate::issues::patch_route))
         .route(issues::ISSUE_EVENTS, get(crate::issues::events_route))
+        // A machine's agents on them (M200).
+        .route(issues::AGENT_ISSUE_HOME, get(crate::issues::agent::home))
+        .route(issues::AGENT_PROJECT_ISSUES, get(crate::issues::agent::list).post(crate::issues::agent::create))
+        .route(issues::AGENT_PROJECT_ISSUE, get(crate::issues::agent::by_number))
+        .route(issues::AGENT_ISSUE, get(crate::issues::agent::get).patch(crate::issues::agent::patch))
+        .route(issues::AGENT_ISSUE_EVENTS, get(crate::issues::agent::events))
         .route("/github/webhook", post(forge::webhook))
 }
 

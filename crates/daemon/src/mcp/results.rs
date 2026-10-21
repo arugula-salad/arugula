@@ -425,7 +425,9 @@ pub struct CloudReach {
 /// `read_forge`.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ForgeRead {
-    pub block: PaneId,
+    /// The block read; none for a native issue.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block: Option<PaneId>,
     pub text: String,
     pub wants: Vec<ForgeWant>,
     pub drafts: Vec<Draft>,
@@ -434,6 +436,10 @@ pub struct ForgeRead {
     /// its events and its waiting drafts, as forge_read's pr or issue.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub platform: Option<serde_json::Value>,
+    /// A native issue in Arugula control (M200): it, its timeline and its
+    /// newest comments.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native: Option<serde_json::Value>,
 }
 
 /// An invite drafted on the user's card.
@@ -745,17 +751,26 @@ mod tests {
             json!({ "block": 5, "text": "t", "wants": [] }),
         );
         shaped(
-            ForgeRead { block: 5, text: "t".into(), wants: vec![], drafts: vec![], error: None, platform: None },
+            ForgeRead {
+                block: Some(5),
+                text: "t".into(),
+                wants: vec![],
+                drafts: vec![],
+                error: None,
+                platform: None,
+                native: None,
+            },
             json!({ "block": 5, "text": "t", "wants": [], "drafts": [], "error": null }),
         );
         shaped(
             ForgeRead {
-                block: 5,
+                block: Some(5),
                 text: "t".into(),
                 wants: vec![],
                 drafts: vec![],
                 error: Some("no".into()),
                 platform: None,
+                native: None,
             },
             json!({ "block": 5, "text": "t", "wants": [], "drafts": [], "error": "no" }),
         );

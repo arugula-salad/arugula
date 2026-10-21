@@ -15,17 +15,21 @@
 //! (`chat_on`), as their threads are.
 //!
 //! **Who acts** is an [`Actor`]: a person (the routes here, from a browser
-//! or a CLI device), or, from M197/M200, a person's agent on a machine. The
-//! functions that take one ([`list`], [`create`], [`read`], [`change`],
-//! [`timeline`]) are what M200's MCP tools call; [`place`] is the one
-//! place an agent's grant will be checked.
+//! or a CLI device), or a person's agent on a machine (M197; [`agent`]'s
+//! routes, M200). The functions that take one ([`list`], [`create`],
+//! [`read`], [`change`], [`timeline`]) are what both call; [`place`] is
+//! the one place an agent's grant is checked.
 //!
 //! **Issue home:** where a project's "new issue" goes, `native` or
 //! `github`. Unless someone chose, it's `github` while the project has a
 //! linked repo and `native` otherwise, so a project linked to GitHub keeps
 //! GitHub. The CLI, MCP and the page read it ([`home`]).
 //!
+//! A machine's agents reach them through [`agent`]'s routes (M200).
+//!
 //! [`db::issues`]: crate::db::issues
+
+pub mod agent;
 
 use std::{collections::BTreeSet, sync::Arc};
 
@@ -105,8 +109,8 @@ fn no_issue() -> ApiError {
 /// The one place who acts is checked. An agent (M197) acts for its owner:
 /// the owner's role is what it may do, and it needs its machine's grant
 /// over the project too (`threads.read` to read, `issues.write` to
-/// write), so it never reaches more than its owner. No route here takes
-/// an agent yet: M200's MCP tools call these functions with one.
+/// write), so it never reaches more than its owner. [`agent`]'s routes
+/// (M200) call these functions with one.
 pub async fn place(app: &Platform, by: Actor<'_>, asked: &str, write: bool) -> Result<Place, ApiError> {
     if !chat_on(app, by.account).await? {
         return Err(refusal(

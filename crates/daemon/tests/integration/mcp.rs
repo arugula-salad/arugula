@@ -142,7 +142,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 27 - NO_FORGE);
+    assert_eq!(tools.len(), 28 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
@@ -398,7 +398,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 27 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 28 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -909,7 +909,7 @@ async fn labs_lists_all_the_tools() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 27 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 28 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -917,7 +917,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 29, "{:?}", names(&with));
+        assert_eq!(with.len(), 30, "{:?}", names(&with));
         assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
@@ -935,13 +935,13 @@ async fn labs_lists_all_the_tools() {
         // of the others' kinds.
         arugula_proto::flags::set(&d.state, "chat", true).unwrap();
         let chat = s.list_all_tools().await.unwrap();
-        assert_eq!(chat.len(), 27, "{:?}", names(&chat));
+        assert_eq!(chat.len(), 28, "{:?}", names(&chat));
         assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
         arugula_proto::flags::set(&d.state, "chat", false).unwrap();
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 27 - NO_FORGE);
+        assert_eq!(without.len(), 28 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -950,7 +950,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 27 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 28 - NO_FORGE, "{:?}", names(&with));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
@@ -1741,7 +1741,10 @@ async fn an_agent_drafts_on_a_linked_pr_with_no_block_and_a_person_sees_it() {
 
     // Reads and drafts, never a send.
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(kinds(&tools, "forge_read"), ["pr", "issue", "items", "checks", "inbox", "drafts", "draft"]);
+    assert_eq!(
+        kinds(&tools, "forge_read"),
+        ["pr", "issue", "items", "checks", "inbox", "drafts", "draft", "native_issues"]
+    );
     assert_eq!(kinds(&tools, "forge_draft"), ["comment", "review", "issue", "discard"]);
     assert!(tools.iter().all(|t| !t.name.contains("send") || t.name == "send_input"), "a send tool");
 
@@ -2021,4 +2024,235 @@ async fn an_agent_reads_and_posts_in_conversations_through_control() {
     assert!(calls.iter().all(|(_, auth, _)| auth.starts_with(&format!("v2 {} ", keys.id()))), "{calls:?}");
     assert!(!d.state.join("threads").exists(), "no thread kept here");
     s.cancel().await.unwrap();
+}
+
+/// A fake control's platform for M200's native issues: one project
+/// (`prj_1`) whose issues are kept, their threads' comments, the machine's
+/// `issues.write` grant (off until `granted`), GitHub drafts through
+/// `/api/forge/ops`, and every call as it came: method and path, its
+/// signature, its body.
+#[derive(Clone, Default)]
+struct FakeNative {
+    granted: Arc<std::sync::atomic::AtomicBool>,
+    issues: Arc<std::sync::Mutex<Vec<Value>>>,
+    comments: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    calls: Arc<std::sync::Mutex<Vec<(String, String, Value)>>>,
+}
+
+async fn fake_native(f: FakeNative) -> String {
+    use axum::{
+        Json, Router,
+        extract::{Request, State},
+        http::StatusCode,
+        response::{IntoResponse, Response},
+        routing::{get, post},
+    };
+    async fn any(State(f): State<FakeNative>, req: Request) -> Response {
+        let (method, at) = (req.method().to_string(), req.uri().to_string());
+        let auth = req.headers().get("x-arugula-auth").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+        let bytes = axum::body::to_bytes(req.into_body(), 1 << 20).await.unwrap();
+        let b: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+        f.calls.lock().unwrap().push((format!("{method} {at}"), auth, b.clone()));
+        let no = |status: StatusCode, said: &str| (status, Json(json!({ "error": said }))).into_response();
+        let path = at.split('?').next().unwrap_or_default().to_owned();
+        let segs: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        let find = |id: &str| f.issues.lock().unwrap().iter().position(|i| i["id"] == id);
+        match (method.as_str(), segs.as_slice()) {
+            ("GET", ["api", "daemon", "chat", "rooms"]) => Json(json!({ "rooms": [], "reach": [
+                { "kind": "project", "id": "prj_1", "name": "acme",
+                  "powers": ["issues.write", "threads.post", "threads.read"] }] }))
+            .into_response(),
+            ("GET", ["api", "daemon", "issue-home"]) => Json(json!({
+                "project": "prj_1", "home": "native", "chosen": false, "repos": [],
+                "native_issues": f.issues.lock().unwrap().len(), "both": false,
+            }))
+            .into_response(),
+            ("POST", ["api", "daemon", "projects", "prj_1", "issues"]) => {
+                if !f.granted.load(Ordering::SeqCst) {
+                    let why = "geek has no issues.write grant over acme: its owner gives it with `arugula grants add geek issues.write --project prj_1`, or turns on geek for acme under Settings, Agents in conversations, on the platform page";
+                    return (StatusCode::FORBIDDEN, Json(json!({ "error": why, "reason": "agent_ungranted" })))
+                        .into_response();
+                }
+                let mut issues = f.issues.lock().unwrap();
+                let n = issues.len() + 1;
+                let i = json!({
+                    "id": format!("iss_{n:032x}"), "project": "prj_1", "number": n, "title": b["title"],
+                    "body": b["body"], "state": "open", "close_reason": null, "author": "a1",
+                    "agent": { "machine": "m1", "machine_name": "geek" }, "labels": b["labels"],
+                    "assignees": b["assignees"], "github": null, "created_at": 1, "updated_at": 1, "closed_at": null,
+                });
+                issues.push(i.clone());
+                Json(i).into_response()
+            }
+            ("GET", ["api", "daemon", "projects", "prj_1", "issues"]) => {
+                Json(json!({ "project": "prj_1", "issues": f.issues.lock().unwrap().clone(), "more": false }))
+                    .into_response()
+            }
+            ("GET", ["api", "daemon", "projects", "prj_1", "issues", n]) => {
+                match f.issues.lock().unwrap().iter().find(|i| n.parse::<u64>().is_ok_and(|n| i["number"] == n)) {
+                    Some(i) => Json(i.clone()).into_response(),
+                    None => no(StatusCode::NOT_FOUND, "no such issue"),
+                }
+            }
+            ("GET", ["api", "daemon", "issues", id]) => match find(id) {
+                Some(at) => Json(f.issues.lock().unwrap()[at].clone()).into_response(),
+                None => no(StatusCode::NOT_FOUND, "no such issue"),
+            },
+            ("GET", ["api", "daemon", "issues", id, "events"]) => Json(json!({ "issue": id, "events": [
+                { "id": 1, "kind": "opened", "actor": "a1", "agent": { "machine": "m1", "machine_name": "geek" },
+                  "at": 1, "detail": {} }] }))
+            .into_response(),
+            ("PATCH", ["api", "daemon", "issues", id]) => {
+                let Some(at) = find(id) else { return no(StatusCode::NOT_FOUND, "no such issue") };
+                let mut issues = f.issues.lock().unwrap();
+                let i = &mut issues[at];
+                let mut events = vec![];
+                if let Some(s) = b["state"].as_str() {
+                    i["state"] = json!(s);
+                    i["close_reason"] =
+                        if s == "closed" { json!(b["reason"].as_str().unwrap_or("completed")) } else { Value::Null };
+                    events.push(
+                        json!({ "id": 2, "kind": if s == "closed" { "closed" } else { "reopened" }, "actor": "a1",
+                                        "agent": { "machine": "m1", "machine_name": "geek" }, "at": 2, "detail": {} }),
+                    );
+                }
+                Json(json!({ "issue": i.clone(), "events": events })).into_response()
+            }
+            ("GET", ["api", "daemon", "chat", "rooms", id, "messages"]) => {
+                let ms: Vec<Value> = f
+                    .comments
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|(on, _)| on == id)
+                    .enumerate()
+                    .map(|(n, (_, text))| {
+                        json!({ "seq": n + 1, "at": 1, "author": "a1", "name": "Jake", "text": text,
+                        "agent": { "machine": "m1", "machine_name": "geek" }, "mentions": [] })
+                    })
+                    .collect();
+                Json(json!({ "room": { "id": "ob_1", "kind": "object", "target": id }, "messages": ms, "more": false }))
+                    .into_response()
+            }
+            ("POST", ["api", "daemon", "chat", "rooms", id, "messages"]) => {
+                let mut cs = f.comments.lock().unwrap();
+                cs.push(((*id).to_owned(), b["text"].as_str().unwrap_or_default().to_owned()));
+                let seq = cs.iter().filter(|(on, _)| on == id).count();
+                Json(json!({ "seq": seq, "mentions": [], "unreached": [], "pushed": [] })).into_response()
+            }
+            ("POST", ["api", "forge", "ops"]) if b["op"] == "draft.create" => {
+                let d = json!({
+                    "id": "dft_00000000000000000000000000000001", "project": "prj_1", "repo": b["repo"],
+                    "repo_id": 77, "number": b["number"], "kind": b["kind"], "event": null, "title": null,
+                    "body": b["body"], "state": "waiting", "author": "a1", "agent": b["agent"], "machine": "m1",
+                    "machine_name": "geek", "created_at": 1, "updated_at": 1,
+                });
+                Json(json!({ "op": b["op"], "v": b["v"], "result": { "draft": d, "created": true } })).into_response()
+            }
+            _ => no(StatusCode::NOT_FOUND, &format!("no route {method} {path}")),
+        }
+    }
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .fallback(any)
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// #1271's done-when: an agent with a grant files a native issue, comments
+/// on it and closes it over MCP, each landing at once, signed as this
+/// machine; refused saying how to grant before it has one. The same agent
+/// drafting on a GitHub issue still makes a draft, and a native issue is
+/// never drafted on. `#N` means the current project: the one this pane's
+/// clone's GitHub repo is linked to.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_files_comments_on_and_closes_a_native_issue() {
+    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let fake = FakeNative::default();
+    let url = fake_native(fake.clone()).await;
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+
+    // The agent's pane is in a clone of acme/app.
+    let dir = d.sessions.join("app");
+    std::fs::create_dir_all(&dir).unwrap();
+    for args in [&["init", "-q"][..], &["remote", "add", "origin", "git@github.com:acme/app.git"]] {
+        assert!(Command::new("git").arg("-C").arg(&dir).args(args).status().unwrap().success());
+    }
+    let s0 = bridge(&d, Client::named("claude-code")).await;
+    let pane = call(&s0, "run", json!({ "cwd": dir })).await["pane"].as_u64().unwrap();
+    let s = bridge_in(&d, Client::named("claude-code"), Some(pane)).await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let c = call(&s, "capabilities", json!({})).await;
+        if c["control"]["threads"]["live"] == true {
+            assert!(c["control"]["threads"]["note"].as_str().unwrap().contains("issue_write"), "{c}");
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "never live: {c}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
+    let file = json!({ "kind": "create", "title": "The canary fails", "body": "since 9:00", "labels": ["bug"] });
+    let why = refused(&s, "issue_write", file.clone()).await;
+    assert!(why.contains("arugula grants add geek issues.write --project prj_1"), "{why}");
+    fake.granted.store(true, Ordering::SeqCst);
+    let filed = call(&s, "issue_write", file).await;
+    let id = filed["issue"]["id"].as_str().unwrap().to_owned();
+    assert!(filed["summary"].as_str().unwrap().contains("Filed #1 [open] The canary fails"), "{filed}");
+    assert!(filed["summary"].as_str().unwrap().contains("now, as your person's agent"), "{filed}");
+
+    let commented = call(&s, "issue_write", json!({ "kind": "comment", "issue": "#1", "text": "bisected it" })).await;
+    assert_eq!(commented["comment"]["seq"], 1, "{commented}");
+    let closed =
+        call(&s, "issue_write", json!({ "kind": "close", "issue": id, "reason": "completed", "comment": "fixed" }))
+            .await;
+    assert_eq!(closed["issue"]["state"], "closed", "{closed}");
+
+    // Read back: read_forge and forge_read take its number or id.
+    let read = call(&s, "read_forge", json!({ "block": "#1" })).await;
+    assert_eq!(read["native"]["issue"]["id"], json!(id), "{read}");
+    assert!(read["text"].as_str().unwrap().contains("[2] Jake's agent on geek: fixed"), "{read}");
+    assert!(read.get("block").is_none(), "{read}");
+    let read = call(&s, "forge_read", json!({ "kind": "issue", "item": id })).await;
+    assert_eq!(read["comments"].as_array().map(Vec::len), Some(2), "{read}");
+    let listed = call(&s, "forge_read", json!({ "kind": "native_issues", "state": "all" })).await;
+    assert!(listed["summary"].as_str().unwrap().contains("#1 [closed, completed] The canary fails"), "{listed}");
+
+    // GitHub stays a draft a person sends; a native issue isn't drafted.
+    let drafted = call(&s, "forge_draft", json!({ "kind": "comment", "item": "acme/app#7", "body": "lgtm" })).await;
+    assert_eq!(drafted["draft"]["state"], "waiting", "{drafted}");
+    assert!(drafted["summary"].as_str().unwrap().contains("waits for a person to send"), "{drafted}");
+    for (tool, args) in [
+        ("forge_draft", json!({ "kind": "comment", "item": "#1", "body": "lgtm" })),
+        ("draft", json!({ "kind": "comment", "block": id, "body": "lgtm" })),
+    ] {
+        let why = refused(&s, tool, args).await;
+        assert!(why.contains("issue_write writes to them at once"), "{tool}: {why}");
+    }
+
+    let calls = fake.calls.lock().unwrap().clone();
+    let at: Vec<&str> = calls.iter().map(|(a, _, _)| a.as_str()).collect();
+    assert!(at.contains(&"GET /api/daemon/issue-home?repo=acme%2Fapp"), "the pane's clone: {at:?}");
+    assert!(at.contains(&"GET /api/daemon/projects/prj_1/issues/1"), "{at:?}");
+    assert!(at.contains(&format!("POST /api/daemon/chat/rooms/{id}/messages").as_str()), "{at:?}");
+    let close = calls.iter().find(|(a, _, _)| a.starts_with("PATCH ")).unwrap();
+    assert_eq!(close.2, json!({ "state": "closed", "reason": "completed" }), "{close:?}");
+    let ops: Vec<&Value> =
+        calls.iter().filter(|(a, _, _)| a == "POST /api/forge/ops").map(|(_, _, b)| &b["op"]).collect();
+    assert_eq!(ops, [&json!("draft.create")], "one draft, no send");
+    let mine: Vec<&(String, String, Value)> =
+        calls.iter().filter(|(a, _, _)| a.contains("/api/daemon/issue") || a.contains("/projects/")).collect();
+    assert!(mine.iter().all(|(_, auth, _)| auth.starts_with(&format!("v2 {} ", keys.id()))), "{mine:?}");
+    s.cancel().await.unwrap();
+    s0.cancel().await.unwrap();
 }

@@ -642,8 +642,14 @@ pub struct OpenIssueArgs {
 /// A PR or issue block, to read.
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadForgeArgs {
-    /// The PR or issue block (from show).
+    /// The PR or issue block (from show). Or a native issue in Arugula
+    /// control: "#N" (in the current project) or "iss_…".
     pub block: PaneArg,
+    /// A native issue's project for "#N": its id (prj_…) or personal.
+    /// Default: the one this clone's GitHub repo is linked to, else the
+    /// user's personal project.
+    #[serde(default)]
+    pub project: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -1309,7 +1315,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "read_forge",
             title: "Read a PR or issue block",
-            description: "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom).",
+            description: "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom). Or a native issue in Arugula control (block \"#N\" in the current project, or \"iss_…\"): it, its timeline and its newest comments.",
             args: Args::One(schema_for_type::<ReadForgeArgs>),
             read_only: true,
             destructive: false,
@@ -1321,7 +1327,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "draft",
             title: "Draft a forge write",
-            description: "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.",
+            description: "Draft a write to a pull request or issue on a forge (GitHub, Forgejo, GitLab), by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.",
             args: Args::Kinds { kinds: table(DRAFT), default: None },
             read_only: false,
             destructive: true,
@@ -1333,7 +1339,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "forge_read",
             title: "Read a linked repo's PRs and issues",
-            description: "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.",
+            description: "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).",
             args: Args::Kinds { kinds: table(super::forge_ops::READ), default: None },
             read_only: true,
             destructive: false,
@@ -1345,7 +1351,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "forge_draft",
             title: "Draft on a linked repo",
-            description: "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it.",
+            description: "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.",
             args: Args::Kinds { kinds: table(super::forge_ops::DRAFT), default: None },
             read_only: false,
             destructive: true,
@@ -1470,6 +1476,19 @@ fn all_defs() -> Vec<Def> {
             args: Args::One(schema_for_type::<super::threads::PostThreadArgs>),
             read_only: false,
             destructive: false,
+            idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
+        // M200: native issues, written at once through the owner's grants.
+        Def {
+            name: super::issues::WRITE_TOOL,
+            title: "Write to a native issue",
+            description: super::issues::WRITE_DESCRIPTION,
+            args: Args::Kinds { kinds: table(super::issues::WRITE), default: None },
+            read_only: false,
+            destructive: true,
             idempotent: false,
             open_world: true,
             flag: None,
@@ -1904,6 +1923,7 @@ impl<'a> Call<'a> {
                 Err(e) => Err(e),
             },
             ("forge_read" | "forge_draft", Some(kind)) => self.forge_ops(name, kind, args).await,
+            ("issue_write", Some(kind)) => self.issue_write(kind, args).await,
             ("read_cloud", Some(kind)) => self.read_cloud(kind, args).await,
             ("cloud", Some(kind)) => self.drive_cloud(kind, args).await,
             ("list", Some("threads")) => match parse::<NoArgs>(args) {
@@ -3398,6 +3418,12 @@ impl Call<'_> {
 
     /// A forge block this caller may read.
     async fn forge(&self, block: &PaneArg) -> Result<(PaneId, Arc<dyn crate::block::Block>), String> {
+        // M200: a native issue isn't a block, and isn't drafted on.
+        if let PaneArg::Name(s) = block
+            && super::issues::Native::parse(s).is_some()
+        {
+            return Err(super::issues::not_drafted(s));
+        }
         let id = block.id()?;
         let p = self.readable(id).await?;
         if p.info.kind != BlockType::Forge {
@@ -3408,6 +3434,22 @@ impl Call<'_> {
     }
 
     async fn read_forge(&self, a: ReadForgeArgs) -> Out {
+        if let PaneArg::Name(s) = &a.block
+            && super::issues::Native::parse(s).is_some()
+        {
+            let (summary, v) = self.read_native(s, a.project.as_deref()).await?;
+            let text = v["text"].as_str().unwrap_or_default().to_owned();
+            let read = results::ForgeRead {
+                block: None,
+                text,
+                wants: vec![],
+                drafts: vec![],
+                error: None,
+                platform: None,
+                native: Some(v),
+            };
+            return done(summary, read);
+        }
         let (id, b) = self.forge(&a.block).await?;
         let st = forge_state(&b)?;
         let what = if st.kind == ItemKind::Issue { "Issue" } else { "PR" };
@@ -3430,12 +3472,13 @@ impl Call<'_> {
         done(
             summary,
             results::ForgeRead {
-                block: id,
+                block: Some(id),
                 text: b.text(),
                 wants: st.wants,
                 drafts: st.drafts,
                 error: st.error,
                 platform,
+                native: None,
             },
         )
     }
@@ -4343,7 +4386,7 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full, fl(false));
-        assert_eq!(all.len(), 27 - NO_FORGE);
+        assert_eq!(all.len(), 28 - NO_FORGE);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -4486,9 +4529,9 @@ mod tests {
         for name in THREAD_TOOLS {
             assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
         }
-        assert_eq!(every.len(), 29);
-        assert_eq!(defs(fl(false)).len(), 27 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 29 - NO_FORGE);
+        assert_eq!(every.len(), 30);
+        assert_eq!(defs(fl(false)).len(), 28 - NO_FORGE);
+        assert_eq!(defs(fl(true)).len(), 30 - NO_FORGE);
         assert_eq!(every.len(), defs(fl(false)).len() + 2 + NO_FORGE, "and delegate and doc");
     }
 
