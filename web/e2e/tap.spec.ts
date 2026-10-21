@@ -26,6 +26,13 @@ test("with a platform page, a chat push or a Cloud tab's opens there, by id (M15
   expect(platformTap({ cloud_workspace: "cw_0123abcd", cloud_tab: "cwc_4567ef01" })).toBe("/workspaces/cw_0123abcd/cwc_4567ef01");
   // M171: an inbox push opens the inbox.
   expect(platformTap({ inbox: { item: `fi_${"0a".repeat(16)}` } })).toBe("/inbox");
+  // M202: a native issue's push opens the issue (at the message, for a
+  // mention in its thread); a mention in a mirrored item's thread, the thread.
+  const iss = `iss_${"0b".repeat(16)}`;
+  expect(platformTap({ inbox: { item: iss } })).toBe(`/issues/${iss}`);
+  expect(platformTap({ inbox: { item: iss, room: `ob_${"0c".repeat(8)}`, seq: 3 } })).toBe(`/issues/${iss}?msg=3`);
+  expect(platformTap({ inbox: { item: `fi_${"0a".repeat(16)}`, room: `ob_${"0c".repeat(8)}`, seq: 3 } })).toBe(`/chat/ob_${"0c".repeat(8)}?msg=3`);
+  expect(platformTap({ inbox: { item: "iss_../x" } })).toBe("/inbox");
   // Anything else stays the shell's.
   for (const n of [{}, { chat: { room: "ch_" } }, { cloud_run: "run_x" }, { cloud_workspace: "cw_0123abcd" }, { pane: 3 }]) expect(platformTap(n)).toBeUndefined();
   expect(platformOf({ platform: "https://app.arugula.io" })).toBe("https://app.arugula.io");

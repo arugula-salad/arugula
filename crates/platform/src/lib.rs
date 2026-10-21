@@ -53,6 +53,7 @@ pub mod grants;
 pub mod hub;
 #[cfg(test)]
 mod hub_calls_tests;
+pub mod inbox;
 pub mod issues;
 #[cfg(test)]
 mod object_threads_tests;

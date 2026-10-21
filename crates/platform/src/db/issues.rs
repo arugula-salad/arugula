@@ -637,7 +637,8 @@ impl Db {
 
 /// What deleting an account takes from issues, inside the platform's
 /// `account_deleted` transaction, after [`super::projects::erase_account`]:
-/// - the issues of the projects that went with it, and their timelines;
+/// - the issues of the projects that went with it, their timelines and
+///   their inbox entries (M202);
 /// - elsewhere its issues and events keep their rows, numbers and text,
 ///   with no author or actor (and no agent);
 /// - it's taken off assignees, and out of assignment events.
@@ -646,6 +647,10 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute(
         "DELETE FROM issue_events WHERE issue_id IN
              (SELECT id FROM issues WHERE project_id NOT IN (SELECT id FROM projects))",
+        params![],
+    )?;
+    c.execute(
+        "DELETE FROM inbox_items WHERE item IN (SELECT id FROM issues WHERE project_id NOT IN (SELECT id FROM projects))",
         params![],
     )?;
     c.execute("DELETE FROM issues WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;

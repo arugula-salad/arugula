@@ -181,7 +181,7 @@ async fn an_agent_reaches_what_its_owner_granted_and_reads() {
 /// project): refused without a grant over the project (and nothing made),
 /// then labelled once it has one, with the room saying so; an issue
 /// outside the owner's projects isn't there, and a private repo's item is
-/// refused as it is to everyone until M165.
+/// refused to an owner GitHub doesn't let read it (M165).
 #[tokio::test]
 async fn an_agent_comments_on_a_native_issue() {
     let (hub, app, base, t, u) = seeded().await;

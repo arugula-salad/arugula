@@ -485,7 +485,7 @@ async fn room_for(app: &Platform, account: &str, id: &str) -> Result<(Room, u64,
 }
 
 /// An account's name: the one it chose, else its login, else "".
-async fn name_of(app: &Platform, account: &str) -> anyhow::Result<String> {
+pub(crate) async fn name_of(app: &Platform, account: &str) -> anyhow::Result<String> {
     Ok(app.cache.accounts(&*app.hub, &[account.to_owned()]).await?.remove(account).map(|a| a.name).unwrap_or_default())
 }
 
@@ -680,7 +680,7 @@ fn names_of(a: &Account) -> Vec<String> {
 /// Whom a text mentions among `audience` (by login, name, or the one word
 /// a roster calls them), leaving out the author, and the `@words` that
 /// named nobody there.
-async fn mentions(
+pub(crate) async fn mentions(
     app: &Platform,
     text: &str,
     audience: &[String],
@@ -1625,6 +1625,10 @@ const PUSHES: PushOptions = PushOptions { ttl: None, any_subscription: true };
 /// nobody twice a minute for one room. The hub sends them
 /// ([`HubPort::push_with`](crate::HubPort::push_with)), in the
 /// background: a failure is only logged.
+///
+/// A mention in the thread on a native issue or a mirrored item is an
+/// inbox entry instead (M202), and the inbox pushes it, with its limits:
+/// one path, so one push ([`crate::inbox::thread_mentioned`]).
 #[allow(clippy::too_many_arguments)]
 async fn push(
     app: &Arc<Platform>,
@@ -1636,7 +1640,9 @@ async fn push(
     named: &[String],
     people: &[String],
 ) -> anyhow::Result<Vec<ChatPushed>> {
-    let mut to: Vec<(String, ChatPushWhy)> = named.iter().map(|a| (a.clone(), ChatPushWhy::Mention)).collect();
+    let inboxed = room.kind == "object" && room.target.as_deref().and_then(crate::inbox::thread_reason).is_some();
+    let mut to: Vec<(String, ChatPushWhy)> =
+        named.iter().filter(|_| !inboxed).map(|a| (a.clone(), ChatPushWhy::Mention)).collect();
     if room.kind == "dm" {
         for a in people {
             if a != author && !named.contains(a) {
@@ -1644,13 +1650,24 @@ async fn push(
             }
         }
     }
-    if to.is_empty() {
+    if to.is_empty() && !(inboxed && !named.is_empty()) {
         return Ok(vec![]);
     }
     let me = match agent {
         Some(a) => format!("{}'s agent on {}", name_of(app, author).await?, a.machine_name),
         None => name_of(app, author).await?,
     };
+    if inboxed {
+        let mut quiet = Vec::new();
+        for a in named {
+            if app.db.chat_mark(&room.id, a)?.1 || app.chat.has_open(a, &room.id) {
+                quiet.push(a.clone());
+            }
+        }
+        let named: Vec<String> = named.iter().filter(|a| *a != author).cloned().collect();
+        let pushed = crate::inbox::thread_mentioned(app, room, &me, (seq, text), &named, &quiet)?;
+        return Ok(pushed.into_iter().map(|account| ChatPushed { account, why: ChatPushWhy::Mention }).collect());
+    }
     let place = match room.kind.as_str() {
         "channel" => format!("#{}", room.name),
         _ => match room.machine.as_deref().and_then(|m| facts.daemons.get(m)) {

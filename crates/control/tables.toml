@@ -747,8 +747,8 @@ name = "inbox_items"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A member's inbox: an item, why it's there (a review requested, a mention, failed checks), and when it was seen and done."
-why_asleep = "The inbox is computed and pushed by the platform with every machine asleep."
+what = "A member's inbox: an item (a linked repo's PR or issue, or a native issue), why it's there (a review requested, a mention, an assignment, failed checks, a mention in its thread), and when it came, was seen and was done."
+why_asleep = "The inbox is computed and pushed by the platform with every machine asleep, and mentions and assignments reach it as they happen."
 with_account = "deleted"
 seen_by = ["litestream"]
 

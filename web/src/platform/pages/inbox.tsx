@@ -1,14 +1,19 @@
 // `/inbox`: the reader's inbox (M171): the PRs and issues on linked repos
 // that want something of them, worked out by the platform for the same
 // reasons a forge block asks for attention, grouped by reason; and the
-// drafts waiting for them to send (M170's list). Each entry opens the item
-// on GitHub, and can be marked seen or done. Read through the viewer check:
-// a private repo's items show only to those GitHub lets read it.
+// drafts waiting for them to send (M170's list). Mentions and assignments
+// on native issues, and mentions in a mirrored item's thread, are entries
+// too (M202). Each entry opens the item (on GitHub; a native issue on its
+// page; a thread's mention in the thread), and can be marked seen or done.
+// Read through the viewer check: a private repo's items show only to those
+// GitHub lets read it, and a native issue's to its project's members.
 
 import { useEffect, useState } from "preact/hooks";
 import type { Inbox, InboxEntry } from "../../shared/proto.gen";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { DraftList, useMyDrafts } from "../drafts";
+import { names } from "../links";
+import { follow, pathOf } from "../router";
 import { toast } from "../toast";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -25,14 +30,22 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 /** The reasons, most pressing first, as headings. Drafts are their own
  * list below. */
-const GROUPS: [string, string][] = [
-  ["review_requested", "Reviews requested"],
-  ["changes_requested", "Changes requested"],
-  ["checks_failed", "Checks failed"],
-  ["mentioned", "Mentions"],
-  ["assigned", "Assigned to you"],
-  ["done", "Merged, closed or ready"],
+const GROUPS: [string, string[], string][] = [
+  ["review_requested", ["review_requested"], "Reviews requested"],
+  ["changes_requested", ["changes_requested"], "Changes requested"],
+  ["checks_failed", ["checks_failed"], "Checks failed"],
+  ["mentioned", ["mentioned", "thread_mention"], "Mentions"],
+  ["assigned", ["assigned"], "Assigned to you"],
+  ["done", ["done"], "Merged, closed or ready"],
 ];
+
+/** Where an entry opens: a native issue on its page, a thread's mention in
+ * the thread (both here), anything else on GitHub. */
+function linkOf(e: InboxEntry): { href: string; here: boolean } {
+  if (e.project && e.item.startsWith("iss_")) return { href: pathOf({ page: "issue", project: e.project, issue: e.item }, names), here: true };
+  if (e.reason === "thread_mention" && e.room) return { href: pathOf({ page: "find", what: "chat", room: e.room }), here: true };
+  return { href: e.url, here: false };
+}
 
 const STATE: Record<string, string> = { open: "open", closed: "closed", merged: "merged" };
 
@@ -70,9 +83,9 @@ export function InboxPage() {
       <h1>Inbox</h1>
       {error && <p class="control-error">{error}</p>}
       {entries === null && !error && <p class="dim">Loading…</p>}
-      {empty && <p class="dim" data-inbox-empty>Nothing wants you on your linked repos right now.</p>}
-      {GROUPS.map(([reason, heading]) => {
-        const group = shown.filter((e) => e.reason === reason);
+      {empty && <p class="dim" data-inbox-empty>Nothing wants you right now.</p>}
+      {GROUPS.map(([reason, reasons, heading]) => {
+        const group = shown.filter((e) => reasons.includes(e.reason));
         if (group.length === 0) return null;
         return (
           <div key={reason} data-inbox-group={reason}>
@@ -82,9 +95,15 @@ export function InboxPage() {
             <ul class="platform-list platform-inbox-list">
               {group.map((e) => {
                 const key = `${e.item} ${e.reason}`;
+                const link = linkOf(e);
+                const open = (ev: MouseEvent) => {
+                  if (!e.seen_at) void mark(e, { seen: true });
+                  if (link.here) follow(ev, link.href);
+                };
+                const away = link.here ? {} : { target: "_blank", rel: "noopener noreferrer" };
                 return (
-                  <li key={key} class={e.seen_at ? "seen" : "unseen"} data-inbox-entry={e.item}>
-                    <a class="platform-inbox-item" href={e.url} target="_blank" rel="noopener noreferrer" onClick={() => !e.seen_at && void mark(e, { seen: true })}>
+                  <li key={key} class={e.seen_at ? "seen" : "unseen"} data-inbox-entry={e.item} data-inbox-reason={e.reason}>
+                    <a class="platform-inbox-item" href={link.href} {...away} onClick={open}>
                       <span class="platform-inbox-ref">
                         {e.repo}#{e.number}
                       </span>{" "}
@@ -92,6 +111,7 @@ export function InboxPage() {
                     </a>
                     <div class="dim platform-inbox-meta">
                       {e.kind === "pr" ? "PR" : "Issue"} · {STATE[e.state] ?? e.state}
+                      {e.reason === "thread_mention" ? " · in its thread" : ""}
                       {e.author ? ` · by ${e.author}` : ""}
                     </div>
                     <div class="platform-inbox-actions">

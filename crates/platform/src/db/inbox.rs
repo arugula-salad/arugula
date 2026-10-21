@@ -10,6 +10,10 @@
 //! - **Read through the viewer check:** [`Db::inbox`] and
 //!   [`Db::mark_inbox`] take the [`Readable`] it made, and touch rows of
 //!   its repos' items only, as every forge read does (M165).
+//! - **Mentions and assignments** on native issues, and mentions in the
+//!   thread on a mirrored item (M202, [`crate::inbox`]), are rows here too:
+//!   made when they happen ([`Db::notice_inbox`]), not worked out. Native
+//!   ones are read by their project's members ([`Db::native_inbox`]).
 
 use std::collections::BTreeSet;
 
@@ -61,6 +65,27 @@ pub struct InboxRow {
     pub author_login: Option<String>,
     pub updated_at: u64,
 }
+
+/// One entry of a member's inbox on a native issue (M202).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeRow {
+    pub item: String,
+    pub reason: String,
+    pub seen_at: Option<u64>,
+    pub done_at: Option<u64>,
+    pub created_at: u64,
+    pub project: String,
+    pub number: u64,
+    pub state: String,
+    pub title: String,
+    /// An account; empty once it's deleted.
+    pub author: String,
+    pub updated_at: u64,
+}
+
+/// A mention in the thread on a mirrored item (M202): kept apart from the
+/// item's GitHub reasons, which [`Db::set_inbox`] works out.
+pub const THREAD_MENTION: &str = "thread_mention";
 
 /// What a member's inbox is narrowed to.
 #[derive(Debug, Clone, Copy, Default)]
@@ -179,7 +204,8 @@ impl Db {
     }
 
     /// An item's inbox as it should be: `want` is every `(account,
-    /// reason)` that holds now. Rows that no longer hold go (an account
+    /// reason)` that holds now, a thread's mentions aside (M202: those are
+    /// [`Db::notice_inbox`]'s). Rows that no longer hold go (an account
     /// not in `want` has none left); a reason that holds keeps its row, so
     /// what was seen and done stays. The rows made now, which are what a
     /// push is for: on two machines at once, only one makes each.
@@ -188,7 +214,10 @@ impl Db {
         let mut c = self.c();
         let tx = c.immediate()?;
         let have: Vec<(String, String)> = tx.query_map(
-            &format!("SELECT account, reason FROM inbox_items WHERE item = ?1{}", tx.for_update()),
+            &format!(
+                "SELECT account, reason FROM inbox_items WHERE item = ?1 AND reason <> '{THREAD_MENTION}'{}",
+                tx.for_update()
+            ),
             params![item],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
@@ -217,7 +246,10 @@ impl Db {
     /// not: what the shadow comparison holds against a block's.
     pub fn inbox_reasons(&self, account: &str, item: &str) -> anyhow::Result<Vec<String>> {
         self.c().query_map(
-            "SELECT reason FROM inbox_items WHERE account = ?1 AND item = ?2 ORDER BY reason",
+            &format!(
+                "SELECT reason FROM inbox_items WHERE account = ?1 AND item = ?2 AND reason <> '{THREAD_MENTION}'
+                 ORDER BY reason"
+            ),
             params![account, item],
             |r| r.get(0),
         )
@@ -305,6 +337,34 @@ impl Db {
         if r.repos().is_empty() {
             return Ok(0);
         }
+        let within = format!("SELECT id FROM forge_items WHERE repo_id IN ({})", repos_in(r));
+        self.mark_rows(account, item, reason, seen, done, now, &within)
+    }
+
+    /// Mark a native issue's entries (M202), for someone the caller found
+    /// may read it.
+    pub fn mark_native_inbox(
+        &self,
+        account: &str,
+        item: &str,
+        reason: Option<&str>,
+        (seen, done): (Option<bool>, Option<bool>),
+        now: u64,
+    ) -> anyhow::Result<usize> {
+        self.mark_rows(account, item, reason, seen, done, now, "SELECT id FROM issues")
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn mark_rows(
+        &self,
+        account: &str,
+        item: &str,
+        reason: Option<&str>,
+        seen: Option<bool>,
+        done: Option<bool>,
+        now: u64,
+        within: &str,
+    ) -> anyhow::Result<usize> {
         let at = |on: Option<bool>, col: &str| match on {
             Some(true) => format!(", {col} = COALESCE({col}, ?1)"),
             Some(false) => format!(", {col} = NULL"),
@@ -314,13 +374,80 @@ impl Db {
         self.c().execute(
             &format!(
                 "UPDATE inbox_items SET updated_at = ?1{}{} WHERE account = ?2 AND item = ?3
-                     AND (?4 = '' OR reason = ?4)
-                     AND item IN (SELECT id FROM forge_items WHERE repo_id IN ({}))",
+                     AND (?4 = '' OR reason = ?4) AND item IN ({within})",
                 at(seen, "seen_at"),
                 at(done, "done_at"),
-                repos_in(r)
             ),
             params![now, account, item, reason],
         )
+    }
+
+    /// An entry for a mention or an assignment (M202): made, or brought
+    /// back if it was there (unseen and not done again, and newest), as a
+    /// new mention does.
+    pub fn notice_inbox(&self, account: &str, item: &str, reason: &str, now: u64) -> anyhow::Result<()> {
+        self.c().execute(
+            "INSERT INTO inbox_items (account, item, reason, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)
+             ON CONFLICT (account, item, reason)
+             DO UPDATE SET seen_at = NULL, done_at = NULL, created_at = ?4, updated_at = ?4",
+            params![account, item, reason, now],
+        )?;
+        Ok(())
+    }
+
+    /// An entry that no longer holds (M202: an assignee taken off).
+    pub fn drop_inbox(&self, account: &str, item: &str, reason: &str) -> anyhow::Result<()> {
+        self.c().execute(
+            "DELETE FROM inbox_items WHERE account = ?1 AND item = ?2 AND reason = ?3",
+            params![account, item, reason],
+        )?;
+        Ok(())
+    }
+
+    /// An account's entries on native issues (M202), newest first, with
+    /// what each is about. The caller keeps those whose project they may
+    /// still read.
+    pub fn native_inbox(&self, account: &str, f: &InboxFilter) -> anyhow::Result<Vec<NativeRow>> {
+        let done = if f.done { "" } else { " AND x.done_at IS NULL" };
+        self.c().query_map(
+            &format!(
+                "SELECT x.item, x.reason, x.seen_at, x.done_at, x.created_at, i.project_id, i.number, i.state,
+                     i.title, i.author, i.updated_at
+                 FROM inbox_items x JOIN issues i ON i.id = x.item
+                 WHERE x.account = ?1{done}
+                 ORDER BY x.created_at DESC, x.item, x.reason LIMIT {}",
+                f.limit
+            ),
+            params![account],
+            |r| {
+                Ok(NativeRow {
+                    item: r.get(0)?,
+                    reason: r.get(1)?,
+                    seen_at: r.get(2)?,
+                    done_at: r.get(3)?,
+                    created_at: r.get(4)?,
+                    project: r.get(5)?,
+                    number: r.get(6)?,
+                    state: r.get(7)?,
+                    title: r.get(8)?,
+                    author: r.get(9)?,
+                    updated_at: r.get(10)?,
+                })
+            },
+        )
+    }
+
+    /// The thread on a mirrored item (M196) in its repo's project now, if
+    /// someone opened it: where a mention there is.
+    pub fn thread_of(&self, item: &str) -> anyhow::Result<Option<String>> {
+        self.c()
+            .query_row(
+                "SELECT r.id FROM chat_rooms r JOIN forge_items i ON i.id = r.target
+                     JOIN linked_repos l ON l.repo_id = i.repo_id
+                 WHERE r.kind = 'object' AND r.target = ?1 AND r.scope = 'project:' || l.project_id",
+                params![item],
+                |r| r.get(0),
+            )
+            .optional()
     }
 }

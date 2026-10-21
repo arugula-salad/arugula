@@ -119,6 +119,23 @@ get an entry, or a push. A reason newly holding pushes once, through the
 hub. The platform page shows it at `/inbox`, grouped by reason, with Seen
 and Done; `GET /api/inbox` and `POST /api/inbox/{item}` are its routes.
 
+**Mentions and assignments (M202, #1273)** on the platform's own objects
+join it (`crates/platform/src/inbox.rs`). Someone added to a native issue's
+assignees, or named by an `@` in its body or its thread, gets an entry on
+the issue (`assigned`, `mentioned`); an `@` in the thread on a mirrored PR
+or issue is a `thread_mention` on the item, beside its GitHub reasons.
+Only those who see the object are mentioned: its project's members, and
+for a private repo's item those GitHub lets read it (M165). Not for what
+you did yourself, and never a machine's agents (they read mentions over
+MCP, M198). Each event pushes each person once, with the inbox's limits:
+a mention in an object's thread is the inbox's push, not chat's too, and
+not when the thread is open or muted. A tap opens the issue on the
+platform page (`/issues/<id>`, at the message for a thread's mention) or
+the item's thread. The entry stays until it's called done; a new mention
+brings it back. Native issues' entries list only for a person who may
+read the issue's project now, and never for a machine's agents
+(`inbox.list`), which reach issues through their own grants.
+
 Agents use them through MCP: `forge_read` (kinds `pr`, `issue`, `items`,
 `checks`, `inbox`, `drafts`, `draft`) and `forge_draft` (kinds `comment`, `review`,
 `issue`, `discard`). MCP has no send. `read_forge` on a block of a linked

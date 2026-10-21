@@ -277,6 +277,9 @@ fn deleting_an_account_takes_its_projects_issues_and_its_name() {
         .unwrap();
     let assign = Patch { assignees: Some(ListEdit::Add(&strings(&["alice"]))), ..Default::default() };
     db.patch_issue(&bobs.id, &assign, Actor::person("bob"), 2).unwrap();
+    // Inbox entries (M202) on an issue that goes, and on one that stays.
+    db.notice_inbox("bob", &private.id, "mentioned", 2).unwrap();
+    db.notice_inbox("bob", &shared.id, "assigned", 2).unwrap();
     let d = Deleted { account: "alice".into(), machines: vec!["alices-box".into()], disbanded: vec![] };
     for _ in 0..2 {
         let mut c = db.c();
@@ -287,6 +290,8 @@ fn deleting_an_account_takes_its_projects_issues_and_its_name() {
     }
     assert!(db.issue(&private.id).unwrap().is_none(), "its personal project's issues go");
     assert!(db.issue_events(&private.id).unwrap().is_empty());
+    let entries: Vec<String> = db.c().query_map("SELECT item FROM inbox_items", params![], |r| r.get(0)).unwrap();
+    assert_eq!(entries, std::slice::from_ref(&shared.id), "the gone issue's entries go");
     let shared = db.issue(&shared.id).unwrap().unwrap();
     assert_eq!(
         (shared.author.as_str(), shared.author_agent.as_deref(), shared.title.as_str()),
