@@ -1,10 +1,11 @@
-// The account's answer about usage counts from control's page (M104), the
-// platform's setting: the card that asks once, and the switch in Sign-in
-// and account that changes the answer. Both take the answer and a way to
-// give one, so neither sees the control session (M149).
+// The account's answer about usage counts from control's page (M104): the
+// card that asks once, and the switch in Sign-in and account that changes
+// the answer. Both take the answer and a way to give one, so neither sees
+// the control session (M149). Shared (M155): the shell asks and switches
+// it on control's page, through the hub, and the platform page may too.
 
 import { useState } from "preact/hooks";
-import { TelemetryCard } from "../../shared/ui/telemetry-card";
+import { TelemetryCard } from "./telemetry-card";
 
 /** The account's answer (control-wire's `telemetry::PageConsent`, which
  * the shell's `ControlSession["telemetry"]` is): `on` is null until asked,

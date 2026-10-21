@@ -1,5 +1,6 @@
-import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
-import { cloudPanes, cloudWorkspaceRoute, cloudWorkspaces, useCloudPanes } from "../shared/cloud";
+import { AgentDialogLayer } from "./ui/agent-dialog";
+import { cloudPanes, cloudWorkspaces } from "../shared/cloud";
+import { chat } from "../shared/chat-store";
 import { cloudFleet } from "./cloud-fleet";
 import { shellPlatformApi } from "./platform-api";
 import { platformOrigin, setPlatformOrigin } from "./platform-links";
@@ -41,8 +42,6 @@ import { fakeSwarm } from "./swarm/fake";
 import { closeSwarm, onSwarmRoute, swarmRoute } from "./swarm/route";
 import { setupDesktop } from "../shared/desktop";
 import { installKeys } from "./ui/keys";
-import { useChatOpen } from "./ui/places";
-import { chat } from "../shared/chat-store";
 import { openDeveloper } from "./ui/developer";
 import { openGettingStarted, type Section } from "./ui/welcome";
 import { followMachine, machineTelemetryChanged, MachineTelemetryLayer } from "./ui/machine-telemetry";
@@ -241,23 +240,23 @@ const cell = await measureCell();
 const root = document.getElementById("root")!;
 function ControlRoot({ s }: { s: ControlSession }) {
   useControl(s);
-  const cloud = useCloudPanes();
-  useEffect(() => { if (s.phase === "ready") return cloudPanes.connect(s.account); }, [s.phase, s.account]);
-  useEffect(() => { if (s.phase === "ready") return cloudWorkspaces.connect(s.account); }, [s.phase, s.account]);
+  // M153: Cloud workspaces are the platform page's; the shell reads them
+  // only to link out to them (the sidebar, the overview, the swarm), so
+  // not at all without a platform page (M155).
+  const cloud = s.phase === "ready" && !!platformOrigin();
+  useEffect(() => { if (cloud) return cloudPanes.connect(s.account); }, [cloud, s.account]);
+  useEffect(() => { if (cloud) return cloudWorkspaces.connect(s.account); }, [cloud, s.account]);
   useSubscribe((fn) => directory.subscribe(fn));
-  // M123: control's chat shows with no machine at all.
-  useSubscribe((fn) => chat.subscribe(fn));
-  const chatOpen = useChatOpen();
   const body =
     s.phase !== "ready" ? (
       <ControlGate s={s} />
-    ) : client.e2e || cloud || cloudWorkspaceRoute() || (chatOpen && chat.on) ? (
+    ) : client.e2e ? (
       <App key={client.base} client={client} cell={cell} />
     ) : s.daemons.length ? (
       // Machines, but none picked yet: not "Add a machine" (#749).
       <Connecting name={directory.current} />
     ) : (
-      <NoMachines s={s} newAgent={() => startAgent(client, {})} />
+      <NoMachines s={s} />
     );
   return (
     <>
@@ -300,7 +299,9 @@ const fleetHosts = (): HostRef[] =>
       teamName: d?.team ? session?.teams.find((t) => t.team === d.team)?.roster.name : undefined,
     };
   });
-cloudPanes.subscribe(() => fleet.setCloudPanes(cloudFleet()));
+// The Cloud workspaces' tabs, in the swarm and the attention drawer: on
+// the platform page when opened (M153), and only with one (M155).
+cloudPanes.subscribe(() => fleet.setCloudPanes(platformOrigin() ? cloudFleet() : []));
 fleet.onOpen = (host, pane, share, reveal) => {
   const tab = fleet.panes.find((p) => p.host === host && p.id === pane && p.cloudTab)?.cloudTab;
   if (tab) { cloudWorkspaces.open(tab.workspace, tab.tab); return; }
@@ -370,7 +371,7 @@ function Swarm({ client }: { client: Client }) {
 
 const draw = () =>
   render(
-    // What chat and the Cloud workspace views reach the shell through (M147).
+    // What a pane's thread and a Cloud workspace block reach the shell through (M147).
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>
       {session ? <ControlRoot key={client.base} s={session} /> : <App key={client.base} client={client} cell={cell} />}
       <Swarm key={client.base} client={client} />

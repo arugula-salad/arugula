@@ -49,7 +49,6 @@ export const FRAGMENTS: Fragment[] = [
 /** The listeners that aren't a route of their own: they redraw on any
  * route, or note it. */
 export const HASH_LISTENERS: { where: string; why: string }[] = [
-  { where: "shared/cloud.ts", why: "Cloud's views redraw on the shell's `#cloud…` routes (`hashRoutes`), which redirect here now." },
   { where: "shared/telemetry.ts", why: "Notes which view is open (M103), never the fragment itself." },
   { where: "shell/main.tsx", why: "Reads `#pane=` and `#link=`, and redirects the platform's old routes." },
   { where: "shell/swarm/route.ts", why: "`#swarm`." },

@@ -1,11 +1,10 @@
 // Sign-in and account (#173): where you're signed in (sign one out, or
 // everywhere), your passkeys (never the last way in), and deleting the
-// account, after typing its login. Its usage reports switch is the
-// platform's (web/src/platform/settings/telemetry.tsx), handed the
-// account's answer.
+// account, after typing its login. Its usage reports switch is shared
+// (../../shared/ui/account-telemetry.tsx), handed the account's answer.
 
 import { useEffect, useState } from "preact/hooks";
-import { UsageReports } from "../../platform/settings/telemetry";
+import { UsageReports } from "../../shared/ui/account-telemetry";
 import { agentName, api, shownName, type ControlSession } from "../control";
 import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "../../shared/ui/confirm";

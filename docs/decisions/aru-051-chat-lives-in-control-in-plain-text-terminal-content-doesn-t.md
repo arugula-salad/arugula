@@ -80,9 +80,10 @@ empty); deleting an account deletes its DMs and its machines' threads and
 blanks its messages elsewhere; a team that goes with its founder takes its
 rooms. It's behind control's `chat` Labs flag, the account's or a team's.
 Agents aren't in chat (M121); a machine with no control has no chat
-(decision 7): since M125 no daemon keeps threads, and a page without
-control's chat (a machine's own page, or control's flag off) shows a Chat
-page that says chat needs control, when the machine's own `chat` flag is on.
+(decision 7): since M125 no daemon keeps threads. The Chat page is the
+platform page's (M153); since M155 a page without it (a machine's own page,
+a control with no platform page, or control's flag off) offers no Chat,
+where it used to show a page that said chat needs control.
 Where: `crates/platform/src/chat.rs`, `crates/platform/src/db/chat.rs`, `crates/platform/src/cache.rs`, `crates/control-wire/src/chat.rs`.
 From: [S41](spikes/s41-chat-in-control/README.md) (decisions 1–10, all as recommended), M122 (#1096).
 

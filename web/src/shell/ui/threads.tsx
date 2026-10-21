@@ -13,6 +13,7 @@ import type { ChatRoom } from "../../shared/proto";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { RoomBody, roomLabel } from "../../shared/chat/room";
 import { usePlatformApi } from "../../shared/platform-api";
+import { platformOrigin } from "../platform-links";
 
 export interface Quote {
   pane: PaneId;
@@ -158,17 +159,20 @@ export function RoomDrawer({ phone }: { phone: boolean }) {
     <aside class={phone ? "thread-panel phone" : "thread-panel"} aria-label={title} data-room-drawer={room.id}>
       <header>
         <strong>{title}</strong>
-        <button
-          class="thread-close"
-          title="Open it on the chat page"
-          aria-label="Open in chat"
-          onClick={() => {
-            closeRoomDrawer();
-            api.nav.openRoom(room.id);
-          }}
-        >
-          ⤢
-        </button>
+        {/* Chat's page is the platform page's (M153). */}
+        {platformOrigin() && (
+          <button
+            class="thread-close"
+            title="Open it on the chat page"
+            aria-label="Open in chat"
+            onClick={() => {
+              closeRoomDrawer();
+              api.nav.openRoom(room.id);
+            }}
+          >
+            ⤢
+          </button>
+        )}
         <button class="thread-close" title="Close (Esc)" aria-label="Close the thread" onClick={closeRoomDrawer}>
           ✕
         </button>

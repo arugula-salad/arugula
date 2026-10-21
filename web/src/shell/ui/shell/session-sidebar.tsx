@@ -5,9 +5,8 @@
 
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { cloudPanes, cloudRoute, cloudWorkspaceRoute, cloudWorkspaces } from "../../../shared/cloud";
-import { CloudWorkspacesGroup } from "../../../platform/cloud/workspaces";
-import { openPlatform, platformOrigin } from "../../platform-links";
+import { cloudPanes, cloudWorkspaces } from "../../../shared/cloud";
+import { openPlatform, platformHref } from "../../platform-links";
 import { paneIds, type Client } from "../../client";
 import { directory } from "../../hosts";
 import type { Attention, PaneInfo, Session, SessionId, TabId } from "../../../shared/proto";
@@ -99,7 +98,6 @@ export function noteLastTab(client: Client) {
 
 /** Show a session at its last tab (and that tab's last pane), or its first. */
 export function showSession(client: Client, id: SessionId) {
-  cloudPanes.local();
   const at = currentPlace();
   if (at !== "panes") closePlace(at);
   const last = lastTabs.get(lastKey(client, id));
@@ -125,7 +123,6 @@ export function SessionSidebar({
   // their panes start and stop working.
   const [hiPick, setHi] = useState<SessionId | null>(null);
   const search = useRef<HTMLInputElement>(null);
-  // S40: with no machine shown, only the Cloud workspaces.
   const state = client.state;
   // Re-render each minute too, for "2m ago".
   const [, tick] = useState(0);
@@ -148,7 +145,6 @@ export function SessionSidebar({
     if (narrow) setSidebarOpen(false);
   };
   const create = () => {
-    cloudPanes.local();
     client.intent({ op: "new_session", name: null, from_pane: client.active() ?? null });
   };
   const onKey = (e: KeyboardEvent) => {
@@ -181,7 +177,7 @@ export function SessionSidebar({
   const owner = !!state && !state.roles;
   const offline = offlineWhy(client);
   return (
-    <aside id="ws-session-sidebar" class={narrow ? "ws-sidebar overlay" : "ws-sidebar"} style={{ width: `${width}px` }} aria-label={state ? `Sessions on ${host}` : "Cloud workspaces"} data-session-sidebar>
+    <aside id="ws-session-sidebar" class={narrow ? "ws-sidebar overlay" : "ws-sidebar"} style={{ width: `${width}px` }} aria-label={`Sessions on ${host}`} data-session-sidebar>
       {state && <>
       <div class="ws-sidebar-head">
         <h2>Sessions</h2>
@@ -244,7 +240,7 @@ export function SessionSidebar({
                   key={r.session.id}
                   client={client}
                   row={r}
-                  current={r.session.id === client.session && !cloudRoute() && !cloudWorkspaceRoute()}
+                  current={r.session.id === client.session}
                   hi={!!q && r.session.id === hiId}
                   renaming={renaming?.kind === "session" && renaming.id === r.session.id}
                   setRenaming={setRenaming}
@@ -269,7 +265,7 @@ export function SessionSidebar({
       </div>
       </>}
       {/* M153: Cloud workspaces are on the platform page, when control has one. */}
-      {platformOrigin() ? <CloudWorkspacesLink enabled={cloudPanes.enabled} /> : <CloudWorkspacesGroup enabled={cloudPanes.enabled} />}
+      <CloudWorkspacesLink enabled={cloudPanes.enabled} />
       {!narrow && <Resizer width={width} />}
     </aside>
   );
@@ -447,14 +443,15 @@ export function SessionButton({
 }
 
 /** M153: Cloud workspaces aren't the shell's sessions any more: they're on
- * the platform page, and this opens them there. */
+ * the platform page, and this opens them there. Nothing without one (M155). */
 function CloudWorkspacesLink({ enabled }: { enabled: boolean }) {
   const n = cloudWorkspaces.list.length;
-  if (!enabled && !n) return null;
+  const href = platformHref("/workspaces");
+  if (!href || (!enabled && !n)) return null;
   return (
     <div class="ws-cloud-group" data-cloud-workspaces-link>
       <h3 class="ws-group cloud">
-        <a class="ws-group-open" href={`${platformOrigin()}/workspaces`} title="Your Cloud workspaces, on the platform page" onClick={(e) => (e.preventDefault(), openPlatform("/workspaces"))}>
+        <a class="ws-group-open" href={href} title="Your Cloud workspaces, on the platform page" onClick={(e) => (e.preventDefault(), openPlatform("/workspaces"))}>
           Cloud workspaces <span class="ws-group-count">{n}</span> ↗
         </a>
       </h3>

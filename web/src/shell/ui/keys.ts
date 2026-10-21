@@ -21,13 +21,11 @@
 
 import { useLayoutEffect } from "preact/hooks";
 import type { Client } from "../client";
-import { cloudPanes } from "../../shared/cloud";
 import { desktopPlatform, openInNewWindow } from "../../shared/desktop";
 import { swarmRoute } from "../swarm/route";
 import { agentsRoute } from "./agents-route";
 import { togglePalette } from "./palette";
 import { openPicker } from "./picker";
-import { isChatOpen } from "./places";
 import { paneIds } from "../client";
 import { layoutRefusal, resizeActive, toggleFocus, type Way } from "./panes/layout";
 import { addPane } from "./shell/add-pane";
@@ -98,8 +96,6 @@ const table: Binding[] = [
     run: (e) => {
       const c = workspace!.client;
       const pane = jumpTarget(e)!;
-      // Off a cloud run's details, back to the panes (as a tab's click).
-      cloudPanes.local();
       // A focused tab shows the pane asked for instead.
       const tab = c.tabOfPane(pane);
       if (tab && tab.focus !== null && tab.focus !== pane) c.intent({ op: "focus", tab: tab.id, pane });
@@ -187,7 +183,7 @@ const table: Binding[] = [
  * reading order, when the workspace shows panes and has that many. */
 function jumpTarget(e: KeyboardEvent): number | null {
   const w = workspace;
-  if (!w || w.phone || !w.client.state || isChatOpen() || swarmRoute() || agentsRoute()) return null;
+  if (!w || w.phone || !w.client.state || swarmRoute() || agentsRoute()) return null;
   // Not from under a dialog (the palette, the picker, a prompt).
   if (document.querySelector(".prompt-backdrop")) return null;
   const n = Number(e.code.slice("Digit".length));
@@ -200,7 +196,7 @@ function jumpTarget(e: KeyboardEvent): number | null {
  * layout (with `one`, also a tab of one pane). */
 function focusTarget(one = false) {
   const w = workspace;
-  if (!w || w.phone || !w.client.state || isChatOpen() || swarmRoute() || agentsRoute()) return null;
+  if (!w || w.phone || !w.client.state || swarmRoute() || agentsRoute()) return null;
   // Not from under a dialog, nor over the session overview (M111).
   if (document.querySelector(".prompt-backdrop") || location.hash.startsWith("#overview")) return null;
   const tab = w.client.tabView();

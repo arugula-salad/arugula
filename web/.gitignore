@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-platform/
 dist-platform.modules.json
+dist.modules.json
 test-results/
 playwright-report/
 journey-reports/

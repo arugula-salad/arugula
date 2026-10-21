@@ -1,16 +1,14 @@
-// The session's tabs, over the panes: each tab, a past cloud run shown
-// beside them, and + (with ▾ for other kinds of tab). Many tabs scroll
+// The session's tabs, over the panes: each tab, and + (with ▾ for other
+// kinds of tab). Many tabs scroll
 // sideways (the wheel too), the shown one is kept in sight, and + and ▾
 // stay at the end (M113).
 
 import { Fragment } from "preact";
 import { useLayoutEffect, useRef } from "preact/hooks";
-import { cloudPanes, useCloudPanes } from "../../../shared/cloud";
 import { paneIds, tabLabel, type Client } from "../../client";
 import { directory } from "../../hosts";
 import type { Session, TabView } from "../../../shared/proto";
 import { AttentionBadge, tabAttention } from "../attention";
-import { CloudTabs } from "../../../platform/cloud/cloud";
 import { machineState, newTabItems, tabItems } from "../commands";
 import { drag, startDrag } from "../drag";
 import { useSubscribe } from "../../../shared/ui/hooks";
@@ -34,7 +32,6 @@ export function TabStrip({
   renaming: Renaming;
   setRenaming: (r: Renaming) => void;
 }) {
-  const cloud = useCloudPanes();
   const tabKey = keyHint("desktop.tab");
   useSubscribe(drag.subscribe);
   const target = drag.current?.target;
@@ -78,14 +75,13 @@ export function TabStrip({
                 client={client}
                 tab={t}
                 index={i}
-                selected={!cloud && id === client.tab}
+                selected={id === client.tab}
                 renaming={renaming?.kind === "tab" && renaming.id === id}
                 setRenaming={setRenaming}
               />
             </Fragment>
           );
         })}
-        <CloudTabs />
         {marker === session.tabs.length && <div class="drop-marker" />}
       </div>
       {/* Outside the tabs that scroll, so they're always in reach. */}
@@ -95,7 +91,7 @@ export function TabStrip({
         aria-label="New tab"
         aria-keyshortcuts={ariaKeys(tabKey)}
         disabled={!!refusal}
-        onClick={() => { cloudPanes.local(); client.intent({ op: "new_tab", session: session.id, from_pane: client.active() ?? null }); }}
+        onClick={() => client.intent({ op: "new_tab", session: session.id, from_pane: client.active() ?? null })}
         onContextMenu={(e) => !refusal && openFresh(client, e, () => newTabItems(client, session.id))}
       >
         +
@@ -179,7 +175,7 @@ function TabItem({
       title={label}
       onPointerDown={(e) =>
         startDrag(e, { kind: "tab", tab: tab.id }, label, {
-          onClick: () => { cloudPanes.local(); client.selectTab(tab.id); },
+          onClick: () => client.selectTab(tab.id),
           onDrop: (what, target) => drop(client, what, target),
         })
       }
@@ -197,7 +193,6 @@ function TabItem({
         else if (e.key === "Home") go(0);
         else if (e.key === "End") go(tabs.length - 1);
         else if (e.key === "Enter" || e.key === " ") {
-          cloudPanes.local();
           client.selectTab(tab.id);
         } else if (e.key === "F2" && edits) setRenaming({ kind: "tab", id: tab.id });
         else return;
