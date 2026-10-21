@@ -32,6 +32,10 @@ constrains:
 
 # Agents are out of chat
 
+Superseded by "Agents are in conversations" (aru-091; Jake, 2026-10-21,
+#1263: "agents everywhere"). What follows is the decision as it stood from
+M121 until then.
+
 Threads and conversations are people's (Jake, 2026-10-19, S41 decisions 8
 and 9). No agent reads or posts in them: MCP has no `read_thread` or
 `post_thread` (and since M125 the daemon has no thread operations). `@agent`,

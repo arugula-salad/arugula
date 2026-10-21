@@ -106,6 +106,8 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-052](docs/decisions/aru-052-agents-are-out-of-chat.md): Agents are out of chat
 - [aru-053](docs/decisions/aru-053-chat-calls-the-owner-by-a-short-name-ledgers-keep-their.md): Chat calls the owner by a short name; ledgers keep their login
 - [aru-087](docs/decisions/aru-087-the-daemon-s-forge-reader-stays-for-unlinked-rep.md): The daemon's forge reader stays for unlinked repos; linked repos' blocks are pins
+- [aru-090](docs/decisions/aru-090-threads-hang-off-any-object.md): Threads hang off any object
+- [aru-091](docs/decisions/aru-091-agents-are-in-conversations.md): Agents are in conversations
 
 ## Federation and control
 
@@ -125,6 +127,8 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-076](docs/decisions/aru-076-platform-paths-stay-on-control-arugula-io-forever.md): Platform paths stay on control.arugula.io forever, behind the hub's gateway
 - [aru-077](docs/decisions/aru-077-the-platform-s-database-is-fly-managed-postgres.md): The platform's database is Fly Managed Postgres, moved in announced windows
 - [aru-084](docs/decisions/aru-084-the-platform-mirrors-linked-github-repos-metadat.md): The platform mirrors linked GitHub repos: metadata, with content opt-in
+- [aru-088](docs/decisions/aru-088-a-project-owns-numbered-issues.md): A project owns numbered issues
+- [aru-089](docs/decisions/aru-089-taking-custody-of-issues-stays-reversible.md): Taking custody of issues stays reversible
 
 ## Build and release
 
