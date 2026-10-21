@@ -1,7 +1,7 @@
 import { AgentMessage } from "../../shared/agent-message";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
-import { cloudPanes, cloudTerminal as terminal, cloudWorkspaces, useCloudPanes, type CloudAgent as Agent, type CloudRun as Run, type PastCloudTab } from "../../shared/cloud";
+import { cloudPanes, cloudTerminal as terminal, cloudWorkspaces, type CloudAgent as Agent, type CloudRun as Run, type PastCloudTab } from "../../shared/cloud";
 import { useCloudApi } from "../../shared/platform-api";
 type Block = { kind: string; body?: unknown; summary?: string; name?: string; request_id?: string; options?: { optionId: string; name?: string }[]; schema?: { properties?: Record<string, { type?: string; title?: string; enum?: string[] }>; required?: string[] } };
 export type Event = { id: number; kind?: string; stage?: string; state?: string; data?: string; blocks?: Block[] };
@@ -105,7 +105,7 @@ export function CloudPanel({ close, notify }: { close: () => void; notify?: () =
     <details><summary>Secrets</summary><SecretEditor names={names} refresh={refresh} /></details>
     {runs.length > 0 && <><h3>Past runs</h3>
       <p class="dim">One-shot runs are retired. What they did stays here to read and download.</p>
-      <ul class="cloud-runs" data-past-runs>{runs.map((r) => <li key={r.id}><button onClick={() => { cloudPanes.open(r.id); close(); }}>{r.spec.agent.name}: {r.spec.prompt.slice(0, 90)}</button><span>{r.state.replaceAll("_", " ")}</span></li>)}</ul></>}
+      <ul class="cloud-runs" data-past-runs>{runs.map((r) => <li key={r.id}><button onClick={() => { close(); cloudPanes.open(r.id); }}>{r.spec.agent.name}: {r.spec.prompt.slice(0, 90)}</button><span>{r.state.replaceAll("_", " ")}</span></li>)}</ul></>}
   </div>;
 }
 
@@ -319,13 +319,4 @@ function Question({ block, answer }: { block: Block; answer: (body: { action: st
     })}
     {error && <p role="alert">{error}</p>}<button disabled={busy}>Answer</button><button type="button" disabled={busy} onClick={() => void answer({ action: "decline" }).catch((e: Error) => setError(e.message))}>Decline</button>
   </form>;
-}
-
-/** The shown past run or past tab, as a tab: closing it goes back to the
- * machine. */
-export function CloudTabs() {
-  const selected = useCloudPanes();
-  if (!selected) return null;
-  const what = selected.startsWith("cwc_") ? "Past tab" : "Past run";
-  return <div class="tab selected" role="tab" aria-selected key={selected}><span class="host-tag">Cloud</span><span class="tab-label">{what}</span><button class="tab-close" title={`Close ${what.toLowerCase()}`} aria-label={`Close ${what.toLowerCase()}`} onClick={(e) => { e.stopPropagation(); cloudPanes.local(); }}>×</button></div>;
 }

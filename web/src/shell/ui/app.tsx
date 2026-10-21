@@ -3,10 +3,6 @@
 // a phone, its own header (ui/phone). Then the tab's panes (ui/panes/), and
 // the layers over them (menus, dialogs, the palette).
 
-import { cloudPanes, cloudWorkspaceRoute, useCloudPanes } from "../../shared/cloud";
-import { CloudTabs, PastTabDetails, RunDetails } from "../../platform/cloud/cloud";
-import { CloudWorkspaceCrumbs, CloudWorkspaceMain, CloudWorkspaceTabStrip, DeleteCloudWorkspace } from "../../platform/cloud/workspaces";
-import { RebuildCloudWorkspace } from "../../platform/cloud/workspace-rebuild";
 import { useEffect, useLayoutEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
 import type { Cell } from "./cells";
@@ -16,16 +12,12 @@ import { KeyBar, PhoneHeader } from "./phone";
 import { ThreadLayer } from "./threads";
 import { InLabs } from "./in-labs";
 import { agentsRoute } from "./agents-route";
-import { hasChat, useChatOpen } from "./places";
-import { chat, chatStore } from "../../shared/chat-store";
-import { AppBar } from "./app-bar";
 import { HostPicker, NewMachineNote, setMachineItems } from "./hosts";
 import { ControlRequests, ShareDialog } from "./people";
 import { directory } from "../hosts";
 import { DeveloperLayer } from "./developer";
 import { RulesLayer } from "./rules";
 import { DocShareLayer } from "./doc-share";
-import { startAgent } from "./agent-dialog";
 import { ConversationsLayer } from "./conversations";
 import { PickerLayer } from "./picker";
 import { InstallHint } from "./notify";
@@ -56,10 +48,6 @@ const HIDDEN_GRACE_MS = 10_000;
 export function App({ client, cell }: { client: Client; cell: Cell }) {
   useSubscribe((fn) => client.subscribe(fn));
   const phone = usePhone();
-  const cloud = useCloudPanes();
-  // S40: a Cloud workspace (or the list of them) is shown instead of a
-  // machine's session; it needs no machine.
-  const cloudWs = cloudWorkspaceRoute();
   const [renaming, setRenaming] = useState<Renaming>(null);
 
   useEffect(() => {
@@ -101,30 +89,24 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
   useFirstRun(client);
   // M113 (#1028): a computer draws the workspace once a machine is shown;
   // a phone keeps its own header.
-  const ws = !phone && (!!client.state || !!cloudWs);
+  const ws = !phone && !!client.state;
   // M111: `#overview` lies over the tabs and panes (not on a phone).
   const overview = useOverview();
   useLayoutEffect(() => {
     if (!ws) return;
-    // The swarm, chat and agents pages sit beside its rail (style.css).
+    // The swarm and agents pages sit beside its rail (style.css).
     document.documentElement.dataset.workspace = "new";
     return () => void delete document.documentElement.dataset.workspace;
   }, [ws]);
 
   const state = client.state;
   const tab = client.tabView();
-  // M73: the chat page covers the panes, which stay laid out under it (so
-  // their terminals keep their size) but can't be reached.
-  // M123: chat is control's, and needs no machine up.
-  useSubscribe((fn) => chat.subscribe(fn));
-  const chatOpen = useChatOpen() && hasChat(client);
-  const controlChat = chatOpen && !!chatStore();
-  const overviewOpen = ws && !!overview && !!state && !cloud && !cloudWs;
+  // Chat and Cloud workspaces are on the platform page (M153, M155).
+  const overviewOpen = ws && !!overview && !!state;
   const main = (
-    <main class="main" inert={chatOpen || overviewOpen}>
-      {cloudWs ? <CloudWorkspaceMain /> : cloud ? (cloud.startsWith("cwc_") ? <PastTabDetails key={cloud} id={cloud} /> : <RunDetails key={cloud} id={cloud} />) : !state ? (
-        // M123: under control's chat there's no machine to wait for.
-        controlChat ? null : <HostPicker />
+    <main class="main" inert={overviewOpen}>
+      {!state ? (
+        <HostPicker />
       ) : state.sessions.length === 0 ? (
         <NoSessions client={client} phone={phone} />
       ) : tab ? (
@@ -137,7 +119,6 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       <MenuLayer />
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
-      {hasChat(client) && <InLabs on>{(l) => <l.ChatPage client={client} />}</InLabs>}
       {state && <AgentsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
@@ -161,31 +142,19 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
     // the tab are the panes' own business.
     // M113: while the link is down, what's shown is the last word from the
     // machine; the chrome greys what it can't vouch for (style.css).
-    const stale = !!state && !client.connected && !cloudWs;
+    const stale = !!state && !client.connected;
     return (
       <div class={stale ? "app ws stale" : "app ws"}>
         <Rail client={client} />
         <div class="ws-shell-body">
-          <ContextHeader client={client} setRenaming={setRenaming} inert={chatOpen} />
-          <div class="ws-row" inert={chatOpen}>
+          <ContextHeader client={client} setRenaming={setRenaming} />
+          <div class="ws-row">
             <SessionSidebar client={client} renaming={renaming} setRenaming={setRenaming} />
             <div class="ws-work">
-              {cloudWs?.workspace ? (
-                <div class="ws-tabs">
-                  <CloudWorkspaceTabStrip />
-                </div>
-              ) : cloudWs ? null : session ? (
+              {session && (
                 <div class="ws-tabs">
                   <TabStrip client={client} session={session} renaming={renaming} setRenaming={setRenaming} />
                 </div>
-              ) : (
-                cloud && (
-                  <div class="ws-tabs">
-                    <div class="tabbar" role="tablist">
-                      <CloudTabs />
-                    </div>
-                  </div>
-                )
               )}
               {stale && (
                 <div class="ws-stale" role="status" data-stale-note>
@@ -196,9 +165,9 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
               <MaintenanceNote />
               <NewMachineNote />
               <AgentsNudge client={client} />
-              {tab && !cloud && !cloudWs && !overviewOpen && <PaneToolbar client={client} tab={tab} />}
+              {tab && !overviewOpen && <PaneToolbar client={client} tab={tab} />}
               {main}
-              {session && !cloud && !cloudWs && <ActivityDrawer key={session.id} client={client} session={session.id} />}
+              {session && <ActivityDrawer key={session.id} client={client} session={session.id} />}
               {overviewOpen && <SessionOverview client={client} session={overview?.session} />}
             </div>
             {/* M111: between the header and the footer, over the panes. */}
@@ -207,30 +176,23 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
           {state && <StatusFooter client={client} />}
         </div>
         {layers}
-        {!cloud && !cloudWs && <StatusPill client={client} errorsOnly />}
+        <StatusPill client={client} errorsOnly />
       </div>
     );
   }
   return (
     <div class={phone ? "app phone" : "app"}>
-      {/* A computer gets here only before a machine answers (or with a
-          cloud run's details and none shown). */}
-      {/* A Cloud workspace is no machine's: no machine or session crumbs. */}
-      {state && phone && !cloudWs && <PhoneHeader client={client} />}
-      {!state && cloud && <AppBar client={client} at="panes" all>{!phone && <div class="tabbar" role="tablist"><CloudTabs /><button onClick={() => startAgent(client, {})}>New agent</button></div>}</AppBar>}
-      {phone && cloudWs && <nav class="cloud-ws-phone-head" aria-label="Where you are">{state && <button class="cloud-ws-back" title="Back to this machine" aria-label="Back to this machine" onClick={() => cloudPanes.local()}>‹</button>}<CloudWorkspaceCrumbs /><span class="bar-fill" /><RebuildCloudWorkspace place="header" /><DeleteCloudWorkspace /></nav>}
-      {phone && cloudWs?.workspace && <div class="cloud-phone-tabs"><CloudWorkspaceTabStrip /></div>}
-      {phone && !cloudWs && cloud && <div class="tabbar cloud-phone-tabs" role="tablist">{state && <button onClick={() => cloudPanes.local()}>This machine</button>}<CloudTabs /></div>}
+      {/* A computer gets here only before a machine answers. */}
+      {state && phone && <PhoneHeader client={client} />}
       {state && <ControlBanner client={client} />}
       <MaintenanceNote />
       {state && <NewMachineNote />}
       {state && <AgentsNudge client={client} />}
       {main}
-      {phone && !cloudWs && state && state.sessions.length > 0 && client.panes.has(client.active() ?? -1) && <KeyBar client={client} />}
+      {phone && state && state.sessions.length > 0 && client.panes.has(client.active() ?? -1) && <KeyBar client={client} />}
       <MenuLayer />
       <PromptLayer />
       <ThreadLayer phone={phone} client={client} />
-      {hasChat(client) && <InLabs on>{(l) => <l.ChatPage client={client} />}</InLabs>}
       {state && <AgentsPageLayer client={client} />}
       <ConversationsLayer />
       <InLabs on={client.flag("studio")}>{(l) => <l.AppsLayer />}</InLabs>
@@ -246,8 +208,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
       {/* An ask to drive shows over the share dialog (#551). */}
       <ShareDialog client={client} />
       <ControlRequests client={client} />
-      {/* M123: control's chat connects to no machine: only its errors. */}
-      {!cloud && !cloudWs && <StatusPill client={client} errorsOnly={controlChat} />}
+      <StatusPill client={client} />
     </div>
   );
 }

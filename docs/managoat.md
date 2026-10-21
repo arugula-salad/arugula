@@ -78,26 +78,24 @@ machine's home.
 
 `show` kind `cloud_workspace` (#1117), with `cloud_workspace` and
 optionally `tab`, puts one in front of the user as a **Cloud workspace
-block** beside the agent's pane. Control's page can't be framed, so the
-block isn't a frame: while someone looks at it, the daemon reads the
-workspace and its tabs from control (as above, every 3 seconds) and the
-block draws them with control's own views: an *Overview* (status,
-repositories, tabs, Changes, and the setup log when setup failed) and a
-tab per agent, with its transcript, its approvals and questions to
-answer, the prompt box, *Interrupt* and *Changes*. Those reads and writes
-go through the block's `cloud` method, which the daemon sends to control
-as the machine, and which reaches only that workspace's routes (and the
-agent and model lists). An editor of the session can use it, as anyone
-who may run things there can drive the owner's Cloud workspaces; a viewer
-sees the status and tabs only. On control's page the block's *Open* shows
-the workspace in *Cloud workspaces* when it's the signed-in person's;
-elsewhere *Open in control* is a link to it. The daemon calls control's `/api/cloud/...`
+block** beside the agent's pane. The page can't be framed, so the block
+isn't a frame: while someone looks at it, the daemon reads the workspace
+and its tabs from control (as above, every 3 seconds) and the block draws
+its overview: status, repositories and tabs. A tab's transcript, its
+approvals and prompt, and the workspace's Changes are the platform page's
+(M155: the daemon's web bundle holds none of its views), so each tab and
+*Open* link there, or to control's page, whose old `#cloud-ws=` link goes
+on to the platform page, when the page showing the block doesn't know it.
+A viewer of the session sees the status and tabs only. The block's `cloud`
+method, which the daemon sends to control as the machine and which reaches
+only that workspace's routes (and the agent and model lists), is what
+older web bundles' views called. The daemon calls control's `/api/cloud/...`
 routes signed with its own key, and control acts as the machine's account,
 the owner. So **anyone who may run things on a machine, a teammate with
 run rights or a guest's agent there, can drive the owner's Cloud
 workspaces through agents on it**: that was decided (Jake, 2026-10-19), not
 overlooked. Changing a Cloud workspace's settings, deleting one, secrets,
-the agent library and past tabs stay on control's page, for a person.
+the agent library and past tabs stay on the platform page, for a person.
 Not joined, or with a control that has no Cloud workspaces, the tools say
 so.
 

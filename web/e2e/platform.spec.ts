@@ -115,6 +115,31 @@ test("chat on the platform page: Alice makes #general and mentions Bob, who answ
   expect(copied).toMatch(new RegExp(`^${app}/p/prj_[0-9a-f]+-acme/chat/ch_[0-9a-f]+-general\\?msg=\\d+$`));
 });
 
+test("the account menu's Plan and usage and Cloud agents open the platform page, which draws them", async () => {
+  // Billing on (faked here: no Stripe in tests), on both pages.
+  const billing = { billing: true, plan: "personal", relay: { bytes: 0, allowance: 1e9, warning: false, slowed: false }, sandbox_minutes: 0, teams: [] };
+  await alice.context().route("**/api/billing", (r) => r.fulfill({ json: billing }));
+  await home(alice);
+  await alice.evaluate(() => window.__arugula.control!.refresh());
+  const menu = async (item: string | RegExp) => {
+    await alice.bringToFront();
+    await alice.locator("[data-account-menu]").first().click();
+    await alice.getByRole("menuitem", { name: item }).click();
+  };
+  const [settings] = await Promise.all([alice.context().waitForEvent("page"), menu(/^Plan and usage/)]);
+  await expect(settings).toHaveURL(`${app}/settings`, { timeout: 15_000 });
+  await settings.locator("[data-open-plan]").click();
+  await expect(settings.getByRole("heading", { name: "Plan and usage" })).toBeVisible();
+  await settings.locator(".prompt").getByRole("button", { name: "Done" }).click();
+  // Its tab, or a new one where the browser keeps them apart.
+  await menu("Cloud agents…");
+  const at = () => alice.context().pages().find((p) => p.url() === `${app}/agents`);
+  await expect.poll(() => !!at(), { timeout: 15_000 }).toBe(true);
+  await expect(at()!.locator("section[data-platform-agents]")).toBeVisible();
+  await alice.context().unroute("**/api/billing");
+  for (const p of alice.context().pages()) if (p !== alice) await p.close();
+});
+
 test("signing out on control's page ends the platform page's session at once", async () => {
   // Control's sign-out, with Alice's cookie, as her page sends it (the
   // page's own sign-out reloads it, under the next step).

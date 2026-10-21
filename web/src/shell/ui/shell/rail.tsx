@@ -1,7 +1,7 @@
 // The rail down the left of the workspace (M108, #1023): Arugula's mark
-// (this machine's sessions), Sessions (the sidebar), Panes, Swarm, Chat,
-// Agents and Settings. It stays while the swarm, chat or agents cover the
-// panes, so the way back is always in one place, and Panes goes back to the
+// (this machine's sessions), Sessions (the sidebar), Panes, Swarm, Chat (on
+// the platform page, M153), Agents and Settings. It stays while the swarm
+// or agents cover the panes, so the way back is always in one place, and Panes goes back to the
 // session's last tab and pane (the routes never change the selection).
 
 import type { ComponentChildren } from "preact";
@@ -37,7 +37,7 @@ function usePlace(client: Client): Place {
 export function Rail({ client }: { client: Client }) {
   const at = usePlace(client);
   const { open } = useSidebar();
-  const threads = hasChat(client);
+  const threads = hasChat();
   const { n, mention } = threads ? chatUnread() : { n: 0, mention: false };
   // As places.tsx decides: the machine owner's, with the Labs flag.
   const agents = client.flag("agents") && !client.state?.roles;
@@ -96,10 +96,10 @@ export function Rail({ client }: { client: Client }) {
         <RailButton
           label="Chat"
           aria={n ? `Chat, ${n} unread${mention ? ", mentioning you" : ""}` : "Chat"}
-          tip="Chat: every thread, on every machine"
-          here={at === "chat"}
+          tip="Chat: every thread, on every machine, on the platform page"
+          here={false}
           hook="data-open-chat"
-          onClick={() => at !== "chat" && openChat()}
+          onClick={() => openChat()}
         >
           <ChatIcon />
           {n > 0 && <span class={mention ? "ws-rail-count mention" : "ws-rail-count"}>{mention ? `@${n}` : n}</span>}

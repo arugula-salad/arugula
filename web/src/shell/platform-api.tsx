@@ -1,17 +1,19 @@
-// The shell's side of the platform's views (M147): what chat and the Cloud
-// workspace views (web/src/platform/, ../shared/chat/) reach the shell
-// through, built on this page's fleet and control session. The views never
-// import any of it; they take a `PlatformApi` (../shared/platform-api).
+// The shell's side of the platform's views (M147): what a pane's thread
+// (../shared/chat/) reaches the shell through, built on this page's fleet
+// and control session. The views never import any of it; they take a
+// `PlatformApi` (../shared/platform-api). Chat's page and Cloud
+// workspaces are the platform page's (M153), and the shell draws neither
+// since M155: their links go there.
 
-import { useRef, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import type { Client } from "./client";
-import type { Fleet, FleetPane } from "./fleet";
+import type { FleetPane } from "./fleet";
 import { directory } from "./hosts";
-import { cardTitle, holdStill, reasonOf, shortHost, shortPaths, shownNow, wantsYou, whatItDoes } from "./swarm/model";
-import { AppBar } from "./ui/app-bar";
+import { whatItDoes } from "./swarm/model";
+import { platformHref } from "./platform-links";
 import { getFleet } from "./ui/hosts";
 import { getControlSession } from "./ui/people";
-import { closeChat, openChat, openChatView, openRoom } from "./ui/places";
+import { openChat, openChatView, openRoom } from "./ui/places";
 import { closeRoomDrawer } from "./ui/threads";
 import type { PaneQuote } from "../shared/chat-store";
 import { cloudApi } from "../shared/cloud";
@@ -45,12 +47,15 @@ function build(client: Client): PlatformApi {
       return () => offs.forEach((off) => off?.());
     },
     toast,
+    // Chat is on the platform page: these open it there.
     nav: {
       openChat,
-      closeChat,
+      closeChat: () => {},
       openRoom,
       openChatView,
-      roomLink: (room, seq) => `${location.origin}${location.pathname}${location.search}#chat=${room}&msg=${seq}`,
+      // The platform page's address for it, else the shell's old one, which
+      // goes there once control has a platform page (M154).
+      roomLink: (room, seq) => platformHref(`/chat/${room}?msg=${seq}`) ?? `${location.origin}${location.pathname}${location.search}#chat=${room}&msg=${seq}`,
     },
     machine(id) {
       const h = hostOf(id);
@@ -68,96 +73,19 @@ function build(client: Client): PlatformApi {
       const h = fleet?.hostById(machine);
       if (!fleet || !h) return toast("That machine isn't one of yours to open");
       if (h.state !== "connected") return toast(`${h.name} is asleep: the quote is all there is until it's back`);
-      closeChat();
       closeRoomDrawer();
       fleet.open(h.name, Number(pane), false, quote ?? undefined);
     },
     goToSession(machine) {
       const h = hostOf(machine);
       if (!h || h.state !== "connected") return toast(`${h?.name ?? "That machine"} is asleep`);
-      closeChat();
       getFleet()?.touch(h.name);
       directory.select(h.name);
     },
-    Bar: ({ children }) => (
-      <AppBar client={client} at="chat" all>
-        {children}
-      </AppBar>
-    ),
+    // Chat's page, which draws the bar, isn't the shell's (M155).
+    Bar: ({ children }) => <>{children}</>,
     quote: { can: () => (getFleet()?.list.length ?? 0) > 0, Picker: QuotePicker },
-    needsYou: { count: () => needing(getFleet()).length, View: NeedsYouView },
   };
-}
-
-/** Activity's "Needs you" (M75): every pane that wants the reader. */
-function NeedsYouView() {
-  const fleet = getFleet();
-  useSubscribe((fn) => fleet?.subscribe(fn) ?? (() => {}));
-  const needs = needing(fleet);
-  shownNow(needs);
-  return fleet && needs.length > 0 ? <NeedsYou fleet={fleet} panes={needs} /> : null;
-}
-
-// ---- Activity
-/** Every pane on every machine that wants you: what the swarm's rail
- * shows, so Chat isn't quiet while agents ask and finish. */
-function needing(fleet: Fleet | null): FleetPane[] {
-  return (fleet?.panes ?? []).filter((p) => wantsYou(p)).sort((a, b) => (reasonOf(b)!.since_ms ?? 0) - (reasonOf(a)!.since_ms ?? 0));
-}
-
-function NeedsYou({ fleet, panes }: { fleet: Fleet; panes: FleetPane[] }) {
-  const [err, setErr] = useState("");
-
-  const dismiss = async (p: FleetPane) => {
-    acted.current.add(p.key);
-    setErr("");
-    const res = await fleet.request(p.host, "POST", "/api/attention/act", { action: "dismiss", pane: p.id }).catch((e: Error) => e);
-    if (res instanceof Error) setErr(res.message);
-    else if (!res.ok) setErr(`couldn't dismiss (${res.status})`);
-  };
-  // Rows hold still under the pointer, as the swarm's cards do.
-  const [held, setHeld] = useState(false);
-  const kept = useRef<(FleetPane & { gone?: boolean })[]>([]);
-  const acted = useRef(new Set<string>());
-  const rows = holdStill<FleetPane & { gone?: boolean }>(held, kept.current, panes, (p) => ({ ...p, gone: true }), acted.current);
-  kept.current = rows;
-  return (
-    <div class="activity-needs" data-activity-needs onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
-      <h3 class="activity-head">Needs you</h3>
-      {rows.map((p) => {
-        const r = p.gone ? p.info.reason : reasonOf(p);
-        if (!r) return null;
-        const owner = fleet.host(p.host)?.owner;
-        return (
-          <div key={p.key} class={p.gone ? "activity-need gone" : "activity-need"} inert={p.gone} data-need={p.key} data-kind={r.kind}>
-            <div class="activity-need-text">
-              <b>{cardTitle(r, 1, [p.host])}</b>
-              <span class="dim" title={`%${p.id} on ${p.host}`}>
-                {" "}
-                · {owner ? `${owner}'s · ` : ""}
-                {whatItDoes(p)} · {shortHost(p.host)}
-                {p.info.project?.name ? ` · ${p.info.project.name}` : ""}
-              </span>
-              <p title={r.headline}>{shortPaths(r.headline)}</p>
-            </div>
-            <div class="activity-need-buttons">
-              <button
-                class="pri"
-                onClick={() => {
-                  closeChat();
-                  fleet.open(p.host, p.id);
-                }}
-              >
-                Open
-              </button>
-              <button onClick={() => void dismiss(p)}>Dismiss</button>
-            </div>
-          </div>
-        );
-      })}
-      {err && <p class="control-error">{err}</p>}
-    </div>
-  );
 }
 
 /** Pick a pane on a machine that's up, read its screen end to end, and

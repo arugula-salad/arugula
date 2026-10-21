@@ -66,7 +66,6 @@ const onNow = () =>
 async function shown(page: Page, pane: number): Promise<Flag[]> {
   await page.evaluate(() => window.__arugula.client.loadFeatures());
   const out: Flag[] = [];
-  if (await page.locator("[data-open-chat]").count()) out.push("chat");
   await paneEl(page, pane).click({ button: "right", position: { x: 60, y: 60 } });
   await expect(page.getByRole("menuitem", { name: "Share read-only link…" })).toBeVisible();
   const items = (await page.getByRole("menuitem").allInnerTexts()).map((s) => s.trim());
@@ -77,6 +76,9 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
   const page_says = await page.evaluate(() => {
     const c = window.__arugula.client as unknown as { flag(n: string): boolean; forgeLink(u: string): string | null };
     return {
+      // Chat is control's, on its platform page (M155): the machine's flag
+      // draws nothing here of its own, but the page has it.
+      chat: c.flag("chat"),
       workspaces: c.flag("workspaces"),
       themes: c.flag("swarm-themes"),
       forges: c.forgeLink("https://gitlab.com/g/p/-/merge_requests/2"),
@@ -85,6 +87,7 @@ async function shown(page: Page, pane: number): Promise<Flag[]> {
       docs: c.flag("docs"),
     };
   });
+  if (page_says.chat) out.push("chat");
   if (page_says.workspaces) out.push("workspaces");
   if (page_says.themes) out.push("swarm-themes");
   if (page_says.forges) out.push("forges");
@@ -121,11 +124,15 @@ test("a machine that hasn't asked isn't offered Developer settings, and #develop
   expect(existsSync(join(state, "flags.json"))).toBe(false);
 });
 
-test("turning chat on in the dialog shows chat, and nothing else, without a reload", async ({ page }) => {
+const chatFlag = (page: Page) => page.evaluate(() => window.__arugula.client.flag("chat"));
+
+test("turning chat on in the dialog turns on chat, and nothing else, without a reload", async ({ page }) => {
   const pane = await start(page);
   await page.goto("/#developer");
   await dialog(page).locator('[data-flag="chat"] input').check();
-  await expect(page.locator("[data-open-chat]")).toBeVisible();
+  await expect.poll(() => chatFlag(page)).toBe(true);
+  // Chat itself is on control's platform page: nothing of it here.
+  await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   await expect(dialog(page).locator("[data-flag] input:checked")).toHaveCount(1);
   expect(onNow()).toEqual(["chat"]);
   await dialog(page).getByRole("button", { name: "Close" }).click();
@@ -139,12 +146,12 @@ test("turning chat on in the dialog shows chat, and nothing else, without a relo
 
 test("once asked for, the account menu offers them; off takes chat away again", async ({ page }) => {
   const pane = await start(page);
-  await expect(page.locator("[data-open-chat]")).toBeVisible();
+  expect(await chatFlag(page)).toBe(true);
   await page.locator(".ws-head [data-account-menu]").click();
   await page.getByRole("menuitem", { name: "Developer settings…" }).click();
   await expect(dialog(page).locator('[data-flag="chat"] input')).toBeChecked();
   await dialog(page).locator('[data-flag="chat"] input').uncheck();
-  await expect(page.locator("[data-open-chat]")).toHaveCount(0);
+  await expect.poll(() => chatFlag(page)).toBe(false);
   expect(onNow()).toEqual([]);
   await page.keyboard.press("Escape");
   expect(await shown(page, pane)).toEqual([]);

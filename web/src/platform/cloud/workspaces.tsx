@@ -1,8 +1,8 @@
-// Cloud workspaces in the shell (S40, M116, #1073): a session backed by a
+// Cloud workspaces (S40, M116, #1073), on the platform page since M153: a
 // Managoat workspace, whose tabs are agent conversations on one machine.
-// The sidebar's group, the tab strip, the header's status and Delete, the
-// main view (the list, a workspace, or a tab's transcript) and the dialogs
-// that make a workspace and open a tab. Everything comes from control's
+// The tab strip, the header's status and Delete, the main view (the list, a
+// workspace, or a tab's transcript) and the dialogs that make a workspace
+// and open a tab. Everything comes from control's
 // `/api/cloud/workspaces`, through the `cloudWorkspaces` store.
 
 import { useEffect, useRef, useState } from "preact/hooks";
@@ -35,104 +35,19 @@ export function showCloudWorkspace(w: CloudWorkspace) {
   cloudWorkspaces.open(w.id, last && tabsOf(w).some((t) => t.id === last) ? last : undefined);
 }
 
-// ---- the sidebar's group
+// ---- making one
 
 /** The shown main view's way to open the create dialog, or, while none
  * is shown, that the next one should open with it. */
 let creating: ((open: boolean) => void) | null = null;
 let createAsked = false;
-/** Open the create dialog (the sidebar's and the list's). */
+/** Open the create dialog (the project home's and the list's). */
 export function newCloudWorkspace() {
   if (creating) creating(true);
   else {
     createAsked = true;
     cloudWorkspaces.open();
   }
-}
-
-export function CloudWorkspacesGroup({ enabled }: { enabled: boolean }) {
-  const route = useCloudWorkspaces();
-  const list = cloudWorkspaces.list;
-  if (!enabled && !list.length) return null;
-  return (
-    <div class="ws-cloud-group" role="listbox" aria-label="Cloud workspaces" data-cloud-workspaces-group>
-      <h3 class="ws-group cloud">
-        <button class="ws-group-open" title="Every Cloud workspace" onClick={() => cloudWorkspaces.open()}>
-          Cloud workspaces <span class="ws-group-count">{list.length}</span>
-        </button>
-      </h3>
-      {list.map((w) => {
-        const { word, dot } = cloudWorkspaceState(w);
-        const tabs = tabsOf(w);
-        const needs = tabs.some((t) => cloudTabAttention(t) === "needs_input");
-        const current = route?.workspace === w.id;
-        return (
-          <div key={w.id} class={`ws-session${current ? " current" : ""}`} role="option" aria-selected={current} data-cloud-workspace={w.id} data-cloud-state={word}>
-            <button class="ws-session-main" title={`${w.name}: ${word}, ${tabs.length} tab${tabs.length === 1 ? "" : "s"}`} onClick={() => showCloudWorkspace(w)}>
-              <span class="ws-session-line">
-                <span class={`ws-dot ${needs ? "needs_input" : dot}`} aria-hidden="true" />
-                <span class="ws-session-name">{w.name}</span>
-                {needs && <span class="attention" title="A tab needs you">●</span>}
-              </span>
-              <span class="ws-session-sub">
-                <span class="ws-cloud-state">{word}</span>
-                <span class="ws-session-ago">{tabs.length} tab{tabs.length === 1 ? "" : "s"}</span>
-              </span>
-            </button>
-          </div>
-        );
-      })}
-      {enabled && (
-        <button class="ws-cloud-new" data-new-cloud-workspace onClick={newCloudWorkspace}>
-          + Cloud workspace
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ---- the session overview
-
-/** The overview's cards for Cloud workspaces, after the machine's
- * sessions: each with its status and tabs. Opening one leaves the
- * overview (its route is replaced). */
-export function CloudWorkspaceCards() {
-  useCloudWorkspaces();
-  const list = cloudWorkspaces.list;
-  if (!list.length) return null;
-  return (
-    <>
-      <h2 class="ws-ov-cloud-head">Cloud workspaces</h2>
-      <div class="ws-ov-grid">
-        {list.map((w) => {
-          const { word, dot } = cloudWorkspaceState(w);
-          return (
-            <article key={w.id} class="ws-ov-session" data-overview-cloud-workspace={w.id}>
-              <header class="ws-ov-session-head">
-                <button class="ws-ov-name" title={`Show ${w.name}`} onClick={() => showCloudWorkspace(w)}>
-                  <span class={`ws-dot ${dot}`} aria-hidden="true" />
-                  <span class="ws-ellipsis">{w.name}</span>
-                </button>
-                <span class="ws-ov-counts">{word}</span>
-              </header>
-              <ul class="ws-ov-panes">
-                {tabsOf(w).map((t) => (
-                  <li key={t.id}>
-                    <button class="ws-ov-pane" data-overview-cloud-tab={t.id} data-attention={cloudTabAttention(t)} title={`Go to this tab${cloudTabAttention(t) === "needs_input" ? " (this doesn't answer it)" : ""}\n${t.cwd}`} onClick={() => cloudWorkspaces.open(w.id, t.id)}>
-                      <span class={`ws-dot ${cloudTabAttention(t)}`} aria-hidden="true" />
-                      <span class="ws-ov-kind">{t.runtime}</span>
-                      <span class="ws-ov-pane-name ws-ellipsis">{t.agent_name}</span>
-                      <span class="ws-ov-where ws-ellipsis">{t.cwd}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </article>
-          );
-        })}
-      </div>
-    </>
-  );
 }
 
 // ---- the header

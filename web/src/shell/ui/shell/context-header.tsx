@@ -17,9 +17,6 @@ import { AttentionBell } from "./attention-drawer";
 import { offlineWhy } from "./live";
 import { useSidebar } from "./prefs";
 import { openOverview } from "../places";
-import { cloudWorkspaceRoute } from "../../../shared/cloud";
-import { CloudWorkspaceCrumbs, DeleteCloudWorkspace, useCloudWorkspaces } from "../../../platform/cloud/workspaces";
-import { RebuildCloudWorkspace } from "../../../platform/cloud/workspace-rebuild";
 
 export type Connection = "direct" | "relayed" | "reconnecting" | "offline";
 
@@ -61,21 +58,17 @@ export function ConnectionChip({ client }: { client: Client }) {
 export function ContextHeader({
   client,
   setRenaming,
-  inert,
 }: {
   client: Client;
   setRenaming: (r: Renaming) => void;
-  inert: boolean;
 }) {
   useSubscribe((fn) => directory.subscribe(fn));
-  useCloudWorkspaces();
   const sidebar = useSidebar();
-  if (cloudWorkspaceRoute()) return <CloudWorkspaceHeader client={client} inert={inert} />;
   const state = client.state!;
   const session = state.sessions.find((s) => s.id === client.session) ?? state.sessions[0];
   const tab = client.tabView();
   return (
-    <header class="ws-head" data-tauri-drag-region inert={inert}>
+    <header class="ws-head" data-tauri-drag-region>
       {sidebar.open && !sidebar.narrow && (
         <button class="ws-wordmark" style={{ width: `${sidebar.width}px` }}
           aria-label="Arugula Control: session overview" title="This machine’s session overview"
@@ -129,32 +122,6 @@ export function ContextHeader({
         </button>
       )}
       <PeopleBar client={client} />
-      <AccountButton client={client} />
-      <WindowButtons />
-    </header>
-  );
-}
-
-/** The header over a Cloud workspace (S40): where it is and its status,
- * then search, the bell, Delete, the account and the window's buttons. */
-function CloudWorkspaceHeader({ client, inert }: { client: Client; inert: boolean }) {
-  const sidebar = useSidebar();
-  return (
-    <header class="ws-head" data-tauri-drag-region inert={inert} data-cloud-header>
-      {sidebar.open && !sidebar.narrow && (
-        <button class="ws-wordmark" style={{ width: `${sidebar.width}px` }} aria-label="Arugula Control: session overview" title="This machine’s session overview"
-          disabled={!client.state} onClick={() => openOverview()}>
-          Arugula <span aria-hidden="true">/</span> <strong>Control</strong>
-        </button>
-      )}
-      <nav class="ws-crumbs" aria-label="Where you are" data-tauri-drag-region>
-        <CloudWorkspaceCrumbs />
-      </nav>
-      <div class="bar-fill" data-tauri-drag-region />
-      {client.state && <CommandsButton client={client} search />}
-      <AttentionBell client={client} />
-      <RebuildCloudWorkspace place="header" />
-      <DeleteCloudWorkspace />
       <AccountButton client={client} />
       <WindowButtons />
     </header>

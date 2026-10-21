@@ -222,7 +222,6 @@ export function goToItem(client: Client, i: AttentionItem) {
     cloudWorkspaces.open(i.p.cloudTab.workspace, i.p.cloudTab.tab);
     return;
   }
-  cloudPanes.local();
   if (i.here) {
     client.setActive(i.p.id);
     requestAnimationFrame(() => client.viewOf(i.p.id)?.focus());

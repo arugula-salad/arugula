@@ -17,9 +17,7 @@ import { fuzzy } from "../../shared/fuzzy";
 import { countView } from "../../shared/telemetry";
 import { useWorkspaceDir } from "../blocks";
 import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";
-import { closeChat, closeOverview, hasChat, isChatOpen, openChat, openChatView, openOverview, overviewRoute } from "./places";
-import { cloudPanes } from "../../shared/cloud";
-import { chatStore } from "../../shared/chat-store";
+import { closeOverview, hasChat, openChat, openChatView, openOverview, overviewRoute } from "./places";
 import { showSession } from "./shell/session-sidebar";
 import { SearchIcon, PanesIcon, SettingsIcon, SessionsIcon, ChatIcon, SwarmIcon } from "./shell/icons";
 import { paneName } from "./shell/overview";
@@ -165,9 +163,8 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   out.push(...fromMenu("Settings", settingsItems(client).filter((i) => typeof i === "object" && "label" in i && i.label !== "Command palette…")));
 
   // Jumps: this machine's sessions, tabs, panes and workspaces by name
-  // (M111: every pane, in any session, and out of a cloud run's tab).
+  // (M111: every pane, in any session).
   const toPane = (p: PaneId) => {
-    cloudPanes.local();
     client.setActive(p);
     requestAnimationFrame(() => client.viewOf(p)?.focus());
   };
@@ -185,7 +182,6 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
         detail: s.name,
         also: s.name,
         run: () => {
-          cloudPanes.local();
           client.selectTab(tid);
         },
       });
@@ -215,7 +211,7 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
   const wanting = state.panes.filter((p) => p.attention === "needs_input").map((p) => p.id);
   const next: PaneId | undefined = wanting.find((p) => p > (pane ?? -1)) ?? wanting[0];
   out.push({ key: "Swarm/open", group: "Swarm", label: "Open the swarm", run: openSwarm });
-  if (hasChat(client)) out.push({ key: "Chat/open", group: "Chat", label: "Open chat: every thread", run: () => openChat() });
+  if (hasChat()) out.push({ key: "Chat/open", group: "Chat", label: "Open chat: every thread", run: () => openChat() });
   out.push({
     key: "Swarm/next",
     group: "Swarm",
@@ -236,8 +232,8 @@ export function commands(client: Client, phone: boolean, workspace: string | nul
 }
 
 /** Where the palette was opened: the panes, or a place over them. */
-function here(): "panes" | "swarm" | "chat" | "agents" {
-  return swarmRoute() ? "swarm" : isChatOpen() ? "chat" : agentsRoute() ? "agents" : "panes";
+function here(): "panes" | "swarm" | "agents" {
+  return swarmRoute() ? "swarm" : agentsRoute() ? "agents" : "panes";
 }
 
 /** The places, and what the one you're in offers: first when you're not
@@ -246,7 +242,6 @@ function places(client: Client, phone: boolean): Command[] {
   const at = here();
   const toPanes = () => {
     if (swarmRoute()) closeSwarm();
-    if (isChatOpen()) closeChat();
     if (agentsRoute()) closeAgentsPage();
     closeOverview();
   };
@@ -274,9 +269,10 @@ function places(client: Client, phone: boolean): Command[] {
     }
   }
   if (at !== "swarm") go("swarm", "Go to Swarm", openSwarm);
-  if (hasChat(client)) {
-    if (at !== "chat") go("chat", "Go to Chat", () => openChat());
-    if (chatStore()) go("activity", "Chat: Activity, what needs you", () => openChatView("activity"));
+  // Chat is on the platform page (M153).
+  if (hasChat()) {
+    go("chat", "Go to Chat", () => openChat());
+    go("activity", "Chat: Activity, what needs you", () => openChatView("activity"));
   }
   if (client.flag("agents") && !client.state?.roles) {
     go("recipes", "Agents: Recipes", () => openAgentsPage("recipes"));
@@ -347,11 +343,11 @@ function Palette({ client, phone, close }: { client: Client; phone: boolean; clo
     if (!c || c.disabled) return;
     remember(c.key);
     close(false);
-    // The panes are under the swarm, chat and agents: show them, unless
-    // it's the swarm's or chat's, or a place's (it goes there itself).
+    // The panes are under the swarm and agents: show them, unless it's the
+    // swarm's, chat's (on the platform page), or a place's (it goes there
+    // itself).
     if (c.group !== "Swarm" && c.group !== "Places" && swarmRoute()) closeSwarm();
     if (c.group !== "Swarm" && c.group !== "Chat" && c.group !== "Places") {
-      if (isChatOpen()) closeChat();
       if (agentsRoute()) closeAgentsPage();
     }
     if (c.group !== "Places" && overviewRoute()) closeOverview();

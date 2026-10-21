@@ -166,16 +166,15 @@ session, held by control so they work with every machine asleep. It's
 behind control's own `chat` flag, the account's or a team's
 (`POST /api/flags`); the API is under `/api/chat`
 (`crates/platform/src/chat.rs`, control's platform since M138), and the
-page reads it in
+pages read it in
 `web/src/shared/chat-store.ts`, `web/src/platform/chat/rooms.tsx` and
-`web/src/shared/chat/room.tsx`.
+`web/src/shared/chat/room.tsx`. The Chat page is the platform page's
+(`app.arugula.io`, M153); control's page keeps each pane's and session's
+thread beside it and links to the rest, and since M155 draws no chat page
+of its own.
 
-**No machine keeps chat (M125).** A machine's `chat` flag does two things
+**No machine keeps chat (M125).** A machine's `chat` flag does one thing
 now:
-- With it, the page shows *Chat* even when control's chat isn't there: on
-  a page the machine serves, or with control's flag off. That page says
-  chat needs control, and how to turn it on (S41 decision 7). The tailnet
-  stays first class for terminals, not for chat.
 - Joined to control, with control's flag on too, it brings the threads and
   conversations an older daemon kept (`<state>/threads/`) into control
   once, then renames the folder `threads.imported/` (M124,
@@ -197,13 +196,16 @@ was made. Control holds the messages; the machine decides who reads them.
   the machine asleep; its chip opens the pane only for someone who may
   reach the machine. Unread counts show on the pane's bubble and the
   session button.
-- **The Chat page** (*Chat* beside *Panes* and *Swarm*, the phone's sheet,
-  the command palette, or `/#chat`): the team's channels and DMs, then the
-  threads on panes and sessions by machine. *Activity* lists what mentions
-  you; the search field searches every room you can read, in control.
-  `@name` notifies them, on
-  their phone too, and a tap opens the room at the message
-  (`#chat=<room>&msg=N`).
+- **The Chat page**, on the platform page (*Chat* beside *Panes* and
+  *Swarm* on control's page, the phone's sheet and the command palette open
+  it there, at `/chat`): the team's channels and DMs, then the threads on
+  panes and sessions by machine. *Activity* lists what mentions you; the
+  search field searches every room you can read, in control. `@name`
+  notifies them, on their phone too, and a tap opens the room at the
+  message (`#chat=<room>&msg=N` on control's page, which sends it on, M154).
+  A control with no platform page, and a machine on its own (the tailnet
+  stays first class for terminals, not for chat), offer no Chat at all
+  (M155; until then that page said chat needs control, S41 decision 7).
 - **Agents are out of chat** (#1095): no agent reads or posts, and `@agent`
   is text. They come back only through the grants #959 and #1002 work out.
 - **Conversations** (#855) were rooms of their own on one machine. Brought

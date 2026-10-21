@@ -118,7 +118,9 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
   people use projects, chat and Cloud workspaces, on an origin apart from
   the shell's, which holds the device keys ("The platform page is on
   app.arugula.io, not on the keys' origin"). Off when unset, and then
-  nothing changes on any host.
+  nothing changes on any host, except that control's page offers no chat
+  page or Cloud workspaces: since M155 the shell (the daemon's embedded
+  web client) draws none of their views, only links to the platform page.
   - A bare host name. Control refuses to start with one of its own sites,
     or a name under the block domain.
   - Its DNS points at **the hub**, never at the platform, which still has

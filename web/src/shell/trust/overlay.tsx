@@ -4,20 +4,18 @@
 // kept to say), else the dialog the account menu opened, else the one-time
 // usage counts question. Also the account's and the host menu's items.
 //
-// The dialogs that are the platform's (plan and usage, Cloud agents, usage
-// reports) are drawn by web/src/platform/settings/ from what's passed them:
-// they never see the control session (M149).
+// The platform's settings (plan and usage, Cloud agents) are on the platform
+// page (M153); the account menu links out to them, and offers neither
+// without one (M155). The usage reports question is the account's, drawn
+// by ../../shared/ui/account-telemetry from what's passed it (M149).
 
 import { useEffect, useState } from "preact/hooks";
-import { openPlatform, platformOrigin } from "../platform-links";
-import { CloudAgents } from "../../platform/settings/cloud-agents";
-import { Plan } from "../../platform/settings/plan";
-import { TelemetryAsk } from "../../platform/settings/telemetry";
+import { openPlatform, platformOrigin, workspacePath } from "../platform-links";
+import { TelemetryAsk } from "../../shared/ui/account-telemetry";
 import type { MenuItem } from "../../shared/ui/menu";
 import { Modal } from "../../shared/ui/modal";
 import { DEVICE_HASH, inviteInHash, JOIN_HASH, type ControlSession } from "../control";
 import { directory } from "../hosts";
-import { enableControlPush } from "../push";
 import { SharedDocs } from "../ui/shared-docs";
 import { AccountPanel } from "./account";
 import { DeviceLinkPrompt, DevicePrompt, JoinPrompt } from "./approve";
@@ -37,9 +35,10 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
     const on = () => setHash(location.hash);
     const open = (e: Event) => setPanel((e as CustomEvent<Panel>).detail);
     const cloudMessage = (event: MessageEvent) => {
-      if (event.data?.type === "open-cloud-run" && /^run_[0-9a-f]+$/.test(event.data.run)) location.hash = `cloud=${event.data.run}`;
+      // A tapped Cloud push: on the platform page (M153).
+      if (event.data?.type === "open-cloud-run" && /^run_[0-9a-f]+$/.test(event.data.run)) openPlatform(`/past/${event.data.run}`);
       if (event.data?.type === "open-cloud-tab" && /^cw_[0-9a-f]+$/.test(event.data.cloud_workspace) && /^cwc_[0-9a-f]+$/.test(event.data.cloud_tab)) {
-        location.hash = `cloud-ws=${event.data.cloud_workspace}/${event.data.cloud_tab}`;
+        openPlatform(workspacePath(event.data.cloud_workspace, event.data.cloud_tab));
       }
     };
     navigator.serviceWorker?.addEventListener("message", cloudMessage);
@@ -91,14 +90,8 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   if (s.joined) return <Joined s={s} />;
   const notice = s.notices[0];
   if (notice) return <Notice s={s} n={notice} />;
-  const cloudRun = /^#cloud=(run_[0-9a-f]+)$/.exec(hash)?.[1];
-  if (panel === "cloud") {
-    const close = () => setPanel(null);
-    return <CloudAgents run={cloudRun} close={close} notify={() => enableControlPush(s.info.vapid, (sub) => s.subscribePush(sub))} />;
-  }
   if (panel === "devices") return <Devices s={s} close={() => setPanel(null)} />;
   if (panel === "teams") return <Teams s={s} close={() => setPanel(null)} />;
-  if (panel === "plan") return <Plan billing={s.billing} upgrade={(team) => s.upgrade(team)} close={() => setPanel(null)} />;
   if (panel === "shared-docs")
     return (
       <Modal close={() => setPanel(null)}>
@@ -147,10 +140,10 @@ export function accountItems(s: ControlSession, docs = false): MenuItem[] {
     { label: "Devices and machines…", run: openPanel("devices") },
     // #1066: follows the `docs` flag of the machine shown.
     ...(docs ? [{ label: "Shared Docs…", run: openPanel("shared-docs") } as MenuItem] : []),
-    // M153: the platform page's, when control has one.
-    { label: "Cloud agents…", run: platformOrigin() ? () => openPlatform("/agents") : openPanel("cloud") },
+    // M153: the platform page's, when control has one; none without (M155).
+    ...(platformOrigin() ? [{ label: "Cloud agents…", run: () => openPlatform("/agents") } as MenuItem] : []),
     { label: "Add a phone or browser…", run: openPanel("add-device") },
     { label: "Sign-in and account…", run: openPanel("account") },
-    ...(s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: platformOrigin() ? () => openPlatform("/settings") : openPanel("plan") }] : []),
+    ...(platformOrigin() && s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: () => openPlatform("/settings") }] : []),
   ];
 }

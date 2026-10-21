@@ -268,10 +268,9 @@ test("setting the flag on the running daemon brings it all back, with no restart
   const pane = await page.evaluate(() => window.__arugula.client.state!.panes[0].id);
   await ready(page, pane);
   await expect.poll(() => page.evaluate(() => window.__arugula.client.hasLabs())).toBe(true);
-  // Chat is control's (M125): a machine on its own has none, and its Chat
-  // page says so (S41 decision 7).
-  await page.locator("[data-open-chat]").click();
-  await expect(page.locator("[data-chat-needs-control]")).toContainText("Chat needs control");
+  // Chat is control's (M125), on its platform page (M155): a machine on its
+  // own has none, and offers none, even with the flag.
+  await expect(page.locator("[data-open-chat]")).toHaveCount(0);
   await expect(page.locator(".thread-badge")).toHaveCount(0);
   await open(page);
   await ready(page, pane);

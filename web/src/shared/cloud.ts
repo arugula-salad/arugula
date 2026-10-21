@@ -1,7 +1,8 @@
 // Cloud agents, through control. Nothing about them is remembered locally:
 // content and authorization always come from control, independently of any
-// daemon. Cloud runs are retired (S40, M119): past ones stay readable at
-// `#cloud=run_…`, and Cloud workspaces (below) are where agents run now.
+// daemon. Cloud runs are retired (S40, M119): past ones stay readable on the
+// platform page (`/past/run_…`), and Cloud workspaces (below) are where
+// agents run now.
 import { useEffect, useState } from "preact/hooks";
 import { maintenance, platformFetch, refusalOf } from "./maintenance";
 import type { CloudRun, CloudTab, CloudTabs, CloudWorkspace, CloudWorkspaces } from "./proto.gen";
@@ -27,9 +28,10 @@ export type CloudApi = <T>(path: string, method?: string, body?: unknown) => Pro
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 
-/** Where Cloud's views are, by the page's own routes (M153): the shell's
- * `#cloud=…` and `#cloud-ws…` fragments (`hashRoutes`, the default), or
- * the platform page's paths, which it sets with `setCloudRoutes`. */
+/** Where Cloud's views are, by the page's own routes (M153): the platform
+ * page's paths, which it sets with `setCloudRoutes`. The shell has no
+ * Cloud views since M155: its routes open the platform page, and its old
+ * `#cloud=…` and `#cloud-ws…` fragments redirect there (M154). */
 export interface CloudRoutes {
   /** The Cloud workspace (and tab) shown, both null for the list; null
    * when no Cloud workspace view is. */
@@ -44,28 +46,12 @@ export interface CloudRoutes {
   leave(): void;
 }
 
-/** The shell's: `#cloud=run_…`/`#cloud=cwc_…` for a past run or tab, and
- * `#cloud-ws`, `#cloud-ws=cw_…`, `#cloud-ws=cw_…/cwc_…`. */
-export const hashRoutes: CloudRoutes = {
-  workspace() {
-    const m = /^#cloud-ws(?:=(cw_[0-9a-f]+)(?:\/(cwc_[0-9a-f]+))?)?$/.exec(location.hash);
-    return m ? { workspace: m[1] ?? null, tab: m[2] ?? null } : null;
-  },
-  past: () => /^#cloud=((?:run|cwc)_[0-9a-f]+)$/.exec(location.hash)?.[1] ?? null,
-  openWorkspace(workspace, tab) {
-    location.hash = workspace ? `cloud-ws=${workspace}${tab ? `/${tab}` : ""}` : "cloud-ws";
-  },
-  openPast(id) {
-    location.hash = `cloud=${id}`;
-  },
-  leave() {
-    if (hashRoutes.past() || hashRoutes.workspace()) history.replaceState(null, "", location.pathname + location.search);
-  },
-};
+/** Until the page sets its own: no Cloud view, and nowhere to open one. */
+const nowhere: CloudRoutes = { workspace: () => null, past: () => null, openWorkspace() {}, openPast() {}, leave() {} };
 
-let routes: CloudRoutes = hashRoutes;
-/** The page's routes for Cloud (the platform page's paths), once, before
- * anything's drawn. Its own route changes call `cloudRouteChanged`. */
+let routes: CloudRoutes = nowhere;
+/** The page's routes for Cloud, once, before anything's drawn. Its own
+ * route changes call `cloudRouteChanged`. */
 export function setCloudRoutes(r: CloudRoutes) {
   routes = r;
 }
@@ -74,7 +60,6 @@ export const cloudRouteChanged = () => changed();
 
 /** The shown past run or past tab. */
 export const cloudRoute = () => routes.past();
-addEventListener("hashchange", changed);
 export const cloudPanes = {
   account: "", enabled: false,
   subscribe(fn: () => void) { listeners.add(fn); return () => { listeners.delete(fn); }; },
@@ -111,10 +96,9 @@ export function useCloudPanes() {
   return cloudRoute();
 }
 
-// ---- Cloud workspaces (S40, M116): a session in the shell backed by a
-// Managoat workspace. Control keeps them and their tabs; nothing about them
-// is remembered locally. The shell's route is `#cloud-ws` (the list), or
-// `#cloud-ws=cw_…` with `/cwc_…` for a tab; the platform page's are paths
+// ---- Cloud workspaces (S40, M116): a Managoat workspace, on the platform
+// page (M153). Control keeps them and their tabs; nothing about them is
+// remembered locally. Their routes are the platform page's paths
 // (`CloudRoutes`).
 
 /** A setup step as people read it: "setup_script" → "setup script". */

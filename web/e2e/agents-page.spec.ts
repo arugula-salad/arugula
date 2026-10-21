@@ -44,7 +44,7 @@ test.afterAll(() => {
 test("make a recipe in a project from the form, edit it, offer it, run it, delete it", async ({ page }) => {
   test.setTimeout(120_000);
   await open(page);
-  // The page is a place in the bar, beside Panes, Swarm and Chat.
+  // The page is a place in the bar, beside Panes and Swarm.
   await page.locator(".ws-rail [data-open-agents]").click();
   const p = page.locator("[data-agents-page=recipes]");
   await expect(p).toBeVisible();
