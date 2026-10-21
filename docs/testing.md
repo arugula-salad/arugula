@@ -985,7 +985,7 @@ It needs, in the repository's Actions settings:
 | `ARUGULA_GH_TEST_REPO` | variable | `org/repo` in a test organization: public, both bots can write, with `.github/workflows/arugula-red.yml` on its default branch (a job that fails on pushes to `red-*`) |
 | `ARUGULA_GH_AUTHOR_TOKEN` | secret | the first bot's token: contents, pull requests, issues and actions, read and write, on that repository |
 | `ARUGULA_GH_REVIEWER_TOKEN` | secret | the second bot's token, the same |
-| `ARUGULA_GH_APP_ID` | variable | a test copy of Arugula's GitHub App, installed on the test organization, with pull request and issue comment events |
+| `ARUGULA_GH_APP_ID` | variable | a test copy of Arugula's GitHub App (`arugula-forge-tests`), installed on the test organization, with its permissions (issues and pull requests read and write since M167, [control-ops.md](control-ops.md)) and pull request and issue comment events |
 | `ARUGULA_GH_APP_PRIVATE_KEY` | secret | that App's private key (PEM) |
 
 Control is stood in for in that test, and the App's deliveries are read

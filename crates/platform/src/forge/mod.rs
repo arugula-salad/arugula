@@ -18,6 +18,8 @@
 //!   (`PlatformPort::github_token`), for an account the same rule allows.
 //!   The platform keeps a token until five minutes before GitHub's
 //!   `expires_at`, never longer.
+//! - **Tokens** (M167): one helper mints them all, each for one repository
+//!   with the least it needs, and logs each mint ([`app`]'s docs).
 //!
 //! First-time lookups at GitHub are rate-limited per account
 //! ([`FORGE_LOOKUPS`], counted here).
@@ -35,7 +37,9 @@ use crate::Platform;
 mod app;
 mod webhook;
 
-pub use app::{GithubApp, GithubUser, Install, epoch_of, parse_pem};
+pub use app::{
+    Caller, GithubApp, GithubUser, Install, Purpose, ReadToken, Repo, WriteToken, Writes, epoch_of, parse_pem,
+};
 pub use webhook::{pokes, signed, webhook};
 
 /// Repositories looked up at GitHub for the first time in a while (not
@@ -154,7 +158,7 @@ pub async fn standing(
                 if fresh && !gh.knows(u, repo) && p.limits.check_account(FORGE_LOOKUPS, account).is_err() {
                     Some("too many repositories asked about lately: live updates resume within the hour".to_owned())
                 } else {
-                    gh.may(&p.http, u, repo).await.err()
+                    gh.may(&Caller::of(p, account), u, repo).await.err()
                 }
             }
         };
@@ -195,18 +199,25 @@ pub async fn token(
     {
         return refused(status, &error);
     }
-    let install = match gh.may(&p.http, user, repo).await {
+    let caller = Caller::of(p, account);
+    let install = match gh.may(&caller, user, repo).await {
         Ok(i) => i,
         Err(why) => return refused(StatusCode::FORBIDDEN, &why),
     };
     let name = repo.split('/').nth(1).unwrap_or_default();
-    let (token, expires_at) = gh.token(&p.http, install.id, name).await?;
+    let t = gh.read_token(&caller, install.id, Repo::Name(name), Purpose::Read).await?;
     // Who and what; never the token.
     info!(account, repo, "installation token for a daemon");
-    Ok(TokenAnswer::Token(GithubToken { token, expires_at, login: user.login.clone(), app: gh.slug.clone() }))
+    Ok(TokenAnswer::Token(GithubToken {
+        token: t.secret().to_owned(),
+        expires_at: t.expires_at,
+        login: user.login.clone(),
+        app: gh.slug.clone(),
+    }))
 }
 
-/// The forge's background work: webhook deliveries older than a week go.
+/// The forge's background work: webhook deliveries older than a week go,
+/// and the token log's mints older than a year.
 pub fn start(p: &Arc<Platform>) {
     if p.github.is_none() {
         return;
@@ -219,6 +230,11 @@ pub fn start(p: &Arc<Platform>) {
                     Ok(n) if n > 0 => info!(deliveries = n, "pruned old GitHub webhook deliveries"),
                     Ok(_) => {}
                     Err(e) => tracing::warn!(error = %e, "pruning GitHub webhook deliveries"),
+                }
+                match p.db.prune_mints(arugula_e2e::now_ms()) {
+                    Ok(n) if n > 0 => info!(mints = n, "pruned old GitHub token mints"),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!(error = %e, "pruning GitHub token mints"),
                 }
             }
             tokio::time::sleep(PRUNE_EVERY).await;

@@ -1,6 +1,41 @@
 //! The GitHub App itself (M40, the platform's since M161): its JWT, where
-//! it's installed, read-only installation tokens, and who may hear about a
+//! it's installed, installation tokens, and who may hear about a
 //! repository through it ([`GithubApp::may`]).
+//!
+//! **Tokens** (M167, aru-085). [`GithubApp::mint`] is the only code that
+//! asks GitHub for an installation token. Each one names one repository and
+//! the least it needs: a [`Purpose`] reads ([`ReadToken`], kept until five
+//! minutes before it expires), and a send's [`Writes`] writes one kind of
+//! thing ([`WriteToken`], minted for that send and dropped, never kept).
+//! The two are different types, a read names a [`Purpose`] and a send a
+//! [`Writes`], so a read can't come away with a token that writes:
+//!
+//! ```no_run
+//! # use arugula_platform::forge::{Caller, GithubApp, Purpose, ReadToken, Repo, Writes, WriteToken};
+//! async fn read(app: &GithubApp, c: &Caller<'_>) -> ReadToken {
+//!     app.read_token(c, 11, Repo::Name("hud"), Purpose::Read).await.unwrap()
+//! }
+//! async fn send(app: &GithubApp, c: &Caller<'_>) -> WriteToken {
+//!     app.write_token(c, 11, Repo::Id(101), Writes::Issues).await.unwrap()
+//! }
+//! ```
+//! ```compile_fail
+//! # use arugula_platform::forge::{Caller, GithubApp, Purpose, Repo, WriteToken};
+//! async fn read(app: &GithubApp, c: &Caller<'_>) -> WriteToken {
+//!     app.read_token(c, 11, Repo::Name("hud"), Purpose::Read).await.unwrap()
+//! }
+//! ```
+//! ```compile_fail
+//! # use arugula_platform::forge::{Caller, GithubApp, Purpose, Repo};
+//! async fn read(app: &GithubApp, c: &Caller<'_>) {
+//!     app.write_token(c, 11, Repo::Name("hud"), Purpose::Read).await.unwrap();
+//! }
+//! ```
+//!
+//! Every mint is a `github_token_mints` row ([`Db::log_mint`]): who it was
+//! for, what for, the installation, the repository and the permissions,
+//! never the token. A read token handed out again from the cache wasn't
+//! minted, so it adds no row.
 
 use std::{
     collections::HashMap,
@@ -15,15 +50,160 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::{info, warn};
 
+use crate::db::{
+    Db,
+    forge::{MintKind, NewMint},
+};
+
 /// How long an answer about an installation or a person's access holds.
 const KEEP: Duration = Duration::from_secs(600);
 
-/// What a hosted box's token may do: read.
+/// What a read token may do: read, and nothing else.
 fn read_only() -> Value {
     json!({
         "metadata": "read", "contents": "read", "pull_requests": "read", "issues": "read",
         "checks": "read", "statuses": "read", "actions": "read",
     })
+}
+
+/// What a read-only installation token is for. Both get [`read_only`]
+/// permissions; the purpose is what the log says.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Purpose {
+    /// The mirror's own reads: backfill, the poller, a webhook's item (M164).
+    Ingest,
+    /// A read for a person: their access check, a hosted box's token, a
+    /// body fetched to show them.
+    Read,
+}
+
+/// What a send writes, so the one write permission its token gets (and
+/// `metadata: read`, which GitHub adds to every token). Only a send names
+/// one ([`GithubApp::write_token`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Writes {
+    /// An issue: a comment (on a PR's conversation too), its state, labels.
+    Issues,
+    /// A PR: a review, a review comment, its state.
+    PullRequests,
+    /// Only for one call GitHub needs both for.
+    Both,
+}
+
+/// What a mint asks GitHub for, and what the log says it was for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Scope {
+    Read(Purpose),
+    Send(Writes),
+}
+
+impl Scope {
+    fn permissions(self) -> Value {
+        match self {
+            Scope::Read(_) => read_only(),
+            Scope::Send(Writes::Issues) => json!({ "metadata": "read", "issues": "write" }),
+            Scope::Send(Writes::PullRequests) => json!({ "metadata": "read", "pull_requests": "write" }),
+            Scope::Send(Writes::Both) => json!({ "metadata": "read", "issues": "write", "pull_requests": "write" }),
+        }
+    }
+
+    fn purpose(self) -> &'static str {
+        match self {
+            Scope::Read(Purpose::Ingest) => "ingest",
+            Scope::Read(Purpose::Read) => "read",
+            Scope::Send(Writes::Issues) => "send:issues",
+            Scope::Send(Writes::PullRequests) => "send:pull_requests",
+            Scope::Send(Writes::Both) => "send:issues+pull_requests",
+        }
+    }
+}
+
+/// The one repository a token is for, under the installation it's minted
+/// on: GitHub's id where the caller has it (a linked repo, a webhook), or
+/// its name without the owner (a repository asked about by name).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Repo<'a> {
+    Id(u64),
+    Name(&'a str),
+}
+
+impl Repo<'_> {
+    fn key(self) -> String {
+        match self {
+            Repo::Id(id) => format!("#{id}"),
+            Repo::Name(n) => n.to_ascii_lowercase(),
+        }
+    }
+
+    /// The access token request's repository: exactly one.
+    fn body(self, permissions: &Value) -> Value {
+        match self {
+            Repo::Id(id) => json!({ "repository_ids": [id], "permissions": permissions }),
+            Repo::Name(n) => json!({ "repositories": [n], "permissions": permissions }),
+        }
+    }
+}
+
+/// Who a mint is for and where it's written down: every mint is a
+/// `github_token_mints` row.
+#[derive(Clone, Copy)]
+pub struct Caller<'a> {
+    pub http: &'a reqwest::Client,
+    pub db: &'a Db,
+    /// The account, or `platform` for the platform's own work.
+    pub who: &'a str,
+}
+
+impl<'a> Caller<'a> {
+    pub fn of(p: &'a crate::Platform, who: &'a str) -> Self {
+        Self { http: &p.http, db: &p.db, who }
+    }
+}
+
+/// A read-only installation token for one repository. No `Debug` of its
+/// secret: a token is never printed.
+#[derive(Clone)]
+pub struct ReadToken {
+    secret: String,
+    /// GitHub's `expires_at`.
+    pub expires_at: String,
+    expires: u64,
+}
+
+impl ReadToken {
+    pub fn secret(&self) -> &str {
+        &self.secret
+    }
+}
+
+impl std::fmt::Debug for ReadToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReadToken").field("expires_at", &self.expires_at).finish_non_exhaustive()
+    }
+}
+
+/// An installation token that writes one kind of thing to one repository,
+/// for one send. Not `Clone` and never kept: it's dropped with the send.
+pub struct WriteToken {
+    secret: String,
+    send: Writes,
+}
+
+impl WriteToken {
+    pub fn secret(&self) -> &str {
+        &self.secret
+    }
+
+    /// What it may write.
+    pub fn send(&self) -> Writes {
+        self.send
+    }
+}
+
+impl std::fmt::Debug for WriteToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WriteToken").field("send", &self.send).finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,8 +226,6 @@ pub struct GithubUser {
 
 /// When a person's access was looked at, and the answer.
 type Access = (Instant, Result<Install, String>);
-/// An installation token, GitHub's `expires_at`, and that in seconds.
-type Minted = (String, String, u64);
 
 pub struct GithubApp {
     pub id: String,
@@ -58,8 +236,9 @@ pub struct GithubApp {
     key: KeyPair,
     installs: Mutex<HashMap<String, (Instant, Option<Install>)>>,
     access: Mutex<HashMap<(u64, String), Access>>,
-    /// Installation tokens by (installation, repository), until they expire.
-    tokens: Mutex<HashMap<(u64, String), Minted>>,
+    /// Read tokens by (installation, repository), until five minutes
+    /// before they expire. Only read tokens: a write token is never kept.
+    reads: Mutex<HashMap<(u64, String), ReadToken>>,
 }
 
 /// An RSA private key from PEM (PKCS#1 `RSA PRIVATE KEY`, as GitHub hands
@@ -117,7 +296,7 @@ impl GithubApp {
             key,
             installs: Mutex::default(),
             access: Mutex::default(),
-            tokens: Mutex::default(),
+            reads: Mutex::default(),
         }
     }
 
@@ -178,23 +357,62 @@ impl GithubApp {
         Ok(found)
     }
 
-    /// An installation token for one repository (its name, without the
-    /// owner), read-only: `(token, expires_at)`.
-    pub async fn token(&self, http: &reqwest::Client, install: u64, name: &str) -> anyhow::Result<(String, String)> {
-        let k = (install, name.to_ascii_lowercase());
-        if let Some((t, at, exp)) = self.tokens.lock().unwrap().get(&k)
-            && *exp > now_s() + 300
+    /// A read-only installation token for one repository, from the cache
+    /// while it has more than five minutes left, or minted (and logged).
+    pub async fn read_token(
+        &self,
+        c: &Caller<'_>,
+        install: u64,
+        repo: Repo<'_>,
+        purpose: Purpose,
+    ) -> anyhow::Result<ReadToken> {
+        let k = (install, repo.key());
+        if let Some(t) = self.reads.lock().unwrap().get(&k)
+            && t.expires > now_s() + 300
         {
-            return Ok((t.clone(), at.clone()));
+            return Ok(t.clone());
         }
+        let (secret, expires_at) = self.mint(c, install, repo, Scope::Read(purpose)).await?;
+        let expires = epoch_of(&expires_at).unwrap_or(now_s() + 3600);
+        let t = ReadToken { secret, expires_at, expires };
+        let mut reads = self.reads.lock().unwrap();
+        reads.retain(|_, t| t.expires > now_s());
+        reads.insert(k, t.clone());
+        Ok(t)
+    }
+
+    /// A token that writes what `send` says to one repository, minted now
+    /// for this send (and logged), never from or into the cache.
+    pub async fn write_token(
+        &self,
+        c: &Caller<'_>,
+        install: u64,
+        repo: Repo<'_>,
+        send: Writes,
+    ) -> anyhow::Result<WriteToken> {
+        let (secret, _) = self.mint(c, install, repo, Scope::Send(send)).await?;
+        Ok(WriteToken { secret, send })
+    }
+
+    /// The only call to GitHub's `POST /app/installations/{id}/access_tokens`:
+    /// a token for `repo` alone with `scope`'s permissions, written to the
+    /// log as soon as GitHub hands it over. `(token, expires_at)`.
+    async fn mint(
+        &self,
+        c: &Caller<'_>,
+        install: u64,
+        repo: Repo<'_>,
+        scope: Scope,
+    ) -> anyhow::Result<(String, String)> {
+        let permissions = scope.permissions();
         let r = self
             .req(
-                http,
+                c.http,
                 reqwest::Method::POST,
                 &format!("app/installations/{install}/access_tokens"),
                 &self.jwt(now_s())?,
             )
-            .json(&json!({ "repositories": [name], "permissions": read_only() }))
+            .json(&repo.body(&permissions))
             .send()
             .await?;
         let status = r.status();
@@ -203,12 +421,29 @@ impl GithubApp {
             bail!("GitHub said {status} minting an installation token: {}", v["message"].as_str().unwrap_or(""));
         }
         let t = v["token"].as_str().context("no token in GitHub's answer")?.to_owned();
-        let at = v["expires_at"].as_str().unwrap_or_default().to_owned();
-        let exp = epoch_of(&at).unwrap_or(now_s() + 3600);
-        let mut tokens = self.tokens.lock().unwrap();
-        tokens.retain(|_, (_, _, e)| *e > now_s());
-        tokens.insert(k, (t.clone(), at.clone(), exp));
-        Ok((t, at))
+        // GitHub says which repositories it covers: the one asked for.
+        let covers =
+            v["repositories"].as_array().map(|r| r.iter().filter_map(|r| r["id"].as_u64()).collect::<Vec<_>>());
+        let repo_id = match (repo, covers.as_deref()) {
+            (_, Some([id])) => Some(*id),
+            (Repo::Id(id), _) => Some(id),
+            (Repo::Name(_), _) => None,
+        };
+        c.db.log_mint(&NewMint {
+            kind: MintKind::Installation,
+            installation_id: Some(install),
+            repo_id,
+            permissions: &permissions,
+            caller: c.who,
+            purpose: scope.purpose(),
+            at: arugula_e2e::now_ms(),
+        })?;
+        if covers.as_ref().is_some_and(|ids| ids.len() != 1 || matches!(repo, Repo::Id(id) if ids[0] != id)) {
+            bail!("GitHub's installation token covers other repositories than the one asked for");
+        }
+        // Who and what; never the token.
+        info!(installation = install, repo_id, caller = c.who, purpose = scope.purpose(), "installation token minted");
+        Ok((t, v["expires_at"].as_str().unwrap_or_default().to_owned()))
     }
 
     /// Whether the answer for this person and repository is at hand.
@@ -219,14 +454,14 @@ impl GithubApp {
 
     /// Whether `user` may hear about `repo` through the App: the
     /// installation that covers it, or why not.
-    pub async fn may(&self, http: &reqwest::Client, user: &GithubUser, repo: &str) -> Result<Install, String> {
+    pub async fn may(&self, c: &Caller<'_>, user: &GithubUser, repo: &str) -> Result<Install, String> {
         let k = (user.id, repo.to_ascii_lowercase());
         if let Some((at, r)) = self.access.lock().unwrap().get(&k)
             && at.elapsed() < KEEP
         {
             return r.clone();
         }
-        let r = self.may_now(http, user, repo).await;
+        let r = self.may_now(c, user, repo).await;
         if let Err(e) = &r {
             info!(repo, why = e, "no live updates for a repository");
         }
@@ -234,10 +469,10 @@ impl GithubApp {
         r
     }
 
-    async fn may_now(&self, http: &reqwest::Client, user: &GithubUser, repo: &str) -> Result<Install, String> {
+    async fn may_now(&self, c: &Caller<'_>, user: &GithubUser, repo: &str) -> Result<Install, String> {
         let login = user.login.as_str();
         let owner = repo.split('/').next().unwrap_or_default();
-        let install = match self.installation(http, repo).await {
+        let install = match self.installation(c.http, repo).await {
             Ok(Some(i)) => i,
             Ok(None) => {
                 return Err(format!(
@@ -257,15 +492,16 @@ impl GithubApp {
         // Someone else's installation (an organization's, say): only if
         // GitHub says they're a collaborator on the repository.
         let name = repo.split('/').nth(1).unwrap_or_default();
-        let token = match self.token(http, install.id, name).await {
-            Ok((t, _)) => t,
+        let token = match self.read_token(c, install.id, Repo::Name(name), Purpose::Read).await {
+            Ok(t) => t,
             Err(e) => {
                 warn!(error = %e, "minting a token to check access");
                 return Err("couldn't check your access to it with the App".into());
             }
         };
         let path = format!("repos/{repo}/collaborators/{login}/permission");
-        let r = self.req(http, reqwest::Method::GET, &path, &token).send().await.map_err(|e| e.to_string())?;
+        let r =
+            self.req(c.http, reqwest::Method::GET, &path, token.secret()).send().await.map_err(|e| e.to_string())?;
         let v: Value = if r.status().is_success() { r.json().await.unwrap_or_default() } else { Value::Null };
         // The login control knows may belong to someone else by now.
         if v["user"]["id"].as_u64().is_some_and(|id| id != user.id) {

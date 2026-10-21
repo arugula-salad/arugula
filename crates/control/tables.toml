@@ -760,7 +760,7 @@ holds = "metadata"
 what = "The audit log of every GitHub token the platform minted: installation or user token, the installation and repo, the permissions, who it was for, what for, and when. Never the token."
 why_asleep = "Tokens are minted for reads, ingest and sends with every machine asleep."
 with_account = "kept"
-note = "Its mints stay in the audit log, naming it, so a token can be traced after the account goes, for as long as the log is kept (M167 sets that)."
+note = "Its mints stay in the audit log, naming it, so a token can be traced after the account goes, for as long as the log keeps a mint: a year, pruned hourly."
 seen_by = ["litestream", "github"]
 
 [[table]]

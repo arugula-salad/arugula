@@ -26,7 +26,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
 
-use arugula_platform::forge::{GithubApp, parse_pem};
+use arugula_platform::forge::{Caller, GithubApp, Purpose, Repo, Writes, parse_pem};
 
 use crate::{App, forge};
 
@@ -75,6 +75,12 @@ async fn installation(State(h): State<Shared>, headers: HeaderMap, Path((o, r)):
     }
 }
 
+/// The fake's repositories, by GitHub id.
+const REPOS: [(u64, &str); 3] = [(101, "hud"), (102, "tool"), (103, "wide")];
+
+/// A new token each time (`ghs_test_INSTALLATION_N`), covering the one
+/// repository asked for, as GitHub's answer lists it. `wide` comes back
+/// covering two, as a misbehaving GitHub would.
 async fn access_tokens(
     State(h): State<Shared>,
     headers: HeaderMap,
@@ -84,14 +90,51 @@ async fn access_tokens(
     if !app_jwt(&h, &headers) {
         return (StatusCode::UNAUTHORIZED, "bad JWT").into_response();
     }
-    h.lock().unwrap().minted.push(json!({ "installation": id, "body": body }));
-    (StatusCode::CREATED, Json(json!({ "token": format!("ghs_test_{id}"), "expires_at": "2099-01-01T00:00:00Z" })))
+    let n = {
+        let mut h = h.lock().unwrap();
+        h.minted.push(json!({ "installation": id, "body": body }));
+        h.minted.len()
+    };
+    let by_id = body["repository_ids"].as_array().into_iter().flatten().filter_map(Value::as_u64);
+    let by_name = body["repositories"].as_array().into_iter().flatten().filter_map(Value::as_str);
+    let mut covers: Vec<Value> = REPOS
+        .iter()
+        .filter(|(i, name)| by_id.clone().any(|x| x == *i) || by_name.clone().any(|x| x == *name))
+        .map(|(i, name)| json!({ "id": i, "name": name }))
+        .collect();
+    if covers.iter().any(|r| r["name"] == "wide") {
+        covers.push(json!({ "id": 101, "name": "hud" }));
+    }
+    let token = format!("ghs_test_{id}_{n}");
+    (
+        StatusCode::CREATED,
+        Json(json!({ "token": token, "expires_at": "2099-01-01T00:00:00Z", "repositories": covers,
+            "permissions": body["permissions"] })),
+    )
         .into_response()
+}
+
+/// The platform's token log, as rows of JSON: every column of every mint.
+fn mints(db: &arugula_platform::db::Db) -> Vec<Value> {
+    db.token_mints(0).unwrap().iter().map(|m| serde_json::to_value(m).unwrap()).collect()
+}
+
+/// Every mint GitHub saw is a row in the log, and no row has a token in
+/// it.
+fn every_mint_logged(h: &Shared, db: &arugula_platform::db::Db) -> Vec<Value> {
+    let rows = mints(db);
+    assert_eq!(rows.len(), h.lock().unwrap().minted.len(), "{rows:?}");
+    assert!(!rows.is_empty());
+    for r in &rows {
+        assert!(!r.to_string().contains("ghs_"), "a token in the log: {r}");
+        assert_eq!(r["kind"], "installation");
+    }
+    rows
 }
 
 async fn permission(headers: HeaderMap, Path((o, r, login)): Path<(String, String, String)>) -> Response {
     let auth = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or("");
-    if auth != "Bearer ghs_test_12" || (o, r) != ("acme".into(), "tool".into()) {
+    if !auth.starts_with("Bearer ghs_test_12_") || (o, r) != ("acme".into(), "tool".into()) {
         return StatusCode::FORBIDDEN.into_response();
     }
     // Who has each login now: jhgaylor is GitHub user 1.
@@ -315,7 +358,8 @@ async fn webhooks_poke_only_subscribed_daemons_of_allowed_accounts() {
     let r = ask(&k1, "jhgaylor/hud").await.unwrap();
     assert_eq!(r.status(), 200);
     let v: Value = r.json().await.unwrap();
-    assert_eq!((v["token"].as_str(), v["login"].as_str()), (Some("ghs_test_11"), Some("jhgaylor")));
+    assert!(v["token"].as_str().unwrap().starts_with("ghs_test_11_"), "{v}");
+    assert_eq!(v["login"], "jhgaylor");
     assert_eq!(v["expires_at"], "2099-01-01T00:00:00Z");
     assert!(
         h.lock().unwrap().minted.iter().any(|m| m["installation"] == 11 && m["body"]["repositories"] == json!(["hud"]))
@@ -336,6 +380,16 @@ async fn webhooks_poke_only_subscribed_daemons_of_allowed_accounts() {
         .await
         .unwrap();
     assert_eq!(unsigned.status(), 401);
+    // M167: each mint (the access check's for acme/tool, the box's for
+    // jhgaylor/hud) is in the token log, read-only, for one repository,
+    // naming who it was for; later asks for either were the cache's, so no
+    // rows.
+    let rows = every_mint_logged(&h, &app.platform.inner().db);
+    let row = |repo: u64| rows.iter().find(|r| r["repo_id"] == repo).unwrap_or_else(|| panic!("{rows:?}"));
+    assert_eq!(row(102)["installation_id"], 12);
+    assert!(["a1", "a2"].contains(&row(102)["caller"].as_str().unwrap()), "{rows:?}");
+    assert_eq!((row(101)["installation_id"].as_u64(), row(101)["purpose"].as_str()), (Some(11), Some("read")));
+    assert!(rows.iter().all(|r| !r["permissions"].as_str().unwrap().contains("write")), "{rows:?}");
 
     // Jake's daemon hangs up: its subscription goes with the socket.
     let s = socks.remove(0);
@@ -428,14 +482,15 @@ async fn webhooks_land_on_the_platform_out_of_process() {
     let r = ask(&k1, "jhgaylor/hud").await.unwrap();
     assert_eq!(r.status(), 200);
     let v: Value = r.json().await.unwrap();
-    assert_eq!(
-        (v["token"].as_str(), v["login"].as_str(), v["app"].as_str()),
-        (Some("ghs_test_11"), Some("jhgaylor"), Some("arugula-test"))
-    );
+    assert!(v["token"].as_str().unwrap().starts_with("ghs_test_11_"), "{v}");
+    assert_eq!((v["login"].as_str(), v["app"].as_str()), (Some("jhgaylor"), Some("arugula-test")));
     let r = ask(&k2, "jhgaylor/hud").await.unwrap();
     assert_eq!(r.status(), 403, "a stranger: the platform's refusal is the answer");
     assert!(r.text().await.unwrap().contains("collaborator"));
     assert_eq!(ask(&k1, "bad/../x").await.unwrap().status(), 400);
+    // The platform logged the mints, in its own database.
+    let rows = every_mint_logged(&h, &s.platform.db);
+    assert!(rows.iter().all(|r| r["purpose"] == "read" && r["caller"] == "a1"), "{rows:?}");
 
     // The platform starts again on the same database: nothing in memory,
     // and GitHub's redelivery is known.
@@ -459,6 +514,61 @@ async fn webhooks_land_on_the_platform_out_of_process() {
     assert_eq!(bare.platform.db.delivery_event("del-4").unwrap(), None);
 }
 
+/// M167: a read's token is read-only and kept; a send's token writes the
+/// one thing it names, is minted for each send, and is never the cached
+/// read token. Every mint is a row in the log, with no token in it.
+#[tokio::test]
+async fn reads_and_sends_get_their_own_tokens() {
+    let (pem, public) = forge::tests::throwaway_key();
+    let h: Shared = Arc::new(Mutex::new(Hub { public, ..Hub::default() }));
+    let api = fake_github(h.clone()).await;
+    let gh = the_app(&api, &pem);
+    let (http, db) = (reqwest::Client::new(), arugula_platform::db::Db::memory());
+    let c = Caller { http: &http, db: &db, who: "a1" };
+    let body = |n: usize| h.lock().unwrap().minted[n]["body"].clone();
+
+    let read = gh.read_token(&c, 11, Repo::Name("hud"), Purpose::Read).await.unwrap();
+    assert_eq!(body(0)["repositories"], json!(["hud"]));
+    assert!(body(0)["permissions"].as_object().unwrap().values().all(|v| v == "read"));
+    let again = gh.read_token(&c, 11, Repo::Name("hud"), Purpose::Ingest).await.unwrap();
+    assert_eq!(again.secret(), read.secret(), "kept");
+    assert_eq!(h.lock().unwrap().minted.len(), 1, "a cache hit isn't a mint");
+
+    // A send, on the same repository, while that read token is kept.
+    let send = gh.write_token(&c, 11, Repo::Name("hud"), Writes::Issues).await.unwrap();
+    assert_ne!(send.secret(), read.secret(), "never the cached read token");
+    assert_eq!(body(1)["permissions"], json!({ "metadata": "read", "issues": "write" }));
+    assert_eq!(body(1)["repositories"], json!(["hud"]));
+    let send2 = gh.write_token(&c, 11, Repo::Name("hud"), Writes::Issues).await.unwrap();
+    assert_ne!(send2.secret(), send.secret(), "a send's token isn't kept");
+    // Nor does a send's token reach the read cache.
+    let read2 = gh.read_token(&c, 11, Repo::Name("hud"), Purpose::Read).await.unwrap();
+    assert_eq!(read2.secret(), read.secret());
+    assert_eq!(h.lock().unwrap().minted.len(), 3);
+    // By id, a review: pull requests only.
+    let review = gh.write_token(&c, 11, Repo::Id(101), Writes::PullRequests).await.unwrap();
+    assert_eq!(review.send(), Writes::PullRequests);
+    assert_eq!(
+        body(3),
+        json!({ "repository_ids": [101], "permissions": { "metadata": "read", "pull_requests": "write" } })
+    );
+    // GitHub's answer covering more than the one repository is refused,
+    // and still logged: it was minted.
+    assert!(gh.write_token(&c, 11, Repo::Name("wide"), Writes::Issues).await.is_err());
+    assert!(gh.read_token(&c, 11, Repo::Name("wide"), Purpose::Read).await.is_err());
+
+    let rows = every_mint_logged(&h, &db);
+    // Rows in the same millisecond come in any order.
+    let mut purposes: Vec<&str> = rows.iter().map(|r| r["purpose"].as_str().unwrap()).collect();
+    purposes.sort_unstable();
+    assert_eq!(purposes, ["read", "read", "send:issues", "send:issues", "send:issues", "send:pull_requests"]);
+    assert!(rows.iter().all(|r| r["installation_id"] == 11 && r["caller"] == "a1"), "{rows:?}");
+    let on = |id: Value| rows.iter().filter(|r| r["repo_id"] == id).count();
+    assert_eq!((on(json!(101)), on(Value::Null)), (4, 2), "covering two, it names none: {rows:?}");
+    let issues = rows.iter().find(|r| r["purpose"] == "send:issues" && r["repo_id"] == 101).unwrap();
+    assert_eq!(issues["permissions"], r#"{"issues":"write","metadata":"read"}"#);
+}
+
 /// By hand, once, read-only: the real App (`ARUGULA_REAL_GITHUB_APP_ENV`
 /// names its env file, as the manifest flow left it): a JWT, the App's
 /// installations, an installation token for one repository, and a PR read
@@ -479,7 +589,8 @@ async fn real_app_reads() {
         "https://api.github.com",
         parse_pem(&pem).unwrap(),
     );
-    let http = reqwest::Client::new();
+    let (http, db) = (reqwest::Client::new(), arugula_platform::db::Db::memory());
+    let c = Caller { http: &http, db: &db, who: "platform" };
     let jwt = app.jwt(now_ms() / 1000).unwrap();
     let r = http
         .get("https://api.github.com/app/installations")
@@ -501,15 +612,18 @@ async fn real_app_reads() {
     let owner = repo.split('/').next().unwrap();
     println!(
         "may {owner} hear {repo}: {:?}",
-        app.may(&http, &arugula_platform::forge::GithubUser { id: install.account_id, login: owner.into() }, &repo)
+        app.may(&c, &arugula_platform::forge::GithubUser { id: install.account_id, login: owner.into() }, &repo)
             .await
             .map(|i| i.id)
     );
-    let (token, expires) = app.token(&http, install.id, repo.split('/').nth(1).unwrap()).await.unwrap();
-    println!("installation token minted, {} chars, expires {expires}", token.len());
+    let name = repo.split('/').nth(1).unwrap();
+    let t = app.read_token(&c, install.id, Repo::Name(name), Purpose::Read).await.unwrap();
+    println!("installation token minted, {} chars, expires {}", t.secret().len(), t.expires_at);
+    println!("logged: {:?}", db.token_mints(0).unwrap());
+    let token = t.secret();
     let r = http
         .get(format!("https://api.github.com/repos/{repo}/pulls/{pr}"))
-        .bearer_auth(&token)
+        .bearer_auth(token)
         .header("User-Agent", "arugula-control")
         .header("Accept", "application/vnd.github+json")
         .send()

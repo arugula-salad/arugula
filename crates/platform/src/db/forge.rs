@@ -2,17 +2,73 @@
 //! PRs and issues as platform rows. They're made by `0005_forge_mirror`;
 //! their queries come with the features that write them (M161 deliveries,
 //! M163 links, M164 items, M167 mints, M170 drafts, M171 the inbox). So
-//! far: the webhook's deliveries (M161) and an account's deletion.
+//! far: the webhook's deliveries (M161), the token log (M167) and an
+//! account's deletion.
+
+use serde::Serialize;
 
 use super::{
     Db,
-    sql::{Optional as _, Sql, params},
+    sql::{Optional as _, Row, Sql, params},
 };
 use crate::Deleted;
 
 /// How long a webhook delivery is remembered (M161): GitHub redelivers by
 /// hand for a few days, and a deploy loses nothing.
 pub const DELIVERIES_KEPT_MS: u64 = 7 * 24 * 3600 * 1000;
+
+/// How long the token log keeps a mint (M167): a year, so a token GitHub's
+/// own audit log names can be traced to who and what it was for.
+pub const MINTS_KEPT_MS: u64 = 365 * 24 * 3600 * 1000;
+
+/// Whose a minted token was: the App's installation's, or a person's user
+/// token (M168).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MintKind {
+    Installation,
+    User,
+}
+
+/// A mint to write down: never the token.
+#[derive(Debug, Clone, Copy)]
+pub struct NewMint<'a> {
+    pub kind: MintKind,
+    pub installation_id: Option<u64>,
+    pub repo_id: Option<u64>,
+    /// What it was scoped to, as GitHub was asked.
+    pub permissions: &'a serde_json::Value,
+    /// The account it was for, or `platform`.
+    pub caller: &'a str,
+    /// What for (`read`, `ingest`, `send:issues`, ...).
+    pub purpose: &'a str,
+    pub at: u64,
+}
+
+/// A row of `github_token_mints`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TokenMint {
+    pub id: String,
+    pub kind: String,
+    pub installation_id: Option<u64>,
+    pub repo_id: Option<u64>,
+    pub permissions: String,
+    pub caller: String,
+    pub purpose: String,
+    pub at: u64,
+}
+
+fn mint_row(r: &Row) -> anyhow::Result<TokenMint> {
+    Ok(TokenMint {
+        id: r.get(0)?,
+        kind: r.get(1)?,
+        installation_id: r.get(2)?,
+        repo_id: r.get(3)?,
+        permissions: r.get(4)?,
+        caller: r.get(5)?,
+        purpose: r.get(6)?,
+        at: r.get(7)?,
+    })
+}
 
 impl Db {
     /// Remember a webhook delivery (`X-GitHub-Delivery`): false when it
@@ -46,6 +102,37 @@ impl Db {
     pub fn prune_deliveries(&self, now: u64) -> anyhow::Result<usize> {
         let before = now.saturating_sub(DELIVERIES_KEPT_MS);
         self.c().execute("DELETE FROM github_webhook_deliveries WHERE received_at < ?1", params![before])
+    }
+
+    /// Write a GitHub token's mint to the log (M167): its id (`gtm_`).
+    pub fn log_mint(&self, m: &NewMint<'_>) -> anyhow::Result<String> {
+        let id = format!("gtm_{}", hex::encode(arugula_e2e::random::<16>()));
+        let kind = match m.kind {
+            MintKind::Installation => "installation",
+            MintKind::User => "user",
+        };
+        self.c().execute(
+            "INSERT INTO github_token_mints (id, kind, installation_id, repo_id, permissions, caller, purpose, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![id, kind, m.installation_id, m.repo_id, m.permissions.to_string(), m.caller, m.purpose, m.at],
+        )?;
+        Ok(id)
+    }
+
+    /// The log's mints since `since`, oldest first.
+    pub fn token_mints(&self, since: u64) -> anyhow::Result<Vec<TokenMint>> {
+        self.c().query_map(
+            "SELECT id, kind, installation_id, repo_id, permissions, caller, purpose, at
+             FROM github_token_mints WHERE at >= ?1 ORDER BY at, id",
+            params![since],
+            mint_row,
+        )
+    }
+
+    /// Forget mints older than [`MINTS_KEPT_MS`]: how many went.
+    pub fn prune_mints(&self, now: u64) -> anyhow::Result<usize> {
+        let before = now.saturating_sub(MINTS_KEPT_MS);
+        self.c().execute("DELETE FROM github_token_mints WHERE at < ?1", params![before])
     }
 }
 
@@ -87,6 +174,35 @@ mod tests {
         assert_eq!(db.prune_deliveries(3_001 + super::DELIVERIES_KEPT_MS).unwrap(), 1);
         assert!(db.first_delivery("d1", "pull_request", 5_000).unwrap(), "a week on, it's new");
         assert!(!db.first_delivery("d2", "issues", 5_000).unwrap());
+    }
+
+    /// A mint is a row with what it was scoped to, and a year on it goes.
+    #[test]
+    fn mints_are_logged_for_a_year() {
+        use super::{MINTS_KEPT_MS, MintKind, NewMint};
+        let db = Db::test();
+        let perms = serde_json::json!({ "metadata": "read" });
+        let m = NewMint {
+            kind: MintKind::Installation,
+            installation_id: Some(11),
+            repo_id: Some(101),
+            permissions: &perms,
+            caller: "a1",
+            purpose: "read",
+            at: 1_000,
+        };
+        let id = db.log_mint(&m).unwrap();
+        assert!(id.starts_with("gtm_"), "{id}");
+        db.log_mint(&NewMint { kind: MintKind::User, installation_id: None, at: 2_000, ..m }).unwrap();
+        let rows = db.token_mints(0).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            (rows[0].kind.as_str(), rows[0].installation_id, rows[0].repo_id, rows[0].permissions.as_str()),
+            ("installation", Some(11), Some(101), r#"{"metadata":"read"}"#)
+        );
+        assert_eq!((rows[1].kind.as_str(), rows[1].installation_id), ("user", None));
+        assert_eq!(db.prune_mints(1_500 + MINTS_KEPT_MS).unwrap(), 1);
+        assert_eq!(db.token_mints(0).unwrap().len(), 1);
     }
 
     fn count(db: &Db, sql: &str) -> u64 {
