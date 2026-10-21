@@ -177,18 +177,22 @@ pub async fn status(State(p): State<Arc<Platform>>, s: Person) -> R {
     let on = p.stripe.is_some();
     let now = now_ms();
     let since = month_start(now);
-    let teams = p.hub.teams(&p.hub.teams_of(&s.account).await?).await?;
+    // Teams, rosters and meters as the cache keeps them (`cache::DELAY`
+    // for a roster, a cache tick for usage): no hub call once it's warm.
+    let ids = p.cache.teams_of(&*p.hub, &s.account).await?;
+    let mut found = p.cache.teams(&*p.hub, &ids).await?;
+    let teams: Vec<_> = ids.iter().filter_map(|id| found.remove(id)).collect();
     // Every meter at once: mine, and my teams' members'.
     let mut accounts = vec![s.account.clone()];
     accounts.extend(teams.iter().flat_map(|t| t.members.iter().map(|m| m.account.clone())));
     accounts.sort();
     accounts.dedup();
     let meters: HashMap<String, (u64, u64)> = p
-        .hub
-        .meters(&accounts, since, now)
+        .cache
+        .meters(&*p.hub, &accounts, since, now)
         .await?
         .into_iter()
-        .map(|m| (m.account, (m.relay_bytes, m.sandbox_minutes)))
+        .map(|(a, m)| (a, (m.relay_bytes, m.sandbox_minutes)))
         .collect();
     let meter = |a: &str| meters.get(a).copied().unwrap_or_default();
     let (relay, warn_relay, slow) = relay_standing(&p, &s.account, meter(&s.account).0).await?;
@@ -236,12 +240,15 @@ pub async fn checkout(State(p): State<Arc<Platform>>, headers: HeaderMap, s: Per
     p.limits.check_account(CHECKOUTS, &s.account)?;
     let (owner, seats) = match &b.team {
         Some(t) => {
-            let team = p
-                .hub
-                .teams(std::slice::from_ref(t))
-                .await?
-                .pop()
-                .ok_or_else(|| err(StatusCode::NOT_FOUND, "no such team"))?;
+            // The cache's team, asked again before refusing.
+            let owns = |team: &Option<crate::hub::Team>| {
+                team.as_ref().is_some_and(|team| team.role(&s.account) == Some(TeamRole::Owner))
+            };
+            let mut team = p.cache.team(&*p.hub, t).await?;
+            if !owns(&team) {
+                team = p.cache.team_now(&*p.hub, t).await?;
+            }
+            let team = team.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such team"))?;
             if team.role(&s.account) != Some(TeamRole::Owner) {
                 return Err(err(StatusCode::FORBIDDEN, "a team's owners pay for it"));
             }
@@ -352,7 +359,7 @@ async fn note(p: &Platform, owner: &str, event: &str, mut props: Value) {
     match owner.split_once(':') {
         Some(("account", a)) => p.analytics.capture(a, event, props),
         Some(("team", t)) => {
-            let founder = p.hub.teams(&[t.to_owned()]).await.ok().and_then(|mut v| v.pop()).map(|t| t.founder);
+            let founder = p.cache.team(&*p.hub, t).await.ok().flatten().map(|t| t.founder);
             let who = founder.unwrap_or_else(|| owner.to_owned());
             p.analytics.capture_team(&who, t, event, props)
         }
@@ -421,7 +428,7 @@ pub async fn report_usage(p: &Platform) {
 /// Who pays for an account's sandboxes: its own plan, else its team's.
 async fn payer(p: &Platform, account: &str) -> anyhow::Result<Option<String>> {
     let mut owners = vec![format!("account:{account}")];
-    owners.extend(p.hub.teams_of(account).await?.into_iter().map(|t| format!("team:{t}")));
+    owners.extend(p.cache.teams_of(&*p.hub, account).await?.into_iter().map(|t| format!("team:{t}")));
     let active = p.db.active_plans(&owners)?;
     Ok(owners.into_iter().find(|o| active.contains(o)))
 }

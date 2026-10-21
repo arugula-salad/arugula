@@ -40,6 +40,8 @@ pub mod contract;
 pub mod db;
 pub mod grants;
 pub mod hub;
+#[cfg(test)]
+mod hub_calls_tests;
 mod port;
 pub mod projects;
 pub mod remote;

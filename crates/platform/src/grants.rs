@@ -63,8 +63,10 @@ pub async fn can_drive_cloud(app: &Platform, daemon: &str, account: &str) -> Hub
         match app.db.cloud_drive(daemon, account)? {
             Some(true) => return Ok(true),
             None => {
-                let joined = app.hub.daemons(&[daemon.to_owned()]).await?;
-                if !joined.iter().any(|d| d.account == account) {
+                // A grant is written on the hub's word, never on a kept
+                // answer. Once per machine: after this it has a grant row.
+                let joined = app.cache.daemons_now(&*app.hub, &[daemon.to_owned()]).await?;
+                if !joined.get(daemon).is_some_and(|d| d.account == account) {
                     return Ok(false);
                 }
                 app.db.grant_on_join(daemon, account, now_ms())?;
@@ -78,25 +80,39 @@ pub async fn can_drive_cloud(app: &Platform, daemon: &str, account: &str) -> Hub
     }
 }
 
-/// Machine names for these grants, from the hub's directory.
+/// Machine names for these grants, from the hub's directory (as the cache
+/// keeps it).
 async fn named(app: &Platform, mut grants: Vec<Grant>) -> HubResult<Vec<Grant>> {
     let mut ids: Vec<String> = grants.iter().map(|g| g.subject_id.clone()).collect();
+    ids.sort();
     ids.dedup();
-    let daemons = app.hub.daemons(&ids).await?;
+    let daemons = app.cache.daemons(&*app.hub, &ids).await?;
     for g in &mut grants {
-        g.subject_name = daemons.iter().find(|d| d.id == g.subject_id).map(|d| d.name.clone());
+        g.subject_name = daemons.get(&g.subject_id).map(|d| d.name.clone());
     }
     Ok(grants)
 }
 
 /// `GET /api/grants`: the grants over the signed-in account, live and
 /// revoked, by machine. Each of the account's machines that has never had
-/// one gets it first, as it would from the feed.
+/// one gets it first, as it would from the feed. Which machines are the
+/// account's comes from the cache; only one with no grant row at all (a
+/// machine that just joined, or one that left and lost its grant) is asked
+/// about again before it's given one, so the steady state asks the hub
+/// nothing.
 pub async fn list(State(app): State<Arc<Platform>>, s: Person) -> R {
-    let machines = app.hub.machines_for(&s.account).await?;
-    for d in app.hub.daemons(&machines).await? {
-        if d.account == s.account {
-            app.db.grant_on_join(&d.id, &d.account, now_ms())?;
+    let machines = app.cache.machines_for(&*app.hub, &s.account).await?;
+    let mut ungranted = vec![];
+    for d in app.cache.daemons(&*app.hub, &machines).await?.into_values() {
+        if d.account == s.account && app.db.cloud_drive(&d.id, &d.account)?.is_none() {
+            ungranted.push(d.id);
+        }
+    }
+    if !ungranted.is_empty() {
+        for d in app.cache.daemons_now(&*app.hub, &ungranted).await?.into_values() {
+            if d.account == s.account {
+                app.db.grant_on_join(&d.id, &d.account, now_ms())?;
+            }
         }
     }
     let mut grants = named(&app, app.db.grants(&s.account)?).await?;
@@ -134,7 +150,13 @@ pub async fn give(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Giv
     if b.power != CLOUD_DRIVE {
         return Err(err(StatusCode::BAD_REQUEST, "the one power there is to give is cloud.drive"));
     }
-    let mine = app.hub.daemons(std::slice::from_ref(&b.daemon)).await?.into_iter().any(|d| d.account == s.account);
+    // A grant is written on the hub's word, never on a kept answer.
+    let mine = app
+        .cache
+        .daemons_now(&*app.hub, std::slice::from_ref(&b.daemon))
+        .await?
+        .get(&b.daemon)
+        .is_some_and(|d| d.account == s.account);
     if !mine {
         return Err(err(StatusCode::NOT_FOUND, "not a machine on this account"));
     }

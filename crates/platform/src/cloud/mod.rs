@@ -142,7 +142,12 @@ impl FromRequestParts<Arc<Platform>> for CloudDriver {
             Principal::Daemon { account, daemon } => (account, daemon),
         };
         if !crate::grants::can_drive_cloud(app, &daemon, &account).await? {
-            let name = app.hub.daemons(std::slice::from_ref(&daemon)).await?.pop().map_or(daemon.clone(), |d| d.name);
+            let name = app
+                .cache
+                .daemons(&*app.hub, std::slice::from_ref(&daemon))
+                .await?
+                .remove(&daemon)
+                .map_or(daemon.clone(), |d| d.name);
             tracing::warn!(what = "cloud_drive", %account, %daemon, why = "no live cloud.drive grant", "refused");
             return Err(err(StatusCode::FORBIDDEN, &no_cloud_drive(&name)));
         }
@@ -159,9 +164,10 @@ async fn personal_project(app: &Platform, account: &str) -> Result<String, ApiEr
         .ok_or_else(|| anyhow::anyhow!("account no longer exists"))?)
 }
 
-/// That the account is still there, before keeping anything of its.
+/// That the account is still there, before keeping anything of its: as
+/// the cache has it, and asked again before refusing.
 async fn require_account(app: &Platform, account: &str) -> Result<(), ApiError> {
-    if app.hub.accounts(&[account.to_owned()]).await?.is_empty() {
+    if !app.cache.account_there(&*app.hub, account).await? {
         return Err(anyhow::anyhow!("account no longer exists").into());
     }
     Ok(())

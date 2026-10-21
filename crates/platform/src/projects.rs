@@ -47,9 +47,10 @@ const PAGE: u32 = 500;
 /// The account's personal project, which its Cloud workspaces and cloud
 /// secrets belong to (M129): made if it has none yet, the same one every
 /// time after. `None` when the hub has no such account, which is how Cloud
-/// tells an account that's gone (M137).
+/// tells an account that's gone (M137): the cache says it's there, and the
+/// hub is asked again before saying it isn't.
 pub async fn personal_project(app: &Platform, account: &str) -> HubResult<Option<String>> {
-    if app.hub.accounts(&[account.to_owned()]).await?.is_empty() {
+    if !app.cache.account_there(&*app.hub, account).await? {
         return Ok(None);
     }
     Ok(Some(app.db.personal_project(account, now_ms())?))
@@ -57,9 +58,14 @@ pub async fn personal_project(app: &Platform, account: &str) -> HubResult<Option
 
 /// The team's default project (M129), which its chat channels belong to:
 /// made if it has none yet (named after the team), the same one every time
-/// after. `None` when the hub has no such team (M138).
+/// after. `None` when the hub has no such team (M138): the cache's team,
+/// and the hub asked again before saying there's none.
 pub async fn team_project(app: &Platform, team: &str) -> HubResult<Option<String>> {
-    let Some(t) = app.hub.teams(&[team.to_owned()]).await?.pop() else { return Ok(None) };
+    let found = match app.cache.team(&*app.hub, team).await? {
+        Some(t) => Some(t),
+        None => app.cache.team_now(&*app.hub, team).await?,
+    };
+    let Some(t) = found else { return Ok(None) };
     Ok(Some(app.db.team_project(team, &t.name, now_ms())?))
 }
 

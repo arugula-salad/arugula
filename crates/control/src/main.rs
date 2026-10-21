@@ -37,6 +37,8 @@ mod gateway_wire;
 #[cfg(test)]
 mod grants_wire;
 mod guest_jump;
+#[cfg(test)]
+mod hub_latency_bench;
 mod hub_port;
 mod internal;
 mod labs_flags;

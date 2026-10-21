@@ -26,7 +26,7 @@ use crate::{
     },
 };
 
-/// The hub as chat asks it: accounts, teams, machines, shares and flags
+/// The hub as the platform asks it: accounts, teams, machines, shares and flags
 /// set by the test, its change feed, the pushes it was asked for, and
 /// how many times each method was called.
 #[derive(Default)]
@@ -59,6 +59,11 @@ impl TestHub {
     /// Calls of every method so far.
     pub(crate) fn calls(&self) -> usize {
         self.calls.lock().unwrap().values().sum()
+    }
+
+    /// Calls of each method so far.
+    pub(crate) fn calls_by_method(&self) -> BTreeMap<&'static str, usize> {
+        self.calls.lock().unwrap().clone()
     }
 
     pub(crate) fn calls_of(&self, method: &str) -> usize {
@@ -121,6 +126,7 @@ impl TestHub {
 
 impl HubPort for TestHub {
     fn resolve<'a>(&'a self, _: &'a Principal) -> BoxFuture<'a, HubResult<Option<Resolved>>> {
+        self.called("resolve");
         done(None)
     }
     fn accounts<'a>(&'a self, ids: &'a [String]) -> BoxFuture<'a, HubResult<Vec<Account>>> {
@@ -200,10 +206,14 @@ impl HubPort for TestHub {
         let s = self.state.lock().unwrap();
         done(owners.iter().filter_map(|o| Some((o.clone(), s.flags.get(o)?.clone()))).collect())
     }
-    fn meters<'a>(&'a self, _: &'a [String], _: u64, _: u64) -> BoxFuture<'a, HubResult<Vec<Meter>>> {
-        done(vec![])
+    fn meters<'a>(&'a self, accounts: &'a [String], _: u64, _: u64) -> BoxFuture<'a, HubResult<Vec<Meter>>> {
+        self.called("meters");
+        let meters =
+            accounts.iter().map(|a| Meter { account: a.clone(), relay_bytes: 1024, sandbox_minutes: 3 }).collect();
+        done(meters)
     }
     fn metered_accounts(&self) -> BoxFuture<'_, HubResult<Vec<String>>> {
+        self.called("metered_accounts");
         done(vec![])
     }
     fn changes(&self, after: u64, limit: u32) -> BoxFuture<'_, HubResult<ChangePage>> {
@@ -212,12 +222,15 @@ impl HubPort for TestHub {
         done(ChangePage { changes, last: s.changes.len() as u64, gap: false })
     }
     fn personal_project<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        self.called("personal_project");
         done(Some(format!("prj_{account}")))
     }
     fn can_drive_cloud<'a>(&'a self, _: &'a str, _: &'a str) -> BoxFuture<'a, HubResult<bool>> {
+        self.called("can_drive_cloud");
         done(false)
     }
     fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        self.called("team_project");
         let there = self.state.lock().unwrap().teams.contains_key(team);
         done(there.then(|| format!("prj_{team}")))
     }
@@ -225,7 +238,7 @@ impl HubPort for TestHub {
 
 /// The platform over `hub`, its chat routes behind a test gate
 /// (`ilg_session=session-<account>`), and its address.
-async fn serve(hub: Arc<TestHub>) -> (Arc<Platform>, String) {
+pub(crate) async fn serve(hub: Arc<TestHub>) -> (Arc<Platform>, String) {
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
     let app = Arc::new(Platform::new(cfg, crate::db::Db::test(), hub, reqwest::Client::new(), Default::default()));
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -235,7 +248,7 @@ async fn serve(hub: Arc<TestHub>) -> (Arc<Platform>, String) {
     (app, base)
 }
 
-async fn call(base: &str, who: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
+pub(crate) async fn call(base: &str, who: &str, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
     let mut req = reqwest::Client::new()
         .request(method.parse().unwrap(), format!("{base}{path}"))
         .header("cookie", format!("ilg_session=session-{who}"));
@@ -263,7 +276,7 @@ fn room(id: &str, scope: &str, kind: &str, machine: Option<&str>, target: Option
 
 /// a owns team t and its machines m0..m4, with six pane threads each;
 /// b, an editor, reads the even ones. Chat is on for t.
-fn seed(app: &Platform, hub: &TestHub) {
+pub(crate) fn seed(app: &Platform, hub: &TestHub) {
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor)]);
     hub.flag("team:t", true);
     app.db.add_chat_room(&room("ch_general", "team:t", "channel", None, None), &[], Some("prj_t")).unwrap();
