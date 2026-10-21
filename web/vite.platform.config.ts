@@ -13,6 +13,16 @@ import { defineConfig, type Plugin } from "vite";
 // the same host's, so signing in on control's page signs this page in.
 const control = process.env.DEV_CONTROL_ORIGIN ?? `http://127.0.0.1:${process.env.DEV_CONTROL_PORT ?? 7690}`;
 
+const MANIFEST = {
+  name: "Arugula",
+  short_name: "Arugula",
+  start_url: "/",
+  display: "browser",
+  background_color: "#1e1e2e",
+  theme_color: "#1e1e2e",
+  icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
+};
+
 /** The build's module ids, for the bundle check; app.html as index.html;
  * and the icons, without the shell's other public files (its manifest, the
  * key probe), which aren't the platform page's. */
@@ -28,6 +38,10 @@ function platformBuild(): Plugin {
       const out = o.dir ?? resolve(here, "dist-platform");
       renameSync(resolve(out, "app.html"), resolve(out, "index.html"));
       for (const f of ["favicon.ico", "icon.svg"]) copyFileSync(resolve(here, "public", f), resolve(out, f));
+      // Its own manifest (M156): the name and icons, so it looks right when
+      // the hub's app opens it. Not an app to install: push stays the hub's
+      // app's ("Push stays on the hub's app"), so it has no worker either.
+      writeFileSync(resolve(out, "app.webmanifest"), JSON.stringify(MANIFEST, null, 1));
     },
   };
 }

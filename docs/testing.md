@@ -882,6 +882,41 @@ Run one with `cd web && E2E_PORT=<port> pnpm exec playwright test
 e2e/<spec>`; `editors.spec.ts` needs code-server, which its first test
 downloads.
 
+### Push opens the platform page (M156)
+
+Push stays on the hub's app ("Push stays on the hub's app"): control's page,
+installed on the phone, subscribes once, and its worker (`web/src/shell/sw.ts`)
+shows chat pushes. With a platform page (`/control.json`'s `platform`), a tap
+on a chat push opens `app.arugula.io/chat/<room>?msg=N` straight away (and a
+Cloud tab's `/workspaces/<cw>/<cwc>`), signed in there by the hub's silent
+hop (M152). Run on hosted control once `app.arugula.io` is live (M158), with
+two accounts in one team with chat on: the phone's, and a computer's that
+mentions it.
+
+**iPhone** (iOS 17 or later; control's page added to the Home Screen and
+opened from there, notifications allowed from its menu):
+1. On the computer, in a channel the phone's account reads, write
+   `@<them> M156 push test` (a mention pushes even in a muted room).
+2. The push arrives on the locked phone, titled with the room. Tap it.
+3. The installed app opens `app.arugula.io` in its in-app browser at that
+   room, scrolled to the message and flashed; no sign-in screen (one
+   redirect through `control.arugula.io/signin/platform` is all).
+4. Reply from the phone; the computer has it over the live stream.
+5. Close the in-app browser: back in the installed app as it was.
+6. Again with the app killed first, and again after signing out on the
+   phone's control page (step 3 then asks to sign in on control, and comes
+   back to the room after).
+
+**Android** (Chrome; control's page installed, notifications allowed): the
+same six steps. The app opens the room in a Custom Tab, or Chrome itself
+when Custom Tabs are off.
+
+**If iOS can't land the person in the room, signed in and usable**, stop and
+report with screenshots: the fallback is chat framed into the hub's app on the
+phone only ("Push stays on the hub's app"), decided then.
+
+The runs are written up on #1182.
+
 ## Tests that need Docker
 
 Docker is required for these. Without it they fail, saying what to run;
