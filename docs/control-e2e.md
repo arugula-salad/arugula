@@ -536,6 +536,18 @@ to:
   its own binary;
 - not to `arugulad` or the CLI.
 
+The platform page is apart from it (step 3, "The platform page is on
+app.arugula.io, not on the keys' origin"). Projects, chat and Cloud
+workspaces are on `app.arugula.io`, an origin of its own that the hub serves
+from the platform's binary. It holds no device key, and its build provably
+loads none of the code that does: CI refuses any import of the key code,
+the daemon client, control's trust client or the fleet from it, and checks
+its build's modules (`web/scripts/check-imports.mjs`). A modified platform
+page could read what it shows, which is the platform plane's plaintext that
+control holds anyway (chat, Cloud workspaces), but it can't use a device key
+or reach a terminal. Its session is its own host's, made by the hub from
+yours and ended with it; passkeys stay on control's page.
+
 So the promise is end to end encryption against the relay and against
 anyone who gets control's data, with the client code and the join trusted.
 To avoid trusting control's page, reach your machines from their own pages

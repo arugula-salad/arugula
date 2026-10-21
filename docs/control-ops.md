@@ -154,6 +154,24 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     own host for a host-only session (`__Host-arugula_app`). The hub keeps
     those sessions (`app_sessions`): each ends with the hub session it was
     made from, at once. `POST /api/app/signout` signs that page out alone.
+  - **Putting it live** (M158, hosted control; each step is Jake's go):
+    1. Release, so the platform's binary (which embeds the page) and the
+       hub both carry it; the tag deploys the platform first, then the hub.
+    2. DNS: a DNS-only CNAME `app.arugula.io` → `illogical-control.fly.dev`
+       on Cloudflare (the zone's token), then `fly certs add app.arugula.io
+       -a illogical-control` and wait for `fly certs show` to say Ready.
+    3. `fly secrets set ARUGULA_PLATFORM_HOST=app.arugula.io -a
+       illogical-control` (a hub restart). `/control.json` then says
+       `"platform": "https://app.arugula.io"`, and the shell links out for
+       chat and Cloud workspaces, old `#chat`/`#cloud` links redirect, and
+       pushes open there.
+    4. Check: `curl -sI https://app.arugula.io/` has the page's CSP and no
+       `Set-Cookie`; signed in on control's page, `app.arugula.io` opens
+       with one silent redirect; `/api/me` there is a 404.
+    Rollback: `fly secrets unset ARUGULA_PLATFORM_HOST -a
+    illogical-control`: the shell draws chat and Cloud itself again only
+    on a build from before M155, so roll back the release too if M155 is
+    in it.
   - `/control.json` says where it is (`platform`: the page's origin, with
     the public URL's scheme and port; `null` without one).
   - `--platform-static-dir` (control's, platform in process) and
