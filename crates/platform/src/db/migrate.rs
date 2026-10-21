@@ -7,12 +7,24 @@
 //!   (M143), whose set is written where the two must differ (FTS5 against
 //!   `tsvector`). [`pending`] is the same for both; only running them is
 //!   the dialect's.
-//! - `platform_migrations` records each one applied, with its checksum. A
-//!   shipped migration is never edited: a changed checksum, or a database
-//!   at a version this build doesn't know, stops the platform at start
-//!   rather than running on a schema it wasn't built for.
+//! - `platform_migrations` records each one applied, with its checksum and
+//!   whether it's additive. A shipped migration is never edited: a changed
+//!   checksum stops the platform at start.
 //! - All of a start's migrations run in one write transaction: they all
 //!   land, or nothing does.
+//!
+//! # Additive migrations, and older builds
+//!
+//! A migration is **additive** when it only adds what older code ignores:
+//! tables, columns with a default or that may be NULL, indexes, or rows.
+//! Each declares it ([`Migration::additive`]), and the flag is recorded
+//! when it runs. An older build (a rollback) starts on a newer database
+//! when every applied migration it doesn't know is recorded as additive,
+//! and refuses otherwise, rather than run on a schema it wasn't built for.
+//! So a migration that isn't additive (a rename, a drop, a new `NOT NULL`
+//! column without a default, a changed meaning) can't be rolled back past:
+//! ship it in an announced window, or in two deploys, the first teaching
+//! the code both shapes and the second changing the schema.
 //!
 //! # Adopting a database made before migrations
 //!
@@ -24,9 +36,14 @@
 //! foreign keys, indexes, triggers and FTS5 tables, compared table by
 //! table), records it and the ones before it as applied without running
 //! them (`adopted = 1`), and runs the rest. A database with none of the
-//! platform's tables is new, and runs them all. One with some of them, or
-//! with tables that match no version, is refused, naming each difference,
-//! and left as it was: the platform won't guess at a schema.
+//! platform's tables is new, and runs them all.
+//!
+//! A self-hosted control may upgrade straight from any older release, so
+//! when the tables match no version, the old schema code runs first, kept
+//! frozen in [`super::legacy`] (`CREATE TABLE IF NOT EXISTS` and the column
+//! probes, as main last had them), and the tables are matched again. Only
+//! if they still match no version is the database refused, naming each
+//! difference, and left as it was: the platform won't guess at a schema.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -40,6 +57,9 @@ pub struct Migration {
     pub version: u32,
     pub name: &'static str,
     pub sql: &'static str,
+    /// It only adds what older code ignores (see the module's docs), so a
+    /// build from before it may still start on a database that has it.
+    pub additive: bool,
 }
 
 impl Migration {
@@ -81,12 +101,23 @@ impl Dialect {
 
 /// SQLite's: the baseline is production's schema as v0.53.2 made it.
 const SQLITE: &[Migration] = &[
-    Migration { version: 1, name: "baseline", sql: include_str!("../../migrations/sqlite/0001_baseline.sql") },
-    Migration { version: 2, name: "hub_feed", sql: include_str!("../../migrations/sqlite/0002_hub_feed.sql") },
+    Migration {
+        version: 1,
+        name: "baseline",
+        sql: include_str!("../../migrations/sqlite/0001_baseline.sql"),
+        additive: false,
+    },
+    Migration {
+        version: 2,
+        name: "hub_feed",
+        sql: include_str!("../../migrations/sqlite/0002_hub_feed.sql"),
+        additive: true,
+    },
     Migration {
         version: 3,
         name: "personal_projects",
         sql: include_str!("../../migrations/sqlite/0003_personal_projects.sql"),
+        additive: true,
     },
 ];
 
@@ -101,7 +132,8 @@ const MAKE_TABLE: &str = "CREATE TABLE IF NOT EXISTS platform_migrations (
     name TEXT NOT NULL,
     checksum TEXT NOT NULL,
     applied_at INTEGER NOT NULL,
-    adopted INTEGER NOT NULL DEFAULT 0
+    adopted INTEGER NOT NULL DEFAULT 0,
+    additive INTEGER NOT NULL DEFAULT 0
 )";
 
 /// A migration a database records as applied.
@@ -109,19 +141,27 @@ const MAKE_TABLE: &str = "CREATE TABLE IF NOT EXISTS platform_migrations (
 pub struct Applied {
     pub version: u32,
     pub checksum: String,
+    pub additive: bool,
 }
 
 /// The migrations still to run on a database that has applied `applied`
-/// (in version order), or why this build can't run on it.
+/// (in version order), or why this build can't run on it. Applied
+/// migrations past the ones this build knows are fine when each is
+/// additive: the build is older than the database, and ignores them.
 pub fn pending<'a>(set: &'a [Migration], applied: &[Applied]) -> anyhow::Result<&'a [Migration]> {
     let known = set.last().map_or(0, |m| m.version);
     for (i, a) in applied.iter().enumerate() {
         let Some(m) = set.get(i) else {
-            bail!(
-                "the platform's database is at migration {} and this build knows only up to {known}: \
-                 run a build that has it, or restore the database from before it",
-                applied.last().map_or(0, |a| a.version)
-            );
+            if let Some(a) = applied[i..].iter().find(|a| !a.additive) {
+                bail!(
+                    "the platform's database is at migration {} and this build knows only up to {known}, \
+                     and migration {} isn't additive: run a build that has it, or restore the database \
+                     from before it",
+                    applied.last().map_or(0, |a| a.version),
+                    a.version
+                );
+            }
+            break;
         };
         if m.version != a.version {
             bail!("the platform's database records migration {} where this build has {}", a.version, m.version);
@@ -142,6 +182,8 @@ pub fn pending<'a>(set: &'a [Migration], applied: &[Applied]) -> anyhow::Result<
 pub struct Report {
     /// The version an existing schema was adopted at; 0 for none.
     pub adopted: u32,
+    /// Whether adopting it took the old schema code first ([`super::legacy`]).
+    pub upgraded: bool,
     /// The versions run.
     pub ran: Vec<u32>,
 }
@@ -154,12 +196,17 @@ pub fn run(conn: &mut Connection) -> anyhow::Result<Report> {
 /// [`run`], stopping after version `to` (tests: a database as an older
 /// build left it).
 pub(crate) fn run_to(conn: &mut Connection, to: u32) -> anyhow::Result<Report> {
-    let set = Dialect::Sqlite.migrations();
+    run_set(conn, Dialect::Sqlite.migrations(), to)
+}
+
+/// [`run_to`] with the migrations `set` (tests: an older build's).
+fn run_set(conn: &mut Connection, set: &[Migration], to: u32) -> anyhow::Result<Report> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     tx.execute_batch(MAKE_TABLE)?;
     let mut report = Report::default();
     if applied(&tx)?.is_empty() {
-        let n = adopt(&tx, set)?;
+        let (n, upgraded) = adopt(&tx, set)?;
+        report.upgraded = upgraded;
         for m in &set[..n] {
             record(&tx, m, true)?;
             report.adopted = m.version;
@@ -175,35 +222,47 @@ pub(crate) fn run_to(conn: &mut Connection, to: u32) -> anyhow::Result<Report> {
 }
 
 fn applied(c: &Connection) -> rusqlite::Result<Vec<Applied>> {
-    let mut q = c.prepare("SELECT version, checksum FROM platform_migrations ORDER BY version")?;
-    q.query_map([], |r| Ok(Applied { version: r.get(0)?, checksum: r.get(1)? }))?.collect()
+    let mut q = c.prepare("SELECT version, checksum, additive FROM platform_migrations ORDER BY version")?;
+    q.query_map([], |r| Ok(Applied { version: r.get(0)?, checksum: r.get(1)?, additive: r.get(2)? }))?.collect()
 }
 
 fn record(c: &Connection, m: &Migration, adopted: bool) -> rusqlite::Result<()> {
     c.execute(
-        "INSERT INTO platform_migrations (version, name, checksum, applied_at, adopted) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![m.version, m.name, m.checksum(), arugula_e2e::now_ms(), adopted],
+        "INSERT INTO platform_migrations (version, name, checksum, applied_at, adopted, additive)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![m.version, m.name, m.checksum(), arugula_e2e::now_ms(), adopted, m.additive],
     )?;
     Ok(())
 }
 
-/// How many of `set` a database made before migrations already has: 0
-/// when it has none of their tables. See the module's docs.
-fn adopt(c: &Connection, set: &[Migration]) -> anyhow::Result<usize> {
+/// How many of `set` a database made before migrations already has (0
+/// when it has none of their tables), and whether the old schema code had
+/// to run first to get there. See the module's docs.
+fn adopt(c: &Connection, set: &[Migration]) -> anyhow::Result<(usize, bool)> {
     let steps = steps(set)?;
     let known: BTreeSet<&String> = steps.iter().flat_map(|s| s.0.keys()).collect();
-    let present: Vec<String> = tables(c)?.into_iter().filter(|t| known.contains(t)).collect();
-    if present.is_empty() {
-        return Ok(0);
+    let here = |c: &Connection| -> rusqlite::Result<Shape> {
+        let present: Vec<String> = tables(c)?.into_iter().filter(|t| known.contains(t)).collect();
+        Shape::of(c, &present)
+    };
+    let first = here(c)?;
+    if first.0.is_empty() {
+        return Ok((0, false));
     }
-    let here = Shape::of(c, &present)?;
-    if let Some(i) = steps.iter().position(|s| *s == here) {
-        return Ok(i + 1);
+    if let Some(i) = steps.iter().position(|s| *s == first) {
+        return Ok((i + 1, false));
     }
-    let (i, diff) = steps.iter().map(|s| here.diff(s)).enumerate().min_by_key(|(_, d)| d.len()).expect("a baseline");
+    // An older release's tables: what its own code would have done next.
+    super::legacy::upgrade(c, arugula_e2e::now_ms()).context("the platform's schema code from before migrations")?;
+    let upgraded = here(c)?;
+    if let Some(i) = steps.iter().position(|s| *s == upgraded) {
+        return Ok((i + 1, true));
+    }
+    let (i, diff) =
+        steps.iter().map(|s| upgraded.diff(s)).enumerate().min_by_key(|(_, d)| d.len()).expect("a baseline");
     bail!(
-        "the platform's tables are here but match no migration, so nothing was changed. \
-         Against {} (the closest), they differ:\n  {}\n\
+        "the platform's tables are here but match no migration, even after the schema code from before \
+         migrations ran, so nothing was changed. Against {} (the closest), they differ:\n  {}\n\
          Bring them to a migration's schema by hand, or restore the database.",
         set[i].file(),
         diff.join("\n  ")

@@ -23,6 +23,7 @@ use rusqlite::Connection;
 pub mod billing;
 pub mod chat;
 pub mod cloud;
+mod legacy;
 pub mod migrate;
 pub mod projects;
 
@@ -38,7 +39,7 @@ impl Db {
         let mut conn = sqlite::open(path)?;
         let report = migrate::run(&mut conn).context("the platform's schema")?;
         if report != migrate::Report::default() {
-            tracing::info!(adopted = report.adopted, ran = ?report.ran, "the platform's schema");
+            tracing::info!(adopted = report.adopted, upgraded = report.upgraded, ran = ?report.ran, "the platform's schema");
         }
         Ok(Self { conn: Mutex::new(conn) })
     }

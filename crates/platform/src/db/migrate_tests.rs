@@ -3,12 +3,14 @@
 
 use rusqlite::Connection;
 
-use super::{Dialect, Report, Shape, TABLE, run, run_to, tables};
+use super::{Dialect, Report, SQLITE, Shape, TABLE, run, run_set, run_to, tables};
 
 /// Production's platform tables, as control v0.53.2 made them.
 const PRODUCTION: &str = include_str!("snapshots/production-v0.53.2.sql");
 /// The platform's tables as main made them just before M142.
 const MAIN: &str = include_str!("snapshots/main-0cd3465c.sql");
+/// An older release's, before projects (M129).
+const V0_50: &str = include_str!("snapshots/release-v0.50.0.sql");
 
 fn latest() -> u32 {
     Dialect::Sqlite.migrations().last().unwrap().version
@@ -96,12 +98,22 @@ fn recorded(c: &Connection) -> Vec<(u32, bool)> {
     q.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap()
 }
 
+fn additive(c: &Connection) -> Vec<(u32, bool)> {
+    let mut q = c.prepare("SELECT version, additive FROM platform_migrations ORDER BY version").unwrap();
+    q.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap()
+}
+
+fn count(c: &Connection, sql: &str) -> u64 {
+    c.query_row(sql, [], |r| r.get(0)).unwrap()
+}
+
 #[test]
 fn a_new_database_runs_every_migration_once() {
     let mut c = Connection::open_in_memory().unwrap();
     let report = run(&mut c).unwrap();
-    assert_eq!(report, Report { adopted: 0, ran: (1..=latest()).collect() });
+    assert_eq!(report, Report { ran: (1..=latest()).collect(), ..Default::default() });
     assert_eq!(recorded(&c), (1..=latest()).map(|v| (v, false)).collect::<Vec<_>>());
+    assert_eq!(additive(&c), SQLITE.iter().map(|m| (m.version, m.additive)).collect::<Vec<_>>());
     assert_eq!(run(&mut c).unwrap(), Report::default(), "nothing left to run");
 }
 
@@ -131,7 +143,7 @@ fn production_is_adopted_and_matches_a_new_database() {
             assert_eq!(last, "setup_step", "a probe's column, last");
         }
         let report = run(&mut c).unwrap_or_else(|e| panic!("{name}: {e:#}"));
-        assert_eq!(report, Report { adopted: at, ran: (at + 1..=latest()).collect() }, "{name}");
+        assert_eq!(report, Report { adopted: at, upgraded: false, ran: (at + 1..=latest()).collect() }, "{name}");
         let have = Shape::of(&c, &names).unwrap();
         assert_eq!(have.diff(&want), Vec::<String>::new(), "{name}");
         assert_eq!(have, want, "{name}");
@@ -158,35 +170,80 @@ fn the_snapshots_are_the_migrations_at_their_versions() {
     }
 }
 
-/// Some of the platform's tables, or tables that match no migration: the
-/// runner says what's wrong and changes nothing.
+/// An older release's tables, as a self-hosted control that skipped
+/// releases has them: the schema code from before migrations brings them
+/// to main's, they're adopted there, and the rest runs. Rows stay.
 #[test]
-fn a_half_matching_schema_is_refused() {
-    let missing_column = made_before(PRODUCTION);
-    missing_column.execute_batch("ALTER TABLE cloud_workspaces DROP COLUMN setup_step").unwrap();
-    let some_tables = Connection::open_in_memory().unwrap();
-    some_tables.execute_batch("CREATE TABLE billing (owner TEXT PRIMARY KEY, status TEXT NOT NULL)").unwrap();
+fn an_older_release_is_upgraded_then_adopted() {
+    let new = fresh();
+    let want = shape(&new);
+    let names = tables(&new).unwrap();
+    let v0_50 = made_before(V0_50);
+    v0_50.execute_batch("INSERT INTO cloud_secrets (account, name, sealed) VALUES ('alice', 'A', x'00')").unwrap();
+    // Older still: v0.50.0 without the columns its releases added late.
+    let older = made_before(V0_50);
+    for (table, column) in [
+        ("chat_members", "from_ms"),
+        ("chat_messages", "imported_id"),
+        ("cloud_workspaces", "settings_applied"),
+        ("cloud_workspaces", "vault_secrets"),
+        ("cloud_workspaces", "rebuild"),
+        ("cloud_workspaces", "rebuild_error"),
+        ("cloud_workspaces", "rebuilds"),
+        ("cloud_workspaces", "setup_step"),
+        ("cloud_tabs", "relaunch"),
+    ] {
+        older.execute_batch(&format!("ALTER TABLE {table} DROP COLUMN {column}")).unwrap();
+    }
+    // Production from before a probe it has since run.
+    let unstepped = made_before(PRODUCTION);
+    unstepped.execute_batch("ALTER TABLE cloud_workspaces DROP COLUMN setup_step").unwrap();
     // Cloud jobs keyed on their run, from before Cloud workspaces (M114).
-    let legacy = made_before(PRODUCTION);
-    legacy
+    let keyed_on_run = made_before(PRODUCTION);
+    keyed_on_run
         .execute_batch(
             "DROP TABLE cloud_jobs;
              CREATE TABLE cloud_jobs (run TEXT PRIMARY KEY, body TEXT NOT NULL, cancel INTEGER NOT NULL DEFAULT 0,
-                 lease TEXT, lease_until INTEGER NOT NULL DEFAULT 0);",
+                 lease TEXT, lease_until INTEGER NOT NULL DEFAULT 0);
+             INSERT INTO cloud_jobs (run, body) VALUES ('run_1', '{}');",
         )
         .unwrap();
+    for (name, mut c) in
+        [("v0.50.0", v0_50), ("older", older), ("unstepped", unstepped), ("keyed on run", keyed_on_run)]
+    {
+        let report = run(&mut c).unwrap_or_else(|e| panic!("{name}: {e:#}"));
+        assert_eq!(report, Report { adopted: 2, upgraded: true, ran: (3..=latest()).collect() }, "{name}");
+        let have = Shape::of(&c, &names).unwrap();
+        assert_eq!(have.diff(&want), Vec::<String>::new(), "{name}");
+        assert_eq!(count(&c, "SELECT count(*) FROM accounts"), 1, "{name}: the hub's table");
+        assert_eq!(count(&c, "SELECT count(*) FROM chat_fts WHERE chat_fts MATCH 'kettle'"), 1, "{name}: search");
+        assert_eq!(count(&c, "SELECT count(*) FROM cloud_jobs WHERE id = 'run_1'"), 1, "{name}");
+        assert_eq!(count(&c, "SELECT count(*) FROM cloud_secrets WHERE project_id IS NULL"), 0, "{name}: backfilled");
+        assert_eq!(run(&mut c).unwrap(), Report::default(), "{name}: once");
+    }
+}
+
+/// Tables that match no migration even after the old schema code: the
+/// runner says what's wrong and changes nothing.
+#[test]
+fn a_half_matching_schema_is_refused() {
+    // A column no probe ever added.
+    let missing_column = made_before(PRODUCTION);
+    missing_column.execute_batch("ALTER TABLE billing DROP COLUMN seat_item").unwrap();
+    let some_tables = Connection::open_in_memory().unwrap();
+    some_tables.execute_batch("CREATE TABLE billing (owner TEXT PRIMARY KEY, status TEXT NOT NULL)").unwrap();
     let different_index = made_before(MAIN);
     different_index
         .execute_batch("DROP INDEX grants_scope; CREATE INDEX grants_scope ON grants (scope_id, scope_kind)")
         .unwrap();
     for (mut c, says) in [
-        (missing_column, vec!["0001_baseline.sql", "cloud_workspaces: column setup_step is missing (TEXT)"]),
-        (some_tables, vec!["table chat_rooms is missing", "billing: column customer is missing"]),
-        (legacy, vec!["cloud_jobs: column run isn't in it", "cloud_jobs: column kind is missing"]),
+        (missing_column, vec!["0002_hub_feed.sql", "billing: column seat_item is missing (TEXT)"]),
+        (some_tables, vec!["billing: column customer is missing"]),
         (different_index, vec!["0002_hub_feed.sql", "grants: index grants_scope is `CREATE INDEX grants_scope ON"]),
     ] {
         let before = shape(&c);
         let e = format!("{:#}", run(&mut c).unwrap_err());
+        assert!(e.contains("even after the schema code from before migrations"), "{e}");
         for s in says {
             assert!(e.contains(s), "{s:?} in:\n{e}");
         }
@@ -197,8 +254,37 @@ fn a_half_matching_schema_is_refused() {
     }
 }
 
-/// A database at a version this build doesn't know (a newer build ran on
-/// it), or whose record of a migration doesn't match the file: refused.
+/// An older build (a rollback) starts on a database past it when every
+/// migration it doesn't know is additive, and leaves them be.
+#[test]
+fn an_older_build_starts_past_additive_migrations() {
+    let mut c = fresh();
+    for known in 1..latest() {
+        let report = run_set(&mut c, &SQLITE[..known as usize], u32::MAX).unwrap();
+        assert_eq!(report, Report::default(), "a build that knows up to {known}");
+    }
+    assert_eq!(recorded(&c).len(), latest() as usize);
+    // A later additive migration, from a build newer than this one.
+    c.execute(
+        "INSERT INTO platform_migrations (version, name, checksum, applied_at, additive) VALUES (?1, 'later', '', 0, 1)",
+        [latest() + 1],
+    )
+    .unwrap();
+    assert_eq!(run(&mut c).unwrap(), Report::default());
+}
+
+/// ... and refuses when one it doesn't know isn't additive.
+#[test]
+fn an_older_build_refuses_a_migration_that_isnt_additive() {
+    let mut c = fresh();
+    c.execute("UPDATE platform_migrations SET additive = 0 WHERE version = 3", []).unwrap();
+    let e = format!("{:#}", run_set(&mut c, &SQLITE[..1], u32::MAX).unwrap_err());
+    assert!(e.contains("knows only up to 1, and migration 3 isn't additive"), "{e}");
+    assert!(run(&mut c).is_ok(), "a build that knows it");
+}
+
+/// A database at a version this build doesn't know, which isn't additive,
+/// or whose record of a migration doesn't match the file: refused.
 #[test]
 fn a_database_ahead_or_edited_is_refused() {
     let mut ahead = fresh();
@@ -209,7 +295,12 @@ fn a_database_ahead_or_edited_is_refused() {
         )
         .unwrap();
     let e = format!("{:#}", run(&mut ahead).unwrap_err());
-    assert!(e.contains(&format!("at migration {} and this build knows only up to {}", latest() + 1, latest())), "{e}");
+    let says = format!(
+        "at migration {0} and this build knows only up to {1}, and migration {0} isn't",
+        latest() + 1,
+        latest()
+    );
+    assert!(e.contains(&says), "{e}");
 
     let mut edited = fresh();
     edited.execute("UPDATE platform_migrations SET checksum = 'x' WHERE version = 1", []).unwrap();

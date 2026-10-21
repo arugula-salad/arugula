@@ -415,10 +415,12 @@ arugula-control --db /tmp/control.db --listen 127.0.0.1:7699
 **The platform's tables (M142)** change only by numbered migrations
 (`crates/platform/migrations/`). Opening logs `the platform's schema` with
 the version it adopted (a database made before migrations, checked table by
-table) and the ones it ran, and `SELECT * FROM platform_migrations` shows
-them. A schema that matches no migration, a migration edited since it ran,
-or a database at a version the build doesn't know stops the start with the
-differences, and leaves the file as it was.
+table, after the old schema code has run if it had to: `upgraded=true`) and
+the ones it ran, and `SELECT * FROM platform_migrations` shows them. A
+schema that still matches no migration, a migration edited since it ran, or
+a database with a migration the build doesn't know that isn't additive stops
+the start with the reason, and leaves the file as it was. Rolling back past
+additive migrations is fine; past one that isn't, restore the database too.
 
 **Projects (M129, #1125).** Every team has one default project, and every
 Cloud workspace, team channel and cloud secret has a project; DMs, pane
