@@ -1,0 +1,114 @@
+# testnet/window2.sh's additions to compose.yaml and window.yaml (M145's
+# rehearsal): the platform out of process on its SQLite file, as production
+# runs it after M141, then on the `postgres` service, then twice. Only
+# window2.sh uses it (`docker compose -f compose.yaml -f window.yaml -f
+# window2.yaml`).
+#
+# - The platform's database is ARUGULA_TESTNET_PLATFORM_DATABASE_URL: empty
+#   is its file (/window/platform.db, which outlives a recreation), a
+#   postgres:// URL the `postgres` service. Setting it and recreating the
+#   platform is the window's flip, as a Fly secret and its restart are.
+# - platform2 (profile `two`) is the second machine `fly scale count 2`
+#   makes: an empty volume of its own, the same secrets. Both answer to
+#   `platforms`, the testnet's stand-in for Flycast: the hub's switch is
+#   from http://platform:7700 (`.internal`, one machine) to
+#   http://platforms:7700. Each is published on the host for the checks
+#   (/platform.json, the platform-fanout claim).
+# - `s3` stands in for R2: rclone's S3 server (SigV4), its bucket a
+#   directory in the state directory. `dump` (profile `dump`) is the nightly
+#   dump's image (packaging/platform-dump, built by window2.sh around this
+#   tree's static binary), run once with `docker compose run`.
+x-cloud: &cloud
+  ARUGULA_MANAGOAT_URL: http://127.0.0.1:9004
+  ARUGULA_MANAGOAT_API_KEY: mg_testnet
+  ARUGULA_CLOUD_SECRET_KEY: c10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10d
+  ARUGULA_CLOUD_ACCOUNTS: "*"
+  ARUGULA_CLOUD_MODEL: anthropic/test
+  RUST_LOG: arugula_platform=info
+  STRIPE_SECRET_KEY: sk_test_testnet
+  STRIPE_WEBHOOK_SECRET: whsec_testnet
+  ARUGULA_PLATFORM_KEY: 7e577e577e577e577e577e577e577e577e577e577e577e577e577e577e577e57
+
+x-managoat: &managoat
+  image: node:22-slim
+  command:
+    - node
+    - -e
+    - >-
+      const net = require("net");
+      net.createServer((c) => { const u = net.connect(9004, "fakes"); c.pipe(u).pipe(c);
+        u.on("error", () => c.destroy()); c.on("error", () => u.destroy()); }).listen(9004, "127.0.0.1")
+
+services:
+  platform:
+    environment:
+      <<: *cloud
+      ARUGULA_PLATFORM_DATABASE_URL: ${ARUGULA_TESTNET_PLATFORM_DATABASE_URL:-}
+      ARUGULA_PLATFORM_PAUSED: ${ARUGULA_TESTNET_PLATFORM_PAUSED:-0}
+    ports:
+      - "127.0.0.1:${ARUGULA_TESTNET_PLATFORM_PORT:-22983}:7700"
+    networks:
+      outer:
+        aliases: [platforms]
+
+  platform2:
+    profiles: [two]
+    image: debian:bookworm-slim
+    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-platform2
+    hostname: platform2
+    user: "${ARUGULA_TESTNET_UID:?window2.sh sets it}:${ARUGULA_TESTNET_GID:?window2.sh sets it}"
+    command:
+      - /opt/arugula/arugula-platform
+      - --listen=0.0.0.0:7700
+      - --db=/window/platform.db
+      - --hub=http://control:7691
+      - --public-url=http://${ARUGULA_TESTNET_INNER_NET:-10.229.80}.10:8080
+      - --stripe-api=http://fakes:9002
+      - --stripe-seat-price=price_seat
+      - --stripe-minutes-price=price_min
+    environment:
+      <<: *cloud
+      ARUGULA_PLATFORM_DATABASE_URL: ${ARUGULA_TESTNET_PLATFORM_DATABASE_URL:-}
+      ARUGULA_PLATFORM_PAUSED: ${ARUGULA_TESTNET_PLATFORM_PAUSED:-0}
+    ports:
+      - "127.0.0.1:${ARUGULA_TESTNET_PLATFORM2_PORT:-22984}:7700"
+    volumes:
+      - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
+      - ${ARUGULA_TESTNET_STATE:-./.state}/window/platform2:/window
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+    networks:
+      outer:
+        aliases: [platforms]
+
+  managoat-platform2:
+    <<: *managoat
+    profiles: [two]
+    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-managoat-platform2
+    network_mode: service:platform2
+
+  s3:
+    profiles: [platform]
+    image: rclone/rclone:1.71.1
+    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-s3
+    hostname: s3
+    user: "${ARUGULA_TESTNET_UID:?window2.sh sets it}:${ARUGULA_TESTNET_GID:?window2.sh sets it}"
+    command: [serve, s3, --addr, ":8080", --auth-key, "testnet-key,testnet-secret", /data]
+    volumes:
+      - ${ARUGULA_TESTNET_STATE:-./.state}/window/s3:/data
+    ports:
+      - "127.0.0.1:${ARUGULA_TESTNET_S3_PORT:-22986}:8080"
+    networks: [outer]
+
+  dump:
+    profiles: [dump]
+    image: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-platform-dump
+    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-dump
+    environment:
+      ARUGULA_PLATFORM_DATABASE_URL: postgres://postgres:testnet@postgres:5432/platform
+      ARUGULA_DUMP_RECIPIENTS: ${ARUGULA_TESTNET_DUMP_RECIPIENTS:?window2.sh sets it}
+      ARUGULA_DUMP_PLATFORM_URL: http://platform:7700/platform.json
+      LITESTREAM_BUCKET: backups
+      LITESTREAM_ENDPOINT: http://s3:8080
+      LITESTREAM_ACCESS_KEY_ID: testnet-key
+      LITESTREAM_SECRET_ACCESS_KEY: testnet-secret
+    networks: [outer]

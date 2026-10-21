@@ -9,6 +9,11 @@
 #                                       TAG, then `check` it
 #   ci-platform-deploy check TAG        every machine runs TAG's image with
 #                                       its health check passing (read-only)
+#   ci-platform-deploy dump TAG DIR     the nightly dump's image (M145,
+#                                       packaging/platform-dump) around DIR's
+#                                       arugula-platform, pushed as dump-TAG,
+#                                       and the dump machine moved onto it;
+#                                       `deploy` runs it after its check
 #
 # Until the app exists there's nothing to deploy: without FLY_API_TOKEN (a
 # deploy token for arugula-platform, which can only be made once the app
@@ -22,6 +27,13 @@ cd "$(dirname "$0")/.."
 toml=packaging/platform/fly.toml
 app=$(sed -n 's/^app = "\(.*\)"/\1/p' "$toml")
 [ -n "$app" ] || { echo "no app in $toml" >&2; exit 1; }
+
+# The nightly dump's machine (M145): a scheduled machine in this app, outside
+# its process groups, so fly deploy, fly scale and the checks above leave it
+# alone. It's found by its metadata.
+dump_machine() {
+  flyctl machines list -a "$app" --json | jq -r '.[] | select(.config.metadata.role == "platform-dump") | .id'
+}
 
 # The image label each of the app's machines runs, one a line.
 running() {
@@ -90,6 +102,40 @@ private() {
   fi
 }
 
+# The dump image carries the same arugula-platform as the platform, so its
+# read-only checks (`migrations`, `checksums`) read this build's tables. Until
+# the lead has made the dump machine (docs/control-ops.md, "The nightly
+# dump"), this only says so. It never fails a deploy: the dump logs a warning
+# when its build and the platform's differ, and runs on.
+dump() {
+  local tag=${1:?usage: ci-platform-deploy dump TAG DIR} dir=${2:?usage: ci-platform-deploy dump TAG DIR}
+  local id ref ctx
+  if ! id=$(dump_machine); then
+    echo "::warning::fly wouldn't list $app's machines: the nightly dump's image wasn't updated"
+    return 0
+  fi
+  ref="registry.fly.io/$app:dump-$tag"
+  ctx=$(mktemp -d)
+  cp "$dir/arugula-platform" packaging/platform-dump/Dockerfile packaging/platform-dump/dump.sh "$ctx"/
+  chmod +x "$ctx/arugula-platform" "$ctx/dump.sh"
+  if ! { flyctl auth docker >/dev/null && docker build -q -t "$ref" "$ctx" >/dev/null && docker push -q "$ref" >/dev/null; }; then
+    rm -rf "$ctx"
+    echo "::warning::the nightly dump's image $ref wasn't built or pushed"
+    return 0
+  fi
+  rm -rf "$ctx"
+  if [ -z "$id" ]; then
+    echo "::notice::$app has no dump machine yet (metadata role=platform-dump): $ref is pushed for making it (docs/control-ops.md, \"The nightly dump\")"
+    return 0
+  fi
+  # --skip-start: it runs on its schedule, not now.
+  if flyctl machine update "$id" -a "$app" --image "$ref" --skip-start -y >/dev/null; then
+    echo "the dump machine $id runs $ref"
+  else
+    echo "::warning::the dump machine $id wasn't moved onto $ref"
+  fi
+}
+
 deploy() {
   local tag=${1:?usage: ci-platform-deploy deploy TAG DIR} dir=${2:?usage: ci-platform-deploy deploy TAG DIR}
   if [ -z "${FLY_API_TOKEN:-}" ]; then
@@ -113,10 +159,12 @@ deploy() {
   chmod +x "$ctx/arugula-platform"
   (cd "$ctx" && flyctl deploy --local-only --ha=false --no-public-ips --image-label "$tag")
   check "$tag"
+  dump "$tag" "$dir"
 }
 
 case ${1:-} in
   deploy) shift; deploy "$@" ;;
   check) shift; check "$@" ;;
-  *) sed -n '5,10p' "$0" >&2; exit 2 ;;
+  dump) shift; dump "$@" ;;
+  *) sed -n '5,15p' "$0" >&2; exit 2 ;;
 esac

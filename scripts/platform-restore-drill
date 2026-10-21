@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+#
+# The platform's restore drill (M145, docs/control-ops.md "Restoring the
+# platform's Postgres"): the newest nightly dump from R2, decrypted,
+# restored into a scratch Postgres 17 in Docker on this machine (never
+# production's), then checked against the record the dump job wrote beside
+# it: the migrations, and every table's row count and portable checksum,
+# which the job read in the dump's own snapshot.
+#
+#   scripts/platform-restore-drill                 the newest dump (latest.json)
+#   scripts/platform-restore-drill --object KEY    that one (platform-pg/….pgdump.age)
+#   scripts/platform-restore-drill --age           the newest dump's age only; exit 1 past 26 h
+#
+# Options:
+#   --bin PATH       arugula-platform to check with: the dump's version (the
+#                    record says which), as the platform's columns are that
+#                    build's. Default: this tree's `just static` build, else PATH's.
+#   --identity FILE  the age identity; default: Infisical, never written to disk
+#   --secrets        also open every cloud secret with ARUGULA_CLOUD_SECRET_KEY
+#                    (from Infisical unless it's in the environment)
+#   --keep           leave the scratch Postgres running, and say how to reach it
+#
+# R2: ARUGULA_DRILL_ENDPOINT, ARUGULA_DRILL_BUCKET, ARUGULA_DRILL_PREFIX
+# (platform-pg), ARUGULA_DRILL_ACCESS_KEY_ID, ARUGULA_DRILL_SECRET_ACCESS_KEY:
+# each from the environment, else from Infisical (`arugula` prod,
+# /illogical/control) as the dump job names them: ARUGULA_DUMP_ENDPOINT,
+# ARUGULA_DUMP_BUCKET, ARUGULA_DUMP_ACCESS_KEY_ID and
+# ARUGULA_DUMP_SECRET_ACCESS_KEY if they're there, else LITESTREAM_ENDPOINT,
+# LITESTREAM_BUCKET, LITESTREAM_ACCESS_KEY_ID and
+# LITESTREAM_SECRET_ACCESS_KEY (the platform's Litestream token, which the
+# dump uses). The identity is ARUGULA_PLATFORM_DUMP_AGE_KEY. Run it where
+# arugula's .infisical.json is (or set INFISICAL_PROJECT_ID). Nothing secret
+# is printed.
+#
+# Needs docker, age, jq, curl and the aws CLI.
+set -euo pipefail
+umask 077
+cd "$(dirname "$0")/.."
+
+log() { echo "[drill] $*" >&2; }
+die() { log "FAIL: $*"; exit 1; }
+
+bin="" identity="" object="" keep=0 secrets=0 age_only=0
+while [ $# -gt 0 ]; do
+  case $1 in
+    --bin) bin=$2; shift 2 ;;
+    --identity) identity=$2; shift 2 ;;
+    --object) object=$2; shift 2 ;;
+    --keep) keep=1; shift ;;
+    --secrets) secrets=1; shift ;;
+    --age) age_only=1; shift ;;
+    *) sed -n '9,20p' "$0" >&2; exit 2 ;;
+  esac
+done
+
+infisical_get() {
+  local args=(secrets get "$1" --env prod --path /illogical/control --plain --silent)
+  [ -z "${INFISICAL_PROJECT_ID:-}" ] || args+=(--projectId "$INFISICAL_PROJECT_ID")
+  infisical "${args[@]}" 2>/dev/null
+}
+from() { # VAR NAME...: the environment's VAR, else the first of Infisical's NAMEs that's set
+  local v=${!1:-} var=$1 name
+  shift
+  for name in "$@"; do
+    [ -z "$v" ] || break
+    v=$(infisical_get "$name") || v=""
+  done
+  [ -n "$v" ] || die "no $var in the environment, and Infisical has none of: $*"
+  printf '%s' "$v"
+}
+
+endpoint=$(from ARUGULA_DRILL_ENDPOINT ARUGULA_DUMP_ENDPOINT LITESTREAM_ENDPOINT)
+bucket=$(from ARUGULA_DRILL_BUCKET ARUGULA_DUMP_BUCKET LITESTREAM_BUCKET)
+prefix=${ARUGULA_DRILL_PREFIX:-platform-pg}
+AWS_ACCESS_KEY_ID=$(from ARUGULA_DRILL_ACCESS_KEY_ID ARUGULA_DUMP_ACCESS_KEY_ID LITESTREAM_ACCESS_KEY_ID)
+AWS_SECRET_ACCESS_KEY=$(from ARUGULA_DRILL_SECRET_ACCESS_KEY ARUGULA_DUMP_SECRET_ACCESS_KEY LITESTREAM_SECRET_ACCESS_KEY)
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION=auto AWS_DEFAULT_REGION=auto
+s3() { aws --endpoint-url "$endpoint" s3 "$@"; }
+
+work=$(mktemp -d)
+ctr=""
+cleanup() {
+  [ -z "$ctr" ] || [ "$keep" = 1 ] || docker rm -f "$ctr" >/dev/null 2>&1 || true
+  rm -rf "$work"
+}
+trap cleanup EXIT
+
+# The record: latest.json, or the one beside --object.
+if [ -n "$object" ]; then
+  s3 cp --only-show-errors "s3://$bucket/${object%.pgdump.age}.json" "$work/record.json"
+else
+  s3 cp --only-show-errors "s3://$bucket/$prefix/latest.json" "$work/record.json"
+  object=$(jq -r .object "$work/record.json")
+fi
+at=$(jq -r .at "$work/record.json")
+taken=$(date -u -d "$(sed -E 's/T([0-9]{2})([0-9]{2})([0-9]{2})Z/ \1:\2:\3/' <<<"$at")" +%s)
+hours=$(( ($(date +%s) - taken) / 3600 ))
+log "the dump: $object, taken $at ($hours h ago), $(jq .bytes "$work/record.json") bytes, platform $(jq -r .platform "$work/record.json")"
+if [ "$age_only" = 1 ]; then
+  [ "$hours" -le 26 ] || die "the newest dump is $hours hours old: the nightly dump has stopped (fly logs -a arugula-platform)"
+  echo "newest dump $at, $hours h old"
+  exit 0
+fi
+
+# The build to check with.
+if [ -z "$bin" ]; then
+  for b in "${CARGO_TARGET_DIR:-target}/x86_64-unknown-linux-musl/release/arugula-platform" "$(command -v arugula-platform || true)"; do
+    if [ -n "$b" ] && [ -x "$b" ]; then bin=$b; break; fi
+  done
+fi
+[ -n "$bin" ] && [ -x "$bin" ] || die "no arugula-platform: pass --bin, or run 'just static'"
+mine=$("$bin" --version | awk '{ print $NF }')
+[ "$mine" = "$(jq -r .platform "$work/record.json")" ] ||
+  log "warning: checking with arugula-platform $mine; the dump's record was written by $(jq -r .platform "$work/record.json"). A table whose columns changed between them will differ."
+
+log "downloading and checking its sha256"
+s3 cp --only-show-errors "s3://$bucket/$object" "$work/dump.age"
+[ "$(sha256sum "$work/dump.age" | cut -d' ' -f1)" = "$(jq -r .sha256 "$work/record.json")" ] ||
+  die "$object isn't what the record says (sha256)"
+
+log "decrypting"
+if [ -n "$identity" ]; then
+  age -d -i "$identity" -o "$work/dump.pgdump" "$work/dump.age"
+else
+  age -d -i <(infisical_get ARUGULA_PLATFORM_DUMP_AGE_KEY) -o "$work/dump.pgdump" "$work/dump.age"
+fi
+
+log "a scratch Postgres 17 in Docker"
+pw=$(head -c 18 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
+ctr="platform-drill-$$"
+docker run -d --rm --name "$ctr" -e POSTGRES_PASSWORD="$pw" -e POSTGRES_DB=drill \
+  -p 127.0.0.1::5432 --tmpfs /var/lib/postgresql/data postgres:17.11-alpine3.24 >/dev/null
+for _ in $(seq 1 60); do
+  docker exec "$ctr" pg_isready -h 127.0.0.1 -U postgres -d drill >/dev/null 2>&1 && break
+  sleep 1
+done
+docker exec "$ctr" pg_isready -h 127.0.0.1 -U postgres -d drill >/dev/null || die "the scratch Postgres didn't start"
+port=$(docker port "$ctr" 5432/tcp | head -n 1 | sed 's/.*://')
+scratch="postgres://postgres:$pw@127.0.0.1:$port/drill?sslmode=disable"
+
+# --clean --if-exists: the dump has CREATE SCHEMA public (pg_dump --schema=public).
+log "restoring"
+started=$(date +%s)
+docker exec -i "$ctr" pg_restore -U postgres -d drill --no-owner --no-privileges --clean --if-exists --exit-on-error < "$work/dump.pgdump"
+restore_s=$(( $(date +%s) - started ))
+
+log "the migration check"
+"$bin" migrations --db "$scratch" > "$work/migrations.txt" || { cat "$work/migrations.txt" >&2; die "the restored database's migrations"; }
+awk '$1 ~ /^[0-9]+$/ && NF == 4 { print $1, $2, $4 }' "$work/migrations.txt" > "$work/migrations.have"
+jq -r '.migrations[] | "\(.version) \(.name) \(.checksum)"' "$work/record.json" > "$work/migrations.want"
+diff "$work/migrations.want" "$work/migrations.have" >&2 || die "the restored migrations differ from the record's"
+
+log "checksums"
+"$bin" checksums --db "$scratch" > "$work/checksums.txt"
+awk 'NF == 3 && length($3) == 64 { print $1, $2, $3 }' "$work/checksums.txt" | sort > "$work/have"
+jq -r '.checksums[] | "\(.table) \(.rows) \(.sha256)"' "$work/record.json" | sort > "$work/want"
+[ -s "$work/want" ] || die "the record has no checksums"
+printf '%-24s %9s  %-16s  %s\n' table rows sha256 ""
+join -a 1 -a 2 -e - -o 0,1.2,1.3,2.2,2.3 "$work/want" "$work/have" |
+  awk '{ printf "%-24s %9s  %-16s  %s\n", $1, $2, substr($3, 1, 16), ($2 == $4 && $3 == $5) ? "ok" : "DIFFERS (restored: " $4 " " substr($5, 1, 16) ")" }'
+cmp -s "$work/want" "$work/have" || die "the restored tables differ from the dump's record"
+
+if [ "$secrets" = 1 ]; then
+  log "cloud secrets"
+  key=$(from ARUGULA_CLOUD_SECRET_KEY ARUGULA_CLOUD_SECRET_KEY)
+  ARUGULA_CLOUD_SECRET_KEY=$key "$bin" secrets-check --db "$scratch" | sed 's/^/  /'
+fi
+
+tables=$(wc -l < "$work/want")
+rows=$(awk '{ n += $2 } END { print n + 0 }' "$work/want")
+echo
+echo "drill: $object (taken $at) restored in ${restore_s} s: $tables tables, $rows rows, every count and checksum equals the dump's record; migrations up to $(tail -n 1 "$work/migrations.want" | cut -d' ' -f1) match"
+if [ "$keep" = 1 ]; then
+  log "kept: docker exec -it $ctr psql -U postgres -d drill   (then: docker rm -f $ctr)"
+fi

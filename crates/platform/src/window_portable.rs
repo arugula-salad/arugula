@@ -8,6 +8,8 @@
 //! arugula-platform copy --from postgres://… --to /data/back.db       # rolling back after it
 //! arugula-platform checksums --db postgres://…                       # portable, read-only
 //! arugula-platform checksums --db /data/platform.db --portable       # the same numbers
+//! arugula-platform checksums --db postgres://… --snapshot ID         # in a pg_dump's snapshot
+//! arugula-platform migrations --db postgres://…                      # what it has applied
 //! ```
 //!
 //! **The portable checksum.** A row's digest is SHA-256 over its columns in
@@ -31,6 +33,13 @@
 //! On Postgres the identities (`chat_messages.id`, `chat_events.seq`, the
 //! two `rowid`s) are moved past the copied rows; on SQLite `chat_fts` is
 //! rebuilt and checked.
+//!
+//! **The tools that only read** (`checksums`, `secrets-check`,
+//! `migrations`) never migrate Postgres: a database this build would
+//! migrate is refused (M145's nightly dump runs them on the live cluster).
+//! `checksums --snapshot` reads in a snapshot another session exported, so
+//! its numbers are a `pg_dump --snapshot` of it, which the restore drill
+//! checks a restored dump against.
 
 use std::{collections::BTreeSet, fmt::Write as _, path::PathBuf, str::FromStr};
 
@@ -59,15 +68,35 @@ pub enum Place {
 }
 
 impl FromStr for Place {
-    type Err = std::convert::Infallible;
+    type Err = String;
 
+    /// A `postgres://` URL, else a file's path. So that a URL's password
+    /// never has to be typed into a command line (M145's window, on a
+    /// machine with no shell), two indirect forms name a URL:
+    /// `@FILE`, a file holding it (put there with `fly ssh sftp put`), and
+    /// `env:NAME`, the variable as the running server has it (after the
+    /// flip, `env:ARUGULA_PLATFORM_DATABASE_URL`), else as this process has.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(if s.starts_with("postgres://") || s.starts_with("postgresql://") {
-            Place::Postgres(s.to_owned())
-        } else {
-            Place::File(PathBuf::from(s))
-        })
+        let url = |u: String, from: &str| {
+            let u = u.trim().to_owned();
+            if is_url(&u) { Ok(Place::Postgres(u)) } else { Err(format!("{from} doesn't hold a postgres:// URL")) }
+        };
+        if let Some(path) = s.strip_prefix('@') {
+            return url(std::fs::read_to_string(path).map_err(|e| format!("reading {path}: {e}"))?, path);
+        }
+        if let Some(name) = s.strip_prefix("env:") {
+            let value = super::running_env(name)
+                .map(|(_, v)| v)
+                .or_else(|| std::env::var(name).ok())
+                .ok_or_else(|| format!("neither the running server nor this shell has {name}"))?;
+            return url(value, name);
+        }
+        Ok(if is_url(s) { Place::Postgres(s.to_owned()) } else { Place::File(PathBuf::from(s)) })
     }
+}
+
+fn is_url(s: &str) -> bool {
+    s.starts_with("postgres://") || s.starts_with("postgresql://")
 }
 
 impl std::fmt::Display for Place {
@@ -214,6 +243,135 @@ pub fn sum(cols: &[String], rows: &[Vec<Value>]) -> (u64, String) {
 /// row count and portable checksum. On a file, a table it doesn't have is
 /// left out.
 pub fn checksums(at: &Place) -> anyhow::Result<Vec<(String, u64, String)>> {
+    checksums_in(at, None)
+}
+
+/// A database's migrations, read-only: the `migrations` tool (M145), and
+/// the check every read-only tool makes on Postgres before it reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Migrations {
+    pub dialect: Dialect,
+    /// What `platform_migrations` records, in version order: version,
+    /// name, checksum and whether it's additive.
+    pub applied: Vec<(u32, String, String, bool)>,
+    /// The newest version this build knows.
+    pub known: u32,
+    /// The versions this build would run on it (it's behind the build).
+    pub pending: Vec<u32>,
+    /// Applied versions this build doesn't know, each additive (the build
+    /// is older than the database, and ignores them).
+    pub ahead: Vec<u32>,
+}
+
+impl Migrations {
+    pub fn render(&self, at: &Place) -> String {
+        let mut out = format!("the platform's migrations in {at} (read-only)\n\n");
+        let _ = writeln!(out, "{:>7}  {:<28} {:<8}  checksum", "version", "name", "additive");
+        for (v, name, sum, additive) in &self.applied {
+            let _ = writeln!(
+                out,
+                "{v:>7}  {name:<28} {:<8}  {}",
+                if *additive { "yes" } else { "no" },
+                &sum[..sum.len().min(16)]
+            );
+        }
+        let _ = writeln!(out);
+        if self.pending.is_empty() {
+            let _ = writeln!(out, "this build knows 1–{}: nothing to run, every checksum matches", self.known);
+        } else {
+            let _ = writeln!(out, "this build knows 1–{} and would run {:?} on it", self.known, self.pending);
+        }
+        if !self.ahead.is_empty() {
+            let _ = writeln!(out, "it also has {:?}, additive, which this build doesn't know and ignores", self.ahead);
+        }
+        out
+    }
+}
+
+/// The migrations `at` has applied, against this build's, without running
+/// any: refused as [`crate::db::migrate::pending`] refuses (an edited
+/// migration, an unknown one that isn't additive), or when the platform
+/// has never started on it.
+pub fn migrations(at: &Place) -> anyhow::Result<Migrations> {
+    match at {
+        Place::File(path) => migrations_on(&super::read_only(path)?, Dialect::Sqlite, at),
+        Place::Postgres(url) => migrations_on(&Db::postgres_as_is(url)?.c(), Dialect::Postgres, at),
+    }
+}
+
+fn migrations_on(c: &impl Sql, dialect: Dialect, at: &Place) -> anyhow::Result<Migrations> {
+    use crate::db::migrate::{Applied, pending};
+    let there = match dialect {
+        Dialect::Sqlite => {
+            c.query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'platform_migrations'",
+                params![],
+                |r| r.get::<i64>(0),
+            )? > 0
+        }
+        Dialect::Postgres => {
+            c.query_row("SELECT to_regclass('platform_migrations') IS NOT NULL", params![], |r| r.get::<bool>(0))?
+        }
+    };
+    if !there {
+        bail!("{at} has no platform_migrations: the platform has never started on it");
+    }
+    let applied: Vec<(u32, String, String, bool)> = c.query_map(
+        "SELECT version, name, checksum, additive FROM platform_migrations ORDER BY version",
+        params![],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+    )?;
+    let set = dialect.migrations();
+    let known = set.last().map_or(0, |m| m.version);
+    let as_applied: Vec<Applied> = applied
+        .iter()
+        .map(|(version, _, checksum, additive)| Applied {
+            version: *version,
+            checksum: checksum.clone(),
+            additive: *additive,
+        })
+        .collect();
+    let pending = pending(set, &as_applied).with_context(|| format!("{at}'s migrations"))?;
+    Ok(Migrations {
+        dialect,
+        pending: pending.iter().map(|m| m.version).collect(),
+        ahead: applied.iter().map(|a| a.0).filter(|v| *v > known).collect(),
+        applied,
+        known,
+    })
+}
+
+/// Postgres at `url`, for a tool that only reads: as it is, never
+/// migrated. One this build would migrate is refused, since its tables
+/// aren't the ones this build reads (M145: the nightly dump runs these on
+/// the live cluster, which only the platform's own start migrates).
+fn open_as_is(at: &Place, url: &str) -> anyhow::Result<Db> {
+    let db = Db::postgres_as_is(url)?;
+    let m = migrations_on(&db.c(), Dialect::Postgres, at)?;
+    if !m.pending.is_empty() {
+        bail!(
+            "{at} is at migration {} and this build would run {:?}: this tool only reads. Run it with the build \
+             the platform runs (`copy` migrates its target; starting the platform migrates its database)",
+            m.applied.last().map_or(0, |a| a.0),
+            m.pending
+        );
+    }
+    Ok(db)
+}
+
+/// What a snapshot id from `pg_export_snapshot()` looks like
+/// (`00000003-0000001B-1`): checked, since it's spliced into SQL.
+fn snapshot_id(id: &str) -> anyhow::Result<&str> {
+    let ok = !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    anyhow::ensure!(ok, "{id:?} isn't a snapshot id from pg_export_snapshot()");
+    Ok(id)
+}
+
+/// [`checksums`], on Postgres optionally in `snapshot`, one another
+/// session exported with `pg_export_snapshot()` and still holds: the
+/// numbers are then exactly those of a `pg_dump --snapshot` of it (the
+/// nightly dump's record, M145), whatever was written since.
+pub fn checksums_in(at: &Place, snapshot: Option<&str>) -> anyhow::Result<Vec<(String, u64, String)>> {
     let mut out = Vec::new();
     let mut add = |t: String, cols: &[String], rows: &[Vec<Value>]| {
         let (n, s) = sum(cols, rows);
@@ -221,6 +379,7 @@ pub fn checksums(at: &Place) -> anyhow::Result<Vec<(String, u64, String)>> {
     };
     match at {
         Place::File(path) => {
+            anyhow::ensure!(snapshot.is_none(), "--snapshot is Postgres's: a file has none to share");
             let c = super::read_only(path)?;
             c.execute_batch("BEGIN")?;
             for (t, cols) in shapes() {
@@ -232,9 +391,17 @@ pub fn checksums(at: &Place) -> anyhow::Result<Vec<(String, u64, String)>> {
             c.execute_batch("COMMIT")?;
         }
         Place::Postgres(url) => {
-            let db = Db::open_url(url)?;
+            let db = open_as_is(at, url)?;
             let c = db.c();
-            c.execute_batch("BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY")?;
+            match snapshot {
+                Some(id) => c
+                    .execute_batch(&format!(
+                        "BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY; SET TRANSACTION SNAPSHOT '{}'",
+                        snapshot_id(id)?
+                    ))
+                    .context("taking the exported snapshot (is the session that exported it still open?)")?,
+                None => c.execute_batch("BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY")?,
+            }
             for (t, cols) in shapes() {
                 let r = rows(&c, &t, &cols)?;
                 add(t, &cols, &r);
@@ -437,7 +604,7 @@ pub fn secrets_open(at: &Place, key: &str) -> anyhow::Result<(u64, Vec<(String, 
         Place::File(path) => super::secrets_open(path, key),
         Place::Postgres(url) => {
             let cipher = crate::cloud::secrets::SecretCipher::new(key)?;
-            let db = Db::open_url(url)?;
+            let db = open_as_is(at, url)?;
             anyhow::ensure!(db.dialect() == Dialect::Postgres, "not Postgres");
             let rows: Vec<(String, String, Vec<u8>)> = db.c().query_map(
                 "SELECT account, name, sealed FROM cloud_secrets ORDER BY account, name",
