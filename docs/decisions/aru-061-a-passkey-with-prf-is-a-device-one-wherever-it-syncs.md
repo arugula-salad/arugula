@@ -26,8 +26,8 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-11"
 reviews: []
 constrains:
-  - "path:web/src/e2e/keys.ts"
-  - "path:web/src/control.ts"
+  - "path:web/src/shell/e2e/keys.ts"
+  - "path:web/src/shell/control.ts"
   - "path:crates/control/src/passkey.rs"
   - "path:crates/control/src/api.rs"
   - "path:crates/e2e/src/cert.rs"
@@ -46,5 +46,5 @@ whose signature is missing or wrong, gives way to an ordinary approval.
 Why: the approval (#761) is the step people trip on, and a synced passkey
 already lets its holder sign in. The cost is written down: whoever holds
 the synced passkey is that device, on every machine it reaches.
-Where: `web/src/e2e/keys.ts` (`adoptPrfKeys`, `PRF_SALTS`), `web/src/control.ts` (`takePrfKeys`, `rejoin`, `savePin`, `usePasskey`), `crates/control/src/passkey.rs`, `crates/control/src/api.rs` (`pin`), `crates/e2e/src/cert.rs` (`device_pin_body`), [docs/control-e2e.md](docs/control-e2e.md#prf-re-deriving-a-browsers-keys).
+Where: `web/src/shell/e2e/keys.ts` (`adoptPrfKeys`, `PRF_SALTS`), `web/src/shell/control.ts` (`takePrfKeys`, `rejoin`, `savePin`, `usePasskey`), `crates/control/src/passkey.rs`, `crates/control/src/api.rs` (`pin`), `crates/e2e/src/cert.rs` (`device_pin_body`), [docs/control-e2e.md](docs/control-e2e.md#prf-re-deriving-a-browsers-keys).
 From: #764, #765.

@@ -49,7 +49,7 @@ build-cache:
 web:
     cd web && pnpm run build
 
-# Write the web client's wire types (web/src/proto.gen.ts) from
+# Write the web client's wire types (web/src/shared/proto.gen.ts) from
 # crates/proto. Without `write`, check they're current, as CI does.
 proto-ts mode="write":
     {{ if mode == "write" { "ARUGULA_WRITE_TS=1" } else { "" } }} cargo test -q -p arugula-proto --features ts ts::
@@ -462,7 +462,7 @@ fake-fleet:
     {{cargo}} build -p arugulad -p arugula
     cd web && pnpm run build && node --experimental-strip-types --no-warnings fake-fleet.ts
 
-# The browser's end-to-end crypto (web/src/e2e) against Rust's (crates/e2e).
+# The browser's end-to-end crypto (web/src/shell/e2e) against Rust's (crates/e2e).
 e2e-interop:
     {{cargo}} build -p arugula-e2e --example interop
     cd web && INTEROP_BIN="{{target_dir}}/debug/examples/interop" {{suite_lock}} node --experimental-strip-types --no-warnings e2e-interop.ts

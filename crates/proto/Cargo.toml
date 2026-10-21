@@ -23,7 +23,7 @@ tracing = { workspace = true }
 
 [features]
 # TypeScript for the types the web client uses: `just proto-ts` writes
-# web/src/proto.gen.ts, and a test checks it's current.
+# web/src/shared/proto.gen.ts, and a test checks it's current.
 ts = [
     "dep:ts-rs",
     "arugula-core/ts",

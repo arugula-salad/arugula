@@ -14,7 +14,7 @@ A capability usually touches five places, each with its own parsing and its
 own errors:
 
 - **The types** are in `crates/proto/src/api.rs` (#445, #446), and the web
-  client's copy is generated from them (`web/src/proto.gen.ts`, ts-rs roots
+  client's copy is generated from them (`web/src/shared/proto.gen.ts`, ts-rs roots
   in `crates/proto/src/ts.rs`).
 - **The route** is a line in the `Router::new()` chain at the top of
   `crates/daemon/src/api.rs` (or `fs.rs`, `hosts.rs`, `share.rs` …) and a
@@ -446,7 +446,7 @@ Each is one PR. Filed on 2026-10-07 as #572–#580, in this order.
    `sandboxes`. May split by module. After 2.
 8. (#579) **Optional: the operations table for the web client.** Emit each
    operation's method and path into `proto.gen.ts` beside its types, so
-   the web client's fetches name the operation too. After 1. Done (`OPS` and `web/src/ops.ts`).
+   the web client's fetches name the operation too. After 1. Done (`OPS` and `web/src/shell/ops.ts`).
 9. (#580) **Optional: `outputSchema`.** `JsonSchema` on `mcp/results.rs`'s types
    and an `Answer` type on `McpOp`, listed as each tool's `outputSchema`.
    Changes the golden fixture on purpose. After 1. Done, for the tools whose answer is one type.

@@ -2,7 +2,7 @@
 
 The wire protocol shared by arugulad and its clients: the WebSocket's JSON
 control messages and binary frames, and the HTTP API's routes and types
-(`src/api.rs`). The web client's copy, `web/src/proto.gen.ts`, is generated
+(`src/api.rs`). The web client's copy, `web/src/shared/proto.gen.ts`, is generated
 with ts-rs: after changing a type the web client uses, run `just proto-ts`
 (CI fails if the file is stale).
 

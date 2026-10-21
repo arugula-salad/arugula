@@ -4,7 +4,7 @@
 // the masks' penalties differently, and any mask scans.
 
 import { expect, test } from "@playwright/test";
-import { qr } from "../src/ui/qr";
+import { qr } from "../src/shared/ui/qr";
 
 const bits = (m: boolean[][]) => m.map((r) => r.map((d) => (d ? "1" : "0")).join(""));
 

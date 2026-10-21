@@ -2,7 +2,7 @@
 //! anything is written.
 //!
 //! Two fences, found the way the web client's Markdown finds them
-//! (`web/src/ui/markdown.tsx`, `web/src/ui/embeds.ts`: three backticks or
+//! (`web/src/shared/ui/markdown.tsx`, `web/src/shared/ui/embeds.ts`: three backticks or
 //! tildes, the language the first word after them, a fence unclosed running
 //! to the end, one inside another fence not a fence). A fence starts a
 //! line, indented as in a list item; one inside a quote (`> ```chart`) is
@@ -29,7 +29,7 @@
 //! what is in it all the same.
 //!
 //! The rules are `deploy/machine/doc.mjs`'s (`checkChart`, `checkOrdered`,
-//! `checkImage`) in Rust, and `web/src/ui/chart.tsx` has them in TypeScript for a chart
+//! `checkImage`) in Rust, and `web/src/shared/ui/chart.tsx` has them in TypeScript for a chart
 //! that arrives some other way. Both run over the files in
 //! `tests/fixtures/docs/` (`expect.json` says what each one must say), so
 //! they can't drift.
@@ -135,7 +135,7 @@ struct ImageRef {
 }
 
 /// The `![alt](src)` in a line, left to right, skipping inline code. The
-/// client's `inline()` finds them the same way (`web/src/ui/markup.tsx`),
+/// client's `inline()` finds them the same way (`web/src/shared/ui/markup.tsx`),
 /// except that it takes only a target it can show, and this takes any.
 fn image_refs(line: &str) -> Vec<ImageRef> {
     let b = line.as_bytes();

@@ -754,7 +754,7 @@ hands one release earlier, and keeps each PR reviewable.
     - the teammate has no continuing access afterwards: a second identical request waits for
       approval.
 - **M91 (#973): the team landing page** (stage 4).
-  - A team route on control's page, replacing the Teams modal (`web/src/ui/control.tsx:2230`) as
+  - A team route on control's page, replacing the Teams modal (`web/src/shell/ui/control.tsx:2230`) as
     the way in.
   - Built on the swarm and attention: shared sessions and activity, shared agents and
     availability, requests waiting, active work and results, and the machines available for

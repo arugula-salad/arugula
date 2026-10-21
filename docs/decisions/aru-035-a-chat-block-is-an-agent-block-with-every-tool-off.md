@@ -24,7 +24,7 @@ reviews: []
 constrains:
   - "path:crates/daemon/src/agent/defs.rs"
   - "path:crates/daemon/src/agent/mod.rs"
-  - "path:web/src/blocks/chat.tsx"
+  - "path:web/src/shell/blocks/chat.tsx"
 ---
 
 # A chat block is an agent block with every tool off
@@ -39,4 +39,4 @@ agent tools or a project, and a permission request is turned down unseen.
 It's per machine, kept and restored by that daemon like an agent block.
 Codex isn't one: codex-acp 2.1.0 has no switch for every tool (the shell
 goes, apply_patch, `exec` and subagents stay).
-Where: `crates/daemon/src/agent/defs.rs` (`chat_meta`), `crates/daemon/src/agent/mod.rs` (`ChatKind`), `web/src/blocks/chat.tsx`.
+Where: `crates/daemon/src/agent/defs.rs` (`chat_meta`), `crates/daemon/src/agent/mod.rs` (`ChatKind`), `web/src/shell/blocks/chat.tsx`.

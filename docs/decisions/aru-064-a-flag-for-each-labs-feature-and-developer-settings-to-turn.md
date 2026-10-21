@@ -34,8 +34,8 @@ constrains:
   - "path:crates/daemon/src/mcp/tools.rs"
   - "path:crates/cli/src/main.rs"
   - "path:crates/daemon/src/args.rs"
-  - "path:web/src/client.ts"
-  - "path:web/src/ui/developer.tsx"
+  - "path:web/src/shell/client.ts"
+  - "path:web/src/shell/ui/developer.tsx"
   - "path:crates/desktop/src/daemon.rs"
 ---
 
@@ -73,5 +73,5 @@ removed", below.)
   *Daemon* menu and `/#developer` open it regardless.
 Not done: per-flag enforcement of routes and block constructors (done since,
 next entry), and flags per team on control (#347).
-Where: `crates/proto/src/flags.rs`, `crates/daemon/src/labs/mod.rs` (`flags`, `on`), `crates/daemon/src/hosts.rs` (`features`), `crates/daemon/src/mcp/tools.rs` (`UNLISTED*`), `crates/cli/src/main.rs` and `crates/daemon/src/args.rs` (`LABS_*`), `web/src/client.ts` (`flag`), `web/src/ui/developer.tsx`, `crates/desktop/src/daemon.rs`.
+Where: `crates/proto/src/flags.rs`, `crates/daemon/src/labs/mod.rs` (`flags`, `on`), `crates/daemon/src/hosts.rs` (`features`), `crates/daemon/src/mcp/tools.rs` (`UNLISTED*`), `crates/cli/src/main.rs` and `crates/daemon/src/args.rs` (`LABS_*`), `web/src/shell/client.ts` (`flag`), `web/src/shell/ui/developer.tsx`, `crates/desktop/src/daemon.rs`.
 From: #665, #464, #347.

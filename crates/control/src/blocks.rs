@@ -10,7 +10,7 @@
 //!
 //! - `/.arugula/boot.js`, `/.arugula/sw.js`, `/.arugula/shim.js`: the
 //!   bootstrap script, the block's service worker and the WebSocket shim
-//!   (`web/src/block/`, built into `web/dist/block/`);
+//!   (`web/src/shell/block/`, built into `web/dist/block/`);
 //! - a bootstrap page for any navigation the worker didn't answer (the first
 //!   load, a hard reload, a cleared worker), under a strict CSP that lets
 //!   only control's own origins frame it;
@@ -195,7 +195,7 @@ async fn serve(app: &Arc<App>, key: String, req: Request) -> Response {
     if h("service-worker") == "script" {
         // The block's app registering a worker of its own: control doesn't
         // have its code, so it serves its own worker, which fetches the
-        // app's through the channel and runs it inside (web/src/block/sw.ts).
+        // app's through the channel and runs it inside (web/src/shell/block/sw.ts).
         let pq = req.uri().path_and_query().map_or("/", |p| p.as_str());
         let body = format!(
             "self.ARUGULA_APP_SW={};importScripts(\"{PREFIX}sw.js\");\n",
@@ -253,7 +253,7 @@ pub fn boot_csp(app: &App) -> String {
 /// The bootstrap page: control's code only. `boot.js` registers the worker,
 /// asks the parent (one of the origins in `arugula-control`) for the
 /// block's credentials, hands them to the worker and loads the page again,
-/// now through the worker (`web/src/block/boot.ts`).
+/// now through the worker (`web/src/shell/block/boot.ts`).
 fn boot(app: &App) -> Response {
     let origins: Vec<&str> = app.cfg.sites.iter().map(|s| s.origin.as_str()).collect();
     let page = format!(

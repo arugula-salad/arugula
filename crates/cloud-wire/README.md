@@ -3,7 +3,7 @@
 What Arugula control's `/api/cloud/…` routes take and answer with: Cloud
 workspaces and their settings, tabs, past tabs, agents, the models a tab may
 run on, and past cloud runs. The platform (`arugula-platform`) serves them,
-and the web client's copy is generated from them (`web/src/proto.gen.ts`,
+and the web client's copy is generated from them (`web/src/shared/proto.gen.ts`,
 `just proto-ts`).
 
 Depends on serde only. Not `arugula-control-wire`: some of these types are

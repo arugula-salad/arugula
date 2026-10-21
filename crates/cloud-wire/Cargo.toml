@@ -15,7 +15,7 @@ ts-rs = { workspace = true, optional = true, features = ["no-serde-warnings"] }
 
 [features]
 # TypeScript for the web client: arugula-proto's `ts` feature turns it on
-# and puts these types in web/src/proto.gen.ts (`just proto-ts`).
+# and puts these types in web/src/shared/proto.gen.ts (`just proto-ts`).
 ts = ["dep:ts-rs"]
 
 [lints]

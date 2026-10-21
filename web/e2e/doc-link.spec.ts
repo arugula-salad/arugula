@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { Broken, additionalData, fromBase64Url, keyFromHash, openParts, openSnapshot } from "../src/doc-link";
+import { Broken, additionalData, fromBase64Url, keyFromHash, openParts, openSnapshot } from "../src/shell/doc-link";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const vector = JSON.parse(readFileSync(join(here, "../../crates/daemon/tests/fixtures/docs/link-vector.json"), "utf8")) as {

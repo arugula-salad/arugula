@@ -38,9 +38,9 @@ Control runs Cloud agents as one-shot **runs**:
   (secrets, runs, requests, cancel, events, import, agents).
 - Control has one platform model and runtime (`ARUGULA_CLOUD_MODEL`,
   `ARUGULA_CLOUD_RUNTIME`).
-- Web: `web/src/cloud.ts` keeps the opened runs in localStorage
+- Web: `web/src/shared/cloud.ts` keeps the opened runs in localStorage
   (`arugula.cloud-panes.<account>`), polls `runs` every 3 s, and turns runs
-  into `FleetPane`s with `cloudRun` set. `web/src/ui/cloud.tsx` has
+  into `FleetPane`s with `cloudRun` set. `web/src/platform/cloud/cloud.tsx` has
   `CloudPanel` (the launch form and the runs), `RunDetails` (transcript,
   approvals, results) and `CloudTabs`.
 - In the new shell, which has been the only shell since M113 (#1047), the
@@ -213,7 +213,7 @@ on merge, and every UI PR has Before | After shots.
 
 ### M116 (#1073): web, the Cloud workspace session in the new shell
 
-- `web/src/cloud.ts`: a `cloudWorkspaces` store that polls control. The
+- `web/src/shared/cloud.ts`: a `cloudWorkspaces` store that polls control. The
   route is `#cloud-ws=cw_…[/tab]`. Tabs come from control, not localStorage.
 - `shell/session-sidebar.tsx`: a **Cloud workspaces** group with status
   (setting up, ready, parked, failed, rebuild needed) and **+ Cloud

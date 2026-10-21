@@ -10,7 +10,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
 import { dragTo, menu, open, paneEl, screen, text, type as typeIn } from "./helpers";
-import type { PaneId } from "../src/proto";
+import type { PaneId } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 import { labs } from "./labs";
 

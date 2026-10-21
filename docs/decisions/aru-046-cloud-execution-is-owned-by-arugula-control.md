@@ -26,9 +26,9 @@ reviews: []
 constrains:
   - "path:crates/platform/src/cloud"
   - "path:crates/platform/src/db/cloud.rs"
-  - "path:web/src/ui/cloud.tsx"
-  - "path:web/src/ui/cloud-workspaces.tsx"
-  - "path:web/src/ui/cloud-launch.tsx"
+  - "path:web/src/platform/cloud/cloud.tsx"
+  - "path:web/src/platform/cloud/workspaces.tsx"
+  - "path:web/src/platform/cloud/launch.tsx"
   - "path:spikes/s40-cloud-workspaces/PLAN.md"
 ---
 
@@ -68,7 +68,7 @@ and cloud secrets move there (M137), and the hub's gateway keeps the Cloud
 paths on `control.arugula.io`.
 
 Where: `crates/platform/src/cloud/`, `crates/platform/src/db/cloud.rs`,
-`web/src/ui/cloud.tsx`, `web/src/ui/cloud-workspaces.tsx`,
-`web/src/ui/cloud-launch.tsx`, [managed cloud agents](docs/managoat.md),
+`web/src/platform/cloud/cloud.tsx`, `web/src/platform/cloud/workspaces.tsx`,
+`web/src/platform/cloud/launch.tsx`, [managed cloud agents](docs/managoat.md),
 `spikes/s40-cloud-workspaces/PLAN.md`.
 From: Jake's managed-platform integration decisions, 2026-10-16; #1039.

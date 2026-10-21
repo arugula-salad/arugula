@@ -99,7 +99,7 @@ const DEC_DEFAULT_ON: &[u16] = &[7, 25];
 const ANSI_MODES: &[u16] = &[4, 20];
 
 /// Default colors, reported in answer to OSC 10/11/12 queries. The web
-/// client's theme uses the same values (`web/src/theme.ts`).
+/// client's theme uses the same values (`web/src/shared/theme.ts`).
 pub const DEFAULT_FG: RgbColor = RgbColor { r: 0xcd, g: 0xd6, b: 0xf4 };
 pub const DEFAULT_BG: RgbColor = RgbColor { r: 0x1e, g: 0x1e, b: 0x2e };
 pub const DEFAULT_CURSOR: RgbColor = RgbColor { r: 0xf5, g: 0xe0, b: 0xdc };

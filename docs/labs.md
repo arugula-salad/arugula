@@ -107,11 +107,11 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
   refused without their flag. Chat has no MCP tools: agents are out of chat
   (#1095).
 - **Web client:** `Client.has("vms" | "studio")` and
-  `hasLabs()` and `flag(name)` in `web/src/client.ts`: VM panes and tabs,
+  `hasLabs()` and `flag(name)` in `web/src/shell/client.ts`: VM panes and tabs,
   *Sandboxes…*, *Split (local)* and a VM tab's *Machine* items, studio
   apps, *Open as workspace*, *Invite over ssh…*, threads, chat,
   and the swarm's city, hive and timeline themes
-  (`web/src/swarm/view.tsx`).
+  (`web/src/shell/swarm/view.tsx`).
 - **Machines (VMs).** A *machine* (`--machine mN`, `mN:PATH`, `--machine
   local`, MCP `run`'s `machine`) is a VM or sandbox from the provider
   (`crates/mux/src/labs/machine.rs`). Examples that use them: `arugula open
@@ -167,8 +167,8 @@ behind control's own `chat` flag, the account's or a team's
 (`POST /api/flags`); the API is under `/api/chat`
 (`crates/platform/src/chat.rs`, control's platform since M138), and the
 page reads it in
-`web/src/chat-store.ts`, `web/src/ui/chat-rooms.tsx` and
-`web/src/ui/room.tsx`.
+`web/src/shared/chat-store.ts`, `web/src/platform/chat/rooms.tsx` and
+`web/src/shared/chat/room.tsx`.
 
 **No machine keeps chat (M125).** A machine's `chat` flag does two things
 now:
@@ -221,7 +221,7 @@ From a member's card you open a shell, an agent, its changes or its graph
 there, or run one of its ops. The block reads the workspace through chant's
 read contract (contract 1), with the workspace's own chant, so what it shows
 is what chant says (`crates/daemon/src/labs/workspace/`,
-`web/src/blocks/workspace.tsx`). DECISIONS.md has what it reads and joins
+`web/src/shell/blocks/workspace.tsx`). DECISIONS.md has what it reads and joins
 itself ("A workspace block asks chant, and keeps a few reads of its own").
 
 ### Opening one
@@ -276,7 +276,7 @@ card says *Reading the decisions…* until then. With no current decision
 covering the member it says so, and on a large repository the read can pass
 the host's 30 s limit on a command, which the card also says. The last line
 has the plan the approval binds and the member's last release in the
-watched environment (`web/src/ui/gate-why.tsx`).
+watched environment (`web/src/shell/ui/gate-why.tsx`).
 
 *Approve* runs the `chant approve` line `chant workspace status` printed
 for the gate, in the member's directory. That line has `--plan <digest>`,
@@ -438,7 +438,7 @@ as an editor block frames code-server, so it needs `--block-listen`. It runs
 `$ARUGULA_BEHOLD` (a command) if the daemon has it, else
 `node_modules/.bin/behold` in the root, else `behold` on `PATH`. *Graph* on
 another member moves the view there (`crates/daemon/src/labs/workspace/graph.rs`,
-`web/src/blocks/workspace-graph.tsx`).
+`web/src/shell/blocks/workspace-graph.tsx`).
 
 The graph opens on the source. *live {env}* on its bar reads the block's
 environment live, with this host's credentials. The gates behold draws

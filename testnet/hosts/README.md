@@ -42,7 +42,7 @@ A daemon that stops closes its connections, and `web/e2e/remote.spec.ts`
 already covers that. Dropped off the network, mac closes nothing: its
 daemon and shells keep running, and the page's connection to it goes
 quiet. The first run of this spec found that remote panes never noticed:
-they stayed "live" with mac gone. `web/src/blocks/remote.ts` now does for
+they stayed "live" with mac gone. `web/src/shell/blocks/remote.ts` now does for
 remote hosts what the fleet does for its own (M25): a heartbeat after 3 s
 of quiet, a dropped link after 6 s with nothing heard or no connect, then
 the usual retry.

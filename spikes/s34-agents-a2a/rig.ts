@@ -13,7 +13,7 @@ import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { createServer as createTcp } from "node:net";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { joinCode } from "../../web/src/e2e/cert.ts";
+import { joinCode } from "../../web/src/shell/e2e/cert.ts";
 import { Device } from "../../web/fixtures/device.ts";
 import { fakeGithub } from "../../web/fixtures/fakes.ts";
 

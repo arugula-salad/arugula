@@ -20,7 +20,7 @@
 //                          the whole #askinvite= link): {}
 //   team-admit TEAM        admit everyone who asked: {admitted}
 
-import { fingerprint } from "../src/e2e/cert.ts";
+import { fingerprint } from "../src/shell/e2e/cert.ts";
 import { Device } from "./device.ts";
 
 const args = process.argv.slice(2);

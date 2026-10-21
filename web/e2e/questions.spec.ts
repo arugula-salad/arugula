@@ -9,7 +9,7 @@
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
 import { paneEl, panes, reset, text } from "./helpers";
-import type { PaneId } from "../src/proto";
+import type { PaneId } from "../src/shared/proto";
 
 const fake = fileURLToPath(new URL("../../crates/daemon/tests/fake_acp.py", import.meta.url));
 const hookInput = fileURLToPath(new URL("../../crates/daemon/tests/fixtures/s13-hook-ask.json", import.meta.url));

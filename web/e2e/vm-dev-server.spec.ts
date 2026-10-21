@@ -11,7 +11,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Frame, type Page } from "@playwright/test";
 import { menu, open, paneEl, text, type as typeIn, closeContexts } from "./helpers";
-import type { PaneId } from "../src/proto";
+import type { PaneId } from "../src/shared/proto";
 import { ANY, blockPort, daemonPort } from "./ports";
 import { labs } from "./labs";
 

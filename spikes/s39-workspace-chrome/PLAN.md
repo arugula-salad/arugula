@@ -5,7 +5,7 @@ S38 holds M93–M98 (#979) and telemetry M100–M106 (#989).
 
 ## What's there today
 
-The desktop workspace is `App` in `web/src/ui/app.tsx` (957 lines) under one
+The desktop workspace is `App` in `web/src/shell/ui/app.tsx` (957 lines) under one
 36px `AppBar` (`ui/app-bar.tsx`). From left to right, the bar holds the host
 button, the places (Panes, Swarm, Chat, Agents), a session menu, Share, the
 tab strip, `+` and `▾`, Commands, the update chip, people, the account and
@@ -30,7 +30,7 @@ What the redesign can reuse as it is:
   and `cwd` (OSC 7).
 - **Guest:** `client.role()` and `ownsMachine()`. The places and actions
   already hide themselves for guests.
-- **Cloud runs** (`web/src/cloud.ts`) already show up as fleet panes with
+- **Cloud runs** (`web/src/shared/cloud.ts`) already show up as fleet panes with
   attention.
 
 What the redesign needs and doesn't have yet:

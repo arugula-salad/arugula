@@ -26,7 +26,7 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-06"
 reviews: []
 constrains:
-  - "path:web/src/terminal-view.ts"
+  - "path:web/src/shell/terminal-view.ts"
 ---
 
 # The web client draws terminals through one file
@@ -34,5 +34,5 @@ constrains:
 xterm.js lives behind `terminal-view.ts` (WebGL on visible panes, DOM for the
 rest) so the renderer can be swapped later (M8, gated, not built). Layout
 changes are intents sent to the daemon and never applied locally.
-Where: `web/src/terminal-view.ts`.
+Where: `web/src/shell/terminal-view.ts`.
 From: [M1](docs/plan-archive.md#m1-multiplexer), [M8](docs/plan-archive.md#m8-client-terminal-engine-ghostty-web-and-local-echo).

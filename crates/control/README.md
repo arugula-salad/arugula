@@ -38,7 +38,7 @@ platform) and `arugula-platform`.
 Start with `src/main.rs`, then `src/api.rs` (devices, approvals, daemons
 joining, the directory) and `src/relay.rs` (the relay). `src/blocks.rs`
 serves blocks' own origins under `--block-domain` (M50), with their
-scripts from `web/src/block/`. Chat (M122: a team's channels, DMs and
+scripts from `web/src/shell/block/`. Chat (M122: a team's channels, DMs and
 threads about panes, which control holds in plain text) is the platform's
 since M138 (`crates/platform/src/chat.rs`); `src/chat_wire.rs` tests it
 through this hub's gate and `hub_port::InProcess`, and `src/chat_bench.rs`

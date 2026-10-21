@@ -127,7 +127,7 @@ nothing marked `mux:` names the edge or the block kinds.
 - libghostty's terminal is `!Send`: each pane's VT thread owns it, and
   everything else asks that thread (`crates/mux/src/pane.rs`, `crates/vt`).
 - The web client's wire types are generated: after changing a type it uses,
-  run `just proto-ts`. CI fails if `web/src/proto.gen.ts` is stale.
+  run `just proto-ts`. CI fails if `web/src/shared/proto.gen.ts` is stale.
 - Every request passes the access checks before it reaches the mux
   (`access.rs`, `authz.rs`, `arugula_core::access`).
 - The daemon serves the web client itself, embedded in the binary
@@ -191,7 +191,7 @@ lints the daemon with neither, and with each alone.
 - `just e2e`: the browser specs. `just e2e-webkit`: WebKit's.
 - `just dev`: a dev daemon on 7682 (state in `~/.local/state/arugula-dev`)
   and Vite on 5173, leaving your daily daemon alone.
-- `just proto-ts`: regenerate `web/src/proto.gen.ts`.
+- `just proto-ts`: regenerate `web/src/shared/proto.gen.ts`.
 - In a worktree, set `CARGO_TARGET_DIR` to a directory of its own, so
   parallel builds don't share one `target/`. A new one builds cold;
   `just build-cache` sets up caches its worktrees share (Ghostty's Zig

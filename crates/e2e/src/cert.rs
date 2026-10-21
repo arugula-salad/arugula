@@ -702,7 +702,7 @@ mod tests {
         assert!(!join_mac_ok(&s, &trust, &machine, "zz"));
     }
 
-    /// The page computes the same MAC (`web/src/e2e/cert.ts`'s `joinMac`):
+    /// The page computes the same MAC (`web/src/shell/e2e/cert.ts`'s `joinMac`):
     /// fixed inputs, fixed answer.
     #[test]
     fn the_join_mac_is_fixed() {

@@ -6,7 +6,7 @@
 
 import { deflateSync } from "node:zlib";
 import { expect, type Page } from "@playwright/test";
-import type { PaneId } from "../src/proto";
+import type { PaneId } from "../src/shared/proto";
 import { example } from "./doc-examples";
 
 declare global {

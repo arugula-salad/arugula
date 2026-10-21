@@ -26,9 +26,9 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-11"
 reviews: []
 constrains:
-  - "path:web/src/control.ts"
-  - "path:web/src/ui/control.tsx"
-  - "path:web/src/ui/scan.tsx"
+  - "path:web/src/shell/control.ts"
+  - "path:web/src/shell/ui/control.tsx"
+  - "path:web/src/shell/ui/scan.tsx"
   - "path:crates/control/src/api.rs"
 ---
 
@@ -47,5 +47,5 @@ the browser's `BarcodeDetector`, else jsQR, loaded only then.
 Why: the compare was easy to skip, and the new browser took the root on
 control's word. Refusing a MAC-less approval outright would strand anyone
 approving from a tab opened before the deploy.
-Where: `web/src/control.ts` (`enroll`, `vouched`, `approveDevice`, `DEVICE_HASH`), `web/src/ui/control.tsx` (`Waiting`, `DevicePrompt`, `Unvouched`), `web/src/ui/scan.tsx`, `crates/control/src/api.rs` (`enroll`, `approve`, `device`), [docs/control-e2e.md](docs/control-e2e.md#approving-a-new-browser-or-phone-the-code-it-shows).
+Where: `web/src/shell/control.ts` (`enroll`, `vouched`, `approveDevice`, `DEVICE_HASH`), `web/src/shell/ui/control.tsx` (`Waiting`, `DevicePrompt`, `Unvouched`), `web/src/shell/ui/scan.tsx`, `crates/control/src/api.rs` (`enroll`, `approve`, `device`), [docs/control-e2e.md](docs/control-e2e.md#approving-a-new-browser-or-phone-the-code-it-shows).
 From: #761, #765.
