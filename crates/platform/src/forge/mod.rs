@@ -204,8 +204,8 @@ pub async fn token(
         Ok(i) => i,
         Err(why) => return refused(StatusCode::FORBIDDEN, &why),
     };
-    let name = repo.split('/').nth(1).unwrap_or_default();
-    let t = gh.read_token(&caller, install.id, Repo::Name(name), Purpose::Read).await?;
+    // It leaves the platform: logged for this account even from the cache.
+    let t = gh.hand_out(&caller, install.id, Repo::Name(repo)).await?;
     // Who and what; never the token.
     info!(account, repo, "installation token for a daemon");
     Ok(TokenAnswer::Token(GithubToken {

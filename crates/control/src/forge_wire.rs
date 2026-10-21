@@ -37,6 +37,8 @@ struct Hub {
     public: Vec<u8>,
     minted: Vec<Value>,
     asked: Vec<String>,
+    /// Tokens revoked (`DELETE /installation/token`).
+    revoked: Vec<String>,
 }
 
 type Shared = Arc<Mutex<Hub>>;
@@ -76,11 +78,18 @@ async fn installation(State(h): State<Shared>, headers: HeaderMap, Path((o, r)):
 }
 
 /// The fake's repositories, by GitHub id.
-const REPOS: [(u64, &str); 3] = [(101, "hud"), (102, "tool"), (103, "wide")];
+const REPOS: [(u64, &str); 5] = [
+    (101, "jhgaylor/hud"),
+    (102, "acme/tool"),
+    (103, "jhgaylor/wide"),
+    (104, "jhgaylor/wrong"),
+    (105, "jhgaylor/bare"),
+];
 
 /// A new token each time (`ghs_test_INSTALLATION_N`), covering the one
-/// repository asked for, as GitHub's answer lists it. `wide` comes back
-/// covering two, as a misbehaving GitHub would.
+/// repository asked for, as GitHub's answer lists it. A misbehaving
+/// GitHub's answers: `wide` covers two, `wrong` another repository, and
+/// `bare` lists none.
 async fn access_tokens(
     State(h): State<Shared>,
     headers: HeaderMap,
@@ -99,19 +108,33 @@ async fn access_tokens(
     let by_name = body["repositories"].as_array().into_iter().flatten().filter_map(Value::as_str);
     let mut covers: Vec<Value> = REPOS
         .iter()
-        .filter(|(i, name)| by_id.clone().any(|x| x == *i) || by_name.clone().any(|x| x == *name))
-        .map(|(i, name)| json!({ "id": i, "name": name }))
+        .filter(|(i, full)| by_id.clone().any(|x| x == *i) || by_name.clone().any(|x| full.ends_with(&format!("/{x}"))))
+        .map(|(i, full)| json!({ "id": i, "full_name": full }))
         .collect();
-    if covers.iter().any(|r| r["name"] == "wide") {
-        covers.push(json!({ "id": 101, "name": "hud" }));
+    let hud = json!({ "id": 101, "full_name": "jhgaylor/hud" });
+    match covers.first().and_then(|r| r["full_name"].as_str()) {
+        Some("jhgaylor/wide") => covers.push(hud),
+        Some("jhgaylor/wrong") => covers = vec![hud],
+        _ => {}
     }
     let token = format!("ghs_test_{id}_{n}");
-    (
-        StatusCode::CREATED,
-        Json(json!({ "token": token, "expires_at": "2099-01-01T00:00:00Z", "repositories": covers,
-            "permissions": body["permissions"] })),
-    )
-        .into_response()
+    let mut answer = json!({ "token": token, "expires_at": "2099-01-01T00:00:00Z", "repositories": covers,
+        "permissions": body["permissions"] });
+    if covers.iter().any(|r| r["full_name"] == "jhgaylor/bare") {
+        answer.as_object_mut().unwrap().remove("repositories");
+    }
+    (StatusCode::CREATED, Json(answer)).into_response()
+}
+
+async fn revoke(State(h): State<Shared>, headers: HeaderMap) -> StatusCode {
+    let auth = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or("");
+    match auth.strip_prefix("Bearer ghs_test_") {
+        Some(t) => {
+            h.lock().unwrap().revoked.push(format!("ghs_test_{t}"));
+            StatusCode::NO_CONTENT
+        }
+        None => StatusCode::UNAUTHORIZED,
+    }
 }
 
 /// The platform's token log, as rows of JSON: every column of every mint.
@@ -119,11 +142,12 @@ fn mints(db: &arugula_platform::db::Db) -> Vec<Value> {
     db.token_mints(0).unwrap().iter().map(|m| serde_json::to_value(m).unwrap()).collect()
 }
 
-/// Every mint GitHub saw is a row in the log, and no row has a token in
-/// it.
+/// Every mint GitHub saw is a row in the log (besides the rows for read
+/// tokens handed out again from the cache), and no row has a token in it.
 fn every_mint_logged(h: &Shared, db: &arugula_platform::db::Db) -> Vec<Value> {
     let rows = mints(db);
-    assert_eq!(rows.len(), h.lock().unwrap().minted.len(), "{rows:?}");
+    let minted = rows.iter().filter(|r| r["purpose"] != "read (cached)").count();
+    assert_eq!(minted, h.lock().unwrap().minted.len(), "{rows:?}");
     assert!(!rows.is_empty());
     for r in &rows {
         assert!(!r.to_string().contains("ghs_"), "a token in the log: {r}");
@@ -150,6 +174,7 @@ async fn fake_github(h: Shared) -> String {
     let r = Router::new()
         .route("/repos/{o}/{r}/installation", get(installation))
         .route("/app/installations/{id}/access_tokens", post(access_tokens))
+        .route("/installation/token", axum::routing::delete(revoke))
         .route("/repos/{o}/{r}/collaborators/{login}/permission", get(permission))
         .with_state(h);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -361,6 +386,9 @@ async fn webhooks_poke_only_subscribed_daemons_of_allowed_accounts() {
     assert!(v["token"].as_str().unwrap().starts_with("ghs_test_11_"), "{v}");
     assert_eq!(v["login"], "jhgaylor");
     assert_eq!(v["expires_at"], "2099-01-01T00:00:00Z");
+    // Asked again: the same token, from the cache.
+    let again: Value = ask(&k1, "jhgaylor/hud").await.unwrap().json().await.unwrap();
+    assert_eq!(again["token"], v["token"]);
     assert!(
         h.lock().unwrap().minted.iter().any(|m| m["installation"] == 11 && m["body"]["repositories"] == json!(["hud"]))
     );
@@ -382,9 +410,14 @@ async fn webhooks_poke_only_subscribed_daemons_of_allowed_accounts() {
     assert_eq!(unsigned.status(), 401);
     // M167: each mint (the access check's for acme/tool, the box's for
     // jhgaylor/hud) is in the token log, read-only, for one repository,
-    // naming who it was for; later asks for either were the cache's, so no
-    // rows.
+    // naming who it was for. A token used again inside the platform (an
+    // access check's) adds no row; one handed to a box again does, `read
+    // (cached)`, naming the box's account even when the token was first
+    // minted for someone else's access check (the stranger's, on hud).
     let rows = every_mint_logged(&h, &app.platform.inner().db);
+    let boxes: Vec<&Value> = rows.iter().filter(|r| r["caller"] == "a1" && r["repo_id"] == 101).collect();
+    assert_eq!(boxes.len(), 2, "a row for each of the box's two asks: {rows:?}");
+    assert!(boxes.iter().any(|r| r["purpose"] == "read (cached)"), "{rows:?}");
     let row = |repo: u64| rows.iter().find(|r| r["repo_id"] == repo).unwrap_or_else(|| panic!("{rows:?}"));
     assert_eq!(row(102)["installation_id"], 12);
     assert!(["a1", "a2"].contains(&row(102)["caller"].as_str().unwrap()), "{rows:?}");
@@ -527,44 +560,97 @@ async fn reads_and_sends_get_their_own_tokens() {
     let c = Caller { http: &http, db: &db, who: "a1" };
     let body = |n: usize| h.lock().unwrap().minted[n]["body"].clone();
 
-    let read = gh.read_token(&c, 11, Repo::Name("hud"), Purpose::Read).await.unwrap();
+    let hud = Repo::Name("jhgaylor/hud");
+    let read = gh.read_token(&c, 11, hud, Purpose::Read).await.unwrap();
     assert_eq!(body(0)["repositories"], json!(["hud"]));
     assert!(body(0)["permissions"].as_object().unwrap().values().all(|v| v == "read"));
-    let again = gh.read_token(&c, 11, Repo::Name("hud"), Purpose::Ingest).await.unwrap();
+    let again = gh.read_token(&c, 11, hud, Purpose::Ingest).await.unwrap();
     assert_eq!(again.secret(), read.secret(), "kept");
     assert_eq!(h.lock().unwrap().minted.len(), 1, "a cache hit isn't a mint");
+    // The same token handed out to a box, for someone else: no mint, but
+    // a row naming them.
+    let b = Caller { who: "a2", ..c };
+    assert_eq!(gh.hand_out(&b, 11, hud).await.unwrap().secret(), read.secret());
+    assert_eq!(h.lock().unwrap().minted.len(), 1);
 
-    // A send, on the same repository, while that read token is kept.
-    let send = gh.write_token(&c, 11, Repo::Name("hud"), Writes::Issues).await.unwrap();
-    assert_ne!(send.secret(), read.secret(), "never the cached read token");
+    // A send, on the same repository, while that read token is kept: its
+    // one call has the token, and then it's revoked.
+    let send = gh.write_token(&c, 11, hud, Writes::Issues).await.unwrap();
     assert_eq!(body(1)["permissions"], json!({ "metadata": "read", "issues": "write" }));
     assert_eq!(body(1)["repositories"], json!(["hud"]));
-    let send2 = gh.write_token(&c, 11, Repo::Name("hud"), Writes::Issues).await.unwrap();
-    assert_ne!(send2.secret(), send.secret(), "a send's token isn't kept");
+    let s1 = send.use_once(async |t: &str| t.to_owned()).await;
+    assert_ne!(s1, read.secret(), "never the cached read token");
+    assert_eq!(h.lock().unwrap().revoked, vec![s1.clone()], "revoked after its call");
+    let send2 = gh.write_token(&c, 11, hud, Writes::Issues).await.unwrap();
+    let s2 = send2.use_once(async |t: &str| t.to_owned()).await;
+    assert_ne!(s2, s1, "a send's token isn't kept");
     // Nor does a send's token reach the read cache.
-    let read2 = gh.read_token(&c, 11, Repo::Name("hud"), Purpose::Read).await.unwrap();
+    let read2 = gh.read_token(&c, 11, hud, Purpose::Read).await.unwrap();
     assert_eq!(read2.secret(), read.secret());
     assert_eq!(h.lock().unwrap().minted.len(), 3);
-    // By id, a review: pull requests only.
+    // By id, a review: pull requests only. Dropped unused, it's revoked
+    // all the same.
     let review = gh.write_token(&c, 11, Repo::Id(101), Writes::PullRequests).await.unwrap();
     assert_eq!(review.send(), Writes::PullRequests);
     assert_eq!(
         body(3),
         json!({ "repository_ids": [101], "permissions": { "metadata": "read", "pull_requests": "write" } })
     );
-    // GitHub's answer covering more than the one repository is refused,
-    // and still logged: it was minted.
-    assert!(gh.write_token(&c, 11, Repo::Name("wide"), Writes::Issues).await.is_err());
-    assert!(gh.read_token(&c, 11, Repo::Name("wide"), Purpose::Read).await.is_err());
+    drop(review);
+    for _ in 0..50 {
+        if h.lock().unwrap().revoked.len() == 3 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(h.lock().unwrap().revoked.len(), 3, "an unused write token is revoked when dropped");
+    assert!(h.lock().unwrap().revoked.iter().all(|t| *t != read.secret()), "the read token wasn't revoked");
+
+    // GitHub's answer covering two repositories, another one, or not
+    // saying: refused, the token revoked, and the mint still logged.
+    for name in ["jhgaylor/wide", "jhgaylor/wrong", "jhgaylor/bare"] {
+        let before = h.lock().unwrap().revoked.len();
+        assert!(gh.write_token(&c, 11, Repo::Name(name), Writes::Issues).await.is_err(), "{name}");
+        assert!(gh.read_token(&c, 11, Repo::Name(name), Purpose::Read).await.is_err(), "{name}");
+        let n = h.lock().unwrap().minted.len();
+        let revoked = h.lock().unwrap().revoked[before..].to_vec();
+        assert_eq!(revoked, vec![format!("ghs_test_11_{}", n - 1), format!("ghs_test_11_{n}")], "{name}");
+    }
+    // By id: the id GitHub confirms is taken, and an answer for another
+    // id is refused.
+    gh.write_token(&c, 11, Repo::Id(102), Writes::Issues).await.unwrap().use_once(async |_: &str| ()).await;
+    let before = h.lock().unwrap().revoked.len();
+    assert!(gh.read_token(&c, 11, Repo::Id(999), Purpose::Read).await.is_err(), "covers nothing");
+    assert_eq!(h.lock().unwrap().revoked.len(), before + 1);
 
     let rows = every_mint_logged(&h, &db);
     // Rows in the same millisecond come in any order.
     let mut purposes: Vec<&str> = rows.iter().map(|r| r["purpose"].as_str().unwrap()).collect();
     purposes.sort_unstable();
-    assert_eq!(purposes, ["read", "read", "send:issues", "send:issues", "send:issues", "send:pull_requests"]);
-    assert!(rows.iter().all(|r| r["installation_id"] == 11 && r["caller"] == "a1"), "{rows:?}");
+    assert_eq!(
+        purposes,
+        [
+            "read",
+            "read",
+            "read",
+            "read",
+            "read",
+            "read (cached)",
+            "send:issues",
+            "send:issues",
+            "send:issues",
+            "send:issues",
+            "send:issues",
+            "send:issues",
+            "send:pull_requests"
+        ]
+    );
+    let cached = rows.iter().find(|r| r["purpose"] == "read (cached)").unwrap();
+    assert_eq!((cached["caller"].as_str(), cached["repo_id"].as_u64()), (Some("a2"), Some(101)));
+    assert!(rows.iter().all(|r| r["installation_id"] == 11), "{rows:?}");
+    assert_eq!(rows.iter().filter(|r| r["caller"] == "a1").count(), rows.len() - 1);
     let on = |id: Value| rows.iter().filter(|r| r["repo_id"] == id).count();
-    assert_eq!((on(json!(101)), on(Value::Null)), (4, 2), "covering two, it names none: {rows:?}");
+    assert_eq!((on(json!(101)), on(Value::Null)), (5, 6), "a name GitHub didn't confirm names none: {rows:?}");
     let issues = rows.iter().find(|r| r["purpose"] == "send:issues" && r["repo_id"] == 101).unwrap();
     assert_eq!(issues["permissions"], r#"{"issues":"write","metadata":"read"}"#);
 }
@@ -616,8 +702,7 @@ async fn real_app_reads() {
             .await
             .map(|i| i.id)
     );
-    let name = repo.split('/').nth(1).unwrap();
-    let t = app.read_token(&c, install.id, Repo::Name(name), Purpose::Read).await.unwrap();
+    let t = app.read_token(&c, install.id, Repo::Name(&repo), Purpose::Read).await.unwrap();
     println!("installation token minted, {} chars, expires {}", t.secret().len(), t.expires_at);
     println!("logged: {:?}", db.token_mints(0).unwrap());
     let token = t.secret();

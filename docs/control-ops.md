@@ -92,12 +92,16 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     and nothing else asks GitHub for one. Each names one repository and
     the least it needs: read-only for reads and the mirror's ingest (kept
     until five minutes before they expire), and `issues: write` or
-    `pull_requests: write` for one send (minted for that send, then
-    dropped, never kept). Every mint is a row in `github_token_mints`:
-    installation, repository id, the permissions asked for, the account
-    (or `platform`), what for, and when, never the token. A token handed
-    out again from the cache isn't a new mint and adds no row. Rows are
-    kept a year, pruned hourly.
+    `pull_requests: write` for one send (minted for that send, never
+    kept, and revoked at GitHub, `DELETE /installation/token`, right after
+    its one call). A token whose answer from GitHub doesn't cover exactly
+    the repository asked for is revoked and refused. Every mint is a row
+    in `github_token_mints`: installation, repository id, the permissions
+    asked for, the account (or `platform`), what for, and when, never the
+    token. A read token used again from the cache inside the platform adds
+    no row; one handed to a hosted box again from the cache adds a row for
+    that account, with the purpose `read (cached)`. Rows are kept a year,
+    pruned hourly.
 - **Blocks through control** (M50, optional): `--block-domain`
   (`ARUGULA_CONTROL_BLOCK_DOMAIN`, `arugula.run` for the hosted one) gives
   each block an origin of its own, `b-<key>.<domain>`, so a port or editor
