@@ -11,6 +11,7 @@ import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signOut } from "./signin";
 import { names } from "./links";
+import { chat } from "../shared/chat-store";
 
 /** The project the route is in, else the reader's own. */
 export function routeProject(r: Route): string | undefined {
@@ -27,6 +28,8 @@ function Place({ to, here, children, data }: { to: string; here: boolean; childr
 
 export function PlatformBar({ children }: { children?: ComponentChildren }) {
   useSubscribe((fn) => session.subscribe(fn));
+  // Issues come with chat (M201): its Labs flag says whether they're there.
+  useSubscribe((fn) => chat.subscribe(fn));
   const r = useRoute();
   const project = routeProject(r);
   const p = session.project(project);
@@ -60,6 +63,11 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         {project && (
           <Place to={pathOf({ page: "project", project }, names)} here={r.page === "project" || r.page === "workspaces" || r.page === "workspace" || r.page === "past"} data="home">
             Project
+          </Place>
+        )}
+        {project && chat.on && (
+          <Place to={pathOf({ page: "issues", project }, names)} here={r.page === "issues" || r.page === "issue" || r.page === "new-issue"} data="issues">
+            Issues
           </Place>
         )}
         {project && (
