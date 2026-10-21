@@ -11,11 +11,17 @@
 //!   comment is an event that one was made. A project that mirrors content
 //!   gets it from M166, not here.
 //! - **Out of order** (`db::mirror`): a row is only overwritten by a
-//!   payload whose GitHub time isn't older.
+//!   payload whose GitHub time is newer; one from the same second that
+//!   disagrees is read again by the poller.
 //! - `check_suite` and `workflow_run` write nothing of their own: their
 //!   check runs come as `check_run` events. A commit status, or a fork's
-//!   check run (which names no PR), is kept only for a head one of the
-//!   repo's PRs has.
+//!   check run (which names no PR), is kept for any commit: one that comes
+//!   before its PR's `synchronize` is there when the new head is. The
+//!   poller prunes checks on a commit no item has as its head after an
+//!   hour.
+//! - **An issue deleted or transferred** goes, with its events, its
+//!   head's checks and its inbox rows (`db::mirror::delete_item`). Its
+//!   drafts stay, for M170: a send to it fails and says why.
 //! - A row that fails to write is logged and left to the poller
 //!   ([`super::poller`]), which finds it as drift; the pokes go as before.
 
@@ -28,7 +34,7 @@ use tracing::{debug, warn};
 use super::stats::Stats;
 use crate::{
     Platform,
-    db::mirror::{self, CheckRow, EventRow, ItemRow, Wrote},
+    db::mirror::{self, CheckRow, EventRow, ItemRow, Source, Wrote},
 };
 
 /// The poller's settings (`Args`).
@@ -39,11 +45,14 @@ pub struct Settings {
     /// The share of an installation's rate limit, in percent, the poller
     /// leaves for reads on demand and sends.
     pub reserve: u8,
+    /// The most list pages a turn reads; a turn that has more carries on
+    /// from where it stopped at the next.
+    pub pages: usize,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { every_ms: 5 * 60_000, reserve: 30 }
+        Self { every_ms: 5 * 60_000, reserve: 30, pages: 50 }
     }
 }
 
@@ -231,10 +240,12 @@ fn change_event(repo_id: u64, item: &ItemRow, kind: &str, sender: &Value) -> Eve
 /// What a webhook writes.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Rows {
+    pub repo: Option<u64>,
     pub items: Vec<ItemRow>,
-    /// And whether it names a PR (else it's kept only for a known head).
-    pub checks: Vec<(CheckRow, bool)>,
+    pub checks: Vec<CheckRow>,
     pub events: Vec<EventRow>,
+    /// An issue deleted, or transferred away: its number.
+    pub deleted: Option<u64>,
     /// GitHub's time for the change, for webhook to row.
     pub at: Option<u64>,
 }
@@ -245,7 +256,7 @@ pub fn rows(event: &str, v: &Value) -> Option<(u64, Rows)> {
     let repo = v["repository"]["id"].as_u64()?;
     let full_name = v["repository"]["full_name"].as_str().unwrap_or_default();
     let action = v["action"].as_str().unwrap_or_default();
-    let mut r = Rows::default();
+    let mut r = Rows { repo: Some(repo), ..Rows::default() };
     match event {
         "pull_request" => {
             let it = pr_row(repo, full_name, &v["pull_request"])?;
@@ -275,6 +286,9 @@ pub fn rows(event: &str, v: &Value) -> Option<(u64, Rows)> {
             r.events.extend(comment_event(repo, number, "review_comment", &v["comment"]));
             r.at = ms(&v["comment"]["created_at"]);
         }
+        "issues" if matches!(action, "deleted" | "transferred") => {
+            r.deleted = Some(v["issue"]["number"].as_u64()?);
+        }
         "issues" => {
             let it = issue_row(repo, &v["issue"])?;
             if matches!(action, "opened" | "closed" | "reopened") {
@@ -291,16 +305,14 @@ pub fn rows(event: &str, v: &Value) -> Option<(u64, Rows)> {
             r.items.extend(issue_row(repo, &v["issue"]));
         }
         "check_run" => {
-            let c = &v["check_run"];
-            let names_pr = c["pull_requests"].as_array().is_some_and(|p| !p.is_empty());
-            let row = run_row(repo, c)?;
+            let row = run_row(repo, &v["check_run"])?;
             r.at = Some(row.updated_at).filter(|t| *t > 0);
-            r.checks.push((row, names_pr));
+            r.checks.push(row);
         }
         "status" => {
             let row = status_row(repo, v["sha"].as_str()?, v)?;
             r.at = Some(row.updated_at).filter(|t| *t > 0);
-            r.checks.push((row, false));
+            r.checks.push(row);
         }
         _ => return None,
     }
@@ -314,6 +326,8 @@ pub struct Written {
     pub fixed: usize,
     pub same: usize,
     pub older: usize,
+    /// Same second, saying otherwise: read again by the poller.
+    pub ties: usize,
 }
 
 impl Written {
@@ -322,6 +336,7 @@ impl Written {
             Wrote::New | Wrote::Changed(_) => self.fixed += 1,
             Wrote::Same => self.same += 1,
             Wrote::Older => self.older += 1,
+            Wrote::Tie => self.ties += 1,
         }
     }
 }
@@ -329,13 +344,17 @@ impl Written {
 /// Write `rows` in the transaction `db::Db::mirror` opened.
 pub fn write(tx: &impl crate::db::sql::Sql, rows: &Rows, now: u64) -> anyhow::Result<Written> {
     let mut w = Written::default();
-    for it in &rows.items {
-        w.add(&mirror::upsert_item(tx, it, now)?);
+    if let Some(n) = rows.deleted
+        && let Some(repo) = rows.repo
+        && mirror::delete_item(tx, repo, n)?
+    {
+        w.fixed += 1;
     }
-    for (c, names_pr) in &rows.checks {
-        if *names_pr || mirror::is_head(tx, c.repo_id, &c.head_sha)? {
-            w.add(&mirror::upsert_check(tx, c)?);
-        }
+    for it in &rows.items {
+        w.add(&mirror::upsert_item(tx, it, Source::Pushed, now)?);
+    }
+    for c in &rows.checks {
+        w.add(&mirror::upsert_check(tx, c, Source::Pushed, now)?);
     }
     for e in &rows.events {
         w.add(&mirror::add_event(tx, e)?);
@@ -356,7 +375,16 @@ pub fn webhook(p: &Platform, event: &str, delivery: &str, v: &Value, came: Insta
                 let event_ms = rows.at.map(|at| arugula_e2e::now_ms().saturating_sub(at));
                 gh.ingest.stats.landed(came.elapsed().as_millis() as u64, event_ms);
             }
-            debug!(event, delivery, repo, fixed = w.fixed, same = w.same, older = w.older, "webhook rows");
+            debug!(
+                event,
+                delivery,
+                repo,
+                fixed = w.fixed,
+                same = w.same,
+                older = w.older,
+                ties = w.ties,
+                "webhook rows"
+            );
         }
         // The poller finds it as drift.
         Err(e) => warn!(event, delivery, repo, error = format!("{e:#}"), "writing a webhook's mirror rows"),
@@ -414,8 +442,9 @@ mod tests {
         assert!(!format!("{r:?}").contains("secret"));
         let status = json!({ "repository": repo, "sha": "abc", "context": "ci", "state": "failure", "updated_at": "2026-10-02T00:00:00Z" });
         let r = rows("status", &status).unwrap().1;
-        assert_eq!(r.checks[0].0.conclusion.as_deref(), Some("failure"));
-        assert!(!r.checks[0].1);
+        assert_eq!(r.checks[0].conclusion.as_deref(), Some("failure"));
+        let gone = json!({ "action": "transferred", "repository": repo, "issue": { "number": 6 } });
+        assert_eq!(rows("issues", &gone).unwrap().1.deleted, Some(6));
         for e in ["check_suite", "workflow_run", "push"] {
             assert!(rows(e, &json!({ "repository": repo })).is_none(), "{e}");
         }

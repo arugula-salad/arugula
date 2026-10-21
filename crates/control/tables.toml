@@ -685,7 +685,7 @@ name = "linked_repos"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A GitHub repo linked to a project: GitHub's repo id, its name, whether it's private, the installation, who linked it and when, whether the project mirrors its content, when it was unlinked and when its rows are purged, and its poller's lease and last backfill and reconcile."
+what = "A GitHub repo linked to a project: GitHub's repo id, its name, whether it's private, the installation, who linked it and when, whether the project mirrors its content, when it was unlinked and when its rows are purged, and its poller's lease, last backfill and reconcile, failures in a row, and where a turn that ran out of pages stopped."
 why_asleep = "Its PRs and issues are kept current by webhooks and a poller on the platform, and read from it, with every machine asleep."
 with_account = "partly"
 note = "It stops naming the account as who linked it. Repos linked to its personal project are unlinked, and their rows purged within 24 hours; a team project's stay linked."
@@ -761,6 +761,16 @@ what = "The audit log of every GitHub token the platform minted: installation or
 why_asleep = "Tokens are minted for reads, ingest and sends with every machine asleep."
 with_account = "kept"
 note = "Its mints stay in the audit log, naming it, so a token can be traced after the account goes, for as long as the log keeps a mint: a year, pruned hourly."
+seen_by = ["litestream", "github"]
+
+[[table]]
+name = "forge_refetch"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "What the forge mirror's poller reads again from GitHub at its repo's next turn (M164): a linked repo's id and an item's kind and number, or a head commit's SHA, that two answers gave in the same second and disagreed on, and when."
+why_asleep = "Webhooks arrive and the poller runs with every machine asleep, and a row two answers disagreed on is put right within a turn."
+with_account = "none"
 seen_by = ["litestream", "github"]
 
 [[table]]

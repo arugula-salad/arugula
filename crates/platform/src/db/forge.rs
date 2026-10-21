@@ -93,7 +93,7 @@ fn purge_rows(c: &impl Sql, repo_id: u64) -> anyhow::Result<()> {
         "DELETE FROM inbox_items WHERE item IN (SELECT id FROM forge_items WHERE repo_id = ?1)",
         params![repo_id],
     )?;
-    for table in ["forge_items", "forge_checks", "forge_events", "forge_content", "drafts"] {
+    for table in ["forge_items", "forge_checks", "forge_events", "forge_content", "forge_refetch", "drafts"] {
         c.execute(&format!("DELETE FROM {table} WHERE repo_id = ?1"), params![repo_id])?;
     }
     Ok(())

@@ -9,8 +9,12 @@
 //!   unlinked (and, for the poller, that it still holds the lease). An
 //!   unlink stops ingest at the next write.
 //! - **Out of order.** A row is only overwritten by an answer whose
-//!   GitHub `updated_at` isn't older than the row's: a late redelivery, or
-//!   a list read before a webhook landed, leaves the newer row be.
+//!   GitHub `updated_at` is newer than the row's: a late redelivery, or a
+//!   list read before a webhook landed, leaves the newer row be. GitHub's
+//!   times are whole seconds, so two answers in the same second that
+//!   disagree are a **tie**: the row stays, and the poller reads the item
+//!   (or the head's checks) again first thing at the repo's next turn
+//!   (`forge_refetch`), whose answer is taken ([`Source::Fetched`]).
 //! - **Metadata only.** No bodies or comment text: the rows have nowhere
 //!   to put them (`forge_content` is M166's).
 
@@ -19,6 +23,7 @@ use sha2::{Digest, Sha256};
 
 use super::{
     Db,
+    forge::Installation,
     migrate::Dialect,
     sql::{Optional as _, Row, Sql, Tx, params},
 };
@@ -165,6 +170,18 @@ pub enum Wrote {
     Same,
     /// The row is newer than the answer, and stays.
     Older,
+    /// The answer is from the same second and says otherwise: the row
+    /// stays, and is read again ([`refetch`]).
+    Tie,
+}
+
+/// Where an answer came from: a webhook or a list, which a tie doesn't
+/// overwrite, or the poller's own read of the one item or head, which a
+/// tie does: it was asked after the answers that tied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    Pushed,
+    Fetched,
 }
 
 impl Wrote {
@@ -174,8 +191,9 @@ impl Wrote {
     }
 }
 
-/// Write an item, unless the row is newer.
-pub fn upsert_item(c: &impl Sql, it: &ItemRow, now: u64) -> Result<Wrote> {
+/// Write an item, unless the row is newer, or (but for a
+/// [`Source::Fetched`] answer) from the same second.
+pub fn upsert_item(c: &impl Sql, it: &ItemRow, from: Source, now: u64) -> Result<Wrote> {
     let was = c
         .query_row(
             &format!("SELECT {ITEM_COLUMNS} FROM forge_items WHERE repo_id = ?1 AND number = ?2{}", c.for_update()),
@@ -189,9 +207,14 @@ pub fn upsert_item(c: &impl Sql, it: &ItemRow, now: u64) -> Result<Wrote> {
         Some(w) => match it.differs(w) {
             d if d.is_empty() && w.updated_at == it.updated_at => return Ok(Wrote::Same),
             d if d.is_empty() => Wrote::Same,
+            _ if w.updated_at == it.updated_at && from == Source::Pushed => {
+                refetch(c, it.repo_id, &w.kind, &it.number.to_string(), now)?;
+                return Ok(Wrote::Tie);
+            }
             d => Wrote::Changed(d),
         },
     };
+    let fetched = from == Source::Fetched;
     let id = format!("fi_{}", hex::encode(arugula_e2e::random::<16>()));
     c.execute(
         "INSERT INTO forge_items (id, repo_id, number, kind, state, title, labels, author_login, author_id,
@@ -203,7 +226,8 @@ pub fn upsert_item(c: &impl Sql, it: &ItemRow, now: u64) -> Result<Wrote> {
              draft = excluded.draft, merge_state = COALESCE(excluded.merge_state, forge_items.merge_state),
              head_ref = excluded.head_ref, head_sha = excluded.head_sha, base_ref = excluded.base_ref,
              created_at = excluded.created_at, updated_at = excluded.updated_at, synced_at = excluded.synced_at
-         WHERE excluded.updated_at >= forge_items.updated_at",
+         WHERE excluded.updated_at > forge_items.updated_at
+             OR (excluded.updated_at = forge_items.updated_at AND ?20)",
         params![
             id,
             it.repo_id,
@@ -223,14 +247,16 @@ pub fn upsert_item(c: &impl Sql, it: &ItemRow, now: u64) -> Result<Wrote> {
             it.base_ref,
             it.created_at,
             it.updated_at,
-            now
+            now,
+            fetched
         ],
     )?;
     Ok(wrote)
 }
 
-/// Write a check, unless the row is newer.
-pub fn upsert_check(c: &impl Sql, ck: &CheckRow) -> Result<Wrote> {
+/// Write a check, unless the row is newer, or (but for a
+/// [`Source::Fetched`] answer) from the same second.
+pub fn upsert_check(c: &impl Sql, ck: &CheckRow, from: Source, now: u64) -> Result<Wrote> {
     let was = c
         .query_row(
             &format!(
@@ -256,6 +282,10 @@ pub fn upsert_check(c: &impl Sql, ck: &CheckRow) -> Result<Wrote> {
             match d.is_empty() {
                 true if at == ck.updated_at => return Ok(Wrote::Same),
                 true => Wrote::Same,
+                false if at == ck.updated_at && from == Source::Pushed => {
+                    refetch(c, ck.repo_id, "head", &ck.head_sha, now)?;
+                    return Ok(Wrote::Tie);
+                }
                 false => Wrote::Changed(d),
             }
         }
@@ -265,8 +295,19 @@ pub fn upsert_check(c: &impl Sql, ck: &CheckRow) -> Result<Wrote> {
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT (repo_id, head_sha, kind, name) DO UPDATE SET status = excluded.status,
              conclusion = excluded.conclusion, url = excluded.url, updated_at = excluded.updated_at
-         WHERE excluded.updated_at >= forge_checks.updated_at",
-        params![ck.repo_id, ck.head_sha, ck.kind, ck.name, ck.status, ck.conclusion, ck.url, ck.updated_at],
+         WHERE excluded.updated_at > forge_checks.updated_at
+             OR (excluded.updated_at = forge_checks.updated_at AND ?9)",
+        params![
+            ck.repo_id,
+            ck.head_sha,
+            ck.kind,
+            ck.name,
+            ck.status,
+            ck.conclusion,
+            ck.url,
+            ck.updated_at,
+            from == Source::Fetched
+        ],
     )?;
     Ok(wrote)
 }
@@ -297,15 +338,70 @@ pub fn add_event(c: &impl Sql, e: &EventRow) -> Result<Wrote> {
     Ok(wrote)
 }
 
-/// Whether one of the repo's items has `sha` as its head: a commit
-/// status or a fork's check run, which name no PR, is kept only then.
-pub fn is_head(c: &impl Sql, repo_id: u64, sha: &str) -> Result<bool> {
-    let n: u64 = c.query_row(
-        "SELECT count(*) FROM forge_items WHERE repo_id = ?1 AND head_sha = ?2",
-        params![repo_id, sha],
-        |r| r.get(0),
+/// Read `kind` (`pr`, `issue`, `head`) `key` (a number, a SHA) again
+/// at the repo's next turn.
+pub fn refetch(c: &impl Sql, repo_id: u64, kind: &str, key: &str, now: u64) -> Result<()> {
+    c.execute(
+        "INSERT INTO forge_refetch (repo_id, kind, key, at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT DO NOTHING",
+        params![repo_id, kind, key, now],
     )?;
-    Ok(n > 0)
+    Ok(())
+}
+
+/// It was read again.
+pub fn refetched(c: &impl Sql, repo_id: u64, kind: &str, key: &str) -> Result<()> {
+    c.execute("DELETE FROM forge_refetch WHERE repo_id = ?1 AND kind = ?2 AND key = ?3", params![repo_id, kind, key])?;
+    Ok(())
+}
+
+/// An issue deleted, or transferred to another repo: its row, its
+/// events, the checks of a head no other item has, its inbox rows and
+/// any read again it waited for. Its drafts stay (M170's): a send to it
+/// fails and says so. Whether there was one.
+pub fn delete_item(c: &impl Sql, repo_id: u64, number: u64) -> Result<bool> {
+    let found = c
+        .query_row(
+            &format!("SELECT id, head_sha FROM forge_items WHERE repo_id = ?1 AND number = ?2{}", c.for_update()),
+            params![repo_id, number],
+            |r| Ok((r.get::<String>(0)?, r.get::<Option<String>>(1)?)),
+        )
+        .optional()?;
+    let Some((id, head)) = found else { return Ok(false) };
+    c.execute("DELETE FROM inbox_items WHERE item = ?1", params![id])?;
+    c.execute("DELETE FROM forge_events WHERE repo_id = ?1 AND number = ?2", params![repo_id, number])?;
+    if let Some(sha) = head {
+        c.execute(
+            "DELETE FROM forge_checks WHERE repo_id = ?1 AND head_sha = ?2
+             AND NOT EXISTS (SELECT 1 FROM forge_items WHERE repo_id = ?1 AND head_sha = ?2 AND number != ?3)",
+            params![repo_id, sha, number],
+        )?;
+    }
+    c.execute(
+        "DELETE FROM forge_refetch WHERE repo_id = ?1 AND kind IN ('pr', 'issue') AND key = ?2",
+        params![repo_id, number.to_string()],
+    )?;
+    c.execute("DELETE FROM forge_items WHERE id = ?1", params![id])?;
+    Ok(true)
+}
+
+/// Checks on a commit no item has as its head, from before `before`: a
+/// status that came before its PR's new head (kept a while, so the
+/// poller doesn't find it missing), an old head's, a branch's. How many.
+pub fn prune_checks(c: &impl Sql, repo_id: u64, before: u64) -> Result<usize> {
+    c.execute(
+        "DELETE FROM forge_checks WHERE repo_id = ?1 AND updated_at < ?2 AND head_sha NOT IN
+             (SELECT head_sha FROM forge_items WHERE repo_id = ?1 AND head_sha IS NOT NULL)",
+        params![repo_id, before],
+    )
+}
+
+/// GitHub's name and privacy for a linked repo, as the poller read them.
+pub fn refresh_link(c: &impl Sql, repo_id: u64, full_name: &str, private: bool) -> Result<()> {
+    c.execute(
+        "UPDATE linked_repos SET full_name = ?1, private = ?2 WHERE repo_id = ?3",
+        params![full_name, private, repo_id],
+    )?;
+    Ok(())
 }
 
 /// A poller's claim on a linked repo, and what it did last.
@@ -317,8 +413,29 @@ pub struct PollJob {
     pub linked_at: u64,
     pub backfilled_at: Option<u64>,
     pub reconciled_at: Option<u64>,
+    /// Where the last turn stopped, when it ran out of pages.
+    pub cursor: Option<String>,
+    /// Turns that failed in a row.
+    pub failures: u64,
+    /// A backfill or a reconcile is due (else only reads again, or the
+    /// rest of a cursor's).
+    pub due: bool,
     pub lease: String,
 }
+
+/// How a turn ends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Finish {
+    /// Backfilled (`true`) or reconciled.
+    Reconciled(bool),
+    /// Only read again what tied.
+    Refetched,
+    /// Ran out of pages: carry on from here.
+    Cursor(String),
+}
+
+/// The longest a failing repo waits.
+pub const MAX_BACKOFF_MS: u64 = 3_600_000;
 
 /// What a claim's `SELECT` ends with: on Postgres it passes over a repo
 /// another machine's claim holds (`cloud_jobs`' way, M144). SQLite's
@@ -358,9 +475,10 @@ impl Db {
         Ok(Some(out))
     }
 
-    /// Claim a linked repo whose poller is due: never backfilled, or not
-    /// reconciled for `every_ms`. Two machines never claim the same one
-    /// (a lease of [`POLL_LEASE_MS`]).
+    /// Claim a linked repo whose poller is due: something to read again
+    /// (first), a turn to carry on, never backfilled, or not reconciled for
+    /// `every_ms`. Two machines never claim the same one (a lease of
+    /// [`POLL_LEASE_MS`]).
     pub fn claim_poll(&self, now: u64, every_ms: u64) -> Result<Option<PollJob>> {
         let mut c = self.c();
         let tx = c.immediate()?;
@@ -368,11 +486,15 @@ impl Db {
         let found = tx
             .query_row(
                 &format!(
-                    "SELECT repo_id, full_name, installation_id, linked_at, backfilled_at, reconciled_at
-                     FROM linked_repos
+                    "SELECT repo_id, full_name, installation_id, linked_at, backfilled_at, reconciled_at,
+                         poll_cursor, poll_failures
+                     FROM linked_repos l
                      WHERE unlinked_at IS NULL AND lease_until <= ?1
-                         AND (backfilled_at IS NULL OR reconciled_at IS NULL OR reconciled_at <= ?2)
-                     ORDER BY COALESCE(reconciled_at, 0), repo_id LIMIT 1{}",
+                         AND (backfilled_at IS NULL OR reconciled_at IS NULL OR reconciled_at <= ?2
+                             OR poll_cursor IS NOT NULL
+                             OR EXISTS (SELECT 1 FROM forge_refetch f WHERE f.repo_id = l.repo_id))
+                     ORDER BY CASE WHEN EXISTS (SELECT 1 FROM forge_refetch f WHERE f.repo_id = l.repo_id)
+                         THEN 0 ELSE 1 END, COALESCE(reconciled_at, 0), repo_id LIMIT 1{}",
                     skip_locked(&tx)
                 ),
                 params![now, due],
@@ -384,12 +506,16 @@ impl Db {
                         linked_at: r.get(3)?,
                         backfilled_at: r.get(4)?,
                         reconciled_at: r.get(5)?,
+                        cursor: r.get(6)?,
+                        failures: r.get(7)?,
+                        due: false,
                         lease: String::new(),
                     })
                 },
             )
             .optional()?;
         let Some(mut job) = found else { return Ok(None) };
+        job.due = job.backfilled_at.is_none() || job.cursor.is_some() || job.reconciled_at.is_none_or(|r| r <= due);
         job.lease = hex::encode(arugula_e2e::random::<16>());
         let n = tx.execute(
             "UPDATE linked_repos SET lease = ?1, lease_until = ?2
@@ -413,16 +539,43 @@ impl Db {
         Ok(n == 1)
     }
 
-    /// A turn is done: the repo was reconciled (and backfilled) at `now`,
-    /// and the claim goes.
-    pub fn finish_poll(&self, job: &PollJob, backfilled: bool, now: u64) -> Result<bool> {
-        let n = self.c().execute(
-            "UPDATE linked_repos SET backfilled_at = CASE WHEN ?1 THEN ?2 ELSE backfilled_at END,
-                 reconciled_at = ?2, lease = NULL, lease_until = ?2
-             WHERE repo_id = ?3 AND lease = ?4",
-            params![backfilled, now, job.repo_id, job.lease],
-        )?;
+    /// A turn is done, and the claim goes: reconciled (and backfilled)
+    /// at `now`, or only read again, or to carry on from a cursor. False
+    /// when the claim was lost.
+    pub fn finish_poll(&self, job: &PollJob, how: &Finish, now: u64) -> Result<bool> {
+        let c = self.c();
+        let n = match how {
+            Finish::Reconciled(backfilled) => c.execute(
+                "UPDATE linked_repos SET backfilled_at = CASE WHEN ?1 THEN ?2 ELSE backfilled_at END,
+                     reconciled_at = ?2, poll_cursor = NULL, poll_failures = 0, lease = NULL, lease_until = ?2
+                 WHERE repo_id = ?3 AND lease = ?4",
+                params![backfilled, now, job.repo_id, job.lease],
+            )?,
+            Finish::Refetched => c.execute(
+                "UPDATE linked_repos SET poll_failures = 0, lease = NULL, lease_until = ?1
+                 WHERE repo_id = ?2 AND lease = ?3",
+                params![now, job.repo_id, job.lease],
+            )?,
+            Finish::Cursor(cursor) => c.execute(
+                "UPDATE linked_repos SET poll_cursor = ?1, poll_failures = 0, lease = NULL, lease_until = ?2
+                 WHERE repo_id = ?3 AND lease = ?4",
+                params![cursor, now, job.repo_id, job.lease],
+            )?,
+        };
         Ok(n == 1)
+    }
+
+    /// A turn failed: the claim goes, and the repo waits `backoff_ms`
+    /// doubled for each failure in a row before it, up to
+    /// [`MAX_BACKOFF_MS`]. How long it waits.
+    pub fn fail_poll(&self, job: &PollJob, backoff_ms: u64, now: u64) -> Result<u64> {
+        let wait = backoff_ms.saturating_mul(1u64 << job.failures.min(16)).min(MAX_BACKOFF_MS);
+        self.c().execute(
+            "UPDATE linked_repos SET poll_failures = poll_failures + 1, lease = NULL, lease_until = ?1
+             WHERE repo_id = ?2 AND lease = ?3",
+            params![now + wait, job.repo_id, job.lease],
+        )?;
+        Ok(wait)
     }
 
     /// Give the claim up without a turn done: no other machine takes the
@@ -443,6 +596,44 @@ impl Db {
             params![repo_id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
+    }
+
+    /// What waits to be read again for a repo: `(kind, key)`.
+    pub fn refetches(&self, repo_id: u64) -> Result<Vec<(String, String)>> {
+        self.c().query_map(
+            "SELECT kind, key FROM forge_refetch WHERE repo_id = ?1 ORDER BY at, kind, key",
+            params![repo_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
+    /// The installations live links go through, for the sweep.
+    pub fn linked_installations(&self) -> Result<Vec<u64>> {
+        self.c().query_map(
+            "SELECT DISTINCT installation_id FROM linked_repos WHERE unlinked_at IS NULL ORDER BY installation_id",
+            params![],
+            |r| r.get(0),
+        )
+    }
+
+    /// An installation as the platform last kept it.
+    pub fn installation(&self, id: u64) -> Result<Option<Installation>> {
+        self.c()
+            .query_row(
+                "SELECT installation_id, github_account_id, github_login, github_account_type, permissions
+                 FROM github_installations WHERE installation_id = ?1",
+                params![id],
+                |r| {
+                    Ok(Installation {
+                        id: r.get(0)?,
+                        account_id: r.get(1)?,
+                        login: r.get(2)?,
+                        account_type: r.get(3)?,
+                        permissions: r.get(4)?,
+                    })
+                },
+            )
+            .optional()
     }
 
     /// Each linked repo's item count, for drift per thousand items.
@@ -511,9 +702,14 @@ mod tests {
     fn items_never_go_back_in_time() {
         let db = Db::test();
         link(&db, 7);
-        let w = |it: ItemRow| db.mirror(7, None, |tx| upsert_item(tx, &it, 5)).unwrap().unwrap();
+        let w = |it: ItemRow| db.mirror(7, None, |tx| upsert_item(tx, &it, Source::Pushed, 5)).unwrap().unwrap();
         assert_eq!(w(item(10, "one")), Wrote::New);
         assert_eq!(w(item(10, "one")), Wrote::Same);
+        // The same second, saying otherwise: kept, and read again.
+        assert_eq!(w(item(10, "uno")), Wrote::Tie);
+        assert_eq!(db.refetches(7).unwrap(), [("pr".to_owned(), "1".to_owned())]);
+        let fetched = db.mirror(7, None, |tx| upsert_item(tx, &item(10, "uno"), Source::Fetched, 5)).unwrap();
+        assert_eq!(fetched, Some(Wrote::Changed(vec!["title"])), "the read again is taken");
         assert_eq!(w(item(20, "two")), Wrote::Changed(vec!["title"]));
         assert_eq!(w(item(15, "old")), Wrote::Older);
         assert_eq!(w(item(30, "two")), Wrote::Same, "a comment moved its time");
@@ -563,7 +759,7 @@ mod tests {
     #[test]
     fn only_a_linked_repo_and_its_lease() {
         let db = Db::test();
-        assert_eq!(db.mirror(7, None, |tx| upsert_item(tx, &item(1, "x"), 1)).unwrap(), None);
+        assert_eq!(db.mirror(7, None, |tx| upsert_item(tx, &item(1, "x"), Source::Pushed, 1)).unwrap(), None);
         link(&db, 7);
         let job = db.claim_poll(100, 1).unwrap().unwrap();
         assert!(db.mirror(7, Some("other"), |_| Ok(())).unwrap().is_none());
@@ -583,13 +779,40 @@ mod tests {
         let job = db.claim_poll(1_000, 300).unwrap().unwrap();
         assert_eq!((job.backfilled_at, job.reconciled_at), (None, None));
         assert!(db.claim_poll(1_000, 300).unwrap().is_none(), "leased");
-        assert!(db.finish_poll(&job, true, 1_100).unwrap());
+        assert!(job.due);
+        assert!(db.finish_poll(&job, &Finish::Reconciled(true), 1_100).unwrap());
         assert!(db.claim_poll(1_200, 300).unwrap().is_none(), "not due");
         let job = db.claim_poll(1_400, 300).unwrap().unwrap();
         assert_eq!((job.backfilled_at, job.reconciled_at), (Some(1_100), Some(1_100)));
         db.release_poll(&job, 2_000).unwrap();
         assert!(db.claim_poll(1_999, 300).unwrap().is_none(), "backing off");
-        assert!(db.claim_poll(2_000, 300).unwrap().is_some());
+        let job = db.claim_poll(2_000, 300).unwrap().unwrap();
+        // A cursor, or something to read again, makes it due at once; only
+        // a cursor makes a reconcile due.
+        assert!(db.finish_poll(&job, &Finish::Cursor("{}".into()), 2_000).unwrap());
+        let job = db.claim_poll(2_001, 300).unwrap().unwrap();
+        assert_eq!((job.cursor.as_deref(), job.due), (Some("{}"), true));
+        assert!(db.finish_poll(&job, &Finish::Reconciled(false), 2_001).unwrap());
+        db.mirror(7, None, |tx| refetch(tx, 7, "head", "abc", 2_002)).unwrap();
+        let job = db.claim_poll(2_002, 300).unwrap().unwrap();
+        assert!(!job.due);
+        assert!(db.finish_poll(&job, &Finish::Refetched, 2_002).unwrap());
+        // Failures wait longer each time, up to an hour.
+        db.mirror(7, None, |tx| refetched(tx, 7, "head", "abc")).unwrap();
+        let mut at = 2_002 + 300;
+        let mut waits = vec![];
+        for _ in 0..9 {
+            let job = db.claim_poll(at, 300).unwrap().unwrap();
+            let wait = db.fail_poll(&job, 60_000, at).unwrap();
+            waits.push(wait / 60_000);
+            assert!(db.claim_poll(at + wait - 1, 300).unwrap().is_none());
+            at += wait;
+        }
+        assert_eq!(waits, [1, 2, 4, 8, 16, 32, 60, 60, 60]);
+        let job = db.claim_poll(at, 300).unwrap().unwrap();
+        assert_eq!(job.failures, 9);
+        db.finish_poll(&job, &Finish::Reconciled(false), at).unwrap();
+        assert_eq!(db.claim_poll(at + 300, 300).unwrap().unwrap().failures, 0);
     }
 
     /// Two machines' pollers, four each, claiming at once: each repo is

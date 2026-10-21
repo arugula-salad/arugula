@@ -16,13 +16,13 @@ use aws_lc_rs::{encoding::AsDer, rsa::KeySize};
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::{HeaderMap, HeaderValue},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
 use serde_json::{Value, json};
 
-use super::{GithubApp, poller};
+use super::{GithubApp, ingest::Settings, poller};
 use crate::{
     Platform,
     chat_tests::TestHub,
@@ -38,12 +38,20 @@ const REPO: u64 = 77;
 /// How many items a fake list page holds, so lists page.
 const PAGE: usize = 2;
 
-/// What the fake GitHub has of `acme/app` (repo 77): its PRs and issues
-/// by number, check runs and statuses by head, reviews by PR; its rate
-/// limit; and what was asked of it.
+/// What the fake GitHub has of `acme/app` (repo 77): its name and
+/// privacy, its PRs and issues by number, check runs and statuses by head,
+/// reviews by PR; its rate limit; installation 9, uninstalled or
+/// suspended; repos it says are gone (and how); whether its lists fail;
+/// and what was asked of it.
 #[derive(Default)]
 struct Gh {
     base: String,
+    name: String,
+    private: bool,
+    uninstalled: bool,
+    suspended: bool,
+    gone: BTreeMap<u64, u16>,
+    broken: bool,
     prs: BTreeMap<u64, Value>,
     issues: BTreeMap<u64, Value>,
     runs: BTreeMap<String, Vec<Value>>,
@@ -101,23 +109,82 @@ fn limits(h: &mut Gh) -> HeaderMap {
     m
 }
 
-async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Json<Value> {
-    // Read only, for the one repo: what the poller's mints ask for.
+async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
+    // Read only, for one repo: what the poller's mints ask for.
     let perms = b["permissions"].as_object().unwrap();
     assert!(perms.values().all(|v| v == "read"), "{b}");
-    assert_eq!(b["repository_ids"], json!([REPO]), "{b}");
-    h.lock().unwrap().mints += 1;
-    Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z",
-        "repositories": [{ "id": REPO }] }))
+    let repo = b["repository_ids"][0].as_u64().unwrap();
+    assert_eq!(b["repository_ids"], json!([repo]), "{b}");
+    let mut h = h.lock().unwrap();
+    if h.uninstalled {
+        return (StatusCode::NOT_FOUND, Json(json!({ "message": "Not Found" }))).into_response();
+    }
+    h.mints += 1;
+    Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": [{ "id": repo }] }))
+        .into_response()
+}
+
+/// The App's own view of installation 9 (its JWT), or of all of them.
+fn installation_9(h: &Gh) -> Value {
+    json!({ "id": 9, "account": { "login": "acme" }, "suspended_at": if h.suspended { json!("2026-10-01T00:00:00Z") } else { Value::Null } })
+}
+
+async fn installation(State(h): State<Shared>, Path(id): Path<u64>) -> Response {
+    let h = h.lock().unwrap();
+    if h.uninstalled || id != 9 {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    Json(installation_9(&h)).into_response()
+}
+
+async fn installations(State(h): State<Shared>) -> Response {
+    let h = h.lock().unwrap();
+    let all = if h.uninstalled { vec![] } else { vec![installation_9(&h)] };
+    Json(json!(all)).into_response()
+}
+
+async fn repo_read(State(h): State<Shared>, Path(id): Path<u64>) -> Response {
+    let mut h = h.lock().unwrap();
+    if let Some(s) = h.gone.get(&id) {
+        let s = StatusCode::from_u16(*s).unwrap();
+        return (s, Json(json!({ "message": "Repository access blocked" }))).into_response();
+    }
+    let name = if id == REPO { h.name.clone() } else { format!("acme/r{id}") };
+    let private = h.private;
+    (limits(&mut h), Json(json!({ "id": id, "full_name": name, "private": private }))).into_response()
+}
+
+async fn one_pr(State(h): State<Shared>, Path((_, n)): Path<(u64, u64)>) -> Response {
+    let mut h = h.lock().unwrap();
+    match h.prs.get(&n).cloned() {
+        Some(v) => (limits(&mut h), Json(v)).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn one_issue(State(h): State<Shared>, Path((_, n)): Path<(u64, u64)>) -> Response {
+    let mut h = h.lock().unwrap();
+    match h.issues.get(&n).cloned() {
+        Some(v) => (limits(&mut h), Json(v)).into_response(),
+        None => (StatusCode::GONE, Json(json!({ "message": "This issue was deleted" }))).into_response(),
+    }
 }
 
 /// A list page: newest first when sorted by update, else by number.
 fn paged(h: &mut Gh, path: &str, mut all: Vec<Value>, q: &BTreeMap<String, String>) -> Response {
+    if h.broken {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
     let state = q.get("state").map_or("open", String::as_str);
     all.retain(|v| state == "all" || v["state"] == state);
     if q.get("sort").map(String::as_str) == Some("updated") {
         all.sort_by_key(|v| std::cmp::Reverse(super::ingest::ms(&v["updated_at"])));
     }
+    pages(h, path, all, q, None)
+}
+
+/// A page of `all` (under `key`, when GitHub wraps it in an object).
+fn pages(h: &mut Gh, path: &str, all: Vec<Value>, q: &BTreeMap<String, String>, key: Option<&str>) -> Response {
     let page: usize = q.get("page").and_then(|p| p.parse().ok()).unwrap_or(1);
     let chunk: Vec<Value> = all.iter().skip((page - 1) * PAGE).take(PAGE).cloned().collect();
     let mut headers = limits(h);
@@ -127,7 +194,11 @@ fn paged(h: &mut Gh, path: &str, mut all: Vec<Value>, q: &BTreeMap<String, Strin
         let link = format!("<{}/{path}?{}>; rel=\"next\"", h.base, next.join("&"));
         headers.insert("link", HeaderValue::from_str(&link).unwrap());
     }
-    (headers, Json(Value::Array(chunk))).into_response()
+    let body = match key {
+        Some(k) => json!({ "total_count": all.len(), k: chunk }),
+        None => Value::Array(chunk),
+    };
+    (headers, Json(body)).into_response()
 }
 
 async fn pulls(State(h): State<Shared>, Path(id): Path<u64>, Query(q): Query<BTreeMap<String, String>>) -> Response {
@@ -147,28 +218,36 @@ async fn issues(State(h): State<Shared>, Path(id): Path<u64>, Query(q): Query<BT
     paged(&mut h, &format!("repositories/{id}/issues"), all, &q)
 }
 
-async fn reviews(State(h): State<Shared>, Path((_, n)): Path<(u64, u64)>) -> Response {
+type Q = Query<BTreeMap<String, String>>;
+
+async fn reviews(State(h): State<Shared>, Path((id, n)): Path<(u64, u64)>, Query(q): Q) -> Response {
     let mut h = h.lock().unwrap();
     let list = h.reviews.get(&n).cloned().unwrap_or_default();
-    (limits(&mut h), Json(json!(list))).into_response()
+    pages(&mut h, &format!("repositories/{id}/pulls/{n}/reviews"), list, &q, None)
 }
 
-async fn runs(State(h): State<Shared>, Path((_, sha)): Path<(u64, String)>) -> Response {
+async fn runs(State(h): State<Shared>, Path((id, sha)): Path<(u64, String)>, Query(q): Q) -> Response {
     let mut h = h.lock().unwrap();
     let list = h.runs.get(&sha).cloned().unwrap_or_default();
-    (limits(&mut h), Json(json!({ "total_count": list.len(), "check_runs": list }))).into_response()
+    pages(&mut h, &format!("repositories/{id}/commits/{sha}/check-runs"), list, &q, Some("check_runs"))
 }
 
-async fn statuses(State(h): State<Shared>, Path((_, sha)): Path<(u64, String)>) -> Response {
+async fn statuses(State(h): State<Shared>, Path((id, sha)): Path<(u64, String)>, Query(q): Q) -> Response {
     let mut h = h.lock().unwrap();
     let list = h.statuses.get(&sha).cloned().unwrap_or_default();
-    (limits(&mut h), Json(json!({ "state": "pending", "statuses": list }))).into_response()
+    pages(&mut h, &format!("repositories/{id}/commits/{sha}/status"), list, &q, Some("statuses"))
 }
 
 async fn fake_github() -> (Shared, String) {
-    let gh: Shared = Arc::new(Mutex::new(Gh { remaining: 5000, ..Default::default() }));
+    let gh: Shared =
+        Arc::new(Mutex::new(Gh { remaining: 5000, name: "acme/app".into(), private: true, ..Default::default() }));
     let r = Router::new()
+        .route("/app/installations", get(installations))
+        .route("/app/installations/{id}", get(installation))
         .route("/app/installations/{id}/access_tokens", post(token))
+        .route("/repositories/{id}", get(repo_read))
+        .route("/repositories/{id}/pulls/{n}", get(one_pr))
+        .route("/repositories/{id}/issues/{n}", get(one_issue))
         .route("/repositories/{id}/pulls", get(pulls))
         .route("/repositories/{id}/issues", get(issues))
         .route("/repositories/{id}/pulls/{n}/reviews", get(reviews))
@@ -190,17 +269,27 @@ fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
 
 /// The platform on `db`, with the App against the fake GitHub at `api`.
 fn platform(db: Db, hub: &Arc<TestHub>, api: &str) -> Arc<Platform> {
+    platform_with(db, hub, api, Settings::default())
+}
+
+fn platform_with(db: Db, hub: &Arc<TestHub>, api: &str, settings: Settings) -> Arc<Platform> {
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
     let mut p = Platform::new(cfg, db, hub.clone(), reqwest::Client::new(), Default::default());
-    p.github = Some(GithubApp::new("1".into(), "arugula-test".into(), SECRET.into(), api, throwaway_key()));
+    let mut app = GithubApp::new("1".into(), "arugula-test".into(), SECRET.into(), api, throwaway_key());
+    app.ingest.settings = settings;
+    p.github = Some(app);
     Arc::new(p)
 }
 
 /// The fake GitHub, the platform, its address and its hub.
 async fn serve() -> (Shared, Arc<Platform>, String, Arc<TestHub>) {
+    serve_with(Settings::default()).await
+}
+
+async fn serve_with(settings: Settings) -> (Shared, Arc<Platform>, String, Arc<TestHub>) {
     let (gh, api) = fake_github().await;
     let hub = Arc::new(TestHub::default());
-    let app = platform(Db::test(), &hub, &api);
+    let app = platform_with(Db::test(), &hub, &api, settings);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
     let router = crate::cloud::tests::router(app.clone());
@@ -310,13 +399,62 @@ async fn an_older_delivery_leaves_the_newer_row() {
     assert_eq!(hook(&base, "pull_request", "d1", &at("First", t - 60_000, "opened")).await, 202);
     let (title, _, updated) = item(&app, 5).unwrap();
     assert_eq!((title.as_str(), updated), ("Renamed", t / 1000 * 1000));
-    // The same time again is taken (GitHub's times are whole seconds).
-    assert_eq!(hook(&base, "pull_request", "d3", &at("Same second", t, "edited")).await, 202);
-    assert_eq!(item(&app, 5).unwrap().0, "Same second");
 }
 
-/// A check run updates `forge_checks`, never back to an older state; a
-/// commit status is kept for a PR's head and not for any other commit.
+/// Two answers from the same second that disagree (GitHub's times are
+/// whole seconds): the row stays, and the poller's next turn, at once,
+/// reads the item, or the head's checks, again and takes GitHub's answer.
+#[tokio::test]
+async fn a_same_second_tie_is_read_again() {
+    let (gh, app, base, _hub) = serve().await;
+    let t = now_ms();
+    link(&app, REPO, t);
+    poller::tick(&app, t).await.unwrap();
+    let at = |title: &str, d: &str| {
+        let body = json!({ "action": "edited", "repository": repository(REPO), "sender": {},
+            "pull_request": pr(5, title, "open", t, "abc") });
+        let base = base.clone();
+        let d = d.to_owned();
+        async move { hook(&base, "pull_request", &d, &body).await }
+    };
+    assert_eq!(at("First", "d1").await, 202);
+    assert_eq!(at("Second", "d2").await, 202);
+    assert_eq!(item(&app, 5).unwrap().0, "First", "a tie doesn't overwrite");
+    let run = |conclusion: &str, d: &str| {
+        let body = json!({ "action": "completed", "repository": repository(REPO),
+            "check_run": { "name": "build", "head_sha": "abc", "status": "completed", "conclusion": conclusion,
+                "started_at": iso(t), "completed_at": iso(t), "pull_requests": [{ "number": 5 }] } });
+        let base = base.clone();
+        let d = d.to_owned();
+        async move { hook(&base, "check_run", &d, &body).await }
+    };
+    assert_eq!(run("failure", "c1").await, 202);
+    assert_eq!(run("success", "c2").await, 202);
+    let mut waiting = app.db.refetches(REPO).unwrap();
+    waiting.sort();
+    assert_eq!(waiting, [("head".to_owned(), "abc".to_owned()), ("pr".to_owned(), "5".to_owned())]);
+    {
+        let mut g = gh.lock().unwrap();
+        g.prs.insert(5, pr(5, "Second", "open", t, "abc"));
+        g.runs.insert(
+            "abc".into(),
+            vec![json!({ "name": "build", "head_sha": "abc", "status": "completed", "conclusion": "success",
+                "started_at": iso(t), "completed_at": iso(t) })],
+        );
+    }
+    // Not a reconcile (that's minutes away): only what tied.
+    let turn = poller::tick(&app, t + 1000).await.unwrap();
+    assert_eq!(turn, Some(poller::Turn::Refetched { repo: REPO, fixed: 2 }));
+    assert_eq!(item(&app, 5).unwrap().0, "Second");
+    assert_eq!(count(&app, "SELECT count(*) FROM forge_checks WHERE conclusion = 'success'"), 1);
+    assert!(app.db.refetches(REPO).unwrap().is_empty());
+    assert_eq!(poller::tick(&app, t + 2000).await.unwrap(), None);
+}
+
+/// A check run updates `forge_checks`, never back to an older state. A
+/// commit status is kept for any commit, so one that comes before its
+/// PR's new head is there when the head is; the poller prunes those on a
+/// commit no item has as its head after an hour.
 #[tokio::test]
 async fn checks_follow_check_runs_and_statuses() {
     let (_gh, app, base, _hub) = serve().await;
@@ -343,22 +481,27 @@ async fn checks_follow_check_runs_and_statuses() {
     assert_eq!(hook(&base, "check_run", "c0", &run("in_progress", Value::Null, 0)).await, 202);
     assert_eq!(check(), ("completed".into(), Some("success".into())), "an older delivery");
 
-    let status = |sha: &str, d: &str| {
+    let status = |sha: &str, d: &str, at: u64| {
         let body = json!({ "repository": repository(REPO), "sha": sha, "context": "lint", "state": "failure",
-            "target_url": "https://ci.example/1", "updated_at": iso(t) });
+            "target_url": "https://ci.example/1", "updated_at": iso(at) });
         let base = base.clone();
         let d = d.to_owned();
         async move { hook(&base, "status", &d, &body).await }
     };
-    assert_eq!(status("abc", "s1").await, 202);
-    assert_eq!(count(&app, "SELECT count(*) FROM forge_checks WHERE kind = 'status'"), 0, "no PR has abc yet");
+    assert_eq!(status("early", "s1", t).await, 202);
+    assert_eq!(status("main-sha", "s2", t - 2 * 3_600_000).await, 202);
+    assert_eq!(
+        count(&app, "SELECT count(*) FROM forge_checks WHERE kind = 'status'"),
+        2,
+        "kept before any PR has them"
+    );
     let opened = json!({ "action": "opened", "repository": repository(REPO), "sender": {},
         "pull_request": pr(5, "x", "open", t, "abc") });
     hook(&base, "pull_request", "p1", &opened).await;
-    assert_eq!(status("abc", "s2").await, 202);
-    assert_eq!(status("main-sha", "s3").await, 202);
-    assert_eq!(count(&app, "SELECT count(*) FROM forge_checks WHERE kind = 'status' AND head_sha = 'abc'"), 1);
-    assert_eq!(count(&app, "SELECT count(*) FROM forge_checks"), 2);
+    poller::tick(&app, t).await.unwrap();
+    let shas: Vec<String> =
+        app.db.c().query_map("SELECT head_sha FROM forge_checks ORDER BY head_sha", params![], |r| r.get(0)).unwrap();
+    assert_eq!(shas, ["abc", "early"], "an hour-old status on no head is pruned");
 }
 
 /// A review lands as an event with its state; neither its text, the PR's
@@ -604,4 +747,273 @@ async fn the_purge_waits_for_the_lease() {
     assert!(!app.db.renew_poll(&job, now + 2).unwrap(), "the turn stops");
     app.db.release_poll(&job, now + 2).unwrap();
     assert_eq!(app.db.purge_one(now + 3).unwrap(), Some(REPO));
+}
+
+/// `linked_repos` as the poller leaves it: name, privacy, unlinked and
+/// purge times, failures in a row, lease until, and whether a cursor waits.
+fn link_row(app: &Platform, repo: u64) -> (String, bool, Option<u64>, Option<u64>, u64, u64, bool) {
+    app.db
+        .c()
+        .query_row(
+            "SELECT full_name, private, unlinked_at, purge_after, poll_failures, lease_until, poll_cursor IS NOT NULL
+             FROM linked_repos WHERE repo_id = ?1",
+            params![repo],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+        )
+        .unwrap()
+}
+
+/// GitHub won't mint a token for the repo, and the App's own view says
+/// the installation is gone: an uninstall whose webhook never came. Its
+/// repos are unlinked, for the purge, as the webhook would have.
+#[tokio::test]
+async fn a_lost_uninstall_unlinks() {
+    let (gh, app, _base, _hub) = serve().await;
+    let now = now_ms();
+    link(&app, REPO, now);
+    link(&app, 88, now);
+    gh.lock().unwrap().uninstalled = true;
+    let turn = poller::tick(&app, now).await.unwrap();
+    assert_eq!(turn, Some(poller::Turn::Gone { repo: REPO, unlinked: 2 }));
+    for r in [REPO, 88] {
+        let (_, _, unlinked, purge, ..) = link_row(&app, r);
+        assert!(unlinked.is_some() && purge.is_some(), "repo {r}");
+    }
+    assert_eq!(
+        count(&app, "SELECT count(*) FROM github_installations WHERE installation_id = 9 AND deleted_at IS NOT NULL"),
+        1
+    );
+    assert_eq!(poller::tick(&app, now).await.unwrap(), None);
+}
+
+/// The repo's own read says it's gone (451: blocked; 404: deleted or
+/// taken out of the installation) while the installation is there: that
+/// repo is unlinked, and the installation's others stay.
+#[tokio::test]
+async fn a_repo_gone_from_github_unlinks_it() {
+    let (gh, app, _base, _hub) = serve().await;
+    let now = now_ms();
+    link(&app, REPO, now);
+    link(&app, 88, now);
+    gh.lock().unwrap().gone.insert(REPO, 451);
+    let turn = poller::tick(&app, now).await.unwrap();
+    assert_eq!(turn, Some(poller::Turn::Gone { repo: REPO, unlinked: 1 }));
+    assert!(link_row(&app, REPO).2.is_some());
+    assert!(link_row(&app, 88).2.is_none(), "the installation's other repo");
+    assert_eq!(count(&app, "SELECT count(*) FROM github_installations WHERE deleted_at IS NOT NULL"), 0);
+    assert!(matches!(poller::tick(&app, now).await.unwrap(), Some(poller::Turn::Done { repo: 88, .. })));
+}
+
+/// The sweep unlinks an installation GitHub no longer lists, or lists as
+/// suspended; one it lists as it is stays.
+#[tokio::test]
+async fn the_sweep_unlinks_what_github_no_longer_lists() {
+    let (gh, app, _base, _hub) = serve().await;
+    let now = now_ms();
+    link(&app, REPO, now);
+    assert_eq!(poller::sweep(&app, now).await.unwrap(), 0);
+    assert!(link_row(&app, REPO).2.is_none());
+    gh.lock().unwrap().suspended = true;
+    assert_eq!(poller::sweep(&app, now).await.unwrap(), 1);
+    assert_eq!(count(&app, "SELECT count(*) FROM github_installations WHERE suspended_at IS NOT NULL"), 1);
+    link(&app, REPO, now);
+    gh.lock().unwrap().uninstalled = true;
+    assert_eq!(poller::sweep(&app, now).await.unwrap(), 1);
+    assert_eq!(count(&app, "SELECT count(*) FROM github_installations WHERE deleted_at IS NOT NULL"), 1);
+    assert!(link_row(&app, REPO).3.is_some(), "the purge follows");
+}
+
+/// A turn that fails for another reason (GitHub's 500) waits a minute,
+/// then two, and so on, up to an hour; a turn that works starts again.
+#[tokio::test]
+async fn failures_back_off_longer_each_time() {
+    let (gh, app, _base, _hub) = serve().await;
+    let now = now_ms();
+    link(&app, REPO, now);
+    gh.lock().unwrap().broken = true;
+    let mut waits = vec![];
+    for _ in 0..3 {
+        let at = link_row(&app, REPO).5.max(now_ms());
+        assert!(poller::tick(&app, at).await.is_err());
+        let (.., failures, until, _) = link_row(&app, REPO);
+        waits.push((failures, (until - now_ms() + 30_000) / 60_000));
+    }
+    assert_eq!(waits, [(1, 1), (2, 2), (3, 4)]);
+    assert!(link_row(&app, REPO).2.is_none(), "a 500 isn't gone");
+    gh.lock().unwrap().broken = false;
+    let at = link_row(&app, REPO).5;
+    assert!(matches!(poller::tick(&app, at).await.unwrap(), Some(poller::Turn::Done { backfill: true, .. })));
+    assert_eq!(link_row(&app, REPO).4, 0);
+}
+
+/// A backfill longer than a turn's pages keeps a cursor and carries on
+/// at the next turns, at once, and drops nothing; it's backfilled only at
+/// the end.
+#[tokio::test]
+async fn a_long_backfill_carries_on() {
+    let (gh, app, _base, _hub) = serve_with(Settings { pages: 2, ..Settings::default() }).await;
+    let now = now_ms();
+    fill(&gh, now);
+    link(&app, REPO, now);
+    let mut more = 0;
+    loop {
+        match poller::tick(&app, now).await.unwrap() {
+            Some(poller::Turn::More { .. }) => {
+                more += 1;
+                assert!(link_row(&app, REPO).6, "a cursor");
+                let backfilled: Option<u64> = app
+                    .db
+                    .c()
+                    .query_row("SELECT backfilled_at FROM linked_repos WHERE repo_id = ?1", params![REPO], |r| r.get(0))
+                    .unwrap();
+                assert_eq!(backfilled, None);
+            }
+            Some(poller::Turn::Done { backfill: true, .. }) => break,
+            t => panic!("{t:?}"),
+        }
+        assert!(more < 20);
+    }
+    assert!(more >= 2, "{more}");
+    let numbers: Vec<u64> = app
+        .db
+        .c()
+        .query_map("SELECT number FROM forge_items WHERE repo_id = ?1 ORDER BY number", params![REPO], |r| r.get(0))
+        .unwrap();
+    assert_eq!(numbers, [1, 2, 4, 5, 6, 10, 11]);
+    assert!(!link_row(&app, REPO).6);
+}
+
+/// Reviews, check runs and statuses longer than a page are read to the end.
+#[tokio::test]
+async fn long_lists_are_read_to_the_end() {
+    let (gh, app, _base, _hub) = serve().await;
+    let now = now_ms();
+    {
+        let mut g = gh.lock().unwrap();
+        g.prs.insert(1, pr(1, "busy", "open", now - 3_600_000, "sha1"));
+        g.reviews.insert(
+            1,
+            (0..5)
+                .map(|i| json!({ "id": 100 + i, "state": "COMMENTED", "user": { "login": "dan", "id": 4 }, "submitted_at": iso(now - 3_600_000) }))
+                .collect(),
+        );
+        g.runs.insert(
+            "sha1".into(),
+            (0..5)
+                .map(|i| json!({ "name": format!("job {i}"), "head_sha": "sha1", "status": "completed", "conclusion": "success", "started_at": iso(now - 3_600_000) }))
+                .collect(),
+        );
+        g.statuses.insert(
+            "sha1".into(),
+            (0..3)
+                .map(
+                    |i| json!({ "context": format!("ci {i}"), "state": "success", "updated_at": iso(now - 3_600_000) }),
+                )
+                .collect(),
+        );
+    }
+    link(&app, REPO, now);
+    poller::tick(&app, now).await.unwrap();
+    assert_eq!(count(&app, "SELECT count(*) FROM forge_events WHERE kind = 'review'"), 5);
+    assert_eq!(count(&app, "SELECT count(*) FROM forge_checks WHERE kind = 'check_run'"), 5);
+    assert_eq!(count(&app, "SELECT count(*) FROM forge_checks WHERE kind = 'status'"), 3);
+}
+
+/// Every turn reads the repo, and keeps its name and privacy current.
+#[tokio::test]
+async fn the_poller_keeps_name_and_privacy_current() {
+    let (gh, app, _base, _hub) = serve().await;
+    let now = now_ms();
+    link(&app, REPO, now);
+    poller::tick(&app, now).await.unwrap();
+    assert!(link_row(&app, REPO).1);
+    {
+        let mut g = gh.lock().unwrap();
+        g.name = "acme/renamed".into();
+        g.private = false;
+    }
+    let every = app.github.as_ref().unwrap().ingest.settings.every_ms;
+    poller::tick(&app, now + every).await.unwrap();
+    let (name, private, ..) = link_row(&app, REPO);
+    assert_eq!((name.as_str(), private), ("acme/renamed", false));
+}
+
+/// Drift is only what GitHub changed since the last reconcile: an old PR
+/// updated again is drift (its webhook didn't come), but its old reviews
+/// are history, not drift. A status that came before its PR's new head
+/// is there when the head is, and isn't drift either.
+#[tokio::test]
+async fn history_and_early_statuses_are_not_drift() {
+    let (gh, app, base, _hub) = serve().await;
+    let t0 = now_ms();
+    fill(&gh, t0);
+    link(&app, REPO, t0);
+    poller::tick(&app, t0).await.unwrap();
+    let every = app.github.as_ref().unwrap().ingest.settings.every_ms;
+    let t1 = t0 + every;
+    let day = 86_400_000;
+    {
+        let mut g = gh.lock().unwrap();
+        g.prs.insert(3, pr(3, "reopened, no webhook", "open", t1 - 120_000, "sha3"));
+        g.reviews.insert(
+            3,
+            vec![json!({ "id": 60, "state": "APPROVED", "user": { "login": "dan", "id": 4 }, "submitted_at": iso(t0 - 190 * day) })],
+        );
+        g.prs.insert(5, pr(5, "open 5", "open", t1 - 140_000, "new5"));
+        g.statuses.insert(
+            "new5".into(),
+            vec![json!({ "context": "lint", "state": "success", "updated_at": iso(t1 - 150_000) })],
+        );
+    }
+    // The status comes first, then the push that makes new5 PR 5's head.
+    let status = json!({ "repository": repository(REPO), "sha": "new5", "context": "lint", "state": "success",
+        "updated_at": iso(t1 - 150_000) });
+    assert_eq!(hook(&base, "status", "s1", &status).await, 202);
+    let sync = json!({ "action": "synchronize", "repository": repository(REPO), "sender": {},
+        "pull_request": gh.lock().unwrap().prs[&5].clone() });
+    assert_eq!(hook(&base, "pull_request", "p1", &sync).await, 202);
+
+    let turn = poller::tick(&app, t1).await.unwrap();
+    assert_eq!(turn, Some(poller::Turn::Done { repo: REPO, backfill: false, fixed: 2, drift: 1 }));
+    assert_eq!(count(&app, "SELECT count(*) FROM forge_events WHERE github_id = 60"), 1, "written all the same");
+}
+
+/// An issue deleted, or transferred away, goes with its events and inbox
+/// rows; its drafts stay (M170's).
+#[tokio::test]
+async fn a_deleted_issue_goes() {
+    let (_gh, app, base, _hub) = serve().await;
+    link(&app, REPO, now_ms());
+    let t = now_ms();
+    for (n, d) in [(6, "o6"), (7, "o7")] {
+        let opened = json!({ "action": "opened", "repository": repository(REPO), "sender": { "login": "bob", "id": 2 },
+            "issue": issue(n, "doomed", "open", t) });
+        assert_eq!(hook(&base, "issues", d, &opened).await, 202);
+    }
+    let id: String =
+        app.db.c().query_row("SELECT id FROM forge_items WHERE number = 6", params![], |r| r.get(0)).unwrap();
+    app.db
+        .c()
+        .execute(
+            "INSERT INTO inbox_items (account, item, reason, created_at, updated_at) VALUES ('alice', ?1, 'mention', 1, 1)",
+            params![id],
+        )
+        .unwrap();
+    app.db
+        .c()
+        .execute(
+            "INSERT INTO drafts (id, project_id, author, repo_id, number, kind, body, created_at, updated_at)
+             VALUES ('dft_1', 'prj_a', 'alice', ?1, 6, 'comment', 'lgtm', 1, 1)",
+            params![REPO],
+        )
+        .unwrap();
+    for (n, action, d) in [(6, "deleted", "x6"), (7, "transferred", "x7")] {
+        let gone = json!({ "action": action, "repository": repository(REPO), "sender": {}, "issue": issue(n, "doomed", "open", t) });
+        assert_eq!(hook(&base, "issues", d, &gone).await, 202);
+    }
+    assert_eq!(item(&app, 6), None);
+    assert_eq!(item(&app, 7), None);
+    assert_eq!(count(&app, "SELECT count(*) FROM forge_events"), 0);
+    assert_eq!(count(&app, "SELECT count(*) FROM inbox_items"), 0);
+    assert_eq!(count(&app, "SELECT count(*) FROM drafts"), 1, "M170's");
 }

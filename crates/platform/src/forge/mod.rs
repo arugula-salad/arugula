@@ -156,6 +156,7 @@ impl Args {
         app.ingest.settings = ingest::Settings {
             every_ms: self.forge_reconcile_minutes.filter(|m| *m > 0).map_or(d.every_ms, |m| m * 60_000),
             reserve: self.forge_rate_reserve.unwrap_or(d.reserve),
+            ..d
         };
         Ok(Some(app))
     }

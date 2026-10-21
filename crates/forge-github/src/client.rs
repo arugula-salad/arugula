@@ -460,12 +460,13 @@ impl<T: TokenSource> Github<T> {
         self.get(repo, path).await
     }
 
-    /// One page of a list about `repo`, and the next page's URL (`Link:
+    /// One page of a list about `repo` (GitHub's JSON: a list, or an
+    /// object with one, as `check-runs`), and the next page's URL (`Link:
     /// rel="next"`), to pass back as `path`.
-    pub async fn page(&self, repo: &str, path: &str) -> Result<(Vec<Value>, Option<String>), Error> {
+    pub async fn page(&self, repo: &str, path: &str) -> Result<(Value, Option<String>), Error> {
         let (v, link) = self.send(reqwest::Method::GET, repo, path, None).await?;
         let next = link.as_deref().and_then(|l| link_rel(l, "next"));
-        Ok((v.as_array().cloned().unwrap_or_default(), next))
+        Ok((v, next))
     }
 
     /// The rate limit as last heard, and any backing off.
