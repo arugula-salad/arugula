@@ -495,7 +495,7 @@ fn listen(mut r: reqwest::Response) -> Arc<Mutex<String>> {
     heard
 }
 
-async fn open_live(base: &str, who: &str, last: Option<&str>) -> Arc<Mutex<String>> {
+pub(crate) async fn open_live(base: &str, who: &str, last: Option<&str>) -> Arc<Mutex<String>> {
     let mut req = reqwest::Client::new()
         .get(format!("{base}/api/chat/live"))
         .header("cookie", format!("ilg_session=session-{who}"));
@@ -508,7 +508,7 @@ async fn open_live(base: &str, who: &str, last: Option<&str>) -> Arc<Mutex<Strin
 }
 
 /// Until `heard` has `what`, at most `within`; how long it took.
-async fn hears(heard: &Mutex<String>, what: &str, within: Duration) -> Duration {
+pub(crate) async fn hears(heard: &Mutex<String>, what: &str, within: Duration) -> Duration {
     let started = std::time::Instant::now();
     while !heard.lock().unwrap().contains(what) {
         assert!(started.elapsed() < within, "never heard {what}: {}", heard.lock().unwrap());

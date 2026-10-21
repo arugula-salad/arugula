@@ -35,6 +35,7 @@ pub mod issues;
 mod legacy;
 pub mod migrate;
 pub mod mirror;
+pub mod objects;
 pub mod pg;
 pub mod projects;
 pub mod sql;

@@ -47,6 +47,8 @@ pub mod grants;
 pub mod hub;
 #[cfg(test)]
 mod hub_calls_tests;
+#[cfg(test)]
+mod object_threads_tests;
 pub mod page;
 mod port;
 pub mod projects;

@@ -2108,7 +2108,8 @@ SELECT 'team channel without a project', id, scope FROM p.chat_rooms
   WHERE kind = 'channel' AND scope LIKE 'team:%' AND project_id IS NULL;
 SELECT 'secret without a project', account, name FROM p.cloud_secrets WHERE project_id IS NULL;
 SELECT 'room in a project that should not be', id, kind FROM p.chat_rooms
-  WHERE project_id IS NOT NULL AND NOT (kind = 'channel' AND scope LIKE 'team:%');
+  WHERE project_id IS NOT NULL AND NOT (kind = 'channel' AND scope LIKE 'team:%')
+  AND NOT (kind = 'object' AND scope = 'project:' || project_id);
 EOF
 ```
 

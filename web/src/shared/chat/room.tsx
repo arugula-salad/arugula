@@ -75,8 +75,10 @@ function titled(room: string, now: string): string {
   return now;
 }
 
-/** A room's mark: # a channel, @ a DM, ↳ a pane, ▤ a session, ⌂ an archive. */
+/** A room's mark: # a channel, @ a DM, ↳ a pane, ▤ a session, ◇ an
+ * object's thread (M196), ⌂ an archive. */
 export function roomSigil(r: ChatRoom): string {
+  if (r.kind === "object") return "◇";
   return r.kind === "channel" ? "#" : r.kind === "dm" ? "@" : r.kind === "pane" ? "↳" : r.kind === "session" ? "▤" : "⌂";
 }
 
@@ -133,6 +135,8 @@ function emptyNote(r: ChatRoom): string {
       return "Talk about this pane here. Whoever may read its thread sees it; write @name to notify one of them.";
     case "session":
       return "Talk about this session here; write @name to notify someone.";
+    case "object":
+      return "Talk about this here. Its project's members read it; write @name to notify one of them.";
     default:
       return "Nothing kept here.";
   }

@@ -146,7 +146,8 @@ async function newDm(store: ChatStore, t: PlatformTeam, api: PlatformApi) {
 function pickRoom(store: ChatStore, route: ChatRoute, phone: boolean): ChatRoom | null {
   if (route.room) return store.room(route.room) ?? null;
   if (phone || route.view) return null;
-  const live = store.rooms.filter((r) => r.kind !== "archive");
+  // Object threads (M196) aren't listed here yet: one opens from its object.
+  const live = store.rooms.filter((r) => r.kind !== "archive" && r.kind !== "object");
   return live.filter((r) => r.unread).sort(byNewest)[0] ?? live.filter((r) => r.last).sort(byNewest)[0] ?? live[0] ?? null;
 }
 
@@ -352,6 +353,8 @@ function topicOf(r: ChatRoom, api: PlatformApi): string {
       const name = machineName(api, r.machine, r.machine_name ?? "a machine");
       return `${r.kind === "pane" ? "A pane's thread" : "A session's thread"} · ${name}${machineUp(api, r.machine) ? "" : " is asleep"}`;
     }
+    case "object":
+      return "A thread on an object · its project's members read it";
     default:
       return "Archive";
   }

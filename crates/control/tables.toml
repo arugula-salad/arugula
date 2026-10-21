@@ -414,10 +414,10 @@ name = "chat_rooms"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A chat room: a team's channel and its name, a DM, or the thread on a pane or a session."
+what = "A chat room: a team's channel and its name, a DM, the thread on a pane or a session, or the thread on an object (an issue, a mirrored PR or issue) in its project."
 why_asleep = "People talk with every machine asleep."
 with_account = "partly"
-note = "Its DMs, the threads on its machines and its archives go, and the rooms of teams that go with it; it's taken off the rest."
+note = "Its DMs, the threads on its machines and its archives go, and the rooms of teams and projects that go with it; it's taken off the rest."
 seen_by = ["litestream"]
 
 [[table]]
