@@ -1,25 +1,28 @@
 // Who's reading the platform page, and their projects (M150): one read of
 // the platform's `GET /api/projects`, which the page asks the platform
 // alone. Then chat and the Cloud workspaces start as the shell starts them,
-// for the same account. Until someone's signed in here the page says where
-// to sign in: the hub's page (M152 makes it one silent hop).
+// for the same account. Someone without a session here is sent through the
+// hub to get one (./signin, M152): one silent hop when they're signed in on
+// the hub. A hop that just came back without one isn't tried again by
+// itself, and the page says where to sign in.
 
 import type { PlatformMe, PlatformProject, PlatformProjects } from "../shared/proto.gen";
 import { chat } from "../shared/chat-store";
 import { cloudPanes, cloudWorkspaces } from "../shared/cloud";
 import { platformFetch, refusalOf } from "../shared/maintenance";
+import { finishSignIn, signIn, triedJustNow } from "./signin";
 
 export type { PlatformProject };
 
-/** The hub's page, where people sign in and where the shell is: what the
- * dev recipes say (`just dev-control` serves this page on app.localhost
- * beside a control on 127.0.0.1), else `control.` beside `app.`, else this
- * origin. */
+/** Where the hub says it is (`X-Arugula-Hub` on its answers here, M152). */
+let hub: string | null = null;
+
+/** The hub's page, where people sign in and where the shell is: as the
+ * hub says on its answers here, else what the dev recipes say (`just
+ * dev-platform`, where this page is Vite's), else this origin. Never a
+ * guess from this page's host name. */
 export function controlOrigin(): string {
-  const dev = import.meta.env.VITE_CONTROL_ORIGIN as string | undefined;
-  if (dev) return dev;
-  if (location.hostname.startsWith("app.")) return location.origin.replace("//app.", "//control.");
-  return location.origin;
+  return hub || (import.meta.env.VITE_CONTROL_ORIGIN as string | undefined) || location.origin;
 }
 
 const listeners = new Set<() => void>();
@@ -48,9 +51,14 @@ export const session = {
   },
   async load() {
     try {
+      await finishSignIn();
       const r = await platformFetch("/api/projects", { credentials: "same-origin" });
+      const said = r.headers.get("x-arugula-hub");
+      if (said && /^https?:\/\/[^/]+$/.test(said)) hub = said;
       const v = (await r.json().catch(() => ({}))) as PlatformProjects & { error?: string; reason?: string };
       if (r.status === 401) {
+        // Off through the hub, unless that's just been tried.
+        if (!triedJustNow() && (await signIn(controlOrigin()))) return;
         this.state = "signed-out";
         return changed();
       }

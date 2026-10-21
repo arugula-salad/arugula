@@ -8,6 +8,7 @@ import { useSubscribe } from "../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../shared/ui/menu";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
+import { signOut } from "./signin";
 import { names } from "./links";
 
 /** The project the route is in, else the reader's own. */
@@ -37,6 +38,18 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
     openMenu({ clientX: at.left, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
   };
   const me = session.me;
+  const account = (e: MouseEvent) => {
+    const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const items: MenuItem[] = [
+      { header: me?.login || me?.name || "Signed in" },
+      { label: "Settings", run: () => go("/settings") },
+      { label: "Your machines, devices and teams ↗", run: () => location.assign(controlOrigin()) },
+      "separator",
+      // This page only: the hub's session, on control's page, stays.
+      { label: "Sign out of this page", run: () => void signOut().then(() => location.reload()) },
+    ];
+    openMenu({ clientX: at.right, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
+  };
   return (
     <header class="bar app-bar platform-bar" data-tauri-drag-region data-platform-bar>
       <button class="scope-label platform-project" data-project-switcher title="Your projects" onClick={pick}>
@@ -66,12 +79,12 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         Machines ↗
       </a>
       {me && (
-        <span class="account-button platform-me" title={me.login ? `Signed in as ${me.login}` : "Signed in"} data-signed-in-as>
+        <button class="account-button platform-me" title={me.login ? `Signed in as ${me.login}` : "Signed in"} aria-label={`Account: ${me.login || me.name}`} data-signed-in-as onClick={account}>
           <span class="account-avatar" aria-hidden="true">
             {(me.login || me.name || "?").slice(0, 1).toUpperCase()}
           </span>
-          <span class="account-login">{me.login || me.name}</span>
-        </span>
+          <span class="account-login">{me.login || me.name}</span> <span class="caret">▾</span>
+        </button>
       )}
     </header>
   );

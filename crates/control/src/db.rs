@@ -87,6 +87,14 @@ CREATE TABLE IF NOT EXISTS daemons (
     urls TEXT NOT NULL,
     last_seen INTEGER
 );
+CREATE TABLE IF NOT EXISTS app_sessions (
+    token_hash TEXT PRIMARY KEY,
+    account TEXT NOT NULL,
+    hub_session TEXT NOT NULL,
+    created INTEGER NOT NULL,
+    expires INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS app_sessions_hub_session ON app_sessions (hub_session);
 CREATE TABLE IF NOT EXISTS passkeys (
     id TEXT PRIMARY KEY,
     account TEXT NOT NULL,
@@ -691,8 +699,68 @@ impl Db {
             .optional()?)
     }
 
+    /// Sign this session out, and the platform page's sessions it made
+    /// (M152).
     pub fn drop_session(&self, token_hash: &str) -> anyhow::Result<()> {
-        self.c().execute("DELETE FROM sessions WHERE token_hash = ?1", params![token_hash])?;
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute("DELETE FROM app_sessions WHERE hub_session = ?1", params![token_hash])?;
+        tx.execute("DELETE FROM sessions WHERE token_hash = ?1", params![token_hash])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    // ---- the platform page's sessions (M152, "The hub signs people in to
+    // the platform page")
+
+    /// A session on the platform page's host, made from the hub's session
+    /// `hub_session` (its token's hash): it ends when that one does.
+    pub fn add_app_session(
+        &self,
+        token_hash: &str,
+        account: &str,
+        hub_session: &str,
+        now: u64,
+        expires: u64,
+    ) -> anyhow::Result<()> {
+        self.c().execute(
+            "INSERT INTO app_sessions (token_hash, account, hub_session, created, expires) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![token_hash, account, hub_session, now, expires],
+        )?;
+        Ok(())
+    }
+
+    /// The account a live platform page session is for: its own and the
+    /// hub session it came from both live, and the account still there.
+    pub fn app_session(&self, token_hash: &str, now: u64) -> anyhow::Result<Option<String>> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT a.account FROM app_sessions a
+                 JOIN sessions s ON s.token_hash = a.hub_session AND s.account = a.account
+                 JOIN accounts ac ON ac.id = a.account
+                 WHERE a.token_hash = ?1 AND a.expires > ?2 AND s.expires > ?2",
+                params![token_hash, now],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// The hub session's account and when it ends, while it's live.
+    pub fn session_until(&self, token_hash: &str, now: u64) -> anyhow::Result<Option<(String, u64)>> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT s.account, s.expires FROM sessions s JOIN accounts a ON a.id = s.account
+                 WHERE s.token_hash = ?1 AND s.expires > ?2",
+                params![token_hash, now],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
+    }
+
+    pub fn drop_app_session(&self, token_hash: &str) -> anyhow::Result<()> {
+        self.c().execute("DELETE FROM app_sessions WHERE token_hash = ?1", params![token_hash])?;
         Ok(())
     }
 
@@ -752,15 +820,29 @@ impl Db {
         if hash_prefix.len() < 16 || !hash_prefix.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Ok(0);
         }
-        Ok(self.c().execute(
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute(
+            "DELETE FROM app_sessions WHERE hub_session IN
+                 (SELECT token_hash FROM sessions WHERE account = ?1 AND substr(token_hash, 1, ?3) = ?2)",
+            params![account, hash_prefix, hash_prefix.len()],
+        )?;
+        let n = tx.execute(
             "DELETE FROM sessions WHERE account = ?1 AND substr(token_hash, 1, ?3) = ?2",
             params![account, hash_prefix, hash_prefix.len()],
-        )?)
+        )?;
+        tx.commit()?;
+        Ok(n)
     }
 
-    /// Sign out everywhere.
+    /// Sign out everywhere, the platform page too.
     pub fn drop_sessions(&self, account: &str) -> anyhow::Result<usize> {
-        Ok(self.c().execute("DELETE FROM sessions WHERE account = ?1", params![account])?)
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute("DELETE FROM app_sessions WHERE account = ?1", params![account])?;
+        let n = tx.execute("DELETE FROM sessions WHERE account = ?1", params![account])?;
+        tx.commit()?;
+        Ok(n)
     }
 
     /// Forget what has expired: sessions, join codes, invites. How many
@@ -768,6 +850,10 @@ impl Db {
     pub fn prune(&self, now: u64) -> anyhow::Result<usize> {
         let c = self.c();
         let n = c.execute("DELETE FROM sessions WHERE expires <= ?1", params![now])?;
+        c.execute(
+            "DELETE FROM app_sessions WHERE expires <= ?1 OR hub_session NOT IN (SELECT token_hash FROM sessions)",
+            params![now],
+        )?;
         c.execute("DELETE FROM joins WHERE created < ?1", params![now.saturating_sub(JOIN_TTL_MS)])?;
         c.execute("DELETE FROM invites WHERE expires <= ?1", params![now])?;
         c.execute("DELETE FROM presigned_invites WHERE expires <= ?1", params![now])?;
@@ -2264,6 +2350,7 @@ impl Db {
             "DELETE FROM doc_links WHERE account = ?1",
             "DELETE FROM identities WHERE account = ?1",
             "DELETE FROM sessions WHERE account = ?1",
+            "DELETE FROM app_sessions WHERE account = ?1",
             "DELETE FROM passkeys WHERE account = ?1",
             "DELETE FROM devices WHERE account = ?1",
             "DELETE FROM turned_down WHERE account = ?1",

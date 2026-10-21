@@ -10,7 +10,7 @@
 //!   `process = "platform"`) goes on to the router, so the gateway answers
 //!   it exactly as on control's site, in process or out;
 //! - nothing of the hub's answers: any other `/api/…`, `/auth/…`,
-//!   `/github/…`, `/.well-known/…`, `/d/…`, `/internal/…`,
+//!   `/github/…`, `/.well-known/…`, `/d/…`, `/internal/…`, `/signin/…`,
 //!   `/control.json` and the platform's `/platform.json`, and every
 //!   WebSocket, is a 404;
 //! - any other GET or HEAD is the platform page (`arugula_platform::page`):
@@ -19,10 +19,15 @@
 //!   shell's `web/dist`. Any other method is a 405.
 //!
 //! Every answer here carries the page's own headers (the platform page's
-//! CSP, no framing, no referrer) and no `Set-Cookie`. The hub's session is
-//! host-only on control's site and never reaches this host; the hub drops
-//! any cookie a request brings here, so one set on a parent domain by a
-//! sibling host can't act as a hub session either.
+//! CSP, no framing, no referrer). The hub's session is host-only on control's
+//! site and never reaches this host; the hub drops any cookie a request
+//! brings here but this host's own session (M152, `app_signin`), so one set
+//! on a parent domain by a sibling host can't act as a session, and no
+//! `Set-Cookie` leaves here but that one's.
+//!
+//! Two of the hub's routes answer here too (M152): `POST /api/app/session`,
+//! which swaps a one-time code for this host's session, and
+//! `POST /api/app/signout`.
 
 use std::sync::{Arc, LazyLock};
 
@@ -85,10 +90,20 @@ pub fn parse(
 /// Whether a request is for `host`: its `Host` (or, without one, its
 /// URI's authority), without the port or a trailing dot, in any case.
 fn is_for(host: &str, req: &Request) -> bool {
-    let asked = match req.headers().get(header::HOST).and_then(|h| h.to_str().ok()) {
+    is_host(host, req.headers(), req.uri().authority().map(|a| a.as_str()))
+}
+
+/// Whether a request with these headers came in on the platform page's
+/// host (M152: its session is this host's own).
+pub fn on_platform_host(app: &App, headers: &HeaderMap) -> bool {
+    app.cfg.platform_host.as_ref().is_some_and(|ph| is_host(&ph.host, headers, None))
+}
+
+fn is_host(host: &str, headers: &HeaderMap, authority: Option<&str>) -> bool {
+    let asked = match headers.get(header::HOST).and_then(|h| h.to_str().ok()) {
         Some(h) => h,
-        None => match req.uri().authority() {
-            Some(a) => a.as_str(),
+        None => match authority {
+            Some(a) => a,
             None => return false,
         },
     };
@@ -133,7 +148,7 @@ pub fn platform_route(method: &Method, path: &str) -> bool {
 /// the page: answered 404 on the platform's host.
 fn not_here(path: &str) -> bool {
     let first = path.trim_start_matches('/').split('/').next().unwrap_or("");
-    matches!(first, "api" | "auth" | "github" | ".well-known" | "d" | "internal")
+    matches!(first, "api" | "auth" | "github" | ".well-known" | "d" | "internal" | "signin")
         || matches!(path, "/control.json" | "/platform.json")
 }
 
@@ -144,13 +159,17 @@ pub async fn split(State(app): State<Arc<App>>, mut req: Request, next: Next) ->
     if !is_for(&ph.host, &req) {
         return next.run(req).await;
     }
-    // No cookie reaches anything from here. M152 lets through the one the
-    // platform sets for itself (its host-only `__Host-` session), here.
+    // No cookie reaches anything from here but this host's own session.
+    let own = crate::app_signin::app_cookie(&app);
+    let kept = crate::auth::cookie(req.headers(), own).map(|v| format!("{own}={v}"));
     req.headers_mut().remove(header::COOKIE);
+    if let Some(c) = kept.and_then(|c| HeaderValue::from_str(&c).ok()) {
+        req.headers_mut().insert(header::COOKIE, c);
+    }
     let path = req.uri().path().to_owned();
     let res = if req.headers().contains_key(header::UPGRADE) {
         nothing()
-    } else if platform_route(req.method(), &path) {
+    } else if platform_route(req.method(), &path) || crate::app_signin::route(req.method(), &path) {
         next.run(req).await
     } else if not_here(&path) {
         nothing()
@@ -165,20 +184,36 @@ pub async fn split(State(app): State<Arc<App>>, mut req: Request, next: Next) ->
             PlatformAt::Remote(_) => crate::gateway::forward(State(app.clone()), req).await,
         }
     };
-    secured(res)
+    let mut res = secured(res, own);
+    // Where the hub is, for the page's sign-in and its links back to
+    // control's page (M152): the hub says it, the page never guesses.
+    if let Ok(v) = HeaderValue::from_str(&app.cfg.public_url) {
+        res.headers_mut().insert(HUB_HEADER, v);
+    }
+    res
 }
+
+/// On every answer on the platform page's host: control's public URL.
+pub const HUB_HEADER: header::HeaderName = header::HeaderName::from_static("x-arugula-hub");
 
 fn nothing() -> Response {
     crate::err(StatusCode::NOT_FOUND, "not found").into_response()
 }
 
 /// The platform page's headers, on every answer on its host, whoever made
-/// it, and no cookie set.
-fn secured(mut res: Response) -> Response {
+/// it, and no cookie set but this host's own session (`own`, M152).
+fn secured(mut res: Response, own: &str) -> Response {
     let h = res.headers_mut();
-    // M152: the platform's own `__Host-` session cookie is the one
-    // Set-Cookie allowed here; until then there's none.
+    let kept: Vec<HeaderValue> = h
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter(|v| v.to_str().is_ok_and(|v| v.split_once('=').is_some_and(|(name, _)| name.trim() == own)))
+        .cloned()
+        .collect();
     h.remove(header::SET_COOKIE);
+    for v in kept {
+        h.append(header::SET_COOKIE, v);
+    }
     set(h, header::CONTENT_SECURITY_POLICY, page::CSP);
     set(h, header::X_FRAME_OPTIONS, "DENY");
     set(h, header::X_CONTENT_TYPE_OPTIONS, "nosniff");

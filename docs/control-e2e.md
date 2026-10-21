@@ -1010,9 +1010,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 70 tables in two planes ("Two planes, two trust rules"):
+Control's database has 71 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (32 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (33 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (38 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, Cloud workspaces, and linked repos' PRs and issues. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1024,6 +1024,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `accounts` | metadata | An account: its id, its root device, its display name, and its answer about page telemetry. | yes | PostHog |
 | `identities` | metadata | A sign-in identity: the provider, its id for the person, and their login. | yes | GitHub |
 | `sessions` | metadata | A sign-in session: a hash of its token, the browser's User-Agent, its device, when it ends. | yes |  |
+| `app_sessions` | metadata | A session on the platform page's host (app.arugula.io, M152): a hash of its token, its account, the hub session it was made from (it ends when that one does), when it ends. | yes |  |
 | `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it, whether it gives PRF. | yes |  |
 | `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
 | `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |

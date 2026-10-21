@@ -97,6 +97,15 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "app_sessions"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A session on the platform page's host (app.arugula.io, M152): a hash of its token, its account, the hub session it was made from (it ends when that one does), when it ends."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "passkeys"
 plane = "machine"
 process = "hub"

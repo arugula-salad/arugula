@@ -520,6 +520,24 @@ const KEPT_JOIN_MS = 15 * 60 * 1000;
  * mustn't see. The link waits in this tab's sessionStorage for
  * `restoreInvite`; a join (or #761, a waiting device's code) comes back
  * with its code alone meanwhile, so the page still says what it's for. */
+/** M152: the hub's `/signin/platform` sent someone without a session here
+ * to sign in, with its query as `#platform-signin=` (base64url). Once
+ * they're signed in, back to it: it sends the browser on to the platform
+ * page with a one-time code. Whether the page is leaving. */
+export function resumePlatformSignIn(): boolean {
+  const m = /^#platform-signin=([A-Za-z0-9_-]{1,4096})$/.exec(location.hash);
+  if (!m) return false;
+  let q: URLSearchParams;
+  try {
+    q = new URLSearchParams(atob(m[1].replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    return false;
+  }
+  history.replaceState(null, "", location.pathname + location.search);
+  location.replace(`/signin/platform?${q}`);
+  return true;
+}
+
 export function signInNext(): string {
   const join = JOIN_HASH.exec(location.hash);
   // #761: a waiting device's code carries its secret too, on its own
@@ -967,6 +985,8 @@ export class ControlSession {
       this.login = this.name || me.login || "you";
       this.account = me.account;
       this.passkeys = me.passkeys;
+      // M152: signed in on the way to the platform page: on to it.
+      if (resumePlatformSignIn()) return;
       if (this.enrollment && this.enrollment.account !== me.account) {
         // Signed in as someone else: this browser's place was in another
         // account. Start over as a new device of this one.
