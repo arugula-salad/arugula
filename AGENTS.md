@@ -132,6 +132,14 @@ nothing marked `mux:` names the edge or the block kinds.
   (`access.rs`, `authz.rs`, `arugula_core::access`).
 - The daemon serves the web client itself, embedded in the binary
   (`server.rs`). That is on purpose (#387).
+- `web/src` is three folders (M147): `shell/` (keys, the daemon client,
+  control's trust UI, the fleet, terminals, blocks, the swarm), `platform/`
+  (chat and Cloud workspace views, projects, account settings) and
+  `shared/` (tokens, common controls, wire types, views both draw).
+  `platform/` imports only `platform/` and `shared/`, `shared/` only
+  itself, and platform views reach the page through `PlatformApi`
+  (`shared/platform-api.tsx`). `just web` refuses anything else
+  (`web/scripts/check-imports.mjs`, M148).
 
 ## Clients
 
@@ -187,7 +195,8 @@ lints the daemon with neither, and with each alone.
 - `just bootstrap`, then `just web`: toolchains, web dependencies, and the web
   build the daemon embeds.
 - `just check`: what CI runs: `just test` (nextest, doctests, the web
-  typecheck), then the `proto-ts` check, fmt and clippy.
+  typecheck), then the web import rule and its tests (`just web-imports`),
+  the `proto-ts` check, fmt and clippy.
 - `just e2e`: the browser specs. `just e2e-webkit`: WebKit's.
 - `just dev`: a dev daemon on 7682 (state in `~/.local/state/arugula-dev`)
   and Vite on 5173, leaving your daily daemon alone.
