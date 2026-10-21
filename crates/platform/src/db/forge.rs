@@ -302,22 +302,7 @@ impl Db {
             Some(w) => w.unlinked_at.is_some(),
             None => false,
         };
-        // Linked again: it keeps what its poller did (M164) and whether
-        // the project mirrors its content.
-        tx.execute(
-            "INSERT INTO linked_repos (repo_id, full_name, private, project_id, installation_id, linked_by, linked_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-             ON CONFLICT (repo_id) DO UPDATE SET full_name = ?2, private = ?3, installation_id = ?5,
-                 linked_by = CASE WHEN linked_repos.unlinked_at IS NULL THEN linked_repos.linked_by ELSE ?6 END,
-                 linked_at = CASE WHEN linked_repos.unlinked_at IS NULL THEN linked_repos.linked_at ELSE ?7 END,
-                 unlinked_at = NULL, purge_after = NULL",
-            params![l.repo_id, l.full_name, l.private, l.project_id, installation.id, by, now],
-        )?;
-        let repo = tx.query_row(
-            &format!("SELECT {LINK_COLUMNS} FROM linked_repos WHERE repo_id = ?1"),
-            params![l.repo_id],
-            link_row,
-        )?;
+        let Some(repo) = upsert_link(&tx, l, installation.id, by, now)? else { return Ok(Linked::Elsewhere) };
         tx.commit()?;
         Ok(Linked::Now { repo, again })
     }
@@ -404,6 +389,37 @@ impl Db {
     }
 }
 
+/// Write `l`'s link, or link it again: it keeps what its poller did (M164)
+/// and whether the project mirrors its content. A row of another project's
+/// is left as it is, and the answer is `None`: on Postgres, another
+/// transaction can link a repo nobody had between [`Db::link_repo`]'s
+/// look and this write (its `FOR UPDATE` locks no row that isn't there),
+/// and the repo stays with the project that linked it first.
+fn upsert_link(
+    c: &impl Sql,
+    l: &LinkedRepo,
+    installation: u64,
+    by: &str,
+    now: u64,
+) -> anyhow::Result<Option<LinkedRepo>> {
+    c.execute(
+        "INSERT INTO linked_repos (repo_id, full_name, private, project_id, installation_id, linked_by, linked_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT (repo_id) DO UPDATE SET full_name = ?2, private = ?3, installation_id = ?5,
+             linked_by = CASE WHEN linked_repos.unlinked_at IS NULL THEN linked_repos.linked_by ELSE ?6 END,
+             linked_at = CASE WHEN linked_repos.unlinked_at IS NULL THEN linked_repos.linked_at ELSE ?7 END,
+             unlinked_at = NULL, purge_after = NULL
+         WHERE linked_repos.project_id = ?4",
+        params![l.repo_id, l.full_name, l.private, l.project_id, installation, by, now],
+    )?;
+    let repo = c.query_row(
+        &format!("SELECT {LINK_COLUMNS} FROM linked_repos WHERE repo_id = ?1"),
+        params![l.repo_id],
+        link_row,
+    )?;
+    Ok((repo.project_id == l.project_id).then_some(repo))
+}
+
 /// An installation as GitHub says it now, not suspended or deleted.
 fn upsert_installation(c: &impl Sql, i: &Installation, now: u64) -> anyhow::Result<()> {
     c.execute(
@@ -484,6 +500,85 @@ mod tests {
         assert_eq!((rows[1].kind.as_str(), rows[1].installation_id), ("user", None));
         assert_eq!(db.prune_mints(1_500 + MINTS_KEPT_MS).unwrap(), 1);
         assert_eq!(db.token_mints(0).unwrap().len(), 1);
+    }
+
+    fn link(repo: u64, project: &str) -> super::LinkedRepo {
+        super::LinkedRepo {
+            repo_id: repo,
+            full_name: format!("acme/r{repo}"),
+            private: false,
+            project_id: project.into(),
+            installation_id: 9,
+            linked_by: None,
+            linked_at: 0,
+            unlinked_at: None,
+            purge_after: None,
+        }
+    }
+
+    fn install() -> super::Installation {
+        super::Installation {
+            id: 9,
+            account_id: 500,
+            login: "acme".into(),
+            account_type: "Organization".into(),
+            permissions: "{}".into(),
+        }
+    }
+
+    /// The race on Postgres, as the second linker meets it: it looked and
+    /// found no link, then another project's commits before its write.
+    /// The write leaves that link alone, and the answer is "elsewhere".
+    #[test]
+    fn a_link_written_meanwhile_by_another_project_stays_its() {
+        let db = Db::test();
+        assert!(matches!(db.link_repo(&link(1, "prj_a"), &install(), "alice", 10).unwrap(), super::Linked::Now { .. }));
+        {
+            let mut c = db.c();
+            let tx = c.immediate().unwrap();
+            assert_eq!(super::upsert_link(&tx, &link(1, "prj_b"), 9, "bob", 20).unwrap(), None);
+            tx.commit().unwrap();
+        }
+        let kept = db.linked_repo(1).unwrap().unwrap();
+        assert_eq!((kept.project_id.as_str(), kept.linked_by.as_deref(), kept.linked_at), ("prj_a", Some("alice"), 10));
+        // The same project's write still links it again.
+        db.unlink_repo("prj_a", "acme/r1", 30).unwrap();
+        let mut c = db.c();
+        let tx = c.immediate().unwrap();
+        let again = super::upsert_link(&tx, &link(1, "prj_a"), 9, "carol", 40).unwrap().unwrap();
+        tx.commit().unwrap();
+        assert_eq!((again.unlinked_at, again.linked_by.as_deref()), (None, Some("carol")));
+    }
+
+    /// Two projects link a repo nobody had, at once, from two machines
+    /// (Postgres; SQLite's writers take turns): one links it, the other is
+    /// told it's elsewhere, and the link is the first's.
+    #[test]
+    fn two_projects_linking_at_once_one_wins() {
+        let db = Db::test();
+        let Some(other) = db.second() else { return };
+        for repo in 100..120u64 {
+            let go = std::sync::Barrier::new(2);
+            let (a, b) = std::thread::scope(|s| {
+                let a = s.spawn(|| {
+                    go.wait();
+                    db.link_repo(&link(repo, "prj_a"), &install(), "alice", 1).unwrap()
+                });
+                let b = s.spawn(|| {
+                    go.wait();
+                    other.link_repo(&link(repo, "prj_b"), &install(), "bob", 1).unwrap()
+                });
+                (a.join().unwrap(), b.join().unwrap())
+            });
+            let stored = db.linked_repo(repo).unwrap().unwrap().project_id;
+            match (a, b) {
+                (super::Linked::Now { repo: r, .. }, super::Linked::Elsewhere)
+                | (super::Linked::Elsewhere, super::Linked::Now { repo: r, .. }) => {
+                    assert_eq!(r.project_id, stored, "repo {repo}")
+                }
+                (a, b) => panic!("repo {repo}: {a:?} and {b:?}"),
+            }
+        }
     }
 
     fn count(db: &Db, sql: &str) -> u64 {
