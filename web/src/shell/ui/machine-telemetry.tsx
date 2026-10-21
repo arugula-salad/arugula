@@ -2,9 +2,9 @@
 // owner's yes or no, which the daemon keeps (`telemetry.get`/`telemetry.set`,
 // M101), asked once on the web client and changed in the machine's settings.
 //
-// - **The question** is the card (telemetry-card.tsx), shown to the owner
-//   alone, only on a page talking to the daemon directly, while the daemon
-//   says nobody has answered. On control's page it comes after the
+// - **The question** is the card (shared/ui/telemetry-card.tsx), shown to
+//   the owner alone, only on a page talking to the daemon directly, while
+//   the daemon says nobody has answered. On control's page it comes after the
 //   account's question (M104) has its answer, or straight away from a
 //   control that doesn't ask: each machine the person owns asks once, as
 //   it's shown there. Not on a read-only link.
@@ -23,7 +23,7 @@ import { OPS, opPath } from "../ops";
 import type { TelemetryInfo } from "../../shared/proto.gen";
 import { automated, counting, flush, startCounting, stopCounting, type PageCounts } from "../../shared/telemetry";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { TelemetryCard, TelemetryPreview } from "./telemetry-card";
+import { TelemetryCard, TelemetryPreview } from "../../shared/ui/telemetry-card";
 
 const ABOUT =
   "Send usage counts and crash reports from this machine: versions, which features are used and how often, and where our code crashed. Never what your terminals show, file names, commands or prompts.";

@@ -1,12 +1,15 @@
 // Sign-in and account (#173): where you're signed in (sign one out, or
 // everywhere), your passkeys (never the last way in), and deleting the
-// account, after typing its login.
+// account, after typing its login. Its usage reports switch is the
+// platform's (web/src/platform/settings/telemetry.tsx), handed the
+// account's answer.
 
 import { useEffect, useState } from "preact/hooks";
+import { UsageReports } from "../../platform/settings/telemetry";
 import { agentName, api, shownName, type ControlSession } from "../control";
 import { currentHand, lending, setLending } from "../hand";
 import { ConfirmRemove } from "../../shared/ui/confirm";
-import { RecoveryAndName } from "./control";
+import { RecoveryAndName } from "./recovery";
 
 export interface SessionRow {
   id: string;
@@ -175,7 +178,7 @@ export function AccountPanel({ s, close }: { s: ControlSession; close: () => voi
         </>
       ) : null}
       <LendDevice s={s} />
-      <UsageReports s={s} />
+      <UsageReports telemetry={s.telemetry} setTelemetry={(on) => s.setTelemetry(on)} />
       <h3 class="control-group">Delete your account</h3>
       <p class="dim">
         Removes your account from this control, with your devices, machines, sessions and passkeys.{" "}
@@ -274,37 +277,6 @@ function DeleteAccount({ s, back }: { s: ControlSession; back: () => void }) {
           Delete my account
         </button>
       </div>
-    </>
-  );
-}
-
-/** M104: the account's answer about usage counts from this page, the
- * card's yes or no, changed here. Not on a control that forwards none. */
-function UsageReports({ s }: { s: ControlSession }) {
-  const [err, setErr] = useState("");
-  const t = s.telemetry;
-  if (!t || (!t.ask && !t.on)) return null;
-  return (
-    <>
-      <h3 class="control-group">Usage reports</h3>
-      <p class="dim">
-        Counts from your account on this page: which views you open and how often, and errors our code hits. Never what your
-        terminals show, names, file names, commands or prompts.
-      </p>
-      <label class="control-confirm">
-        <input
-          type="checkbox"
-          role="switch"
-          data-telemetry-switch
-          checked={!!t.on}
-          onChange={(e) => {
-            setErr("");
-            s.setTelemetry((e.target as HTMLInputElement).checked).catch((x: Error) => setErr(x.message));
-          }}
-        />{" "}
-        Usage reports from this page
-      </label>
-      {err ? <p class="control-error">{err}</p> : null}
     </>
   );
 }

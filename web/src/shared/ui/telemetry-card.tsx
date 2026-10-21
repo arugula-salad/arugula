@@ -1,9 +1,9 @@
 // The question about usage counts (the telemetry track): a card in the
 // corner, not a dialog, so nothing waits on it. Control's page asks for the
-// account (M104); the machine's web client asks for the machine (M103,
-// machine-telemetry.tsx), with its own words and the machine's preview
-// under *What's sent*. Closing it without answering asks again on the next
-// load.
+// account (M104, platform/settings/telemetry.tsx); the machine's web client
+// asks for the machine (M103, shell/ui/machine-telemetry.tsx), with its own
+// words and the machine's preview under *What's sent*. Closing it without
+// answering asks again on the next load.
 
 export function TelemetryCard({
   about,
