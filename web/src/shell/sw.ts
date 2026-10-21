@@ -20,7 +20,7 @@
 import { E2ESocket } from "./e2e/channel.ts";
 import type { ActRequest } from "../shared/proto";
 import { existingKeys, loadWorkerDirectory } from "./e2e/keys.ts";
-import { chatTap, shareUrl, tapUrl, withShare } from "./tap.ts";
+import { chatTap, platformOf, platformTap, shareUrl, tapUrl, withShare } from "./tap.ts";
 
 /** The parts of a service worker's global scope used here (the project's
  * types are the page's). */
@@ -198,26 +198,18 @@ async function failed(pane: number, daemon: string | undefined, what: string) {
 sw.addEventListener("notificationclick", (event: ClickEvent) => {
   event.notification.close();
   const data = (event.notification.data || {}) as Msg & { approve: Msg["approve"] | null; ask: Msg["ask"] | null };
-  if (data.cloud_run && /^run_[0-9a-f]+$/.test(data.cloud_run)) {
-    const run = data.cloud_run;
-    event.waitUntil((async () => {
-      const windows = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
-      for (const window of windows) {
-        if (window.focus) { window.postMessage({ type: "open-cloud-run", run }); return window.focus(); }
-      }
-      return sw.clients.openWindow(`/#cloud=${run}`);
-    })());
-    return;
-  }
-  if (data.cloud_workspace && data.cloud_tab && /^cw_[0-9a-f]+$/.test(data.cloud_workspace) && /^cwc_[0-9a-f]+$/.test(data.cloud_tab)) {
-    const target = { cloud_workspace: data.cloud_workspace, cloud_tab: data.cloud_tab };
-    event.waitUntil((async () => {
-      const windows = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
-      for (const window of windows) {
-        if (window.focus) { window.postMessage({ type: "open-cloud-tab", ...target }); return window.focus(); }
-      }
-      return sw.clients.openWindow(`/#cloud-ws=${target.cloud_workspace}/${target.cloud_tab}`);
-    })());
+  // M156: a chat push, or a Cloud workspace's, opens on the platform page,
+  // signed in there by the hub's silent hop (M152): straight there, not
+  // through this page. Push stays this app's: one install, one permission
+  // ("Push stays on the hub's app"). Without a platform page, as before.
+  const there = !event.action && (data.control || data.cloud_run || data.cloud_workspace) ? platformTap(data) : undefined;
+  if (there) {
+    event.waitUntil(
+      (async () => {
+        const origin = await platformOrigin();
+        return origin ? sw.clients.openWindow(`${origin}${there}`) : here(data);
+      })(),
+    );
     return;
   }
   const pane = data.pane;
@@ -298,23 +290,6 @@ sw.addEventListener("notificationclick", (event: ClickEvent) => {
     );
     return;
   }
-  // A chat push from control (M123): the room, at the message.
-  const room = data.control ? chatTap(data) : undefined;
-  if (room) {
-    event.waitUntil(
-      (async () => {
-        const wins = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
-        for (const w of wins) {
-          if (w.focus) {
-            w.postMessage({ type: "open-room", url: room });
-            return w.focus();
-          }
-        }
-        return sw.clients.openWindow(room);
-      })(),
-    );
-    return;
-  }
   // Control's notice (#104): its page shows the prompt, with the
   // fingerprint, once it looks again.
   if (data.control) {
@@ -347,3 +322,35 @@ sw.addEventListener("notificationclick", (event: ClickEvent) => {
     })(),
   );
 });
+
+/** A chat push's or a Cloud one's tap on this page, as before the
+ * platform page: a page of this app's that's open shows it, else one opens. */
+async function here(data: Msg): Promise<unknown> {
+  const windows = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const show = (msg: Record<string, unknown>, url: string) => {
+    for (const w of windows) {
+      if (w.focus) {
+        w.postMessage(msg);
+        return w.focus();
+      }
+    }
+    return sw.clients.openWindow(url);
+  };
+  if (data.cloud_run && /^run_[0-9a-f]+$/.test(data.cloud_run)) return show({ type: "open-cloud-run", run: data.cloud_run }, `/#cloud=${data.cloud_run}`);
+  if (data.cloud_workspace && data.cloud_tab && /^cw_[0-9a-f]+$/.test(data.cloud_workspace) && /^cwc_[0-9a-f]+$/.test(data.cloud_tab)) {
+    return show({ type: "open-cloud-tab", cloud_workspace: data.cloud_workspace, cloud_tab: data.cloud_tab }, `/#cloud-ws=${data.cloud_workspace}/${data.cloud_tab}`);
+  }
+  const room = data.control ? chatTap(data) : undefined;
+  if (room) return show({ type: "open-room", url: room }, room);
+}
+
+/** M156: the platform page's origin, from control's `/control.json`, when
+ * this is control's worker and control has one. Asked on a tap. */
+async function platformOrigin(): Promise<string | null> {
+  try {
+    const r = await fetch("/control.json", { cache: "no-store" });
+    return r.ok ? platformOf(await r.json()) : null;
+  } catch {
+    return null;
+  }
+}

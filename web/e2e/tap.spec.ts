@@ -1,8 +1,9 @@
 // Where a tap on a notification goes (src/tap.ts, used by the service
-// worker): the pane, the card, and a room of control's chat (M123).
+// worker): the pane, the card, and a room of control's chat (M123), on
+// the platform page once control has one (M156).
 
 import { expect, test } from "@playwright/test";
-import { chatTap, shareUrl, tapUrl, withShare } from "../src/shell/tap";
+import { chatTap, platformOf, platformTap, shareUrl, tapUrl, withShare } from "../src/shell/tap";
 
 test("a chat push from control opens its room at the message (M123)", () => {
   const room = `ch_${"0a".repeat(8)}`;
@@ -15,6 +16,18 @@ test("a chat push from control opens its room at the message (M123)", () => {
     expect(chatTap({ chat: { room: bad, seq: 1 } })).toBeUndefined();
   }
   expect(chatTap({})).toBeUndefined();
+});
+
+test("with a platform page, a chat push or a Cloud tab's opens there, by id (M156)", () => {
+  const room = `ch_${"0a".repeat(8)}`;
+  expect(platformTap({ chat: { room, seq: 7 } })).toBe(`/chat/${room}?msg=7`);
+  expect(platformTap({ chat: { room: `dm_${"1f".repeat(8)}` } })).toBe(`/chat/dm_${"1f".repeat(8)}`);
+  expect(platformTap({ cloud_run: "run_00ff11ee" })).toBe("/past/run_00ff11ee");
+  expect(platformTap({ cloud_workspace: "cw_0123abcd", cloud_tab: "cwc_4567ef01" })).toBe("/workspaces/cw_0123abcd/cwc_4567ef01");
+  // Anything else stays the shell's.
+  for (const n of [{}, { chat: { room: "ch_" } }, { cloud_run: "run_x" }, { cloud_workspace: "cw_0123abcd" }, { pane: 3 }]) expect(platformTap(n)).toBeUndefined();
+  expect(platformOf({ platform: "https://app.arugula.io" })).toBe("https://app.arugula.io");
+  for (const bad of [{}, null, { platform: null }, { platform: "https://app.arugula.io/x" }, { platform: "javascript:alert(1)" }]) expect(platformOf(bad)).toBeNull();
 });
 
 test("a tap opens the pane", () => {
