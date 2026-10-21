@@ -61,12 +61,22 @@ async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Json<Value> {
     assert_eq!(b["repositories"].as_array().map(Vec::len), Some(1));
     let short = b["repositories"][0].as_str().unwrap();
     let h = h.lock().unwrap();
-    let covers: Vec<Value> = h
+    // A repo the test made, or else one the App is installed on (id 0: a
+    // test that only installs the App doesn't say the repo's id).
+    let mut covers: Vec<Value> = h
         .repos
         .iter()
         .filter(|(name, _)| name.rsplit('/').next() == Some(short))
         .map(|(name, (id, _))| json!({ "id": id, "full_name": name }))
         .collect();
+    if covers.is_empty() {
+        covers = h
+            .installed
+            .keys()
+            .filter(|name| name.rsplit('/').next() == Some(short))
+            .map(|name| json!({ "id": 0, "full_name": name }))
+            .collect();
+    }
     Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": covers }))
 }
 
