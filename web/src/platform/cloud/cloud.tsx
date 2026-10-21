@@ -64,7 +64,9 @@ function eventFailure(event: Event): string {
 /** The account's cloud agents: the ones it may open in a Cloud workspace's
  * tabs, its secrets, and its past runs (runs are retired, S40 M119: they
  * open read only, with their downloads). */
-export function CloudPanel({ close, notify }: { close: () => void; notify: () => Promise<string> }) {
+/** `notify` turns on push where the page has it: the shell's; the platform
+ * page has none of its own ("Push stays on the hub's app"). */
+export function CloudPanel({ close, notify }: { close: () => void; notify?: () => Promise<string> }) {
   const api = useCloudApi();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -91,7 +93,7 @@ export function CloudPanel({ close, notify }: { close: () => void; notify: () =>
     <div class="prompt-buttons"><h2>Cloud agents</h2><button onClick={close}>Close</button></div>
     <p>Agents run in Cloud workspaces: a machine in the cloud with your repositories on it. <b>New agent</b> → <b>Cloud</b> opens one there, and so does <b>+ Agent</b> in a Cloud workspace.</p>
     {!unavailable && <p><button data-open-cloud-workspaces onClick={() => { close(); location.hash = "cloud-ws"; }}>Cloud workspaces</button></p>}
-    <button onClick={() => void notify().then((state) => { if (state !== "on") setError(state === "denied" ? "Notifications are blocked in browser settings." : "Notifications are unavailable in this browser."); }, (e: Error) => setError(e.message))}>Notify me when an agent needs input</button>
+    {notify && <button onClick={() => void notify().then((state) => { if (state !== "on") setError(state === "denied" ? "Notifications are blocked in browser settings." : "Notifications are unavailable in this browser."); }, (e: Error) => setError(e.message))}>Notify me when an agent needs input</button>}
     <p class="dim">{unavailable || "Limited beta"}</p>
     <p class="dim">Cloud execution processes your prompts, repository, selected secrets, and results. Terminal connections remain end-to-end encrypted.</p>
     {error && <p role="alert" class="control-error">{error}</p>}

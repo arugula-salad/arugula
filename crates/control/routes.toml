@@ -1102,6 +1102,17 @@ process = "platform"
 auth = "session"
 clients = ["cli"]
 
+# ---- platform: projects
+# The platform page's list of the reader's projects (M150): their own and
+# each team's default one, with the team's members read only.
+
+[[route]]
+method = "GET"
+path = "/api/projects"  # wire::projects::PROJECTS
+process = "platform"
+auth = "session"
+clients = ["page"]
+
 # ---- platform: billing
 
 [[route]]

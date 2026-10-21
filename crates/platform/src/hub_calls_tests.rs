@@ -55,6 +55,7 @@ async fn a_second_request_asks_the_hub_nothing() {
         ("a", "/api/cloud/workspaces"),
         ("a", "/api/billing"),
         ("b", "/api/chat/search?q=from%3Aa%20hello"),
+        ("b", "/api/projects"),
     ] {
         let (first, _) = counted(&hub, &base, who, path).await;
         let (second, _) = counted(&hub, &base, who, path).await;
@@ -349,4 +350,36 @@ async fn a_slow_feed_holds_a_call_back_briefly() {
     let h = r.headers()[crate::timing::HEADER].to_str().unwrap().to_owned();
     assert_eq!(timing_entry(&h, "hubn"), Some(1.0), "{h}");
     assert!(timing_entry(&h, "hub").unwrap() >= crate::cache::FRESH_WAIT.as_secs_f64() * 1e3 * 0.9, "{h}");
+}
+
+/// The platform page's projects (M150): the reader's own first, then each
+/// team's default one with its members, read only.
+#[tokio::test]
+async fn the_projects_are_mine_then_my_teams() {
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    seed(&app, &hub);
+    hub.team("u", &[("b", TeamRole::Owner), ("c", TeamRole::Viewer)]);
+    let (st, v) = call(&base, "b", "GET", "/api/projects", None).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["me"]["account"], "b");
+    let p = v["projects"].as_array().unwrap();
+    assert_eq!(p.len(), 3, "{v}");
+    assert_eq!((p[0]["name"].as_str(), &p[0]["team"]), (Some("Personal"), &Value::Null));
+    assert!(p[0]["id"].as_str().unwrap().starts_with("prj_"));
+    assert_eq!(p[1]["team"]["id"], "t");
+    assert_eq!(p[1]["team"]["role"], "editor");
+    assert_eq!(p[1]["team"]["members"][0], serde_json::json!({ "account": "a", "name": "a", "role": "owner" }));
+    assert_eq!((p[2]["team"]["id"].as_str(), p[2]["team"]["role"].as_str()), (Some("u"), Some("owner")));
+    // The same project every time, and the one chat's channels belong to.
+    let (_, again) = call(&base, "b", "GET", "/api/projects", None).await;
+    assert_eq!(again, v);
+    assert_eq!(app.db.team_default_project("u").unwrap().as_deref(), p[2]["id"].as_str());
+
+    // Someone in one team of the two: their own, and that team's.
+    let (_, c) = call(&base, "c", "GET", "/api/projects", None).await;
+    let names: Vec<_> =
+        c["projects"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap().to_owned()).collect();
+    assert_eq!(names, ["Personal", "u"], "{c}");
+    assert_eq!(c["projects"][1]["team"]["role"], "viewer");
 }

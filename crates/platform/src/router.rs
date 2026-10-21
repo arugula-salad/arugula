@@ -11,11 +11,12 @@ use axum::{
     routing::{MethodRouter, get, post},
 };
 
-use crate::{Platform, billing, chat, cloud, grants};
+use crate::{Platform, billing, chat, cloud, grants, projects};
 
 /// Every route the platform answers. Each moved here from `routes()` in
 /// `crates/control/src/main.rs` with the same path and methods: billing's
-/// (M139), Cloud's (M137), chat's (M138), then grants'.
+/// (M139), Cloud's (M137), chat's (M138), then grants'; and the platform
+/// page's own (M150).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -73,6 +74,7 @@ fn routes() -> Routes {
         .route(arugula_control_wire::chat::CHAT_IMPORT, post(chat::daemon_import))
         .route("/api/grants", get(grants::list).post(grants::give))
         .route("/api/grants/{id}/revoke", post(grants::revoke))
+        .route(arugula_control_wire::projects::PROJECTS, get(projects::list))
 }
 
 /// The platform's router, for any state the hub's router has (the
