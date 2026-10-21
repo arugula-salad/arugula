@@ -116,6 +116,7 @@ mod finder;
 mod frames;
 mod links;
 mod panics;
+mod platform;
 mod profile;
 #[cfg(target_os = "macos")]
 mod service;
@@ -485,6 +486,12 @@ fn ours(url: &tauri::Url) -> bool {
     }
 }
 
+/// The platform page (`platform.rs`): on the origin control's
+/// `/control.json` says, when it says one.
+fn platform_page(url: &tauri::Url) -> bool {
+    platform::is_platform(url, cloud::platform().as_ref())
+}
+
 /// A block's origin (`frames.rs`): wry asks `on_navigation` about frames
 /// too on macOS and Linux, and a port or editor block's frame is on one.
 fn block_frame(url: &tauri::Url) -> bool {
@@ -506,8 +513,10 @@ fn daemons(url: &tauri::Url) -> bool {
 fn follow_join(app: AppHandle) {
     let mut was = cloud::control();
     loop {
-        // Control's block domain, before a block's frame needs it.
-        cloud::learn_block_domain();
+        // Control's block domain, before a block's frame needs it, and its
+        // platform page, whose window controls need their permissions.
+        cloud::learn_control_json();
+        allow_control(&app);
         std::thread::sleep(JOIN_POLL);
         if !reachable() {
             continue;
@@ -521,9 +530,12 @@ fn follow_join(app: AppHandle) {
         cloud::set_local_only(false);
         allow_control(&app);
         let home = home(&app);
+        // The old control's platform page, still known until the new
+        // control's `/control.json` is read.
+        let was_platform = was.as_deref().and_then(cloud::platform_of);
         for w in app.webview_windows().into_values() {
             let Ok(url) = w.url() else { continue };
-            if cloud::moves(was.as_deref(), now.as_deref(), &url, daemons(&url)) {
+            if cloud::moves(was.as_deref(), was_platform.as_ref(), now.as_deref(), &url, daemons(&url)) {
                 let to = home.clone();
                 let _ = app.run_on_main_thread(move || {
                     let _ = w.navigate(to);
@@ -562,33 +574,30 @@ fn open_outside(url: &tauri::Url) {
 }
 
 /// The window permissions the bar needs (capabilities/default.json), for
-/// control's origin too: when joined, the window shows control's page, and
-/// without them its bar can't move, minimize, maximize or close the window
-/// on Linux. The control is only known at run time, and can change (#204).
+/// control's origin and its platform page's (M157) too: when joined, the
+/// window shows those pages, and without them their bar can't move,
+/// minimize, maximize or close the window on Linux (#290). Both are only
+/// known at run time, and can change (#204), so this runs when a window
+/// opens and each time `follow_join` looks.
 fn allow_control(app: &AppHandle) {
     static ALLOWED: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    let Some(origin) = cloud::control()
-        .and_then(|c| c.parse::<tauri::Url>().ok())
-        .map(|u| u.origin().ascii_serialization())
-        .filter(|o| o != "null")
-    else {
-        return;
-    };
     let mut allowed = ALLOWED.lock().unwrap();
-    if allowed.contains(&origin) {
-        return;
-    }
-    let cap = tauri::ipc::CapabilityBuilder::new(format!("control-{}", allowed.len()))
-        .remote(format!("{origin}/*"))
-        .window("*")
-        .permission("core:window:allow-minimize")
-        .permission("core:window:allow-toggle-maximize")
-        .permission("core:window:allow-internal-toggle-maximize")
-        .permission("core:window:allow-close")
-        .permission("core:window:allow-start-dragging");
-    match app.add_capability(cap) {
-        Ok(()) => allowed.push(origin),
-        Err(e) => eprintln!("arugula: letting {origin} use its window: {e}"),
+    for origin in platform::window_origins(cloud::control().as_deref(), cloud::platform().as_ref()) {
+        if allowed.contains(&origin) {
+            continue;
+        }
+        let cap = tauri::ipc::CapabilityBuilder::new(format!("control-{}", allowed.len()))
+            .remote(format!("{origin}/*"))
+            .window("*")
+            .permission("core:window:allow-minimize")
+            .permission("core:window:allow-toggle-maximize")
+            .permission("core:window:allow-internal-toggle-maximize")
+            .permission("core:window:allow-close")
+            .permission("core:window:allow-start-dragging");
+        match app.add_capability(cap) {
+            Ok(()) => allowed.push(origin),
+            Err(e) => eprintln!("arugula: letting {origin} use its window: {e}"),
+        }
     }
 }
 
@@ -633,11 +642,11 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
         // Files dropped on a pane are the page's (M70: uploaded to the
         // pane's host); the webview would otherwise take them itself.
         .disable_drag_drop_handler()
-        // A link with target=_blank: the client's own pages in a window of
-        // ours, anything else in the browser. A webview drops these unless
-        // the app handles them.
+        // A link with target=_blank: the client's own pages (and the
+        // platform page's) in a window of ours, anything else in the
+        // browser. A webview drops these unless the app handles them.
         .on_new_window(move |url, _| {
-            if ours(&url) {
+            if ours(&url) || platform_page(&url) {
                 let h = handle.clone();
                 let _ = handle.run_on_main_thread(move || {
                     let _ = open_window(&h, WebviewUrl::External(url));
@@ -659,9 +668,10 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
             }
         })
         // Control's own sign-in (GitHub) can't finish in the window: the
-        // app's sign-in takes over. A link away from the daemon and control:
-        // the browser takes it. A block's frame (a port, an editor) stays:
-        // on macOS and Linux this hears frames too (`frames.rs`).
+        // app's sign-in takes over. A link away from the daemon, control and
+        // its platform page (`platform.rs`): the browser takes it. A block's
+        // frame (a port, an editor) stays: on macOS and Linux this hears
+        // frames too (`frames.rs`).
         .on_navigation(move |url| {
             if cloud::is_control_signin(url) {
                 let (app, label) = nav.clone();
@@ -676,7 +686,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl) -> tauri::Result<tauri::Webview
                 });
                 return false;
             }
-            if ours(url) || block_frame(url) {
+            if ours(url) || platform_page(url) || block_frame(url) {
                 return true;
             }
             open_outside(url);
@@ -725,6 +735,7 @@ fn title_for(url: &tauri::Url) -> String {
     let control = cloud::control().and_then(|c| c.parse::<tauri::Url>().ok());
     match control {
         Some(c) if c.origin() == url.origin() => c.host_str().unwrap_or("Arugula").to_owned(),
+        _ if platform_page(url) => url.host_str().unwrap_or("Arugula").to_owned(),
         _ => "Arugula".into(),
     }
 }
