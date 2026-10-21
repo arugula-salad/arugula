@@ -111,15 +111,14 @@ impl Backup {
             (self.bin.clone(), self.config.clone(), self.child.clone(), self.stopping.clone());
         tokio::spawn(async move {
             loop {
-                let spawned = tokio::process::Command::new(&bin)
-                    .arg("replicate")
-                    .arg("-config")
-                    .arg(&config)
-                    // Its own process group: a signal to ours doesn't cut
-                    // its last sync short; [`Backup::stop`] stops it.
-                    .process_group(0)
-                    .kill_on_drop(true)
-                    .spawn();
+                let mut cmd = tokio::process::Command::new(&bin);
+                cmd.arg("replicate").arg("-config").arg(&config).kill_on_drop(true);
+                // Its own process group: a signal to ours doesn't cut its
+                // last sync short; [`Backup::stop`] stops it. (Control runs
+                // on Linux; the crate builds on Windows with the workspace.)
+                #[cfg(unix)]
+                cmd.process_group(0);
+                let spawned = cmd.spawn();
                 match spawned {
                     Ok(mut c) => {
                         *child.lock().unwrap() = c.id();
@@ -142,9 +141,12 @@ impl Backup {
         self.stopping.store(true, std::sync::atomic::Ordering::SeqCst);
         let Some(pid) = *self.child.lock().unwrap() else { return };
         // SAFETY: a plain signal to our own child.
+        #[cfg(unix)]
         unsafe {
             libc::kill(pid as i32, libc::SIGTERM);
         }
+        #[cfg(not(unix))]
+        let _ = pid;
         for _ in 0..100 {
             tokio::time::sleep(Duration::from_millis(100)).await;
             if self.child.lock().unwrap().is_none() {
