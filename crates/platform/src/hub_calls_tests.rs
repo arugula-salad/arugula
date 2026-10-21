@@ -272,3 +272,81 @@ async fn what_the_feed_cant_say_still_runs_out_on_time() {
     let (made, _) = counted(&hub, &base, "a", "/api/billing").await;
     assert_eq!(made, BTreeMap::from([("meters", 1)]), "at it");
 }
+
+/// One `Server-Timing` entry's number: `dur` for a time, `desc` for a
+/// count (`crate::timing`).
+pub(crate) fn timing_entry(header: &str, name: &str) -> Option<f64> {
+    header.split(',').map(str::trim).find_map(|e| {
+        let mut parts = e.split(';');
+        (parts.next()? == name).then(|| parts.find_map(|p| p.split_once('=').and_then(|(_, v)| v.parse().ok())))?
+    })
+}
+
+/// A request's `Server-Timing`, as the platform answered it.
+async fn timing(base: &str, who: &str, path: &str) -> String {
+    let r = reqwest::Client::new()
+        .get(format!("{base}{path}"))
+        .header("cookie", format!("ilg_session=session-{who}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200, "{path}");
+    let h = r.headers().get(crate::timing::HEADER).expect("every platform answer says its timing");
+    h.to_str().unwrap().to_owned()
+}
+
+/// What a request costs in statements once it's warm (each a round trip on
+/// Postgres), read from the platform's own `Server-Timing`, so the header
+/// and the guard are one. The seed: a's five machines (all with grants),
+/// team t's channel and thirty pane threads, b reading fifteen of them.
+#[tokio::test]
+async fn statements_per_request() {
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    seed(&app, &hub);
+    crate::cache::catch_up(&app).await.unwrap();
+    let mut said = vec![];
+    for (who, path, most) in
+        [("a", "/api/grants", 1), ("b", "/api/chat", 4), ("a", "/api/cloud/workspaces", 3), ("a", "/api/billing", 2)]
+    {
+        timing(&base, who, path).await;
+        let h = timing(&base, who, path).await;
+        let n = timing_entry(&h, "dbq").unwrap() as u64;
+        assert_eq!(timing_entry(&h, "hubn"), Some(0.0), "{path}: {h}");
+        assert!(timing_entry(&h, "app").is_some() && timing_entry(&h, "db").is_some(), "{h}");
+        assert!(!h.contains("dbconn") && !h.contains("dbprep"), "warm: {h}");
+        eprintln!("{path}: {h}");
+        said.extend((n > most).then(|| format!("{path}: {n} statements (at most {most})")));
+    }
+    assert_eq!(said, Vec::<String>::new());
+}
+
+/// A call after a write in the hub reads the feed first (`cache::fresh`),
+/// but a slow hub holds it back at most `cache::FRESH_WAIT`, not the
+/// internal client's 30 s: it's answered from what's kept, and its
+/// `Server-Timing` shows the hub call it waited on.
+#[tokio::test]
+async fn a_slow_feed_holds_a_call_back_briefly() {
+    use std::{sync::atomic::Ordering, time::Instant};
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    seed(&app, &hub);
+    crate::cache::catch_up(&app).await.unwrap();
+    timing(&base, "a", "/api/grants").await;
+    hub.feed_slow.store(true, Ordering::SeqCst);
+    let ahead = u64::MAX / 2;
+    let t = Instant::now();
+    let r = reqwest::Client::new()
+        .get(format!("{base}/api/grants"))
+        .header("cookie", "ilg_session=session-a")
+        .header(crate::cache::SEQ_HEADER, ahead.to_string())
+        .send()
+        .await
+        .unwrap();
+    let took = t.elapsed();
+    assert_eq!(r.status(), 200);
+    assert!(took < crate::cache::FRESH_WAIT * 4, "waited {took:?} on a slow feed");
+    let h = r.headers()[crate::timing::HEADER].to_str().unwrap().to_owned();
+    assert_eq!(timing_entry(&h, "hubn"), Some(1.0), "{h}");
+    assert!(timing_entry(&h, "hub").unwrap() >= crate::cache::FRESH_WAIT.as_secs_f64() * 1e3 * 0.9, "{h}");
+}

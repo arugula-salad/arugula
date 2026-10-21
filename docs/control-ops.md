@@ -458,6 +458,42 @@ out-of-process platform is held with `ARUGULA_PLATFORM_PAUSED=1` on its
 own app (`fly secrets set -a arugula-platform ARUGULA_PLATFORM_PAUSED=1`,
 a platform restart, which drops nothing); unset it to resume.
 
+**Where a request's time goes.** Every platform route answers with a
+`Server-Timing` header: the platform's entries
+(`crates/platform/src/timing.rs`), then the gateway's
+(`crates/control/src/gateway.rs`). Durations are in ms; `desc` is a
+count. Only durations and counts: never a path, an id or anything the
+request carried.
+
+| entry | who adds it | what |
+|---|---|---|
+| `db;dur=` | platform | time in database calls, waiting for a connection included (a Postgres pool slot, SQLite's lock) |
+| `dbq;desc=` | platform | statements sent; on Postgres each is a round trip, `BEGIN` and `COMMIT` too |
+| `dbprep;desc=`, `dbconn;desc=` | platform | statements prepared and connections opened (one more round trip, or a handshake, each); only there when not 0, which is the steady state |
+| `hub;dur=`, `hubn;desc=` | platform | `HubPort` calls and how many, the `x-arugula-hub-seq` catch-up (`cache::fresh`, at most 250 ms) included; out of process each is an ewr↔iad round trip |
+| `app;dur=` | platform | the platform's whole time, until its answer begins |
+| `up;dur=` | gateway | from sending the call until the platform's answer began: the private network, Flycast's proxy and `app` |
+| `gw;dur=` | gateway | the gateway's whole time until the answer begins, `up` included (who's asking, the seq header, signing) |
+
+So `up - app` is the private network plus Flycast, `gw - up` the hub's own
+work, and whatever the client measured beyond `gw` is between it and the
+hub (TLS, Fly's edge). In process only the platform's entries are there.
+
+From any machine logged in with the CLI (`arugula login`),
+`ARUGULA_DEBUG_HTTP=1` prints each call's total and its header on stderr:
+
+```
+ARUGULA_DEBUG_HTTP=1 arugula grants >/dev/null
+# arugula: GET /api/grants: 200 in 84.2 ms; server-timing: db;dur=0.91, dbq;desc=1, hub;dur=0.00, hubn;desc=0, app;dur=1.20, up;dur=9.80, gw;dur=10.40
+```
+
+Both processes also log every request at `debug` with the same numbers
+(the platform's `platform request`, with the route's pattern; the hub's
+`forwarded`, with the request id). They're off at the default `info`:
+`fly secrets set -a arugula-platform RUST_LOG=arugula_platform=debug`
+(and `-a illogical-control RUST_LOG=arugula_control=debug`) turns them on,
+at a restart each; unset to turn them off.
+
 ### Two platform machines (M144)
 
 On Postgres the platform runs two machines; on SQLite exactly one

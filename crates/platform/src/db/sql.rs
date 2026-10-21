@@ -260,7 +260,9 @@ pub trait Sql {
     fn execute(&self, sql: &str, p: &[&dyn Param]) -> Result<usize> {
         let p = values(p)?;
         match self.on() {
-            On::Sqlite(c) => Ok(c.prepare_cached(sql)?.execute(rusqlite::params_from_iter(p))?),
+            On::Sqlite(c) => {
+                crate::timing::statement(|| Ok(c.prepare_cached(sql)?.execute(rusqlite::params_from_iter(p))?))
+            }
             On::Postgres(s) => session(s)?.execute(sql, &p),
         }
     }
@@ -269,7 +271,7 @@ pub trait Sql {
     fn query_map<T>(&self, sql: &str, p: &[&dyn Param], mut f: impl FnMut(&Row) -> Result<T>) -> Result<Vec<T>> {
         let p = values(p)?;
         match self.on() {
-            On::Sqlite(c) => {
+            On::Sqlite(c) => crate::timing::statement(|| {
                 let mut q = c.prepare_cached(sql)?;
                 let n = q.column_count();
                 let mut rows = q.query(rusqlite::params_from_iter(p))?;
@@ -279,7 +281,7 @@ pub trait Sql {
                     out.push(f(&row)?);
                 }
                 Ok(out)
-            }
+            }),
             On::Postgres(s) => session(s)?.query(sql, &p)?.into_iter().map(|r| f(&Row(r))).collect(),
         }
     }
@@ -300,7 +302,7 @@ pub trait Sql {
     /// Statements without parameters, separated by semicolons.
     fn execute_batch(&self, sql: &str) -> Result<()> {
         match self.on() {
-            On::Sqlite(c) => Ok(c.execute_batch(sql)?),
+            On::Sqlite(c) => crate::timing::statement(|| Ok(c.execute_batch(sql)?)),
             On::Postgres(s) => session(s)?.batch(sql),
         }
     }
@@ -402,7 +404,7 @@ impl<'a> Conn<'a> {
 
     fn begin(&mut self, sqlite: &str) -> Result<Tx<'_, 'a>> {
         match &self.0 {
-            Inner::Sqlite(c) => c.execute_batch(sqlite)?,
+            Inner::Sqlite(c) => crate::timing::statement(|| c.execute_batch(sqlite))?,
             Inner::Postgres(l) => l.begin()?,
         }
         Ok(Tx { conn: self, done: false })

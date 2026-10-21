@@ -74,6 +74,15 @@ pub(crate) async fn split() -> Split {
 pub(crate) async fn split_with(
     wrap: impl FnOnce(Arc<dyn arugula_platform::HubPort>) -> Arc<dyn arugula_platform::HubPort>,
 ) -> Split {
+    split_on(arugula_platform::db::Db::memory(), wrap).await
+}
+
+/// [`split_with`], with the platform on `db` (`hub_latency_bench` on
+/// Postgres).
+pub(crate) async fn split_on(
+    db: arugula_platform::db::Db,
+    wrap: impl FnOnce(Arc<dyn arugula_platform::HubPort>) -> Arc<dyn arugula_platform::HubPort>,
+) -> Split {
     let (internal_l, internal) = listener().await;
     let (platform_l, platform_base) = listener().await;
     let mut p = Platform::new(
@@ -82,7 +91,7 @@ pub(crate) async fn split_with(
             sites: vec!["http://control.test".into()],
             relay_free_bytes: 0,
         },
-        arugula_platform::db::Db::memory(),
+        db,
         wrap(Arc::new(HttpHub::new(&internal, key()).unwrap())),
         reqwest::Client::new(),
         Default::default(),
@@ -178,6 +187,35 @@ async fn the_platform_answers_through_the_gateway() {
     assert!(s.hub.platform.active_plans(&["account:a".into()]).await.unwrap().is_empty());
     assert!(s.hub.platform.delete_blockers("a", false).await.unwrap().is_empty());
     assert!(s.platform.db.mentions("geek").is_empty(), "nothing of the hub's is in the platform's tables");
+}
+
+/// Where a forwarded call's time went: the platform's `Server-Timing`
+/// entries, as it said them, then the gateway's `up` and `gw`, in one
+/// header, with nothing in it but names, durations and counts.
+#[tokio::test]
+async fn where_the_time_went_comes_back() {
+    let s = split().await;
+    let r = reqwest::Client::new()
+        .get(format!("{}/api/cloud/workspaces", s.base))
+        .header("cookie", "ilg_session=session-a")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let all: Vec<&str> = r.headers().get_all("server-timing").iter().map(|v| v.to_str().unwrap()).collect();
+    assert_eq!(all.len(), 1, "one header: {all:?}");
+    let names: Vec<&str> = all[0].split(", ").map(|e| e.split(';').next().unwrap()).collect();
+    assert_eq!(names, ["db", "dbq", "hub", "hubn", "app", "up", "gw"], "{}", all[0]);
+    let n = |name: &str| -> f64 {
+        let e = all[0].split(", ").find(|e| e.starts_with(&format!("{name};"))).unwrap();
+        e.split_once('=').unwrap().1.parse().unwrap()
+    };
+    assert!(n("app") <= n("up") && n("up") <= n("gw"), "{}", all[0]);
+    assert!(
+        all[0].chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || ";=., ".contains(c)),
+        "names and numbers only: {}",
+        all[0]
+    );
 }
 
 /// Chat's live stream goes through as it comes, unbuffered, with

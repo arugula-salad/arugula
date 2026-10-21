@@ -73,7 +73,7 @@ use crate::{
     cache,
     db::{
         Db, Taken,
-        chat::{Message, NewChatEvent, NewMessage, OldMessage, Page, Room, Search, Word},
+        chat::{Message, NewChatEvent, NewMessage, OldMessage, Page, Room, Search, UnreadAsk, Word},
     },
     hub::{Account, Daemon, Flags, PushOptions, Team},
 };
@@ -175,10 +175,36 @@ struct Facts {
     /// The machines asked about for the reader, and those they may reach.
     asked: HashSet<String>,
     reach: HashSet<String>,
+    /// A page's rooms ([`Facts::page`]): their DMs' members and their
+    /// machines' readers, each read once for the page rather than once or
+    /// more per room (a round trip each on Postgres). Empty for one room's
+    /// facts, whose callers may write in between: those read the database.
+    page: PageReads,
+}
+
+#[derive(Default)]
+struct PageReads {
+    /// The machines whose readers are in `readers`.
+    readers_on: HashSet<String>,
+    readers: HashMap<(String, String, String), Vec<arugula_control_wire::chat::ChatReader>>,
+    /// The rooms whose members are in `members`.
+    members_of: HashSet<String>,
+    members: HashMap<String, Vec<String>>,
 }
 
 impl Facts {
     async fn of(app: &Platform, reader: Option<&str>, rooms: &[&Room]) -> anyhow::Result<Facts> {
+        Self::read(app, reader, rooms, false).await
+    }
+
+    /// [`Facts::of`] for a page of rooms nothing writes to before it's
+    /// answered (a chat list, a live stream's refresh, search): the
+    /// database's part read once for all of them too.
+    async fn page(app: &Platform, reader: Option<&str>, rooms: &[&Room]) -> anyhow::Result<Facts> {
+        Self::read(app, reader, rooms, true).await
+    }
+
+    async fn read(app: &Platform, reader: Option<&str>, rooms: &[&Room], whole: bool) -> anyhow::Result<Facts> {
         let hub = &*app.hub;
         let mut machines: Vec<String> = rooms.iter().filter_map(|r| r.machine.clone()).collect();
         machines.sort();
@@ -201,9 +227,29 @@ impl Facts {
         };
         asked.sort();
         asked.dedup();
+        let mut page = PageReads::default();
         let mut people = Vec::new();
-        for r in rooms.iter().filter(|r| r.kind == "dm") {
-            people.extend(app.db.chat_members(&r.id)?);
+        if whole {
+            // Readers matter on others' machines (an owner sees their own
+            // threads), or on any for nobody in particular (an audience).
+            let mut on: Vec<String> = rooms
+                .iter()
+                .filter(|r| matches!(r.kind.as_str(), "pane" | "session"))
+                .filter_map(|r| r.machine.clone())
+                .filter(|m| reader.is_none_or(|me| daemons.get(m).is_some_and(|d| d.account != me)))
+                .collect();
+            on.sort();
+            on.dedup();
+            page.readers = app.db.chat_readers_on(&on)?;
+            page.readers_on = on.into_iter().collect();
+            let dms: Vec<&str> = rooms.iter().filter(|r| r.kind == "dm").map(|r| r.id.as_str()).collect();
+            page.members = app.db.chat_members_of(&dms)?;
+            page.members_of = dms.iter().map(|d| (*d).to_owned()).collect();
+            people.extend(page.members.values().flatten().cloned());
+        } else {
+            for r in rooms.iter().filter(|r| r.kind == "dm") {
+                people.extend(app.db.chat_members(&r.id)?);
+            }
         }
         people.sort();
         people.dedup();
@@ -219,7 +265,31 @@ impl Facts {
             people,
             asked: asked.into_iter().collect(),
             reach,
+            page,
         })
+    }
+
+    /// A room's members: from the page, or the database.
+    fn members(&self, app: &Platform, room: &str) -> anyhow::Result<Vec<String>> {
+        if self.page.members_of.contains(room) {
+            return Ok(self.page.members.get(room).cloned().unwrap_or_default());
+        }
+        app.db.chat_members(room)
+    }
+
+    /// Who reads a pane's or session's thread, as its machine last said:
+    /// from the page, or the database.
+    fn readers(
+        &self,
+        app: &Platform,
+        machine: &str,
+        kind: &str,
+        target: &str,
+    ) -> anyhow::Result<Option<Vec<arugula_control_wire::chat::ChatReader>>> {
+        if self.page.readers_on.contains(machine) {
+            return Ok(self.page.readers.get(&(machine.to_owned(), kind.to_owned(), target.to_owned())).cloned());
+        }
+        app.db.chat_readers(machine, kind, target)
     }
 
     /// An account's role in a team, if it's in it now: a locked team's
@@ -259,7 +329,7 @@ async fn target_sight(
     if !facts.reaches(app, account, machine).await? {
         return Ok(None);
     }
-    Ok(match app.db.chat_readers(machine, kind, target)? {
+    Ok(match facts.readers(app, machine, kind, target)? {
         Some(list) => list.iter().find(|r| r.account == account).map(|r| r.from.unwrap_or(0)),
         // Before the machine has said: its team's owners.
         None => match &d.team {
@@ -275,7 +345,7 @@ async fn sight(app: &Platform, facts: &Facts, account: &str, room: &Room) -> any
     Ok(match (room.kind.as_str(), team) {
         ("channel", Some(team)) => facts.role(team, account).map(|_| 0),
         ("dm", Some(team)) => {
-            let member = app.db.chat_members(&room.id)?.iter().any(|a| a == account);
+            let member = facts.members(app, &room.id)?.iter().any(|a| a == account);
             (member && facts.role(team, account).is_some()).then_some(0)
         }
         ("pane" | "session", _) => match (&room.machine, &room.target) {
@@ -295,7 +365,7 @@ fn watching(app: &Platform, facts: &Facts, account: &str, room: &Room) -> anyhow
     if facts.owner(m) == Some(account) {
         return Ok(false);
     }
-    Ok(app.db.chat_readers(m, &room.kind, t)?.is_some_and(|l| l.iter().any(|r| r.account == account && r.watching)))
+    Ok(facts.readers(app, m, &room.kind, t)?.is_some_and(|l| l.iter().any(|r| r.account == account && r.watching)))
 }
 
 /// Whether `account`, who sees `room`, may post in it now.
@@ -307,7 +377,7 @@ fn writable(app: &Platform, facts: &Facts, room: &Room, account: &str) -> anyhow
         ("channel", _) => true,
         ("pane" | "session", _) => !watching(app, facts, account, room)?,
         // Both still in the team: one who left ends it for the other.
-        ("dm", Some(team)) => app.db.chat_members(&room.id)?.iter().all(|a| facts.role(team, a).is_some()),
+        ("dm", Some(team)) => facts.members(app, &room.id)?.iter().all(|a| facts.role(team, a).is_some()),
         _ => false,
     })
 }
@@ -318,11 +388,10 @@ async fn rooms_seen(app: &Platform, account: &str) -> anyhow::Result<(Vec<(Room,
     let hub = &*app.hub;
     let (teams, machines) = tokio::try_join!(app.cache.teams_of(hub, account), app.cache.machines_for(hub, account))?;
     let scopes: Vec<String> = teams.iter().map(|t| team_scope(t)).collect();
-    let mut rooms = app.db.chat_rooms_in(&scopes, &machines)?;
-    rooms.extend(app.db.chat_rooms_member(account)?);
+    let mut rooms = app.db.chat_rooms_seen(&scopes, &machines, account)?;
     let mut ids = HashSet::new();
     rooms.retain(|r| ids.insert(r.id.clone()));
-    let facts = Facts::of(app, Some(account), &rooms.iter().collect::<Vec<_>>()).await?;
+    let facts = Facts::page(app, Some(account), &rooms.iter().collect::<Vec<_>>()).await?;
     let mut out = Vec::new();
     for r in rooms {
         if let Some(from) = sight(app, &facts, account, &r).await? {
@@ -396,11 +465,25 @@ fn new_id(prefix: &str) -> String {
 
 /// A room as `account` sees it.
 fn listed(app: &Platform, facts: &Facts, account: &str, room: &Room, from: u64) -> anyhow::Result<ChatRoom> {
-    let (read, muted) = app.db.chat_mark(&room.id, account)?;
-    let (unread, mentions) = app.db.chat_unread(&room.id, account, read, from)?;
+    let mark = app.db.chat_mark(&room.id, account)?;
+    let counts = app.db.chat_unread(&room.id, account, mark.0, from)?;
+    listed_as(app, facts, account, room, mark, counts)
+}
+
+/// [`listed`], with the reader's mark (and whether they muted it) and the
+/// room's (unread, mentions) already read: a page reads those once for all
+/// its rooms ([`rooms`]).
+fn listed_as(
+    app: &Platform,
+    facts: &Facts,
+    account: &str,
+    room: &Room,
+    (read, muted): (i64, bool),
+    (unread, mentions): (u64, u64),
+) -> anyhow::Result<ChatRoom> {
     let with = if room.kind == "dm" {
-        app.db
-            .chat_members(&room.id)?
+        facts
+            .members(app, &room.id)?
             .into_iter()
             .find(|a| a != account)
             .map(|a| ChatPerson { name: facts.people.get(&a).map(|p| p.name.clone()).unwrap_or_default(), account: a })
@@ -938,9 +1021,18 @@ pub async fn open(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Cha
 pub async fn rooms(State(app): State<Arc<Platform>>, s: Person) -> J<ChatRooms> {
     gate(&app, &s.account).await?;
     let (seen, facts) = rooms_seen(&app, &s.account).await?;
+    // The page's marks and unread counts: one statement each, for every
+    // room (a round trip each on Postgres, where one per room added up).
+    let ids: Vec<&str> = seen.iter().map(|(r, _)| r.id.as_str()).collect();
+    let marks = app.db.chat_marks(&ids, &s.account)?;
+    let mark = |id: &str| marks.get(id).copied().unwrap_or((0, false));
+    let asks: Vec<UnreadAsk<'_>> =
+        seen.iter().map(|(r, from)| UnreadAsk { room: &r.id, read: mark(&r.id).0, from: *from }).collect();
+    let counts = app.db.chat_unread_in(&s.account, &asks)?;
     let mut rooms = Vec::new();
-    for (r, from) in seen {
-        rooms.push(listed(&app, &facts, &s.account, &r, from)?);
+    for (r, _) in &seen {
+        let n = counts.get(&r.id).copied().unwrap_or((0, 0));
+        rooms.push(listed_as(&app, &facts, &s.account, r, mark(&r.id), n)?);
     }
     Ok(Json(ChatRooms { rooms }))
 }

@@ -46,6 +46,7 @@ mod port;
 pub mod projects;
 pub mod remote;
 mod router;
+pub mod timing;
 pub mod window;
 
 pub use hub::HubPort;
@@ -170,7 +171,8 @@ impl Platform {
         Platform {
             cfg,
             db,
-            hub,
+            // Every hub call a request makes is in its Server-Timing.
+            hub: Arc::new(timing::Timed(hub)),
             http,
             limits: Limits::new(None),
             analytics,

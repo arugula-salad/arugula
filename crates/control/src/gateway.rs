@@ -23,7 +23,9 @@
 //!    from);
 //! 5. passes the answer back as it comes, status, headers (`Retry-After`
 //!    among them) and body, streamed: chat's live stream (SSE) goes through
-//!    unbuffered, `Last-Event-ID` and all.
+//!    unbuffered, `Last-Event-ID` and all;
+//! 6. adds where the time went to the platform's `Server-Timing` (`up`,
+//!    `gw`; [`server_timing`]), and logs it at `debug`.
 //!
 //! A platform that can't be reached at all (a deploy restarting it) is
 //! tried again for a few seconds, then answered as a maintenance 503: the
@@ -44,14 +46,14 @@ use arugula_platform::{Deleted, Platform, PlatformPort, auth::Asked, remote::Htt
 use axum::{
     Router,
     body::Body,
-    extract::{Request, State},
+    extract::{MatchedPath, Request, State},
     http::{HeaderMap, HeaderName, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{MethodFilter, MethodRouter},
 };
 use futures_util::{TryStreamExt as _, future::BoxFuture};
 use serde::Deserialize;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::App;
 
@@ -277,11 +279,38 @@ fn parts_method(m: &axum::http::Method) -> reqwest::Method {
     reqwest::Method::from_bytes(m.as_str().as_bytes()).unwrap_or(reqwest::Method::GET)
 }
 
+/// Where a forwarded call's time went (`docs/control-ops.md`, "Where a
+/// request's time goes"): the platform's own `Server-Timing` entries
+/// (`arugula_platform::timing`), then the gateway's.
+const SERVER_TIMING: &str = arugula_platform::timing::HEADER;
+
+fn ms(d: Duration) -> f64 {
+    d.as_secs_f64() * 1e3
+}
+
+/// The answer's `Server-Timing`: what the platform said, as it said it,
+/// then `up` (from sending the call until the platform's answer began:
+/// the private network, Flycast's proxy and the platform's whole time)
+/// and `gw` (the gateway's whole time, `up` included, until the answer
+/// begins). Durations only.
+fn server_timing(from: &HeaderMap, up: Duration, gw: Duration) -> String {
+    let mut parts: Vec<String> = from
+        .get_all(SERVER_TIMING)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned)
+        .collect();
+    parts.push(format!("up;dur={:.2}, gw;dur={:.2}", ms(up), ms(gw)));
+    parts.join(", ")
+}
+
 /// One platform route, forwarded.
 async fn forward(State(app): State<Arc<App>>, req: Request) -> Response {
     let PlatformAt::Remote(r) = &app.platform else {
         return ApiError(StatusCode::INTERNAL_SERVER_ERROR, "the platform is in process".into(), None).into_response();
     };
+    let began = std::time::Instant::now();
     let (mut parts, body) = req.into_parts();
     let vouch = match crate::hub_port::who(&app, &mut parts).await {
         Some(Asked::Principal(p)) => Vouch::Principal(p),
@@ -302,6 +331,7 @@ async fn forward(State(app): State<Arc<App>>, req: Request) -> Response {
         .and_then(|v| v.to_str().ok()?.parse::<u64>().ok())
         .is_some_and(|n| n <= BUFFER_UP_TO);
     let started = std::time::Instant::now();
+    let mut up;
     let sign = |headers: &mut HeaderMap| {
         let h = r.key.sign_vouch(&vouch, method.as_str(), &pq, &request, arugula_e2e::now_ms());
         headers.insert(principal::HEADER, h.parse().expect("a header value"));
@@ -315,7 +345,9 @@ async fn forward(State(app): State<Arc<App>>, req: Request) -> Response {
         let mut wait = Duration::from_millis(100);
         loop {
             sign(&mut headers);
+            let sent = std::time::Instant::now();
             let res = r.http.request(method.clone(), &url).headers(headers.clone()).body(bytes.clone()).send().await;
+            up = sent.elapsed();
             match res {
                 Err(e) if never_reached(&e, &method) && started.elapsed() + wait < RECONNECT_FOR => {
                     tokio::time::sleep(wait).await;
@@ -327,7 +359,10 @@ async fn forward(State(app): State<Arc<App>>, req: Request) -> Response {
     } else {
         sign(&mut headers);
         let stream = body.into_data_stream();
-        r.http.request(method, &url).headers(headers).body(reqwest::Body::wrap_stream(stream)).send().await
+        let sent = std::time::Instant::now();
+        let res = r.http.request(method, &url).headers(headers).body(reqwest::Body::wrap_stream(stream)).send().await;
+        up = sent.elapsed();
+        res
     };
     let res = match sent {
         Ok(res) => res,
@@ -341,11 +376,24 @@ async fn forward(State(app): State<Arc<App>>, req: Request) -> Response {
         }
     };
     let mut out = Response::builder().status(res.status().as_u16());
+    let timing = server_timing(res.headers(), up, began.elapsed());
+    debug!(
+        %request,
+        route = parts.extensions.get::<MatchedPath>().map_or("", MatchedPath::as_str),
+        status = res.status().as_u16(),
+        gw_ms = ms(began.elapsed()),
+        up_ms = ms(up),
+        platform = %timing,
+        "forwarded"
+    );
     if let Some(h) = out.headers_mut() {
         for (k, v) in res.headers() {
-            if !hop(k) {
+            if !hop(k) && k.as_str() != SERVER_TIMING {
                 h.append(k.clone(), v.clone());
             }
+        }
+        if let Ok(v) = timing.parse() {
+            h.insert(SERVER_TIMING, v);
         }
     }
     let stream = res.bytes_stream().map_err(std::io::Error::other);

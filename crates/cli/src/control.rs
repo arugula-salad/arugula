@@ -104,6 +104,12 @@ pub struct Enrolled {
     keys: DeviceKeys,
 }
 
+/// `ARUGULA_DEBUG_HTTP=1`: each call to control says on stderr how long it
+/// took and what control's `Server-Timing` said.
+fn debug_http() -> bool {
+    std::env::var("ARUGULA_DEBUG_HTTP").is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
 impl Enrolled {
     pub fn load() -> anyhow::Result<Option<Self>> {
         let dir = config_dir();
@@ -132,6 +138,7 @@ impl Enrolled {
         loop {
             // Signed afresh each try: a signature's nonce counts once.
             let auth = request_auth(&self.keys, method, path, bytes.as_bytes());
+            let began = std::time::Instant::now();
             let res = send_on(
                 u.connect(Some(Duration::from_secs(10)))?,
                 method,
@@ -142,7 +149,18 @@ impl Enrolled {
             )
             .with_context(|| format!("asking control at {}", self.url))?;
             let (status, asked) = (res.status, maintenance::retry_after(res.header("retry-after")));
+            let timing = res.header("server-timing").map(str::to_owned);
             let got = res.bytes().with_context(|| format!("reading control at {}", self.url))?;
+            if debug_http() {
+                // Where the time went (docs/control-ops.md, "Where a
+                // request's time goes"): the whole call as this CLI saw
+                // it, connecting included, and control's Server-Timing.
+                eprintln!(
+                    "arugula: {method} {path}: {status} in {:.1} ms; server-timing: {}",
+                    began.elapsed().as_secs_f64() * 1e3,
+                    timing.as_deref().unwrap_or("(none)")
+                );
+            }
             if maintenance::may_retry(method, status, &got)
                 && let Some(wait) = waits.next(asked)
             {

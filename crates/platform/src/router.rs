@@ -83,6 +83,8 @@ pub fn router<S: Clone + Send + Sync + 'static>(platform: Arc<Platform>) -> Rout
     routes()
         .router
         .layer(axum::middleware::from_fn_with_state(platform.clone(), crate::cache::fresh))
+        // Outermost: the catch-up above is in the request's Server-Timing.
+        .layer(axum::middleware::from_fn(crate::timing::layer))
         .with_state(platform)
 }
 

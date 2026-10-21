@@ -157,6 +157,7 @@ impl Pool {
     }
 
     fn session(&self) -> Result<Session> {
+        crate::timing::connected();
         let cfg = self.cfg.clone();
         let made = self.rt.spawn(async move {
             let (client, connection) = cfg.connect(NoTls).await?;
@@ -349,26 +350,31 @@ impl Session {
             return Ok(s.clone());
         }
         let pg = numbered(sql);
+        crate::timing::prepared();
         let s = futures_executor::block_on(self.client.prepare(&pg)).with_context(|| format!("preparing {pg}"))?;
         self.statements.borrow_mut().insert(sql.to_owned(), s.clone());
         Ok(s)
     }
 
     pub fn execute(&self, sql: &str, p: &[Value]) -> Result<usize> {
-        let s = self.prepare(sql)?;
-        let p: Vec<&(dyn ToSql + Sync)> = p.iter().map(|v| v as _).collect();
-        Ok(futures_executor::block_on(self.client.execute(&s, &p))? as usize)
+        crate::timing::statement(|| {
+            let s = self.prepare(sql)?;
+            let p: Vec<&(dyn ToSql + Sync)> = p.iter().map(|v| v as _).collect();
+            Ok(futures_executor::block_on(self.client.execute(&s, &p))? as usize)
+        })
     }
 
     pub fn query(&self, sql: &str, p: &[Value]) -> Result<Vec<Vec<Value>>> {
-        let s = self.prepare(sql)?;
-        let p: Vec<&(dyn ToSql + Sync)> = p.iter().map(|v| v as _).collect();
-        let rows = futures_executor::block_on(self.client.query(&s, &p))?;
-        rows.iter().map(|r| (0..r.len()).map(|i| Ok(r.try_get::<_, Value>(i)?)).collect()).collect()
+        crate::timing::statement(|| {
+            let s = self.prepare(sql)?;
+            let p: Vec<&(dyn ToSql + Sync)> = p.iter().map(|v| v as _).collect();
+            let rows = futures_executor::block_on(self.client.query(&s, &p))?;
+            rows.iter().map(|r| (0..r.len()).map(|i| Ok(r.try_get::<_, Value>(i)?)).collect()).collect()
+        })
     }
 
     pub fn batch(&self, sql: &str) -> Result<()> {
-        Ok(futures_executor::block_on(self.client.batch_execute(sql))?)
+        crate::timing::statement(|| Ok(futures_executor::block_on(self.client.batch_execute(sql))?))
     }
 
     /// Hold the lock `name` until the transaction ends
