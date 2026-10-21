@@ -56,6 +56,11 @@ Each has a `README.md` with where to start reading.
 - `crates/cloud-wire`: what control's `/api/cloud/` takes and answers with
   (Cloud workspaces, tabs, agents); the web client's copy is generated
   from it (`just proto-ts`).
+- `crates/forge-github`: the GitHub reader (M160): GitHub's REST API onto
+  the forge model (PRs, issues, checks, reviews, events, which Forgejo and
+  GitLab map onto too), with its tokens from a `TokenSource`. The daemon's
+  forge blocks read through it with the person's `gh` token; the platform
+  will with an installation or one-use user token. It knows no blocks.
 - `crates/testkit`: the harness for the daemon's integration tests.
 - `crates/desktop`: the desktop app (Tauri). Outside the Cargo workspace, with
   its own `Cargo.lock`, so it releases on its own (#388).

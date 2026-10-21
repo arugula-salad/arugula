@@ -59,7 +59,9 @@ pub mod live;
 #[cfg(feature = "labs")]
 mod labs_forges;
 pub mod login;
-pub mod model;
+// The normalized model (M160: the GitHub crate's, which Forgejo and GitLab
+// map onto too).
+pub use arugula_forge_github::model;
 pub mod util;
 
 use std::{
@@ -84,7 +86,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::{info, warn};
 
-use self::model::{Check, Event, EventLine, Item, ItemKind, ItemText, Me, Pr, Provider, Review, Reviewer, Want};
+use self::model::{Event, EventLine, Item, ItemKind, ItemText, Me, Pr, Provider, Review, Reviewer, Want};
 use crate::{
     block::{Block, BlockCtx, Summary, no_method},
     mux::AskReply,
@@ -115,41 +117,12 @@ const LINKED: Duration = Duration::from_secs(30);
 
 // ---------------------------------------------------------------- adapters
 
-/// What went wrong talking to a forge.
-#[derive(Debug, Clone)]
-pub enum Error {
-    /// No login, or no token for it.
-    Login(String),
-    /// 401 or 403.
-    Denied(String),
-    NotFound(String),
-    Http(String),
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Error::Login(e) => write!(f, "{e}"),
-            Error::Denied(e) => write!(f, "the forge refused the login: {e}"),
-            Error::NotFound(e) => write!(f, "not found: {e}"),
-            Error::Http(e) => write!(f, "{e}"),
-        }
-    }
-}
-
-/// A URL as it may be logged (no query: nothing secret is ever in one,
-/// but a forge's paging is noise).
-pub fn redact(url: &str) -> &str {
-    url.split('?').next().unwrap_or(url)
-}
-
-/// The cheap part of a read: the item and its checks.
-pub struct Polled {
-    pub item: Item,
-    pub checks: Vec<Check>,
-    /// What changes when reviews or the timeline might have.
-    pub fingerprint: String,
-}
+// What went wrong, a poll's cheap part and a write's answer are the GitHub
+// crate's, and every forge's adapter uses them.
+pub use arugula_forge_github::{Error, Polled, Sent};
+// Forgejo's adapter (Labs) logs URLs with it.
+#[cfg(feature = "labs")]
+pub use arugula_forge_github::redact;
 
 /// What the daemon does with a [`Write`] (the type is proto's).
 trait WriteExt: Sized {
@@ -212,12 +185,6 @@ impl WriteExt for Write {
             Write::Merge { .. } | Write::Rerun | Write::Live { .. } => None,
         }
     }
-}
-
-/// What a write did.
-pub struct Sent {
-    pub url: Option<String>,
-    pub said: String,
 }
 
 /// A forge, through one login (M38 and M39 add GitHub's and GitLab's).
@@ -613,7 +580,7 @@ impl ForgeBlock {
         };
         let repo = self.config.lock().unwrap().repo.clone();
         let token = github::GhToken::new(runner.clone(), &host).for_repo(&repo);
-        let a: Arc<dyn Adapter> = Arc::new(github::Github::new(&api, http(), token));
+        let a: Arc<dyn Adapter> = Arc::new(github::client(&api, token));
         Ok(Some(self.attach(host, api, a)))
     }
 

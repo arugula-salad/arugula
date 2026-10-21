@@ -1,12 +1,13 @@
 //! The normalized model of a pull request (S23's structs): an item, its
 //! reviews, checks and timeline events, the same whichever forge it's on.
-//! An adapter per provider ([`super::forgejo`], [`super::gitlab`]) maps a forge's answers onto
-//! it. The attention rules are written against it, not against a forge.
+//! An adapter per provider ([`crate::parse`] for GitHub; the daemon's for
+//! Forgejo and GitLab) maps a forge's answers onto it. The attention rules
+//! are written against it, not against a forge.
 
 use serde::{Deserialize, Serialize};
 
-// The model types the block's state is made of are proto's (`arugula_proto::forge`),
-// which the web client's types are made from; this module keeps their logic.
+// The model types are proto's (`arugula_proto::forge`), which the web client's
+// are made from; this module keeps their logic.
 pub use arugula_proto::forge::{
     Branch, Check, CheckSource, CheckState, Event, EventKind, Issue, Item, ItemKind, ItemState, Linked, Pr, Provider,
     Review, ReviewState, Reviewer, RunRef,

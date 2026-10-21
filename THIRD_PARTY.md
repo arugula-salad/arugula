@@ -5670,6 +5670,7 @@ Used by:
 - [arugula-core 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugulad 0.55.1](https://github.com/arugula-salad/arugula)
 - [arugula-e2e 0.0.0](https://github.com/arugula-salad/arugula)
+- [arugula-forge-github 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-mux 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-platform 0.55.1](https://github.com/arugula-salad/arugula)
 - [arugula-proto 0.0.0](https://github.com/arugula-salad/arugula)
