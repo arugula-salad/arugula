@@ -39,13 +39,13 @@ never = [
     "terminal bytes, snapshots, logs, scrollback; the lines of a pane nobody quoted into chat",
     "link keys (a link's fragment), and Shared Docs' keys",
     "the push payloads machines send, in the clear",
-    "a person's own credentials: GitHub's OAuth token (used once at sign-in), forge tokens",
+    "a person's own credentials: GitHub's OAuth token (used once at sign-in), the one-use user token a send is made with (used for one call, then revoked), forge tokens",
 ]
 
 # Who else sees what control holds, for the doc.
 [parties.litestream]
 name = "Litestream's bucket"
-sees = "Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. Cloud secrets are there sealed, and their key isn't."
+sees = "Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. On Postgres, the platform's tables go there in its nightly dump instead: encrypted, kept 30 days. Cloud secrets are there sealed, and their key isn't."
 
 [parties.managoat]
 name = "Managoat"
@@ -61,7 +61,7 @@ sees = "Sprites hosts hosted sandboxes: it knows each one's VM."
 
 [parties.github]
 name = "GitHub"
-sees = "GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it sees every token control mints and every draft sent, and it sends the webhooks."
+sees = "GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it makes every token control mints and sees each one used, every draft sent goes to it, and it sends the webhooks."
 
 [parties.stripe]
 name = "Stripe"
@@ -747,7 +747,7 @@ name = "inbox_items"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A member's inbox: an item (a linked repo's PR or issue, or a native issue), why it's there (a review requested, a mention, an assignment, failed checks, a mention in its thread), and when it came, was seen and was done."
+what = "A member's inbox: an item (a linked repo's PR or issue, or a native issue), why it's there (a review requested, failed checks, changes requested, a mention, an assignment, merged or approved and green, a draft waiting, a mention in its thread), and when it came, was seen and was done. A linked repo's item only for members GitHub lets read it."
 why_asleep = "The inbox is computed and pushed by the platform with every machine asleep, and mentions and assignments reach it as they happen."
 with_account = "deleted"
 seen_by = ["litestream"]
