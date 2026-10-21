@@ -108,7 +108,14 @@ async fn installation(Path((o, r)): Path<(String, String)>) -> Response {
 async fn token(Json(b): Json<Value>) -> Json<Value> {
     // Read only, for one repository, whatever it's for.
     assert!(b["permissions"].as_object().unwrap().values().all(|v| v == "read"), "{b}");
-    Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z" }))
+    // GitHub's answer names the one repository it covers, as M167 checks.
+    let covers = match (b["repository_ids"][0].as_u64(), b["repositories"][0].as_str()) {
+        (Some(id), _) => json!({ "id": id }),
+        (None, Some("app")) => json!({ "id": APP, "full_name": "acme/app" }),
+        (None, Some("site")) => json!({ "id": SITE, "full_name": "acme/site" }),
+        _ => json!({}),
+    };
+    Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": [covers] }))
 }
 
 async fn repo(Path((o, r)): Path<(String, String)>) -> Response {
