@@ -10,7 +10,7 @@
 use arugula_proto::flags::On;
 
 use super::{
-    results::{Capabilities, CloudReach, ControlJoined, ForgeSignIn, HooksLive},
+    results::{Capabilities, CloudReach, ControlJoined, ForgeSignIn, HooksLive, ThreadsReach},
     tools::{self, Call, Out, done},
 };
 use crate::{review::Runner, store::now_ms};
@@ -25,11 +25,12 @@ impl Call<'_> {
         let on = crate::labs::flags(app.control.state_dir());
         let forges = self.forges(on).await;
         let hooks = self.hooks().await;
-        let control = control(app, self.cloud_reach().await);
+        let (cloud, threads) = tokio::join!(self.cloud_reach(), self.threads_reach());
+        let control = control(app, cloud, threads);
         let tools = tools::list(self.scope(), on).into_iter().map(|t| t.name.to_string()).collect();
         let signed: Vec<&str> = forges.iter().filter(|f| f.signed_in).map(|f| f.forge.as_str()).collect();
         let summary = format!(
-            "Arugula {}: hooks {}; forges signed in: {}; control: {}; Cloud workspaces: {}",
+            "Arugula {}: hooks {}; forges signed in: {}; control: {}; Cloud workspaces: {}; conversations: {}",
             env!("CARGO_PKG_VERSION"),
             match hooks.live {
                 Some(true) => "live",
@@ -39,6 +40,7 @@ impl Call<'_> {
             if signed.is_empty() { "none".to_owned() } else { signed.join(", ") },
             control.state,
             if control.cloud.reachable { "yes" } else { "no" },
+            if control.threads.live { "yes" } else { "no" },
         );
         done(
             summary,
@@ -134,8 +136,9 @@ impl Call<'_> {
 }
 
 /// This machine's standing with control, the teams it holds rosters of,
-/// and whether its agents reach the owner's Cloud workspaces (#1094).
-fn control(app: &crate::server::App, cloud: CloudReach) -> ControlJoined {
+/// and whether its agents reach the owner's Cloud workspaces (#1094) and
+/// conversations (M198).
+fn control(app: &crate::server::App, cloud: CloudReach, threads: ThreadsReach) -> ControlJoined {
     let st = app.control.state();
     let teams = app
         .control
@@ -150,5 +153,5 @@ fn control(app: &crate::server::App, cloud: CloudReach) -> ControlJoined {
                 .collect()
         })
         .unwrap_or_default();
-    ControlJoined { state: st.state, kind: st.kind, name: st.name, connected: st.connected, teams, cloud }
+    ControlJoined { state: st.state, kind: st.kind, name: st.name, connected: st.connected, teams, cloud, threads }
 }

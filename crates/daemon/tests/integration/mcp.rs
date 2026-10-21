@@ -142,15 +142,15 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 24 - NO_FORGE);
+    assert_eq!(tools.len(), 27 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
     // kinds aren't listed, and a caller who names one is told where cloud
-    // agents went. Chat's old tools are gone (#1095).
-    for name in ["read_thread", "post_thread"] {
-        assert!(tools.iter().all(|t| t.name != name), "{name} is listed");
-        assert!(refused(&s, name, json!({ "pane": 1 })).await.contains("no tool"), "{name} by name");
+    // agents went. The thread tools are control's conversations (M198),
+    // everyone's.
+    for name in ["read_thread", "search_threads", "post_thread"] {
+        assert!(tools.iter().any(|t| t.name == name), "{name} isn't listed");
     }
     for (tool, kind) in [("show", "app"), ("show", "workspace")] {
         assert!(!kinds(&tools, tool).contains(&kind.to_owned()), "{tool} kind {kind} is listed");
@@ -398,7 +398,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 24 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 27 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -473,7 +473,7 @@ async fn http_with_a_token_until_it_is_revoked() {
         d.post("/api/mcp/tokens", json!({ "name": "watcher", "scope": "read" }))["token"].as_str().unwrap().to_owned();
     let w = http(&d, &ro, Client::named("watcher")).await.unwrap();
     // (read_forge is among the read-only tools only with the forge.)
-    assert_eq!(w.list_all_tools().await.unwrap().len(), 10 - NO_FORGE / 2);
+    assert_eq!(w.list_all_tools().await.unwrap().len(), 12 - NO_FORGE / 2);
     assert!(refused(&w, "run", json!({ "command": "true" })).await.contains("may only read"));
     // Grouped, a write is still a write.
     assert!(refused(&w, "show", json!({ "kind": "port", "port": 1 })).await.contains("may only read"));
@@ -901,14 +901,15 @@ async fn prompt_agent_records_the_client_as_who_prompted() {
 /// The `labs` file in the state dir lists `delegate`, `doc` and the other
 /// jobs (kinds of show and list), and removing it takes them away again,
 /// with no restart. Each is read where it's used, on a `stat`. Chat's old
-/// tools and their text never come back (#1095).
+/// pane-thread text never comes back (#1095); M198's thread tools are
+/// listed without labs.
 #[tokio::test(flavor = "multi_thread")]
 async fn labs_lists_all_the_tools() {
     let d = Daemon::child();
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 24 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 27 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -916,9 +917,8 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 26, "{:?}", names(&with));
+        assert_eq!(with.len(), 29, "{:?}", names(&with));
         assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
-        assert!(!with.iter().any(|t| t.name == "read_thread" || t.name == "post_thread"), "{:?}", names(&with));
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
         }
@@ -935,13 +935,13 @@ async fn labs_lists_all_the_tools() {
         // of the others' kinds.
         arugula_proto::flags::set(&d.state, "chat", true).unwrap();
         let chat = s.list_all_tools().await.unwrap();
-        assert_eq!(chat.len(), 24, "{:?}", names(&chat));
+        assert_eq!(chat.len(), 27, "{:?}", names(&chat));
         assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
         arugula_proto::flags::set(&d.state, "chat", false).unwrap();
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 24 - NO_FORGE);
+        assert_eq!(without.len(), 27 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -950,8 +950,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 24 - NO_FORGE, "{:?}", names(&with));
-        assert!(!with.iter().any(|t| t.name == "read_thread" || t.name == "post_thread"));
+        assert_eq!(with.len(), 27 - NO_FORGE, "{:?}", names(&with));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
@@ -1858,4 +1857,168 @@ async fn an_agent_drafts_on_a_linked_pr_with_no_block_and_a_person_sees_it() {
     assert_eq!((comment.1["kind"].as_str(), comment.1["agent"].as_str()), (Some("comment"), Some("cli")));
     assert_eq!(calls.last().unwrap().1["op"], "pr.comment");
     drop(d);
+}
+
+/// A fake control's platform for M198's thread routes: one channel the
+/// machine's grants reach, a message that mentions its agents (`me`) and
+/// one its owner's agent wrote, posts kept, search by `q`, a refusal for
+/// a room it isn't granted, and every call as it came: its path and
+/// query, its signature, its body.
+#[derive(Clone, Default)]
+struct FakeThreads {
+    me: String,
+    calls: Arc<std::sync::Mutex<Vec<(String, String, Value)>>>,
+}
+
+async fn fake_threads(f: FakeThreads) -> String {
+    use axum::{
+        Json, Router,
+        body::Bytes,
+        extract::{Path, Request, State},
+        http::StatusCode,
+        middleware::{self, Next},
+        response::IntoResponse,
+        routing::{get, post},
+    };
+    async fn note(State(f): State<FakeThreads>, req: Request, next: Next) -> axum::response::Response {
+        let at = req.uri().to_string();
+        if at.starts_with("/api/daemon/chat/") {
+            let auth = req.headers().get("x-arugula-auth").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+            let (parts, body) = req.into_parts();
+            let bytes: Bytes = axum::body::to_bytes(body, 1 << 20).await.unwrap();
+            f.calls.lock().unwrap().push((at, auth, serde_json::from_slice(&bytes).unwrap_or_default()));
+            return next.run(Request::from_parts(parts, bytes.into())).await;
+        }
+        next.run(req).await
+    }
+    let room = json!({ "id": "ch_general", "kind": "channel", "team": "t1", "name": "general", "target": null,
+                       "project": null, "with": null, "last": 2, "last_mention": 1,
+                       "powers": ["threads.post", "threads.read"], "writable": true });
+    let reach =
+        json!([{ "kind": "project", "id": "prj_t1", "name": "acme", "powers": ["threads.post", "threads.read"] }]);
+    let (r1, r2) = (room.clone(), room);
+    let me = f.me.clone();
+    let messages = move || {
+        json!([
+            { "seq": 1, "at": 1, "author": "a2", "name": "Sam", "text": "@geek can you look?", "quote": null,
+              "pane": null, "mentions": [me.clone()], "edited": null, "deleted": null, "imported": null, "agent": null },
+            { "seq": 2, "at": 2, "author": "a1", "name": "Jake", "text": "on it", "quote": null, "pane": null,
+              "mentions": [], "edited": null, "deleted": null, "imported": null,
+              "agent": { "machine": "m1", "machine_name": "geek" } },
+        ])
+    };
+    let found = messages.clone();
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .route(
+            "/api/daemon/chat/rooms",
+            get(move || {
+                let (room, reach) = (r1.clone(), reach.clone());
+                async move { Json(json!({ "rooms": [room], "reach": reach })) }
+            }),
+        )
+        .route(
+            "/api/daemon/chat/rooms/{id}/messages",
+            get(move |Path(id): Path<String>| {
+                let (room, ms) = (r2.clone(), messages());
+                async move {
+                    if id != "ch_general" {
+                        return (StatusCode::NOT_FOUND, Json(json!({ "error": "no such room" }))).into_response();
+                    }
+                    Json(json!({ "room": room, "messages": [ms[0].clone()], "more": false })).into_response()
+                }
+            })
+            .post(|Path(id): Path<String>| async move {
+                if id == "dm_ab" {
+                    let why = "geek has no threads.post grant over your DMs: its owner gives it with `arugula grants add geek threads.post --dms`";
+                    return (StatusCode::FORBIDDEN, Json(json!({ "error": why, "reason": "agent_ungranted" })))
+                        .into_response();
+                }
+                Json(json!({ "seq": 3, "mentions": ["a2"], "unreached": ["nobody"], "pushed": [] })).into_response()
+            }),
+        )
+        .route(
+            "/api/daemon/chat/search",
+            get(move || {
+                let ms = found();
+                async move { Json(json!({ "found": [{ "room": "ch_general", "message": ms[1].clone() }] })) }
+            }),
+        )
+        .layer(middleware::from_fn_with_state(f.clone(), note))
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// M198: an agent lists, reads (its mentions too), searches and posts in
+/// the owner's conversations through control, signed as this machine, with
+/// no thread kept here; capabilities says they're live. Not joined, it's
+/// told so; a refusal says how to grant.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_reads_and_posts_in_conversations_through_control() {
+    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let said = refused(&s, "read_thread", json!({ "room": "ch_general" })).await;
+    assert!(said.contains("hasn't joined Arugula control"), "{said}");
+    let c = call(&s, "capabilities", json!({})).await;
+    assert_eq!(c["control"]["threads"]["live"], false, "{c}");
+
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let fake = FakeThreads { me: format!("machine:{}", keys.id()), ..Default::default() };
+    let url = fake_threads(fake.clone()).await;
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let c = loop {
+        let c = call(&s, "capabilities", json!({})).await;
+        if c["control"]["threads"]["live"] == true {
+            break c;
+        }
+        assert!(std::time::Instant::now() < deadline, "never live: {c}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    assert!(c["summary"].as_str().unwrap().contains("conversations: yes"), "{c}");
+    assert_eq!(c["control"]["threads"]["scopes"][0]["name"], "acme", "{c}");
+
+    let listed = call(&s, "list", json!({ "kind": "threads" })).await;
+    assert_eq!(listed["threads"][0]["id"], "ch_general", "{listed}");
+    assert!(
+        listed["summary"].as_str().unwrap().contains("#general (threads.post, threads.read), mentioned you at seq 1")
+    );
+
+    let read = call(&s, "read_thread", json!({ "room": "ch_general", "after_seq": 0, "mentions_only": true })).await;
+    assert_eq!((&read["messages"][0]["seq"], &read["next_after_seq"]), (&json!(1), &json!(1)), "{read}");
+    assert_eq!(read["messages"][0]["mentions_you"], true, "{read}");
+    assert!(read["summary"].as_str().unwrap().contains("[1] Sam: @geek can you look?"), "{read}");
+    let found = call(&s, "search_threads", json!({ "q": "on it*", "team": "t1" })).await;
+    assert_eq!(found["found"][0]["message"]["by"], "Jake's agent on geek", "{found}");
+
+    let posted = call(&s, "post_thread", json!({ "room": "iss_0123", "text": "looking, @sam" })).await;
+    assert_eq!(posted["seq"], 3, "{posted}");
+    let summary = posted["summary"].as_str().unwrap();
+    assert!(
+        summary.contains("labelled as your person's agent") && summary.contains("@nobody reached nobody"),
+        "{summary}"
+    );
+    let why = refused(&s, "post_thread", json!({ "room": "dm_ab", "text": "hi" })).await;
+    assert!(why.contains("arugula grants add geek threads.post --dms"), "{why}");
+    let why = refused(&s, "read_thread", json!({ "room": "ch_nope" })).await;
+    assert!(why.contains("no such room"), "{why}");
+
+    let calls = fake.calls.lock().unwrap().clone();
+    let paths: Vec<&str> = calls.iter().map(|(p, _, _)| p.as_str()).collect();
+    assert!(paths.contains(&"/api/daemon/chat/rooms/ch_general/messages?after=0&mentions=true"), "{paths:?}");
+    assert!(paths.contains(&"/api/daemon/chat/search?q=on+it*&team=t1"), "{paths:?}");
+    let post = calls.iter().find(|(p, _, _)| p == "/api/daemon/chat/rooms/iss_0123/messages").unwrap();
+    assert_eq!(post.2, json!({ "text": "looking, @sam" }));
+    assert!(calls.iter().all(|(_, auth, _)| auth.starts_with(&format!("v2 {} ", keys.id()))), "{calls:?}");
+    assert!(!d.state.join("threads").exists(), "no thread kept here");
+    s.cancel().await.unwrap();
 }

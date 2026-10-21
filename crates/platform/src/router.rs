@@ -76,6 +76,12 @@ fn routes() -> Routes {
         .route("/api/chat/rooms/{id}/mute", post(chat::mute))
         .route(arugula_control_wire::chat::CHAT_READERS, post(chat::daemon_readers))
         .route(arugula_control_wire::chat::CHAT_IMPORT, post(chat::daemon_import))
+        .route(arugula_control_wire::chat::AGENT_ROOMS, get(chat::agent_threads::rooms))
+        .route(
+            "/api/daemon/chat/rooms/{id}/messages",
+            get(chat::agent_threads::messages).post(chat::agent_threads::post),
+        )
+        .route(arugula_control_wire::chat::AGENT_SEARCH, get(chat::agent_threads::search))
         .route("/api/grants", get(grants::list).post(grants::give))
         .route("/api/grants/{id}/revoke", post(grants::revoke))
         .route(arugula_control_wire::projects::PROJECTS, get(projects::list))

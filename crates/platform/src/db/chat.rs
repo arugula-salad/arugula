@@ -443,6 +443,58 @@ impl Db {
         Ok((ms, more))
     }
 
+    /// [`chat_messages`](Self::chat_messages), of only those that mention
+    /// `who` (an account, or a machine's agents as `machine:<id>`, M198).
+    pub fn chat_mentioning(&self, room: &str, who: &str, page: Page, limit: u32) -> Result<(Vec<Message>, bool)> {
+        let c = self.c();
+        let n = i64::from(limit) + 1;
+        let (op, order, at) = match page {
+            Page::After(after) => (">", "", after),
+            Page::Before(before) => ("<", " DESC", before),
+            Page::Newest => ("<", " DESC", i64::MAX),
+        };
+        let mentioned = match c.dialect() {
+            Dialect::Sqlite => "EXISTS (SELECT 1 FROM json_each(mentions) WHERE value = ?4)",
+            Dialect::Postgres => "EXISTS (SELECT 1 FROM jsonb_array_elements_text(mentions::jsonb) v WHERE v = ?4)",
+        };
+        let mut ms = c.query_map(
+            &format!(
+                "SELECT {MSG_COLS} FROM chat_messages WHERE room = ?1 AND seq {op} ?2 AND {mentioned}
+                 ORDER BY seq{order} LIMIT ?3"
+            ),
+            params![room, at, n, who],
+            msg_row,
+        )?;
+        let more = ms.len() > limit as usize;
+        ms.truncate(limit as usize);
+        if !matches!(page, Page::After(_)) {
+            ms.reverse();
+        }
+        Ok((ms, more))
+    }
+
+    /// The newest message in each of these rooms that mentions `who` (as
+    /// [`chat_mentioning`](Self::chat_mentioning)), by room: one statement.
+    pub fn chat_last_mentions(&self, rooms: &[&str], who: &str) -> Result<std::collections::HashMap<String, i64>> {
+        if rooms.is_empty() {
+            return Ok(Default::default());
+        }
+        let c = self.c();
+        let mentioned = match c.dialect() {
+            Dialect::Sqlite => "EXISTS (SELECT 1 FROM json_each(mentions) WHERE value = ?2)",
+            Dialect::Postgres => "EXISTS (SELECT 1 FROM jsonb_array_elements_text(mentions::jsonb) v WHERE v = ?2)",
+        };
+        let rows = c.query_map(
+            &format!(
+                "SELECT room, max(seq) FROM chat_messages WHERE {} AND deleted IS NULL AND {mentioned} GROUP BY room",
+                in_json(&c, "room", 1)
+            ),
+            params![json_list(rooms)?, who],
+            |r| Ok((r.get::<String>(0)?, r.get::<i64>(1)?)),
+        )?;
+        Ok(rows.into_iter().collect())
+    }
+
     /// Bring in a machine's old messages (M124), each once by its old
     /// number (`imported_id`): those the room has already are left out.
     /// While the room holds nothing of control's own, they keep their

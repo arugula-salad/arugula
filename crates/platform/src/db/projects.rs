@@ -410,6 +410,20 @@ impl Db {
         )
     }
 
+    /// A machine's live agent grants (M197) that `by`, its owner, gave:
+    /// what its agents reach (M198).
+    pub fn agent_grants_of(&self, daemon: &str, by: &str) -> anyhow::Result<Vec<Grant>> {
+        self.c().query_map(
+            &format!(
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1
+                 AND granted_by = ?2 AND revoked_at IS NULL AND power IN (?3, ?4, ?5)
+                 ORDER BY scope_kind, scope_id, power"
+            ),
+            params![daemon, by, AGENT_POWERS[0], AGENT_POWERS[1], AGENT_POWERS[2]],
+            grant_row,
+        )
+    }
+
     /// The last hub change applied here; `None` before the first read.
     pub fn feed_after(&self) -> anyhow::Result<Option<u64>> {
         self.c().query_row("SELECT seq FROM hub_feed WHERE reader = ?1", params![READER], |r| r.get(0)).optional()

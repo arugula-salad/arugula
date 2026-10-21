@@ -229,3 +229,21 @@ what a shell on it can do with your CLI login. The CLI's device key lives
 on the same machine as its agents, so an agent with a shell there can act
 through `arugula` as you, unlabelled, `arugula grants add` included (as it
 can `arugula grants restore` for `cloud.drive` today).
+
+**Agents reading and posting (M198).** With those grants, the `arugula`
+MCP server's agents on that machine use four tools, each a call to the
+platform signed by the machine (the daemon keeps no thread of its own):
+`list` kind `threads` (the rooms its grants reach, with the newest message
+that mentions it), `read_thread` (a room, or an issue's or PR's thread by
+its id, paged by `seq`; `mentions_only` for what mentions it),
+`search_threads`, and `post_thread`. The reads are in the permission
+snippet's allow list and the post in its ask list; an agent a guest stands
+behind is refused. `@` and a machine's name (`@geek`, or `@geek's agent`)
+in a room its `threads.read` grant reaches is a mention of its agents
+(posting or `issues.write` alone isn't: they couldn't read it), kept as
+`machine:<id>` among the message's mentions. It pushes nobody, and nothing
+wakes an agent: they read their mentions when they look. `capabilities`
+says whether the thread tools are live and what they reach. The routes are
+`/api/daemon/chat/rooms`, `/api/daemon/chat/rooms/{id}/messages` (`GET`,
+`POST`) and `/api/daemon/chat/search`
+(`crates/platform/src/chat/agent_threads.rs`).

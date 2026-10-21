@@ -987,6 +987,7 @@ const LIST: &[Kind] = &[
     super::cloud::LIST_TABS,
     super::cloud::LIST_AGENTS,
     super::repos::LIST_LINKED,
+    super::threads::LIST,
 ];
 
 /// The jobs that work but aren't listed without their Labs flag: they're for
@@ -1437,6 +1438,43 @@ fn all_defs() -> Vec<Def> {
             flag: None,
             output: None,
         },
+        // M198: agents in conversations, through the owner's grants.
+        Def {
+            name: super::threads::READ_TOOL,
+            title: "Read a conversation",
+            description: super::threads::READ_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::threads::ReadThreadArgs>),
+            read_only: true,
+            destructive: false,
+            idempotent: true,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
+        Def {
+            name: super::threads::SEARCH_TOOL,
+            title: "Search conversations",
+            description: super::threads::SEARCH_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::threads::SearchThreadsArgs>),
+            read_only: true,
+            destructive: false,
+            idempotent: true,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
+        Def {
+            name: super::threads::POST_TOOL,
+            title: "Post in a conversation",
+            description: super::threads::POST_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::threads::PostThreadArgs>),
+            read_only: false,
+            destructive: false,
+            idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
     ]
 }
 
@@ -1868,6 +1906,22 @@ impl<'a> Call<'a> {
             ("forge_read" | "forge_draft", Some(kind)) => self.forge_ops(name, kind, args).await,
             ("read_cloud", Some(kind)) => self.read_cloud(kind, args).await,
             ("cloud", Some(kind)) => self.drive_cloud(kind, args).await,
+            ("list", Some("threads")) => match parse::<NoArgs>(args) {
+                Ok(_) => self.list_threads().await,
+                Err(e) => Err(e),
+            },
+            ("read_thread", _) => match parse(args) {
+                Ok(a) => self.read_thread(a).await,
+                Err(e) => Err(e),
+            },
+            ("search_threads", _) => match parse(args) {
+                Ok(a) => self.search_threads(a).await,
+                Err(e) => Err(e),
+            },
+            ("post_thread", _) => match parse(args) {
+                Ok(a) => self.post_thread(a).await,
+                Err(e) => Err(e),
+            },
             ("delegate", Some(kind @ ("send" | "get" | "answer" | "cancel" | "review" | "apply"))) => match parse(args)
             {
                 Ok(a) => self.delegate(kind, a).await,
@@ -4235,8 +4289,6 @@ mod tests {
             // Cloud workspaces (#1094) are everyone's; chant's are Labs'.
             let tools = tools.replace("cloud workspace", "").replace("cloud_workspace", "");
             assert!(!tools.contains("workspace"), "the tool list mentions workspaces");
-            assert!(!tools.contains("read_thread"), "the tool list mentions chat");
-            assert!(!tools.contains("post_thread"), "the tool list mentions chat");
         }
         let shown = kinds_of(labs, "show");
         assert!(!shown.contains(&"app") && !shown.contains(&"workspace"), "{shown:?}");
@@ -4291,7 +4343,7 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full, fl(false));
-        assert_eq!(all.len(), 24 - NO_FORGE);
+        assert_eq!(all.len(), 27 - NO_FORGE);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -4308,6 +4360,8 @@ mod tests {
             "read_invite",
             "read_file",
             "read_cloud",
+            "read_thread",
+            "search_threads",
         ];
         want.retain(|n| crate::forges::BUILT || !FORGE_TOOLS.contains(n));
         assert_eq!(ro, want);
@@ -4321,9 +4375,9 @@ mod tests {
         assert_eq!((hint("show").destructive_hint, hint("show").open_world_hint), (Some(false), Some(true)));
     }
 
-    /// Chat's old tools: agents are out of chat (#1095), so no build has
-    /// them, whatever its flags.
-    const CHAT_TOOLS: [&str; 2] = ["read_thread", "post_thread"];
+    /// The thread tools (M198): agents are in conversations again
+    /// (aru-091), through control's platform, with no thread kept here.
+    const THREAD_TOOLS: [&str; 3] = ["read_thread", "search_threads", "post_thread"];
 
     /// How many of the tools a build without the forge doesn't list.
     const NO_FORGE: usize = if crate::forges::BUILT { 0 } else { FORGE_TOOLS.len() };
@@ -4429,13 +4483,12 @@ mod tests {
         let named = |k: &str| e.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').any(|w| w == k);
         assert!(named("port") && named("cloud_workspace") && !e.contains("managoat") && !named("workspace"), "{e}");
         let every: Vec<&str> = all_defs().iter().map(|d| d.name).collect();
-        for name in CHAT_TOOLS {
-            assert!(!every.contains(&name), "{name} is an agent's again");
-            assert!(route(name, json!({}), fl(true)).is_err(), "{name}");
+        for name in THREAD_TOOLS {
+            assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
         }
-        assert_eq!(every.len(), 26);
-        assert_eq!(defs(fl(false)).len(), 24 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 26 - NO_FORGE);
+        assert_eq!(every.len(), 29);
+        assert_eq!(defs(fl(false)).len(), 27 - NO_FORGE);
+        assert_eq!(defs(fl(true)).len(), 29 - NO_FORGE);
         assert_eq!(every.len(), defs(fl(false)).len() + 2 + NO_FORGE, "and delegate and doc");
     }
 
@@ -4525,8 +4578,8 @@ mod tests {
     }
 
     /// What a stranger can't use isn't in the instructions or in the tools'
-    /// descriptions and arguments either; chat's text is there only with
-    /// `labs`.
+    /// descriptions and arguments either. (Conversations in control are
+    /// everyone's since M198.)
     #[test]
     fn the_prose_leaves_out_what_a_stranger_cant_use() {
         let mut prose = vec![crate::mcp::instructions(fl(false))];
@@ -4556,7 +4609,6 @@ mod tests {
                 "sandbox",
                 "wisp",
                 "open_app",
-                "thread",
                 "@agent",
                 "\"vm\"",
                 "vm_tab",
@@ -4631,7 +4683,7 @@ mod tests {
                 .filter(|n| crate::forges::BUILT || !FORGE_TOOLS.contains(n))
                 .collect()
         };
-        // The snippet lists what a stranger sees; the two chat tools join with labs.
+        // The snippet lists what a stranger sees.
         let defs = defs(fl(false));
         let want = |ro: bool| -> Vec<&str> { defs.iter().filter(|d| d.read_only == ro).map(|d| d.name).collect() };
         assert_eq!(

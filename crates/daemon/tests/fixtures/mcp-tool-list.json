@@ -610,7 +610,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -641,7 +641,8 @@
               "cloud_workspaces",
               "cloud_tabs",
               "cloud_agents",
-              "linked_repos"
+              "linked_repos",
+              "threads"
             ],
             "type": "string"
           },
@@ -774,13 +775,18 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "threads": {
+                "$ref": "#/$defs/ThreadsReach",
+                "description": "Whether you can read and post in the user's conversations from here\n(M198)."
               }
             },
             "required": [
               "state",
               "connected",
               "teams",
-              "cloud"
+              "cloud",
+              "threads"
             ],
             "type": "object"
           },
@@ -853,6 +859,61 @@
             },
             "required": [
               "inbox",
+              "note"
+            ],
+            "type": "object"
+          },
+          "ThreadScope": {
+            "description": "A scope a machine's agent grants reach.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "description": "`project` (its channels, issues and their threads) or `account`\n(the owner's DMs).",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "powers": {
+                "description": "threads.read, threads.post, issues.write.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name",
+              "powers"
+            ],
+            "type": "object"
+          },
+          "ThreadsReach": {
+            "description": "The conversations in control that agents here reach (M198): through\ngrants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live thread grant\n(threads.read or threads.post) over something its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "scopes": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/ThreadScope"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "scopes",
               "note"
             ],
             "type": "object"
@@ -2842,6 +2903,130 @@
       },
       "name": "link_repo",
       "title": "Link a GitHub repo to a project"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a conversation"
+      },
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "after_seq": {
+            "default": null,
+            "description": "Messages after this seq, oldest first (a previous read's\nnext_after_seq). Without it or before_seq: the newest page.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "before_seq": {
+            "default": null,
+            "description": "The page before this seq.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "At most this many (default 50, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "mentions_only": {
+            "default": false,
+            "description": "Only the messages that mention this machine's agents (@ and its\nname).",
+            "type": "boolean"
+          },
+          "room": {
+            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) for its thread.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room"
+        ],
+        "title": "ReadThreadArgs",
+        "type": "object"
+      },
+      "name": "read_thread",
+      "title": "Read a conversation"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Search conversations"
+      },
+      "description": "Search the conversations in Arugula control this machine's agents may read (threads.read): words (mea* a prefix), in:#channel, from:@login, has:quote. Newest first, at most 50.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "q": {
+            "description": "Words (mea* for a prefix), with in:#channel, from:@login or\nhas:quote.",
+            "type": "string"
+          },
+          "team": {
+            "default": null,
+            "description": "Only one team's rooms (its id).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "title": "SearchThreadsArgs",
+        "type": "object"
+      },
+      "name": "search_threads",
+      "title": "Search conversations"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Post in a conversation"
+      },
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "room": {
+            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) to comment on it.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The message, in markdown; @login mentions a person there.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room",
+          "text"
+        ],
+        "title": "PostThreadArgs",
+        "type": "object"
+      },
+      "name": "post_thread",
+      "title": "Post in a conversation"
     }
   ],
   "block, labs true": [
@@ -3565,7 +3750,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -3602,7 +3787,8 @@
               "cloud_workspaces",
               "cloud_tabs",
               "cloud_agents",
-              "linked_repos"
+              "linked_repos",
+              "threads"
             ],
             "type": "string"
           },
@@ -3735,13 +3921,18 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "threads": {
+                "$ref": "#/$defs/ThreadsReach",
+                "description": "Whether you can read and post in the user's conversations from here\n(M198)."
               }
             },
             "required": [
               "state",
               "connected",
               "teams",
-              "cloud"
+              "cloud",
+              "threads"
             ],
             "type": "object"
           },
@@ -3814,6 +4005,61 @@
             },
             "required": [
               "inbox",
+              "note"
+            ],
+            "type": "object"
+          },
+          "ThreadScope": {
+            "description": "A scope a machine's agent grants reach.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "description": "`project` (its channels, issues and their threads) or `account`\n(the owner's DMs).",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "powers": {
+                "description": "threads.read, threads.post, issues.write.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name",
+              "powers"
+            ],
+            "type": "object"
+          },
+          "ThreadsReach": {
+            "description": "The conversations in control that agents here reach (M198): through\ngrants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live thread grant\n(threads.read or threads.post) over something its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "scopes": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/ThreadScope"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "scopes",
               "note"
             ],
             "type": "object"
@@ -5968,6 +6214,130 @@
       },
       "name": "link_repo",
       "title": "Link a GitHub repo to a project"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a conversation"
+      },
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "after_seq": {
+            "default": null,
+            "description": "Messages after this seq, oldest first (a previous read's\nnext_after_seq). Without it or before_seq: the newest page.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "before_seq": {
+            "default": null,
+            "description": "The page before this seq.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "At most this many (default 50, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "mentions_only": {
+            "default": false,
+            "description": "Only the messages that mention this machine's agents (@ and its\nname).",
+            "type": "boolean"
+          },
+          "room": {
+            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) for its thread.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room"
+        ],
+        "title": "ReadThreadArgs",
+        "type": "object"
+      },
+      "name": "read_thread",
+      "title": "Read a conversation"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Search conversations"
+      },
+      "description": "Search the conversations in Arugula control this machine's agents may read (threads.read): words (mea* a prefix), in:#channel, from:@login, has:quote. Newest first, at most 50.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "q": {
+            "description": "Words (mea* for a prefix), with in:#channel, from:@login or\nhas:quote.",
+            "type": "string"
+          },
+          "team": {
+            "default": null,
+            "description": "Only one team's rooms (its id).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "title": "SearchThreadsArgs",
+        "type": "object"
+      },
+      "name": "search_threads",
+      "title": "Search conversations"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Post in a conversation"
+      },
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "room": {
+            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) to comment on it.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The message, in markdown; @login mentions a person there.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room",
+          "text"
+        ],
+        "title": "PostThreadArgs",
+        "type": "object"
+      },
+      "name": "post_thread",
+      "title": "Post in a conversation"
     }
   ],
   "full, labs false": [
@@ -6581,7 +6951,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -6612,7 +6982,8 @@
               "cloud_workspaces",
               "cloud_tabs",
               "cloud_agents",
-              "linked_repos"
+              "linked_repos",
+              "threads"
             ],
             "type": "string"
           },
@@ -6745,13 +7116,18 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "threads": {
+                "$ref": "#/$defs/ThreadsReach",
+                "description": "Whether you can read and post in the user's conversations from here\n(M198)."
               }
             },
             "required": [
               "state",
               "connected",
               "teams",
-              "cloud"
+              "cloud",
+              "threads"
             ],
             "type": "object"
           },
@@ -6824,6 +7200,61 @@
             },
             "required": [
               "inbox",
+              "note"
+            ],
+            "type": "object"
+          },
+          "ThreadScope": {
+            "description": "A scope a machine's agent grants reach.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "description": "`project` (its channels, issues and their threads) or `account`\n(the owner's DMs).",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "powers": {
+                "description": "threads.read, threads.post, issues.write.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name",
+              "powers"
+            ],
+            "type": "object"
+          },
+          "ThreadsReach": {
+            "description": "The conversations in control that agents here reach (M198): through\ngrants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live thread grant\n(threads.read or threads.post) over something its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "scopes": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/ThreadScope"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "scopes",
               "note"
             ],
             "type": "object"
@@ -8813,6 +9244,130 @@
       },
       "name": "link_repo",
       "title": "Link a GitHub repo to a project"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a conversation"
+      },
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "after_seq": {
+            "default": null,
+            "description": "Messages after this seq, oldest first (a previous read's\nnext_after_seq). Without it or before_seq: the newest page.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "before_seq": {
+            "default": null,
+            "description": "The page before this seq.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "At most this many (default 50, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "mentions_only": {
+            "default": false,
+            "description": "Only the messages that mention this machine's agents (@ and its\nname).",
+            "type": "boolean"
+          },
+          "room": {
+            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) for its thread.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room"
+        ],
+        "title": "ReadThreadArgs",
+        "type": "object"
+      },
+      "name": "read_thread",
+      "title": "Read a conversation"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Search conversations"
+      },
+      "description": "Search the conversations in Arugula control this machine's agents may read (threads.read): words (mea* a prefix), in:#channel, from:@login, has:quote. Newest first, at most 50.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "q": {
+            "description": "Words (mea* for a prefix), with in:#channel, from:@login or\nhas:quote.",
+            "type": "string"
+          },
+          "team": {
+            "default": null,
+            "description": "Only one team's rooms (its id).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "title": "SearchThreadsArgs",
+        "type": "object"
+      },
+      "name": "search_threads",
+      "title": "Search conversations"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Post in a conversation"
+      },
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "room": {
+            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) to comment on it.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The message, in markdown; @login mentions a person there.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room",
+          "text"
+        ],
+        "title": "PostThreadArgs",
+        "type": "object"
+      },
+      "name": "post_thread",
+      "title": "Post in a conversation"
     }
   ],
   "full, labs true": [
@@ -9536,7 +10091,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -9573,7 +10128,8 @@
               "cloud_workspaces",
               "cloud_tabs",
               "cloud_agents",
-              "linked_repos"
+              "linked_repos",
+              "threads"
             ],
             "type": "string"
           },
@@ -9706,13 +10262,18 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "threads": {
+                "$ref": "#/$defs/ThreadsReach",
+                "description": "Whether you can read and post in the user's conversations from here\n(M198)."
               }
             },
             "required": [
               "state",
               "connected",
               "teams",
-              "cloud"
+              "cloud",
+              "threads"
             ],
             "type": "object"
           },
@@ -9785,6 +10346,61 @@
             },
             "required": [
               "inbox",
+              "note"
+            ],
+            "type": "object"
+          },
+          "ThreadScope": {
+            "description": "A scope a machine's agent grants reach.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "description": "`project` (its channels, issues and their threads) or `account`\n(the owner's DMs).",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "powers": {
+                "description": "threads.read, threads.post, issues.write.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name",
+              "powers"
+            ],
+            "type": "object"
+          },
+          "ThreadsReach": {
+            "description": "The conversations in control that agents here reach (M198): through\ngrants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live thread grant\n(threads.read or threads.post) over something its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "scopes": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/ThreadScope"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "scopes",
               "note"
             ],
             "type": "object"
@@ -11939,6 +12555,130 @@
       },
       "name": "link_repo",
       "title": "Link a GitHub repo to a project"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a conversation"
+      },
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "after_seq": {
+            "default": null,
+            "description": "Messages after this seq, oldest first (a previous read's\nnext_after_seq). Without it or before_seq: the newest page.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "before_seq": {
+            "default": null,
+            "description": "The page before this seq.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "At most this many (default 50, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "mentions_only": {
+            "default": false,
+            "description": "Only the messages that mention this machine's agents (@ and its\nname).",
+            "type": "boolean"
+          },
+          "room": {
+            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) for its thread.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room"
+        ],
+        "title": "ReadThreadArgs",
+        "type": "object"
+      },
+      "name": "read_thread",
+      "title": "Read a conversation"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Search conversations"
+      },
+      "description": "Search the conversations in Arugula control this machine's agents may read (threads.read): words (mea* a prefix), in:#channel, from:@login, has:quote. Newest first, at most 50.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "q": {
+            "description": "Words (mea* for a prefix), with in:#channel, from:@login or\nhas:quote.",
+            "type": "string"
+          },
+          "team": {
+            "default": null,
+            "description": "Only one team's rooms (its id).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "title": "SearchThreadsArgs",
+        "type": "object"
+      },
+      "name": "search_threads",
+      "title": "Search conversations"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Post in a conversation"
+      },
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "room": {
+            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) to comment on it.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The message, in markdown; @login mentions a person there.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room",
+          "text"
+        ],
+        "title": "PostThreadArgs",
+        "type": "object"
+      },
+      "name": "post_thread",
+      "title": "Post in a conversation"
     }
   ],
   "read, labs false": [
@@ -12143,7 +12883,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -12174,7 +12914,8 @@
               "cloud_workspaces",
               "cloud_tabs",
               "cloud_agents",
-              "linked_repos"
+              "linked_repos",
+              "threads"
             ],
             "type": "string"
           },
@@ -12307,13 +13048,18 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "threads": {
+                "$ref": "#/$defs/ThreadsReach",
+                "description": "Whether you can read and post in the user's conversations from here\n(M198)."
               }
             },
             "required": [
               "state",
               "connected",
               "teams",
-              "cloud"
+              "cloud",
+              "threads"
             ],
             "type": "object"
           },
@@ -12386,6 +13132,61 @@
             },
             "required": [
               "inbox",
+              "note"
+            ],
+            "type": "object"
+          },
+          "ThreadScope": {
+            "description": "A scope a machine's agent grants reach.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "description": "`project` (its channels, issues and their threads) or `account`\n(the owner's DMs).",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "powers": {
+                "description": "threads.read, threads.post, issues.write.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name",
+              "powers"
+            ],
+            "type": "object"
+          },
+          "ThreadsReach": {
+            "description": "The conversations in control that agents here reach (M198): through\ngrants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live thread grant\n(threads.read or threads.post) over something its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "scopes": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/ThreadScope"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "scopes",
               "note"
             ],
             "type": "object"
@@ -13194,6 +13995,99 @@
       },
       "name": "read_cloud",
       "title": "Read a Cloud workspace"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a conversation"
+      },
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "after_seq": {
+            "default": null,
+            "description": "Messages after this seq, oldest first (a previous read's\nnext_after_seq). Without it or before_seq: the newest page.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "before_seq": {
+            "default": null,
+            "description": "The page before this seq.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "At most this many (default 50, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "mentions_only": {
+            "default": false,
+            "description": "Only the messages that mention this machine's agents (@ and its\nname).",
+            "type": "boolean"
+          },
+          "room": {
+            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) for its thread.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room"
+        ],
+        "title": "ReadThreadArgs",
+        "type": "object"
+      },
+      "name": "read_thread",
+      "title": "Read a conversation"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Search conversations"
+      },
+      "description": "Search the conversations in Arugula control this machine's agents may read (threads.read): words (mea* a prefix), in:#channel, from:@login, has:quote. Newest first, at most 50.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "q": {
+            "description": "Words (mea* for a prefix), with in:#channel, from:@login or\nhas:quote.",
+            "type": "string"
+          },
+          "team": {
+            "default": null,
+            "description": "Only one team's rooms (its id).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "title": "SearchThreadsArgs",
+        "type": "object"
+      },
+      "name": "search_threads",
+      "title": "Search conversations"
     }
   ],
   "read, labs true": [
@@ -13398,7 +14292,7 @@
         "readOnlyHint": true,
         "title": "List panes and more"
       },
-      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.",
+      "description": "What's here to work with, by kind (default panes).\n- panes (the default): Every pane and block (terminals, browsers, agents): where it is, what it runs, whether it needs attention, who started it.\n- conversations {all?, cwd?, limit?, live?, query?}: Claude Code conversations on this machine, from a terminal or the desktop app's Code tab, newest first: id, title, folder, first and last prompt, where it's open now, and the agent block that has it. show kind conversation opens one.\n- devices: The user's devices (their phone, say) that lend tools to agents: each with its tools and their arguments, and whether it's connected now. One that isn't can still be called with device_call: it's woken with a notification, which the user has to open.\n- agents {fresh?, query?}: The agents the user's team offers: every Claude Code agent recipe offered on this machine, the user's other machines, their teams' and teammates', one line each: name, machine and owner, model, description. A machine that's offline shows its agents as last seen. To hand one a task (this machine's too), delegate {kind: send, agent: NAME}; for a fix in its own project, with pr: true. To run one of this machine's beside you, start_agent {recipe: NAME}.\n- cloud_workspaces: The user's Cloud workspaces in Arugula control (machines in the cloud with their repositories checked out, each with tabs of agents): each one's id, name, status (provisioning while it sets up, with its step; ready; failed), whether a rebuild would change it, and its link on control's page. They're the machine owner's: control acts as them for any agent here.\n- cloud_tabs {cloud_workspace}: A Cloud workspace's tabs, each an agent's conversation on its machine: id, agent, model, cwd and status (opening, running, idle, needs_input, failed, closing).\n- cloud_agents: What a Cloud workspace's tab can run: the agents (curated ones and the user's own, by id) and the models, the first the default.\n- linked_repos {project?}: The GitHub repos linked to one of the user's projects in Arugula control (default their personal one): each one's name, whether it's private, and, for one unlinked, when its rows are purged.\n- threads: The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -13435,7 +14329,8 @@
               "cloud_workspaces",
               "cloud_tabs",
               "cloud_agents",
-              "linked_repos"
+              "linked_repos",
+              "threads"
             ],
             "type": "string"
           },
@@ -13568,13 +14463,18 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "threads": {
+                "$ref": "#/$defs/ThreadsReach",
+                "description": "Whether you can read and post in the user's conversations from here\n(M198)."
               }
             },
             "required": [
               "state",
               "connected",
               "teams",
-              "cloud"
+              "cloud",
+              "threads"
             ],
             "type": "object"
           },
@@ -13647,6 +14547,61 @@
             },
             "required": [
               "inbox",
+              "note"
+            ],
+            "type": "object"
+          },
+          "ThreadScope": {
+            "description": "A scope a machine's agent grants reach.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "description": "`project` (its channels, issues and their threads) or `account`\n(the owner's DMs).",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "powers": {
+                "description": "threads.read, threads.post, issues.write.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "name",
+              "powers"
+            ],
+            "type": "object"
+          },
+          "ThreadsReach": {
+            "description": "The conversations in control that agents here reach (M198): through\ngrants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live thread grant\n(threads.read or threads.post) over something its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "scopes": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/ThreadScope"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "scopes",
               "note"
             ],
             "type": "object"
@@ -14455,6 +15410,99 @@
       },
       "name": "read_cloud",
       "title": "Read a Cloud workspace"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a conversation"
+      },
+      "description": "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "after_seq": {
+            "default": null,
+            "description": "Messages after this seq, oldest first (a previous read's\nnext_after_seq). Without it or before_seq: the newest page.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "before_seq": {
+            "default": null,
+            "description": "The page before this seq.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "limit": {
+            "default": null,
+            "description": "At most this many (default 50, at most 200).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "mentions_only": {
+            "default": false,
+            "description": "Only the messages that mention this machine's agents (@ and its\nname).",
+            "type": "boolean"
+          },
+          "room": {
+            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) for its thread.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room"
+        ],
+        "title": "ReadThreadArgs",
+        "type": "object"
+      },
+      "name": "read_thread",
+      "title": "Read a conversation"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Search conversations"
+      },
+      "description": "Search the conversations in Arugula control this machine's agents may read (threads.read): words (mea* a prefix), in:#channel, from:@login, has:quote. Newest first, at most 50.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "q": {
+            "description": "Words (mea* for a prefix), with in:#channel, from:@login or\nhas:quote.",
+            "type": "string"
+          },
+          "team": {
+            "default": null,
+            "description": "Only one team's rooms (its id).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "title": "SearchThreadsArgs",
+        "type": "object"
+      },
+      "name": "search_threads",
+      "title": "Search conversations"
     }
   ]
 }

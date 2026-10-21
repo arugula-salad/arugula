@@ -47,7 +47,9 @@
 //! What one posts is the owner's, with the machine beside it
 //! ([`post_as`]), shown as "<owner>'s agent on <machine>"; a room any live
 //! agent grant reaches says whose agents, to everyone in it
-//! ([`room_agents`]). Nothing here wakes an agent.
+//! ([`room_agents`]). Nothing here wakes an agent. MCP's thread tools
+//! reach them through [`agent_threads`] (M198), and `@<machine>` mentions
+//! a machine's agents there ([`agent_mentions`]).
 //!
 //! [`Cache`]: crate::cache::Cache
 
@@ -92,6 +94,7 @@ use crate::{
     hub::{Account, Daemon, Flags, PushOptions, Team},
 };
 
+pub(crate) mod agent_threads;
 pub(crate) mod objects;
 
 type J<T> = Result<Json<T>, ApiError>;
@@ -706,6 +709,38 @@ async fn mentions(
     }
     let unreached = words.iter().filter(|w| !hit.contains(w.as_str())).cloned().collect();
     Ok((named, unreached))
+}
+
+/// The agents a text mentions (M198): an `@word` that named nobody, but
+/// names a machine whose live `threads.read` grant reaches `room` (one
+/// that can read the mention; [`room_agents`]), by its name: `@geek`, or
+/// `@geek's agent` (the word stops at the `'`). Each is stored beside the
+/// accounts as `machine:<id>`, and its word leaves `unreached`. Nobody is
+/// pushed for one and nothing wakes an agent: its agents read it over MCP.
+/// An agent doesn't mention its own machine.
+async fn agent_mentions(
+    app: &Platform,
+    facts: &Facts,
+    room: &Room,
+    unreached: &mut Vec<String>,
+    by: Option<&AgentPrincipal>,
+) -> anyhow::Result<Vec<String>> {
+    if unreached.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut agents = room_agents(app, facts, room).await?;
+    agents.retain(|a| a.powers.iter().any(|p| p == THREADS_READ));
+    let named = |a: &ChatRoomAgent, w: &str| !a.machine_name.is_empty() && a.machine_name.to_lowercase() == w;
+    let mut out: Vec<String> = Vec::new();
+    for a in &agents {
+        let mention = format!("{}{}", wire::AGENT_MENTION, a.machine);
+        if unreached.iter().any(|w| named(a, w)) && by.is_none_or(|b| b.machine != a.machine) && !out.contains(&mention)
+        {
+            out.push(mention);
+        }
+    }
+    unreached.retain(|w| !agents.iter().any(|a| named(a, w)));
+    Ok(out)
 }
 
 // ---------------------------------------------------------------- live
@@ -1549,7 +1584,9 @@ pub async fn post_as(
     app.limits.check_account_per_minute(CHAT_POSTS, &s.account)?;
     app.limits.check_all_per_minute(ALL_CHAT_POSTS)?;
     let people = audience(&app, &room).await?;
-    let (named, unreached) = mentions(&app, text, &people, &s.account).await?;
+    let (named, mut unreached) = mentions(&app, text, &people, &s.account).await?;
+    let mut stored = named.clone();
+    stored.extend(agent_mentions(&app, &facts, &room, &mut unreached, agent).await?);
     let at = now_ms();
     let seq = app.db.add_chat_message(
         &room.id,
@@ -1560,7 +1597,7 @@ pub async fn post_as(
             quote,
             ref_machine: b.pane.as_ref().map(|p| p.machine.as_str()),
             ref_pane: b.pane.as_ref().map(|p| p.pane.as_str()),
-            mentions: &named,
+            mentions: &stored,
             agent: agent.map(|a| a.machine.as_str()),
         },
     )?;
@@ -1576,7 +1613,7 @@ pub async fn post_as(
         &people,
     )
     .await?;
-    Ok(ChatPosted { seq, mentions: named, unreached, pushed })
+    Ok(ChatPosted { seq, mentions: stored, unreached, pushed })
 }
 
 /// How chat's pushes go: to every subscription the account has, with the
@@ -1699,7 +1736,8 @@ pub async fn edit(
     }
     sizes(text, None)?;
     app.limits.check_account_per_minute(CHAT_POSTS, &s.account)?;
-    let (named, _) = mentions(&app, text, &audience(&app, &room).await?, &s.account).await?;
+    let (mut named, mut unreached) = mentions(&app, text, &audience(&app, &room).await?, &s.account).await?;
+    named.extend(agent_mentions(&app, &facts, &room, &mut unreached, None).await?);
     app.db.edit_chat_message(&room.id, seq, text, &named, now_ms())?;
     app.chat.publish(&app.db, ChatLive::Changed { room: room.id.clone(), seq }, None);
     Ok(Json(shown(&app, &s.account, &message_in(&app, &room, seq)?).await?))
@@ -1787,34 +1825,50 @@ fn parse_search(q: &str) -> Asked {
 /// newest first.
 pub async fn search(State(app): State<Arc<Platform>>, s: Person, Query(q): Query<ChatSearchQuery>) -> J<ChatFound> {
     gate(&app, &s.account).await?;
-    let asked = parse_search(&q.q);
-    if asked.words.is_empty() && asked.channel.is_none() && asked.from.is_none() && !asked.has_quote {
-        return Ok(Json(ChatFound { found: vec![] }));
+    let team = q.team.as_deref();
+    Ok(Json(search_in(&app, &s.account, &q.q, |r, facts| Ok(in_team(facts, r, team))).await?))
+}
+
+/// Whether `r` is one team's: its channel or DM, a thread on its machine,
+/// or an object in its project. `None`: any.
+fn in_team(facts: &Facts, r: &Room, team: Option<&str>) -> bool {
+    match team {
+        Some(t) => {
+            r.scope == team_scope(t)
+                || objects::team_of(facts, r) == Some(t)
+                || r.machine.as_deref().is_some_and(|m| facts.daemons.get(m).and_then(|d| d.team.as_deref()) == Some(t))
+        }
+        None => true,
     }
-    app.limits.check_account(CHAT_SEARCHES, &s.account)?;
+}
+
+/// A search (`q` as a search box has it) over the rooms `account` sees
+/// that `keep` keeps: for a person ([`search`]) or their machine's agents
+/// ([`agent_threads::search`]), newest first.
+async fn search_in(
+    app: &Platform,
+    account: &str,
+    q: &str,
+    mut keep: impl FnMut(&Room, &Facts) -> anyhow::Result<bool>,
+) -> Result<ChatFound, ApiError> {
+    let asked = parse_search(q);
+    if asked.words.is_empty() && asked.channel.is_none() && asked.from.is_none() && !asked.has_quote {
+        return Ok(ChatFound { found: vec![] });
+    }
+    app.limits.check_account(CHAT_SEARCHES, account)?;
     let author = match &asked.from {
         // The login's account, else the one account by that name.
         Some(who) => match app.cache.accounts_called(&*app.hub, who).await?.as_slice() {
             [one] => Some(one.id.clone()),
-            _ => return Ok(Json(ChatFound { found: vec![] })),
+            _ => return Ok(ChatFound { found: vec![] }),
         },
         None => None,
     };
-    let (seen, facts) = rooms_seen(&app, &s.account).await?;
+    let (seen, facts) = rooms_seen(app, account).await?;
     let mut floors = HashMap::new();
     for (r, from) in seen {
-        let in_team = match &q.team {
-            Some(t) => {
-                r.scope == team_scope(t)
-                    || objects::team_of(&facts, &r) == Some(t.as_str())
-                    || r.machine
-                        .as_deref()
-                        .is_some_and(|m| facts.daemons.get(m).and_then(|d| d.team.as_deref()) == Some(t.as_str()))
-            }
-            None => true,
-        };
         let in_channel = asked.channel.as_ref().is_none_or(|c| r.kind == "channel" && r.name == *c);
-        if in_team && in_channel {
+        if in_channel && keep(&r, &facts)? {
             floors.insert(r.id, from);
         }
     }
@@ -1825,9 +1879,9 @@ pub async fn search(State(app): State<Arc<Platform>>, s: Person, Query(q): Query
         SEARCH_HITS,
     )?;
     let hits: Vec<&Message> = hits.iter().filter(|m| floors.get(&m.room).is_some_and(|from| m.at >= *from)).collect();
-    let shower = Shower::of(&app, &s.account, &hits).await?;
+    let shower = Shower::of(app, account, &hits).await?;
     let found = hits.into_iter().map(|m| ChatHit { room: m.room.clone(), message: shower.show(m) }).collect();
-    Ok(Json(ChatFound { found }))
+    Ok(ChatFound { found })
 }
 
 // ---------------------------------------------------------------- daemons

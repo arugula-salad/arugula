@@ -39,18 +39,18 @@ fn room(id: &str, kind: &str) -> Room {
     }
 }
 
-fn post(text: &str) -> ChatPost {
+pub(crate) fn post(text: &str) -> ChatPost {
     ChatPost { text: text.into(), pane: None, quote: None }
 }
 
-fn give(machine: &str, power: &str, scope: Value) -> Option<Value> {
+pub(crate) fn give(machine: &str, power: &str, scope: Value) -> Option<Value> {
     Some(json!({ "daemon": machine, "power": power, "scope": scope }))
 }
 
 /// a owns team t (b and x in it too) and the machine geek; c alone is in
 /// team u. #general is t's, and there's a DM between a and b and one
 /// between b and x. Chat is on for t. t's and u's default projects.
-async fn seeded() -> (Arc<TestHub>, Arc<crate::Platform>, String, String, String) {
+pub(crate) async fn seeded() -> (Arc<TestHub>, Arc<crate::Platform>, String, String, String) {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
@@ -67,7 +67,7 @@ async fn seeded() -> (Arc<TestHub>, Arc<crate::Platform>, String, String, String
     (hub, app, base, t, u)
 }
 
-fn geek() -> Machine {
+pub(crate) fn geek() -> Machine {
     Machine { account: "a".into(), daemon: "geek".into() }
 }
 

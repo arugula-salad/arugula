@@ -29,8 +29,18 @@
 //                 out, then ready; with --break the other is paused too, so
 //                 nothing takes it: {holder, other, lease_left_ms,
 //                 taken_after_lease_ms, ready_ms}
+//   agents BOX SSH_CONFIG [--break]
+//                 agents in conversations (M198), signed by BOX's daemon: the
+//                 owner gives BOX threads.read and threads.post over a team's
+//                 project (not with --break), @mentions BOX in a channel there;
+//                 Claude's view, `arugula mcp` on BOX over ssh, finds the
+//                 mention with read_thread, answers with post_thread and sees
+//                 capabilities say thread tools are live; the owner reads the
+//                 answer labelled as their agent on BOX; once the read grant
+//                 is revoked, the next read_thread is refused:
+//                 {room, machine, posted}
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHmac, randomBytes } from "node:crypto";
 import { Device } from "../web/fixtures/device.ts";
 
@@ -322,6 +332,99 @@ async function handover(d: Device, fakePort: number, stack: string, broken: bool
   }
 }
 
+/** `arugula mcp` on `box` over ssh: MCP on its stdio, one call at a time. */
+function mcpOn(box: string, cfg: string) {
+  const p = spawn("ssh", ["-F", cfg, box, 'sh -c "exec $HOME/.local/bin/arugula mcp"'], { stdio: ["pipe", "pipe", "pipe"] });
+  let buf = "";
+  let err = "";
+  const answers = new Map<number, any>();
+  p.stdout.on("data", (b) => {
+    buf += b.toString();
+    for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (!line) continue;
+      const m = JSON.parse(line);
+      if (typeof m.id === "number") answers.set(m.id, m);
+    }
+  });
+  p.stderr.on("data", (b) => (err += b.toString()));
+  let next = 1;
+  const send = (m: unknown) => p.stdin.write(JSON.stringify(m) + "\n");
+  const ask = async (method: string, params: unknown, ms = 20_000): Promise<any> => {
+    const id = next++;
+    send({ jsonrpc: "2.0", id, method, params });
+    const until = Date.now() + ms;
+    while (!answers.has(id)) {
+      if (Date.now() > until || p.exitCode !== null) throw new Error(`mcp on ${box}: no answer to ${method}: ${err.slice(-400)}`);
+      await sleep(50);
+    }
+    const a = answers.get(id);
+    if (a.error) throw new Error(`mcp on ${box}: ${method}: ${JSON.stringify(a.error)}`);
+    return a.result;
+  };
+  return {
+    async start() {
+      await ask("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "testnet", version: "0" } });
+      send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    },
+    /** A tool's answer: its structured content, or why it was refused. */
+    async call(name: string, args: unknown): Promise<{ ok: boolean; v: any; text: string }> {
+      const r = await ask("tools/call", { name, arguments: args });
+      const text = (r.content ?? []).map((c: any) => c.text ?? "").join("\n");
+      return { ok: r.isError !== true, v: r.structuredContent ?? {}, text };
+    },
+    stop() {
+      p.stdin.end();
+      p.kill();
+    },
+  };
+}
+
+async function agents(d: Device, box: string, cfg: string, broken: boolean) {
+  await must(d, "POST", "/api/flags", { name: "chat", on: true });
+  const team = await d.createTeam("agents claim");
+  const room = (await must(d, "POST", `/api/chat/teams/${team}/channels`, { name: `m198-${Date.now() % 100000}` })).id;
+  const projects = await must(d, "GET", "/api/projects");
+  const project = projects.projects.find((p: any) => p.team?.id === team)?.id;
+  if (!project) throw new Error(`no default project for team ${team}: ${JSON.stringify(projects)}`);
+  const machine = (await d.directory()).find((x) => x.name === box)?.id;
+  if (!machine) throw new Error(`control lists no daemon ${box}`);
+  const grants: Record<string, string> = {};
+  if (!broken) {
+    for (const power of ["threads.read", "threads.post"]) {
+      const g = await must(d, "POST", "/api/grants", { daemon: machine, power, scope: { kind: "project", id: project } });
+      grants[power] = g.id;
+    }
+  }
+  const mark = `M198-${process.pid}-${Date.now()}`;
+  const asked = await must(d, "POST", `/api/chat/rooms/${room}/messages`, { text: `@${box} look at ${mark}` });
+  if (!broken && !asked.mentions.includes(`machine:${machine}`)) throw new Error(`@${box} isn't a mention: ${JSON.stringify(asked)}`);
+
+  const mcp = mcpOn(box, cfg);
+  try {
+    await mcp.start();
+    const read = await mcp.call("read_thread", { room, mentions_only: true });
+    if (!read.ok || !read.text.includes(mark)) throw new Error(`read_thread didn't find the mention: ${read.text}`);
+    const posted = await mcp.call("post_thread", { room, text: `on it: ${mark}-reply` });
+    if (!posted.ok) throw new Error(`post_thread: ${posted.text}`);
+    const caps = await mcp.call("capabilities", {});
+    if (caps.v?.control?.threads?.live !== true) throw new Error(`capabilities: thread tools aren't live: ${caps.text}`);
+    const page = await must(d, "GET", `/api/chat/rooms/${room}/messages`);
+    const owner = page.messages.find((m: any) => m.text === `@${box} look at ${mark}`)?.author;
+    const reply = page.messages.find((m: any) => m.text === `on it: ${mark}-reply`);
+    if (!owner || reply?.author !== owner || reply.agent?.machine !== machine || reply.agent?.machine_name !== box) {
+      throw new Error(`the answer isn't labelled as the owner's agent on ${box}: ${JSON.stringify(reply)}`);
+    }
+    await must(d, "POST", `/api/grants/${grants["threads.read"]}/revoke`);
+    const after = await mcp.call("read_thread", { room });
+    if (after.ok || !after.text.includes("no threads.read grant")) throw new Error(`read after the revoke: ${after.text}`);
+    return { room, machine, posted: posted.v.seq };
+  } finally {
+    mcp.stop();
+  }
+}
+
 async function main() {
   const d = await Device.load(state);
   switch (cmd) {
@@ -335,8 +438,10 @@ async function main() {
       return fanout(d, [Number(rest[0]), Number(rest[1])]);
     case "handover":
       return handover(d, Number(rest[0]), rest[1], rest.includes("--break"));
+    case "agents":
+      return agents(d, rest[0], rest[1], rest.includes("--break"));
     default:
-      throw new Error(`unknown command ${cmd ?? "(none)"}: chat, hold, measure, fanout, handover`);
+      throw new Error(`unknown command ${cmd ?? "(none)"}: chat, hold, measure, fanout, handover, agents`);
   }
 }
 
