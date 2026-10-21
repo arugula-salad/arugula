@@ -3,8 +3,10 @@
 //! hub does both and puts what it found in the request's extensions as an
 //! [`Asked`]. In process that's the hub's `hub_port::gate` layer in front
 //! of [`router`](crate::router()); out of process (M140) it's the platform's
-//! check of the hub's signed principal header
-//! (`arugula_control_common::principal`).
+//! check of the hub's signed principal header ([`remote::vouched`],
+//! `arugula_control_common::principal`).
+//!
+//! [`remote::vouched`]: crate::remote::vouched
 //!
 //! The extractors answer as control's own do (`auth::Session`,
 //! `auth::DaemonAuth`), word for word, so a route moving here keeps its
@@ -27,14 +29,9 @@ pub enum Asked {
     },
 }
 
-/// What a request proved who it was with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Credential {
-    /// A session cookie.
-    Session,
-    /// A device's or daemon's signature (`x-arugula-auth`).
-    Signature,
-}
+/// What a request proved who it was with: it crosses in the principal
+/// header out of process, so it's common's.
+pub use arugula_control_common::principal::Credential;
 
 fn asked(parts: &Parts) -> Option<&Asked> {
     parts.extensions.get::<Asked>()

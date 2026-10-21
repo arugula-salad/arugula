@@ -1000,9 +1000,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 57 tables in two planes ("Two planes, two trust rules"):
+Control's database has 59 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (30 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (32 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (27 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, and Cloud workspaces. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1041,6 +1041,8 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `retained_for` | metadata | Which teams a deleted account's certificates are kept for. | kept: as retained_certs. |  |
 | `gone_daemons` | metadata | A hash of each machine of a deleted account, so one asking again is told why. | kept: made when the account goes: a hash of the machine's id and when, nothing of the account. |  |
 | `hub_changes` | metadata | The hub's outbox for the platform (#1153): a change to an account's name, a revoked device, a roster or a lock, a machine joining, moving, leaving or being shared, or a Labs flag, by kind, the id it's about and when. Kept a week, and at most the newest 100,000. | yes: every change naming the account, its devices, its machines and the teams it disbands goes, and its deletion is one change that names nobody. |  |
+| `maintenance` | metadata | The maintenance switch (M141): one row while it's on, with the seconds Retry-After says, whether the in-process platform's background work is held, and since when. Set by the operator with `arugula-control maintenance`. | nothing of one |  |
+| `untold_deletions` | metadata | Accounts the hub deleted that the platform hasn't confirmed erasing yet (M140): the account id, its machines' ids, the teams it disbanded, and when. Written in the deletion's transaction, told again every 30 seconds until the platform takes it. | kept: only until the platform confirms it erased its part, usually at once; then the row goes. |  |
 
 ### The platform plane
 

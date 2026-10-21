@@ -19,6 +19,10 @@ just testnet test ssh          # the ssh claims run on control's stack too
 just testnet test control relay # M52 end to end
 just testnet test control cli  # M49: the CLI logged in, reaching a direct and a relayed box
 just testnet test control team # #254: the CLI reaching a team machine of another account
+just testnet test control platform # M140: chat and Cloud through control's own site
+ARUGULA_TESTNET_PLATFORM=out just testnet up control  # the platform out of process (M140)
+just testnet test control platform-restart  # out of process: a relayed session outlives a platform restart
+just testnet measure control   # M140: platform routes' latency, in process vs out
 just testnet up tailnet        # headscale and two Tailscale nodes
 just testnet measure tailnet   # S28: ssh against the tailnet path
 testnet/selfupdate.sh OLD NEW  # #391: the daemon updates itself (two `just static` builds)
@@ -40,7 +44,7 @@ not run. CI never sets it. The claims expect fresh boxes: after installing anyth
 | Profile | Services | Status | For |
 |---|---|---|---|
 | `ssh` | `bastion`, `box-bare`, `box-systemd`, `git` | validated | S28, M51, M52's install step, #26 |
-| `control` | `ssh`'s, and `control`, `fakes` | validated | M52's join, the relay, a box with no way out |
+| `control` | `ssh`'s, and `control`, `fakes`; `platform` too with `ARUGULA_TESTNET_PLATFORM=out` | validated | M52's join, the relay, a box with no way out, the platform out of process (M140) |
 | `tailnet` | `headscale`, `ts-box`, `ts-client` | validated | S28's tailnet comparison |
 
 The relay is part of `control`, and Forgejo and GitLab have a stack of
@@ -107,6 +111,16 @@ Everything in `ssh`, and:
   `ARUGULA_TESTNET_FAKES_PORT`, for the browser's redirect), Stripe and a
   Web Push endpoint. Only control talks to the last two.
 
+- `platform` (only with `ARUGULA_TESTNET_PLATFORM=out` at `up`): this
+  tree's `arugula-platform` from the same static build, on the outer
+  network with nothing published, and control started with
+  `--platform http://platform:7700` as its gateway (M140). Control's
+  internal API (`HubPort` over HTTP) listens on `:7691` in both ways, and
+  the two share the stack's own `ARUGULA_PLATFORM_KEY` (in
+  `compose.yaml`). The platform's database is in its container's own
+  filesystem, so it outlives `docker restart`. Without the variable the
+  platform runs inside control, as it always did: CI's run is that way.
+
 A person on the host is `web/fixtures/device-cli.ts`, the headless
 approving device ([docs/testing.md](../docs/testing.md#a-device-that-approves-things)): it signs in, enrolls, approves join
 codes and opens panes through the relay. `up.sh` writes
@@ -143,6 +157,17 @@ The `control` profile's:
 | `unreachable` | box-bare joining the hosted control (no route out) is told it can't reach control, with `arugula --ssh box-bare web` as the way in, and `--ssh` still works | joining the stack's control, which it can reach |
 | `cli` | M49 end to end: box-systemd and box-bare join the stack's control (the device approves both); box-bare's daemon also listens on the inner network and lists `http://box-bare:7681`, box-systemd lists no URL. On the bastion (the CLI copied there, no daemon, so no `hosts.json`), `arugula login` shows a code and the device approves it; `arugula hosts` lists both from control, marked; `--host box-bare` (direct) and `--host box-systemd` (relayed) each `run`, `ls` and `capture`; then on box-systemd `events --follow` and `tail --follow` print while running, and `attach`, in a pty from `ssh -tt`, types a command, see its answer and leave with Ctrl-] | the CLI isn't logged in: neither name resolves |
 | `team` | another account's machine (#254): an owner (a second headless device) makes a team and joins box-systemd to it; the CLI's account asks to join and is let in; `arugula hosts` on the bastion lists box-systemd as the owner's, and `--host box-systemd` captures its pane and attaches to it as a team editor, relayed | the CLI pinned a different root for the owner's account first, so control's chain for it is refused |
+| `platform` | chat and Cloud through control's own site, whichever process answers (M140): a person turns chat on, makes a team and a channel, posts, reads it back and hears its event on the live stream; the platform answers Cloud's and billing's routes (`testnet/platform.ts chat`) | the maintenance switch on (`arugula-control maintenance on`), so every platform route answers 503 |
+| `platform-restart` | only out of process: a relayed session to box-systemd's pane stays open while the `platform` container restarts, a marker round-tripping on the same socket before and after (`testnet/platform.ts hold`) | control's container restarted instead, which holds the relay |
+
+`just testnet measure control [samples]` (`measure-control.sh`) times a
+few routes from the host as a signed-in person (`GET /api/me` for the
+hub's floor, then `GET /api/chat`, a room's messages,
+`GET /api/cloud/workspaces` and a `POST` marking a room read), 300 times
+each after a warm-up, in whichever way the stack runs the platform. Each
+run is kept in `testnet/.measure-<stack>/` (which `down` leaves); with
+both ways measured it compares their p95s and fails over M140's 20 ms
+gate.
 
 ## Conventions
 

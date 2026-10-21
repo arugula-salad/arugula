@@ -88,6 +88,20 @@
 #           CLI already pinned a different root for the owner's account
 #           (control "changed" it), so the machine is neither listed nor
 #           reached.
+#   platform
+#           Chat and Cloud through control's own site (M140), whichever
+#           process answers (ARUGULA_TESTNET_PLATFORM=in or out at `up`): a
+#           person turns chat on, makes a team and a channel, posts, reads
+#           the message back and hears it on the live stream; the platform
+#           answers Cloud's and billing's routes. Broken: the maintenance
+#           switch on (`arugula-control maintenance on`, and off
+#           afterwards), so every platform route answers 503.
+#   platform-restart
+#           Only with the platform out of process: a relayed session to a
+#           box's pane stays open while the platform's container restarts,
+#           a marker round-tripping on the same socket before and after.
+#           Broken: control's container restarts instead, which holds the
+#           relay.
 #
 # Needs `testnet/up.sh <profile>` first. Exit codes: 0 every claim held, 1 a
 # claim failed or there's no Docker (ARUGULA_SKIP_DOCKER=1 makes that a
@@ -101,7 +115,7 @@ PROFILE="${1:-ssh}"; shift || true
 CFG="$STATE/ssh_config"
 BREAK="${BREAK:-}"
 SSH_CLAIMS="login jump no-route bare bytes agent linger"
-CONTROL_CLAIMS="signin reach relay unreachable cli team"
+CONTROL_CLAIMS="signin reach relay unreachable cli team platform"
 
 need_docker
 
@@ -115,6 +129,9 @@ if [ "$PROFILE" = control ]; then
   [ -f "$STATE/control.env" ] || { echo "no $STATE/control.env; run 'just testnet up control' first" >&2; exit 1; }
   # shellcheck source=/dev/null
   . "$STATE/control.env"
+  # A platform of its own to restart, only out of process.
+  [ "${ARUGULA_TESTNET_PLATFORM:-in}" != out ] || CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart"
+  [ "$PROFILE" != control ] || CLAIMS="$CONTROL_CLAIMS"
 fi
 
 if [ "${1:-}" = --break ]; then
@@ -536,6 +553,31 @@ claim_team() {
     { note "team: a capture after attach doesn't show what was typed"; ok=0; }
   bastion_tidy
   [ "$ok" = 1 ]
+}
+
+# Control's platform, through control's own site (M140).
+plat() { node --experimental-strip-types --no-warnings "$HERE/platform.ts" --state "$WORK/device.json" "$@"; }
+maintenance() { docker exec "$TESTNET-control" /opt/arugula/arugula-control maintenance "$@" --db /var/lib/arugula-control/control.db; }
+
+claim_platform() {
+  local rc=0
+  signin "platform-$$-$RANDOM" > /dev/null || { note "platform: no device signed in"; return 1; }
+  if [ -n "$BREAK" ]; then maintenance on --retry-after 30 > /dev/null; sleep 2; fi
+  plat chat > "$WORK/platform.json" || rc=1
+  if [ -n "$BREAK" ]; then maintenance off > /dev/null; sleep 2; fi
+  [ "$rc" = 0 ] || { note "platform: chat and Cloud through control:"; cat "$WORK/platform.json" >&2; }
+  return "$rc"
+}
+
+claim_platform_restart() {
+  local box=box-systemd fp restart="$TESTNET-platform"
+  [ -z "$BREAK" ] || restart="$TESTNET-control"
+  fresh "$box" || { note "platform-restart: couldn't recreate $box"; return 1; }
+  fp="$(signin "hold-$$-$RANDOM" | field fingerprint)"
+  [ -n "$fp" ] || { note "platform-restart: no device signed in"; return 1; }
+  join_box "$box" "$fp" || return 1
+  plat hold "$box" "$restart" > "$WORK/hold.json" || { note "platform-restart: the relayed session didn't hold"; return 1; }
+  note "platform-restart: $(cat "$WORK/hold.json")"
 }
 
 failed=""

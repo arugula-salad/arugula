@@ -3,7 +3,8 @@
 # zip of arugulad and arugula for Windows (install.ps1's), attach them
 # to the tag's release with SHA256SUMS, publish it as latest, bump the
 # Homebrew formula, send the editor extension to the marketplaces, and
-# deploy the hosted control from the x86_64 static build (M133). No
+# deploy the hosted control from the x86_64 static build (M133), its
+# platform first once that's its own Fly app (M140). No
 # desktop app: it has its own release, app-v* tags (app-release.yml, #393),
 # and the daemon updates itself (#391).
 name: release
@@ -36,9 +37,9 @@ jobs:
       - run: just bootstrap
       - run: scripts/release check-version "$GITHUB_REF_NAME"
       - run: just static x86_64
-      # Control's binaries, for the control job's image (a tar keeps
-      # them executable).
-      - run: tar -cf "$RUNNER_TEMP/control-binaries.tar" -C "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" arugula-control arugulad
+      # Control's binaries, for the platform and control jobs' images (a
+      # tar keeps them executable).
+      - run: tar -cf "$RUNNER_TEMP/control-binaries.tar" -C "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" arugula-control arugulad arugula-platform
       - uses: actions/upload-artifact@v4
         with:
           name: control-binaries
@@ -133,9 +134,12 @@ jobs:
   # FLY_API_TOKEN is a deploy token for illogical-control; without it the
   # job fails. One deploy at a time: a tag's waits for the one before (a
   # third tag replaces the one waiting; GitHub keeps one pending per
-  # group). GitHub's runner: Docker of its own.
+  # group). GitHub's runner: Docker of its own. It waits for the platform's
+  # deploy (the platform deploys first: a hub never forwards a route the
+  # platform doesn't serve yet), but deploys whatever became of it.
   control:
-    needs: linux
+    needs: [linux, platform]
+    if: ${{ !cancelled() && needs.linux.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -165,6 +169,34 @@ jobs:
       - run: scripts/ci-control-deploy deploy "$GITHUB_REF_NAME" "$RUNNER_TEMP/control"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # Control's platform (arugula-platform, M140 #1157), from the same build,
+  # before the hub. Until that Fly app exists there's no deploy token for
+  # it: with FLY_PLATFORM_API_TOKEN unset, scripts/ci-platform-deploy says
+  # so and succeeds, and the hub deploys as before. Once set, a failed
+  # platform deploy fails this job but not the hub's.
+  platform:
+    needs: linux
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: platform-deploy
+      cancel-in-progress: false
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_PLATFORM_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: control-binaries
+          path: ${{ runner.temp }}/control
+      - run: tar -xf "$RUNNER_TEMP/control/control-binaries.tar" -C "$RUNNER_TEMP/control"
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+        if: ${{ env.FLY_API_TOKEN != '' }}
+        with:
+          version: 0.4.104
+      - run: scripts/ci-platform-deploy deploy "$GITHUB_REF_NAME" "$RUNNER_TEMP/control"
 
   # The editor extension as arugula.arugula-editor (#529), once the
   # release is out. A version that's already there is skipped, so most

@@ -188,7 +188,7 @@ impl Rig {
     /// What the test changed in the hub reaches chat: the platform reads the
     /// change feed now, as its next tick would.
     async fn settle(&self) {
-        arugula_platform::cache::catch_up(&self.c.app.platform).await.unwrap();
+        arugula_platform::cache::catch_up(self.c.app.platform.inner()).await.unwrap();
     }
 }
 
@@ -533,7 +533,7 @@ async fn leaving_the_team_and_deleting_the_account_take_its_chat() {
     // his messages elsewhere are blank and nobody's.
     let (st, v) = r.call(&r.alex, "POST", "/api/me/delete", Some(json!({ "confirm": "alex" }))).await;
     assert_eq!(st, 200, "{v}");
-    let chat = &r.c.app.platform.db;
+    let chat = &r.c.app.platform.inner().db;
     assert!(chat.chat_room(&dm).unwrap().is_none());
     assert!(chat.chat_room(&bth).unwrap().is_none());
     let ms = r.messages(&r.jake, &general).await;
@@ -556,7 +556,7 @@ async fn leaving_the_team_and_deleting_the_account_take_its_chat() {
 async fn a_roster_change_reaches_chat_within_the_documented_delay() {
     use arugula_platform::cache::{CACHE_TICK, DELAY};
     let r = rig().await;
-    arugula_platform::chat::start(&r.c.app.platform);
+    arugula_platform::chat::start(r.c.app.platform.inner());
     let general = r.channel(&r.jake, "general").await;
     // Chat stays on for alex out of acme; he has #general, and chat keeps
     // what the hub said of acme.

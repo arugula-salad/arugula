@@ -14,7 +14,6 @@ use arugula_e2e::{
     now_ms,
     team::{TeamPin, TeamRole},
 };
-use arugula_platform::PlatformPort;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -938,8 +937,9 @@ fn takes_chat_import(app: &App, daemon: &str) -> bool {
 
 pub async fn directory(State(app): State<Arc<App>>, s: crate::auth::Reacher) -> R {
     // M124: with chat on, the owner's page says which of their machines are
-    // too old to bring their threads into it.
-    let chat = !s.daemon && app.platform.chat_on(&s.account).await?;
+    // too old to bring their threads into it. The hub's own flags say
+    // (M140), so the directory never waits on the platform.
+    let chat = !s.daemon && crate::labs_flags::chat_on(&app, &s.account)?;
     let mut daemons: Vec<Value> = app
         .db
         .daemons(&s.account)?

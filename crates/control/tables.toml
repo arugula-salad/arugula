@@ -346,6 +346,25 @@ with_account = "deleted"
 note = "Every change naming the account, its devices, its machines and the teams it disbands goes, and its deletion is one change that names nobody."
 seen_by = ["litestream"]
 
+[[table]]
+name = "maintenance"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "The maintenance switch (M141): one row while it's on, with the seconds Retry-After says, whether the in-process platform's background work is held, and since when. Set by the operator with `arugula-control maintenance`."
+with_account = "none"
+seen_by = ["litestream"]
+
+[[table]]
+name = "untold_deletions"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "Accounts the hub deleted that the platform hasn't confirmed erasing yet (M140): the account id, its machines' ids, the teams it disbanded, and when. Written in the deletion's transaction, told again every 30 seconds until the platform takes it."
+with_account = "kept"
+note = "Only until the platform confirms it erased its part, usually at once; then the row goes."
+seen_by = ["litestream"]
+
 # ---- the platform plane: what has to exist while every machine is asleep
 
 [[table]]

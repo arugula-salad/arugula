@@ -101,10 +101,15 @@ async fn registered() -> BTreeSet<(String, String)> {
         assert!(once.insert(*p), "{p} is registered by two `.route` calls: make it one");
     }
     let c = crate::routing_wire::control(|_| {}).await;
+    allowed(&c.http, &c.base, &paths).await
+}
+
+/// The methods each path takes, as the router at `base` says.
+async fn allowed(http: &reqwest::Client, base: &str, paths: &[&str]) -> BTreeSet<(String, String)> {
     let probe = reqwest::Method::from_bytes(b"PROBE").unwrap();
     let mut got = BTreeSet::new();
-    for path in paths {
-        let res = c.http.request(probe.clone(), format!("{}{}", c.base, probe_path(path))).send().await.unwrap();
+    for &path in paths {
+        let res = http.request(probe.clone(), format!("{base}{}", probe_path(path))).send().await.unwrap();
         // No `Allow`: one handler for every method (`any`).
         let Some(allow) = res.headers().get(reqwest::header::ALLOW) else {
             got.insert(("ANY".to_owned(), path.to_owned()));
@@ -133,6 +138,25 @@ async fn every_route_is_listed_once() {
         missing.is_empty() && extra.is_empty(),
         "crates/control/routes.toml doesn't match the router.\nRegistered, not listed:{missing}\nListed, not registered:{extra}"
     );
+}
+
+/// Out of process (M140), the hub's gateway answers every platform route
+/// routes.toml lists, with exactly its methods, and the hub's own routes
+/// as ever.
+#[tokio::test]
+async fn the_gateway_answers_what_routes_toml_lists() {
+    let mut app = crate::App::for_tests("http://control.test");
+    let key = arugula_control_common::principal::PrincipalKey::new(&[1; 32]).unwrap();
+    app.platform = crate::gateway::PlatformAt::Remote(crate::gateway::Remote::new("http://127.0.0.1:9", key).unwrap());
+    let app = app.start();
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", l.local_addr().unwrap());
+    let router = crate::router(app).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    tokio::spawn(async move { axum::serve(l, router).await });
+    let mut paths = crate::routes().paths;
+    paths.extend(arugula_platform::paths());
+    let got = allowed(&reqwest::Client::new(), &base, &paths).await;
+    assert_eq!(got, listed(), "the gateway's routes are routes.toml's");
 }
 
 /// What the platform's router answers is listed as the platform's (#1152),

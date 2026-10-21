@@ -2,11 +2,13 @@
 //! [`InProcess`], the platform's `HubPort` over the hub's own state, and
 //! [`gate`], which tells the platform's routes who's asking.
 //!
-//! The platform calls these and nothing else of the hub's. M140 serves the
-//! same calls over the private network, and signs the principal into a
-//! header (`arugula_control_common::principal`) where [`gate`] puts it in
-//! the request's extensions. `arugula_platform::contract` checks that both
-//! answer the same (the tests below run it here).
+//! The platform calls these and nothing else of the hub's. Out of process
+//! (M140) the hub serves the same calls over the private network
+//! (`internal`, `arugula_platform::remote::serve_hub` over [`InProcess`]),
+//! and its gateway signs [`who`]'s asking into a header
+//! (`arugula_control_common::principal`) where [`gate`] puts it in the
+//! request's extensions. `arugula_platform::contract` checks that both
+//! ports answer the same (the tests below run it against each).
 
 use std::{
     collections::BTreeMap,
@@ -21,6 +23,7 @@ use arugula_platform::{
 };
 use axum::{
     extract::{FromRequestParts, Request, State},
+    http::request::Parts,
     middleware::Next,
     response::Response,
 };
@@ -241,50 +244,71 @@ impl HubPort for InProcess {
 
     // Projects and grants are the platform's now, and the platform no
     // longer asks these three (`HubPort` only grows, so they stay). The hub
-    // holds neither, so in process it answers from the platform's own.
+    // holds neither, so in process it answers from the platform's own; out
+    // of process it has none to answer from.
 
     fn personal_project<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
-        Box::pin(async move { arugula_platform::projects::personal_project(&self.app()?.platform, account).await })
+        Box::pin(async move {
+            let app = self.app()?;
+            arugula_platform::projects::personal_project(local(&app)?, account).await
+        })
     }
 
     fn can_drive_cloud<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, HubResult<bool>> {
-        Box::pin(async move { arugula_platform::grants::can_drive_cloud(&self.app()?.platform, daemon, account).await })
+        Box::pin(async move {
+            let app = self.app()?;
+            arugula_platform::grants::can_drive_cloud(local(&app)?, daemon, account).await
+        })
     }
 
     fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
-        Box::pin(async move { arugula_platform::projects::team_project(&self.app()?.platform, team).await })
+        Box::pin(async move {
+            let app = self.app()?;
+            arugula_platform::projects::team_project(local(&app)?, team).await
+        })
     }
 }
 
-/// In front of the platform's routes, in process: who's asking, as the
-/// hub checks it for its own routes, put in the request for the platform's
-/// extractors (`arugula_platform::auth`). A daemon's or CLI device's
-/// signature (already checked by `auth::verify_daemon`) or a refusal of
-/// it; else the session, with `auth::Session`'s same-origin check, or its
-/// refusal. M140's gateway does the same and signs the principal into a
-/// header.
-pub async fn gate(State(app): State<Arc<App>>, req: Request, next: Next) -> Response {
-    let (mut parts, body) = req.into_parts();
-    // Only the hub says who's asking.
-    parts.extensions.remove::<Asked>();
+/// The platform, when it's in this process: what the three calls above
+/// answer from.
+fn local(app: &App) -> HubResult<&Arc<arugula_platform::Platform>> {
+    app.platform.local().ok_or_else(|| anyhow::anyhow!("the platform is out of process: it answers this itself"))
+}
+
+/// Who's asking, as the hub checks it for its own routes: a daemon's or
+/// CLI device's signature (already checked by `auth::verify_daemon`) or a
+/// refusal of it; else the session, with `auth::Session`'s same-origin
+/// check, or its refusal. `None`: a signature of another kind of device,
+/// which no platform route takes.
+pub async fn who(app: &Arc<App>, parts: &mut Parts) -> Option<Asked> {
     let signed = parts.extensions.get::<auth::Signed>().map(|s| s.0.clone());
-    let asked = match signed {
+    match signed {
         Some(Ok(cert)) if cert.kind == Kind::Daemon => {
             Some(Asked::Principal(Principal::Daemon { account: cert.account, daemon: cert.device }))
         }
         Some(Ok(cert)) if cert.kind == Kind::Cli => {
             // As a session: it notes the account for analytics.
-            let _ = auth::Session::from_request_parts(&mut parts, &app).await;
+            let _ = auth::Session::from_request_parts(parts, app).await;
             Some(Asked::Principal(Principal::Cli { account: cert.account, device: cert.device }))
         }
         Some(Ok(_)) => None,
         Some(Err((status, error))) => Some(Asked::Refused { status, error, by: Credential::Signature }),
-        None => Some(match auth::Session::from_request_parts(&mut parts, &app).await {
+        None => Some(match auth::Session::from_request_parts(parts, app).await {
             Ok(s) => Asked::Principal(Principal::Person { account: s.account }),
             Err(e) => Asked::Refused { status: e.0, error: e.1, by: Credential::Session },
         }),
-    };
-    if let Some(a) = asked {
+    }
+}
+
+/// In front of the platform's routes, in process: [`who`]'s asking, put in
+/// the request for the platform's extractors (`arugula_platform::auth`).
+/// Out of process the gateway (`gateway`) asks the same and signs it into
+/// the principal header.
+pub async fn gate(State(app): State<Arc<App>>, req: Request, next: Next) -> Response {
+    let (mut parts, body) = req.into_parts();
+    // Only the hub says who's asking.
+    parts.extensions.remove::<Asked>();
+    if let Some(a) = who(&app, &mut parts).await {
         parts.extensions.insert(a);
     }
     next.run(Request::from_parts(parts, body)).await
@@ -310,6 +334,8 @@ mod tests {
     /// of its own.
     struct Fixture {
         app: Arc<App>,
+        /// The port under test, when it isn't the app's own in-process one.
+        port: Option<Arc<dyn HubPort>>,
         push_at: String,
         pushes: Arc<AtomicUsize>,
         ttl: Arc<std::sync::Mutex<Option<u32>>>,
@@ -346,7 +372,21 @@ mod tests {
             tokio::spawn(async move { axum::serve(l, service).await });
             let mut app = App::for_tests("http://control.test");
             app.cfg.push_hosts.push(at.to_string());
-            Fixture { app: app.start(), push_at: format!("http://{at}/push"), pushes, ttl }
+            Fixture { app: app.start(), port: None, push_at: format!("http://{at}/push"), pushes, ttl }
+        }
+
+        /// The same hub, its port reached over HTTP as an out-of-process
+        /// platform reaches it (M140): its internal API on a listener of
+        /// its own, and `HttpHub`.
+        async fn over_http() -> Self {
+            let mut f = Self::new().await;
+            let key = arugula_control_common::principal::PrincipalKey::new(&[6; 32]).unwrap();
+            let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base = format!("http://{}", l.local_addr().unwrap());
+            let router = crate::internal::router(&f.app, key.clone());
+            tokio::spawn(async move { axum::serve(l, router).await });
+            f.port = Some(Arc::new(arugula_platform::remote::HttpHub::new(&base, key).unwrap()));
+            f
         }
 
         /// A push subscription at the push service's `/push/<kind>`, signed by
@@ -376,7 +416,7 @@ mod tests {
 
     impl contract::Fixture for Fixture {
         fn hub(&self) -> Arc<dyn HubPort> {
-            self.app.platform.hub.clone()
+            self.port.clone().unwrap_or_else(|| self.app.platform.inner().hub.clone())
         }
 
         fn account(&self, id: &str, login: &str, name: &str) -> anyhow::Result<()> {
@@ -481,7 +521,8 @@ mod tests {
             let p = crate::account::plan(&self.app, account)?;
             let disband: Vec<String> = p.disband.iter().map(|(t, _, _)| t.clone()).collect();
             self.app.db.delete_account(&crate::db::Erase { account, disband: &disband, retain_for: &p.retain_for })?;
-            Ok(())
+            // The hub's part only: nothing tells the platform here.
+            self.app.db.told_deletion(account)
         }
 
         fn subscribe(&self, account: &str, gone: bool) -> anyhow::Result<()> {
@@ -515,7 +556,7 @@ mod tests {
 
         fn revoke_cloud_drive(&self, account: &str, daemon: &str) -> anyhow::Result<()> {
             // The platform's grants, as `arugula grants revoke` reaches them.
-            let db = &self.app.platform.db;
+            let db = &self.app.platform.inner().db;
             for g in db.grants(account)? {
                 if g.subject_id == daemon {
                     db.revoke_grant(account, &g.id, arugula_e2e::now_ms())?;
@@ -529,6 +570,67 @@ mod tests {
     #[tokio::test]
     async fn in_process_keeps_the_contract() {
         contract::run(&Fixture::new().await).await;
+    }
+
+    /// The same contract over HTTP (M140): the hub's internal API and
+    /// `HttpHub` answer exactly as the in-process port does.
+    #[tokio::test]
+    async fn http_keeps_the_contract() {
+        contract::run(&Fixture::over_http().await).await;
+    }
+
+    /// The internal API takes nothing that came through Fly's public
+    /// proxy, and nothing unsigned.
+    #[tokio::test]
+    async fn the_internal_api_is_private() {
+        let f = Fixture::new().await;
+        let key = arugula_control_common::principal::PrincipalKey::new(&[6; 32]).unwrap();
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", l.local_addr().unwrap());
+        let router = crate::internal::router(&f.app, key.clone());
+        tokio::spawn(async move { axum::serve(l, router).await });
+        let path = format!("{}/changes", arugula_platform::remote::HUB_PREFIX);
+        let body = br#"{"after":0,"limit":1}"#;
+        let http = reqwest::Client::new();
+        let signed = || {
+            let sig = arugula_control_common::internal::sign(
+                &key,
+                arugula_control_common::internal::Callee::Hub,
+                "POST",
+                &path,
+                body,
+                arugula_e2e::now_ms(),
+            );
+            http.post(format!("{base}{path}")).header(arugula_control_common::internal::HEADER, sig).body(&body[..])
+        };
+        assert_eq!(signed().send().await.unwrap().status(), 200);
+        assert_eq!(signed().header("fly-forwarded-port", "443").send().await.unwrap().status(), 404);
+        assert_eq!(signed().header("fly-client-ip", "203.0.113.9").send().await.unwrap().status(), 404);
+        assert_eq!(http.post(format!("{base}{path}")).body(&body[..]).send().await.unwrap().status(), 401);
+        // And none of it is on control's own site.
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let public = format!("http://{}", l.local_addr().unwrap());
+        let app = f.app.clone();
+        tokio::spawn(async move {
+            axum::serve(l, crate::router(app).into_make_service_with_connect_info::<std::net::SocketAddr>()).await
+        });
+        let sig = arugula_control_common::internal::sign(
+            &key,
+            arugula_control_common::internal::Callee::Hub,
+            "POST",
+            &path,
+            body,
+            arugula_e2e::now_ms(),
+        );
+        let r = http
+            .post(format!("{public}{path}"))
+            .header(arugula_control_common::internal::HEADER, sig)
+            .body(&body[..])
+            .send()
+            .await
+            .unwrap();
+        assert_ne!(r.status(), 200, "the public listener has no internal API");
+        assert!(!r.text().await.unwrap().contains("\"changes\""));
     }
 
     /// The gate answers who's asking as control's own extractors do: a
@@ -588,7 +690,7 @@ mod tests {
     #[tokio::test]
     async fn detached_says_so() {
         let app = App::for_tests("http://control.test");
-        let e = app.platform.hub.changes(0, 1).await.unwrap_err();
+        let e = app.platform.inner().hub.changes(0, 1).await.unwrap_err();
         assert_eq!(e.to_string(), "the hub isn't running");
     }
 }

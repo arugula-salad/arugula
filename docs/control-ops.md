@@ -156,6 +156,9 @@ Daemons join a self-hosted control the same way:
 
 The hosted control is one Fly machine (`packaging/control/fly.toml`):
 `shared-cpu-1x` with 1 GB, in `ewr`, SQLite on the `control_data` volume.
+Its platform (chat, Cloud, billing, projects and grants) runs inside it
+until M141 moves it to its own app, `arugula-platform` ("The platform"
+below).
 
 ### The volume
 
@@ -197,6 +200,8 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
   `ARUGULA_CLOUD_RUNTIME` are only read when it's unset
   (`cloud::configured_models`), so with it set they're stale.
 - `POSTHOG_API_KEY`: product analytics (`analytics.rs`).
+- `ARUGULA_PLATFORM_KEY`: the key the hub and an out-of-process platform
+  share ("The platform" below). Unused while the platform runs in process.
 - `SPRITES_TOKEN`: hosted sandboxes (M20). Only accounts in
   `ARUGULA_SANDBOX_ACCOUNTS` may make one, and that isn't set, so they're
   off for everyone.
@@ -275,6 +280,171 @@ approval step.
   older tag's job won't do it. Deploy the older tag's image instead, from
   `packaging/control/`:
   `fly deploy --image registry.fly.io/illogical-control:vX.Y.Z`.
+
+### The platform
+
+Control is two processes ("Control is two processes: a hub and a
+platform", #1150): the hub (`arugula-control`: identity, devices, rosters,
+the relay, push, block and doc origins, the jump host, forge, telemetry)
+and the platform (`arugula-platform`: chat, Cloud, billing, projects and
+grants). The platform runs in one of two ways, from the same binaries:
+
+- **In process** (`ARUGULA_PLATFORM=in-process`, the default, and the
+  rollback): inside the hub, as one Fly app. Production runs this way
+  until M141's window.
+- **Out of process** (`ARUGULA_PLATFORM=http://arugula-platform.internal:7700`):
+  its own Fly app, `arugula-platform` (`packaging/platform/fly.toml`), with
+  its own volume (`platform_data` at `/data`, `platform.db`). The hub is
+  its gateway: every route `crates/control/routes.toml` gives
+  `process = "platform"` stays on `control.arugula.io` ("Platform paths
+  stay on control.arugula.io forever"), and the hub forwards it (M140,
+  `crates/control/src/gateway.rs`). A platform deploy or crash restarts no
+  relay socket.
+
+**Two apps.**
+
+| | `illogical-control` (hub) | `arugula-platform` |
+|---|---|---|
+| Image | `packaging/control/Dockerfile` | `packaging/platform/Dockerfile` |
+| Public | `control.arugula.io` (`[http_service]`, 7690) | nothing: no service, no public IP |
+| Private | its internal API, `[::]:7691` (`HubPort` for the platform) | `[::]:7700` (the forwarded routes, and `PlatformPort` for the hub) |
+| Volume | `control_data` (10 GB) | `platform_data` |
+| Health | `/control.json` through the proxy | `/platform.json`, a machine check |
+| Logs | `fly logs -a illogical-control` | `fly logs -a arugula-platform` |
+
+**How they reach each other.** Over Fly's private network (6PN, carried
+over WireGuard between Fly's hosts), by `.internal` names: the hub calls
+`http://arugula-platform.internal:7700`, the platform calls
+`http://illogical-control.internal:7691`. Not Flycast: Flycast needs a
+private IP and a service in `fly.toml`, and goes through Fly's proxy, an
+extra hop with nothing to balance across one machine. M144 (two platform
+machines) revisits it.
+- The hub's internal API listens on its own port, which no `fly.toml`
+  service names, so Fly's public proxy never reaches it. It also refuses
+  anything carrying `Fly-Forwarded-Port` or `Fly-Client-IP` (the headers
+  that proxy adds), in case someone ever declares a service for it, and
+  every call has to be signed with the shared key.
+- The platform has no service and no public IP. Never
+  `fly ips allocate-v4/v6` for it.
+
+**The shared key.** `ARUGULA_PLATFORM_KEY`, a Fly secret on both apps,
+32 random bytes as hex (`openssl rand -hex 32`); keep it in Infisical
+(`arugula` prod, `/illogical/control`). It's used two ways, never sent:
+- the hub signs who's asking into each forwarded call's
+  `x-arugula-principal` header (HMAC-SHA256 over the principal, method,
+  path and query, time and the request id; ±60 s), and the platform
+  answers nothing that lacks a valid one;
+- each internal call, either way, is signed in `x-arugula-internal`
+  (HMAC-SHA256 over which process is called, the method, path, time, a
+  nonce and the body's hash; each nonce taken once).
+
+HMAC rather than a bearer token: the key never crosses the network or
+lands in a log, and a captured call is good once, for that one request.
+To rotate it, set the new one on both apps (`fly secrets set` restarts
+each): calls fail with 401 between the two restarts, so do it in a
+maintenance window.
+
+**What the gateway does** with each platform route: answers 503 while the
+maintenance switch is on; checks the session (and its same-origin rule)
+or the device's or daemon's signature exactly as the hub always has,
+replay cache included; drops the cookie, the signature and any
+principal or internal header a client sent; forwards the call with the
+signed principal header, the method, path, query, body and Host header
+untouched (a daemon's signature covers the body); and passes the status,
+headers (`Retry-After` among them) and body back as they come, streamed,
+so chat's live stream (SSE, with `Last-Event-ID`) goes through
+unbuffered. A body up to 1 MB is read first; a bigger one streams. If
+the platform can't be reached at all, the call is tried again for 5
+seconds, then answered with the maintenance 503 (`Retry-After: 5`): it
+never reached the platform, so clients send it again. `/api/directory`'s
+"chat is on" comes from the hub's own Labs flags, so the directory never
+waits on the platform.
+
+**Logs.** The hub logs each forwarded call that fails with a request id
+(`the platform can't be reached`, `the platform didn't answer`); the
+platform logs each call it handles in a `call{request=…}` span with the
+same id, so `fly logs -a arugula-platform | grep <id>` finds the other
+half. The platform also logs refused calls (`refused a call the hub
+didn't vouch for`, `refused an internal call`): a key that differs between
+the two apps shows up there as 401s.
+
+**Deleting an account** out of process is two steps: the hub commits,
+then tells the platform (`PlatformPort::account_deleted`). Until the
+platform confirms, a row in the hub's `untold_deletions` keeps what to
+tell it, and the hub tries again every 30 seconds.
+
+**Deploys.** A release tag deploys the platform first (release.yml's
+`platform` job), then the hub (`control`, which waits for it but deploys
+whatever became of it). `scripts/ci-platform-deploy` builds the platform's
+image on GitHub's runner and checks every machine runs the tag with its
+health check passing. It needs the repository secret
+`FLY_PLATFORM_API_TOKEN`, a deploy token for `arugula-platform`, which
+can't exist before the app does: without it the job says so and
+succeeds, deploying nothing, and the hub deploys as before. Hotfix:
+`just platform-deploy`. Roll back: from `packaging/platform/`,
+`fly deploy --image registry.fly.io/arugula-platform:vX.Y.Z`. An older
+platform starts on a database whose migrations it doesn't know only while
+all of them are additive (M142, "Checking a migration on a copy" below);
+past one that isn't, restore `platform.db` too. A platform
+deploy restarts no relay socket; pages' chat streams reconnect and
+resync.
+
+**Making the app** (once, before M141):
+
+```
+fly apps create arugula-platform -o <org>
+fly volumes create platform_data -a arugula-platform -r ewr -s 3
+KEY=$(openssl rand -hex 32)            # keep it in Infisical too
+fly secrets set -a arugula-platform --stage ARUGULA_PLATFORM_KEY=$KEY \
+  ARUGULA_MANAGOAT_API_KEY=… ARUGULA_CLOUD_SECRET_KEY=… ARUGULA_CLOUD_ACCOUNTS=… \
+  ARUGULA_CLOUD_MODELS=… POSTHOG_API_KEY=…
+fly secrets set -a illogical-control --stage ARUGULA_PLATFORM_KEY=$KEY
+fly tokens create deploy -a arugula-platform -n github-release -x 8760h
+gh secret set FLY_PLATFORM_API_TOKEN -R arugula-salad/arugula
+```
+
+`--stage` sets a secret without restarting anything; the hub only reads
+`ARUGULA_PLATFORM_KEY` once it runs the platform out of process. The
+cloud secrets must be the hub's own values (`ARUGULA_CLOUD_SECRET_KEY`
+above all: it decrypts every stored cloud secret, so escrow it first,
+M141). The next tag deploys the platform; until M141 it runs with an
+empty database beside the hub, which still runs its own platform in
+process and answers every platform route itself.
+
+**Flipping to out of process** (M141's window writes the full runbook):
+turn the maintenance switch on with `--pause`, copy the platform's tables
+from `control.db` to the platform's `platform.db`, then
+`fly secrets set -a illogical-control ARUGULA_PLATFORM=http://arugula-platform.internal:7700`.
+That restarts the hub once (relay sockets reconnect on their own), with
+its internal API on `[::]:7691`. Check, then turn the switch off.
+
+**Rolling back to in process:**
+`fly secrets unset -a illogical-control ARUGULA_PLATFORM` (or set it to
+`in-process`): the hub restarts running its own platform on
+`control.db`, migrating its platform tables as the hub's build knows them
+(the same additive-only rule). After M141 that file's platform tables are the 14-day
+read-only copies, so anything written on the platform since is in
+`platform.db`: copy it back first (M141's runbook says how).
+
+**The maintenance switch** (M141): every platform route answers `503`,
+`Retry-After: N`, `{"error": "Chat and Cloud are down for maintenance; try again in N seconds.", "reason": "maintenance"}`
+before anything is forwarded; terminals, the relay and every hub route
+are untouched. It's a row in the hub's database, which the running hub
+reads every second, so setting it restarts nothing and it holds across a
+restart:
+
+```
+fly ssh console -a illogical-control -C "/arugula-control maintenance on --retry-after 30 --pause --db /data/control.db"
+fly ssh console -a illogical-control -C "/arugula-control maintenance status --db /data/control.db"
+fly ssh console -a illogical-control -C "/arugula-control maintenance off --db /data/control.db"
+```
+
+`--pause` also holds the in-process platform's background work (the
+cloud worker, approval pushes, usage reports, the projects and grants
+feed follower), so its tables hold still while they're copied. An
+out-of-process platform is held with `ARUGULA_PLATFORM_PAUSED=1` on its
+own app (`fly secrets set -a arugula-platform ARUGULA_PLATFORM_PAUSED=1`,
+a platform restart, which drops nothing); unset it to resume.
 
 ### Capacity
 
@@ -424,17 +594,21 @@ additive migrations is fine; past one that isn't, restore the database too.
 
 **Projects (M129, #1125).** Every team has one default project, and every
 Cloud workspace, team channel and cloud secret has a project; DMs, pane
-threads and archives have none. Each of these prints nothing when it holds:
+threads and archives have none. Teams are the hub's; projects, Cloud and
+chat are the platform's, so as with the grants check below, attach the
+platform's file as `p` (before M141, `control.db` itself). Each of these
+prints nothing when it holds:
 
 ```
 sqlite3 /tmp/control.db <<'EOF'
-SELECT 'team without one default', t.id FROM teams t
-  WHERE (SELECT count(*) FROM projects p WHERE p.team_id = t.id AND p.is_default = 1) != 1;
-SELECT 'workspace without a project', id FROM cloud_workspaces WHERE project_id IS NULL;
-SELECT 'team channel without a project', id, scope FROM chat_rooms
+ATTACH '/tmp/platform.db' AS p;   -- before M141: ATTACH '/tmp/control.db' AS p;
+SELECT 'team without one default', t.id FROM main.teams t
+  WHERE (SELECT count(*) FROM p.projects pr WHERE pr.team_id = t.id AND pr.is_default = 1) != 1;
+SELECT 'workspace without a project', id FROM p.cloud_workspaces WHERE project_id IS NULL;
+SELECT 'team channel without a project', id, scope FROM p.chat_rooms
   WHERE kind = 'channel' AND scope LIKE 'team:%' AND project_id IS NULL;
-SELECT 'secret without a project', account, name FROM cloud_secrets WHERE project_id IS NULL;
-SELECT 'room in a project that should not be', id, kind FROM chat_rooms
+SELECT 'secret without a project', account, name FROM p.cloud_secrets WHERE project_id IS NULL;
+SELECT 'room in a project that should not be', id, kind FROM p.chat_rooms
   WHERE project_id IS NOT NULL AND NOT (kind = 'channel' AND scope LIKE 'team:%');
 EOF
 ```
@@ -447,23 +621,28 @@ any.
 grant over its account unless its owner revoked it. Control doesn't record
 which machine made a call, so "every machine that drove a workspace in the
 last 30 days" is checked as every machine of an account that made a Cloud
-workspace or opened a tab in that time. This prints nothing when it holds
-(on production after the deploy, or on a copy). It joins the hub's
-`devices` and `daemons` to the platform's `grants`, so it works only while
-both are in one file (until M141). Since grants moved to the platform, a
+workspace or opened a tab in that time. Machines are the hub's (`devices`,
+`daemons` in `control.db`); grants and Cloud are the platform's (`grants`,
+`cloud_workspaces`, `cloud_tabs`), in `control.db` too while the platform
+runs in process, and in the platform's own `platform.db` once M141 moves
+them. So the query attaches the platform's file as `p`: on a copy of each
+(`fly ssh sftp get /data/control.db -a illogical-control`, and
+`fly ssh sftp get /data/platform.db -a arugula-platform` after M141; before
+it, attach `control.db` itself). It prints nothing when it holds. A
 machine gets its grant within a feed tick of joining, or when it first
-drives, so one that joined in the last second may show up here:
+drives, so one that joined in the last second may show up:
 
 ```
 sqlite3 /tmp/control.db <<'EOF'
+ATTACH '/tmp/platform.db' AS p;   -- before M141: ATTACH '/tmp/control.db' AS p;
 SELECT 'machine without a live cloud.drive grant', d.account, d.id, n.name,
-       (SELECT max(g.revoked_at) FROM grants g WHERE g.subject_id = d.id) AS revoked_at
-FROM devices d LEFT JOIN daemons n ON n.id = d.id
+       (SELECT max(g.revoked_at) FROM p.grants g WHERE g.subject_id = d.id) AS revoked_at
+FROM main.devices d LEFT JOIN main.daemons n ON n.id = d.id
 WHERE d.kind = 'daemon' AND d.approved = 1
   AND d.account IN (
-    SELECT account FROM cloud_workspaces WHERE created > (strftime('%s', 'now') - 30 * 86400) * 1000
-    UNION SELECT account FROM cloud_tabs WHERE created > (strftime('%s', 'now') - 30 * 86400) * 1000)
-  AND NOT EXISTS (SELECT 1 FROM grants g WHERE g.subject_kind = 'daemon' AND g.subject_id = d.id
+    SELECT account FROM p.cloud_workspaces WHERE created > (strftime('%s', 'now') - 30 * 86400) * 1000
+    UNION SELECT account FROM p.cloud_tabs WHERE created > (strftime('%s', 'now') - 30 * 86400) * 1000)
+  AND NOT EXISTS (SELECT 1 FROM p.grants g WHERE g.subject_kind = 'daemon' AND g.subject_id = d.id
     AND g.power = 'cloud.drive' AND g.scope_kind = 'account' AND g.scope_id = d.account
     AND g.revoked_at IS NULL);
 EOF

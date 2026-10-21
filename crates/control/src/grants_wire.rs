@@ -32,7 +32,7 @@ fn cloud_app() -> Arc<App> {
         app.db.account_for("test", id, id, id, now).unwrap();
         app.db.add_session(&crate::auth::hash(&format!("session-{id}")), id, now, now + 60_000).unwrap();
     }
-    Arc::get_mut(&mut app.platform).expect("not started yet").cloud = Some(Cloud {
+    app.platform.inner_mut().cloud = Some(Cloud {
         secret_cipher: Some(SecretCipher::new(&"01".repeat(32)).unwrap()),
         provider: Provider::new("https://provider.example", "platform-key".into()).unwrap(),
         accounts: vec!["a".into(), "b".into()],
@@ -197,7 +197,7 @@ async fn a_revoked_grant_refuses_only_its_own_machine() {
 #[tokio::test]
 async fn a_joined_machine_gets_its_grant_from_the_feed() {
     let app = cloud_app();
-    let p = &app.platform;
+    let p = app.platform.inner();
     arugula_platform::projects::follow(p).await.unwrap();
     let box_ = daemon(&app, "a", "box").id();
     assert!(p.db.grants("a").unwrap().is_empty(), "nothing yet: the hub doesn't write grants");
@@ -217,7 +217,7 @@ async fn a_joined_machine_gets_its_grant_from_the_feed() {
 #[tokio::test]
 async fn a_machine_that_joins_again_starts_with_a_new_grant() {
     let app = cloud_app();
-    arugula_platform::projects::follow(&app.platform).await.unwrap();
+    arugula_platform::projects::follow(app.platform.inner()).await.unwrap();
     let keys = daemon(&app, "a", "geek");
     let (base, server) = serve(app.clone()).await;
     assert_eq!(call(&base, &keys, "GET", "/api/cloud/workspaces").await.0, StatusCode::OK, "it drives at once");

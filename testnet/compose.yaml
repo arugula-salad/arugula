@@ -105,6 +105,14 @@ services:
       RUST_LOG: arugula_control=debug
       STRIPE_SECRET_KEY: sk_test_testnet
       STRIPE_WEBHOOK_SECRET: whsec_testnet
+      # The platform (M140): in process unless `up.sh control` was asked
+      # for it out of process (ARUGULA_TESTNET_PLATFORM=out), when it's the
+      # `platform` service and control is its gateway. The key is the
+      # stack's own, shared with `platform`; the internal API listens
+      # either way (it answers nothing unsigned).
+      ARUGULA_PLATFORM: ${ARUGULA_TESTNET_PLATFORM_URL:-in-process}
+      ARUGULA_PLATFORM_KEY: &platform-key 7e577e577e577e577e577e577e577e577e577e577e577e577e577e577e577e57
+      ARUGULA_CONTROL_INTERNAL_LISTEN: 0.0.0.0:7691
     volumes:
       - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
     tmpfs: [/var/lib/arugula-control]
@@ -115,6 +123,35 @@ services:
       outer: {}
       inner:
         ipv4_address: ${ARUGULA_TESTNET_INNER_NET:-10.229.80}.10
+
+  # Control's platform out of process (M140): this tree's arugula-platform,
+  # reached only by control, on the outer network (nothing published).
+  # `ARUGULA_TESTNET_PLATFORM=out testnet/up.sh control` brings it up and
+  # points control at it. Its database is in the container's own
+  # filesystem, so it outlives `docker restart` (the platform-restart
+  # claim); `down` removes it.
+  platform:
+    profiles: [platform]
+    image: debian:bookworm-slim
+    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-platform
+    hostname: platform
+    command:
+      - /opt/arugula/arugula-platform
+      - --listen=0.0.0.0:7700
+      - --db=/root/platform.db
+      - --hub=http://control:7691
+      - --public-url=http://${ARUGULA_TESTNET_INNER_NET:-10.229.80}.10:8080
+      - --stripe-api=http://fakes:9002
+      - --stripe-seat-price=price_seat
+      - --stripe-minutes-price=price_min
+    environment:
+      RUST_LOG: arugula_platform=debug
+      STRIPE_SECRET_KEY: sk_test_testnet
+      STRIPE_WEBHOOK_SECRET: whsec_testnet
+      ARUGULA_PLATFORM_KEY: *platform-key
+    volumes:
+      - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
+    networks: [outer]
 
   # The fakes control-smoke uses (web/fixtures/fakes.ts): GitHub sign-in on
   # 9001 (published, for the browser's redirect), Stripe on 9002, a Web Push

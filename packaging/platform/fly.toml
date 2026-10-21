@@ -1,0 +1,46 @@
+# Control's platform (M140, #1157): chat, Cloud, billing, projects and
+# grants, behind the hub's gateway (illogical-control). It has no public
+# address: no [http_service] and no [[services]], so Fly's proxy never
+# forwards to it and no public IP is allocated. The hub reaches it over the
+# private network (6PN) at arugula-platform.internal:7700, and it reaches
+# the hub's internal API at illogical-control.internal:7691. Never
+# `fly ips allocate-*` a public address for it.
+#
+# Secrets (fly secrets set -a arugula-platform): ARUGULA_PLATFORM_KEY (the
+# same as the hub's), and the platform's own: ARUGULA_MANAGOAT_API_KEY,
+# ARUGULA_CLOUD_SECRET_KEY, ARUGULA_CLOUD_ACCOUNTS, ARUGULA_CLOUD_MODELS,
+# POSTHOG_API_KEY (docs/control-ops.md, "The platform"). Each release tag
+# deploys it before the hub (release.yml's `platform` job), once
+# FLY_PLATFORM_API_TOKEN is set; `just platform-deploy` is for hotfixes.
+app = "arugula-platform"
+primary_region = "ewr"
+kill_signal = "SIGTERM"
+kill_timeout = "15s"
+
+[env]
+  # 6PN is IPv6: listen on every address, which only the private network
+  # reaches with no service declared.
+  ARUGULA_PLATFORM_LISTEN = "[::]:7700"
+  ARUGULA_PLATFORM_DB = "/data/platform.db"
+  ARUGULA_PLATFORM_HUB = "http://illogical-control.internal:7691"
+  # The hub's site, where billing's checkout comes back to.
+  ARUGULA_CONTROL_URL = "https://control.arugula.io"
+
+[[mounts]]
+  source = "platform_data"
+  destination = "/data"
+
+# Machine checks (no service needed): fly deploy waits for them, and
+# scripts/ci-platform-deploy checks they pass.
+[checks]
+  [checks.health]
+    type = "http"
+    port = 7700
+    path = "/platform.json"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

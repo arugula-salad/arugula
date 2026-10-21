@@ -7,10 +7,12 @@
 //! Projects, team members and grants (#1122) are the platform's too
 //! (`arugula_platform::db::projects`): no query here names them. `changes`
 //! is the outbox the platform follows (#1153), and how a machine's joining
-//! reaches its grant.
+//! reaches its grant. `platform` is what the hub keeps about the platform
+//! (M140).
 
 pub mod changes;
 pub mod doc_links;
+pub mod platform;
 #[cfg(test)]
 mod tables;
 
@@ -542,6 +544,7 @@ impl Db {
         conn.execute_batch(SCHEMA)?;
         conn.execute_batch(doc_links::SCHEMA)?;
         conn.execute_batch(changes::SCHEMA)?;
+        conn.execute_batch(platform::SCHEMA)?;
         migrate(&conn)?;
         if !answers_before {
             grandfather_shares(&conn)?;
@@ -554,6 +557,7 @@ impl Db {
         conn.execute_batch(SCHEMA).unwrap();
         conn.execute_batch(doc_links::SCHEMA).unwrap();
         conn.execute_batch(changes::SCHEMA).unwrap();
+        conn.execute_batch(platform::SCHEMA).unwrap();
         migrate(&conn).unwrap();
         Self { conn: Mutex::new(conn) }
     }
@@ -2163,7 +2167,9 @@ impl Db {
     /// Delete an account and everything that's only its, in one
     /// transaction. Returns its machines' ids (to hang up on). What the
     /// platform holds of it (billing's, chat's, Cloud's, projects and
-    /// grants) goes after, through `PlatformPort::account_deleted`.
+    /// grants) goes after, through `PlatformPort::account_deleted`; until
+    /// the platform says it has, an `untold_deletions` row keeps what to
+    /// tell it (M140).
     pub fn delete_account(&self, e: &Erase) -> anyhow::Result<Vec<String>> {
         let a = e.account;
         let mut c = self.c();
@@ -2278,6 +2284,13 @@ impl Db {
         ] {
             tx.execute(sql, params![a])?;
         }
+        // Until the platform says it erased its part (M140).
+        let deleted = arugula_platform::Deleted {
+            account: a.to_owned(),
+            machines: daemons.clone(),
+            disbanded: e.disband.to_vec(),
+        };
+        platform::untold(&tx, &deleted, arugula_e2e::now_ms())?;
         tx.commit()?;
         Ok(daemons)
     }

@@ -16,6 +16,11 @@
 //! can't be moved to another request. The platform takes a header only
 //! within [`SKEW_MS`] of its own clock. The hub drops any principal header
 //! a client sent before it adds its own.
+//!
+//! The gateway forwards every call with one, even one with no principal:
+//! then the JSON is a [`Vouch`] that says the hub refused the credentials
+//! (and how it would have answered) or that there were none, and the
+//! platform refuses a call with no valid header at all.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use hmac::{KeyInit as _, Mac as _};
@@ -96,18 +101,36 @@ impl PrincipalKey {
         Self::new(&bytes)
     }
 
-    fn mac(&self, method: &str, path_and_query: &str, ms: u64, request_id: &str, principal: &str) -> HmacSha256 {
+    /// An HMAC-SHA256 under this key, for `message`: what the principal
+    /// header and the processes' internal calls (`internal`) are signed
+    /// with, each with its own first line, so one can't pass for the other.
+    pub(crate) fn hmac(&self, message: &[u8]) -> HmacSha256 {
         let mut mac = HmacSha256::new_from_slice(&self.0).expect("HMAC takes any key");
-        mac.update(message(method, path_and_query, ms, request_id, principal).as_bytes());
+        mac.update(message);
         mac
+    }
+
+    fn mac(&self, method: &str, path_and_query: &str, ms: u64, request_id: &str, principal: &str) -> HmacSha256 {
+        self.hmac(message(method, path_and_query, ms, request_id, principal).as_bytes())
     }
 
     /// The header for a request: `method` and `path_and_query` as the
     /// platform will see them, at `ms`.
     pub fn sign(&self, principal: &Principal, method: &str, path_and_query: &str, request_id: &str, ms: u64) -> String {
-        assert!(valid_request_id(request_id), "a request id is 1 to 64 of [A-Za-z0-9_-]");
         let json = serde_json::to_string(principal).expect("a principal serializes");
-        let tag = self.mac(method, path_and_query, ms, request_id, &json).finalize().into_bytes();
+        self.sign_json(&json, method, path_and_query, request_id, ms)
+    }
+
+    /// The header for a request the gateway forwards (M140): who's asking,
+    /// a refusal of their credentials, or nobody.
+    pub fn sign_vouch(&self, vouch: &Vouch, method: &str, path_and_query: &str, request_id: &str, ms: u64) -> String {
+        let json = serde_json::to_string(vouch).expect("a vouch serializes");
+        self.sign_json(&json, method, path_and_query, request_id, ms)
+    }
+
+    fn sign_json(&self, json: &str, method: &str, path_and_query: &str, request_id: &str, ms: u64) -> String {
+        assert!(valid_request_id(request_id), "a request id is 1 to 64 of [A-Za-z0-9_-]");
+        let tag = self.mac(method, path_and_query, ms, request_id, json).finalize().into_bytes();
         format!("v1 {ms} {request_id} {} {}", B64.encode(json), B64.encode(tag))
     }
 
@@ -120,6 +143,34 @@ impl PrincipalKey {
         path_and_query: &str,
         now_ms: u64,
     ) -> Result<Verified, BadPrincipal> {
+        let (json, request_id, ms) = self.verify_json(header, method, path_and_query, now_ms)?;
+        let principal = serde_json::from_str(&json).map_err(|_| BadPrincipal::Malformed)?;
+        Ok(Verified { principal, request_id, ms })
+    }
+
+    /// What a forwarded request's header vouches for, if this key signed
+    /// it for this request within [`SKEW_MS`] of `now_ms`: a principal (as
+    /// [`verify`](Self::verify) reads it), a refusal, or nobody.
+    pub fn verify_vouch(
+        &self,
+        header: &str,
+        method: &str,
+        path_and_query: &str,
+        now_ms: u64,
+    ) -> Result<(Vouch, String), BadPrincipal> {
+        let (json, request_id, _) = self.verify_json(header, method, path_and_query, now_ms)?;
+        let vouch = serde_json::from_str(&json).map_err(|_| BadPrincipal::Malformed)?;
+        Ok((vouch, request_id))
+    }
+
+    /// The signed JSON, the request id and the time.
+    fn verify_json(
+        &self,
+        header: &str,
+        method: &str,
+        path_and_query: &str,
+        now_ms: u64,
+    ) -> Result<(String, String, u64), BadPrincipal> {
         let f: Vec<&str> = header.split(' ').collect();
         let [v, ms, request_id, json, tag] = f.as_slice() else { return Err(BadPrincipal::Malformed) };
         if *v != "v1" {
@@ -138,9 +189,44 @@ impl PrincipalKey {
         if ms.abs_diff(now_ms) > SKEW_MS {
             return Err(BadPrincipal::Stale);
         }
-        let principal = serde_json::from_str(&json).map_err(|_| BadPrincipal::Malformed)?;
-        Ok(Verified { principal, request_id: (*request_id).to_owned(), ms })
+        Ok((json, (*request_id).to_owned(), ms))
     }
+}
+
+/// What the hub vouches for when its gateway forwards a call to the
+/// platform (M140): every forwarded call carries one, so the platform
+/// refuses anything without it. Its JSON is the principal's for a
+/// principal (so [`PrincipalKey::verify`] reads it too), else
+/// `{"kind": "refused", ...}` or `{"kind": "nobody"}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Vouch {
+    /// Who's asking.
+    Principal(Principal),
+    /// No credentials, or credentials the hub refused.
+    Not(NotVouched),
+}
+
+/// A call the hub forwards without a principal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum NotVouched {
+    /// The request's credentials were refused: the status and the error
+    /// the hub would have answered with, and which credentials they were.
+    /// The platform's extractors answer with them, as the hub's do.
+    Refused { status: u16, error: String, by: Credential },
+    /// No session and no signature (a webhook, or a page signed out).
+    Nobody,
+}
+
+/// What a request proved who it was with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Credential {
+    /// A session cookie.
+    Session,
+    /// A device's or daemon's signature (`x-arugula-auth`).
+    Signature,
 }
 
 /// What the MAC covers.
@@ -173,6 +259,8 @@ pub enum BadPrincipal {
     Signature,
     /// Signed longer than [`SKEW_MS`] ago, or ahead.
     Stale,
+    /// An internal call whose nonce was already taken (`internal`).
+    Replayed,
 }
 
 impl std::fmt::Display for BadPrincipal {
@@ -182,6 +270,7 @@ impl std::fmt::Display for BadPrincipal {
             BadPrincipal::Version => "a principal header of another version",
             BadPrincipal::Signature => "a principal header not signed for this request",
             BadPrincipal::Stale => "a principal header too old or too new",
+            BadPrincipal::Replayed => "an internal call already taken",
         })
     }
 }
@@ -264,6 +353,34 @@ mod tests {
         assert!(key().verify(&h, "GET", "/api/chat", NOW + SKEW_MS).is_ok());
         assert_eq!(key().verify(&h, "GET", "/api/chat", NOW + SKEW_MS + 1), Err(BadPrincipal::Stale));
         assert_eq!(key().verify(&h, "GET", "/api/chat", NOW - SKEW_MS - 1), Err(BadPrincipal::Stale), "from ahead");
+    }
+
+    /// A forwarded call's header carries a principal, a refusal or nobody,
+    /// and a principal's reads as `verify` reads it.
+    #[test]
+    fn vouches() {
+        let refused = Vouch::Not(NotVouched::Refused {
+            status: 403,
+            error: "cross-origin request refused".into(),
+            by: Credential::Session,
+        });
+        for v in [Vouch::Principal(daemon()), refused.clone(), Vouch::Not(NotVouched::Nobody)] {
+            let h = key().sign_vouch(&v, "GET", "/api/chat", "req-1", NOW);
+            assert_eq!(key().verify_vouch(&h, "GET", "/api/chat", NOW).unwrap(), (v, "req-1".into()));
+            assert_eq!(key().verify_vouch(&h, "POST", "/api/chat", NOW), Err(BadPrincipal::Signature));
+        }
+        let h = key().sign_vouch(&Vouch::Principal(daemon()), "GET", "/api/chat", "req-1", NOW);
+        assert_eq!(key().verify(&h, "GET", "/api/chat", NOW).unwrap().principal, daemon());
+        let h = key().sign_vouch(&refused, "GET", "/api/chat", "req-1", NOW);
+        assert_eq!(key().verify(&h, "GET", "/api/chat", NOW), Err(BadPrincipal::Malformed), "no principal in it");
+        assert_eq!(
+            serde_json::to_value(&refused).unwrap(),
+            serde_json::json!({ "kind": "refused", "status": 403, "error": "cross-origin request refused", "by": "session" })
+        );
+        assert_eq!(
+            serde_json::to_value(Vouch::Not(NotVouched::Nobody)).unwrap(),
+            serde_json::json!({ "kind": "nobody" })
+        );
     }
 
     #[test]

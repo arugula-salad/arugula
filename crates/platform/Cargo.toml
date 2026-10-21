@@ -1,11 +1,15 @@
 [package]
 name = "arugula-platform"
-# The workspace's version: it becomes the `arugula-platform` binary (M140).
+# The workspace's version, as the `arugula-platform` binary's (M140).
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Arugula control's platform: chat, Cloud and billing, behind the hub"
+
+[[bin]]
+name = "arugula-platform"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -29,6 +33,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }
 
 [features]

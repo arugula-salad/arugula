@@ -70,8 +70,8 @@ control-tables mode="write":
 build: web
     {{cargo}} build --release
 
-# Static musl binaries (daemon, CLI and arugula-control) for sandboxes,
-# machines without systemd, hosting control and releases:
+# Static musl binaries (daemon, CLI, arugula-control and arugula-platform)
+# for sandboxes, machines without systemd, hosting control and releases:
 # target/ARCH-unknown-linux-musl/release/. ARCH is
 # x86_64 or aarch64. Zig, already here for libghostty, is the C compiler and
 # brings musl; for aarch64 it links too.
@@ -83,8 +83,8 @@ static arch="x86_64": web
     export ZIG_MUSL_ARCH={{arch}} "CC_${t//-/_}=$PWD/scripts/zig-cc-musl" "AR_${t//-/_}=$PWD/scripts/zig-ar"
     # Cross: Zig links too, with its own musl and startup files, not rustc's.
     if [ {{arch}} != "$(uname -m)" ]; then export "CARGO_TARGET_${T}_LINKER=$PWD/scripts/zig-cc-musl" "CARGO_TARGET_${T}_RUSTFLAGS=-C link-self-contained=no"; fi
-    {{cargo}} build --release --target "$t" -p arugulad -p arugula -p arugula-control
-    file {{target_dir}}/$t/release/arugulad {{target_dir}}/$t/release/arugula {{target_dir}}/$t/release/arugula-control
+    {{cargo}} build --release --target "$t" -p arugulad -p arugula -p arugula-control -p arugula-platform
+    file {{target_dir}}/$t/release/arugulad {{target_dir}}/$t/release/arugula {{target_dir}}/$t/release/arugula-control {{target_dir}}/$t/release/arugula-platform
 
 # Deploy the hosted Arugula control to Fly (packaging/control/fly.toml):
 # the static x86_64 binary in a distroless image, from a small build context.
@@ -96,6 +96,17 @@ control-deploy: static
     ctx=$(mktemp -d)
     trap 'rm -rf "$ctx"' EXIT
     cp {{target_dir}}/x86_64-unknown-linux-musl/release/arugula-control {{target_dir}}/x86_64-unknown-linux-musl/release/arugulad packaging/control/Dockerfile packaging/control/fly.toml "$ctx"/
+    cd "$ctx" && fly deploy --local-only --ha=false
+
+# Deploy control's platform to Fly (packaging/platform/fly.toml, M140): the
+# static x86_64 binary in a distroless image. Release tags deploy it from
+# CI before the hub (release.yml's `platform` job); this is for hotfixes.
+platform-deploy: static
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ctx=$(mktemp -d)
+    trap 'rm -rf "$ctx"' EXIT
+    cp {{target_dir}}/x86_64-unknown-linux-musl/release/arugula-platform packaging/platform/Dockerfile packaging/platform/fly.toml "$ctx"/
     cd "$ctx" && fly deploy --local-only --ha=false
 
 # The daemons the hosted control saw in the last 30 days, by version: a

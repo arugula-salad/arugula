@@ -13,7 +13,9 @@ pub fn start(app: Arc<Platform>) {
         let app = app.clone();
         tokio::spawn(async move {
             loop {
-                if let Err(error) = tick(&app).await {
+                if !app.is_paused()
+                    && let Err(error) = tick(&app).await
+                {
                     tracing::warn!(%error, "cloud reconciliation failed");
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;

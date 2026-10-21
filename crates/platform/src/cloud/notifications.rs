@@ -10,7 +10,9 @@ use std::sync::Arc;
 pub fn start(app: Arc<Platform>) {
     tokio::spawn(async move {
         loop {
-            if let Err(error) = tick(&app).await {
+            if !app.is_paused()
+                && let Err(error) = tick(&app).await
+            {
                 tracing::warn!(%error,"cloud notifications will retry");
             }
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
