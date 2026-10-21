@@ -659,8 +659,7 @@ impl GithubApp {
         repo: &str,
     ) -> Result<RepoRole, String> {
         let http = c.http;
-        let name = repo.split('/').nth(1).unwrap_or_default();
-        let token = match self.read_token(c, install.id, Repo::Name(name), Purpose::Read).await {
+        let token = match self.read_token(c, install.id, Repo::Name(repo), Purpose::Read).await {
             Ok(t) => t,
             Err(e) => {
                 warn!(error = %e, "minting a token to check a role");

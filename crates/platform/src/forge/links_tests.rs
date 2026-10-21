@@ -54,11 +54,20 @@ async fn installation(State(h): State<Shared>, Path((o, r)): Path<(String, Strin
     }
 }
 
-async fn token(Json(b): Json<Value>) -> Json<Value> {
-    // Read only, for one repository: what the App asks for.
+async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Json<Value> {
+    // Read only, for one repository: what the App asks for. GitHub's answer
+    // names the repository it covers, as M167 checks.
     assert_eq!(b["permissions"]["metadata"], "read");
     assert_eq!(b["repositories"].as_array().map(Vec::len), Some(1));
-    Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z" }))
+    let short = b["repositories"][0].as_str().unwrap();
+    let h = h.lock().unwrap();
+    let covers: Vec<Value> = h
+        .repos
+        .iter()
+        .filter(|(name, _)| name.rsplit('/').next() == Some(short))
+        .map(|(name, (id, _))| json!({ "id": id, "full_name": name }))
+        .collect();
+    Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": covers }))
 }
 
 async fn repo(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> Response {
