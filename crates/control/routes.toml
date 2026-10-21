@@ -11,8 +11,7 @@
 #   arugula-control-wire is written out, with its constant in a comment.
 # - `process`: `hub` (identity, devices, rosters, the relay, push, block and
 #   doc origins, forge and telemetry: it deploys rarely) or `platform` (chat,
-#   Cloud, billing, and grants once they move: it deploys as often as it
-#   likes). Every path stays on control's own site whichever answers it:
+#   Cloud, billing, projects and grants: it deploys as often as it likes). Every path stays on control's own site whichever answers it:
 #   the hub is the gateway for the platform's.
 # - `auth`: what control checks before it acts:
 #   - `public`: nothing (some are rate-limited; `note` says what stands in);
@@ -1076,30 +1075,30 @@ process = "platform"
 auth = "session"
 clients = ["page"]
 
-# ---- grants: the hub's for now
-# Grants are planned for the platform (#1150), and stay in the hub until
-# they move there with projects: every machine gets `cloud.drive` in its
-# join's own transaction, and the list names machines from the hub's
-# directory. The platform asks the hub (`HubPort::can_drive_cloud`, M137).
+# ---- platform: grants
+# The platform's since step 2 (#1150), with projects: a machine gets
+# `cloud.drive` when the hub's change feed says it joined, or the first time
+# it asks, and the list names machines from the hub's directory
+# (`HubPort::daemons`).
 
 [[route]]
 method = "GET"
 path = "/api/grants"
-process = "hub"
+process = "platform"
 auth = "session"
 clients = ["cli"]
 
 [[route]]
 method = "POST"
 path = "/api/grants"
-process = "hub"
+process = "platform"
 auth = "session"
 clients = ["cli"]
 
 [[route]]
 method = "POST"
 path = "/api/grants/{id}/revoke"
-process = "hub"
+process = "platform"
 auth = "session"
 clients = ["cli"]
 

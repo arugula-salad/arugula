@@ -22,8 +22,10 @@ or reach secrets, the agent library or past tabs; those stay a person's
 
 **That power is a grant (M130, #1126).** Every machine joined to an account
 holds a `cloud.drive` grant over it: machines joined before M130 got one
-when control started, and each machine that joins gets one when it's
-approved. The routes above check it, so a machine without a live grant is
+when control started, and each machine that joins gets one as soon as it's
+approved (from control's change feed, or the first time it drives, whichever
+comes first, so a machine that just joined is never refused). The routes
+above check it, so a machine without a live grant is
 refused (403) with a message that names it and says how to give it back.
 The owner manages them from a device logged in to the account:
 
@@ -40,5 +42,6 @@ machine's signature isn't accepted here): `GET /api/grants`,
 since the daemon signs every MCP call as itself; narrowing one to the
 owner's own agents is a later daemon change. A machine that's removed loses
 its grants, and one that joins again gets a new one. Grants live in
-control's `grants` table (`crates/control/src/db/projects.rs`, "Grants, not
-impersonation" in [DECISIONS.md](../DECISIONS.md)).
+the platform's `grants` table (`crates/platform/src/db/projects.rs`, "Grants,
+not impersonation" in [DECISIONS.md](../DECISIONS.md)), and the routes are
+the platform's behind the hub's gate (`crates/platform/src/grants.rs`).

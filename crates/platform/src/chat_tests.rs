@@ -96,6 +96,12 @@ impl TestHub {
         self.change(ChangeKind::DaemonJoined, id);
     }
 
+    /// A machine leaves its account.
+    pub(crate) fn leave(&self, id: &str) {
+        self.state.lock().unwrap().daemons.remove(id);
+        self.change(ChangeKind::DaemonLeft, id);
+    }
+
     pub(crate) fn flag(&self, owner: &str, on: bool) {
         self.state.lock().unwrap().flags.entry(owner.into()).or_default().insert(FLAG.into(), on);
         self.change(ChangeKind::LabsFlag, owner);

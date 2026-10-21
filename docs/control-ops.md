@@ -438,7 +438,11 @@ grant over its account unless its owner revoked it. Control doesn't record
 which machine made a call, so "every machine that drove a workspace in the
 last 30 days" is checked as every machine of an account that made a Cloud
 workspace or opened a tab in that time. This prints nothing when it holds
-(on production after the deploy, or on a copy):
+(on production after the deploy, or on a copy). It joins the hub's
+`devices` and `daemons` to the platform's `grants`, so it works only while
+both are in one file (until M141). Since grants moved to the platform, a
+machine gets its grant within a feed tick of joining, or when it first
+drives, so one that joined in the last second may show up here:
 
 ```
 sqlite3 /tmp/control.db <<'EOF'

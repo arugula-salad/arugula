@@ -61,9 +61,11 @@ pub trait Fixture: Send + Sync {
     /// The hub's prune of its change feed, as it would run at `now` (ms).
     fn prune_changes(&self, now: u64) -> anyhow::Result<()>;
     /// A machine that joins the account the way a daemon does, approved,
-    /// which gives it `cloud.drive` over the account: its id.
+    /// which gives it `cloud.drive` over the account (the platform's, from
+    /// the feed or its first ask): its id.
     fn machine(&self, account: &str, name: &str) -> anyhow::Result<String>;
-    /// The account revokes its machine's `cloud.drive` grant.
+    /// The account revokes its machine's `cloud.drive` grant (the
+    /// platform's, as `POST /api/grants/{id}/revoke` does).
     fn revoke_cloud_drive(&self, account: &str, daemon: &str) -> anyhow::Result<()>;
 }
 
@@ -351,7 +353,11 @@ async fn push_options(f: &dyn Fixture) {
     assert_eq!(f.last_ttl(), Some(3600));
 }
 
-/// What chat asks of projects (M138): a team's default project.
+/// What chat asked of projects (M138): a team's default project. The
+/// platform keeps projects itself since step 2 and no longer asks; the
+/// method stays (the trait only grows), and the in-process hub answers it
+/// from the platform's own. An HTTP hub that doesn't serve it (M140) can
+/// leave this check out.
 async fn projects(f: &dyn Fixture) {
     let hub = f.hub();
     f.account("acct-pj", "pj", "").unwrap();
@@ -363,8 +369,9 @@ async fn projects(f: &dyn Fixture) {
     assert_eq!(hub.team_project("t-none").await.unwrap(), None, "no such team");
 }
 
-/// What Cloud asks (M137): an account's personal project, and a machine's
-/// `cloud.drive` grant.
+/// What Cloud asked (M137): an account's personal project, and a machine's
+/// `cloud.drive` grant. Unused by the platform since step 2, as
+/// [`projects`]: the in-process hub answers from the platform's own.
 async fn cloud(f: &dyn Fixture) {
     let hub = f.hub();
     f.account("acct-cl", "cl", "").unwrap();

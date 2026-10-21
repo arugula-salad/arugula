@@ -7,8 +7,8 @@
 //!
 //! Each feature brings its own tables and queries as it moves in (billing's
 //! in [`billing`], M139; Cloud's in [`cloud`], M137; chat's in [`chat`],
-//! M138), and flips their `process` in `crates/control/tables.toml` to
-//! `platform`.
+//! M138; projects, team members and grants in [`projects`]), and flips
+//! their `process` in `crates/control/tables.toml` to `platform`.
 
 use std::{
     path::Path,
@@ -21,13 +21,14 @@ use rusqlite::Connection;
 pub mod billing;
 pub mod chat;
 pub mod cloud;
+pub mod projects;
 
 pub struct Db {
     conn: Mutex<Connection>,
 }
 
 /// The platform's tables, made if they aren't there: each feature's own.
-const SCHEMA: &[&str] = &[billing::SCHEMA, chat::SCHEMA, cloud::SCHEMA];
+const SCHEMA: &[&str] = &[billing::SCHEMA, chat::SCHEMA, cloud::SCHEMA, projects::SCHEMA];
 
 impl Db {
     /// The database at `path`: in process, the hub's file.
@@ -38,6 +39,7 @@ impl Db {
         }
         chat::migrate(&conn)?;
         cloud::migrate(&conn)?;
+        projects::migrate(&conn, arugula_e2e::now_ms())?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -50,6 +52,7 @@ impl Db {
         }
         chat::migrate(&conn).expect("the platform's schema");
         cloud::migrate(&conn).expect("the platform's schema");
+        projects::migrate(&conn, arugula_e2e::now_ms()).expect("the platform's schema");
         Self { conn: Mutex::new(conn) }
     }
 

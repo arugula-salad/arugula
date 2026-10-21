@@ -17,8 +17,9 @@
 //!
 //! Today it runs inside the hub's process. Billing moved in first (M139),
 //! then Cloud ([`cloud`], M137), then chat ([`chat`], M138), which follows
-//! the hub's change feed through [`cache`]. M140 runs it as its own process
-//! behind the hub.
+//! the hub's change feed through [`cache`], then projects and grants
+//! ([`projects`], [`grants`]), which follow it too. M140 runs it as its own
+//! process behind the hub.
 //!
 //! [`Principal`]: arugula_control_common::Principal
 
@@ -36,8 +37,10 @@ pub mod cloud;
 #[cfg(feature = "contract")]
 pub mod contract;
 pub mod db;
+pub mod grants;
 pub mod hub;
 mod port;
+pub mod projects;
 mod router;
 
 pub use hub::HubPort;
@@ -74,7 +77,8 @@ impl Config {
 
 /// The platform: its own database, its view of the hub, and what it keeps
 /// in memory. Each feature that moved in brought its own fields, as `App`
-/// had them: billing's `stripe`, Cloud's `cloud`, and chat's `chat`.
+/// had them: billing's `stripe`, Cloud's `cloud`, chat's `chat`, and
+/// projects' `feed`.
 pub struct Platform {
     pub cfg: Config,
     pub db: db::Db,
@@ -93,6 +97,9 @@ pub struct Platform {
     pub chat: chat::Hub,
     /// The hub's answers chat asks for, following its change feed (M138).
     pub cache: cache::Cache,
+    /// Held while [`projects::follow`] applies the hub's change feed to
+    /// projects and grants: one reader at a time.
+    pub feed: tokio::sync::Mutex<()>,
 }
 
 impl Platform {
@@ -108,6 +115,7 @@ impl Platform {
             cloud: None,
             chat: Default::default(),
             cache: Default::default(),
+            feed: Default::default(),
         }
     }
 }

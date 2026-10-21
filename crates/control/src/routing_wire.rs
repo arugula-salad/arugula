@@ -237,7 +237,9 @@ async fn joining_again_needs_the_machines_key() {
 }
 
 /// M130: a machine that joins gets `cloud.drive` over its owner's account,
-/// as the machines from before got it from the backfill.
+/// as the machines from before got it from the backfill. The grant is the
+/// platform's (step 2): the hub's join writes none, and the machine has it
+/// the moment it's joined, before the platform reads the change feed.
 #[tokio::test]
 async fn a_joined_machine_drives_its_owners_cloud_workspaces() {
     let c = control(|_| {}).await;
@@ -246,7 +248,10 @@ async fn a_joined_machine_drives_its_owners_cloud_workspaces() {
     let b = join_body(&keys, true);
     let r: Value = c.http.post(format!("{}/api/join", c.base)).json(&b).send().await.unwrap().json().await.unwrap();
     let code = r["code"].as_str().unwrap().to_owned();
-    assert!(!c.app.db.can_drive_cloud(&keys.id(), "a1").unwrap(), "not before it's approved");
+    let p = &c.app.platform;
+    let id = keys.id();
+    let drives = || arugula_platform::grants::can_drive_cloud(p, &id, "a1");
+    assert!(!drives().await.unwrap(), "not before it's approved");
     let ask: Cert = serde_json::from_value(b["cert"].clone()).unwrap();
     let mut approval = Cert { account: "a1".into(), ..ask };
     approval.sign_with(&root);
@@ -254,10 +259,12 @@ async fn a_joined_machine_drives_its_owners_cloud_workspaces() {
     let (st, _) =
         c.as_person(&cookie, "POST", &format!("/api/joins/{code}/approve"), Some(json!({ "cert": approval }))).await;
     assert_eq!(st, 200);
-    assert!(c.app.db.can_drive_cloud(&keys.id(), "a1").unwrap());
-    let grants = c.app.db.grants("a1").unwrap();
-    assert_eq!(grants.len(), 1);
-    assert_eq!((grants[0].subject_name.as_deref(), grants[0].granted_by.as_str()), (Some("box"), "a1"));
+    assert!(drives().await.unwrap());
+    let (st, listed) = c.as_person(&cookie, "GET", "/api/grants", None).await;
+    assert_eq!(st, 200);
+    let grants = listed["grants"].as_array().unwrap();
+    assert_eq!(grants.len(), 1, "{listed}");
+    assert_eq!((&grants[0]["subject"]["name"], &grants[0]["granted_by"]), (&json!("box"), &json!("a1")));
 }
 
 #[tokio::test]
