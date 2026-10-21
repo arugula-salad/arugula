@@ -3,13 +3,11 @@
 //! revocations, pending joins, the directory and byte counts. Nothing a
 //! daemon sends inside a channel ever reaches it. Managed cloud execution is
 //! the platform's (M137, `arugula_platform::db::cloud`).
-//! Chat (M122, `chat`) is held here in plain text: rooms, messages and the
-//! lines people quote from panes, never the rest of a pane.
+//! Chat (M122) is the platform's too (M138, `arugula_platform::db::chat`).
 //! Projects, team members and grants (`projects`, #1122) are the platform
 //! plane's nouns. `changes` is the outbox the platform follows (#1153).
 
 pub mod changes;
-pub mod chat;
 pub mod doc_links;
 pub mod projects;
 #[cfg(test)]
@@ -541,12 +539,10 @@ impl Db {
             |r| r.get(0),
         )?;
         conn.execute_batch(SCHEMA)?;
-        conn.execute_batch(chat::SCHEMA)?;
         conn.execute_batch(doc_links::SCHEMA)?;
         conn.execute_batch(projects::SCHEMA)?;
         conn.execute_batch(changes::SCHEMA)?;
         migrate(&conn)?;
-        chat::migrate(&conn)?;
         projects::migrate(&conn, arugula_e2e::now_ms())?;
         if !answers_before {
             grandfather_shares(&conn)?;
@@ -557,12 +553,10 @@ impl Db {
     pub fn memory() -> Self {
         let conn = arugula_control_common::sqlite::memory();
         conn.execute_batch(SCHEMA).unwrap();
-        conn.execute_batch(chat::SCHEMA).unwrap();
         conn.execute_batch(doc_links::SCHEMA).unwrap();
         conn.execute_batch(projects::SCHEMA).unwrap();
         conn.execute_batch(changes::SCHEMA).unwrap();
         migrate(&conn).unwrap();
-        chat::migrate(&conn).unwrap();
         projects::migrate(&conn, arugula_e2e::now_ms()).unwrap();
         Self { conn: Mutex::new(conn) }
     }
@@ -2179,8 +2173,8 @@ impl Db {
 
     /// Delete an account and everything that's only its, in one
     /// transaction. Returns its machines' ids (to hang up on). What the
-    /// platform holds of it (billing's and Cloud's) goes after, through
-    /// `PlatformPort::account_deleted`.
+    /// platform holds of it (billing's, chat's and Cloud's) goes after,
+    /// through `PlatformPort::account_deleted`.
     pub fn delete_account(&self, e: &Erase) -> anyhow::Result<Vec<String>> {
         let a = e.account;
         let mut c = self.c();
@@ -2248,9 +2242,6 @@ impl Db {
                 tx.execute(sql, params![t])?;
             }
         }
-        // Chat (M122): its DMs, the threads on its machines, the disbanded
-        // teams' rooms, and its name on everything else.
-        chat::erase_account(&tx, a, &daemons, e.disband)?;
         projects::erase_account(&tx, a, &daemons, e.disband)?;
         // Certificates kept for teams that are gone now.
         tx.execute("DELETE FROM retained_certs WHERE account NOT IN (SELECT account FROM retained_for)", [])?;

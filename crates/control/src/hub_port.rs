@@ -17,7 +17,7 @@ use arugula_control_common::Principal;
 use arugula_e2e::Kind;
 use arugula_platform::{
     auth::{Asked, Credential},
-    hub::{Account, ChangePage, Daemon, Flags, HubPort, HubResult, Member, Meter, Pushed, Resolved, Team},
+    hub::{Account, ChangePage, Daemon, Flags, HubPort, HubResult, Member, Meter, PushOptions, Pushed, Resolved, Team},
 };
 use axum::{
     extract::{FromRequestParts, Request, State},
@@ -185,9 +185,18 @@ impl HubPort for InProcess {
     }
 
     fn push<'a>(&'a self, account: &'a str, message: &'a serde_json::Value) -> BoxFuture<'a, HubResult<Pushed>> {
+        self.push_with(account, message, PushOptions::default())
+    }
+
+    fn push_with<'a>(
+        &'a self,
+        account: &'a str,
+        message: &'a serde_json::Value,
+        options: PushOptions,
+    ) -> BoxFuture<'a, HubResult<Pushed>> {
         Box::pin(async move {
             let app = self.app()?;
-            crate::push::push_account(&app, account, message.to_string().as_bytes()).await
+            crate::push::push_account(&app, account, message.to_string().as_bytes(), options).await
         })
     }
 
@@ -236,6 +245,10 @@ impl HubPort for InProcess {
 
     fn can_drive_cloud<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, HubResult<bool>> {
         Box::pin(async move { self.app()?.db.can_drive_cloud(daemon, account) })
+    }
+
+    fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        Box::pin(async move { self.app()?.db.team_project(team, arugula_e2e::now_ms()) })
     }
 }
 
@@ -295,22 +308,31 @@ mod tests {
         app: Arc<App>,
         push_at: String,
         pushes: Arc<AtomicUsize>,
+        ttl: Arc<std::sync::Mutex<Option<u32>>>,
     }
 
     impl Fixture {
         async fn new() -> Self {
-            use axum::{Router, extract::Path, http::StatusCode, routing::post};
+            use axum::{
+                Router,
+                extract::Path,
+                http::{HeaderMap, StatusCode},
+                routing::post,
+            };
             let pushes = Arc::new(AtomicUsize::new(0));
-            let count = pushes.clone();
+            let ttl = Arc::new(std::sync::Mutex::new(None));
+            let (count, seen) = (pushes.clone(), ttl.clone());
             let service = Router::new().route(
                 "/push/{kind}",
-                post(move |Path(kind): Path<String>| {
-                    let count = count.clone();
+                post(move |Path(kind): Path<String>, headers: HeaderMap| {
+                    let (count, seen) = (count.clone(), seen.clone());
                     async move {
                         if kind == "gone" {
                             return StatusCode::GONE;
                         }
                         count.fetch_add(1, Ordering::SeqCst);
+                        *seen.lock().unwrap() =
+                            headers.get("ttl").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
                         StatusCode::CREATED
                     }
                 }),
@@ -320,7 +342,31 @@ mod tests {
             tokio::spawn(async move { axum::serve(l, service).await });
             let mut app = App::for_tests("http://control.test");
             app.cfg.push_hosts.push(at.to_string());
-            Fixture { app: app.start(), push_at: format!("http://{at}/push"), pushes }
+            Fixture { app: app.start(), push_at: format!("http://{at}/push"), pushes, ttl }
+        }
+
+        /// A push subscription at the push service's `/push/<kind>`, signed by
+        /// a new approved browser of the account's: the browser's id.
+        fn subscribe_at(&self, account: &str, kind: &str) -> anyhow::Result<String> {
+            use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
+            let keys = DeviceKeys::generate();
+            let mut cert = Cert::new(&keys, account, Kind::Browser, "a browser");
+            cert.sign_with(&keys);
+            self.app.db.put_device(&cert, true, 0)?;
+            let browser = p256::SecretKey::from_slice(&[1u8; 32]).unwrap();
+            let mut sub = PushSub {
+                v: 1,
+                account: account.into(),
+                device: String::new(),
+                endpoint: format!("{}/{kind}", self.push_at),
+                p256dh: B64.encode(browser.public_key().to_sec1_bytes()),
+                auth: B64.encode([2u8; 16]),
+                at: 0,
+                sig: String::new(),
+            };
+            sub.sign_with(&keys);
+            self.app.db.put_push_sub(&sub.endpoint, account, &serde_json::to_string(&sub)?)?;
+            Ok(cert.device)
         }
     }
 
@@ -435,28 +481,20 @@ mod tests {
         }
 
         fn subscribe(&self, account: &str, gone: bool) -> anyhow::Result<()> {
-            use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
-            let keys = DeviceKeys::generate();
-            let mut cert = Cert::new(&keys, account, Kind::Browser, "a browser");
-            cert.sign_with(&keys);
-            self.app.db.put_device(&cert, true, 0)?;
-            let browser = p256::SecretKey::from_slice(&[1u8; 32]).unwrap();
-            let mut sub = PushSub {
-                v: 1,
-                account: account.into(),
-                device: String::new(),
-                endpoint: format!("{}/{}", self.push_at, if gone { "gone" } else { "ok" }),
-                p256dh: B64.encode(browser.public_key().to_sec1_bytes()),
-                auth: B64.encode([2u8; 16]),
-                at: 0,
-                sig: String::new(),
-            };
-            sub.sign_with(&keys);
-            self.app.db.put_push_sub(&sub.endpoint, account, &serde_json::to_string(&sub)?)
+            self.subscribe_at(account, if gone { "gone" } else { "ok" }).map(|_| ())
         }
 
         fn pushes(&self) -> usize {
             self.pushes.load(Ordering::SeqCst)
+        }
+
+        fn subscribe_revoked(&self, account: &str) -> anyhow::Result<()> {
+            let device = self.subscribe_at(account, "revoked")?;
+            self.app.db.add_revocation(&Revocation::new(account, &device, &DeviceKeys::generate()))
+        }
+
+        fn last_ttl(&self) -> Option<u32> {
+            *self.ttl.lock().unwrap()
         }
 
         fn prune_changes(&self, now: u64) -> anyhow::Result<()> {

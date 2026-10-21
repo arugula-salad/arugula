@@ -1,6 +1,9 @@
 //! Chat (M122): rooms, their messages in plain text, read marks, an FTS5
 //! index, and who may read each pane's or session's thread as its daemon
 //! last said. Who sees what is decided in `crate::chat`; this is storage.
+//! The platform's since M138: it moved here from control's `db/chat.rs`,
+//! and never joins a hub table (a team channel's project comes from
+//! `HubPort::team_project`). FTS5 stays until M143 ports it to Postgres.
 //!
 //! - A room's `scope` is what it belongs to, and what deleting takes it
 //!   with: `team:<id>` (a channel or a DM), `machine:<id>` (the thread on a
@@ -17,7 +20,7 @@ use rusqlite::{OptionalExtension, Transaction, params, params_from_iter};
 
 use super::{Db, taken};
 
-pub(super) const SCHEMA: &str = "
+pub const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS chat_rooms (
     id TEXT PRIMARY KEY,
     scope TEXT NOT NULL,
@@ -101,7 +104,7 @@ CREATE TABLE IF NOT EXISTS chat_readers (
 ";
 
 /// Columns M124 added to M122's tables, for a database made before them.
-pub(super) fn migrate(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+pub fn migrate(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     let has = |table: &str, col: &str| -> rusqlite::Result<bool> {
         let mut q = conn.prepare(&format!("PRAGMA table_info({table})"))?;
         let names: Vec<String> = q.query_map([], |r| r.get(1))?.collect::<Result<_, _>>()?;
@@ -257,17 +260,13 @@ impl Db {
             .optional()?)
     }
 
-    /// A new room, with its members (a DM's two people). Fails with
+    /// A new room, with its members (a DM's two people), in `project`: a
+    /// team's channel belongs to the team's default project (the hub's,
+    /// `HubPort::team_project`); DMs and threads to none. Fails with
     /// [`super::Taken`] for a channel name or a pane's room already there.
-    pub fn add_chat_room(&self, room: &Room, members: &[&str]) -> Result<()> {
+    pub fn add_chat_room(&self, room: &Room, members: &[&str], project: Option<&str>) -> Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
-        // A team's channel belongs to the team's default project; DMs and
-        // threads to none.
-        let project = match room.scope.strip_prefix("team:").filter(|_| room.kind == "channel") {
-            Some(team) => Some(super::projects::team_project(&tx, team, room.created)?),
-            None => None,
-        };
         tx.execute(
             "INSERT INTO chat_rooms (id, scope, kind, name, machine, target, created_by, created, project_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -705,14 +704,15 @@ fn drop_rooms_where(tx: &Transaction, cond: &str, arg: &str) -> rusqlite::Result
     Ok(())
 }
 
-/// What deleting an account takes from chat (S41 decision 6), inside
-/// `Db::delete_account`'s transaction:
+/// What deleting an account takes from chat (S41 decision 6), inside the
+/// platform's transaction once the hub has deleted it
+/// (`PlatformPort::account_deleted`):
 /// - its DMs, both sides, and the threads on its machines;
 /// - the rooms of the teams that go with it;
 /// - its messages elsewhere keep their rows and numbers, blank and with no
 ///   author ("a deleted account");
 /// - it leaves no trace in others' mentions, read marks or reader lists.
-pub(super) fn erase_account(tx: &Transaction, account: &str, machines: &[String], disband: &[String]) -> Result<()> {
+pub(crate) fn erase_account(tx: &Transaction, account: &str, machines: &[String], disband: &[String]) -> Result<()> {
     drop_rooms_where(tx, "kind = 'dm' AND id IN (SELECT room FROM chat_members WHERE account = ?1)", account)?;
     for m in machines {
         drop_rooms_where(tx, "scope = 'machine:' || ?1", m)?;
@@ -771,7 +771,7 @@ mod tests {
             archived: None,
             last_seq: 0,
         };
-        db.add_chat_room(&r, members).unwrap();
+        db.add_chat_room(&r, members, None).unwrap();
     }
 
     fn post(db: &Db, room: &str, author: &str, text: &str, quote: Option<&str>, mentions: &[String]) -> i64 {
@@ -902,7 +902,7 @@ mod tests {
             archived: None,
             last_seq: 0,
         };
-        db.add_chat_room(&r, &[]).unwrap();
+        db.add_chat_room(&r, &[], None).unwrap();
         room(&db, "archive", "account:gone1", "archive", &["gone1", "b2"]);
         post(&db, "ch", "gone1", "secret plans", Some("quoted"), &["b2".into()]);
         post(&db, "ch", "b2", "@gonzo hi", None, &["gone1".into()]);

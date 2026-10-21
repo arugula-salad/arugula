@@ -43,8 +43,8 @@ Each has a `README.md` with where to start reading.
   builds without libghostty and Zig.
 - `crates/control`: Arugula control's hub: accounts, devices, the directory
   and the relay. It runs the platform in process for now.
-- `crates/platform`: control's platform (#1150): billing and Cloud are
-  here, and chat moves here next. It reaches the hub only through `HubPort`, and the hub reaches
+- `crates/platform`: control's platform (#1150): billing, Cloud and chat
+  are here. It reaches the hub only through `HubPort`, and the hub reaches
   it through `PlatformPort`.
 - `crates/control-common`: what the hub and the platform both use: the SQLite
   opener, API errors, rate limits, analytics and the signed principal.

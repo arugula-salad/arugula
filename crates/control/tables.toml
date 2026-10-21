@@ -384,7 +384,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "chat_rooms"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "A chat room: a team's channel and its name, a DM, or the thread on a pane or a session."
 why_asleep = "People talk with every machine asleep."
@@ -395,7 +395,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "chat_members"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "metadata"
 what = "A DM's two people, and an archive's readers."
 why_asleep = "People talk with every machine asleep."
@@ -405,7 +405,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "chat_messages"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "A chat message, in plain text, with the lines its author quoted from a pane and who it mentions."
 why_asleep = "People talk with every machine asleep."
@@ -416,7 +416,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "chat_fts"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "plaintext"
 what = "The full-text index of chat messages and their quotes (SQLite FTS5)."
 why_asleep = "Control searches chat itself, with every machine asleep."
@@ -427,7 +427,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "chat_reads"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "metadata"
 what = "A person's read mark in a room, and whether they muted it."
 why_asleep = "Unread counts and pushes, with every machine asleep."
@@ -437,7 +437,7 @@ seen_by = ["litestream"]
 [[table]]
 name = "chat_readers"
 plane = "platform"
-process = "hub"
+process = "platform"
 holds = "metadata"
 what = "Who may read the thread on a pane or a session, as its machine last said."
 why_asleep = "A pane's thread stays readable while its machine sleeps."

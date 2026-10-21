@@ -11,6 +11,8 @@ description = "Arugula control's platform: chat, Cloud and billing, behind the h
 anyhow = { workspace = true }
 arugula-cloud-wire = { workspace = true }
 arugula-control-common = { workspace = true }
+# Chat's wire types (M138), which daemons and the page share.
+arugula-control-wire = { workspace = true }
 arugula-e2e = { workspace = true }
 axum = { workspace = true }
 # Cloud secrets, sealed with ARUGULA_CLOUD_SECRET_KEY.

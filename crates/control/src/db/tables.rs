@@ -191,10 +191,19 @@ fn each_process_makes_its_own_tables() {
             .collect::<Result<_, _>>()
             .unwrap()
     };
-    let platform = names(&arugula_platform::db::Db::memory().c());
     let mut listed: Vec<String> =
         m.table.iter().filter(|t| t.process == Process::Platform).map(|t| t.name.clone()).collect();
     listed.sort();
+    // An FTS5 table's shadow tables (`chat_fts_data` ...) are the listed
+    // table's.
+    let shadow = |n: &String| {
+        listed.iter().any(|l| {
+            n.strip_prefix(l.as_str())
+                .is_some_and(|s| ["_data", "_idx", "_content", "_docsize", "_config"].contains(&s))
+        })
+    };
+    let mut platform = names(&arugula_platform::db::Db::memory().c());
+    platform.retain(|n| !shadow(n));
     assert_eq!(platform, listed, "tables.toml's `process = \"platform\"` rows are what the platform makes");
     let hub = names(&Db::memory().c());
     let both: Vec<&String> = platform.iter().filter(|n| hub.contains(n)).collect();

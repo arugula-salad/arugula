@@ -6,9 +6,10 @@
 //! client device and a daemon (docs/control-e2e.md): control introduces
 //! them and relays opaque messages, and the keys it distributes are signed
 //! by the account's own devices, so it can refuse service but can't read.
-//! The exception is chat (M122, `chat.rs`): a team's channels and DMs and
-//! the threads about panes are held here in plain text, with the lines
-//! people choose to quote from a pane; the rest of a pane never is.
+//! The exception is chat (M122): a team's channels and DMs and the threads
+//! about panes are held in plain text, with the lines people choose to
+//! quote from a pane; the rest of a pane never is. Chat is the platform's
+//! (`arugula_platform::chat`, M138), behind this hub's gate.
 
 mod account;
 mod analytics;
@@ -20,7 +21,8 @@ mod blocks;
 #[cfg(test)]
 mod blocks_wire;
 mod census;
-mod chat;
+#[cfg(test)]
+mod chat_bench;
 #[cfg(test)]
 mod chat_wire;
 mod db;
@@ -329,11 +331,9 @@ pub struct App {
     pub blocks: blocks::Open,
     /// Product analytics, when they're on.
     pub analytics: analytics::Analytics,
-    /// Chat's live streams and recent events (M122).
-    pub chat: chat::Hub,
     /// Shared Docs: the disk guard and the open counts (#1064).
     pub docs: doc_links::Docs,
-    /// The platform (#1153), in process: chat, Cloud and billing move into
+    /// The platform (#1153), in process: chat, Cloud and billing moved into
     /// it (M137-M139), and it reaches the hub only through `hub_port`.
     pub platform: Arc<arugula_platform::Platform>,
     /// The platform's view of the hub, attached to this app by
@@ -411,7 +411,6 @@ impl App {
             guest_routes: Default::default(),
             blocks: Default::default(),
             analytics: Default::default(),
-            chat: Default::default(),
             docs: Default::default(),
             platform,
             hub_port,
@@ -495,20 +494,6 @@ fn routes() -> Routes {
         .route(wire::TEAMS, get(teams::daemon_teams))
         .route(wire::ACCESS, post(teams::daemon_access))
         .route("/api/relay/link/{id}", get(relay::link))
-        .route("/api/chat", get(chat::rooms))
-        .route("/api/chat/live", get(chat::live))
-        .route("/api/chat/live/open", post(chat::open))
-        .route("/api/chat/search", get(chat::search))
-        .route("/api/chat/targets", post(chat::open_target))
-        .route("/api/chat/teams/{team}/channels", post(chat::new_channel))
-        .route("/api/chat/teams/{team}/dms", post(chat::new_dm))
-        .route("/api/chat/rooms/{id}", get(chat::room).patch(chat::change_room))
-        .route("/api/chat/rooms/{id}/messages", get(chat::messages).post(chat::post))
-        .route("/api/chat/rooms/{id}/messages/{seq}", axum::routing::patch(chat::edit).delete(chat::delete))
-        .route("/api/chat/rooms/{id}/read", post(chat::read))
-        .route("/api/chat/rooms/{id}/mute", post(chat::mute))
-        .route(wire::chat::CHAT_READERS, post(chat::daemon_readers))
-        .route(wire::chat::CHAT_IMPORT, post(chat::daemon_import))
         .route("/api/push/subscribe", post(push::subscribe))
         .route("/api/push/unsubscribe", post(push::unsubscribe))
         .route(wire::PUSH_SUBS, get(push::daemon_subs))
@@ -925,7 +910,6 @@ async fn run() -> anyhow::Result<()> {
         guest_routes: Default::default(),
         blocks: Default::default(),
         analytics,
-        chat: Default::default(),
         // The database's directory, whose disk shared Docs fill.
         docs: doc_links::Docs::at(db_dir),
         platform,
@@ -941,6 +925,8 @@ async fn run() -> anyhow::Result<()> {
         tokio::spawn(forge::heartbeat(app.clone(), std::time::Duration::from_secs(a.forge_heartbeat_secs.max(1))));
     }
     arugula_platform::cloud::start(&app.platform);
+    // Chat follows the hub's change feed (M138).
+    arugula_platform::chat::start(&app.platform);
     if app.cfg.billing {
         let p = app.platform.clone();
         tokio::spawn(async move {

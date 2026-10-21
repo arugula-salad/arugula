@@ -11,7 +11,7 @@ use axum::{
     routing::{MethodRouter, get, post},
 };
 
-use crate::{Platform, billing, cloud};
+use crate::{Platform, billing, chat, cloud};
 
 /// Every route the platform answers. Each moved here from `routes()` in
 /// `crates/control/src/main.rs` with the same path and methods: billing's
@@ -57,6 +57,20 @@ fn routes() -> Routes {
         .route("/api/cloud/import", post(cloud::migration::import))
         .route("/api/cloud/agents", get(cloud::catalog).post(cloud::create_agent))
         .route("/api/cloud/agents/{id}", axum::routing::put(cloud::update_agent).delete(cloud::delete_agent))
+        .route("/api/chat", get(chat::rooms))
+        .route("/api/chat/live", get(chat::live))
+        .route("/api/chat/live/open", post(chat::open))
+        .route("/api/chat/search", get(chat::search))
+        .route("/api/chat/targets", post(chat::open_target))
+        .route("/api/chat/teams/{team}/channels", post(chat::new_channel))
+        .route("/api/chat/teams/{team}/dms", post(chat::new_dm))
+        .route("/api/chat/rooms/{id}", get(chat::room).patch(chat::change_room))
+        .route("/api/chat/rooms/{id}/messages", get(chat::messages).post(chat::post))
+        .route("/api/chat/rooms/{id}/messages/{seq}", axum::routing::patch(chat::edit).delete(chat::delete))
+        .route("/api/chat/rooms/{id}/read", post(chat::read))
+        .route("/api/chat/rooms/{id}/mute", post(chat::mute))
+        .route(arugula_control_wire::chat::CHAT_READERS, post(chat::daemon_readers))
+        .route(arugula_control_wire::chat::CHAT_IMPORT, post(chat::daemon_import))
 }
 
 /// The platform's router, for any state the hub's router has (the

@@ -16,8 +16,9 @@
 //! - [`router()`] is the platform's routes, which the hub mounts in process.
 //!
 //! Today it runs inside the hub's process. Billing moved in first (M139),
-//! then Cloud ([`cloud`], M137); chat (M138) moves in next, into its own
-//! module here. M140 runs it as its own process behind the hub.
+//! then Cloud ([`cloud`], M137), then chat ([`chat`], M138), which follows
+//! the hub's change feed through [`cache`]. M140 runs it as its own process
+//! behind the hub.
 //!
 //! [`Principal`]: arugula_control_common::Principal
 
@@ -27,7 +28,10 @@ use arugula_control_common::{analytics::Analytics, limit::Limits};
 
 pub mod auth;
 pub mod billing;
+pub mod cache;
 pub mod chat;
+#[cfg(test)]
+mod chat_tests;
 pub mod cloud;
 #[cfg(feature = "contract")]
 pub mod contract;
@@ -69,8 +73,8 @@ impl Config {
 }
 
 /// The platform: its own database, its view of the hub, and what it keeps
-/// in memory. Each feature that moves in brings its own fields, as `App`
-/// has them now: billing's `stripe`, then Cloud's and chat's.
+/// in memory. Each feature that moved in brought its own fields, as `App`
+/// had them: billing's `stripe`, Cloud's `cloud`, and chat's `chat`.
 pub struct Platform {
     pub cfg: Config,
     pub db: db::Db,
@@ -85,10 +89,25 @@ pub struct Platform {
     pub stripe: Option<billing::Stripe>,
     /// Cloud workspaces (M137), when this control has a Managoat key.
     pub cloud: Option<cloud::Cloud>,
+    /// Chat's live streams and recent events (M122, here since M138).
+    pub chat: chat::Hub,
+    /// The hub's answers chat asks for, following its change feed (M138).
+    pub cache: cache::Cache,
 }
 
 impl Platform {
     pub fn new(cfg: Config, db: db::Db, hub: Arc<dyn HubPort>, http: reqwest::Client, analytics: Analytics) -> Self {
-        Platform { cfg, db, hub, http, limits: Limits::new(None), analytics, stripe: None, cloud: None }
+        Platform {
+            cfg,
+            db,
+            hub,
+            http,
+            limits: Limits::new(None),
+            analytics,
+            stripe: None,
+            cloud: None,
+            chat: Default::default(),
+            cache: Default::default(),
+        }
     }
 }

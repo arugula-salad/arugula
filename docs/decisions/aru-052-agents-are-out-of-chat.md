@@ -27,7 +27,7 @@ decided_on: "2026-10-19"
 reviews: []
 constrains:
   - "path:crates/daemon/src/mcp/tools.rs"
-  - "path:crates/control/src/chat.rs"
+  - "path:crates/platform/src/chat.rs"
 ---
 
 # Agents are out of chat
@@ -43,5 +43,5 @@ the owner's teams gets control's plain share offer. Old messages an agent
 posted, or a link's events, read as the text they were kept with. Agents
 come back into chat only through the grants #959 and #1002 work out, once
 chat is control's (#978), not through the daemon's thread store.
-Where: `crates/daemon/src/mcp/tools.rs` (the tool list), control's `crates/control/src/chat.rs`.
+Where: `crates/daemon/src/mcp/tools.rs` (the tool list), control's `crates/platform/src/chat.rs`.
 From: [S41](spikes/s41-chat-in-control/README.md) q7 and decisions 8 and 9, M121 (#1095).
