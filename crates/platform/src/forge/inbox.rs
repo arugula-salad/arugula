@@ -524,13 +524,23 @@ pub async fn mark(
     Path(item): Path<String>,
     Json(b): Json<wire::InboxMark>,
 ) -> Result<Json<wire::InboxMarked>, ApiError> {
+    Ok(Json(mark_for(&app, &account, item, &b).await?))
+}
+
+/// A person's marks on an item's entries (`inbox.mark`'s too).
+pub async fn mark_for(
+    app: &Platform,
+    account: &str,
+    item: String,
+    b: &wire::InboxMark,
+) -> Result<wire::InboxMarked, ApiError> {
     if b.reason.as_deref().is_some_and(|r| !wire::INBOX_REASONS.contains(&r)) {
         return Err(err(StatusCode::BAD_REQUEST, "reason: one of the inbox's reasons"));
     }
-    let v = Viewer::of(&app, &account).await?;
-    let (r, _) = viewer::item(&app, &v, &item).await?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such item"))?;
-    let n = app.db.mark_inbox(&r, &account, &item, b.reason.as_deref(), b.seen, b.done, now_ms())?;
-    Ok(Json(wire::InboxMarked { item, marked: n as u32 }))
+    let v = Viewer::of(app, account).await?;
+    let (r, _) = viewer::item(app, &v, &item).await?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such item"))?;
+    let n = app.db.mark_inbox(&r, account, &item, b.reason.as_deref(), b.seen, b.done, now_ms())?;
+    Ok(wire::InboxMarked { item, marked: n as u32 })
 }
 
 /// Whether a block's reasons and the platform's agree: the same set.

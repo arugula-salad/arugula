@@ -384,6 +384,17 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::forge_ops::DraftCmd,
     },
+    /// Your inbox of PRs and issues on linked repos, on Arugula control.
+    ///
+    /// What wants you there (a review requested, your checks failed,
+    /// changes requested, a mention, assigned, merged or ready, a draft
+    /// waiting): `inbox` lists it, `seen` and `done` mark an item's
+    /// entries. Needs `arugula login`. (`arugula inbox` is Claude Code's
+    /// follow-ups.)
+    Forge {
+        #[command(subcommand)]
+        cmd: cmd::forge_ops::ForgeCmd,
+    },
     /// How Arugula is doing on this machine.
     ///
     /// The daemon (its version, the service that runs it, its binary and
@@ -629,6 +640,9 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
     if let Command::Draft { cmd } = cli.cmd {
         return cmd::forge_ops::draft(cmd, cli.json);
     }
+    if let Command::Forge { cmd } = cli.cmd {
+        return cmd::forge_ops::forge(cmd, cli.json);
+    }
     // A linked repo's PRs and issues on control (M169): no daemon.
     if let Command::Pr(args) = &cli.cmd
         && let Some(done) = cmd::pr::on_control(args, cli.json)
@@ -738,7 +752,8 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
         | Command::Logout
         | Command::Grants { .. }
         | Command::Project { .. }
-        | Command::Draft { .. } => {
+        | Command::Draft { .. }
+        | Command::Forge { .. } => {
             unreachable!("handled before connecting")
         }
         Command::Ls => cmd::ls::run(ctx),

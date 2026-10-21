@@ -101,10 +101,23 @@ a live `cloud.drive` grant (for its owner). Sends (`draft.send`,
 `pr.comment`, `pr.review`, `issue.create`, `issue.comment`) are a person's
 only: a machine is refused (403, `reason: "agents_draft"`), and until M168
 a person is told sending isn't available yet (501, `reason: "not_yet"`).
-`inbox.list` comes with the inbox (M171).
+The inbox (M171): `inbox.list` reads the reader's (a person's, or a
+machine's for its owner), and `inbox.mark` marks an item's entries seen or
+done, a person's only (a machine is refused, 403).
+
+**The inbox (M171, #1217).** The platform works out each member's inbox
+from the mirror's rows, by a forge block's attention rules: a review
+requested from you, your PR's checks failed, changes requested on it, a
+mention (only where the project mirrors content), an issue assigned to
+you, your PR merged or approved and green (your issue closed), and a draft
+waiting for you. A team's review request isn't one: GitHub tells the
+platform nobody's teams. Only members the viewer check lets read the item
+get an entry, or a push. A reason newly holding pushes once, through the
+hub. The platform page shows it at `/inbox`, grouped by reason, with Seen
+and Done; `GET /api/inbox` and `POST /api/inbox/{item}` are its routes.
 
 Agents use them through MCP: `forge_read` (kinds `pr`, `issue`, `items`,
-`checks`, `drafts`, `draft`) and `forge_draft` (kinds `comment`, `review`,
+`checks`, `inbox`, `drafts`, `draft`) and `forge_draft` (kinds `comment`, `review`,
 `issue`, `discard`). MCP has no send. `read_forge` on a block of a linked
 repo reads the platform's item too (`platform` in its answer), and `draft`
 on one keeps the draft on the platform (M170).
@@ -118,6 +131,8 @@ arugula pr comment acme/app#7 "lgtm"      # likewise `issue comment acme/app#2 .
 arugula issue create acme/app -t "Title" -b "Body"
 arugula draft ls                          # your waiting drafts; or OWNER/REPO[#N], --project
 arugula draft show dft_…                  # discard, send
+arugula forge inbox                       # what wants you; --all with what's done
+arugula forge done acme/app#7             # seen likewise; --reason, --undo
 ```
 
 Run by an agent (`CLAUDECODE` or `AI_AGENT` set), the CLI's comment,

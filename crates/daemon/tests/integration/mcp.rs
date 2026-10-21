@@ -1742,7 +1742,7 @@ async fn an_agent_drafts_on_a_linked_pr_with_no_block_and_a_person_sees_it() {
 
     // Reads and drafts, never a send.
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(kinds(&tools, "forge_read"), ["pr", "issue", "items", "checks", "drafts", "draft"]);
+    assert_eq!(kinds(&tools, "forge_read"), ["pr", "issue", "items", "checks", "inbox", "drafts", "draft"]);
     assert_eq!(kinds(&tools, "forge_draft"), ["comment", "review", "issue", "discard"]);
     assert!(tools.iter().all(|t| !t.name.contains("send") || t.name == "send_input"), "a send tool");
 
