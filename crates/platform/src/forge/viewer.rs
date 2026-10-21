@@ -289,11 +289,18 @@ pub async fn item(app: &Platform, v: &Viewer, id: &str) -> Result<Option<(Readab
 pub async fn title_readers(app: &Platform, item: &str, accounts: &[String]) -> Result<Vec<String>, ApiError> {
     let Some(repo_id) = app.db.forge_item_repo(item)? else { return Ok(vec![]) };
     let Some(repo) = app.db.linked_repo(repo_id)? else { return Ok(vec![]) };
+    Ok(readers(app, &repo, accounts).await?.into_iter().map(|v| v.account).collect())
+}
+
+/// Which of `accounts` [`check`] lets read a repo's items, as viewers
+/// (with their GitHub identities): [`title_readers`] for every item of one
+/// repo at once (the inbox, M171).
+pub async fn readers(app: &Platform, repo: &LinkedRepo, accounts: &[String]) -> Result<Vec<Viewer>, ApiError> {
     let mut out = Vec::new();
     for a in accounts {
         let v = Viewer::of(app, a).await?;
-        if check(app, &v, std::slice::from_ref(&repo)).await?.readable.has(repo_id) {
-            out.push(a.clone());
+        if check(app, &v, std::slice::from_ref(repo)).await?.readable.has(repo.repo_id) {
+            out.push(v);
         }
     }
     Ok(out)

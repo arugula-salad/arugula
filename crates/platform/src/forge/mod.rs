@@ -37,6 +37,9 @@
 //! - **Drafts** ([`drafts`], M170): comments, reviews and new issues on
 //!   linked repos that people and their agents wrote, read through the
 //!   same check, and a machine's drafts brought in once.
+//! - **The inbox** ([`inbox`], M171): what each member's items want of
+//!   them, worked out from the mirror's rows as ingest writes them, pushed,
+//!   and read through the same check.
 //!
 //! First-time lookups at GitHub are rate-limited per account
 //! ([`FORGE_LOOKUPS`], counted here).
@@ -57,6 +60,9 @@ mod content_tests;
 pub mod drafts;
 #[cfg(test)]
 mod drafts_tests;
+pub mod inbox;
+#[cfg(test)]
+mod inbox_tests;
 pub mod ingest;
 #[cfg(test)]
 mod ingest_tests;
@@ -288,6 +294,7 @@ pub fn start(p: &Arc<Platform>) {
         return;
     }
     poller::start(p);
+    inbox::start(p);
     let p = p.clone();
     tokio::spawn(async move {
         loop {

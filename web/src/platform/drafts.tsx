@@ -32,6 +32,23 @@ export function useProjectDrafts(project: string) {
   return { drafts, error, reload: load };
 }
 
+/** The reader's own waiting drafts, across projects (the inbox's "a draft
+ * waiting for you"): `null` until the platform has said. */
+export function useMyDrafts() {
+  const [drafts, setDrafts] = useState<ForgeDraft[] | null>(null);
+  const [error, setError] = useState("");
+  const load = () =>
+    call<ForgeDrafts>("GET", "/api/forge/drafts").then(
+      (v) => {
+        setDrafts(v.drafts);
+        setError("");
+      },
+      (e: Error) => setError(e.message),
+    );
+  useEffect(() => void load(), []);
+  return { drafts, error, reload: load };
+}
+
 const KIND: Record<string, string> = { comment: "Comment", issue: "New issue" };
 const EVENT: Record<string, string> = { APPROVE: "approve", REQUEST_CHANGES: "request changes", COMMENT: "comment" };
 

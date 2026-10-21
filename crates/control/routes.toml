@@ -1283,6 +1283,30 @@ auth = "cloud_driver"
 clients = ["cli", "daemon"]
 note = "Typed forge operations (M169), by name and version: reads and drafts through the routes above and their viewer check. A send is a person's: a machine is refused, and a person told it isn't built yet (M168)."
 
+[[route]]
+method = "GET"
+path = "/api/inbox"  # wire::projects::INBOX
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "The reader's inbox (M171), the operation `inbox.list`: linked repos' items that want something of them, each repo checked against the reader's own GitHub access."
+
+[[route]]
+method = "POST"
+path = "/api/inbox/{item}"  # wire::projects::INBOX_ITEM
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Marks a person's inbox entries for an item seen or done (M171), through the viewer check: an item they may not read is a 404."
+
+[[route]]
+method = "POST"
+path = "/api/inbox/shadow"  # wire::projects::INBOX_SHADOW
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "An opted-in machine's forge blocks' attention, items and reasons without titles (M171's shadow period): compared with the owner's inbox and logged, nothing returned but counts. Rate-limited per account."
+
 # ---- platform: billing
 
 [[route]]

@@ -3,7 +3,7 @@
 // that wants you (M24's reason) at its card on the swarm's rail (M26); a
 // chat push from control (M123) at its message. Once control has a
 // platform page (M156), a chat push or a Cloud workspace's opens there, by
-// id: `platformTap`.
+// id: `platformTap`; an inbox push (M171) at the inbox.
 
 /** A chat push from control (M123): `chat: {room, seq}`, opened on the chat
  * page at that message. Anything that isn't a room's id opens nothing. */
@@ -35,7 +35,7 @@ export function tapUrl(n: { pane?: number; daemon?: string; reason?: unknown }):
 /** M156: where a chat push or a Cloud one opens on the platform page (an
  * id-only path, which the page puts in its project), or undefined for a
  * push that isn't one of those. */
-export function platformTap(n: { chat?: unknown; cloud_run?: unknown; cloud_workspace?: unknown; cloud_tab?: unknown }): string | undefined {
+export function platformTap(n: { chat?: unknown; cloud_run?: unknown; cloud_workspace?: unknown; cloud_tab?: unknown; inbox?: unknown }): string | undefined {
   const c = n.chat as { room?: unknown; seq?: unknown } | undefined;
   if (c && typeof c.room === "string" && /^[a-z]{2}_[0-9a-f]{8,32}$/.test(c.room)) {
     const msg = typeof c.seq === "number" && Number.isInteger(c.seq) ? `?msg=${c.seq}` : "";
@@ -46,6 +46,8 @@ export function platformTap(n: { chat?: unknown; cloud_run?: unknown; cloud_work
   if (typeof n.cloud_workspace === "string" && /^cw_[0-9a-f]+$/.test(n.cloud_workspace) && typeof n.cloud_tab === "string" && /^cwc_[0-9a-f]+$/.test(n.cloud_tab)) {
     return `/workspaces/${n.cloud_workspace}/${n.cloud_tab}`;
   }
+  // M171: something on a linked repo wants you: the inbox.
+  if (n.inbox && typeof n.inbox === "object") return "/inbox";
   return undefined;
 }
 

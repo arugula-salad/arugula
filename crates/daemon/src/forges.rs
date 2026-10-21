@@ -65,6 +65,7 @@ pub fn start(
     urls: Vec<String>,
 ) {
     crate::forge::live::init(state_dir, control, urls);
+    crate::forge::shadow::start();
 }
 
 #[cfg(not(feature = "forge"))]

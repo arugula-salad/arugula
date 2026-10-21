@@ -1,6 +1,7 @@
 //! PRs and issues on linked repos through Arugula control (M169): `pr
 //! view|list|checks`, `issue view|list|create`, `pr comment|review` and
-//! `issue comment` on `OWNER/REPO#N`, and `arugula draft`. No block opens
+//! `issue comment` on `OWNER/REPO#N`, `arugula draft`, and `arugula forge
+//! inbox|seen|done` (M171). No block opens
 //! and no daemon is asked: each is one typed operation
 //! (`arugula_control_wire::forge_ops`) on control's platform, as this
 //! CLI's account (`arugula login`).
@@ -12,7 +13,10 @@
 
 use anyhow::bail;
 use arugula_control_wire::{
-    forge_ops::{Call, CommentOn, DraftQuery, DraftRef, FORGE_OPS, ItemQuery, ItemRef, NewIssue, Op, ReviewOf},
+    forge_ops::{
+        Call, CommentOn, DraftQuery, DraftRef, FORGE_OPS, InboxMarkOn, InboxQuery, ItemQuery, ItemRef, NewIssue, Op,
+        ReviewOf,
+    },
     projects::NewDraft,
 };
 use serde_json::Value;
@@ -41,6 +45,38 @@ pub enum DraftCmd {
     Discard { draft: String },
     /// Send a draft, as you.
     Send { draft: String },
+}
+
+/// `arugula forge`: the inbox (M171).
+#[derive(clap::Subcommand)]
+pub enum ForgeCmd {
+    /// What wants you on your linked repos, newest first.
+    Inbox {
+        /// What you called done too.
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Mark an item's entries seen (`--undo`: not seen).
+    Seen {
+        /// `OWNER/REPO#N`, or its link.
+        target: String,
+        /// Only this reason's entry (review_requested, checks_failed …).
+        #[arg(long)]
+        reason: Option<String>,
+        #[arg(long)]
+        undo: bool,
+    },
+    /// Mark an item's entries done: out of the inbox while the reason
+    /// holds (`--undo`: back in).
+    Done {
+        target: String,
+        #[arg(long)]
+        reason: Option<String>,
+        #[arg(long)]
+        undo: bool,
+    },
 }
 
 /// `pr list` and `issue list`'s filters.
@@ -311,6 +347,48 @@ pub fn draft(cmd: DraftCmd, json_out: bool) -> anyhow::Result<i32> {
     Ok(0)
 }
 
+/// `arugula forge`.
+pub fn forge(cmd: ForgeCmd, json_out: bool) -> anyhow::Result<i32> {
+    let target = |t: &str| item(t).ok_or_else(|| anyhow::anyhow!("OWNER/REPO#N, or its link on github.com, not {t:?}"));
+    let (op, mark) = match cmd {
+        ForgeCmd::Inbox { all, limit } => (Op::InboxList(InboxQuery { done: all, limit }), false),
+        ForgeCmd::Seen { target: t, reason, undo } => {
+            let at = target(&t)?;
+            let m = InboxMarkOn { repo: at.repo, number: at.number, reason, seen: Some(!undo), done: None };
+            (Op::InboxMark(m), true)
+        }
+        ForgeCmd::Done { target: t, reason, undo } => {
+            let at = target(&t)?;
+            let m = InboxMarkOn { repo: at.repo, number: at.number, reason, seen: None, done: Some(!undo) };
+            (Op::InboxMark(m), true)
+        }
+    };
+    let v = call(op)?;
+    if json_out {
+        print_json(&v);
+    } else if mark {
+        println!("{} marked", v["marked"]);
+    } else {
+        let entries = v["entries"].as_array().cloned().unwrap_or_default();
+        if entries.is_empty() {
+            println!("Nothing in your inbox.");
+        }
+        for e in &entries {
+            println!("{}", inbox_line(e));
+        }
+    }
+    Ok(0)
+}
+
+/// `acme/app#7  review requested  Fix it` (`*` when not yet seen).
+fn inbox_line(e: &Value) -> String {
+    let at = format!("{}#{}", e["repo"].as_str().unwrap_or("?"), e["number"]);
+    let new = if e["seen_at"].is_u64() { ' ' } else { '*' };
+    let done = if e["done_at"].is_u64() { "  (done)" } else { "" };
+    let why = e["reason"].as_str().unwrap_or("?").replace('_', " ");
+    format!("{new} {at:<28} {why:<18} {}{done}", e["title"].as_str().unwrap_or(""))
+}
+
 /// `acme/app#7  pr  open  Fix it  (alice-gh)`.
 fn line(i: &Value) -> String {
     let at = format!("{}#{}", i["repo"].as_str().unwrap_or("?"), i["number"]);
@@ -369,6 +447,10 @@ mod tests {
             &["arugula", "draft", "show", "dft_1"],
             &["arugula", "draft", "discard", "dft_1"],
             &["arugula", "draft", "send", "dft_1"],
+            &["arugula", "forge", "inbox"],
+            &["arugula", "forge", "inbox", "--all"],
+            &["arugula", "forge", "seen", "acme/app#7"],
+            &["arugula", "forge", "done", "acme/app#7", "--reason", "checks_failed", "--undo"],
         ] {
             assert!(crate::Cli::try_parse_from(argv).is_ok(), "{argv:?}");
         }
@@ -382,6 +464,9 @@ mod tests {
         assert!(l.starts_with("acme/app#7") && l.contains("draft") && l.ends_with("Fix it  (alice)"), "{l}");
         let d = json!({ "id": "dft_1", "kind": "review", "event": "REQUEST_CHANGES", "repo": "acme/app",
                         "number": 7, "state": "waiting", "agent": "mcp:claude-code", "machine_name": "geek" });
+        let e =
+            json!({ "repo": "acme/app", "number": 7, "reason": "checks_failed", "title": "Fix it", "seen_at": null });
+        assert_eq!(inbox_line(&e), format!("* {:<28} {:<18} Fix it", "acme/app#7", "checks failed"));
         assert_eq!(
             draft_line(&d),
             "dft_1  review (request_changes) on acme/app#7  waiting  by mcp:claude-code on geek"

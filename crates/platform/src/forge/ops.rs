@@ -7,6 +7,9 @@
 //! - **Versions:** a call for one this platform doesn't speak is a 400.
 //! - **Sends** are a person's (aru-041): a machine is refused, and a
 //!   person is told it isn't built yet (M168).
+//! - **The inbox** (M171): `inbox.list` is `GET /api/inbox`'s, and
+//!   `inbox.mark` a person's, as `POST /api/inbox/{item}` is: a machine is
+//!   refused.
 //! - A repo the reader may not read is no linked repo to them, as
 //!   [`drafts::repo`] says it, and an item they may not read no item.
 
@@ -24,6 +27,7 @@ use serde_json::Value;
 
 use super::{
     drafts::{self, Drafter, DraftsQuery},
+    inbox,
     items::{self, ItemsQuery},
     viewer::{self, Viewer},
 };
@@ -69,6 +73,9 @@ pub async fn call(
                 &format!("{name}: sending from Arugula control isn't available yet; a draft waits for it"),
             ),
         });
+    }
+    if let (Op::InboxMark(_), Some(_)) = (&op, &d.machine) {
+        return Err(err(StatusCode::FORBIDDEN, "inbox.mark is a person's: an agent reads the inbox (inbox.list)"));
     }
     if let Op::DraftCreate(new) = &op {
         let Json(made) = drafts::create(State(app.clone()), d, Json(new.clone())).await?;
@@ -126,6 +133,17 @@ pub async fn call(
                 None => drafts::mine(st(), viewer, Query(query)).await?,
             };
             answer(&op, v, listed)
+        }
+        Op::InboxList(q) => {
+            let query = inbox::InboxQuery { done: q.done, limit: q.limit };
+            let Json(listed) = inbox::list(st(), viewer, Query(query)).await?;
+            answer(&op, v, listed)
+        }
+        Op::InboxMark(m) => {
+            let at = wire::ItemRef { repo: m.repo.clone(), number: m.number };
+            let id = item_id(&app, &viewer, &at, None).await?;
+            let b = arugula_control_wire::projects::InboxMark { reason: m.reason.clone(), seen: m.seen, done: m.done };
+            answer(&op, v, inbox::mark_for(&app, &d.account, id, &b).await?)
         }
         Op::DraftGet(r) => {
             let Json(one) = drafts::get(st(), viewer, Path(r.draft.clone())).await?;

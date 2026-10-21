@@ -30,6 +30,7 @@ pub mod chat;
 pub mod cloud;
 pub mod content;
 pub mod forge;
+pub mod inbox;
 mod legacy;
 pub mod migrate;
 pub mod mirror;

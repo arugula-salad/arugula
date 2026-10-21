@@ -1,5 +1,6 @@
 //! PRs and issues on linked repos from agents, with no block open (M169):
-//! `forge_read` (a PR, an issue, a list of them, a PR's checks, drafts)
+//! `forge_read` (a PR, an issue, a list of them, a PR's checks, drafts,
+//! and the user's inbox, M171)
 //! and `forge_draft` (a comment, a review or a new issue, and discarding
 //! a draft).
 //!
@@ -16,7 +17,7 @@
 //! to an operation that sends ([`op`]'s test says so), and the platform
 //! refuses a machine's send anyway.
 
-use arugula_control_wire::forge_ops::{Call as OpCall, DraftQuery, DraftRef, ItemQuery, ItemRef, Op};
+use arugula_control_wire::forge_ops::{Call as OpCall, DraftQuery, DraftRef, InboxQuery, ItemQuery, ItemRef, Op};
 use arugula_control_wire::projects::NewDraft;
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
@@ -74,6 +75,16 @@ pub struct DraftsArgs {
     /// waiting (the default), sent, discarded, failed or all.
     #[serde(default)]
     pub state: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct InboxArgs {
+    /// Include what the user called done.
+    #[serde(default)]
+    pub done: bool,
+    /// At most this many (default 200, at most 500).
+    #[serde(default)]
+    pub limit: Option<u32>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -141,6 +152,12 @@ pub(crate) const READ: &[Kind] = &[
         name: "checks",
         description: "A pull request's checks on its head commit: each one's status and conclusion.",
         schema: schema_for_type::<ItemArgs>,
+        flag: None,
+    },
+    Kind {
+        name: "inbox",
+        description: "The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.",
+        schema: schema_for_type::<InboxArgs>,
         flag: None,
     },
     Kind {
@@ -233,6 +250,10 @@ pub(crate) fn op(tool: &str, kind: &str, a: Value, by: &str) -> Result<Op, Strin
                 Some(s) => (Some(s.to_owned()), None),
             };
             Op::DraftList(DraftQuery { project: a.project, repo, number, state: a.state, ..Default::default() })
+        }
+        ("forge_read", "inbox") => {
+            let a: InboxArgs = args(a)?;
+            Op::InboxList(InboxQuery { done: a.done, limit: a.limit })
         }
         ("forge_read", "draft") => Op::DraftGet(DraftRef { draft: args::<DraftIdArgs>(a)?.draft }),
         ("forge_draft", "comment") => {
@@ -343,6 +364,23 @@ fn summary(o: &Op, r: &Value) -> String {
                 n => format!("{n}: {}", drafts.iter().map(draft_line).collect::<Vec<_>>().join("; ")),
             }
         }
+        Op::InboxList(_) => {
+            let entries = r["entries"].as_array().cloned().unwrap_or_default();
+            let each = entries.iter().map(|e| {
+                let seen = if e["seen_at"].is_u64() { "" } else { " (new)" };
+                format!(
+                    "{}#{} {}{seen}: {}",
+                    e["repo"].as_str().unwrap_or("?"),
+                    e["number"],
+                    e["reason"].as_str().unwrap_or("?").replace('_', " "),
+                    e["title"].as_str().unwrap_or("")
+                )
+            });
+            match entries.len() {
+                0 => "Nothing in the inbox.".to_owned(),
+                n => format!("{n}: {}", each.collect::<Vec<_>>().join("; ")),
+            }
+        }
         Op::DraftGet(_) => draft_line(r),
         Op::DraftCreate(_) => format!(
             "Drafted {}: it waits for a person to send or discard it (forge_read kind draft shows what became of it)",
@@ -417,6 +455,10 @@ mod tests {
         assert_eq!(
             (d.repo.as_str(), d.number, d.kind.as_str(), d.event.as_deref(), d.agent.as_deref()),
             ("acme/app", Some(4), "review", Some("REQUEST_CHANGES"), Some("mcp:claude-code"))
+        );
+        assert_eq!(
+            op("forge_read", "inbox", json!({ "done": true }), "x").unwrap(),
+            Op::InboxList(InboxQuery { done: true, limit: None })
         );
         let l = op("forge_read", "drafts", json!({ "item": "acme/app" }), "x").unwrap();
         assert_eq!(l, Op::DraftList(DraftQuery { repo: Some("acme/app".into()), ..Default::default() }));

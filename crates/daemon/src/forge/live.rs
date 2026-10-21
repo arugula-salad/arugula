@@ -157,7 +157,7 @@ pub fn register(b: Weak<ForgeBlock>) {
     resubscribe();
 }
 
-fn blocks() -> Vec<Arc<ForgeBlock>> {
+pub(super) fn blocks() -> Vec<Arc<ForgeBlock>> {
     let Some(h) = hub() else { return vec![] };
     let mut bs = h.blocks.lock().unwrap();
     bs.retain(|b| b.upgrade().is_some_and(|b| !b.is_closed()));

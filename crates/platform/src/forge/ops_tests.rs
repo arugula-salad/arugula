@@ -160,3 +160,33 @@ async fn sends_and_versions() {
     let (s, _) = call(&base, "nobody", "POST", "/api/forge/ops", Some(at(1))).await;
     assert!(s == 401 || s == 404, "{s}");
 }
+
+/// The inbox (M171) as operations: `inbox.list` for a person or a machine
+/// (for its owner), and `inbox.mark` a person's only.
+#[tokio::test]
+async fn the_inbox_as_operations() {
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, base) = serve(&hub).await;
+    world(&hub, &gh, &app).await;
+    hub.daemon("geek", "bob", None);
+    super::inbox::recompute(&app, 77, &[1], true).await.unwrap();
+
+    let (s, v) = op(&base, "bob", "inbox.list", json!({})).await;
+    assert_eq!((s, v["result"]["entries"][0]["reason"].as_str()), (200, Some("review_requested")), "{v}");
+    let (s, v) = machine_op(&base, "bob geek", "inbox.list", json!({})).await;
+    assert_eq!((s, v["result"]["entries"][0]["title"].as_str()), (200, Some("secret plan")), "{v}");
+    let (s, v) = op(&base, "carol", "inbox.list", json!({})).await;
+    assert_eq!((s, &v["result"]["entries"]), (200, &json!([])), "{v}");
+
+    let done = json!({ "repo": "acme/app", "number": 1, "done": true });
+    let (s, v) = machine_op(&base, "bob geek", "inbox.mark", done.clone()).await;
+    assert_eq!(s, 403, "{v}");
+    let (s, v) = op(&base, "bob", "inbox.mark", done.clone()).await;
+    assert_eq!((s, v["result"]["marked"].as_u64()), (200, Some(1)), "{v}");
+    let (s, _) = op(&base, "carol", "inbox.mark", done).await;
+    assert_eq!(s, 404, "a repo she may not read");
+    let (_, v) = op(&base, "bob", "inbox.list", json!({})).await;
+    assert_eq!(v["result"]["entries"], json!([]), "{v}");
+    let (_, v) = op(&base, "bob", "inbox.list", json!({ "done": true })).await;
+    assert!(v["result"]["entries"][0]["done_at"].is_u64(), "{v}");
+}

@@ -64,6 +64,7 @@ pub mod live;
 mod labs_forges;
 pub mod login;
 pub mod platform;
+pub mod shadow;
 // The normalized model (M160: the GitHub crate's, which Forgejo and GitLab
 // map onto too).
 pub use arugula_forge_github::model;
@@ -502,6 +503,47 @@ impl ForgeBlock {
 
     pub fn is_closed(&self) -> bool {
         self.live.closed()
+    }
+
+    /// M171's shadow period: what this block's attention rules find now,
+    /// whether or not the person looked, as the platform's inbox says its
+    /// reasons, and the platform's waiting drafts it shows. Only a GitHub
+    /// block on a repo linked in control, once it has read the item and
+    /// who you are; never a title.
+    pub fn shadow(&self) -> Option<arugula_control_wire::projects::ShadowBlock> {
+        let (provider, host, repo, number) = self.live_key();
+        if provider != Provider::Github || host != "github.com" {
+            return None;
+        }
+        let drafts = {
+            let p = self.platform.lock().unwrap();
+            p.link.as_ref()?;
+            p.drafts.iter().map(|d| d.id.clone()).collect()
+        };
+        let me = self.you.lock().unwrap().clone()?;
+        let wants = {
+            let st = self.state.lock().unwrap();
+            match (st.pr.as_ref(), st.issue.as_ref()) {
+                (Some(pr), _) => model::attention(pr, &me, 0),
+                (None, Some(issue)) => model::issue_attention(issue, &me, 0),
+                (None, None) => return None,
+            }
+        };
+        let reasons = wants
+            .iter()
+            .map(|w| {
+                match w {
+                    Want::Review { .. } => "review_requested",
+                    Want::Failed { .. } => "checks_failed",
+                    Want::Changes { .. } => "changes_requested",
+                    Want::Mention { .. } => "mentioned",
+                    Want::Assigned { .. } => "assigned",
+                    Want::Done { .. } => "done",
+                }
+                .to_owned()
+            })
+            .collect();
+        Some(arugula_control_wire::projects::ShadowBlock { repo, number, reasons, drafts })
     }
 
     /// Something changed on the forge: poll now.

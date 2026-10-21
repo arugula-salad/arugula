@@ -130,6 +130,9 @@ pub struct Platform {
     pub stopping: std::sync::atomic::AtomicBool,
     /// Cloud jobs this machine holds a lease on right now.
     pub busy: std::sync::atomic::AtomicUsize,
+    /// The linked repos' items whose inbox to work out again (M171), as
+    /// this machine's ingest wrote them, and its pushes lately.
+    pub inbox: forge::inbox::Queue,
 }
 
 impl Platform {
@@ -194,6 +197,7 @@ impl Platform {
             listening,
             stopping: Default::default(),
             busy: Default::default(),
+            inbox: Default::default(),
         }
     }
 }

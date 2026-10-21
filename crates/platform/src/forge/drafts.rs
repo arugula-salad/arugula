@@ -195,6 +195,7 @@ pub async fn create(
         Err(e) if e.is::<Taken>() => return Err(err(StatusCode::CONFLICT, "that import_key is another draft's")),
         Err(e) => return Err(e.into()),
     };
+    super::inbox::drafted(&app, row.repo_id, row.number);
     tracing::info!(
         draft = row.id,
         account = d.account,
@@ -332,6 +333,9 @@ pub async fn discard(
     let state = app.db.discard_draft(who, &id, now_ms())?.ok_or_else(no_draft)?;
     if state != "discarded" {
         return Err(err(StatusCode::CONFLICT, &format!("it's {state}, not waiting")));
+    }
+    if let Some((repo_id, number)) = app.db.draft_item(&id)? {
+        super::inbox::drafted(&app, repo_id, number);
     }
     tracing::info!(draft = id, account = v.account, "draft discarded");
     Ok(Json(wire::DraftDiscarded { id, state }))

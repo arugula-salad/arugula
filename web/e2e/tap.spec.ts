@@ -24,6 +24,8 @@ test("with a platform page, a chat push or a Cloud tab's opens there, by id (M15
   expect(platformTap({ chat: { room: `dm_${"1f".repeat(8)}` } })).toBe(`/chat/dm_${"1f".repeat(8)}`);
   expect(platformTap({ cloud_run: "run_00ff11ee" })).toBe("/past/run_00ff11ee");
   expect(platformTap({ cloud_workspace: "cw_0123abcd", cloud_tab: "cwc_4567ef01" })).toBe("/workspaces/cw_0123abcd/cwc_4567ef01");
+  // M171: an inbox push opens the inbox.
+  expect(platformTap({ inbox: { item: `fi_${"0a".repeat(16)}` } })).toBe("/inbox");
   // Anything else stays the shell's.
   for (const n of [{}, { chat: { room: "ch_" } }, { cloud_run: "run_x" }, { cloud_workspace: "cw_0123abcd" }, { pane: 3 }]) expect(platformTap(n)).toBeUndefined();
   expect(platformOf({ platform: "https://app.arugula.io" })).toBe("https://app.arugula.io");

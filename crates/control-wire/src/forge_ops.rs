@@ -22,7 +22,9 @@
 //! M168's: until it's built, a send is a 501 with `reason: "not_yet"`.
 //! MCP lists no send.
 //!
-//! `inbox.list` is M171's, which adds it here.
+//! The inbox (M171): `inbox.list` reads the reader's, and `inbox.mark`
+//! marks an item's entries seen or done, a person's action (a machine is
+//! refused, as a send is).
 
 use serde::{Deserialize, Serialize};
 
@@ -69,6 +71,9 @@ pub enum Op {
     /// A PR's head commit's checks: [`ForgeChecks`](crate::projects::ForgeChecks).
     #[serde(rename = "checks.get")]
     ChecksGet(ItemRef),
+    /// The reader's inbox (M171): [`Inbox`](crate::projects::Inbox).
+    #[serde(rename = "inbox.list")]
+    InboxList(InboxQuery),
     /// A comment, a review or a new issue, waiting for a person:
     /// [`DraftCreated`](crate::projects::DraftCreated).
     #[serde(rename = "draft.create")]
@@ -82,6 +87,10 @@ pub enum Op {
     /// [`DraftDiscarded`](crate::projects::DraftDiscarded).
     #[serde(rename = "draft.discard")]
     DraftDiscard(DraftRef),
+    /// Mark an item's inbox entries seen or done, a person's:
+    /// [`InboxMarked`](crate::projects::InboxMarked).
+    #[serde(rename = "inbox.mark")]
+    InboxMark(InboxMarkOn),
     /// Send a waiting draft, as the person: [`Sent`].
     #[serde(rename = "draft.send")]
     DraftSend(DraftRef),
@@ -100,15 +109,17 @@ pub enum Op {
 }
 
 /// Every operation's name, reads and drafts first.
-pub const NAMES: [&str; 13] = [
+pub const NAMES: [&str; 15] = [
     "pr.get",
     "issue.get",
     "item.list",
     "checks.get",
+    "inbox.list",
     "draft.create",
     "draft.list",
     "draft.get",
     "draft.discard",
+    "inbox.mark",
     "draft.send",
     "pr.comment",
     "pr.review",
@@ -123,10 +134,12 @@ impl Op {
             Op::IssueGet(_) => "issue.get",
             Op::ItemList(_) => "item.list",
             Op::ChecksGet(_) => "checks.get",
+            Op::InboxList(_) => "inbox.list",
             Op::DraftCreate(_) => "draft.create",
             Op::DraftList(_) => "draft.list",
             Op::DraftGet(_) => "draft.get",
             Op::DraftDiscard(_) => "draft.discard",
+            Op::InboxMark(_) => "inbox.mark",
             Op::DraftSend(_) => "draft.send",
             Op::PrComment(_) => "pr.comment",
             Op::PrReview(_) => "pr.review",
@@ -238,6 +251,30 @@ pub struct DraftQuery {
     pub limit: Option<u32>,
 }
 
+/// `inbox.list`: the reader's inbox, without what they called done unless
+/// `done`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxQuery {
+    #[serde(default)]
+    pub done: bool,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// `inbox.mark`: an item's entries (one reason's, or all), seen or done,
+/// or not ([`InboxMark`](crate::projects::InboxMark)'s rules).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxMarkOn {
+    pub repo: String,
+    pub number: u64,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub seen: Option<bool>,
+    #[serde(default)]
+    pub done: Option<bool>,
+}
+
 /// A draft, by its id (`dft_…`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DraftRef {
@@ -318,6 +355,8 @@ mod tests {
         assert_eq!((n.kind.as_str(), n.number, n.body.as_str()), ("review", Some(7), ""));
         let l: Call = serde_json::from_value(json!({ "op": "item.list", "v": 1 })).unwrap();
         assert_eq!(l.op, Op::ItemList(ItemQuery::default()));
+        let i: Call = serde_json::from_value(json!({ "op": "inbox.list", "v": 1, "done": true })).unwrap();
+        assert_eq!(i.op, Op::InboxList(InboxQuery { done: true, limit: None }));
         assert!(serde_json::from_value::<Call>(json!({ "op": "pr.merge", "v": 1 })).is_err());
         assert!(serde_json::from_value::<Call>(json!({ "op": "pr.get", "repo": "a/b", "number": 1 })).is_err());
     }
@@ -347,10 +386,12 @@ mod tests {
             Op::IssueGet(r()),
             Op::ItemList(ItemQuery::default()),
             Op::ChecksGet(r()),
+            Op::InboxList(InboxQuery::default()),
             Op::DraftCreate(NewDraft::default()),
             Op::DraftList(DraftQuery::default()),
             Op::DraftGet(d()),
             Op::DraftDiscard(d()),
+            Op::InboxMark(InboxMarkOn::default()),
             Op::DraftSend(d()),
             Op::PrComment(CommentOn::default()),
             Op::PrReview(ReviewOf::default()),

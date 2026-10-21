@@ -414,3 +414,115 @@ pub struct ForgeDraft {
     #[serde(default)]
     pub error: Option<String>,
 }
+
+/// The inbox (M171): the PRs and issues that want something of the
+/// reader, worked out and pushed by the platform from the mirror's rows,
+/// for the same reasons a forge block asks for attention. Each entry is an
+/// item and a reason ([`INBOX_REASONS`]); an item is in it while the
+/// reason holds, and only for those the viewer check lets read its repo
+/// (M165).
+///
+/// - `GET /api/inbox` ([`Inbox`]): the operation `inbox.list`. Newest
+///   first, without the entries called done unless the query says
+///   `done=true`; `limit` up to 500.
+/// - `POST /api/inbox/{item}` ([`InboxMark`]): mark its entries (one
+///   reason's, or all) seen or done, or not; answered [`InboxMarked`].
+/// - `POST /api/inbox/shadow` ([`InboxShadow`]): an opted-in machine's
+///   forge blocks' attention, which the platform compares with its own
+///   inbox for the machine's owner and logs (the shadow period). Answered
+///   [`ShadowCompared`].
+pub const INBOX: &str = "/api/inbox";
+pub const INBOX_ITEM: &str = "/api/inbox/{item}";
+pub const INBOX_SHADOW: &str = "/api/inbox/shadow";
+
+/// Why an item is in an inbox: a review is requested from you, your PR's
+/// checks failed, changes are requested on your PR, you're mentioned, an
+/// issue is assigned to you, your PR merged or is approved and green (or
+/// your issue closed), or a draft on it waits for you to send.
+pub const INBOX_REASONS: [&str; 7] =
+    ["review_requested", "checks_failed", "changes_requested", "mentioned", "assigned", "done", "draft"];
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Inbox {
+    pub entries: Vec<InboxEntry>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct InboxEntry {
+    /// The item: `fi_` and 32 hex characters.
+    pub item: String,
+    /// One of [`INBOX_REASONS`].
+    pub reason: String,
+    /// `OWNER/NAME`.
+    pub repo: String,
+    pub number: u64,
+    /// `pr` or `issue`.
+    pub kind: String,
+    /// `open`, `closed` or `merged`.
+    pub state: String,
+    pub title: String,
+    #[serde(default)]
+    pub author: Option<String>,
+    /// The item on GitHub.
+    pub url: String,
+    /// When it came into the inbox, and when the item last changed.
+    pub created_at: u64,
+    pub updated_at: u64,
+    #[serde(default)]
+    pub seen_at: Option<u64>,
+    #[serde(default)]
+    pub done_at: Option<u64>,
+}
+
+/// Mark an item's entries: `true` sets seen or done (now, if it wasn't),
+/// `false` clears it, and one not given stays as it is.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct InboxMark {
+    /// Only this reason's entry; all of the item's when `None`.
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub seen: Option<bool>,
+    #[serde(default)]
+    pub done: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct InboxMarked {
+    pub item: String,
+    /// How many entries it changed.
+    pub marked: u32,
+}
+
+/// What an opted-in machine's forge blocks want of its owner (the shadow
+/// period, M171): items and reasons, never a title.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxShadow {
+    pub blocks: Vec<ShadowBlock>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShadowBlock {
+    /// `OWNER/NAME` on github.com.
+    pub repo: String,
+    pub number: u64,
+    /// What the block's attention rules find now, as [`INBOX_REASONS`]
+    /// (`draft` aside), whether or not the person looked.
+    pub reasons: Vec<String>,
+    /// The platform's waiting drafts the block shows (`dft_` ids): its
+    /// `draft` reason, when one is the owner's.
+    #[serde(default)]
+    pub drafts: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShadowCompared {
+    /// Blocks on items the platform has, and how many agreed.
+    pub compared: u32,
+    pub agree: u32,
+    pub disagree: u32,
+}

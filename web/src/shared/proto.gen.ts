@@ -1285,6 +1285,54 @@ team?: string,
  */
 features?: HostFeatures, };
 
+export type Inbox = { entries: Array<InboxEntry>, };
+
+export type InboxEntry = { 
+/**
+ * The item: `fi_` and 32 hex characters.
+ */
+item: string, 
+/**
+ * One of [`INBOX_REASONS`].
+ */
+reason: string, 
+/**
+ * `OWNER/NAME`.
+ */
+repo: string, number: number, 
+/**
+ * `pr` or `issue`.
+ */
+kind: string, 
+/**
+ * `open`, `closed` or `merged`.
+ */
+state: string, title: string, author: string | null, 
+/**
+ * The item on GitHub.
+ */
+url: string, 
+/**
+ * When it came into the inbox, and when the item last changed.
+ */
+created_at: number, updated_at: number, seen_at: number | null, done_at: number | null, };
+
+/**
+ * Mark an item's entries: `true` sets seen or done (now, if it wasn't),
+ * `false` clears it, and one not given stays as it is.
+ */
+export type InboxMark = { 
+/**
+ * Only this reason's entry; all of the item's when `None`.
+ */
+reason: string | null, seen: boolean | null, done: boolean | null, };
+
+export type InboxMarked = { item: string, 
+/**
+ * How many entries it changed.
+ */
+marked: number, };
+
 export type Intent = { "op": "new_session", name: string | null, from_pane: number | null, } | { "op": "rename_session", session: number, name: string, } | { "op": "close_session", session: number, } | { "op": "new_tab", session: number, from_pane: number | null, cwd?: string, } | { "op": "rename_tab", tab: number, name: string | null, } | { "op": "close_tab", tab: number, } | { "op": "move_tab", tab: number, session: number, index: number, } | { "op": "split", pane: number, edge: Edge, local?: boolean, cwd?: string, } | { "op": "close_pane", pane: number, } | { "op": "move_pane", pane: number, target: number, edge: Edge, } | { "op": "break_pane", pane: number, session: number, index: number | null, } | { "op": "dock_tab", tab: number, target: number, edge: Edge, } | { "op": "resize_split", split: number, weights: Array<number>, } | { "op": "arrange", tab: number, preset: Preset, main?: number, } | { "op": "focus", tab: number, pane: number | null, } | { "op": "set_option", scope: OptionScope, name: string, value: string | null, };
 
 /**

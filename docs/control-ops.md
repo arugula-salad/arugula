@@ -720,6 +720,45 @@ fly logs -a arugula-platform | grep 'forge mirror:'
 - `forge mirror: poller turn`: a backfill, or a reconcile that fixed
   rows, with `fixed` and `drift`.
 
+**The inbox** (M171, #1217). Each member's inbox (`inbox_items`) is
+worked out from the mirror's rows by the block's attention rules: a
+review requested, checks failed, changes requested, mentioned (only where
+the project mirrors content), assigned, done, and a draft waiting. A
+webhook's rows mark their items, each poller turn marks its whole repo
+(a backfill's quietly), and each machine works out what it marked within
+half a minute. A reason newly holding pushes once, through the hub, only
+to members the viewer check lets read the item, and only for what changed
+in the last hour. `inbox push` lines name the item and the account, never
+a title.
+
+**The inbox's shadow period.** For two weeks the server's inbox is held
+up against forge blocks' attention on Jake's machines. Set
+`ARUGULA_INBOX_SHADOW=1` in each of those daemons' environment (`on`,
+`true`, or a number of minutes; 15 minutes for `1`) and restart them. It's
+off unless set. Each then sends `POST /api/inbox/shadow` with its open
+GitHub blocks on linked repos: the item, the reasons the block's rules
+find (whether or not the person looked), and the platform's drafts it
+shows. No titles or text. The platform compares each with the owner's
+inbox rows for that item (seen, done or not) and logs:
+
+```sh
+fly logs -a arugula-platform | grep 'inbox shadow'
+```
+
+- `inbox shadow`: one line per report, with `day` (UTC), `daemon`,
+  `compared`, `agree` and `disagree`. A day's numbers are the sum of its
+  lines on every machine; the match rate is `agree / compared`. The gate
+  is 99%.
+- `inbox shadow: disagree`: one line per disagreement, with the `item` id
+  and both sides' reasons (`block`, `platform`). Expect some, and explain
+  them: a team's review request (the platform doesn't know a person's
+  teams), mentions where content isn't mirrored, a block's poll or the
+  platform's recompute catching up, and `mergeable` (the platform has only
+  GitHub's `mergeable_state`).
+
+Fly keeps logs only a few days, so ship them where they last (or collect
+the lines daily) for the two weeks.
+
 **Making the app** (once, before M141). It lives in `iad`, beside its
 Managed Postgres, which Fly doesn't offer in `ewr`; the hub stays in `ewr`,
 about 5 ms away:
