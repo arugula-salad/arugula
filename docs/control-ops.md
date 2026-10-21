@@ -42,8 +42,9 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
   GitHub, and read access for hosted boxes with no `gh` login. Make it
   with GitHub's manifest flow (or by hand at *Settings → Developer settings
   → GitHub Apps*):
-  - **Permissions**, all read-only: metadata, contents, pull requests,
-    issues, checks, commit statuses, actions.
+  - **Permissions:** read for metadata, contents, checks, commit
+    statuses and actions; read and write for issues and pull requests
+    (M167: write is only for sending a person's draft, below).
   - **Events:** pull request, pull request review, pull request review
     comment, issues, issue comment, check run, check suite, status,
     workflow run.
@@ -86,6 +87,21 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     the daemon) for an installation token scoped to that repository with
     read-only permissions; control (the platform, which the hub asks)
     keeps one until five minutes before it expires.
+  - **Tokens** (M167, aru-085): one helper in the platform
+    (`crates/platform/src/forge/app.rs`) mints every installation token,
+    and nothing else asks GitHub for one. Each names one repository and
+    the least it needs: read-only for reads and the mirror's ingest (kept
+    until five minutes before they expire), and `issues: write` or
+    `pull_requests: write` for one send (minted for that send, never
+    kept, and revoked at GitHub, `DELETE /installation/token`, right after
+    its one call). A token whose answer from GitHub doesn't cover exactly
+    the repository asked for is revoked and refused. Every mint is a row
+    in `github_token_mints`: installation, repository id, the permissions
+    asked for, the account (or `platform`), what for, and when, never the
+    token. A read token used again from the cache inside the platform adds
+    no row; one handed to a hosted box again from the cache adds a row for
+    that account, with the purpose `read (cached)`. Rows are kept a year,
+    pruned hourly.
 - **Blocks through control** (M50, optional): `--block-domain`
   (`ARUGULA_CONTROL_BLOCK_DOMAIN`, `arugula.run` for the hosted one) gives
   each block an origin of its own, `b-<key>.<domain>`, so a port or editor
@@ -557,6 +573,34 @@ GitHub keeps the failed deliveries, to redeliver once the secrets are set
 (then restart the platform). The hub also logs an error when daemons'
 watches or tokens find the platform without an App while it has
 `GITHUB_APP_ID`. Daemons' blocks poll meanwhile.
+
+**The App's write permissions** (M167, #1213). The App gains
+`issues: write` and `pull_requests: write`, and nothing else, so a draft
+can be sent with every machine asleep (M168). The code asks for write
+only inside a send, so the upgrade can go out before or after the release
+that has it. Do the test App first, then the real one:
+
+1. **The test App** (`arugula-forge-tests`, App id 5280040, on the
+   `arugula-salad-test` organization): at
+   `https://github.com/organizations/arugula-salad-test/settings/apps/arugula-forge-tests/permissions`,
+   under *Repository permissions*, set **Issues** and **Pull requests**
+   to *Read and write*. Leave everything else as it is. Save, and confirm
+   the prompt that installers will be asked.
+2. Approve it on the test installation: the organization's *Settings →
+   GitHub Apps → arugula-forge-tests → Review request* (an org owner).
+   Until then its tokens keep the old permissions, and GitHub refuses a
+   mint that asks for write (`422`), so a send fails clearly and its
+   draft is kept.
+3. Run `forges-nightly` by hand on `main` and check it passes.
+4. **The real App** (`illogical-by-arugula`): the same two permissions,
+   in its settings on the account that owns it. GitHub emails every
+   installer to approve. Jake approves his own installations; a team's
+   org owner approves theirs, after the note to installers.
+5. Check: on an installation's page (*Settings → Applications →
+   Installed GitHub Apps → Configure*), Issues and Pull requests say
+   *Read and write*, and nothing else changed. Until an installer
+   approves, sends to their repositories fall back to a machine (M168),
+   and reads carry on as before.
 
 **Making the app** (once, before M141). It lives in `iad`, beside its
 Managed Postgres, which Fly doesn't offer in `ewr`; the hub stays in `ewr`,
