@@ -1,6 +1,10 @@
 //! M40 end to end inside control: its real router on a port, a fake
 //! GitHub API that checks the App's JWT, and daemons on the relay socket
-//! (signed as daemons sign) that subscribe and hear pokes.
+//! (signed as daemons sign) that subscribe and hear pokes. Since M161 the
+//! App is the platform's: in process first, then with the platform as its
+//! own server behind the hub's gateway, where a webhook lands on the
+//! platform, the hub relays its pokes, and a restarted platform still knows
+//! a delivery it took.
 
 use std::{
     net::SocketAddr,
@@ -21,6 +25,8 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
+
+use arugula_platform::forge::{GithubApp, parse_pem};
 
 use crate::{App, forge};
 
@@ -175,13 +181,8 @@ async fn webhooks_poke_only_subscribed_daemons_of_allowed_accounts() {
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
     let mut app = App::for_tests(&base);
-    app.github_app = Some(forge::GithubApp::new(
-        "42".into(),
-        "arugula-test".into(),
-        SECRET.into(),
-        &api,
-        forge::parse_pem(&pem).unwrap(),
-    ));
+    app.github_app = Some("arugula-test".into());
+    app.platform.inner_mut().github = Some(the_app(&api, &pem));
     let app = app.start();
     // Jake signed in with GitHub; a stranger did too; someone else only
     // with a passkey.
@@ -351,6 +352,113 @@ async fn webhooks_poke_only_subscribed_daemons_of_allowed_accounts() {
     assert_eq!(v["relayed"], 0);
 }
 
+fn the_app(api: &str, pem: &str) -> GithubApp {
+    GithubApp::new("42".into(), "arugula-test".into(), SECRET.into(), api, parse_pem(pem).unwrap())
+}
+
+/// Wait for the next `forge.poke`, past heartbeats.
+async fn poke(s: &mut Sock) -> Value {
+    loop {
+        let m = text(s, 3000).await.expect("a poke");
+        if m["t"] == "forge.poke" {
+            return m;
+        }
+    }
+}
+
+/// M161: the platform as its own server, on a database file of its own,
+/// behind the hub's gateway. A signed webhook to the hub lands on the
+/// platform, which records the delivery and hands the pokes to the hub over
+/// `HubPort`; the daemon watching hears the same bytes as ever. The access
+/// check and the hosted box's token are the platform's, asked over
+/// `PlatformPort`. A platform started again on the same database, with
+/// nothing in memory, knows the delivery when GitHub sends it again; one
+/// with no App refuses it with an error.
+#[tokio::test]
+async fn webhooks_land_on_the_platform_out_of_process() {
+    let (pem, public) = forge::tests::throwaway_key();
+    let h: Shared = Arc::new(Mutex::new(Hub { public, ..Hub::default() }));
+    let api = fake_github(h.clone()).await;
+    let path = std::env::temp_dir().join(format!("arugula-m161-{}.db", hex::encode(arugula_e2e::random::<16>())));
+    let open = || arugula_platform::db::Db::open(&path).unwrap();
+    let s = crate::gateway_wire::split_github(open(), |hub| hub, Some(the_app(&api, &pem))).await;
+    let now = now_ms();
+    s.hub.db.account_for("github", "1", "jhgaylor", "a1", now).unwrap();
+    s.hub.db.account_for("github", "2", "stranger", "a2", now).unwrap();
+    let (k1, k2) = (daemon(&s.hub, "a1", "geek"), daemon(&s.hub, "a2", "theirs"));
+
+    // Where each repository stands is the platform's answer.
+    let mut sock = dial(&s.base, &k1).await;
+    let watch = json!({ "t": "forge.watch", "repos": ["jhgaylor/hud", "nobody/x"] });
+    sock.send(Message::Text(watch.to_string().into())).await.unwrap();
+    let w = text(&mut sock, 3000).await.expect("where it stands");
+    assert_eq!(w["t"], "forge.watching");
+    assert_eq!((w["repos"][0]["live"].as_bool(), w["repos"][1]["live"].as_bool()), (Some(true), Some(false)), "{w}");
+    assert!(w["repos"][1]["why"].as_str().unwrap().contains("isn't installed on nobody"), "{w}");
+
+    // A signed event through the hub's gateway: the platform takes it, and
+    // the daemon hears the poke.
+    let pr = json!({ "action": "opened", "repository": { "full_name": "jhgaylor/hud" },
+        "pull_request": { "number": 7, "title": "a private title" } });
+    let (st, v) = hook(&s.base, "pull_request", "del-1", &pr, Some(sig(&pr.to_string()))).await;
+    assert_eq!((st, v["relayed"].as_u64()), (202, Some(1)), "{v}");
+    let p = poke(&mut sock).await;
+    assert_eq!(
+        p,
+        json!({ "t": "forge.poke", "poke": { "provider": "github", "host": "github.com", "repo": "jhgaylor/hud",
+            "number": 7, "event": "pull_request", "delivery": "del-1" } })
+    );
+    let recorded = |db: &arugula_platform::db::Db, d: &str| db.delivery_event(d).unwrap();
+    assert_eq!(recorded(&s.platform.db, "del-1").as_deref(), Some("pull_request"), "the platform recorded it");
+    // A bad signature is refused, and not recorded.
+    let (st, _) = hook(&s.base, "pull_request", "del-2", &pr, Some("sha256=00".into())).await;
+    assert_eq!(st, 401);
+    assert_eq!(recorded(&s.platform.db, "del-2"), None);
+
+    // A hosted box's token, minted by the platform.
+    let ask = |k: &DeviceKeys, repo: &str| {
+        let body = json!({ "repo": repo }).to_string();
+        reqwest::Client::new()
+            .post(format!("{}/api/daemon/github/token", s.base))
+            .header("x-arugula-auth", sign_header(k, "POST", "/api/daemon/github/token", body.as_bytes()))
+            .header("content-type", "application/json")
+            .body(body)
+            .send()
+    };
+    let r = ask(&k1, "jhgaylor/hud").await.unwrap();
+    assert_eq!(r.status(), 200);
+    let v: Value = r.json().await.unwrap();
+    assert_eq!(
+        (v["token"].as_str(), v["login"].as_str(), v["app"].as_str()),
+        (Some("ghs_test_11"), Some("jhgaylor"), Some("arugula-test"))
+    );
+    let r = ask(&k2, "jhgaylor/hud").await.unwrap();
+    assert_eq!(r.status(), 403, "a stranger: the platform's refusal is the answer");
+    assert!(r.text().await.unwrap().contains("collaborator"));
+    assert_eq!(ask(&k1, "bad/../x").await.unwrap().status(), 400);
+
+    // The platform starts again on the same database: nothing in memory,
+    // and GitHub's redelivery is known.
+    drop(sock);
+    let again = crate::gateway_wire::split_github(open(), |hub| hub, Some(the_app(&api, &pem))).await;
+    let (st, v) = hook(&again.base, "pull_request", "del-1", &pr, Some(sig(&pr.to_string()))).await;
+    assert_eq!((st, v["duplicate"].as_bool()), (200, Some(true)), "{v}");
+    let (st, v) = hook(&again.base, "pull_request", "del-3", &pr, Some(sig(&pr.to_string()))).await;
+    assert_eq!((st, v["relayed"].as_u64()), (202, Some(0)), "a new one is taken: {v}");
+    assert!(recorded(&again.platform.db, "del-3").is_some());
+    for ext in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+    }
+
+    // A platform started without the App's secrets refuses the webhook out
+    // loud (GitHub keeps it, to redeliver), never drops it.
+    let bare = crate::gateway_wire::split_github(arugula_platform::db::Db::memory(), |hub| hub, None).await;
+    let (st, v) = hook(&bare.base, "pull_request", "del-4", &pr, Some(sig(&pr.to_string()))).await;
+    assert_eq!(st, 503, "{v}");
+    assert!(v["error"].as_str().unwrap().contains("no GitHub App key"), "{v}");
+    assert_eq!(bare.platform.db.delivery_event("del-4").unwrap(), None);
+}
+
 /// By hand, once, read-only: the real App (`ARUGULA_REAL_GITHUB_APP_ENV`
 /// names its env file, as the manifest flow left it): a JWT, the App's
 /// installations, an installation token for one repository, and a PR read
@@ -364,12 +472,12 @@ async fn real_app_reads() {
         env.lines().find_map(|l| l.strip_prefix(&format!("{k}="))).map(|v| v.trim().trim_matches('"').to_owned())
     };
     let pem = std::fs::read_to_string(get("GITHUB_APP_PRIVATE_KEY_FILE").unwrap()).unwrap();
-    let app = forge::GithubApp::new(
+    let app = GithubApp::new(
         get("GITHUB_APP_ID").unwrap(),
         get("GITHUB_APP_SLUG").unwrap(),
         String::new(),
         "https://api.github.com",
-        forge::parse_pem(&pem).unwrap(),
+        parse_pem(&pem).unwrap(),
     );
     let http = reqwest::Client::new();
     let jwt = app.jwt(now_ms() / 1000).unwrap();
@@ -393,7 +501,9 @@ async fn real_app_reads() {
     let owner = repo.split('/').next().unwrap();
     println!(
         "may {owner} hear {repo}: {:?}",
-        app.may(&http, &forge::GithubUser { id: install.account_id, login: owner.into() }, &repo).await.map(|i| i.id)
+        app.may(&http, &arugula_platform::forge::GithubUser { id: install.account_id, login: owner.into() }, &repo)
+            .await
+            .map(|i| i.id)
     );
     let (token, expires) = app.token(&http, install.id, repo.split('/').nth(1).unwrap()).await.unwrap();
     println!("installation token minted, {} chars, expires {expires}", token.len());

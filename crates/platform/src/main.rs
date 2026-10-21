@@ -1,5 +1,5 @@
 //! `arugula-platform`: control's platform as its own process (M140): chat,
-//! Cloud and billing, behind the hub's gateway ("Platform paths stay on
+//! Cloud, billing and the GitHub App's webhook (M161), behind the hub's gateway ("Platform paths stay on
 //! control.arugula.io forever"). It has no public address. The hub
 //! forwards each platform route here with a principal header signed with
 //! the key both share (`ARUGULA_PLATFORM_KEY`), and the platform calls the
@@ -76,6 +76,15 @@ struct Args {
     #[command(flatten)]
     billing: arugula_platform::billing::Args,
 
+    /// The GitHub App (M161): its id, slug, private key and webhook secret,
+    /// with the names they had on the hub.
+    #[command(flatten)]
+    github_app: arugula_platform::forge::Args,
+
+    /// GitHub's API (tests point it at a fake).
+    #[arg(long, default_value = "https://api.github.com", hide = true)]
+    github_api: String,
+
     /// Product analytics: the same PostHog project as the hub's.
     #[arg(long, env = "POSTHOG_API_KEY", hide_env_values = true)]
     posthog_api_key: Option<String>,
@@ -148,6 +157,7 @@ async fn run() -> anyhow::Result<()> {
     let mut p = Platform::new(cfg, db, hub, http, analytics);
     p.stripe = a.billing.stripe()?;
     p.cloud = a.cloud.cloud()?;
+    p.github = a.github_app.app(&a.github_api)?;
     p.paused = a.paused.into();
     let p = Arc::new(p);
     if a.paused {
@@ -159,6 +169,7 @@ async fn run() -> anyhow::Result<()> {
     arugula_platform::chat::start(&p);
     arugula_platform::projects::start(&p);
     arugula_platform::billing::start(&p);
+    arugula_platform::forge::start(&p);
 
     let port: Arc<dyn PlatformPort> = p.clone();
     let app = Router::new()

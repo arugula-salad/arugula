@@ -82,6 +82,7 @@ pub async fn run(f: &dyn Fixture) {
     push_options(f).await;
     cloud(f).await;
     projects(f).await;
+    pokes(f).await;
     // Last: it prunes the feed.
     changes(f).await;
 }
@@ -389,6 +390,23 @@ async fn cloud(f: &dyn Fixture) {
     assert!(!hub.can_drive_cloud("dmn-none", "acct-cl").await.unwrap(), "no such machine");
     f.revoke_cloud_drive("acct-cl", &m).unwrap();
     assert!(!hub.can_drive_cloud(&m, "acct-cl").await.unwrap(), "a revoked grant");
+}
+
+/// Relaying a webhook's pokes (M161): to no daemon when none watches the
+/// repository, nothing for no pokes. Who hears one is `forge_wire`'s, over
+/// real relay sockets.
+async fn pokes(f: &dyn Fixture) {
+    let hub = f.hub();
+    let poke = arugula_control_wire::forge::Poke {
+        provider: "github".into(),
+        host: "github.com".into(),
+        repo: "nobody/watches".into(),
+        number: Some(1),
+        event: "pull_request".into(),
+        delivery: "d-contract".into(),
+    };
+    assert_eq!(hub.forge_pokes(&[poke]).await.unwrap(), 0);
+    assert_eq!(hub.forge_pokes(&[]).await.unwrap(), 0);
 }
 
 /// Every change after `after`, a page of `limit` at a time.

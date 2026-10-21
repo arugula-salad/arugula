@@ -12,7 +12,9 @@ Billing has moved in (M139:
 `cloud::Args`, its API types in `arugula-cloud-wire`) and chat (M138:
 `src/chat.rs`, its tables in `src/db/chat.rs`, its API types in
 `arugula-control-wire`), and then projects and grants (`src/projects.rs`
-and `src/grants.rs`, their tables in `src/db/projects.rs`). It runs inside
+and `src/grants.rs`, their tables in `src/db/projects.rs`), and the GitHub
+App's webhook, key, access checks and tokens (M161: `src/forge/`, its flags
+in `forge::Args`, the forge mirror's tables in `src/db/forge.rs`). It runs inside
 the hub's process (`--platform in-process`, the default) or as its own,
 the `arugula-platform` binary (`src/main.rs`, M140), behind the hub's
 gateway ([docs/control-ops.md](../../docs/control-ops.md#the-platform)).

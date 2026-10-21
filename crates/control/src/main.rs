@@ -148,26 +148,19 @@ struct Args {
     #[arg(long, default_value = "https://api.github.com", hide = true)]
     github_api: String,
 
-    /// The GitHub App (M40) whose webhooks come to /github/webhook and
-    /// whose installation tokens let hosted boxes read: its id, slug,
-    /// webhook secret and private key (a PEM file, or the PEM itself in
-    /// GITHUB_APP_PRIVATE_KEY, as a Fly secret). Its client id and secret
-    /// sign people in when GITHUB_CLIENT_ID/SECRET aren't set. Off without
-    /// an id and a key.
-    #[arg(long, env = "GITHUB_APP_ID")]
-    github_app_id: Option<String>,
-    #[arg(long, env = "GITHUB_APP_SLUG", default_value = "arugula-io")]
-    github_app_slug: String,
+    /// The GitHub App (M40): its flags are the platform's (M161), with the
+    /// names they always had. In process the hub hands the App to the
+    /// platform; out of process it needs only the id and slug, and the
+    /// platform holds the key and webhook secret (docs/control-ops.md).
+    #[command(flatten)]
+    github_app: arugula_platform::forge::Args,
+    /// The App's client id and secret sign people in when
+    /// GITHUB_CLIENT_ID/SECRET aren't set: the hub's ("The hub stays the
+    /// identity provider").
     #[arg(long, env = "GITHUB_APP_CLIENT_ID")]
     github_app_client_id: Option<String>,
     #[arg(long, env = "GITHUB_APP_CLIENT_SECRET", hide_env_values = true)]
     github_app_client_secret: Option<String>,
-    #[arg(long, env = "GITHUB_APP_WEBHOOK_SECRET", hide_env_values = true)]
-    github_app_webhook_secret: Option<String>,
-    #[arg(long, env = "GITHUB_APP_PRIVATE_KEY_FILE")]
-    github_app_private_key_file: Option<PathBuf>,
-    #[arg(long, env = "GITHUB_APP_PRIVATE_KEY", hide_env_values = true)]
-    github_app_private_key: Option<String>,
     /// How often subscribed daemons hear the webhook path is up (tests).
     #[arg(long, default_value_t = 60, hide = true)]
     forge_heartbeat_secs: u64,
@@ -361,8 +354,9 @@ pub struct App {
     pub limits: limit::Limits,
     pub vapid: push::Vapid,
     pub hosted: Option<sandboxes::Hosted>,
-    /// The GitHub App (M40), and daemons' subscriptions to its webhooks.
-    pub github_app: Option<forge::GithubApp>,
+    /// The GitHub App's slug (M40), when control has one; the App itself
+    /// is the platform's (M161). And daemons' subscriptions to its pokes.
+    pub github_app: Option<String>,
     pub forge: forge::Watches,
     /// The desktop app's sign-ins in progress (M48).
     pub app_logins: app_login::Tickets,
@@ -410,6 +404,7 @@ fn platform(
     cfg: arugula_platform::Config,
     stripe: Option<arugula_platform::billing::Stripe>,
     cloud: Option<arugula_platform::cloud::Cloud>,
+    github: Option<arugula_platform::forge::GithubApp>,
     http: &reqwest::Client,
     analytics: &analytics::Analytics,
 ) -> (gateway::PlatformAt, Arc<hub_port::InProcess>) {
@@ -417,6 +412,7 @@ fn platform(
     let mut p = arugula_platform::Platform::new(cfg, db, hub.clone(), http.clone(), analytics.clone());
     p.stripe = stripe;
     p.cloud = cloud;
+    p.github = github;
     (gateway::PlatformAt::InProcess(Arc::new(p)), hub)
 }
 
@@ -432,8 +428,15 @@ impl App {
             sites: vec![public_url.into()],
             relay_free_bytes: 0,
         };
-        let (platform, hub_port) =
-            platform(arugula_platform::db::Db::memory(), cfg, None, None, &http, &analytics::Analytics::default());
+        let (platform, hub_port) = platform(
+            arugula_platform::db::Db::memory(),
+            cfg,
+            None,
+            None,
+            None,
+            &http,
+            &analytics::Analytics::default(),
+        );
         App {
             cfg: Config {
                 push_hosts: vec![],
@@ -569,7 +572,6 @@ fn routes() -> Routes {
         .route("/api/sandboxes", get(sandboxes::list).post(sandboxes::create))
         .route("/api/sandboxes/{id}", axum::routing::delete(sandboxes::delete))
         .route(wire::SANDBOX_DONE, post(sandboxes::done))
-        .route("/github/webhook", post(forge::webhook))
         .route("/api/daemon/github/token", post(forge::daemon_token))
         .route(wire::RELAY_DIAL, get(relay::dial))
         .route("/api/relay/c/{id}", get(relay::client))
@@ -656,7 +658,7 @@ async fn control_json(
         github: app.cfg.github.is_some(),
         passkeys,
         vapid: app.vapid.public(),
-        github_app: app.github_app.as_ref().map(|g| g.slug.clone()),
+        github_app: app.github_app.clone(),
         // How daemons sign their requests here (auth.rs): 2 takes body
         // hashes and nonces.
         daemon_auth: 2,
@@ -759,27 +761,6 @@ pub fn origin_of(url: &str) -> anyhow::Result<String> {
     Ok(u.origin().ascii_serialization())
 }
 
-/// The GitHub App from its id and key, if both are given.
-fn github_app(a: &Args) -> anyhow::Result<Option<forge::GithubApp>> {
-    let Some(id) = a.github_app_id.clone().filter(|s| !s.is_empty()) else {
-        info!("no GITHUB_APP_ID: no GitHub webhooks or App tokens (forge blocks poll)");
-        return Ok(None);
-    };
-    let pem = match (&a.github_app_private_key, &a.github_app_private_key_file) {
-        (Some(k), _) if !k.is_empty() => k.clone(),
-        (_, Some(f)) => std::fs::read_to_string(f)
-            .with_context(|| format!("reading GITHUB_APP_PRIVATE_KEY_FILE {}", f.display()))?,
-        _ => anyhow::bail!("GITHUB_APP_ID is set but there's no GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_FILE"),
-    };
-    let key = forge::parse_pem(&pem)?;
-    let secret = a.github_app_webhook_secret.clone().unwrap_or_default();
-    if secret.is_empty() {
-        tracing::warn!("no GITHUB_APP_WEBHOOK_SECRET: every GitHub webhook will be refused");
-    }
-    info!(app = id, slug = a.github_app_slug, "GitHub App");
-    Ok(Some(forge::GithubApp::new(id, a.github_app_slug.clone(), secret, &a.github_api, key)))
-}
-
 fn main() -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
     // database (census.rs), with no server. `maintenance`: the switch
@@ -834,7 +815,7 @@ async fn run() -> anyhow::Result<()> {
     public_url = port_of(&public_url);
     let also_urls: Vec<String> = a.also_url.iter().filter(|u| !u.is_empty()).map(|u| port_of(u)).collect();
     let set = |v: Option<String>| v.filter(|s| !s.is_empty());
-    let github_app = github_app(&a)?;
+    let github_app = a.github_app.id().map(|_| a.github_app.github_app_slug.clone());
     // Sign-in: an OAuth app's (or another App's) credentials, else the
     // GitHub App's own.
     let (client_id, client_secret) = match (set(a.github_client_id.clone()), set(a.github_client_secret.clone())) {
@@ -933,11 +914,18 @@ async fn run() -> anyhow::Result<()> {
             relay_free_bytes: a.relay_free_mb * 1_000_000,
         };
         info!("the platform runs in process");
-        platform(a.platform_db.open(&a.db)?, cfg, stripe, cloud, &http, &analytics)
+        let github = a.github_app.app(&a.github_api)?;
+        platform(a.platform_db.open(&a.db)?, cfg, stripe, cloud, github, &http, &analytics)
     } else {
         // The platform is its own process: this hub is its gateway (M140).
         let key = platform_key.clone().context("--platform is a URL, so ARUGULA_PLATFORM_KEY is needed")?;
         info!(at = %a.platform, "the platform runs out of process, behind this hub's gateway");
+        if a.github_app.has_secrets() {
+            info!(
+                "GITHUB_APP_PRIVATE_KEY and GITHUB_APP_WEBHOOK_SECRET are the platform's (M161): unused here, \
+                 kept only for a rollback"
+            );
+        }
         let remote = gateway::Remote::new(&a.platform, key)?;
         (gateway::PlatformAt::Remote(remote), Arc::new(hub_port::InProcess::default()))
     };
@@ -1029,6 +1017,7 @@ async fn run() -> anyhow::Result<()> {
         arugula_platform::chat::start(p);
         arugula_platform::projects::start(p);
         arugula_platform::billing::start(p);
+        arugula_platform::forge::start(p);
     }
     // Shared Docs' open counts reach the database.
     {

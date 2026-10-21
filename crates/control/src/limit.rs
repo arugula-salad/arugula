@@ -35,10 +35,8 @@ pub const TEAMS: (&str, usize) = ("team", 20);
 pub const TEAM_INVITES: (&str, usize) = ("team-invite", 120);
 /// `forge.watch` messages, per daemon.
 pub const FORGE_WATCHES: (&str, usize) = ("forge-watch", 120);
-/// Repositories looked up at GitHub for the first time in a while (not
-/// the heartbeat's re-checks), per account: what a burst of `forge.watch`
-/// messages costs the App's quota.
-pub const FORGE_LOOKUPS: (&str, usize) = ("forge-lookup", 600);
+// Repositories looked up at GitHub for the first time are counted by the
+// platform since M161 (`arugula_platform::forge::FORGE_LOOKUPS`).
 /// Shares offered to other accounts, per daemon (each shows a prompt).
 pub const OFFERS: (&str, usize) = ("offer", 120);
 /// Telemetry reports (M100), per client address: many installs can share

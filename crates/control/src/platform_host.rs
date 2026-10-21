@@ -8,7 +8,8 @@
 //! On the platform's host:
 //! - a platform route (a method and path `routes.toml` gives
 //!   `process = "platform"`) goes on to the router, so the gateway answers
-//!   it exactly as on control's site, in process or out;
+//!   it exactly as on control's site, in process or out (but GitHub's
+//!   webhook, which comes only to control's site: M161);
 //! - nothing of the hub's answers: any other `/api/…`, `/auth/…`,
 //!   `/github/…`, `/.well-known/…`, `/d/…`, `/internal/…`, `/signin/…`,
 //!   `/control.json` and the platform's `/platform.json`, and every
@@ -152,6 +153,12 @@ fn not_here(path: &str) -> bool {
         || matches!(path, "/control.json" | "/platform.json")
 }
 
+/// GitHub's webhook is the platform's since M161, and comes only to
+/// control's own site, where the App says it is: not here.
+fn webhook(path: &str) -> bool {
+    path.starts_with("/github/")
+}
+
 /// The outermost layer, outside even `blocks::split`: a request for the
 /// platform's host reaches only the platform's routes and its page.
 pub async fn split(State(app): State<Arc<App>>, mut req: Request, next: Next) -> Response {
@@ -169,7 +176,8 @@ pub async fn split(State(app): State<Arc<App>>, mut req: Request, next: Next) ->
     let path = req.uri().path().to_owned();
     let res = if req.headers().contains_key(header::UPGRADE) {
         nothing()
-    } else if platform_route(req.method(), &path) || crate::app_signin::route(req.method(), &path) {
+    } else if (platform_route(req.method(), &path) && !webhook(&path)) || crate::app_signin::route(req.method(), &path)
+    {
         next.run(req).await
     } else if not_here(&path) {
         nothing()

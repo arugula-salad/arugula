@@ -158,6 +158,7 @@ services:
       - --stripe-api=http://fakes:9002
       - --stripe-seat-price=price_seat
       - --stripe-minutes-price=price_min
+      - --github-api=http://fakes:9001
     environment:
       # On `postgres` with ARUGULA_TESTNET_POSTGRES=1 (M143), as control's.
       ARUGULA_PLATFORM_DATABASE_URL: ${ARUGULA_TESTNET_POSTGRES:+postgres://postgres:testnet@postgres:5432/platform}
@@ -165,8 +166,15 @@ services:
       STRIPE_SECRET_KEY: sk_test_testnet
       STRIPE_WEBHOOK_SECRET: whsec_testnet
       ARUGULA_PLATFORM_KEY: *platform-key
+      # The GitHub App (M161): its webhook comes to control's site and lands
+      # here (the github-webhook claim). The key is a throwaway up.sh makes.
+      GITHUB_APP_ID: "1"
+      GITHUB_APP_SLUG: arugula-testnet
+      GITHUB_APP_WEBHOOK_SECRET: whsec-github-testnet
+      GITHUB_APP_PRIVATE_KEY_FILE: /keys/github-app.pem
     volumes:
       - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
+      - ${ARUGULA_TESTNET_STATE:-./.state}:/keys:ro
     networks: [outer]
 
   # The platform's Postgres (M143): 17, as hosted control's Fly Managed

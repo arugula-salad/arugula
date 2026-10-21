@@ -11,7 +11,12 @@
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 
-use crate::{Platform, billing, db};
+use arugula_control_wire::forge::Standing;
+
+use crate::{
+    Platform, billing, db,
+    forge::{self, GithubUser, TokenAnswer},
+};
 
 pub trait PlatformPort: Send + Sync {
     /// What stands in the way of deleting an account, as sentences for its
@@ -36,6 +41,29 @@ pub trait PlatformPort: Send + Sync {
     /// platform kept of the team goes, and billing's seats follow it. Waits
     /// for Stripe, as the roster's route always has.
     fn roster_changed<'a>(&'a self, team: &'a str) -> BoxFuture<'a, anyhow::Result<()>>;
+
+    /// Where each repository a daemon watches stands (M161: the App's
+    /// `may()` is the platform's): live, so its pokes come, or why not.
+    /// `github` is the account's GitHub identity, if it signed in with
+    /// GitHub; `fresh`, that a daemon just asked, not the heartbeat. One
+    /// per repository, in the order asked.
+    fn forge_standing<'a>(
+        &'a self,
+        account: &'a str,
+        github: Option<&'a GithubUser>,
+        repos: &'a [String],
+        fresh: bool,
+    ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>>;
+
+    /// A read-only installation token for one repository, for a hosted
+    /// box's `POST /api/daemon/github/token` (M161: the App's key is the
+    /// platform's), or why not.
+    fn github_token<'a>(
+        &'a self,
+        account: &'a str,
+        github: Option<&'a GithubUser>,
+        repo: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<TokenAnswer>>;
 }
 
 /// An account the hub deleted.
@@ -52,7 +80,8 @@ pub struct Deleted {
 /// and its part of `account_deleted`; Cloud (M137) `delete_blockers` and
 /// its part of `account_deleted`; chat (M138) `chat_on` and its part of
 /// `account_deleted`; projects and grants, and the forge mirror (M162),
-/// their part of `account_deleted`.
+/// their part of `account_deleted`; the GitHub App (M161) `forge_standing`
+/// and `github_token`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         Box::pin(async move {
@@ -96,5 +125,24 @@ impl PlatformPort for Platform {
             billing::sync_seats(self, team).await;
             Ok(())
         })
+    }
+
+    fn forge_standing<'a>(
+        &'a self,
+        account: &'a str,
+        github: Option<&'a GithubUser>,
+        repos: &'a [String],
+        fresh: bool,
+    ) -> BoxFuture<'a, anyhow::Result<Vec<Standing>>> {
+        Box::pin(async move { Ok(forge::standing(self, account, github, repos, fresh).await) })
+    }
+
+    fn github_token<'a>(
+        &'a self,
+        account: &'a str,
+        github: Option<&'a GithubUser>,
+        repo: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<TokenAnswer>> {
+        Box::pin(forge::token(self, account, github, repo))
     }
 }
