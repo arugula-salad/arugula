@@ -958,7 +958,7 @@ fn ask_proof(ask: &AskInvite, once: &DeviceKeys, account: &str, root: &DeviceKey
 /// #762: every invite link carries a one-time key, and a request to join
 /// carries its proof. Control can't put someone in front of an owner who
 /// didn't hold the link: a request it made up has no proof for its account,
-/// and the owner's page refuses it (`askOk` in `web/src/e2e/team.ts` checks
+/// and the owner's page refuses it (`askOk` in `web/src/shell/e2e/team.ts` checks
 /// what `AskInvite::proves` does here).
 #[tokio::test]
 async fn an_ask_me_first_request_carries_the_links_proof() {

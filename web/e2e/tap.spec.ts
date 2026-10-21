@@ -2,7 +2,7 @@
 // worker): the pane, the card, and a room of control's chat (M123).
 
 import { expect, test } from "@playwright/test";
-import { chatTap, shareUrl, tapUrl, withShare } from "../src/tap";
+import { chatTap, shareUrl, tapUrl, withShare } from "../src/shell/tap";
 
 test("a chat push from control opens its room at the message (M123)", () => {
   const room = `ch_${"0a".repeat(8)}`;

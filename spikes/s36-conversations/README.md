@@ -362,7 +362,7 @@ conversation keeps its id and timeline.
 
 ## q7: the Chat page
 
-From `web/src/ui/chat.tsx` and `threads.tsx`:
+From `web/src/shell/ui/chat.tsx` and `threads.tsx`:
 - **Channels**, the slot M73 left, goes after Activity and Huddles and before the machine sections
   (`chat.tsx:231-243`). It lists every conversation the person may read, from each machine's
   `threads` summaries, which already carry them: `threads_for` includes `conv` targets. A row shows

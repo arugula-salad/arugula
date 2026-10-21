@@ -5,13 +5,13 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { evaluate, certBody, joinCode, joinMac, splitJoinCode, type Cert } from "./src/e2e/cert.ts";
-import { generateKeys, signText } from "./src/e2e/keys.ts";
-import { daemonNow, E2ESocket, readWelcome } from "./src/e2e/channel.ts";
-import { blockRoutesLabel } from "./src/blocks/block-route.ts";
-import { blockOrigin, blockSrc, credsFor, frameAllow, grantExpiry, heard, isWebKit, MAX_LIFE_MS, mint, type Framed } from "./src/blocks/through-control.ts";
-import { workerDirectBlocked } from "./src/block/lna.ts";
-import { follows, newInviteKey, redeemInvite, signInvite, signRedeem, signRoster, type Roster, type TeamPin } from "./src/e2e/team.ts";
+import { evaluate, certBody, joinCode, joinMac, splitJoinCode, type Cert } from "./src/shell/e2e/cert.ts";
+import { generateKeys, signText } from "./src/shell/e2e/keys.ts";
+import { daemonNow, E2ESocket, readWelcome } from "./src/shell/e2e/channel.ts";
+import { blockRoutesLabel } from "./src/shell/blocks/block-route.ts";
+import { blockOrigin, blockSrc, credsFor, frameAllow, grantExpiry, heard, isWebKit, MAX_LIFE_MS, mint, type Framed } from "./src/shell/blocks/through-control.ts";
+import { workerDirectBlocked } from "./src/shell/block/lna.ts";
+import { follows, newInviteKey, redeemInvite, signInvite, signRedeem, signRoster, type Roster, type TeamPin } from "./src/shell/e2e/team.ts";
 
 const bin = process.env.INTEROP_BIN ?? "../target/debug/examples/interop";
 let failed = 0;

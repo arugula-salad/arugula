@@ -1,4 +1,4 @@
-//! The web client's copy of these types, `web/src/proto.gen.ts`, made
+//! The web client's copy of these types, `web/src/shared/proto.gen.ts`, made
 //! from the Rust (ts-rs, the `ts` feature). [`current`] fails when the
 //! committed file differs from what the types say now; `just proto-ts`
 //! writes it again.
@@ -176,7 +176,7 @@ fn flags_table() -> String {
 }
 
 fn path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web/src/proto.gen.ts")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web/src/shared/proto.gen.ts")
 }
 
 #[test]
@@ -187,5 +187,5 @@ fn current() {
         return;
     }
     let have = std::fs::read_to_string(path()).unwrap_or_default();
-    assert!(have == want, "web/src/proto.gen.ts is stale: run `just proto-ts`");
+    assert!(have == want, "web/src/shared/proto.gen.ts is stale: run `just proto-ts`");
 }

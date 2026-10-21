@@ -7,7 +7,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import { closeContexts, reset } from "./helpers";
-import type { PaneId } from "../src/proto";
+import type { PaneId } from "../src/shared/proto";
 
 test.afterAll(closeContexts);
 

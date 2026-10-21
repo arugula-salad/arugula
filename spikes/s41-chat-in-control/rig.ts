@@ -29,7 +29,7 @@ import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, appendFile
 import { join, resolve } from "node:path";
 import { Device } from "../../web/fixtures/device.ts";
 import { fakeGithub, fakePush } from "../../web/fixtures/fakes.ts";
-import { signText } from "../../web/src/e2e/keys.ts";
+import { signText } from "../../web/src/shell/e2e/keys.ts";
 
 const root = resolve(process.argv[2] ?? "/tmp/s41-rig");
 rmSync(root, { recursive: true, force: true });

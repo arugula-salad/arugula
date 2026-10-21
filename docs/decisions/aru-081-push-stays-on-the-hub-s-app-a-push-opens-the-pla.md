@@ -11,7 +11,7 @@ question: "Which installed app and service worker show chat pushes once chat liv
 options:
   - id: "a"
     label: "The hub's app: one install, one permission, and tapping a push opens the platform page"
-    how: "control.arugula.io's service worker (web/src/sw.ts) keeps showing chat pushes and opens the app.arugula.io URL for the room or message. The platform page gets a manifest and icons but no push subscription of its own."
+    how: "control.arugula.io's service worker (web/src/shell/sw.ts) keeps showing chat pushes and opens the app.arugula.io URL for the room or message. The platform page gets a manifest and icons but no push subscription of its own."
     tradeoff: "On a phone the platform page opens in the installed app's in-app browser or a Custom Tab, not as its own installed app; if that can't land someone in the room usably on iOS, chat is framed into the hub's app on the phone only."
   - id: "b"
     label: "A second install and subscription for app.arugula.io"
@@ -35,14 +35,14 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-20"
 reviews: []
 constrains:
-  - "path:web/src/sw.ts"
+  - "path:web/src/shell/sw.ts"
   - "path:crates/control/src/push.rs"
 ---
 
 # Push stays on the hub's app; a push opens the platform page
 
 Push stays on the hub's app (Jake, 2026-10-20, #1171). There is one install
-(control's) and one permission. The hub's service worker (`web/src/sw.ts`)
+(control's) and one permission. The hub's service worker (`web/src/shell/sw.ts`)
 keeps showing chat pushes, and tapping one opens the `app.arugula.io` URL
 for that room or message, signed in through the hub's silent hop ("The hub
 signs people in to the platform page"). On iOS the installed app opens it
@@ -54,5 +54,5 @@ It ships only after real iPhone and Android runs (M156). If iOS can't land
 the person in the room, signed in and usable, the fallback is chat framed
 into the hub's app on the phone only, decided after a report with
 screenshots.
-Where: `web/src/sw.ts`, `crates/control/src/push.rs`.
+Where: `web/src/shell/sw.ts`, `crates/control/src/push.rs`.
 From: #1171, M146 (#1172), M156 (#1182).

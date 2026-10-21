@@ -89,7 +89,7 @@ prototype's paths):
 
 The product adds editing and deleting your own message, renaming and archiving a channel (owners), and
 leaving a channel's notifications (a per-person mute, not membership). It also adds the wire types in
-`arugula-control-wire`, generated into `web/src/proto.gen.ts`.
+`arugula-control-wire`, generated into `web/src/shared/proto.gen.ts`.
 
 **Limits:**
 - A message is at most 8 KB of text, and a quote at most 16 KB, as `MAX_TEXT` and `MAX_QUOTE` are
@@ -297,21 +297,21 @@ That's about 1,700 lines of Rust out and 1,300 changed, plus tests.
 
 ### q8: clients
 
-The Chat page talks to control: `api()` in `web/src/control.ts`, with a new `ChatStore` holding the
+The Chat page talks to control: `api()` in `web/src/shell/control.ts`, with a new `ChatStore` holding the
 rooms, the messages fetched, and the SSE stream.
 
 | file | lines | what changes |
 |---|---|---|
-| `web/src/ui/chat.tsx` | 737 | The sidebar goes from "machines, then sessions, then panes" to "channels, DMs, threads on panes". The "Not here: offline" note and `convRows` go. `PanePeek`/`ChatDetails` still read the pane from its machine, and say "box-a is asleep" when it is. |
-| `web/src/ui/threads.tsx` | 841 | `ThreadBody`, `Compose` and `Message` read from the store. `Quote` gains `machine`. `reveal` finds the pane's machine through the fleet. `@agent`/`@lead`, `InviteOffer` and `landed` go. `people()` is the room's audience, from control. |
-| `web/src/fleet.ts` | 562 | It stops carrying thread summaries. `FleetPane.unread`/`mention` come from the store, keyed by (machine, pane), for the swarm's corners and the pane badges. It still carries pane metadata. |
-| `web/src/ui/chat-find.tsx` | 496 | Search calls `GET /api/chat/search`. Activity is mentions of me from `GET /api/chat`. |
-| `web/src/ui/places.tsx` | 240 | `sources()` goes. `chatUnread()` reads the store. Routes are `#chat=<room>`. |
-| `web/src/client.ts` | 1,754 | `loadThread`, `postThread`, `markThreadRead`, `onThread`, `convs`, `conv*` (about 215 lines) go. |
+| `web/src/shell/ui/chat.tsx` | 737 | The sidebar goes from "machines, then sessions, then panes" to "channels, DMs, threads on panes". The "Not here: offline" note and `convRows` go. `PanePeek`/`ChatDetails` still read the pane from its machine, and say "box-a is asleep" when it is. |
+| `web/src/shell/ui/threads.tsx` | 841 | `ThreadBody`, `Compose` and `Message` read from the store. `Quote` gains `machine`. `reveal` finds the pane's machine through the fleet. `@agent`/`@lead`, `InviteOffer` and `landed` go. `people()` is the room's audience, from control. |
+| `web/src/shell/fleet.ts` | 562 | It stops carrying thread summaries. `FleetPane.unread`/`mention` come from the store, keyed by (machine, pane), for the swarm's corners and the pane badges. It still carries pane metadata. |
+| `web/src/platform/chat/find.tsx` | 496 | Search calls `GET /api/chat/search`. Activity is mentions of me from `GET /api/chat`. |
+| `web/src/shell/ui/places.tsx` | 240 | `sources()` goes. `chatUnread()` reads the store. Routes are `#chat=<room>`. |
+| `web/src/shell/client.ts` | 1,754 | `loadThread`, `postThread`, `markThreadRead`, `onThread`, `convs`, `conv*` (about 215 lines) go. |
 | `web/src/ui/convs.tsx`, `links.tsx`, `conv-events.tsx` | 910 | Out. Archives (q6) open in the ordinary room view, read-only. |
-| `web/src/sw.ts`, `tap.ts`, `main.tsx` | | Taps open `#chat=<room>`. Pushes now come from control (`control: true`), not the daemon. |
-| `web/src/ui/phone.tsx` | 392 | Nothing of its own: the Chat button shows on control's `chat` flag rather than a daemon's `hasThreads()`, and the chat page's phone layout (#889) stays. |
-| `web/src/hand.ts` | | Unchanged (S33's phone hand has no chat). |
+| `web/src/shell/sw.ts`, `tap.ts`, `main.tsx` | | Taps open `#chat=<room>`. Pushes now come from control (`control: true`), not the daemon. |
+| `web/src/shell/ui/phone.tsx` | 392 | Nothing of its own: the Chat button shows on control's `chat` flag rather than a daemon's `hasThreads()`, and the chat page's phone layout (#889) stays. |
+| `web/src/shell/hand.ts` | | Unchanged (S33's phone hand has no chat). |
 
 **Who "me" is:** the control account, not each daemon's presence principal (`chatMe()`, `meMatcher`).
 

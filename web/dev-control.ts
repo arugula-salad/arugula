@@ -71,7 +71,7 @@ import { join } from "node:path";
 import type { Server } from "node:http";
 import { Device } from "./fixtures/device.ts";
 import { fakeGithub, fakeManagoat, type FakeTurn } from "./fixtures/fakes.ts";
-import { fingerprint, type Cert } from "./src/e2e/cert.ts";
+import { fingerprint, type Cert } from "./src/shell/e2e/cert.ts";
 
 // An agent's pane exports ARUGULA_* (the socket, keep-panes…) that would
 // change what these daemons do (#682): not theirs.

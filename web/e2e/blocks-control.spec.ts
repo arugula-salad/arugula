@@ -22,7 +22,7 @@ import { expect, test, type BrowserContext, type Frame, type Page } from "@playw
 import { createServer, type ViteDevServer } from "vite";
 import { fakeGithub } from "../fixtures/fakes.ts";
 import { closeContexts, menu, paneEl } from "./helpers";
-import type { PaneId } from "../src/proto";
+import type { PaneId } from "../src/shared/proto";
 import { ANY, controlPort } from "./ports";
 
 test.afterAll(closeContexts);

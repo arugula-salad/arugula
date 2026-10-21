@@ -20,7 +20,7 @@ throttled phone from 3.7 s to about 0.35 s:
   - `0.4.0`: `latest`, released 2025-12-09.
   - `0.4.0-next.20.g1858a59`: `next`, 2026-06-28; repo `main` is the same commit.
   - Both embed Ghostty `5714ed07a` (2025-12-01) plus a 65 KB patch (`patches/ghostty-wasm-api.patch`).
-- **xterm.js** `@xterm/xterm` 6.0.0, with unicode11 0.9.0 and webgl 0.19.0, configured as in `web/src/terminal-view.ts`. The harness uses WebGL except on touch devices.
+- **xterm.js** `@xterm/xterm` 6.0.0, with unicode11 0.9.0 and webgl 0.19.0, configured as in `web/src/shell/terminal-view.ts`. The harness uses WebGL except on touch devices.
 - **Upstream libghostty-vt wasm.** Built from S5's pinned Ghostty `22d13172` (the daemon's engine) with Zig 0.16:
   - command: `zig build -Demit-lib-vt -Dtarget=wasm32-freestanding`;
   - ReleaseSmall is 851 KB (262 KB gzip); ReleaseFast is 5.3 MB.

@@ -18,7 +18,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { chromium, expect, test, type FrameLocator, type Page } from "@playwright/test";
 import { menu, paneEl, panes, ready, reset, run, closeContexts } from "./helpers";
-import type { PaneId } from "../src/proto";
+import type { PaneId } from "../src/shared/proto";
 import { tokenCookies } from "./local-token";
 import { ANY, blockPort, daemonPort } from "./ports";
 import { iphone, launchWebkit, pixel7 } from "./phones";

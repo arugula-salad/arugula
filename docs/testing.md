@@ -26,7 +26,7 @@ or an account skip without it and name what's missing
 | Command | What it runs | In CI |
 |---|---|---|
 | `cargo nextest run --workspace` (in `just test`) | unit tests in every crate, and the daemon's integration tests in `crates/daemon/tests/`, `ssh.rs` and `reboot.rs` among them (Docker); the [client fixtures](#client-fixtures) both ways | Linux and macOS |
-| `just e2e-interop` (in `just test`) | the browser's end-to-end crypto (`web/src/e2e`) against Rust's (`crates/e2e`): certificate vectors made by `crates/e2e/examples/interop.rs` and the ones checked in (`crates/e2e/fixtures/`), and a Noise handshake with its `responder` | Linux and macOS |
+| `just e2e-interop` (in `just test`) | the browser's end-to-end crypto (`web/src/shell/e2e`) against Rust's (`crates/e2e`): certificate vectors made by `crates/e2e/examples/interop.rs` and the ones checked in (`crates/e2e/fixtures/`), and a Noise handshake with its `responder` | Linux and macOS |
 | `just test-platform-postgres` | the platform's tests (`arugula-platform`) again on Postgres 17, in a container of their own: `ARUGULA_TEST_POSTGRES_URL` gives each test a schema there (`Db::test`) where it would have SQLite in memory | Linux (Docker) |
 | `just control-smoke` (in `just test`) | `web/control-smoke.ts`: a fake GitHub, Stripe, push service and Sprites API, the real `arugula-control` and real daemons; headless devices sign in, enroll, approve the daemons' join codes and reach them directly and through the relay; the CLI (M49) logs in with a code the device approves and, with no daemon of its own, runs, lists and captures on one machine directly and one through the relay | Linux and macOS |
 | `just e2e` | the Playwright specs in `web/e2e/` against throwaway daemons (`just e2e <url>` tests a running one): the `chrome` project, and `webkit` for `*.webkit.spec.ts` | Linux (Playwright's Chromium and WebKit) |
@@ -477,7 +477,7 @@ snapshot as the daemon seals it (#1066): a fixed key, id, version and
 nonces, the parts in base64, and the manifest and assets they hold. A Rust
 test (`docs/link.rs`) checks the encrypt path makes the file byte for byte
 (`UPDATE_LINK_VECTOR=1` rewrites it) and opens it; `web/e2e/doc-link.spec.ts`
-opens it with `web/src/doc-link.ts`, the code the page behind a link runs, on
+opens it with `web/src/shell/doc-link.ts`, the code the page behind a link runs, on
 WebCrypto in Node, and checks that swapped parts, a part of another version
 or link, a cut-off end and a wrong key don't open. The same spec reads
 `web/dist/doc.html` and checks the page loads only the Doc renderer: no
@@ -699,7 +699,7 @@ step needs a line there; stations are placed by hand in the same file.
 Anything that waits for a person to approve it on a signed-in device (a
 daemon's `arugulad join`, a second browser, a CLI) is approved in tests by
 `web/fixtures/device.ts`. It's the web client's own e2e code
-(`web/src/e2e`) without a page: it signs in through control's GitHub
+(`web/src/shell/e2e`) without a page: it signs in through control's GitHub
 sign-in (against the fake GitHub in `web/fixtures/fakes.ts`, which signs in
 whoever the device names), makes and enrolls device keys, and checks
 everything it accepts against the account root it pinned, as the browser

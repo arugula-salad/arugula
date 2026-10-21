@@ -19,7 +19,7 @@ Checked 2026-10-02 against chant `6fcb9f34` (0.87.0).
 - **The throwaway block,** on branch `s21-workspace-block` only, not to merge:
   - `BlockType::Workspace` and `crates/daemon/src/workspace.rs`. It includes `model.rs` by path, so the block and the CLI can't disagree.
   - `illogical workspace [DIR] [--env E]`.
-  - A web renderer (`web/src/blocks/workspace.tsx`) and a TUI note.
+  - A web renderer (`web/src/shell/blocks/workspace.tsx`) and a TUI note.
   - Methods: `refresh`, `approve {member, op, gate}`, `member {name}`, `state`.
 
 Tried on a dev daemon against:

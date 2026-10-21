@@ -203,7 +203,7 @@ idle and busy.
 
 ### The prototype
 
-`sw-proto/` bundles the app's own `web/src/e2e` code into a classic service
+`sw-proto/` bundles the app's own `web/src/shell/e2e` code into a classic service
 worker (18 KB unminified). On a push, the worker:
 
 1. loads the device keys the page made (non-extractable X25519 and Ed25519,

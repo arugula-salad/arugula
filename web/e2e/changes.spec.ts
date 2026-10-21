@@ -13,7 +13,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
 import { open, text, closeContexts } from "./helpers";
-import type { PaneId } from "../src/proto";
+import type { PaneId } from "../src/shared/proto";
 import { ANY, daemonPort } from "./ports";
 import { deliver, FakePush, tap } from "./phones";
 import { labs } from "./labs";

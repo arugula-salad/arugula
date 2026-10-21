@@ -26,15 +26,15 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-06"
 reviews: []
 constrains:
-  - "path:web/src/proto.gen.ts"
-  - "path:web/src/proto.ts"
+  - "path:web/src/shared/proto.gen.ts"
+  - "path:web/src/shared/proto.ts"
   - "path:crates/proto/src/ts.rs"
 ---
 
 # TypeScript types are generated from `proto`
 
-`web/src/proto.gen.ts` comes from the Rust types (`ts-rs`, `just proto-ts`),
-and CI fails when it is stale. The hand-written `web/src/proto.ts` is being
+`web/src/shared/proto.gen.ts` comes from the Rust types (`ts-rs`, `just proto-ts`),
+and CI fails when it is stale. The hand-written `web/src/shared/proto.ts` is being
 retired.
-Where: `crates/proto/src/ts.rs`, `justfile` (`proto-ts`), `web/src/proto.gen.ts`.
+Where: `crates/proto/src/ts.rs`, `justfile` (`proto-ts`), `web/src/shared/proto.gen.ts`.
 From: #387 (the arch tracker), #396.

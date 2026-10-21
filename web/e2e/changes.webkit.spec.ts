@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { open, text } from "./helpers";
 import { daemon, FakePush, iphone } from "./phones";
-import type { PaneId } from "../src/proto";
+import type { PaneId } from "../src/shared/proto";
 
 let dir = "";
 let repo = "";

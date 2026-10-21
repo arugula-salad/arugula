@@ -1,6 +1,6 @@
 import { defineConfig } from "vite";
 
-// Control's files for block origins (M50, src/block/), each built by itself
+// Control's files for block origins (M50, src/shell/block/), each built by itself
 // into dist/block/<mode>.js as one classic script: `--mode boot`, `sw` or
 // `shim`. Control serves them at /.arugula/<mode>.js on block origins only
 // (crates/control/src/blocks.rs).
@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
       outDir: "dist/block",
       emptyOutDir: false,
       target: "es2022",
-      lib: { entry: `src/block/${mode}.ts`, formats: ["iife"], name: `arugulaBlock_${mode}`, fileName: () => `${mode}.js` },
+      lib: { entry: `src/shell/block/${mode}.ts`, formats: ["iife"], name: `arugulaBlock_${mode}`, fileName: () => `${mode}.js` },
     },
   };
 });

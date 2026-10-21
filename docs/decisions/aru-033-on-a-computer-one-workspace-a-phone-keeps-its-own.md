@@ -26,10 +26,10 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-18"
 reviews: []
 constrains:
-  - "path:web/src/ui/app.tsx"
-  - "path:web/src/ui/shell"
-  - "path:web/src/ui/panes"
-  - "path:web/src/appearance.ts"
+  - "path:web/src/shell/ui/app.tsx"
+  - "path:web/src/shell/ui/shell"
+  - "path:web/src/shell/ui/panes"
+  - "path:web/src/shared/appearance.ts"
 ---
 
 # On a computer, one workspace; a phone keeps its own
@@ -47,6 +47,6 @@ untouched by it. Slate is the dark palette when none is picked; a picked
 one is kept. Every palette's UI text is drawn at WCAG AA against its
 backgrounds: `legible()` moves a color that falls short toward white or
 black as little as it takes, so palettes keep their hues and the terminal
-colors aren't touched. Where: `web/src/ui/app.tsx`, `web/src/ui/shell/`,
-`web/src/ui/panes/`, `legible()` in `web/src/appearance.ts`. From: S39,
+colors aren't touched. Where: `web/src/shell/ui/app.tsx`, `web/src/shell/ui/shell/`,
+`web/src/shell/ui/panes/`, `legible()` in `web/src/shared/appearance.ts`. From: S39,
 M107–M113 (#1022–#1028).

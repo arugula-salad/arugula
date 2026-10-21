@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { devices, expect, test, type Page } from "@playwright/test";
-import type { PaneId } from "../src/proto";
+import type { PaneId } from "../src/shared/proto";
 import { menu, open, paneEl, panes, ready, reset, text } from "../e2e/helpers";
 import { labs } from "../e2e/labs";
 import "../e2e/local-token";

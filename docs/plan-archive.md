@@ -950,7 +950,7 @@ instead.
 
 - **What landed:**
   - **A remote block** (`BlockType::Remote`, `crates/daemon/src/remote.rs`): a leaf of the home daemon's tree whose config is `{host, pane}`, a host in its list and the pane's id there. It's a block, so `layout.json`, restore, split, move, dock, break out and close all work as for any block; the daemon never talks to the other host about it. `/api/blocks` takes `type: remote` only for a host in the list, never the daemon itself.
-  - **The web client** (`web/src/blocks/remote.ts`) draws it: one connection per host serves every remote pane on it (a `Client` with `only`, which attaches just those panes), and the pane's xterm sits in the block's slot, so moving it never redraws it. The slot's badge names the host; the tab gets a host tag. While the host can't be reached the terminal greys out under "box is unreachable · reconnecting…", and the connection's usual retries bring it back by itself.
+  - **The web client** (`web/src/shell/blocks/remote.ts`) draws it: one connection per host serves every remote pane on it (a `Client` with `only`, which attaches just those panes), and the pane's xterm sits in the block's slot, so moving it never redraws it. The slot's badge names the host; the tab gets a host tag. While the host can't be reached the terminal greys out under "box is unreachable · reconnecting…", and the connection's usual retries bring it back by itself.
   - **Making one:** *New tab on box* (the `+` button's right-click menu) and *Split right on box* (a pane's menu); the page asks the host for a shell (`/api/run`, in a session named after the home daemon), then records its place (`/api/blocks`). If recording fails it closes the pane there. `illogical --host box run --home [--split %N] [cmd]` does the same from the CLI.
   - **Sizes:** the window that sizes the home tab sends the host the size of the pane's place (`view`, zoomed if the host's tab has other panes); typing in it claims the home tab first, so "last input wins" holds across both.
   - **Closing:** closing it here (the pane, its tab or its session) closes it on the host too, from the web and from `illogical close`; a pane its host closed leaves the layout here, removed by the first client that sees it gone.
@@ -3007,9 +3007,9 @@ One live view of every pane on every machine you (or your team) can see. Panes f
 **Done 2026-10-02, apart from real phones and a real provider sandbox.**
 
 - **What landed:**
-  - **Every host at once** (`web/src/fleet.ts`): the page holds a summaries-only connection (M23) to every host in the directory, control's list or the home daemon's, each over its usual transport and its own end-to-end channel. The tab view still connects for real to the one host it shows, so a pane's output is attached only when it's opened (`fleet.open(host, pane)`, which also wakes a sleeping sandbox).
+  - **Every host at once** (`web/src/shell/fleet.ts`): the page holds a summaries-only connection (M23) to every host in the directory, control's list or the home daemon's, each over its usual transport and its own end-to-end channel. The tab view still connects for real to the one host it shows, so a pane's output is attached only when it's opened (`fleet.open(host, pane)`, which also wakes a sleeping sandbox).
   - **One model:** a pane is `host:pane` (`FleetPane`: the host, its `PaneInfo`, its session, `stale`, and the host's owner and team from control's directory). Each host is `connected`, `stale` (dropped, with when it was last heard), `offline` (never reached, or gone a minute), `asleep` or `capped`. A host that's away keeps its panes in view from the last summary, greyed (`stale: true`), and the last summaries are kept in `localStorage` for the next load.
-  - **One socket to control for every relayed daemon** (`/api/relay/m`, `web/src/e2e/relaymux.ts`): numbered channels (`OPEN`, `OPENED`, `DATA`, `CLOSE`) inside one WebSocket, each carrying one daemon's Noise channel through the daemon's existing relay stream, so the daemon side is unchanged. Control routes, checks `may_reach` per channel, counts bytes per account and slows free accounts over their allowance, as for `/api/relay/c/<id>`. The tab view's own channel goes the same way. Hosted sandboxes keep a socket each (their provider's proxy). A control without the route falls back to a socket per daemon.
+  - **One socket to control for every relayed daemon** (`/api/relay/m`, `web/src/shell/e2e/relaymux.ts`): numbered channels (`OPEN`, `OPENED`, `DATA`, `CLOSE`) inside one WebSocket, each carrying one daemon's Noise channel through the daemon's existing relay stream, so the daemon side is unchanged. Control routes, checks `may_reach` per channel, counts bytes per account and slows free accounts over their allowance, as for `/api/relay/c/<id>`. The tab view's own channel goes the same way. Hosted sandboxes keep a socket each (their provider's proxy). A control without the route falls back to a socket per daemon.
   - **Behaving well:**
     - connects go through a limiter (4 at a time, each holding its slot until it connects or fails, at most 3 s), with jitter;
     - after a wake (a gap in the page's timers, the page becoming visible, or `online`) every host that's down reconnects, spread over 1.5 s;
@@ -3040,7 +3040,7 @@ One live view of every pane on every machine you (or your team) can see. Panes f
 
 - **What landed:**
   - **Where:** `/#swarm`, from a *Swarm* button beside the tabs, the host menu and the phone's sheet. It draws every pane in the fleet (M25, M30), and works with one daemon too.
-  - **The field** (`web/src/swarm/field.ts`, ported from the prototype):
+  - **The field** (`web/src/shell/swarm/field.ts`, ported from the prototype):
     - every pane is a tile on one Canvas 2D, coloured by kind and lit by activity;
     - tiles are pulled toward their cluster's centre by how busy they are, and pushed apart through a grid;
     - it shows stubs when you zoom in, and a header with the command and machine at reading zoom (no live text: that's after the MVP);
@@ -3276,7 +3276,7 @@ S17's notes for M28:
 
 **Built 2026-10-03.** The swarm's bar has *Theme*: **blocks** (M26's field, the default) or **city**, the same panes in 3D, remembered per browser (`illogical.swarm.theme`). The mockup it came from: <https://claude.ai/artifact/J9usdMhboLiQPUjG4Pvkt1>.
 
-- **One scene interface.** `SwarmScene` (`set`, `regroup`, `fitAll`, `diveTo`, `start`/`stop`/`resize`, `clusters`, `screenOf`, `measure`) in `field.ts`; `Field` implements it, and so does `City` (`web/src/swarm/city.ts`). The view makes one or the other on a canvas of its own (a canvas with a 2D context can't take WebGL) and feeds both the same `FieldPane`s, which grew what the city needs: `id`, `sub` (the row: machine, or project when clustering by machine), `bps`, `started` (the running command's `started_ms`), `lastDur`, `lastExit`, `people` (watchers other than you, `driving` for the driver), `att.since`.
+- **One scene interface.** `SwarmScene` (`set`, `regroup`, `fitAll`, `diveTo`, `start`/`stop`/`resize`, `clusters`, `screenOf`, `measure`) in `field.ts`; `Field` implements it, and so does `City` (`web/src/shell/swarm/city.ts`). The view makes one or the other on a canvas of its own (a canvas with a 2D context can't take WebGL) and feeds both the same `FieldPane`s, which grew what the city needs: `id`, `sub` (the row: machine, or project when clustering by machine), `bps`, `started` (the running command's `started_ms`), `lastDur`, `lastExit`, `people` (watchers other than you, `driving` for the driver), `att.since`.
 - **What the city means (every channel one thing a pane reports).**
   - A block is a cluster; its rows are machines; lots go in pane order, so a pane keeps its address and buildings move only on a regroup (or when panes come and go in its block).
   - Height: how long its command has run, `0.45 + 1.4·log2(1 + s/8)` (13 at most), kept from `last` when it's done; while it waits on you (a reason newer than its start) it stops at `since`. Servers, logs, studio apps and editors (they run until stopped), and PRs and issues (not processes), stand low and fixed.
@@ -3293,7 +3293,7 @@ S17's notes for M28:
 
 #### M42: the hive and the timeline themes (#117)
 
-**Built 2026-10-03.** Two more themes under *Theme*, taken from a mockup of nine views: <https://claude.ai/artifact/NZoeJbYneDHuyZcxKYC36D>. Both are Canvas 2D `SwarmScene`s on a shared base, `Flat` (`web/src/swarm/flat.ts`). The base handles the camera, pan, zoom, pinch, fitting to what the bar and rail leave free, hover, click, right-click and the frame-rate check. Each theme is its own lazy chunk, like the city: the hive is about 2.5 kB gzipped and the timeline about 3.5 kB.
+**Built 2026-10-03.** Two more themes under *Theme*, taken from a mockup of nine views: <https://claude.ai/artifact/NZoeJbYneDHuyZcxKYC36D>. Both are Canvas 2D `SwarmScene`s on a shared base, `Flat` (`web/src/shell/swarm/flat.ts`). The base handles the camera, pan, zoom, pinch, fitting to what the bar and rail leave free, hover, click, right-click and the frame-rate check. Each theme is its own lazy chunk, like the city: the hive is about 2.5 kB gzipped and the timeline about 3.5 kB.
 
 - **Hive** (`hive.ts`): one hex cell per pane, in a comb per cluster.
   - Cells spiral out from the comb's middle by row (machine), then pane number, so a pane keeps its cell until a regroup.
@@ -3523,7 +3523,7 @@ Answer these before M33. Each answer goes in as a fixture or a measured number:
 
 #### M33: as built
 
-**Done 2026-10-02.** `crates/daemon/src/conversations/` (the index, liveness and the converter), the agent block's `import` and `fork` (`crates/daemon/src/agent/mod.rs`), `/api/conversations` and `/api/conversations/open`, `illogical claude ls|open` and `agent --resume|--fork`, MCP `list_conversations` and `open_conversation`, `web/src/ui/conversations.tsx` and the block's Continue/Fork, and Ctrl-] `C` in the TUI. docs/features.md has how it's used.
+**Done 2026-10-02.** `crates/daemon/src/conversations/` (the index, liveness and the converter), the agent block's `import` and `fork` (`crates/daemon/src/agent/mod.rs`), `/api/conversations` and `/api/conversations/open`, `illogical claude ls|open` and `agent --resume|--fork`, MCP `list_conversations` and `open_conversation`, `web/src/shell/ui/conversations.tsx` and the block's Continue/Fork, and Ctrl-] `C` in the TUI. docs/features.md has how it's used.
 
 - **The index** is read when asked (the picker, `ls`, MCP), not watched: it stats every transcript and reads the two ends of the ones whose size or mtime changed, so a new or finished session is there on the next listing. A cold listing of geek's 387 took 0.6 s; later ones only reread what changed.
 - **Decisions (2026-10-02):**
@@ -3688,7 +3688,7 @@ A studio box as a block: the app in the frame (its own origin, so no block site)
 **Done 2026-10-02 (tracker #86).**
 
 - **The block and the follower:**
-  - The block is `crates/daemon/src/apps/` (`mod.rs` the block, `studio.rs` studio's client, `hud.rs` S22's follower) and `web/src/blocks/app.tsx`.
+  - The block is `crates/daemon/src/apps/` (`mod.rs` the block, `studio.rs` studio's client, `hud.rs` S22's follower) and `web/src/shell/blocks/app.tsx`.
   - Config `{box_url, app, studio, title?, follower?}`. The owner-only `enter {to?}` method mints a fresh `/__enter` link that the frame navigates to after its first load. The link is never in the frame's `src`, the config, the log or storage.
   - `Api::Ask` takes browser and app blocks. An ask carries `source` and `agent` (the card says "hud asks"), and the bundle and project come from the block.
   - The follower holds its own cookie jar from a minted link, kept in memory only and re-minted on a 401. It follows each of hud's tabs with backoff and posts answers with the box's own `Origin`.
@@ -3810,7 +3810,7 @@ Answer these before M36. Each answer goes in as a fixture or a measured number:
   - `checkout`: a terminal block in that worktree (`.illogical/worktrees/pr-N`, or the repo's own convention if it has one), on the block's host.
 - **`capture --text`:** the PR as text (header, body, reviews, checks, the timeline), for agents.
 - **Ways in:** `illogical pr [URL | REPO#N | N]` (N in the current repo), *Open pull request…* in the picker, a PR link in a terminal (OSC 8 or a plain URL on a known forge host), MCP `open_pr`, and the swarm (kind `pr`, filed under the repo's project).
-- **Web:** `web/src/blocks/forge.tsx`: header, checks, reviews, the timeline, and the draft asks. The phone's sheet puts what waits on you first. A TUI line.
+- **Web:** `web/src/shell/blocks/forge.tsx`: header, checks, reviews, the timeline, and the draft asks. The phone's sheet puts what waits on you first. A TUI line.
 
 **Tests:** adapter unit tests on S23's fixtures (every review and check state); daemon tests for attention, drafts as asks and the viewer's refusal, against a fake Forgejo (recorded responses, ETags included); an e2e spec on a Forgejo in CI if one is cheap to run, else the fake.
 
@@ -3818,7 +3818,7 @@ Answer these before M36. Each answer goes in as a fixture or a measured number:
 
 #### M36: as built
 
-**Done 2026-10-02 (merged as `e01f369`; the real-write "done when" is Jake's, below).** `crates/daemon/src/forge/` (`mod.rs` the block, `model.rs` S23's normalized model and the attention rules, `forgejo.rs` the adapter, `login.rs` tea logins and tokens), `illogical pr` (and `pr comment|review|merge`), MCP `open_pr`, `read_pr`, `pr_comment`, `pr_review`, `pr_merge`, `web/src/blocks/forge.tsx`, a TUI line, swarm kind `pr`. docs/features.md has how it's used.
+**Done 2026-10-02 (merged as `e01f369`; the real-write "done when" is Jake's, below).** `crates/daemon/src/forge/` (`mod.rs` the block, `model.rs` S23's normalized model and the attention rules, `forgejo.rs` the adapter, `login.rs` tea logins and tokens), `illogical pr` (and `pr comment|review|merge`), MCP `open_pr`, `read_pr`, `pr_comment`, `pr_review`, `pr_merge`, `web/src/shell/blocks/forge.tsx`, a TUI line, swarm kind `pr`. docs/features.md has how it's used.
 
 - **The block.** `BlockType::Forge`, config `{provider, api?, login?, repo, kind: pr, number, host?, dir?}` plus what it has seen (`seen_ms`, `done_ack`, `log_mark`) and the drafts still waiting. Opened from a link, `OWNER/REPO#N` or N (`forge::open_config`: the clone's `upstream`, else `origin`).
   - **The adapter trait** (`me`, `poll`, `rest`, `write`, `repo_urls`) returns the normalized model, so M38/M39 add a file each. `Write` is `comment | review {event} | merge {style}`.
@@ -3856,7 +3856,7 @@ Answer these before M36. Each answer goes in as a fixture or a measured number:
 
 #### M37: as built
 
-**Done 2026-10-03 on branch `m37-forge-issues` (not merged; the real "done when" is a write, Jake's, below).** `crates/daemon/src/forge/issue.rs` (the issue's read, *Agent on this*, new issues), additions to `model.rs` and `forgejo.rs`, `illogical issue` (and `issue new|comment|agent`), MCP `open_issue`, `read_issue`, `issue_comment`, `issue_new`, the issue view in `web/src/blocks/forge.tsx`, swarm kind `issue`. docs/features.md and docs/cli.md say how it's used.
+**Done 2026-10-03 on branch `m37-forge-issues` (not merged; the real "done when" is a write, Jake's, below).** `crates/daemon/src/forge/issue.rs` (the issue's read, *Agent on this*, new issues), additions to `model.rs` and `forgejo.rs`, `illogical issue` (and `issue new|comment|agent`), MCP `open_issue`, `read_issue`, `issue_comment`, `issue_new`, the issue view in `web/src/shell/blocks/forge.tsx`, swarm kind `issue`. docs/features.md and docs/cli.md say how it's used.
 
 - **The block.** `kind: issue` on M36's forge block, same config, login, polling and log. The model gains `ItemKind::Issue`, `Issue {item, events, linked}` and `Linked` (a PR that refers to it: number, title, state, url). A poll is `GET issues/N` (it refuses a PR's number: "open it as one"); the timeline is read again when the fingerprint (`updated_at`, comments, state, assignees) moves. Linked PRs come from the timeline's refs whose `ref_issue.pull_request` is set (no extra request). Timeline events now carry an assignment's target (`assigned X` / `unassigned X`) and a ref's `#N`.
   - **The adapter** gains `issue`, `issue_events`, `pr_by_head`, `new_issue` and `default_branch`, each with a default that says "not on this forge yet", so M38's and M39's adapters compile and work for PRs without them (merged with both cleanly on that basis).
@@ -3897,7 +3897,7 @@ Answer these before M36. Each answer goes in as a fixture or a measured number:
 
 #### M38: as built
 
-**Done 2026-10-03 on branch `m38-forge-github` (the write part of "done when" is Jake's, below).** `crates/daemon/src/forge/github.rs` (the adapter, gh and its token, ETags, the rate limit), small changes to `forge/mod.rs` (GitHub's connect, `rate` in the state, GitHub links and clones in `open_config`, the rerun note), `model.rs` (`Provider::Github`, `CheckSource::CheckRun`, `EventKind::Mentioned` and its attention rule), `illogical pr rerun %N`, `web/src/blocks/forge.tsx` (*Rerun*, the rate note) and `client.ts` (`/pull/N` links in terminals). It reuses M39's `rerun_checks` write and the rail's `rerun` routing. REST, not GraphQL, as S23 said. docs/features.md has how it's used.
+**Done 2026-10-03 on branch `m38-forge-github` (the write part of "done when" is Jake's, below).** `crates/daemon/src/forge/github.rs` (the adapter, gh and its token, ETags, the rate limit), small changes to `forge/mod.rs` (GitHub's connect, `rate` in the state, GitHub links and clones in `open_config`, the rerun note), `model.rs` (`Provider::Github`, `CheckSource::CheckRun`, `EventKind::Mentioned` and its attention rule), `illogical pr rerun %N`, `web/src/shell/blocks/forge.tsx` (*Rerun*, the rate note) and `client.ts` (`/pull/N` links in terminals). It reuses M39's `rerun_checks` write and the rail's `rerun` routing. REST, not GraphQL, as S23 said. docs/features.md has how it's used.
 
 - **The block.** The same `forge` block with `provider: github`, `api: https://api.github.com` (GitHub Enterprise: `https://HOST/api/v3`, URL building only). Opened from `https://github.com/O/R/pull/N` (`illogical pr URL`, *Open pull request…*, MCP `open_pr`, a link in a terminal; a `/pull/N` link on another host is taken as Enterprise), or `OWNER/REPO#N` / `N` in a clone whose remote is on github.com (`git@github.com:`, `ssh.github.com`, https).
   - **Login:** `gh auth token --hostname H` through `Runner::user` (#74), held in memory by host and asked again after a 401 (a test hands out a stale token first). The block's `login` is the host; `login {name}` says gh's is used. A Forgejo-provider block whose host no tea login has been picked for, and that gh has a token for, becomes GitHub Enterprise. **Changed from the spec:** that check is `gh auth token --hostname H` (keyring, no request), not `gh auth status`, which validates each token against its host; the answer is cached per host.
@@ -3925,7 +3925,7 @@ Answer these before M36. Each answer goes in as a fixture or a measured number:
 
 #### M39: as built
 
-**Done 2026-10-03 on branch `m39-forge-gitlab` (the authenticated and write part of "done when" is Jake's, below).** `crates/daemon/src/forge/gitlab.rs` (the adapter, glab and its token), small changes to `forge/mod.rs` (the provider's connect, `read_only`, `rerun_checks`, GitLab links in `open_config`), `model.rs` (`Provider::Gitlab`, `CheckSource::PipelineJob`, `CheckState::Manual`), `api.rs` (*Rerun* on a forge block), `web/src/blocks/forge.tsx` and `client.ts` (MR links in terminals). docs/features.md has how it's used.
+**Done 2026-10-03 on branch `m39-forge-gitlab` (the authenticated and write part of "done when" is Jake's, below).** `crates/daemon/src/forge/gitlab.rs` (the adapter, glab and its token), small changes to `forge/mod.rs` (the provider's connect, `read_only`, `rerun_checks`, GitLab links in `open_config`), `model.rs` (`Provider::Gitlab`, `CheckSource::PipelineJob`, `CheckState::Manual`), `api.rs` (*Rerun* on a forge block), `web/src/shell/blocks/forge.tsx` and `client.ts` (MR links in terminals). docs/features.md has how it's used.
 
 - **The block.** The same `forge` block with `provider: gitlab`, `api: https://HOST/api/v4`, `repo` the project path (subgroups too: `group/sub/proj`, URL-encoded to `group%2Fsub%2Fproj`) and `number` the MR's `iid`. Opened from `…/G/[SUB/]P/-/merge_requests/N` (`illogical pr URL`, *Open pull request…*, MCP `open_pr`, a link in a terminal), `GROUP/PROJECT!N`, or `N`/`REPO#N` in a clone whose remote is gitlab.com or a `gitlab.` host (others say `provider`).
   - **Login:** `glab config get token --host H` through `Runner::user` (#74), when glab knows the host: gitlab.com, `glab config get host`, or a host in its `config.yml`. The token is held in memory by host and asked again after a 401, never in config, state or logs (the tests grep for it). The block's `login` is `glab:HOST`; `login {name}` is tea's and says so.
@@ -3960,7 +3960,7 @@ Answer these before M36. Each answer goes in as a fixture or a measured number:
 
 #### M40: as built
 
-**Done 2026-10-03, released in v0.8.0.** Control is deployed with the App's six `GITHUB_APP_*` secrets (imported from `~/.config/illogical/github-app-forge.env`). An unsigned POST to `/github/webhook` gets 401, and GitHub's redelivered ping got 200 (the first ping, sent before the route existed, got 404). The real-forge checks are Jake's, in #93. `crates/control/src/forge.rs` (the App, webhooks, subscriptions, tokens) and small changes to `relay.rs` (text messages both ways on a daemon's socket), `db.rs`, `main.rs`; `crates/daemon/src/forge/live.rs` (pokes, health, hooks to the daemon, App tokens) and small additive changes to `forge/mod.rs` (`live_key`, `poked`, the wait, `live` as a write, the state's `live*`), `forgejo.rs`/`gitlab.rs` (`hook`), `github.rs` (the App fallback), `control.rs`, `dial.rs`, `server.rs`, `authz.rs`; *Live updates* in `web/src/blocks/forge.tsx`. docs/control.md has the App's setup; docs/features.md the live updates.
+**Done 2026-10-03, released in v0.8.0.** Control is deployed with the App's six `GITHUB_APP_*` secrets (imported from `~/.config/illogical/github-app-forge.env`). An unsigned POST to `/github/webhook` gets 401, and GitHub's redelivered ping got 200 (the first ping, sent before the route existed, got 404). The real-forge checks are Jake's, in #93. `crates/control/src/forge.rs` (the App, webhooks, subscriptions, tokens) and small changes to `relay.rs` (text messages both ways on a daemon's socket), `db.rs`, `main.rs`; `crates/daemon/src/forge/live.rs` (pokes, health, hooks to the daemon, App tokens) and small additive changes to `forge/mod.rs` (`live_key`, `poked`, the wait, `live` as a write, the state's `live*`), `forgejo.rs`/`gitlab.rs` (`hook`), `github.rs` (the App fallback), `control.rs`, `dial.rs`, `server.rs`, `authz.rs`; *Live updates* in `web/src/shell/blocks/forge.tsx`. docs/control.md has the App's setup; docs/features.md the live updates.
 
 - **Control's GitHub App.** Config is exactly the manifest flow's names: `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET`, `GITHUB_APP_WEBHOOK_SECRET`, and `GITHUB_APP_PRIVATE_KEY_FILE` (a `.pem`) or `GITHUB_APP_PRIVATE_KEY` (the PEM itself, `\n`s allowed: the Fly form). PKCS#1 or PKCS#8, signed with `aws-lc-rs` (already in the tree through rustls; no OpenSSL). Off without an id and key. With no `GITHUB_CLIENT_ID/SECRET`, the App's client id and secret sign people in (the App needs the callback URL for that). `control.json` says `github_app: SLUG`.
   - **JWT:** RS256, `iat` now−60, `exp` now+540, `iss` the App id.
@@ -4492,7 +4492,7 @@ See #130.
 ### Command palette (#139, built 2026-10-04)
 
 - **Chord:** Ctrl+Shift+P, and Cmd+Shift+P on a Mac (the desktop app's Edit-only menu leaves Cmd chords to the page). Caught on `window` in the capture phase like the picker's Ctrl+Shift+G, so a focused terminal never sees it. Firefox keeps Ctrl+Shift+P for a private window; the session menu's *Command palette…* opens it there. Blocks in a cross-origin iframe (web pages, editors, studio apps) keep their keys until focus is back on the page.
-- **One registry:** `web/src/ui/commands.tsx` builds the pane, tab, `+` and session menus, and the palette reads the same lists, so a menu item is a palette command without more work. A `MenuItem` can carry a `shortcut`, shown in both.
+- **One registry:** `web/src/shell/ui/commands.tsx` builds the pane, tab, `+` and session menus, and the palette reads the same lists, so a menu item is a palette command without more work. A `MenuItem` can carry a `shortcut`, shown in both.
 - **Also in it:** jumps to sessions, tabs, panes (in split tabs) and workspace blocks by name; the swarm, and the next pane that needs you (in the tabs or in the swarm).
 - **Recent picks** come first, kept in `localStorage` (per browser; nothing synced).
 - **Phone:** a full-height sheet like the picker's, from the sheet's *Commands* button; the keyboard stays down until the filter is tapped.

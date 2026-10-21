@@ -30,7 +30,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Cert } from "../../web/src/e2e/cert.ts";
+import type { Cert } from "../../web/src/shell/e2e/cert.ts";
 import { Device } from "../../web/fixtures/device.ts";
 import { fakeGithub } from "../../web/fixtures/fakes.ts";
 

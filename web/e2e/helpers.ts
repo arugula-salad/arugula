@@ -2,10 +2,10 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Browser, type Locator, type Page } from "@playwright/test";
-import type { Client } from "../src/client";
-import type { HostDirectory } from "../src/hosts";
-import type { ControlSession } from "../src/control";
-import type { PaneId, TabView } from "../src/proto";
+import type { Client } from "../src/shell/client";
+import type { HostDirectory } from "../src/shell/hosts";
+import type { ControlSession } from "../src/shell/control";
+import type { PaneId, TabView } from "../src/shared/proto";
 
 declare global {
   interface Window {
@@ -14,9 +14,9 @@ declare global {
       hosts: HostDirectory;
       remotes: { client(host: string): Client | undefined };
       control: ControlSession | null;
-      fleet: import("../src/fleet").Fleet;
+      fleet: import("../src/shell/fleet").Fleet;
       /** M123: control's chat. */
-      chat: import("../src/chat-store").ChatStore;
+      chat: import("../src/shared/chat-store").ChatStore;
       summaries(): Client;
       text(pane: PaneId): string;
       screen(pane: PaneId): string;

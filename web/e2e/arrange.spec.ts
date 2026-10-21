@@ -4,7 +4,7 @@
 // placed anew; focus gives back exactly the layout it hid.
 
 import { expect, test, type Page } from "@playwright/test";
-import type { Node, PaneId } from "../src/proto";
+import type { Node, PaneId } from "../src/shared/proto";
 import { active, closeContexts, paneEl, panes, ready, reset, run, tab, text } from "./helpers";
 
 test.afterAll(closeContexts);

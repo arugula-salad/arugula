@@ -348,7 +348,7 @@ Here is what M35 built on this branch, and what M36 changes to put a draft on a 
    comment), `source: "forge"`, and `agent: "<MCP client>"` ("claude-code drafted a comment on #84").
    Answer with the edited `{body}` to send it, or *decline* to drop it.
    - The web's generic form draws a string as a one-line `<input type="text">`
-     (`web/src/blocks/ask.tsx`, `FormCard`), so M36 adds a `<textarea>` for `format: "markdown"` (or
+     (`web/src/shared/ask.tsx`, `FormCard`), so M36 adds a `<textarea>` for `format: "markdown"` (or
      `maxLength` > 200).
 3. **`approve` collides.** `api.rs`'s `call` route sends `approve`, `deny`, `answer` and `decline` on a
    block that *holds an ask* to `answer_terminal`. The only exception is an `approve` with `key` or

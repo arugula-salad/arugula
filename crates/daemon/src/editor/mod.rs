@@ -585,7 +585,7 @@ printf '%s\n%s\n%s\n' "$d" "$f" "$g""#;
 /// (no block listener: `sites::Scheme::Channel`) leaves it empty, and the
 /// page that frames the block on control's block origin (M50) puts that
 /// origin's host in, as it does for every `vscode-remote://` in the
-/// address (`web/src/blocks/through-control.ts`, `blockSrc`): which origin
+/// address (`web/src/shell/blocks/through-control.ts`, `blockSrc`): which origin
 /// a block is shown on is the viewer's choice, not the daemon's.
 fn open_payload(origin: &str, file: &str, line: Option<u32>) -> String {
     let authority = origin.split_once("://").map_or(origin, |(_, a)| a);

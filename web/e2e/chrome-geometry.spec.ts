@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
-import type { Layout } from "../src/proto";
-import { paneChrome, HEADER_HEIGHT, PANE_GAP } from "../src/ui/panes/chrome-geometry";
+import type { Layout } from "../src/shared/proto";
+import { paneChrome, HEADER_HEIGHT, PANE_GAP } from "../src/shell/ui/panes/chrome-geometry";
 const cell = { width: 8, height: 17 };
 const asymmetric: Layout = {
   panes: [[1, { x: 0, y: 0, cols: 40, rows: 30 }], [2, { x: 41, y: 0, cols: 59, rows: 12 }], [3, { x: 41, y: 13, cols: 59, rows: 17 }]],

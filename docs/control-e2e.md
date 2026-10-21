@@ -232,7 +232,7 @@ A passkey created with the `prf` extension returns 32 bytes per salt, the
 same every time for that credential. Since #764 those bytes are the
 browser's device keys, where the passkey gives them:
 
-- **Derivation** (`adoptPrfKeys` in `web/src/e2e/keys.ts`): every passkey
+- **Derivation** (`adoptPrfKeys` in `web/src/shell/e2e/keys.ts`): every passkey
   ceremony (making one, signing in) asks for PRF at two fixed salts,
   `"arugula device noise v1"` and `"arugula device sign v1"`. Each output
   goes through HKDF-SHA256 (no salt, `info` `"arugula device x25519 v1"` or
@@ -404,7 +404,7 @@ fingerprint:
   must be that request's keys' code, so control can't swap the key, and
   sends with the certificate it signs
   `HMAC-SHA256(secret, "arugula device secret v1", account, root, the device's id and keys)`
-  (`deviceMac` in `web/src/e2e/cert.ts`), where the root is the one the
+  (`deviceMac` in `web/src/shell/e2e/cert.ts`), where the root is the one the
   approving device pinned. Control keeps it with the device (`mac`) and
   hands it over with the approval (`GET /api/devices/{id}`).
 - **The new device checks it** against the account and root control names
@@ -784,7 +784,7 @@ state (the daemon's `Site::site_key`). There control serves only:
 | Path | What |
 |---|---|
 | any navigation the worker didn't answer | the bootstrap page: `<meta name=arugula-control content="<control's origins>">` and `/.arugula/boot.js`, under `default-src 'none'; script-src 'self'; …; frame-ancestors <control's origins>` |
-| `/.arugula/boot.js`, `/.arugula/sw.js`, `/.arugula/shim.js` | `web/src/block/`'s scripts; the worker gets `Service-Worker-Allowed: /` and no CSP |
+| `/.arugula/boot.js`, `/.arugula/sw.js`, `/.arugula/shim.js` | `web/src/shell/block/`'s scripts; the worker gets `Service-Worker-Allowed: /` and no CSP |
 | any request with `Service-Worker: script` | `self.ARUGULA_APP_SW="<path>";importScripts("/.arugula/sw.js")`: the app's own worker, run inside the block's |
 | `/.arugula/relay?d=<daemon id>` | the block's channel through the relay, for a socket whose `Origin` is the block's own |
 | anything else | 503: the worker wasn't in the way |
@@ -797,7 +797,7 @@ daemon and one that isn't connected get the same 404.
 
 ### The frame's contract with control's page
 
-The bootstrap page, the worker and the shim (`web/src/block/`) talk to the
+The bootstrap page, the worker and the shim (`web/src/shell/block/`) talk to the
 page that framed them with `postMessage`. Every message carries
 `arugula: "arugula-block"` and `v: 1`.
 
@@ -866,7 +866,7 @@ page that framed them with `postMessage`. Every message carries
 
 ### Control's page, the parent
 
-`web/src/blocks/through-control.ts` and `block-frame.tsx` (#150, PR 4):
+`web/src/shell/blocks/through-control.ts` and `block-frame.tsx` (#150, PR 4):
 
 - **When:** a port or editor block whose state has a `site_key`, on a
   machine this page reaches through a control whose `/control.json` says
@@ -891,10 +891,10 @@ page that framed them with `postMessage`. Every message carries
 - **The route:** the daemon's `wss://…/e2e` when this page's own channel
   went there directly, except in WebKit (Safari, every iOS browser,
   WebKitGTK); else the relay.
-- **The device channel** (`web/src/e2e/channel.ts`) reads message 2 before
+- **The device channel** (`web/src/shell/e2e/channel.ts`) reads message 2 before
   it treats a close as a failed handshake, so a refusal with the close
   reads as one.
-- **Which way it went** (`web/src/blocks/block-route.ts`): each block
+- **Which way it went** (`web/src/shell/blocks/block-route.ts`): each block
   through control shows "direct" or "relayed" from its frame's `route`,
   or "own site" once it fell back to the machine's own block site, in a
   corner of its frame. That's the worker's channel (the block's

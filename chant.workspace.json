@@ -110,7 +110,7 @@
       "name": "proto",
       "dir": "crates/proto",
       "kind": "other",
-      "because": "a Rust library crate: the wire protocol between arugulad and its clients, and the TypeScript copy web/src/proto.gen.ts",
+      "because": "a Rust library crate: the wire protocol between arugulad and its clients, and the TypeScript copy web/src/shared/proto.gen.ts",
       "outputs": ["crate", "ts"],
       "links": [
         { "member": "core", "output": "crate" },

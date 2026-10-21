@@ -28,7 +28,7 @@ reviews: []
 constrains:
   - "path:crates/e2e/src/cert.rs"
   - "path:crates/control/src/api.rs"
-  - "path:web/src/control.ts"
+  - "path:web/src/shell/control.ts"
 ---
 
 # A refused approval names the check, and isn't a turn-down
@@ -43,5 +43,5 @@ join waiting; only *Cancel* turns a machine down. A browser checks its own key
 against the account's trust before it offers *Approve*.
 Why: "doesn't check out" left people with no way forward, and a failed
 approval was recorded as a rejection.
-Where: `crates/e2e/src/cert.rs` (`Trust::refusal`, `Refusal`), `crates/control/src/api.rs` (`approval_ok`), `web/src/control.ts` (`REFUSED`, the `untrusted` phase).
+Where: `crates/e2e/src/cert.rs` (`Trust::refusal`, `Refusal`), `crates/control/src/api.rs` (`approval_ok`), `web/src/shell/control.ts` (`REFUSED`, the `untrusted` phase).
 From: #327, #330.

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { open, reset, closeContexts, text } from "./helpers";
-import type { PaneId } from "../src/proto";
+import type { PaneId } from "../src/shared/proto";
 
 const cli = resolve("../target/debug/arugula");
 const fixtures = resolve("../crates/daemon/tests/fixtures");

@@ -5,7 +5,7 @@
 //! - Binary frames carry terminal bytes with a fixed header ([`Frame`]).
 //!
 //! The web client's copy of these types is generated from them
-//! (`web/src/proto.gen.ts`, `just proto-ts`); CI fails when it's stale.
+//! (`web/src/shared/proto.gen.ts`, `just proto-ts`); CI fails when it's stale.
 
 use serde::{Deserialize, Serialize};
 
@@ -465,7 +465,7 @@ pub struct AskRef {
     /// reason rides in every attention event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
-    #[cfg_attr(feature = "ts", ts(type = "import(\"./blocks/ask\").Question[]"))]
+    #[cfg_attr(feature = "ts", ts(type = "import(\"./ask\").Question[]"))]
     pub questions: Option<Box<serde_json::Value>>,
 }
 
@@ -1055,13 +1055,13 @@ pub struct PaneInfo {
     /// A question open in a terminal (Claude Code's AskUserQuestion, through
     /// its hook), drawn as a card beside it (M6c).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    // The web client's card types live with the card (web/src/blocks/ask.tsx).
-    #[cfg_attr(feature = "ts", ts(type = "import(\"./blocks/ask\").Ask | null"))]
+    // The web client's card types live with the card (web/src/shared/ask.tsx).
+    #[cfg_attr(feature = "ts", ts(type = "import(\"./ask\").Ask | null"))]
     pub ask: Option<ask::Ask>,
     /// Who answered its last question or approval, and how (M29), until
     /// it asks again. For agent blocks too.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(type = "import(\"./blocks/ask\").Answered | null"))]
+    #[cfg_attr(feature = "ts", ts(type = "import(\"./ask\").Answered | null"))]
     pub answered: Option<ask::Answered>,
     /// An edit Claude Code in this terminal proposes, waiting as a diff
     /// (M28: arugulad as its IDE).

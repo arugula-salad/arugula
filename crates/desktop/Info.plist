@@ -8,7 +8,7 @@
      .command scripts (run in a new tab), as an alternate handler, so it
      never takes them from Terminal unless someone picks it.
      NSMicrophoneUsageDescription: a lent device's record_audio (S33,
-     web/src/hand.ts): an agent asks, the person allows it, the page records. -->
+     web/src/shell/hand.ts): an agent asks, the person allows it, the page records. -->
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>

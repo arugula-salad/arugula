@@ -28,9 +28,9 @@ reviews: []
 constrains:
   - "path:crates/e2e/src/team.rs"
   - "path:crates/control/src/teams.rs"
-  - "path:web/src/e2e/team.ts"
-  - "path:web/src/control.ts"
-  - "path:web/src/ui/control.tsx"
+  - "path:web/src/shell/e2e/team.ts"
+  - "path:web/src/shell/control.ts"
+  - "path:web/src/shell/ui/control.tsx"
 ---
 
 # Every team invite link carries a one-time key; admitting someone compares nothing
@@ -47,5 +47,5 @@ rather than kept on a compare path.
 Why: the fingerprint was 16 hex digits of someone else's device, which
 nobody checked; the link already reaches the right person, so make it prove
 that.
-Where: `crates/e2e/src/team.rs` (`AskInvite`), `crates/control/src/teams.rs` (`invite`, `accept_invite`), `web/src/e2e/team.ts` (`askOk`), `web/src/control.ts` (`makeInvite`, `acceptInvite`, `loadTeams`), `web/src/ui/control.tsx` (`AdmitPrompt`), [docs/control-e2e.md](docs/control-e2e.md).
+Where: `crates/e2e/src/team.rs` (`AskInvite`), `crates/control/src/teams.rs` (`invite`, `accept_invite`), `web/src/shell/e2e/team.ts` (`askOk`), `web/src/shell/control.ts` (`makeInvite`, `acceptInvite`, `loadTeams`), `web/src/shell/ui/control.tsx` (`AdmitPrompt`), [docs/control-e2e.md](docs/control-e2e.md).
 From: #762, #765.

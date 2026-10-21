@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
 import { paneEl, ready, text, type as typeIn } from "./helpers";
 import { ANY, daemonPort } from "./ports";
-import type { PaneId } from "../src/proto";
+import type { PaneId } from "../src/shared/proto";
 import { labs } from "./labs";
 
 let homeUrl = "";

@@ -5,8 +5,8 @@
 // and a text alternative; a line a path a series.
 
 import { expect, test } from "@playwright/test";
-import { buildChart, checkChart, checkSpec, niceTicks, parseChart, summary, type El, type Spec } from "../src/ui/chart";
-import { assetName, checkEmbeds, checkSvg, fences, imageRefs, plain, svgUrl } from "../src/ui/embeds";
+import { buildChart, checkChart, checkSpec, niceTicks, parseChart, summary, type El, type Spec } from "../src/shared/ui/chart";
+import { assetName, checkEmbeds, checkSvg, fences, imageRefs, plain, svgUrl } from "../src/shared/ui/embeds";
 import { example, examples, expected } from "./doc-examples";
 
 const all = (el: El, tag: string): El[] => [...(el.tag === tag ? [el] : []), ...el.kids.flatMap((k) => all(k, tag))];

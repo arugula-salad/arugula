@@ -15,7 +15,7 @@
 //! asks, kept between [`Patience::floor`] and [`Patience::per_wait`], or a
 //! doubling backoff when it asks nothing, until [`Patience::total`] is spent.
 //! The daemon and the CLI share it; the web client has its own copy
-//! (`web/src/maintenance.ts`).
+//! (`web/src/shared/maintenance.ts`).
 
 use std::time::Duration;
 

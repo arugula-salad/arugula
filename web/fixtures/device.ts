@@ -15,10 +15,10 @@
 // docs/testing.md describes both.
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { certBody, deviceMac, evaluate, joinCode, joinMac, revocationBody, splitJoinCode, unhex, type Cert, type Revocation } from "../src/e2e/cert.ts";
-import { E2ESocket } from "../src/e2e/channel.ts";
-import { generateKeys, signText, type DeviceKeys } from "../src/e2e/keys.ts";
-import { askBody, askOk, inviteKey, newInviteKey, signAskInvite, signRoster, teamJoinBody, word, type AccountCerts, type AskInvite, type Roster, type TeamPin, type TeamRole } from "../src/e2e/team.ts";
+import { certBody, deviceMac, evaluate, joinCode, joinMac, revocationBody, splitJoinCode, unhex, type Cert, type Revocation } from "../src/shell/e2e/cert.ts";
+import { E2ESocket } from "../src/shell/e2e/channel.ts";
+import { generateKeys, signText, type DeviceKeys } from "../src/shell/e2e/keys.ts";
+import { askBody, askOk, inviteKey, newInviteKey, signAskInvite, signRoster, teamJoinBody, word, type AccountCerts, type AskInvite, type Roster, type TeamPin, type TeamRole } from "../src/shell/e2e/team.ts";
 
 const subtle = globalThis.crypto.subtle;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

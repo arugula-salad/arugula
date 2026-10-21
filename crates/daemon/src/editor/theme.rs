@@ -1,6 +1,6 @@
 //! An editor block's colors follow the page's palette (#1048).
 //!
-//! The page makes VS Code's colors from its palette (`web/src/editor-theme.ts`)
+//! The page makes VS Code's colors from its palette (`web/src/shell/editor-theme.ts`)
 //! and sends them with the block's `theme` call. They go into the block's
 //! workspace file as settings (Arugula's dark or light theme, with the
 //! palette's colors over it), and VS Code applies a change to that file at
