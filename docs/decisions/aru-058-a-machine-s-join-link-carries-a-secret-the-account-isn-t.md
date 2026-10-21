@@ -29,7 +29,7 @@ constrains:
   - "path:crates/e2e/src/cert.rs"
   - "path:crates/daemon/src/control.rs"
   - "path:crates/cli/src/control.rs"
-  - "path:web/src/shell/ui/control.tsx"
+  - "path:web/src/shell/trust/approve.tsx"
   - "path:web/src/shell/control.ts"
 ---
 
@@ -47,5 +47,5 @@ take a PAKE. Older daemons and CLIs, and a control that doesn't say
 `join_secret`, keep comparing the account's fingerprint.
 Why: a compare only works if the person actually compares, and over ssh it
 meant going back to the terminal to type `y`.
-Where: `crates/e2e/src/cert.rs` (`join_secret`, `join_mac`), `crates/daemon/src/control.rs` (`join_start`, `join_finish`, `AccountCheck`), `crates/cli/src/control.rs` (`login`), `web/src/shell/ui/control.tsx` (`JoinPrompt`), `web/src/shell/control.ts` (`approveJoin`, `signInNext`), [docs/control-e2e.md](docs/control-e2e.md#joining-a-machine-the-secret-in-its-link).
+Where: `crates/e2e/src/cert.rs` (`join_secret`, `join_mac`), `crates/daemon/src/control.rs` (`join_start`, `join_finish`, `AccountCheck`), `crates/cli/src/control.rs` (`login`), `web/src/shell/trust/approve.tsx` (`JoinPrompt`), `web/src/shell/control.ts` (`approveJoin`, `signInNext`), [docs/control-e2e.md](docs/control-e2e.md#joining-a-machine-the-secret-in-its-link).
 From: #760, #765.

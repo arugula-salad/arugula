@@ -31,7 +31,7 @@ constrains:
   - "path:crates/control/src/labs_flags.rs"
   - "path:crates/control/src/api.rs"
   - "path:crates/daemon/src/control.rs"
-  - "path:web/src/shell/ui/control.tsx"
+  - "path:web/src/shell/trust/teams.tsx"
   - "path:web/src/shell/ui/developer.tsx"
 ---
 
@@ -74,5 +74,5 @@ off locally:
   (`labs_flags`, owner `account:ID` or `team:ID`), and a daemon ignores one
   it doesn't have; the page offers the list it was built with (`FLAGS` in
   `proto.gen.ts`). Developer settings says where each flag comes from.
-Where: `crates/proto/src/flags.rs` (`explain`, `write_control`, `unset`), `crates/control-wire/src/team.rs` (`TrustAnswer::flags`), `crates/control/src/labs_flags.rs`, `crates/control/src/api.rs` (`daemon_trust`), `crates/daemon/src/control.rs` (`refresh`), `web/src/shell/ui/control.tsx` (`LabsFlagList`), `web/src/shell/ui/developer.tsx`.
+Where: `crates/proto/src/flags.rs` (`explain`, `write_control`, `unset`), `crates/control-wire/src/team.rs` (`TrustAnswer::flags`), `crates/control/src/labs_flags.rs`, `crates/control/src/api.rs` (`daemon_trust`), `crates/daemon/src/control.rs` (`refresh`), `web/src/shell/trust/teams.tsx` (`LabsFlagList`), `web/src/shell/ui/developer.tsx`.
 From: #347 (decided by Jake, 2026-10-12; who sees the lists and the local-only flags on PR #828, the same day).

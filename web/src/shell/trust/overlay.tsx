@@ -1,0 +1,154 @@
+// Control's overlay over the app (M17): one thing at a time, in order of
+// what needs an answer first (recovery codes to keep, a link's join, device
+// or invite; a device or machine asking; a session offered; what control
+// kept to say), else the dialog the account menu opened, else the one-time
+// usage counts question. Also the account's and the host menu's items.
+//
+// The dialogs that are the platform's (plan and usage, Cloud agents, usage
+// reports) are drawn by web/src/platform/settings/ from what's passed them:
+// they never see the control session (M149).
+
+import { useEffect, useState } from "preact/hooks";
+import { CloudAgents } from "../../platform/settings/cloud-agents";
+import { Plan } from "../../platform/settings/plan";
+import { TelemetryAsk } from "../../platform/settings/telemetry";
+import type { MenuItem } from "../../shared/ui/menu";
+import { Modal } from "../../shared/ui/modal";
+import { DEVICE_HASH, inviteInHash, JOIN_HASH, type ControlSession } from "../control";
+import { directory } from "../hosts";
+import { enableControlPush } from "../push";
+import { SharedDocs } from "../ui/shared-docs";
+import { AccountPanel } from "./account";
+import { DeviceLinkPrompt, DevicePrompt, JoinPrompt } from "./approve";
+import { openPanel, useControl, usedLink, type Panel } from "./common";
+import { AddDevice, Devices } from "./devices";
+import { AddMachine } from "./machines";
+import { AdmitPrompt, AppLoginDone, AppLoginPrompt, InvitePrompt, Joined, Notice, PresignedPrompt, ShareOfferPrompt } from "./prompts";
+import { RecoveryCodes } from "./recovery";
+import { Teams } from "./teams";
+
+/** Over the app: approval prompts, a daemon's join, the device list. */
+export function ControlOverlay({ s }: { s: ControlSession }) {
+  useControl(s);
+  const [hash, setHash] = useState(location.hash);
+  const [panel, setPanel] = useState<null | Panel>(null);
+  useEffect(() => {
+    const on = () => setHash(location.hash);
+    const open = (e: Event) => setPanel((e as CustomEvent<Panel>).detail);
+    const cloudMessage = (event: MessageEvent) => {
+      if (event.data?.type === "open-cloud-run" && /^run_[0-9a-f]+$/.test(event.data.run)) location.hash = `cloud=${event.data.run}`;
+      if (event.data?.type === "open-cloud-tab" && /^cw_[0-9a-f]+$/.test(event.data.cloud_workspace) && /^cwc_[0-9a-f]+$/.test(event.data.cloud_tab)) {
+        location.hash = `cloud-ws=${event.data.cloud_workspace}/${event.data.cloud_tab}`;
+      }
+    };
+    navigator.serviceWorker?.addEventListener("message", cloudMessage);
+    addEventListener("hashchange", on);
+    addEventListener("arugula:control-panel", open);
+    // Says the panel event has a listener, so a test can wait for it
+    // rather than send one into nothing.
+    document.documentElement.dataset.controlPanels = "";
+    // Mounted afresh (the page switches machine when one is approved, and
+    // that happens before the prompt clears the hash): catch up with a
+    // hashchange that fired before this listener was there.
+    on();
+    return () => {
+      navigator.serviceWorker?.removeEventListener("message", cloudMessage);
+      removeEventListener("hashchange", on);
+      removeEventListener("arugula:control-panel", open);
+      delete document.documentElement.dataset.controlPanels;
+    };
+  }, []);
+  if (s.phase !== "ready") return null;
+  if (s.recoveryCodes) return <RecoveryCodes s={s} />;
+  const join = JOIN_HASH.exec(hash);
+  if (join) return <JoinPrompt s={s} code={join[1]} device={join[2]} />;
+  // #761: a waiting device's code, scanned with the camera or opened.
+  const device = DEVICE_HASH.exec(hash)?.[1];
+  if (device) return <DeviceLinkPrompt key={device} s={s} whole={device} />;
+  // The app's device asking to be approved comes first: it's the next step
+  // after allowing its sign-in.
+  const appLogin = /^#app=([0-9a-f]{16,128})$/.exec(hash)?.[1];
+  if (appLogin && !s.pending[0]) return <AppLoginPrompt s={s} id={appLogin} />;
+  if (hash === "#app-done" && !s.pending[0]) return <AppLoginDone />;
+  const invite = inviteInHash(hash) ?? inviteInHash(usedLink);
+  if (invite)
+    return invite.presigned ? (
+      <PresignedPrompt s={s} team={invite.team} seed={invite.code} />
+    ) : (
+      <InvitePrompt s={s} team={invite.team} code={invite.code} old={invite.old} />
+    );
+  // Someone used an invite to a team I own: add them (sign the roster)?
+  const req = s.teams.flatMap((t) => (t.role === "owner" ? t.requests.map((r) => ({ t, r })) : []))[0];
+  if (req) return <AdmitPrompt s={s} team={req.t} req={req.r} />;
+  const asking = s.pending[0];
+  // #326: a device that came to approve a machine's join: both together.
+  const asked = asking && s.pendingJoins.get(asking.device);
+  if (asking && asked) return <JoinPrompt key={asked} s={s} code={asked} from={asking} />;
+  if (asking) return <DevicePrompt key={asking.device} s={s} c={asking} />;
+  const offer = s.offers[0];
+  if (offer) return <ShareOfferPrompt s={s} o={offer} />;
+  if (s.joined) return <Joined s={s} />;
+  const notice = s.notices[0];
+  if (notice) return <Notice s={s} n={notice} />;
+  const cloudRun = /^#cloud=(run_[0-9a-f]+)$/.exec(hash)?.[1];
+  if (panel === "cloud") {
+    const close = () => setPanel(null);
+    return <CloudAgents run={cloudRun} close={close} notify={() => enableControlPush(s.info.vapid, (sub) => s.subscribePush(sub))} />;
+  }
+  if (panel === "devices") return <Devices s={s} close={() => setPanel(null)} />;
+  if (panel === "teams") return <Teams s={s} close={() => setPanel(null)} />;
+  if (panel === "plan") return <Plan billing={s.billing} upgrade={(team) => s.upgrade(team)} close={() => setPanel(null)} />;
+  if (panel === "shared-docs")
+    return (
+      <Modal close={() => setPanel(null)}>
+        <SharedDocs s={s} close={() => setPanel(null)} />
+      </Modal>
+    );
+  if (panel === "account")
+    return (
+      <Modal close={() => setPanel(null)}>
+        <AccountPanel s={s} close={() => setPanel(null)} />
+      </Modal>
+    );
+  if (panel === "add-device") return <AddDevice s={s} close={() => setPanel(null)} />;
+  if (panel === "add")
+    return (
+      <Modal close={() => setPanel(null)}>
+        <h2>Add a machine</h2>
+        <AddMachine s={s} />
+      </Modal>
+    );
+  // M104: asked once, when nothing else is.
+  if (s.askTelemetry())
+    return (
+      <TelemetryAsk answer={(on) => void s.setTelemetry(on).catch(() => {})} later={() => s.telemetryNotNow()} />
+    );
+  return null;
+}
+
+/** For the host menu. */
+export function controlMenuItems(s: ControlSession): MenuItem[] {
+  const shown = s.daemons.find((d) => d.name === directory.current);
+  return [
+    "separator",
+    ...(s.stale ? [{ header: "Control unreachable" } as MenuItem] : []),
+    ...(s.sandboxesOpen ? [{ label: "New hosted VM", run: () => void s.startSandbox() }] : []),
+    ...(shown?.sandbox ? [{ label: "Delete this VM", run: () => void s.deleteSandbox(shown.sandbox!) }] : []),
+    { label: "Add a machine…", run: openPanel("add") },
+  ];
+}
+
+/** The account's own items, in the account menu on every page (the bar's,
+ * and the no-machines screen's, #97). Sign out is the menu's own, last. */
+export function accountItems(s: ControlSession, docs = false): MenuItem[] {
+  return [
+    { label: "Teams…", run: openPanel("teams") },
+    { label: "Devices and machines…", run: openPanel("devices") },
+    // #1066: follows the `docs` flag of the machine shown.
+    ...(docs ? [{ label: "Shared Docs…", run: openPanel("shared-docs") } as MenuItem] : []),
+    { label: "Cloud agents…", run: openPanel("cloud") },
+    { label: "Add a phone or browser…", run: openPanel("add-device") },
+    { label: "Sign-in and account…", run: openPanel("account") },
+    ...(s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: openPanel("plan") }] : []),
+  ];
+}

@@ -2767,8 +2767,8 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   line-height: 1.45;
 }
 
-/* The usage counts question (telemetry-card.tsx): a card in the corner,
-   over the page but not in its way. */
+/* The usage counts question (shared/ui/telemetry-card.tsx): a card in the
+   corner, over the page but not in its way. */
 .telemetry-card {
   position: fixed;
   z-index: 60;
