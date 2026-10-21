@@ -759,7 +759,7 @@ mod wire {
             "me": null, "pr": null, "issue": null, "link": null, "new": null, "wants": [], "rerun": null,
             "drafts": [], "updated_ms": 0, "polls": 0, "pokes": 0, "reads": 0, "watching": false, "said": null,
             "rate": null, "live": "polling", "live_via": null, "live_why": null, "live_heard_ms": null,
-            "hook": false,
+            "hook": false, "pin": null,
         })
     }
 
@@ -949,7 +949,7 @@ mod wire {
                     "rate": { "limit": 5000, "remaining": 90, "used": 4910, "reset": 1_790_000_000,
                               "requests": 12, "not_modified": 3, "backoff": "low" },
                     "live": "webhook", "live_via": "github-app", "live_why": null, "live_heard_ms": 98,
-                    "hook": false,
+                    "hook": false, "pin": null,
                 })
             );
         }
