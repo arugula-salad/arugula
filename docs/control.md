@@ -122,6 +122,22 @@ Agents use them through MCP: `forge_read` (kinds `pr`, `issue`, `items`,
 repo reads the platform's item too (`platform` in its answer), and `draft`
 on one keeps the draft on the platform (M170).
 
+**Pins (M172, #1218).** A PR or issue block on a repo linked for the
+machine's owner is a pin onto the platform's item (`pin: {kind,
+global_id}` in its config and state, kept in `layout.json`): the daemon
+reads the item, its checks and its events from the platform, at most every
+10 seconds while it's drawn and at once on a poke, and makes no GitHub call
+for it. It looks as a block read from GitHub does, less the description
+and comments' text, which the mirror doesn't keep. Unlinked repos, Forgejo,
+GitLab and machines outside control read as before. The platform says it's
+unlinked: the block reads GitHub again. The platform can't be reached: the
+block shows what it said last for 10 minutes, then reads GitHub until it
+answers (after a restart, at once: a block is never blank). A person's
+comment, review or merge from a pinned block still goes out with their `gh`
+until sends are the platform's (M168). A machine reporting for M171's
+shadow period (`ARUGULA_INBOX_SHADOW`) doesn't pin, so its report stays
+GitHub's word.
+
 ```
 arugula pr view acme/app#7                # no block; also `issue view`
 arugula pr list acme/app --state open     # or --project; also `issue list`

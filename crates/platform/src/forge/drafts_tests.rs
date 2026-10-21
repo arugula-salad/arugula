@@ -198,11 +198,19 @@ async fn a_machine_asks_whether_a_repo_is_linked() {
     hub.daemon("eves", "eve", None);
     let (s, v) = machine(&base, "alice geek", "GET", "/api/forge/repos/Acme/App", None).await;
     assert_eq!(s, 200);
-    assert_eq!(v, json!({ "repo": "Acme/App", "linked": true, "project": team, "repo_id": 77, "why": null }));
+    // M172: and who the reader is on GitHub, for a block pinned to one of
+    // its items.
+    assert_eq!(
+        v,
+        json!({ "repo": "Acme/App", "linked": true, "project": team, "repo_id": 77, "why": null, "login": "alice-gh" })
+    );
     let (_, v) = machine(&base, "carol box", "GET", "/api/forge/repos/acme/app", None).await;
     assert_eq!((v["linked"].as_bool(), v["why"].as_str()), (Some(false), Some("no_github")));
     let (_, v) = machine(&base, "eve eves", "GET", "/api/forge/repos/acme/app", None).await;
-    assert_eq!(v, json!({ "repo": "acme/app", "linked": false, "project": null, "repo_id": null, "why": null }));
+    assert_eq!(
+        v,
+        json!({ "repo": "acme/app", "linked": false, "project": null, "repo_id": null, "why": null, "login": null })
+    );
     let (_, v) = machine(&base, "alice geek", "GET", "/api/forge/repos/acme/elsewhere", None).await;
     assert_eq!(v["linked"], false);
 }

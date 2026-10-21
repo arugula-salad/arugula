@@ -291,6 +291,11 @@ pub struct ForgeRepo {
     pub repo_id: Option<u64>,
     #[serde(default)]
     pub why: Option<String>,
+    /// M172: the reader's GitHub login, when it's linked for them: who
+    /// "you" are to a block pinned to one of its items, which reads no
+    /// GitHub of its own.
+    #[serde(default)]
+    pub login: Option<String>,
 }
 
 /// Drafts (M170): a comment, a review or a new issue on a linked repo,
