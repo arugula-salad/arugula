@@ -349,7 +349,7 @@ fn normalising_ignores_comments_quotes_and_spacing() {
 
 /// Postgres's tables are SQLite's (M143): the same tables, each with the
 /// same columns, each as nullable, but for the columns only Postgres has
-/// (chat's `search`, and `rowid` where SQLite's implicit one is read) and a
+/// (chat's and issues' `search`, and `rowid` where SQLite's implicit one is read) and a
 /// cloud secret's project, which is its key there. Runs when
 /// `ARUGULA_TEST_POSTGRES_URL` names a Postgres.
 #[test]
@@ -362,7 +362,8 @@ fn postgres_has_sqlites_tables() {
     if pg.dialect() != Dialect::Postgres {
         return;
     }
-    let only_postgres = ["chat_messages.search", "cloud_notifications.rowid", "cloud_workspace_specs.rowid"];
+    let only_postgres =
+        ["chat_messages.search", "issues.search", "cloud_notifications.rowid", "cloud_workspace_specs.rowid"];
     let columns = |db: &Db, sql: &str| -> Vec<(String, bool)> {
         db.c()
             .query_map(sql, params![], |r| {
@@ -379,7 +380,7 @@ fn postgres_has_sqlites_tables() {
         &Db::memory(),
         "SELECT m.name, p.name, CASE WHEN p.\"notnull\" = 1 OR p.pk > 0 THEN 1 ELSE 0 END
          FROM sqlite_master m, pragma_table_info(m.name) p
-         WHERE m.type = 'table' AND m.name NOT LIKE 'chat_fts%'",
+         WHERE m.type = 'table' AND m.name NOT LIKE 'chat_fts%' AND m.name NOT LIKE 'issues_fts%'",
     );
     let mut post = columns(
         &pg,
