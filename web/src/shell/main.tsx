@@ -1,5 +1,8 @@
 import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
-import { cloudFleet, cloudPanes, cloudWorkspaceRoute, cloudWorkspaces, useCloudPanes } from "../shared/cloud";
+import { cloudPanes, cloudWorkspaceRoute, cloudWorkspaces, useCloudPanes } from "../shared/cloud";
+import { cloudFleet } from "./cloud-fleet";
+import { shellPlatformApi } from "./platform-api";
+import { PlatformApiContext } from "../shared/platform-api";
 // Arugula web client: tabs and splits of terminals owned by the daemon.
 
 import { OPS, opPath } from "./ops";
@@ -348,13 +351,14 @@ function Swarm({ client }: { client: Client }) {
 
 const draw = () =>
   render(
-    <>
+    // What chat and the Cloud workspace views reach the shell through (M147).
+    <PlatformApiContext.Provider value={shellPlatformApi(client)}>
       {session ? <ControlRoot key={client.base} s={session} /> : <App key={client.base} client={client} cell={cell} />}
       <Swarm key={client.base} client={client} />
       <AgentDialogLayer />
       <AppearanceLayer />
       <MachineTelemetryLayer />
-    </>,
+    </PlatformApiContext.Provider>,
     root,
   );
 draw();

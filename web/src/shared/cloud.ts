@@ -2,9 +2,7 @@
 // content and authorization always come from control, independently of any
 // daemon. Cloud runs are retired (S40, M119): past ones stay readable at
 // `#cloud=run_…`, and Cloud workspaces (below) are where agents run now.
-import { createContext } from "preact";
-import { useContext, useEffect, useState } from "preact/hooks";
-import type { FleetPane } from "../shell/fleet";
+import { useEffect, useState } from "preact/hooks";
 import { maintenance, platformFetch, refusalOf } from "./maintenance";
 import type { CloudRun, CloudTab, CloudTabs, CloudWorkspace, CloudWorkspaces } from "./proto.gen";
 // Control's `/api/cloud/` types are generated from crates/cloud-wire
@@ -23,10 +21,9 @@ export async function cloudApi<T>(path: string, method = "GET", body?: unknown):
 }
 /** How a Cloud workspace view reaches control's `/api/cloud/`: on
  * control's page, `cloudApi` itself; in a Cloud workspace block (#1117),
- * the block's `cloud` method, which the daemon sends on as the machine. */
+ * the block's `cloud` method, which the daemon sends on as the machine.
+ * Views get it from the page (`useCloudApi`, ./platform-api). */
 export type CloudApi = <T>(path: string, method?: string, body?: unknown) => Promise<T>;
-export const CloudApiContext = createContext<CloudApi>(cloudApi);
-export const useCloudApi = () => useContext(CloudApiContext);
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 /** The shown past run (`#cloud=run_…`) or past tab (`#cloud=cwc_…`). */
@@ -60,9 +57,6 @@ function forgetOpenedRuns() {
     }
   } catch { /* private browsing */ }
 }
-/** Every cloud pane the swarm and the attention drawer draw: the Cloud
- * workspaces' tabs. */
-export const cloudFleet = (): FleetPane[] => cloudWorkspaces.fleet();
 /** Re-renders on Cloud workspaces and the route; returns the shown past
  * run, if one is. */
 export function useCloudPanes() {
@@ -155,18 +149,5 @@ export const cloudWorkspaces = {
     changed();
     return () => { active = false; clearTimeout(timer); this.poke = () => {}; this.account = ""; this.list = []; this.tabs = new Map(); this.loaded = false; changed(); };
   },
-  fleet(): FleetPane[] {
-    return this.list.flatMap((w) => (this.tabs.get(w.id) ?? []).map((t): FleetPane => {
-      const attention = cloudTabAttention(t);
-      const id = Number.parseInt(t.id.slice(4, 17), 16);
-      return {
-        key: `cloud:${t.id}`, host: "Cloud", id, cloudTab: { workspace: w.id, tab: t.id },
-        info: { id, epoch: 0, cwd: t.cwd, command: t.agent_name, running: attention === "working", policy: { kind: "none" }, current: null, last: null,
-          attention, integration: false, type: "agent", host: null, kind: "agent", title: `${t.agent_name} in ${w.name}`,
-          reason: attention === "needs_input" ? { kind: "input", since_ms: t.created, headline: `${t.agent_name} in ${w.name} waits for you`, actions: [] }
-            : t.status === "failed" ? { kind: "failed", since_ms: t.created, headline: t.error ?? `${t.agent_name} in ${w.name} failed`, actions: [] } : null },
-        session: { id: Number.parseInt(w.id.slice(3, 16), 16), name: w.name }, stale: !!this.error, person: { id: "me", name: "me", kind: "me" }, driver: null, watchers: [], unread: 0, mention: false,
-      };
-    }));
-  },
 };
+

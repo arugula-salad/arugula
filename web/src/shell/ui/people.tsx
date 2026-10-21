@@ -14,6 +14,7 @@ import { CopyText } from "../../shared/ui/copy";
 import { countView } from "../../shared/telemetry";
 import { canScan, Scanner } from "./scan";
 import { useEscape } from "./keys";
+import { colorOf } from "../../shared/chat/avatar";
 
 /** Control mode (M19): people are accounts there, and links go through it. */
 let control: ControlSession | null = null;
@@ -22,12 +23,8 @@ export function setControlSession(s: ControlSession | null) {
   control = s;
 }
 
-/** A steady colour per person. */
-export function colorOf(who: string): string {
-  let h = 0;
-  for (const c of who) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return `hsl(${h % 360} 70% 68%)`;
-}
+/** A steady colour per person (chat's avatars share it). */
+export { colorOf };
 
 function initials(name: string): string {
   const base = name.split("@")[0];

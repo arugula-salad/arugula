@@ -3,16 +3,14 @@
 // switcher (Ctrl/Cmd+K, drawn by ./chat-rooms) is open.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import { closeChat, openChat, openChatView, openRoom, type ChatRoute } from "../../shell/ui/places";
-import { getFleet } from "../../shell/ui/hosts";
 import { useSubscribe } from "../../shared/ui/hooks";
-import type { Fleet, FleetPane } from "../../shell/fleet";
-import { cardTitle, holdStill, reasonOf, shortHost, shortPaths, shownNow, wantsYou, whatItDoes } from "../../shell/swarm/model";
 import { Markup } from "../../shared/ui/markup";
-import { MsgAvatar } from "../../shell/ui/threads";
+import { MsgAvatar } from "../../shared/chat/avatar";
 import type { ChatStore } from "../../shared/chat-store";
 import type { ChatHit, ChatMessage, ChatRoom } from "../../shared/proto";
 import { roomLabel, roomSigil, machineName } from "../../shared/chat/room";
+import { usePlatformApi, type PlatformApi } from "../../shared/platform-api";
+import type { ChatRoute } from "../../shared/chat/route";
 
 function when(at: number): string {
   const d = new Date(at);
@@ -22,10 +20,11 @@ function when(at: number): string {
 }
 
 function ViewHead({ title, sub, phone }: { title: string; sub?: string; phone: boolean }) {
+  const { nav } = usePlatformApi();
   return (
     <header class="chat-head">
       {phone && (
-        <button class="chat-back" title="Every thread" onClick={() => openChat()}>
+        <button class="chat-back" title="Every thread" onClick={() => nav.openChat()}>
           ‹
         </button>
       )}
@@ -37,72 +36,11 @@ function ViewHead({ title, sub, phone }: { title: string; sub?: string; phone: b
   );
 }
 
-// ---- Activity
-/** Every pane on every machine that wants you: what the swarm's rail
- * shows, so Chat isn't quiet while agents ask and finish. */
-function needing(fleet: Fleet | null): FleetPane[] {
-  return (fleet?.panes ?? []).filter((p) => wantsYou(p)).sort((a, b) => (reasonOf(b)!.since_ms ?? 0) - (reasonOf(a)!.since_ms ?? 0));
-}
-
-function NeedsYou({ fleet, panes }: { fleet: Fleet; panes: FleetPane[] }) {
-  const [err, setErr] = useState("");
-
-  const dismiss = async (p: FleetPane) => {
-    acted.current.add(p.key);
-    setErr("");
-    const res = await fleet.request(p.host, "POST", "/api/attention/act", { action: "dismiss", pane: p.id }).catch((e: Error) => e);
-    if (res instanceof Error) setErr(res.message);
-    else if (!res.ok) setErr(`couldn't dismiss (${res.status})`);
-  };
-  // Rows hold still under the pointer, as the swarm's cards do.
-  const [held, setHeld] = useState(false);
-  const kept = useRef<(FleetPane & { gone?: boolean })[]>([]);
-  const acted = useRef(new Set<string>());
-  const rows = holdStill<FleetPane & { gone?: boolean }>(held, kept.current, panes, (p) => ({ ...p, gone: true }), acted.current);
-  kept.current = rows;
-  return (
-    <div class="activity-needs" data-activity-needs onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}>
-      <h3 class="activity-head">Needs you</h3>
-      {rows.map((p) => {
-        const r = p.gone ? p.info.reason : reasonOf(p);
-        if (!r) return null;
-        const owner = fleet.host(p.host)?.owner;
-        return (
-          <div key={p.key} class={p.gone ? "activity-need gone" : "activity-need"} inert={p.gone} data-need={p.key} data-kind={r.kind}>
-            <div class="activity-need-text">
-              <b>{cardTitle(r, 1, [p.host])}</b>
-              <span class="dim" title={`%${p.id} on ${p.host}`}>
-                {" "}
-                · {owner ? `${owner}'s · ` : ""}
-                {whatItDoes(p)} · {shortHost(p.host)}
-                {p.info.project?.name ? ` · ${p.info.project.name}` : ""}
-              </span>
-              <p title={r.headline}>{shortPaths(r.headline)}</p>
-            </div>
-            <div class="activity-need-buttons">
-              <button
-                class="pri"
-                onClick={() => {
-                  closeChat();
-                  fleet.open(p.host, p.id);
-                }}
-              >
-                Open
-              </button>
-              <button onClick={() => void dismiss(p)}>Dismiss</button>
-            </div>
-          </div>
-        );
-      })}
-      {err && <p class="control-error">{err}</p>}
-    </div>
-  );
-}
-
 // ---- control's chat (M123): search and Activity over its rooms
 
 /** A message found in a room, and a way there. */
 function RoomHits({ store, hits }: { store: ChatStore; hits: { room: string; m: ChatMessage }[] }) {
+  const api = usePlatformApi();
   return (
     <ul class="chat-hits">
       {hits.map(({ room, m }) => {
@@ -110,9 +48,9 @@ function RoomHits({ store, hits }: { store: ChatStore; hits: { room: string; m: 
         const unread = !!r && m.seq > r.read && !store.mine(m);
         return (
           <li key={`${room}/${m.seq}`}>
-            <button class={unread ? "chat-hit unread" : "chat-hit"} data-chat-hit={m.seq} data-hit-room={room} onClick={() => openRoom(room, m.seq)}>
+            <button class={unread ? "chat-hit unread" : "chat-hit"} data-chat-hit={m.seq} data-hit-room={room} onClick={() => api.nav.openRoom(room, m.seq)}>
               <span class="chat-hit-where">
-                <span>{r ? whereOf(r) : "a room"}</span>
+                <span>{r ? whereOf(r, api) : "a room"}</span>
                 <time>{when(m.at)}</time>
               </span>
               <span class="chat-hit-body">
@@ -130,9 +68,9 @@ function RoomHits({ store, hits }: { store: ChatStore; hits: { room: string; m: 
   );
 }
 
-function whereOf(r: ChatRoom): string {
-  const name = `${roomSigil(r)} ${roomLabel(r)}`;
-  return r.machine ? `${name} · ${machineName(r.machine, r.machine_name ?? "")}` : name;
+function whereOf(r: ChatRoom, api: PlatformApi): string {
+  const name = `${roomSigil(r)} ${roomLabel(r, api)}`;
+  return r.machine ? `${name} · ${machineName(api, r.machine, r.machine_name ?? "")}` : name;
 }
 
 /** Search over the rooms this person reads, by control (`GET
@@ -174,8 +112,8 @@ const ACTIVITY_ROOMS = 30;
 
 /** What needs you on every machine, and messages that mention you. */
 export function RoomActivityView({ store, phone }: { store: ChatStore; phone: boolean }) {
-  const fleet = getFleet();
-  useSubscribe((fn) => fleet?.subscribe(fn) ?? (() => {}));
+  const api = usePlatformApi();
+  useSubscribe((fn) => api.subscribe(fn));
   useSubscribe((fn) => store.subscribe(fn));
   // Recent mentions, read or not: the newest page of the rooms that spoke
   // most recently (those with an unread mention first), not only those
@@ -191,15 +129,16 @@ export function RoomActivityView({ store, phone }: { store: ChatStore; phone: bo
   const hits: { room: string; m: ChatMessage }[] = [];
   for (const r of store.rooms) for (const m of store.messages(r.id)?.list ?? []) if (m.mentions.includes(store.me) && m.deleted === null) hits.push({ room: r.id, m });
   hits.sort((a, b) => b.m.at - a.m.at);
-  const needs = needing(fleet);
-  shownNow(needs);
+  // What needs you on the machines, where this page sees them (the shell's).
+  const needs = api.needsYou?.count() ?? 0;
+  const NeedsYou = api.needsYou?.View;
   return (
     <section class="chat-thread chat-view" aria-label="Activity" data-chat-activity-view>
       <ViewHead title="Activity" sub="What needs you on every machine, and mentions of you" phone={phone} />
       <div class="thread-list">
-        {fleet && needs.length > 0 && <NeedsYou fleet={fleet} panes={needs} />}
-        {hits.length === 0 && needs.length === 0 && <p class="thread-empty">Nothing for you yet. When an agent asks you something or finishes, or someone @mentions you, it's here.</p>}
-        {hits.length > 0 && needs.length > 0 && <h3 class="activity-head">Messages</h3>}
+        {NeedsYou && <NeedsYou />}
+        {hits.length === 0 && needs === 0 && <p class="thread-empty">Nothing for you yet. When an agent asks you something or finishes, or someone @mentions you, it's here.</p>}
+        {hits.length > 0 && needs > 0 && <h3 class="activity-head">Messages</h3>}
         <RoomHits store={store} hits={hits.slice(0, 100)} />
       </div>
     </section>
@@ -210,6 +149,7 @@ export function RoomActivityView({ store, phone }: { store: ChatStore; phone: bo
  * it heads the results instead, opened from the list's search button: it
  * takes the focus when it's empty, and emptying it stays on the results. */
 export function SearchField({ route, phone }: { route: ChatRoute; phone?: boolean }) {
+  const { nav } = usePlatformApi();
   const shown = route.view === "search" ? (route.q ?? "") : "";
   const [text, setText] = useState(shown);
   const timer = useRef<number | undefined>(undefined);
@@ -224,7 +164,7 @@ export function SearchField({ route, phone }: { route: ChatRoute; phone?: boolea
   }, []);
   const go = (v: string, now = false) => {
     clearTimeout(timer.current);
-    const run = () => (v.trim() || phone ? openChatView("search", v.trim()) : route.view === "search" && openChat());
+    const run = () => (v.trim() || phone ? nav.openChatView("search", v.trim()) : route.view === "search" && nav.openChat());
     if (now) run();
     else timer.current = window.setTimeout(run, 200);
   };

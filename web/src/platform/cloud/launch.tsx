@@ -5,9 +5,10 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
-  cloudApi as api, cloudWorkspaceMounts, cloudWorkspaces, cloudWorkspaceState, useCloudPanes,
+  cloudWorkspaceMounts, cloudWorkspaces, cloudWorkspaceState, useCloudPanes,
   type CloudAgent, type CloudModel, type CloudTab, type CloudWorkspace, type CloudWorkspaceSpec,
 } from "../../shared/cloud";
+import { useCloudApi } from "../../shared/platform-api";
 
 /** Where the agent goes: a Cloud workspace's id, or a new one. */
 const NEW = "new";
@@ -26,6 +27,7 @@ export function cloudWorkspaceName(url: string): string {
 const usable = (w: CloudWorkspace) => w.status !== "deleting" && w.status !== "failed";
 
 export function CloudAgentLaunch({ close, choice }: { close: () => void; choice: ComponentChildren }) {
+  const api = useCloudApi();
   useCloudPanes();
   const list = cloudWorkspaces.list.filter(usable);
   // Until one is picked: the shown Cloud workspace, else the newest, else

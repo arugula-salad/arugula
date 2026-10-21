@@ -6,7 +6,8 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { CloudWorkspaceRebuildNote, RebuildCloudWorkspace } from "./workspace-rebuild";
-import { cloudApi as api, cloudWorkspaceRebuildBadge, cloudWorkspaces, type CloudWorkspace, type CloudWorkspaceChange, type CloudWorkspaceSpec } from "../../shared/cloud";
+import { cloudWorkspaceRebuildBadge, cloudWorkspaces, type CloudWorkspace, type CloudWorkspaceChange, type CloudWorkspaceSpec } from "../../shared/cloud";
+import { useCloudApi } from "../../shared/platform-api";
 
 /** Words split on commas and spaces: "ffmpeg, jq" → ["ffmpeg", "jq"]. */
 const words = (s: string) => s.split(/[\s,]+/).filter(Boolean);
@@ -98,6 +99,7 @@ export function CloudWorkspaceSettings({ w }: { w: CloudWorkspace }) {
 type RepositoryDraft = { url: string; ref: string; mount: string; secret: string };
 
 function CloudWorkspaceSettingsForm({ w, close }: { w: CloudWorkspace; close: () => void }) {
+  const api = useCloudApi();
   // A copy of the saved spec as it was when the form opened: the polls
   // don't move what's being typed.
   const [spec] = useState(() => w.saved_spec);

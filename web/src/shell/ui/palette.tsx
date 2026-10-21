@@ -13,7 +13,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { paneIds, tabLabel, type Client } from "../client";
 import type { PaneId } from "../../shared/proto";
-import { fuzzy } from "../fs";
+import { fuzzy } from "../../shared/fuzzy";
 import { countView } from "../../shared/telemetry";
 import { useWorkspaceDir } from "../blocks";
 import { closeSwarm, openSwarm, swarmRoute } from "../swarm/route";

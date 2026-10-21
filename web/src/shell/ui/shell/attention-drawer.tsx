@@ -8,7 +8,8 @@
 // buttons.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { cloudFleet, cloudPanes, cloudWorkspaces } from "../../../shared/cloud";
+import { cloudPanes, cloudWorkspaces } from "../../../shared/cloud";
+import { cloudFleet } from "../../cloud-fleet";
 import { type Client } from "../../client";
 import type { FleetPane } from "../../fleet";
 import { directory } from "../../hosts";

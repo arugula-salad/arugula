@@ -6,7 +6,8 @@
 // Refresh. Nothing polls: a read can keep a provider's machine awake.
 
 import { useEffect, useState } from "preact/hooks";
-import { cloudWorkspaces, useCloudApi, type CloudTab, type CloudWorkspace } from "../../shared/cloud";
+import { cloudWorkspaces, type CloudTab, type CloudWorkspace } from "../../shared/cloud";
+import { useCloudApi } from "../../shared/platform-api";
 
 type GitChange = { path: string; index: string; worktree: string; renamed_from?: string | null };
 type GitStatus = { path: string; repo_root: string; branch: string | null; entries: GitChange[]; truncated: boolean };

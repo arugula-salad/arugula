@@ -1,7 +1,8 @@
 import { AgentMessage } from "../../shared/agent-message";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
-import { cloudApi as api, cloudPanes, cloudTerminal as terminal, useCloudApi, useCloudPanes, type CloudAgent as Agent, type CloudRun as Run, type PastCloudTab } from "../../shared/cloud";
+import { cloudPanes, cloudTerminal as terminal, useCloudPanes, type CloudAgent as Agent, type CloudRun as Run, type PastCloudTab } from "../../shared/cloud";
+import { useCloudApi } from "../../shared/platform-api";
 type Block = { kind: string; body?: unknown; summary?: string; name?: string; request_id?: string; options?: { optionId: string; name?: string }[]; schema?: { properties?: Record<string, { type?: string; title?: string; enum?: string[] }>; required?: string[] } };
 export type Event = { id: number; kind?: string; stage?: string; state?: string; data?: string; blocks?: Block[] };
 
@@ -64,6 +65,7 @@ function eventFailure(event: Event): string {
  * tabs, its secrets, and its past runs (runs are retired, S40 M119: they
  * open read only, with their downloads). */
 export function CloudPanel({ close, notify }: { close: () => void; notify: () => Promise<string> }) {
+  const api = useCloudApi();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [names, setNames] = useState<string[]>([]);
@@ -106,6 +108,7 @@ export function CloudPanel({ close, notify }: { close: () => void; notify: () =>
 }
 
 function AgentEditor({ agent, names, done }: { agent?: Agent; names: string[]; done: () => void }) {
+  const api = useCloudApi();
   const [name, setName] = useState(agent?.definition.name ?? "");
   const [instructions, setInstructions] = useState(agent?.definition.instructions ?? "");
   const [tools, setTools] = useState(JSON.stringify(agent?.definition.mcp_servers ?? {}, null, 2));
@@ -132,6 +135,7 @@ function AgentEditor({ agent, names, done }: { agent?: Agent; names: string[]; d
 }
 
 function ImportAgent({ refresh }: { refresh: () => Promise<void> }) {
+  const api = useCloudApi();
   const [id, setId] = useState(""); const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
   return <form class="cloud-form" onSubmit={async (event) => {
@@ -149,6 +153,7 @@ function ImportAgent({ refresh }: { refresh: () => Promise<void> }) {
 }
 
 function SecretEditor({ names, refresh }: { names: string[]; refresh: () => Promise<void> }) {
+  const api = useCloudApi();
   const [name, setName] = useState(""); const [value, setValue] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   return <><p>Values are write-only. A Cloud workspace takes the ones it names when it's made.</p><form class="cloud-form" onSubmit={async (e) => {
     e.preventDefault(); setBusy(true); setError("");

@@ -7,9 +7,10 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
-  cloudApi as api, cloudPanes, cloudTabAttention, useCloudApi, cloudWorkspaceMounts, cloudWorkspaceRoute, cloudWorkspaces, cloudWorkspaceState, setupStepName, useCloudPanes,
+  cloudPanes, cloudTabAttention, cloudWorkspaceMounts, cloudWorkspaceRoute, cloudWorkspaces, cloudWorkspaceState, setupStepName, useCloudPanes,
   type CloudAgent, type CloudModel, type CloudSetupLog as SetupLog, type CloudTab, type CloudWorkspace, type CloudWorkspaceSpec, type PastCloudTab,
 } from "../../shared/cloud";
+import { useCloudApi } from "../../shared/platform-api";
 import { ConfirmRemove } from "../../shared/ui/confirm";
 import { CloudTranscript, useCloudConversation } from "./cloud";
 import { CloudWorkspaceSettings } from "./workspace-settings";
@@ -171,6 +172,7 @@ export function CloudWorkspaceCrumbs() {
 
 /** Delete, in the header: the confirm names the tabs it ends. */
 export function DeleteCloudWorkspace() {
+  const api = useCloudApi();
   const route = useCloudWorkspaces();
   const w = cloudWorkspaces.find(route?.workspace ?? null);
   const [asking, setAsking] = useState(false);
@@ -213,6 +215,7 @@ export function DeleteCloudWorkspace() {
 // ---- the tab strip
 
 export function CloudWorkspaceTabStrip() {
+  const api = useCloudApi();
   const route = useCloudWorkspaces();
   const w = cloudWorkspaces.find(route?.workspace ?? null);
   const [adding, setAdding] = useState(false);
@@ -376,6 +379,7 @@ function CloudWorkspaceList({ create }: { create: () => void }) {
 /** Closed tabs, read only: what a closed tab, or a deleted Cloud
  * workspace's, leaves to read. Read when the list is shown. */
 function PastTabs() {
+  const api = useCloudApi();
   const [tabs, setTabs] = useState<PastCloudTab[]>([]);
   useEffect(() => { void api<{ past_tabs: PastCloudTab[] }>("past-tabs").then((v) => setTabs(v.past_tabs), () => {}); }, []);
   if (!tabs.length) return null;
@@ -481,6 +485,7 @@ const words = (s: string) => s.split(/[\s,]+/).filter(Boolean);
 type RepositoryDraft = { url: string; ref: string; secret: string };
 
 function NewCloudWorkspaceDialog({ close }: { close: () => void }) {
+  const api = useCloudApi();
   const [name, setName] = useState("");
   const [repositories, setRepositories] = useState<RepositoryDraft[]>([{ url: "", ref: "", secret: "" }]);
   const [apt, setApt] = useState("");
@@ -551,6 +556,7 @@ function NewCloudWorkspaceDialog({ close }: { close: () => void }) {
 }
 
 function NewCloudTabDialog({ workspace: w, close }: { workspace: CloudWorkspace; close: () => void }) {
+  const api = useCloudApi();
   const [agents, setAgents] = useState<CloudAgent[]>([]);
   const [models, setModels] = useState<CloudModel[]>([]);
   const [agent, setAgent] = useState("curated_coding");

@@ -11,6 +11,7 @@ import { agentsRoute, closeAgentsPage, openAgentsPage } from "./agents-route";
 import { getFleet } from "./hosts";
 import { closeThread } from "./threads";
 import { chat, chatStore, ROOM_ID } from "../../shared/chat-store";
+import type { ChatRoute } from "../../shared/chat/route";
 
 // ---- the route
 
@@ -18,15 +19,7 @@ const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
 addEventListener("hashchange", changed);
 
-export interface ChatRoute {
-  /** M74: a message to show (a copied link). */
-  msg?: number;
-  /** M75: Activity (your mentions), or search results for `q`. */
-  view?: "activity" | "search";
-  q?: string;
-  /** M123: a room in control's chat (`#chat=<room>`). */
-  room?: string;
-}
+export type { ChatRoute };
 
 /** `#chat`, `#chat=<room>` for one room of control's chat and `…&msg=N`
  * for one message in it; `#chat=activity`, and `#chat=search/<words>`. */

@@ -19,7 +19,7 @@ export function ChatPage({ client }: { client: Client }) {
   const store = useChat();
   if (!route) return null;
   if (!store) return <ChatNeedsControl client={client} />;
-  return <RoomsView client={client} route={route} store={store} />;
+  return <RoomsView route={route} store={store} />;
 }
 
 /** Chat with no chat in control: where it went, and how to get it. */

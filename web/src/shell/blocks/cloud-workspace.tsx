@@ -13,8 +13,9 @@
 import { render } from "preact";
 import { useMemo, useState } from "preact/hooks";
 import type { Client } from "../client";
-import { CloudApiContext, cloudTabAttention, cloudWorkspaces, cloudWorkspaceState, type CloudApi, type CloudTab, type CloudWorkspace } from "../../shared/cloud";
+import { cloudTabAttention, cloudWorkspaces, cloudWorkspaceState, type CloudApi, type CloudTab, type CloudWorkspace } from "../../shared/cloud";
 import type { PaneId } from "../../shared/proto";
+import { PlatformApiContext, usePlatformApi } from "../../shared/platform-api";
 import { CloudWorkspaceChanges } from "../../platform/cloud/workspace-changes";
 import { CloudSetupLog, CloudTabView } from "../../platform/cloud/workspaces";
 import { registerBlock, type BlockView } from "./view";
@@ -90,6 +91,9 @@ function Overview({ w, tabs, may, pick }: { w: CloudWorkspace; tabs: CloudTab[];
 
 function CloudWorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s: CloudWorkspaceBlockState | null }) {
   const api = useMemo(() => blockApi(client, id), [client, id]);
+  // The page's platform API, with control's `/api/cloud/` through the block.
+  const page = usePlatformApi();
+  const platform = useMemo(() => ({ ...page, cloud: api }), [page, api]);
   const [picked, setPicked] = useState<string | null | undefined>(undefined);
   if (!s) return <div class="review"><p class="dim">Loading…</p></div>;
   const w = s.workspace;
@@ -134,13 +138,13 @@ function CloudWorkspaceBlock({ client, id, s }: { client: Client; id: PaneId; s:
         ) : tabId && !may ? (
           <p class="dim cloud-ws-block-note">You're watching this session: a tab's transcript is for the people who can change it.</p>
         ) : tabId ? (
-          <CloudApiContext.Provider value={api}>
+          <PlatformApiContext.Provider value={platform}>
             <CloudTabView key={tabId} w={w} tab={tab} id={tabId} tabs={tabs} />
-          </CloudApiContext.Provider>
+          </PlatformApiContext.Provider>
         ) : (
-          <CloudApiContext.Provider value={api}>
+          <PlatformApiContext.Provider value={platform}>
             <Overview w={w} tabs={tabs} may={may} pick={setPicked} />
-          </CloudApiContext.Provider>
+          </PlatformApiContext.Provider>
         )}
       </div>
     </div>

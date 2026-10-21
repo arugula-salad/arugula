@@ -10,7 +10,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import type { Client } from "../client";
 import type { PaneId, RunRequest } from "../../shared/proto";
 import { directory } from "../hosts";
-import { fuzzy, isDir, listDirs, recentDirs, type FsList } from "../fs";
+import { isDir, listDirs, recentDirs, type FsList } from "../fs";
+import { fuzzy } from "../../shared/fuzzy";
 import { isWorkspace, openWorkspace } from "../blocks/open-labs";
 
 /** `choose`: the picker only picks (+ Pane's directory, M110). */

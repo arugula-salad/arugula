@@ -6,11 +6,13 @@
 
 import type { Client } from "../client";
 import type { PaneId, SessionId } from "../../shared/proto";
-import { colorOf } from "./people";
 import type { MenuItem } from "../../shared/ui/menu";
-import { chat, chatStore } from "../../shared/chat-store";
+import { useEffect, useState } from "preact/hooks";
+import { chat, chatStore, type PaneQuote } from "../../shared/chat-store";
+import type { ChatRoom } from "../../shared/proto";
 import { useSubscribe } from "../../shared/ui/hooks";
-import { RoomDrawer, closeRoomDrawer, openRoomDrawer } from "../../shared/chat/room";
+import { RoomBody, roomLabel } from "../../shared/chat/room";
+import { usePlatformApi } from "../../shared/platform-api";
 
 export interface Quote {
   pane: PaneId;
@@ -107,21 +109,71 @@ function Bubble() {
 }
 
 /** A pane's or session's room, open beside the panes. */
-export function ThreadLayer({ phone, client }: { phone: boolean; client?: Client }) {
-  return <RoomDrawer phone={phone} toast={(s) => client?.toast(s)} />;
+export function ThreadLayer({ phone }: { phone: boolean; client?: Client }) {
+  return <RoomDrawer phone={phone} />;
 }
 
-/** A message's picture: theirs, or their initials on their color. */
-export function MsgAvatar({ who, name, pic }: { who: string; name: string; pic?: string }) {
-  const initials = name
-    .split(/[\s@]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
+// ---- the drawer beside a pane
+
+let drawer: { room: ChatRoom; quote?: PaneQuote } | null = null;
+const drawerListeners = new Set<() => void>();
+
+/** The thread on a pane or a session, in the drawer, made the first time;
+ * with a quote ready to send. */
+export async function openRoomDrawer(machine: string, kind: "pane" | "session", target: number, quote?: PaneQuote, toast?: (s: string) => void) {
+  try {
+    const room = await chat.openTarget(machine, kind, target);
+    drawer = { room, quote };
+    drawerListeners.forEach((fn) => fn());
+  } catch (e) {
+    toast?.(`Couldn't open its thread: ${(e as Error).message}`);
+  }
+}
+
+export function closeRoomDrawer() {
+  if (!drawer) return;
+  drawer = null;
+  drawerListeners.forEach((fn) => fn());
+}
+
+export function RoomDrawer({ phone }: { phone: boolean }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const fn = () => tick((t) => t + 1);
+    drawerListeners.add(fn);
+    return () => void drawerListeners.delete(fn);
+  }, []);
+  useEffect(() => {
+    if (!drawer) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRoomDrawer();
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [!!drawer]);
+  useSubscribe((fn) => chat.subscribe(fn));
+  const api = usePlatformApi();
+  if (!drawer) return null;
+  const room = chat.room(drawer.room.id) ?? drawer.room;
+  const title = `${room.kind === "pane" ? "Thread" : "Session thread"} · ${roomLabel(room, api)}`;
   return (
-    <span class="msg-avatar" style={{ background: colorOf(who) }} aria-hidden="true">
-      {pic ? <img src={pic} alt="" referrerpolicy="no-referrer" /> : initials}
-    </span>
+    <aside class={phone ? "thread-panel phone" : "thread-panel"} aria-label={title} data-room-drawer={room.id}>
+      <header>
+        <strong>{title}</strong>
+        <button
+          class="thread-close"
+          title="Open it on the chat page"
+          aria-label="Open in chat"
+          onClick={() => {
+            closeRoomDrawer();
+            api.nav.openRoom(room.id);
+          }}
+        >
+          ⤢
+        </button>
+        <button class="thread-close" title="Close (Esc)" aria-label="Close the thread" onClick={closeRoomDrawer}>
+          ✕
+        </button>
+      </header>
+      <RoomBody key={room.id} room={room} phone={phone} quote={drawer.quote} name={title} />
+    </aside>
   );
 }
