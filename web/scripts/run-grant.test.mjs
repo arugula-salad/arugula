@@ -29,7 +29,8 @@ test("a grant signed here is the one Rust would sign, and checks out", async () 
   assert.ok(await verify(keys.signPub, grantBody(g), g.sig));
   // Changed after signing: the signature no longer checks out.
   assert.ok(!(await verify(keys.signPub, grantBody({ ...g, caps: ["runs.start"] }), g.sig)));
-  const r = await signGrantRevoke(g, "finish", keys, 4000);
+  const r = await signGrantRevoke(g.project, g.delegation, "finish", keys, 4000);
   assert.ok(await verify(keys.signPub, grantRevokeBody(r), r.sig));
   assert.ok(!(await verify(keys.signPub, grantRevokeBody({ ...r, running: "stop" }), r.sig)));
+  assert.ok(!(await verify(keys.signPub, grantRevokeBody({ ...r, delegation: "other" }), r.sig)));
 });

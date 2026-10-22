@@ -235,6 +235,15 @@ pub trait HubPort: Send + Sync {
         Box::pin(async { Ok(()) })
     }
 
+    /// The id of `project`'s live delegation for hosted machines (M178),
+    /// signed for `owner` (`team:<id>` or `account:<id>`) and naming the
+    /// hub's hosted key: what a standing grant for runs must name (M211).
+    /// `None` when it has none. A hub from before M211 can't say.
+    fn live_delegation<'a>(&'a self, project: &'a str, owner: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        let _ = (project, owner);
+        Box::pin(async { anyhow::bail!("this hub doesn't say projects' delegations") })
+    }
+
     /// Whether these machines are working (M180): busy from the start of
     /// an agent turn or a foreground command to its end, as each hosted
     /// daemon last said on its relay socket. Machines that aren't on the

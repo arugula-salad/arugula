@@ -39,12 +39,12 @@
   "revoke": {
     "at": 4000,
     "by": "4439457f6ef4c3ff",
-    "grant": "0123456789abcdef0123456789abcdef",
+    "delegation": "017b544b71e654f70c0a0fda7f9993b0",
     "project": "prj_1",
     "running": "stop",
-    "sig": "9a0b38e8b2ece4636cb2cf52c975d2aa916d45c6a502bc301ae8bcd9a811659a2dbd87639bf7abaef8a6bb9c4e2c5ea8ad4259f11a03cc433a0faf3f5179ac03"
+    "sig": "8165971086501fa372fa97cc05a4d7bce1365e24c9754717ef65140a5185c1b5c803014201773965f28bab3ca062f69ff164f19b72e63f75096cf05dd3cb4d07"
   },
-  "revoke_body": "arugula project grant revoke v1\nproject prj_1\ngrant 0123456789abcdef0123456789abcdef\nrunning stop\nat 4000\nby 4439457f6ef4c3ff\n",
+  "revoke_body": "arugula project grant revoke v2\nproject prj_1\ndelegation 017b544b71e654f70c0a0fda7f9993b0\nrunning stop\nat 4000\nby 4439457f6ef4c3ff\n",
   "root": {
     "account": "acct1",
     "approver": "4439457f6ef4c3ff",

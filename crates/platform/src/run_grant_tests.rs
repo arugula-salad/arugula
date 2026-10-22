@@ -49,23 +49,42 @@ fn workspace(app: &Platform, project: &str, machine: &str) -> String {
     id
 }
 
-fn grant(project: &str, owner: &str, keys: &DeviceKeys) -> ProjectGrant {
+const DAY: u64 = 24 * 60 * 60 * 1000;
+
+fn delegation(project: &str, owner: &str, keys: &DeviceKeys, at: u64) -> Delegation {
     let mut d = Delegation {
         project: project.into(),
         owner: owner.into(),
         key: HostedKey::from_seed(&[1; 32]).public(),
-        at: 1,
+        at,
         by: String::new(),
         sig: String::new(),
     };
     d.sign_with(keys);
-    let mut g = ProjectGrant::new(&d, now_ms(), None);
+    d
+}
+
+/// A grant for 90 days, under the delegation made at 1.
+fn grant(project: &str, owner: &str, keys: &DeviceKeys) -> ProjectGrant {
+    grant_under(&delegation(project, owner, keys, 1), keys, now_ms(), Some(now_ms() + 90 * DAY))
+}
+
+fn grant_under(d: &Delegation, keys: &DeviceKeys, made: u64, expires: Option<u64>) -> ProjectGrant {
+    let mut g = ProjectGrant::new(d, made, expires);
     g.sign_with(keys);
     g
 }
 
+fn revoke(g: &ProjectGrant, running: Running, keys: &DeviceKeys) -> GrantRevoke {
+    GrantRevoke::new(&g.project, &g.delegation, running, now_ms(), keys)
+}
+
 async fn sign(base: &str, who: &str, project: &str, g: &ProjectGrant) -> (u16, Value) {
     call(base, who, "POST", &format!("/api/projects/{project}/runs/grant"), Some(json!({ "grant": g }))).await
+}
+
+async fn unsign(base: &str, who: &str, project: &str, r: &GrantRevoke) -> (u16, Value) {
+    call(base, who, "POST", &format!("/api/projects/{project}/runs/grant/revoke"), Some(json!({ "revoke": r }))).await
 }
 
 async fn start(base: &str, who: &str, project: &str, w: &str) -> (u16, Value) {
@@ -85,12 +104,13 @@ async fn read(base: &str, who: &str, project: &str) -> Value {
 async fn a_grant_signed_used_and_revoked() {
     let (hub, app, base, project) = serve().await;
     let keys = DeviceKeys::generate();
+    let g = grant(&project, "team:t1", &keys);
+    hub.set_delegation(&project, Some(&g.delegation));
     let v = read(&base, "vic", &project).await;
     assert_eq!((v["offer"].as_bool(), v["grant"].is_null(), v["owner"].as_str()), (Some(false), true, Some("team:t1")));
     let w = workspace(&app, &project, "m1");
     assert_eq!(read(&base, "alice", &project).await["offer"], true, "offered with a hosted workspace");
 
-    let g = grant(&project, "team:t1", &keys);
     assert_eq!(sign(&base, "bob", &project, &g).await.0, 403, "an editor");
     assert_eq!(sign(&base, "olga", &project, &g).await.0, 404, "not a member");
     let (status, kept) = sign(&base, "alice", &project, &g).await;
@@ -101,6 +121,7 @@ async fn a_grant_signed_used_and_revoked() {
     assert_eq!(sign(&base, "alice", &project, &again).await.0, 409, "one live grant a project");
     let v = read(&base, "vic", &project).await;
     assert_eq!((v["offer"].as_bool(), v["grant"]["grant"]["id"].as_str()), (Some(false), Some(g.id.as_str())));
+    assert_eq!((v["stale"].as_bool(), v["renew"].as_bool()), (Some(false), Some(false)));
 
     // A start: the grant and the project's revokes go to the machine.
     hub.answers_ops("m1", OpAnswer::Done { url: None });
@@ -121,37 +142,79 @@ async fn a_grant_signed_used_and_revoked() {
     assert_eq!(start(&base, "alice", &project, "dev").await.0, 503);
 
     // Revoked: by an owner only; every machine hears it; no more starts.
-    let r = GrantRevoke::new(&g, Running::Stop, now_ms(), &keys);
-    let path = format!("/api/projects/{project}/runs/grant/revoke");
-    assert_eq!(call(&base, "bob", "POST", &path, Some(json!({ "revoke": r }))).await.0, 403);
+    let r = revoke(&g, Running::Stop, &keys);
+    assert_eq!(unsign(&base, "bob", &project, &r).await.0, 403);
     hub.answers_ops("m1", OpAnswer::Done { url: None });
-    let (status, v) = call(&base, "alice", "POST", &path, Some(json!({ "revoke": r }))).await;
-    assert_eq!((status, v["told"].as_u64()), (200, Some(1)), "{v}");
+    let (status, v) = unsign(&base, "alice", &project, &r).await;
+    assert_eq!((status, v["told"].as_u64(), v["revoked"].as_u64()), (200, Some(1), Some(1)), "{v}");
     let Some((m, DaemonOp::RunRevoke(rr))) = hub.ops_asked().last().cloned() else { panic!() };
-    assert_eq!((m.as_str(), &rr.grant, &rr.revoke), ("m1", &g, &r));
-    assert_eq!(call(&base, "alice", "POST", &path, Some(json!({ "revoke": r }))).await.0, 409, "once");
+    assert_eq!((m.as_str(), &rr.revoke), ("m1", &r));
+    assert_eq!(unsign(&base, "alice", &project, &r).await.0, 409, "once");
     let (status, v) = start(&base, "alice", &project, "dev").await;
     assert_eq!((status, v["reason"].as_str()), (409, Some("no_grant")), "{v}");
     let v = read(&base, "alice", &project).await;
     assert_eq!((v["offer"].as_bool(), v["past"][0]["revoke"]["running"].as_str()), (Some(true), Some("stop")));
 
-    // Signed again (from the phone, say): the next start carries the old
-    // grant's revoke, for a machine that was asleep through it.
-    let g2 = grant(&project, "team:t1", &keys);
+    // A grant made before the revoke can't come in after it.
+    assert_eq!(sign(&base, "alice", &project, &again).await.0, 409, "revoked before it got here");
+    // Signed again (from the phone, say): the next start carries the
+    // revoke, for a machine that was asleep through it.
+    let d = delegation(&project, "team:t1", &keys, 1);
+    let g2 = grant_under(&d, &keys, r.at + 1, Some(now_ms() + 90 * DAY));
     assert_eq!(sign(&base, "alice", &project, &g2).await.0, 201);
     assert_eq!(start(&base, "alice", &project, &w).await.0, 200);
     let Some((_, DaemonOp::RunStart(s))) = hub.ops_asked().last().cloned() else { panic!() };
     assert_eq!((s.grant, s.revokes), (g2, vec![r]));
 }
 
+/// A grant names the project's live delegation, and expires: an expired
+/// one isn't live and a new one takes its place; one under a delegation
+/// that isn't live any more is offered again and replaced.
+#[tokio::test]
+async fn expiry_and_the_live_delegation() {
+    let (hub, app, base, project) = serve().await;
+    let keys = DeviceKeys::generate();
+    workspace(&app, &project, "m1");
+    let d1 = delegation(&project, "team:t1", &keys, 1);
+    let g = grant_under(&d1, &keys, now_ms(), Some(now_ms() + 90 * DAY));
+    // No live delegation, or another one: refused.
+    let (status, v) = sign(&base, "alice", &project, &g).await;
+    assert_eq!((status, v["reason"].as_str()), (409, Some("delegation_not_live")), "{v}");
+    hub.set_delegation(&project, Some("someone-elses"));
+    assert_eq!(sign(&base, "alice", &project, &g).await.0, 409);
+    hub.set_delegation(&project, Some(&d1.id()));
+    // Near its expiry: renewing is offered.
+    let soon = grant_under(&d1, &keys, now_ms(), Some(now_ms() + 3 * DAY));
+    assert_eq!(sign(&base, "alice", &project, &soon).await.0, 201);
+    assert_eq!(read(&base, "alice", &project).await["renew"], true);
+    // Expired: not live, nothing starts, and the next one is kept.
+    app.db.c().execute("UPDATE run_grants SET expires_at = 1 WHERE id = ?1", params![soon.id]).unwrap();
+    let v = read(&base, "alice", &project).await;
+    assert_eq!((v["grant"].is_null(), v["offer"].as_bool()), (true, Some(true)));
+    assert_eq!(start(&base, "alice", &project, "dev").await.1["reason"], "no_grant");
+    assert_eq!(sign(&base, "alice", &project, &g).await.0, 201);
+    // The project's delegation changes: the grant is stale, offered again,
+    // and one under the new delegation replaces it.
+    let d2 = delegation(&project, "team:t1", &keys, 2);
+    hub.set_delegation(&project, Some(&d2.id()));
+    let v = read(&base, "alice", &project).await;
+    assert_eq!((v["stale"].as_bool(), v["offer"].as_bool()), (Some(true), Some(true)));
+    let g2 = grant_under(&d2, &keys, now_ms(), Some(now_ms() + 90 * DAY));
+    assert_eq!(sign(&base, "alice", &project, &g2).await.0, 201);
+    let v = read(&base, "alice", &project).await;
+    assert_eq!((v["grant"]["grant"]["id"].as_str(), v["stale"].as_bool()), (Some(g2.id.as_str()), Some(false)));
+}
+
 /// What the platform refuses to keep: a grant for another project or
-/// owner, narrowed, unsigned, from the wrong time, or already expired; and
-/// a revoke that isn't this project's grant's.
+/// owner, narrowed, unsigned, from the wrong time, already expired, with
+/// no expiry or one too far off; and a revoke that isn't this project's,
+/// or covers nothing.
 #[tokio::test]
 async fn what_isnt_kept() {
-    let (_hub, _app, base, project) = serve().await;
+    let (hub, _app, base, project) = serve().await;
     let keys = DeviceKeys::generate();
     let good = grant(&project, "team:t1", &keys);
+    hub.set_delegation(&project, Some(&good.delegation));
     let mut bad = vec![
         grant("prj_other", "team:t1", &keys),
         grant(&project, "team:t2", &keys),
@@ -164,18 +227,22 @@ async fn what_isnt_kept() {
     old.sign_with(&keys);
     let mut lapsed = ProjectGrant { made: now_ms() - 1000, expires: Some(now_ms() - 500), ..good.clone() };
     lapsed.sign_with(&keys);
-    bad.extend([narrow, old, lapsed]);
+    let mut forever = ProjectGrant { expires: None, ..good.clone() };
+    forever.sign_with(&keys);
+    let mut too_long = ProjectGrant { expires: Some(now_ms() + 400 * DAY), ..good.clone() };
+    too_long.sign_with(&keys);
+    bad.extend([narrow, old, lapsed, forever, too_long]);
     for g in bad {
         let (status, v) = sign(&base, "alice", &project, &g).await;
         assert_eq!(status, 400, "{v} for {g:?}");
     }
+    let r = revoke(&good, Running::Finish, &keys);
+    assert_eq!(unsign(&base, "alice", &project, &r).await.0, 409, "covers nothing yet");
     assert_eq!(sign(&base, "alice", &project, &good).await.0, 201);
-    let path = format!("/api/projects/{project}/runs/grant/revoke");
-    let other = ProjectGrant { id: arugula_e2e::project_grant::new_id(), ..good.clone() };
-    let r = GrantRevoke::new(&other, Running::Finish, now_ms(), &keys);
-    assert_eq!(call(&base, "alice", "POST", &path, Some(json!({ "revoke": r }))).await.0, 404);
-    let r = GrantRevoke { project: "prj_other".into(), ..GrantRevoke::new(&good, Running::Finish, now_ms(), &keys) };
-    assert_eq!(call(&base, "alice", "POST", &path, Some(json!({ "revoke": r }))).await.0, 400);
+    let elsewhere = GrantRevoke::new(&good.project, "another", Running::Finish, now_ms(), &keys);
+    assert_eq!(unsign(&base, "alice", &project, &elsewhere).await.0, 409, "another delegation");
+    let r = GrantRevoke { project: "prj_other".into(), ..revoke(&good, Running::Finish, &keys) };
+    assert_eq!(unsign(&base, "alice", &project, &r).await.0, 400);
     // No workspace by that name.
     assert_eq!(start(&base, "alice", &project, "nope").await.0, 404);
 }

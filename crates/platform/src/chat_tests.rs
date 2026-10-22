@@ -68,6 +68,8 @@ struct State {
     /// enrollments asked for, the workspaces whose box enrolled (as which
     /// machine), and the workspaces said gone.
     delegated: BTreeSet<String>,
+    /// Projects' live delegation ids (M211), by project.
+    delegation_ids: BTreeMap<String, String>,
     enrollments: Vec<crate::hosted::enroll::EnrollAsk>,
     enrolled: BTreeMap<String, String>,
     taken: BTreeSet<String>,
@@ -131,6 +133,15 @@ impl TestHub {
     /// An owner's device delegated `project` to control (M178).
     pub(crate) fn delegate(&self, project: &str) {
         self.state.lock().unwrap().delegated.insert(project.into());
+    }
+
+    /// `project`'s live delegation is now `id` (M211), or it has none.
+    pub(crate) fn set_delegation(&self, project: &str, id: Option<&str>) {
+        let mut s = self.state.lock().unwrap();
+        match id {
+            Some(id) => s.delegation_ids.insert(project.into(), id.into()),
+            None => s.delegation_ids.remove(project),
+        };
     }
 
     /// The box of `workspace` enrolled, as `machine`.
@@ -409,6 +420,11 @@ impl HubPort for TestHub {
         };
         s.enrollments.push(ask.clone());
         done(given)
+    }
+
+    fn live_delegation<'a>(&'a self, project: &'a str, _owner: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        self.called("live_delegation");
+        done(self.state.lock().unwrap().delegation_ids.get(project).cloned())
     }
 
     fn hosted_enrolled<'a>(

@@ -27,9 +27,11 @@ export interface ProjectGrant {
   sig: string;
 }
 
+/** Every grant for `project` under `delegation` made at or before `at`
+ * (v2: it names no grant id, so whoever relays it can't choose one). */
 export interface GrantRevoke {
   project: string;
-  grant: string;
+  delegation: string;
   /** What happens to runs going: they finish, or they're stopped too. */
   running: "finish" | "stop";
   at: number;
@@ -43,14 +45,24 @@ export const grantBody = (g: ProjectGrant) =>
   `made ${g.made}\nexpires ${g.expires ?? "never"}\nby ${g.by}\n`;
 
 export const grantRevokeBody = (r: GrantRevoke) =>
-  `arugula project grant revoke v1\nproject ${r.project}\ngrant ${r.grant}\nrunning ${r.running}\nat ${r.at}\nby ${r.by}\n`;
+  `arugula project grant revoke v2\nproject ${r.project}\ndelegation ${r.delegation}\nrunning ${r.running}\nat ${r.at}\nby ${r.by}\n`;
 
 /** A new grant's id: 32 hex digits from 16 random bytes. */
 const newId = () => hex(globalThis.crypto.getRandomValues(new Uint8Array(16)));
 
-/** An owner's device grants runs on `d`'s project, until it's revoked (or
- * `expires`, if given). */
-export async function signGrant(d: Delegation, keys: DeviceKeys, expires: number | null = null, id = newId(), made = Date.now()): Promise<ProjectGrant> {
+/** How long a grant made here lasts unless the owner picks (S37 q7a). */
+export const GRANT_DAYS = 90;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** An owner's device grants runs on `d`'s project until it's revoked or
+ * `expires` (null: never; the page and the CLI always give one). */
+export async function signGrant(
+  d: Delegation,
+  keys: DeviceKeys,
+  expires: number | null = Date.now() + GRANT_DAYS * DAY_MS,
+  id = newId(),
+  made = Date.now(),
+): Promise<ProjectGrant> {
   const g: ProjectGrant = {
     id,
     project: d.project,
@@ -65,9 +77,12 @@ export async function signGrant(d: Delegation, keys: DeviceKeys, expires: number
   return { ...g, sig: await signText(keys, grantBody(g)) };
 }
 
-/** An owner's device takes a grant back; `running: "stop"` stops the runs
- * going too. */
-export async function signGrantRevoke(g: ProjectGrant, running: GrantRevoke["running"], keys: DeviceKeys, at = Date.now()): Promise<GrantRevoke> {
-  const r: GrantRevoke = { project: g.project, grant: g.id, running, at, by: keys.id, sig: "" };
+/** When a grant lasting `days` from now expires. */
+export const expiresIn = (days: number, from = Date.now()) => from + days * DAY_MS;
+
+/** An owner's device takes back every grant for `project` under
+ * `delegation` made by now; `running: "stop"` stops the runs going too. */
+export async function signGrantRevoke(project: string, delegation: string, running: GrantRevoke["running"], keys: DeviceKeys, at = Date.now()): Promise<GrantRevoke> {
+  const r: GrantRevoke = { project, delegation, running, at, by: keys.id, sig: "" };
   return { ...r, sig: await signText(keys, grantRevokeBody(r)) };
 }

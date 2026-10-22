@@ -8,8 +8,9 @@
 //!   no operation: the machine checks the grant and answers, and M212 adds
 //!   the run it starts.
 //! - `runs.revoke` ([`RunRevoke`], M211): an owner's device revoked the
-//!   grant. The machine keeps the revoke (so the platform can't take it
-//!   back by leaving it out later) and refuses the grant from then on.
+//!   project's grants made by then. The machine checks the revoke once and
+//!   keeps it (so the platform can't take it back by leaving it out later)
+//!   and refuses those grants from then on.
 
 use arugula_e2e::project_grant::{GrantRevoke, ProjectGrant};
 use serde::{Deserialize, Serialize};
@@ -32,9 +33,9 @@ pub struct RunStart {
     pub revokes: Vec<GrantRevoke>,
 }
 
-/// A standing grant's revoke, for every hosted machine of its project.
+/// A revoke of the project's grants, for every hosted machine of its
+/// project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunRevoke {
-    pub grant: ProjectGrant,
     pub revoke: GrantRevoke,
 }

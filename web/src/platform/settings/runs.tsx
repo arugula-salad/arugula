@@ -19,7 +19,9 @@ interface Grant {
 interface View {
   role: "owner" | "editor" | "viewer";
   grant: { grant: Grant; created_at: number } | null;
-  past: { grant: Grant; revoke: { running: "finish" | "stop"; at: number } | null; revoked_at: number | null }[];
+  past: { grant: Grant; revoke: { running: "finish" | "stop"; at: number } | null; revoked_at: number | null; superseded_at: number | null }[];
+  stale: boolean;
+  renew: boolean;
   workspaces: number;
   offer: boolean;
 }
@@ -51,16 +53,20 @@ export function RunGrant({ project }: { project: string }) {
       <h2>Runs</h2>
       {g ? (
         <p>
-          Runs may start on this project's hosted workspaces with every device asleep: a project owner's device signed it on {day(g.made)}
-          {g.expires ? `, until ${day(g.expires)}` : ""}. Each workspace checks that signature before it starts anything.
+          A standing grant is in place: the platform may start runs and instruct them on every hosted workspace of this project, running
+          whatever command the project's runs start, with every device asleep, {g.expires ? `until ${day(g.expires)}` : "until it's revoked"} unless
+          it's revoked first. A project owner's device signed it on {day(g.made)}. Each workspace checks that signature before it starts
+          anything.
+          {v.stale ? " It's for an earlier delegation, so workspaces enrolled since refuse it: sign it again." : ""}
+          {!v.stale && v.renew ? " It expires soon: renew it to keep runs starting." : ""}
         </p>
       ) : (
-        <p class="dim">No runs start here: nobody has allowed them.</p>
+        <p class="dim">No runs start here: nobody has allowed them, or the last grant expired or was revoked.</p>
       )}
       {v.role === "owner" ? (
         <p class="dim">
-          {g ? "Revoke it" : v.offer ? "This project has hosted workspaces. Allow runs on them" : "Allow runs"} on {sign}, under Devices and machines, on a
-          computer or your phone: your devices sign it there. Deploys still ask you every time.
+          {g ? (v.stale || v.renew ? "Sign it again, or revoke it," : "Revoke it") : v.offer ? "This project has hosted workspaces. Allow runs on them" : "Allow runs"} on{" "}
+          {sign}, under Devices and machines, on a computer or your phone: your devices sign it there. Deploys still ask you every time.
         </p>
       ) : (
         <p class="dim">A project owner allows runs, or revokes them, from a device.</p>
@@ -69,8 +75,8 @@ export function RunGrant({ project }: { project: string }) {
         <ul class="platform-list dim" data-run-grants-past>
           {v.past.map((p) => (
             <li key={p.grant.id}>
-              Allowed {day(p.grant.made)}, revoked {p.revoked_at ? day(p.revoked_at) : ""}
-              {p.revoke?.running === "stop" ? ", and the runs going stopped" : ""}
+              Allowed {day(p.grant.made)},{" "}
+              {p.revoked_at ? `revoked ${day(p.revoked_at)}${p.revoke?.running === "stop" ? ", and the runs going stopped" : ""}` : p.superseded_at ? `replaced ${day(p.superseded_at)}` : "expired"}
             </li>
           ))}
         </ul>

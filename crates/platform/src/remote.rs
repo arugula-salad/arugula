@@ -233,6 +233,12 @@ struct WorkspacesArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+struct DelegationArgs {
+    project: String,
+    owner: String,
+}
+
+#[derive(Serialize, Deserialize)]
 struct OpArgs {
     daemon: String,
     op: DaemonOp,
@@ -373,6 +379,12 @@ impl HubPort for HttpHub {
         Box::pin(self.0.call("hosted_gone", WorkspacesArgs { workspaces: workspaces.to_vec() }))
     }
 
+    fn live_delegation<'a>(&'a self, project: &'a str, owner: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        Box::pin(
+            self.0.call("live_delegation", DelegationArgs { project: project.to_owned(), owner: owner.to_owned() }),
+        )
+    }
+
     fn activity<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<crate::hub::MachineActivity>>> {
         Box::pin(self.0.call("activity", IdsArgs { ids: machines.to_vec() }))
     }
@@ -469,6 +481,10 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "hosted_enrolled" => answer(hub.hosted_enrolled(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
             "hosted_gone" => answer(hub.hosted_gone(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
             "activity" => answer(hub.activity(&args::<IdsArgs>(&body)?.ids).await?)?,
+            "live_delegation" => {
+                let a: DelegationArgs = args(&body)?;
+                answer(hub.live_delegation(&a.project, &a.owner).await?)?
+            }
             _ => return Ok(None),
         }))
     }

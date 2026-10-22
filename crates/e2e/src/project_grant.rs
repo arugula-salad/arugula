@@ -26,9 +26,9 @@
 //! ```
 //!
 //! ```text
-//! arugula project grant revoke v1
+//! arugula project grant revoke v2
 //! project <prj_ id>
-//! grant <id>
+//! delegation <the project's delegation id>
 //! running <finish|stop>
 //! at <ms>
 //! by <device id>
@@ -41,13 +41,21 @@
 //!   hosted workspaces of the project, under the delegation it names. A
 //!   new delegation needs a new grant. It never covers a deploy (aru-101).
 //! - **Revoking** is S37's: a revoke signed by any owner's device, relayed
-//!   by the platform, and kept by each hosted machine that hears it, so the
-//!   platform can't take it back by leaving it out later. It stops new
-//!   runs; `running stop` also asks for the ones running to stop
-//!   (decision 3: revoking and stopping are separate, so it says which).
-//! - **Control can drop a revoke** (S37's threat model): it keeps the grant
-//!   working on a machine that hasn't heard. A grant can carry an expiry
-//!   to bound that.
+//!   by the platform. It names no grant: it takes back every grant for the
+//!   project under its delegation made at or before its `at` (v2; v1
+//!   named one grant id, which whoever relays it could choose), so a grant
+//!   made after it is a new one. A hosted machine checks a revoke's
+//!   signature once, when it first hears it, and keeps it ([`Revokes`]):
+//!   the platform can't bring a grant back by leaving the revoke out later,
+//!   or by dropping its signer's certificate. It stops new runs; `running
+//!   stop` also asks for the ones running to stop (decision 3: revoking
+//!   and stopping are separate, so it says which).
+//! - **Control can drop a revoke** (S37's threat model): a machine that
+//!   never heard it keeps honouring the grant until it expires. Grants
+//!   made through the page and the CLI expire (90 days unless the owner
+//!   picks), which bounds that.
+//! - **A revoked delegation** stops every grant under it, on the machines
+//!   enrolled under it.
 
 use serde::{Deserialize, Serialize};
 
@@ -201,12 +209,15 @@ impl Running {
     }
 }
 
-/// A grant taken back, by any owner's device.
+/// The project's grants taken back, by any owner's device: every grant for
+/// the project under `delegation` made at or before `at`. It names no
+/// grant, so whoever relays it can't point it at another one; a grant made
+/// after it is a new one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GrantRevoke {
     pub project: String,
-    /// The grant's id.
-    pub grant: String,
+    /// The delegation whose grants it takes back.
+    pub delegation: String,
     pub running: Running,
     pub at: u64,
     pub by: String,
@@ -215,18 +226,26 @@ pub struct GrantRevoke {
 }
 
 impl GrantRevoke {
-    pub fn new(g: &ProjectGrant, running: Running, at: u64, by: &crate::DeviceKeys) -> Self {
-        let mut r =
-            Self { project: g.project.clone(), grant: g.id.clone(), running, at, by: by.id(), sig: String::new() };
+    /// Every grant for `project` under `delegation` made by `at`, revoked
+    /// by `by`.
+    pub fn new(project: &str, delegation: &str, running: Running, at: u64, by: &crate::DeviceKeys) -> Self {
+        let mut r = Self {
+            project: project.to_owned(),
+            delegation: delegation.to_owned(),
+            running,
+            at,
+            by: by.id(),
+            sig: String::new(),
+        };
         r.sig = hex::encode(by.signature(r.body().as_bytes()));
         r
     }
 
     pub fn body(&self) -> String {
         format!(
-            "arugula project grant revoke v1\nproject {}\ngrant {}\nrunning {}\nat {}\nby {}\n",
+            "arugula project grant revoke v2\nproject {}\ndelegation {}\nrunning {}\nat {}\nby {}\n",
             self.project,
-            self.grant,
+            self.delegation,
             self.running.as_str(),
             self.at,
             self.by
@@ -237,8 +256,8 @@ impl GrantRevoke {
     pub fn parse(body: &str, sig: &str) -> Option<Self> {
         let mut lines = body.strip_suffix('\n')?.split('\n');
         let mut field = |name: &str| lines.next()?.strip_prefix(name)?.strip_prefix(' ').map(str::to_owned);
-        (field("arugula project grant revoke")? == "v1").then_some(())?;
-        let (project, grant) = (field("project")?, field("grant")?);
+        (field("arugula project grant revoke")? == "v2").then_some(())?;
+        let (project, delegation) = (field("project")?, field("delegation")?);
         let running = match field("running")?.as_str() {
             "finish" => Running::Finish,
             "stop" => Running::Stop,
@@ -246,14 +265,26 @@ impl GrantRevoke {
         };
         let at = field("at")?.parse().ok()?;
         let by = field("by")?;
-        let r = Self { project, grant, running, at, by, sig: sig.to_owned() };
+        let r = Self { project, delegation, running, at, by, sig: sig.to_owned() };
         (r.body() == body).then_some(r)
     }
 
-    /// It takes back `g`, signed by a device that may sign for `g`'s
-    /// project (any of its owners, not only the one who granted).
+    /// It's about `g`: the same project and delegation, and `g` was made at
+    /// or before it. Says nothing about the signature.
+    pub fn covers(&self, g: &ProjectGrant) -> bool {
+        self.project == g.project && self.delegation == g.delegation && g.made <= self.at
+    }
+
+    /// Signed by a device that may sign for the project `owner` names (any
+    /// of its owners, not only the one who granted), trusted now.
+    pub fn signed_for(&self, owner: &str, owners: &Owners) -> bool {
+        token(&self.project) && token(&self.delegation) && owners.may_sign(owner, &self.by, &self.body(), &self.sig)
+    }
+
+    /// It takes back `g`: it covers it, signed by one of the project's
+    /// owners now.
     pub fn revokes(&self, g: &ProjectGrant, owners: &Owners) -> bool {
-        self.project == g.project && self.grant == g.id && owners.may_sign(&g.owner, &self.by, &self.body(), &self.sig)
+        self.covers(g) && self.signed_for(&g.owner, owners)
     }
 }
 
@@ -273,11 +304,24 @@ pub enum GrantRefusal {
     NotCovered,
     /// Its expiry has passed.
     Expired,
+    /// An owner revoked the delegation it's under.
+    DelegationRevoked,
     /// An owner's device revoked it.
     Revoked,
 }
 
 impl GrantRefusal {
+    pub const ALL: [GrantRefusal; 8] = [
+        GrantRefusal::Form,
+        GrantRefusal::WrongProject,
+        GrantRefusal::WrongDelegation,
+        GrantRefusal::Unsigned,
+        GrantRefusal::NotCovered,
+        GrantRefusal::Expired,
+        GrantRefusal::DelegationRevoked,
+        GrantRefusal::Revoked,
+    ];
+
     pub fn code(self) -> &'static str {
         match self {
             GrantRefusal::Form => "grant_form",
@@ -286,6 +330,7 @@ impl GrantRefusal {
             GrantRefusal::Unsigned => "grant_unsigned",
             GrantRefusal::NotCovered => "grant_not_covered",
             GrantRefusal::Expired => "grant_expired",
+            GrantRefusal::DelegationRevoked => "delegation_revoked",
             GrantRefusal::Revoked => "grant_revoked",
         }
     }
@@ -300,22 +345,38 @@ impl GrantRefusal {
             GrantRefusal::Unsigned => "no owner's device signed the standing grant",
             GrantRefusal::NotCovered => "the standing grant doesn't cover this",
             GrantRefusal::Expired => "the standing grant has expired: an owner signs it again",
+            GrantRefusal::DelegationRevoked => "the project's delegation for this machine was revoked",
             GrantRefusal::Revoked => "the standing grant was revoked",
         }
     }
+}
+
+/// What a hosted machine holds against a grant beside the grant itself.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Revokes<'a> {
+    /// Its delegation's revocations, as it pinned them.
+    pub delegation: &'a [crate::hosted::DelegationRevoke],
+    /// Revokes that came with the ask: they count only if one of the
+    /// project's owners signed them, trusted now.
+    pub sent: &'a [GrantRevoke],
+    /// Revokes it checked when it first heard them and kept: they count
+    /// without being checked again, so dropping their signer's certificate
+    /// later doesn't bring a grant back.
+    pub kept: &'a [GrantRevoke],
 }
 
 /// Whether a hosted machine enrolled under `d` may do `cap` under `g` at
 /// `now`: the grant is well formed, for `d`'s project and owner, names
 /// `d`, is signed by one of the project's owners as `owners` says (which
 /// the machine got from its own checks, not the platform's word), covers
-/// `cap`, hasn't expired, and no revoke among `revokes` that checks out
-/// takes it back. Revokes that don't check out are ignored: the platform
-/// may send junk, and only a refusal comes of it.
+/// `cap`, hasn't expired; `d` isn't revoked; and no revoke takes it back
+/// (a kept one, or a sent one that checks out). Revokes that don't check
+/// out are ignored: the platform may send junk, and only a refusal comes
+/// of it.
 pub fn check(
     g: &ProjectGrant,
     d: &Delegation,
-    revokes: &[GrantRevoke],
+    revokes: Revokes,
     owners: &Owners,
     cap: &str,
     now: u64,
@@ -338,7 +399,10 @@ pub fn check(
     if g.expires.is_some_and(|e| e <= now) {
         return Err(GrantRefusal::Expired);
     }
-    if revokes.iter().any(|r| r.revokes(g, owners)) {
+    if revokes.delegation.iter().any(|r| r.revokes(d, owners)) {
+        return Err(GrantRefusal::DelegationRevoked);
+    }
+    if revokes.kept.iter().any(|r| r.covers(g)) || revokes.sent.iter().any(|r| r.revokes(g, owners)) {
         return Err(GrantRefusal::Revoked);
     }
     Ok(())
@@ -442,13 +506,13 @@ mod tests {
         let g = grant(&d, &w.owner.keys);
         assert_eq!(g.caps, ["runs.instruct", "runs.start"]);
         for cap in CAPS {
-            assert_eq!(check(&g, &d, &[], &owners, cap, 200), Ok(()));
+            assert_eq!(check(&g, &d, Revokes::default(), &owners, cap, 200), Ok(()));
         }
         // Not a deploy, or anything else.
-        assert_eq!(check(&g, &d, &[], &owners, "deploys.apply", 200), Err(GrantRefusal::NotCovered));
+        assert_eq!(check(&g, &d, Revokes::default(), &owners, "deploys.apply", 200), Err(GrantRefusal::NotCovered));
         // Another owner's device's grant counts the same.
         let g2 = grant(&d, &w.other_owner.keys);
-        assert_eq!(check(&g2, &d, &[], &owners, "runs.start", 200), Ok(()));
+        assert_eq!(check(&g2, &d, Revokes::default(), &owners, "runs.start", 200), Ok(()));
     }
 
     #[test]
@@ -458,7 +522,10 @@ mod tests {
         let d = delegation("team:t1", &w.owner.keys, 10);
         // An editor's device, a stranger's, control's own key: none.
         for by in [&w.editor.keys, &DeviceKeys::generate()] {
-            assert_eq!(check(&grant(&d, by), &d, &[], &owners, "runs.start", 200), Err(GrantRefusal::Unsigned));
+            assert_eq!(
+                check(&grant(&d, by), &d, Revokes::default(), &owners, "runs.start", 200),
+                Err(GrantRefusal::Unsigned)
+            );
         }
         // An owner's machine or recovery code doesn't either.
         for kind in [Kind::Daemon, Kind::Recovery] {
@@ -468,12 +535,18 @@ mod tests {
             let mut certs = w.certs.clone();
             certs.get_mut(&w.owner.account).unwrap().0.push(kc);
             let owners = Owners::Team { roster: &w.roster, certs: &certs };
-            assert_eq!(check(&grant(&d, &k), &d, &[], &owners, "runs.start", 200), Err(GrantRefusal::Unsigned));
+            assert_eq!(
+                check(&grant(&d, &k), &d, Revokes::default(), &owners, "runs.start", 200),
+                Err(GrantRefusal::Unsigned)
+            );
         }
         // An owner who's an editor now.
         let later = roster(vec![member(&w.owner, TeamRole::Editor), member(&w.editor, TeamRole::Owner)], &w.owner);
         let owners = Owners::Team { roster: &later, certs: &w.certs };
-        assert_eq!(check(&grant(&d, &w.owner.keys), &d, &[], &owners, "runs.start", 200), Err(GrantRefusal::Unsigned));
+        assert_eq!(
+            check(&grant(&d, &w.owner.keys), &d, Revokes::default(), &owners, "runs.start", 200),
+            Err(GrantRefusal::Unsigned)
+        );
     }
 
     /// The platform holds the grant: whatever it changes, the signature no
@@ -486,30 +559,40 @@ mod tests {
         let g = grant(&d, &w.owner.keys);
         let mut narrow = ProjectGrant { caps: vec!["runs.start".into()], ..g.clone() };
         narrow.sign_with(&w.owner.keys);
-        assert_eq!(check(&narrow, &d, &[], &owners, "runs.instruct", 200), Err(GrantRefusal::NotCovered));
+        assert_eq!(
+            check(&narrow, &d, Revokes::default(), &owners, "runs.instruct", 200),
+            Err(GrantRefusal::NotCovered)
+        );
         let wider = ProjectGrant { caps: g.caps.clone(), ..narrow.clone() };
-        assert_eq!(check(&wider, &d, &[], &owners, "runs.instruct", 200), Err(GrantRefusal::Unsigned));
+        assert_eq!(check(&wider, &d, Revokes::default(), &owners, "runs.instruct", 200), Err(GrantRefusal::Unsigned));
         let mut short = ProjectGrant { expires: Some(150), ..g.clone() };
         short.sign_with(&w.owner.keys);
-        assert_eq!(check(&short, &d, &[], &owners, "runs.start", 200), Err(GrantRefusal::Expired));
-        assert_eq!(check(&short, &d, &[], &owners, "runs.start", 149), Ok(()));
+        assert_eq!(check(&short, &d, Revokes::default(), &owners, "runs.start", 200), Err(GrantRefusal::Expired));
+        assert_eq!(check(&short, &d, Revokes::default(), &owners, "runs.start", 149), Ok(()));
         let longer = ProjectGrant { expires: None, ..short.clone() };
-        assert_eq!(check(&longer, &d, &[], &owners, "runs.start", 200), Err(GrantRefusal::Unsigned));
+        assert_eq!(check(&longer, &d, Revokes::default(), &owners, "runs.start", 200), Err(GrantRefusal::Unsigned));
         // An unknown power, signed or not, isn't well formed.
         let mut odd = ProjectGrant { caps: vec!["deploys.apply".into(), "runs.start".into()], ..g.clone() };
         odd.sign_with(&w.owner.keys);
-        assert_eq!(check(&odd, &d, &[], &owners, "deploys.apply", 200), Err(GrantRefusal::Form));
+        assert_eq!(check(&odd, &d, Revokes::default(), &owners, "deploys.apply", 200), Err(GrantRefusal::Form));
         // Another project, or another delegation of this one.
         let mut other = ProjectGrant { project: "prj_2".into(), ..g.clone() };
         other.sign_with(&w.owner.keys);
-        assert_eq!(check(&other, &d, &[], &owners, "runs.start", 200), Err(GrantRefusal::WrongProject));
+        assert_eq!(check(&other, &d, Revokes::default(), &owners, "runs.start", 200), Err(GrantRefusal::WrongProject));
         let d2 = delegation("team:t1", &w.owner.keys, 11);
-        assert_eq!(check(&g, &d2, &[], &owners, "runs.start", 200), Err(GrantRefusal::WrongDelegation));
+        assert_eq!(check(&g, &d2, Revokes::default(), &owners, "runs.start", 200), Err(GrantRefusal::WrongDelegation));
         // Another team's project, signed by this team's owner.
         let mut theirs = ProjectGrant { owner: "team:t2".into(), ..g.clone() };
         theirs.sign_with(&w.owner.keys);
         let dt = Delegation { owner: "team:t2".into(), ..d.clone() };
-        assert_eq!(check(&theirs, &dt, &[], &owners, "runs.start", 200), Err(GrantRefusal::WrongProject));
+        assert_eq!(
+            check(&theirs, &dt, Revokes::default(), &owners, "runs.start", 200),
+            Err(GrantRefusal::WrongProject)
+        );
+    }
+
+    fn sent(r: &[GrantRevoke]) -> Revokes<'_> {
+        Revokes { sent: r, ..Default::default() }
     }
 
     #[test]
@@ -518,17 +601,68 @@ mod tests {
         let owners = Owners::Team { roster: &w.roster, certs: &w.certs };
         let d = delegation("team:t1", &w.owner.keys, 10);
         let g = grant(&d, &w.owner.keys);
-        let spite = GrantRevoke::new(&g, Running::Stop, 150, &w.editor.keys);
-        assert_eq!(check(&g, &d, std::slice::from_ref(&spite), &owners, "runs.start", 200), Ok(()));
-        let r = GrantRevoke::new(&g, Running::Finish, 150, &w.other_owner.keys);
-        assert_eq!(check(&g, &d, &[spite, r.clone()], &owners, "runs.start", 200), Err(GrantRefusal::Revoked));
-        // The platform can't move a revoke to another grant, or turn a
-        // finish into a stop.
-        let g2 = grant(&d, &w.owner.keys);
-        let moved = GrantRevoke { grant: g2.id.clone(), ..r.clone() };
-        assert_eq!(check(&g2, &d, &[moved], &owners, "runs.start", 200), Ok(()));
+        let spite = GrantRevoke::new(&g.project, &g.delegation, Running::Stop, 150, &w.editor.keys);
+        assert_eq!(check(&g, &d, sent(std::slice::from_ref(&spite)), &owners, "runs.start", 200), Ok(()));
+        let r = GrantRevoke::new(&g.project, &g.delegation, Running::Finish, 150, &w.other_owner.keys);
+        assert_eq!(check(&g, &d, sent(&[spite, r.clone()]), &owners, "runs.start", 200), Err(GrantRefusal::Revoked));
+        // It names no grant: every grant of the project under the
+        // delegation made by then is revoked, and one made after isn't.
+        let mut before = ProjectGrant::new(&d, 140, None);
+        before.sign_with(&w.other_owner.keys);
+        assert_eq!(
+            check(&before, &d, sent(std::slice::from_ref(&r)), &owners, "runs.start", 200),
+            Err(GrantRefusal::Revoked)
+        );
+        let mut after = ProjectGrant::new(&d, 151, None);
+        after.sign_with(&w.owner.keys);
+        assert_eq!(check(&after, &d, sent(std::slice::from_ref(&r)), &owners, "runs.start", 200), Ok(()));
+        // The platform can't move it to another project or delegation, or
+        // turn a finish into a stop.
+        let moved = GrantRevoke { delegation: "other".into(), ..r.clone() };
+        assert!(!moved.revokes(&g, &owners));
         let harsher = GrantRevoke { running: Running::Stop, ..r.clone() };
         assert!(!harsher.revokes(&g, &owners));
+    }
+
+    /// A revoke the machine checked and kept counts after the platform
+    /// drops its signer's certificate; one sent with a start only counts
+    /// while its signer is trusted.
+    #[test]
+    fn a_kept_revoke_outlives_its_signers_certificate() {
+        let w = world();
+        let d = delegation("team:t1", &w.owner.keys, 10);
+        // Signed by device A (the owner's), revoked by device B (the other
+        // owner's).
+        let g = grant(&d, &w.owner.keys);
+        let r = GrantRevoke::new(&g.project, &g.delegation, Running::Finish, 150, &w.other_owner.keys);
+        let owners = Owners::Team { roster: &w.roster, certs: &w.certs };
+        assert!(r.revokes(&g, &owners), "checked when it's heard");
+        // A refresh from the platform without B's certificate.
+        let mut certs = w.certs.clone();
+        certs.remove(&w.other_owner.account);
+        let refreshed = Owners::Team { roster: &w.roster, certs: &certs };
+        assert_eq!(
+            check(&g, &d, sent(std::slice::from_ref(&r)), &refreshed, "runs.start", 200),
+            Ok(()),
+            "sent: no longer checks out"
+        );
+        let kept = Revokes { kept: std::slice::from_ref(&r), ..Default::default() };
+        assert_eq!(check(&g, &d, kept, &refreshed, "runs.start", 200), Err(GrantRefusal::Revoked));
+    }
+
+    #[test]
+    fn a_revoked_delegation_stops_its_grants() {
+        let w = world();
+        let owners = Owners::Team { roster: &w.roster, certs: &w.certs };
+        let d = delegation("team:t1", &w.owner.keys, 10);
+        let g = grant(&d, &w.owner.keys);
+        let gone = [crate::hosted::DelegationRevoke::new(&d, 120, &w.other_owner.keys)];
+        let revokes = Revokes { delegation: &gone, ..Default::default() };
+        assert_eq!(check(&g, &d, revokes, &owners, "runs.start", 200), Err(GrantRefusal::DelegationRevoked));
+        // Not by an editor.
+        let spite = [crate::hosted::DelegationRevoke::new(&d, 120, &w.editor.keys)];
+        let revokes = Revokes { delegation: &spite, ..Default::default() };
+        assert_eq!(check(&g, &d, revokes, &owners, "runs.start", 200), Ok(()));
     }
 
     #[test]
@@ -538,7 +672,7 @@ mod tests {
         let g = grant(&d, &me.keys);
         let t = Trust { account: "me".into(), root: me.cert.device.clone() };
         let owners = Owners::Account { trust: &t, certs: std::slice::from_ref(&me.cert), revocations: &[] };
-        assert_eq!(check(&g, &d, &[], &owners, "runs.start", 200), Ok(()));
+        assert_eq!(check(&g, &d, Revokes::default(), &owners, "runs.start", 200), Ok(()));
         // A phone of mine, removed since: its grant stops counting.
         let pk = DeviceKeys::generate();
         let mut pc = Cert::new(&pk, "me", Kind::Browser, "phone");
@@ -546,10 +680,10 @@ mod tests {
         let g = grant(&d, &pk);
         let both = [me.cert.clone(), pc.clone()];
         let owners = Owners::Account { trust: &t, certs: &both, revocations: &[] };
-        assert_eq!(check(&g, &d, &[], &owners, "runs.start", 200), Ok(()));
+        assert_eq!(check(&g, &d, Revokes::default(), &owners, "runs.start", 200), Ok(()));
         let gone = [Revocation::new("me", &pc.device, &me.keys)];
         let owners = Owners::Account { trust: &t, certs: &both, revocations: &gone };
-        assert_eq!(check(&g, &d, &[], &owners, "runs.start", 200), Err(GrantRefusal::Unsigned));
+        assert_eq!(check(&g, &d, Revokes::default(), &owners, "runs.start", 200), Err(GrantRefusal::Unsigned));
     }
 
     #[test]
@@ -561,7 +695,7 @@ mod tests {
             g.sign_with(&me.keys);
             assert_eq!(ProjectGrant::parse(&g.body(), &g.sig), Some(g.clone()));
             for running in [Running::Finish, Running::Stop] {
-                let r = GrantRevoke::new(&g, running, 300, &me.keys);
+                let r = GrantRevoke::new(&g.project, &g.delegation, running, 300, &me.keys);
                 assert_eq!(GrantRevoke::parse(&r.body(), &r.sig), Some(r));
             }
         }
@@ -612,7 +746,7 @@ mod fixed {
         let mut e =
             ProjectGrant { id: "fedcba9876543210fedcba9876543210".into(), ..ProjectGrant::new(&d, 3000, Some(9000)) };
         e.sign_with(&owner);
-        let r = GrantRevoke::new(&g, Running::Stop, 4000, &owner);
+        let r = GrantRevoke::new(&g.project, &g.delegation, Running::Stop, 4000, &owner);
         let got = serde_json::json!({
             "root": root, "delegation": d, "grant": g, "body": g.body(), "expiring": e, "revoke": r, "revoke_body": r.body(),
         });
@@ -624,7 +758,8 @@ mod fixed {
         assert_eq!(got, want, "ARUGULA_WRITE_FIXTURE=1 writes it again, if the formats changed on purpose");
         let t = Trust { account: "acct1".into(), root: root.device.clone() };
         let owners = Owners::Account { trust: &t, certs: std::slice::from_ref(&root), revocations: &[] };
-        assert_eq!(check(&g, &d, &[], &owners, "runs.start", 3500), Ok(()));
-        assert_eq!(check(&g, &d, &[r], &owners, "runs.start", 3500), Err(GrantRefusal::Revoked));
+        assert_eq!(check(&g, &d, Revokes::default(), &owners, "runs.start", 3500), Ok(()));
+        let sent = Revokes { sent: std::slice::from_ref(&r), ..Default::default() };
+        assert_eq!(check(&g, &d, sent, &owners, "runs.start", 3500), Err(GrantRefusal::Revoked));
     }
 }
