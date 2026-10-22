@@ -54,8 +54,10 @@ CREATE TABLE deploys (
 CREATE INDEX deploys_environment ON deploys (environment_id, state);
 CREATE INDEX deploys_planned_by ON deploys (planned_by);
 
--- An environment's event log: append-only, never updated in place (the
--- trigger refuses an update). `seq` counts from 1 in each environment.
+-- An environment's event log: append-only, never updated or deleted in
+-- place. Triggers refuse an update, and a delete while the event's
+-- environment exists: a log goes only whole, after its environment (an
+-- account's deletion; a window's `--replace` deletes environments first). `seq` counts from 1 in each environment.
 -- `kind` is what happened to `deploy_id`: `planned`, `requested`,
 -- `approved`, `denied`, `canceled`, `expired`, `started`, `succeeded`,
 -- `failed` or `staled`. `actor` is who: `person <account>`, `agent
@@ -80,4 +82,9 @@ CREATE TABLE deploy_events (
 CREATE INDEX deploy_events_deploy ON deploy_events (deploy_id, seq);
 CREATE TRIGGER deploy_events_append_only BEFORE UPDATE ON deploy_events BEGIN
     SELECT RAISE(ABORT, 'deploy_events are append-only');
+END;
+CREATE TRIGGER deploy_events_kept BEFORE DELETE ON deploy_events
+    WHEN EXISTS (SELECT 1 FROM environments WHERE id = old.environment_id)
+BEGIN
+    SELECT RAISE(ABORT, 'deploy_events are append-only: only a deleted environment''s go');
 END;

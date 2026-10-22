@@ -42,11 +42,46 @@ fn jake() -> Actor {
     Actor::person("jake")
 }
 
-/// Planned, asked for and approved by a person.
+/// Jake's device's verified decision on `d` as it is now: tests stand in
+/// for M218's verifier.
+fn decision(db: &Db, d: &str, decision: Decision) -> VerifiedApproval {
+    let row = db.deploy(d).unwrap().unwrap();
+    let planned = db.deploy_history(d).unwrap().into_iter().find(|e| e.kind == "planned").unwrap();
+    VerifiedApproval::unchecked_for_tests(
+        d,
+        &row.plan_digest,
+        &planned.hash,
+        &digest("op"),
+        "jake",
+        "dev_jake",
+        decision,
+        99,
+        "5167",
+    )
+}
+
+fn approve(db: &Db, d: &str, at: u64) -> std::result::Result<Recorded, Refusal> {
+    db.record_approval(&decision(db, d, Decision::Once), at).unwrap()
+}
+
+/// Planned, asked for and approved by Jake's device.
 fn approved(db: &Db, env: &str, sha: &str, at: u64) -> Deploy {
     let d = plan(db, env, sha, &jake(), at);
     record(db, &d.id, EventKind::Requested, &jake(), at).unwrap();
-    record(db, &d.id, EventKind::Approved, &jake(), at).unwrap().deploy
+    approve(db, &d.id, at).unwrap().deploy
+}
+
+/// Drop both of `deploy_events`' triggers: what someone with the database
+/// can do.
+fn drop_triggers(db: &Db) {
+    let c = db.c();
+    for t in ["deploy_events_append_only", "deploy_events_kept"] {
+        c.execute_batch(&match c.dialect() {
+            Dialect::Sqlite => format!("DROP TRIGGER {t}"),
+            Dialect::Postgres => format!("DROP TRIGGER {t} ON deploy_events"),
+        })
+        .unwrap();
+    }
 }
 
 fn kinds(events: &[Event]) -> Vec<&str> {
@@ -90,7 +125,7 @@ fn a_deploy_moves_through_s37s_states() {
     // An agent may ask for approval.
     record(&db, &d.id, EventKind::Requested, &Actor::agent("jake", "geek"), 11).unwrap();
     assert_eq!(db.may_approve(&d.id).unwrap(), Ok(()));
-    record(&db, &d.id, EventKind::Approved, &jake(), 12).unwrap();
+    approve(&db, &d.id, 12).unwrap();
     assert_eq!(db.may_approve(&d.id).unwrap(), Err(Refusal::State(State::Approved)), "approved once");
     let started = record(&db, &d.id, EventKind::Started, &Actor::run("run_1"), 13).unwrap();
     assert_eq!((started.deploy.state, started.deploy.run.as_deref()), (State::Running, Some("run_1")));
@@ -140,17 +175,18 @@ fn agents_never_approve() {
     record(&db, &d.id, EventKind::Requested, &agent, 2).unwrap();
     assert_eq!(record(&db, &d.id, EventKind::Approved, &agent, 3), Err(Refusal::Agent));
     assert_eq!(record(&db, &d.id, EventKind::Denied, &agent, 3), Err(Refusal::Agent));
-    for by in [Actor::run("run_1"), Actor::Platform] {
-        assert_eq!(record(&db, &d.id, EventKind::Approved, &by, 3), Err(Refusal::Actor), "{by:?}");
+    for by in [jake(), Actor::run("run_1"), Actor::Platform] {
+        assert_eq!(record(&db, &d.id, EventKind::Approved, &by, 3), Err(Refusal::Unverified), "{by:?}");
+        assert_eq!(record(&db, &d.id, EventKind::Denied, &by, 3), Err(Refusal::Unverified), "{by:?}");
     }
     assert_eq!(record(&db, &d.id, EventKind::Expired, &jake(), 3), Err(Refusal::Actor));
     assert_eq!(record(&db, &d.id, EventKind::Started, &jake(), 3), Err(Refusal::Actor));
     assert_eq!(record(&db, &d.id, EventKind::Staled, &Actor::Platform, 3), Err(Refusal::Actor));
     assert_eq!(db.deploy(&d.id).unwrap().unwrap().state, State::Pending, "nothing changed");
     assert_eq!(kinds(&db.deploy_events(&env.id).unwrap()), ["planned", "requested"]);
-    // A person denies; denied is the end.
-    record(&db, &d.id, EventKind::Denied, &jake(), 4).unwrap();
-    assert_eq!(record(&db, &d.id, EventKind::Approved, &jake(), 5), Err(Refusal::State(State::Denied)));
+    // An owner's device denies; denied is the end.
+    db.record_approval(&decision(&db, &d.id, Decision::Deny), 4).unwrap().unwrap();
+    assert_eq!(approve(&db, &d.id, 5), Err(Refusal::State(State::Denied)));
     assert!(
         db.plan_deploy(
             &NewDeploy { environment: &env.id, source: &commit("b"), plan_digest: &digest("b") },
@@ -191,19 +227,21 @@ fn the_stale_rule() {
     }
     let why = Refusal::Stale { seq: at, deploy: a.id.clone() };
     assert_eq!(db.may_approve(&b.id).unwrap(), Err(why.clone()));
-    assert_eq!(record(&db, &b.id, EventKind::Approved, &jake(), 5), Err(why.clone()));
+    assert_eq!(approve(&db, &b.id, 5), Err(why.clone()));
     assert_eq!(record(&db, &c.id, EventKind::Started, &Actor::run("run_c"), 5), Err(why.clone()));
     // Stale is the end, as denied is.
     assert_eq!(record(&db, &b.id, EventKind::Canceled, &jake(), 5), Err(Refusal::State(State::Stale)));
     // Another environment's deploy isn't stale.
     assert_eq!(db.may_approve(&elsewhere.id).unwrap(), Ok(()));
 
-    // The rule is the log's, not the row's: a row put back to pending is
-    // still refused.
-    db.c().execute("UPDATE deploys SET state = 'pending' WHERE id = ?1", params![b.id]).unwrap();
+    // The rule is the log's, not the row's: a row put back to pending, and
+    // its copy of its plan's seq moved past the apply, is still refused.
+    db.c().execute("UPDATE deploys SET state = 'pending', planned_seq = 999 WHERE id = ?1", params![b.id]).unwrap();
     assert_eq!(db.may_approve(&b.id).unwrap(), Err(why.clone()));
-    assert_eq!(record(&db, &b.id, EventKind::Approved, &jake(), 5), Err(why));
-    db.c().execute("UPDATE deploys SET state = 'stale' WHERE id = ?1", params![b.id]).unwrap();
+    assert_eq!(approve(&db, &b.id, 5), Err(why));
+    db.c()
+        .execute("UPDATE deploys SET state = 'stale', planned_seq = ?2 WHERE id = ?1", params![b.id, b.planned_seq])
+        .unwrap();
 
     // D is planned while A is being applied: it may be approved, but not
     // started while A runs, and A's end makes it stale (A may have changed
@@ -256,12 +294,13 @@ fn the_hash_chain_finds_a_tampered_event() {
     let c = db.c();
     let refused = c.execute("UPDATE deploy_events SET at = 0 WHERE environment_id = ?1", params![env.id]);
     assert!(format!("{:#}", refused.unwrap_err()).contains("append-only"));
-    // Someone with the database can: drop the trigger.
-    c.execute_batch(match c.dialect() {
-        Dialect::Sqlite => "DROP TRIGGER deploy_events_append_only",
-        Dialect::Postgres => "DROP TRIGGER deploy_events_append_only ON deploy_events",
-    })
-    .unwrap();
+    // Nor delete one while its environment is there.
+    let refused = c.execute("DELETE FROM deploy_events WHERE environment_id = ?1", params![env.id]);
+    assert!(format!("{:#}", refused.unwrap_err()).contains("append-only"));
+    drop(c);
+    // Someone with the database can: drop the triggers.
+    drop_triggers(&db);
+    let c = db.c();
     let tamper = |sql: &str| {
         c.execute(sql, params![env.id]).unwrap();
     };
@@ -288,6 +327,7 @@ fn the_hash_chain_finds_a_tampered_event() {
     assert_eq!(db.verify_deploy_log(&env.id).unwrap(), Ok(5));
     db.c().execute("DELETE FROM deploy_events WHERE environment_id = ?1 AND seq = 2", params![env.id]).unwrap();
     assert_eq!(db.verify_deploy_log(&env.id).unwrap(), Err(BadLink { seq: 2, why: Broken::Seq { found: 3 } }));
+    assert_eq!(db.verify_deploy_log(&other.id).unwrap(), Ok(1), "the other environment's chain holds");
     // The detail, too, and a field with a newline can't be read one way.
     let mut e = log[0].clone();
     e.detail = e.detail.replace("aaa", "bbb");
@@ -377,4 +417,125 @@ fn deleting_an_account_keeps_the_chain() {
     assert_eq!((d.planned_by.as_str(), d.planned_by_agent.as_deref(), d.state), ("", None, State::Pending));
     assert_eq!(db.verify_deploy_log(&team.id).unwrap(), Ok(2));
     assert_eq!(db.mentions("alice"), ["deploy_events.actor"], "only the log keeps its id");
+}
+
+/// Events cut off the end of the log leave a chain that verifies, so the
+/// deploys' rows are checked against their events: a state, a plan's
+/// seq, a run they don't bear out, or an event with no deploy.
+#[test]
+fn a_log_cut_short_shows_in_the_rows() {
+    let db = Db::test();
+    let env = production(&db, "prj_a");
+    let a = approved(&db, &env.id, "aaa", 1);
+    record(&db, &a.id, EventKind::Started, &Actor::run("run_a"), 2).unwrap();
+    record(&db, &a.id, EventKind::Succeeded, &Actor::run("run_a"), 3).unwrap();
+    let b = plan(&db, &env.id, "bbb", &jake(), 4);
+    assert_eq!(db.verify_deploy_log(&env.id).unwrap(), Ok(6));
+    drop_triggers(&db);
+    let bad =
+        |seq, deploy: &Deploy, field| Err(BadLink { seq, why: Broken::Deploy { deploy: deploy.id.clone(), field } });
+    let sql = |q: &str| {
+        db.c().execute(q, params![env.id]).unwrap();
+    };
+    // B's plan cut off: B's row has no planned event.
+    sql("DELETE FROM deploy_events WHERE environment_id = ?1 AND seq = 6");
+    assert_eq!(db.verify_deploy_log(&env.id).unwrap(), bad(6, &b, DeployField::Planned));
+    // And A's success: A's row says more than its events.
+    sql("DELETE FROM deploys WHERE environment_id = ?1 AND state = 'planned'");
+    sql("DELETE FROM deploy_events WHERE environment_id = ?1 AND seq = 5");
+    assert_eq!(db.verify_deploy_log(&env.id).unwrap(), bad(4, &a, DeployField::State));
+    sql("UPDATE deploys SET state = 'running' WHERE environment_id = ?1");
+    assert_eq!(db.verify_deploy_log(&env.id).unwrap(), Ok(4), "the row and its events agree again");
+    // Its run, or its plan's seq, changed on the row.
+    sql("UPDATE deploys SET run_id = 'run_x' WHERE environment_id = ?1");
+    assert_eq!(db.verify_deploy_log(&env.id).unwrap(), bad(4, &a, DeployField::Run));
+    sql("UPDATE deploys SET run_id = 'run_a', planned_seq = 2 WHERE environment_id = ?1");
+    assert_eq!(db.verify_deploy_log(&env.id).unwrap(), bad(2, &a, DeployField::Planned));
+    // Its row gone: its events name a deploy that isn't there.
+    sql("DELETE FROM deploys WHERE environment_id = ?1");
+    assert_eq!(db.verify_deploy_log(&env.id).unwrap(), bad(1, &a, DeployField::Missing));
+}
+
+/// An approval is recorded only from a verified one, and only for the
+/// deploy as it is: its plan and its `planned` event. It goes in the event
+/// whole, as the owner's account.
+#[test]
+fn only_a_verified_approval_approves() {
+    let db = Db::test();
+    let env = production(&db, "prj_a");
+    let d = plan(&db, &env.id, "aaa", &jake(), 1);
+    assert_eq!(approve(&db, &d.id, 2), Err(Refusal::State(State::Planned)), "nobody asked yet");
+    record(&db, &d.id, EventKind::Requested, &jake(), 2).unwrap();
+    let other = plan(&db, &env.id, "bbb", &jake(), 3);
+    let planned = |id: &str| db.deploy_history(id).unwrap()[0].hash.clone();
+    let row = db.deploy(&d.id).unwrap().unwrap();
+    let made = |plan: &str, planned: &str| {
+        VerifiedApproval::unchecked_for_tests(
+            &d.id,
+            plan,
+            planned,
+            "0p",
+            "jake",
+            "dev_jake",
+            Decision::Once,
+            99,
+            "5167",
+        )
+    };
+    assert_eq!(
+        db.record_approval(&made(&digest("bbb"), &planned(&d.id)), 4).unwrap(),
+        Err(Refusal::Mismatch(Mismatch::Plan))
+    );
+    assert_eq!(
+        db.record_approval(&made(&row.plan_digest, &planned(&other.id)), 4).unwrap(),
+        Err(Refusal::Mismatch(Mismatch::Planned))
+    );
+    assert_eq!(db.deploy(&d.id).unwrap().unwrap().state, State::Pending, "nothing changed");
+    let ok = made(&row.plan_digest, &planned(&d.id));
+    let done = db.record_approval(&ok, 5).unwrap().unwrap();
+    assert_eq!(done.deploy.state, State::Approved);
+    let e = &done.events[0];
+    assert_eq!((e.kind.as_str(), Actor::parse(&e.actor)), ("approved", Some(jake())));
+    assert_eq!(e.detail_json().unwrap(), ok.detail());
+    assert_eq!(
+        ok.detail(),
+        json!({ "decision": "once", "plan": row.plan_digest, "planned": planned(&d.id), "op": "0p",
+                "device": "dev_jake", "expires": 99, "signature": "5167" })
+    );
+    assert_eq!(db.record_approval(&ok, 6).unwrap(), Err(Refusal::State(State::Approved)), "once");
+    assert_eq!(db.verify_deploy_log(&env.id).unwrap(), Ok(4));
+}
+
+/// The platform can't fail a running deploy (its run may still be
+/// applying, and the busy check would let another start); the run's own
+/// report can.
+#[test]
+fn only_its_run_fails_a_running_deploy() {
+    let db = Db::test();
+    let env = production(&db, "prj_a");
+    let a = approved(&db, &env.id, "aaa", 1);
+    record(&db, &a.id, EventKind::Started, &Actor::run("run_a"), 2).unwrap();
+    let b = approved(&db, &env.id, "bbb", 3);
+    assert_eq!(record(&db, &a.id, EventKind::Failed, &Actor::Platform, 4), Err(Refusal::Actor));
+    assert_eq!(record(&db, &a.id, EventKind::Failed, &Actor::run("run_b"), 4), Err(Refusal::NotItsRun));
+    assert_eq!(
+        record(&db, &b.id, EventKind::Started, &Actor::run("run_b"), 4),
+        Err(Refusal::Busy { deploy: a.id.clone() }),
+        "still being applied"
+    );
+    let failed = record(&db, &a.id, EventKind::Failed, &Actor::run("run_a"), 5).unwrap();
+    assert_eq!(failed.deploy.state, State::Failed);
+}
+
+/// An event's detail is small.
+#[test]
+fn details_are_capped() {
+    let db = Db::test();
+    let env = production(&db, "prj_a");
+    let d = plan(&db, &env.id, "aaa", &jake(), 1);
+    let big = json!({ "note": "x".repeat(MAX_DETAIL) });
+    let e = db.record_deploy(&d.id, EventKind::Requested, &jake(), 2, big).unwrap_err();
+    assert!(format!("{e:#}").contains("at most"), "{e:#}");
+    assert_eq!(db.deploy(&d.id).unwrap().unwrap().state, State::Planned);
+    record(&db, &d.id, EventKind::Requested, &jake(), 2).unwrap();
 }

@@ -7,27 +7,37 @@
 //!
 //! - **The log is the record.** Every change to a deploy is an event in its
 //!   environment's log, written in the same transaction as the deploy's
-//!   `state`. Events are never updated or deleted in place (a trigger
-//!   refuses an update); only a whole log goes, with its project.
+//!   `state`. Events are never updated or deleted in place: triggers
+//!   refuse an update, and a delete while the event's environment exists.
+//!   Only a whole log goes, after its environment, with its project.
 //! - **The log is a hash chain per environment.** Each event's `hash` is
 //!   SHA-256 over its canonical lines ([`Event::canonical`]), the first of
 //!   which is the hash of the event before it. Anyone with the rows can
 //!   check it ([`verify_chain`]): a changed, removed or reordered event
-//!   breaks the link at it. The chain is per environment, not per deploy
-//!   or per project, because that's what the stale rule reads: whether
-//!   anything applied to this environment after a plan.
+//!   breaks the link at it. Events cut off the end of the log leave the
+//!   deploys' rows saying more than their events do ([`verify_rows`]).
+//!   The chain is per environment, not per deploy or per project, because
+//!   that's what the stale rule reads: whether anything applied to this
+//!   environment after a plan. It's tamper-evident, not write-once
+//!   (aru-103): whoever runs the database could rewrite the log and the
+//!   rows together, and only an earlier copy shows it.
 //! - **The stale rule.** A deploy planned before another deploy applied to
 //!   its environment can't be approved or started ([`Db::may_approve`]).
 //!   "Applied" is any apply event of another deploy (`started`,
-//!   `succeeded` or `failed`) with a higher `seq` than the deploy's
-//!   `planned` event: an apply that failed may still have changed the
-//!   environment. The same events turn the environment's other open
+//!   `succeeded` or `failed`) with a higher `seq` than the deploy's own
+//!   `planned` event, read from the log (never the row's copy): an apply
+//!   that failed may still have changed the environment. The same events turn the environment's other open
 //!   deploys (`planned`, `pending`, `approved`) `stale` at once, each with a
 //!   `staled` event; the seq check holds even if a row's state didn't.
 //! - **Who records what** ([`EventKind::allows`]): a person or an agent
-//!   plans, asks, and cancels; only a person approves or denies, **never an
-//!   agent**; only a run starts, and finishes, its apply; only the
-//!   platform expires one or fails a run that's gone.
+//!   plans, asks, and cancels; only the run that started an apply finishes
+//!   it; only the platform expires one.
+//! - **Approvals.** An approval or a deny is recorded only from a
+//!   [`VerifiedApproval`] ([`Db::record_approval`]), which only M218's
+//!   verifier makes, after it checks the owner device's signature. It names
+//!   the deploy, its plan and the hash of its `planned` event, and goes in
+//!   the event whole, so anyone can check the signature from the log.
+//!   **Agents never approve:** no [`Actor`] can record one.
 //! - **States** are S37's (q4: `pending`, `approved`, `denied`,
 //!   `canceled`, `expired`, `running`, `succeeded`, `failed`), with
 //!   `planned` before them (a plan nobody has asked to apply yet) and
@@ -66,6 +76,9 @@ pub const DRIVERS: &[&str] = &["chant-fly", "apps-platform"];
 
 /// The first event's `prev_hash`.
 pub const GENESIS: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+/// The most an event's detail holds, in bytes.
+pub const MAX_DETAIL: usize = 4096;
 
 /// The first line of an event's canonical form: its domain separator.
 pub const EVENT_V1: &str = "arugula deploy event v1";
@@ -285,22 +298,30 @@ impl EventKind {
     }
 
     /// Whether `by` may record it ([`Db::record_deploy`]): a person or an
-    /// agent asks and cancels; only a person approves or denies, never an
-    /// agent (M218 adds the owner device's signature); only a run starts
-    /// and finishes its apply, or the platform fails one whose run is gone;
-    /// only the platform expires one. Planning is [`Db::plan_deploy`]'s and
-    /// staling the platform's own, never asked for.
+    /// agent asks and cancels; only a run starts and finishes its apply
+    /// (the run that started it: [`Refusal::NotItsRun`]); only the platform
+    /// expires one. No actor approves or denies: that's
+    /// [`Db::record_approval`]'s, from a [`VerifiedApproval`], and an agent
+    /// asking is told [`Refusal::Agent`]. Planning is
+    /// [`Db::plan_deploy`]'s and staling the platform's own, never asked
+    /// for.
+    ///
+    /// The platform can't fail a running deploy: it would clear the busy
+    /// check while the run may still be applying. TODO(M210/M223): let it,
+    /// in the same transaction that reads the run as finished (`runs`), for
+    /// a run whose lease ran out.
     pub fn allows(self, by: &Actor) -> std::result::Result<(), Refusal> {
         let ok = match self {
             EventKind::Requested => matches!(by, Actor::Person(_) | Actor::Agent { .. }),
             EventKind::Canceled => matches!(by, Actor::Person(_) | Actor::Agent { .. } | Actor::Platform),
-            EventKind::Approved | EventKind::Denied => match by {
-                Actor::Agent { .. } => return Err(Refusal::Agent),
-                a => matches!(a, Actor::Person(_)),
-            },
+            EventKind::Approved | EventKind::Denied => {
+                return Err(match by {
+                    Actor::Agent { .. } => Refusal::Agent,
+                    _ => Refusal::Unverified,
+                });
+            }
             EventKind::Expired => matches!(by, Actor::Platform),
-            EventKind::Started | EventKind::Succeeded => matches!(by, Actor::Run(_)),
-            EventKind::Failed => matches!(by, Actor::Run(_) | Actor::Platform),
+            EventKind::Started | EventKind::Succeeded | EventKind::Failed => matches!(by, Actor::Run(_)),
             EventKind::Planned | EventKind::Staled => false,
         };
         if ok { Ok(()) } else { Err(Refusal::Actor) }
@@ -383,7 +404,8 @@ pub struct Deploy {
     /// SHA-256 of the plan the driver made, hex.
     pub plan_digest: String,
     pub state: State,
-    /// The `seq` of its `planned` event in its environment's log.
+    /// The `seq` of its `planned` event in its environment's log: a copy,
+    /// for ordering. The stale rule reads the event itself.
     pub planned_seq: u64,
     /// The run that applied it, once it started.
     pub run: Option<String>,
@@ -414,7 +436,10 @@ pub struct Event {
     ///   plan's digest);
     /// - `started`: `run`;
     /// - `staled`: `after` (the deploy that applied) and `seq` (its event);
-    /// - the others: what their caller gives (M218: the approval).
+    /// - `approved`, `denied`: the approval ([`VerifiedApproval::detail`]);
+    /// - the others: what their caller gives.
+    ///
+    /// At most [`MAX_DETAIL`] bytes.
     pub detail: String,
     /// The hash of the event before it in the environment ([`GENESIS`] for
     /// the first).
@@ -489,6 +514,23 @@ pub enum Broken {
     Hash,
     /// A field holds a newline, so it has no one canonical form.
     Unreadable,
+    /// A deploy's row disagrees with its own events, or an event names a
+    /// deploy with no row: what events cut off the end of the log, or a
+    /// row changed behind them, leave.
+    Deploy { deploy: String, field: DeployField },
+}
+
+/// What a deploy's row says that its events don't ([`Broken::Deploy`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeployField {
+    /// It has no `planned` event, or its `planned_seq` isn't that event's.
+    Planned,
+    /// Its state isn't what its last event left it in.
+    State,
+    /// Its run isn't the one its `started` event names.
+    Run,
+    /// An event names it, and it has no row.
+    Missing,
 }
 
 /// Check an environment's log, given in seq order from its first event: each
@@ -519,6 +561,47 @@ pub fn verify_chain(environment: &str, events: &[Event]) -> std::result::Result<
     Ok(events.len() as u64)
 }
 
+/// Check an environment's deploys against its log (given in seq order, as
+/// [`verify_chain`] takes it): each deploy has its `planned` event at its
+/// `planned_seq`, is in the state its last event left it in, with the run
+/// its `started` event names, and every event's deploy has a row. The
+/// first bad link (the lowest seq where they disagree), if any. Pure, as
+/// [`verify_chain`] is.
+pub fn verify_rows(events: &[Event], deploys: &[Deploy]) -> std::result::Result<(), BadLink> {
+    let mut bad: Vec<BadLink> = Vec::new();
+    let link = |seq, deploy: &str, field| BadLink { seq, why: Broken::Deploy { deploy: deploy.to_owned(), field } };
+    for e in events {
+        if !deploys.iter().any(|d| d.id == e.deploy) {
+            bad.push(link(e.seq, &e.deploy, DeployField::Missing));
+        }
+    }
+    for d in deploys {
+        let own: Vec<&Event> = events.iter().filter(|e| e.deploy == d.id).collect();
+        let planned = own.iter().find(|e| e.kind == EventKind::Planned.as_str());
+        let Some(planned) = planned.filter(|p| p.seq == d.planned_seq) else {
+            bad.push(link(d.planned_seq, &d.id, DeployField::Planned));
+            continue;
+        };
+        let last = own.last().unwrap_or(planned);
+        if EventKind::parse(&last.kind).map(EventKind::to) != Some(d.state) {
+            bad.push(link(last.seq, &d.id, DeployField::State));
+        }
+        let started = own.iter().find(|e| e.kind == EventKind::Started.as_str());
+        // A `started` by anything but a run names no run a row could have.
+        let run = started.map(|e| match Actor::parse(&e.actor) {
+            Some(Actor::Run(r)) => r,
+            _ => String::new(),
+        });
+        if run != d.run {
+            bad.push(link(started.map_or(last.seq, |e| e.seq), &d.id, DeployField::Run));
+        }
+    }
+    match bad.into_iter().min_by_key(|b| b.seq) {
+        Some(b) => Err(b),
+        None => Ok(()),
+    }
+}
+
 /// Why a change to a deploy wasn't made.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Refusal {
@@ -531,6 +614,12 @@ pub enum Refusal {
     Stale { seq: u64, deploy: String },
     /// An agent tried to approve or deny. Agents never do.
     Agent,
+    /// An approval or a deny asked for without a [`VerifiedApproval`]
+    /// ([`Db::record_approval`]).
+    Unverified,
+    /// A verified approval that isn't for this deploy as it is: another
+    /// plan, or another `planned` event (another log).
+    Mismatch(Mismatch),
     /// Not this actor's to record ([`EventKind::allows`]).
     Actor,
     /// Another deploy of its environment is being applied.
@@ -548,10 +637,140 @@ impl std::fmt::Display for Refusal {
                 write!(f, "the deploy is stale: {deploy} applied to its environment after it was planned")
             }
             Refusal::Agent => f.write_str("an agent can't approve or deny a deploy"),
+            Refusal::Unverified => f.write_str("a deploy is approved or denied only by an owner device's signature"),
+            Refusal::Mismatch(Mismatch::Plan) => f.write_str("the approval is for another plan"),
+            Refusal::Mismatch(Mismatch::Planned) => f.write_str("the approval is for another log"),
             Refusal::Actor => f.write_str("that's not this actor's to record"),
             Refusal::Busy { deploy } => write!(f, "{deploy} is being applied to the environment"),
             Refusal::NotItsRun => f.write_str("that run isn't applying this deploy"),
         }
+    }
+}
+
+/// What a verified approval doesn't match ([`Refusal::Mismatch`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mismatch {
+    /// Its plan digest isn't the deploy's.
+    Plan,
+    /// Its `planned` event's hash isn't the one in the log.
+    Planned,
+}
+
+/// An owner device's decision on a deploy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decision {
+    /// Approve it, once.
+    Once,
+    Deny,
+}
+
+impl Decision {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Decision::Once => "once",
+            Decision::Deny => "deny",
+        }
+    }
+}
+
+/// An approval or a deny whose signature has been checked: the only way
+/// one is recorded ([`Db::record_approval`]). Its fields are private, so
+/// storage can't be handed one that wasn't verified: outside tests, it's
+/// made only by M218's verifier, which checks the owner device's signature
+/// over the deploy's operation before it makes one.
+///
+/// It names the deploy, its plan's digest and the hash of its `planned`
+/// event, so the device signs the log up to the plan; recording it checks
+/// them against the deploy's row and its log. The whole of it goes in the
+/// event's detail ([`VerifiedApproval::detail`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedApproval {
+    deploy: String,
+    plan_digest: String,
+    planned_hash: String,
+    /// The operation's hash the device signed over (M218's `arugula deploy
+    /// op v1`), hex.
+    op: String,
+    /// The approver: a project owner's account.
+    account: String,
+    /// The approving device.
+    device: String,
+    decision: Decision,
+    /// By when the apply must start, ms.
+    expires: u64,
+    /// The device's signature, hex.
+    signature: String,
+}
+
+impl VerifiedApproval {
+    /// One made without checking anything: tests only. M218's verifier is
+    /// the only other constructor.
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn unchecked_for_tests(
+        deploy: &str,
+        plan_digest: &str,
+        planned_hash: &str,
+        op: &str,
+        account: &str,
+        device: &str,
+        decision: Decision,
+        expires: u64,
+        signature: &str,
+    ) -> Self {
+        Self {
+            deploy: deploy.into(),
+            plan_digest: plan_digest.into(),
+            planned_hash: planned_hash.into(),
+            op: op.into(),
+            account: account.into(),
+            device: device.into(),
+            decision,
+            expires,
+            signature: signature.into(),
+        }
+    }
+
+    pub fn deploy(&self) -> &str {
+        &self.deploy
+    }
+
+    pub fn account(&self) -> &str {
+        &self.account
+    }
+
+    pub fn device(&self) -> &str {
+        &self.device
+    }
+
+    pub fn decision(&self) -> Decision {
+        self.decision
+    }
+
+    pub fn expires(&self) -> u64 {
+        self.expires
+    }
+
+    /// The event it's recorded as.
+    pub fn kind(&self) -> EventKind {
+        match self.decision {
+            Decision::Once => EventKind::Approved,
+            Decision::Deny => EventKind::Denied,
+        }
+    }
+
+    /// What its event's detail holds: enough, with the event's deploy and
+    /// actor, to check the signature from the log.
+    pub fn detail(&self) -> serde_json::Value {
+        json!({
+            "decision": self.decision.as_str(),
+            "plan": self.plan_digest,
+            "planned": self.planned_hash,
+            "op": self.op,
+            "device": self.device,
+            "expires": self.expires,
+            "signature": self.signature,
+        })
     }
 }
 
@@ -675,6 +894,9 @@ fn append(
         prev_hash,
         hash: String::new(),
     };
+    if e.detail.len() > MAX_DETAIL {
+        bail!("an event's detail is at most {MAX_DETAIL} bytes, and this one is {}", e.detail.len());
+    }
     e.hash = e.digest().context("an event with a newline in it")?;
     c.execute(
         "INSERT INTO deploy_events (environment_id, seq, deploy_id, kind, actor, at, detail, prev_hash, hash)
@@ -697,40 +919,56 @@ fn last_apply(c: &impl Sql, environment: &str, deploy: &str) -> Result<Option<(u
     .optional()
 }
 
-/// The stale rule, on what's been read: `d` may not be approved or started
-/// once another deploy applied after its plan.
-fn stale(d: &Deploy, last_apply: Option<(u64, String)>) -> std::result::Result<(), Refusal> {
+/// A deploy's `planned` event: where the stale rule starts from, never the
+/// row's copy of its seq.
+fn planned_event(c: &impl Sql, deploy: &str) -> Result<Option<Event>> {
+    c.query_row(
+        &format!(
+            "SELECT {EVENT_COLS} FROM deploy_events WHERE deploy_id = ?1 AND kind = 'planned' ORDER BY seq LIMIT 1"
+        ),
+        params![deploy],
+        event_row,
+    )
+    .optional()
+}
+
+/// A deploy's row and its `planned` event, which must agree on its
+/// environment. `None`: there's no such deploy.
+fn deploy_and_plan(c: &impl Sql, deploy: &str) -> Result<Option<(Deploy, Event)>> {
+    let Some(d) = c
+        .query_row(&format!("SELECT {DEPLOY_COLS} FROM deploys WHERE id = ?1"), params![deploy], deploy_row)
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    let Some(planned) = planned_event(c, deploy)? else {
+        bail!("deploy {deploy} has no planned event: its environment's log is broken");
+    };
+    if planned.environment != d.environment {
+        bail!("deploy {deploy}'s row and its planned event name different environments");
+    }
+    Ok(Some((d, planned)))
+}
+
+/// The stale rule, on what's been read: `d`, planned at `planned_seq` in
+/// the log, may not be approved or started once another deploy applied
+/// after it.
+fn stale(planned_seq: u64, last_apply: Option<(u64, String)>) -> std::result::Result<(), Refusal> {
     match last_apply {
-        Some((seq, deploy)) if seq > d.planned_seq => Err(Refusal::Stale { seq, deploy }),
+        Some((seq, deploy)) if seq > planned_seq => Err(Refusal::Stale { seq, deploy }),
         _ => Ok(()),
     }
 }
 
-/// Whether `kind` may be recorded on `d` by `by`, inside the transaction
-/// that holds `d`'s environment: the actor ([`EventKind::allows`]), then
-/// [`ready`].
-fn check(c: &impl Sql, d: &Deploy, kind: EventKind, by: &Actor) -> Result<std::result::Result<(), Refusal>> {
-    if let Err(r) = kind.allows(by) {
-        return Ok(Err(r));
-    }
-    if matches!(kind, EventKind::Succeeded | EventKind::Failed)
-        && let Actor::Run(r) = by
-        && d.state == State::Running
-        && d.run.as_deref() != Some(r)
-    {
-        return Ok(Err(Refusal::NotItsRun));
-    }
-    ready(c, d, kind)
-}
-
 /// Whether `d`'s state lets `kind` move it, and for an approval or a start
-/// the stale rule, and for a start that nothing else is being applied.
-fn ready(c: &impl Sql, d: &Deploy, kind: EventKind) -> Result<std::result::Result<(), Refusal>> {
+/// the stale rule (from its `planned` event's seq), and for a start that
+/// nothing else is being applied.
+fn ready(c: &impl Sql, d: &Deploy, planned_seq: u64, kind: EventKind) -> Result<std::result::Result<(), Refusal>> {
     let gate = matches!(kind, EventKind::Approved | EventKind::Started);
     if gate && (d.state == State::Stale || kind.from().contains(&d.state)) {
         // The rule itself, whatever the row's state says: and for a stale
         // one, why.
-        if let Err(r) = stale(d, last_apply(c, &d.environment, &d.id)?) {
+        if let Err(r) = stale(planned_seq, last_apply(c, &d.environment, &d.id)?) {
             return Ok(Err(r));
         }
     }
@@ -749,6 +987,116 @@ fn ready(c: &impl Sql, d: &Deploy, kind: EventKind) -> Result<std::result::Resul
         return Ok(Err(Refusal::Busy { deploy: busy }));
     }
     Ok(Ok(()))
+}
+
+/// [`Db::record_deploy`] inside a transaction the caller holds and commits
+/// (M218 writes its own rows in the same one).
+pub(super) fn record_in(
+    tx: &impl Sql,
+    deploy: &str,
+    kind: EventKind,
+    by: &Actor,
+    at: u64,
+    detail: serde_json::Value,
+) -> Result<std::result::Result<Recorded, Refusal>> {
+    if !detail.is_object() {
+        bail!("an event's detail is a JSON object");
+    }
+    if !by.well_formed() {
+        bail!("an actor's ids are each one word");
+    }
+    if let Err(r) = kind.allows(by) {
+        return Ok(Err(r));
+    }
+    write(tx, deploy, kind, by, at, detail, None)
+}
+
+/// [`Db::record_approval`] inside a transaction the caller holds and
+/// commits.
+pub(super) fn record_approval_in(
+    tx: &impl Sql,
+    approval: &VerifiedApproval,
+    at: u64,
+) -> Result<std::result::Result<Recorded, Refusal>> {
+    let by = Actor::Person(approval.account.clone());
+    if !by.well_formed() {
+        bail!("an approver's account is one word");
+    }
+    write(tx, &approval.deploy, approval.kind(), &by, at, approval.detail(), Some(approval))
+}
+
+/// Record `kind` on `deploy`, once the actor may: the environment locked,
+/// then the deploy's own checks, then its event, its row, and the deploys
+/// an apply makes stale.
+fn write(
+    tx: &impl Sql,
+    deploy: &str,
+    kind: EventKind,
+    by: &Actor,
+    at: u64,
+    mut detail: serde_json::Value,
+    approval: Option<&VerifiedApproval>,
+) -> Result<std::result::Result<Recorded, Refusal>> {
+    let Some(environment) = tx
+        .query_row("SELECT environment_id FROM deploys WHERE id = ?1", params![deploy], |r| r.get::<String>(0))
+        .optional()?
+    else {
+        return Ok(Err(Refusal::Gone));
+    };
+    lock_environment(tx, &environment)?;
+    let Some((d, planned)) = deploy_and_plan(tx, deploy)? else {
+        return Ok(Err(Refusal::Gone));
+    };
+    if matches!(kind, EventKind::Succeeded | EventKind::Failed)
+        && let Actor::Run(r) = by
+        && d.state == State::Running
+        && d.run.as_deref() != Some(r)
+    {
+        return Ok(Err(Refusal::NotItsRun));
+    }
+    if let Some(a) = approval {
+        if a.plan_digest != d.plan_digest {
+            return Ok(Err(Refusal::Mismatch(Mismatch::Plan)));
+        }
+        if a.planned_hash != planned.hash {
+            return Ok(Err(Refusal::Mismatch(Mismatch::Planned)));
+        }
+    }
+    if let Err(r) = ready(tx, &d, planned.seq, kind)? {
+        return Ok(Err(r));
+    }
+    let run = match (kind, by) {
+        // TODO(M219): the routes tie this run to the deploy: it's the
+        // driver run made for this deploy's operation, so no other run
+        // can start it.
+        (EventKind::Started, Actor::Run(r)) => {
+            detail["run"] = r.clone().into();
+            Some(r.clone())
+        }
+        _ => d.run.clone(),
+    };
+    let own = append(tx, &environment, deploy, kind, by, at, &detail)?;
+    let d = tx.query_row(
+        &format!("UPDATE deploys SET state = ?2, run_id = ?3, updated_at = ?4 WHERE id = ?1 RETURNING {DEPLOY_COLS}"),
+        params![deploy, kind.to().as_str(), run, at],
+        deploy_row,
+    )?;
+    let mut events = vec![own.clone()];
+    if kind.applies() {
+        let open: Vec<String> = tx.query_map(
+            "SELECT id FROM deploys WHERE environment_id = ?1 AND id != ?2
+                 AND state IN ('planned', 'pending', 'approved')
+             ORDER BY planned_seq",
+            params![environment, deploy],
+            |r| r.get(0),
+        )?;
+        for other in open {
+            let why = json!({ "after": deploy, "seq": own.seq });
+            events.push(append(tx, &environment, &other, EventKind::Staled, &Actor::Platform, at, &why)?);
+            tx.execute("UPDATE deploys SET state = 'stale', updated_at = ?2 WHERE id = ?1", params![other, at])?;
+        }
+    }
+    Ok(Ok(Recorded { deploy: d, events }))
 }
 
 impl Db {
@@ -884,27 +1232,27 @@ impl Db {
     }
 
     /// Whether `deploy` may be approved now: it's waiting for approval and
-    /// nothing else applied to its environment since it was planned (the
-    /// stale rule). What M218 asks before it takes an approval; recording
-    /// one ([`Db::record_deploy`]) asks again in its own transaction.
+    /// nothing else applied to its environment since its `planned` event
+    /// (the stale rule). What M218 asks before it takes an approval;
+    /// recording one ([`Db::record_approval`]) asks again in its own
+    /// transaction.
     pub fn may_approve(&self, deploy: &str) -> Result<std::result::Result<(), Refusal>> {
         let c = self.c();
-        let Some(d) = c
-            .query_row(&format!("SELECT {DEPLOY_COLS} FROM deploys WHERE id = ?1"), params![deploy], deploy_row)
-            .optional()?
-        else {
+        let Some((d, planned)) = deploy_and_plan(&c, deploy)? else {
             return Ok(Err(Refusal::Gone));
         };
-        ready(&c, &d, EventKind::Approved)
+        ready(&c, &d, planned.seq, EventKind::Approved)
     }
 
     /// Move a deploy on by recording `kind` as `by`, with `detail` (a JSON
-    /// object) in its event: the deploy's state and its log change in one
-    /// transaction, or neither does. A `started` sets the run that applies
-    /// it. An apply (`started`, `succeeded`, `failed`) makes every other
-    /// open deploy of the environment stale, each with its own event.
-    /// Refused when the deploy's state, the actor or the stale rule don't
-    /// allow it ([`Refusal`]).
+    /// object, at most [`MAX_DETAIL`] bytes) in its event: the deploy's
+    /// state and its log change in one transaction, or neither does. A
+    /// `started` sets the run that applies it. An apply (`started`,
+    /// `succeeded`, `failed`) makes every other open deploy of the
+    /// environment stale, each with its own event. Refused when the
+    /// deploy's state, the actor or the stale rule don't allow it
+    /// ([`Refusal`]); an approval or a deny always is
+    /// ([`Db::record_approval`]).
     pub fn record_deploy(
         &self,
         deploy: &str,
@@ -913,59 +1261,31 @@ impl Db {
         at: u64,
         detail: serde_json::Value,
     ) -> Result<std::result::Result<Recorded, Refusal>> {
-        if !detail.is_object() {
-            bail!("an event's detail is a JSON object");
-        }
-        if !by.well_formed() {
-            bail!("an actor's ids are each one word");
-        }
         let mut c = self.c();
         let tx = c.immediate()?;
-        let Some(environment) = tx
-            .query_row("SELECT environment_id FROM deploys WHERE id = ?1", params![deploy], |r| r.get::<String>(0))
-            .optional()?
-        else {
-            return Ok(Err(Refusal::Gone));
-        };
-        lock_environment(&tx, &environment)?;
-        let d =
-            tx.query_row(&format!("SELECT {DEPLOY_COLS} FROM deploys WHERE id = ?1"), params![deploy], deploy_row)?;
-        if let Err(r) = check(&tx, &d, kind, by)? {
-            return Ok(Err(r));
+        let r = record_in(&tx, deploy, kind, by, at, detail)?;
+        if r.is_ok() {
+            tx.commit()?;
         }
-        let mut detail = detail;
-        let run = match (kind, by) {
-            (EventKind::Started, Actor::Run(r)) => {
-                detail["run"] = r.clone().into();
-                Some(r.clone())
-            }
-            _ => d.run.clone(),
-        };
-        let own = append(&tx, &environment, deploy, kind, by, at, &detail)?;
-        let d = tx.query_row(
-            &format!(
-                "UPDATE deploys SET state = ?2, run_id = ?3, updated_at = ?4 WHERE id = ?1 RETURNING {DEPLOY_COLS}"
-            ),
-            params![deploy, kind.to().as_str(), run, at],
-            deploy_row,
-        )?;
-        let mut events = vec![own.clone()];
-        if kind.applies() {
-            let open: Vec<String> = tx.query_map(
-                "SELECT id FROM deploys WHERE environment_id = ?1 AND id != ?2
-                     AND state IN ('planned', 'pending', 'approved')
-                 ORDER BY planned_seq",
-                params![environment, deploy],
-                |r| r.get(0),
-            )?;
-            for other in open {
-                let why = json!({ "after": deploy, "seq": own.seq });
-                events.push(append(&tx, &environment, &other, EventKind::Staled, &Actor::Platform, at, &why)?);
-                tx.execute("UPDATE deploys SET state = 'stale', updated_at = ?2 WHERE id = ?1", params![other, at])?;
-            }
+        Ok(r)
+    }
+
+    /// Record an owner device's verified approval or deny on its deploy,
+    /// as its account: refused unless it names the deploy's plan and its
+    /// `planned` event as they are, the deploy is waiting for approval, and
+    /// (for an approval) the stale rule allows it.
+    pub fn record_approval(
+        &self,
+        approval: &VerifiedApproval,
+        at: u64,
+    ) -> Result<std::result::Result<Recorded, Refusal>> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        let r = record_approval_in(&tx, approval, at)?;
+        if r.is_ok() {
+            tx.commit()?;
         }
-        tx.commit()?;
-        Ok(Ok(Recorded { deploy: d, events }))
+        Ok(r)
     }
 
     /// An environment's log, oldest first.
@@ -986,17 +1306,35 @@ impl Db {
         )
     }
 
-    /// Check an environment's log ([`verify_chain`]): how many events
-    /// verified, or the first bad link.
+    /// Check an environment's log ([`verify_chain`]) and its deploys'
+    /// rows against it ([`verify_rows`]), read in one snapshot: how many
+    /// events verified, or the first bad link.
     pub fn verify_deploy_log(&self, environment: &str) -> Result<std::result::Result<u64, BadLink>> {
-        Ok(verify_chain(environment, &self.deploy_events(environment)?))
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        if tx.dialect() == super::migrate::Dialect::Postgres {
+            tx.execute_batch("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")?;
+        }
+        let events = tx.query_map(
+            &format!("SELECT {EVENT_COLS} FROM deploy_events WHERE environment_id = ?1 ORDER BY seq"),
+            params![environment],
+            event_row,
+        )?;
+        let deploys = tx.query_map(
+            &format!("SELECT {DEPLOY_COLS} FROM deploys WHERE environment_id = ?1 ORDER BY planned_seq"),
+            params![environment],
+            deploy_row,
+        )?;
+        tx.commit()?;
+        Ok(verify_chain(environment, &events).and_then(|n| verify_rows(&events, &deploys).map(|()| n)))
     }
 }
 
 /// What deleting an account takes from deploys, inside the platform's
 /// `account_deleted` transaction, after [`super::projects::erase_account`]:
-/// - the environments of the projects that went with it, their deploys and
-///   their logs, whole;
+/// - the environments of the projects that went with it, then their logs
+///   (which a trigger keeps while their environment exists) and their
+///   deploys, whole;
 /// - elsewhere its deploys keep their rows, naming no planner (and no
 ///   agent);
 /// - its events keep their rows as written, its account id in `actor`
@@ -1004,17 +1342,9 @@ impl Db {
 ///   its environment's chain. The id names no one once the account is
 ///   gone, so they're shown as "a deleted account".
 pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
-    c.execute(
-        "DELETE FROM deploy_events WHERE environment_id IN
-             (SELECT id FROM environments WHERE project_id NOT IN (SELECT id FROM projects))",
-        params![],
-    )?;
-    c.execute(
-        "DELETE FROM deploys WHERE environment_id IN
-             (SELECT id FROM environments WHERE project_id NOT IN (SELECT id FROM projects))",
-        params![],
-    )?;
     c.execute("DELETE FROM environments WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
+    c.execute("DELETE FROM deploy_events WHERE environment_id NOT IN (SELECT id FROM environments)", params![])?;
+    c.execute("DELETE FROM deploys WHERE environment_id NOT IN (SELECT id FROM environments)", params![])?;
     c.execute("UPDATE deploys SET planned_by = '', planned_by_agent = NULL WHERE planned_by = ?1", params![d.account])?;
     Ok(())
 }

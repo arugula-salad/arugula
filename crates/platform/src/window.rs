@@ -208,7 +208,7 @@ pub fn copy(from: &Path, to: &Path, replace: bool) -> anyhow::Result<Report> {
                 held.join(", ")
             );
         }
-        for t in names.iter().rev() {
+        for t in emptying_order(names.iter().map(String::as_str)) {
             tx.execute(&format!("DELETE FROM main.\"{t}\""), [])?;
         }
         for t in &names {
@@ -506,10 +506,20 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
 #[cfg(any(test, feature = "contract"))]
 pub const SAMPLE_KEY: &str = "0101010101010101010101010101010101010101010101010101010101010101";
 
+/// The order `--replace` empties tables in: children before parents (the
+/// reverse of [`tables`]), but `environments` first, because a trigger
+/// keeps `deploy_events` while their environment exists (M217).
+pub(crate) fn emptying_order<'a>(names: impl DoubleEndedIterator<Item = &'a str>) -> Vec<&'a str> {
+    let mut out: Vec<&str> = names.rev().collect();
+    out.sort_by_key(|t| *t != "environments");
+    out
+}
+
 /// A few rows in several of the platform's tables, the way the platform
 /// writes them (tests, here and in control): rooms, members and messages
 /// that search finds, a read mark, projects, an issue search finds and its
-/// timeline, a grant, the feed's position,
+/// timeline, an environment with a deploy and its log (whose trigger
+/// `--replace` has to get past), a grant, the feed's position,
 /// cloud notifications with a gap in their rowids, and a cloud secret
 /// sealed with [`SAMPLE_KEY`]. Accounts `acct-a` and `acct-b`.
 #[cfg(any(test, feature = "contract"))]
@@ -536,6 +546,13 @@ pub fn sample(db: &crate::db::Db) {
          INSERT INTO issues (search_id, id, project_id, number, title, body, author, labels, created_at, updated_at)
              VALUES (3, 'iss_1', 'prj_t', 1, 'Rehearsal notes', 'the canary held', 'acct-a', '[\"ops\"]', 24, 24);
          INSERT INTO issue_events (id, issue_id, kind, actor, at) VALUES (5, 'iss_1', 'opened', 'acct-a', 24);
+         INSERT INTO environments (id, project_id, name, driver, created_at, updated_at)
+             VALUES ('env_1', 'prj_t', 'production', 'chant-fly', 25, 25);
+         INSERT INTO deploys (id, environment_id, source_kind, source_ref, source_where, plan_digest, state,
+                 planned_seq, planned_by, created_at, updated_at)
+             VALUES ('dep_1', 'env_1', 'commit', 'abc', 'acme/app', 'ff', 'planned', 1, 'acct-a', 25, 25);
+         INSERT INTO deploy_events (id, environment_id, seq, deploy_id, kind, actor, at, prev_hash, hash)
+             VALUES (6, 'env_1', 1, 'dep_1', 'planned', 'person acct-a', 25, '00', 'ff');
          INSERT INTO cloud_notifications (conversation, account, request, next_attempt)
              VALUES ('c2', 'acct-a', 'q2', 1), ('c1', 'acct-a', 'q1', 1);
          DELETE FROM cloud_notifications WHERE conversation = 'c2';
