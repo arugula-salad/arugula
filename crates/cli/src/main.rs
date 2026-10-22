@@ -388,6 +388,8 @@ enum Command {
     /// spec (asking the box for unpushed work first), `delete` takes it and
     /// its box away. `key set anthropic|openai` gives the project its own
     /// inference key (from stdin; never in the box), `key clear` and `key ls`.
+    /// `preview public WORKSPACE PORT` gives a port a public address for 7
+    /// days (`renew`, `off`, `ls`).
     /// `--project` names a project by id or name; the default is your
     /// personal one. Needs `arugula login`.
     Cloud {

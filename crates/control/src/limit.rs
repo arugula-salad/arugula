@@ -19,6 +19,9 @@ pub const LINKS: (&str, usize) = ("link", 240);
 /// worker and shim open one each per load, and again after the browser
 /// stops an idle worker.
 pub const BLOCK_RELAYS: (&str, usize) = ("block-relay", 3_000);
+/// Requests to public previews, per client address (M187): a page and its
+/// assets, many times over.
+pub const PUBLIC_PREVIEWS: (&str, usize) = ("public-preview", 20_000);
 /// Invite previews on the signed-out page (#103).
 pub const INVITES: (&str, usize) = ("invite", 240);
 /// Notifications relayed, all daemons together, per hour: a brake.

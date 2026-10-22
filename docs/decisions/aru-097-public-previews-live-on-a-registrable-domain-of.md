@@ -47,6 +47,8 @@ reviews: []
 constrains:
   - "path:crates/control/src/blocks_wire.rs"
   - "path:crates/control/src/blocks.rs"
+  - "path:crates/control/src/previews.rs"
+  - "path:crates/daemon/src/public_preview.rs"
 ---
 
 # Public previews live on a registrable domain of their own
@@ -69,5 +71,17 @@ channel to a hosted machine, and the daemon's `block_signer`
 (`crates/daemon/src/control.rs`) lets in grants from the project's owners'
 and editors' devices only (M186). `blocks.rs`'s test
 `no_provider_preview_urls` keeps the provider's preview hosts out of the
-tree. Public previews: not built yet (M187).
+tree. Public previews (M187): `arugula.site`, Jake's pick (bought
+2026-10-22). Control (the hub) terminates HTTPS for `*.<preview domain>`
+and brings each request to the box over its relay socket, on a block
+channel opened with a grant signed with control's hosted key for one port
+(`arugula_e2e::preview`, `crates/control/src/previews.rs`), so **control
+sees a public preview's traffic in plain text**, which is acceptable because
+it's public; members' previews stay end to end. The box serves it only
+while the platform, asked through control at most every 20 seconds, says
+that port is public under that id (`crates/daemon/src/public_preview.rs`),
+so turning it off takes it down within a minute. The platform keeps who and
+until when in `hosted_ports` (`crates/platform/src/hosted/previews.rs`). A
+paused box isn't woken for a stranger. Abuse contact and takedown:
+docs/control-ops.md, "Public previews".
 From: #1235 (platform roadmap, step 5), M175 (#1236), M186 (#1247), M187 (#1248), M50 (#150).

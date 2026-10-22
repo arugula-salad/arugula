@@ -11,6 +11,8 @@
 //!   channel to one block with a key the device signed for it.
 //! - [`hosted`]: hosted machines (M178): project delegations, and the
 //!   certificates control signs under them, accepted for one project only.
+//! - [`preview`]: public previews' grants (M187): control opening a
+//!   channel to one public port of a hosted machine, for a stranger.
 //! - [`run`]: a run's lifecycle (S37's eight states, M210) and the event a
 //!   daemon signs when it reports a move.
 //! - [`project_grant`]: the standing project grant (M211): an owner's
@@ -22,6 +24,7 @@ pub mod channel;
 pub mod hosted;
 pub mod keys;
 pub mod mux;
+pub mod preview;
 pub mod project_grant;
 pub mod push;
 pub mod run;

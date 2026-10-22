@@ -35,6 +35,23 @@ pub const HOSTED_TRUST: &str = "/api/hosted/trust";
 /// (`no_key`, `cap`) and a sentence for the person. Its end is
 /// `POST {HOSTED_TURNS}/{turn}/end`.
 pub const HOSTED_TURNS: &str = "/api/hosted/turns";
+/// A hosted machine's ports that are public now (M187): `GET`, signed as
+/// the machine, answered [`PublicPorts`]. The machine serves a public
+/// preview only for a port and id listed here.
+pub const HOSTED_PREVIEWS: &str = "/api/hosted/previews";
+
+/// What [`HOSTED_PREVIEWS`] answers.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicPorts {
+    pub ports: Vec<PublicPort>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PublicPort {
+    pub port: u16,
+    /// The preview's id, the label of its host.
+    pub preview: String,
+}
 
 /// What a hosted machine sets up on its first boot (`GET`, signed as the
 /// machine), answered [`SetupPlan`] (M183).

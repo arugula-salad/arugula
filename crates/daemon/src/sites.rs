@@ -303,6 +303,23 @@ impl Sites {
         site
     }
 
+    /// A site for a public preview of `port` (M187, `public_preview.rs`):
+    /// kept nowhere, so no block or Host header reaches it, and reporting
+    /// nothing.
+    pub fn public_site(&self, port: u16) -> Arc<Site> {
+        let site = Site {
+            id: 0,
+            host: String::new(),
+            origin: String::new(),
+            target: Mutex::new(Some(Target::Local(port))),
+            down: AtomicBool::new(false),
+            report: Box::new(|_| {}),
+            head: OnceLock::new(),
+            site_key: String::new(),
+        };
+        Arc::new(site)
+    }
+
     pub fn close(&self, id: PaneId) {
         self.sites.lock().unwrap().remove(&id);
         self.closed.send_modify(|n| *n += 1);
@@ -568,6 +585,11 @@ pub(crate) enum Via {
     /// A block channel (M50): from control's block origin, which this
     /// daemon doesn't name.
     Channel,
+    /// A public preview (M187): anyone's browser, through control, on the
+    /// preview's own origin, which this daemon doesn't name. The page is
+    /// top-level and its own: no frame rules of ours, and the port's own
+    /// guards stand for requests from other sites.
+    Public,
 }
 
 fn is_upgrade(h: &HeaderMap) -> bool {
@@ -599,17 +621,21 @@ fn rewrite_request(h: &mut HeaderMap, site: &Site, local: &str, upgrade: bool, v
         h.insert(header::CONNECTION, HeaderValue::from_static("upgrade"));
     }
     h.insert(header::HOST, HeaderValue::from_str(local).expect("host"));
-    // `check` let through only our own origin.
-    if h.contains_key(header::ORIGIN) {
+    // `check` let through only our own origin; a public preview's
+    // requests from other sites keep theirs, so the port's own CSRF checks
+    // still see them (browsers set `Sec-Fetch-Site`; pages can't).
+    let own = via != Via::Public || text(h, "sec-fetch-site") == Some("same-origin");
+    if own && h.contains_key(header::ORIGIN) {
         h.insert(header::ORIGIN, HeaderValue::from_str(&local_origin).expect("origin"));
     }
     let referer = text(h, header::REFERER.as_str()).and_then(|r| match via {
         Via::Listener => r.strip_prefix(&site.origin),
         // The page's own URL, on an origin this daemon doesn't name.
-        Via::Channel => {
+        Via::Channel | Via::Public if own => {
             let rest = &r[r.find("://")? + 3..];
             Some(rest.find('/').map_or("", |i| &rest[i..]))
         }
+        Via::Channel | Via::Public => None,
     });
     if let Some(r) = referer
         && let Ok(v) = HeaderValue::from_str(&format!("{local_origin}{r}"))
@@ -626,7 +652,7 @@ fn rewrite_request(h: &mut HeaderMap, site: &Site, local: &str, upgrade: bool, v
 /// The answer as the browser sees it: from the block's origin, framed only
 /// by the app. Redirects to the port go to `base` (the block's origin, or
 /// empty for a path on whatever origin the page is on).
-fn rewrite_response(h: &mut HeaderMap, base: &str, local: &str, frame_ancestors: &HeaderValue, upgraded: bool) {
+fn rewrite_response(h: &mut HeaderMap, base: &str, local: &str, frame_ancestors: Option<&HeaderValue>, upgraded: bool) {
     for name in HOP {
         if !(upgraded && (*name == "connection" || *name == "upgrade")) {
             h.remove(*name);
@@ -644,9 +670,12 @@ fn rewrite_response(h: &mut HeaderMap, base: &str, local: &str, frame_ancestors:
             h.insert(header::LOCATION, v);
         }
     }
-    h.remove(header::X_FRAME_OPTIONS);
     // A second policy: browsers enforce both, so the server's own stays.
-    h.append(header::CONTENT_SECURITY_POLICY, frame_ancestors.clone());
+    // A public preview's framing is the port's own business.
+    if let Some(f) = frame_ancestors {
+        h.remove(header::X_FRAME_OPTIONS);
+        h.append(header::CONTENT_SECURITY_POLICY, f.clone());
+    }
 }
 
 async fn handle(
@@ -736,11 +765,12 @@ pub(crate) async fn forward(
     };
     let upgraded = res.status() == StatusCode::SWITCHING_PROTOCOLS;
     let (ancestors, base) = match via {
-        Via::Listener => (frame_ancestors(&pages(&sites.settings.app_origins)), site.origin.as_str()),
+        Via::Listener => (Some(frame_ancestors(&pages(&sites.settings.app_origins))), site.origin.as_str()),
         // Its origin is control's, so only control's pages frame it.
-        Via::Channel => (frame_ancestors(&control_origins()), ""),
+        Via::Channel => (Some(frame_ancestors(&control_origins())), ""),
+        Via::Public => (None, ""),
     };
-    rewrite_response(res.headers_mut(), base, &local, &ancestors, upgraded);
+    rewrite_response(res.headers_mut(), base, &local, ancestors.as_ref(), upgraded);
     let html = text(res.headers(), header::CONTENT_TYPE.as_str()).is_some_and(|t| t.starts_with("text/html"));
     if edit_page && html && !res.headers().contains_key(header::CONTENT_ENCODING) {
         let (mut parts, body) = res.into_parts();
@@ -973,16 +1003,52 @@ mod tests {
         assert_eq!(h["referer"], "http://localhost:5173");
     }
 
+    /// M187: a public preview's own requests look local; another site's
+    /// keep their Origin, so the port's own CSRF checks see them. Its
+    /// answers keep the port's own framing rules, and its redirects stay
+    /// on the preview's origin.
+    #[test]
+    fn public_requests_keep_other_sites_origins() {
+        let s = sites(Scheme::Channel);
+        let site = s.public_site(5173);
+        assert_eq!(site.target(), Some(Target::Local(5173)));
+        assert!(s.site(0).is_none(), "kept nowhere");
+        let own = "https://0123456789abcdef0123456789abcdef.arugula.site";
+        let mut h = headers(&[
+            ("origin", own),
+            ("referer", &format!("{own}/a?b")),
+            ("sec-fetch-site", "same-origin"),
+            ("accept-encoding", "gzip"),
+        ]);
+        rewrite_request(&mut h, &site, "localhost:5173", false, Via::Public);
+        assert_eq!(h["origin"], "http://localhost:5173");
+        assert_eq!(h["referer"], "http://localhost:5173/a?b");
+        assert_eq!(h["accept-encoding"], "gzip", "control passes the bytes on as they are");
+        let mut h = headers(&[
+            ("origin", "https://evil.example"),
+            ("referer", "https://evil.example/x"),
+            ("sec-fetch-site", "cross-site"),
+        ]);
+        rewrite_request(&mut h, &site, "localhost:5173", false, Via::Public);
+        assert_eq!(h["origin"], "https://evil.example");
+        assert_eq!(h["referer"], "https://evil.example/x");
+        let mut h = headers(&[("location", "http://localhost:5173/next"), ("x-frame-options", "DENY")]);
+        rewrite_response(&mut h, "", "localhost:5173", None, false);
+        assert_eq!(h["location"], "/next");
+        assert_eq!(h["x-frame-options"], "DENY");
+        assert!(!h.contains_key("content-security-policy"));
+    }
+
     #[test]
     fn channel_redirects_stay_on_the_page_origin() {
         let fa = frame_ancestors(&["https://control.example".into()]);
         let mut h = headers(&[("location", "http://localhost:5173/next?x"), ("x-frame-options", "DENY")]);
-        rewrite_response(&mut h, "", "localhost:5173", &fa, false);
+        rewrite_response(&mut h, "", "localhost:5173", Some(&fa), false);
         assert_eq!(h["location"], "/next?x");
         assert!(!h.contains_key("x-frame-options"));
         assert_eq!(h["content-security-policy"], "frame-ancestors 'self' https://control.example");
         let mut h = headers(&[("location", "http://127.0.0.1:5173")]);
-        rewrite_response(&mut h, "", "localhost:5173", &fa, false);
+        rewrite_response(&mut h, "", "localhost:5173", Some(&fa), false);
         assert_eq!(h["location"], "/");
     }
 
@@ -1020,7 +1086,7 @@ mod tests {
             ("location", "http://localhost:5173/next"),
             ("content-security-policy", "default-src 'self'"),
         ]);
-        rewrite_response(&mut h, &site.origin, "localhost:5173", &fa, false);
+        rewrite_response(&mut h, &site.origin, "localhost:5173", Some(&fa), false);
         assert!(!h.contains_key("x-frame-options"));
         assert_eq!(h["location"], "http://b-3-k.localhost:7690/next");
         let csp: Vec<_> = h.get_all("content-security-policy").iter().map(|v| v.to_str().unwrap()).collect();
@@ -1029,7 +1095,7 @@ mod tests {
             ["default-src 'self'", "frame-ancestors 'self' http://127.0.0.1:7681 https://geek.example.ts.net"]
         );
         let mut h = headers(&[("location", "https://elsewhere.example/")]);
-        rewrite_response(&mut h, &site.origin, "localhost:5173", &fa, false);
+        rewrite_response(&mut h, &site.origin, "localhost:5173", Some(&fa), false);
         assert_eq!(h["location"], "https://elsewhere.example/");
     }
 

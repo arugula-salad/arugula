@@ -320,6 +320,15 @@ struct TranscriptArgs {
     transcript: arugula_control_wire::transcripts::TranscriptPost,
 }
 
+/// Public previews (M187): a preview's id, or a workspace's.
+#[derive(Serialize, Deserialize)]
+struct PreviewArgs {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    workspace: String,
+}
+
 fn ids(v: &[String]) -> IdsArgs {
     IdsArgs { ids: v.to_vec() }
 }
@@ -642,6 +651,16 @@ impl PlatformPort for HttpPlatform {
         Box::pin(self.0.call("hosted_wake", a))
     }
 
+    fn public_preview<'a>(&'a self, id: &'a str) -> BoxFuture<'a, anyhow::Result<Option<crate::PublicPreview>>> {
+        let a = PreviewArgs { id: id.to_owned(), workspace: String::new() };
+        Box::pin(self.0.call("public_preview", a))
+    }
+
+    fn public_ports<'a>(&'a self, workspace: &'a str) -> BoxFuture<'a, anyhow::Result<Vec<(u16, String)>>> {
+        let a = PreviewArgs { id: String::new(), workspace: workspace.to_owned() };
+        Box::pin(self.0.call("public_ports", a))
+    }
+
     fn hosted_turn<'a>(
         &'a self,
         workspace: &'a str,
@@ -808,6 +827,8 @@ async fn platform_call(
                 let a: TranscriptArgs = args(&body)?;
                 answer(p.hosted_transcript(&a.workspace, &a.machine, &a.transcript).await?)?
             }
+            "public_preview" => answer(p.public_preview(&args::<PreviewArgs>(&body)?.id).await?)?,
+            "public_ports" => answer(p.public_ports(&args::<PreviewArgs>(&body)?.workspace).await?)?,
             _ => return Ok(None),
         }))
     }
@@ -1015,6 +1036,25 @@ mod tests {
             ) -> BoxFuture<'a, anyhow::Result<bool>> {
                 Box::pin(async move { Ok(t == "ht_1") })
             }
+            fn public_preview<'a>(
+                &'a self,
+                id: &'a str,
+            ) -> BoxFuture<'a, anyhow::Result<Option<crate::PublicPreview>>> {
+                let p = (id == "p1").then(|| crate::PublicPreview {
+                    id: id.into(),
+                    workspace: "hw_1".into(),
+                    project: "prj_a".into(),
+                    machine: Some("m1".into()),
+                    port: 5173,
+                    state: "ready".into(),
+                    by: Some("alice".into()),
+                    until: 9,
+                });
+                Box::pin(async move { Ok(p) })
+            }
+            fn public_ports<'a>(&'a self, w: &'a str) -> BoxFuture<'a, anyhow::Result<Vec<(u16, String)>>> {
+                Box::pin(async move { Ok(vec![(5173, format!("{w}-p1"))]) })
+            }
         }
         let base = serve(serve_platform(Arc::new(Plans), key())).await;
         let p = HttpPlatform::new(&base, key()).unwrap();
@@ -1028,6 +1068,10 @@ mod tests {
             crate::TurnAnswer::Refused { status: 403, reason: Some("no_key".into()), error: "hw_1 m1 claude".into() }
         );
         assert!(p.hosted_turn_end("hw_1", "m1", "ht_1").await.unwrap());
+        // M187: public previews, by id and by workspace.
+        assert_eq!(p.public_preview("p1").await.unwrap().map(|p| (p.port, p.machine)), Some((5173, Some("m1".into()))));
+        assert_eq!(p.public_preview("nope").await.unwrap(), None);
+        assert_eq!(p.public_ports("hw_1").await.unwrap(), [(5173, "hw_1-p1".to_owned())]);
         p.roster_changed("t").await.unwrap();
         let e = p.account_deleted(&Deleted { account: "a".into(), machines: vec![], disbanded: vec![] }).await;
         assert!(format!("{:#}", e.unwrap_err()).contains("not now"), "an error crosses as an error");

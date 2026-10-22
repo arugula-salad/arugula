@@ -132,6 +132,49 @@ pub enum CloudCmd {
         #[command(subcommand)]
         cmd: KeyCmd,
     },
+    /// A hosted workspace's ports, and their public previews.
+    ///
+    /// `ls` lists the ports and which are public. `public PORT` makes one
+    /// public at its own address, which anyone can open signed out, for 7
+    /// days; `renew` gives it 7 more; `off` takes it down (within a
+    /// minute). Making a port public needs owner or editor on the project,
+    /// and shows who did it.
+    Preview {
+        #[command(subcommand)]
+        cmd: PreviewCmd,
+    },
+}
+
+#[derive(clap::Subcommand)]
+pub enum PreviewCmd {
+    /// The workspace's ports, and which are public.
+    #[command(visible_alias = "list")]
+    Ls {
+        workspace: String,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Make a port public for 7 days: anyone with its address can open it.
+    Public {
+        workspace: String,
+        port: u16,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Keep a public port public for 7 more days.
+    Renew {
+        workspace: String,
+        port: u16,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Take a port's public preview down.
+    Off {
+        workspace: String,
+        port: u16,
+        #[arg(long)]
+        project: Option<String>,
+    },
 }
 
 #[derive(clap::Subcommand)]
@@ -263,6 +306,38 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
         CloudCmd::Delete { workspace, project } => {
             let (project, w) = find(&e, project.as_deref(), &workspace)?;
             show(&e.api("DELETE", &path(&project, &w), None)?);
+        }
+        CloudCmd::Preview { cmd } => {
+            let (workspace, project, port, how) = match cmd {
+                PreviewCmd::Ls { workspace, project } => (workspace, project, None, ""),
+                PreviewCmd::Public { workspace, port, project } => (workspace, project, Some(port), "public"),
+                PreviewCmd::Renew { workspace, port, project } => (workspace, project, Some(port), "renew"),
+                PreviewCmd::Off { workspace, port, project } => (workspace, project, Some(port), "off"),
+            };
+            let (project, w) = find(&e, project.as_deref(), &workspace)?;
+            let ports = format!("{}/ports", path(&project, &w));
+            let got = match (port, how) {
+                (Some(p), "public") => e.api("PUT", &format!("{ports}/{p}/public"), Some(&json!({})))?,
+                (Some(p), "renew") => e.api("PUT", &format!("{ports}/{p}/public"), Some(&json!({ "renew": true })))?,
+                (Some(p), _) => e.api("DELETE", &format!("{ports}/{p}/public"), None)?,
+                (None, _) => e.api("GET", &ports, None)?,
+            };
+            if json_out {
+                print_json(&got);
+            } else if port.is_some() {
+                println!("{}", port_line(&got));
+            } else {
+                let listed = got["ports"].as_array().cloned().unwrap_or_default();
+                if listed.is_empty() {
+                    println!("No ports noted yet: `arugula cloud preview public WORKSPACE PORT` makes one public.");
+                }
+                for p in &listed {
+                    println!("{}", port_line(p));
+                }
+                if got["previews"] == false {
+                    println!("Public previews aren't set up on this control.");
+                }
+            }
         }
         CloudCmd::Key { cmd } => {
             let keys = match cmd {
@@ -404,6 +479,40 @@ fn before_rebuild(w: &Value, download: Option<&std::path::Path>, force: bool) ->
         "arugula: a rebuild loses that work: push it, save it with --download FILE, or rebuild anyway with --force"
     );
     Ok(false)
+}
+
+/// `5173  public  https://….arugula.site  by alice until 2026-10-29 14:00 UTC`,
+/// `5173  private`, or `5173  off` after turning it off.
+fn port_line(p: &Value) -> String {
+    let port = p["port"].as_u64().unwrap_or_default();
+    if p["public"] != true {
+        return format!("{port:<6} {}", if p.get("was_public").is_some() { "off" } else { "private" });
+    }
+    let mut out = format!("{port:<6} public  {}", p["url"].as_str().unwrap_or_default());
+    if let Some(by) = p["public_by"].as_str() {
+        out.push_str(&format!("  by {by}"));
+    }
+    if let Some(until) = p["public_until"].as_u64() {
+        out.push_str(&format!(" until {}", utc(until)));
+    }
+    out
+}
+
+/// Ms since the epoch as `2026-10-29 14:00 UTC`.
+fn utc(ms: u64) -> String {
+    let secs = (ms / 1000) as i64;
+    let (days, rest) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    // Days to a civil date (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02} {:02}:{:02} UTC", rest / 3600, rest % 3600 / 60)
 }
 
 fn path(project: &str, w: &Value) -> String {
@@ -561,6 +670,10 @@ mod tests {
             &["arugula", "cloud", "key", "set", "anthropic", "--project", "Acme"],
             &["arugula", "cloud", "key", "clear", "openai"],
             &["arugula", "cloud", "key", "ls"],
+            &["arugula", "cloud", "preview", "ls", "dev"],
+            &["arugula", "cloud", "preview", "public", "dev", "5173", "--project", "Acme"],
+            &["arugula", "cloud", "preview", "renew", "dev", "5173"],
+            &["arugula", "cloud", "preview", "off", "dev", "5173"],
         ] {
             assert!(crate::Cli::try_parse_from(argv).is_ok(), "{argv:?}");
         }
@@ -578,6 +691,12 @@ mod tests {
             "anthropic  set by alice"
         );
         assert_eq!(key_line(&json!({ "provider": "openai", "set": false })), "openai     not set");
+        let p = json!({ "port": 5173, "public": true, "url": "https://ab.arugula.site", "public_by": "alice",
+                        "public_until": 1_793_282_400_000u64 });
+        assert_eq!(port_line(&p), "5173   public  https://ab.arugula.site  by alice until 2026-10-29 14:00 UTC");
+        assert_eq!(port_line(&json!({ "port": 80, "public": false })), "80     private");
+        assert_eq!(port_line(&json!({ "port": 80, "public": false, "was_public": true })), "80     off");
+        assert!(crate::Cli::try_parse_from(["arugula", "cloud", "preview", "public", "dev", "0x"]).is_err());
         assert!(
             crate::Cli::try_parse_from(["arugula", "cloud", "key", "set", "gemini"]).is_err(),
             "anthropic or openai"

@@ -218,6 +218,26 @@ and editors' machines as their person (a viewer's reach its agents only):
 machine archives its transcript to the platform, read only under the
 project (`GET /api/projects/{project}/transcripts`).
 
+**Public previews (M187, #1248).** A dev server in a hosted workspace shows
+to the project's people in a browser block (M186). One of its owners or
+editors can also make a port public: it gets an address of its own,
+`https://<id>.arugula.site` (`ARUGULA_PREVIEW_DOMAIN`), that anyone opens
+signed out, for 7 days unless renewed, and the workspace shows who made it
+public. Control serves it through the relay and sees its traffic, which is
+fine because it's public; members' previews stay end to end. A paused box
+isn't woken for a stranger: the page says it's asleep. Turning a preview
+off takes it down within a minute (docs/control-e2e.md, "Public
+previews").
+
+```
+arugula cloud preview public dev 5173     # prints its public address
+arugula cloud preview ls dev
+arugula cloud preview renew dev 5173      # 7 more days
+arugula cloud preview off dev 5173
+```
+
+No page lists a workspace's ports yet: the CLI is the way in.
+
 **Bodies and comments (M166, #1212).** The platform keeps a linked repo's
 PRs and issues as metadata. Opening one (`GET
 /api/forge/items/{id}/content`) reads its body, comments, reviews' text

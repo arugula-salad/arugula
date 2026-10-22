@@ -722,6 +722,14 @@ process = "hub"
 auth = "hosted"
 clients = ["daemon"]
 note = "A hosted box says an agent turn ended (M185): only its own box's (PlatformPort::hosted_turn_end)."
+
+[[route]]
+method = "GET"
+path = "/api/hosted/previews"  # wire::hosted::HOSTED_PREVIEWS
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A hosted machine's ports that are public now (M187), and their preview ids, through PlatformPort::public_ports for the workspace its certificate names. The machine serves a public preview only for a port listed here, asked again at most every 20 s."
 [[route]]
 method = "GET"
 path = "/api/hosted/work"  # wire::work::WORK
@@ -1535,6 +1543,30 @@ process = "platform"
 auth = "cloud_driver"
 clients = ["cli", "daemon"]
 note = "Removes a hosted workspace's secret (M183): a project's owner or editor."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/workspaces/{id}/ports"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "A hosted workspace's ports (M187), for its project's members: each port, whether it's public, its public URL, who made it public and until when."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/workspaces/{id}/ports/{port}/public"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Makes a hosted workspace's port public for 7 days, or renews it with {\"renew\":true} (M187): a project's owner or editor. Answers its URL, <id>.ARUGULA_PREVIEW_DOMAIN, with an id of 32 random hex characters made fresh each time it's made public."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/workspaces/{id}/ports/{port}/public"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Turns a port's public preview off (M187): a project's owner or editor. The hub's and the machine's caches let it go within a minute."
 
 [[route]]
 method = "GET"
