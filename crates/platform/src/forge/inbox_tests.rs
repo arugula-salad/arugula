@@ -108,8 +108,9 @@ async fn each_reason_from_the_rows() {
         reasons(&wants(&app, 77, 1, "alice", Some("alice-gh"))),
         [("checks_failed", "2 checks failed: ci, lint"), ("changes_requested", "changes requested by bob-gh")]
     );
-    // Green, and his newest review approves: done.
+    // Green, his newest review approves, and GitHub says it can merge: done.
     exec(&app, "UPDATE forge_checks SET conclusion = 'success' WHERE repo_id = 77", params![]);
+    exec(&app, "UPDATE forge_items SET merge_state = 'clean' WHERE id = 'fi_a1'", params![]);
     exec(&app, "UPDATE forge_events SET review_state = 'approved' WHERE id = 'fev_3'", params![]);
     assert_eq!(reasons(&wants(&app, 77, 1, "alice", Some("alice-gh"))), [("done", "approved, checks green")]);
     // Held by branch protection: not done.
@@ -143,7 +144,7 @@ async fn each_reason_from_the_rows() {
     // As entries: every member who may read the repo, nobody else.
     exec(
         &app,
-        "UPDATE forge_items SET merge_state = NULL, reviewers = '[\"bob-gh\", \"dan-gh\"]' WHERE id = 'fi_a1'",
+        "UPDATE forge_items SET merge_state = 'clean', reviewers = '[\"bob-gh\", \"dan-gh\"]' WHERE id = 'fi_a1'",
         params![],
     );
     inbox::recompute(&app, 77, &[1], false).await.unwrap();
@@ -160,6 +161,33 @@ async fn each_reason_from_the_rows() {
         ],
         "dan is asked to review the private #1 too, and may not read it"
     );
+}
+
+/// A green PR (bob approved alice's #1) is done only once the mirror knows it can
+/// merge: no merge state (a list's row), `unknown` (GitHub hadn't worked
+/// it out), a conflict and a hold aren't; a known state that's neither is.
+/// Merged is done whatever it last said.
+#[tokio::test]
+async fn green_is_done_only_once_it_can_merge() {
+    let (_hub, _gh, app, _) = setup().await;
+    exec(&app, "UPDATE forge_checks SET conclusion = 'success' WHERE repo_id = 77", params![]);
+    let alice = |app: &Platform| {
+        reasons(&wants(app, 77, 1, "alice", Some("alice-gh"))).iter().map(|r| r.1.to_owned()).collect::<Vec<_>>()
+    };
+    let set = |state: Option<&str>| {
+        exec(&app, "UPDATE forge_items SET merge_state = ?1 WHERE id = 'fi_a1'", params![state]);
+    };
+    for state in [None, Some("unknown"), Some("dirty"), Some("blocked")] {
+        set(state);
+        assert!(alice(&app).is_empty(), "{state:?}: {:?}", alice(&app));
+    }
+    for state in ["clean", "unstable", "has_hooks", "behind"] {
+        set(Some(state));
+        assert_eq!(alice(&app), ["approved, checks green"], "{state}");
+    }
+    set(Some("dirty"));
+    exec(&app, "UPDATE forge_items SET state = 'merged' WHERE id = 'fi_a1'", params![]);
+    assert_eq!(alice(&app), ["merged"]);
 }
 
 /// The rows ingest writes are marked, and worked out by the machine that

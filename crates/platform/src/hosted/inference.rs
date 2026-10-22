@@ -313,7 +313,9 @@ fn capped(app: &Platform, account: &str, cap: Cap, b: &HostedBox, p: Provider) -
 /// The start of an agent turn of `agent` (`claude`, `codex`) on a hosted
 /// box, which the hub asks for it (`PlatformPort::hosted_turn`): whose
 /// key pays, or why it can't run. The box's rules are brought up to date
-/// first, whatever the answer.
+/// first, whatever the answer. With no key for `agent`'s provider the
+/// answer is `no_key`, whether or not the rules could be set; with one,
+/// rules that couldn't be set are a 503.
 pub async fn turn(app: &Platform, workspace: &str, machine: &str, agent: &str) -> anyhow::Result<TurnAnswer> {
     let Some(p) = Provider::of_agent(agent) else {
         return Ok(TurnAnswer::refused(StatusCode::BAD_REQUEST, None, "agent: claude or codex"));
@@ -322,14 +324,15 @@ pub async fn turn(app: &Platform, workspace: &str, machine: &str, agent: &str) -
         return Ok(TurnAnswer::refused(StatusCode::NOT_FOUND, None, "this machine isn't a live hosted workspace"));
     };
     let Plan { payers, rules } = plan(app, &b.project, b.created_by.as_deref())?;
-    if !sync_rules(app, &b, &rules).await? {
-        let why = "couldn't set up this workspace's key: try again in a moment";
-        return Ok(TurnAnswer::refused(StatusCode::SERVICE_UNAVAILABLE, None, why));
-    }
+    let synced = sync_rules(app, &b, &rules).await?;
     let Some(pays) = payers.get(&p) else {
         info!(workspace = %b.workspace, provider = p.as_str(), "a hosted agent turn has no key");
         return Ok(TurnAnswer::refused(StatusCode::FORBIDDEN, Some("no_key"), &no_key(&b, p)));
     };
+    if !synced {
+        let why = "couldn't set up this workspace's key: try again in a moment";
+        return Ok(TurnAnswer::refused(StatusCode::SERVICE_UNAVAILABLE, None, why));
+    }
     Ok(match app.db.start_hosted_turn(&b.workspace, p.as_str(), pays, &app.hosted.inference.caps, now_ms())? {
         Started::Turn(turn) => {
             let pays = match pays {

@@ -23,7 +23,7 @@ use sha2::{Digest, Sha256};
 
 use super::{
     Db,
-    forge::Installation,
+    forge::{ForgeCheck, Installation},
     migrate::Dialect,
     sql::{Optional as _, Row, Sql, Tx, params},
 };
@@ -395,6 +395,30 @@ pub fn prune_checks(c: &impl Sql, repo_id: u64, before: u64) -> Result<usize> {
     )
 }
 
+/// An open PR whose merge state the poller may read again
+/// ([`Db::merge_candidates`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergeCandidate {
+    pub number: u64,
+    /// GitHub's `mergeable_state`, as the row has it.
+    pub merge_state: Option<String>,
+    /// When the row was last written, or its merge state read again.
+    pub synced_at: u64,
+    pub head_sha: String,
+    pub checks: Vec<ForgeCheck>,
+}
+
+/// The poller read a PR again for its merge state at `now`: its row is as
+/// fresh as that, whether or not the answer changed it (the next
+/// rechecks go stalest first).
+pub fn merge_checked(c: &impl Sql, repo_id: u64, number: u64, now: u64) -> Result<()> {
+    c.execute(
+        "UPDATE forge_items SET synced_at = ?1 WHERE repo_id = ?2 AND number = ?3 AND synced_at < ?1",
+        params![now, repo_id, number],
+    )?;
+    Ok(())
+}
+
 /// GitHub's name and privacy for a linked repo, as the poller read them.
 pub fn refresh_link(c: &impl Sql, repo_id: u64, full_name: &str, private: bool) -> Result<()> {
     c.execute(
@@ -596,6 +620,60 @@ impl Db {
             params![repo_id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
+    }
+
+    /// The open PRs, not drafts, whose merge state the poller may read
+    /// again (`forge::poller`'s merge rechecks): each with its state, when
+    /// its row was last written or read, and its head's checks.
+    pub fn merge_candidates(&self, repo_id: u64) -> Result<Vec<MergeCandidate>> {
+        let c = self.c();
+        let mut out: Vec<MergeCandidate> = c
+            .query_map(
+                "SELECT number, merge_state, synced_at, head_sha, draft FROM forge_items
+                 WHERE repo_id = ?1 AND kind = 'pr' AND state = 'open' AND head_sha IS NOT NULL ORDER BY number",
+                params![repo_id],
+                |r| {
+                    Ok((
+                        MergeCandidate {
+                            number: r.get(0)?,
+                            merge_state: r.get(1)?,
+                            synced_at: r.get(2)?,
+                            head_sha: r.get(3)?,
+                            checks: vec![],
+                        },
+                        r.get::<bool>(4)?,
+                    ))
+                },
+            )?
+            .into_iter()
+            .filter_map(|(m, draft)| (!draft).then_some(m))
+            .collect();
+        let checks: Vec<(String, ForgeCheck)> = c.query_map(
+            "SELECT c.head_sha, c.kind, c.name, c.status, c.conclusion, c.url, c.updated_at FROM forge_checks c
+             WHERE c.repo_id = ?1 AND c.head_sha IN
+                 (SELECT head_sha FROM forge_items WHERE repo_id = ?1 AND kind = 'pr' AND state = 'open')
+             ORDER BY c.name, c.kind",
+            params![repo_id],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    ForgeCheck {
+                        kind: r.get(1)?,
+                        name: r.get(2)?,
+                        status: r.get(3)?,
+                        conclusion: r.get(4)?,
+                        url: r.get(5)?,
+                        updated_at: r.get(6)?,
+                    },
+                ))
+            },
+        )?;
+        for (sha, check) in checks {
+            for m in out.iter_mut().filter(|m| m.head_sha == sha) {
+                m.checks.push(check.clone());
+            }
+        }
+        Ok(out)
     }
 
     /// What waits to be read again for a repo: `(kind, key)`.
