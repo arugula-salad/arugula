@@ -114,11 +114,12 @@ pub trait HubPort: Send + Sync {
 
     /// What these accounts used, for billing: bytes relayed in the calendar
     /// month (UTC) that `until` (ms) falls in, and hosted sandbox minutes
-    /// between `since` and `until`. One per account asked, in that order.
+    /// between `since` and `until` (none since hosted sandboxes went,
+    /// M190). One per account asked, in that order.
     fn meters<'a>(&'a self, accounts: &'a [String], since: u64, until: u64) -> BoxFuture<'a, HubResult<Vec<Meter>>>;
 
     /// Every account that has had a hosted sandbox: whose minutes billing
-    /// reports.
+    /// reports. None since hosted sandboxes went (M190).
     fn metered_accounts(&self) -> BoxFuture<'_, HubResult<Vec<String>>>;
 
     /// What changed in the hub after `after` (a [`Change::seq`]), oldest

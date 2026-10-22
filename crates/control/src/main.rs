@@ -74,8 +74,6 @@ mod roots;
 mod routes;
 #[cfg(test)]
 mod routing_wire;
-mod sandboxes;
-mod sprites;
 mod teams;
 mod telemetry;
 #[cfg(test)]
@@ -179,23 +177,6 @@ struct Args {
     /// How often subscribed daemons hear the webhook path is up (tests).
     #[arg(long, default_value_t = 60, hide = true)]
     forge_heartbeat_secs: u64,
-
-    /// Hosted sandboxes (M20): the Sprites API they're made with, and its
-    /// token (SPRITES_TOKEN). Off without a token.
-    #[arg(long, default_value = "https://api.sprites.dev", env = "ARUGULA_SPRITES_URL")]
-    sprites_url: String,
-    #[arg(long, env = "SPRITES_TOKEN", hide_env_values = true)]
-    sprites_token: Option<String>,
-
-    /// The static daemon (x86_64 musl) to put in them.
-    #[arg(long, default_value = "/arugulad", env = "ARUGULA_SANDBOX_BINARY")]
-    sandbox_binary: PathBuf,
-    /// Accounts that may make them, comma-separated (`*`: everyone).
-    #[arg(long, env = "ARUGULA_SANDBOX_ACCOUNTS", value_delimiter = ',')]
-    sandbox_accounts: Vec<String>,
-    /// How many each may have at once.
-    #[arg(long, default_value_t = 2, env = "ARUGULA_SANDBOX_QUOTA")]
-    sandbox_quota: usize,
 
     /// Cloud workspaces: their flags and env vars are the platform's
     /// (M137), with the names they always had.
@@ -399,7 +380,6 @@ pub struct App {
     /// Control's hosted key (M178): it signs the hosted machines enrolled
     /// under a project's delegation, and nothing else.
     pub hosted_key: arugula_e2e::hosted::HostedKey,
-    pub hosted: Option<sandboxes::Hosted>,
     /// The GitHub App's slug (M40), when control has one; the App itself
     /// is the platform's (M161). And daemons' subscriptions to its pokes.
     pub github_app: Option<String>,
@@ -525,7 +505,6 @@ impl App {
             limits: limit::Limits::new(None),
             vapid,
             hosted_key,
-            hosted: None,
             github_app: None,
             forge: Default::default(),
             app_logins: Default::default(),
@@ -636,9 +615,6 @@ fn routes() -> Routes {
         .route("/api/doc-links/{id}/v/{ver}/commit", post(doc_links::commit))
         // The viewer where there's no block domain (`doc_links::serve`).
         .route("/d/{*rest}", axum::routing::any(doc_links::fallback))
-        .route("/api/sandboxes", get(sandboxes::list).post(sandboxes::create))
-        .route("/api/sandboxes/{id}", axum::routing::delete(sandboxes::delete))
-        .route(wire::SANDBOX_DONE, post(sandboxes::done))
         // Hosted machines under a project's delegation (M178).
         .route("/api/hosted/delegations", get(hosted::delegations).post(hosted::delegate))
         .route("/api/hosted/delegations/revoke", post(hosted::revoke))
@@ -948,15 +924,6 @@ async fn run() -> anyhow::Result<()> {
     }
     let vapid = push::Vapid::load(&db)?;
     let hosted_key = hosted::load_key(&db)?;
-    let hosted = match a.sprites_token.filter(|t| !t.is_empty()) {
-        Some(t) => Some(sandboxes::Hosted {
-            sprites: sprites::Sprites::new(&a.sprites_url, t)?,
-            binary: a.sandbox_binary,
-            allow: a.sandbox_accounts,
-            quota: a.sandbox_quota,
-        }),
-        None => None,
-    };
     let stripe = a.billing.stripe()?;
     // The guests' jump host: bound now, so its port is known.
     let guest_ssh = match a.guest_ssh {
@@ -1091,7 +1058,6 @@ async fn run() -> anyhow::Result<()> {
         limits: limit::Limits::new(a.trust_proxy_header),
         vapid,
         hosted_key,
-        hosted,
         github_app,
         forge: Default::default(),
         app_logins: Default::default(),

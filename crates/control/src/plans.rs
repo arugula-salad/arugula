@@ -1,6 +1,6 @@
 //! What the hub asks of billing (M22), which is the platform's since M139
-//! (#1156): whether an account pays, for hosted sandboxes, and the relay's
-//! standing against the free allowance. Plans are the platform's
+//! (#1156): whether an account pays, and the relay's standing against
+//! the free allowance. Plans are the platform's
 //! (`PlatformPort::active_plans`); the relay's bytes are the hub's own
 //! (`usage`, which the relay writes).
 
@@ -22,7 +22,7 @@ fn month(ms: u64) -> String {
 /// Who pays for something an account does: its team's plan if it's in an
 /// active one, else its own. Any active plan of the account's or one of
 /// its teams' will do.
-pub async fn paid(app: &App, account: &str) -> anyhow::Result<bool> {
+async fn paid(app: &App, account: &str) -> anyhow::Result<bool> {
     let mut owners = vec![format!("account:{account}")];
     for body in app.db.teams_of(account)? {
         owners.push(format!("team:{}", crate::teams::parse(&body)?.team));

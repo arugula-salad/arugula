@@ -1,5 +1,5 @@
 //! Run logs (M213): where a hosted run's log is in the run-log bucket, a
-//! chunk a row (`run_log_chunks`, made by `0025_run_logs`), beside its
+//! chunk a row (`run_log_chunks`, made by `0026_run_logs`), beside its
 //! artifacts (`run_artifacts`, M210). What may be sent, and who reads it,
 //! is `crate::run_logs`'s; this is storage, the sweep that forgets what's
 //! past the run-log days, and the operator's usage.

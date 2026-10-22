@@ -242,8 +242,14 @@ const SQLITE: &[Migration] = &[
     },
     Migration {
         version: 25,
+        name: "managoat_moves",
+        sql: include_str!("../../migrations/sqlite/0025_managoat_moves.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 26,
         name: "run_logs",
-        sql: include_str!("../../migrations/sqlite/0025_run_logs.sql"),
+        sql: include_str!("../../migrations/sqlite/0026_run_logs.sql"),
         additive: true,
     },
 ];
@@ -398,8 +404,14 @@ const POSTGRES: &[Migration] = &[
     },
     Migration {
         version: 25,
+        name: "managoat_moves",
+        sql: include_str!("../../migrations/postgres/0025_managoat_moves.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 26,
         name: "run_logs",
-        sql: include_str!("../../migrations/postgres/0025_run_logs.sql"),
+        sql: include_str!("../../migrations/postgres/0026_run_logs.sql"),
         additive: true,
     },
 ];

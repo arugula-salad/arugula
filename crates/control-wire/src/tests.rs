@@ -61,7 +61,7 @@ fn without(v: &Value, key: &str) -> Value {
 /// The daemon's request (`join_start`), nulls and all.
 fn join_request() -> Value {
     json!({
-        "cert": cert(), "urls": [], "team": null, "ticket": null, "features": "presigned-invites,owner-moves",
+        "cert": cert(), "urls": [], "team": null, "features": "presigned-invites,owner-moves",
         "proof": { "ms": 1_790_000_000_000u64, "sig": "ab" },
     })
 }
@@ -69,23 +69,25 @@ fn join_request() -> Value {
 #[test]
 fn the_join_request_is_what_the_daemon_sends() {
     round::<JoinRequest>(join_request());
-    let with_team = json!({
-        "cert": cert(), "urls": [], "team": "t1", "ticket": "tk", "features": "", "proof": null,
-    });
+    let with_team = json!({ "cert": cert(), "urls": [], "team": "t1", "features": "", "proof": null });
     let r = round::<JoinRequest>(with_team);
-    assert_eq!((r.team.as_deref(), r.ticket.as_deref()), (Some("t1"), Some("tk")));
+    assert_eq!(r.team.as_deref(), Some("t1"));
 }
 
-/// `routing_wire.rs`'s `join_body`: an older daemon sends no team, ticket or
-/// proof (and the CLI no urls or features).
+/// `routing_wire.rs`'s `join_body`: an older daemon sends no team or proof
+/// (and the CLI no urls or features). Daemons before M190 sent a hosted
+/// sandbox's `ticket`, null but for one: it's ignored.
 #[test]
 fn an_older_daemons_join_request_parses() {
     let old = json!({ "cert": cert(), "urls": [], "features": "presigned-invites" });
     let r: JoinRequest = parse(&old);
-    assert!(r.team.is_none() && r.ticket.is_none() && r.proof.is_none());
+    assert!(r.team.is_none() && r.proof.is_none());
+    let mut with_ticket = join_request();
+    with_ticket["ticket"] = json!(null);
+    parse::<JoinRequest>(&with_ticket);
     let cli: JoinRequest = parse(&json!({ "cert": cert(), "proof": { "ms": 1, "sig": "x" } }));
     assert!(cli.urls.is_empty() && cli.features.is_empty() && cli.proof.is_some());
-    for k in ["urls", "team", "ticket", "features", "proof"] {
+    for k in ["urls", "team", "features", "proof"] {
         parse::<JoinRequest>(&without(&join_request(), k));
     }
 }
@@ -411,7 +413,7 @@ fn the_cli_joins_with_a_cert_and_a_proof_only() {
     round::<CliJoinRequest>(recorded.clone());
     // Control reads it as the daemon's request, the rest defaulted.
     let r: JoinRequest = parse(&recorded);
-    assert!(r.urls.is_empty() && r.team.is_none() && r.ticket.is_none() && r.features.is_empty());
+    assert!(r.urls.is_empty() && r.team.is_none() && r.features.is_empty());
     // With a secret in its link (#760), it says so.
     let mut secret = recorded;
     secret["features"] = json!("join-secret");

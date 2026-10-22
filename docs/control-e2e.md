@@ -2,7 +2,7 @@
 
 Written 2026-10-01, from the control spike ([spikes/s15-control](../spikes/s15-control/README.md)).
 This is the design the control track builds: accounts and devices, the
-end-to-end relay, teams, hosted sandboxes and push. It turns the control track's promise
+end-to-end relay, teams and push. It turns the control track's promise
 (plan-archive.md, "Control track") into mechanisms: **control can refuse service,
 but it can't read.** That promise has limits, set out in
 [What holds against control](#what-holds-against-control): the client code
@@ -377,12 +377,6 @@ would pass. So the daemon doesn't take the root on control's word. Since
     again.
 - **Hosted machines** (step 5) join under a project's delegation instead
   ([below](#hosted-machines-a-projects-delegation)).
-- **Hosted sandboxes** (M20, retired in M190) skip the check: control creates the VM through
-  its provider and writes the sandbox's `control.json` itself
-  (`crates/control/src/sandboxes.rs`). The operator runs that machine, so it
-  can read it whatever the keys say. A sandbox is end to end encrypted
-  against the network, not against control. Its join has no link, so no
-  secret.
 
 ### Approving a new browser or phone: the code it shows
 
@@ -754,49 +748,6 @@ hosted workspaces. Each run's events say, signed by the machine, which
 operation it ran, and its pane shows it. **What it can't:** run anything on
 a person's machine, run a run twice, or report a run's state for the
 machine.
-
-**Its log, which the platform reads** (M213;
-`crates/platform/src/run_logs/`, `crates/daemon/src/run_logs.rs`). This is
-the one place control reads a terminal's bytes: a stated exception to
-aru-055, for runs on hosted workspaces only.
-
-- **The whole log.** While a run runs, its machine sends its pane's output
-  (the banner, then everything the run printed) to the run-log bucket in
-  chunks of about 4 MiB, and the rest when it ends, with the files the run
-  left in `$ARUGULA_ARTIFACTS`, before it reports its end. Each upload goes
-  to a URL the platform signs for one key under that run's prefix
-  (`<project>/<run>/log/<n>`, `<project>/<run>/artifacts/<name>`), for
-  exactly its size, for 15 minutes. Every URL signed counts against the
-  run's caps (1 GiB of log, 50 artifacts of at most 100 MiB, 120 URLs a
-  minute) and its project's bytes a day (5 GiB) while it's out, so a
-  machine can't fill the bucket by asking; what was put at a URL nobody
-  said they used is deleted once it expires. The platform records each chunk's
-  offset and SHA-256 (`run_log_chunks`) and each artifact's digest
-  (`run_artifacts`) once it sees the object in the bucket.
-- **Read with every machine asleep.** The project's members (viewers too)
-  read the log through the platform a page at a time from any offset, each
-  chunk checked against its size and SHA-256, and list and fetch its
-  artifacts with signed links that last an hour and download as files,
-  never as pages.
-- **Kept 30 days.** The bucket deletes them after 30 days, and the
-  platform forgets its rows for them then too (and deletes the files it
-  knew, in case the bucket's rule is missing). When a project goes (its
-  owner's account is deleted, its team disbanded), its runs' files are
-  deleted from the bucket with their rows.
-- **Only hosted machines.** Only a hosted machine's signature gets an
-  upload URL, and only for its own runs while they run (and an hour
-  after). A person's machine never sends a run's log: it takes no runs, and
-  its daemon refuses before it asks. An artifact is only a regular file the
-  run user owns, opened without following links, so a run can't send the
-  machine's keys or state.
-- **Off without a bucket.** A control with no `ARUGULA_RUN_LOGS_BUCKET`
-  keeps none: a run's log stays in its pane.
-
-**What control can do with run logs:** read everything a hosted run
-printed and every artifact it left, for 30 days, and show them to the
-project's members. So can Cloudflare, which holds the bucket. **What it
-can't:** read a run's log from a person's machine, or anything a hosted
-machine's daemon keeps outside the run's pane and artifacts directory.
 
 ## What holds against control
 
@@ -1175,8 +1126,7 @@ page that framed them with `postMessage`. Every message carries
 
 - **When:** a port or editor block whose state has a `site_key`, on a
   machine this page reaches through a control whose `/control.json` says
-  `block_domain`: a hosted machine's too (M186). Not an M20 hosted
-  sandbox's (its daemon doesn't dial control's relay). The frame is `<page's scheme>//b-<site_key>.<block
+  `block_domain`: a hosted machine's too (M186). The frame is `<page's scheme>//b-<site_key>.<block
   domain>[:<page's port>]` plus the daemon's `src` made a path.
 - **The editor's `src`:** code-server opens a file from VS Code's
   `payload` (`[["openFile","vscode-remote://<host>/path"]]`), where the
@@ -1429,9 +1379,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 103 tables in two planes ("Two planes, two trust rules"):
+Control's database has 102 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (36 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (35 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (67 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1456,7 +1406,6 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `daemon_offer_pushes` | metadata | When an account was last pushed about a shared machine. | yes |  |
 | `share_answers` | metadata | An account's yes or no to a machine shared with it. | yes |  |
 | `daemon_links` | metadata | Until when a machine has a live share link, so control routes link guests to it. | yes |  |
-| `sandboxes` | metadata | A hosted sandbox: its VM's id, the device that asked, a hash of its join ticket, its state. | yes | Sprites |
 | `project_delegations` | metadata | A project delegation (M178): an owner's device's signed word that control may enroll hosted machines into the project, the account that sent it, and the signed revocation that ended it. | yes: its own project's and its disbanded teams' go, and every one it signed. |  |
 | `hosted_enrollments` | metadata | A one-time hosted enrollment (M178): a hash of its ticket or the box's sandbox id, the project, workspace and delegation, when it runs out and when it was used. | yes |  |
 | `hosted_machines` | metadata | A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), its addresses, when it was last seen and removed. | yes |  |
@@ -1501,7 +1450,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `cloud_requests` | **plaintext** | What an agent in the cloud asks someone to approve, and the answer. | An agent in the cloud asks while every machine is off. | yes | Managoat |
 | `cloud_notifications` | metadata | Whether a push about an approval went out yet, and when to try again. | An agent in the cloud asks while every machine is off. | yes |  |
 | `cloud_events` | **plaintext** | A cloud conversation's transcript: prompts, replies, tool calls and results, as Managoat sent them. | Transcripts are read with every machine off. | yes | Managoat |
-| `cloud_workspaces` | **plaintext** | A Cloud workspace: its name, its spec (repositories, packages, setup script, environment variables, networking, secret names), its status and errors. | Cloud workspaces work with every machine off. | yes: its Managoat resources go first: deleting is refused until they have. | Managoat |
+| `cloud_workspaces` | **plaintext** | A Cloud workspace: its name, its spec (repositories, packages, setup script, environment variables, networking, secret names), its status and errors, and the hosted workspace it moved to (M189). | Cloud workspaces work with every machine off. | yes: its Managoat resources go first: deleting is refused until they have. | Managoat |
 | `cloud_workspace_specs` | **plaintext** | The spec a Cloud workspace's environment revision was saved as (the newest few). | Cloud workspaces work with every machine off. | yes | Managoat |
 | `cloud_tabs` | **plaintext** | A tab in a Cloud workspace: the agent, runtime, model and prompt it opened with, its status. | Cloud workspaces work with every machine off. | yes | Managoat |
 | `projects` | metadata | A project: its id, the team or account it belongs to, its name, whether it's the default one, the last number it gave a native issue, and its issue home (native or GitHub) if someone chose one. | Cloud workspaces, team channels, native issues and cloud secrets belong to one, and they exist with every machine asleep. | partly: its personal project goes, and the default projects of teams that go with it; other teams' stay. |  |
@@ -1539,7 +1488,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `project_keys` | **plaintext** | A project's data key (M209), which seals that project's secrets, wrapped by the master key control holds apart from the database; which master key wrapped it (a hash of it), when it was made and when it was last re-wrapped. Rotating the master key re-wraps these and nothing else. | A project's secrets are opened for its workspaces and deploys with every machine off. | partly: a personal project's keys go with it, and so do a disbanded team's; other teams' stay. |  |
 | `project_secrets` | **plaintext** | A project's secret that has no table of its own, such as a deploy environment's (M217), by name, sealed with the project's key. | Deploys run with every machine off. | partly: a personal project's secrets go with it, and so do a disbanded team's; other teams' stay. |  |
 | `hosted_ports` | metadata | A port of a hosted workspace (M186), its label, and while it's public (M187) its preview id (32 random hex characters, the label of its host under the preview domain), who made it public or last renewed it, and until when. | Previews are served and expire with every machine asleep. | partly: it stops naming the account as who made a port public. They go with their workspace. |  |
-| `hosted_transcripts` | **plaintext** | A closed agent block's transcript from a hosted workspace's box (M184): its project, workspace, machine and block, the agent, its title and working directory, when it ran, and its text (prompts, the agent's messages and tool calls, cut to 768 KiB), kept read only. | A project's people read what its hosted workspaces' agents did after the box is paused, rebuilt or deleted. | partly: those of its personal project and its disbanded teams' projects go. A team's stay with its project: its other people read them. |  |
+| `hosted_transcripts` | **plaintext** | A closed agent block's transcript from a hosted workspace's box (M184): its project, workspace, machine and block, the agent, its title and working directory, when it ran, and its text (prompts, the agent's messages and tool calls, cut to 768 KiB), kept read only. A beta Cloud workspace's tabs' transcripts, copied when it moved off Managoat (M189), are kept the same way. | A project's people read what its hosted workspaces' agents did after the box is paused, rebuilt or deleted. | partly: those of its personal project and its disbanded teams' projects go. A team's stay with its project: its other people read them. |  |
 | `hosted_usage` | metadata | When a hosted workspace's box ran (M188): its workspace, project and box, its size (vCPUs and memory), and each running interval's start and end. | The platform meters boxes from their lifecycle, which runs with every machine asleep, and the operator reads what they cost. | nothing of one: it names no account: a workspace's project and box ids only. It stays when the workspace goes: it's what E2B billed. | E2B |
 | `hosted_usage_provider` | metadata | What E2B says a hosted workspace's box ran (M188), from its lifecycle events: how many runs, their milliseconds, vCPU-milliseconds and MiB-milliseconds, and when it was read. | The platform checks its usage against E2B's record with every machine asleep. | nothing of one: it names no account: a workspace's project and box ids only. | E2B |
 | `environments` | metadata | A project's environment (M217): its name in the project, the driver that applies its deploys (chant-fly, apps-platform), the names of the secrets a driver run gets (never their values: those are sealed per project, M209), and its times. | Deploys are planned, approved and applied through control with every machine asleep. | partly: those of projects that go with it go. |  |
@@ -1556,7 +1505,6 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 - **Managoat:** Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals.
 - **E2B:** E2B runs hosted workspaces' boxes, so it processes their contents: it holds each box's disk and memory (the repos, files, terminals and agent conversations in it) while the box lives, paused too, the env and metadata each is made with (the workspace, project, release and template ids), its egress rules (which hold projects' own inference keys, and name the platform's), and the platform's inference keys in its secrets broker. It records each box's runs (when, how long, its size), which it bills by and the platform reads back to check its own usage.
 - **PostHog:** PostHog gets product events, when control has a key for it: account, team and machine ids, a machine's version, OS and arch, plans, Labs flags and counts. No names, logins, addresses or content.
-- **Sprites:** Sprites hosts hosted sandboxes: it knows each one's VM.
 - **GitHub:** GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it makes every token control mints and sees each one used, every draft sent goes to it, and it sends the webhooks.
 - **Stripe:** Stripe bills, when control has a key for it: it holds the customers and subscriptions control keeps ids for, and gets sandbox minutes.
 

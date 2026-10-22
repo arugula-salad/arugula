@@ -224,7 +224,7 @@ async fn joining_again_needs_the_machines_key() {
     let other = DeviceKeys::generate();
     let ask = Cert { account: String::new(), ..Cert::new(&other, "", Kind::Daemon, "box") };
     let code = arugula_e2e::cert::join_code(&ask);
-    c.app.db.add_join(&code, &ask, &hash("p"), &[], None, None, "", false, now_ms()).unwrap();
+    c.app.db.add_join(&code, &ask, &hash("p"), &[], None, "", false, now_ms()).unwrap();
     c.app.db.put_device(&Cert::new(&other, "a1", Kind::Daemon, "box"), true, now_ms()).unwrap();
     c.app.db.put_daemon("a1", &other.id(), "box", &[]).unwrap();
     let mut approval = Cert { account: "a1".into(), ..ask.clone() };
@@ -313,7 +313,7 @@ async fn a_removed_machine_rejoins_only_with_a_new_key() {
     // real reason.
     let ask = Cert { account: String::new(), ..Cert::new(&old, "", Kind::Daemon, "box") };
     c.app.db.drop_join(&old_code).unwrap();
-    c.app.db.add_join(&old_code, &ask, &hash("p"), &[], None, None, "", true, now_ms()).unwrap();
+    c.app.db.add_join(&old_code, &ask, &hash("p"), &[], None, "", true, now_ms()).unwrap();
     let (st, said) = approve(&old, &old_code).await;
     assert_eq!(st, 403);
     assert!(said["error"].as_str().unwrap().contains("removed"), "{said}");

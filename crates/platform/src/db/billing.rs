@@ -1,6 +1,6 @@
 //! Billing's tables (M22, the platform's since M139): who pays, and the
 //! sandbox minutes already reported to Stripe. The meters themselves
-//! (relayed bytes in `usage`, sandbox minutes from `sandboxes`) stay the
+//! (relayed bytes in `usage`; sandbox minutes, none since M190) stay the
 //! hub's, which writes them, and come through `HubPort::meters`. The
 //! tables are made by the platform's migrations (`migrations/sqlite`).
 

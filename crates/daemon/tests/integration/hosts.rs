@@ -571,7 +571,7 @@ fn both_helps_follow_the_same_labs_file() {
         assert!(by_flag.contains(f), "{f} isn't in `arugulad --help` with labs (--state-dir)");
         assert!(!flag_without.contains(f), "{f}: the flag's directory has no labs, whatever the environment's does");
     }
-    for f in ["--log-file", "--no-relay", "--sandbox-of-control", "--guest-machines"] {
+    for f in ["--log-file", "--no-relay", "--guest-machines"] {
         assert!(!by_env.contains(f), "{f} is internal");
     }
 }

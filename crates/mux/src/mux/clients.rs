@@ -261,9 +261,6 @@ impl Daemon {
         for gone in before.into_iter().filter(|s| self.mux.session(*s).is_err()) {
             self.config.acl.forget_session(gone);
         }
-        if self.config.sandbox_of_control && self.mux.sessions.is_empty() {
-            self.config.people.clone().sandbox_done();
-        }
         info!(?client, ?intent, "intent");
         let rects = self.mux.pane_rects();
         for e in effects {

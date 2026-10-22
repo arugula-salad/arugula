@@ -749,26 +749,6 @@ async fn splice_to(
         }
     };
     let started = Instant::now();
-    // A hosted sandbox (M20) doesn't dial in: it's reached through the
-    // provider's proxy, which wakes it.
-    if let Ok(Some(sandbox)) = app.db.sandbox_of_daemon(&id)
-        && app.hosted.is_some()
-    {
-        return up.max_message_size(MAX_WIRE).read_buffer_size(CLIENT_READ_BUFFER).on_upgrade(move |ws| async move {
-            let (up, down) = tokio::select! {
-                r = sandbox_splice(&app, &sandbox, ws, &ticket) => match r {
-                    Ok(n) => n,
-                    Err(e) => {
-                        warn!(%sandbox, error = %e, "can't reach the sandbox");
-                        return;
-                    }
-                },
-                _ = ticket.gone() => return,
-            };
-            let _ = app.db.add_relay_bytes(&who, &crate::day(now_ms()), up + down);
-            note_session(&app, &who, "sandbox", started, up, down, false);
-        });
-    }
     // Past twice the free allowance, a free account's relayed traffic
     // slows down (M22); it's warned before that.
     let slow = match account.as_deref() {
@@ -867,59 +847,6 @@ async fn splice(ws: WebSocket, stream: DuplexStream, slow: bool, ticket: &Ticket
     let r = tokio::join!(up, down);
     reader.abort();
     r
-}
-
-/// A client's channel onto a hosted sandbox's daemon (`/e2e`), through the
-/// provider's proxy: WebSocket messages both ways, one for one.
-async fn sandbox_splice(app: &App, sandbox: &str, ws: WebSocket, ticket: &Ticket) -> anyhow::Result<(u64, u64)> {
-    use tokio_tungstenite::tungstenite::Message as T;
-    let h = app.hosted.as_ref().ok_or_else(|| anyhow::anyhow!("no hosted sandboxes"))?;
-    let stream = h.sprites.dial(sandbox, crate::sandboxes::PORT).await?;
-    let url = format!("ws://localhost:{}/e2e", crate::sandboxes::PORT);
-    let (daemon, _) = tokio_tungstenite::client_async(url, stream).await?;
-    let (mut dtx, mut drx) = daemon.split();
-    let (mut ctx, mut crx) = ws.split();
-    let up = async {
-        let mut n = 0u64;
-        while let Some(Ok(m)) = crx.next().await {
-            match m {
-                Message::Binary(b) => {
-                    n += b.len() as u64;
-                    if ticket.count(b.len() as u64) {
-                        tokio::time::sleep(throttle(b.len())).await;
-                    }
-                    if dtx.send(T::Binary(b.to_vec().into())).await.is_err() {
-                        break;
-                    }
-                }
-                Message::Close(_) => break,
-                _ => {}
-            }
-        }
-        let _ = dtx.close().await;
-        n
-    };
-    let down = async {
-        let mut n = 0u64;
-        while let Some(Ok(m)) = drx.next().await {
-            match m {
-                T::Binary(b) => {
-                    n += b.len() as u64;
-                    if ticket.count(b.len() as u64) {
-                        tokio::time::sleep(throttle(b.len())).await;
-                    }
-                    if ctx.send(Message::Binary(b.to_vec().into())).await.is_err() {
-                        break;
-                    }
-                }
-                T::Close(_) => break,
-                _ => {}
-            }
-        }
-        let _ = ctx.close().await;
-        n
-    };
-    Ok(tokio::join!(up, down))
 }
 
 // ---- many daemons over one socket (M25)
@@ -1075,11 +1002,6 @@ async fn channel(
             let _ = out.send(refuse("no such daemon")).await;
             return false;
         }
-    }
-    // Hosted sandboxes are reached through their provider, one socket each.
-    if app.hosted.is_some() && matches!(app.db.sandbox_of_daemon(&id), Ok(Some(_))) {
-        let _ = out.send(refuse("a hosted sandbox: use /api/relay/c")).await;
-        return false;
     }
     // A hosted machine (M182): asked if it's up, and its box woken first if
     // it's asleep and the page asks. The page hears each step.

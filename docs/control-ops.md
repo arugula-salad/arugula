@@ -375,9 +375,9 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
 - `POSTHOG_API_KEY`: product analytics (`analytics.rs`).
 - `ARUGULA_PLATFORM_KEY`: the key the hub and an out-of-process platform
   share ("The platform" below). Unused while the platform runs in process.
-- `SPRITES_TOKEN`: hosted sandboxes (M20). Only accounts in
-  `ARUGULA_SANDBOX_ACCOUNTS` may make one, and that isn't set, so they're
-  off for everyone.
+- `SPRITES_TOKEN`: read by nothing since hosted sandboxes (M20) were
+  retired (M190). To unset it, keep its value in Infisical under
+  `/illogical/control` first, then `fly secrets unset SPRITES_TOKEN`.
 
 Read, but they do nothing: `ARUGULA_CLOUD_DAILY_RUNS`,
 `ARUGULA_CLOUD_CONCURRENT_RUNS`, `ARUGULA_CLOUD_RUN_MINUTES`. Cloud runs
@@ -2429,6 +2429,27 @@ boxes (their disks and memory, and its broker's secrets): docs/control-e2e.md
   E2B's console (its usage tab) has the bill itself; the two should agree
   within the time a box takes to start and pause.
 
+### Retiring Managoat (M189)
+
+Beta Cloud workspaces move to hosted ones from their own pages (see
+docs/managoat.md, "Moving off Managoat"). Jake's call: 14 days' notice,
+then delete.
+
+1. Put the beta accounts on `ARUGULA_HOSTED_ACCOUNTS`, so they can move.
+2. Send the notice, and set `ARUGULA_MANAGOAT_DELETE_AFTER` (the day, 14
+   days on, `YYYY-MM-DD`) on `arugula-platform`: their pages say it.
+3. On the day, list what's left, then delete it:
+
+   ```
+   fly ssh console -a arugula-platform -C "/arugula-platform managoat-retire --dry-run"
+   fly ssh console -a arugula-platform -C "/arugula-platform managoat-retire --execute"
+   ```
+
+   It deletes only what control made (`--all`: everything in the
+   account). A failed delete says so; run it again.
+4. Then the PR that removes the Managoat code, `ARUGULA_MANAGOAT_API_KEY`
+   and the `cloud_*` tables.
+
 ### Public previews
 
 A hosted workspace's port that one of its project's owners or editors
@@ -2651,7 +2672,6 @@ What's in them:
   `machine relay session` (seconds a machine stayed dialed in),
   `relay refused` (account limit or relay full).
 - **Paid things**: `checkout started`, `upgraded`, `subscription changed`,
-  `sandbox created`, `sandbox failed`, `sandbox deleted` (minutes),
   `cloud agent created/updated/deleted/imported`, `cloud run stopped`
   (outcome; a run left over from before runs were retired),
   `cloud request answered`, `cloud secret saved/deleted`,
