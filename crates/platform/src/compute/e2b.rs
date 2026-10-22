@@ -35,10 +35,11 @@
 //! box is deleted and the create refused.
 //!
 //! Every box is also made with `network.allowPublicTraffic: false`: E2B
-//! otherwise serves every port a process in the box listens on at
-//! `<port>-<id>.e2b.app` to anyone, past members' previews. With it those
-//! URLs want the create's traffic token, which nobody holds; previews go
-//! through the relay instead. A rules update says it again.
+//! otherwise serves every port a process in the box listens on at its own
+//! `<port>-<id>` host on E2B's preview domain, to anyone, past members'
+//! previews. With it those URLs want the create's traffic token, which
+//! nobody holds; previews go through the relay instead. A rules update says
+//! it again.
 
 use std::{collections::BTreeMap, time::Duration};
 

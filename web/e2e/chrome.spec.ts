@@ -465,16 +465,18 @@ test.describe("accessibility", () => {
       for (const text of ["COMPOSER", "STATUS"]) {
         const cell = page.locator(".xterm-rows span").filter({ hasText: text });
         await expect(cell).toBeVisible();
-        const ratio = await cell.evaluate((el) => {
+        // The renderer replaces a row's spans as it redraws: a span it let go
+        // of has no computed colors, so read again until one has.
+        await expect.poll(() => cell.first().evaluate((el) => {
           const css = getComputedStyle(el);
-          const lum = (color: string) => color.match(/\d+/g)!.slice(0, 3).map(Number).map((c) => {
+          const lum = (color: string) => (color.match(/\d+/g) ?? []).slice(0, 3).map(Number).map((c) => {
             const n = c / 255;
             return n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4;
           }).reduce((sum, n, i) => sum + n * [0.2126, 0.7152, 0.0722][i], 0);
+          if (!css.color || !css.backgroundColor) return 0;
           const a = lum(css.color), b = lum(css.backgroundColor);
           return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-        });
-        expect(ratio, `${palette} ${text}`).toBeGreaterThanOrEqual(4.5);
+        }).catch(() => 0), { message: `${palette} ${text}` }).toBeGreaterThanOrEqual(4.5);
       }
     }
   });
