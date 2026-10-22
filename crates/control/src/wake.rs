@@ -36,13 +36,16 @@ use crate::App;
 /// The header that asks `/api/relay/c` to wake a sleeping hosted machine.
 pub const HEADER: &str = "x-arugula-wake";
 /// A daemon heard from this recently is taken as up without asking.
-const FRESH: Duration = Duration::from_secs(2);
+const FRESH: Duration = Duration::from_millis(500);
 /// How long a quiet hosted machine has to answer a ping before it's taken
 /// as asleep.
 const PROBE: Duration = Duration::from_millis(800);
 /// How long the ping goes unanswered before the wake is asked too: most
 /// machines that are up answer well within it.
 const GRACE: Duration = Duration::from_millis(150);
+/// How long a machine that answered only once its wake was asked has to
+/// dial in afresh: a box just resumed does (M180), and its old socket goes.
+const SETTLE: Duration = Duration::from_millis(600);
 /// How long its daemon has to dial in once its box runs.
 const REDIAL: Duration = Duration::from_secs(15);
 /// The most an open waits on a wake, whatever happens.
@@ -119,6 +122,7 @@ impl Wakes {
 pub async fn reach(app: &Arc<App>, id: &str, wake: bool, waking: impl FnOnce()) -> anyhow::Result<Option<Reach>> {
     let Some(row) = app.db.hosted(id)? else { return Ok(None) };
     let (project, workspace) = (row.cert.project, row.cert.workspace);
+    let mut waking = Some(waking);
     let mut asked = None;
     let mut stale = None;
     if let Some((mux, generation)) = app.relay.mux_of(id) {
@@ -128,7 +132,12 @@ pub async fn reach(app: &Arc<App>, id: &str, wake: bool, waking: impl FnOnce()) 
         if wake {
             tokio::select! {
                 a = &mut probe => answered = Some(a),
-                _ = tokio::time::sleep(GRACE) => asked = Some(app.relay.wakes.start(app, &project, &workspace)),
+                _ = tokio::time::sleep(GRACE) => {
+                    asked = Some(app.relay.wakes.start(app, &project, &workspace));
+                    if let Some(f) = waking.take() {
+                        f();
+                    }
+                }
             }
         }
         let answered = match answered {
@@ -141,6 +150,13 @@ pub async fn reach(app: &Arc<App>, id: &str, wake: bool, waking: impl FnOnce()) 
             },
         };
         if answered == Some(true) {
+            // Answered late, with its wake asked: it may have been resumed,
+            // and then it dials in afresh in a moment.
+            if asked.is_some()
+                && let Ok(mux) = tokio::time::timeout(SETTLE, app.relay.came(id, Some(generation))).await
+            {
+                return Ok(Some(Reach::Up(mux)));
+            }
             return Ok(Some(Reach::Up(mux)));
         }
         info!(machine = %id, %workspace, "a hosted machine didn't answer: its box is taken as asleep");
@@ -150,7 +166,9 @@ pub async fn reach(app: &Arc<App>, id: &str, wake: bool, waking: impl FnOnce()) 
     if !wake {
         return Ok(Some(Reach::Asleep));
     }
-    waking();
+    if let Some(f) = waking.take() {
+        f();
+    }
     let started = Instant::now();
     let mut answer = asked.unwrap_or_else(|| app.relay.wakes.start(app, &project, &workspace));
     let most = tokio::time::Instant::now() + MOST;

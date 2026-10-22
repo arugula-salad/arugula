@@ -91,7 +91,7 @@ export function StatusFooter({ client }: { client: Client }) {
 }
 
 export function StatusPill({ client, errorsOnly }: { client: Client; errorsOnly?: boolean }) {
-  if (client.box && !client.connected) return <WakePill client={client} />;
+  if (client.box && (!client.connected || client.box.state === "awake")) return <WakePill client={client} />;
   const text = client.error ?? (client.connected || errorsOnly ? null : client.state ? "reconnecting…" : "connecting…");
   if (!text) return null;
   return (
@@ -102,13 +102,21 @@ export function StatusPill({ client, errorsOnly }: { client: Client; errorsOnly?
 }
 
 /** M182: a hosted machine's box as control says it: waking (until its
- * daemon dials in again and the page goes on where it was), asleep (Wake
- * wakes it), or why it didn't wake, with Rebuild (its box made again from
- * its spec, so asked twice) and Try again. */
+ * daemon dials in again and the page goes on where it was, then a moment
+ * of how long that took), asleep (Wake wakes it), or why it didn't wake,
+ * with Rebuild (its box made again from its spec, so asked twice) and Try
+ * again. */
 function WakePill({ client }: { client: Client }) {
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const box = client.box!;
+  if (box.state === "awake") {
+    return (
+      <div id="status" role="status" class="wake" data-wake="awake" data-wake-ms={box.ms}>
+        awake · {((box.ms ?? 0) / 1000).toFixed(1)} s
+      </div>
+    );
+  }
   if (box.state === "waking") {
     return (
       <div id="status" role="status" class="wake" data-wake="waking">

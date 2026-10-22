@@ -483,6 +483,8 @@ pub struct Control {
     pub activity: watch::Sender<Option<String>>,
     /// The VM was resumed (M180): redial the relay now, not after backoff.
     resumed: tokio::sync::Notify,
+    /// Resumes so far, for a dial that failed as one came (M182).
+    resumes: std::sync::atomic::AtomicU64,
 }
 
 /// How talking to control is going, for [`State`].
@@ -712,6 +714,7 @@ impl Control {
             doc_info: Default::default(),
             activity: watch::channel(None).0,
             resumed: tokio::sync::Notify::new(),
+            resumes: Default::default(),
         });
         me.reload();
         me
@@ -966,6 +969,7 @@ impl Control {
     /// Only a dial under way or a wait between dials hears it: one that
     /// starts later is fresh anyway.
     pub fn resumed(&self) {
+        self.resumes.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.resumed.notify_waiters();
     }
 
@@ -1940,6 +1944,7 @@ async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
         }
     });
     let mut backoff = Duration::from_secs(1);
+    let mut resumes = control.resumes.load(std::sync::atomic::Ordering::SeqCst);
     loop {
         let Some(e) = control.enrolled() else { return };
         let started = std::time::Instant::now();
@@ -1967,6 +1972,12 @@ async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
         // Control may have hung up because this machine was removed
         // (#330): find out now, not at the next refresh.
         control.poke();
+        // A resume that came as the old socket failed, which the select
+        // above may have taken first (M182: the hub hung up on the frozen
+        // socket, and its wake waits on this dial).
+        let n = control.resumes.load(std::sync::atomic::Ordering::SeqCst);
+        let now = now || n != resumes;
+        resumes = n;
         if started.elapsed() > Duration::from_secs(30) || now {
             backoff = Duration::from_secs(1);
         }

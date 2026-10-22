@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# M182's gate (#1243, run in M192): opening a paused hosted workspace shows
+# its terminal in under 2 seconds, p95 over 20 tries. Each try pauses the
+# workspace's box at the provider, as its timeout passing does (the
+# platform doesn't hear of it, and the box's socket to control looks open
+# until it's pinged), then opens it:
+#
+#   hosted-wake-gate STATE MACHINE WORKSPACE [TRIES]
+#       from here, as the page does (web/fixtures/device-cli.ts `open`: the
+#       shared relay socket, asking to wake it), timed to its first pane's
+#       screen
+#   hosted-wake-gate --phone STATE MACHINE WORKSPACE [TRIES]
+#       from the phone: after each pause, open it there; the page shows
+#       "awake · N s" once it answers, and you type N here
+#
+# STATE: a device-cli state file signed in to control as one of the
+# project's people (`device-cli.ts --state STATE signin --control URL`).
+# MACHINE: the workspace's machine, by name or id. WORKSPACE: its `hw_` id.
+# TRIES: 20 unless given.
+#
+# The box is paused with the operator's provider key, never sent anywhere
+# but the provider: E2B_API_KEY, at E2B_URL (https://api.e2b.dev unless
+# set; loam's E2B-compatible API works too). CURL runs the provider's calls
+# (curl unless set: testnet's fake E2B is reached with `docker exec`).
+# Prints each try, then the median, p95 and worst, and exits 1 if p95 is
+# 2 s or more.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+phone=0
+if [ "${1:-}" = --phone ]; then phone=1; shift; fi
+state=${1:?usage: hosted-wake-gate [--phone] STATE MACHINE WORKSPACE [TRIES]}
+machine=${2:?usage: hosted-wake-gate [--phone] STATE MACHINE WORKSPACE [TRIES]}
+workspace=${3:?usage: hosted-wake-gate [--phone] STATE MACHINE WORKSPACE [TRIES]}
+tries=${4:-20}
+: "${E2B_API_KEY:?E2B_API_KEY: the operator's provider key}"
+e2b=${E2B_URL:-https://api.e2b.dev}
+read -r -a curl <<< "${CURL:-curl}"
+
+devs() { node --experimental-strip-types --no-warnings web/fixtures/device-cli.ts --state "$state" "$@"; }
+api() { "${curl[@]}" -fsS -H "X-API-Key: $E2B_API_KEY" "$@"; }
+
+# The workspace's box, by the metadata the platform gives every box.
+sandbox=$(api "$e2b/v2/sandboxes?metadata=arugula_workspace%3D$workspace&state=running,paused" |
+  node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const b=JSON.parse(s);if(b.length!==1){console.error(`${b.length} boxes for the workspace`);process.exit(1)}console.log(b[0].sandboxID)})')
+
+# Opened once first, so it's up and its panes are there.
+devs open "$machine" 60 > /dev/null
+
+times=()
+for i in $(seq 1 "$tries"); do
+  api -X POST -H 'content-type: application/json' -d '{}' "$e2b/sandboxes/$sandbox/pause" > /dev/null || true
+  # Paused a while, as a box between turns is.
+  sleep "${ARUGULA_GATE_PAUSED_SECS:-5}"
+  if [ "$phone" = 1 ]; then
+    read -r -p "try $i: open $machine on the phone, then type the seconds it shows (awake · N s): " s
+    ms=$(node -e 'console.log(Math.round(Number(process.argv[1]) * 1000))' "$s")
+  else
+    out=$(devs open "$machine" 30)
+    ms=$(node -e 'const o=JSON.parse(process.argv[1]);console.log(o.ready)' "$out")
+    echo "try $i: ${ms} ms ($out)"
+  fi
+  times+=("$ms")
+done
+
+node - "${times[@]}" <<'JS'
+const v = process.argv.slice(2).map(Number).sort((a, b) => a - b);
+const at = (q) => v[Math.min(v.length, Math.max(1, Math.ceil(v.length * q))) - 1];
+const p95 = at(0.95);
+console.log(`open to terminal over ${v.length} tries: median ${at(0.5)} ms, p95 ${p95} ms, worst ${at(1)} ms`);
+console.log(p95 < 2000 ? "PASS: p95 under 2 s" : "FAIL: p95 is 2 s or more");
+process.exit(p95 < 2000 ? 0 : 1);
+JS

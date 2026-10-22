@@ -24,10 +24,13 @@ export const WAKE_MS = 50_000;
  * starts to wake it, then `failed` (`code`, `why`) or `asleep` (nobody
  * asked to wake it) before the channel's close. */
 export interface WakeSaid {
-  state: "waking" | "asleep" | "failed";
+  /** `awake` is the page's own: the machine answered after waking, `ms`
+   * from the open (shown a moment: the phone's gate reads it, #1243). */
+  state: "waking" | "asleep" | "failed" | "awake";
   /** `gone`, `refused`, `unavailable`, `starting`, `failed` or `silent`. */
   code?: string;
   why?: string;
+  ms?: number;
 }
 
 /** The close code (try again later) control's relay closes a browser's

@@ -275,6 +275,8 @@ export class Client {
    * Wake pressed). A reconnect on its own doesn't: a box left open on a
    * screen still pauses between turns. Never a summary connection's. */
   private wakeNext = true;
+  /** M182: when the try that asked to wake began (performance.now()). */
+  private wakeAt = 0;
   /** M25: tries that ended before the daemon said hello. */
   failures = 0;
   /** M25: when the daemon last sent anything (ms), so a link that died
@@ -967,6 +969,7 @@ export class Client {
     if (this.e2e) {
       const wake = this.wakeNext && !this.summary;
       this.wakeNext = false;
+      if (wake) this.wakeAt = performance.now();
       link = new E2ELink(
         this.e2e,
         (how) => {
@@ -1162,7 +1165,18 @@ export class Client {
         }
         this.daemonVersion = msg.version;
         this.revoked = false;
-        this.box = null;
+        // M182: back from a wake: how long it took, shown a moment.
+        if (this.box?.state === "waking") {
+          const ms = Math.round(performance.now() - this.wakeAt);
+          console.info(`arugula: ${this.e2e?.daemon.id ?? this.base} woke and answered ${ms}ms after it was opened`);
+          const awake: WakeSaid = { state: "awake", ms };
+          this.box = awake;
+          setTimeout(() => {
+            if (this.box !== awake) return;
+            this.box = null;
+            this.emit();
+          }, 4000);
+        } else this.box = null;
         this.clientId = msg.client;
         this.connected = true;
         this.focused = undefined;
