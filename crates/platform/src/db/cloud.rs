@@ -2102,6 +2102,7 @@ mod tests {
     /// twice, until their leases run out.
     #[test]
     fn two_machines_never_claim_the_same_job() {
+        use crate::db::jobs::tests::again_while_busy;
         let (a, b, file) = two_machines();
         let spec_tab = CloudTabSpec {
             agent_id: "agent_test".into(),
@@ -2129,9 +2130,12 @@ mod tests {
                     scope.spawn(|| {
                         loop {
                             let mut got = vec![];
-                            got.extend(db.claim_cloud_job(1_000).unwrap().map(|j| j.run.id));
-                            got.extend(db.claim_cloud_workspace_job(1_000).unwrap().map(|j| j.cloud_workspace.id));
-                            got.extend(db.claim_cloud_tab_job(1_000).unwrap().map(|j| j.tab.id));
+                            // A claim refused as locked is tried again (`again_while_busy` says why).
+                            got.extend(again_while_busy(|| db.claim_cloud_job(1_000)).map(|j| j.run.id));
+                            got.extend(
+                                again_while_busy(|| db.claim_cloud_workspace_job(1_000)).map(|j| j.cloud_workspace.id),
+                            );
+                            got.extend(again_while_busy(|| db.claim_cloud_tab_job(1_000)).map(|j| j.tab.id));
                             if got.is_empty() {
                                 return;
                             }
