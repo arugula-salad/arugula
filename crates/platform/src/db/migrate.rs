@@ -191,12 +191,7 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0015_platform_jobs.sql"),
         additive: true,
     },
-    Migration {
-        version: 16,
-        name: "runs",
-        sql: include_str!("../../migrations/sqlite/0016_runs.sql"),
-        additive: true,
-    },
+    Migration { version: 16, name: "runs", sql: include_str!("../../migrations/sqlite/0016_runs.sql"), additive: true },
     Migration {
         version: 17,
         name: "deploys",
