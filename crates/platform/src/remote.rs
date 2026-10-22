@@ -372,6 +372,10 @@ impl HubPort for HttpHub {
     fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
         Box::pin(self.0.call("hosted_gone", WorkspacesArgs { workspaces: workspaces.to_vec() }))
     }
+
+    fn activity<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<crate::hub::MachineActivity>>> {
+        Box::pin(self.0.call("activity", IdsArgs { ids: machines.to_vec() }))
+    }
 }
 
 /// What one side's internal API answers with: the port it serves, and
@@ -464,6 +468,7 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "hosted_enrollment" => answer(hub.hosted_enrollment(&args::<EnrollAsk>(&body)?).await?)?,
             "hosted_enrolled" => answer(hub.hosted_enrolled(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
             "hosted_gone" => answer(hub.hosted_gone(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
+            "activity" => answer(hub.activity(&args::<IdsArgs>(&body)?.ids).await?)?,
             _ => return Ok(None),
         }))
     }

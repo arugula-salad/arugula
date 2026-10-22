@@ -317,6 +317,13 @@ impl HubPort for InProcess {
     fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
         Box::pin(async move { crate::hosted::gone(&*self.app()?, workspaces) })
     }
+
+    fn activity<'a>(
+        &'a self,
+        machines: &'a [String],
+    ) -> BoxFuture<'a, HubResult<Vec<arugula_platform::hub::MachineActivity>>> {
+        Box::pin(async move { Ok(self.app()?.relay.activity.of(machines)) })
+    }
 }
 
 /// The platform, when it's in this process: what the three calls above

@@ -169,6 +169,16 @@ pub(crate) fn directory(app: &App, account: &str) -> anyhow::Result<Vec<Value>> 
     Ok(out)
 }
 
+/// The hosted machines of every project `account` is in (its own and its
+/// teams'), to nudge when its devices change (M180): they let its devices
+/// in, and look again at once, as when a team's roster changes.
+pub(crate) fn of_account(app: &App, account: &str) -> Vec<String> {
+    owners_for(app, account)
+        .and_then(|o| app.db.hosted_of(&o))
+        .map(|v| v.into_iter().map(|h| h.cert.device).collect())
+        .unwrap_or_default()
+}
+
 /// The hosted machines of a team's project, to nudge when its roster
 /// changes.
 pub(crate) fn of_team(app: &App, team: &str) -> Vec<String> {

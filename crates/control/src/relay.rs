@@ -67,6 +67,8 @@ pub struct Relay {
     /// Ops asked of daemons and not answered yet (M168): by the ask's id,
     /// the daemon asked and where its answer goes.
     asked: Mutex<HashMap<String, (String, tokio::sync::oneshot::Sender<OpAnswer>)>>,
+    /// Whether each hosted machine is working (M180).
+    pub activity: crate::activity::Activities,
 }
 
 /// How long a machine has to answer an op: a send runs `gh` and waits for
@@ -512,6 +514,7 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
                     heard = Instant::now();
                     if !crate::guest_jump::from_daemon(&app, &id, generation, t.as_str())
                         && !app.relay.op_text(&id, t.as_str())
+                        && !app.relay.activity.heard(&id, generation, t.as_str())
                     {
                         crate::forge::from_daemon(&app, &id, generation, t.as_str());
                     }
@@ -538,6 +541,7 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
     drop(live);
     app.forge.drop_daemon(&id, generation);
     app.guest_routes.drop_daemon(&id, generation);
+    app.relay.activity.drop_daemon(&id, generation);
     let _ = seen(&app, &id, hosted, None);
     info!(daemon = %id, "daemon left the relay");
     app.analytics.capture(

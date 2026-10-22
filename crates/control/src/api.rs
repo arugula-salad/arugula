@@ -74,11 +74,13 @@ fn trusted(app: &App, account: &str) -> anyhow::Result<(Option<Trust>, Vec<Cert>
     Ok((root.map(|root| Trust { account: account.to_owned(), root }), certs, revs))
 }
 
-/// The account's daemons should look at its certificates again now.
+/// The account's daemons should look at its certificates again now, and
+/// so should the hosted machines of its projects (M180).
 fn nudge(app: &App, account: &str) {
-    if let Ok(ds) = app.db.daemons(account) {
-        app.relay.nudge(&ds.into_iter().map(|d| d.id).collect::<Vec<_>>());
-    }
+    let mut ids: Vec<String> =
+        app.db.daemons(account).map(|ds| ds.into_iter().map(|d| d.id).collect()).unwrap_or_default();
+    ids.extend(crate::hosted::of_account(app, account));
+    app.relay.nudge(&ids);
 }
 
 /// A refused enrolment or approval, in the log (#94): which request, the

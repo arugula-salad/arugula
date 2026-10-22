@@ -319,6 +319,9 @@ impl HubPort for Timed {
     fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
         timed!(self.0.hosted_gone(workspaces))
     }
+    fn activity<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<crate::hub::MachineActivity>>> {
+        timed!(self.0.activity(machines))
+    }
 }
 
 #[cfg(test)]

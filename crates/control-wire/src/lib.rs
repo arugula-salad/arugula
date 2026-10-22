@@ -19,6 +19,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod activity;
 pub mod chat;
 pub mod forge;
 pub mod forge_ops;
