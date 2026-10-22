@@ -32,13 +32,13 @@ use crate::{
 
 /// An account's devices: a phone (its root), a CLI on its machine, and a
 /// browser it removed.
-struct Devices {
-    phone: DeviceKeys,
+pub(crate) struct Devices {
+    pub(crate) phone: DeviceKeys,
     cli: DeviceKeys,
     removed: DeviceKeys,
 }
 
-fn devices(hub: &TestHub, account: &str) -> Devices {
+pub(crate) fn devices(hub: &TestHub, account: &str) -> Devices {
     let phone = DeviceKeys::generate();
     let mut root = Cert::new(&phone, account, Kind::Browser, "Pixel");
     root.sign_with(&phone);
@@ -92,7 +92,7 @@ fn roster(version: u64, members: &[(&str, &str, TeamRole)], by: &DeviceKeys) -> 
 
 /// The platform over the same app, behind a gate that also vouches for a
 /// CLI device (`x-test-cli: <account> <device>`), as the hub's does.
-async fn serve_with_cli(app: Arc<crate::Platform>) -> String {
+pub(crate) async fn serve_with_cli(app: Arc<crate::Platform>) -> String {
     fn asked(headers: &axum::http::HeaderMap) -> Option<Principal> {
         let h = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_owned);
         if let Some(c) = h("x-test-cli") {
@@ -134,14 +134,18 @@ async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16
     as_header(base, ("x-test-daemon", "a geek"), method, path, body).await
 }
 
-fn digest(s: &str) -> String {
+/// The chant-fly driver's plan for commit `sha` of acme/app to production
+/// (M219: the platform makes it, and checks a plan it's given).
+fn driver_plan(sha: &str) -> String {
+    arugula_e2e::deploy::plan_digest("chant-fly", "production", "commit", sha, "acme/app")
+}
+
+pub(crate) fn digest(s: &str) -> String {
     hex::encode(Sha256::digest(s.as_bytes()))
 }
 
 fn plan_body(env: &str, sha: &str) -> Option<Value> {
-    Some(
-        json!({ "environment": env, "source": { "kind": "commit", "ref": sha, "where": "acme/app" }, "plan": digest(sha) }),
-    )
+    Some(json!({ "environment": env, "source": { "kind": "commit", "ref": sha, "where": "acme/app" } }))
 }
 
 /// An account's test passkey (Ed25519), the same every time.
@@ -183,11 +187,11 @@ fn assertion(body: &str, pk: &Pk) -> Value {
 /// `who`'s `keys` signing `decision` on deploy `d` whose operation hash is
 /// `op`, good for an hour, confirmed with `who`'s passkey: the body the
 /// approve and deny routes take.
-fn signed(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision) -> Value {
+pub(crate) fn signed(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision) -> Value {
     signed_until(keys, who, d, op, decision, now_ms() + 3_600_000)
 }
 
-fn signed_until(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision, expires: u64) -> Value {
+pub(crate) fn signed_until(keys: &DeviceKeys, who: &str, d: &str, op: &str, decision: Decision, expires: u64) -> Value {
     signed_with(keys, who, d, op, decision, expires, Some(&Pk { of: who, challenge: None, flags: 0x05 }))
 }
 
@@ -234,7 +238,7 @@ async fn production(base: &str, t: &str) -> String {
 }
 
 /// Planned by `who` (a person) and asked for: its id and operation hash.
-async fn asked(base: &str, who: &str, t: &str, env: &str, sha: &str) -> (String, String) {
+pub(crate) async fn asked(base: &str, who: &str, t: &str, env: &str, sha: &str) -> (String, String) {
     let (st, d) = call(base, who, "POST", &format!("/api/projects/{t}/deploys"), plan_body(env, sha)).await;
     assert_eq!((st, &d["state"]), (200, &json!("planned")), "{d}");
     let id = d["id"].as_str().unwrap().to_owned();
@@ -276,7 +280,7 @@ async fn an_owners_phone_approves_and_the_log_keeps_its_signature() {
     assert!(
         body.starts_with(&format!(
             "arugula deploy op v1\nproject {t}\nenvironment {env}\nname production\nplan {}\n",
-            digest("deadbeef")
+            driver_plan("deadbeef")
         )),
         "{body}"
     );
@@ -506,6 +510,7 @@ async fn a_stale_deploy_is_refused_even_with_a_good_signature() {
     .await;
     assert_eq!(st, 200);
     // The first one's driver run starts applying it.
+    app.db.link_deploy_run_for_tests(&first, "run_1");
     app.db.record_deploy(&first, EventKind::Started, &Actor::run("run_1"), now_ms(), json!({})).unwrap().unwrap();
 
     let (st, d) = call(&base, "a", "GET", &format!("/api/deploys/{second}"), None).await;
@@ -707,9 +712,18 @@ async fn asks_are_limited_per_project_and_asker() {
     devices(&hub, "a");
     let env = production(&base, &t).await;
     let mut body = plan_body(&env, "deadbeef").unwrap();
-    body["plan"] = digest("deadbeef").to_uppercase().into();
+    body["plan"] = driver_plan("deadbeef").to_uppercase().into();
     let (st, d) = call(&base, "a", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
-    assert_eq!((st, &d["plan"]), (200, &json!(digest("deadbeef"))), "{d}");
+    assert_eq!((st, &d["plan"]), (200, &json!(driver_plan("deadbeef"))), "{d}");
+    // Another plan than the driver's is refused (M219); none is made.
+    let mut other = plan_body(&env, "deadbeef").unwrap();
+    other["plan"] = digest("not the driver's").into();
+    let (st, v) = call(&base, "a", "POST", &format!("/api/projects/{t}/deploys"), Some(other)).await;
+    assert_eq!((st, v["reason"].as_str()), (400, Some(crate::deploys::OTHER_PLAN)), "{v}");
+    let mut none = plan_body(&env, "deadbeef").unwrap();
+    none.as_object_mut().unwrap().remove("plan");
+    let (st, d) = call(&base, "a", "POST", &format!("/api/projects/{t}/deploys"), Some(none)).await;
+    assert_eq!((st, &d["plan"]), (200, &json!(driver_plan("deadbeef"))), "made when left out: {d}");
     let first = d["id"].as_str().unwrap().to_owned();
     let plan = |who: &'static str, n: u32| {
         let base = base.clone();
@@ -817,6 +831,7 @@ fn recorded_only_over_the_operation_and_never_stale() {
     assert_eq!((r.deploy.state, stored.seq, stored.decision), (State::Approved, r.events[0].seq, Decision::Once));
     assert_eq!((r.events[0].actor.as_str(), stored.device_name.as_str()), ("person a", "phone"));
 
+    db.link_deploy_run_for_tests(&one, "run_1");
     db.record_deploy(&one, EventKind::Started, &Actor::run("run_1"), 4, json!({})).unwrap().unwrap();
     let (_, op2) = db.deploy_operation(&two).unwrap().unwrap();
     assert!(matches!(

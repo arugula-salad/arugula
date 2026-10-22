@@ -957,10 +957,21 @@ name = "deploy_approvals"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A deploy's approvals and denies (M218): S37's work approval over the deploy's operation (its environment, plan's digest, source and planned event's hash), signed by a project owner's device. Which deploy, its event in the log, the decision, the operation's hash, the approver's account, the device that signed and its name then, by when the apply must start, the signature, the passkey assertion the hub checked over the approval (credential id, clientDataJSON, authenticatorData, signature), and when."
+what = "A deploy's approvals and denies (M218): S37's work approval over the deploy's operation (its environment, plan's digest, source and planned event's hash), signed by a project owner's device. Which deploy, its event in the log, the decision, the operation's hash, the approver's account, the device that signed and its name then, by when the apply must start, the signature, the passkey assertion the hub checked over the approval (credential id, clientDataJSON, authenticatorData, signature), and when; and when a start used it up, by which run (M219)."
 why_asleep = "An owner approves a deploy from their phone and a driver run checks it, with every machine asleep."
 with_account = "partly"
 note = "Those of projects that go with it go. The rest are kept as signed, the account's id in them included, as its events are: rewriting one would break its signature."
+seen_by = ["litestream"]
+
+[[table]]
+name = "deploy_runs"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "The run that applies an approved deploy (M219): which deploy and run, the approval it applies, the hosted workspace it runs on, the environment's driver then, when it was made, when its machine was given the environment's secrets (once), and when the project's owners were told its apply failed (once). No secret: those are sealed in project_secrets and given only to the run's machine, while it runs."
+why_asleep = "A deploy's run applies it on the project's hosted workspace, and its log takes the deploy's start only from that run, with every owner's device asleep."
+with_account = "partly"
+note = "Those of deploys that go with its projects go."
 seen_by = ["litestream"]
 
 [[table]]

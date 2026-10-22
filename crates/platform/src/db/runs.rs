@@ -248,6 +248,15 @@ pub struct Approval {
 }
 
 impl Approval {
+    /// A deploy's run's approval (M219): the deploy's own approval, as
+    /// recorded once M218's verifier checked its owner device's signature
+    /// over the deploy's operation, which the run's operation names. Only
+    /// `db::deploy_runs::deploy_approval` makes one, for the deploy's own
+    /// run.
+    pub(crate) fn of_deploy(id: &str, daemon: &str, op: &str, by: &str) -> Self {
+        Self { id: id.into(), daemon: daemon.into(), op: op.into(), by: by.into() }
+    }
+
     #[cfg(test)]
     pub(crate) fn checked(id: &str, daemon: &str, op: &str, by: &str) -> Self {
         Self { id: id.into(), daemon: daemon.into(), op: op.into(), by: by.into() }

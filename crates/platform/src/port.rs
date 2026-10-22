@@ -16,7 +16,7 @@ use arugula_control_wire::{
     hosted::{SetupPlan, SetupReport},
     run_logs::{Upload, UploadGiven, Uploaded},
     transcripts::TranscriptPost,
-    work::{Report, Reported, Work},
+    work::{Report, Reported, SecretsAsk, SecretsGiven, Work},
 };
 
 pub use crate::hosted::{inference::TurnAnswer, previews::PublicPreview, transcripts::Archived};
@@ -155,6 +155,18 @@ pub trait PlatformPort: Send + Sync {
         Box::pin(async { anyhow::bail!("this platform doesn't take runs' reports") })
     }
 
+    /// A hosted machine's deploy run's secrets (M219), for the hub's `POST
+    /// /api/hosted/work/secrets`: once, while the run runs. A platform from
+    /// before M219 has none to give.
+    fn hosted_secrets<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a SecretsAsk,
+    ) -> BoxFuture<'a, anyhow::Result<SecretsGiven>> {
+        let _ = (machine, ask);
+        Box::pin(async { Ok(SecretsGiven::Refused { why: "this platform doesn't apply deploys".into() }) })
+    }
+
     /// What a hosted machine sets up on its box's first boot (M183), for the
     /// hub's `GET /api/hosted/spec`: its workspace's spec, with what to clone
     /// each repo with. `None` when the workspace is gone, or `machine` isn't
@@ -267,7 +279,8 @@ pub struct Deleted {
 /// `hosted_upload` and `hosted_uploaded`; hosted workspaces' setup (M183)
 /// `hosted_plan` and `hosted_setup`; hosted workspaces' agents (M184)
 /// `machine_drives` and `hosted_transcript`; public previews (M187)
-/// `public_preview` and `public_ports`.
+/// `public_preview` and `public_ports`; deploys' runs (M219)
+/// `hosted_secrets`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         Box::pin(async move {
@@ -401,6 +414,14 @@ impl PlatformPort for Platform {
         report: &'a Report,
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
         Box::pin(crate::work::report(self, machine, report))
+    }
+
+    fn hosted_secrets<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a SecretsAsk,
+    ) -> BoxFuture<'a, anyhow::Result<SecretsGiven>> {
+        Box::pin(crate::deploys::apply::secrets(self, machine, ask))
     }
 
     fn hosted_plan<'a>(

@@ -469,6 +469,77 @@ project. No grant approves a deploy. An owner approves on their phone or
 in a browser: the device's signature over the deploy's operation, and a
 passkey's assertion over the approval, which the hub checks.
 
+**Applying a deploy (M219).** An approval queues the deploy's apply. Before
+anything runs, the platform checks the approval's expiry, the approving
+device and the approver's owner role again.
+
+Each deploy gets a fresh box: a hosted workspace made for that one deploy.
+Nobody can list it, open it or reach it, the project's owners included. It
+doesn't count against the project's workspaces, and its usage is metered
+apart. Its daemon gives up root before it runs anything (only the run user
+stays reachable with sudo). It takes its one deploy, and stops after.
+The box sends its run's log (the pane's output, redacted) before it
+reports the end. The platform deletes the box once that log is in (or
+after two minutes), whatever happened: a failure, a refusal, a box that
+never came up, or a crash on the platform part way. A reaper deletes any
+deploy box past its longest life.
+
+The box checks the approval itself, against the owners it pinned when it
+enrolled: an owner's browser signed exactly this operation, it hasn't
+expired, a passkey confirmed it, and the plan is its driver's. Only a
+deploy's own box applies a deploy, and only that one. The deploy starts
+only when its run starts, before the approval expires, and that start uses
+the approval up: it never starts the deploy again or goes to another run.
+
+Secrets for a deploy are set per environment, by an owner, from a browser
+(not a CLI):
+
+```
+POST /api/environments/{id}/secrets/{name} {"value": "..."}
+```
+
+Each driver takes only the secret names it declares (the fake driver
+`APP_TOKEN`; chant→Fly `FLY_API_TOKEN` and `GITHUB_TOKEN`; apps-platform
+`APPS_PLATFORM_TOKEN`). Names that change how a shell or a tool behaves
+(`PATH`, `IFS`, `BASH_ENV`, `LD_*`, `NODE_*`, `GIT_*`, `NPM_CONFIG_*`,
+`SSL_*`, `*_PROXY`, `DEPLOY_*` and the like) are refused everywhere, and a
+value can't hold a NUL. Values are sealed with the project's key and never
+read back. The box gets them once, while its run applies the deploy, and
+hands them to the driver on a pipe. They're never written to the box's
+disk. A GitHub token a driver needs is minted for that run alone,
+read-only for its repository, and revoked when the run ends, by the box
+itself and by the platform.
+
+The driver runs beside the run's pane, not in it. Its output reaches the
+pane with each secret replaced by `[redacted NAME]`, its exact bytes and
+trimmed. **That's best effort:** a driver that prints a secret encoded or
+split differently gets past it. Drivers must never print their secrets.
+
+A driver that fails marks the deploy failed, and the project's owners get a
+push with the run's log. A box that refuses an approval (something forged
+or stale got past the platform) cancels the deploy before anything runs,
+and the owners get a push saying why.
+
+**What a compromised platform can do.** The platform holds the master key,
+so it can open a project's secrets itself, and it chooses where a deploy's
+box runs. The box's own checks guard against a platform that's only partly
+compromised (one that can send work but not forge an owner's device
+signature):
+
+- it won't apply what no owner's browser signed;
+- it won't apply another driver's plan, or secrets its driver doesn't take;
+- it won't apply after the approval expired by its own clock.
+
+Each deploy's box is new, so a box can't tell on its own that a deploy was
+applied elsewhere. Against a replay, the platform uses an approval up when
+its deploy starts, and each driver's target refuses a deploy id it applied
+(chant→Fly by chant's ledger, apps-platform by the `Arugula-Deploy: <id>`
+trailer).
+
+The box can't check the passkey's signature yet: only the hub keeps
+passkeys' public keys. It checks the passkey's challenge and that it
+verified the person.
+
 **Agents in conversations (M197).** Three more powers let a machine's
 agents into its owner's conversations: `threads.read` and `threads.post`
 over a project (a team's channels are its default project's; an object's

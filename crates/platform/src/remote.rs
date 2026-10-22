@@ -42,7 +42,7 @@ use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke, Standing},
     hosted::{EnrollAsk, EnrollGiven, Enrolled, SetupPlan, SetupReport, WakeAnswer},
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{Report, Reported, Work},
+    work::{Report, Reported, SecretsAsk, SecretsGiven, Work},
 };
 
 use crate::{
@@ -295,6 +295,12 @@ struct WorkArgs {
 struct ReportArgs {
     machine: HostedMachine,
     report: Report,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SecretsArgs {
+    machine: HostedMachine,
+    ask: SecretsAsk,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -773,6 +779,14 @@ impl PlatformPort for HttpPlatform {
         Box::pin(self.0.call("hosted_report", ReportArgs { machine: machine.clone(), report: report.clone() }))
     }
 
+    fn hosted_secrets<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a SecretsAsk,
+    ) -> BoxFuture<'a, anyhow::Result<SecretsGiven>> {
+        Box::pin(self.0.call("hosted_secrets", SecretsArgs { machine: machine.clone(), ask: ask.clone() }))
+    }
+
     fn hosted_plan<'a>(
         &'a self,
         project: &'a str,
@@ -891,6 +905,10 @@ async fn platform_call(
             "hosted_report" => {
                 let a: ReportArgs = args(&body)?;
                 answer(p.hosted_report(&a.machine, &a.report).await?)?
+            }
+            "hosted_secrets" => {
+                let a: SecretsArgs = args(&body)?;
+                answer(p.hosted_secrets(&a.machine, &a.ask).await?)?
             }
             "hosted_plan" => {
                 let a: HostedArgs = args(&body)?;

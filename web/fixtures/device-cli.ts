@@ -37,6 +37,20 @@
 //   watch NAME PANE TEXT [SECS]
 //                          watch a pane over control's relay, end to end, until
 //                          it shows TEXT: {id, pane}
+//   passkey-add            register a software passkey on the account (M219),
+//                          through control's WebAuthn routes: {id}
+//   environment NAME DRIVER SECRETS [TEAM]
+//                          as an owner, an environment with a driver and its
+//                          secrets' names (comma-separated, or -): {environment, project}
+//   environment-secret ENV NAME VALUE
+//                          as an owner, set one of its secrets: {set}
+//   deploy-plan ENV REF WHERE [TEAM]
+//                          plan a deploy of commit REF and ask for its
+//                          approval: {deploy, op, state}
+//   deploy-approve DEPLOY [LIFE_MS]
+//                          approve it once, signed by this device and
+//                          confirmed with its passkey: {deploy, state}
+//   deploy DEPLOY          a deploy as its members read it
 //   hosted-entry ID        a hosted machine as the directory lists it here,
 //                          proof and all (exit 1 if it isn't listed)
 //   hosted-accept FILE     whether this device accepts the hosted machine whose
@@ -153,6 +167,21 @@ async function main() {
       await d.watch(box.id, Number(rest[1]), rest[2], secs(rest[3], 15));
       return out({ id: box.id, pane: Number(rest[1]) });
     }
+    case "passkey-add": {
+      const r = await d.addPasskey();
+      await d.save(state);
+      return out(r);
+    }
+    case "environment":
+      return out(await d.environment(rest[0], rest[1], rest[2] && rest[2] !== "-" ? rest[2].split(",") : [], rest[3]));
+    case "environment-secret":
+      return out(await d.environmentSecret(rest[0], rest[1], rest[2]));
+    case "deploy-plan":
+      return out(await d.planDeploy(rest[0], rest[1], rest[2], rest[3]));
+    case "deploy-approve":
+      return out(await d.approveDeploy(rest[0], rest[1] ? Number(rest[1]) : undefined));
+    case "deploy":
+      return out(await d.deploy(rest[0]));
     case "hosted-entry": {
       const e = await d.hostedEntry(rest[0]);
       if (!e) throw new Error(`control lists no hosted machine ${rest[0]} here`);
@@ -195,7 +224,7 @@ async function main() {
     }
     default:
       throw new Error(
-        `unknown command ${cmd ?? "(none)"}: signin, approve, devices, online, pane, panes, team-create, team-invite, team-accept, team-admit, delegate, undelegate, grant-sign, grant-revoke, run-start, agent-run, watch, hosted-entry, hosted-accept, routed, open, preview`,
+        `unknown command ${cmd ?? "(none)"}: signin, approve, devices, online, pane, panes, team-create, team-invite, team-accept, team-admit, delegate, undelegate, grant-sign, grant-revoke, run-start, agent-run, watch, passkey-add, environment, environment-secret, deploy-plan, deploy-approve, deploy, hosted-entry, hosted-accept, routed, open, preview`,
       );
   }
 }

@@ -23,7 +23,7 @@ use super::{
         DEPLOY_COLS, Deploy, Environment, Event, PasskeyProof, Recorded, Refusal, VerifiedApproval, deploy_and_plan,
         deploy_row, record_approval_in,
     },
-    sql::{Row, Sql, params},
+    sql::{Optional as _, Row, Sql, params},
 };
 
 /// A new approval's id: `apv_` and 32 hex characters.
@@ -168,6 +168,12 @@ impl Db {
             ],
             approval_row,
         )?;
+        // Approved: its apply is queued in the same transaction (M219's
+        // `deploys::apply`), so an approval is never left unapplied.
+        if v.decision() == super::deploys::Decision::Once {
+            let payload = serde_json::json!({ "deploy": v.deploy() });
+            super::jobs::enqueue(&tx, v.deploy(), super::jobs::JobKind::Deploy, &payload, at, at)?;
+        }
         tx.commit()?;
         Ok(Ok((recorded, stored)))
     }
@@ -213,6 +219,39 @@ impl Db {
             &super::sql::list(environments),
             deploy_row,
         )
+    }
+}
+
+/// Use up `deploy`'s approval as run `run` starts it, at `at`, in the
+/// caller's transaction: `true` when there was one to use. Deploys whose
+/// approvals were recorded without a row (M217's tests, which stand in for
+/// M218's verifier) have nothing to use up, and go by their log alone.
+pub(crate) fn consume(c: &impl Sql, deploy: &str, run: &str, at: u64) -> Result<bool> {
+    let rows: u64 = c.query_row(
+        "SELECT count(*) FROM deploy_approvals WHERE deploy_id = ?1 AND decision = 'once'",
+        params![deploy],
+        |r| r.get(0),
+    )?;
+    if rows == 0 {
+        return Ok(true);
+    }
+    Ok(c.execute(
+        "UPDATE deploy_approvals SET consumed_at = ?3, consumed_run = ?2
+         WHERE deploy_id = ?1 AND decision = 'once' AND consumed_at IS NULL",
+        params![deploy, run, at],
+    )? >= 1)
+}
+
+impl Db {
+    /// The run that used up `deploy`'s approval, if a start did.
+    pub fn approval_consumed_by(&self, deploy: &str) -> Result<Option<String>> {
+        self.c()
+            .query_row(
+                "SELECT consumed_run FROM deploy_approvals WHERE deploy_id = ?1 AND consumed_run IS NOT NULL LIMIT 1",
+                params![deploy],
+                |r| r.get(0),
+            )
+            .optional()
     }
 }
 

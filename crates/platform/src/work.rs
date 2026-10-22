@@ -36,7 +36,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use arugula_control_wire::work::{Report, Reported, TAKES_RUN, Work, WorkItem};
+use arugula_control_wire::work::{Report, Reported, TAKES_DEPLOY, TAKES_RUN, Work, WorkItem};
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -127,8 +127,9 @@ impl Dispatch {
         let waiting = matches!(run.state, State::Pending | State::Approved);
         // Where it runs: a hosted workspace of its project, whose box
         // enrolled as the machine its operation names. Nothing else gets work.
+        // A people's workspace, or a deploy's own box (M219).
         let w = match &run.workspace {
-            Some(ws) => db.hosted_workspace(&run.project, ws)?,
+            Some(ws) => db.hosted_any(&run.project, ws)?.filter(|w| w.state != "deleted"),
             None => None,
         };
         let Some(w) = w.filter(|w| {
@@ -165,14 +166,19 @@ impl Dispatch {
             job.checkpoint = Some(serde_json::to_value(&cp)?);
             db.checkpoint_job(job, now)?;
             let (app, project, ws, id) = (self.app.clone(), run.project.clone(), w.id.clone(), run.id.clone());
-            tokio::spawn(async move {
-                match crate::hosted::wake::wake(&app, &project, &ws).await {
-                    Ok(a) => info!(run = id, workspace = ws, answer = ?a, "woke a hosted workspace for its run"),
-                    Err(e) => {
-                        warn!(run = id, workspace = ws, error = %format!("{e:#}"), "can't wake a run's workspace")
+            // A deploy box is never opened: the worker resumes it, asked.
+            if w.purpose == crate::db::hosted::DEPLOY {
+                let _ = crate::hosted::ask(&app, &ws, crate::hosted::Ask::Wake);
+            } else {
+                tokio::spawn(async move {
+                    match crate::hosted::wake::wake(&app, &project, &ws).await {
+                        Ok(a) => info!(run = id, workspace = ws, answer = ?a, "woke a hosted workspace for its run"),
+                        Err(e) => {
+                            warn!(run = id, workspace = ws, error = %format!("{e:#}"), "can't wake a run's workspace")
+                        }
                     }
-                }
-            });
+                });
+            }
         }
         // Not taken: nothing pulled it for that long (a machine that's
         // busy with another run pulls it, and it waits).
@@ -216,7 +222,17 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
     // On every pull, for the runs going as well as the ones to start.
     let revokes = app.db.run_grant_revokes(&m.project)?;
     let now = arugula_e2e::now_ms();
+    let takes_deploys = takes.iter().any(|t| t == TAKES_DEPLOY);
     for id in ready {
+        // A deploy's run (M219) goes only to a machine that applies them,
+        // with what it checks before it does.
+        let deploy = crate::deploys::apply::deploy_work(&app.db, &id)?;
+        if deploy.is_some() && !takes_deploys {
+            continue;
+        }
+        if app.db.deploy_run_of(&id)?.is_some() && deploy.is_none() {
+            continue;
+        }
         // Its machine is asking for it: it isn't `not_taken` while it does.
         app.db.note_pulled(&id, now)?;
         let Some(run) = app.db.run(&id)? else { continue };
@@ -236,6 +252,7 @@ pub async fn work(app: &Platform, m: &HostedMachine, takes: &[String]) -> Result
             last_seq: run.last_seq,
             grant,
             revokes: revokes.clone(),
+            deploy,
         });
     }
     Ok(Work { items, revokes })
@@ -274,12 +291,22 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &Report) -> Result<Rep
             if run.state == State::Failed {
                 crate::inbox::run_failed(app, &run).await;
             }
-            Ok(Reported::Taken)
+            // A deploy's run (M219) moves its deploy: refused, the run
+            // fails and the machine is told before it applies anything.
+            Ok(crate::deploys::apply::reported(app, &run).await?.unwrap_or(Reported::Taken))
         }
         Err(why) => {
             // The same event, kept before: a retry whose answer was lost.
             let kept = app.db.run_events(&r.run)?.into_iter().find(|e| e.seq == r.seq);
             if kept.is_some_and(|e| e.sig.as_deref() == Some(r.sig.as_str())) {
+                // Its deploy (M219) moves on as if the report were new: a
+                // start the platform kept but didn't finish handling is
+                // started (or refused) now, before the box applies anything.
+                if let Some(run) = app.db.run(&r.run)?
+                    && let Some(said) = crate::deploys::apply::reported(app, &run).await?
+                {
+                    return Ok(said);
+                }
                 return Ok(Reported::Already);
             }
             info!(run = r.run, machine = m.machine, refused = %why, "refused a hosted machine's run report");
@@ -294,11 +321,16 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &Report) -> Result<Rep
 }
 
 /// The job worker with every kind's handler this platform has: runs'
-/// dispatch (M212) and schedules' ticks (M214). Other kinds join it here
+/// dispatch (M212), schedules' ticks (M214) and deploys' applies (M219). Other kinds join it here
 /// as they land: one worker claims every kind.
 pub fn start(app: &Arc<Platform>) {
     let ticks = crate::triggers::schedule::Ticks { gate: Arc::new(crate::triggers::Members(app.clone())) };
-    crate::jobs::start(app.clone(), crate::jobs::Worker::new().with(Dispatch { app: app.clone() }).with(ticks));
+    let deploys = crate::deploys::apply::Apply { app: app.clone() };
+    crate::deploys::apply::start_reaper(app.clone());
+    crate::jobs::start(
+        app.clone(),
+        crate::jobs::Worker::new().with(Dispatch { app: app.clone() }).with(ticks).with(deploys),
+    );
 }
 
 #[cfg(test)]

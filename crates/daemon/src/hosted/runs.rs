@@ -80,7 +80,7 @@ const UNREADABLE: Refused = Refused {
 };
 
 /// Who may sign for the machine's project, from what it pinned.
-fn owners(saved: &Saved) -> Option<Owners<'_>> {
+pub(crate) fn owners(saved: &Saved) -> Option<Owners<'_>> {
     let pin = saved.hosted.as_ref()?;
     match pin.delegation.owner()? {
         Owner::Team(_) => Some(Owners::Team { roster: saved.roster.as_ref()?, certs: &saved.team_certs }),
@@ -293,6 +293,7 @@ pub(crate) mod tests {
             trust: Some(Trust { account: "acct1".into(), root: root.id() }),
             account_certs: vec![root_cert, phone_cert],
             account_revocations: vec![],
+            purpose: None,
         };
         (super::super::enroll::saved_from(got, &keys, None).unwrap(), d, root, phone)
     }

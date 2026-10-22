@@ -132,6 +132,8 @@ services:
       # workspaces this account made: `runs` makes its workspace as it.
       ARUGULA_HOSTED_PLATFORM_KEYS: anthropic
       ARUGULA_CLOUD_ACCOUNTS: acct-testnet-runs-maker
+      # Environments may name the fake driver (M219's `deploys`).
+      ARUGULA_PLATFORM_FAKE_DRIVER: "1"
       STRIPE_SECRET_KEY: sk_test_testnet
       STRIPE_WEBHOOK_SECRET: whsec_testnet
       # The platform (M140): in process unless `up.sh control` was asked

@@ -27,13 +27,14 @@ use std::{
 use arugula_control_wire::{
     hosted::{EnrollRequest, Enrollment},
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{Report, Work, WorkItem},
+    work::{DeployWork, PasskeyAssertion, Report, Secret, SecretsAsk, SecretsGiven, Work, WorkItem},
 };
 use arugula_e2e::{
     Cert, DeviceKeys, Kind, Trust,
+    deploy::{Approval, Decision, Operation},
     hosted::{Delegation, HostedCert, HostedKey},
     project_grant::{GrantRevoke, ProjectGrant, Running},
-    run::{Event, Op, State},
+    run::{DeployApply, Event, Op, State},
 };
 use arugula_testkit::arugulad;
 use axum::{
@@ -49,6 +50,9 @@ use sha2::{Digest as _, Sha256};
 
 const PROJECT: &str = "prj_1";
 const WORKSPACE: &str = "hw_1";
+/// A deploy's secret (M219): never on the box's disk, in its pane or its
+/// log.
+const SECRET: &str = "s3cr3t-m219-never-on-disk";
 
 #[derive(Clone)]
 struct Fake {
@@ -78,6 +82,14 @@ struct Fake {
     refused: Arc<Mutex<Vec<String>>>,
     /// No run-log bucket.
     off: Arc<AtomicBool>,
+    /// The deploy runs whose secrets the box asked for (M219), each time.
+    secrets_asked: Arc<Mutex<Vec<String>>>,
+    /// What control's enrollment says the box is for (M219: `deploy`).
+    purpose: Arc<Mutex<Option<String>>>,
+    /// Where the deploy's token revokes itself, and the bearers it was
+    /// revoked with (M219).
+    revoke_at: Arc<Mutex<Option<String>>>,
+    revoked: Arc<Mutex<Vec<String>>>,
 }
 
 impl Fake {
@@ -113,6 +125,10 @@ impl Fake {
             recorded: Default::default(),
             refused: Default::default(),
             off: Default::default(),
+            secrets_asked: Default::default(),
+            purpose: Default::default(),
+            revoke_at: Default::default(),
+            revoked: Default::default(),
         }
     }
 
@@ -154,6 +170,7 @@ impl Fake {
             last_seq: 1,
             grant: Some(grant),
             revokes: vec![],
+            deploy: None,
         }
     }
 
@@ -201,6 +218,7 @@ async fn enroll(Axum(f): Axum<Fake>, Json(b): Json<EnrollRequest>) -> Response {
         trust: Some(Trust { account: "acct1".into(), root: f.root.id() }),
         account_certs: vec![f.root_cert.clone()],
         account_revocations: vec![],
+        purpose: f.purpose.lock().unwrap().clone(),
     };
     *f.enrolled.lock().unwrap() = Some((e.clone(), b.sign));
     Json(e).into_response()
@@ -306,6 +324,31 @@ async fn turn_end(Axum(f): Axum<Fake>, axum::extract::Path(t): axum::extract::Pa
     Json(json!({ "ended": true }))
 }
 
+/// M219: a deploy run's secrets, given once per run, as the platform does.
+async fn secrets(Axum(f): Axum<Fake>, Json(a): Json<SecretsAsk>) -> Json<SecretsGiven> {
+    let mut asked = f.secrets_asked.lock().unwrap();
+    let again = asked.contains(&a.run);
+    asked.push(a.run);
+    Json(if again {
+        SecretsGiven::Refused { why: "once per run".into() }
+    } else {
+        SecretsGiven::Given {
+            secrets: vec![Secret {
+                name: "APP_TOKEN".into(),
+                value: SECRET.into(),
+                revoke: f.revoke_at.lock().unwrap().clone(),
+            }],
+        }
+    })
+}
+
+/// M219: a short-lived token revokes itself, its bearer itself.
+async fn revoke(Axum(f): Axum<Fake>, headers: HeaderMap) -> StatusCode {
+    let bearer = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+    f.revoked.lock().unwrap().push(bearer);
+    StatusCode::NO_CONTENT
+}
+
 fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
     rt.block_on(async {
         let app = Router::new()
@@ -315,6 +358,8 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
             .route("/api/relay/dial", get(dial))
             .route("/api/hosted/work", get(work))
             .route("/api/hosted/work/report", post(report))
+            .route("/api/hosted/work/secrets", post(secrets))
+            .route("/revoke", axum::routing::delete(revoke))
             .route("/api/hosted/turns", post(turn))
             .route("/api/hosted/turns/{turn}/end", post(turn_end))
             .route("/api/hosted/work/upload", post(upload))
@@ -499,6 +544,222 @@ fn a_hosted_machine_runs_each_run_once() {
     assert_eq!(said, "-p fix the build --output-format text --dangerously-skip-permissions key:arugula-brokered\n");
     wait(&marks, &f, "the turn ended", || f.turns.lock().unwrap().len() == 2);
     assert_eq!(*f.turns.lock().unwrap(), ["start claude", "end trn_1"]);
+
+    // M219: a people's workspace never applies a deploy, even one approved
+    // by the account's own browser: only a deploy's own box does.
+    let dep = run_id('3');
+    f.items.lock().unwrap().push(deploy_item(&f, &dep, &format!("dep_{}", "3".repeat(32)), "good-3", &f.root));
+    wait(&marks, &f, "the deploy refused", || f.reports_of(&dep).len() == 1);
+    assert!(f.reports_of(&dep)[0].detail.contains("not_deploy_box"), "{}", f.reports_of(&dep)[0].detail);
+    assert!(f.secrets_asked.lock().unwrap().is_empty(), "no secrets");
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// A deploy of `source` to production, approved by `by` (the account's
+/// own browser, or someone else's key), with a passkey over the approval.
+fn deploy_item(f: &Fake, run: &str, dep: &str, source: &str, by: &DeviceKeys) -> WorkItem {
+    use base64::Engine as _;
+    let op = Operation {
+        project: PROJECT.into(),
+        environment: "env_1".into(),
+        environment_name: "production".into(),
+        plan: arugula_e2e::deploy::plan_digest("fake", "production", "commit", source, "acme/app"),
+        source_kind: "commit".into(),
+        source_ref: source.into(),
+        source_where: "acme/app".into(),
+        planned: "cd".repeat(32),
+    };
+    let approval = Approval::new(by, dep, &op, "acct1", Decision::Once, arugula_e2e::now_ms() + 3_600_000);
+    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let cd = json!({ "type": "webauthn.get", "challenge": approval.passkey_challenge(), "origin": "https://c.test" });
+    let mut data = Sha256::digest(b"c.test").to_vec();
+    data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
+    let run_op =
+        Op { deploy: Some(DeployApply { deploy: dep.into(), driver: "fake".into(), op: op.hash() }), ..Op::default() }
+            .encode(&f.device());
+    WorkItem {
+        run: run.into(),
+        project: PROJECT.into(),
+        workspace: WORKSPACE.into(),
+        op_hash: hex::encode(Sha256::digest(run_op.as_bytes())),
+        op: run_op,
+        state: "approved".into(),
+        last_seq: 2,
+        grant: None,
+        revokes: vec![],
+        deploy: Some(DeployWork {
+            deploy: dep.into(),
+            operation: op,
+            approval,
+            passkey: Some(PasskeyAssertion {
+                id: "pk".into(),
+                client_data_json: b64.encode(cd.to_string()),
+                authenticator_data: b64.encode(&data),
+                signature: "c2ln".into(),
+            }),
+            driver: "fake".into(),
+            secrets: vec!["APP_TOKEN".into()],
+        }),
+    }
+}
+
+/// Every file under `dir` whose bytes hold `needle`.
+fn holding(dir: &Path, needle: &[u8]) -> Vec<PathBuf> {
+    let mut out = vec![];
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let p = e.path();
+        let Ok(t) = e.file_type() else { continue };
+        if t.is_dir() {
+            out.extend(holding(&p, needle));
+        } else if t.is_file()
+            && let Ok(b) = std::fs::read(&p)
+            && b.windows(needle.len()).any(|w| w == needle)
+        {
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// M219: a deploy's run, against the fake control. Its approval is checked
+/// on the box against the account it pinned: one signed by someone else's
+/// key fails there, without asking for secrets. An approved one asks for
+/// its secrets once, after its start was taken; its driver gets them on
+/// its standard input, prints them, and fails part way; its pane shows
+/// `[redacted APP_TOKEN]` and never the secret; and afterwards no file
+/// under the daemon's state directory (its home, its ledger, the panes'
+/// logs on disk, the driver's own directory) or the test's holds it.
+#[test]
+fn a_hosted_machine_applies_a_deploy_and_its_secret_never_reaches_disk_or_a_pane() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::new();
+    *f.purpose.lock().unwrap() = Some("deploy".into());
+    let url = serve(&rt, f.clone());
+    *f.revoke_at.lock().unwrap() = Some(format!("{url}/revoke"));
+    let marks: PathBuf = std::env::temp_dir().join(format!("arugula-hosted-deploy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&marks);
+    std::fs::create_dir_all(&marks).unwrap();
+    let d = arugulad!("hosteddeploy")
+        .no_wisp()
+        .no_tailscale()
+        .home_in_state()
+        .args(["--hosted"])
+        .env("ARUGULA_HOSTED_TICKET", "ticket-1")
+        .env("ARUGULA_CONTROL_URL", &url)
+        .env("ARUGULA_WORK_PULL_MS", "150")
+        // No `runner` user here: a deploy's box refuses that, but in tests.
+        .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("ARUGULA_HOSTED_TESTS_UNSAFE", "1")
+        .env("ARUGULA_HOSTED_FAKE_DRIVER", "1")
+        .env("RUST_LOG", "info")
+        .args(["--log-file", &marks.join("arugulad.log").to_string_lossy()])
+        .wait_secs(30)
+        .start();
+    wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
+
+    // Someone else's key: refused on the box, before any secret.
+    let forged = run_id('7');
+    f.items.lock().unwrap().push(deploy_item(
+        &f,
+        &forged,
+        &format!("dep_{}", "f".repeat(32)),
+        "good-0",
+        &DeviceKeys::generate(),
+    ));
+    wait(&marks, &f, "the forged deploy refused", || f.reports_of(&forged).len() == 1);
+    let r = &f.reports_of(&forged)[0];
+    assert_eq!((r.from.as_str(), r.to.as_str()), ("approved", "failed"));
+    assert!(r.detail.contains("approval_device"), "{}", r.detail);
+
+    // Approved by the account's own browser: it runs, and fails part way.
+    let dep = format!("dep_{}", "1".repeat(32));
+    let run = run_id('8');
+    f.items.lock().unwrap().push(deploy_item(&f, &run, &dep, "fail-1", &f.root));
+    wait(&marks, &f, "the deploy's run ended", || f.reports_of(&run).len() == 2);
+    let reports = f.reports_of(&run);
+    assert_eq!(states(&reports), [(3, "approved".into(), "running".into()), (4, "running".into(), "failed".into())]);
+    assert_eq!(reports[1].detail, r#"{"exit":3}"#);
+    assert_eq!(*f.secrets_asked.lock().unwrap(), std::slice::from_ref(&run), "asked once, and not for the forged one");
+    let running: serde_json::Value = serde_json::from_str(&reports[0].detail).unwrap();
+    assert_eq!(running["deploy"], json!(dep));
+
+    // Its log went to the bucket before its end was reported (the box is
+    // deleted after): the pane's output, redacted.
+    let (logs, _) = f.uploads_of(&run);
+    assert!(!logs.is_empty(), "its log was sent");
+    let mut all = Vec::new();
+    for u in &logs {
+        let Upload::Log { n, .. } = u else { unreachable!() };
+        all.extend_from_slice(&f.objects.lock().unwrap()[&format!("{run}/log/{n}")]);
+    }
+    let text = String::from_utf8_lossy(&all);
+    assert!(text.contains("fake driver: APP_TOKEN is [redacted APP_TOKEN] (25 bytes)"), "{text}");
+    assert!(text.contains("fake driver: failing part way") && text.contains("the driver exited 3"), "{text}");
+    assert!(text.contains(&format!("arugula run {run} · operation sha256:")), "{text}");
+    assert!(text.contains("fake driver: wrote "), "its driver ran: {text}");
+    assert!(!text.contains(SECRET), "the secret is in the uploaded log: {text}");
+    // Its token was revoked by the box itself, as its own bearer.
+    assert_eq!(*f.revoked.lock().unwrap(), [format!("Bearer {SECRET}")], "revoked once, by the box");
+    let home = d.state.join("work").join(format!("{run}.home"));
+    assert!(!home.exists(), "its directory (its HOME) is gone after the run");
+    std::thread::sleep(Duration::from_millis(500));
+    let found: Vec<PathBuf> =
+        [d.state.as_path(), marks.as_path()].iter().flat_map(|dir| holding(dir, SECRET.as_bytes())).collect();
+    assert!(found.is_empty(), "the secret is on disk: {found:?}");
+    assert!(!holding(&d.state, b"[redacted APP_TOKEN]").is_empty(), "the redacted output is (the pane's log)");
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// M219: a deploy's box (control's enrollment says `purpose: deploy`) takes
+/// its one deploy's run and nothing else (a plain run, even under the
+/// project's grant, fails there), applies it, and stops once control has
+/// its end.
+#[test]
+fn a_deploy_box_takes_its_one_deploy_and_stops() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::new();
+    *f.purpose.lock().unwrap() = Some("deploy".into());
+    let url = serve(&rt, f.clone());
+    let marks: PathBuf = std::env::temp_dir().join(format!("arugula-deploy-box-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&marks);
+    std::fs::create_dir_all(&marks).unwrap();
+    let d = arugulad!("deploybox")
+        .no_wisp()
+        .no_tailscale()
+        .home_in_state()
+        .args(["--hosted"])
+        .env("ARUGULA_HOSTED_TICKET", "ticket-1")
+        .env("ARUGULA_CONTROL_URL", &url)
+        .env("ARUGULA_WORK_PULL_MS", "150")
+        .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("ARUGULA_HOSTED_TESTS_UNSAFE", "1")
+        .env("ARUGULA_HOSTED_FAKE_DRIVER", "1")
+        .env("RUST_LOG", "info")
+        .args(["--log-file", &marks.join("arugulad.log").to_string_lossy()])
+        .wait_secs(30)
+        .start();
+    wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
+    let plain = run_id('a');
+    f.items.lock().unwrap().push(f.item(&plain, "echo ran", f.grant(&f.root)));
+    wait(&marks, &f, "the plain run refused", || f.reports_of(&plain).len() == 1);
+    assert!(f.reports_of(&plain)[0].detail.contains("deploy_box"), "{}", f.reports_of(&plain)[0].detail);
+    let run = run_id('b');
+    let dep = format!("dep_{}", "2".repeat(32));
+    f.items.lock().unwrap().push(deploy_item(&f, &run, &dep, "good-1", &f.root));
+    wait(&marks, &f, "the deploy ran", || f.reports_of(&run).len() == 2);
+    assert_eq!(
+        states(&f.reports_of(&run)),
+        [(3, "approved".into(), "running".into()), (4, "running".into(), "succeeded".into())]
+    );
+    // It stops once control has its end.
+    let pid = d.pid().unwrap();
+    let gone =
+        || std::fs::read_to_string(format!("/proc/{pid}/stat")).map_or(true, |s| s.split(' ').nth(2) == Some("Z"));
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while !gone() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(gone(), "the deploy's box is still up after its run");
     let _ = std::fs::remove_dir_all(&marks);
 }
 

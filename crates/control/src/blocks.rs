@@ -443,6 +443,10 @@ impl Owner {
 /// `control.rs`). Outsiders, and pages with no device, are refused there.
 fn block_owner(app: &App, daemon: &str) -> Option<Owner> {
     if let Some(h) = app.db.hosted(daemon).ok().flatten() {
+        // A deploy's box (M219): nobody's blocks.
+        if h.purpose.is_some() {
+            return None;
+        }
         return Some(Owner::Project(h.cert.project));
     }
     app.db.daemon_account(daemon).ok().flatten().map(Owner::Account)

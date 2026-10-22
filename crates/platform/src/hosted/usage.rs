@@ -202,6 +202,9 @@ pub struct Interval {
     pub class: Option<Class>,
     pub started_at: u64,
     pub ended_at: Option<u64>,
+    /// Its workspace's purpose: `workspace`, or `deploy` for a box made for
+    /// one deploy's run (M219), which the report counts apart too.
+    pub purpose: String,
 }
 
 /// A box the provider has a record of, beside the platform's: both in ms.
@@ -247,6 +250,8 @@ pub struct Report {
     pub to: u64,
     pub all: Totals,
     pub projects: BTreeMap<String, Totals>,
+    /// Deploys' boxes (M219), which are in `all` and `projects` too.
+    pub deploys: Totals,
     pub checked: Vec<Checked>,
 }
 
@@ -262,6 +267,10 @@ pub fn report(intervals: &[Interval], checked: Vec<Checked>, from: u64, to: u64)
         for t in [&mut r.all, r.projects.entry(i.project.clone()).or_default()] {
             *t.ms.entry(i.class).or_default() += ms;
             t.workspaces.insert(i.workspace.clone());
+        }
+        if i.purpose == crate::db::hosted::DEPLOY {
+            *r.deploys.ms.entry(i.class).or_default() += ms;
+            r.deploys.workspaces.insert(i.workspace.clone());
         }
     }
     r
@@ -306,6 +315,15 @@ impl Report {
             self.all.cost(),
             self.all.per_active_hour().map_or_else(|| "-".into(), |c| format!("{c:.4}"))
         );
+        if !self.deploys.workspaces.is_empty() {
+            let _ = writeln!(
+                s,
+                "of which {} deploys' boxes (M219) ran {:.2} hours: ${:.2}",
+                self.deploys.workspaces.len(),
+                hours(self.deploys.total_ms()),
+                self.deploys.cost()
+            );
+        }
         if !self.projects.is_empty() {
             let _ = writeln!(s, "\n{:<40} {:>10} {:>10} {:>10}", "project", "workspaces", "hours", "$");
             for (p, t) in &self.projects {

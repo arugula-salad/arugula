@@ -724,6 +724,14 @@ clients = ["daemon"]
 note = "A hosted machine's signed report of a run's state change (M212), checked by the platform with the machine's key and kept with its signature (PlatformPort::hosted_report)."
 
 [[route]]
+method = "POST"
+path = "/api/hosted/work/secrets"  # wire::work::WORK_SECRETS
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A hosted machine's deploy run asks for its environment's secrets (M219): given once, only to the run's own machine, while the run runs and its deploy is being applied by it, opened from their seals then, with the driver's short-lived tokens minted then (PlatformPort::hosted_secrets). The platform logs their names, never their values."
+
+[[route]]
 method = "GET"
 path = "/api/hosted/spec"  # wire::hosted::SPEC
 process = "hub"
@@ -1988,6 +1996,14 @@ process = "platform"
 auth = "session"
 clients = ["page", "cli"]
 note = "Makes an environment (a name, a driver, its secrets' names): owners."
+
+[[route]]
+method = "POST"
+path = "/api/environments/{id}/secrets/{name}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Sets one of an environment's secrets (M219): owners, from a browser's session only (a CLI's login and an agent's machine are refused), a name the environment lists, never a reserved one. Sealed with the project's key (M209) and never read back: only a deploy run's machine gets it, once, while it runs."
 
 [[route]]
 method = "POST"

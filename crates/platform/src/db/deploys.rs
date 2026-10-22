@@ -70,8 +70,9 @@ fn new_deploy_id() -> String {
     format!("dep_{}", hex::encode(arugula_e2e::random::<16>()))
 }
 
-/// The drivers an environment may name (M219-M222). Planter's waits for
-/// step 8.
+/// The drivers an environment may name (M219-M222), besides the fake one
+/// where it's allowed (`crate::drivers::names`). Planter's waits for step
+/// 8.
 pub const DRIVERS: &[&str] = &["chant-fly", "apps-platform"];
 
 /// The first event's `prev_hash`.
@@ -92,11 +93,10 @@ pub fn valid_environment_name(name: &str) -> bool {
 }
 
 /// A secret's name, as an environment variable: 1-64 of `A-Z`, `0-9` and
-/// `_`, not starting with a digit.
+/// `_`, not starting with a digit, and not one the driver's shell or its
+/// environment uses (M219: `arugula_e2e::deploy::secret_name_ok`).
 pub fn valid_secret_name(name: &str) -> bool {
-    (1..=64).contains(&name.len())
-        && name.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
-        && !name.as_bytes()[0].is_ascii_digit()
+    arugula_e2e::deploy::secret_name_ok(name)
 }
 
 /// An id or a reference that goes on a line of its own: printable, with
@@ -624,8 +624,13 @@ pub enum Refusal {
     Actor,
     /// Another deploy of its environment is being applied.
     Busy { deploy: String },
-    /// A run reporting on an apply that isn't its own.
+    /// A run reporting on an apply that isn't its own, or starting a
+    /// deploy that isn't the one it was made for (M219).
     NotItsRun,
+    /// A start after the approval's `expires` (M219).
+    ApprovalExpired,
+    /// A start with an approval a start used up already (M219).
+    ApprovalConsumed,
 }
 
 impl std::fmt::Display for Refusal {
@@ -643,6 +648,8 @@ impl std::fmt::Display for Refusal {
             Refusal::Actor => f.write_str("that's not this actor's to record"),
             Refusal::Busy { deploy } => write!(f, "{deploy} is being applied to the environment"),
             Refusal::NotItsRun => f.write_str("that run isn't applying this deploy"),
+            Refusal::ApprovalExpired => f.write_str("the deploy's approval expired before its apply started"),
+            Refusal::ApprovalConsumed => f.write_str("the deploy's approval was used up by a start already"),
         }
     }
 }
@@ -907,9 +914,18 @@ pub(super) fn event_row(r: &Row) -> Result<Event> {
     })
 }
 
-fn sorted_names(names: &[String]) -> Result<Vec<String>> {
+fn sorted_names(names: &[String], driver: &str) -> Result<Vec<String>> {
     if let Some(bad) = names.iter().find(|n| !valid_secret_name(n)) {
-        bail!("{bad:?} isn't a secret's name: A-Z, 0-9 and _, not starting with a digit");
+        bail!(
+            "{bad:?} isn't a secret's name: A-Z, 0-9 and _, not starting with a digit, and not one a driver's shell \
+             or tools use (PATH, IFS, BASH_ENV, LD_*, NODE_*, GIT_*, *_PROXY, DEPLOY_* and the like)"
+        );
+    }
+    // Each driver takes only the secrets it names (M220's review): a name
+    // it doesn't read could only change how it behaves.
+    let takes = arugula_e2e::deploy::driver_secrets(driver).unwrap_or_default();
+    if let Some(bad) = names.iter().find(|n| !takes.contains(&n.as_str())) {
+        bail!("the {driver} driver doesn't take a secret called {bad:?}: it takes {}", takes.join(", "));
     }
     let mut names = names.to_vec();
     names.sort();
@@ -1014,6 +1030,19 @@ pub(super) fn deploy_and_plan(c: &impl Sql, deploy: &str) -> Result<Option<(Depl
         bail!("deploy {deploy}'s row and its planned event name different environments");
     }
     Ok(Some((d, planned)))
+}
+
+/// By when the deploy's approval says its apply must start: the
+/// `expires` of its latest `approved` event, from the log.
+fn approval_expires(c: &impl Sql, deploy: &str) -> Result<Option<u64>> {
+    let detail: Option<String> = c
+        .query_row(
+            "SELECT detail FROM deploy_events WHERE deploy_id = ?1 AND kind = 'approved' ORDER BY seq DESC LIMIT 1",
+            params![deploy],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(detail.and_then(|d| serde_json::from_str::<serde_json::Value>(&d).ok()).and_then(|d| d["expires"].as_u64()))
 }
 
 /// The stale rule, on what's been read: `d`, planned at `planned_seq` in
@@ -1131,10 +1160,26 @@ fn write(
     if let Err(r) = ready(tx, &d, planned.seq, kind)? {
         return Ok(Err(r));
     }
+    if kind == EventKind::Started
+        && let Actor::Run(r) = by
+    {
+        // Only the run made for this deploy's operation (M219) starts it,
+        // and only while its approval is good: by `at`, the run's own
+        // signed time.
+        if !super::deploy_runs::is_its_run(tx, deploy, r)? {
+            return Ok(Err(Refusal::NotItsRun));
+        }
+        if approval_expires(tx, deploy)?.is_none_or(|e| at > e) {
+            return Ok(Err(Refusal::ApprovalExpired));
+        }
+        // Its approval is used up as it starts: once, by this run. One
+        // used up (by this run or another) never starts it again.
+        if !super::deploy_approvals::consume(tx, deploy, r, at)? {
+            return Ok(Err(Refusal::ApprovalConsumed));
+        }
+    }
     let run = match (kind, by) {
-        // TODO(M219): the routes tie this run to the deploy: it's the
-        // driver run made for this deploy's operation, so no other run
-        // can start it.
+        // The deploy's own run (checked above).
         (EventKind::Started, Actor::Run(r)) => {
             detail["run"] = r.clone().into();
             Some(r.clone())
@@ -1179,10 +1224,11 @@ impl Db {
         if !valid_environment_name(name) {
             bail!("{name:?} isn't an environment's name: a-z, 0-9 and -, up to 40");
         }
-        if !DRIVERS.contains(&driver) {
-            bail!("{driver:?} isn't a driver: {}", DRIVERS.join(", "));
+        let drivers = crate::drivers::names();
+        if !drivers.contains(&driver) {
+            bail!("{driver:?} isn't a driver: {}", drivers.join(", "));
         }
-        let names = sorted_names(secret_names)?;
+        let names = sorted_names(secret_names, driver)?;
         self.c()
             .query_row(
                 &format!(
@@ -1213,7 +1259,8 @@ impl Db {
     /// Set the names of the secrets an environment's driver runs get.
     /// `None`: there's no such environment.
     pub fn set_environment_secrets(&self, id: &str, names: &[String], at: u64) -> Result<Option<Environment>> {
-        let names = sorted_names(names)?;
+        let Some(env) = self.environment(id)? else { return Ok(None) };
+        let names = sorted_names(names, &env.driver)?;
         self.c()
             .query_row(
                 &format!(
@@ -1412,6 +1459,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute("DELETE FROM deploy_events WHERE environment_id NOT IN (SELECT id FROM environments)", params![])?;
     c.execute("DELETE FROM deploys WHERE environment_id NOT IN (SELECT id FROM environments)", params![])?;
     super::deploy_approvals::erase_account(c)?;
+    super::deploy_runs::erase_account(c)?;
     c.execute("UPDATE deploys SET planned_by = '', planned_by_agent = NULL WHERE planned_by = ?1", params![d.account])?;
     Ok(())
 }

@@ -33,6 +33,7 @@ pub mod cloud;
 pub mod cloud_moves;
 pub mod content;
 pub mod deploy_approvals;
+pub mod deploy_runs;
 pub mod deploys;
 pub mod forge;
 pub mod hosted;

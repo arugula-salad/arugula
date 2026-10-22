@@ -184,13 +184,39 @@ impl Event<'_> {
 /// argv <base64>            (once per argument, in order; kind run)
 /// text <base64>            (kind agent)
 /// agent <recipe name|->    (kind agent)
+/// deploy <dep id>          (kind deploy, M219)
+/// driver <driver name>     (kind deploy)
+/// apply <deploy op hash>   (kind deploy)
 /// ```
+///
+/// A deploy's run (M219) applies one approved deploy with its
+/// environment's driver: no command and no directory of the platform's,
+/// only which deploy, which driver, and the hash of the deploy's operation
+/// (`arugula deploy op v1`) its owner's approval signs. The machine runs
+/// its own copy of the driver, and only with that approval.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Op {
     pub argv: Vec<String>,
     pub instruction: Option<String>,
     pub agent: Option<String>,
     pub directory: Option<String>,
+    pub deploy: Option<DeployApply>,
+}
+
+/// What a deploy's run applies (M219): `kind deploy`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeployApply {
+    /// `dep_` and 32 hex characters.
+    pub deploy: String,
+    /// The environment's driver (`chant-fly`, `apps-platform`, `fake`).
+    pub driver: String,
+    /// The deploy's operation hash, hex: what its approval signs.
+    pub op: String,
+}
+
+/// One word for an op's line: printable, with no space.
+fn word(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 200 && s.bytes().all(|b| b.is_ascii_graphic())
 }
 
 fn b64(s: &str) -> String {
@@ -204,9 +230,16 @@ fn unb64(s: &str) -> Option<String> {
 }
 
 impl Op {
-    /// S37's kind: `run` for a command, `agent` for an instruction.
+    /// S37's kind: `run` for a command, `agent` for an instruction,
+    /// `deploy` for a deploy's apply (M219).
     pub fn kind(&self) -> &'static str {
-        if self.instruction.is_some() { "agent" } else { "run" }
+        if self.deploy.is_some() {
+            "deploy"
+        } else if self.instruction.is_some() {
+            "agent"
+        } else {
+            "run"
+        }
     }
 
     /// The operation's bytes, for `daemon`. Frozen once shipped.
@@ -218,6 +251,9 @@ impl Op {
         }
         if let Some(i) = &self.instruction {
             op.push_str(&format!("text {}\nagent {}\n", b64(i), self.agent.as_deref().unwrap_or("-")));
+        }
+        if let Some(d) = &self.deploy {
+            op.push_str(&format!("deploy {}\ndriver {}\napply {}\n", d.deploy, d.driver, d.op));
         }
         op
     }
@@ -240,12 +276,29 @@ impl Op {
                 (_, "text") => out.instruction = Some(unb64(value)?),
                 (_, "agent") if value != "-" => out.agent = Some(value.to_owned()),
                 (_, "agent") => {}
+                (_, "deploy") => {
+                    out.deploy = Some(DeployApply { deploy: value.into(), driver: String::new(), op: String::new() })
+                }
+                (_, "driver") => out.deploy.as_mut()?.driver = value.into(),
+                (_, "apply") => out.deploy.as_mut()?.op = value.into(),
                 _ => return None,
             }
         }
         let daemon = daemon.filter(|d| !d.is_empty() && !d.contains(' '))?;
-        if out.instruction.is_none() && out.argv.is_empty() {
-            return None;
+        match &out.deploy {
+            // A deploy's apply is that and nothing else: no command, no
+            // instruction, no directory.
+            Some(d) => {
+                if !(word(&d.deploy) && word(&d.driver) && word(&d.op))
+                    || !out.argv.is_empty()
+                    || out.instruction.is_some()
+                    || out.directory.is_some()
+                {
+                    return None;
+                }
+            }
+            None if out.instruction.is_none() && out.argv.is_empty() => return None,
+            None => {}
         }
         (out.encode(&daemon) == op).then_some((daemon, out))
     }
@@ -277,6 +330,34 @@ mod tests {
             bytes.trim_end().to_owned(),
             bytes.replace("arugula op v1", "arugula op v2"),
             bytes.replace("bWFrZQ==", "!!"),
+        ] {
+            assert_eq!(Op::decode(&bad), None, "{bad:?}");
+        }
+    }
+
+    /// M219: a deploy's apply reads back only as written, and is nothing
+    /// else besides.
+    #[test]
+    fn a_deploys_apply_reads_back_only_as_written() {
+        let d = DeployApply { deploy: "dep_1".into(), driver: "fake".into(), op: "ab".repeat(32) };
+        let op = Op { deploy: Some(d.clone()), ..Op::default() };
+        let bytes = op.encode("d1");
+        assert_eq!(
+            bytes,
+            format!(
+                "arugula op v1\ndaemon d1\nkind deploy\nsession -\npane - -\ncwd -\ndeploy dep_1\ndriver fake\napply {}\n",
+                "ab".repeat(32)
+            )
+        );
+        assert_eq!(Op::decode(&bytes), Some(("d1".into(), op.clone())));
+        assert_eq!(op.kind(), "deploy");
+        for bad in [
+            bytes.replace("kind deploy", "kind run"),
+            bytes.replace("cwd -", "cwd L3c="),
+            format!("{bytes}argv bWFrZQ==\n"),
+            bytes.replace("driver fake\n", ""),
+            bytes.replace("deploy dep_1\n", ""),
+            bytes.replace("apply ", "apply  "),
         ] {
             assert_eq!(Op::decode(&bad), None, "{bad:?}");
         }

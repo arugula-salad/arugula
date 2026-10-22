@@ -51,6 +51,7 @@ pub mod db;
 pub mod deploys;
 #[cfg(test)]
 mod deploys_tests;
+pub mod drivers;
 pub mod forge;
 pub mod grants;
 pub mod hosted;
@@ -176,6 +177,9 @@ pub struct Platform {
     /// The run-log bucket (M213), when this platform has one: hosted runs'
     /// logs and artifacts go there.
     pub run_logs: Option<run_logs::Bucket>,
+    /// Short-lived tokens minted for deploys' runs (M219), revoked when
+    /// each run ends: this machine's, in memory only.
+    pub deploy_tokens: drivers::Held,
 }
 
 impl Platform {
@@ -246,6 +250,7 @@ impl Platform {
             busy: Default::default(),
             inbox: Default::default(),
             run_logs: None,
+            deploy_tokens: Default::default(),
         }
     }
 }

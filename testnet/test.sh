@@ -170,6 +170,14 @@
 #           rebuild, and `--download` saves it, then rebuilds (a new box at
 #           the fake, the old one deleted). Broken: the wrong GIT_TOKEN, so
 #           the clone fails and the setup says so.
+#   deploys
+#           Only with ARUGULA_TESTNET_HOSTED=1 at `up` (M219): each approved
+#           deploy runs on a fresh box of its own at the fake E2B, which
+#           `hosted-box` stands in for; the fake driver applies it, the
+#           secret is in no file on the box after, and the box is deleted
+#           (the claim's comment says the rest). Broken: the secret is
+#           written into the box's state directory, so the disk check
+#           finds it.
 #   agents  Agents in conversations (M198), signed by a joined box's daemon:
 #           box-systemd joins a person's account; they give it threads.read
 #           and threads.post over their team's project and @mention it in a
@@ -224,7 +232,7 @@ if [ "$PROFILE" = control ]; then
     two) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart platform-fanout platform-handover" ;;
   esac
   # Hosted workspaces at the fake E2B (M183).
-  [ "${ARUGULA_TESTNET_HOSTED:-}" != 1 ] || CONTROL_CLAIMS="$CONTROL_CLAIMS hosted-setup"
+  [ "${ARUGULA_TESTNET_HOSTED:-}" != 1 ] || CONTROL_CLAIMS="$CONTROL_CLAIMS hosted-setup deploys"
   # Public previews (M187): with hosted workspaces at the fake E2B and a
   # preview domain on control.
   PREVIEW_DOMAIN="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$TESTNET-control" 2>/dev/null |
@@ -737,7 +745,8 @@ hbox() { docker exec -u user -e HOME=/home/user "$TESTNET-hosted-box" "$@"; }
 hroot() { docker exec "$TESTNET-hosted-box" "$@"; }
 hosted_daemon() {
   docker exec -d -u user -e HOME=/home/user -e ARUGULA_HOSTED_TICKET="$1" -e ARUGULA_CONTROL_URL="$CONTROL_URL" \
-    -e ARUGULA_WORK_PULL_MS=1000 -e RUST_LOG=info -e ANTHROPIC_API_KEY=sk-testnet-m212 "$TESTNET-hosted-box" \
+    -e ARUGULA_WORK_PULL_MS=1000 -e RUST_LOG=info -e ANTHROPIC_API_KEY=sk-testnet-m212 \
+    -e ARUGULA_HOSTED_FAKE_DRIVER=1 "$TESTNET-hosted-box" \
     sh -c 'exec /opt/arugula/arugulad --hosted >> /home/user/arugulad.log 2>&1'
 }
 run_state() { pq "SELECT state FROM runs WHERE id = '$1'"; }
@@ -848,6 +857,142 @@ print(hashlib.sha256(json.dumps(r, separators=(",", ":")).encode()).hexdigest())
     { note "runs: it failed with $(pq "SELECT detail FROM run_events WHERE run_id = '$run' ORDER BY seq DESC LIMIT 1")"; ok=0; }
   [ "$(runner_procs)" = 0 ] || { note "runs: runner still runs $(runner_procs) processes after the stop"; ok=0; }
   hroot pkill -f 'arugulad --hosted' 2>/dev/null || true
+  [ "$ok" = 1 ]
+}
+
+# M219: a deploy applied by a run with a credential, on a fresh box of its
+# own. Only with ARUGULA_TESTNET_HOSTED=1 at `up` (hosted.yaml: the platform
+# in process makes boxes at the fake E2B in `fakes`, which makes none). The
+# platform's deploy job makes the deploy's box there (a create whose env has
+# its enrollment ticket); the claim stands in for the new box with
+# `hosted-box`, reset to the template's users (the blanket sudo rule back,
+# no state), and starts the real `arugulad --hosted` there with that ticket
+# and the fake driver (`ARUGULA_HOSTED_FAKE_DRIVER=1`; the platform's
+# `ARUGULA_PLATFORM_FAKE_DRIVER=1` is in compose.yaml). The owner registers
+# a passkey through control's own WebAuthn routes, makes an environment with
+# the fake driver and one secret, plans a deploy, and approves it with their
+# browser device's signature and the passkey. Checked:
+# - the box is the deploy's alone: control's directory doesn't list it to
+#   its owner, nor the platform's workspaces; its daemon gives up root
+#   (`sudo -n true` refused after) and stops once its run is reported;
+# - the deploy succeeds; the box's ledger has its run's start and end,
+#   signed and taken; its driver ran as `runner`, its directory is gone;
+# - the secret was given once, and is in no file on the box (its pane's log
+#   says `[redacted APP_TOKEN]`) nor in control's database file or log;
+# - the platform deletes the box at the fake E2B after;
+# - a second deploy gets a box of its own (another create); its driver
+#   fails part way: the deploy fails, the owners are paged, that box goes
+#   too.
+# The uploaded run log (M213) isn't in this tree: what it would upload is
+# the pane's output, which is redacted before the pane.
+# BREAK: the secret is written into the box's state directory after the run,
+# as a leak would, so the disk check must find it.
+# hosted-box as a new box from the template: its users as M177 makes them,
+# nothing of a box before.
+fresh_hosted_box() {
+  hroot sh -c "pkill -f '[a]rugulad --hosted' 2>/dev/null; pkill -u runner 2>/dev/null; sleep 1
+    rm -rf /home/user/.local /home/user/arugulad.log /home/runner/work /tmp/fake-driver-*
+    echo 'user ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/user && chmod 0440 /etc/sudoers.d/user
+    rm -f /etc/sudoers.d/arugulad-runner; true"
+}
+# Start the box's daemon with the ticket the platform put in its env.
+deploy_box_daemon() {
+  docker exec -d -u user -e HOME=/home/user -e ARUGULA_HOSTED_TICKET="$1" -e ARUGULA_CONTROL_URL="$CONTROL_URL" \
+    -e ARUGULA_WORK_PULL_MS=1000 -e RUST_LOG=info -e ARUGULA_HOSTED_FAKE_DRIVER=1 "$TESTNET-hosted-box" \
+    sh -c 'exec /opt/arugula/arugulad --hosted >> /home/user/arugulad.log 2>&1'
+}
+# The newest live box at the fake E2B for project $1 that isn't $2: `<id> <ticket>`.
+new_box() {
+  local got=""
+  for _ in $(seq 1 60); do
+    got="$(e2b_project "$1" | awk -v old="$2" '$1 == "live" && $2 != old { print $2, $3 }' | tail -1)"
+    [ -n "$got" ] && break
+    sleep 1
+  done
+  echo "$got"
+}
+dep_field() { devs "$1" deploy "$2" | python3 -c "import json, sys; d = json.load(sys.stdin); print($3)"; }
+wait_dep() {
+  local own="$1" dep="$2" want="$3" secs="${4:-120}" st=""
+  for _ in $(seq 1 "$secs"); do
+    st="$(dep_field "$own" "$dep" 'd["state"]' 2>/dev/null)"
+    [ "$st" = "$want" ] && return 0; sleep 1
+  done
+  note "deploys: $dep is ${st:-?}, not $want"; return 1
+}
+deleted_at_e2b() {
+  for _ in $(seq 1 60); do e2b_project "$1" | grep -qx "deleted $2" && return 0; sleep 1; done
+  note "deploys: the platform didn't delete box $2 at the fake E2B: $(e2b_project "$1")"; return 1
+}
+claim_deploys() {
+  local ok=1 acct proj envid dep run sbx tk found bad sbx2 dev_id secret="s3cr3t-m219-$$-$RANDOM" own="$WORK/downer.json"
+  fresh_hosted_box
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
+  acct="$(devs "$own" signin --control "$CONTROL_URL" $CONTROL_VIA --login "downer$$" | field account)"
+  [ -n "$acct" ] || { note "deploys: the owner didn't sign in"; return 1; }
+  devs "$own" passkey-add | grep -q '"id"' || { note "deploys: no passkey"; return 1; }
+  proj="$(devs "$own" delegate | field project)"
+  [ -n "$proj" ] || { note "deploys: no delegation"; return 1; }
+  envid="$(devs "$own" environment production fake APP_TOKEN | field environment)"
+  [ -n "$envid" ] || { note "deploys: no environment"; return 1; }
+  devs "$own" environment-secret "$envid" APP_TOKEN "$secret" | grep -q '"set":true' ||
+    { note "deploys: the secret wasn't set"; return 1; }
+
+  # Approved from the owner's browser, with a passkey: the platform makes
+  # the deploy's own box.
+  dep="$(devs "$own" deploy-plan "$envid" "good-$$" acme/app | field deploy)"
+  [ -n "$dep" ] || { note "deploys: nothing planned"; return 1; }
+  devs "$own" deploy-approve "$dep" | grep -q '"state":"approved"' || { note "deploys: not approved"; return 1; }
+  read -r sbx tk <<< "$(new_box "$proj" "")"
+  [ -n "$tk" ] || { note "deploys: the platform made no box at the fake E2B: $(e2b_boxes)"; return 1; }
+  deploy_box_daemon "$tk"
+  wait_dep "$own" "$dep" succeeded 120 || { ok=0; hbox tail -30 /home/user/arugulad.log >&2; }
+  run="$(dep_field "$own" "$dep" 'd["run"]')"
+  [ "$(dep_field "$own" "$dep" '" ".join(e["kind"] for e in d["events"])')" = "planned requested approved started succeeded" ] ||
+    { note "deploys: its log: $(dep_field "$own" "$dep" '" ".join(e["kind"] for e in d["events"])')"; ok=0; }
+  [ "$(dep_field "$own" "$dep" 'd["log"].get("verified", 0) > 0')" = True ] || { note "deploys: its log doesn't verify"; ok=0; }
+  # The box's ledger: its start and its end, each taken by control.
+  hroot cat "/home/user/.local/state/arugula/work/$run.json" > "$WORK/dep-ledger" 2>/dev/null
+  python3 -c 'import json, sys; l = json.load(open(sys.argv[1])); e = l["events"]
+assert [k["report"]["to"] for k in e] == ["running", "succeeded"], e
+assert all(k["answered"] and not k.get("refused") for k in e), e' "$WORK/dep-ledger" ||
+    { note "deploys: the box's ledger: $(cat "$WORK/dep-ledger")"; ok=0; }
+  # The deploy's alone, and gone after.
+  dev_id="$(hbox sh -c 'cat ~/.local/state/arugula/control.json 2>/dev/null' |
+    python3 -c 'import json, sys; h = json.load(sys.stdin)["hosted"]; print(h["cert"]["device"], h.get("deploy", False))' 2>/dev/null)"
+  [ "${dev_id#* }" = True ] || { note "deploys: the box didn't hear it's a deploy's: $dev_id"; ok=0; }
+  devs "$own" hosted-entry "${dev_id% *}" > /dev/null 2>&1 && { note "deploys: the deploy's box is listed to its owner"; ok=0; }
+  for _ in $(seq 1 30); do hroot pgrep -f 'arugulad --hosted' > /dev/null || break; sleep 1; done
+  hroot pgrep -f 'arugulad --hosted' > /dev/null && { note "deploys: the box's daemon didn't stop after its run"; ok=0; }
+  hbox sudo -n true 2> /dev/null && { note "deploys: the box's user kept root"; ok=0; }
+  hroot test -e "/home/runner/work/$run" && { note "deploys: the driver's directory stayed"; ok=0; }
+  grep -q "gave a deploy run its secrets, once" <(docker logs "$TESTNET-control" 2>&1 | grep "$run") ||
+    { note "deploys: no secrets were given"; ok=0; }
+  deleted_at_e2b "$proj" "$sbx" || ok=0
+
+  # The secret: on no file of the box's, in control's database only sealed,
+  # and never in its log.
+  [ -z "$BREAK" ] || hbox sh -c "printf %s '$secret' > /home/user/.local/state/arugula/leak"
+  found="$(hroot sh -c "grep -rlF -e '$secret' / --exclude-dir=proc --exclude-dir=sys --exclude-dir=dev --exclude-dir=opt 2>/dev/null" || true)"
+  [ -z "$found" ] || { note "deploys: the secret is on the box's disk: $found"; ok=0; }
+  hroot sh -c 'grep -rlF "[redacted APP_TOKEN]" /home/user/.local 2>/dev/null' | grep -q . ||
+    { note "deploys: no pane log on the box to look in"; ok=0; }
+  docker exec "$TESTNET-control" sh -c "grep -rlF -e '$secret' /var/lib/arugula-control 2>/dev/null" | grep -q . &&
+    { note "deploys: the secret is in control's database in the clear"; ok=0; }
+  docker logs "$TESTNET-control" 2>&1 | grep -qF -e "$secret" && { note "deploys: the secret is in control's log"; ok=0; }
+
+  # A second deploy: a box of its own; its driver fails part way.
+  fresh_hosted_box
+  bad="$(devs "$own" deploy-plan "$envid" "fail-$$" acme/app | field deploy)"
+  devs "$own" deploy-approve "$bad" > /dev/null || { note "deploys: the second wasn't approved"; ok=0; }
+  read -r sbx2 tk <<< "$(new_box "$proj" "$sbx")"
+  [ -n "$tk" ] && [ "$sbx2" != "$sbx" ] || { note "deploys: no box of its own for the second: $(e2b_project "$proj")"; ok=0; }
+  deploy_box_daemon "$tk"
+  wait_dep "$own" "$bad" failed 120 || ok=0
+  for _ in $(seq 1 20); do docker logs "$TESTNET-control" 2>&1 | grep "paged the owners" | grep -q "$bad" && break; sleep 0.5; done
+  docker logs "$TESTNET-control" 2>&1 | grep "paged the owners" | grep -q "$bad" || { note "deploys: nobody was paged"; ok=0; }
+  deleted_at_e2b "$proj" "$sbx2" || ok=0
+  fresh_hosted_box
   [ "$ok" = 1 ]
 }
 
