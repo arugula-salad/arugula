@@ -510,7 +510,11 @@ disk. A GitHub token a driver needs is minted for that run alone, for one
 repository, and revoked when the run ends, by the box itself and by the
 platform. A token that writes (chant→Fly's ledger, apps-platform's list)
 asks for Contents: write, so the App's installation there must grant it:
-a deploy is refused when it's planned if it doesn't.
+a deploy is refused when it's planned if it doesn't. A token for the
+deploy's own repository, read or write, is minted only while that
+repository is linked to the deploy's project, and for it by GitHub's id.
+That's checked when the deploy is planned and again when the token is
+minted, so a repository unlinked after the approval gets no token.
 
 The driver runs beside the run's pane, not in it. Its output reaches the
 pane with each secret replaced by `[redacted NAME]`, its exact bytes and

@@ -110,9 +110,20 @@ async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
     // For one repository, no more than its installation grants. GitHub's
     // answer names the repository it covers, as M167 checks.
     assert_eq!(b["permissions"]["metadata"], "read");
+    let h = h.lock().unwrap();
+    // By GitHub's id (a deploy's own repository), or by its short name.
+    let by_id = b["repository_ids"][0].as_u64().and_then(|id| h.repos.iter().find(|(_, (i, _))| *i == id));
+    if let Some((name, (id, _))) = by_id {
+        assert_eq!(b["repository_ids"].as_array().map(Vec::len), Some(1));
+        if exceeds(&b["permissions"], &h.grants.get(name).cloned().unwrap_or_else(granted)) {
+            return not_granted();
+        }
+        let covers = json!([{ "id": id, "full_name": name }]);
+        return Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": covers }))
+            .into_response();
+    }
     assert_eq!(b["repositories"].as_array().map(Vec::len), Some(1));
     let short = b["repositories"][0].as_str().unwrap();
-    let h = h.lock().unwrap();
     let grants = h.grants.iter().find(|(name, _)| name.rsplit('/').next() == Some(short)).map(|(_, g)| g.clone());
     if exceeds(&b["permissions"], &grants.unwrap_or_else(granted)) {
         return not_granted();
@@ -541,24 +552,60 @@ async fn a_machine_links_for_its_owner_with_its_grant() {
     assert_eq!(s, 403);
 }
 
+/// Link `repo` (GitHub id `id`, installation 9) to `project`.
+fn linked(app: &Platform, project: &str, repo: &str, id: u64) {
+    let l = crate::db::forge::LinkedRepo {
+        repo_id: id,
+        full_name: repo.into(),
+        private: true,
+        project_id: project.into(),
+        installation_id: 9,
+        linked_by: None,
+        linked_at: 1,
+        unlinked_at: None,
+        purge_after: None,
+        mirror_content: false,
+    };
+    let i = crate::db::forge::Installation {
+        id: 9,
+        account_id: 500,
+        login: "acme".into(),
+        account_type: "Organization".into(),
+        permissions: "{}".into(),
+    };
+    assert!(matches!(app.db.link_repo(&l, &i, "alice", 1).unwrap(), crate::db::forge::Linked::Now { .. }));
+}
+
 /// A deploy whose run would mint a token that writes (M220's chant→Fly
 /// ledger, M222's list) is refused when it's planned unless the App's
 /// installation on that repository grants `contents: write`, as GitHub
 /// itself refuses such a mint; an environment's own token needs no mint.
+/// A token for the deploy's own repository, read or write, is for a
+/// repository linked to the deploy's project only: when it's planned, and
+/// again when it's minted (a link may go after the approval).
 #[tokio::test]
 async fn a_write_mint_needs_an_installation_that_grants_it() {
     use crate::{
-        db::deploys::{Environment, Source, SourceKind},
-        drivers::mint::plan_refuses,
+        db::deploys::{Deploy, Environment, Source, SourceKind, State},
+        drivers::{
+            Mint,
+            mint::{mint, plan_refuses},
+        },
     };
     let hub = Arc::new(TestHub::default());
     let (gh, app, _) = serve(&hub).await;
     {
         let mut g = gh.lock().unwrap();
-        g.installed.insert("acme/app".into(), (9, 500, "acme".into()));
-        g.installed.insert("acme/site".into(), (9, 500, "acme".into()));
+        for (repo, id) in [("acme/app", 77), ("acme/site", 78), ("acme/other", 79)] {
+            g.installed.insert(repo.into(), (9, 500, "acme".into()));
+            g.repos.insert(repo.into(), (id, true));
+        }
         g.grants.insert("acme/site".into(), json!({ "metadata": "read", "contents": "write" }));
+        g.grants.insert("acme/other".into(), json!({ "metadata": "read", "contents": "write" }));
     }
+    linked(&app, "prj_1", "acme/app", 77);
+    linked(&app, "prj_1", "acme/site", 78);
+    linked(&app, "prj_2", "acme/other", 79);
     let env = |driver: &str, secrets: &[&str]| Environment {
         id: "env_1".into(),
         project: "prj_1".into(),
@@ -578,16 +625,46 @@ async fn a_write_mint_needs_an_installation_that_grants_it() {
     let caller = super::Caller::of(&app, "platform");
     let e = gha.deploy_write_token(&caller, 9, super::Repo::Name("acme/app")).await.unwrap_err();
     assert!(format!("{e:#}").contains("not granted to this installation"), "{e:#}");
-    // Not installed: refused.
-    let why = plan_refuses(&app, &chant, &at("evil/app")).await.unwrap();
-    assert!(why.contains("isn't installed on evil/app"), "{why}");
     // Granted: planned, and minted.
-    assert_eq!(plan_refuses(&app, &chant, &at("acme/site")).await, None);
-    assert!(gha.deploy_write_token(&caller, 9, super::Repo::Name("acme/site")).await.is_ok());
-    // The environment's own token: nothing to mint.
+    assert_eq!(plan_refuses(&app, &chant, &at("ACME/Site")).await, None, "its name in any case");
+    let deploy = |repo: &str| Deploy {
+        id: "dep_1".into(),
+        environment: "env_1".into(),
+        source: at(repo),
+        plan_digest: "d".into(),
+        state: State::Running,
+        planned_seq: 1,
+        run: Some("run_1".into()),
+        planned_by: "alice".into(),
+        planned_by_agent: None,
+        created_at: 1,
+        updated_at: 1,
+    };
+    let write = Mint::GithubWriteSource { name: "GITHUB_TOKEN" };
+    let read = Mint::GithubRead { name: "SOURCE_TOKEN" };
+    assert!(mint(&app, write, &deploy("acme/site"), "prj_1", "run_1").await.is_ok());
+    assert!(mint(&app, read, &deploy("acme/app"), "prj_1", "run_1").await.is_ok());
+    // Another project's repository, or one linked nowhere (the App is
+    // installed on both): refused when it's planned and when it's minted,
+    // read or write.
+    for repo in ["acme/other", "evil/app"] {
+        let why = plan_refuses(&app, &chant, &at(repo)).await.unwrap();
+        assert!(why.contains(&format!("{repo} isn't a repository linked to this project")), "{why}");
+        let why = plan_refuses(&app, &env("apps-platform", &["APPS_PLATFORM_TOKEN"]), &at(repo)).await.unwrap();
+        assert!(why.contains("SOURCE_TOKEN"), "{why}");
+        for m in [write, read] {
+            let e = mint(&app, m, &deploy(repo), "prj_1", "run_1").await.unwrap_err();
+            assert!(format!("{e:#}").contains("isn't a repository linked to this project"), "{e:#}");
+        }
+    }
+    // Unlinked after it was planned (and approved): not minted.
+    assert!(app.db.unlink_repo("prj_1", "acme/site", 2).unwrap().is_some());
+    let e = mint(&app, write, &deploy("acme/site"), "prj_1", "run_1").await.unwrap_err();
+    assert!(format!("{e:#}").contains("isn't a repository linked"), "{e:#}");
+    // The environment's own token: nothing to mint, nothing to check.
     assert_eq!(plan_refuses(&app, &env("chant-fly", &["GITHUB_TOKEN"]), &at("acme/app")).await, None);
     // apps-platform writes its list, wherever the app is.
-    let why = plan_refuses(&app, &env("apps-platform", &[]), &at("acme/site")).await.unwrap();
+    let why = plan_refuses(&app, &env("apps-platform", &[]), &at("acme/app")).await.unwrap();
     assert!(why.contains("arugula-salad/planter-apps") && why.contains("APPS_PLATFORM_TOKEN of its own"), "{why}");
-    assert_eq!(plan_refuses(&app, &env("apps-platform", &["APPS_PLATFORM_TOKEN"]), &at("acme/site")).await, None);
+    assert_eq!(plan_refuses(&app, &env("apps-platform", &["APPS_PLATFORM_TOKEN"]), &at("acme/app")).await, None);
 }

@@ -15,17 +15,27 @@
 //! for the deploy's own repository ([`Mint::GithubWriteSource`]): its box
 //! pushes chant's ledger there.
 //!
+//! **A token for the deploy's own repository** (read or write) is minted
+//! only when that repository is linked to the deploy's project, live, and
+//! for it by GitHub's id ([`source_link`]): the App is installed on many
+//! repositories, and a deploy's `where` is the planner's to say. Checked
+//! when it's planned and again when it's minted, since a repository may
+//! be unlinked after the approval.
+//!
 //! A deploy whose run would mint a token that writes is refused when it's
 //! planned, not when it runs, if the App can't: not installed on the
 //! repository, or installed without `contents: write`
 //! ([`plan_refuses`]). An owner never approves a deploy that can't run.
 
-use anyhow::{Context as _, Result, bail};
+use anyhow::{Context as _, Result};
 use arugula_control_wire::work::Secret;
 
 use crate::{
     Platform,
-    db::deploys::{Deploy, Environment, Source, SourceKind},
+    db::{
+        deploys::{Deploy, Environment, Source, SourceKind},
+        forge::LinkedRepo,
+    },
     forge::{Caller, Repo},
 };
 
@@ -52,6 +62,12 @@ impl Mint {
         }
     }
 
+    /// Whether it's for the deploy's own repository, which must be linked
+    /// to the deploy's project ([`source_link`]).
+    pub fn for_source(&self) -> bool {
+        matches!(self, Mint::GithubRead { .. } | Mint::GithubWriteSource { .. })
+    }
+
     /// The repository it writes for deploys of `source` (`owner/name`):
     /// `None` when it only reads.
     pub fn writes<'a>(&self, source: &'a Source) -> Option<&'a str> {
@@ -70,15 +86,25 @@ impl Mint {
 pub async fn plan_refuses(app: &Platform, env: &Environment, source: &Source) -> Option<String> {
     let driver = super::driver(&env.driver)?;
     for m in driver.mints(env) {
-        let Some(repo) = m.writes(source) else { continue };
         let name = m.name();
+        let mut linked = None;
+        if m.for_source() {
+            match source_link(app, &env.project, source) {
+                Ok(Some(l)) => linked = Some(l.full_name),
+                Ok(None) => return Some(not_linked(name, source)),
+                Err(e) => return Some(format!("couldn't read the project's repositories: {e:#}")),
+            }
+        }
+        // The repository as it's linked (GitHub's spelling), for one of
+        // the source's.
+        let Some(repo) = m.writes(source).map(|r| if m.for_source() { linked.as_deref().unwrap_or(r) } else { r })
+        else {
+            continue;
+        };
         let own = format!("or give the environment a {name} of its own");
         let Some(gh) = app.github.as_ref() else {
             return Some(format!("this platform has no GitHub App to mint {name} with: {own}"));
         };
-        if source.kind != SourceKind::Commit && matches!(m, Mint::GithubWriteSource { .. }) {
-            return Some(format!("{name} is minted only for a commit's repository"));
-        }
         match gh.installation(&app.http, repo).await {
             Ok(Some(i)) if i.grants("contents", "write") => {}
             Ok(Some(_)) => {
@@ -98,48 +124,55 @@ pub async fn plan_refuses(app: &Platform, env: &Environment, source: &Source) ->
     None
 }
 
+/// The deploy's source repository as `project` links it now (not
+/// unlinked), by its name in any case: `None` when it isn't, or the source
+/// isn't a commit's repository.
+pub fn source_link(app: &Platform, project: &str, source: &Source) -> Result<Option<LinkedRepo>> {
+    if source.kind != SourceKind::Commit {
+        return Ok(None);
+    }
+    Ok(app.db.linked_repo_named(&source.place)?.filter(|l| l.project_id == project && l.unlinked_at.is_none()))
+}
+
+fn not_linked(name: &str, source: &Source) -> String {
+    format!(
+        "{} isn't a repository linked to this project, so its run can't have a {name} for it: link it to the \
+         project first",
+        source.place
+    )
+}
+
 /// Tokens minted for runs, by run, to revoke when each ends: in memory
 /// only (a token is never written down), so a restart leaves them to
 /// expire within the hour.
 #[derive(Default)]
 pub struct Held(std::sync::Mutex<std::collections::HashMap<String, Vec<String>>>);
 
-/// Mint `m` for deploy `d`'s run `run`, now.
-pub async fn mint(app: &Platform, m: Mint, d: &Deploy, run: &str) -> Result<Secret> {
-    match m {
-        Mint::GithubRead { name } => {
-            if d.source.kind != SourceKind::Commit {
-                bail!("a GitHub token is minted only for a commit's repository");
+/// Mint `m` for deploy `d` (of `project`)'s run `run`, now. A token for
+/// the deploy's own repository is minted for it by GitHub's id, and only
+/// while it's linked to `project`.
+pub async fn mint(app: &Platform, m: Mint, d: &Deploy, project: &str, run: &str) -> Result<Secret> {
+    let gh = app.github.as_ref().context("this platform has no GitHub App to mint a token with")?;
+    let caller = Caller::of(app, "platform");
+    let token = match m {
+        Mint::GithubRead { .. } | Mint::GithubWriteSource { .. } => {
+            let link = source_link(app, project, &d.source)?.with_context(|| not_linked(m.name(), &d.source))?;
+            let repo = Repo::Id(link.repo_id);
+            if matches!(m, Mint::GithubRead { .. }) {
+                gh.deploy_token(&caller, link.installation_id, repo).await?.0
+            } else {
+                gh.deploy_write_token(&caller, link.installation_id, repo).await?.0
             }
-            let gh = app.github.as_ref().context("this platform has no GitHub App to mint a token with")?;
-            let repo = d.source.place.as_str();
+        }
+        Mint::GithubWrite { repo, .. } => {
             let install = gh
                 .installation(&app.http, repo)
                 .await?
                 .with_context(|| format!("the GitHub App isn't installed on {repo}"))?;
-            let caller = Caller::of(app, "platform");
-            let (token, _) = gh.deploy_token(&caller, install.id, Repo::Name(repo)).await?;
-            Ok(held(app, run, name, token, gh.revoke_url()))
+            gh.deploy_write_token(&caller, install.id, Repo::Name(repo)).await?.0
         }
-        Mint::GithubWrite { name, repo } => write(app, name, repo, run).await,
-        Mint::GithubWriteSource { name } => {
-            if d.source.kind != SourceKind::Commit {
-                bail!("a GitHub token is minted only for a commit's repository");
-            }
-            write(app, name, &d.source.place, run).await
-        }
-    }
-}
-
-/// An installation token that writes `repo`'s contents, for `run`, as
-/// `name`.
-async fn write(app: &Platform, name: &str, repo: &str, run: &str) -> Result<Secret> {
-    let gh = app.github.as_ref().context("this platform has no GitHub App to mint a token with")?;
-    let install =
-        gh.installation(&app.http, repo).await?.with_context(|| format!("the GitHub App isn't installed on {repo}"))?;
-    let caller = Caller::of(app, "platform");
-    let (token, _) = gh.deploy_write_token(&caller, install.id, Repo::Name(repo)).await?;
-    Ok(held(app, run, name, token, gh.revoke_url()))
+    };
+    Ok(held(app, run, m.name(), token, gh.revoke_url()))
 }
 
 /// Keep `token` to revoke when `run` ends, and hand it over as `name`,
