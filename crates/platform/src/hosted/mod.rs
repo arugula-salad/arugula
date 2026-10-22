@@ -56,8 +56,9 @@ pub use crate::db::hosted::HostedWorkspace;
 #[derive(clap::Args, Debug, Clone, Default)]
 #[group(id = "hosted")]
 pub struct Args {
-    /// The template new boxes are made from. M177 records a template per
-    /// release, and its lookup takes over from this flag.
+    /// The template new boxes are made from, in place of this release's
+    /// (M177's `arugula-workspace:vX.Y.Z`): for loam and testnet, whose
+    /// templates are named by their operator.
     #[arg(long, env = "ARUGULA_HOSTED_TEMPLATE")]
     pub hosted_template: Option<String>,
     /// How a new box enrolls: `sandbox` (by its sandbox id, for a box made
@@ -122,12 +123,11 @@ impl Config {
     }
 }
 
-/// The template a new box is made from: the current release's.
-///
-/// The seam for M177, which records a template per release: until its
-/// lookup lands, `ARUGULA_HOSTED_TEMPLATE` names it.
+/// The template a new box is made from: the current release's
+/// ([`crate::compute::template::current`]), unless `ARUGULA_HOSTED_TEMPLATE`
+/// names another.
 pub fn template(app: &Platform) -> Option<String> {
-    app.hosted.template.clone()
+    Some(app.hosted.template.clone().unwrap_or_else(crate::compute::template::current))
 }
 
 /// What the box carries for [`crate::compute::Substrate::list`].

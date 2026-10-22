@@ -1747,6 +1747,36 @@ destroying M1. A rollback after the 14 days restores a nightly dump instead
 ("Restoring the platform's Postgres"). After the 14 days a follow-up deletes
 the file and the volumes (filed from M145's PR).
 
+### Hosted workspaces' template
+
+A hosted workspace's box (#1235) is made from E2B's template
+`arugula-workspace`, tagged with the release: `arugula-workspace:v0.58.0`.
+release.yml's `template` job builds it (`scripts/ci-hosted-template
+publish`) from `packaging/hosted/Dockerfile` around the tag's static
+arugulad and arugula, with the ACP adapters, Codex, Node, git and gh
+pinned there. E2B starts `arugulad --hosted` at the end of the build and
+snapshots the box once `arugula-hosted-ready` passes, so a box starts with
+the daemon running. The platform makes boxes only from its own version's
+tag (`crates/platform/src/compute/template.rs`); there's nothing else to
+record. Until a release's job has finished, E2B refuses creates for it.
+
+- **The key** is the repository secret `E2B_API_KEY`, a key for E2B's
+  project. It never goes into a box.
+- **Nothing per box is in the template.** A snapshot can't read the
+  create's env on a secure box (envd's `/envs` wants the access token), so
+  the daemon makes its keys and enrolls only once it sees a new sandbox id
+  in `/run/e2b/.E2B_SANDBOX_ID` (M180).
+- **By hand:** `scripts/ci-hosted-template image DIR` builds it with
+  Docker from DIR's `just static` binaries; `dry-run vX.Y.Z DIR` prints
+  what E2B would be sent. A test build goes under another name
+  (`ARUGULA_TEMPLATE_NAME=arugula-workspace-test`), and is deleted after
+  (`e2b template delete`).
+- **loam** builds no templates: an operator maps an image to an E2B
+  template name. `ci-hosted-template image DIR BASE`, with BASE loam's
+  `loam-e2b` image, builds the same file for it, and loam starts the daemon
+  from `/var/lib/loam/services/arugulad.json` at every boot. The
+  differences are in #1252.
+
 ### Capacity
 
 An idle relay connection costs control about 28 KB: in a

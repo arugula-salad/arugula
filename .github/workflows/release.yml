@@ -2,9 +2,10 @@
 # macOS (arm64, and x86_64 cross-compiled for Intel Macs) binaries, and a
 # zip of arugulad and arugula for Windows (install.ps1's), attach them
 # to the tag's release with SHA256SUMS, publish it as latest, bump the
-# Homebrew formula, send the editor extension to the marketplaces, and
-# deploy the hosted control from the x86_64 static build (M133), its
-# platform first once that's its own Fly app (M140). No
+# Homebrew formula, send the editor extension to the marketplaces, build
+# the hosted workspace's E2B template (M177), and deploy the hosted
+# control from the x86_64 static build (M133), its platform first once
+# that's its own Fly app (M140). No
 # desktop app: it has its own release, app-v* tags (app-release.yml, #393),
 # and the daemon updates itself (#391).
 name: release
@@ -37,9 +38,10 @@ jobs:
       - run: just bootstrap
       - run: scripts/release check-version "$GITHUB_REF_NAME"
       - run: just static x86_64
-      # Control's binaries, for the platform and control jobs' images (a
-      # tar keeps them executable).
-      - run: tar -cf "$RUNNER_TEMP/control-binaries.tar" -C "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" arugula-control arugulad arugula-platform
+      # Control's binaries, for the platform and control jobs' images, and
+      # arugulad and arugula for the template job's (a tar keeps them
+      # executable).
+      - run: tar -cf "$RUNNER_TEMP/control-binaries.tar" -C "$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release" arugula-control arugulad arugula-platform arugula
       - uses: actions/upload-artifact@v4
         with:
           name: control-binaries
@@ -197,6 +199,33 @@ jobs:
         with:
           version: 0.4.104
       - run: scripts/ci-platform-deploy deploy "$GITHUB_REF_NAME" "$RUNNER_TEMP/control"
+
+  # A hosted workspace's box (M177 #1238): packaging/hosted around the
+  # tag's static arugulad and arugula, built on E2B as the template
+  # arugula-workspace, tagged with the tag, and snapshotted with `arugulad
+  # --hosted` running. The platform makes boxes from its own version's tag
+  # (crates/platform/src/compute/template.rs), so the tag is the record.
+  # E2B_API_KEY is a key for E2B's project; without it the job fails. It
+  # holds back nothing else: until it's done, the platform's creates for
+  # this version are refused. Never on a PR: tags only, like this file.
+  template:
+    needs: linux
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: control-binaries
+          path: ${{ runner.temp }}/control
+      - run: tar -xf "$RUNNER_TEMP/control/control-binaries.tar" -C "$RUNNER_TEMP/control"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.3
+      - run: scripts/ci-hosted-template publish "$GITHUB_REF_NAME" "$RUNNER_TEMP/control"
+        env:
+          E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
 
   # The editor extension as arugula.arugula-editor (#529), once the
   # release is out. A version that's already there is skipped, so most
