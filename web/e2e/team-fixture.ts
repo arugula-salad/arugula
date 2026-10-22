@@ -15,6 +15,8 @@ import { labs } from "./labs";
 export class TeamControl {
   base = "";
   github = "";
+  /** Control's SQLite file (the platform's tables are in it too). */
+  db = "";
   private procs: ChildProcess[] = [];
   /** Each machine's daemon, by name, and how it was started. */
   private machines = new Map<string, { proc: ChildProcess; args: string[] }>();
@@ -54,6 +56,7 @@ export class TeamControl {
     });
     this.github = `http://127.0.0.1:${await listen(this.gh)}`;
     const db = join(this.temp("db"), "control.db");
+    this.db = db;
     this.procs.push(
       spawn(
         "../target/debug/arugula-control",

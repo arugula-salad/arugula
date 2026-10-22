@@ -17,6 +17,9 @@
 //!   no threads.
 //! - `hw_`: a hosted workspace (step 5's M179), in its project, until
 //!   it's deleted.
+//! - `run_`: a run (step 7's M210), in its project (M215). Only the
+//!   platform's runs: a Managoat Cloud run's id has the same prefix, but
+//!   it isn't in `runs`, so it names nothing here.
 //! - `cw_`: a Managoat Cloud workspace, which M189 retires: not yet (its
 //!   rows are an account's, not its project's members').
 //! - Anything else: no such object.
@@ -78,6 +81,7 @@ enum Prefix {
     Issue,
     Mirrored,
     Hosted,
+    Run,
     Cloud,
 }
 
@@ -90,13 +94,14 @@ fn prefix(target: &str) -> Option<Prefix> {
         "iss" => Some(Prefix::Issue),
         "fi" => Some(Prefix::Mirrored),
         "hw" => Some(Prefix::Hosted),
+        "run" => Some(Prefix::Run),
         "cw" => Some(Prefix::Cloud),
         _ => None,
     }
 }
 
 /// Whether `target` is an object's global id by its shape (`iss_…`,
-/// `fi_…`, `hw_…`, `cw_…`), not a room's: an agent names an object's
+/// `fi_…`, `hw_…`, `run_…`, `cw_…`), not a room's: an agent names an object's
 /// thread by it (M198).
 pub(super) fn is_object(target: &str) -> bool {
     prefix(target).is_some()
@@ -130,6 +135,11 @@ pub(super) fn find(app: &Platform, targets: &[&str]) -> anyhow::Result<HashMap<S
     for (id, project, name) in app.db.hosted_places(&hosted)? {
         out.insert(id, Object { project, name: format!("workspace {name}"), guard: Guard::Members });
     }
+    let runs: Vec<&str> = of(Prefix::Run).collect();
+    for (id, project) in app.db.run_places(&runs)? {
+        let short = id.trim_start_matches("run_").chars().take(8).collect::<String>();
+        out.insert(id, Object { project, name: format!("run {short}"), guard: Guard::Members });
+    }
     // Cloud workspaces never get threads ([`resolve`] says so).
     Ok(out)
 }
@@ -144,7 +154,9 @@ pub(super) fn resolve(app: &Platform, target: &str) -> Result<Object, ApiError> 
             NOT_YET,
             "a Cloud workspace has no thread: hosted workspaces' (hw_) do",
         )),
-        Prefix::Issue | Prefix::Mirrored | Prefix::Hosted => find(app, &[target])?.remove(target).ok_or_else(nothing),
+        Prefix::Issue | Prefix::Mirrored | Prefix::Hosted | Prefix::Run => {
+            find(app, &[target])?.remove(target).ok_or_else(nothing)
+        }
     }
 }
 
@@ -252,6 +264,7 @@ mod tests {
         assert_eq!(prefix("iss_0123abcd"), Some(Prefix::Issue));
         assert_eq!(prefix("fi_00ff"), Some(Prefix::Mirrored));
         assert_eq!(prefix("hw_9d81"), Some(Prefix::Hosted));
+        assert_eq!(prefix("run_9d81"), Some(Prefix::Run));
         assert_eq!(prefix("cw_9d81"), Some(Prefix::Cloud));
         for bad in ["prj_1", "iss_", "fi", "fi_a-b", "_x", "", &format!("fi_{}", "a".repeat(65))] {
             assert_eq!(prefix(bad), None, "{bad}");

@@ -129,6 +129,16 @@ pub struct Run {
     pub chant_ledger: Option<String>,
 }
 
+/// Which of a project's runs a list keeps ([`Db::runs_of`]): all of them
+/// by default.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RunFilter<'a> {
+    pub state: Option<State>,
+    pub trigger: Option<TriggerKind>,
+    /// A run spec's id, as its trigger's source names it.
+    pub spec: Option<&'a str>,
+}
+
 /// One change of a run's state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event {
@@ -531,16 +541,28 @@ impl Db {
         )
     }
 
-    /// A project's latest runs, newest first, those in `state` only if
-    /// given (M216).
-    pub fn runs_of(&self, project: &str, state: Option<State>, limit: u32) -> Result<Vec<Run>> {
-        let Some(state) = state else { return self.project_runs(project, limit) };
-        self.c().query_map(
+    /// A project's latest runs, newest first: only those that match `f`
+    /// (M216's state, M215's trigger and spec).
+    pub fn runs_of(&self, project: &str, f: &RunFilter, limit: u32) -> Result<Vec<Run>> {
+        let c = self.c();
+        // The spec a trigger's source names (`{"spec": …}`).
+        let spec = match c.dialect() {
+            super::migrate::Dialect::Sqlite => "json_extract(trigger_source, '$.spec')",
+            super::migrate::Dialect::Postgres => "(CAST(trigger_source AS jsonb) ->> 'spec')",
+        };
+        c.query_map(
             &format!(
-                "SELECT {COLS} FROM runs WHERE project_id = ?1 AND state = ?2
-                 ORDER BY created_at DESC, id DESC LIMIT ?3"
+                "SELECT {COLS} FROM runs WHERE project_id = ?1
+                     AND (?2 = '' OR state = ?2) AND (?3 = '' OR trigger_kind = ?3) AND (?4 = '' OR {spec} = ?4)
+                 ORDER BY created_at DESC, id DESC LIMIT ?5"
             ),
-            params![project, state.as_str(), limit],
+            params![
+                project,
+                f.state.map_or("", State::as_str),
+                f.trigger.map_or("", TriggerKind::as_str),
+                f.spec.unwrap_or(""),
+                limit
+            ],
             run_row,
         )
     }

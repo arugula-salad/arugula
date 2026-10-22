@@ -32,6 +32,9 @@ export const session = {
   /** Who's signed in, once the platform has said. */
   me: null as PlatformMe | null,
   projects: [] as PlatformProject[],
+  /** Whether the reader is on the hosted workspaces' list (M179), which
+   * starting runs needs too (M214). */
+  hosted: false,
   /** null while it's asking; "signed-out" for no session; else an error. */
   state: null as null | "ready" | "signed-out" | { error: string },
   subscribe(fn: () => void) {
@@ -66,6 +69,7 @@ export const session = {
       const first = !this.me;
       this.me = v.me;
       this.projects = v.projects;
+      this.hosted = !!v.hosted;
       this.state = "ready";
       if (first) {
         const roster = v.projects.flatMap((p) => p.team?.members.filter((m) => m.account === v.me.account).map((m) => m.name) ?? []);

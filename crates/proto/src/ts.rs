@@ -119,6 +119,13 @@ fn generate() -> String {
     // Sending one as the person (M168).
     c.visit::<arugula_control_wire::projects::SendDraft>();
     c.visit::<arugula_control_wire::projects::DraftSent>();
+    // A project's runs on the platform page (M215).
+    {
+        use arugula_control_wire::runs::*;
+        c.visit::<RunList>();
+        c.visit::<RunView>();
+        c.visit::<RunLogPage>();
+    }
     // Native issues (M195).
     {
         use arugula_control_wire::issues::*;

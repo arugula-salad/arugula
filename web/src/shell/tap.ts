@@ -54,6 +54,8 @@ export function platformTap(n: { chat?: unknown; cloud_run?: unknown; cloud_work
     const i = n.inbox as { item?: unknown; room?: unknown; seq?: unknown };
     const msg = typeof i.seq === "number" && Number.isInteger(i.seq) ? `?msg=${i.seq}` : "";
     if (typeof i.item === "string" && /^iss_[0-9a-f]{8,64}$/.test(i.item)) return `/issues/${i.item}${msg}`;
+    // M215: a run that failed opens the run.
+    if (typeof i.item === "string" && /^run_[0-9a-f]{32}$/.test(i.item)) return `/runs/${i.item}`;
     if (typeof i.room === "string" && /^[a-z]{2}_[0-9a-f]{8,32}$/.test(i.room)) return `/chat/${i.room}${msg}`;
     return "/inbox";
   }

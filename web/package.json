@@ -9,7 +9,7 @@
     "build": "node scripts/check-imports.mjs && node scripts/check-css.mjs src/shared/style.css src/shell/shell-chrome.css src/shell/pane-chrome.css src/shell/interaction-chrome.css src/shell/block-chrome.css src/platform/platform.css src/shared/issues/issues.css && tsc --noEmit && vite build && node scripts/check-imports.mjs --bundle dist.modules.json --forbid platform && vite build --config vite.platform.config.ts && node scripts/check-imports.mjs --bundle dist-platform.modules.json --forbid keys && vite build --config vite.sw.config.ts && vite build --config vite.block.config.ts --mode boot && vite build --config vite.block.config.ts --mode sw && vite build --config vite.block.config.ts --mode shim",
     "typecheck": "tsc --noEmit",
     "imports": "node scripts/check-imports.mjs && node --test --test-reporter=dot scripts/check-imports.test.mjs",
-    "paths": "node --experimental-strip-types --no-warnings --test --test-reporter=dot scripts/platform-paths.test.mjs scripts/fragments.test.mjs scripts/agents.test.mjs scripts/issues.test.mjs scripts/hosted.test.mjs scripts/wake.test.mjs scripts/run-grant.test.mjs scripts/move.test.mjs"
+    "paths": "node --experimental-strip-types --no-warnings --test --test-reporter=dot scripts/platform-paths.test.mjs scripts/fragments.test.mjs scripts/agents.test.mjs scripts/issues.test.mjs scripts/hosted.test.mjs scripts/wake.test.mjs scripts/run-grant.test.mjs scripts/move.test.mjs scripts/runs.test.mjs"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.5",

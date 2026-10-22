@@ -61,6 +61,11 @@
 //                      browsers approved by headless devices of their own),
 //                      the team's `chat` flag on, and #general and a DM
 //                      seeded on the first run.
+//   DEV_CONTROL_HOSTED=1
+//                      hosted workspaces on for everyone (M179), against an
+//                      E2B nobody answers: no box is made, so a hosted
+//                      workspace and its runs (M215's runs page) are rows
+//                      written into control's database by hand.
 //   DEV_CONTROL_CLOUD_FULL=1
 //                      with DEV_CONTROL_CLOUD, Managoat has no machine
 //                      free for a rebuild (503 fleet_full): a Rebuild
@@ -220,6 +225,7 @@ async function startControl() {
       ...(blockDomain ? ["--block-domain", blockDomain] : []),
       ...(platformHost ? ["--platform-host", platformHost, "--platform-static-dir", platformWeb] : []),
       ...(cloud ? await cloudFlags() : []),
+      ...(process.env.DEV_CONTROL_HOSTED === "1" ? ["--hosted-accounts", "*", "--e2b-api-key", "dev-nobody", "--e2b-url", "http://127.0.0.1:9"] : []),
     ],
     { stdio: ["ignore", "ignore", "inherit"], detached: true },
   );
