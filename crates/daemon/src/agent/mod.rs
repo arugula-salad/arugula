@@ -52,6 +52,7 @@ pub mod adapters;
 mod background;
 pub mod chant;
 pub mod defs;
+pub mod hosted;
 pub mod images;
 mod link;
 pub mod transcript;
@@ -405,6 +406,12 @@ struct Inner {
     /// #590: the run id picked for the prompt just sent (its trailer is in
     /// the prompt), for its `runs start`.
     next_run: Option<String>,
+    /// M185, on a hosted box: the platform's turn for the prompt out now,
+    /// whether the next one is being asked about, and the actor's own
+    /// channel, for the answer.
+    hosted_turn: Option<String>,
+    gating: bool,
+    to_self: Option<mpsc::UnboundedSender<Msg>>,
 }
 
 enum Msg {
@@ -412,6 +419,9 @@ enum Msg {
     Closed(u64, String),
     /// Something changed outside the actor (a method call).
     Changed,
+    /// M185: what the platform said about the next turn on a hosted box:
+    /// its turn id, or why it can't run.
+    Gated(Result<String, String>),
 }
 
 /// The agent type's kind: what an agent block is given beside what every
@@ -582,6 +592,9 @@ impl Inner {
             runs: None,
             carry_run: None,
             next_run: None,
+            hosted_turn: None,
+            gating: false,
+            to_self: None,
         }
     }
 
@@ -1487,6 +1500,7 @@ impl Agent {
             inner.token = Some(link.tokens.block_token(ctx.id));
         }
         let (tx, rx) = mpsc::unbounded_channel();
+        inner.to_self = Some(tx.clone());
         let member = inner.cfg.chant.clone();
         let chat = inner.cfg.def.chat;
         let agent = Arc::new(Agent { ctx: ctx.clone(), inner: Arc::new(Mutex::new(inner)), tx, chat });
@@ -1715,6 +1729,11 @@ impl Agent {
                 // on a command line).
                 if let Some(w) = &inner.worn {
                     env.extend(w.env().iter().cloned());
+                }
+                // M185: on a hosted box, a placeholder for its provider's
+                // key, which the egress proxy fills in. Never the key.
+                if hosted::gate().is_some() {
+                    env.extend(hosted::env_here(inner.cfg.def.agent));
                 }
                 let marker = self.ctx.dir.join(TOKEN_IN_ENV);
                 if by_reference(&inner.cfg.def, &self.ctx)
@@ -2049,7 +2068,23 @@ async fn run(ctx: AgentCtx, inner: Arc<Mutex<Inner>>, mut rx: mpsc::UnboundedRec
                                 ctx.machine(true);
                             }
                         }
+                        Msg::Gated(given) => {
+                            g.gating = false;
+                            match given {
+                                Ok(turn) => {
+                                    g.hosted_turn = Some(turn);
+                                    send_next(&ctx, &mut g);
+                                }
+                                // Not sent: said in its place, and what was
+                                // queued waits for the person.
+                                Err(why) => {
+                                    g.note(json!({ "e": "queue_clear" }));
+                                    g.note(json!({ "e": "error", "message": why }));
+                                }
+                            }
+                        }
                         Msg::Closed(generation, why) if generation == g.generation => {
+                            end_hosted_turn(&ctx, &mut g);
                             g.link = None;
                             g.pid = None;
                             info!(block = ctx.id, why, "agent server stopped");
@@ -2301,6 +2336,7 @@ fn act(ctx: &AgentCtx, g: &mut Inner, f: Effect) {
             send_next(ctx, g);
         }
         Effect::TurnEnded => {
+            end_hosted_turn(ctx, g);
             // In history as an entry of its own: the prompt. Not a command
             // and no exit code: a turn that stopped early isn't a failure of
             // anything that ran.
@@ -2551,12 +2587,34 @@ fn start_run(ctx: &AgentCtx, g: &mut Inner, prompt: &str) {
     }
 }
 
+/// M185: say the platform's turn for the prompt that was out ended.
+fn end_hosted_turn(ctx: &AgentCtx, g: &mut Inner) {
+    if let (Some(turn), Some(gate)) = (g.hosted_turn.take(), hosted::gate()) {
+        ctx.rt.spawn(async move { gate.end(turn).await });
+    }
+}
+
 /// Send the next queued prompt, if the agent can take it.
 fn send_next(ctx: &AgentCtx, g: &mut Inner) {
     if g.status != Status::Ready || g.prompt_id.is_some() || g.cfg.session_id.is_none() {
         return;
     }
     let Some(q) = g.queue.front().cloned() else { return };
+    // M185: on a hosted box, the platform says whose key the turn runs on
+    // first (a prompt the agent asked to retry is still that turn).
+    if g.hosted_turn.is_none()
+        && let (Some(gate), Some(agent)) = (hosted::gate(), hosted::agent_of(g.cfg.def.agent))
+    {
+        if !g.gating
+            && let Some(tx) = g.to_self.clone()
+        {
+            g.gating = true;
+            ctx.rt.spawn(async move {
+                let _ = tx.send(Msg::Gated(gate.start(agent).await));
+            });
+        }
+        return;
+    }
     let session = g.session();
     let mut prompt = vec![];
     if !q.text.is_empty() {

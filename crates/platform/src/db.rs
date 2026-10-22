@@ -12,7 +12,8 @@
 //! Each feature brings its own queries as it moves in (billing's in
 //! [`billing`], M139; Cloud's in [`cloud`], M137; chat's in [`chat`], M138;
 //! projects, team members and grants in [`projects`]; the forge mirror in
-//! [`forge`], M162; native issues in [`issues`], M194), and flips their
+//! [`forge`], M162; native issues in [`issues`], M194; runs in [`runs`],
+//! M210; environments and deploys in [`deploys`], M217), and flips their
 //! `process` in `crates/control/tables.toml` to `platform`. Their tables
 //! are made and changed only by numbered migrations ([`migrate`], M142).
 
@@ -29,16 +30,21 @@ pub mod billing;
 pub mod chat;
 pub mod cloud;
 pub mod content;
+pub mod deploys;
 pub mod forge;
 pub mod hosted;
+pub mod hosted_usage;
 pub mod inbox;
+pub mod inference;
 pub mod issues;
+pub mod jobs;
 mod legacy;
 pub mod migrate;
 pub mod mirror;
 pub mod objects;
 pub mod pg;
 pub mod projects;
+pub mod runs;
 pub mod sql;
 
 pub use pg::Listening;

@@ -11,8 +11,9 @@ fn master(hex: &str) -> SecretCipher {
     SecretCipher::new(hex).unwrap()
 }
 
-/// Two projects' cloud secrets and a hosted workspace's, sealed as they
-/// were before M209: with the master key itself.
+/// Two projects' cloud secrets, a hosted workspace's and a project's own
+/// inference key, sealed as they were before M209: with the master key
+/// itself.
 fn before_m209(db: &Db, master: &SecretCipher) {
     let c = db.c();
     for (account, project, name, value) in
@@ -36,6 +37,12 @@ fn before_m209(db: &Db, master: &SecretCipher) {
         params![master.seal("hw_1", "DB_URL", "postgres://b").unwrap()],
     )
     .unwrap();
+    c.execute(
+        "INSERT INTO project_inference_keys (project_id, provider, sealed, set_by, updated_at)
+         VALUES ('prj_a', 'anthropic', ?1, 'alice', 1)",
+        params![master.seal("prj_a", "inference:anthropic", "sk-ant-a").unwrap()],
+    )
+    .unwrap();
 }
 
 /// Every stored secret, opened as the platform opens it.
@@ -47,16 +54,20 @@ fn values(db: &Db, master: &SecretCipher) -> Vec<String> {
     }
     let sealed = db.hosted_secret_sealed("hw_1", "DB_URL").unwrap().unwrap();
     out.push(open_hosted(&db.c(), master, "prj_b", "hw_1", "DB_URL", &sealed).unwrap());
+    for (provider, sealed) in db.sealed_inference_keys("prj_a").unwrap() {
+        out.push(open_inference(&db.c(), master, "prj_a", &provider, &sealed).unwrap());
+    }
     out
 }
 
-const VALUES: [&str; 3] = ["ghp_alice", "npm_bob", "postgres://b"];
+const VALUES: [&str; 4] = ["ghp_alice", "npm_bob", "postgres://b", "sk-ant-a"];
 
 fn key_versions(db: &Db) -> Vec<i64> {
     db.c()
         .query_map(
             "SELECT key_version FROM cloud_secrets UNION ALL
-             SELECT key_version FROM hosted_workspace_secrets WHERE sealed IS NOT NULL",
+             SELECT key_version FROM hosted_workspace_secrets WHERE sealed IS NOT NULL UNION ALL
+             SELECT key_version FROM project_inference_keys",
             params![],
             |r| r.get(0),
         )
@@ -67,7 +78,8 @@ fn sealed_bytes(db: &Db) -> Vec<Vec<u8>> {
     db.c()
         .query_map(
             "SELECT sealed FROM cloud_secrets UNION ALL
-             SELECT sealed FROM hosted_workspace_secrets WHERE sealed IS NOT NULL",
+             SELECT sealed FROM hosted_workspace_secrets WHERE sealed IS NOT NULL UNION ALL
+             SELECT sealed FROM project_inference_keys",
             params![],
             |r| r.get(0),
         )
@@ -139,14 +151,14 @@ fn reseal_is_idempotent_and_survives_stopping_halfway() {
     let m = master(OLD);
     before_m209(&db, &m);
     assert_eq!(values(&db, &m), VALUES);
-    assert_eq!(check(&db.c(), &m).unwrap(), Checked { opened: 3, by_master: 3, failed: vec![] });
+    assert_eq!(check(&db.c(), &m).unwrap(), Checked { opened: 4, by_master: 4, failed: vec![] });
 
     // Stopped after one row, as a crash between rows would.
     let first = reseal(&db, &m, 1).unwrap();
     assert_eq!(first.resealed, 1);
-    assert_eq!(first.left.len(), 2);
+    assert_eq!(first.left.len(), 3);
     assert_eq!(values(&db, &m), VALUES, "both kinds open");
-    assert_eq!(check(&db.c(), &m).unwrap().by_master, 2);
+    assert_eq!(check(&db.c(), &m).unwrap().by_master, 3);
 
     // A crash inside a row: the project key got made, the row's write
     // never committed.
@@ -164,13 +176,13 @@ fn reseal_is_idempotent_and_survives_stopping_halfway() {
     assert_eq!(values(&db, &m), VALUES);
 
     let rest = reseal(&db, &m, usize::MAX).unwrap();
-    assert_eq!(rest, Resealed { resealed: 2, left: vec![] });
-    assert_eq!(key_versions(&db), [1, 1, 1]);
+    assert_eq!(rest, Resealed { resealed: 3, left: vec![] });
+    assert_eq!(key_versions(&db), [1, 1, 1, 1]);
     assert_eq!(values(&db, &m), VALUES);
     let after = sealed_bytes(&db);
     assert_eq!(reseal(&db, &m, usize::MAX).unwrap(), Resealed::default(), "nothing left to do");
     assert_eq!(sealed_bytes(&db), after, "and nothing rewritten");
-    assert_eq!(check(&db.c(), &m).unwrap(), Checked { opened: 3, by_master: 0, failed: vec![] });
+    assert_eq!(check(&db.c(), &m).unwrap(), Checked { opened: 4, by_master: 0, failed: vec![] });
     // A broker secret has no value here, and stays that way.
     assert_eq!(db.hosted_secret_sealed("hw_1", "ANTHROPIC_KEY").unwrap(), None);
 }
@@ -191,7 +203,7 @@ fn reseal_leaves_what_it_cant_do() {
     .unwrap();
     drop(c);
     let r = reseal(&db, &m, usize::MAX).unwrap();
-    assert_eq!(r.resealed, 3);
+    assert_eq!(r.resealed, 4);
     assert_eq!(r.left, ["cloud_secrets carol T"]);
     let (_, carol) = db.cloud_secret("carol", "T").unwrap().unwrap();
     assert_eq!(carol.key_version, MASTER);
@@ -215,23 +227,23 @@ fn rotation_rewraps_project_keys_and_every_secret_still_opens() {
     let db = Db::test();
     let old = master(OLD);
     before_m209(&db, &old);
-    // One of three is still sealed the old way when the rotation starts.
+    // Two of four are still sealed the old way when the rotation starts.
     reseal(&db, &old, 2).unwrap();
     seal(&db, &old, "prj_a", &environment_name("env_1", "FLY_API_TOKEN"), "fly-a").unwrap();
     assert!(rotate(&db, &master(NEW)).is_err(), "it needs the old key too");
 
     let both = master(NEW).with_previous(Some(OLD)).unwrap();
     let r = rotate(&db, &both).unwrap();
-    assert_eq!(r, Rotated { resealed: 1, rewrapped: 2, already: 0 });
+    assert_eq!(r, Rotated { resealed: 2, rewrapped: 2, already: 0 });
     let new = master(NEW);
     assert_eq!(values(&db, &new), VALUES);
     assert_eq!(
         open(&db, &new, "prj_a", &environment_name("env_1", "FLY_API_TOKEN")).unwrap().as_deref(),
         Some("fly-a")
     );
-    assert_eq!(check(&db.c(), &new).unwrap(), Checked { opened: 4, by_master: 0, failed: vec![] });
+    assert_eq!(check(&db.c(), &new).unwrap(), Checked { opened: 5, by_master: 0, failed: vec![] });
     let failed = check(&db.c(), &old).unwrap().failed;
-    assert_eq!(failed.len(), 6, "the old key opens nothing now: {failed:?}");
+    assert_eq!(failed.len(), 7, "the old key opens nothing now: {failed:?}");
     let master_ids: Vec<(String, Option<i64>)> = db
         .c()
         .query_map("SELECT master_id, rotated_at FROM project_keys", params![], |r| Ok((r.get(0)?, r.get(1)?)))

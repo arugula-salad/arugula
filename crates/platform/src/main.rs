@@ -79,7 +79,8 @@ struct Args {
     compute: arugula_platform::compute::Args,
 
     /// Hosted workspaces (M179): ARUGULA_HOSTED_TEMPLATE,
-    /// ARUGULA_HOSTED_ENROLL and ARUGULA_HOSTED_ACCOUNTS.
+    /// ARUGULA_HOSTED_ENROLL and ARUGULA_HOSTED_ACCOUNTS; and their
+    /// inference (M185): ARUGULA_HOSTED_PLATFORM_KEYS and the turn caps.
     #[command(flatten)]
     hosted: arugula_platform::hosted::Args,
 
@@ -116,13 +117,13 @@ struct Args {
 fn main() -> anyhow::Result<()> {
     // `copy`, `checksums`, `secrets-check`, `migrations`: a window's tools
     // (window.rs, M141, M145), run on the platform's machine beside the
-    // server, and by the nightly dump. `rotate-key`: the master key's
-    // rotation (M209, `keys::rotate`).
+    // server, and by the nightly dump. `usage`: hosted workspaces' usage
+    // and cost (M188), read-only. `rotate-key`: the master key's rotation
+    // (M209, `keys::rotate`).
     let mut argv = std::env::args().skip(1).peekable();
-    if argv
-        .peek()
-        .is_some_and(|a| ["copy", "checksums", "secrets-check", "migrations", "rotate-key"].contains(&a.as_str()))
-    {
+    if argv.peek().is_some_and(|a| {
+        ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key"].contains(&a.as_str())
+    }) {
         return arugula_platform::window::run("arugula-platform", argv);
     }
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
@@ -170,8 +171,8 @@ async fn run() -> anyhow::Result<()> {
     }
     let mut p = Platform::new(cfg, db, hub, http, analytics);
     p.stripe = a.billing.stripe()?;
-    p.secret_key = a.cloud.master_key()?.map(Arc::new);
-    p.hosted = a.hosted.config(p.secret_key.clone())?;
+    p.hosted = a.hosted.config(&a.cloud)?;
+    p.secret_key = p.hosted.cipher.clone();
     p.cloud = a.cloud.cloud()?;
     p.compute = a.compute.substrate()?;
     p.github = a.github_app.app(&a.github_api)?;

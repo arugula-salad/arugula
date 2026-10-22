@@ -9,13 +9,14 @@
 //!
 //! - **What's sealed this way:** cloud secrets (`cloud_secrets`, the
 //!   owner's personal project's), hosted workspaces' sealed secrets
-//!   (`hosted_workspace_secrets`, the workspace's project's), and secrets
+//!   (`hosted_workspace_secrets`, the workspace's project's), projects' own
+//!   inference keys (`project_inference_keys`, M185), and secrets
 //!   with no table of their own, such as an environment's (M217): those are
 //!   kept in `project_secrets` by name ([`seal`], [`open`]).
 //! - **Which key sealed a row:** its `key_version`. `0` ([`MASTER`]) is the
 //!   master key itself, as everything was sealed before M209, bound to an
 //!   owner and a name; a version is that version of the project's data key.
-//!   Both open ([`open_cloud`], [`open_hosted`]).
+//!   Both open ([`open_cloud`], [`open_hosted`], [`open_inference`]).
 //! - **Re-sealing what the master key sealed** ([`reseal`]) runs at start
 //!   and hourly ([`start`]), one row per transaction: each row is opened
 //!   with the master key and written back sealed with its project's key
@@ -67,6 +68,12 @@ pub fn cloud_name(account: &str, name: &str) -> String {
 /// project.
 pub fn hosted_name(workspace: &str, name: &str) -> String {
     format!("hosted_workspace_secrets/{workspace}/{name}")
+}
+
+/// The name a project's own inference key for `provider` (M185) is sealed
+/// under, beside its project.
+pub fn inference_name(provider: &str) -> String {
+    format!("project_inference_keys/{provider}")
 }
 
 /// The name an environment's secret is kept under in `project_secrets`
@@ -235,6 +242,21 @@ pub fn open_hosted(
     }
 }
 
+/// A project's own inference key for `provider` (M185), opened. One the
+/// master key sealed is bound to the project and `inference:<provider>`.
+pub fn open_inference(
+    c: &impl Sql,
+    master: &SecretCipher,
+    project: &str,
+    provider: &str,
+    sealed: &Sealed,
+) -> Result<String> {
+    match sealed.key_version {
+        MASTER => master.open(project, &format!("inference:{provider}"), &sealed.bytes),
+        _ => open_value(c, master, project, &inference_name(provider), sealed),
+    }
+}
+
 /// A table whose rows are sealed secrets: how [`reseal`] and [`check`]
 /// find its rows, which `(owner, name)` the master key bound a row to,
 /// and the name its project's key binds it to.
@@ -258,7 +280,7 @@ struct Row {
     sealed: Sealed,
 }
 
-const STORES: [Store; 2] = [
+const STORES: [Store; 3] = [
     Store {
         table: "cloud_secrets",
         rows: "SELECT account, name, project_id, key_version, sealed FROM cloud_secrets
@@ -277,6 +299,15 @@ const STORES: [Store; 2] = [
                  WHERE workspace_id = ?3 AND name = ?4 AND key_version = 0 AND sealed = ?5",
         legacy: |r| (r.a.clone(), r.b.clone()),
         name: |r| hosted_name(&r.a, &r.b),
+    },
+    Store {
+        table: "project_inference_keys",
+        rows: "SELECT project_id, provider, project_id, key_version, sealed FROM project_inference_keys
+               ORDER BY key_version, project_id, provider",
+        update: "UPDATE project_inference_keys SET sealed = ?1, key_version = ?2
+                 WHERE project_id = ?3 AND provider = ?4 AND key_version = 0 AND sealed = ?5",
+        legacy: |r| (r.a.clone(), format!("inference:{}", r.b)),
+        name: |r| inference_name(&r.b),
     },
 ];
 

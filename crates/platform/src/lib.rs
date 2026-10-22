@@ -56,6 +56,7 @@ pub mod hub;
 mod hub_calls_tests;
 pub mod inbox;
 pub mod issues;
+pub mod jobs;
 pub mod keys;
 #[cfg(test)]
 mod object_threads_tests;
@@ -70,7 +71,7 @@ pub mod timing;
 pub mod window;
 
 pub use hub::HubPort;
-pub use port::{Deleted, PlatformPort};
+pub use port::{Deleted, PlatformPort, TurnAnswer};
 pub use router::{paths, router};
 
 /// What the platform is told when it starts.
@@ -129,6 +130,9 @@ pub struct Platform {
     /// The master key (`ARUGULA_CLOUD_SECRET_KEY`, and the old one while
     /// it's rotated), which wraps each project's data key ([`keys`]).
     pub secret_key: Option<Arc<cloud::secrets::SecretCipher>>,
+    /// Wakes asked of hosted workspaces' boxes (M182): one at a time per
+    /// workspace, and the worker started on them at once.
+    pub wakes: hosted::wake::Wakes,
     /// The GitHub App (M40, here since M161), when this control has its id
     /// and key: its webhook, `may()` and installation tokens.
     pub github: Option<forge::GithubApp>,
@@ -216,6 +220,7 @@ impl Platform {
             compute: None,
             hosted: Default::default(),
             secret_key: None,
+            wakes: Default::default(),
             github: None,
             chat,
             cache: Default::default(),

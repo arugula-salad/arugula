@@ -12,7 +12,7 @@ use axum::{
     extract::{Path, Query, State as AxState},
     http::{HeaderMap, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
-    routing::{any, get, post},
+    routing::{any, get, post, put},
 };
 use serde_json::{Value, json};
 
@@ -30,6 +30,10 @@ struct Fake {
     made: u32,
     /// Boxes per listing page.
     page: usize,
+    /// Each box's lifecycle events, oldest first (M188's runs).
+    events: BTreeMap<String, Vec<Value>>,
+    /// Each box's egress rules, as last set (M185).
+    rules: BTreeMap<String, Value>,
 }
 
 type S = Arc<Mutex<Fake>>;
@@ -74,6 +78,7 @@ async fn create(AxState(s): AxState<S>, m: Method, uri: Uri, h: HeaderMap, Json(
     f.made += 1;
     let id = format!("sbx{}", f.made);
     f.boxes.insert(id.clone(), ("running".into(), body["metadata"].clone()));
+    f.rules.insert(id.clone(), body["network"]["rules"].clone());
     let made = json!({
         "sandboxID": id, "templateID": "rki5dems9wqfm4r03t7g", "alias": "base", "clientID": "x",
         "envdVersion": "0.6.10", "envdAccessToken": "envd-secret", "trafficAccessToken": "traffic-secret",
@@ -174,13 +179,67 @@ async fn action(
     }
 }
 
+/// `GET /events/sandboxes/{id}`: E2B's paging (`offset`, `limit`), its
+/// `types` filter, and a 404 for a box it never had.
+async fn events(AxState(s): AxState<S>, m: Method, uri: Uri, Path(id): Path<String>) -> Response {
+    if let Some(r) = record(&s, &m, &uri, Value::Null) {
+        return r;
+    }
+    let f = s.lock().unwrap();
+    let Some(all) = f.events.get(&id) else { return error(404, None) };
+    let q: Vec<(String, String)> =
+        url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes()).into_owned().collect();
+    let get = |k: &str| q.iter().find(|(n, _)| n == k).map(|(_, v)| v.parse::<usize>().unwrap());
+    let types: Vec<&str> = q.iter().filter(|(n, _)| n == "types").map(|(_, v)| v.as_str()).collect();
+    let kept: Vec<Value> = all.iter().filter(|e| types.contains(&e["type"].as_str().unwrap())).cloned().collect();
+    let from = get("offset").unwrap_or(0).min(kept.len());
+    let end = (from + get("limit").unwrap_or(10)).min(kept.len());
+    Json(kept[from..end].to_vec()).into_response()
+}
+
+fn event(id: u32, kind: &str, run: Option<(&str, u64)>) -> Value {
+    let mut data = json!({"sandbox_metadata": {"arugula_workspace": "hw_1"}});
+    if let Some((started, ms)) = run {
+        data["execution"] = json!({"execution_time": ms, "memory_mb": 2048, "started_at": started, "vcpu_count": 2});
+    }
+    json!({
+        "id": format!("00000000-0000-0000-0000-{id:012}"), "version": "v2", "type": format!("sandbox.lifecycle.{kind}"),
+        "timestamp": "2026-10-22T00:00:00Z", "sandboxId": "sbx1", "sandboxExecutionId": "x",
+        "sandboxTemplateId": "t", "sandboxBuildId": "b", "sandboxTeamId": "00000000-0000-0000-0000-000000000000",
+        "eventData": data,
+    })
+}
+
+async fn network(
+    AxState(s): AxState<S>,
+    m: Method,
+    uri: Uri,
+    Path(id): Path<String>,
+    Json(b): Json<Value>,
+) -> Response {
+    if let Some(r) = record(&s, &m, &uri, b.clone()) {
+        return r;
+    }
+    let mut f = s.lock().unwrap();
+    match f.boxes.get(&id) {
+        // As E2B: a paused box's network can't be changed.
+        Some((st, _)) if st == "running" => {
+            f.rules.insert(id, b["rules"].clone());
+            StatusCode::NO_CONTENT.into_response()
+        }
+        _ => error(404, None),
+    }
+}
+
 async fn fake() -> (E2b, S, String) {
     let s: S = Arc::new(Mutex::new(Fake { page: 100, ..Default::default() }));
     let app = Router::new()
         .route("/v2/sandboxes", post(create).get(list))
         .route("/sandboxes/{id}", any(one))
+        .route("/sandboxes/{id}/network", put(network))
         .route("/sandboxes/{id}/{what}", post(action))
         .route("/v2/sandboxes/{id}/{what}", post(action))
+        .route("/events/sandboxes/{id}", get(events))
         .route("/health", get(|| async { "ok" }))
         .with_state(s.clone());
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -195,6 +254,7 @@ fn workspace(id: &str) -> Create {
         env: [("ARUGULA_HOSTED_TICKET".into(), "t1".into())].into(),
         metadata: [("arugula_workspace".into(), id.into()), ("arugula_project".into(), "prj_1".into())].into(),
         timeout: Duration::from_secs(300),
+        rules: Rules::new(),
     }
 }
 
@@ -212,13 +272,62 @@ async fn create_pauses_on_timeout_and_never_auto_resumes() {
     assert_eq!(body["autoPause"], true);
     assert_eq!(body["autoPauseMemory"], true);
     assert_eq!(body["autoResume"], json!({"enabled": false}));
+    assert_eq!(body["secure"], true, "envd takes anyone in a box made without it");
     assert_eq!(body["timeout"], 300);
     assert_eq!(body["templateID"], "base");
     assert_eq!(body["envVars"], json!({"ARUGULA_HOSTED_TICKET": "t1"}));
     assert_eq!(body["metadata"], json!({"arugula_workspace": "hw_1", "arugula_project": "prj_1"}));
+    assert!(body.get("network").is_none(), "no rules, no network config");
     assert!(!body.to_string().contains(KEY), "the key goes in a header, never a body");
     let shown = format!("{made:?}{e2b:?}");
     assert!(!shown.contains("secret") && !shown.contains(KEY));
+}
+
+/// A create answered without an envd access token made a box whose envd
+/// takes anyone: it's deleted and the create refused.
+#[tokio::test]
+async fn create_refuses_a_box_whose_envd_is_open() {
+    let (e2b, s, _) = fake().await;
+    for token in [Value::Null, json!("")] {
+        let open = json!({"sandboxID": "sbx9", "templateID": "base", "clientID": "x", "envdVersion": "0.6.10",
+            "envdAccessToken": token});
+        s.lock().unwrap().failures.push_back((StatusCode::CREATED, Json(open)).into_response());
+        assert_eq!(
+            e2b.create(&workspace("hw_1")).await,
+            Err(Error::Refused { status: 201, code: Some("envd_not_secured".into()) })
+        );
+        let (method, path, _) = calls(&s).pop().unwrap();
+        assert_eq!((method.as_str(), path.as_str()), ("DELETE", "/sandboxes/sbx9"));
+    }
+    let open = json!({"sandboxID": "sbx9", "templateID": "base", "clientID": "x", "envdVersion": "0.6.10"});
+    s.lock().unwrap().failures.push_back((StatusCode::CREATED, Json(open)).into_response());
+    assert!(e2b.create(&workspace("hw_1")).await.is_err());
+}
+
+/// A box's runs are its pauses' and its delete's, read across pages, each
+/// once: a delete of a paused box ends no run. A box E2B never had (or a
+/// provider with no events, loam) has no record.
+#[tokio::test]
+async fn runs_are_read_from_lifecycle_events() {
+    let (e2b, s, _) = fake().await;
+    let mut evs = vec![event(0, "created", None)];
+    // 120 pause-resume cycles, a second each: two pages of runs.
+    for i in 0..120u32 {
+        evs.push(event(2 * i + 1, "paused", Some(("2026-10-22T00:00:00Z", 1_000 + u64::from(i)))));
+        evs.push(event(2 * i + 2, "resumed", None));
+    }
+    evs.push(event(999, "killed", Some(("2026-10-22T01:00:00.5Z", 400))));
+    evs.push(event(1000, "killed", None));
+    s.lock().unwrap().events.insert("sbx1".into(), evs);
+    let runs = e2b.runs("sbx1").await.unwrap().unwrap();
+    assert_eq!(runs.len(), 121);
+    assert_eq!(runs[0], Run { started_at: 1_792_627_200_000, ms: 1_000, cpus: 2, memory_mb: 2048 });
+    assert_eq!(runs[120], Run { started_at: 1_792_630_800_500, ms: 400, cpus: 2, memory_mb: 2048 });
+    let paths: Vec<String> = calls(&s).into_iter().map(|c| c.1).filter(|p| p.starts_with("/events/")).collect();
+    assert_eq!(paths.len(), 2, "{paths:?}");
+    assert!(paths[1].contains("offset=100") && paths[1].contains("orderAsc=true"), "{}", paths[1]);
+    assert!(paths[0].contains("types=sandbox.lifecycle.paused&types=sandbox.lifecycle.killed"), "{}", paths[0]);
+    assert_eq!(e2b.runs("nope").await.unwrap(), None);
 }
 
 #[tokio::test]
@@ -228,6 +337,7 @@ async fn status_reads_without_waking() {
     assert_eq!(e2b.pause(&id).await.unwrap(), Paused::Paused);
     let b = e2b.status(&id).await.unwrap().unwrap();
     assert_eq!((b.state, b.pauses_on_timeout), (State::Paused, Some(true)));
+    assert_eq!((b.cpus, b.memory_mb), (Some(2), Some(512)));
     assert_eq!(b.metadata["arugula_workspace"], "hw_1");
     assert_eq!(e2b.status(&id).await.unwrap().unwrap().state, State::Paused);
     assert!(calls(&s).iter().all(|(_, p, _)| !p.contains("connect") && !p.contains("resume")));
@@ -320,6 +430,44 @@ async fn errors_keep_only_status_and_code() {
 
     fail((StatusCode::OK, "not json").into_response());
     assert_eq!(e2b.status(&id).await, Err(Error::Invalid));
+}
+
+/// M185: a box made with rules carries them as E2B's network rules, a
+/// key or a broker reference alike, and a running box's rules are
+/// replaced (a paused one's can't be). A create's `Debug` never shows a
+/// rule's value.
+#[tokio::test]
+async fn rules() {
+    let (e2b, s, _) = fake().await;
+    let mut b = workspace("hw_1");
+    let rules: Rules = [(
+        "api.anthropic.com".to_owned(),
+        [("x-api-key".to_owned(), "sk-ant-fake-value".to_owned())].into(), // gitleaks:allow: a test value
+    )]
+    .into();
+    b.rules = rules.clone();
+    assert!(!format!("{b:?}").contains("sk-ant"), "{b:?}");
+    let id = e2b.create(&b).await.unwrap().id;
+    let want = json!({"api.anthropic.com": [{"transform": {"headers": {"x-api-key": "sk-ant-fake-value"}}}]}); // gitleaks:allow
+    assert_eq!(calls(&s)[0].2["network"], json!({"rules": want}));
+
+    let both: Rules = [
+        ("api.anthropic.com".to_owned(), [("x-api-key".to_owned(), fill("arugula-platform-anthropic"))].into()),
+        ("api.openai.com".to_owned(), [("authorization".to_owned(), format!("Bearer {}", fill("o")))].into()),
+    ]
+    .into();
+    e2b.set_rules(&id, &both).await.unwrap();
+    let (method, path, body) = calls(&s).pop().unwrap();
+    assert_eq!((method.as_str(), path), ("PUT", format!("/sandboxes/{id}/network")));
+    assert_eq!(body["rules"]["api.openai.com"][0]["transform"]["headers"]["authorization"], "Bearer ${e2b.secrets.o}");
+    assert_eq!(
+        body["rules"]["api.anthropic.com"][0]["transform"]["headers"]["x-api-key"],
+        "${e2b.secrets.arugula-platform-anthropic}"
+    );
+    e2b.set_rules(&id, &Rules::new()).await.unwrap();
+    assert_eq!(s.lock().unwrap().rules[&id], json!({}), "no rules clears them");
+    e2b.pause(&id).await.unwrap();
+    assert_eq!(e2b.set_rules(&id, &both).await, Err(Error::NotFound), "a paused box's rules can't change");
 }
 
 #[tokio::test]

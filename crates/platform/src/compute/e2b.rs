@@ -2,13 +2,18 @@
 //!
 //! | Call | Route |
 //! |---|---|
-//! | create | `POST /v2/sandboxes` (`autoPause`, memory kept, auto-resume off) |
+//! | create | `POST /v2/sandboxes` (`secure`, `autoPause`, memory kept, auto-resume off) |
 //! | resume | `POST /v2/sandboxes/{id}/connect` (201 woke, 200 was running) |
 //! | pause | `POST /sandboxes/{id}/pause` (409: paused already) |
 //! | delete | `DELETE /sandboxes/{id}` (404: gone already) |
 //! | status | `GET /sandboxes/{id}` |
 //! | list | `GET /v2/sandboxes?metadata=…&state=running,paused`, paged by `X-Next-Token` |
 //! | hold | `POST /sandboxes/{id}/timeout` |
+//! | runs | `GET /events/sandboxes/{id}?types=…paused&types=…killed`, paged by `offset` |
+//! | set_rules | `PUT /sandboxes/{id}/network` (`rules`; 404: paused or gone) |
+//!
+//! A create's rules go in its `network.rules`. They can hold a key, so
+//! they're only ever in a request's body, never in an error or a log.
 //!
 //! Every call but create is retried a few times on no answer, 429, 502,
 //! 503 and 504: each is idempotent here (a second pause finds it paused, a
@@ -19,6 +24,15 @@
 //! create's or connect's `envdAccessToken` and `trafficAccessToken` are
 //! credentials for the box's envd and ports, which the platform doesn't
 //! use, so they're never kept.
+//!
+//! Every box is made `secure`: its envd (the daemon E2B puts in a box, on
+//! port 49983) then takes process starts and file reads and writes only
+//! with that access token, which nobody holds. Without it, any process in
+//! the box, or anyone who knew its id, could run commands in it as root.
+//! E2B's cloud makes every box secure whatever the request says, and loam
+//! refuses `secure: false`; another E2B-compatible API may not, so a
+//! create whose answer has no access token is taken as an open envd: the
+//! box is deleted and the create refused.
 
 use std::{collections::BTreeMap, time::Duration};
 
@@ -27,7 +41,7 @@ use reqwest::{Client, Method, Response, StatusCode, Url};
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
-use super::{Create, Created, Error, Paused, Result, Resumed, Sandbox, State, Substrate};
+use super::{Create, Created, Error, Paused, Result, Resumed, Rules, Run, Sandbox, State, Substrate};
 
 /// Tries of a retried call, and the longest `Retry-After` waited out.
 const TRIES: u32 = 3;
@@ -139,6 +153,13 @@ async fn done(r: Response) -> Result<()> {
     if r.status().is_success() { Ok(()) } else { Err(failure(r).await) }
 }
 
+/// Rules as E2B's `network.rules`: per host, one rule that sets headers.
+fn network_rules(rules: &Rules) -> Value {
+    let hosts: serde_json::Map<String, Value> =
+        rules.iter().map(|(host, headers)| (host.clone(), json!([{"transform": {"headers": headers}}]))).collect();
+    Value::Object(hosts)
+}
+
 fn seconds(d: Duration) -> u64 {
     d.as_secs().max(1)
 }
@@ -150,6 +171,14 @@ struct NewBox {
     sandbox_id: String,
     #[serde(rename = "templateID")]
     template_id: String,
+    /// Whether it has an envd access token (see the top): the token itself
+    /// is dropped as it's read.
+    #[serde(rename = "envdAccessToken", default, deserialize_with = "present")]
+    secured: bool,
+}
+
+fn present<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<bool, D::Error> {
+    Ok(Option::<String>::deserialize(d)?.is_some_and(|t| !t.is_empty()))
 }
 
 #[derive(Deserialize)]
@@ -166,6 +195,10 @@ struct Detail {
     end_at: String,
     #[serde(default)]
     lifecycle: Option<Lifecycle>,
+    #[serde(default)]
+    cpu_count: Option<u32>,
+    #[serde(rename = "memoryMB", default)]
+    memory_mb: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -190,8 +223,51 @@ impl TryFrom<Detail> for Sandbox {
             started_at: d.started_at,
             end_at: d.end_at,
             pauses_on_timeout: d.lifecycle.map(|l| l.on_timeout == "pause"),
+            cpus: d.cpu_count,
+            memory_mb: d.memory_mb,
         })
     }
+}
+
+/// A lifecycle event (`GET /events/sandboxes/{id}`): a pause's and a
+/// delete's carry the run they ended, as E2B billed it. Nothing else of
+/// it is read (its `sandbox_metadata` is the box's own).
+#[derive(Deserialize)]
+struct Event {
+    id: String,
+    #[serde(rename = "eventData", default)]
+    data: Option<EventData>,
+}
+
+#[derive(Deserialize)]
+struct EventData {
+    #[serde(default)]
+    execution: Option<Execution>,
+}
+
+#[derive(Deserialize)]
+struct Execution {
+    execution_time: u64,
+    vcpu_count: u32,
+    memory_mb: u32,
+    started_at: String,
+}
+
+/// The runs in a box's events, each once: deleting a paused box ends no
+/// run, and an event a page boundary repeated is the same id.
+fn runs_of(events: Vec<Event>, seen: &mut std::collections::BTreeSet<String>) -> Result<Vec<Run>> {
+    let mut out = Vec::new();
+    for e in events {
+        if !seen.insert(e.id) {
+            continue;
+        }
+        let Some(x) = e.data.and_then(|d| d.execution) else { continue };
+        let started_at = arugula_forge_github::util::time(&x.started_at)
+            .and_then(|t| u64::try_from(t).ok())
+            .ok_or(Error::Invalid)?;
+        out.push(Run { started_at, ms: x.execution_time, cpus: x.vcpu_count, memory_mb: x.memory_mb });
+    }
+    Ok(out)
 }
 
 /// E2B's `metadata` filter, as its SDKs write it: each key and value
@@ -209,15 +285,20 @@ fn metadata_query(metadata: &BTreeMap<String, String>) -> String {
 impl Substrate for E2b {
     fn create<'a>(&'a self, b: &'a Create) -> BoxFuture<'a, Result<Created>> {
         Box::pin(async move {
-            let body = json!({
+            let mut body = json!({
                 "templateID": b.template,
                 "timeout": seconds(b.timeout),
                 "autoPause": true,
                 "autoPauseMemory": true,
                 "autoResume": {"enabled": false},
+                // Never drop this: without it envd takes anyone (see the top).
+                "secure": true,
                 "metadata": b.metadata,
                 "envVars": b.env,
             });
+            if !b.rules.is_empty() {
+                body["network"] = json!({"rules": network_rules(&b.rules)});
+            }
             let r = self.send(Method::POST, self.url(&["v2", "sandboxes"])?, Some(&body)).await?;
             if !r.status().is_success() {
                 // An unknown template is a 404, which isn't "no such box".
@@ -226,7 +307,13 @@ impl Substrate for E2b {
                     e => e,
                 });
             }
+            let status = r.status().as_u16();
             let made: NewBox = read(r).await?;
+            if !made.secured {
+                // An open envd (see the top): this box is never used.
+                let _ = self.delete(&made.sandbox_id).await;
+                return Err(Error::Refused { status, code: Some("envd_not_secured".into()) });
+            }
             Ok(Created { id: made.sandbox_id, template: made.template_id })
         })
     }
@@ -325,6 +412,48 @@ impl Substrate for E2b {
         Box::pin(async move {
             let body = json!({"timeout": seconds(timeout)});
             let r = self.idempotent(Method::POST, self.url(&["sandboxes", id, "timeout"])?, Some(&body)).await?;
+            done(r).await
+        })
+    }
+
+    fn runs<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<Option<Vec<Run>>>> {
+        Box::pin(async move {
+            const PAGE: usize = 100;
+            let mut seen = std::collections::BTreeSet::new();
+            let mut all = Vec::new();
+            // Oldest first, so a page's offset holds while new events come.
+            for page in 0..100 {
+                let mut url = self.url(&["events", "sandboxes", id])?;
+                url.query_pairs_mut()
+                    .append_pair("orderAsc", "true")
+                    .append_pair("limit", &PAGE.to_string())
+                    .append_pair("offset", &(page * PAGE).to_string())
+                    .append_pair("types", "sandbox.lifecycle.paused")
+                    .append_pair("types", "sandbox.lifecycle.killed");
+                let r = self.idempotent(Method::GET, url, None).await?;
+                // No such box, none of its events in yet (E2B's lag its
+                // lifecycle by seconds), or (loam) no such record.
+                if r.status() == StatusCode::NOT_FOUND {
+                    return Ok(None);
+                }
+                if !r.status().is_success() {
+                    return Err(failure(r).await);
+                }
+                let events: Vec<Event> = read(r).await?;
+                let n = events.len();
+                all.extend(runs_of(events, &mut seen)?);
+                if n < PAGE {
+                    return Ok(Some(all));
+                }
+            }
+            Err(Error::Invalid)
+        })
+    }
+
+    fn set_rules<'a>(&'a self, id: &'a str, rules: &'a Rules) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let body = json!({"rules": network_rules(rules)});
+            let r = self.idempotent(Method::PUT, self.url(&["sandboxes", id, "network"])?, Some(&body)).await?;
             done(r).await
         })
     }

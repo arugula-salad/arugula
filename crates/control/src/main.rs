@@ -75,6 +75,9 @@ mod teams;
 mod telemetry;
 #[cfg(test)]
 mod two_sites;
+mod wake;
+#[cfg(test)]
+mod wake_wire;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
@@ -621,6 +624,8 @@ fn routes() -> Routes {
         .route("/api/hosted/delegations/revoke", post(hosted::revoke))
         .route(wire::hosted::ENROLL, post(hosted::enroll))
         .route(wire::hosted::HOSTED_TRUST, get(hosted::trust))
+        .route(wire::hosted::HOSTED_TURNS, post(hosted::turn))
+        .route("/api/hosted/turns/{turn}/end", post(hosted::turn_end))
         .route("/api/hosted/machines/{id}", axum::routing::delete(hosted::remove))
         .route("/api/daemon/github/token", post(forge::daemon_token))
         .route(wire::RELAY_DIAL, get(relay::dial))
@@ -970,7 +975,7 @@ async fn run() -> anyhow::Result<()> {
     let (platform, hub_port) = if a.platform == "in-process" {
         // A second connection to the same file: the platform never reads
         // the hub's tables (#1153).
-        let hosted = a.hosted.clone().config(a.cloud.master_key()?.map(Arc::new))?;
+        let hosted = a.hosted.clone().config(&a.cloud)?;
         let cloud = a.cloud.cloud()?;
         let cfg = arugula_platform::Config {
             public_url: public_url.clone(),

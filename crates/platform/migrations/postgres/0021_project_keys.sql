@@ -1,4 +1,4 @@
--- 0024: per-project envelope keys for secrets (M209, platform step 7).
+-- 0021: per-project envelope keys for secrets (M209, platform step 7).
 -- Each project has a random data key, wrapped (sealed) by the platform's
 -- master key, ARUGULA_CLOUD_SECRET_KEY; the data key seals that project's
 -- secrets (`keys`). Rotating the master key re-wraps the data keys and
@@ -32,9 +32,11 @@ CREATE TABLE project_secrets (
     PRIMARY KEY (project_id, name)
 );
 
--- Which key sealed each stored secret: 0 is the master key itself (before
--- M209: bound to the owner and the name), a version is the project's data
--- key. The platform re-seals 0s with the project's key, one row at a time
--- (`keys::reseal`), and opens either until none is left.
+-- Which key sealed each stored secret (and each project's own inference
+-- key, M185): 0 is the master key itself (before M209: bound to the owner
+-- and the name), a version is the project's data key. The platform
+-- re-seals 0s with the project's key, one row at a time (`keys::reseal`),
+-- and opens either until none is left.
 ALTER TABLE cloud_secrets ADD COLUMN key_version BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE hosted_workspace_secrets ADD COLUMN key_version BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE project_inference_keys ADD COLUMN key_version BIGINT NOT NULL DEFAULT 0;

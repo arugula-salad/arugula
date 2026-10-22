@@ -71,6 +71,44 @@ pub enum CloudCmd {
         #[arg(long)]
         project: Option<String>,
     },
+    /// The project's own inference keys, which its hosted agents run on
+    /// (M185).
+    ///
+    /// `set anthropic` or `set openai` reads the key from stdin (asked for
+    /// without echo on a terminal): an owner of the project. Control keeps
+    /// it sealed and puts it in each box's egress rules, so the compute
+    /// provider's proxy sets it on the box's requests to the provider: it's
+    /// never in the box, and never shown again. `clear` removes it; `ls`
+    /// says which are set.
+    Key {
+        #[command(subcommand)]
+        cmd: KeyCmd,
+    },
+}
+
+#[derive(clap::Subcommand)]
+pub enum KeyCmd {
+    /// Set the project's key for a provider, from stdin.
+    Set {
+        #[arg(value_parser = ["anthropic", "openai"])]
+        provider: String,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Remove the project's key for a provider.
+    #[command(visible_alias = "rm")]
+    Clear {
+        #[arg(value_parser = ["anthropic", "openai"])]
+        provider: String,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Which of the project's keys are set.
+    #[command(visible_alias = "list")]
+    Ls {
+        #[arg(long)]
+        project: Option<String>,
+    },
 }
 
 /// How long `--wait` waits.
@@ -131,8 +169,43 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
             let (project, w) = find(&e, project.as_deref(), &workspace)?;
             show(&e.api("DELETE", &path(&project, &w), None)?);
         }
+        CloudCmd::Key { cmd } => {
+            let keys = match cmd {
+                KeyCmd::Set { provider, project } => {
+                    let project = project_of(&e, project.as_deref())?;
+                    let value = super::studio::secret_input(&format!("{provider} API key: "))?;
+                    let body = json!({ "value": value });
+                    e.api("PUT", &format!("/api/projects/{project}/inference-keys/{provider}"), Some(&body))?
+                }
+                KeyCmd::Clear { provider, project } => {
+                    let project = project_of(&e, project.as_deref())?;
+                    e.api("DELETE", &format!("/api/projects/{project}/inference-keys/{provider}"), None)?
+                }
+                KeyCmd::Ls { project } => {
+                    let project = project_of(&e, project.as_deref())?;
+                    e.api("GET", &format!("/api/projects/{project}/inference-keys"), None)?
+                }
+            };
+            if json_out {
+                print_json(&keys);
+            } else {
+                for k in keys["keys"].as_array().into_iter().flatten() {
+                    println!("{}", key_line(k));
+                }
+            }
+        }
     }
     Ok(0)
+}
+
+/// `anthropic  set by alice` or `openai  not set`.
+fn key_line(k: &Value) -> String {
+    let provider = k["provider"].as_str().unwrap_or_default();
+    match (k["set"] == true, k["set_by"].as_str()) {
+        (true, Some(by)) => format!("{provider:<10} set by {by}"),
+        (true, None) => format!("{provider:<10} set"),
+        _ => format!("{provider:<10} not set"),
+    }
 }
 
 fn path(project: &str, w: &Value) -> String {
@@ -234,6 +307,9 @@ mod tests {
             &["arugula", "cloud", "rebuild", "hw_1"],
             &["arugula", "cloud", "rm", "dev"],
             &["arugula", "cloud", "delete", "dev"],
+            &["arugula", "cloud", "key", "set", "anthropic", "--project", "Acme"],
+            &["arugula", "cloud", "key", "clear", "openai"],
+            &["arugula", "cloud", "key", "ls"],
         ] {
             assert!(crate::Cli::try_parse_from(argv).is_ok(), "{argv:?}");
         }
@@ -246,5 +322,14 @@ mod tests {
         assert!(l.starts_with("dev") && l.contains("machine m1") && l.contains("rebuild needed"), "{l}");
         let w = json!({ "name": "dev", "state": "failed", "id": "hw_1", "error": "no delegation" });
         assert!(line(&w).ends_with("\n  no delegation"), "{}", line(&w));
+        assert_eq!(
+            key_line(&json!({ "provider": "anthropic", "set": true, "set_by": "alice" })),
+            "anthropic  set by alice"
+        );
+        assert_eq!(key_line(&json!({ "provider": "openai", "set": false })), "openai     not set");
+        assert!(
+            crate::Cli::try_parse_from(["arugula", "cloud", "key", "set", "gemini"]).is_err(),
+            "anthropic or openai"
+        );
     }
 }

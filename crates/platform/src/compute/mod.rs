@@ -3,9 +3,13 @@
 //! loam's E2B-compatible API alike (only the URL and key differ).
 //!
 //! The substrate does a box's lifecycle and nothing else: create, resume,
-//! pause, delete, status, list and hold. No exec, files or ports: the
+//! pause, delete, status, list and hold, and (when the provider keeps them)
+//! the runs it billed. No exec, files or ports: the
 //! daemon in the box (`arugulad --hosted`, M180) dials out and brings
-//! those. A box always pauses when its timeout passes, never dies, and only
+//! those. Beside the lifecycle, egress rules (M185): [`Rules`] that set
+//! headers on a box's outbound requests at the provider's egress proxy, so
+//! an inference key never enters the box ("Hosted inference: strangers
+//! bring their own key", aru-096). A box always pauses when its timeout passes, never dies, and only
 //! [`Substrate::resume`] wakes it: no read here does, and traffic doesn't
 //! either (auto-resume is off).
 //!
@@ -22,7 +26,10 @@ mod e2b;
 #[cfg(test)]
 mod e2b_tests;
 #[cfg(test)]
+mod egress_tests;
+#[cfg(test)]
 mod live_tests;
+pub mod template;
 
 pub use e2b::E2b;
 
@@ -48,8 +55,26 @@ impl Args {
     }
 }
 
-/// What a box is made from and carries.
-#[derive(Debug, Clone, Default)]
+/// What a box's egress proxy writes into its outbound HTTPS requests
+/// (M185), as E2B's network rules do: for each host (exact, or `*.` and a
+/// suffix), headers set over whatever the box sent. A value is a key
+/// itself (a project's: the proxy holds it, the box never sees it), or
+/// names a secret in the provider's broker with [`fill`] (the platform's,
+/// which the operator keeps there), resolved at request time; a secret
+/// that's gone is no header at all (E2B fails open, and never sends the
+/// reference on). Plain HTTP is never filled. Rules can hold keys: never
+/// log them.
+pub type Rules = BTreeMap<String, BTreeMap<String, String>>;
+
+/// A header value that the egress proxy fills with the broker's secret
+/// `name` (E2B's `${e2b.secrets.<name>}`).
+pub fn fill(name: &str) -> String {
+    format!("${{e2b.secrets.{name}}}")
+}
+
+/// What a box is made from and carries. Its `Debug` names the rules'
+/// hosts and headers, never their values.
+#[derive(Clone, Default)]
 pub struct Create {
     /// The template id (M177's per release; `base` in the live suite).
     pub template: String,
@@ -60,6 +85,21 @@ pub struct Create {
     pub metadata: BTreeMap<String, String>,
     /// How long it runs before it pauses itself, unless held.
     pub timeout: Duration,
+    /// Its egress rules from the start (M185): none, unless set.
+    pub rules: Rules,
+}
+
+impl std::fmt::Debug for Create {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let rules: BTreeMap<&String, Vec<&String>> = self.rules.iter().map(|(h, v)| (h, v.keys().collect())).collect();
+        f.debug_struct("Create")
+            .field("template", &self.template)
+            .field("env", &self.env.keys().collect::<Vec<_>>())
+            .field("metadata", &self.metadata)
+            .field("timeout", &self.timeout)
+            .field("rules", &rules)
+            .finish()
+    }
 }
 
 /// A box as made: its id and the template the provider says it's from.
@@ -91,6 +131,21 @@ pub struct Sandbox {
     /// Whether it pauses at its timeout (`lifecycle.onTimeout`), when the
     /// provider says: [`Substrate::status`] does, a listing doesn't.
     pub pauses_on_timeout: Option<bool>,
+    /// Its size, when the provider says (E2B and loam do): vCPUs and
+    /// memory in MiB, what it's billed by ([`crate::hosted::usage`]).
+    pub cpus: Option<u32>,
+    pub memory_mb: Option<u32>,
+}
+
+/// One run of a box as the provider billed it, from its start or a resume
+/// to a pause or its delete (M188).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Run {
+    /// When it started, ms since the epoch, and how long it ran, in ms.
+    pub started_at: u64,
+    pub ms: u64,
+    pub cpus: u32,
+    pub memory_mb: u32,
 }
 
 /// What [`Substrate::resume`] found.
@@ -175,4 +230,27 @@ pub trait Substrate: Send + Sync {
     /// (and not after: this sets the time, as E2B's timeout does). A paused
     /// box is [`Error::NotFound`] on E2B and loam alike: hold never wakes.
     fn hold<'a>(&'a self, id: &'a str, timeout: Duration) -> BoxFuture<'a, Result<()>>;
+
+    /// A box's finished runs as the provider keeps them, to reconcile
+    /// what the platform metered with (M188): `None` when it keeps no such
+    /// record (loam), or none for this box. Never wakes it. Optional: a
+    /// provider without one leaves this as it is.
+    fn runs<'a>(&'a self, _id: &'a str) -> BoxFuture<'a, Result<Option<Vec<Run>>>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// Replace a running box's egress rules (M185): they take effect on
+    /// its next request, and last through a pause. A paused box is
+    /// [`Error::NotFound`], as with hold: set them again after a wake. This
+    /// replaces the box's whole network config on E2B, so egress limits
+    /// (M192) will have to ride along.
+    fn set_rules<'a>(&'a self, id: &'a str, rules: &'a Rules) -> BoxFuture<'a, Result<()>> {
+        let _ = (id, rules);
+        no_rules()
+    }
+}
+
+/// What a provider without egress rules answers.
+fn no_rules<'a>() -> BoxFuture<'a, Result<()>> {
+    Box::pin(async { Err(Error::Refused { status: 404, code: None }) })
 }

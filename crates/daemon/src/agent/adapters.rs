@@ -298,6 +298,21 @@ mod tests {
         );
         assert!(of(Kind::Managoat).is_none());
         assert_eq!(quote("/a b/it's"), r"'/a b/it'\''s'");
+    }
+
+    /// A hosted workspace's image (M177) installs the adapters this daemon
+    /// pins, where it looks first.
+    #[test]
+    fn the_hosted_image_has_the_pins() {
+        let image = include_str!("../../../../packaging/hosted/Dockerfile");
+        for (arg, pin) in [("CLAUDE_ACP", CLAUDE_ACP), ("CODEX_ACP", CODEX_ACP)] {
+            assert!(
+                image.lines().any(|l| l == format!("ARG {arg}={pin}")),
+                "packaging/hosted/Dockerfile: ARG {arg}={pin}"
+            );
+        }
+        assert!(image.contains("--prefix /home/user/.local/share/arugula/agents/claude"));
+        assert!(image.contains("--omit=optional --prefix /home/user/.local/share/arugula/agents/codex"));
         assert_eq!(major("v22.23.2"), Some(22));
         assert_eq!(major("v8.1.0"), Some(8));
     }

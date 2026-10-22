@@ -112,6 +112,7 @@ async fn suite(
         env: [("ARUGULA_TEST_ENV".into(), "1".into())].into(),
         metadata: metadata.clone(),
         timeout: Duration::from_secs(120),
+        rules: Rules::new(),
     };
 
     // A second box with a short timeout, to see it pause (not die) when
@@ -202,5 +203,127 @@ async fn suite(
         run.check("10 s timeout passed: paused, not gone", matches!(&s, Ok(Some(b)) if b.state == State::Paused), &s);
         let resumed = run.time("resume (auto-paused)", e2b.resume(&short.id, Duration::from_secs(60))).await;
         run.check("resume an auto-paused box", resumed == Ok(Resumed::Woke), &resumed);
+    }
+}
+
+/// M188's reconcile source, live: a box made and paused shows one run in
+/// its lifecycle events (E2B's lag them by seconds), with its size; loam
+/// keeps none. The box is deleted whatever happened.
+#[tokio::test]
+#[ignore = "makes a real box: set ARUGULA_TEST_E2B_URL and ARUGULA_TEST_E2B_KEY"]
+async fn live_runs() {
+    let (Ok(url), Ok(key)) = (std::env::var("ARUGULA_TEST_E2B_URL"), std::env::var("ARUGULA_TEST_E2B_KEY")) else {
+        panic!("set ARUGULA_TEST_E2B_URL and ARUGULA_TEST_E2B_KEY");
+    };
+    let template = std::env::var("ARUGULA_TEST_E2B_TEMPLATE").unwrap_or_else(|_| "base".into());
+    let e2b = E2b::new(&url, key).unwrap();
+    let run_id = format!("m188-{:x}", arugula_e2e::now_ms());
+    let tag: BTreeMap<String, String> = [("arugula_test".into(), "1".into()), ("arugula_run".into(), run_id)].into();
+    let made = e2b
+        .create(&Create {
+            template,
+            env: BTreeMap::new(),
+            metadata: tag.clone(),
+            timeout: Duration::from_secs(60),
+            rules: Rules::new(),
+        })
+        .await
+        .unwrap();
+    let body = AssertUnwindSafe(async {
+        let size = e2b.status(&made.id).await.unwrap().unwrap();
+        println!("size: {:?} vCPU, {:?} MiB", size.cpus, size.memory_mb);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        e2b.pause(&made.id).await.unwrap();
+        // E2B answers 404 ("no events") until its first event lands.
+        let mut runs = None;
+        for _ in 0..30 {
+            runs = e2b.runs(&made.id).await.unwrap();
+            if runs.as_ref().is_some_and(|r| !r.is_empty()) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+        println!("runs: {runs:?}");
+        if url.contains("e2b.dev") {
+            assert!(runs.is_some(), "E2B keeps lifecycle events");
+        }
+        if let Some(runs) = runs {
+            assert_eq!(runs.len(), 1);
+            assert!(runs[0].ms >= 1_000, "{runs:?}");
+            assert_eq!((Some(runs[0].cpus), Some(runs[0].memory_mb)), (size.cpus, size.memory_mb));
+        }
+    })
+    .catch_unwind()
+    .await;
+    e2b.delete(&made.id).await.unwrap();
+    assert!(e2b.list(&tag).await.unwrap().is_empty(), "a box left");
+    if let Err(p) = body {
+        std::panic::resume_unwind(p);
+    }
+}
+
+/// How long a resume takes (M182's wake on connect): one box, paused and
+/// resumed `ARUGULA_TEST_E2B_TRIES` times (20 unless set), each resume
+/// timed from the ask to the provider's answer that the box runs. The
+/// box's own daemon dials in after that (M180: about 0.14 s), which a
+/// `base` box doesn't have. `ARUGULA_TEST_E2B_PAUSED_SECS` keeps it paused
+/// that long each time. Prints the median, p95 and worst.
+///
+/// ```sh
+/// ARUGULA_TEST_E2B_URL=https://api.e2b.dev ARUGULA_TEST_E2B_KEY=... \
+///   cargo test -p arugula-platform --lib compute::live_tests::resume_latency -- --ignored --nocapture
+/// ```
+#[tokio::test]
+#[ignore = "makes a real box: set ARUGULA_TEST_E2B_URL and ARUGULA_TEST_E2B_KEY"]
+async fn resume_latency() {
+    let (Ok(url), Ok(key)) = (std::env::var("ARUGULA_TEST_E2B_URL"), std::env::var("ARUGULA_TEST_E2B_KEY")) else {
+        panic!("set ARUGULA_TEST_E2B_URL and ARUGULA_TEST_E2B_KEY");
+    };
+    let template = std::env::var("ARUGULA_TEST_E2B_TEMPLATE").unwrap_or_else(|_| "base".into());
+    let tries: usize = std::env::var("ARUGULA_TEST_E2B_TRIES").ok().and_then(|n| n.parse().ok()).unwrap_or(20);
+    let asleep: u64 = std::env::var("ARUGULA_TEST_E2B_PAUSED_SECS").ok().and_then(|n| n.parse().ok()).unwrap_or(0);
+    let e2b = E2b::new(&url, key).unwrap();
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let tag: BTreeMap<String, String> =
+        [("arugula_test".into(), "1".into()), ("arugula_run".into(), format!("m182-{nanos:x}"))].into();
+    let made = e2b
+        .create(&Create {
+            template,
+            env: BTreeMap::new(),
+            metadata: tag.clone(),
+            timeout: Duration::from_secs(120),
+            rules: Rules::new(),
+        })
+        .await
+        .unwrap();
+    let body = AssertUnwindSafe(async {
+        let (mut resumes, mut pauses) = (vec![], vec![]);
+        for i in 0..tries {
+            let at = Instant::now();
+            assert_eq!(e2b.pause(&made.id).await.unwrap(), Paused::Paused, "try {i}");
+            pauses.push(at.elapsed());
+            tokio::time::sleep(Duration::from_secs(asleep)).await;
+            let at = Instant::now();
+            assert_eq!(e2b.resume(&made.id, Duration::from_secs(120)).await.unwrap(), Resumed::Woke, "try {i}");
+            resumes.push(at.elapsed());
+            println!("try {i}: pause {} ms, resume {} ms", pauses[i].as_millis(), resumes[i].as_millis());
+        }
+        let line = |name: &str, v: &mut Vec<Duration>| {
+            v.sort();
+            let at = |q: f64| v[((v.len() as f64 * q).ceil() as usize).clamp(1, v.len()) - 1].as_millis();
+            println!("{name} over {}: median {} ms, p95 {} ms, worst {} ms", v.len(), at(0.5), at(0.95), at(1.0));
+        };
+        line("resume", &mut resumes);
+        line("pause", &mut pauses);
+    })
+    .catch_unwind()
+    .await;
+    let _ = e2b.delete(&made.id).await;
+    for b in e2b.list(&tag).await.unwrap_or_default() {
+        let _ = e2b.delete(&b.id).await;
+    }
+    assert!(e2b.list(&tag).await.unwrap().is_empty(), "a box was left behind");
+    if let Err(p) = body {
+        std::panic::resume_unwind(p);
     }
 }

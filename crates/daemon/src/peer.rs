@@ -256,7 +256,10 @@ async fn open(control: &Control, m: &Machine) -> anyhow::Result<Arc<Conn>> {
     let ws_base = base.replacen("https://", "wss://", 1).replacen("http://", "ws://", 1);
     let url = reqwest::Url::parse(&format!("{ws_base}{relay}"))?;
     let (name, auth) = control.auth_for(&e, "GET", &relay);
-    let mut ws = tokio::time::timeout(TIMEOUT, crate::dial::open_ws(&url, &[(name, &auth), ("origin", base)]))
+    // A hosted machine that's asleep is woken (M182): a channel is opened
+    // for something an agent or a person asked of the machine.
+    let headers = [(name, auth.as_str()), ("origin", base), ("x-arugula-wake", "1")];
+    let mut ws = tokio::time::timeout(TIMEOUT, crate::dial::open_ws(&url, &headers))
         .await
         .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))??;
     // Noise IK, this daemon the initiator.

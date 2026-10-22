@@ -81,6 +81,19 @@ pub fn tables() -> Vec<String> {
         .collect()
 }
 
+/// The order `--replace` empties `tables` in: the reverse of the order
+/// they're made in, but the tables in [`GUARDS`] first.
+pub(crate) fn emptying<'a>(tables: impl DoubleEndedIterator<Item = &'a str>) -> Vec<&'a str> {
+    let mut out: Vec<&str> = tables.rev().collect();
+    out.sort_by_key(|t| !GUARDS.contains(t));
+    out
+}
+
+/// Tables whose rows guard another's: `run_events` refuses a delete while
+/// its run is there (M210), and `deploy_events` while its environment is
+/// (M217), so `runs` and `environments` are emptied first.
+const GUARDS: [&str; 2] = ["runs", "environments"];
+
 /// One table on both sides of a copy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Table {
@@ -208,7 +221,7 @@ pub fn copy(from: &Path, to: &Path, replace: bool) -> anyhow::Result<Report> {
                 held.join(", ")
             );
         }
-        for t in names.iter().rev() {
+        for t in emptying(names.iter().map(String::as_str)) {
             tx.execute(&format!("DELETE FROM main.\"{t}\""), [])?;
         }
         for t in &names {
@@ -373,7 +386,7 @@ fn running_env(var: &str) -> Option<(u32, String)> {
 
 /// The first words that make either binary run one of these instead of
 /// serving (and `platform`, control's prefix for them).
-pub const COMMANDS: [&str; 6] = ["copy", "checksums", "secrets-check", "migrations", "rotate-key", "platform"];
+pub const COMMANDS: [&str; 7] = ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "platform"];
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -431,6 +444,17 @@ enum What {
         #[arg(long)]
         db: Place,
     },
+    /// How long hosted workspaces' boxes ran, by size and by project, what
+    /// that cost at E2B's prices and per active hour, and E2B's own record
+    /// beside it (M188), read-only.
+    Usage {
+        /// A file, or a `postgres://` URL.
+        #[arg(long)]
+        db: Place,
+        /// The window: this many days back from now.
+        #[arg(long, default_value_t = 7)]
+        days: u64,
+    },
     /// Rotate the master key (M209): re-wrap every project key with the
     /// new one, ARUGULA_CLOUD_SECRET_KEY, that the old one,
     /// ARUGULA_CLOUD_SECRET_KEY_PREVIOUS, wrapped; both the running
@@ -486,6 +510,11 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
             if !m.pending.is_empty() {
                 bail!("this build would migrate {db}: it's at {}", m.applied.last().map_or(0, |a| a.0));
             }
+        }
+        What::Usage { db, days } => {
+            let to = arugula_e2e::now_ms();
+            let r = portable::usage(&db, to.saturating_sub(days * 86_400_000), to)?;
+            print!("{}", r.render(&db.to_string(), days));
         }
         What::SecretsCheck { db } => {
             const VAR: &str = "ARUGULA_CLOUD_SECRET_KEY";
@@ -546,7 +575,8 @@ pub const SAMPLE_KEY: &str = "01010101010101010101010101010101010101010101010101
 /// A few rows in several of the platform's tables, the way the platform
 /// writes them (tests, here and in control): rooms, members and messages
 /// that search finds, a read mark, projects, an issue search finds and its
-/// timeline, a grant, the feed's position,
+/// timeline, an environment with a deploy and its log (whose trigger
+/// `--replace` has to get past), a grant, the feed's position,
 /// cloud notifications with a gap in their rowids, and a cloud secret
 /// sealed with [`SAMPLE_KEY`]. Accounts `acct-a` and `acct-b`.
 #[cfg(any(test, feature = "contract"))]
@@ -573,6 +603,20 @@ pub fn sample(db: &crate::db::Db) {
          INSERT INTO issues (search_id, id, project_id, number, title, body, author, labels, created_at, updated_at)
              VALUES (3, 'iss_1', 'prj_t', 1, 'Rehearsal notes', 'the canary held', 'acct-a', '[\"ops\"]', 24, 24);
          INSERT INTO issue_events (id, issue_id, kind, actor, at) VALUES (5, 'iss_1', 'opened', 'acct-a', 24);
+         INSERT INTO runs (id, project_id, trigger_kind, op, op_hash, daemon, state, started_by, last_seq, created_at,
+                 started_at)
+             VALUES ('run_1', 'prj_t', 'manual', 'arugula op v1\ndaemon d1\n', 'ab', 'd1', 'running', 'acct-a', 2, 25, 26);
+         INSERT INTO run_events (run_id, seq, from_state, to_state, at, daemon, sig)
+             VALUES ('run_1', 1, NULL, 'pending', 25, NULL, NULL), ('run_1', 2, 'pending', 'running', 26, 'd1', 'cd');
+         INSERT INTO run_artifacts (run_id, name, size, digest, bucket_key, created_at)
+             VALUES ('run_1', 'out.txt', 3, 'sha256:ef', 'prj_t/run_1/out.txt', 27);
+         INSERT INTO environments (id, project_id, name, driver, created_at, updated_at)
+             VALUES ('env_1', 'prj_t', 'production', 'chant-fly', 25, 25);
+         INSERT INTO deploys (id, environment_id, source_kind, source_ref, source_where, plan_digest, state,
+                 planned_seq, planned_by, created_at, updated_at)
+             VALUES ('dep_1', 'env_1', 'commit', 'abc', 'acme/app', 'ff', 'planned', 1, 'acct-a', 25, 25);
+         INSERT INTO deploy_events (id, environment_id, seq, deploy_id, kind, actor, at, prev_hash, hash)
+             VALUES (6, 'env_1', 1, 'dep_1', 'planned', 'person acct-a', 25, '00', 'ff');
          INSERT INTO cloud_notifications (conversation, account, request, next_attempt)
              VALUES ('c2', 'acct-a', 'q2', 1), ('c1', 'acct-a', 'q1', 1);
          DELETE FROM cloud_notifications WHERE conversation = 'c2';

@@ -17,6 +17,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { certBody, deviceMac, evaluate, joinCode, joinMac, revocationBody, splitJoinCode, unhex, type Cert, type Revocation } from "../src/shell/e2e/cert.ts";
 import { E2ESocket } from "../src/shell/e2e/channel.ts";
+import type { WakeSaid } from "../src/shell/e2e/relaymux.ts";
 import { generateKeys, signText, type DeviceKeys } from "../src/shell/e2e/keys.ts";
 import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "../src/shell/e2e/hosted.ts";
 import { askBody, askOk, inviteKey, newInviteKey, signAskInvite, signRoster, teamJoinBody, word, type AccountCerts, type AskInvite, type Roster, type TeamPin, type TeamRole } from "../src/shell/e2e/team.ts";
@@ -381,7 +382,7 @@ export class Device {
    * control's relay, or `direct` (its own `/e2e` URL). Its Noise key comes
    * from a certificate that chains to this device's root, never from the
    * directory alone. */
-  async connect(daemonId: string, direct?: string, timeoutMs = 5000): Promise<E2ESocket> {
+  async connect(daemonId: string, direct?: string, timeoutMs = 5000, how: { mux?: boolean; wake?: boolean; onWake?: (w: WakeSaid) => void } = {}): Promise<E2ESocket> {
     const cert = (await this.trusted()).get(daemonId);
     // A hosted machine (M178, M180): its Noise key from its hosted
     // certificate, once this device accepts it for its project, as the page does.
@@ -401,10 +402,49 @@ export class Device {
         super(u, { headers } as unknown as string[]);
       }
     } as typeof WebSocket;
+    // M182: as the page does, a channel in the shared socket, which can
+    // ask to wake a hosted machine that's asleep.
+    const mux = how.mux && !direct ? `${ws}/api/relay/m` : undefined;
     try {
-      return await E2ESocket.connect([{ url, timeoutMs }], { id: daemonId, noise }, this.keys);
+      return await E2ESocket.connect([{ url, timeoutMs, mux, wake: how.wake, onWake: how.onWake }], { id: daemonId, noise }, this.keys);
     } finally {
       globalThis.WebSocket = orig;
+    }
+  }
+
+  /** Open a machine as the page does (M182): through the shared socket,
+   * asking to wake it if `wake`, then its hello and its first pane's
+   * screen. How long each took from the open (ms), and what control said
+   * of a hosted machine's box. */
+  async open(daemonId: string, opts: { wake?: boolean; timeoutMs?: number } = {}): Promise<{ hello: number; ready: number; said: string[] }> {
+    const said: string[] = [];
+    const t0 = performance.now();
+    const sock = await this.connect(daemonId, undefined, opts.timeoutMs ?? 15_000, { mux: true, wake: opts.wake ?? true, onWake: (w) => said.push(w.state) });
+    try {
+      const texts: string[] = [];
+      let screen = false;
+      sock.onText = (t) => texts.push(t);
+      sock.onBinary = (b) => {
+        if (b[0] === 1 || b[0] === 2) screen = true;
+      };
+      sock.start();
+      const until = Date.now() + (opts.timeoutMs ?? 15_000);
+      const wait = async (what: string, ok: () => boolean) => {
+        while (!ok()) {
+          if (Date.now() > until) throw new Error(`timed out waiting for ${what}`);
+          await sleep(5);
+        }
+      };
+      await wait("the daemon's hello", () => texts.some((t) => t.includes('"hello"')));
+      const hello = performance.now() - t0;
+      const pane: number | undefined = JSON.parse(texts.find((t) => t.includes('"hello"'))!).state?.panes?.[0]?.id;
+      if (pane !== undefined) {
+        sock.sendText(JSON.stringify({ type: "attach", panes: [{ pane, offset: null }] }));
+        await wait("its first pane's screen", () => screen);
+      }
+      return { hello: Math.round(hello), ready: Math.round(performance.now() - t0), said };
+    } finally {
+      sock.close();
     }
   }
 

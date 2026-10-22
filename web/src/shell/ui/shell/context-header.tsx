@@ -18,7 +18,7 @@ import { offlineWhy } from "./live";
 import { useSidebar } from "./prefs";
 import { openOverview } from "../places";
 
-export type Connection = "direct" | "relayed" | "reconnecting" | "offline";
+export type Connection = "direct" | "relayed" | "reconnecting" | "offline" | "waking" | "asleep";
 
 /** How the shown machine is reached, from real state: the page's own
  * connection first (direct or through control's relay), then, while it's
@@ -30,6 +30,10 @@ export function connection(client: Client): { state: Connection; why: string } {
       : { state: "direct", why: "Straight to the machine" };
   }
   const name = directory.current;
+  // M182: a hosted machine's box, as control says.
+  if (client.box?.state === "waking") return { state: "waking", why: `Waking ${name || "the machine"}: its box was paused` };
+  if (client.box?.state === "asleep") return { state: "asleep", why: `${name || "The machine"} is asleep: its box is paused until it's opened` };
+  if (client.box?.state === "failed") return { state: "offline", why: (client.box.why ?? `${name || "The machine"} didn't wake`).replace(/\.$/, "") };
   const said = name ? machineState(name) : "";
   if (said.startsWith("offline")) return { state: "offline", why: `${name} is ${said}; still trying` };
   return { state: "reconnecting", why: `Lost the connection to ${name || "the machine"}; reconnecting${client.failures ? ` (${client.failures} tries)` : ""}` };
@@ -40,6 +44,8 @@ const CONNECTION_WORDS: Record<Connection, string> = {
   relayed: "Relayed",
   reconnecting: "Reconnecting",
   offline: "Offline",
+  waking: "Waking",
+  asleep: "Asleep",
 };
 
 export function ConnectionChip({ client }: { client: Client }) {

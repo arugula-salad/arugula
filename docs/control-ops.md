@@ -300,11 +300,55 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
 - `ARUGULA_E2B_API_KEY`, `ARUGULA_E2B_URL` (`https://api.e2b.dev` unless
   set; loam's is `https://api.e2b.<loam domain>`): hosted workspaces'
   boxes (`compute/`, M176), the platform's only. Never sent to a client or
-  put in a box. Not set yet: nothing drives a box before M179.
+  put in a box. Not set yet: see "E2B" below.
+- `ARUGULA_HOSTED_PLATFORM_KEYS` (`anthropic`, `openai`, comma-separated):
+  which providers the platform's own inference key pays for, for hosted
+  workspaces made by accounts on `ARUGULA_CLOUD_ACCOUNTS` (M185). **The spend
+  bound is the provider's**: each is a key of its own, for hosted boxes
+  only, with a hard monthly spend limit set at the provider. The turn caps
+  below are fairness between accounts, not the bound. The keys aren't Fly
+  secrets and the platform never holds them: each is an E2B secret, named
+  `arugula-platform-anthropic` and `arugula-platform-openai`, which a box's
+  egress rules name. Infisical (arugula prod, `/illogical/control`) keeps
+  the record. To make one (Jake, at M192):
+
+  1. **Anthropic:** in the Claude Console, make a workspace for hosted boxes
+     (`arugula-hosted`), set its monthly spend limit (Workspace → Limits),
+     and make an API key in that workspace. **OpenAI:** make a project
+     (`arugula-hosted`), set its monthly spend limit with "Enforce a hard
+     limit" on (Project → Limits; past it, requests get a 429
+     `project_spend_limit_exceeded`), and make a project key.
+  2. Keep it in Infisical as `ARUGULA_HOSTED_ANTHROPIC_KEY` /
+     `ARUGULA_HOSTED_OPENAI_KEY`, beside the limit you set.
+  3. Put it in E2B with the platform's E2B key. It takes effect on the next
+     request from every box, paused ones when they wake; rotating is the
+     same call to `POST /secrets/<name>`:
+
+     ```
+     curl -s https://api.e2b.dev/secrets -H "X-API-Key: $E2B_API_KEY" \
+       -H 'content-type: application/json' \
+       -d '{"name": "arugula-platform-anthropic", "value": "'"$KEY"'"}'
+     # rotating: POST /secrets/arugula-platform-anthropic {"value": ...}
+     ```
+  4. Add the provider to `ARUGULA_HOSTED_PLATFORM_KEYS`.
+
+  These are the only E2B secrets Arugula uses. Projects' own keys aren't
+  E2B secrets: the platform keeps them sealed with the project's key
+  ("Secrets' keys" below) and writes them into each box's egress rules, which E2B holds per box
+  (and answers back to the E2B key's holder).
+- `ARUGULA_HOSTED_CONCURRENT_TURNS` (2), `ARUGULA_HOSTED_DAILY_TURNS` (100),
+  `ARUGULA_HOSTED_TURN_MINUTES` (120): caps on agent turns that run on the
+  platform's key, per account: at once, per UTC day, and minutes per UTC
+  day. A project's own key has none. The old `ARUGULA_CLOUD_DAILY_RUNS`,
+  `ARUGULA_CLOUD_CONCURRENT_RUNS` and `ARUGULA_CLOUD_RUN_MINUTES` do
+  nothing.
 - `ARUGULA_CLOUD_SECRET_KEY`: the master key. It wraps each project's
-  data key, which seals that project's secrets ("Secrets' keys" below).
-  `ARUGULA_CLOUD_SECRET_KEY_PREVIOUS` is set only while it's rotated.
-- `ARUGULA_CLOUD_ACCOUNTS`: who may use Cloud workspaces (`*` for all).
+  data key, which seals that project's secrets and its own inference keys
+  ("Secrets' keys" below). Without it, a project can't set an inference
+  key. `ARUGULA_CLOUD_SECRET_KEY_PREVIOUS` is set only while it's rotated.
+- `ARUGULA_CLOUD_ACCOUNTS`: who may use Cloud workspaces (`*` for all),
+  and whose hosted workspaces run on the platform's inference key (M185;
+  there, `*` is no one: only accounts named).
 - `ARUGULA_CLOUD_MODELS`: the `runtime:model` pairs a Cloud workspace's
   tabs may run on, the first the default. `ARUGULA_CLOUD_MODEL` and
   `ARUGULA_CLOUD_RUNTIME` are only read when it's unset
@@ -331,8 +375,8 @@ and `ARUGULA_CLOUD_RUNTIME`, stale with `ARUGULA_CLOUD_MODELS` set.
 
 Each project has its own data key, in `project_keys`, wrapped by the
 master key (`ARUGULA_CLOUD_SECRET_KEY`). A project's secrets are sealed
-with its data key: cloud secrets, hosted workspaces' secrets, and
-`project_secrets` (an environment's, M217). One project's key never opens
+with its data key: cloud secrets, hosted workspaces' secrets, its own
+inference keys (M185), and `project_secrets` (an environment's, M217). One project's key never opens
 another project's secrets (`crates/platform/src/keys.rs`).
 
 **Re-sealing.** Before M209 the master key sealed each secret itself
@@ -1042,6 +1086,16 @@ they go to the other machine at once, not when their leases run out.
   is still free. A machine that dies holding a job leaves it to the other
   when the lease runs out; every checkpoint checks the lease, so a worker
   that comes back late can't overwrite its successor.
+- **Platform jobs** (`platform_jobs`, M208: workspaces, runs, deploys and
+  schedules) take the same claim, but a stricter lease (`crate::jobs`):
+  every write is refused once the lease has run out, even before another
+  machine takes the job, and a step longer than the lease keeps it with a
+  heartbeat every 40 s (at most 6 min ahead). A step whose heartbeat finds
+  the lease lost is dropped, and so is one that runs past its kind's
+  deadline (30 min unless the kind says otherwise). A failed, panicked or
+  dropped step backs off from 10 s, doubling to an hour, and a job claimed
+  its kind's most times in a row ends `failed`. The machines' clocks must
+  agree to well within the 2 min lease. No kind uses them yet; the Cloud kinds move there in M190.
 - **Chat's live events**: each is a row of `chat_events`, numbered across
   both machines; `pg_notify` wakes the other machine, which sends its own
   streams what it hadn't (`chat::Hub::catch_up`), and every machine reads
@@ -1089,6 +1143,7 @@ Row-level instead of the old lock:
 | Numbering a message | `UPDATE chat_rooms … RETURNING last_seq` (as before) |
 | Editing or deleting a message | the message's row `FOR UPDATE` (the room's byte count) |
 | Importing a machine's old threads | the room's row `FOR UPDATE` |
+| A deploy's events, chained in `seq` order (M217) | the environment's row `FOR UPDATE`, and `(environment_id, seq)`'s unique index |
 | Sending an approval push | each push taken for 30 s (`UPDATE … WHERE next_attempt <= now`) before it's sent |
 | Giving `cloud.drive` back | `grants_live`'s unique index, `ON CONFLICT DO NOTHING`, then read |
 | Default projects, grants on join | unique indexes, `ON CONFLICT DO NOTHING` (as before) |
@@ -1806,6 +1861,36 @@ destroying M1. A rollback after the 14 days restores a nightly dump instead
 ("Restoring the platform's Postgres"). After the 14 days a follow-up deletes
 the file and the volumes (filed from M145's PR).
 
+### Hosted workspaces' template
+
+A hosted workspace's box (#1235) is made from E2B's template
+`arugula-workspace`, tagged with the release: `arugula-workspace:v0.58.0`.
+release.yml's `template` job builds it (`scripts/ci-hosted-template
+publish`) from `packaging/hosted/Dockerfile` around the tag's static
+arugulad and arugula, with the ACP adapters, Codex, Node, git and gh
+pinned there. E2B starts `arugulad --hosted` at the end of the build and
+snapshots the box once `arugula-hosted-ready` passes, so a box starts with
+the daemon running. The platform makes boxes only from its own version's
+tag (`crates/platform/src/compute/template.rs`); there's nothing else to
+record. Until a release's job has finished, E2B refuses creates for it.
+
+- **The key** is the repository secret `E2B_API_KEY`, a key for E2B's
+  project. It never goes into a box.
+- **Nothing per box is in the template.** A snapshot can't read the
+  create's env on a secure box (envd's `/envs` wants the access token), so
+  the daemon makes its keys and enrolls only once it sees a new sandbox id
+  in `/run/e2b/.E2B_SANDBOX_ID` (M180).
+- **By hand:** `scripts/ci-hosted-template image DIR` builds it with
+  Docker from DIR's `just static` binaries; `dry-run vX.Y.Z DIR` prints
+  what E2B would be sent. A test build goes under another name
+  (`ARUGULA_TEMPLATE_NAME=arugula-workspace-test`), and is deleted after
+  (`e2b template delete`).
+- **loam** builds no templates: an operator maps an image to an E2B
+  template name. `ci-hosted-template image DIR BASE`, with BASE loam's
+  `loam-e2b` image, builds the same file for it, and loam starts the daemon
+  from `/var/lib/loam/services/arugulad.json` at every boot. The
+  differences are in #1252.
+
 ### Capacity
 
 An idle relay connection costs control about 28 KB: in a
@@ -2194,6 +2279,49 @@ So hosted control's platform runs about $45 a month above the hub. The
 pricing page's other figure is Performance at $1,922/month. Fly's
 Managed Postgres page has the plans in between; Basic is the one to stay
 on until the platform's data or connections outgrow its 1 GB of memory.
+
+### E2B (hosted workspaces' boxes)
+
+Hosted workspaces (#1235) run on E2B: each is `arugulad --hosted` in an
+E2B box that the platform makes, pauses, wakes and deletes
+(`crates/platform/src/compute/`, `hosted/`). E2B processes what's in the
+boxes (their disks and memory, and its broker's secrets): docs/control-e2e.md
+("Who else sees it") and the privacy page say so.
+
+- **The account.** One E2B team for hosted control. Jake signs it up for
+  Pro when hosted workspaces go live (M192): $150 a month plus usage, and
+  Pro's limits (a box runs at most 24 hours before it must pause; Hobby's
+  is 1 hour). Until then only the test key below drives boxes.
+- **Keys.** `ARUGULA_E2B_API_KEY` is a Fly secret on `arugula-platform`
+  only (never the hub's, never in a box), kept in Infisical (project
+  `arugula`, env `prod`). `ARUGULA_E2B_URL` stays unset for E2B's cloud
+  (loam's is `https://api.e2b.<loam domain>`). Tests use another key,
+  under `/illogical/control-tests`: their boxes carry `arugula_test=1`
+  and are deleted after. The release job's template build has its own
+  repository secret (M177's "Hosted workspaces' template").
+- **The template** is built per release by release.yml's `template` job:
+  see "Hosted workspaces' template" (M177). Nothing about it is set here.
+- **The bill.** E2B bills per second while a box runs: $0.000014 per
+  vCPU-second and $0.0000045 per GiB-second (<https://e2b.dev/pricing>,
+  checked 2026-10-21), storage free, and nothing while a box is paused.
+  So a 2 vCPU, 2 GiB box costs $0.13 an hour it runs. The prices are one
+  constant, `hosted::usage::PRICES`: change it (and its date) when E2B's
+  page does.
+- **Usage.** The platform meters each box's running time, by size, from
+  its own lifecycle (`hosted_usage`, M188), and checks it against E2B's
+  record: E2B has no usage API, but its lifecycle events carry each run
+  as billed, which the platform's leader reads back for every box that
+  stopped (`hosted_usage_provider`). `arugula-platform usage` prints the
+  hours by size and by project, what they cost, the cost per active hour
+  and how far the platform's metering is from E2B's record, read-only:
+
+  ```
+  just platform-usage 7
+  ```
+
+  which is `fly ssh console -a arugula-platform -C "/arugula-platform usage --db env:ARUGULA_PLATFORM_DATABASE_URL --days 7"`.
+  E2B's console (its usage tab) has the bill itself; the two should agree
+  within the time a box takes to start and pause.
 
 ### Checking a migration on a copy
 
