@@ -70,6 +70,7 @@
 
 pub mod agent;
 pub mod apply;
+pub mod catalog;
 
 use std::sync::Arc;
 
@@ -513,6 +514,7 @@ pub struct PlanSource {
 
 #[derive(Deserialize)]
 pub struct Plan {
+    /// Its id (`env_…`), or its name in the project.
     environment: String,
     source: PlanSource,
     /// The plan's SHA-256, hex: the environment's driver's plan for this
@@ -534,7 +536,11 @@ pub const OTHER_PLAN: &str = "other_plan";
 pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> J {
     let account = by.account().unwrap_or_default();
     let (p, role) = project_as(app, account, project, true).await?;
-    let env = app.db.environment(&b.environment)?.filter(|e| e.project == p.id);
+    // An environment by its id, or (M252) by its name in the project.
+    let env = match app.db.environment(&b.environment)?.filter(|e| e.project == p.id) {
+        Some(e) => Some(e),
+        None => app.db.environments(&p.id)?.into_iter().find(|e| e.name == b.environment),
+    };
     let env = env.ok_or_else(|| err(StatusCode::NOT_FOUND, "the project has no such environment"))?;
     let kind = SourceKind::parse(&b.source.kind)
         .ok_or_else(|| err(StatusCode::BAD_REQUEST, "a deploy's source is a commit or an artifact"))?;

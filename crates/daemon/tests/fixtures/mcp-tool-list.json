@@ -3427,6 +3427,78 @@
       },
       "name": "read_run",
       "title": "Read a run"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Plan a deploy and ask for approval"
+      },
+      "description": "Plan a deploy of a commit to one of a project's environments in Arugula control, and ask the project's owners to approve it. Agents plan and ask; they never approve: an owner approves (or denies) it on their phone or in a browser, with a passkey, and only then is it applied. The platform makes the plan from the environment's driver and returns its text, which is what the owner reads. Needs this machine's deploys.plan grant over the project, given by your person (an owner or editor there); without it the platform refuses and says how to give it. Returns the deploy (dep_…), waiting for approval; read_deploy follows it.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "commit": {
+            "description": "The commit to deploy, by its full 40-hex id.",
+            "type": "string"
+          },
+          "environment": {
+            "description": "The environment: its name in the project (production), or its id\n(env_…).",
+            "type": "string"
+          },
+          "project": {
+            "description": "The project in Arugula control: its id (prj_…).",
+            "type": "string"
+          },
+          "repo": {
+            "description": "The repository the commit is in: OWNER/NAME on GitHub.",
+            "type": "string"
+          },
+          "roll_back": {
+            "default": false,
+            "description": "Roll back: deploy a commit this environment ran before, with what it\nran then.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "commit",
+          "repo"
+        ],
+        "title": "PlanDeployArgs",
+        "type": "object"
+      },
+      "name": "plan_deploy",
+      "title": "Plan a deploy and ask for approval"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a deploy"
+      },
+      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "The deploy (dep_…), from plan_deploy.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ReadDeployArgs",
+        "type": "object"
+      },
+      "name": "read_deploy",
+      "title": "Read a deploy"
     }
   ],
   "block, labs true": [
@@ -7138,6 +7210,78 @@
       },
       "name": "read_run",
       "title": "Read a run"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Plan a deploy and ask for approval"
+      },
+      "description": "Plan a deploy of a commit to one of a project's environments in Arugula control, and ask the project's owners to approve it. Agents plan and ask; they never approve: an owner approves (or denies) it on their phone or in a browser, with a passkey, and only then is it applied. The platform makes the plan from the environment's driver and returns its text, which is what the owner reads. Needs this machine's deploys.plan grant over the project, given by your person (an owner or editor there); without it the platform refuses and says how to give it. Returns the deploy (dep_…), waiting for approval; read_deploy follows it.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "commit": {
+            "description": "The commit to deploy, by its full 40-hex id.",
+            "type": "string"
+          },
+          "environment": {
+            "description": "The environment: its name in the project (production), or its id\n(env_…).",
+            "type": "string"
+          },
+          "project": {
+            "description": "The project in Arugula control: its id (prj_…).",
+            "type": "string"
+          },
+          "repo": {
+            "description": "The repository the commit is in: OWNER/NAME on GitHub.",
+            "type": "string"
+          },
+          "roll_back": {
+            "default": false,
+            "description": "Roll back: deploy a commit this environment ran before, with what it\nran then.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "commit",
+          "repo"
+        ],
+        "title": "PlanDeployArgs",
+        "type": "object"
+      },
+      "name": "plan_deploy",
+      "title": "Plan a deploy and ask for approval"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a deploy"
+      },
+      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "The deploy (dep_…), from plan_deploy.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ReadDeployArgs",
+        "type": "object"
+      },
+      "name": "read_deploy",
+      "title": "Read a deploy"
     }
   ],
   "full, labs false": [
@@ -10568,6 +10712,78 @@
       },
       "name": "read_run",
       "title": "Read a run"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Plan a deploy and ask for approval"
+      },
+      "description": "Plan a deploy of a commit to one of a project's environments in Arugula control, and ask the project's owners to approve it. Agents plan and ask; they never approve: an owner approves (or denies) it on their phone or in a browser, with a passkey, and only then is it applied. The platform makes the plan from the environment's driver and returns its text, which is what the owner reads. Needs this machine's deploys.plan grant over the project, given by your person (an owner or editor there); without it the platform refuses and says how to give it. Returns the deploy (dep_…), waiting for approval; read_deploy follows it.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "commit": {
+            "description": "The commit to deploy, by its full 40-hex id.",
+            "type": "string"
+          },
+          "environment": {
+            "description": "The environment: its name in the project (production), or its id\n(env_…).",
+            "type": "string"
+          },
+          "project": {
+            "description": "The project in Arugula control: its id (prj_…).",
+            "type": "string"
+          },
+          "repo": {
+            "description": "The repository the commit is in: OWNER/NAME on GitHub.",
+            "type": "string"
+          },
+          "roll_back": {
+            "default": false,
+            "description": "Roll back: deploy a commit this environment ran before, with what it\nran then.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "commit",
+          "repo"
+        ],
+        "title": "PlanDeployArgs",
+        "type": "object"
+      },
+      "name": "plan_deploy",
+      "title": "Plan a deploy and ask for approval"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a deploy"
+      },
+      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "The deploy (dep_…), from plan_deploy.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ReadDeployArgs",
+        "type": "object"
+      },
+      "name": "read_deploy",
+      "title": "Read a deploy"
     }
   ],
   "full, labs true": [
@@ -14279,6 +14495,78 @@
       },
       "name": "read_run",
       "title": "Read a run"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Plan a deploy and ask for approval"
+      },
+      "description": "Plan a deploy of a commit to one of a project's environments in Arugula control, and ask the project's owners to approve it. Agents plan and ask; they never approve: an owner approves (or denies) it on their phone or in a browser, with a passkey, and only then is it applied. The platform makes the plan from the environment's driver and returns its text, which is what the owner reads. Needs this machine's deploys.plan grant over the project, given by your person (an owner or editor there); without it the platform refuses and says how to give it. Returns the deploy (dep_…), waiting for approval; read_deploy follows it.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "commit": {
+            "description": "The commit to deploy, by its full 40-hex id.",
+            "type": "string"
+          },
+          "environment": {
+            "description": "The environment: its name in the project (production), or its id\n(env_…).",
+            "type": "string"
+          },
+          "project": {
+            "description": "The project in Arugula control: its id (prj_…).",
+            "type": "string"
+          },
+          "repo": {
+            "description": "The repository the commit is in: OWNER/NAME on GitHub.",
+            "type": "string"
+          },
+          "roll_back": {
+            "default": false,
+            "description": "Roll back: deploy a commit this environment ran before, with what it\nran then.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "environment",
+          "commit",
+          "repo"
+        ],
+        "title": "PlanDeployArgs",
+        "type": "object"
+      },
+      "name": "plan_deploy",
+      "title": "Plan a deploy and ask for approval"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a deploy"
+      },
+      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "The deploy (dep_…), from plan_deploy.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ReadDeployArgs",
+        "type": "object"
+      },
+      "name": "read_deploy",
+      "title": "Read a deploy"
     }
   ],
   "read, labs false": [
@@ -15863,6 +16151,32 @@
       },
       "name": "read_run",
       "title": "Read a run"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a deploy"
+      },
+      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "The deploy (dep_…), from plan_deploy.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ReadDeployArgs",
+        "type": "object"
+      },
+      "name": "read_deploy",
+      "title": "Read a deploy"
     }
   ],
   "read, labs true": [
@@ -17453,6 +17767,32 @@
       },
       "name": "read_run",
       "title": "Read a run"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a deploy"
+      },
+      "description": "Read a deploy in Arugula control (with this machine's deploys.plan grant over its project): where it goes, what it deploys, its plan's text, its state (planned, pending: waiting for an owner's approval, approved, running, succeeded, failed, denied, stale) and its log. Reading never approves: an owner approves on their phone or in a browser.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "The deploy (dep_…), from plan_deploy.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "ReadDeployArgs",
+        "type": "object"
+      },
+      "name": "read_deploy",
+      "title": "Read a deploy"
     }
   ]
 }

@@ -142,7 +142,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 30 - NO_FORGE);
+    assert_eq!(tools.len(), 32 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
@@ -398,7 +398,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 30 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 32 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -473,7 +473,7 @@ async fn http_with_a_token_until_it_is_revoked() {
         d.post("/api/mcp/tokens", json!({ "name": "watcher", "scope": "read" }))["token"].as_str().unwrap().to_owned();
     let w = http(&d, &ro, Client::named("watcher")).await.unwrap();
     // (read_forge is among the read-only tools only with the forge.)
-    assert_eq!(w.list_all_tools().await.unwrap().len(), 13 - NO_FORGE / 2);
+    assert_eq!(w.list_all_tools().await.unwrap().len(), 14 - NO_FORGE / 2);
     assert!(refused(&w, "run", json!({ "command": "true" })).await.contains("may only read"));
     // Grouped, a write is still a write.
     assert!(refused(&w, "show", json!({ "kind": "port", "port": 1 })).await.contains("may only read"));
@@ -909,7 +909,7 @@ async fn labs_lists_all_the_tools() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 30 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 32 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -917,7 +917,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 32, "{:?}", names(&with));
+        assert_eq!(with.len(), 34, "{:?}", names(&with));
         assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
@@ -935,13 +935,13 @@ async fn labs_lists_all_the_tools() {
         // of the others' kinds.
         arugula_proto::flags::set(&d.state, "chat", true).unwrap();
         let chat = s.list_all_tools().await.unwrap();
-        assert_eq!(chat.len(), 30, "{:?}", names(&chat));
+        assert_eq!(chat.len(), 32, "{:?}", names(&chat));
         assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
         arugula_proto::flags::set(&d.state, "chat", false).unwrap();
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 30 - NO_FORGE);
+        assert_eq!(without.len(), 32 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -950,7 +950,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 30 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 32 - NO_FORGE, "{:?}", names(&with));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
@@ -2543,4 +2543,134 @@ async fn a_machines_forwarded_call_runs_here() {
     assert_ne!(v["isError"], true, "{v}");
     let v = call_here("machine_read", json!({ "kind": "cancel", "pane": pane }), false);
     assert_eq!(v["isError"], true, "a terminal isn't an agent block: {v}");
+}
+
+/// A fake control's deploy routes for a machine's agents (M218's): one
+/// project, refused until the owner gives `deploys.plan`, and every path
+/// asked, so the test can tell nothing tried to approve.
+#[derive(Clone, Default)]
+struct FakeDeploys {
+    granted: Arc<std::sync::atomic::AtomicBool>,
+    asked: Arc<std::sync::Mutex<Vec<(String, Value)>>>,
+}
+
+const DEP: &str = "dep_0123456789abcdef0123456789abcdef";
+
+fn fake_deploy(state: &str) -> Value {
+    json!({ "id": DEP, "state": state, "environment": { "id": "env_1", "name": "production" },
+        "source": { "kind": "commit", "ref": "ab".repeat(20), "where": "acme/app" }, "roll_back": null,
+        "plan": "cd".repeat(32), "plan_text": "deploy fake to production\ncommit\n", "may_approve": false,
+        "events": [{ "seq": 1, "kind": "planned", "by": "a1's agent on test" }], "approvals": [] })
+}
+
+async fn fake_deploys(f: FakeDeploys) -> String {
+    use axum::{
+        Json, Router,
+        extract::{Request, State},
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post},
+    };
+    async fn any(State(f): State<FakeDeploys>, req: Request) -> axum::response::Response {
+        let path = format!("{} {}", req.method(), req.uri().path());
+        let body: Value = axum::body::to_bytes(req.into_body(), 1 << 16)
+            .await
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        f.asked.lock().unwrap().push((path.clone(), body));
+        if !f.granted.load(std::sync::atomic::Ordering::SeqCst) {
+            let why = "test has no deploys.plan grant over that project: its owner gives it with `arugula grants add test deploys.plan --project acme`";
+            return (StatusCode::FORBIDDEN, Json(json!({ "error": why, "reason": "agent_ungranted" }))).into_response();
+        }
+        match path.as_str() {
+            "POST /api/daemon/projects/prj_0a/deploys" => Json(fake_deploy("planned")).into_response(),
+            p if p == format!("POST /api/daemon/deploys/{DEP}/request") => Json(fake_deploy("pending")).into_response(),
+            p if p == format!("GET /api/daemon/deploys/{DEP}") => Json(fake_deploy("pending")).into_response(),
+            _ => (StatusCode::NOT_FOUND, Json(json!({ "error": "no such route" }))).into_response(),
+        }
+    }
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .fallback(any)
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// M252: an agent plans a deploy and asks for its approval through control,
+/// signed as this machine, under its owner's `deploys.plan` grant; refused
+/// without it, saying approving is the owner's. No tool approves, and
+/// nothing it does asks control to.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_plans_a_deploy_and_asks_and_never_approves() {
+    let fake = FakeDeploys::default();
+    let url = fake_deploys(fake.clone()).await;
+    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let s = bridge(&d, Client::named("claude-code")).await;
+    let tools = s.list_all_tools().await.unwrap();
+    let plan = tools.iter().find(|t| t.name == "plan_deploy").expect("plan_deploy is listed");
+    let says = plan.description.as_deref().unwrap_or_default();
+    assert!(says.contains("never approve") && says.contains("an owner approves"), "{says}");
+    assert!(!tools.iter().any(|t| t.name.contains("approve") || t.name.contains("deny")), "no tool approves");
+
+    let args =
+        json!({ "project": "prj_0a", "environment": "production", "commit": "AB".repeat(20), "repo": "acme/app" });
+    let said = refused(&s, "plan_deploy", args.clone()).await;
+    assert!(said.contains("hasn't joined Arugula control"), "{said}");
+    let said = refused(
+        &s,
+        "plan_deploy",
+        json!({ "project": "prj_0a", "environment": "production", "commit": "abc", "repo": "acme/app" }),
+    )
+    .await;
+    assert!(said.contains("40-hex"), "{said}");
+
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    // Until the owner gives deploys.plan: refused, saying so.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let said = loop {
+        let said = refused(&s, "plan_deploy", args.clone()).await;
+        if !said.contains("hasn't joined") {
+            break said;
+        }
+        assert!(std::time::Instant::now() < deadline, "never joined: {said}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    assert!(said.contains("no deploys.plan grant") && said.contains("approving stays theirs"), "{said}");
+
+    fake.granted.store(true, std::sync::atomic::Ordering::SeqCst);
+    let p = call(&s, "plan_deploy", args).await;
+    assert_eq!(p["deploy"]["state"], "pending", "planned and asked: {p}");
+    let summary = p["summary"].as_str().unwrap();
+    assert!(summary.contains("deploy fake to production") && summary.contains("you can't"), "{summary}");
+    let r = call(&s, "read_deploy", json!({ "id": DEP })).await;
+    assert!(r["summary"].as_str().unwrap().contains("waiting for an owner's approval"), "{r}");
+    let why = refused(&s, "read_deploy", json!({ "id": "dep_1" })).await;
+    assert!(why.contains("dep_ and 32 hex"), "{why}");
+
+    let asked = fake.asked.lock().unwrap().clone();
+    let paths: Vec<&str> = asked.iter().map(|(p, _)| p.as_str()).filter(|p| p.contains("deploy")).collect();
+    let plan = "POST /api/daemon/projects/prj_0a/deploys";
+    let request = format!("POST /api/daemon/deploys/{DEP}/request");
+    let read = format!("GET /api/daemon/deploys/{DEP}");
+    assert_eq!(paths, [plan, plan, request.as_str(), read.as_str()], "{asked:?}");
+    let body = &asked.iter().rfind(|(p, _)| p == plan).unwrap().1;
+    assert_eq!(
+        body,
+        &json!({ "environment": "production", "roll_back": false,
+            "source": { "kind": "commit", "ref": "ab".repeat(20), "where": "acme/app" } })
+    );
+    assert!(!asked.iter().any(|(p, _)| p.contains("approve") || p.contains("deny")), "{asked:?}");
+    s.cancel().await.unwrap();
+    drop(d);
 }

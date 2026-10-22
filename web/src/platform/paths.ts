@@ -25,7 +25,9 @@
 //   /p/:project/past/:id           a past run (`run_…`) or a closed tab
 //                                  (`cwc_…`), read only
 //   /p/:project/settings           its settings: linked repos (`?link=OWNER/REPO`
-//                                  fills in one to link)
+//                                  fills in one to link), environments (M252)
+//   /p/:project/deploys/new        "Deploy…" (M252): plan a deploy and ask for
+//                                  its approval (`?env=env_…` picks one)
 //   /installed?state=…             back from installing the GitHub App (its
 //                                  setup URL): on to the project's settings
 //   /inbox                         the reader's inbox (M171): items that want
@@ -62,6 +64,7 @@ export type Route =
   | { page: "workspace"; project: string; workspace: string; tab?: string }
   | { page: "past"; project: string; id: string }
   | { page: "project-settings"; project: string; link?: string }
+  | { page: "new-deploy"; project: string; env?: string }
   | { page: "installed"; project?: string; repo?: string }
   | { page: "inbox" }
   | { page: "agents" }
@@ -168,6 +171,10 @@ export function parse(path: string, search = ""): Route {
     const link = q.get("link");
     return { page: "project-settings", project, ...(link && REPO.test(link) ? { link } : {}) };
   }
+  if (parts.length === 4 && parts[2] === "deploys" && parts[3] === "new") {
+    const env = q.get("env");
+    return { page: "new-deploy", project, ...(env && /^env_[0-9a-f]{32}$/.test(env) ? { env } : {}) };
+  }
   if (parts[2] === "chat") {
     if (parts.length === 3) return { page: "chat", project };
     if (parts.length === 4 && parts[3] === "activity") return { page: "chat", project, view: "activity" };
@@ -269,6 +276,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return `/p/${s(r.project)}/past/${s(r.id)}`;
     case "project-settings":
       return `/p/${s(r.project)}/settings${r.link ? `?link=${encodeURIComponent(r.link)}` : ""}`;
+    case "new-deploy":
+      return `/p/${s(r.project)}/deploys/new${r.env ? `?env=${r.env}` : ""}`;
     case "installed":
       return r.project && r.repo ? `/installed?state=${encodeURIComponent(`${r.project}:${r.repo}`)}` : "/installed";
     case "inbox":

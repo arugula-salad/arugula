@@ -34,10 +34,14 @@ test("each route parses", () => {
   assert.deepEqual(parse("/installed", `?state=${encodeURIComponent(`${P}:acme/app`)}&installation_id=9&setup_action=install`), { page: "installed", project: P, repo: "acme/app" });
   assert.deepEqual(parse("/installed", "?state=https%3A%2F%2Fevil.example%2F"), { page: "installed" }, "only a project and a repo");
   assert.deepEqual(parse("/installed"), { page: "installed" });
+  const env = `env_${"0a".repeat(16)}`;
+  assert.deepEqual(parse(`/p/${P}/deploys/new`), { page: "new-deploy", project: P });
+  assert.deepEqual(parse(`/p/${P}/deploys/new`, `?env=${env}`), { page: "new-deploy", project: P, env });
+  assert.deepEqual(parse(`/p/${P}/deploys/new`, "?env=production"), { page: "new-deploy", project: P }, "an id only");
 });
 
 test("anything else is missing, never a guess", () => {
-  for (const p of ["/p", "/p/arugula", `/p/${P}/nope`, "/dm/sam", `/p/${P}/workspaces/app`, `/p/${P}/workspaces/cw_0123abcd/tab`, "/settings/x", "/chats"]) {
+  for (const p of ["/p", "/p/arugula", `/p/${P}/nope`, "/dm/sam", `/p/${P}/workspaces/app`, `/p/${P}/workspaces/cw_0123abcd/tab`, "/settings/x", "/chats", `/p/${P}/deploys`, `/p/${P}/deploys/old`]) {
     assert.equal(parse(p).page, "missing", p);
   }
   assert.equal(parse(`/p/${P}/chat/ch_0123456789abcdef`, "?msg=x").msg, undefined);
@@ -53,6 +57,7 @@ test("links carry the current slug, and read back as the same route", () => {
     { page: "workspace", project: P, workspace: "cw_0123abcd", tab: "cwc_4567ef01" },
     { page: "project-settings", project: P, link: "acme/app" },
     { page: "installed", project: P, repo: "acme/app" },
+    { page: "new-deploy", project: P, env: `env_${"0a".repeat(16)}` },
   ];
   assert.equal(pathOf(routes[1], names), `/p/${P}-arugula-team`);
   assert.equal(pathOf(routes[2], names), `/p/${P}-arugula-team/chat/ch_0123456789abcdef-general?msg=4`);

@@ -1535,6 +1535,31 @@ fn all_defs() -> Vec<Def> {
             flag: None,
             output: None,
         },
+        // M252: plan a project's deploy and ask; an owner approves.
+        Def {
+            name: super::deploys::PLAN_TOOL,
+            title: "Plan a deploy and ask for approval",
+            description: super::deploys::PLAN_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::deploys::PlanDeployArgs>),
+            read_only: false,
+            destructive: false,
+            idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
+        Def {
+            name: super::deploys::READ_TOOL,
+            title: "Read a deploy",
+            description: super::deploys::READ_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::deploys::ReadDeployArgs>),
+            read_only: true,
+            destructive: false,
+            idempotent: true,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
     ]
 }
 
@@ -1996,6 +2021,14 @@ impl<'a> Call<'a> {
             },
             ("read_run", _) => match parse(args) {
                 Ok(a) => self.read_run(a).await,
+                Err(e) => Err(e),
+            },
+            ("plan_deploy", _) => match parse(args) {
+                Ok(a) => self.plan_deploy(a).await,
+                Err(e) => Err(e),
+            },
+            ("read_deploy", _) => match parse(args) {
+                Ok(a) => self.read_deploy(a).await,
                 Err(e) => Err(e),
             },
             ("read_cloud", Some(kind)) => self.read_cloud(kind, args).await,
@@ -4517,7 +4550,7 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full, fl(false));
-        assert_eq!(all.len(), 30 - NO_FORGE);
+        assert_eq!(all.len(), 32 - NO_FORGE);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -4537,6 +4570,7 @@ mod tests {
             "read_thread",
             "search_threads",
             "read_run",
+            "read_deploy",
         ];
         want.retain(|n| crate::forges::BUILT || !FORGE_TOOLS.contains(n));
         assert_eq!(ro, want);
@@ -4661,9 +4695,9 @@ mod tests {
         for name in THREAD_TOOLS {
             assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
         }
-        assert_eq!(every.len(), 32);
-        assert_eq!(defs(fl(false)).len(), 30 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 32 - NO_FORGE);
+        assert_eq!(every.len(), 34);
+        assert_eq!(defs(fl(false)).len(), 32 - NO_FORGE);
+        assert_eq!(defs(fl(true)).len(), 34 - NO_FORGE);
         assert_eq!(every.len(), defs(fl(false)).len() + 2 + NO_FORGE, "and delegate and doc");
     }
 

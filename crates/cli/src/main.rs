@@ -415,6 +415,20 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::runs::RunsCmd,
     },
+    /// A project's deploys on Arugula control.
+    ///
+    /// `envs` lists its environments, `plan --env NAME --commit SHA --repo
+    /// OWNER/NAME [--roll-back]` plans a deploy and prints its plan,
+    /// `request DEP` asks the project's owners to approve it, `show DEP`
+    /// reads it (its plan, state and log). An owner approves on their phone
+    /// or in a browser, with a passkey, never here; environments and their
+    /// secrets are made on the platform page. `--project` names a project
+    /// by id or name; the default is your personal one. Needs `arugula
+    /// login`.
+    Deploys {
+        #[command(subcommand)]
+        cmd: cmd::deploys::DeploysCmd,
+    },
     /// A project's linked GitHub repos on Arugula control.
     ///
     /// `link OWNER/REPO` links one (you need admin or maintain on it on
@@ -692,6 +706,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Runs { cmd } = cli.cmd {
         return cmd::runs::run(cmd, cli.json);
     }
+    if let Command::Deploys { cmd } = cli.cmd {
+        return cmd::deploys::run(cmd, cli.json);
+    }
     if let Command::Project { cmd } = cli.cmd {
         return cmd::project::run(cmd, cli.json);
     }
@@ -813,6 +830,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         | Command::Grants { .. }
         | Command::Cloud { .. }
         | Command::Runs { .. }
+        | Command::Deploys { .. }
         | Command::Project { .. }
         | Command::Draft { .. }
         | Command::Forge { .. } => {

@@ -19,6 +19,11 @@ export interface Deploy {
   environment: { id: string; name: string; driver: string };
   source: { kind: string; ref: string; where: string };
   plan: string;
+  /** The plan's text (M220): what an owner reads before they approve.
+   * Null when the platform can't make it again. */
+  plan_text: string | null;
+  /** A roll back's deploy and what it goes back to, or null. */
+  roll_back: { deploy: string } | null;
   state: string;
   planned_by: string;
   planned_by_name: string;
@@ -72,8 +77,9 @@ const STATE: Record<string, string> = {
 /** Where Approve and Deny go: the deploy on control's page. */
 export const approveHref = (id: string) => `${controlOrigin()}/#deploy=${id}`;
 
-/** One deploy's card. `link`: its heading opens the deploy's own page. */
-export function DeployCard({ d, link }: { d: Deploy; link?: boolean }) {
+/** One deploy's card. `link`: its heading opens the deploy's own page.
+ * The plan's text is open on the deploy's own page, or with `planOpen`. */
+export function DeployCard({ d, link, planOpen }: { d: Deploy; link?: boolean; planOpen?: boolean }) {
   const path = `/deploys/${d.id}`;
   return (
     <article class="deploy-card" data-deploy-card={d.id} data-deploy-state={d.state}>
@@ -107,6 +113,12 @@ export function DeployCard({ d, link }: { d: Deploy; link?: boolean }) {
           by {planner(d)}, {when(d.created_at)}
         </dd>
       </dl>
+      {d.plan_text ? (
+        <details class="deploy-op" open={planOpen ?? !link} data-deploy-plan-text>
+          <summary>{d.roll_back ? "The plan: a roll back" : "The plan"}</summary>
+          <pre>{d.plan_text}</pre>
+        </details>
+      ) : null}
       <details class="deploy-op">
         <summary>The operation an approval signs</summary>
         <pre data-deploy-op>{d.operation.body}</pre>

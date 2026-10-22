@@ -19,6 +19,7 @@ import { issues } from "../shared/issues/store";
 import { ChatPage } from "./pages/chat";
 import { Home } from "./pages/home";
 import { DeployPage } from "./pages/deploy";
+import { NewDeployPage } from "./pages/new-deploy";
 import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
 import { Installed, ProjectSettings } from "./pages/project-settings";
@@ -74,6 +75,8 @@ function body(r: Route, lost: string | null) {
       );
     case "project-settings":
       return <ProjectSettings id={r.project} link={r.link} />;
+    case "new-deploy":
+      return <NewDeployPage project={r.project} env={r.env} />;
     case "installed":
       return <Installed project={r.project} repo={r.repo} />;
     case "workspace":

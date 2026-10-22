@@ -24,9 +24,7 @@ use crate::{
     grants::{AgentScope, agent_may},
 };
 
-pub const AGENT_PROJECT_DEPLOYS: &str = "/api/daemon/projects/{project}/deploys";
-pub const AGENT_DEPLOY: &str = "/api/daemon/deploys/{id}";
-pub const AGENT_DEPLOY_REQUEST: &str = "/api/daemon/deploys/{id}/request";
+pub use arugula_control_wire::deploys::{AGENT_DEPLOY, AGENT_DEPLOY_REQUEST, AGENT_PROJECT_DEPLOYS};
 
 /// Plans, asks and reads a machine's agents make, per hour.
 const AGENT_DEPLOYS: (&str, usize) = ("deploy-agent", 600);

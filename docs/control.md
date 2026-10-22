@@ -469,6 +469,44 @@ project. No grant approves a deploy. An owner approves on their phone or
 in a browser: the device's signature over the deploy's operation, and a
 passkey's assertion over the approval, which the hub checks.
 
+**Environments and planning a deploy (M252).** All of it is on the
+platform page, and planning is in the CLI and MCP too:
+
+- **Make an environment** (owners): the project's settings, Environments,
+  New environment. Pick a driver; the page asks for that driver's settings
+  (required ones marked, defaults shown) and the secret names it may hold.
+  A secret the platform mints for each run is shown, not offered.
+  `GET /api/projects/{project}/drivers` is what the page reads.
+- **Set its secrets** (owners, in a browser only): each secret the
+  environment holds has a password box under it. A value is sent once,
+  cleared from the page, sealed by the platform, and never shown or read
+  back. Set it again to replace it. There's no CLI or MCP for secrets.
+- **Plan and ask** (owners and editors): Deploy… on the settings page (or
+  on an environment) picks the environment, a commit by its full 40-hex id
+  and the repo it's in (the project's linked repos are offered), and
+  whether it's a roll back. Plan shows the plan's text, which is what an
+  owner approves. Ask for approval sends each owner a card.
+- **The CLI**, as your person:
+
+  ```
+  arugula deploys envs --project acme
+  arugula deploys plan --project acme --env production --commit <sha> --repo acme/web [--roll-back]
+  arugula deploys request dep_…
+  arugula deploys show dep_…
+  ```
+
+  An agent's shell (`CLAUDECODE` or `AI_AGENT` set) may run `envs` and
+  `show` only. There's no `approve` and no secrets.
+- **An agent**, with its machine's `deploys.plan` grant over the project:
+  MCP `plan_deploy` (`project`, `environment` by name or id, `commit`,
+  `repo`, `roll_back`) plans and asks in one call, and `read_deploy`
+  (`id`) reads its plan, state and log. Without the grant the platform
+  refuses and says how to give it.
+
+An environment is named by its id (`env_…`) or its name in the project.
+Approving stays the owner's, on their phone or in a browser, with a
+passkey: the deploy's card opens control's page for it.
+
 **Applying a deploy (M219).** An approval queues the deploy's apply. Before
 anything runs, the platform checks the approval's expiry, the approving
 device and the approver's owner role again.
@@ -492,7 +530,8 @@ only when its run starts, before the approval expires, and that start uses
 the approval up: it never starts the deploy again or goes to another run.
 
 Secrets for a deploy are set per environment, by an owner, from a browser
-(not a CLI):
+(not a CLI): the environment's password boxes on the platform page, which
+call
 
 ```
 POST /api/environments/{id}/secrets/{name} {"value": "..."}

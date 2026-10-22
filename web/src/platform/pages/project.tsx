@@ -36,7 +36,7 @@ export function ProjectHome({ id }: { id: string }) {
         <a href={settingsPath} data-project-settings onClick={(e) => follow(e, settingsPath)}>
           Project settings
         </a>
-        <span class="dim"> · linked repos</span>
+        <span class="dim"> · linked repos, environments</span>
       </p>
       <div class="platform-columns">
         <div>
