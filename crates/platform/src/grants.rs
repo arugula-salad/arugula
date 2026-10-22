@@ -52,7 +52,7 @@ use serde_json::{Value, json};
 use crate::{
     Platform,
     auth::{Machine, Person},
-    db::projects::{AGENT_POWERS, CLOUD_DRIVE, Grant, ISSUES_WRITE, RUN_POWERS},
+    db::projects::{AGENT_POWERS, CLOUD_DRIVE, DEPLOYS_PLAN, Grant, ISSUES_WRITE, RUN_POWERS},
     hub::HubResult,
 };
 
@@ -123,7 +123,7 @@ pub fn is_agent_power(power: &str) -> bool {
 /// Whether an agent's `power` is over a project only, never the owner's
 /// DMs.
 fn project_only(power: &str) -> bool {
-    power == ISSUES_WRITE || RUN_POWERS.contains(&power)
+    power == ISSUES_WRITE || power == DEPLOYS_PLAN || RUN_POWERS.contains(&power)
 }
 
 /// How the owner gives this grant, for a refusal.
@@ -341,8 +341,8 @@ pub async fn give(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Giv
         _ => {
             return Err(err(
                 StatusCode::BAD_REQUEST,
-                "the powers there are to give are cloud.drive, threads.read, threads.post, issues.write, runs.read, \
-                 runs.start and runs.command",
+                "the powers there are to give are cloud.drive, threads.read, threads.post, issues.write, deploys.plan, \
+                 runs.read, runs.start and runs.command",
             ));
         }
     };

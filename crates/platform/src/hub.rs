@@ -270,6 +270,73 @@ pub trait HubPort: Send + Sync {
         let _ = machines;
         Box::pin(async { anyhow::bail!("this hub doesn't say whether machines are working") })
     }
+
+    /// What an account's devices are (M218): its root (the first device it
+    /// approved, which its daemons pin), its approved device certificates
+    /// and its revocations, as the hub keeps them. The platform decides
+    /// from these which devices count (`arugula_e2e::Trust::evaluate`), so
+    /// a certificate the hub kept that doesn't chain to the root never
+    /// does. `None` when there's no such account, or it has no root yet. A
+    /// hub from before M218 doesn't have it.
+    fn device_trust<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<DeviceTrust>>> {
+        let _ = account;
+        Box::pin(async { anyhow::bail!("this hub doesn't say an account's devices") })
+    }
+
+    /// Every version of a team's roster the hub keeps, oldest first, as
+    /// signed (M218: whose device made an approver an owner). Empty when
+    /// there's no such team. A hub from before M218 can't say.
+    fn team_rosters<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Vec<arugula_e2e::team::Roster>>> {
+        let _ = team;
+        Box::pin(async { anyhow::bail!("this hub doesn't say a team's rosters") })
+    }
+
+    /// Check a passkey's assertion for the platform (M218): the passkey is
+    /// registered to `account` (the hub keeps passkeys' public keys: they're
+    /// bound to control's own site), the ceremony is a `webauthn.get` from
+    /// control's page over exactly `challenge` (base64url, no padding), the
+    /// person was verified (UV), and the signature and counter check out.
+    /// It signs nobody in. A hub from before M218 can't.
+    fn verify_passkey<'a>(
+        &'a self,
+        account: &'a str,
+        challenge: &'a str,
+        assertion: &'a PasskeyAssertion,
+    ) -> BoxFuture<'a, HubResult<PasskeyVerdict>> {
+        let _ = (account, challenge, assertion);
+        Box::pin(async { anyhow::bail!("this hub doesn't check passkeys for the platform") })
+    }
+}
+
+/// A passkey's assertion, as the page got it from `navigator.credentials.get`
+/// ([`HubPort::verify_passkey`]): each base64url, no padding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PasskeyAssertion {
+    /// The credential's id (`rawId`).
+    pub id: String,
+    #[serde(rename = "clientDataJSON")]
+    pub client_data_json: String,
+    #[serde(rename = "authenticatorData")]
+    pub authenticator_data: String,
+    pub signature: String,
+}
+
+/// What the hub found of a passkey's assertion: good, or why not.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PasskeyVerdict {
+    pub ok: bool,
+    #[serde(default)]
+    pub why: String,
+}
+
+/// An account's devices ([`HubPort::device_trust`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceTrust {
+    /// The root device's id.
+    pub root: String,
+    /// Its approved certificates.
+    pub certs: Vec<arugula_e2e::Cert>,
+    pub revocations: Vec<arugula_e2e::Revocation>,
 }
 
 /// How a push goes ([`HubPort::push_with`]). The default is what

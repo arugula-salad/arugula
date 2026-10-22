@@ -18,6 +18,7 @@ import { IssuesPage, NewIssuePage } from "./pages/issues";
 import { issues } from "../shared/issues/store";
 import { ChatPage } from "./pages/chat";
 import { Home } from "./pages/home";
+import { DeployPage } from "./pages/deploy";
 import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
 import { Installed, ProjectSettings } from "./pages/project-settings";
@@ -90,6 +91,8 @@ function body(r: Route, lost: string | null) {
       return <AgentsPage />;
     case "settings":
       return <SettingsPage />;
+    case "deploy":
+      return <DeployPage id={r.deploy} />;
     default:
       return <Missing what="Nothing's at this address." />;
   }

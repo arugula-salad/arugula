@@ -3,12 +3,14 @@
 //! workspaces; every machine you join gets it, and you revoke it from one,
 //! and give it back, here. And (M197) what its agents may do in
 //! conversations: `threads.read` and `threads.post` in a project's threads
-//! (a team's channels are its project's) or your DMs, and `issues.write` on
-//! a project's issues. And (M216) its agents and a project's runs:
-//! `runs.read` reads them, `runs.start` starts its run specs, and
-//! `runs.command` starts a command or an instruction of the agent's own
-//! (each start as yours, never past your role). Those are off until you `add` them, and only over what you
-//! can read yourself. Through control, as this CLI's account (`arugula
+//! (a team's channels are its project's) or your DMs, `issues.write` on
+//! a project's issues, and (M218) `deploys.plan`: plan a project's deploys
+//! and ask an owner to approve them, never approve one. And (M216) its
+//! agents and a project's runs: `runs.read` reads them, `runs.start`
+//! starts its run specs, and `runs.command` starts a command or an
+//! instruction of the agent's own (each start as yours, never past your
+//! role). Those are off until you `add` them, and only over what you can
+//! read yourself. Through control, as this CLI's account (`arugula
 //! login`).
 
 use anyhow::bail;
@@ -17,12 +19,13 @@ use serde_json::{Value, json};
 use crate::control::Enrolled;
 use crate::util::print_json;
 
-/// The powers an agent gets over a scope (M197, and M216's over runs).
-const AGENT_POWERS: [&str; 6] =
-    ["threads.read", "threads.post", "issues.write", "runs.read", "runs.start", "runs.command"];
+/// The powers an agent gets over a scope (M197, M218's deploys.plan, and
+/// M216's over runs).
+const AGENT_POWERS: [&str; 7] =
+    ["threads.read", "threads.post", "issues.write", "deploys.plan", "runs.read", "runs.start", "runs.command"];
 
 /// Those over a project only.
-const PROJECT_ONLY: [&str; 4] = ["issues.write", "runs.read", "runs.start", "runs.command"];
+const PROJECT_ONLY: [&str; 5] = ["issues.write", "deploys.plan", "runs.read", "runs.start", "runs.command"];
 
 /// Where an agent power reaches: one of the two.
 #[derive(clap::Args, Debug, Clone, Default)]
@@ -43,17 +46,18 @@ pub enum GrantsCmd {
     /// Give a machine's agents a power over a project or your DMs.
     ///
     /// The powers are threads.read, threads.post or issues.write over a
-    /// project (`--project`) or your DMs (`--dms`), runs.read, runs.start
-    /// (its run specs) or runs.command (its own commands) over a project,
-    /// or cloud.drive again.
+    /// project (`--project`) or your DMs (`--dms`), deploys.plan over a
+    /// project (plan deploys and ask for approval, never approve),
+    /// runs.read, runs.start (its run specs) or runs.command (its own
+    /// commands) over a project, or cloud.drive again.
     /// Every room it reaches says whose agents read and post there, and what
     /// they write is labelled as your agent's on that machine.
     Add {
         /// The machine: its name or id.
         machine: String,
         /// One or more of threads.read, threads.post, issues.write,
-        /// runs.read, runs.start, runs.command (or cloud.drive, with no
-        /// scope).
+        /// deploys.plan, runs.read, runs.start, runs.command (or
+        /// cloud.drive, with no scope).
         #[arg(required = true)]
         powers: Vec<String>,
         #[command(flatten)]
@@ -145,8 +149,8 @@ fn give(daemon: &str, power: &str, scope: Option<&Value>) -> anyhow::Result<Valu
             bail!("{p} is over a project or your DMs: add --project NAME or --dms")
         }
         (p, _) => bail!(
-            "there's no power called {p}: threads.read, threads.post, issues.write, runs.read, runs.start, runs.command \
-             or cloud.drive"
+            "there's no power called {p}: threads.read, threads.post, issues.write, deploys.plan, runs.read, \
+             runs.start, runs.command or cloud.drive"
         ),
     }
 }

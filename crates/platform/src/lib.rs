@@ -48,6 +48,9 @@ pub mod compute;
 #[cfg(feature = "contract")]
 pub mod contract;
 pub mod db;
+pub mod deploys;
+#[cfg(test)]
+mod deploys_tests;
 pub mod forge;
 pub mod grants;
 pub mod hosted;

@@ -745,6 +745,52 @@ fn signed(pk: &Passkey, data: &[u8], raw: &[u8], sig: &[u8]) -> Result<bool, Api
     })
 }
 
+/// A passkey's assertion over a challenge the platform made (M218: a
+/// deploy's approval, whose challenge is SHA-256 of the approval's bytes),
+/// checked for the platform (`HubPort::verify_passkey`): the passkey is
+/// registered to `account`, the ceremony is a `webauthn.get` from one of
+/// control's own sites over exactly `challenge` (base64url), the
+/// authenticator verified the person (UV), the signature checks out with
+/// the passkey's key, and its counter didn't go backwards. Nothing is
+/// signed in. Why not, or `Ok`.
+pub fn verify_for(
+    app: &App,
+    account: &str,
+    challenge: &str,
+    a: &arugula_platform::hub::PasskeyAssertion,
+) -> anyhow::Result<Result<(), String>> {
+    let no = |why: &str| Ok(Err(why.to_owned()));
+    let Some(pk) = app.db.passkey(&a.id)? else { return no("that passkey isn't registered here") };
+    if pk.account != account {
+        return no("that passkey isn't one of yours");
+    }
+    let Ok(raw) = B64.decode(&a.client_data_json) else { return no("bad clientDataJSON") };
+    let Ok(cd) = serde_json::from_slice::<ClientData>(&raw) else { return no("bad clientDataJSON") };
+    if cd.kind != "webauthn.get" {
+        return no("wrong WebAuthn ceremony");
+    }
+    if cd.challenge != challenge {
+        return no("the passkey signed something other than this approval");
+    }
+    let Some(site) = app.cfg.sites.iter().find(|s| s.origin == cd.origin) else {
+        return no("a passkey from another site");
+    };
+    // The sign-in's own checks: the signature, UV, and the counter.
+    let assertion = Assertion {
+        id: a.id.clone(),
+        client_data: a.client_data_json.clone(),
+        authenticator_data: a.authenticator_data.clone(),
+        signature: a.signature.clone(),
+        prf: false,
+    };
+    let count = match asserted(app, site, &assertion, &raw) {
+        Ok((_, count)) => count,
+        Err(e) => return Ok(Err(e.1)),
+    };
+    app.db.passkey_used(&a.id, count, now_ms())?;
+    Ok(Ok(()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -775,6 +821,43 @@ mod tests {
             (Cbor::from(-1), Cbor::Bytes(c.n)),
             (Cbor::from(-2), Cbor::Bytes(c.e)),
         ])
+    }
+
+    /// M218: the platform's check of a passkey over a deploy approval's
+    /// bytes. Its owner's passkey, over that challenge, with UV, from
+    /// control's site: yes. Anything else: why not. Nobody is signed in.
+    #[test]
+    fn verify_for_checks_whose_what_and_how() {
+        use ed25519_dalek::Signer as _;
+        let app = App::for_tests("https://control.test");
+        let key = ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
+        app.db.add_passkey("pk1", "acct-a", EDDSA, &key.verifying_key().to_bytes(), 1).unwrap();
+        let challenge = B64.encode(Sha256::digest(b"arugula deploy approval v1\n..."));
+        let make = |id: &str, ch: &str, origin: &str, flags: u8| {
+            let client = json!({ "type": "webauthn.get", "challenge": ch, "origin": origin }).to_string();
+            let mut data = Sha256::digest(b"control.test").to_vec();
+            data.push(flags);
+            data.extend_from_slice(&0u32.to_be_bytes());
+            let mut msg = data.clone();
+            msg.extend_from_slice(&Sha256::digest(client.as_bytes()));
+            arugula_platform::hub::PasskeyAssertion {
+                id: id.into(),
+                client_data_json: B64.encode(client.as_bytes()),
+                authenticator_data: B64.encode(&data),
+                signature: B64.encode(key.sign(&msg).to_bytes()),
+            }
+        };
+        let site = "https://control.test";
+        let check = |account: &str, a| verify_for(&app, account, &challenge, &a).unwrap();
+        assert_eq!(check("acct-a", make("pk1", &challenge, site, UP | UV)), Ok(()));
+        assert!(check("acct-b", make("pk1", &challenge, site, UP | UV)).is_err(), "another account's");
+        assert!(check("acct-a", make("pk1", "b3RoZXI", site, UP | UV)).is_err(), "another challenge");
+        assert!(check("acct-a", make("pk1", &challenge, site, UP)).is_err(), "no user verification");
+        assert!(check("acct-a", make("pk1", &challenge, "https://evil.test", UP | UV)).is_err(), "another site");
+        assert!(check("acct-a", make("pk-none", &challenge, site, UP | UV)).is_err(), "not registered");
+        let mut forged = make("pk1", &challenge, site, UP | UV);
+        forged.signature = B64.encode([0u8; 64]);
+        assert!(check("acct-a", forged).is_err(), "a bad signature");
     }
 
     #[tokio::test]

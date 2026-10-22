@@ -9,6 +9,8 @@
 //! - [`channel`]: the Noise IK channel and what travels inside it.
 //! - [`block`]: block channels' grants (M50): a block's frame opening a
 //!   channel to one block with a key the device signed for it.
+//! - [`deploy`]: a deploy's approval (M218), signed by a project owner's
+//!   device over the deploy's operation.
 //! - [`hosted`]: hosted machines (M178): project delegations, and the
 //!   certificates control signs under them, accepted for one project only.
 //! - [`preview`]: public previews' grants (M187): control opening a
@@ -21,6 +23,7 @@
 pub mod block;
 pub mod cert;
 pub mod channel;
+pub mod deploy;
 pub mod hosted;
 pub mod keys;
 pub mod mux;

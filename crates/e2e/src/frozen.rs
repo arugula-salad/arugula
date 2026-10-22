@@ -13,6 +13,7 @@ use crate::{
     block::Grant,
     cert::{Cert, Revocation, join_code, join_proof_body, request_auth, verify_hex},
     channel::prologue,
+    deploy::{Approval, Decision, Operation},
     keys::{DeviceKeys, HEADER, device_id},
     push::PushSub,
     team::{Invite, Member, Move, Roster, TeamPin},
@@ -76,6 +77,25 @@ fn signed_domains_never_change() {
         detail: "{}",
         daemon: "d",
     };
+    let op = Operation {
+        project: "p".into(),
+        environment: "e".into(),
+        environment_name: "n".into(),
+        plan: "p".into(),
+        source_kind: "commit".into(),
+        source_ref: "r".into(),
+        source_where: "w".into(),
+        planned: "h".into(),
+    };
+    let approval = Approval {
+        deploy: "d".into(),
+        op: "o".into(),
+        account: "a".into(),
+        decision: Decision::Once,
+        expires: 1,
+        by: "d".into(),
+        sig: String::new(),
+    };
     let project_grant: crate::project_grant::ProjectGrant = serde_json::from_value(json!({
         "id": "i", "project": "p", "owner": "account:a", "delegation": "d", "caps": ["runs.start"], "made": 1, "by": "d",
     }))
@@ -107,6 +127,9 @@ fn signed_domains_never_change() {
         (first_line(public.body()), "61727567756c61207075626c69632070726576696577206772616e74207631"),
         // Run events (M210), which hosted daemons sign.
         (first_line(run.body()), "61727567756c612072756e206576656e74207631"),
+        // M218's deploy operation and approval.
+        (first_line(op.body()), "61727567756c61206465706c6f79206f70207631"),
+        (first_line(approval.body()), "61727567756c61206465706c6f7920617070726f76616c207631"),
         // The standing project grant and its revoke (M211; the revoke is v2).
         (first_line(project_grant.body()), "61727567756c612070726f6a656374206772616e74207631"),
         (first_line(grant_revoke.body()), "61727567756c612070726f6a656374206772616e74207265766f6b65207632"),

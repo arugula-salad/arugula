@@ -52,7 +52,9 @@ use crate::{
         GithubUser, TokenAnswer,
         send::{Outcome, UserToken},
     },
-    hub::{Account, ChangePage, Daemon, Flags, HubPort, HubResult, Meter, PushOptions, Pushed, Resolved, Team},
+    hub::{
+        Account, ChangePage, Daemon, DeviceTrust, Flags, HubPort, HubResult, Meter, PushOptions, Pushed, Resolved, Team,
+    },
     work::HostedMachine,
 };
 
@@ -339,6 +341,13 @@ struct PreviewArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+struct PasskeyArgs {
+    account: String,
+    challenge: String,
+    assertion: crate::hub::PasskeyAssertion,
+}
+
+#[derive(Serialize, Deserialize)]
 struct UploadArgs {
     machine: HostedMachine,
     upload: Upload,
@@ -492,6 +501,25 @@ impl HubPort for HttpHub {
             SignedArgs { owner: owner.into(), device: device.into(), body: body.into(), sig: sig.into() },
         ))
     }
+
+    fn device_trust<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<DeviceTrust>>> {
+        Box::pin(self.0.call("device_trust", AccountArgs { account: account.to_owned() }))
+    }
+
+    fn team_rosters<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Vec<arugula_e2e::team::Roster>>> {
+        Box::pin(self.0.call("team_rosters", TeamArgs { team: team.to_owned() }))
+    }
+
+    fn verify_passkey<'a>(
+        &'a self,
+        account: &'a str,
+        challenge: &'a str,
+        assertion: &'a crate::hub::PasskeyAssertion,
+    ) -> BoxFuture<'a, HubResult<crate::hub::PasskeyVerdict>> {
+        let a =
+            PasskeyArgs { account: account.to_owned(), challenge: challenge.to_owned(), assertion: assertion.clone() };
+        Box::pin(self.0.call("verify_passkey", a))
+    }
 }
 
 /// What one side's internal API answers with: the port it serves, and
@@ -580,6 +608,12 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "daemon_op" => {
                 let a: OpArgs = args(&body)?;
                 answer(hub.daemon_op(&a.daemon, &a.op).await?)?
+            }
+            "device_trust" => answer(hub.device_trust(&args::<AccountArgs>(&body)?.account).await?)?,
+            "team_rosters" => answer(hub.team_rosters(&args::<TeamArgs>(&body)?.team).await?)?,
+            "verify_passkey" => {
+                let a: PasskeyArgs = args(&body)?;
+                answer(hub.verify_passkey(&a.account, &a.challenge, &a.assertion).await?)?
             }
             "hosted_enrollment" => answer(hub.hosted_enrollment(&args::<EnrollAsk>(&body)?).await?)?,
             "hosted_enrolled" => answer(hub.hosted_enrolled(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,

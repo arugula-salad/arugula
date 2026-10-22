@@ -254,6 +254,20 @@ export async function adoptPrfKeys(noise: BufferSource, sign: BufferSource, name
   }
 }
 
+/** M218: the Ed25519 key a passkey's PRF output (`sign`, at
+ * `PRF_SALTS.sign`) derives, as `adoptPrfKeys` derives it, without storing
+ * anything: what signs a deploy's approval when this browser's keys came
+ * from that passkey, so the signature itself needs the passkey. Its public
+ * key, hex, to check it's this device's. */
+export async function prfSignKey(sign: BufferSource): Promise<{ key: CryptoKey; pub: string }> {
+  const s = await fromSeed("Ed25519", await seedOf(sign, "arugula device ed25519 v1"));
+  try {
+    return { key: await subtle.importKey("pkcs8", s.pkcs8, { name: "Ed25519" }, false, ["sign"]), pub: s.pub };
+  } finally {
+    s.pkcs8.fill(0);
+  }
+}
+
 /** The device this browser's keys came from a passkey as, if they did. */
 export async function prfDevice(): Promise<PrfDevice | undefined> {
   return kv<PrfDevice>("readonly", (s) => s.get("prf"));

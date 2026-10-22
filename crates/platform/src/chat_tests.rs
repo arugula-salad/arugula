@@ -64,6 +64,13 @@ struct State {
     ops: Vec<(String, arugula_control_wire::forge::DaemonOp)>,
     /// It runs GitHub's authorization for a send (M168).
     authorizes: bool,
+    /// Accounts' devices (M218).
+    devices: BTreeMap<String, crate::hub::DeviceTrust>,
+    /// Teams' rosters, as signed (M218).
+    rosters: BTreeMap<String, Vec<arugula_e2e::team::Roster>>,
+    /// Passkeys by credential id: their account and Ed25519 public key
+    /// (M218).
+    passkeys: BTreeMap<String, (String, [u8; 32])>,
     /// Hosted machines (M179): the projects with a delegation, the
     /// enrollments asked for, the workspaces whose box enrolled (as which
     /// machine), and the workspaces said gone.
@@ -217,6 +224,21 @@ impl TestHub {
     }
 
     /// Whether it runs GitHub's authorization for a send.
+    /// A team's signed rosters, oldest first, as the hub keeps them (M218).
+    pub(crate) fn rosters(&self, team: &str, rosters: Vec<arugula_e2e::team::Roster>) {
+        self.state.lock().unwrap().rosters.insert(team.into(), rosters);
+    }
+
+    /// A passkey of an account's, Ed25519, as the hub keeps it (M218).
+    pub(crate) fn passkey(&self, id: &str, account: &str, public: [u8; 32]) {
+        self.state.lock().unwrap().passkeys.insert(id.into(), (account.into(), public));
+    }
+
+    /// An account's devices as the hub keeps them (M218).
+    pub(crate) fn devices(&self, account: &str, trust: crate::hub::DeviceTrust) {
+        self.state.lock().unwrap().devices.insert(account.into(), trust);
+    }
+
     pub(crate) fn authorizes(&self, on: bool) {
         self.state.lock().unwrap().authorizes = on;
     }
@@ -514,6 +536,58 @@ impl HubPort for TestHub {
         }
         s.gone.extend_from_slice(workspaces);
         done(())
+    }
+
+    fn device_trust<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<crate::hub::DeviceTrust>>> {
+        self.called("device_trust");
+        done(self.state.lock().unwrap().devices.get(account).cloned())
+    }
+
+    fn team_rosters<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Vec<arugula_e2e::team::Roster>>> {
+        self.called("team_rosters");
+        done(self.state.lock().unwrap().rosters.get(team).cloned().unwrap_or_default())
+    }
+
+    /// The hub's checks (`passkey::verify_for`), for Ed25519 passkeys on
+    /// `https://control.example`: whose it is, the ceremony, the challenge,
+    /// UV and the signature.
+    fn verify_passkey<'a>(
+        &'a self,
+        account: &'a str,
+        challenge: &'a str,
+        a: &'a crate::hub::PasskeyAssertion,
+    ) -> BoxFuture<'a, HubResult<crate::hub::PasskeyVerdict>> {
+        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as B64};
+        use sha2::Digest as _;
+        self.called("verify_passkey");
+        let verdict = (|| {
+            let (whose, public) = self.state.lock().unwrap().passkeys.get(&a.id).cloned().ok_or("not registered")?;
+            if whose != account {
+                return Err("not theirs");
+            }
+            let raw = B64.decode(&a.client_data_json).map_err(|_| "client data")?;
+            let cd: Value = serde_json::from_slice(&raw).map_err(|_| "client data")?;
+            if cd["type"] != "webauthn.get" || cd["challenge"] != challenge || cd["origin"] != "https://control.example"
+            {
+                return Err("another ceremony, challenge or site");
+            }
+            let data = B64.decode(&a.authenticator_data).map_err(|_| "authenticator data")?;
+            if data.len() < 37 || data[32] & 0x05 != 0x05 {
+                return Err("no user verification");
+            }
+            let sig: [u8; 64] = B64.decode(&a.signature).ok().and_then(|s| s.try_into().ok()).ok_or("signature")?;
+            let mut msg = data.clone();
+            msg.extend_from_slice(&sha2::Sha256::digest(&raw));
+            ed25519_dalek::VerifyingKey::from_bytes(&public)
+                .ok()
+                .filter(|k| k.verify_strict(&msg, &ed25519_dalek::Signature::from_bytes(&sig)).is_ok())
+                .ok_or("bad signature")?;
+            Ok(())
+        })();
+        done(match verdict {
+            Ok(()) => crate::hub::PasskeyVerdict { ok: true, why: String::new() },
+            Err(why) => crate::hub::PasskeyVerdict { ok: false, why: why.into() },
+        })
     }
 }
 
