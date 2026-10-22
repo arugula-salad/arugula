@@ -778,6 +778,7 @@ claim_runs() {
   # an account on the platform's allowlist (compose.yaml), and with the
   # digest of the egress rules it made the box with (M185), which set the
   # platform's Anthropic key from E2B's broker. No compute provider here.
+  # shellcheck disable=SC2016 # E2B's own ${...} placeholder, not the shell's
   rules="$(python3 -c 'import hashlib, json, sys
 r = {"api.anthropic.com": {"x-api-key": "${e2b.secrets.arugula-platform-anthropic}"}}
 print(hashlib.sha256(json.dumps(r, separators=(",", ":")).encode()).hexdigest())')"
@@ -1014,7 +1015,7 @@ claim_hosted_setup() {
   bastion_tidy() { s bastion 'rm -rf ~/.local/bin/arugula ~/.config/arugula /tmp/dev.tgz' >/dev/null 2>&1 || true; }
   bastion_tidy
   fresh "$box" || { note "hosted-setup: couldn't recreate $box"; return 1; }
-  git_repo app && git_repo lib || { note "hosted-setup: no repos on the git server"; return 1; }
+  { git_repo app && git_repo lib; } || { note "hosted-setup: no repos on the git server"; return 1; }
   fp="$(signin "hsetup-$$-$RANDOM" | field fingerprint)"
   [ -n "$fp" ] || { note "hosted-setup: no device signed in"; return 1; }
   team="$(dev team-create "setup team" | field team)"
@@ -1039,9 +1040,9 @@ claim_hosted_setup() {
   [ -n "$tk" ] || { note "hosted-setup: the platform made no box at the fake E2B: $(e2b_boxes)"; bastion_tidy; return 1; }
   first="$(e2b_project "$proj" | awk '$1 == "live" { print $2 }' | tail -1)"
   # The real hosted daemon on box-systemd, with that box's env.
-  docker cp "$ARUGULA_TESTNET_BINARIES/arugulad" "$TESTNET-$box:/usr/local/bin/arugulad" &&
+  { docker cp "$ARUGULA_TESTNET_BINARIES/arugulad" "$TESTNET-$box:/usr/local/bin/arugulad" &&
     docker cp "$STATE/git_https.crt" "$TESTNET-$box:/home/illo/git-ca.crt" &&
-    docker exec "$TESTNET-$box" sh -c 'chmod 755 /usr/local/bin/arugulad && chown illo /home/illo/git-ca.crt' ||
+    docker exec "$TESTNET-$box" sh -c 'chmod 755 /usr/local/bin/arugulad && chown illo /home/illo/git-ca.crt'; } ||
     { note "hosted-setup: couldn't install arugulad on $box"; bastion_tidy; return 1; }
   s "$box" 'loginctl enable-linger; echo sbx-testnet > ~/e2b-id' > /dev/null
   s "$box" systemd-run --user --unit=arugulad-hosted -E "ARUGULA_HOSTED_TICKET=$tk" -E "ARUGULA_CONTROL_URL=$CONTROL_URL" \
@@ -1060,7 +1061,7 @@ claim_hosted_setup() {
   pane="$(bcli --host dev --json ls 2>/dev/null | tr -d ' \n' | sed -n 's/.*"id":\([0-9]*\),[^}]*"session_name":"setup".*/\1/p' | head -1)"
   [ -n "$pane" ] || pane="$(bcli --host dev ls 2>/dev/null | awk '/setup/ { sub("%", "", $1); print $1; exit }')"
   bcli --host dev capture "$pane" 2>/dev/null > "$WORK/hs-pane"
-  grep -q "==> clone app" "$WORK/hs-pane" && grep -q "==> clone lib" "$WORK/hs-pane" && grep -q "Set up." "$WORK/hs-pane" ||
+  { grep -q "==> clone app" "$WORK/hs-pane" && grep -q "==> clone lib" "$WORK/hs-pane" && grep -q "Set up." "$WORK/hs-pane"; } ||
     { note "hosted-setup: the setup pane (%$pane) doesn't show it:"; cat "$WORK/hs-pane" >&2; ok=0; }
   [ "$(s "$box" cat app/built.txt 2>/dev/null)" = "built app" ] || { note "hosted-setup: the script didn't run in app"; ok=0; }
   s "$box" 'git -C app config --get-regexp "^http" ; git -C app remote get-url origin' 2>/dev/null | grep -qx https://git/app.git ||
@@ -1081,7 +1082,7 @@ claim_hosted_setup() {
     grep -qx "deleted $first" <<< "$got" && awk '$1 == "live" { print $2 }' <<< "$got" | grep -qvx "$first" && break
     sleep 1
   done
-  grep -qx "deleted $first" <<< "$got" && awk '$1 == "live" { print $2 }' <<< "$got" | grep -qvx "$first" ||
+  { grep -qx "deleted $first" <<< "$got" && awk '$1 == "live" { print $2 }' <<< "$got" | grep -qvx "$first"; } ||
     { note "hosted-setup: no new box at the fake E2B: $got"; ok=0; }
   s "$box" 'systemctl --user stop arugulad-hosted' > /dev/null 2>&1
   bastion_tidy
@@ -1110,8 +1111,8 @@ claim_public_preview() {
     sleep 1
   done
   [ -n "$tk" ] || { note "public-preview: the platform made no box at the fake E2B"; bastion_tidy; return 1; }
-  docker cp "$ARUGULA_TESTNET_BINARIES/arugulad" "$TESTNET-$box:/usr/local/bin/arugulad" &&
-    docker exec "$TESTNET-$box" chmod 755 /usr/local/bin/arugulad ||
+  { docker cp "$ARUGULA_TESTNET_BINARIES/arugulad" "$TESTNET-$box:/usr/local/bin/arugulad" &&
+    docker exec "$TESTNET-$box" chmod 755 /usr/local/bin/arugulad; } ||
     { note "public-preview: couldn't install arugulad on $box"; bastion_tidy; return 1; }
   s "$box" 'loginctl enable-linger; echo sbx-testnet > ~/e2b-id; mkdir -p ~/site; echo PUBLIC-PREVIEW-OK > ~/site/index.html' > /dev/null
   s "$box" systemd-run --user --unit=arugulad-hosted -E "ARUGULA_HOSTED_TICKET=$tk" -E "ARUGULA_CONTROL_URL=$CONTROL_URL" \
