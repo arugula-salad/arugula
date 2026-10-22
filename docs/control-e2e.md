@@ -1159,10 +1159,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 89 tables in two planes ("Two planes, two trust rules"):
+Control's database has 92 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (36 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (53 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues and runs. Control reads most of it, and says so here.
+- **The platform plane** (56 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1264,6 +1264,9 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `hosted_ports` | metadata | A port a dev server listens on in a hosted workspace (M186), its label, and who made it public and until when (M187). | Previews are served and expire with every machine asleep. | partly: it stops naming the account as who made a port public. They go with their workspace. |  |
 | `hosted_usage` | metadata | When a hosted workspace's box ran (M188): its workspace, project and box, its size (vCPUs and memory), and each running interval's start and end. | The platform meters boxes from their lifecycle, which runs with every machine asleep, and the operator reads what they cost. | nothing of one: it names no account: a workspace's project and box ids only. It stays when the workspace goes: it's what E2B billed. | E2B |
 | `hosted_usage_provider` | metadata | What E2B says a hosted workspace's box ran (M188), from its lifecycle events: how many runs, their milliseconds, vCPU-milliseconds and MiB-milliseconds, and when it was read. | The platform checks its usage against E2B's record with every machine asleep. | nothing of one: it names no account: a workspace's project and box ids only. | E2B |
+| `environments` | metadata | A project's environment (M217): its name in the project, the driver that applies its deploys (chant-fly, apps-platform), the names of the secrets a driver run gets (never their values: those are sealed per project, M209), and its times. | Deploys are planned, approved and applied through control with every machine asleep. | partly: those of projects that go with it go. |  |
+| `deploys` | metadata | A deploy to an environment (M217): what it deploys (a commit's sha or an artifact's digest, and where), the plan's digest, its state (S37's, with planned and stale), where its plan is in the environment's log, the run that applied it, who planned it (an account, and the machine when its agent did), and its times. | A deploy waits for an owner's approval and is applied by a driver run on the platform, with every machine asleep. | partly: those of projects that go with it go. The rest stay, naming no planner. |  |
+| `deploy_events` | metadata | An environment's deploy log (M217): append-only, a hash chain per environment that anyone can verify. Each event says which deploy, what happened (planned, requested, approved, denied, canceled, expired, started, succeeded, failed, staled), who (an account, an agent's owner and machine, a run, or the platform), when, a small detail (the source and plan's digest, the run, the approval), and its hash and the one before. | Approving a deploy checks its environment's log (the stale rule), with every machine asleep. | partly: those of projects that go with it go. The rest are kept as written, the account's id in them included: an event is never rewritten, and rewriting one would break its chain. The id names no one once the account is gone, so they show as a deleted account. |  |
 
 ### Who else sees it
 

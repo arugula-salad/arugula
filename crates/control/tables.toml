@@ -972,3 +972,36 @@ why_asleep = "The platform checks its usage against E2B's record with every mach
 with_account = "none"
 note = "It names no account: a workspace's project and box ids only."
 seen_by = ["litestream", "e2b"]
+
+[[table]]
+name = "environments"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A project's environment (M217): its name in the project, the driver that applies its deploys (chant-fly, apps-platform), the names of the secrets a driver run gets (never their values: those are sealed per project, M209), and its times."
+why_asleep = "Deploys are planned, approved and applied through control with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go."
+seen_by = ["litestream"]
+
+[[table]]
+name = "deploys"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A deploy to an environment (M217): what it deploys (a commit's sha or an artifact's digest, and where), the plan's digest, its state (S37's, with planned and stale), where its plan is in the environment's log, the run that applied it, who planned it (an account, and the machine when its agent did), and its times."
+why_asleep = "A deploy waits for an owner's approval and is applied by a driver run on the platform, with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest stay, naming no planner."
+seen_by = ["litestream"]
+
+[[table]]
+name = "deploy_events"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "An environment's deploy log (M217): append-only, a hash chain per environment that anyone can verify. Each event says which deploy, what happened (planned, requested, approved, denied, canceled, expired, started, succeeded, failed, staled), who (an account, an agent's owner and machine, a run, or the platform), when, a small detail (the source and plan's digest, the run, the approval), and its hash and the one before."
+why_asleep = "Approving a deploy checks its environment's log (the stale rule), with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest are kept as written, the account's id in them included: an event is never rewritten, and rewriting one would break its chain. The id names no one once the account is gone, so they show as a deleted account."
+seen_by = ["litestream"]

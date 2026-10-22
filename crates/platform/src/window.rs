@@ -90,8 +90,9 @@ pub(crate) fn emptying<'a>(tables: impl DoubleEndedIterator<Item = &'a str>) -> 
 }
 
 /// Tables whose rows guard another's: `run_events` refuses a delete while
-/// its run is there (M210), so `runs` is emptied before it.
-const GUARDS: [&str; 1] = ["runs"];
+/// its run is there (M210), and `deploy_events` while its environment is
+/// (M217), so `runs` and `environments` are emptied first.
+const GUARDS: [&str; 2] = ["runs", "environments"];
 
 /// One table on both sides of a copy.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -537,7 +538,8 @@ pub const SAMPLE_KEY: &str = "01010101010101010101010101010101010101010101010101
 /// A few rows in several of the platform's tables, the way the platform
 /// writes them (tests, here and in control): rooms, members and messages
 /// that search finds, a read mark, projects, an issue search finds and its
-/// timeline, a grant, the feed's position,
+/// timeline, an environment with a deploy and its log (whose trigger
+/// `--replace` has to get past), a grant, the feed's position,
 /// cloud notifications with a gap in their rowids, and a cloud secret
 /// sealed with [`SAMPLE_KEY`]. Accounts `acct-a` and `acct-b`.
 #[cfg(any(test, feature = "contract"))]
@@ -571,6 +573,13 @@ pub fn sample(db: &crate::db::Db) {
              VALUES ('run_1', 1, NULL, 'pending', 25, NULL, NULL), ('run_1', 2, 'pending', 'running', 26, 'd1', 'cd');
          INSERT INTO run_artifacts (run_id, name, size, digest, bucket_key, created_at)
              VALUES ('run_1', 'out.txt', 3, 'sha256:ef', 'prj_t/run_1/out.txt', 27);
+         INSERT INTO environments (id, project_id, name, driver, created_at, updated_at)
+             VALUES ('env_1', 'prj_t', 'production', 'chant-fly', 25, 25);
+         INSERT INTO deploys (id, environment_id, source_kind, source_ref, source_where, plan_digest, state,
+                 planned_seq, planned_by, created_at, updated_at)
+             VALUES ('dep_1', 'env_1', 'commit', 'abc', 'acme/app', 'ff', 'planned', 1, 'acct-a', 25, 25);
+         INSERT INTO deploy_events (id, environment_id, seq, deploy_id, kind, actor, at, prev_hash, hash)
+             VALUES (6, 'env_1', 1, 'dep_1', 'planned', 'person acct-a', 25, '00', 'ff');
          INSERT INTO cloud_notifications (conversation, account, request, next_attempt)
              VALUES ('c2', 'acct-a', 'q2', 1), ('c1', 'acct-a', 'q1', 1);
          DELETE FROM cloud_notifications WHERE conversation = 'c2';

@@ -100,7 +100,7 @@ pub struct Deleted {
 /// `account_deleted`; projects and grants, the forge mirror (M162) and
 /// native issues (M194), their part of `account_deleted`; the GitHub App
 /// (M161) `forge_standing` and `github_token`; sends (M168) `send_draft`;
-/// runs (M210), their part of `account_deleted`.
+/// runs (M210) and deploys (M217), their part of `account_deleted`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         Box::pin(async move {
@@ -120,6 +120,7 @@ impl PlatformPort for Platform {
             db::forge::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
             db::issues::erase_account(&tx, deleted)?;
             db::runs::erase_account(&tx, deleted)?;
+            db::deploys::erase_account(&tx, deleted)?;
             let rooms = crate::chat::erase_account(&tx, deleted)?;
             tx.commit()?;
             drop(c);
