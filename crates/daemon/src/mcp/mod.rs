@@ -32,6 +32,7 @@
 mod capabilities;
 mod cloud;
 mod forge_ops;
+mod issues;
 pub(crate) mod ops;
 pub mod relay;
 mod repos;

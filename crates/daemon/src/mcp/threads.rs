@@ -289,11 +289,15 @@ impl Call<'_> {
         };
         let scopes: Vec<ThreadScope> = serde_json::from_value(v["reach"].clone()).unwrap_or_default();
         let live = scopes.iter().any(|s| s.powers.iter().any(|p| p.starts_with("threads.")));
-        let note = if live {
+        let mut note: String = if live {
             "read_thread, search_threads and post_thread reach these (list kind threads lists the rooms). Your posts are labelled as your person's agent on this machine; nothing wakes you on a mention.".into()
         } else {
             "This machine's owner hasn't given its agents a thread grant: `arugula grants add <machine> threads.read --project <id>` (or --dms), or Settings, Agents in conversations, on the platform page.".into()
         };
+        // M200: native issues, where issues.write reaches.
+        if scopes.iter().any(|s| s.powers.iter().any(|p| p == "issues.write")) {
+            note += " issue_write files and changes native issues where issues.write reaches, at once.";
+        }
         ThreadsReach { live, scopes, note }
     }
 }

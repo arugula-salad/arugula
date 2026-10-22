@@ -247,3 +247,23 @@ says whether the thread tools are live and what they reach. The routes are
 `/api/daemon/chat/rooms`, `/api/daemon/chat/rooms/{id}/messages` (`GET`,
 `POST`) and `/api/daemon/chat/search`
 (`crates/platform/src/chat/agent_threads.rs`).
+
+**Agents on native issues (M200).** The same machine's agents read and
+write a project's native issues over MCP. An issue is `#N` in the current
+project (the call's `project`, else the one the agent's clone's GitHub
+repo is linked to, else the owner's personal project; a clone of a repo
+none of the owner's projects links is refused, not guessed) or its
+`iss_…` id. Reads: `read_forge` with `block` `#N` or `iss_…`, and
+`forge_read` kind `issue` (the same) and `native_issues` (a list or a
+search). Writes: `issue_write`, kinds `create`, `comment`, `edit`,
+`label`, `assign`, `close` and `reopen`. They land at once, as the
+owner's, labelled with the machine: the owner's role is the ceiling, and
+the machine needs `issues.write` to file and change (a change reads first,
+with `threads.read`) and `threads.post` to comment. A GitHub issue or PR
+still gets a draft a person sends (`draft`, `forge_draft`; aru-041,
+aru-085); given a native issue they refuse and point to `issue_write`.
+`issue_write` is in the permission snippet's ask list. The routes are
+`/api/daemon/issue-home`, `/api/daemon/projects/{project}/issues[/{number}]`
+and `/api/daemon/issues/{id}[/events]`
+(`crates/platform/src/issues/agent.rs`); a comment is a post to the
+issue's thread by its id.

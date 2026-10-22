@@ -142,6 +142,7 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__cloud",
     "mcp__arugula__link_repo",
     "mcp__arugula__post_thread",
+    "mcp__arugula__issue_write",
 ];
 
 #[derive(Subcommand)]

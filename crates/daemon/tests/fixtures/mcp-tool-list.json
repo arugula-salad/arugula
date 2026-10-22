@@ -1648,7 +1648,7 @@
         "readOnlyHint": true,
         "title": "Read a PR or issue block"
       },
-      "description": "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom).",
+      "description": "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom). Or a native issue in Arugula control (block \"#N\" in the current project, or \"iss_…\"): it, its timeline and its newest comments.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -1670,7 +1670,15 @@
         "properties": {
           "block": {
             "$ref": "#/$defs/PaneArg",
-            "description": "The PR or issue block (from show)."
+            "description": "The PR or issue block (from show). Or a native issue in Arugula\ncontrol: \"#N\" (in the current project) or \"iss_…\"."
+          },
+          "project": {
+            "default": null,
+            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -1871,8 +1879,12 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
+            "description": "The block read; none for a native issue.",
             "minimum": 0,
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "drafts": {
             "items": {
@@ -1885,6 +1897,9 @@
               "string",
               "null"
             ]
+          },
+          "native": {
+            "description": "A native issue in Arugula control (M200): it, its timeline and its\nnewest comments."
           },
           "platform": {
             "description": "On a repo linked in Arugula control (M169): the platform's item,\nits events and its waiting drafts, as forge_read's pr or issue."
@@ -1903,7 +1918,6 @@
           }
         },
         "required": [
-          "block",
           "text",
           "wants",
           "drafts",
@@ -1921,7 +1935,7 @@
         "readOnlyHint": false,
         "title": "Draft a forge write"
       },
-      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
+      "description": "Draft a write to a pull request or issue on a forge (GitHub, Forgejo, GitLab), by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -2036,15 +2050,33 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "author": {
+          "assignee": {
             "default": null,
-            "description": "items: A GitHub login.",
+            "description": "native_issues: An account.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "author": {
+            "default": null,
+            "description": "items: A GitHub login. native_issues: An account.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "before": {
+            "default": null,
+            "description": "native_issues: Issues numbered below this: the next page.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -2059,7 +2091,7 @@
           },
           "item": {
             "default": null,
-            "description": "pr, issue, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
+            "description": "pr, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. issue: The issue: OWNER/NAME#N, or its link on github.com; or a native\nissue in Arugula control, \"#N\" (in the current project) or \"iss_…\". drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
             "type": [
               "string",
               "null"
@@ -2082,13 +2114,22 @@
               "checks",
               "inbox",
               "drafts",
-              "draft"
+              "draft",
+              "native_issues"
             ],
             "type": "string"
           },
+          "labels": {
+            "default": [],
+            "description": "native_issues: Issues with each of these labels.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "limit": {
             "default": null,
-            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500).",
+            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500). native_issues: At most this many (default 50, at most 200).",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -2098,7 +2139,7 @@
           },
           "project": {
             "default": null,
-            "description": "items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts.",
+            "description": "issue: A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -2106,7 +2147,7 @@
           },
           "q": {
             "default": null,
-            "description": "items: Text in the title.",
+            "description": "items: Text in the title. native_issues: Words in the title or body (dep*: a word starting with dep).",
             "type": [
               "string",
               "null"
@@ -2130,7 +2171,7 @@
           },
           "state": {
             "default": null,
-            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all.",
+            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all. native_issues: open (the default), closed or all.",
             "type": [
               "string",
               "null"
@@ -2153,7 +2194,7 @@
         "readOnlyHint": false,
         "title": "Draft on a linked repo"
       },
-      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
+      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
       "inputSchema": {
         "$defs": {
           "Event": {
@@ -3027,6 +3068,117 @@
       },
       "name": "post_thread",
       "title": "Post in a conversation"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Write to a native issue"
+      },
+      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "add": {
+            "default": [],
+            "description": "label, assign: label: labels; assign: accounts in the project.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "assignees": {
+            "default": [],
+            "description": "create: Accounts in the project.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "body": {
+            "default": null,
+            "description": "create: In markdown.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "comment": {
+            "default": null,
+            "description": "close: A comment to leave with it, posted once the close has landed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issue": {
+            "description": "comment, edit, label, assign, close, reopen: The issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "create",
+              "comment",
+              "edit",
+              "label",
+              "assign",
+              "close",
+              "reopen"
+            ],
+            "type": "string"
+          },
+          "labels": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "project": {
+            "default": null,
+            "description": "create: The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "default": null,
+            "description": "close: completed (the default), not_planned or duplicate.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remove": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text": {
+            "description": "comment: The comment, in markdown; @login mentions a person there.",
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "issue_write",
+      "title": "Write to a native issue"
     }
   ],
   "block, labs true": [
@@ -4959,7 +5111,7 @@
         "readOnlyHint": true,
         "title": "Read a PR or issue block"
       },
-      "description": "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom).",
+      "description": "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom). Or a native issue in Arugula control (block \"#N\" in the current project, or \"iss_…\"): it, its timeline and its newest comments.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -4981,7 +5133,15 @@
         "properties": {
           "block": {
             "$ref": "#/$defs/PaneArg",
-            "description": "The PR or issue block (from show)."
+            "description": "The PR or issue block (from show). Or a native issue in Arugula\ncontrol: \"#N\" (in the current project) or \"iss_…\"."
+          },
+          "project": {
+            "default": null,
+            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -5182,8 +5342,12 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
+            "description": "The block read; none for a native issue.",
             "minimum": 0,
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "drafts": {
             "items": {
@@ -5196,6 +5360,9 @@
               "string",
               "null"
             ]
+          },
+          "native": {
+            "description": "A native issue in Arugula control (M200): it, its timeline and its\nnewest comments."
           },
           "platform": {
             "description": "On a repo linked in Arugula control (M169): the platform's item,\nits events and its waiting drafts, as forge_read's pr or issue."
@@ -5214,7 +5381,6 @@
           }
         },
         "required": [
-          "block",
           "text",
           "wants",
           "drafts",
@@ -5232,7 +5398,7 @@
         "readOnlyHint": false,
         "title": "Draft a forge write"
       },
-      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
+      "description": "Draft a write to a pull request or issue on a forge (GitHub, Forgejo, GitLab), by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -5347,15 +5513,33 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "author": {
+          "assignee": {
             "default": null,
-            "description": "items: A GitHub login.",
+            "description": "native_issues: An account.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "author": {
+            "default": null,
+            "description": "items: A GitHub login. native_issues: An account.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "before": {
+            "default": null,
+            "description": "native_issues: Issues numbered below this: the next page.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -5370,7 +5554,7 @@
           },
           "item": {
             "default": null,
-            "description": "pr, issue, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
+            "description": "pr, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. issue: The issue: OWNER/NAME#N, or its link on github.com; or a native\nissue in Arugula control, \"#N\" (in the current project) or \"iss_…\". drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
             "type": [
               "string",
               "null"
@@ -5393,13 +5577,22 @@
               "checks",
               "inbox",
               "drafts",
-              "draft"
+              "draft",
+              "native_issues"
             ],
             "type": "string"
           },
+          "labels": {
+            "default": [],
+            "description": "native_issues: Issues with each of these labels.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "limit": {
             "default": null,
-            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500).",
+            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500). native_issues: At most this many (default 50, at most 200).",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -5409,7 +5602,7 @@
           },
           "project": {
             "default": null,
-            "description": "items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts.",
+            "description": "issue: A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -5417,7 +5610,7 @@
           },
           "q": {
             "default": null,
-            "description": "items: Text in the title.",
+            "description": "items: Text in the title. native_issues: Words in the title or body (dep*: a word starting with dep).",
             "type": [
               "string",
               "null"
@@ -5441,7 +5634,7 @@
           },
           "state": {
             "default": null,
-            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all.",
+            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all. native_issues: open (the default), closed or all.",
             "type": [
               "string",
               "null"
@@ -5464,7 +5657,7 @@
         "readOnlyHint": false,
         "title": "Draft on a linked repo"
       },
-      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
+      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
       "inputSchema": {
         "$defs": {
           "Event": {
@@ -6338,6 +6531,117 @@
       },
       "name": "post_thread",
       "title": "Post in a conversation"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Write to a native issue"
+      },
+      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "add": {
+            "default": [],
+            "description": "label, assign: label: labels; assign: accounts in the project.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "assignees": {
+            "default": [],
+            "description": "create: Accounts in the project.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "body": {
+            "default": null,
+            "description": "create: In markdown.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "comment": {
+            "default": null,
+            "description": "close: A comment to leave with it, posted once the close has landed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issue": {
+            "description": "comment, edit, label, assign, close, reopen: The issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "create",
+              "comment",
+              "edit",
+              "label",
+              "assign",
+              "close",
+              "reopen"
+            ],
+            "type": "string"
+          },
+          "labels": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "project": {
+            "default": null,
+            "description": "create: The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "default": null,
+            "description": "close: completed (the default), not_planned or duplicate.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remove": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text": {
+            "description": "comment: The comment, in markdown; @login mentions a person there.",
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "issue_write",
+      "title": "Write to a native issue"
     }
   ],
   "full, labs false": [
@@ -7989,7 +8293,7 @@
         "readOnlyHint": true,
         "title": "Read a PR or issue block"
       },
-      "description": "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom).",
+      "description": "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom). Or a native issue in Arugula control (block \"#N\" in the current project, or \"iss_…\"): it, its timeline and its newest comments.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -8011,7 +8315,15 @@
         "properties": {
           "block": {
             "$ref": "#/$defs/PaneArg",
-            "description": "The PR or issue block (from show)."
+            "description": "The PR or issue block (from show). Or a native issue in Arugula\ncontrol: \"#N\" (in the current project) or \"iss_…\"."
+          },
+          "project": {
+            "default": null,
+            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -8212,8 +8524,12 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
+            "description": "The block read; none for a native issue.",
             "minimum": 0,
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "drafts": {
             "items": {
@@ -8226,6 +8542,9 @@
               "string",
               "null"
             ]
+          },
+          "native": {
+            "description": "A native issue in Arugula control (M200): it, its timeline and its\nnewest comments."
           },
           "platform": {
             "description": "On a repo linked in Arugula control (M169): the platform's item,\nits events and its waiting drafts, as forge_read's pr or issue."
@@ -8244,7 +8563,6 @@
           }
         },
         "required": [
-          "block",
           "text",
           "wants",
           "drafts",
@@ -8262,7 +8580,7 @@
         "readOnlyHint": false,
         "title": "Draft a forge write"
       },
-      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
+      "description": "Draft a write to a pull request or issue on a forge (GitHub, Forgejo, GitLab), by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -8377,15 +8695,33 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "author": {
+          "assignee": {
             "default": null,
-            "description": "items: A GitHub login.",
+            "description": "native_issues: An account.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "author": {
+            "default": null,
+            "description": "items: A GitHub login. native_issues: An account.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "before": {
+            "default": null,
+            "description": "native_issues: Issues numbered below this: the next page.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -8400,7 +8736,7 @@
           },
           "item": {
             "default": null,
-            "description": "pr, issue, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
+            "description": "pr, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. issue: The issue: OWNER/NAME#N, or its link on github.com; or a native\nissue in Arugula control, \"#N\" (in the current project) or \"iss_…\". drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
             "type": [
               "string",
               "null"
@@ -8423,13 +8759,22 @@
               "checks",
               "inbox",
               "drafts",
-              "draft"
+              "draft",
+              "native_issues"
             ],
             "type": "string"
           },
+          "labels": {
+            "default": [],
+            "description": "native_issues: Issues with each of these labels.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "limit": {
             "default": null,
-            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500).",
+            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500). native_issues: At most this many (default 50, at most 200).",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -8439,7 +8784,7 @@
           },
           "project": {
             "default": null,
-            "description": "items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts.",
+            "description": "issue: A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -8447,7 +8792,7 @@
           },
           "q": {
             "default": null,
-            "description": "items: Text in the title.",
+            "description": "items: Text in the title. native_issues: Words in the title or body (dep*: a word starting with dep).",
             "type": [
               "string",
               "null"
@@ -8471,7 +8816,7 @@
           },
           "state": {
             "default": null,
-            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all.",
+            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all. native_issues: open (the default), closed or all.",
             "type": [
               "string",
               "null"
@@ -8494,7 +8839,7 @@
         "readOnlyHint": false,
         "title": "Draft on a linked repo"
       },
-      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
+      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
       "inputSchema": {
         "$defs": {
           "Event": {
@@ -9368,6 +9713,117 @@
       },
       "name": "post_thread",
       "title": "Post in a conversation"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Write to a native issue"
+      },
+      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "add": {
+            "default": [],
+            "description": "label, assign: label: labels; assign: accounts in the project.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "assignees": {
+            "default": [],
+            "description": "create: Accounts in the project.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "body": {
+            "default": null,
+            "description": "create: In markdown.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "comment": {
+            "default": null,
+            "description": "close: A comment to leave with it, posted once the close has landed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issue": {
+            "description": "comment, edit, label, assign, close, reopen: The issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "create",
+              "comment",
+              "edit",
+              "label",
+              "assign",
+              "close",
+              "reopen"
+            ],
+            "type": "string"
+          },
+          "labels": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "project": {
+            "default": null,
+            "description": "create: The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "default": null,
+            "description": "close: completed (the default), not_planned or duplicate.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remove": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text": {
+            "description": "comment: The comment, in markdown; @login mentions a person there.",
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "issue_write",
+      "title": "Write to a native issue"
     }
   ],
   "full, labs true": [
@@ -11300,7 +11756,7 @@
         "readOnlyHint": true,
         "title": "Read a PR or issue block"
       },
-      "description": "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom).",
+      "description": "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom). Or a native issue in Arugula control (block \"#N\" in the current project, or \"iss_…\"): it, its timeline and its newest comments.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -11322,7 +11778,15 @@
         "properties": {
           "block": {
             "$ref": "#/$defs/PaneArg",
-            "description": "The PR or issue block (from show)."
+            "description": "The PR or issue block (from show). Or a native issue in Arugula\ncontrol: \"#N\" (in the current project) or \"iss_…\"."
+          },
+          "project": {
+            "default": null,
+            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -11523,8 +11987,12 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
+            "description": "The block read; none for a native issue.",
             "minimum": 0,
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "drafts": {
             "items": {
@@ -11537,6 +12005,9 @@
               "string",
               "null"
             ]
+          },
+          "native": {
+            "description": "A native issue in Arugula control (M200): it, its timeline and its\nnewest comments."
           },
           "platform": {
             "description": "On a repo linked in Arugula control (M169): the platform's item,\nits events and its waiting drafts, as forge_read's pr or issue."
@@ -11555,7 +12026,6 @@
           }
         },
         "required": [
-          "block",
           "text",
           "wants",
           "drafts",
@@ -11573,7 +12043,7 @@
         "readOnlyHint": false,
         "title": "Draft a forge write"
       },
-      "description": "Draft a write to a pull request or issue, by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
+      "description": "Draft a write to a pull request or issue on a forge (GitHub, Forgejo, GitLab), by kind. Nothing reaches the forge in an agent's name: the draft waits on its block as a card the user (or an editor) edits and sends, or drops. Returns its draft id (a new issue: its block) at once; read_forge shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.\n- comment {block, body}: A comment on a PR or issue block's pull request or issue, on GitHub, Forgejo or GitLab.\n- review {block, event, body?}: A review (approve, request_changes or comment) of a PR block's pull request.\n- merge {block, style?}: Merging a PR block's pull request.\n- issue {title, beside?, block?, body?, dir?, repo?}: A new issue on GitHub or the user's Forgejo (repo as a link says which; a clone's remote does too): a block beside you holding the draft, for the user to send, edit, drop or ask you to change; it shows the issue once sent. Asked for changes, draft again with block set to that block. Returns the block.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -11688,15 +12158,33 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "author": {
+          "assignee": {
             "default": null,
-            "description": "items: A GitHub login.",
+            "description": "native_issues: An account.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "author": {
+            "default": null,
+            "description": "items: A GitHub login. native_issues: An account.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "before": {
+            "default": null,
+            "description": "native_issues: Issues numbered below this: the next page.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -11711,7 +12199,7 @@
           },
           "item": {
             "default": null,
-            "description": "pr, issue, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
+            "description": "pr, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. issue: The issue: OWNER/NAME#N, or its link on github.com; or a native\nissue in Arugula control, \"#N\" (in the current project) or \"iss_…\". drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
             "type": [
               "string",
               "null"
@@ -11734,13 +12222,22 @@
               "checks",
               "inbox",
               "drafts",
-              "draft"
+              "draft",
+              "native_issues"
             ],
             "type": "string"
           },
+          "labels": {
+            "default": [],
+            "description": "native_issues: Issues with each of these labels.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "limit": {
             "default": null,
-            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500).",
+            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500). native_issues: At most this many (default 50, at most 200).",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -11750,7 +12247,7 @@
           },
           "project": {
             "default": null,
-            "description": "items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts.",
+            "description": "issue: A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -11758,7 +12255,7 @@
           },
           "q": {
             "default": null,
-            "description": "items: Text in the title.",
+            "description": "items: Text in the title. native_issues: Words in the title or body (dep*: a word starting with dep).",
             "type": [
               "string",
               "null"
@@ -11782,7 +12279,7 @@
           },
           "state": {
             "default": null,
-            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all.",
+            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all. native_issues: open (the default), closed or all.",
             "type": [
               "string",
               "null"
@@ -11805,7 +12302,7 @@
         "readOnlyHint": false,
         "title": "Draft on a linked repo"
       },
-      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
+      "description": "Draft a comment, a review or a new issue on a GitHub repo linked to the user's projects in Arugula control, with no block open, or discard a draft. Nothing reaches GitHub in an agent's name: the draft waits for a person to send (from the web page, their phone or the arugula CLI) or discard. Returns the draft at once; forge_read kind draft shows what became of it. Native issues in Arugula control aren't drafted: issue_write writes to them at once.\n- comment {body, item}: A comment on a PR or issue.\n- review {event, item, body?}: A review of a PR: approve, request_changes or comment.\n- issue {repo, title, body?}: A new issue on a linked repo.\n- discard {draft}: Discard a waiting draft (yours, or one on a repo the user reads).",
       "inputSchema": {
         "$defs": {
           "Event": {
@@ -12679,6 +13176,117 @@
       },
       "name": "post_thread",
       "title": "Post in a conversation"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Write to a native issue"
+      },
+      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "add": {
+            "default": [],
+            "description": "label, assign: label: labels; assign: accounts in the project.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "assignees": {
+            "default": [],
+            "description": "create: Accounts in the project.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "body": {
+            "default": null,
+            "description": "create: In markdown.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "comment": {
+            "default": null,
+            "description": "close: A comment to leave with it, posted once the close has landed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "issue": {
+            "description": "comment, edit, label, assign, close, reopen: The issue: \"#N\" (in the current project) or \"iss_…\".",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Which one (see the tool's description).",
+            "enum": [
+              "create",
+              "comment",
+              "edit",
+              "label",
+              "assign",
+              "close",
+              "reopen"
+            ],
+            "type": "string"
+          },
+          "labels": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "project": {
+            "default": null,
+            "description": "create: The project's id (prj_…) or personal. Default: the current project.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "default": null,
+            "description": "close: completed (the default), not_planned or duplicate.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remove": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text": {
+            "description": "comment: The comment, in markdown; @login mentions a person there.",
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "type": "object"
+      },
+      "name": "issue_write",
+      "title": "Write to a native issue"
     }
   ],
   "read, labs false": [
@@ -13368,7 +13976,7 @@
         "readOnlyHint": true,
         "title": "Read a PR or issue block"
       },
-      "description": "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom).",
+      "description": "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom). Or a native issue in Arugula control (block \"#N\" in the current project, or \"iss_…\"): it, its timeline and its newest comments.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -13390,7 +13998,15 @@
         "properties": {
           "block": {
             "$ref": "#/$defs/PaneArg",
-            "description": "The PR or issue block (from show)."
+            "description": "The PR or issue block (from show). Or a native issue in Arugula\ncontrol: \"#N\" (in the current project) or \"iss_…\"."
+          },
+          "project": {
+            "default": null,
+            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -13591,8 +14207,12 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
+            "description": "The block read; none for a native issue.",
             "minimum": 0,
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "drafts": {
             "items": {
@@ -13605,6 +14225,9 @@
               "string",
               "null"
             ]
+          },
+          "native": {
+            "description": "A native issue in Arugula control (M200): it, its timeline and its\nnewest comments."
           },
           "platform": {
             "description": "On a repo linked in Arugula control (M169): the platform's item,\nits events and its waiting drafts, as forge_read's pr or issue."
@@ -13623,7 +14246,6 @@
           }
         },
         "required": [
-          "block",
           "text",
           "wants",
           "drafts",
@@ -13641,15 +14263,33 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "author": {
+          "assignee": {
             "default": null,
-            "description": "items: A GitHub login.",
+            "description": "native_issues: An account.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "author": {
+            "default": null,
+            "description": "items: A GitHub login. native_issues: An account.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "before": {
+            "default": null,
+            "description": "native_issues: Issues numbered below this: the next page.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -13664,7 +14304,7 @@
           },
           "item": {
             "default": null,
-            "description": "pr, issue, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
+            "description": "pr, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. issue: The issue: OWNER/NAME#N, or its link on github.com; or a native\nissue in Arugula control, \"#N\" (in the current project) or \"iss_…\". drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
             "type": [
               "string",
               "null"
@@ -13687,13 +14327,22 @@
               "checks",
               "inbox",
               "drafts",
-              "draft"
+              "draft",
+              "native_issues"
             ],
             "type": "string"
           },
+          "labels": {
+            "default": [],
+            "description": "native_issues: Issues with each of these labels.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "limit": {
             "default": null,
-            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500).",
+            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500). native_issues: At most this many (default 50, at most 200).",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -13703,7 +14352,7 @@
           },
           "project": {
             "default": null,
-            "description": "items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts.",
+            "description": "issue: A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -13711,7 +14360,7 @@
           },
           "q": {
             "default": null,
-            "description": "items: Text in the title.",
+            "description": "items: Text in the title. native_issues: Words in the title or body (dep*: a word starting with dep).",
             "type": [
               "string",
               "null"
@@ -13735,7 +14384,7 @@
           },
           "state": {
             "default": null,
-            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all.",
+            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all. native_issues: open (the default), closed or all.",
             "type": [
               "string",
               "null"
@@ -14783,7 +15432,7 @@
         "readOnlyHint": true,
         "title": "Read a PR or issue block"
       },
-      "description": "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom).",
+      "description": "A PR or issue block's pull request or issue as text (header, body, checks, reviews, linked pull requests, timeline), what it waits on the user for, an issue's agent and its PR, and your drafts: each waiting, sent (with its link and who sent it) or dropped (and by whom). Or a native issue in Arugula control (block \"#N\" in the current project, or \"iss_…\"): it, its timeline and its newest comments.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -14805,7 +15454,15 @@
         "properties": {
           "block": {
             "$ref": "#/$defs/PaneArg",
-            "description": "The PR or issue block (from show)."
+            "description": "The PR or issue block (from show). Or a native issue in Arugula\ncontrol: \"#N\" (in the current project) or \"iss_…\"."
+          },
+          "project": {
+            "default": null,
+            "description": "A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -15006,8 +15663,12 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "block": {
+            "description": "The block read; none for a native issue.",
             "minimum": 0,
-            "type": "integer"
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "drafts": {
             "items": {
@@ -15020,6 +15681,9 @@
               "string",
               "null"
             ]
+          },
+          "native": {
+            "description": "A native issue in Arugula control (M200): it, its timeline and its\nnewest comments."
           },
           "platform": {
             "description": "On a repo linked in Arugula control (M169): the platform's item,\nits events and its waiting drafts, as forge_read's pr or issue."
@@ -15038,7 +15702,6 @@
           }
         },
         "required": [
-          "block",
           "text",
           "wants",
           "drafts",
@@ -15056,15 +15719,33 @@
         "readOnlyHint": true,
         "title": "Read a linked repo's PRs and issues"
       },
-      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead.\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).",
+      "description": "Read PRs and issues on GitHub repos linked to the user's projects in Arugula control (list kind linked_repos lists them), with no block open: a PR, an issue, a list of them, a PR's checks, or drafts waiting for a person. As the user (the owner of this machine), and only what GitHub lets them read. For a repo that isn't linked, show (kind pr or issue) opens a block instead. Also Arugula's own (native) issues: kind issue with item \"#N\" (in the current project) or \"iss_…\", and kind native_issues (with this machine's threads.read grant).\n- pr {item}: A pull request: its state, title, author, labels, reviewers, branches, what happened to it (reviews, pushes) and its waiting drafts. Metadata only, no body or comments.\n- issue {item, project?}: An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments.\n- items {author?, item_kind?, limit?, project?, q?, repo?, review_requested?, state?}: The PRs and issues of one linked repo, or of a project's linked repos, last updated first; item_kind, state, author, review_requested and q narrow it. Repos the user can't read on GitHub are named as withheld.\n- checks {item}: A pull request's checks on its head commit: each one's status and conclusion.\n- inbox {done?, limit?}: The user's inbox: PRs and issues on their linked repos that want something of them (a review requested, their checks failed, changes requested, a mention, assigned, merged or ready, a draft waiting), newest first, each with whether they've seen it.\n- drafts {item?, project?, state?}: Drafts waiting for a person to send: on a PR or issue, a repo or a project, or the user's own.\n- draft {draft}: One draft: what it says and what became of it (waiting, sent with its link, discarded or failed).\n- native_issues {assignee?, author?, before?, labels?, limit?, project?, q?, state?}: Arugula's own (native) issues of a project in Arugula control (the current one unless project names it), newest first; state, labels, assignee, author and q (search words) narrow it. issue_write writes to them at once.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "author": {
+          "assignee": {
             "default": null,
-            "description": "items: A GitHub login.",
+            "description": "native_issues: An account.",
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "author": {
+            "default": null,
+            "description": "items: A GitHub login. native_issues: An account.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "before": {
+            "default": null,
+            "description": "native_issues: Issues numbered below this: the next page.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -15079,7 +15760,7 @@
           },
           "item": {
             "default": null,
-            "description": "pr, issue, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
+            "description": "pr, checks: The PR or issue: OWNER/NAME#N, or its link on github.com. issue: The issue: OWNER/NAME#N, or its link on github.com; or a native\nissue in Arugula control, \"#N\" (in the current project) or \"iss_…\". drafts: One PR's or issue's (OWNER/NAME#N), or one repo's (OWNER/NAME).\nNeither: the user's own drafts, across their projects.",
             "type": [
               "string",
               "null"
@@ -15102,13 +15783,22 @@
               "checks",
               "inbox",
               "drafts",
-              "draft"
+              "draft",
+              "native_issues"
             ],
             "type": "string"
           },
+          "labels": {
+            "default": [],
+            "description": "native_issues: Issues with each of these labels.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "limit": {
             "default": null,
-            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500).",
+            "description": "items: At most this many (default 100, at most 200). inbox: At most this many (default 200, at most 500). native_issues: At most this many (default 50, at most 200).",
             "format": "uint32",
             "minimum": 0,
             "type": [
@@ -15118,7 +15808,7 @@
           },
           "project": {
             "default": null,
-            "description": "items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts.",
+            "description": "issue: A native issue's project for \"#N\": its id (prj_…) or personal.\nDefault: the one this clone's GitHub repo is linked to, else the\nuser's personal project. items: The project's id (prj_…). Default: the repo's project, else the\nuser's personal one. drafts: The project's id (prj_…): all of its drafts. native_issues: The project's id (prj_…) or personal. Default: the current project.",
             "type": [
               "string",
               "null"
@@ -15126,7 +15816,7 @@
           },
           "q": {
             "default": null,
-            "description": "items: Text in the title.",
+            "description": "items: Text in the title. native_issues: Words in the title or body (dep*: a word starting with dep).",
             "type": [
               "string",
               "null"
@@ -15150,7 +15840,7 @@
           },
           "state": {
             "default": null,
-            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all.",
+            "description": "items: open, closed or merged. drafts: waiting (the default), sent, discarded, failed or all. native_issues: open (the default), closed or all.",
             "type": [
               "string",
               "null"

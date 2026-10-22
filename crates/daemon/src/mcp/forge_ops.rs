@@ -34,6 +34,19 @@ pub struct ItemArgs {
     pub item: String,
 }
 
+/// Kind `issue`'s: GitHub's, or a native one (M200).
+#[derive(Deserialize, JsonSchema)]
+pub struct IssueItemArgs {
+    /// The issue: OWNER/NAME#N, or its link on github.com; or a native
+    /// issue in Arugula control, "#N" (in the current project) or "iss_…".
+    pub item: String,
+    /// A native issue's project for "#N": its id (prj_…) or personal.
+    /// Default: the one this clone's GitHub repo is linked to, else the
+    /// user's personal project.
+    #[serde(default)]
+    pub project: Option<String>,
+}
+
 #[derive(Deserialize, JsonSchema)]
 pub struct ItemsArgs {
     /// The project's id (prj_…). Default: the repo's project, else the
@@ -138,8 +151,8 @@ pub(crate) const READ: &[Kind] = &[
     },
     Kind {
         name: "issue",
-        description: "An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts.",
-        schema: schema_for_type::<ItemArgs>,
+        description: "An issue: its state, title, author, labels, assignees, what happened to it and its waiting drafts. A native issue (\"#N\" or \"iss_…\"): it, its timeline and its newest comments.",
+        schema: schema_for_type::<IssueItemArgs>,
         flag: None,
     },
     Kind {
@@ -172,6 +185,7 @@ pub(crate) const READ: &[Kind] = &[
         schema: schema_for_type::<DraftIdArgs>,
         flag: None,
     },
+    super::issues::LIST,
 ];
 
 pub(crate) const DRAFT: &[Kind] = &[
@@ -224,7 +238,7 @@ pub(crate) fn op(tool: &str, kind: &str, a: Value, by: &str) -> Result<Op, Strin
     };
     Ok(match (tool, kind) {
         ("forge_read", "pr") => Op::PrGet(item(&args::<ItemArgs>(a)?.item)?),
-        ("forge_read", "issue") => Op::IssueGet(item(&args::<ItemArgs>(a)?.item)?),
+        ("forge_read", "issue") => Op::IssueGet(item(&args::<IssueItemArgs>(a)?.item)?),
         ("forge_read", "checks") => Op::ChecksGet(item(&args::<ItemArgs>(a)?.item)?),
         ("forge_read", "items") => {
             let a: ItemsArgs = args(a)?;
@@ -412,6 +426,18 @@ impl Call<'_> {
         {
             return Err(format!("{tool} reads and drafts as this machine's owner: only their own agents may"));
         }
+        // M200: native issues are read here too, and never drafted on.
+        let native = a["item"].as_str().filter(|i| super::issues::Native::parse(i).is_some()).map(str::to_owned);
+        match (tool, kind, native) {
+            ("forge_read", "native_issues", _) => return self.list_native(a).await,
+            ("forge_read", "issue", Some(_)) => {
+                let a: IssueItemArgs = args(a)?;
+                let (summary, v) = self.read_native(&a.item, a.project.as_deref()).await?;
+                return done(summary, v);
+            }
+            ("forge_draft", _, Some(item)) => return Err(super::issues::not_drafted(&item)),
+            _ => {}
+        }
         let o = op(tool, kind, a, &self.by())?;
         let r = self.forge_op(o.clone()).await?;
         let mut out = match r {
@@ -434,7 +460,7 @@ mod tests {
         let a = json!({ "item": "acme/app#1", "body": "b", "event": "approve", "repo": "acme/app",
                         "title": "t", "draft": "dft_1" });
         for (tool, kinds) in [("forge_read", READ), ("forge_draft", DRAFT)] {
-            for k in kinds {
+            for k in kinds.iter().filter(|k| k.name != super::super::issues::LIST.name) {
                 let o = op(tool, k.name, a.clone(), "mcp:x").unwrap_or_else(|e| panic!("{tool} {}: {e}", k.name));
                 assert!(!o.sends(), "{tool} {} is {}", k.name, o.name());
             }

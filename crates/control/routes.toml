@@ -1439,6 +1439,65 @@ auth = "session"
 clients = ["page", "cli"]
 note = "An issue's timeline."
 
+# ---- platform: native issues for a machine's agents (M200)
+# MCP's issue tools, signed by the machine. The owner's role in the
+# project is the ceiling, and the machine needs its grant over it (M197):
+# `threads.read` to read, `issues.write` to write, asked on every call.
+# What an agent writes lands at once, as the owner's, labelled with the
+# machine. Comments go to the issue's thread (`/api/daemon/chat/...`).
+
+[[route]]
+method = "GET"
+path = "/api/daemon/issue-home"  # wire::issues::AGENT_ISSUE_HOME
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "The project an agent's #N means (`project`, else the one `repo` is linked to, else the owner's personal one) and where its new issues go."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/projects/{project}/issues"  # wire::issues::AGENT_PROJECT_ISSUES
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/issues"  # wire::issues::AGENT_PROJECT_ISSUES
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Opened at once, labelled as the owner's agent on the machine: `issues.write`, and the owner an owner or editor."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/projects/{project}/issues/{number}"  # wire::issues::AGENT_PROJECT_ISSUE
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/daemon/issues/{id}"  # wire::issues::AGENT_ISSUE
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "PATCH"
+path = "/api/daemon/issues/{id}"  # wire::issues::AGENT_ISSUE
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Edit, label, assign, close or reopen, at once: `threads.read` and `issues.write`, and the owner an owner or editor."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/issues/{id}/events"  # wire::issues::AGENT_ISSUE_EVENTS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+
 # ---- platform: billing
 
 [[route]]

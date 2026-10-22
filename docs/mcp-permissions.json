@@ -11,7 +11,7 @@
       "mcp__arugula__show", "mcp__arugula__start_agent", "mcp__arugula__prompt_agent",
       "mcp__arugula__agent_respond", "mcp__arugula__draft", "mcp__arugula__forge_draft",
       "mcp__arugula__invite_person", "mcp__arugula__device_call", "mcp__arugula__cloud",
-      "mcp__arugula__link_repo", "mcp__arugula__post_thread"
+      "mcp__arugula__link_repo", "mcp__arugula__post_thread", "mcp__arugula__issue_write"
     ]
   }
 }

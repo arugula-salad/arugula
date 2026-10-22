@@ -31,6 +31,50 @@ pub const ISSUE: &str = "/api/issues/{id}";
 /// `GET`: an issue's timeline, [`IssueEvents`].
 pub const ISSUE_EVENTS: &str = "/api/issues/{id}/events";
 
+/// A machine's agents' (M200), signed by the machine: the same reads and
+/// writes, each checked against its owner's role and the machine's grants
+/// (M197: `threads.read` to read, `issues.write` to write). `GET
+/// ?project=&repo=`: the project an agent's `#N` means, and where its new
+/// issues go, [`IssueHome`]: `project` (an id or `personal`), else the one
+/// `repo` (`owner/name`) is linked to, else the owner's personal one.
+pub const AGENT_ISSUE_HOME: &str = "/api/daemon/issue-home";
+/// [`PROJECT_ISSUES`], [`PROJECT_ISSUE`], [`ISSUE`] and [`ISSUE_EVENTS`]
+/// for a machine's agents. Comments are posted to the issue's thread
+/// (`chat::agent_messages` with its id).
+pub const AGENT_PROJECT_ISSUES: &str = "/api/daemon/projects/{project}/issues";
+pub const AGENT_PROJECT_ISSUE: &str = "/api/daemon/projects/{project}/issues/{number}";
+pub const AGENT_ISSUE: &str = "/api/daemon/issues/{id}";
+pub const AGENT_ISSUE_EVENTS: &str = "/api/daemon/issues/{id}/events";
+
+/// [`AGENT_PROJECT_ISSUES`] for `project`.
+pub fn agent_project_issues(project: &str) -> String {
+    format!("/api/daemon/projects/{project}/issues")
+}
+
+/// [`AGENT_PROJECT_ISSUE`] for `project`'s `number`.
+pub fn agent_project_issue(project: &str, number: u64) -> String {
+    format!("/api/daemon/projects/{project}/issues/{number}")
+}
+
+/// [`AGENT_ISSUE`] for `id`.
+pub fn agent_issue(id: &str) -> String {
+    format!("/api/daemon/issues/{id}")
+}
+
+/// [`AGENT_ISSUE_EVENTS`] for `id`.
+pub fn agent_issue_events(id: &str) -> String {
+    format!("/api/daemon/issues/{id}/events")
+}
+
+/// [`AGENT_ISSUE_HOME`]'s query.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentIssueHomeQuery {
+    #[serde(default)]
+    pub project: Option<String>,
+    #[serde(default)]
+    pub repo: Option<String>,
+}
+
 /// The longest title, in characters, and the longest body, in bytes:
 /// GitHub's, so an issue can go there (M205).
 pub const TITLE_MAX: usize = 256;
