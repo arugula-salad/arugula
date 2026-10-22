@@ -70,6 +70,7 @@ pub mod run_grant;
 #[cfg(test)]
 mod run_grant_tests;
 pub mod timing;
+pub mod triggers;
 pub mod window;
 
 pub use hub::HubPort;

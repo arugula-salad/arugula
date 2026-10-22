@@ -30,11 +30,16 @@ bytes = "1.12.1"
 chacha20poly1305 = "0.10.1"
 # Cloud's flags and their env vars, which control takes too.
 clap = { workspace = true, features = ["derive", "env"] }
+# Run schedules' cron expressions (M214), read in their time zones.
+croner = { version = "4.0.1", default-features = false, features = ["jiff"] }
 futures-util = { workspace = true }
 # Waiting for a Postgres answer from synchronous code (`db/pg.rs`).
 futures-executor = "0.3.34"
 hex = { workspace = true }
 hmac = { workspace = true }
+# Time zones for run schedules (M214), with IANA's database built in: the
+# platform's image has no /usr/share/zoneinfo.
+jiff = { version = "0.2.37", default-features = false, features = ["std", "tzdb-bundle-always"] }
 reqwest = { workspace = true, features = ["rustls", "json"] }
 rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
 # The platform page's build (web/dist-platform, M151), embedded.

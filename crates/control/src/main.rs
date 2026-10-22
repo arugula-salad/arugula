@@ -1091,6 +1091,7 @@ async fn run() -> anyhow::Result<()> {
         arugula_platform::projects::start(p);
         arugula_platform::billing::start(p);
         arugula_platform::forge::start(p);
+        arugula_platform::triggers::start(p);
     }
     // Shared Docs' open counts reach the database.
     {

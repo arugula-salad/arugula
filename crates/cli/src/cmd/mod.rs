@@ -41,6 +41,7 @@ pub mod rerun;
 pub mod rules;
 pub mod run;
 pub mod runs;
+pub mod runs_grant;
 pub mod search;
 pub mod send;
 pub mod setup;

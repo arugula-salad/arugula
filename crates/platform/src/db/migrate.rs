@@ -210,6 +210,12 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0019_run_grants.sql"),
         additive: true,
     },
+    Migration {
+        version: 20,
+        name: "run_triggers",
+        sql: include_str!("../../migrations/sqlite/0020_run_triggers.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -328,6 +334,12 @@ const POSTGRES: &[Migration] = &[
         version: 19,
         name: "run_grants",
         sql: include_str!("../../migrations/postgres/0019_run_grants.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 20,
+        name: "run_triggers",
+        sql: include_str!("../../migrations/postgres/0020_run_triggers.sql"),
         additive: true,
     },
 ];

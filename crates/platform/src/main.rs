@@ -186,6 +186,8 @@ async fn run() -> anyhow::Result<()> {
     arugula_platform::projects::start(&p);
     arugula_platform::billing::start(&p);
     arugula_platform::forge::start(&p);
+    // Run schedules (M214).
+    arugula_platform::triggers::start(&p);
 
     let port: Arc<dyn PlatformPort> = p.clone();
     let app = Router::new()

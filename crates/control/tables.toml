@@ -870,7 +870,7 @@ holds = "plaintext"
 what = "The platform's leased background work (M208): one job per workspace, run, deploy or schedule, with its kind, what it was asked, how far it got, its state, its failures in a row and the last one's error, when it's next due, and which machine's lease holds it until when."
 why_asleep = "Runs, deploys and schedules move on with every machine asleep, and a platform machine that dies mid-step leaves its job to another."
 with_account = "partly"
-note = "A job goes with what it's for (a project's run or deploy) when that goes. No kind uses it yet (M210 is the first)."
+note = "A job goes with what it's for (a project's run, deploy or schedule) when that goes. Schedules use it (M214), and runs and deploys will."
 seen_by = ["litestream"]
 
 [[table]]
@@ -878,10 +878,43 @@ name = "runs"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A project's run (M210): the workspace it runs on, what started it (a schedule, a forge event, or someone by hand: an account, and the machine when its agent did), the S37 operation it runs, its hash and the daemon it names (the only one whose reports move the run), its state (one of S37's eight), the standing grant it may run under, its times, exit code, and the chant ledger entry a release run wrote. The operation is in plain text: its command, directory and instruction (S37 decision 6)."
+what = "A project's run (M210): the workspace it runs on, what started it (a schedule, a forge event, or someone by hand: an account, and the machine when its agent did), the S37 operation it runs, its hash and the daemon it names (the only one whose reports move the run), its state (one of S37's eight), the standing grant it may run under, its times, exit code, the chant ledger entry a release run wrote, and what a trigger made it for (a schedule's tick or a rule's event, M214). The operation is in plain text: its command, directory and instruction (S37 decision 6)."
 why_asleep = "Scheduled and event runs start, and their state is shown and checked, with every person's machine asleep."
 with_account = "partly"
 note = "The runs of projects that go with it go. The rest stay, naming no one who started them."
+seen_by = ["litestream"]
+
+[[table]]
+name = "run_specs"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A project's run specs (M214): a name, the hosted workspace it runs on, and what it runs: a command (its arguments) or an instruction to an agent (and the agent's recipe), and the directory; who made and last changed it, and when. The command and instruction are in plain text, as a run's operation is."
+why_asleep = "Schedules and event rules start a spec's runs with every person's machine asleep."
+with_account = "partly"
+note = "The specs of projects that go with it go, with their schedules and rules. The rest stay, naming no one who made or changed them."
+seen_by = ["litestream"]
+
+[[table]]
+name = "run_schedules"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A run spec's schedules (M214): a cron expression and its time zone, whether it's on, its next tick, the tick it last fired for, the run that made and why a tick made none, and who made it. Its job on platform_jobs fires it."
+why_asleep = "The platform schedules and the hosted workspace executes: a schedule ticks with every person's machine asleep."
+with_account = "partly"
+note = "Those of specs that go, go (with their jobs). The rest stay, naming no one who made them."
+seen_by = ["litestream"]
+
+[[table]]
+name = "run_rules"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A run spec's event rules (M214): a linked repo's event (a PR opened, a check failed, a push), the repo and branch it's on or any, whether it's on, whether it takes events from forks and outside the repo, its hourly cap, and who made it."
+why_asleep = "A GitHub event starts a spec's run with every person's machine asleep."
+with_account = "partly"
+note = "Those of specs that go, go. The rest stay, naming no one who made them."
 seen_by = ["litestream"]
 
 [[table]]
