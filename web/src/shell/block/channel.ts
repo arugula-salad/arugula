@@ -69,8 +69,12 @@ export interface WsHandlers {
 /** The daemon refused the grant: `code` is `arugula_e2e::block::Refused`'s
  * (`expired`: ask for a new one). */
 export class Refused extends Error {
-  constructor(readonly code: string) {
+  // Not a parameter property: the device fixture loads this file with
+  // Node's type stripping, which has none (M186).
+  readonly code: string;
+  constructor(code: string) {
     super(`the machine refused this block (${code})`);
+    this.code = code;
   }
 }
 

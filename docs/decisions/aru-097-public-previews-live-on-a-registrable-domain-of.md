@@ -46,6 +46,7 @@ decided_on: "2026-10-21"
 reviews: []
 constrains:
   - "path:crates/control/src/blocks_wire.rs"
+  - "path:crates/control/src/blocks.rs"
 ---
 
 # Public previews live on a registrable domain of their own
@@ -63,5 +64,10 @@ A dev server in a hosted workspace shows in two ways (Jake, 2026-10-21,
   documented.
 - **The provider's own preview URLs are never used.** E2B's are public by
   default and need a header browsers can't send.
-Where: M50's block origins, the preview routes (M186, M187).
+Where: M50's block origins: `crates/control/src/blocks.rs` relays a block's
+channel to a hosted machine, and the daemon's `block_signer`
+(`crates/daemon/src/control.rs`) lets in grants from the project's owners'
+and editors' devices only (M186). `blocks.rs`'s test
+`no_provider_preview_urls` keeps the provider's preview hosts out of the
+tree. Public previews: not built yet (M187).
 From: #1235 (platform roadmap, step 5), M175 (#1236), M186 (#1247), M187 (#1248), M50 (#150).

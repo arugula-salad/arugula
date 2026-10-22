@@ -496,3 +496,80 @@ async fn block_sockets_are_capped_and_close_without_a_handshake() {
     let other = "fedcba9876543210fedcba9876543210";
     held.push(c.relay(other, Some(&own_origin(other)), &id).await.unwrap());
 }
+
+/// A hosted machine (M178) of `project`, as control knows it once it
+/// enrolled.
+fn hosted(app: &App, project: &str) -> DeviceKeys {
+    let keys = DeviceKeys::generate();
+    let d = arugula_e2e::hosted::Delegation {
+        project: project.into(),
+        owner: "team:00aa11bb22cc33dd".into(),
+        key: app.hosted_key.public(),
+        at: now_ms(),
+        by: String::new(),
+        sig: String::new(),
+    };
+    let (noise, sign) = (hex::encode(keys.noise_public), hex::encode(keys.sign_public()));
+    let cert = arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &noise, &sign, now_ms());
+    assert_eq!(cert.device, keys.id());
+    app.db.add_hosted(&cert, now_ms()).unwrap();
+    keys
+}
+
+/// M186: a dev server in a hosted workspace shows on a block origin, over
+/// the hosted machine's relay socket, metered against its project. Control
+/// only relays: the machine refuses a grant from a device it doesn't let
+/// open blocks (an outsider's), and a removed machine isn't reached.
+#[tokio::test]
+async fn a_hosted_machines_preview_crosses_the_relay() {
+    const PROJECT: &str = "prj_0123456789abcdef0123456789abcdef";
+    let c = control(|_| {}).await;
+    let (member, outsider) = (DeviceKeys::generate(), DeviceKeys::generate());
+    let keys = hosted(&c.app, PROJECT);
+    let (id, noise) = (keys.id(), keys.noise_public);
+    fake_daemon(&c, keys, &member).await;
+    let origin = own_origin(KEY);
+
+    let block_key = DeviceKeys::generate();
+    let mut ws = c.relay(KEY, Some(&origin), &id).await.expect("a hosted machine's block socket");
+    let grant = Grant::new(&member, &id, BLOCK, &block_key.noise_public, now_ms() + 60_000);
+    let (answer, ch) = handshake(&mut ws, (&id, &noise), grant, &block_key).await;
+    assert_eq!(answer, Ok(()));
+    let head = ReqHead { method: "GET".into(), path: "/".into(), headers: vec![] };
+    for f in [wire::json_frame(wire::HEAD, 1, &head), wire::frame(wire::END, 1, b"")] {
+        for w in ch.seal(&Msg::Binary(f)).unwrap() {
+            ws.send(Message::Binary(w.into())).await.unwrap();
+        }
+    }
+    let mut body = None;
+    while body.is_none() {
+        let Some(Ok(Message::Binary(w))) = ws.next().await else { panic!("the channel closed") };
+        if let Some(Msg::Binary(f)) = ch.open(&w).unwrap()
+            && let Ok((wire::DATA, _, payload)) = wire::parse(&f)
+        {
+            body = Some(payload.to_vec());
+        }
+    }
+    assert_eq!(body.unwrap(), b"block 7 at /");
+    ws.close(None).await.unwrap();
+    drop(ws);
+    let day = crate::day(now_ms());
+    for _ in 0..100 {
+        if c.app.db.relay_bytes(PROJECT, &day).unwrap() > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(c.app.db.relay_bytes(PROJECT, &day).unwrap() > 0, "metered against its project");
+
+    // An outsider's grant: the machine's refusal, readable, then a close.
+    let mut ws = c.relay(KEY, Some(&origin), &id).await.unwrap();
+    let grant = Grant::new(&outsider, &id, BLOCK, &block_key.noise_public, now_ms() + 60_000);
+    let (answer, _) = handshake(&mut ws, (&id, &noise), grant, &block_key).await;
+    assert_eq!(answer, Err(Refused::Untrusted));
+    assert!(closed(&mut ws, 5).await.is_some());
+
+    // Removed from its project: unknown here.
+    assert!(c.app.db.remove_hosted(&id, now_ms()).unwrap());
+    assert_eq!(c.relay(KEY, Some(&origin), &id).await.unwrap_err(), 404);
+}

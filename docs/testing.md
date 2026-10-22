@@ -742,7 +742,17 @@ d approve ABCDE-FGHIJ.KLMN-PQRS-TVWX-YZ01                 # {device, name}
 d devices                                                 # {devices: [{id, kind, name}]}
 d online box 30                                           # wait up to 30s
 d pane box MARKER                                         # round-trip through its first pane
+d preview box 5173 --blocks blocks.localhost:24888 --to 127.0.0.1:24880
+                         # M186: GET / of port 5173 in a browser block, through
+                         # control's block origin and relay, as a block's frame does
 ```
+
+`preview` needs control started with a block domain (on the testnet,
+`ARUGULA_TESTNET_BLOCK_DOMAIN=blocks.localhost`). `*.localhost` resolves
+to `::1`, so `--to` forwards it to control's published port. Given
+`BLOCK:SITEKEY` and `--entry FILE` (a `hosted-entry`'s output) instead of
+a port, it tries a block someone else opened, as an outsider would; the
+daemon's refusal comes back as `{refused}`.
 
 `approveJoin(…)` and `approve` take the whole code `arugulad join` or
 `arugula login` prints after `#join=`: the code, a dot, and the machine's
