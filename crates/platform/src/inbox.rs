@@ -199,7 +199,13 @@ async fn issue_changed_or_opened(
     for gone in was.iter().filter(|a| !issue.assignees.contains(a)) {
         app.db.drop_inbox(gone, &issue.id, ASSIGNED)?;
     }
-    let assigned: Vec<&String> = issue.assignees.iter().filter(|a| !was.contains(a) && *a != by.account).collect();
+    // Newly assigned, with chat (and so native issues) on, as mentions are.
+    let mut assigned: Vec<&String> = Vec::new();
+    for a in issue.assignees.iter().filter(|a| !was.contains(a) && *a != by.account) {
+        if chat_on(app, a).await? {
+            assigned.push(a);
+        }
+    }
     // Those the body names now and didn't before.
     let mentioned = match old {
         Some(o) if o.body == issue.body => vec![],
@@ -272,7 +278,11 @@ pub async fn entries(app: &Platform, account: &str, f: &InboxFilter) -> Result<V
         let name = match crate::issues::place(app, Actor::person(account), &r.project, false).await {
             Ok(p) => Some(p.project.name),
             Err(ApiError(StatusCode::NOT_FOUND | StatusCode::FORBIDDEN, ..)) => None,
-            Err(e) => return Err(e),
+            // One project's trouble leaves out its entries, not the inbox.
+            Err(ApiError(status, said, _)) => {
+                warn!(project = %r.project, %status, said, "inbox: a project's entries left out");
+                None
+            }
         };
         projects.insert(r.project.clone(), name);
     }

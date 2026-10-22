@@ -246,3 +246,22 @@ async fn who_sees_native_entries() {
     let (st, _) = call(&base, "bob", "POST", &format!("/api/inbox/{id}"), Some(json!({ "done": true }))).await;
     assert_eq!(st, 404);
 }
+
+/// An assignee with chat off (and so no native issues) gets no entry and
+/// no push, as a mention doesn't; turned on, the next assignment reaches
+/// them.
+#[tokio::test]
+async fn an_assignee_without_chat_gets_nothing() {
+    let (hub, app, base, team) = setup().await;
+    hub.flag("account:bob", false);
+    app.cache.drop_all();
+    let id = new_issue(&base, "alice", &team, json!({ "title": "Ship it", "assignees": ["bob", "carol"] })).await;
+    assert_eq!(rows(&app), [format!("carol {id} assigned")], "not bob");
+    let sent = pushes(&hub).await;
+    assert_eq!(sent.iter().map(|(a, ..)| a.as_str()).collect::<Vec<_>>(), ["carol"], "{sent:?}");
+
+    hub.flag("account:bob", true);
+    app.cache.drop_all();
+    let other = new_issue(&base, "alice", &team, json!({ "title": "Ship it too", "assignees": ["bob"] })).await;
+    assert!(rows(&app).contains(&format!("bob {other} assigned")), "{:?}", rows(&app));
+}
