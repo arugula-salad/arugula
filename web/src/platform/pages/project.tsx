@@ -13,6 +13,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { names, roomPath } from "../links";
 import { follow, pathOf } from "../router";
 import { controlOrigin, session, type PlatformProject } from "../session";
+import { ProjectIssues } from "./issues";
 
 const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
 
@@ -62,6 +63,7 @@ export function ProjectHome({ id }: { id: string }) {
                 );
               })}
           </ul>
+          {chat.on && <ProjectIssues p={p} />}
           {!p.team && (
             <>
               <h2>

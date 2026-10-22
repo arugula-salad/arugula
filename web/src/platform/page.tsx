@@ -2,7 +2,7 @@
 // draws its own (the rooms view puts its search in the bar). Before anyone
 // is signed in here it says where to sign in.
 
-import { useEffect } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { chat } from "../shared/chat-store";
 import { useSubscribe } from "../shared/ui/hooks";
 import { MaintenanceNote } from "../shared/ui/maintenance-note";
@@ -13,6 +13,9 @@ import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
 import { toasts } from "./toast";
 import { AgentsPage } from "./pages/agents";
+import { IssuePage } from "./pages/issue";
+import { IssuesPage, NewIssuePage } from "./pages/issues";
+import { issues } from "./issues/store";
 import { ChatPage } from "./pages/chat";
 import { Home } from "./pages/home";
 import { InboxPage } from "./pages/inbox";
@@ -26,24 +29,31 @@ export function PlatformPage() {
   const r = useRoute();
   useEffect(() => void session.load(), []);
   useSlug(r);
-  useFind(r);
+  const lost = useFind(r);
   const s = session.state;
   if (s === null) return <Shell><p class="platform-section dim">Loading…</p></Shell>;
   if (s === "signed-out") return <SignIn />;
   if (typeof s === "object") return <Shell><p class="platform-section control-error">{s.error}</p></Shell>;
   if (r.page === "chat") return <><ChatPage route={{ room: r.room, msg: r.msg, view: r.view, q: r.q }} /><Toast /></>;
   if (r.page === "dm") return <><ChatPage route={{ room: r.room, msg: r.msg }} /><Toast /></>;
-  return <Shell>{body(r)}</Shell>;
+  return <Shell>{body(r, lost)}</Shell>;
 }
 
-function body(r: Route) {
+/** `lost`: the issue an id-only address names, when it couldn't be read. */
+function body(r: Route, lost: string | null) {
   switch (r.page) {
     case "find":
-      return <p class="platform-section dim">Finding it…</p>;
+      return r.what === "issue" && lost === r.issue ? <Missing what="That issue isn't one you can read (or it's gone)." /> : <p class="platform-section dim">Finding it…</p>;
     case "home":
       return <Home />;
     case "project":
       return <ProjectHome id={r.project} />;
+    case "issues":
+      return <IssuesPage project={r.project} filter={{ state: r.state, q: r.q, label: r.label, assignee: r.assignee }} />;
+    case "new-issue":
+      return <NewIssuePage project={r.project} />;
+    case "issue":
+      return <IssuePage project={r.project} issue={r.issue} msg={r.msg} />;
     case "workspaces":
       return <WorkspacesPage />;
     case "project-settings":
@@ -106,12 +116,25 @@ function Toast() {
 
 /** An id-only address (`/chat/:room`…) goes where it belongs as soon as
  * the page can say, in its place in history. */
-function useFind(r: Route) {
+function useFind(r: Route): string | null {
   useSubscribe((fn) => chat.subscribe(fn));
+  useSubscribe((fn) => issues.subscribe(fn));
   const to = r.page === "find" && session.state === "ready" ? resolve(r) : null;
+  // An issue's project is the issue's to say: read it once.
+  const ask = r.page === "find" && r.what === "issue" && session.state === "ready" && !to ? r.issue : null;
+  // The one that couldn't be read, while the address names it: going
+  // anywhere else and back asks again.
+  const [lost, setLost] = useState<string | null>(null);
+  useEffect(() => {
+    setLost(null);
+    let live = true;
+    if (ask) issues.get(ask).catch(() => live && setLost(ask));
+    return () => void (live = false);
+  }, [ask]);
   useEffect(() => {
     if (to) go(to, true);
   }, [to]);
+  return lost;
 }
 
 /** Put the address's slugs right once the names are known: only the ids

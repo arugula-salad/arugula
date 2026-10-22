@@ -12,7 +12,7 @@
 // reader may reach that machine); one that doesn't is inert, and the quote
 // is all they see.
 
-import { Fragment } from "preact";
+import { Fragment, type ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
@@ -175,6 +175,29 @@ function readOnly(r: ChatRoom): string {
   return "You can read this room, not write in it.";
 }
 
+/** Something shown in a room among its messages, at its time. */
+export interface Between {
+  key: string;
+  at: number;
+  el: ComponentChildren;
+}
+
+/** A room's messages and what's between them, in time order: each thing
+ * before the first message after it, the rest after the last. */
+type Row = { m: ChatMessage; x?: undefined } | { x: Between; m?: undefined };
+
+function rowsOf(msgs: ChatMessage[], between: Between[] = []): Row[] {
+  const xs = [...between].sort((a, b) => a.at - b.at);
+  const out: Row[] = [];
+  let i = 0;
+  for (const m of msgs) {
+    while (i < xs.length && xs[i].at <= m.at) out.push({ x: xs[i++] });
+    out.push({ m });
+  }
+  while (i < xs.length) out.push({ x: xs[i++] });
+  return out;
+}
+
 /** A room's messages and the box to write in. */
 export function RoomBody({
   room,
@@ -182,6 +205,8 @@ export function RoomBody({
   quote: initialQuote,
   focus,
   name,
+  between,
+  empty,
 }: {
   room: ChatRoom;
   phone: boolean;
@@ -190,6 +215,11 @@ export function RoomBody({
   focus?: number;
   /** What the composer calls the room: "Message #general". */
   name: string;
+  /** Other things in the room's time order, between its messages: an
+   * issue's timeline (M201). */
+  between?: Between[];
+  /** What the room says before anything's in it, instead of its own. */
+  empty?: string;
 }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const [error, setError] = useState<string | null>(null);
@@ -262,31 +292,42 @@ export function RoomBody({
           </button>
         )}
         {msgs === null && !error && <p class="thread-empty">Loading…</p>}
-        {msgs?.length === 0 && <p class="thread-empty">{emptyNote(current)}</p>}
-        {msgs?.map((m, i) => {
-          const prev = msgs[i - 1];
-          return (
-            <Fragment key={m.seq}>
-              {(!prev || day(prev.at) !== day(m.at)) && (
-                <div class="msg-day" role="separator">
-                  <span>{dayLabel(m.at)}</span>
-                </div>
-              )}
-              {m.seq === newFrom.current && (
-                <div class="msg-new" role="separator" data-new-line>
-                  <span>New</span>
-                </div>
-              )}
-              <RoomMessage
-                room={current}
-                m={m}
-                prev={prev && day(prev.at) === day(m.at) && m.seq !== newFrom.current ? prev : undefined}
-                reply={(q) => composeRef.current?.reply(q)}
-                setError={setError}
-              />
-            </Fragment>
-          );
-        })}
+        {msgs?.length === 0 && !between?.length && <p class="thread-empty">{empty ?? emptyNote(current)}</p>}
+        {msgs &&
+          rowsOf(msgs, between).map((row, i, rows) => {
+            const at = row.m ? row.m.at : row.x.at;
+            const before = rows[i - 1];
+            const beforeAt = before && (before.m ? before.m.at : before.x.at);
+            const newDay = beforeAt === undefined || day(beforeAt) !== day(at);
+            const dayLine = newDay && (
+              <div class="msg-day" role="separator">
+                <span>{dayLabel(at)}</span>
+              </div>
+            );
+            if (row.x) {
+              return (
+                <Fragment key={`x:${row.x.key}`}>
+                  {dayLine}
+                  {row.x.el}
+                </Fragment>
+              );
+            }
+            const m = row.m;
+            // A message follows on from the one before it, unless something
+            // else came between them.
+            const prev = !newDay && before?.m && m.seq !== newFrom.current ? before.m : undefined;
+            return (
+              <Fragment key={m.seq}>
+                {dayLine}
+                {m.seq === newFrom.current && (
+                  <div class="msg-new" role="separator" data-new-line>
+                    <span>New</span>
+                  </div>
+                )}
+                <RoomMessage room={current} m={m} prev={prev} reply={(q) => composeRef.current?.reply(q)} setError={setError} />
+              </Fragment>
+            );
+          })}
       </div>
       {error && <p class="thread-error">{error}</p>}
       {current.writable ? (

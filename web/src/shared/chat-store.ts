@@ -316,6 +316,12 @@ export class ChatStore {
     return this.took(await call<ChatRoom>("POST", "/api/chat/targets", { machine, kind, target: String(target) }));
   }
 
+  /** The thread on an object (M196: a native issue, `iss_…`), made the
+   * first time; for a member of its project. */
+  async openObject(target: string): Promise<ChatRoom> {
+    return this.took(await call<ChatRoom>("POST", "/api/chat/targets", { machine: "", kind: "object", target }));
+  }
+
   async rename(id: string, name: string) {
     return this.took(await call<ChatRoom>("PATCH", `/api/chat/rooms/${enc(id)}`, { name }));
   }
