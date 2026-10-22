@@ -641,7 +641,7 @@ pub struct ResultPipe {
 #[cfg(unix)]
 impl ResultPipe {
     pub fn new() -> Result<Self, String> {
-        let (r, w) = nix::unistd::pipe2(nix::fcntl::OFlag::O_CLOEXEC).map_err(|e| format!("its result pipe: {e}"))?;
+        let (r, w) = crate::agent::pipe_cloexec().map_err(|e| format!("its result pipe: {e}"))?;
         Ok(Self { r, w })
     }
 

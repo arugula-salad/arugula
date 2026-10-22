@@ -405,6 +405,15 @@ fn lines(p: &Path) -> usize {
     std::fs::read_to_string(p).map_or(0, |s| s.lines().count())
 }
 
+/// Run `run`'s state in its ledger, `<state>/work/ID.json`.
+fn ledger_state(state: &Path, run: &str) -> String {
+    let file = std::fs::read_to_string(state.join("work").join(format!("{run}.json"))).unwrap_or_default();
+    serde_json::from_str::<serde_json::Value>(&file)
+        .ok()
+        .and_then(|l| l["state"].as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
 fn run_id(n: char) -> String {
     format!("run_{}", n.to_string().repeat(32))
 }
@@ -480,6 +489,9 @@ fn a_hosted_machine_runs_each_run_once() {
     let b = run_id('b');
     f.items.lock().unwrap().push(f.item(&b, &format!("echo ran >> {}", two.display()), f.grant(&f.root)));
     wait(&marks, &f, "run b ran", || lines(&two) == 1);
+    // Its end is kept before the daemon goes: a daemon gone before that
+    // (a crash, M223) fails it instead.
+    wait(&marks, &f, "run b's end kept", || !matches!(ledger_state(&d.state, &b).as_str(), "" | "running"));
     std::thread::sleep(Duration::from_millis(600));
     assert!(f.reports_of(&b).is_empty());
 
@@ -491,7 +503,8 @@ fn a_hosted_machine_runs_each_run_once() {
     let p = f.pulls();
     wait(&marks, &f, "more pulls", || f.pulls() > p + 5);
     assert_eq!((lines(&one), lines(&two)), (1, 1), "nothing ran again");
-    assert_eq!(states(&f.reports_of(&b)), ran(1));
+    let reports = f.reports_of(&b);
+    assert_eq!(states(&reports), ran(1), "{:?}", reports.iter().map(|r| &r.detail).collect::<Vec<_>>());
     assert_eq!(f.reports_of(&a).len(), 2, "run a's were taken: not sent again");
 
     // A grant nobody in the project signed, and an operation changed after

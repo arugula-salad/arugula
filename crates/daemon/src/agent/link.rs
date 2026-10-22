@@ -134,7 +134,7 @@ pub struct LocalSpawn<'a> {
 
 /// A pipe whose ends aren't inherited (`pipe2` doesn't exist on macOS).
 #[cfg(unix)]
-fn pipe_cloexec() -> nix::Result<(std::os::fd::OwnedFd, std::os::fd::OwnedFd)> {
+pub(crate) fn pipe_cloexec() -> nix::Result<(std::os::fd::OwnedFd, std::os::fd::OwnedFd)> {
     use nix::fcntl::{FcntlArg, FdFlag, fcntl};
     let (r, w) = nix::unistd::pipe()?;
     for fd in [&r, &w] {
