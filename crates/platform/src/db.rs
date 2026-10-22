@@ -32,6 +32,7 @@ pub mod content;
 pub mod forge;
 pub mod inbox;
 pub mod issues;
+pub mod jobs;
 mod legacy;
 pub mod migrate;
 pub mod mirror;

@@ -831,6 +831,17 @@ note = "Those of issues that go, go. The rest stay, naming no actor, and it's ta
 seen_by = ["litestream"]
 
 [[table]]
+name = "platform_jobs"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "The platform's leased background work (M208): one job per workspace, run, deploy or schedule, with its kind, what it was asked, how far it got, its state, its failures in a row and the last one's error, when it's next due, and which machine's lease holds it until when."
+why_asleep = "Runs, deploys and schedules move on with every machine asleep, and a platform machine that dies mid-step leaves its job to another."
+with_account = "partly"
+note = "A job goes with what it's for (a project's run or deploy) when that goes. No kind uses it yet (M210 is the first)."
+seen_by = ["litestream"]
+
+[[table]]
 name = "platform_migrations"
 plane = "platform"
 process = "platform"

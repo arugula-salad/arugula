@@ -1047,10 +1047,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 77 tables in two planes ("Two planes, two trust rules"):
+Control's database has 78 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (33 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (44 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues. Control reads most of it, and says so here.
+- **The platform plane** (45 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1139,6 +1139,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `issues` | **plaintext** | A project's native issue, in plain text: its number in the project, title, body, state and close reason, who opened it, labels, assignees (accounts), where it was exported to on GitHub, and its times. One an agent opened under its machine's issues.write grant (M197) keeps the machine's owner as its author and names the machine. Its comments are its thread's chat messages. | A project's issues are read, written, searched and put in inboxes by control with every machine asleep, so control reads their text (aru-088). | partly: the issues of projects that go with it go. The rest stay, with their text, naming no author, and it's taken off assignees. |  |
 | `issues_fts` | **plaintext** | The full-text index of native issues' titles and bodies (SQLite FTS5; on Postgres it's a generated column of issues). | Control searches a project's issues itself, with every machine asleep. | partly: as issues: it's rebuilt from them. |  |
 | `issue_events` | **plaintext** | A native issue's timeline: opened, edited, closed, reopened, labelled, assigned, exported, with who (an account, and the machine when its agent did it) and when, and a small detail: an edit's old title (the text that makes it plaintext), a close's reason, the label or assignee, where it was exported to. | An issue's timeline shows with every machine asleep. | partly: those of issues that go, go. The rest stay, naming no actor, and it's taken out of assignment events. |  |
+| `platform_jobs` | **plaintext** | The platform's leased background work (M208): one job per workspace, run, deploy or schedule, with its kind, what it was asked, how far it got, its state, its failures in a row and the last one's error, when it's next due, and which machine's lease holds it until when. | Runs, deploys and schedules move on with every machine asleep, and a platform machine that dies mid-step leaves its job to another. | partly: a job goes with what it's for (a project's run or deploy) when that goes. No kind uses it yet (M210 is the first). |  |
 | `platform_migrations` | metadata | Which of the platform's numbered migrations (M142) its database has: each one's number, name, checksum, whether it's additive (older builds may start past it) and when it ran, or that it was found already in place on a database made before migrations. | The platform checks its tables are the shape its code expects before it serves anything, whether or not any machine is up. | nothing of one |  |
 
 ### Who else sees it
