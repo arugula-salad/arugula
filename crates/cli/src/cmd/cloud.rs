@@ -71,8 +71,7 @@ pub enum CloudCmd {
         #[arg(long)]
         project: Option<String>,
     },
-    /// The project's own inference keys, which its hosted agents run on
-    /// (M185).
+    /// The project's own inference keys, which its hosted agents run on.
     ///
     /// `set anthropic` or `set openai` reads the key from stdin (asked for
     /// without echo on a terminal): an owner of the project. Control keeps
