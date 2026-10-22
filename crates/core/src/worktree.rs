@@ -51,6 +51,9 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("arugula-worktree-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        // git prints the real path: macOS's temp dir is under a symlink
+        // (/var is /private/var).
+        let dir = dir.canonicalize().unwrap();
         let sh = |script: &str| {
             let out = std::process::Command::new("sh").arg("-c").arg(script).current_dir(&dir).output().unwrap();
             assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
