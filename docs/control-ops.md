@@ -864,7 +864,7 @@ that has it. Do the test App first, then the real one:
    mint that asks for write (`422`), so a send fails clearly and its
    draft is kept.
 3. Run `forges-nightly` by hand on `main` and check it passes.
-4. **The real App** (`illogical-by-arugula`): the same two permissions,
+4. **The real App** (`arugula-io`, id 5171453): the same two permissions,
    in its settings on the account that owns it. GitHub emails every
    installer to approve. Jake approves his own installations; a team's
    org owner approves theirs, after the note to installers.
@@ -894,7 +894,7 @@ Do the test App first, then the real one:
 3. Check: remove a collaborator from `forge-tests` on GitHub and look
    for a `member` delivery in the App's *Advanced → Recent Deliveries*,
    answered 202.
-4. **The real App** (`illogical-by-arugula`): the same permission and
+4. **The real App** (`arugula-io`, id 5171453): the same permission and
    events. GitHub emails every installer to approve; a user account's
    installation has no organization members, and approving changes
    nothing else for it.
