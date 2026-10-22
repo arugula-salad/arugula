@@ -520,6 +520,44 @@ push with the run's log. A box that refuses an approval (something forged
 or stale got past the platform) cancels the deploy before anything runs,
 and the owners get a push saying why.
 
+**The apps-platform driver (M222).** It deploys an app to home-cloud's app
+platform. Its source is a full commit of one of the list's organization's
+repositories (`arugula-salad/<app>`, not the list itself), and the plan names
+the list repository, the pointer's path (`apps/<app>.yaml`) and the commit.
+The box gives the driver the deploy it checked on its command line, and the
+driver recomputes the approved plan from it.
+
+Apply clones the list and pins the pointer's `GitRepository` at that commit
+(nothing else in the file changes; a new app gets a pointer as planter writes
+it). It commits that one file and pushes, and Flux applies it. It refuses:
+
+- a commit that isn't on the app repository's default branch (GitHub serves a
+  fork's commits by their sha too);
+- a deploy whose id is in the list's history already (a replay);
+- a new app whose name another of the list's objects holds, or overlaps by a
+  dash-prefix;
+- a repository or `app.yaml` over its size bound.
+
+The token writes that one repository only: an installation token of the
+platform's GitHub App, `contents: write` on the list alone, minted for the
+run. An environment can hold a fine-grained token of its own as
+`APPS_PLATFORM_TOKEN` instead. A second, read-only token (`SOURCE_TOKEN`, a
+name environments can't use) reads the app's repository. Both reach git as
+headers in its environment, never on a command line or on disk. The box
+revokes both at GitHub right after the push; the platform revokes them again
+when the run ends.
+
+The run succeeds once the app's public address answers its health path, three
+times in a row, within ten minutes. An app whose answer reports its revision
+(JSON `revision`, `commit`, `version` or `sha`, or an `X-Revision` header) is
+held to it: it must be the commit's, or the image that commit pins. **An app
+that reports none is ready when it answers,** and an old version still
+serving answers too, so for it a failed rollout can look ready.
+
+Rolling back is a deploy of the last good commit: when the pointer's last
+commit is this driver's and it pinned that commit before, it's a revert
+commit of it.
+
 **What a compromised platform can do.** The platform holds the master key,
 so it can open a project's secrets itself, and it chooses where a deploy's
 box runs. The box's own checks guard against a platform that's only partly

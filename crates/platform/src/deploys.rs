@@ -416,6 +416,31 @@ pub async fn create_environment(
     if role != TeamRole::Owner {
         return Err(refusal(StatusCode::FORBIDDEN, NOT_AN_OWNER, "only the project's owners make its environments"));
     }
+    // A secret can't take the name of a token the driver mints for its
+    // runs (M222: the apps-platform driver's `SOURCE_TOKEN`); one it mints
+    // only when the environment holds none of its own may be held.
+    if let Some(d) = crate::drivers::driver(&b.driver) {
+        let would = Environment {
+            id: String::new(),
+            project: p.id.clone(),
+            name: b.name.clone(),
+            driver: b.driver.clone(),
+            secret_names: b.secret_names.clone(),
+            settings: b.settings.clone(),
+            created_at: 0,
+            updated_at: 0,
+        };
+        if let Some(m) = d.mints(&would).into_iter().find(|m| b.secret_names.iter().any(|n| n == m.name())) {
+            return Err(err(
+                StatusCode::BAD_REQUEST,
+                &format!(
+                    "{} is the token the {} driver mints for each run: name the secret otherwise",
+                    m.name(),
+                    d.name()
+                ),
+            ));
+        }
+    }
     // Its driver's settings, defaults filled in (M220): the plan names them.
     let settings = match crate::drivers::driver(&b.driver) {
         Some(d) => d.settings(&b.settings).map_err(|why| err(StatusCode::BAD_REQUEST, &why))?,
@@ -527,6 +552,9 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
             StatusCode::CONFLICT,
             &format!("the environment's secret {bad} isn't one the {} driver takes: take it out first", env.driver),
         ));
+    }
+    if let Some(why) = driver.refuses(&source) {
+        return Err(err(StatusCode::BAD_REQUEST, &why));
     }
     // Its settings as its driver takes them (M220): an environment made
     // before they were checked is refused until it's made again.

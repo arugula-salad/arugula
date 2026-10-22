@@ -41,6 +41,7 @@
 //! (`ARUGULA_PLATFORM_FAKE_DRIVER=1`), and boxes run it only where they
 //! say so too.
 
+pub mod apps_platform;
 pub mod chant_fly;
 pub mod fake;
 pub mod mint;
@@ -112,10 +113,19 @@ pub trait Driver: Send + Sync {
         self.rolls_back().then(Settings::new)
     }
 
-    /// The secret names it takes (`arugula_e2e::deploy::driver_secrets`):
-    /// an environment holds only these, and a box hands it only these.
+    /// The secret names it takes (`arugula_e2e::deploy::driver_secrets`),
+    /// the ones it mints ([`Driver::mints`]) among them: a box hands it only
+    /// these, and an environment holds only these, less the ones it mints
+    /// whatever the environment holds.
     fn secret_names(&self) -> &'static [&'static str] {
         arugula_e2e::deploy::driver_secrets(self.name()).unwrap_or_default()
+    }
+
+    /// Why it can't deploy `source` at all, said when it's planned: `None`
+    /// when it can.
+    fn refuses(&self, source: &Source) -> Option<String> {
+        let _ = source;
+        None
     }
 
     /// The short-lived tokens it mints at apply, each from a long-lived
@@ -153,9 +163,10 @@ pub trait Driver: Send + Sync {
     }
 }
 
-/// A driver whose box half isn't built yet (M222's apps-platform):
-/// environments may name it, deploys may be planned and approved, and a
-/// box refuses to apply it until its driver lands.
+/// A driver whose box half isn't built yet: environments may name it,
+/// deploys may be planned and approved, and a box refuses to apply it
+/// until its driver lands. (M220's chant→Fly and M222's apps-platform are
+/// both built now.)
 ///
 /// Each driver's target must refuse a deploy id it applied (`DEPLOY_ID`),
 /// since each deploy's box is new and can't know: chant→Fly by chant's
@@ -198,7 +209,7 @@ pub fn exited_0(run: &Run) -> Verdict {
 }
 
 static CHANT_FLY: chant_fly::ChantFly = chant_fly::ChantFly;
-static APPS_PLATFORM: Unbuilt = Unbuilt("apps-platform");
+static APPS_PLATFORM: apps_platform::AppsPlatform = apps_platform::AppsPlatform;
 static FAKE: fake::Fake = fake::Fake;
 
 /// Whether environments here may name the fake driver: tests, and a

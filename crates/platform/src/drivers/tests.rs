@@ -118,13 +118,65 @@ fn every_named_driver_plans_and_checks() {
             d.verify(&e, &deploy(&p.digest), &run(Some(2)), &ok),
             Verdict::Unhealthy("the apply exited 2".into())
         );
-        assert!(d.mints(&e).is_empty(), "none mints: chant-fly's token is the environment's own");
+        if name != apps_platform::NAME {
+            assert!(d.mints(&e).is_empty(), "none mints: chant-fly's token is the environment's own");
+        }
         assert!(!d.secret_names().is_empty(), "{name} names the secrets it takes");
         assert!(d.secret_names().iter().all(|n| arugula_e2e::deploy::secret_name_ok(n)), "none reserved");
+        // A box hands its driver only the names on its list, minted ones
+        // too (M222: the apps-platform driver's tokens).
+        for m in d.mints(&env(name)) {
+            assert!(d.secret_names().contains(&m.name()), "{name} mints {} it doesn't take", m.name());
+        }
     }
     assert!(driver("fake").unwrap().rolls_back());
-    assert!(!driver("apps-platform").unwrap().rolls_back(), "M222's");
+    assert!(driver("apps-platform").unwrap().rolls_back(), "M222's");
     assert_eq!(Mint::GithubRead { name: "GITHUB_TOKEN" }.name(), "GITHUB_TOKEN");
+}
+
+/// The apps-platform driver (M222): its plan names the list, the pointer's
+/// path and the commit; it plans only a commit of one of the list's
+/// organization's repositories; it mints a read token for the app's
+/// repository and a write token for the list alone, unless the
+/// environment holds a token of its own; and it rolls back.
+#[test]
+fn the_apps_platform_driver_plans_a_pin_and_mints_a_token_for_the_list_only() {
+    let d = driver("apps-platform").unwrap();
+    let sha = "c".repeat(40);
+    let source = Source { kind: SourceKind::Commit, reference: sha.clone(), place: "arugula-salad/beds-smoke".into() };
+    let p = d.plan(&env("apps-platform"), &source);
+    for line in [
+        "driver apps-platform\n".to_owned(),
+        "repo arugula-salad/planter-apps (branch main)\n".to_owned(),
+        "path apps/beds-smoke.yaml\n".to_owned(),
+        format!("at commit {sha};"),
+    ] {
+        assert!(p.text.contains(&line), "{line:?} in {}", p.text);
+    }
+    assert_eq!(
+        p.digest,
+        arugula_e2e::deploy::plan_digest("apps-platform", "production", "commit", &sha, "arugula-salad/beds-smoke"),
+        "the box recomputes the same plan"
+    );
+    assert!(d.refuses(&source).is_none());
+    for bad in [
+        Source { kind: SourceKind::Artifact, ..source.clone() },
+        Source { place: "acme/app".into(), ..source.clone() },
+        Source { reference: "abc".into(), ..source.clone() },
+    ] {
+        assert!(d.refuses(&bad).is_some(), "{bad:?}");
+    }
+    assert_eq!(
+        d.mints(&env("apps-platform")),
+        [
+            Mint::GithubRead { name: "SOURCE_TOKEN" },
+            Mint::GithubWrite { name: "APPS_PLATFORM_TOKEN", repo: "arugula-salad/planter-apps" }
+        ]
+    );
+    let own = Environment { secret_names: vec!["APPS_PLATFORM_TOKEN".into()], ..env("apps-platform") };
+    assert_eq!(d.mints(&own), [Mint::GithubRead { name: "SOURCE_TOKEN" }], "its own token, not a mint");
+    assert!(d.rolls_back());
+    assert!(driver("chant-fly").unwrap().refuses(&source).is_none(), "others plan any source");
 }
 
 /// chant→Fly's plan says what chant will do, with the settings it names;

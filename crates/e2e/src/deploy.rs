@@ -45,6 +45,9 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+#[path = "deploy_apps_platform.rs"]
+pub mod apps_platform;
+
 use crate::{Cert, Trust, cert::verify_hex, hosted::Owners, keys::DeviceKeys, team::TeamRole};
 
 /// An approval's longest life (S37 q4: at most 7 days), from when it's
@@ -108,9 +111,14 @@ pub fn plan_text(
     source_ref: &str,
     source_where: &str,
 ) -> String {
-    format!(
+    let mut text = format!(
         "arugula deploy plan v1\ndriver {driver}\nenvironment {environment_name}\nsource {source_kind} {source_ref}\nwhere {source_where}\n"
-    )
+    );
+    // A driver that knows more of what it'll change says it (M222).
+    if driver == apps_platform::DRIVER {
+        text.push_str(&apps_platform::plan_lines(source_kind, source_ref, source_where));
+    }
+    text
 }
 
 /// SHA-256 of [`plan_text`], hex.
@@ -180,14 +188,17 @@ pub const RESERVED_SECRET_PREFIXES: &[&str] =
 /// `ALL_PROXY`, `NO_PROXY`).
 pub const RESERVED_SECRET_SUFFIXES: &[&str] = &["_PROXY"];
 
-/// The secret names each driver takes (M219, M220's review): a driver's
-/// environment holds only these, and a box hands its driver only these.
+/// The secret names each driver takes (M219, M220's review), the tokens
+/// the platform mints for its runs among them: a driver's environment
+/// holds only these, and a box hands its driver only these.
 /// `None`: there's no such driver.
 pub fn driver_secrets(driver: &str) -> Option<&'static [&'static str]> {
     Some(match driver {
         "fake" => &["APP_TOKEN"],
         "chant-fly" => &["FLY_API_TOKEN", "GITHUB_TOKEN"],
-        "apps-platform" => &["APPS_PLATFORM_TOKEN"],
+        // The list's write token (minted unless the environment holds its
+        // own) and the app's read token (always minted, M222).
+        "apps-platform" => &["APPS_PLATFORM_TOKEN", "SOURCE_TOKEN"],
         _ => return None,
     })
 }
@@ -680,6 +691,7 @@ mod tests {
         // Each driver takes only the names it declares.
         assert!(driver_takes("chant-fly", "FLY_API_TOKEN") && driver_takes("chant-fly", "GITHUB_TOKEN"));
         assert!(!driver_takes("chant-fly", "APPS_PLATFORM_TOKEN") && !driver_takes("fake", "FLY_API_TOKEN"));
+        assert!(driver_takes("apps-platform", "APPS_PLATFORM_TOKEN") && driver_takes("apps-platform", "SOURCE_TOKEN"));
         assert!(!driver_takes("planter", "APP_TOKEN"), "no such driver");
     }
 }
