@@ -135,6 +135,9 @@ pub struct Reacher {
     pub account: String,
     /// A daemon's signature, not a person's.
     pub daemon: bool,
+    /// That daemon's id (M184: the relay checks its grant before routing it
+    /// to a hosted machine).
+    pub device: Option<String>,
 }
 
 impl FromRequestParts<Arc<App>> for Reacher {
@@ -144,10 +147,10 @@ impl FromRequestParts<Arc<App>> for Reacher {
         if let Some(Signed(Ok(cert))) = parts.extensions.get::<Signed>()
             && cert.kind == Kind::Daemon
         {
-            return Ok(Reacher { account: cert.account.clone(), daemon: true });
+            return Ok(Reacher { account: cert.account.clone(), daemon: true, device: Some(cert.device.clone()) });
         }
         let s = Session::from_request_parts(parts, app).await?;
-        Ok(Reacher { account: s.account, daemon: false })
+        Ok(Reacher { account: s.account, daemon: false, device: None })
     }
 }
 

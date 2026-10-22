@@ -1007,6 +1007,17 @@ note = "It stops naming the account as who made a port public. They go with thei
 seen_by = ["litestream"]
 
 [[table]]
+name = "hosted_transcripts"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A closed agent block's transcript from a hosted workspace's box (M184): its project, workspace, machine and block, the agent, its title and working directory, when it ran, and its text (prompts, the agent's messages and tool calls, cut to 768 KiB), kept read only."
+why_asleep = "A project's people read what its hosted workspaces' agents did after the box is paused, rebuilt or deleted."
+with_account = "partly"
+note = "Those of its personal project and its disbanded teams' projects go. A team's stay with its project: its other people read them."
+seen_by = ["litestream"]
+
+[[table]]
 name = "hosted_usage"
 plane = "platform"
 process = "platform"

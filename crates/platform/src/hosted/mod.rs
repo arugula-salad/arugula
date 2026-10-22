@@ -25,6 +25,9 @@
 //!   (fail closed). Where the box isn't a snapshot (loam, tests:
 //!   `ARUGULA_HOSTED_ENROLL=ticket`), the hub makes a one-time ticket that
 //!   goes in the box's env instead.
+//! - **Agents** (M184): an agent block on the box is the daemon's, as on
+//!   any machine; when one closes, its transcript is archived here, read
+//!   only under the project ([`transcripts`]).
 //! - **Usage** (M188): how long each box ran, by its size, is metered from
 //!   the worker's checkpoints and checked against E2B's own record
 //!   ([`usage`]).
@@ -64,6 +67,7 @@ pub mod setup;
 mod setup_tests;
 #[cfg(test)]
 mod tests;
+pub mod transcripts;
 pub mod usage;
 pub mod wake;
 #[cfg(test)]

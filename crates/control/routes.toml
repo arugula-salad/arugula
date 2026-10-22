@@ -762,6 +762,14 @@ auth = "session"
 clients = ["page"]
 note = "A project owner removes a hosted machine."
 
+[[route]]
+method = "POST"
+path = "/api/hosted/transcripts"  # wire::transcripts::HOSTED_TRANSCRIPTS
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A hosted machine archives a closed agent block's transcript (M184): kept read only by the platform under the project its certificate's workspace is in (PlatformPort::hosted_transcript), only from the machine that workspace enrolled as."
+
 # ---- forge: the App's webhook is the platform's (M161); the hub keeps
 # daemons' subscriptions and the token route, which ask the platform
 
@@ -804,6 +812,7 @@ path = "/api/relay/c/{id}"
 process = "hub"
 auth = "session_or_daemon"
 clients = ["page", "daemon", "cli"]
+note = "A machine reaches a hosted workspace's machine only with a live cloud.drive grant (M184, PlatformPort::machine_drives)."
 
 [[route]]
 method = "GET"
@@ -1550,6 +1559,30 @@ process = "platform"
 auth = "session"
 clients = ["cli"]
 note = "Clears a project's own inference key (M185): a project's owner. It leaves every running box's egress rules at once, and a paused box's when it wakes."
+
+[[route]]
+method = "GET"
+path = "/api/workspaces"
+process = "platform"
+auth = "cloud_driver"
+clients = ["daemon"]
+note = "The hosted workspaces of every project the caller is in (M184), for MCP's list kind cloud_workspaces; none where hosted workspaces aren't set up."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/transcripts"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+note = "A project's archived agent transcripts from its hosted workspaces (M184), newest first, for its members; ?workspace= keeps to one."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/transcripts/{id}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+note = "One archived agent transcript, with its text (M184), for the project's members. Read only."
 
 [[route]]
 method = "GET"

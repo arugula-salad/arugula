@@ -633,3 +633,74 @@ async fn live_lifecycle() {
         std::panic::resume_unwind(p);
     }
 }
+
+/// M184: a workspace's machine archives a closed agent block's transcript
+/// under its project, once per block, and only its own machine may; the
+/// project's members read it and outsiders don't; and `/api/workspaces`
+/// lists the hosted workspaces of every project the caller is in.
+#[tokio::test]
+async fn transcripts_are_archived_under_the_project() {
+    use arugula_control_wire::transcripts::TranscriptPost;
+
+    use crate::{Archived, PlatformPort as _};
+
+    let (hub, _fake, app, base, project) = serve(EnrollBy::Sandbox).await;
+    hub.delegate(&project);
+    let (_, w) = make(&base, "bob", &project, "dev").await;
+    let id = w["id"].as_str().unwrap().to_owned();
+    let now = now_ms();
+    drive(&app, now).await;
+    hub.enroll(&id, "hosted-machine-1");
+    drive(&app, now + 3_000).await;
+
+    let post = |block: u64, text: &str| TranscriptPost {
+        block,
+        agent: "claude".into(),
+        title: "fix the build\u{7}".into(),
+        cwd: Some("/home/user/app".into()),
+        started_at: 5,
+        closed_at: 9,
+        cut: false,
+        text: text.into(),
+    };
+    let kept = match app.hosted_transcript(&id, "hosted-machine-1", &post(7, "> make it pass")).await.unwrap() {
+        Archived::Kept { id } => id,
+        other => panic!("{other:?}"),
+    };
+    assert!(kept.starts_with("htx_") && kept.len() == 36, "{kept}");
+    let again = app.hosted_transcript(&id, "hosted-machine-1", &post(7, "> make it pass")).await.unwrap();
+    assert_eq!(again, Archived::Kept { id: kept.clone() }, "a block sent again is the same one");
+    let refused = |a: Archived| match a {
+        Archived::Refused { status, .. } => status,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(refused(app.hosted_transcript(&id, "another-machine", &post(8, "x")).await.unwrap()), 403);
+    assert_eq!(refused(app.hosted_transcript("hw_nope", "hosted-machine-1", &post(8, "x")).await.unwrap()), 404);
+    let long = "x".repeat(arugula_control_wire::transcripts::MAX_TEXT + 1);
+    assert_eq!(refused(app.hosted_transcript(&id, "hosted-machine-1", &post(9, &long)).await.unwrap()), 413);
+
+    // A viewer reads it; an outsider doesn't.
+    let (status, listed) = call(&base, "vic", "GET", &format!("/api/projects/{project}/transcripts"), None).await;
+    assert_eq!(status, 200, "{listed}");
+    let t = &listed["transcripts"][0];
+    assert_eq!((t["id"].as_str(), t["workspace"].as_str()), (Some(kept.as_str()), Some(id.as_str())));
+    assert_eq!((t["title"].as_str(), t["bytes"].as_u64()), (Some("fix the build"), Some(14)));
+    assert!(t.get("text").is_none(), "the list has no text");
+    let (_, one) =
+        call(&base, "vic", "GET", &format!("/api/projects/{project}/transcripts?workspace=hw_x"), None).await;
+    assert_eq!(one["transcripts"], json!([]));
+    let path = format!("/api/projects/{project}/transcripts/{kept}");
+    let (status, read) = call(&base, "vic", "GET", &path, None).await;
+    assert_eq!((status, read["text"].as_str()), (200, Some("> make it pass")));
+    assert_eq!(call(&base, "olga", "GET", &path, None).await.0, 404);
+    assert_eq!(call(&base, "olga", "GET", &format!("/api/projects/{project}/transcripts"), None).await.0, 404);
+
+    // Every project's hosted workspaces, for the caller.
+    let (status, all) = call(&base, "vic", "GET", "/api/workspaces", None).await;
+    assert_eq!(status, 200, "{all}");
+    let ws = all["workspaces"].as_array().unwrap();
+    assert_eq!(ws.len(), 1);
+    assert_eq!((ws[0]["id"].as_str(), ws[0]["project_name"].as_str()), (Some(id.as_str()), Some("t1")));
+    assert_eq!(ws[0]["machine"], "hosted-machine-1");
+    assert_eq!(call(&base, "olga", "GET", "/api/workspaces", None).await.1["workspaces"], json!([]));
+}

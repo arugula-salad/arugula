@@ -22,8 +22,8 @@ use crate::{Platform, billing, chat, cloud, forge, grants, hosted, projects, run
 /// (M163); their items, each read checked against the viewer (M165);
 /// drafts on them (M170); the inbox (M171); native issues' (M195), for
 /// agents too (M200); hosted workspaces (M179) and their inference keys
-/// (M185); the standing project grant for runs (M211); and what starts
-/// runs (M214).
+/// (M185); the standing project grant for runs (M211); what starts runs
+/// (M214); and hosted agents' archived transcripts (M184).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -156,6 +156,9 @@ fn routes() -> Routes {
             "/api/projects/{project}/workspaces/{id}/secrets/{name}",
             axum::routing::put(hosted::routes::put_secret).delete(hosted::routes::delete_secret),
         )
+        .route("/api/workspaces", get(hosted::routes::all))
+        .route("/api/projects/{project}/transcripts", get(hosted::transcripts::list))
+        .route("/api/projects/{project}/transcripts/{id}", get(hosted::transcripts::read))
 }
 
 /// The platform's router, for any state the hub's router has (the

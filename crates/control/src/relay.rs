@@ -679,6 +679,19 @@ pub async fn client(
         Ok(false) => return err(StatusCode::NOT_FOUND, "no such daemon").into_response(),
         Err(e) => return crate::ApiError::from(e).into_response(),
     }
+    // M184: a machine reaches a hosted one only with a live cloud.drive
+    // grant.
+    if let Some(daemon) = &s.device {
+        match crate::hosted_agents::machine_may_drive(&app, daemon, &s.account, &id).await {
+            Ok(true) => {}
+            Ok(false) => {
+                let name = app.db.daemon_row(daemon).ok().flatten().map_or_else(|| daemon.clone(), |(_, d)| d.name);
+                let why = arugula_platform::cloud::no_cloud_drive(&name);
+                return err(StatusCode::FORBIDDEN, &why).into_response();
+            }
+            Err(e) => return crate::ApiError::from(e).into_response(),
+        }
+    }
     // A hosted machine (M182): asked if it's up, and its box woken first if
     // it's asleep and this open asks (`x-arugula-wake: 1`). The upgrade
     // waits for it.
