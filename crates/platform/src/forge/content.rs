@@ -416,8 +416,13 @@ async fn maintains(app: &Platform, account: &str, link: &LinkedRepo) -> Result<(
         return Err(err(StatusCode::FORBIDDEN, "sign in to control with GitHub to mirror a GitHub repo's content"));
     };
     app.limits.check_account(super::FORGE_LOOKUPS, account)?;
-    let install =
-        Install { id: link.installation_id, account: String::new(), account_id: 0, account_type: String::new() };
+    let install = Install {
+        id: link.installation_id,
+        account: String::new(),
+        account_id: 0,
+        account_type: String::new(),
+        permissions: serde_json::Value::Null,
+    };
     let role = gh
         .repo_role(&super::Caller::of(app, account), &install, &user, &link.full_name)
         .await

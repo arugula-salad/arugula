@@ -51,7 +51,9 @@ pub struct RollBack {
 /// - `npm_scripts` (`true`, optional): `npm ci` runs the packages' install
 ///   scripts (otherwise `--ignore-scripts`);
 /// - `chant_github` (`true`, optional): chant's op gets `GITHUB_TOKEN` too
-///   (an op that pushes, such as a release that tags);
+///   (an op that pushes, such as a release that tags). Without it, chant
+///   reads and writes its ledger through a stand-in for origin on the box,
+///   and the driver pushes it;
 /// - `chant_digest` (`plan` or `image`, default `plan`): what the release
 ///   record's digest is. `image`: it must be the digest of the image Fly
 ///   runs after. `plan`: Fly must run another image than before.
@@ -324,8 +326,9 @@ fn chant_fly_does(source_ref: &str, source_where: &str, s: &Settings, roll_back:
          and keep the image it runs\n"
     ));
     t.push_str(&format!(
-        "with: the environment's FLY_API_TOKEN (fly tokens create deploy -a {app} -x 720h) and GITHUB_TOKEN if set, \
-         for this run only\n"
+        "with: the environment's FLY_API_TOKEN (fly tokens create deploy -a {app} -x 720h), and GITHUB_TOKEN: the \
+         environment's own, or else one the platform's GitHub App mints for this run that writes {source_where}'s \
+         contents only, revoked when the run ends; each for this run only\n"
     ));
     t
 }

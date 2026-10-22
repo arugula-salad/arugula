@@ -728,7 +728,7 @@ pub async fn secrets(app: &Platform, m: &HostedMachine, ask: &SecretsAsk) -> Res
     }
     if let Some(driver) = drivers::driver(&env.driver) {
         for mint in driver.mints(&env) {
-            match drivers::mint(app, mint, &d, &run.id).await {
+            match drivers::mint(app, mint, &d, &env.project, &run.id).await {
                 Ok(s) => out.push(s),
                 Err(e) => return refused(&format!("minting {}: {e:#}", mint.name())),
             }

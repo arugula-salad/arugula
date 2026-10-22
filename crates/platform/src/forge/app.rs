@@ -299,6 +299,22 @@ pub struct Install {
     pub account_id: u64,
     /// `User` or `Organization`.
     pub account_type: String,
+    /// What it grants the App, as GitHub says (`{"contents": "read", …}`).
+    pub permissions: Value,
+}
+
+impl Install {
+    /// Whether it grants `permission` at `level` (`read` or `write`) or
+    /// more.
+    pub fn grants(&self, permission: &str, level: &str) -> bool {
+        let rank = |l: &str| match l {
+            "read" => 1,
+            "write" => 2,
+            "admin" => 3,
+            _ => 0,
+        };
+        rank(self.permissions[permission].as_str().unwrap_or("")) >= rank(level).max(1)
+    }
 }
 
 /// A repository as GitHub says it to the App, with what a person may do
@@ -458,6 +474,7 @@ impl GithubApp {
                     account: v["account"]["login"].as_str().unwrap_or_default().to_owned(),
                     account_id: v["account"]["id"].as_u64().unwrap_or(0),
                     account_type: v["account"]["type"].as_str().unwrap_or_default().to_owned(),
+                    permissions: v["permissions"].clone(),
                 })
             }
             404 => None,

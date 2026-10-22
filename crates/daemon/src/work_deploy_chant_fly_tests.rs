@@ -21,55 +21,114 @@ fn image(n: char) -> String {
     format!("registry.fly.io/acme-web:deployment-{n}@sha256:{}", n.to_string().repeat(64))
 }
 
-/// A fake chant: `run` stops at a gate (of $FAKE_DIR/gate-op's op, or its
-/// own) until it's approved, then deploys (a new image) and writes a
-/// release record to chant's ledger and pushes it; `approve` records the
-/// approval; `components release` records a release again. Each call goes
-/// in $FAKE_LOG with which tokens it saw.
+/// A fake chant, after `@intentius/chant` 0.124.40 as the M220 rig ran it
+/// (arugula-salad/deploy-smoke): each command first reads chant's ledger
+/// (`chant/lifecycle`) from origin, and refuses when it isn't here and
+/// origin can't be reached (chant's `requireLifecycleLedger`); origin, as
+/// GitHub answers for a private repository, answers only a git that has
+/// GITHUB_TOKEN, and any other remote (the driver's stand-in) answers.
+/// `run release --json` stops at its gate (exit 3) until a resolution of
+/// this commit's plan is in the ledger: it writes a pending fact
+/// (`_gates/release.jsonl`, its `planDigest`) and prints its run record
+/// (`gate: {name, since}`, `approve`), as chant does; then it deploys (a
+/// new image) and records the release. `approve` resolves the gate for the
+/// plan given (`--plan` must be the pending one's); `components release`
+/// records a release again. Each push goes to origin when it's reachable,
+/// a warning otherwise. Each call goes in $FAKE_LOG with which tokens it
+/// saw.
 const FAKE_CHANT: &str = r#"#!/bin/bash
 set -e
 fly=no; [ "$FLY_API_TOKEN" = "$FAKE_TOKEN" ] && fly=yes
 gh=no; [ -n "$GITHUB_TOKEN" ] && gh=yes
 echo "chant $* | fly:$fly gh:$gh user:$USER" >> "$FAKE_LOG"
+export LC_ALL=C
+B=refs/heads/chant/lifecycle
+now() { date -u +%Y-%m-%dT%H:%M:%S.000Z; }
+reachable() { [ -n "$GITHUB_TOKEN" ] || [ "$(git remote get-url origin)" != "$FAKE_ORIGIN" ]; }
+ledger() {
+  local had err
+  had=$(git rev-parse -q --verify $B || true)
+  if reachable; then
+    err=$(git fetch -q origin chant/lifecycle:chant/lifecycle 2>&1) && return 0
+    case "$err" in *"couldn't find remote ref"*) return 0 ;; esac
+  fi
+  [ -n "$had" ] && return 0
+  echo "the chant/lifecycle ledger branch is not in this checkout and could not be fetched from \"origin\", so what is on it cannot be read. Refusing rather than treating an unreadable ledger as an empty one." >&2
+  return 1
+}
 append() {
-  local env=$1 line=$2 parent old blob tree commit
+  local file=$1 line=$2 parent old blob tree commit
   export GIT_INDEX_FILE=$FAKE_DIR/index.$$
-  parent=$(git rev-parse -q --verify refs/heads/chant/lifecycle || true)
+  parent=$(git rev-parse -q --verify $B || true)
   rm -f "$GIT_INDEX_FILE"
   [ -n "$parent" ] && git read-tree "$parent"
-  old=$( [ -n "$parent" ] && git show "$parent:$env/releases.jsonl" 2>/dev/null || true )
+  old=$( [ -n "$parent" ] && git show "$parent:$file" 2>/dev/null || true )
   blob=$( { [ -n "$old" ] && printf '%s\n' "$old"; printf '%s\n' "$line"; } | git hash-object -w --stdin)
-  git update-index --add --cacheinfo "100644,$blob,$env/releases.jsonl"
+  git update-index --add --cacheinfo "100644,$blob,$file"
   tree=$(git write-tree)
-  commit=$(git commit-tree "$tree" ${parent:+-p "$parent"} -m release)
-  git update-ref refs/heads/chant/lifecycle "$commit"
+  commit=$(git commit-tree "$tree" ${parent:+-p "$parent"} -m "chant: $file")
+  git update-ref $B "$commit"
   rm -f "$GIT_INDEX_FILE"
-  git push -q origin chant/lifecycle 2>/dev/null || true
+  unset GIT_INDEX_FILE
 }
+push() {
+  if reachable && git push -q origin chant/lifecycle:chant/lifecycle 2>/dev/null; then return 0; fi
+  echo "warning: The push to the remote did not land: the push of chant/lifecycle to \"origin\" failed" >&2
+}
+sha=$(git rev-parse HEAD)
+plan="sha256:$(printf 'plan %s %s' "$sha" "$(cat "$FAKE_DIR/plan-salt" 2>/dev/null)" | sha256sum | cut -c1-64)"
 case "$1 $2" in
   "run release")
-    if [ ! -e "$FAKE_DIR/approved" ]; then
-      gop=$(cat "$FAKE_DIR/gate-op" 2>/dev/null || echo release)
-      echo "{\"status\":\"gated\",\"gate\":{\"op\":\"$gop\",\"gate\":\"approve-release\",\"planDigest\":\"sha256:abc\"}}"
+    ledger || { echo '{"version":1,"op":"release","status":"fail"}'; exit 1; }
+    op=$(cat "$FAKE_DIR/gate-op" 2>/dev/null || echo release)
+    gate=approve-release
+    if ! git show $B:_gates/release.jsonl 2>/dev/null | grep '"resolvedBy"' | grep -F "\"gitSha\":\"$sha\"" | grep -qF "\"planDigest\":\"$plan\""; then
+      id="local-$(date +%s%N | cut -c1-13)"; t=$(now)
+      if [ -e "$FAKE_DIR/no-plan" ]; then pd=; hint="chant approve $op $gate"
+      else pd="\"planDigest\":\"$plan\","; hint="chant approve $op $gate --plan $plan"; fi
+      [ -e "$FAKE_DIR/other-hint" ] && hint="chant approve $op $gate --plan sha256:$(printf '%064d' 0)"
+      append _gates/$op.jsonl "{\"description\":\"Approve deploying this commit to acme-web\",\"expiresAt\":\"$t\",\"gate\":\"$gate\",\"gitSha\":\"$sha\",\"kind\":\"pending\",\"neverOverMcp\":true,\"op\":\"$op\",\"origin\":\"cli\",$pd\"runId\":\"$id\",\"timestamp\":\"$t\",\"version\":1}"
+      push
+      echo "{\"version\":1,\"id\":\"$id\",\"op\":\"$op\",\"env\":\"local\",\"started\":\"$t\",\"ended\":\"$t\",\"status\":\"gated\",\"labels\":{},\"outcomes\":{},\"phases\":[{\"name\":\"Plan\",\"status\":\"ok\",\"steps\":[{\"fn\":\"shellCmd\",\"status\":\"ok\",\"durationMs\":23}],\"durationMs\":23},{\"name\":\"Approve\",\"status\":\"skipped\",\"steps\":[{\"fn\":\"gate:$gate\",\"status\":\"skipped\",\"durationMs\":118}],\"durationMs\":119}],\"gate\":{\"name\":\"$gate\",\"since\":\"$t\"},\"gitSha\":\"$sha\",\"approve\":\"$hint\"}"
       exit 3
     fi
     [ -e "$FAKE_DIR/no-deploy" ] || cp "$FAKE_DIR/next-image" "$FAKE_DIR/image"
     [ -e "$FAKE_DIR/no-record" ] && exit 0
-    sha=$(git rev-parse HEAD)
-    append "${FAKE_ENV:-github}" "{\"version\":1,\"component\":\"acme\",\"env\":\"${FAKE_ENV:-github}\",\"digest\":\"sha256:d1\",\"gitSha\":\"$sha\",\"runId\":\"local-1\",\"timestamp\":\"2026-10-22T00:00:01Z\",\"actor\":\"$USER\",\"approver\":\"acct1\"}"
-    echo '{"status":"ok"}' ;;
-  "approve release") touch "$FAKE_DIR/approved" ;;
+    id="local-$(date +%s%N | cut -c1-13)"; env=${FAKE_ENV:-github}
+    append $env/releases.jsonl "{\"actor\":\"$USER\",\"component\":\"acme\",\"digest\":\"sha256:d1\",\"env\":\"$env\",\"gitSha\":\"$sha\",\"runId\":\"$id\",\"timestamp\":\"$(now)\",\"version\":1}"
+    push
+    echo "{\"version\":1,\"id\":\"$id\",\"op\":\"release\",\"env\":\"local\",\"status\":\"ok\",\"gitSha\":\"$sha\"}" ;;
+  "approve release")
+    ledger || exit 1
+    gate=$3; by=; relayed=; note=; given=; prev=
+    for a in "$@"; do case "$prev" in --approver) by=$a;; --relayed-by) relayed=$a;; --note) note=$a;; --plan) given=$a;; esac; prev=$a; done
+    pending=$(git show $B:_gates/release.jsonl 2>/dev/null | grep '"kind":"pending"' | grep -F "\"gitSha\":\"$sha\"" | tail -1)
+    [ -n "$pending" ] || { echo "no pending gate $gate for $sha" >&2; exit 1; }
+    case "$pending" in *"\"planDigest\":\"$given\""*) ;; *) echo "that plan isn't the pending one's" >&2; exit 1 ;; esac
+    runid=$(printf '%s' "$pending" | sed 's/.*"runId":"\([^"]*\)".*/\1/')
+    append _gates/release.jsonl "{\"approver\":{\"kind\":\"human\"},\"gate\":\"$gate\",\"gitSha\":\"$sha\",\"note\":\"$note\",\"op\":\"release\",\"origin\":\"cli\",\"planDigest\":\"$given\",\"relayedBy\":\"$relayed\",\"resolvedBy\":\"$by\",\"runId\":\"$runid\",\"timestamp\":\"$(now)\",\"version\":1}"
+    push
+    echo "Gate \"$gate\" on \"release\" resolved by $by, relayed by $relayed" ;;
   "components release")
-    sha=; run=; prev=
-    for a in "$@"; do case "$prev" in --git-sha) sha=$a;; --run-id) run=$a;; esac; prev=$a; done
-    append "$3" "{\"version\":1,\"component\":\"acme\",\"env\":\"$3\",\"digest\":\"sha256:d1\",\"gitSha\":\"$sha\",\"runId\":\"$run\",\"timestamp\":\"2026-10-22T00:00:09Z\",\"actor\":\"$USER\",\"approver\":\"acct1\"}" ;;
+    ledger || exit 1
+    gsha=; run=; actor=; by=; prev=
+    for a in "$@"; do case "$prev" in --git-sha) gsha=$a;; --run-id) run=$a;; --actor) actor=$a;; --approver) by=$a;; esac; prev=$a; done
+    append "$3/releases.jsonl" "{\"actor\":\"$actor\",\"approver\":\"$by\",\"component\":\"acme\",\"digest\":\"sha256:d1\",\"env\":\"$3\",\"gitSha\":\"$gsha\",\"runId\":\"$run\",\"timestamp\":\"$(now)\",\"version\":1}"
+    push
+    echo "Recorded release: acme@$3 -> sha256:d1" ;;
   *) echo "fake chant: $*?" >&2; exit 2 ;;
 esac
 "#;
 
-/// A fake flyctl: `tokens debug` decodes the token as $FAKE_DIR/token says
-/// (app-scoped for 2 hours, or `org`, or `forever`); `status` says the
-/// app's machines (started, on $FAKE_DIR/image, checks passing unless
+/// A fake flyctl, after flyctl v0.4.104: `tokens debug` decodes the token
+/// as `fly tokens create deploy -a <app>` makes it (its permission
+/// macaroon's Organization, 3P and IfPresent caveats, the IfPresent's
+/// `ifs` the app and Fly's features, `else` read; its discharge's
+/// ValidityWindow, 2 hours), or as $FAKE_DIR/token says otherwise: `org`
+/// (no app), `forever`, `broad` (IfPresent `else` is everything),
+/// `org-in-ifs` (IfPresent holds an Organization caveat), `inner-window`
+/// (its only window in the IfPresent); `status` says the app's machines
+/// (started, on $FAKE_DIR/image, checks passing unless
 /// $FAKE_DIR/unhealthy); `deploy --image` deploys one.
 const FAKE_FLYCTL: &str = r#"#!/bin/bash
 fly=no; [ "$FLY_API_TOKEN" = "$FAKE_TOKEN" ] && fly=yes
@@ -77,19 +136,45 @@ gh=no; [ -n "$GITHUB_TOKEN" ] && gh=yes
 echo "flyctl $* | fly:$fly gh:$gh" >> "$FAKE_LOG"
 img=$(cat "$FAKE_DIR/image")
 case "$1" in
-  version) echo "flyctl v0.4.104" ;;
+  version) echo "flyctl v0.4.104 linux/amd64 Commit: 815f54c0 BuildDate: 2026-09-15T17:40:56Z" ;;
   tokens)
-    end=$(( $(date +%s) + 7200 ))
+    now=$(date +%s); end=$(( now + 7200 ))
+    apps='{"type":"Apps","body":{"apps":{"5678":"rwcdC"}}},'; else=r; more=; inner=
     case "$(cat "$FAKE_DIR/token" 2>/dev/null)" in
-      org) apps='' ;;
-      forever) apps='{"type":"Apps","body":{"apps":{"123":"rwcdC"}}},'; end=$(( end + 20 * 365 * 86400 )) ;;
-      *) apps='{"type":"Apps","body":{"apps":{"123":"rwcdC"}}},' ;;
+      org) apps= ;;
+      forever) end=$(( end + 20 * 365 * 86400 )) ;;
+      broad) else=rwcdC ;;
+      org-in-ifs) more='{"type":"Organization","body":{"id":1234,"mask":"rwcdC"}},' ;;
+      inner-window) inner="{\"type\":\"ValidityWindow\",\"body\":{\"not_before\":$now,\"not_after\":$end}}," ;;
     esac
-    echo "[{\"location\":\"https://api.fly.io/v1\",\"caveats\":[{\"type\":\"Organization\",\"body\":{\"id\":1,\"mask\":\"*\"}},$apps{\"type\":\"ValidityWindow\",\"body\":{\"not_before\":1,\"not_after\":$end}}]}]" ;;
+    window="{\"type\":\"ValidityWindow\",\"body\":{\"not_before\":$now,\"not_after\":$end}},"
+    [ -n "$inner" ] && window=
+    cat <<EOF
+[
+  {
+    "location": "https://api.fly.io/v1",
+    "caveats": [
+      {"type": "Organization", "body": {"id": 1234, "mask": "rwcdC"}},
+      {"type": "3P", "body": {"Location": "https://api.fly.io/aaa/v1", "VerifierKey": "AAAA", "Ticket": "AAAA"}},
+      {"type": "IfPresent", "body": {"ifs": [$apps$more$inner{"type": "FeatureSet", "body": {"features": {"wg": "rw"}}}], "else": "$else"}}
+    ]
+  },
+  {
+    "location": "https://api.fly.io/aaa/v1",
+    "caveats": [
+      $window
+      {"type": "FlyioUserID", "body": 42},
+      {"type": "IsUser", "body": {"uint64": 42}},
+      {"type": "BindToParentToken", "body": "AAAA"}
+    ]
+  }
+]
+EOF
+    echo "Warning: Metrics send issue: metrics send failed with status 401" >&2 ;;
   status)
     check=passing; [ -e "$FAKE_DIR/unhealthy" ] && check=critical
     reg=${img%%/*}; rest=${img#*/}; repo=${rest%%:*}; rest=${rest#*:}; tag=${rest%%@*}; dig=${rest#*@}
-    printf '{"Machines":[{"id":"m1","state":"started","image_ref":{"registry":"%s","repository":"%s","tag":"%s","digest":"%s"},"checks":[{"status":"%s"}]},{"id":"m2","state":"stopped","image_ref":{}}]}\n' "$reg" "$repo" "$tag" "$dig" "$check" ;;
+    printf '{"ID":"acme-web","Name":"acme-web","Machines":[{"id":"m1","state":"started","region":"iad","image_ref":{"registry":"%s","repository":"%s","tag":"%s","digest":"%s","labels":{}},"checks":[{"name":"servicecheck-00-http-8080","status":"%s"}]},{"id":"m2","state":"stopped","image_ref":{}}]}\n' "$reg" "$repo" "$tag" "$dig" "$check" ;;
   deploy)
     prev=; for a in "$@"; do [ "$prev" = --image ] && echo "$a" > "$FAKE_DIR/image"; prev=$a; done ;;
   *) exit 2 ;;
@@ -193,6 +278,7 @@ impl Rig {
             .env("FAKE_TOKEN", TOKEN)
             .env("FAKE_LOG", self.dir.join("log"))
             .env("FAKE_DIR", &self.dir)
+            .env("FAKE_ORIGIN", self.dir.join("origin/acme/app.git"))
             .envs(extra.iter().copied());
         // SAFETY: dup2 only, between fork and exec.
         unsafe {
@@ -259,7 +345,9 @@ fn chant_fly_releases_through_chants_gate_and_links_its_ledger() {
             .starts_with("chant approve release approve-release --approver acct1 --relayed-by arugula --note ")
     );
     assert!(calls[gated + 1].contains("approval apv_1 by acct1 from device dev1, operation sha256:ab12, run run_1"));
-    assert!(calls[gated + 1].ends_with("--plan sha256:abc"), "{}", calls[gated + 1]);
+    // The plan chant's run recorded (its pending fact's), and only that.
+    let plan = calls[gated + 1].rsplit_once(" --plan ").map(|(_, p)| p.to_owned()).unwrap_or_default();
+    assert!(plan.starts_with("sha256:") && plan.len() == 71, "{}", calls[gated + 1]);
     assert_eq!(calls[gated + 2], "chant run release --json");
     assert_eq!(calls.last().unwrap(), "flyctl status --app acme-web --json");
     // Who saw which token: chant's op and flyctl the Fly token, nobody
@@ -284,7 +372,61 @@ fn chant_fly_releases_through_chants_gate_and_links_its_ledger() {
     assert_eq!(result["chant_record"]["gitSha"], r.sha);
     assert_eq!(result["fly"], serde_json::json!({ "app": "acme-web", "image": image('2'), "healthy": true }));
     let line = r.origin(&format!("git show {tip}:github/releases.jsonl"));
-    assert!(line.contains("\"approver\":\"acct1\"") && !line.contains(TOKEN), "{line}");
+    assert!(line.contains("\"actor\":\"arugula\"") && !line.contains(TOKEN), "{line}");
+    // chant's gate facts reached origin too: what it waited for, and who
+    // resolved it, for which plan.
+    let gates = r.origin(&format!("git show {tip}:_gates/release.jsonl"));
+    let resolved = gates.lines().find(|l| l.contains("\"resolvedBy\"")).unwrap_or_default();
+    for want in ["\"resolvedBy\":\"acct1\"", "\"relayedBy\":\"arugula\"", &format!("\"planDigest\":\"{plan}\"")] {
+        assert!(resolved.contains(want), "{want} in {gates}");
+    }
+    // chant had no GitHub token, and origin (like a private repository on
+    // GitHub) answers none without one: on this first deploy there was no
+    // chant/lifecycle to read, and chant read and wrote its ledger through
+    // the driver's stand-in, which takes that branch only.
+    assert!(!ran.out.contains("could not be fetched") && !ran.out.contains("did not land"), "{}", ran.out);
+    let home = r.dir.join("home");
+    assert!(
+        !Command::new("git")
+            .args(["-C", "src", "push", "-q", "../ledger.git", "HEAD:refs/heads/main"])
+            .current_dir(&home)
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success(),
+        "the stand-in took another branch"
+    );
+
+    // The next deploy reads origin's ledger and adds to it.
+    std::fs::write(r.dir.join("next-image"), image('3')).unwrap();
+    std::fs::write(r.dir.join("plan-salt"), "2").unwrap();
+    let next = r.dir.join("home2");
+    std::fs::create_dir_all(&next).unwrap();
+    let ran = r.apply(SETTINGS, None, &[("HOME", next.to_str().unwrap())]);
+    assert_eq!(ran.code, 0, "{}", ran.out);
+    let tip2 = r.origin("git rev-parse refs/heads/chant/lifecycle");
+    assert_eq!(r.origin(&format!("git merge-base --is-ancestor {tip} {tip2} && echo yes")), "yes");
+    assert_eq!(
+        ran.result.unwrap()["chant_ledger"],
+        format!("https://github.com/acme/app/blob/{tip2}/github/releases.jsonl#L2")
+    );
+}
+
+/// chant's gate is approved for the plan its run recorded, from the
+/// pending fact in its ledger: with none, or when the run names another,
+/// nothing is approved.
+#[test]
+fn chant_fly_approves_only_the_plan_chant_recorded() {
+    needs_node!();
+    for (kind, says) in [("no-plan", "has no plan digest"), ("other-hint", "says to approve plan sha256:000")] {
+        let r = rig(&format!("chant-fly-{kind}"));
+        std::fs::write(r.dir.join(kind), "").unwrap();
+        let ran = r.apply(SETTINGS, None, &[]);
+        assert_eq!(ran.code, 1, "{}", ran.out);
+        assert!(ran.out.contains(says), "{}", ran.out);
+        assert!(!r.calls().iter().any(|c| c.starts_with("chant approve")), "{:?}", r.calls());
+        assert!(ran.result.is_none());
+    }
 }
 
 /// The settings the plan names change what runs: install scripts, chant's
@@ -316,11 +458,21 @@ fn chant_fly_does_what_its_settings_say() {
 }
 
 /// A token for the whole org, or one that doesn't expire soon: nothing of
-/// the repo's runs.
+/// the repo's runs. (Every other test's token is shaped as `fly tokens
+/// create deploy` makes one, its app in an IfPresent caveat.)
 #[test]
 fn chant_fly_wants_an_app_token_that_expires() {
     needs_node!();
-    for (kind, says) in [("org", "isn't scoped to one app"), ("forever", "longer than 30 days")] {
+    for (kind, says) in [
+        ("org", "isn't scoped to one app"),
+        ("forever", "longer than 30 days"),
+        // An IfPresent caveat naming one app whose `else` lets every other
+        // access do anything: the org's, not the app's.
+        ("broad", "lets more than read past the app"),
+        ("org-in-ifs", "its IfPresent caveat holds Apps, Organization, FeatureSet"),
+        // A window that binds only some accesses doesn't end the token.
+        ("inner-window", "doesn't expire"),
+    ] {
         let r = rig(&format!("chant-fly-token-{kind}"));
         std::fs::write(r.dir.join("token"), kind).unwrap();
         let ran = r.apply(SETTINGS, None, &[]);

@@ -499,16 +499,22 @@ POST /api/environments/{id}/secrets/{name} {"value": "..."}
 ```
 
 Each driver takes only the secret names it declares (the fake driver
-`APP_TOKEN`; chant→Fly `FLY_API_TOKEN` and `GITHUB_TOKEN`; apps-platform
-`APPS_PLATFORM_TOKEN`). Names that change how a shell or a tool behaves
+`APP_TOKEN`; chant→Fly `FLY_API_TOKEN` and, instead of a minted one,
+`GITHUB_TOKEN`; apps-platform `APPS_PLATFORM_TOKEN`). Names that change how a shell or a tool behaves
 (`PATH`, `IFS`, `BASH_ENV`, `LD_*`, `NODE_*`, `GIT_*`, `NPM_CONFIG_*`,
 `SSL_*`, `*_PROXY`, `DEPLOY_*` and the like) are refused everywhere, and a
 value can't hold a NUL. Values are sealed with the project's key and never
 read back. The box gets them once, while its run applies the deploy, and
 hands them to the driver on a pipe. They're never written to the box's
-disk. A GitHub token a driver needs is minted for that run alone,
-read-only for its repository, and revoked when the run ends, by the box
-itself and by the platform.
+disk. A GitHub token a driver needs is minted for that run alone, for one
+repository, and revoked when the run ends, by the box itself and by the
+platform. A token that writes (chant→Fly's ledger, apps-platform's list)
+asks for Contents: write, so the App's installation there must grant it:
+a deploy is refused when it's planned if it doesn't. A token for the
+deploy's own repository, read or write, is minted only while that
+repository is linked to the deploy's project, and for it by GitHub's id.
+That's checked when the deploy is planned and again when the token is
+minted, so a repository unlinked after the approval gets no token.
 
 The driver runs beside the run's pane, not in it. Its output reaches the
 pane with each secret replaced by `[redacted NAME]`, its exact bytes and
@@ -584,7 +590,7 @@ owner makes it with its settings and its secrets' names:
 
 ```
 POST /api/projects/{project}/environments
-{"name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN", "GITHUB_TOKEN"],
+{"name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN"],
  "settings": {"fly_app": "acme-web", "chant_env": "github", "chant_dir": "ops"}}
 ```
 
@@ -600,7 +606,11 @@ Settings (each starts with a letter or a digit):
 - `npm_scripts: "true"` lets `npm ci` run install scripts. Without it,
   `npm ci --ignore-scripts`.
 - `chant_github: "true"` gives the op `GITHUB_TOKEN` too, for an op that
-  pushes, such as a release that tags.
+  pushes, such as a release that tags. Without it, chant can't reach
+  GitHub, so its own git reads and writes its ledger through a stand-in for
+  origin on the box. The stand-in holds `chant/lifecycle` as origin had it
+  (none on a first deploy) and takes that branch only. The driver pushes
+  it.
 - `chant_digest`: `plan` (the default) or `image`. With `image`, the
   release record's digest must be the image Fly runs. With `plan`, Fly
   must run a different image than before.
@@ -609,12 +619,21 @@ Secrets:
 - `FLY_API_TOKEN` must be a deploy token for the one app that expires
   within 30 days: `fly tokens create deploy -a <app> -x 720h`. The box
   reads its caveats with `flyctl tokens debug` and refuses an org token or
-  one that lives longer. Nothing of the repository's runs before that
-  check.
-- `GITHUB_TOKEN` must be able to push the repository, because chant's
-  ledger (`chant/lifecycle`) goes to origin. The driver checks it can push
-  before anything runs. Only the driver's own `git fetch`, `push` and
-  `ls-remote` use it, through a credential helper for `https://github.com`.
+  one that lives longer. A deploy token names its app inside an
+  `IfPresent` caveat; that counts only when the caveat's `else` is read at
+  most and it holds nothing but `Apps`, `FeatureSet` and
+  `ValidityWindow`. The expiry is read from the token's top-level windows.
+  Nothing of the repository's runs before that check.
+- `GITHUB_TOKEN` pushes chant's ledger (`chant/lifecycle`) to origin. The
+  platform mints it for each run through its GitHub App: an installation
+  token that writes the deploy's repository's contents and nothing else,
+  revoked when the run ends. The App must be installed on the repository
+  with Contents: write. A deploy is refused when it's planned if it isn't,
+  so an owner never approves one that can't run. An environment that holds
+  a `GITHUB_TOKEN` of its own gets that instead, and nothing is minted. The
+  driver checks it can push before anything runs. Only the driver's own
+  `git fetch`, `push` and `ls-remote` use it, through a credential helper
+  for `https://github.com`.
 
 **The repository's chant op runs with `FLY_API_TOKEN`** in its environment:
 that's how it deploys. `npm ci` and `chant components release` get neither
@@ -626,9 +645,13 @@ On the box, the driver:
 1. checks out the commit by its full id, exactly;
 2. runs `npm ci` and `chant run <op> --json` in the chant member;
 3. at each gate, runs `chant approve <op> <gate> --approver <account>
-   --relayed-by arugula --note "..."`, then runs the op again. The note
-   names the platform's deploy, approval, approving device, operation hash
-   and run.
+   --relayed-by arugula --note "..." --plan <digest>`, then runs the op
+   again. The note names the platform's deploy, approval, approving
+   device, operation hash and run. The digest is the plan chant's run
+   recorded: the `planDigest` of its pending fact in
+   `_gates/<op>.jsonl` on `chant/lifecycle`. A gate with no plan digest,
+   or one the run's `approve` hint disagrees with, isn't approved, so a
+   chant op's gates need a plan.
 
 chant's records then say:
 - the gate's resolution: `resolvedBy` is the approver's account id (not

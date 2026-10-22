@@ -114,9 +114,11 @@ fn limits(h: &mut Gh) -> HeaderMap {
 }
 
 async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
-    // Read only, for one repo: what the poller's mints ask for.
-    let perms = b["permissions"].as_object().unwrap();
-    assert!(perms.values().all(|v| v == "read"), "{b}");
+    // Read only, for one repo: what the poller's mints ask for, and all the
+    // installation here grants (GitHub refuses a mint that asks for more).
+    if super::links_tests::exceeds(&b["permissions"], &super::links_tests::read_grant()) {
+        return super::links_tests::not_granted();
+    }
     let repo = b["repository_ids"][0].as_u64().unwrap();
     assert_eq!(b["repository_ids"], json!([repo]), "{b}");
     let mut h = h.lock().unwrap();

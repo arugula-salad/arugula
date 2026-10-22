@@ -105,9 +105,12 @@ async fn installation(Path((o, r)): Path<(String, String)>) -> Response {
     }
 }
 
-async fn token(Json(b): Json<Value>) -> Json<Value> {
-    // Read only, for one repository, whatever it's for.
-    assert!(b["permissions"].as_object().unwrap().values().all(|v| v == "read"), "{b}");
+async fn token(Json(b): Json<Value>) -> Response {
+    // Read only, for one repository, whatever it's for: the installation
+    // here grants no more, and GitHub refuses a mint that asks for more.
+    if super::links_tests::exceeds(&b["permissions"], &super::links_tests::read_grant()) {
+        return super::links_tests::not_granted();
+    }
     // GitHub's answer names the one repository it covers, as M167 checks.
     let covers = match (b["repository_ids"][0].as_u64(), b["repositories"][0].as_str()) {
         (Some(id), _) => json!({ "id": id }),
@@ -115,7 +118,7 @@ async fn token(Json(b): Json<Value>) -> Json<Value> {
         (None, Some("site")) => json!({ "id": SITE, "full_name": "acme/site" }),
         _ => json!({}),
     };
-    Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": [covers] }))
+    Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": [covers] })).into_response()
 }
 
 async fn repo(Path((o, r)): Path<(String, String)>) -> Response {

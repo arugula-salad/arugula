@@ -118,8 +118,8 @@ fn every_named_driver_plans_and_checks() {
             d.verify(&e, &deploy(&p.digest), &run(Some(2)), &ok),
             Verdict::Unhealthy("the apply exited 2".into())
         );
-        if name != apps_platform::NAME {
-            assert!(d.mints(&e).is_empty(), "none mints: chant-fly's token is the environment's own");
+        if name == fake::NAME {
+            assert!(d.mints(&e).is_empty(), "the fake mints none");
         }
         assert!(!d.secret_names().is_empty(), "{name} names the secrets it takes");
         assert!(d.secret_names().iter().all(|n| arugula_e2e::deploy::secret_name_ok(n)), "none reserved");
@@ -197,6 +197,13 @@ fn chant_fly_checks_what_its_box_reported() {
         assert!(p.text.contains(says), "{says:?} in {}", p.text);
     }
     assert!(d.settings(&Settings::new()).unwrap_err().contains("fly_app"));
+    // Its GitHub token pushes chant's ledger: minted for the run, writing
+    // the deploy's own repository only, unless the environment holds one.
+    assert_eq!(d.mints(&e), [Mint::GithubWriteSource { name: "GITHUB_TOKEN" }]);
+    assert_eq!(d.mints(&e)[0].writes(&source()), Some("acme/app"));
+    let own = Environment { secret_names: vec!["GITHUB_TOKEN".into()], ..env("chant-fly") };
+    assert!(d.mints(&own).is_empty(), "its own token, not a mint");
+    assert!(p.text.contains("one the platform's GitHub App mints for this run that writes acme/app's contents only"));
     let dep = deploy(&p.digest);
     let ok = run(Some(0));
     assert_eq!(d.verify(&e, &dep, &ok, &reported()), Verdict::Healthy);
