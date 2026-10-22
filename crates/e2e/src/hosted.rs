@@ -335,6 +335,41 @@ impl Owners<'_> {
         }
     }
 
+    /// [`Owners::may_sign`], by a device that's a browser all the way back
+    /// to its owner's root (`browser` decides each link; recovery codes
+    /// count on the way, `cert::browser_link`): what a project's standing
+    /// grant and its revokes take (M211), as a team's owner or editor does.
+    /// Never a CLI's or the app's, whose keys a program on their computer
+    /// may hold.
+    pub fn browser_signed_by(
+        &self,
+        owner: &str,
+        device: &str,
+        body: &str,
+        sig: &str,
+        browser: impl Fn(&Cert) -> bool + Copy,
+    ) -> bool {
+        if !self.may_sign(owner, device, body, sig) {
+            return false;
+        }
+        let chained = |trust: &Trust, certs: &[Cert]| {
+            trust.chained(certs, device, |c| crate::cert::browser_link(c, device, browser))
+        };
+        match self {
+            Owners::Team { roster, certs } => roster.members.iter().filter(|m| m.role == TeamRole::Owner).any(|m| {
+                let c = certs.get(&m.account).map(|(c, _)| c.as_slice()).unwrap_or_default();
+                roster.devices(&m.account, certs).get(device).is_some()
+                    && chained(&Trust { account: m.account.clone(), root: m.root.clone() }, c)
+            }),
+            Owners::Account { trust, certs, .. } => chained(trust, certs),
+        }
+    }
+
+    /// [`Owners::browser_signed_by`] with `kind: browser` on each link.
+    pub fn browser_signed(&self, owner: &str, device: &str, body: &str, sig: &str) -> bool {
+        self.browser_signed_by(owner, device, body, sig, |c| c.kind == Kind::Browser)
+    }
+
     /// `account`'s place in the project: its team role, or owner of its
     /// own account's project. `None` when it isn't in the project.
     pub fn role_of(&self, account: &str) -> Option<TeamRole> {

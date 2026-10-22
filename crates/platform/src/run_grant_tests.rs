@@ -97,6 +97,26 @@ async fn read(base: &str, who: &str, project: &str) -> Value {
     v
 }
 
+/// A grant, or a revoke, that the hub says isn't a browser owner's (a CLI's
+/// or the desktop app's key) is refused here, as every machine refuses it.
+#[tokio::test]
+async fn only_a_browser_owners_grant_and_revoke_are_kept() {
+    let (hub, app, base, project) = serve().await;
+    workspace(&app, &project, "m1");
+    let (browser, cli) = (DeviceKeys::generate(), DeviceKeys::generate());
+    hub.not_a_browser(&cli.id());
+    let by_cli = grant(&project, "team:t1", &cli);
+    hub.set_delegation(&project, Some(&by_cli.delegation));
+    let (status, v) = sign(&base, "alice", &project, &by_cli).await;
+    assert_eq!((status, v["reason"].as_str()), (403, Some(crate::run_grant::NEEDS_BROWSER)), "{v}");
+    let g = grant(&project, "team:t1", &browser);
+    hub.set_delegation(&project, Some(&g.delegation));
+    assert_eq!(sign(&base, "alice", &project, &g).await.0, 201);
+    let (status, v) = unsign(&base, "alice", &project, &revoke(&g, Running::Finish, &cli)).await;
+    assert_eq!((status, v["reason"].as_str()), (403, Some(crate::run_grant::NEEDS_BROWSER)), "{v}");
+    assert_eq!(unsign(&base, "alice", &project, &revoke(&g, Running::Finish, &browser)).await.0, 200);
+}
+
 /// Offered with the first hosted workspace; an owner's signed grant is
 /// kept as signed; a start sends it to the workspace's machine with the
 /// revokes; a revoke goes to every machine and stops the next start here.

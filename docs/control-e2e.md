@@ -662,8 +662,9 @@ project as its resource.
   every hosted workspace of the project, running whatever command the
   project's runs start, until the grant expires or is revoked. It never
   covers a deploy.
-- **The grant.** An owner's own device (a browser or the CLI, as for a
-  delegation) signs `arugula project grant v1`: its id, the project and its
+- **The grant.** An owner's browser or phone, one that's a browser all
+  the way back to its account's root (`Owners::browser_signed`; recovery
+  codes count on the way), signs `arugula project grant v1`: its id, the project and its
   owner, the project's live delegation, `resource hosted`, `to platform`,
   the powers (`runs.instruct`, `runs.start`), when, when it expires, and
   which device. The page and the CLI give 90 days unless the owner picks
@@ -671,27 +672,33 @@ project as its resource.
   Devices and machines… has *Runs on hosted workspaces* under *Hosted
   machines*: *Allow runs* signs it, on a computer or the phone, and
   *Renew* signs a revoke and a new grant when it's about to expire (or
-  *Sign again* when the project's delegation changed). `arugula runs
-  grant sign` signs it with the CLI's device. The platform's project
-  settings show it, and offer it once the project has a hosted workspace.
+  *Sign again* when the project's delegation changed). Not the CLI or the
+  desktop app: their keys may be a program's on their computer, so
+  `arugula runs grant sign` and `revoke` send you to the page, and the
+  app's window has those buttons off. The platform's project settings
+  show it, and offer it once the project has a hosted workspace.
 - **The platform keeps it, and can't make or widen it.** It stores the
   signed bytes and the signature (`run_grants`), one live grant a project
   (not revoked, expired or superseded), and reads the grant back from
   those bytes only. It takes a grant only if it names the project's live
-  delegation (the hub's word); one that expired, or names a delegation
-  that isn't live any more, is superseded by the next. It holds no device
-  keys, so it can't check the signature itself; the hosted machines do.
+  delegation (the hub's word), and only if the hub says a browser of one
+  of the project's owners signed it, all the way back
+  (`HubPort::owner_browser_signed`, with `Cert::is_browser` on every link),
+  and the same of a revoke. One that expired, or names a delegation that
+  isn't live any more, is superseded by the next. It holds no device keys
+  itself; the hosted machines check again.
 - **Each start carries it.** The platform asks the workspace's machine
   over the relay (`runs.start`, a typed op), with the grant and the
   newest revoke of the project's grants. The machine checks, with what it
   pinned at enrollment (the team's roster and members' certificates, or
-  the account's chain): the grant is signed by a device of one of the
-  project's owners, trusted now; it's for the machine's own project and
+  the account's chain): the grant is signed by a browser of one of the
+  project's owners, trusted now and a browser all the way back; it's for the machine's own project and
   owner and names the delegation it was enrolled under; that delegation
   isn't revoked; it covers what's asked; it hasn't expired; no owner's
   revoke covers it. If any check fails, nothing starts and the refusal's
   code comes back.
-- **Revoking.** Any owner's device signs `arugula project grant revoke v2`
+- **Revoking.** Any owner's browser (all the way back, as for the grant)
+  signs `arugula project grant revoke v2`
   (the project, a delegation, `running finish` or `running stop`, when, by).
   It names no grant: it takes back every grant of the project under that
   delegation made at or before its time, so whoever relays it can't point

@@ -399,9 +399,9 @@ enum Command {
     /// [--tz ZONE]` runs one on a schedule; `rule add SPEC --on
     /// pr-opened|check-failed|push [--repo] [--branch]` on a linked repo's
     /// event (owner or editor on the project). `grant` shows the project's
-    /// standing grant for runs; `grant sign` signs it with this CLI's device
-    /// (a project owner), so its runs start with every device asleep;
-    /// `grant revoke` takes it back (`--stop`: the runs going stop too). Not
+    /// standing grant for runs; an owner signs and revokes it on control's
+    /// page from a browser or a phone (`grant sign` and `grant revoke` say
+    /// so: this CLI's key isn't taken for it). Not
     /// `arugula run`, which runs a command in a pane here. `--project` names
     /// a project by id or name; the default is your personal one. Needs
     /// `arugula login`.

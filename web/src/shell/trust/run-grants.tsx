@@ -46,6 +46,10 @@ export function RunGrants({ s }: { s: ControlSession }) {
   };
   useEffect(() => void load().catch((e: Error) => setErr(e.message)), []);
   if (!rows?.length) return err ? <p class="control-error">{err}</p> : null;
+  // Only a browser or a phone (one all the way back to the account's root)
+  // signs or revokes a standing grant: not the desktop app, whose keys may
+  // be a program's. Every hosted workspace refuses the rest too.
+  const mine = s.canApprove("browser");
   const act = (id: string, f: () => Promise<unknown>) => async () => {
     setBusy(id);
     setErr("");
@@ -97,7 +101,7 @@ export function RunGrants({ s }: { s: ControlSession }) {
                     <>
                       {pick(r)}{" "}
                       <button
-                        disabled={!!busy}
+                        disabled={!!busy || !mine}
                         data-renew-run-grant={r.id}
                         onClick={act(r.id, async () => {
                           const [after] = r.view?.stale ? [] : await s.revokeRunGrants(r.id, [g.grant.delegation], false);
@@ -112,14 +116,14 @@ export function RunGrants({ s }: { s: ControlSession }) {
                     <input type="checkbox" data-stop-running checked={!!stop[r.id]} onChange={(e) => setStop({ ...stop, [r.id]: (e.target as HTMLInputElement).checked })} /> also
                     stop the runs going
                   </label>{" "}
-                  <button class="control-revoke quiet-danger" disabled={!!busy} data-revoke-run-grant={r.id} onClick={act(r.id, () => s.revokeRunGrants(r.id, delegationsOf(r), !!stop[r.id]))}>
+                  <button class="control-revoke quiet-danger" disabled={!!busy || !mine} data-revoke-run-grant={r.id} onClick={act(r.id, () => s.revokeRunGrants(r.id, delegationsOf(r), !!stop[r.id]))}>
                     Revoke
                   </button>
                 </span>
               ) : (
                 <span>
                   {pick(r)}{" "}
-                  <button disabled={!!busy} data-sign-run-grant={r.id} onClick={act(r.id, () => s.signRunGrant(r.delegation, daysOf(r)))}>
+                  <button disabled={!!busy || !mine} data-sign-run-grant={r.id} onClick={act(r.id, () => s.signRunGrant(r.delegation, daysOf(r)))}>
                     Allow runs
                   </button>
                 </span>
@@ -134,6 +138,11 @@ export function RunGrants({ s }: { s: ControlSession }) {
         workspace checks the signature. Deploys still ask you every time. <b>Revoke</b> stops new runs; the ones going finish unless you stop
         them too. A workspace that's asleep when you revoke is told later; one that's never told keeps honouring the grant until it expires.
       </p>
+      {mine ? null : (
+        <p class="dim" data-run-grant-elsewhere>
+          Sign or revoke these from a browser or a phone of yours: the desktop app doesn't.
+        </p>
+      )}
       {err ? <p class="control-error">{err}</p> : null}
     </>
   );

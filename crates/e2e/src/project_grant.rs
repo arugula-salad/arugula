@@ -34,9 +34,11 @@
 //! by <device id>
 //! ```
 //!
-//! - **Who signs.** A browser or CLI of one of the project's owners, as for
-//!   a delegation ([`Owners`]): never a machine, a recovery code, control's
-//!   key or the platform.
+//! - **Who signs.** A browser of one of the project's owners that's a
+//!   browser all the way back to its account's root
+//!   ([`Owners::browser_signed`]), and so are its revokes: never a CLI or
+//!   the desktop app (their keys may be a program's on their computer), a
+//!   machine, a recovery code, control's key or the platform.
 //! - **What it covers.** `runs.start` and `runs.instruct` ([`CAPS`]) on the
 //!   hosted workspaces of the project, under the delegation it names. A
 //!   new delegation needs a new grant. It never covers a deploy (aru-101).
@@ -184,9 +186,10 @@ impl ProjectGrant {
         self.sig = hex::encode(keys.signature(self.body().as_bytes()));
     }
 
-    /// Signed by a device that may sign for its project, as `owners` says.
+    /// Signed by a browser of one of its project's owners, a browser all
+    /// the way back, as `owners` says.
     pub fn signed_for(&self, owners: &Owners) -> bool {
-        self.well_formed() && owners.may_sign(&self.owner, &self.by, &self.body(), &self.sig)
+        self.well_formed() && owners.browser_signed(&self.owner, &self.by, &self.body(), &self.sig)
     }
 }
 
@@ -275,10 +278,13 @@ impl GrantRevoke {
         self.project == g.project && self.delegation == g.delegation && g.made <= self.at
     }
 
-    /// Signed by a device that may sign for the project `owner` names (any
-    /// of its owners, not only the one who granted), trusted now.
+    /// Signed by a browser (one all the way back) of the project `owner`
+    /// names (any of its owners, not only the one who granted), trusted
+    /// now.
     pub fn signed_for(&self, owner: &str, owners: &Owners) -> bool {
-        token(&self.project) && token(&self.delegation) && owners.may_sign(owner, &self.by, &self.body(), &self.sig)
+        token(&self.project)
+            && token(&self.delegation)
+            && owners.browser_signed(owner, &self.by, &self.body(), &self.sig)
     }
 
     /// It takes back `g`: it covers it, signed by one of the project's
@@ -527,8 +533,10 @@ mod tests {
                 Err(GrantRefusal::Unsigned)
             );
         }
-        // An owner's machine or recovery code doesn't either.
-        for kind in [Kind::Daemon, Kind::Recovery] {
+        // An owner's machine, recovery code, CLI or desktop app doesn't
+        // either, nor a browser one of those made: their keys may be a
+        // program's. Nor a revoke from them.
+        for kind in [Kind::Daemon, Kind::Recovery, Kind::Cli, Kind::App] {
             let k = DeviceKeys::generate();
             let mut kc = Cert::new(&k, &w.owner.account, kind, "x");
             kc.sign_with(&w.owner.keys);
@@ -540,6 +548,35 @@ mod tests {
                 Err(GrantRefusal::Unsigned)
             );
         }
+        for kind in [Kind::Cli, Kind::App] {
+            let k = DeviceKeys::generate();
+            let mut kc = Cert::new(&k, &w.owner.account, kind, "x");
+            kc.sign_with(&w.owner.keys);
+            let mut certs = w.certs.clone();
+            certs.get_mut(&w.owner.account).unwrap().0.push(kc);
+            let owners = Owners::Team { roster: &w.roster, certs: &certs };
+            let g = grant(&d, &w.owner.keys);
+            assert_eq!(check(&g, &d, Revokes::default(), &owners, "runs.start", 200), Ok(()));
+            let r = GrantRevoke::new(&g.project, &g.delegation, Running::Finish, 150, &k);
+            assert!(!r.revokes(&g, &owners), "a {} can't revoke it", kind.as_str());
+            let r = GrantRevoke::new(&g.project, &g.delegation, Running::Finish, 150, &w.other_owner.keys);
+            assert!(r.revokes(&g, &owners), "another owner's browser can");
+        }
+        // A browser a CLI signed (control keeps none now) isn't one.
+        let (ck, mut cc) =
+            (DeviceKeys::generate(), Cert::new(&DeviceKeys::generate(), &w.owner.account, Kind::Cli, "cli"));
+        cc = Cert { sign: hex::encode(ck.sign_public()), noise: hex::encode(ck.noise_public), device: ck.id(), ..cc };
+        cc.sign_with(&w.owner.keys);
+        let lk = DeviceKeys::generate();
+        let mut laundered = Cert::new(&lk, &w.owner.account, Kind::Browser, "laundered");
+        laundered.sign_with(&ck);
+        let mut certs = w.certs.clone();
+        certs.get_mut(&w.owner.account).unwrap().0.extend([cc, laundered]);
+        let owners = Owners::Team { roster: &w.roster, certs: &certs };
+        assert_eq!(
+            check(&grant(&d, &lk), &d, Revokes::default(), &owners, "runs.start", 200),
+            Err(GrantRefusal::Unsigned)
+        );
         // An owner who's an editor now.
         let later = roster(vec![member(&w.owner, TeamRole::Editor), member(&w.editor, TeamRole::Owner)], &w.owner);
         let owners = Owners::Team { roster: &later, certs: &w.certs };

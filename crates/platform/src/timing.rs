@@ -325,6 +325,15 @@ impl HubPort for Timed {
     fn live_delegation<'a>(&'a self, project: &'a str, owner: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
         timed!(self.0.live_delegation(project, owner))
     }
+    fn owner_browser_signed<'a>(
+        &'a self,
+        owner: &'a str,
+        device: &'a str,
+        body: &'a str,
+        sig: &'a str,
+    ) -> BoxFuture<'a, HubResult<bool>> {
+        timed!(self.0.owner_browser_signed(owner, device, body, sig))
+    }
 }
 
 #[cfg(test)]
