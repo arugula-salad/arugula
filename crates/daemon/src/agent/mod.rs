@@ -415,7 +415,8 @@ struct Inner {
 }
 
 enum Msg {
-    Frame(u64, Value),
+    /// A frame from the agent: its generation, and when it was logged.
+    Frame(u64, Value, u64),
     Closed(u64, String),
     /// Something changed outside the actor (a method call).
     Changed,
@@ -598,9 +599,11 @@ impl Inner {
         }
     }
 
-    fn write_log(&mut self, d: &str, m: &Value) {
+    /// Log a frame at `at`: the time it's taken at live too, so a
+    /// transcript rebuilt from the log has the same times as the live one.
+    fn write_log(&mut self, d: &str, m: &Value, at: u64) {
         if let Some(log) = self.log.as_mut() {
-            let mut line = json!({ "t": now_ms(), "d": d, "m": m }).to_string().into_bytes();
+            let mut line = json!({ "t": at, "d": d, "m": m }).to_string().into_bytes();
             line.push(b'\n');
             if let Err(e) = log.append(&line) {
                 warn!(error = %e, "can't write the agent log");
@@ -609,8 +612,9 @@ impl Inner {
     }
 
     fn note(&mut self, e: Value) {
-        self.write_log("note", &e);
-        self.on_note(&e, now_ms());
+        let at = now_ms();
+        self.write_log("note", &e, at);
+        self.on_note(&e, at);
     }
 
     /// Queue a prompt for the agent. It's in the log, so a prompt queued
@@ -684,8 +688,9 @@ impl Inner {
     /// Send a frame: log it, account for it, then write it.
     fn out(&mut self, frame: Value) {
         let secrets = self.secrets();
-        self.write_log("out", &without_images(&redacted(&frame, &secrets)));
-        self.on_out(&frame, now_ms());
+        let at = now_ms();
+        self.write_log("out", &without_images(&redacted(&frame, &secrets)), at);
+        self.on_out(&frame, at);
         if let Some(link) = &self.link {
             link.send(frame.to_string().into_bytes());
         }
@@ -1624,14 +1629,16 @@ impl Agent {
                         return;
                     }
                 };
-                // Logged before it's taken off the pipe.
+                // Logged before it's taken off the pipe, at the time it's
+                // taken at.
+                let at = now_ms();
                 if let Some(g) = g.as_mut()
                     && g.generation == generation
                 {
-                    g.write_log("in", &v);
+                    g.write_log("in", &v, at);
                 }
                 drop(g);
-                let _ = tx.send(Msg::Frame(generation, v));
+                let _ = tx.send(Msg::Frame(generation, v, at));
             }
             FromAgent::Closed(why) => {
                 let _ = tx.send(Msg::Closed(generation, why));
@@ -2060,8 +2067,8 @@ async fn run(ctx: AgentCtx, inner: Arc<Mutex<Inner>>, mut rx: mpsc::UnboundedRec
                         return;
                     }
                     match m {
-                        Msg::Frame(generation, v) if generation == g.generation => {
-                            fx = g.on_in(&v, now_ms());
+                        Msg::Frame(generation, v, at) if generation == g.generation => {
+                            fx = g.on_in(&v, at);
                             // Hearing from it means its machine is up.
                             if ctx.sprite.is_some() && !machine_up {
                                 machine_up = true;
