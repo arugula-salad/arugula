@@ -550,10 +550,12 @@ pub async fn archive(state_dir: &Path) -> anyhow::Result<Option<tokio::process::
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use arugula_control_wire::hosted::SetupRepo;
 
     use super::*;
 
+    #[cfg(unix)]
     fn plan() -> SetupPlan {
         SetupPlan {
             workspace: "hw_1".into(),
@@ -574,6 +576,8 @@ mod tests {
         }
     }
 
+    // Hosted boxes are Linux: its paths and shell.
+    #[cfg(unix)]
     #[test]
     fn repos_get_a_directory_each() {
         let got = places(
@@ -584,6 +588,8 @@ mod tests {
         assert_eq!(dirs, ["/home/u/app", "/home/u/app-2", "/home/u/repo"]);
     }
 
+    // Hosted boxes are Linux: its paths and shell.
+    #[cfg(unix)]
     #[test]
     fn credentials_go_in_the_env_file_only() {
         let p = plan();
@@ -611,6 +617,8 @@ mod tests {
     /// The script runs: it reads and removes its env file, clones each
     /// repo with what it was given, runs the setup script in the first, and
     /// leaves its steps and exit code beside it; a failing step stops it.
+    // Hosted boxes are Linux: its paths and shell.
+    #[cfg(unix)]
     #[test]
     fn the_script_runs() {
         if std::process::Command::new("git").arg("--version").output().is_err() {

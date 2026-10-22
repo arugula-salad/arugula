@@ -708,6 +708,8 @@ mod tests {
     /// The reads a driving machine makes for read_cloud: a repository's
     /// diff and status (the first one under home without a path), a
     /// directory, a file; what isn't text, isn't.
+    // Hosted boxes are Linux: its paths and shell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn reads_here() {
         let dir = std::env::temp_dir().join(format!("arugula-hosted-read-{}", std::process::id()));
