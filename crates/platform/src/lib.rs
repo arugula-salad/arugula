@@ -38,6 +38,7 @@ pub mod chat;
 #[cfg(test)]
 mod chat_tests;
 pub mod cloud;
+pub mod compute;
 #[cfg(feature = "contract")]
 pub mod contract;
 pub mod db;
@@ -105,6 +106,9 @@ pub struct Platform {
     pub stripe: Option<billing::Stripe>,
     /// Cloud workspaces (M137), when this control has a Managoat key.
     pub cloud: Option<cloud::Cloud>,
+    /// Hosted workspaces' boxes (M176), when this platform has an E2B key.
+    /// Nothing drives it yet: M179 will.
+    pub compute: Option<Arc<dyn compute::Substrate>>,
     /// The GitHub App (M40, here since M161), when this control has its id
     /// and key: its webhook, `may()` and installation tokens.
     pub github: Option<forge::GithubApp>,
@@ -189,6 +193,7 @@ impl Platform {
             analytics,
             stripe: None,
             cloud: None,
+            compute: None,
             github: None,
             chat,
             cache: Default::default(),
