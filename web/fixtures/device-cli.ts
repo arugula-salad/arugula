@@ -29,6 +29,14 @@
 //   grant-revoke [TEAM] [stop]
 //                          revoke it (`stop`: the runs going stop too):
 //                          {project, grant, told}
+//   run-start WORKSPACE [TEAM] [--dir DIR] -- ARGV...
+//                          start a run of ARGV on a hosted workspace, under
+//                          the project's live grant (M214, M212): {run, state}
+//   agent-run WORKSPACE INSTRUCTION [TEAM]
+//                          start an agent run (Claude Code, headless): {run, state}
+//   watch NAME PANE TEXT [SECS]
+//                          watch a pane over control's relay, end to end, until
+//                          it shows TEXT: {id, pane}
 //   hosted-entry ID        a hosted machine as the directory lists it here,
 //                          proof and all (exit 1 if it isn't listed)
 //   hosted-accept FILE     whether this device accepts the hosted machine whose
@@ -72,6 +80,7 @@ const [control] = opt("--control");
 const via = Object.fromEntries(opt("--via").map((v) => [v.slice(0, v.indexOf("=")), v.slice(v.indexOf("=") + 1)]));
 const [login] = opt("--login");
 const [name] = opt("--name");
+const [dir] = opt("--dir");
 const noWake = args.includes("--no-wake");
 if (noWake) args.splice(args.indexOf("--no-wake"), 1);
 const [blocks] = opt("--blocks");
@@ -132,6 +141,18 @@ async function main() {
       return out(await d.signRunGrant(rest[0] || undefined));
     case "grant-revoke":
       return out(await d.revokeRunGrant(rest[0] || undefined, rest[1] === "stop"));
+    case "run-start": {
+      const dash = rest.indexOf("--");
+      if (dash < 1) throw new Error("run-start WORKSPACE [TEAM] -- ARGV...");
+      return out(await d.startRun(rest[0], rest.slice(dash + 1), dash > 1 ? rest[1] : undefined, dir));
+    }
+    case "agent-run":
+      return out(await d.startAgentRun(rest[0], rest[1], rest[2]));
+    case "watch": {
+      const box = await find(rest[0]);
+      await d.watch(box.id, Number(rest[1]), rest[2], secs(rest[3], 15));
+      return out({ id: box.id, pane: Number(rest[1]) });
+    }
     case "hosted-entry": {
       const e = await d.hostedEntry(rest[0]);
       if (!e) throw new Error(`control lists no hosted machine ${rest[0]} here`);
@@ -174,7 +195,7 @@ async function main() {
     }
     default:
       throw new Error(
-        `unknown command ${cmd ?? "(none)"}: signin, approve, devices, online, pane, panes, team-create, team-invite, team-accept, team-admit, delegate, undelegate, grant-sign, grant-revoke, hosted-entry, hosted-accept, routed, open, preview`,
+        `unknown command ${cmd ?? "(none)"}: signin, approve, devices, online, pane, panes, team-create, team-invite, team-accept, team-admit, delegate, undelegate, grant-sign, grant-revoke, run-start, agent-run, watch, hosted-entry, hosted-accept, routed, open, preview`,
       );
   }
 }

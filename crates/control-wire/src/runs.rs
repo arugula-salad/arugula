@@ -4,9 +4,9 @@
 //! - `runs.start` ([`RunStart`], M211): start under the project's standing
 //!   grant (`arugula_e2e::project_grant`). The machine checks the grant
 //!   against its own enrollment before anything starts, and answers
-//!   `done`, or `cant` with the refusal's code. Until M212 a start carries
-//!   no operation: the machine checks the grant and answers, and M212 adds
-//!   the run it starts.
+//!   `done`, or `cant` with the refusal's code. It carries no operation:
+//!   one that names a run (M212) has the machine pull its work at once
+//!   (`crate::work`), where the run comes with its grant, checked again.
 //! - `runs.revoke` ([`RunRevoke`], M211): an owner's device revoked the
 //!   project's grants made by then. The machine checks the revoke once and
 //!   keeps it (so the platform can't take it back by leaving it out later)

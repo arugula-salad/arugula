@@ -674,7 +674,8 @@ project as its resource.
   it sends. The kept file fails closed: once one was kept, a missing or
   unreadable file refuses every start. It's in arugulad's state directory,
   which runs must never be able to write (M212). `running stop` also stops
-  the runs going (once there are runs to stop).
+  the runs going: each machine stops everything they started, and they
+  fail, saying the grant was revoked.
 - **It gates only what the platform starts.** People's own use of a hosted
   machine (its owners and editors) doesn't go through it.
 
@@ -685,6 +686,62 @@ chooses. A machine that heard a revoke keeps it; one that never heard it
 expires. **What it can't:** make a grant, widen one (another power, a
 later expiry, another project or delegation), point a revoke at another
 grant, or bring back one a machine has heard revoked.
+
+**Running one** (M212; `crates/platform/src/work.rs`,
+`crates/daemon/src/work.rs`). A run is S37's operation (`arugula op v1`,
+`arugula_e2e::run::Op`): a command and its arguments, or an instruction for
+an agent, and a directory, for one hosted machine.
+
+- **Only to a hosted machine.** The run's job checks that the machine its
+  operation names is its hosted workspace's box. A run for any other
+  machine (a person's) fails, saying so, and never reaches it.
+- **The machine pulls it.** A hosted machine asks for its work every few
+  seconds, signed as itself (`GET /api/hosted/work`; only a hosted
+  machine's signature opens it), and at once when a start names a run.
+  Control answers every run that's ready for it and hasn't started, again
+  and again until it starts, and the project's revokes every time. A
+  paused box is woken for its run. One run goes at a time on a machine.
+  A run nobody asks for in 15 minutes fails.
+- **Checked again on the machine.** The operation's bytes must hash to the
+  run's hash; it must be for this machine, project and workspace; its
+  directory must be under the box user's home and not hidden; and the
+  grant must pass the checks above. Otherwise the run fails, with the
+  check's name, and nothing starts.
+- **At most once.** Before it starts anything, the machine makes the run's
+  ledger entry (`<state>/work/ID.json`, made once, fsynced), saying
+  `running`. It never starts an id with an entry again, or one whose entry
+  can't be read, whatever control sends; it only sends again the reports
+  control hasn't taken. A run it finds `running` after a restart with no
+  pane fails ("interrupted by a restart; not run again").
+- **As another user, in its own copy.** The command runs as `runner`
+  (`sudo -n -u runner`, an empty environment, a pty of its own), which:
+  - has no sudo, and can't read arugulad's state directory (the machine's
+    keys, its enrollment, the revokes it kept) or write anything of the
+    box user's;
+  - reads the box user's repos through their group, and works only in its
+    own copy (a clone, under `~runner/work/ID`, which is also its `HOME`);
+  - can't reach the daemon's ports, the provider's agent or the privileged
+    ports on loopback (iptables rules the daemon makes before the first
+    run; until they're in, nothing runs).
+  When a run ends, or is stopped, everything `runner` runs is killed.
+- **In a pane.** A new pane in the `runs` session, an ordinary end-to-end
+  pane its project's people watch as any. Its first lines and its tab say
+  which run it is, the operation's hash and the exact command, with
+  anything that wouldn't print as itself escaped.
+- **Agent runs** are Claude Code, headless (`claude -p`), with the
+  instruction, as `runner` in the run's copy. Its login reaches it on its
+  standard input, never on a command line, and its exit is the run's.
+- **Reported, signed.** `running` (with the pane and the operation's
+  hash), then `succeeded` or `failed` (the exit code), each signed by the
+  machine (`arugula run event v1`) and kept with its signature
+  (`POST /api/hosted/work/report`).
+
+**What control can do with runs:** under a standing grant, nothing signed
+by a person binds the command, so control chooses it, on that project's
+hosted workspaces. Each run's events say, signed by the machine, which
+operation it ran, and its pane shows it. **What it can't:** run anything on
+a person's machine, run a run twice, or report a run's state for the
+machine.
 
 ## What holds against control
 

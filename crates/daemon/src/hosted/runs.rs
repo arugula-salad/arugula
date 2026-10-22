@@ -28,9 +28,10 @@
 //! The grant gates only what the platform starts. People's own use of the
 //! machine (its owners and editors, M180) doesn't go through it.
 //!
-//! Until M212 a start carries no operation: the check is the whole of it,
-//! and M212 starts the run here once it passes. A revoke that says
-//! `running stop` has nothing to stop until then either.
+//! A start that names a run (M212) has the machine pull its work at once
+//! (`crate::work`); the run is checked again here ([`allows`]) before it
+//! starts. A revoke that says `running stop` stops the runs going under
+//! the grants it covers (`crate::work::stop_revoked`).
 
 use std::{path::Path, sync::Mutex};
 
@@ -42,7 +43,7 @@ use arugula_control_wire::{
 use arugula_e2e::{
     hosted::{Owner, Owners},
     now_ms,
-    project_grant::{self, GrantRefusal, GrantRevoke, Revokes, Running},
+    project_grant::{self, GrantRefusal, GrantRevoke, ProjectGrant, Revokes, Running},
 };
 use tracing::{info, warn};
 
@@ -149,9 +150,11 @@ fn saved(app: &crate::server::App) -> Option<Saved> {
     app.control.enrolled().map(|e| e.saved.clone())
 }
 
-/// `runs.start`: check the grant, and answer. Nothing runs yet (M212).
-pub fn start(app: &crate::server::App, s: &RunStart) -> OpAnswer {
-    let Some(saved) = saved(app) else { return refused(NOT_HOSTED) };
+/// Whether the platform may do `s.cap` here under `s.grant` now: the
+/// revokes it carries kept first, then [`check`]ed with every revoke kept
+/// here. What a start asks, and what a run checks before it starts (M212).
+pub fn allows(app: &crate::server::App, s: &RunStart) -> Result<(), Refused> {
+    let Some(saved) = saved(app) else { return Err(NOT_HOSTED) };
     let dir = app.control.state_dir();
     if let Err(e) = keep(dir, &saved, &s.revokes) {
         warn!(error = %format!("{e:#}"), "hosted: can't keep a standing grant's revoke");
@@ -160,10 +163,36 @@ pub fn start(app: &crate::server::App, s: &RunStart) -> OpAnswer {
         Ok(k) => k,
         Err(e) => {
             warn!(error = %format!("{e:#}"), "hosted: refusing starts: the kept revokes can't be read");
-            return refused(UNREADABLE);
+            return Err(UNREADABLE);
         }
     };
-    match check(&saved, s, &kept, now_ms()) {
+    check(&saved, s, &kept, now_ms())
+}
+
+/// Keep what's about this machine among `revokes` (they come with each
+/// pull, M212), checked as a relayed revoke is.
+pub fn keep_revokes(app: &crate::server::App, revokes: &[GrantRevoke]) {
+    let Some(saved) = saved(app) else { return };
+    if let Err(e) = keep(app.control.state_dir(), &saved, revokes) {
+        warn!(error = %format!("{e:#}"), "hosted: can't keep a standing grant's revoke");
+    }
+}
+
+/// Whether the runs going under `g` stop (M212): a revoke kept here covers
+/// it and says `running stop`; or the kept revokes can't be read, which
+/// fails closed.
+pub fn stops(app: &crate::server::App, g: &ProjectGrant) -> bool {
+    match read_kept(app.control.state_dir()) {
+        Ok(kept) => kept.iter().any(|r| r.running == Running::Stop && r.covers(g)),
+        Err(_) => true,
+    }
+}
+
+/// `runs.start`: check the grant, and answer. A start that names a run
+/// (M212) has the machine ask for its work now: the run itself comes that
+/// way, and is checked again before it starts.
+pub fn start(app: &crate::server::App, s: &RunStart) -> OpAnswer {
+    match allows(app, s) {
         Ok(()) => {
             info!(
                 grant = s.grant.id,
@@ -171,6 +200,9 @@ pub fn start(app: &crate::server::App, s: &RunStart) -> OpAnswer {
                 run = s.run.as_deref().unwrap_or("-"),
                 "hosted: a start under the project's standing grant checks out"
             );
+            if s.run.is_some() {
+                crate::work::nudge();
+            }
             OpAnswer::Done { url: None }
         }
         Err(r) => {
@@ -193,6 +225,9 @@ pub fn revoke(app: &crate::server::App, r: &RunRevoke) -> OpAnswer {
                 stop,
                 "hosted: the project's standing grants were revoked"
             );
+            if stop {
+                crate::work::stop_revoked(app);
+            }
             OpAnswer::Done { url: None }
         }
         // Not this machine's, not an owner's, or an older one than it has.

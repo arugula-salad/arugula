@@ -723,6 +723,22 @@ auth = "hosted"
 clients = ["daemon"]
 note = "A hosted box says an agent turn ended (M185): only its own box's (PlatformPort::hosted_turn_end)."
 [[route]]
+method = "GET"
+path = "/api/hosted/work"  # wire::work::WORK
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A hosted machine's runs (M212): the hub says which machine asked, and its key, and the platform answers (PlatformPort::hosted_work). A person's machine never gets work."
+
+[[route]]
+method = "POST"
+path = "/api/hosted/work/report"  # wire::work::WORK_REPORT
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A hosted machine's signed report of a run's state change (M212), checked by the platform with the machine's key and kept with its signature (PlatformPort::hosted_report)."
+
+[[route]]
 method = "DELETE"
 path = "/api/hosted/machines/{id}"
 process = "hub"
@@ -1461,7 +1477,7 @@ path = "/api/projects/{project}/runs/start"
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Owners and editors: the workspace's hosted machine is sent the live grant (runs.start) and checks it. Until M212 it carries no operation."
+note = "Owners and editors: the workspace's hosted machine is sent the live grant (runs.start) and checks it. It starts nothing: runs start with POST /api/projects/{project}/runs (M214) and the machine pulls them (/api/hosted/work, M212)."
 
 [[route]]
 method = "GET"

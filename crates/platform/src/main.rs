@@ -180,14 +180,14 @@ async fn run() -> anyhow::Result<()> {
     }
     arugula_platform::cloud::start(&p);
     arugula_platform::hosted::start(&p);
+    // The job worker: runs' dispatch (M212) and schedules (M214).
+    arugula_platform::work::start(&p);
     // Chat follows the hub's change feed, and so do projects and grants (a
     // machine that joins gets its `cloud.drive` grant from it).
     arugula_platform::chat::start(&p);
     arugula_platform::projects::start(&p);
     arugula_platform::billing::start(&p);
     arugula_platform::forge::start(&p);
-    // Run schedules (M214).
-    arugula_platform::triggers::start(&p);
 
     let port: Arc<dyn PlatformPort> = p.clone();
     let app = Router::new()

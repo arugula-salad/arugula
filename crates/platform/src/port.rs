@@ -11,7 +11,10 @@
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 
-use arugula_control_wire::forge::Standing;
+use arugula_control_wire::{
+    forge::Standing,
+    work::{Report, Reported, Work},
+};
 
 pub use crate::hosted::inference::TurnAnswer;
 use crate::{
@@ -20,6 +23,7 @@ use crate::{
         self, GithubUser, TokenAnswer,
         send::{Outcome, UserToken},
     },
+    work::HostedMachine,
 };
 
 pub trait PlatformPort: Send + Sync {
@@ -122,6 +126,31 @@ pub trait PlatformPort: Send + Sync {
         let _ = (workspace, machine, turn);
         Box::pin(async { anyhow::bail!("this platform doesn't run hosted agents") })
     }
+
+    /// A hosted machine's work (M212), for the hub's `GET
+    /// /api/hosted/work`: the runs ready for it, of the kinds it `takes`.
+    /// The hub checked its signature, and says who it is. A platform from
+    /// before M212 has none to give.
+    fn hosted_work<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        takes: &'a [String],
+    ) -> BoxFuture<'a, anyhow::Result<Work>> {
+        let _ = (machine, takes);
+        Box::pin(async { Ok(Work::default()) })
+    }
+
+    /// A hosted machine's signed report of a run's state change (M212), for
+    /// the hub's `POST /api/hosted/work/report`. A platform from before
+    /// M212 can't take it.
+    fn hosted_report<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        report: &'a Report,
+    ) -> BoxFuture<'a, anyhow::Result<Reported>> {
+        let _ = (machine, report);
+        Box::pin(async { anyhow::bail!("this platform doesn't take runs' reports") })
+    }
 }
 
 /// An account the hub deleted.
@@ -142,7 +171,8 @@ pub struct Deleted {
 /// (M161) `forge_standing` and `github_token`; sends (M168) `send_draft`;
 /// runs (M210), deploys (M217) and what starts runs (M214), their part of
 /// `account_deleted`; hosted workspaces (M182) `hosted_wake`; hosted
-/// inference (M185) `hosted_turn` and `hosted_turn_end`.
+/// inference (M185) `hosted_turn` and `hosted_turn_end`; hosted machines'
+/// runs (M212) `hosted_work` and `hosted_report`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         Box::pin(async move {
@@ -253,5 +283,21 @@ impl PlatformPort for Platform {
         turn: &'a str,
     ) -> BoxFuture<'a, anyhow::Result<bool>> {
         Box::pin(crate::hosted::inference::turn_end(self, workspace, machine, turn))
+    }
+
+    fn hosted_work<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        takes: &'a [String],
+    ) -> BoxFuture<'a, anyhow::Result<Work>> {
+        Box::pin(crate::work::work(self, machine, takes))
+    }
+
+    fn hosted_report<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        report: &'a Report,
+    ) -> BoxFuture<'a, anyhow::Result<Reported>> {
+        Box::pin(crate::work::report(self, machine, report))
     }
 }

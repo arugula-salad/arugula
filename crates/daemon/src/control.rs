@@ -922,6 +922,13 @@ impl Control {
         Ok(serde_json::from_slice(&got)?)
     }
 
+    /// GET from control, signed as this machine, if it's in control (a
+    /// hosted machine's work, M212).
+    pub async fn get_signed<T: serde::de::DeserializeOwned>(&self, path_and_query: &str) -> anyhow::Result<T> {
+        let e = self.enrolled().ok_or_else(|| anyhow::anyhow!("this machine isn't in control"))?;
+        self.get(&e, path_and_query).await
+    }
+
     /// Send a request to control and read its answer, waiting out a
     /// maintenance window (M141) for as long as `patience` lasts (`None`:
     /// not at all). `build` makes the request afresh for each try, so each

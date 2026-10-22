@@ -5,6 +5,7 @@
 //! window missed while the platform was down fires once. On SQLite and,
 //! with `ARUGULA_TEST_POSTGRES_URL`, on Postgres.
 
+use crate::jobs::Worker;
 use std::{
     sync::atomic::{AtomicU64, Ordering::SeqCst},
     time::Duration,

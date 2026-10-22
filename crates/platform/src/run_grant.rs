@@ -31,11 +31,11 @@
 //!   checks and keeps it; the newest goes again with every start, for a
 //!   machine that was asleep. A machine that never hears it honours the
 //!   grant until it expires. `running: stop` asks for runs going to stop
-//!   as well: M212's, once there are runs.
+//!   as well (M212).
 //! - **A start** (`runs.start`) sends the live grant and the project's
-//!   revokes to the workspace's machine, which answers. Until M212 it
-//!   carries no operation: it's the check M212's runs go through, and the
-//!   route M212 makes start one.
+//!   revokes to the workspace's machine, which answers. It starts
+//!   nothing: runs start with `POST /api/projects/{project}/runs` (M214),
+//!   and the machine pulls them, each checked the same way (M212).
 //!
 //! No agent signs or revokes a grant: these take a person (a session or
 //! their CLI device, which signs with its own key), never a machine's

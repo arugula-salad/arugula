@@ -25,7 +25,6 @@
 //!   reaches a run's environment, command or an agent's prompt unquoted.
 
 use anyhow::Result;
-use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -111,16 +110,13 @@ impl Operation {
     /// runs it on `daemon`: what the run's hash, its grant and any
     /// approval name, and what the daemon runs.
     pub fn encode(&self, daemon: &str) -> String {
-        let b64 = |s: &str| base64::engine::general_purpose::STANDARD.encode(s.as_bytes());
-        let cwd = self.directory.as_deref().map_or_else(|| "-".to_owned(), b64);
-        let mut op = format!("arugula op v1\ndaemon {daemon}\nkind {}\nsession -\npane - -\ncwd {cwd}\n", self.kind());
-        for a in &self.argv {
-            op.push_str(&format!("argv {}\n", b64(a)));
+        arugula_e2e::run::Op {
+            argv: self.argv.clone(),
+            instruction: self.instruction.clone(),
+            agent: self.agent.clone(),
+            directory: self.directory.clone(),
         }
-        if let Some(i) = &self.instruction {
-            op.push_str(&format!("text {}\nagent {}\n", b64(i), self.agent.as_deref().unwrap_or("-")));
-        }
-        op
+        .encode(daemon)
     }
 
     fn argv_json(&self) -> String {
