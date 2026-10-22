@@ -162,6 +162,7 @@ pub fn fresh(sandbox: &str) -> bool {
     false
 }
 
+#[cfg(unix)]
 fn report(r: anyhow::Result<()>) -> bool {
     match r {
         Ok(()) => {
