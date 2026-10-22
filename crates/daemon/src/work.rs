@@ -1134,6 +1134,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     fn sh(script: &str) -> String {
         let out = std::process::Command::new("sh").args(["-c", script]).output().unwrap();
         String::from_utf8_lossy(&out.stdout).into_owned()
