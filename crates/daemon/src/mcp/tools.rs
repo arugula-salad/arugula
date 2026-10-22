@@ -3368,6 +3368,9 @@ impl Call<'_> {
 impl Call<'_> {
     /// A forge block (M36's PR, M37's issue or new issue) beside a pane.
     async fn open_forge(&self, mut what: ForgeOpen, dir: Option<String>, beside: Option<PaneArg>) -> Out {
+        // Where it lands is this host: refused before anything is asked of
+        // Arugula control as this machine (M203's issues).
+        confine(self.on_machine().await?, false)?;
         let (beside, host) = self.beside(beside.as_ref()).await?;
         // N alone means the repository beside it, if no dir is given.
         let dir = match (&dir, beside) {
