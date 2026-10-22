@@ -142,7 +142,7 @@ async fn tools_through_the_stdio_bridge() {
 
     // The tools, with honest annotations: grouped by kind (#349).
     let tools = s.list_all_tools().await.unwrap();
-    assert_eq!(tools.len(), 28 - NO_FORGE);
+    assert_eq!(tools.len(), 30 - NO_FORGE);
     // Studio apps and chant workspaces aren't listed without their flags,
     // and a caller who names one is told how to turn it on (#347); a build
     // without Labs says it isn't built. Daemon-side Managoat was removed: its
@@ -398,7 +398,7 @@ async fn stateless_clients_get_the_cache_hints_claude_code_wants() {
     // (and retries it, then gives up: no tools).
     let tools = s.list_tools(None).await.unwrap();
     assert_eq!((tools.ttl_ms, tools.cache_scope), (Some(0), Some(CacheScope::Private)));
-    assert_eq!(tools.tools.len(), 28 - NO_FORGE, "without labs");
+    assert_eq!(tools.tools.len(), 30 - NO_FORGE, "without labs");
     let t = s.list_resource_templates(None).await.unwrap();
     assert_eq!((t.ttl_ms, t.cache_scope), (Some(0), Some(CacheScope::Private)));
     let r = call(&s, "run", json!({ "command": "echo stateless", "wait": true })).await;
@@ -473,7 +473,7 @@ async fn http_with_a_token_until_it_is_revoked() {
         d.post("/api/mcp/tokens", json!({ "name": "watcher", "scope": "read" }))["token"].as_str().unwrap().to_owned();
     let w = http(&d, &ro, Client::named("watcher")).await.unwrap();
     // (read_forge is among the read-only tools only with the forge.)
-    assert_eq!(w.list_all_tools().await.unwrap().len(), 12 - NO_FORGE / 2);
+    assert_eq!(w.list_all_tools().await.unwrap().len(), 13 - NO_FORGE / 2);
     assert!(refused(&w, "run", json!({ "command": "true" })).await.contains("may only read"));
     // Grouped, a write is still a write.
     assert!(refused(&w, "show", json!({ "kind": "port", "port": 1 })).await.contains("may only read"));
@@ -909,7 +909,7 @@ async fn labs_lists_all_the_tools() {
     let s = bridge(&d, Client::named("claude-code")).await;
     let names = |tools: &[rmcp::model::Tool]| tools.iter().map(|t| t.name.to_string()).collect::<Vec<_>>();
     let instructions = |s: &Session| s.peer_info().and_then(|i| i.instructions.clone()).unwrap_or_default();
-    assert_eq!(s.list_all_tools().await.unwrap().len(), 28 - NO_FORGE);
+    assert_eq!(s.list_all_tools().await.unwrap().len(), 30 - NO_FORGE);
     assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
 
     // With Labs built in, the `labs` file lists them.
@@ -917,7 +917,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 30, "{:?}", names(&with));
+        assert_eq!(with.len(), 32, "{:?}", names(&with));
         assert!(with.iter().any(|t| t.name == "delegate"), "delegate isn't listed with labs");
         for (tool, kind) in [("show", "app"), ("show", "workspace")] {
             assert!(kinds(&with, tool).contains(&kind.to_owned()), "{tool} kind {kind} isn't listed with labs");
@@ -935,13 +935,13 @@ async fn labs_lists_all_the_tools() {
         // of the others' kinds.
         arugula_proto::flags::set(&d.state, "chat", true).unwrap();
         let chat = s.list_all_tools().await.unwrap();
-        assert_eq!(chat.len(), 28, "{:?}", names(&chat));
+        assert_eq!(chat.len(), 30, "{:?}", names(&chat));
         assert!(!kinds(&chat, "show").contains(&"app".to_owned()), "show lists app with only chat on");
         arugula_proto::flags::set(&d.state, "chat", false).unwrap();
         // A `fountain` flag from before #942's F5 changes nothing.
         std::fs::write(d.state.join("flags.json"), r#"{"flags":{"fountain":false}}"#).unwrap();
         let without = s.list_all_tools().await.unwrap();
-        assert_eq!(without.len(), 28 - NO_FORGE);
+        assert_eq!(without.len(), 30 - NO_FORGE);
         assert!(!kinds(&without, "show").contains(&"managoat".to_owned()));
         assert!(!kinds(&without, "show").contains(&"workspace".to_owned()));
     }
@@ -950,7 +950,7 @@ async fn labs_lists_all_the_tools() {
     {
         arugula_testkit::labs(&d.state, true);
         let with = s.list_all_tools().await.unwrap();
-        assert_eq!(with.len(), 28 - NO_FORGE, "{:?}", names(&with));
+        assert_eq!(with.len(), 30 - NO_FORGE, "{:?}", names(&with));
         assert!(!kinds(&with, "show").contains(&"managoat".to_owned()));
         assert!(!instructions(&s).contains("read_thread"), "{}", instructions(&s));
         arugula_testkit::labs(&d.state, false);
@@ -2268,6 +2268,243 @@ async fn an_agent_files_comments_on_and_closes_a_native_issue() {
     assert!(mine.iter().all(|(_, auth, _)| auth.starts_with(&format!("v2 {} ", keys.id()))), "{mine:?}");
     s.cancel().await.unwrap();
     s0.cancel().await.unwrap();
+}
+
+/// A fake control's platform for M216's runs: project `prj_1` with one
+/// hosted box (`hw_1`, machine `dev_1`), the machine's run grants (off
+/// until `granted`), and the runs started, each of which runs on its own
+/// a moment later (`running` in pane 3, then `succeeded`, exit 0) with a
+/// kept log. Every call as it came: method and path, its signature, its
+/// body.
+#[derive(Clone, Default)]
+struct FakeRuns {
+    granted: Arc<std::sync::atomic::AtomicBool>,
+    /// The first wait is refused for too many open (429).
+    busy_once: Arc<std::sync::atomic::AtomicBool>,
+    runs: Arc<std::sync::Mutex<Vec<Value>>>,
+    calls: Arc<std::sync::Mutex<Vec<(String, String, Value)>>>,
+}
+
+const RUN_LOG: &str = "running 3 tests\ntest result: ok. 3 passed\n";
+
+async fn fake_runs(f: FakeRuns) -> String {
+    use axum::{
+        Json, Router,
+        extract::{Request, State},
+        http::StatusCode,
+        response::{IntoResponse, Response},
+        routing::{get, post},
+    };
+    fn event(seq: u64, to: &str, detail: Value) -> Value {
+        json!({ "seq": seq, "from": null, "to": to, "at": seq, "detail": detail, "daemon": "dev_1" })
+    }
+    async fn any(State(f): State<FakeRuns>, req: Request) -> Response {
+        let (method, at) = (req.method().to_string(), req.uri().to_string());
+        let auth = req.headers().get("x-arugula-auth").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+        let bytes = axum::body::to_bytes(req.into_body(), 1 << 20).await.unwrap();
+        let b: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+        f.calls.lock().unwrap().push((format!("{method} {at}"), auth, b.clone()));
+        let (path, q) = at.split_once('?').unwrap_or((&at, ""));
+        let q: std::collections::HashMap<String, String> =
+            url::form_urlencoded::parse(q.as_bytes()).into_owned().collect();
+        let segs: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        let ungranted = |power: &str| {
+            let why = format!(
+                "geek-box has no {power} grant over acme: its owner gives it with `arugula grants add geek-box {power} --project prj_1`, or turns on geek-box for acme under Settings, Agents and runs, on the platform page"
+            );
+            (StatusCode::FORBIDDEN, Json(json!({ "error": why, "reason": "agent_ungranted" }))).into_response()
+        };
+        let granted = f.granted.load(Ordering::SeqCst);
+        let find = |id: &str| f.runs.lock().unwrap().iter().find(|r| r["id"] == id).cloned();
+        match (method.as_str(), segs.as_slice()) {
+            ("GET", ["api", "daemon", "runs", "reach"]) => {
+                let projects = if granted {
+                    json!([{ "id": "prj_1", "name": "acme", "powers": ["runs.read", "runs.start"] }])
+                } else {
+                    json!([])
+                };
+                Json(json!({ "projects": projects })).into_response()
+            }
+            ("POST", ["api", "daemon", "projects", "prj_1", "runs"]) => {
+                if !granted {
+                    return ungranted(if b["spec"].is_null() { "runs.command" } else { "runs.start" });
+                }
+                let argv: Vec<String> = serde_json::from_value(b["argv"].clone()).unwrap_or_default();
+                let op = arugula_e2e::run::Op { argv, ..Default::default() }.encode("dev_1");
+                let id = format!("run_{:032x}", f.runs.lock().unwrap().len() + 1);
+                let run = json!({
+                    "id": id, "project": "prj_1", "workspace": "hw_1", "trigger": "manual",
+                    "source": { "by": "a1", "agent": "m1" }, "op": op, "op_hash": "h", "daemon": "dev_1",
+                    "state": "pending", "started_by": "a1", "started_by_agent": "m1", "grant": "pgr_1",
+                    "last_seq": 1, "created_at": 1, "events": [event(1, "pending", json!({}))],
+                });
+                f.runs.lock().unwrap().push(run.clone());
+                // It runs on its box a moment later, then succeeds.
+                let runs = f.runs.clone();
+                tokio::spawn(async move {
+                    for (seq, to, detail) in
+                        [(2, "running", json!({ "pane": 3 })), (3, "succeeded", json!({ "exit": 0 }))]
+                    {
+                        tokio::time::sleep(Duration::from_millis(1500)).await;
+                        let mut all = runs.lock().unwrap();
+                        let r = all.iter_mut().find(|r| r["id"] == id).unwrap();
+                        r["state"] = json!(to);
+                        r["last_seq"] = json!(seq);
+                        r["events"].as_array_mut().unwrap().push(event(seq, to, detail));
+                        if to == "succeeded" {
+                            r["exit_code"] = json!(0);
+                            r["pane"] = json!(3);
+                        }
+                    }
+                });
+                (StatusCode::CREATED, Json(run)).into_response()
+            }
+            ("GET", ["api", "daemon", "projects", "prj_1", "runs"]) => {
+                if !granted {
+                    return ungranted("runs.read");
+                }
+                Json(json!({ "project": "prj_1", "runs": f.runs.lock().unwrap().clone() })).into_response()
+            }
+            ("GET", ["api", "daemon", "runs", id]) => {
+                if !granted {
+                    return ungranted("runs.read");
+                }
+                // Answered once it has an event after `since`, or ended,
+                // or `wait` passed.
+                let since: Option<u64> = q.get("since").and_then(|s| s.parse().ok());
+                let wait = Duration::from_secs(q.get("wait").and_then(|s| s.parse().ok()).unwrap_or(0));
+                if since.is_some() && f.busy_once.swap(false, Ordering::SeqCst) {
+                    let why = "at most 8 waits on runs at once: try again when one ends";
+                    return (StatusCode::TOO_MANY_REQUESTS, Json(json!({ "error": why }))).into_response();
+                }
+                let until = std::time::Instant::now() + wait;
+                loop {
+                    let Some(r) = find(id) else {
+                        return (StatusCode::NOT_FOUND, Json(json!({ "error": "no such run" }))).into_response();
+                    };
+                    let moved = since.is_none_or(|s| r["last_seq"].as_u64().unwrap() > s) || r["state"] == "succeeded";
+                    if moved || std::time::Instant::now() >= until {
+                        return Json(r).into_response();
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            }
+            ("GET", ["api", "daemon", "runs", id, "log"]) => {
+                if !granted {
+                    return ungranted("runs.read");
+                }
+                let Some(r) = find(id) else {
+                    return (StatusCode::NOT_FOUND, Json(json!({ "error": "no such run" }))).into_response();
+                };
+                let max: usize = q.get("max").and_then(|s| s.parse().ok()).unwrap_or(65536);
+                let ended = r["state"] == "succeeded";
+                let kept = if ended { RUN_LOG } else { "" };
+                let offset: usize = match q.get("tail").map(String::as_str) {
+                    Some("true") => kept.len().saturating_sub(max),
+                    _ => q.get("offset").and_then(|s| s.parse().ok()).unwrap_or(0),
+                };
+                let text = &kept[offset.min(kept.len())..(offset + max).min(kept.len())];
+                Json(json!({ "run": id, "kept": true, "text": text, "offset": offset,
+                    "next_offset": offset + text.len(), "end": ended && offset + text.len() == kept.len(), "note": null }))
+                .into_response()
+            }
+            _ => (StatusCode::NOT_FOUND, Json(json!({ "error": format!("no route {method} {path}") }))).into_response(),
+        }
+    }
+    let app = Router::new()
+        .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
+        .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
+        .route("/api/daemon/peers", get(|| async { Json(json!({})) }))
+        .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
+        .route("/api/daemon/access", post(|| async { Json(json!({})) }))
+        .fallback(any)
+        .with_state(f);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let at = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    at
+}
+
+/// M216's done-when, against a fake platform: an agent starts a run on a
+/// project's hosted box, waits for it to end, and reads its log, each call
+/// signed as this machine. Before its owner grants it, it's refused saying
+/// how, and capabilities says the run tools aren't live.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_agent_starts_a_run_waits_for_it_and_reads_its_log() {
+    let d = Daemon::child_with(&["--wisp-token-file", "/nonexistent"]);
+    let keys = arugula_e2e::DeviceKeys::load_or_create(&d.state.join("daemon.key")).unwrap();
+    let fake = FakeRuns::default();
+    let url = fake_runs(fake.clone()).await;
+    let cert = arugula_e2e::Cert::new(&keys, "a1", arugula_e2e::Kind::Daemon, "test");
+    let saved = json!({ "url": url, "trust": { "account": "a1", "root": keys.id() }, "cert": cert });
+    std::fs::write(d.state.join("control.json"), saved.to_string()).unwrap();
+    let s = bridge(&d, Client::named("claude-code")).await;
+
+    let tools = s.list_all_tools().await.unwrap();
+    for t in ["start_run", "read_run"] {
+        assert!(tools.iter().any(|x| x.name == t), "{t} is listed");
+    }
+    // Once the daemon has read control.json: joined, with no run grant.
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let c = call(&s, "capabilities", json!({})).await;
+        assert_eq!(c["control"]["runs"]["live"], false, "{c}");
+        if c["control"]["runs"]["note"].as_str().unwrap().contains("runs.start") {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "never joined: {c}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
+    let start = json!({ "project": "prj_1", "command": ["just", "test"], "box": "dev" });
+    let why = refused(&s, "start_run", start.clone()).await;
+    assert!(why.contains("arugula grants add geek-box runs.command --project prj_1"), "{why}");
+    let why = refused(&s, "start_run", json!({ "project": "prj_1", "spec": "nightly" })).await;
+    assert!(why.contains("arugula grants add geek-box runs.start --project prj_1"), "{why}");
+    assert!(refused(&s, "start_run", json!({ "project": "acme", "command": ["x"] })).await.contains("prj_"));
+    let both = json!({ "project": "prj_1", "command": ["x"], "instruction": "y" });
+    assert!(refused(&s, "start_run", both).await.contains("one of them"));
+
+    fake.granted.store(true, Ordering::SeqCst);
+    let c = call(&s, "capabilities", json!({})).await;
+    assert_eq!(c["control"]["runs"]["live"], true, "{c}");
+    assert_eq!(c["control"]["runs"]["projects"][0]["id"], "prj_1", "{c}");
+
+    let started = call(&s, "start_run", start).await;
+    let id = started["run"]["id"].as_str().unwrap().to_owned();
+    let summary = started["summary"].as_str().unwrap();
+    assert!(summary.contains(&format!("Started {id} [pending] `just test` on hw_1")), "{summary}");
+    assert!(summary.contains("started by a1's agent on m1"), "{summary}");
+
+    let why = refused(&s, "wait", json!({ "run": id, "until": "idle" })).await;
+    assert!(why.contains("until it ends"), "{why}");
+    // Too many waits open on the platform: it backs off and asks again.
+    fake.busy_once.store(true, Ordering::SeqCst);
+    let waited = call(&s, "wait", json!({ "run": id, "until": "command_end", "timeout": 30 })).await;
+    assert_eq!(waited["state"], "succeeded", "{waited}");
+    let summary = waited["summary"].as_str().unwrap();
+    assert!(summary.contains("[succeeded, exit 0]") && summary.contains("3 passed"), "{summary}");
+
+    let read = call(&s, "read_run", json!({ "run": id, "offset": 16 })).await;
+    assert_eq!(read["log"]["text"], &RUN_LOG[16..], "paged by offset: {read}");
+    let summary = read["summary"].as_str().unwrap();
+    assert!(summary.contains("[2] running in pane %3") && summary.contains("[3] succeeded, exit 0"), "{summary}");
+    let page = call(&s, "read_run", json!({ "run": id, "max_chars": 10 })).await;
+    assert_eq!((&page["log"]["text"], &page["log"]["next_offset"]), (&json!("running 3 "), &json!(10)));
+    let listed = call(&s, "read_run", json!({ "project": "prj_1" })).await;
+    assert!(listed["summary"].as_str().unwrap().contains(&format!("{id} [succeeded, exit 0]")), "{listed}");
+
+    let calls = fake.calls.lock().unwrap().clone();
+    let post = calls.iter().find(|(a, _, _)| a == "POST /api/daemon/projects/prj_1/runs").unwrap();
+    assert_eq!(post.2, json!({ "argv": ["just", "test"], "workspace": "dev" }));
+    let at: Vec<&str> = calls.iter().map(|(a, _, _)| a.as_str()).collect();
+    assert!(at.iter().any(|a| a.starts_with(&format!("GET /api/daemon/runs/{id}?since="))), "long-polled: {at:?}");
+    assert!(at.contains(&format!("GET /api/daemon/runs/{id}/log?offset=16&max=16000").as_str()), "{at:?}");
+    assert!(at.contains(&format!("GET /api/daemon/runs/{id}/log?tail=true&max=16000").as_str()), "the tail: {at:?}");
+    assert!(!fake.busy_once.load(Ordering::SeqCst), "a wait was refused once, and asked again");
+    let mine: Vec<_> = calls.iter().filter(|(a, _, _)| a.contains("/api/daemon/")).collect();
+    assert!(mine.iter().all(|(_, auth, _)| auth.starts_with(&format!("v2 {} ", keys.id()))), "{mine:?}");
+    s.cancel().await.unwrap();
 }
 
 /// M184: a tool call another machine sends for its agent (a hosted

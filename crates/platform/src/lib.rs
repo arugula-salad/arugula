@@ -70,6 +70,7 @@ mod router;
 pub mod run_grant;
 #[cfg(test)]
 mod run_grant_tests;
+pub mod run_log;
 pub mod timing;
 pub mod triggers;
 pub mod window;

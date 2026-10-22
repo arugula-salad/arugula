@@ -59,6 +59,20 @@ pub const THREADS_POST: &str = "threads.post";
 pub const ISSUES_WRITE: &str = "issues.write";
 pub const AGENT_POWERS: [&str; 3] = [THREADS_READ, THREADS_POST, ISSUES_WRITE];
 
+/// An agent's powers over a project's runs (M216, platform step 7): its
+/// machine's agents read the project's runs and their logs (`runs.read`),
+/// start one of its run specs (`runs.start`, under the project's standing
+/// grant, like any trigger), or start a command or an instruction of their
+/// own there (`runs.command`). Over a project only, never given on join,
+/// and never an approval: a deploy's is an owner's device's (aru-101). Not
+/// the standing grant's `runs.start` capability
+/// (`arugula_e2e::project_grant`), which is what a hosted machine checks;
+/// this is who may ask the platform for a run.
+pub const RUNS_READ: &str = "runs.read";
+pub const RUNS_START: &str = "runs.start";
+pub const RUNS_COMMAND: &str = "runs.command";
+pub const RUN_POWERS: [&str; 3] = [RUNS_READ, RUNS_START, RUNS_COMMAND];
+
 /// The reader in `hub_feed` that keeps these tables.
 const READER: &str = "projects";
 
@@ -420,6 +434,20 @@ impl Db {
                  ORDER BY scope_kind, scope_id, power"
             ),
             params![daemon, by, AGENT_POWERS[0], AGENT_POWERS[1], AGENT_POWERS[2]],
+            grant_row,
+        )
+    }
+
+    /// A machine's live run grants (M216) that `by`, its owner, gave: the
+    /// projects whose runs its agents reach.
+    pub fn run_grants_of(&self, daemon: &str, by: &str) -> anyhow::Result<Vec<Grant>> {
+        self.c().query_map(
+            &format!(
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1
+                 AND granted_by = ?2 AND revoked_at IS NULL AND scope_kind = 'project' AND power IN (?3, ?4, ?5)
+                 ORDER BY scope_id, power"
+            ),
+            params![daemon, by, RUN_POWERS[0], RUN_POWERS[1], RUN_POWERS[2]],
             grant_row,
         )
     }
