@@ -1,4 +1,4 @@
-//! Hosted workspaces' usage rows (M188), made by migration `0015`: each
+//! Hosted workspaces' usage rows (M188), made by migration `0014`: each
 //! box's running intervals, metered in the worker's checkpoint, and what
 //! the provider says each box ran. What they mean is
 //! [`crate::hosted::usage`]'s.

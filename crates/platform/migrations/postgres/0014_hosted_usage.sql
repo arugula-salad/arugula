@@ -1,4 +1,4 @@
--- 0015: hosted workspaces' usage (M188, platform step 5, #1235). What the
+-- 0014: hosted workspaces' usage (M188, platform step 5, #1235). What the
 -- compute provider bills for (E2B: vCPU-seconds and GiB-seconds while a
 -- box runs; nothing while it's paused), kept from the platform's own
 -- lifecycle, and what the provider says it billed, to check that against.

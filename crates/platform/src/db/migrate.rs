@@ -180,9 +180,9 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 15,
+        version: 14,
         name: "hosted_usage",
-        sql: include_str!("../../migrations/sqlite/0015_hosted_usage.sql"),
+        sql: include_str!("../../migrations/sqlite/0014_hosted_usage.sql"),
         additive: true,
     },
 ];
@@ -270,9 +270,9 @@ const POSTGRES: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 15,
+        version: 14,
         name: "hosted_usage",
-        sql: include_str!("../../migrations/postgres/0015_hosted_usage.sql"),
+        sql: include_str!("../../migrations/postgres/0014_hosted_usage.sql"),
         additive: true,
     },
 ];
