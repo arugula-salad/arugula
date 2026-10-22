@@ -43,9 +43,6 @@ const PROBE: Duration = Duration::from_millis(800);
 /// How long the ping goes unanswered before the wake is asked too: most
 /// machines that are up answer well within it.
 const GRACE: Duration = Duration::from_millis(150);
-/// How long a machine that answered only once its wake was asked has to
-/// dial in afresh: a box just resumed does (M180), and its old socket goes.
-const SETTLE: Duration = Duration::from_millis(600);
 /// How long its daemon has to dial in once its box runs.
 const REDIAL: Duration = Duration::from_secs(15);
 /// The most an open waits on a wake, whatever happens.
@@ -149,17 +146,19 @@ pub async fn reach(app: &Arc<App>, id: &str, wake: bool, waking: impl FnOnce()) 
                 mux = app.relay.came(id, Some(generation)) => return Ok(Some(Reach::Up(mux))),
             },
         };
-        if answered == Some(true) {
-            // Answered late, with its wake asked: it may have been resumed,
-            // and then it dials in afresh in a moment.
-            if asked.is_some()
-                && let Ok(mux) = tokio::time::timeout(SETTLE, app.relay.came(id, Some(generation))).await
-            {
-                return Ok(Some(Reach::Up(mux)));
-            }
+        if answered == Some(true) && asked.is_none() {
             return Ok(Some(Reach::Up(mux)));
         }
-        info!(machine = %id, %workspace, "a hosted machine didn't answer: its box is taken as asleep");
+        // Answered only once its wake was asked: its box was resumed, and
+        // its old socket came back with it (E2B's can). Its daemon drops
+        // that socket and dials in afresh (M180), whenever it notices, so
+        // nothing is opened on it: a stream there would die with it, the
+        // CLI's mid-handshake. Hung up on here, it dials in at once.
+        if answered == Some(true) {
+            info!(machine = %id, %workspace, "a hosted machine answered only once its box was woken: waiting for it to dial in afresh");
+        } else {
+            info!(machine = %id, %workspace, "a hosted machine didn't answer: its box is taken as asleep");
+        }
         app.relay.drop_stale(id, generation);
         stale = Some(generation);
     }

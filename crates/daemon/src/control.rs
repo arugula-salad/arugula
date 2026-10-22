@@ -2096,6 +2096,10 @@ fn file_stamp(dir: &Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(dir.join(FILE)).and_then(|m| m.modified()).ok()
 }
 
+/// A socket dialed this recently is kept through a resume's signal: it was
+/// dialed after the pause.
+const RESUME_QUIET: Duration = Duration::from_secs(2);
+
 /// The relay socket, redialled with backoff while enrolled.
 async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
     let (accept, mut streams) = mpsc::unbounded_channel();
@@ -2125,11 +2129,24 @@ async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
         // A resume (M180) ends the socket and skips the wait: the hub's
         // wake (M182) is waiting on this dial.
         let mut now = false;
-        let r = tokio::select! {
-            r = relay_once(&control, &app, &e, &accept, &raw) => r,
-            _ = control.resumed.notified() => {
-                now = true;
-                Ok(())
+        // By the wall clock, which a pause doesn't stop.
+        let dialed = std::time::SystemTime::now();
+        let once = relay_once(&control, &app, &e, &accept, &raw);
+        tokio::pin!(once);
+        let r = loop {
+            tokio::select! {
+                r = &mut once => break r,
+                _ = control.resumed.notified() => {
+                    // A second sign of the same resume (the clock, then the
+                    // sandbox id file, a tick apart): this socket was dialed
+                    // for it, and dropping it would cut what the hub just
+                    // opened on it (M182).
+                    if dialed.elapsed().is_ok_and(|d| d < RESUME_QUIET) {
+                        continue;
+                    }
+                    now = true;
+                    break Ok(());
+                }
             }
         };
         control.set_link(|l| l.relay = false);
