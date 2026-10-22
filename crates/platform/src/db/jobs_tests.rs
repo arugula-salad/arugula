@@ -20,6 +20,28 @@ pub(crate) fn two_machines() -> (Db, Db, Option<Removed>) {
     (Db::open(&path).unwrap(), Db::open(&path).unwrap(), Some(Removed(path)))
 }
 
+/// `f`, again while SQLite says the database is locked, as the worker's
+/// next tick would. Two connections claiming back to back, as the
+/// two-machine tests' threads do, can starve one of them past the busy
+/// timeout when commits wait on a slow disk: SQLite's waits aren't first
+/// come, first served. The platform on SQLite is one machine whose workers
+/// pause between ticks, and a tick that's refused is tried again.
+pub(crate) fn again_while_busy<T>(mut f: impl FnMut() -> anyhow::Result<T>) -> T {
+    loop {
+        match f() {
+            Err(e) if busy(&e) => std::thread::sleep(std::time::Duration::from_millis(1)),
+            r => return r.unwrap(),
+        }
+    }
+}
+
+fn busy(e: &anyhow::Error) -> bool {
+    e.chain().any(|c| {
+        c.downcast_ref::<rusqlite::Error>()
+            .is_some_and(|e| e.sqlite_error_code() == Some(rusqlite::ErrorCode::DatabaseBusy))
+    })
+}
+
 pub(crate) struct Removed(std::path::PathBuf);
 
 impl Drop for Removed {
@@ -172,7 +194,7 @@ fn two_machines_never_claim_the_same_job() {
         for db in [&a, &b] {
             for _ in 0..4 {
                 scope.spawn(|| {
-                    while let Some(job) = db.claim_job(&JobKind::ALL, 1_000).unwrap() {
+                    while let Some(job) = again_while_busy(|| db.claim_job(&JobKind::ALL, 1_000)) {
                         claimed.lock().unwrap().push(job.id);
                     }
                 });
