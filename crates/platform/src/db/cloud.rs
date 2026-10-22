@@ -2094,7 +2094,13 @@ mod tests {
             return (db, other, None);
         }
         let path = std::env::temp_dir().join(format!("arugula-two-{}.db", hex::encode(arugula_e2e::random::<8>())));
-        (Db::open(&path).unwrap(), Db::open(&path).unwrap(), Some(path))
+        let (a, b) = (Db::open(&path).unwrap(), Db::open(&path).unwrap());
+        // Eight threads on one file wait their turn for its lock; a loaded
+        // CI runner can take longer than SQLite's usual five seconds.
+        for db in [&a, &b] {
+            db.sqlite().busy_timeout(std::time::Duration::from_secs(60)).unwrap();
+        }
+        (a, b, Some(path))
     }
 
     /// Two machines' workers, four each, claiming at once (M144): every
