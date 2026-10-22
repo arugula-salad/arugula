@@ -128,6 +128,10 @@ services:
       RUST_LOG: arugula_control=debug
       # Anyone here may start runs on a hosted workspace (M212's `runs`).
       ARUGULA_HOSTED_ACCOUNTS: "*"
+      # The platform's Anthropic key pays for agent turns (M185) in
+      # workspaces this account made: `runs` makes its workspace as it.
+      ARUGULA_HOSTED_PLATFORM_KEYS: anthropic
+      ARUGULA_CLOUD_ACCOUNTS: acct-testnet-runs-maker
       STRIPE_SECRET_KEY: sk_test_testnet
       STRIPE_WEBHOOK_SECRET: whsec_testnet
       # The platform (M140): in process unless `up.sh control` was asked
@@ -191,6 +195,10 @@ services:
       RUST_LOG: arugula_platform=debug
       # Anyone here may start runs on a hosted workspace (M212's `runs`).
       ARUGULA_HOSTED_ACCOUNTS: "*"
+      # The platform's Anthropic key pays for agent turns (M185) in
+      # workspaces this account made: `runs` makes its workspace as it.
+      ARUGULA_HOSTED_PLATFORM_KEYS: anthropic
+      ARUGULA_CLOUD_ACCOUNTS: acct-testnet-runs-maker
       STRIPE_SECRET_KEY: sk_test_testnet
       STRIPE_WEBHOOK_SECRET: whsec_testnet
       ARUGULA_PLATFORM_KEY: *platform-key
