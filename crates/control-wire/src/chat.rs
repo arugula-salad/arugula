@@ -49,8 +49,8 @@ pub enum ChatKind {
     /// An old conversation brought in from a machine, read-only (M124).
     Archive,
     /// The thread on an object (M196), by its global id: a native issue
-    /// (`iss_`) or a mirrored GitHub PR or issue (`fi_`). Its people are
-    /// its project's members.
+    /// (`iss_`), a mirrored GitHub PR or issue (`fi_`) or a hosted
+    /// workspace (`hw_`). Its people are its project's members.
     Object,
 }
 
@@ -553,8 +553,8 @@ pub const AGENT_SEARCH: &str = "/api/daemon/chat/search";
 /// A room's messages as an agent reads them (`GET`,
 /// [`AgentMessagesQuery`], answered [`AgentMessages`]), and an agent's
 /// post there (`POST` a [`ChatPost`], answered [`ChatPosted`]). `room` is
-/// a room's id, or an object's global id (`iss_…`, `fi_…`) for its thread,
-/// made the first time.
+/// a room's id, or an object's global id (`iss_…`, `fi_…`, `hw_…`) for its
+/// thread, made the first time.
 pub fn agent_messages(room: &str) -> String {
     format!("{AGENT_ROOMS}/{room}/messages")
 }

@@ -252,7 +252,8 @@ impl Db {
     /// until `next` (now, if something new was asked meanwhile). `done` is
     /// the ask it carried out, cleared unless it was asked again as
     /// something else; a delete asked meanwhile keeps the state `deleting`.
-    /// A workspace deleted for good loses its secrets and ports.
+    /// A workspace deleted for good loses its secrets, its ports and its
+    /// thread (M196).
     pub fn checkpoint_hosted(&self, job: &HostedJob, done: Option<Ask>, next: u64, now: u64) -> Result<()> {
         let mut c = self.c();
         let tx = c.immediate()?;
@@ -291,6 +292,7 @@ impl Db {
         if job.deleted_at.is_some() {
             tx.execute("DELETE FROM hosted_workspace_secrets WHERE workspace_id = ?1", params![w.id])?;
             tx.execute("DELETE FROM hosted_ports WHERE workspace_id = ?1", params![w.id])?;
+            super::objects::drop_workspace_thread(&tx, &w.id)?;
         }
         tx.commit()
     }

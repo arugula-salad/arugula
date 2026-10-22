@@ -64,6 +64,24 @@ impl Db {
         )
     }
 
+    /// The live hosted workspaces with these ids (`hw_…`, M179): each one's
+    /// id, project and name. One statement; an id that isn't there, or
+    /// names a deleted workspace, isn't in the list.
+    pub fn hosted_places(&self, ids: &[&str]) -> anyhow::Result<Vec<(String, String, String)>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!(
+                "SELECT id, project_id, name FROM hosted_workspaces WHERE deleted_at IS NULL AND {}",
+                in_json(&c, "id", 1)
+            ),
+            params![json_list(ids)?],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+    }
+
     /// The mirrored items with these ids (`fi_…`), with their repos' links.
     /// One statement; an id that isn't there isn't in the list.
     pub fn mirrored_items(&self, ids: &[&str]) -> anyhow::Result<Vec<Mirrored>> {
@@ -103,6 +121,12 @@ pub(super) fn drop_item_threads(tx: &impl Sql, repo_id: u64) -> anyhow::Result<(
         "kind = 'object' AND target IN (SELECT id FROM forge_items WHERE repo_id = ?1)",
         repo_id,
     )
+}
+
+/// The thread on a hosted workspace, and all that's in it: a workspace
+/// deleted for good takes it ([`Db::checkpoint_hosted`]).
+pub(super) fn drop_workspace_thread(tx: &impl Sql, workspace: &str) -> anyhow::Result<()> {
+    super::chat::drop_rooms_where(tx, "kind = 'object' AND target = ?1", workspace)
 }
 
 #[cfg(test)]

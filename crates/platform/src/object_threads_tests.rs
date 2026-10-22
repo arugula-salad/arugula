@@ -1,6 +1,7 @@
 //! Object threads (M196) through the platform's own routes, with the hub
 //! of chat's tests ([`TestHub`]): who opens, posts, reads and searches the
-//! thread on a mirrored PR or issue, and who is refused.
+//! thread on a mirrored PR or issue, a native issue or a hosted workspace,
+//! and who is refused.
 
 use std::{sync::Arc, time::Duration};
 
@@ -146,13 +147,13 @@ async fn a_private_repos_threads_need_github_access() {
 }
 
 /// What an id names, by its prefix: an unknown one or a missing row is no
-/// object; a workspace's thread isn't here yet.
+/// object; a Cloud workspace has no thread.
 #[tokio::test]
 async fn an_id_names_an_object_or_nothing() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
     seed(&app, &hub);
-    for target in ["prj_1", "fi_00", "nothing", ""] {
+    for target in ["prj_1", "fi_00", "hw_00", "nothing", ""] {
         assert_eq!(open(&base, "a", target).await.0, 404, "{target}");
     }
     let (st, v) = open(&base, "a", "cw_9d81").await;
@@ -269,4 +270,108 @@ async fn the_purge_of_an_unlinked_repo_takes_its_threads() {
     let (_, v) = call(&base, "a", "GET", "/api/chat/search?q=canary", None).await;
     let found: Vec<&Value> = v["found"].as_array().unwrap().iter().map(|f| &f["room"]).collect();
     assert_eq!(found, [&json!(rooms[1])], "{v}");
+}
+
+/// A hosted workspace in t's project (M179), `hw_dev`.
+fn workspace(app: &Platform, project: &str) -> String {
+    let spec = crate::hosted::Spec { setup: "make".into(), ..Default::default() };
+    match app.db.add_hosted_workspace("hw_dev", project, "dev", &spec, "a", 10, 1).unwrap() {
+        crate::db::hosted::Added::Made(w) => w.id,
+        other => panic!("{other:?}"),
+    }
+}
+
+/// The worker deletes `id` for good, as `hosted::worker` does once its
+/// boxes are gone.
+fn delete_for_good(app: &Platform, id: &str) {
+    use crate::hosted::Ask;
+    assert!(app.db.ask_hosted(id, Ask::Delete, 20).unwrap());
+    let mut job = app.db.claim_hosted(20).unwrap().unwrap();
+    assert_eq!(job.w.id, id);
+    job.w.state = "deleted".into();
+    job.deleted_at = Some(20);
+    app.db.checkpoint_hosted(&job, Some(Ask::Delete), 20, 20).unwrap();
+}
+
+/// A hosted workspace's thread (M179) is its project's: a member (a
+/// viewer too) comments on it; someone outside the project is refused.
+/// Deleted for good, the workspace takes its thread, with its messages,
+/// read marks and search.
+#[tokio::test]
+async fn members_comment_on_a_hosted_workspace_until_its_deleted() {
+    use crate::db::migrate::Dialect;
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let (team, _) = seed(&app, &hub);
+    let ws = workspace(&app, &team);
+
+    let (st, room) = open(&base, "b", &ws).await;
+    assert_eq!(st, 200, "{room}");
+    assert_eq!(
+        (&room["kind"], &room["name"], &room["project"], &room["target"]),
+        (&json!("object"), &json!("workspace dev"), &json!(team), &json!(ws))
+    );
+    let id = room["id"].as_str().unwrap().to_owned();
+    let post = Some(json!({ "text": "@a the box is warm" }));
+    assert_eq!(call(&base, "b", "POST", &format!("/api/chat/rooms/{id}/messages"), post).await.0, 200);
+    let (st, v) = call(&base, "a", "GET", &format!("/api/chat/rooms/{id}/messages"), None).await;
+    assert_eq!((st, &v["messages"][0]["text"]), (200, &json!("@a the box is warm")), "{v}");
+    assert_eq!(call(&base, "a", "POST", &format!("/api/chat/rooms/{id}/read"), Some(json!({ "seq": 1 }))).await.0, 200);
+
+    assert_eq!(open(&base, "c", &ws).await.0, 404);
+    assert_eq!(call(&base, "c", "GET", &format!("/api/chat/rooms/{id}/messages"), None).await.0, 404);
+    let (_, v) = call(&base, "c", "GET", "/api/chat/search?q=warm", None).await;
+    assert_eq!(v["found"], json!([]), "{v}");
+
+    delete_for_good(&app, &ws);
+    for who in ["a", "b"] {
+        assert_eq!(open(&base, who, &ws).await.0, 404, "{who}");
+        assert_eq!(call(&base, who, "GET", &format!("/api/chat/rooms/{id}"), None).await.0, 404, "{who}");
+        let (_, v) = call(&base, who, "GET", "/api/chat", None).await;
+        assert!(v["rooms"].as_array().unwrap().iter().all(|r| r["id"] != json!(id)), "{who}: {v}");
+    }
+    let count = |sql: &str, id: &str| -> u64 { app.db.c().query_row(sql, params![id], |r| r.get(0)).unwrap() };
+    for sql in [
+        "SELECT count(*) FROM chat_rooms WHERE id = ?1",
+        "SELECT count(*) FROM chat_messages WHERE room = ?1",
+        "SELECT count(*) FROM chat_reads WHERE room = ?1",
+    ] {
+        assert_eq!(count(sql, &id), 0, "{sql}");
+    }
+    if app.db.c().dialect() == Dialect::Sqlite {
+        assert_eq!(count("SELECT count(*) FROM chat_fts WHERE chat_fts MATCH ?1", "warm"), 0);
+    }
+    let (_, v) = call(&base, "a", "GET", "/api/chat/search?q=warm", None).await;
+    assert_eq!(v["found"], json!([]), "{v}");
+}
+
+/// An agent reaches a hosted workspace's thread through its project's
+/// grant, as any object's (M197): refused without one, then it comments.
+#[tokio::test]
+async fn an_agent_comments_on_a_hosted_workspace() {
+    use crate::{
+        agents_tests::{geek, give, post, seeded},
+        chat::{agent_object_room, post_as},
+        db::projects::{THREADS_POST, THREADS_READ},
+        grants::AGENT_UNGRANTED,
+    };
+    let (_hub, app, base, t, u) = seeded().await;
+    let ours = workspace(&app, &t);
+    let spec = crate::hosted::Spec::default();
+    app.db.add_hosted_workspace("hw_theirs", &u, "dev", &spec, "c", 10, 1).unwrap();
+
+    let e = agent_object_room(&app, &geek(), THREADS_POST, &ours).await.unwrap_err();
+    assert_eq!(e.2, Some(AGENT_UNGRANTED), "{}", e.1);
+    let e = agent_object_room(&app, &geek(), THREADS_POST, "hw_theirs").await.unwrap_err();
+    assert_eq!(e.0.as_u16(), 404, "u's workspace isn't a's to see: {}", e.1);
+    for power in [THREADS_READ, THREADS_POST] {
+        let (st, v) =
+            call(&base, "a", "POST", "/api/grants", give("geek", power, json!({ "kind": "project", "id": t }))).await;
+        assert_eq!(st, 200, "{v}");
+    }
+    let (room, _, agent) = agent_object_room(&app, &geek(), THREADS_POST, &ours).await.unwrap();
+    assert_eq!((room.name.as_str(), room.target.as_deref()), ("workspace dev", Some(ours.as_str())));
+    post_as(&app, "a", Some(&agent), &room.id, post("setup finished")).await.unwrap();
+    let (st, v) = call(&base, "b", "GET", &format!("/api/chat/rooms/{}/messages", room.id), None).await;
+    assert_eq!((st, &v["messages"][0]["agent"]["machine"]), (200, &json!("geek")), "{v}");
 }

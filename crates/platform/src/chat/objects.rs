@@ -6,7 +6,8 @@
 //! pushes for mentions, the live stream. There's one per object in each
 //! project. A mirrored item's thread goes with the item's other rows when
 //! its repo's are purged (M163): once an unlinked repo's grace is over, or
-//! at once when it's linked to another project.
+//! at once when it's linked to another project. A hosted workspace's goes
+//! when it's deleted for good, with its secrets and ports.
 //!
 //! **What an id names** ([`find`]), by its prefix:
 //! - `iss_`: a native issue (M194), in its project.
@@ -14,7 +15,10 @@
 //!   project. A private repo's also needs the reader's own GitHub access
 //!   ([`may_read_private`]: M165's check). An unlinked repo's items have
 //!   no threads.
-//! - `cw_`: a hosted workspace, with step 5's M179: not yet.
+//! - `hw_`: a hosted workspace (step 5's M179), in its project, until
+//!   it's deleted.
+//! - `cw_`: a Managoat Cloud workspace, which M189 retires: not yet (its
+//!   rows are an account's, not its project's members').
 //! - Anything else: no such object.
 //!
 //! **Who sees one:** the third rule beside a team's roster and a machine's
@@ -53,7 +57,7 @@ pub const NOT_YET: &str = "not_yet";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Object {
     pub project: String,
-    /// The room's name: `issue #12`, `PR owner/name#3`.
+    /// The room's name: `issue #12`, `PR owner/name#3`, `workspace dev`.
     pub name: String,
     /// More than membership guards it.
     pub guard: Guard,
@@ -73,7 +77,8 @@ pub(super) enum Guard {
 enum Prefix {
     Issue,
     Mirrored,
-    Workspace,
+    Hosted,
+    Cloud,
 }
 
 fn prefix(target: &str) -> Option<Prefix> {
@@ -84,21 +89,23 @@ fn prefix(target: &str) -> Option<Prefix> {
     match p {
         "iss" => Some(Prefix::Issue),
         "fi" => Some(Prefix::Mirrored),
-        "cw" => Some(Prefix::Workspace),
+        "hw" => Some(Prefix::Hosted),
+        "cw" => Some(Prefix::Cloud),
         _ => None,
     }
 }
 
 /// Whether `target` is an object's global id by its shape (`iss_…`,
-/// `fi_…`, `cw_…`), not a room's: an agent names an object's thread by it
-/// (M198).
+/// `fi_…`, `hw_…`, `cw_…`), not a room's: an agent names an object's
+/// thread by it (M198).
 pub(super) fn is_object(target: &str) -> bool {
     prefix(target).is_some()
 }
 
 /// The objects these ids name, by id: one statement per kind for all of
 /// them. An id that names nothing (an unknown prefix, a row that isn't
-/// there, an unlinked repo's item, a workspace for now) isn't in the map.
+/// there, an unlinked repo's item, a deleted workspace, a Cloud workspace)
+/// isn't in the map.
 pub(super) fn find(app: &Platform, targets: &[&str]) -> anyhow::Result<HashMap<String, Object>> {
     let mut out = HashMap::new();
     let of = |p| targets.iter().copied().filter(move |t| prefix(t) == Some(p));
@@ -119,21 +126,25 @@ pub(super) fn find(app: &Platform, targets: &[&str]) -> anyhow::Result<HashMap<S
         };
         out.insert(m.id, Object { project: m.project_id, name: format!("{what} {}#{}", m.full_name, m.number), guard });
     }
-    // Hosted workspaces wait on step 5's M179 ([`open`] says so).
+    let hosted: Vec<&str> = of(Prefix::Hosted).collect();
+    for (id, project, name) in app.db.hosted_places(&hosted)? {
+        out.insert(id, Object { project, name: format!("workspace {name}"), guard: Guard::Members });
+    }
+    // Cloud workspaces never get threads ([`resolve`] says so).
     Ok(out)
 }
 
 /// The object `target` names, for someone opening its thread: 404 for an
-/// id that names nothing, and "not yet" for a workspace.
+/// id that names nothing, and "not yet" for a Cloud workspace.
 pub(super) fn resolve(app: &Platform, target: &str) -> Result<Object, ApiError> {
     let nothing = || err(StatusCode::NOT_FOUND, "no such object");
     match prefix(target).ok_or_else(nothing)? {
-        Prefix::Workspace => Err(refusal(
+        Prefix::Cloud => Err(refusal(
             StatusCode::NOT_IMPLEMENTED,
             NOT_YET,
-            "a workspace's thread isn't here yet: it comes with hosted workspaces' records (M179)",
+            "a Cloud workspace has no thread: hosted workspaces' (hw_) do",
         )),
-        Prefix::Issue | Prefix::Mirrored => find(app, &[target])?.remove(target).ok_or_else(nothing),
+        Prefix::Issue | Prefix::Mirrored | Prefix::Hosted => find(app, &[target])?.remove(target).ok_or_else(nothing),
     }
 }
 
@@ -240,7 +251,8 @@ mod tests {
     fn an_id_is_known_by_its_prefix() {
         assert_eq!(prefix("iss_0123abcd"), Some(Prefix::Issue));
         assert_eq!(prefix("fi_00ff"), Some(Prefix::Mirrored));
-        assert_eq!(prefix("cw_9d81"), Some(Prefix::Workspace));
+        assert_eq!(prefix("hw_9d81"), Some(Prefix::Hosted));
+        assert_eq!(prefix("cw_9d81"), Some(Prefix::Cloud));
         for bad in ["prj_1", "iss_", "fi", "fi_a-b", "_x", "", &format!("fi_{}", "a".repeat(65))] {
             assert_eq!(prefix(bad), None, "{bad}");
         }
