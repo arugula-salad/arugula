@@ -308,6 +308,10 @@ impl Telemetry {
     pub fn new(dir: &Path, env: Env, timing: Timing, channel: Channel) -> Arc<Self> {
         let state = consent::enabled_in(dir, &*env);
         let kept = read_kept(dir).filter(|k| state.install() == Some(k.install.as_str())).unwrap_or_default();
+        // Built before `up` starts: loading the system's roots can take a
+        // few hundred ms on a busy machine, which `started_after` mustn't
+        // count.
+        let http = crate::roots::http().timeout(Duration::from_secs(20)).build().expect("http client");
         Arc::new(Telemetry {
             dir: dir.to_owned(),
             url: consent::url_in(&*env),
@@ -316,7 +320,7 @@ impl Telemetry {
             timing,
             channel,
             up: Instant::now(),
-            http: crate::roots::http().timeout(Duration::from_secs(20)).build().expect("http client"),
+            http,
             signer: OnceLock::new(),
             on: AtomicBool::new(state.on),
             live: Mutex::new(Live {
