@@ -57,6 +57,10 @@ struct Gh {
     runs: BTreeMap<String, Vec<Value>>,
     statuses: BTreeMap<String, Vec<Value>>,
     reviews: BTreeMap<u64, Vec<Value>>,
+    /// Each PR's `mergeable_state`, which only its own read carries.
+    merge: BTreeMap<u64, &'static str>,
+    /// The PRs read one by one, in order.
+    pr_reads: Vec<u64>,
     remaining: u64,
     mints: usize,
     reads: usize,
@@ -156,8 +160,14 @@ async fn repo_read(State(h): State<Shared>, Path(id): Path<u64>) -> Response {
 
 async fn one_pr(State(h): State<Shared>, Path((_, n)): Path<(u64, u64)>) -> Response {
     let mut h = h.lock().unwrap();
+    h.pr_reads.push(n);
     match h.prs.get(&n).cloned() {
-        Some(v) => (limits(&mut h), Json(v)).into_response(),
+        Some(mut v) => {
+            if let Some(m) = h.merge.get(&n) {
+                v["mergeable_state"] = json!(m);
+            }
+            (limits(&mut h), Json(v)).into_response()
+        }
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -1062,4 +1072,69 @@ async fn a_webhook_starts_its_rules_runs() {
     app.db.c().execute("ALTER TABLE runs_away RENAME TO runs", params![]).unwrap();
     assert_eq!(hook(&base, "pull_request", "d3", &opened(6)).await, 202, "redelivered");
     assert_eq!(t::runs_in(&app.db, "prj_a").len(), 2);
+}
+
+/// A PR's merge state, as the row has it.
+fn merge_state(app: &Platform, number: u64) -> Option<String> {
+    app.db
+        .c()
+        .query_row(
+            "SELECT merge_state FROM forge_items WHERE repo_id = ?1 AND number = ?2",
+            params![REPO, number],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+/// Lists don't carry a PR's merge state: the poller reads each open PR
+/// whose state it doesn't know, one by one, and learns a conflict a later
+/// turn; a green PR's again once its row is old (its base may have moved).
+/// Neither is drift: no webhook carries it.
+#[tokio::test]
+async fn the_poller_learns_merge_states() {
+    let (gh, app, _base, _hub) = serve().await;
+    let t0 = now_ms();
+    fill(&gh, t0);
+    {
+        let mut g = gh.lock().unwrap();
+        // PR 4 green; GitHub hasn't worked its state out yet.
+        g.statuses.insert(
+            "sha4".into(),
+            vec![
+                json!({ "context": "lint", "state": "success", "target_url": "", "updated_at": iso(t0 - 86_400_000) }),
+            ],
+        );
+        g.merge = BTreeMap::from([(1, "clean"), (4, "unknown"), (5, "clean"), (6, "clean")]);
+    }
+    link(&app, REPO, t0);
+    poller::tick(&app, t0).await.unwrap();
+    let mut read = std::mem::take(&mut gh.lock().unwrap().pr_reads);
+    read.sort();
+    assert_eq!(read, [1, 4, 5, 6], "the open PRs, which a list didn't say");
+    assert_eq!(merge_state(&app, 4).as_deref(), Some("unknown"));
+    assert_eq!(merge_state(&app, 2), None, "a closed one isn't read");
+
+    // GitHub works it out: a conflict. The next reconcile reads PR 4 alone.
+    gh.lock().unwrap().merge.insert(4, "dirty");
+    let every = app.github.as_ref().unwrap().ingest.settings.every_ms;
+    let t1 = t0 + every;
+    let turn = poller::tick(&app, t1).await.unwrap();
+    assert_eq!(turn, Some(poller::Turn::Done { repo: REPO, backfill: false, fixed: 1, drift: 0 }));
+    assert_eq!(std::mem::take(&mut gh.lock().unwrap().pr_reads), [4]);
+    assert_eq!(merge_state(&app, 4).as_deref(), Some("dirty"));
+    let stats = &app.github.as_ref().unwrap().ingest.stats;
+    assert_eq!(stats.drift_today(t1).get(&REPO).copied().unwrap_or(0), 0);
+
+    // Known, and read lately: not again yet.
+    poller::tick(&app, t1 + every).await.unwrap();
+    assert!(gh.lock().unwrap().pr_reads.is_empty());
+    // The base moved, and the conflict's gone: a green PR's read again once
+    // its row is old. Not PR 1 (red), nor 5 and 6 (no checks).
+    gh.lock().unwrap().merge.insert(4, "clean");
+    let t2 = t1 + poller::MERGE_RECHECK_MS;
+    let turn = poller::tick(&app, t2).await.unwrap();
+    assert_eq!(turn, Some(poller::Turn::Done { repo: REPO, backfill: false, fixed: 1, drift: 0 }));
+    assert_eq!(std::mem::take(&mut gh.lock().unwrap().pr_reads), [4]);
+    assert_eq!(merge_state(&app, 4).as_deref(), Some("clean"));
+    assert_eq!(stats.drift_today(t2).get(&REPO).copied().unwrap_or(0), 0);
 }

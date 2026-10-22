@@ -42,6 +42,17 @@
 //!   a list's page names is fetched whole (body, comments, reviews' text,
 //!   review comments) and replaces what `forge_content` had of it.
 //!   Turning mirroring on makes the next turn a backfill.
+//! - **Merge states**: lists never carry a PR's `mergeable_state`,
+//!   webhooks often say `unknown` (GitHub works it out lazily), and a base
+//!   branch that moves changes it with no event the App hears. So at the
+//!   end of each backfill and reconcile the poller reads, one PR at a time
+//!   (`GET pulls/N`, which makes GitHub work it out), the open PRs that
+//!   aren't drafts whose state it doesn't know, and the green ones whose
+//!   row is older than [`MERGE_RECHECK_MS`]: unknown first, then stalest,
+//!   at most [`MERGE_CHECKS`] a turn ([`merge_rechecks`]). Within the rate
+//!   reserve (one that reaches it leaves the rest for the next turn), as
+//!   ingest, and never drift: GitHub sends no webhook for it. The inbox
+//!   calls a green PR done only once the state is known (M171).
 //! - **Unlinking** stops a turn at its next read or write (`Db::mirror`
 //!   and `Db::renew_poll` check the link), and M163's purge waits for the
 //!   lease to run out.
@@ -62,7 +73,8 @@ use crate::{
     db::{
         forge::Installation,
         mirror::{
-            self, CheckRow, EventRow, Finish, ItemRow, PollJob, Source, Wrote, add_event, upsert_check, upsert_item,
+            self, CheckRow, EventRow, Finish, ItemRow, MergeCandidate, PollJob, Source, Wrote, add_event, upsert_check,
+            upsert_item,
         },
         sql::Tx,
     },
@@ -86,6 +98,25 @@ pub const SWEEP_EVERY: Duration = Duration::from_secs(6 * 3600);
 const TICK: Duration = Duration::from_secs(5);
 /// Most pages of one item's reviews, or one head's checks.
 const SMALL_PAGES: usize = 10;
+/// Most PRs a turn reads again for their merge state.
+pub const MERGE_CHECKS: usize = 10;
+/// How old a green PR's row is before its merge state is read again (its
+/// base may have moved).
+pub const MERGE_RECHECK_MS: u64 = 15 * 60_000;
+
+/// Which open PRs (not drafts) a turn at `now` reads again for their merge
+/// state, in order: every one whose state the row doesn't know (none, or
+/// `unknown`), then green ones whose row is older than
+/// [`MERGE_RECHECK_MS`], stalest first; at most [`MERGE_CHECKS`].
+pub fn merge_rechecks(open: &[MergeCandidate], now: u64) -> Vec<u64> {
+    let unknown = |m: &MergeCandidate| matches!(m.merge_state.as_deref(), None | Some("unknown"));
+    let mut due: Vec<&MergeCandidate> = open
+        .iter()
+        .filter(|m| unknown(m) || (m.synced_at + MERGE_RECHECK_MS <= now && super::inbox::green(&m.checks)))
+        .collect();
+    due.sort_by_key(|m| (!unknown(m), m.synced_at, m.number));
+    due.into_iter().take(MERGE_CHECKS).map(|m| m.number).collect()
+}
 
 /// Installation tokens for the one repo, read only: the poller's
 /// (`Purpose::Ingest`, for `platform`), or a person's read (M166).
@@ -275,12 +306,17 @@ impl<'p> Poll<'p> {
                 continue;
             }
             self.fixed += 1;
+            // A merge state is no webhook's to write (GitHub works it out
+            // when asked, and a base that moves sends nothing): never drift.
+            let fields = match &wrote {
+                Wrote::Changed(f) => f.iter().filter(|f| **f != "merge_state").copied().collect::<Vec<_>>().join(","),
+                _ => "missing".into(),
+            };
+            if fields.is_empty() {
+                continue;
+            }
             if from == Source::Pushed && self.drift_from.is_some_and(|since| since <= at && at < before) {
                 self.drift += 1;
-                let fields = match &wrote {
-                    Wrote::Changed(f) => f.join(","),
-                    _ => "missing".into(),
-                };
                 // The repo's id, the item or check, and what was wrong; never a title.
                 info!(repo = self.job.repo_id, kind, which, fields, "forge mirror: drift fixed");
             }
@@ -336,6 +372,29 @@ impl<'p> Poll<'p> {
         }
         let before = self.now.saturating_sub(KEEP_UNHEADED_MS);
         self.tx(|tx| mirror::prune_checks(tx, id, before))?;
+        Ok(())
+    }
+
+    /// The PRs whose merge state is due a read ([`merge_rechecks`]), read
+    /// one by one and written as the poller's own answers (never drift).
+    /// One GitHub won't answer is left for the next turn, and so is the
+    /// rest once the installation's reserve is reached.
+    async fn merges(&mut self) -> Result<(), Stop> {
+        let (id, name, now) = (self.job.repo_id, self.job.full_name.clone(), self.now);
+        for n in merge_rechecks(&self.p.db.merge_candidates(id)?, now) {
+            let v = match self.read(&format!("repositories/{id}/pulls/{n}")).await {
+                Ok(v) => v,
+                Err(Stop::Budget(_)) => return Ok(()),
+                Err(Stop::Gh { path, error, .. }) => {
+                    warn!(repo = id, number = n, path, error = %error, "forge mirror: reading a PR's merge state");
+                    continue;
+                }
+                Err(s) => return Err(s),
+            };
+            let rows: Vec<ItemRow> = ingest::pr_row(id, &name, &v).into_iter().collect();
+            self.write(&rows, &[], &[], Source::Fetched)?;
+            self.tx(|tx| mirror::merge_checked(tx, id, n, now))?;
+        }
         Ok(())
     }
 
@@ -495,6 +554,7 @@ impl<'p> Poll<'p> {
             }
         }
         self.checks().await?;
+        self.merges().await?;
         Ok(Finish::Reconciled(backfill))
     }
 }
@@ -747,6 +807,48 @@ pub fn start(p: &Arc<Platform>) {
 
 #[cfg(test)]
 mod tests {
+    use super::{MERGE_CHECKS, MERGE_RECHECK_MS, MergeCandidate, merge_rechecks};
+    use crate::db::forge::ForgeCheck;
+
+    fn open(number: u64, state: Option<&str>, synced_at: u64, conclusion: Option<&str>) -> MergeCandidate {
+        let checks = conclusion
+            .map(|c| ForgeCheck {
+                kind: "check_run".into(),
+                name: "ci".into(),
+                status: "completed".into(),
+                conclusion: Some(c.into()),
+                url: None,
+                updated_at: 1,
+            })
+            .into_iter()
+            .collect();
+        MergeCandidate { number, merge_state: state.map(Into::into), synced_at, head_sha: format!("s{number}"), checks }
+    }
+
+    /// Unknown first, whatever their checks; then green ones whose rows are
+    /// older than the recheck age, stalest first; at most a turn's worth.
+    #[test]
+    fn which_prs_are_read_again() {
+        let now = 10 * MERGE_RECHECK_MS;
+        let old = now - MERGE_RECHECK_MS;
+        let fresh = now - 1000;
+        let prs = [
+            open(1, Some("clean"), old - 5, Some("success")),
+            open(2, None, fresh, None),
+            open(3, Some("dirty"), old - 9, Some("success")),
+            open(4, Some("unknown"), fresh - 1, Some("failure")),
+            open(5, Some("clean"), fresh, Some("success")),
+            open(6, Some("dirty"), old - 20, Some("failure")),
+            open(7, Some("blocked"), old, Some("success")),
+        ];
+        // 5 is fresh, 6 isn't green.
+        assert_eq!(merge_rechecks(&prs, now), [4, 2, 3, 1, 7]);
+        let many: Vec<MergeCandidate> = (1..=30).map(|n| open(n, None, 30 - n, None)).collect();
+        let due = merge_rechecks(&many, now);
+        assert_eq!(due.len(), MERGE_CHECKS);
+        assert_eq!(due[..3], [30, 29, 28], "stalest first");
+    }
+
     #[test]
     fn mint_statuses() {
         let e = "GitHub said 404 Not Found minting an installation token: Not Found";
