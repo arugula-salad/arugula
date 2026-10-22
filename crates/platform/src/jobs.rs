@@ -16,7 +16,8 @@
 //! which keeps the job and tells the step about a cancel
 //! ([`LeasedJob::cancelled`]). If a heartbeat finds the lease lost, the
 //! step is dropped where it waits: another machine has the job. A step
-//! that panics fails like one that returns an error. What a handler must
+//! that panics fails like one that returns an error, and so does one that
+//! runs past its kind's deadline ([`Handler::deadline`]), which is dropped. What a handler must
 //! do before an outside effect is in [`crate::db::jobs`]'s docs.
 use crate::{
     Platform,
@@ -30,6 +31,28 @@ use futures_util::{FutureExt as _, future::BoxFuture};
 use std::{collections::BTreeMap, panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
 pub use crate::db::jobs::{LEASE_MS, MAX_ATTEMPTS};
+
+/// How long a step may run unless its kind says otherwise: a step that
+/// hangs while its heartbeats go on would hold its job for good.
+pub const STEP_DEADLINE_MS: u64 = 30 * 60_000;
+
+/// How a step ended, or didn't.
+enum Ended<T> {
+    Stepped(T),
+    /// A heartbeat found the lease lost.
+    Lost,
+    /// It ran past its kind's deadline.
+    Late,
+}
+
+/// `ms` for a person: `30 min`, `90 s`, `250 ms`.
+fn span(ms: u64) -> String {
+    match ms {
+        _ if ms.is_multiple_of(60_000) => format!("{} min", ms / 60_000),
+        _ if ms.is_multiple_of(1_000) => format!("{} s", ms / 1_000),
+        _ => format!("{ms} ms"),
+    }
+}
 
 /// What a step leaves its job as.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +101,12 @@ pub trait Handler: Send + Sync {
     /// `failed`.
     fn max_attempts(&self) -> u32 {
         MAX_ATTEMPTS
+    }
+
+    /// How long (ms) one step may run, heartbeats or not. One that runs
+    /// longer is dropped and counts as a failed attempt.
+    fn deadline(&self) -> u64 {
+        STEP_DEADLINE_MS
     }
 
     fn step<'a>(&'a self, db: &'a Db, job: &'a mut LeasedJob, clock: &'a Clock) -> BoxFuture<'a, Result<Step>>;
@@ -135,6 +164,7 @@ impl Worker {
         };
         let handler = self.handlers[&job.kind].clone();
         let beat = job.clone();
+        let deadline = self.clock.now().saturating_add(handler.deadline());
         let outcome = {
             let step = AssertUnwindSafe(handler.step(db, &mut job, &self.clock)).catch_unwind();
             tokio::pin!(step);
@@ -143,36 +173,46 @@ impl Worker {
             loop {
                 tokio::select! {
                     biased;
-                    outcome = &mut step => break Some(outcome),
+                    outcome = &mut step => break Ended::Stepped(outcome),
                     _ = every.tick() => {
                         let now = self.clock.now();
+                        if now >= deadline {
+                            break Ended::Late;
+                        }
                         match db.extend_job(&beat, now + LEASE_MS, now) {
                             Ok(_) => {}
-                            Err(error) if error.is::<LeaseLost>() => break None,
+                            Err(error) if error.is::<LeaseLost>() => break Ended::Lost,
                             Err(error) => tracing::warn!(job = %beat.id, %error, "job heartbeat failed; trying again"),
                         }
                     }
                 }
             }
         };
-        let Some(outcome) = outcome else {
-            tracing::warn!(job = %job.id, kind = job.kind.as_str(), "job lease lost mid-step; the step was dropped");
-            return Ok(true);
-        };
         let now = self.clock.now();
         let max = handler.max_attempts();
         let saved = match outcome {
-            Ok(Ok(Step::Again(at))) => db.release_job(&job, at, now),
-            Ok(Ok(Step::Done)) => db.finish_job(&job, JobEnd::Done, None, now),
-            Ok(Ok(Step::Failed(error))) => db.finish_job(&job, JobEnd::Failed, Some(&error), now),
-            Ok(Ok(Step::Cancelled)) => db.finish_job(&job, JobEnd::Cancelled, None, now),
-            Ok(Err(error)) if error.is::<LeaseLost>() => Err(error),
-            Ok(Err(error)) => {
+            Ended::Lost => {
+                tracing::warn!(job = %job.id, kind = job.kind.as_str(), "job lease lost mid-step; the step was dropped");
+                return Ok(true);
+            }
+            // Dropped where it waits, as on a lost lease, but still held: a
+            // failed attempt, keeping what it last wrote.
+            Ended::Late => {
+                let error = format!("step passed its deadline of {}", span(handler.deadline()));
+                tracing::warn!(job = %job.id, kind = job.kind.as_str(), attempts = job.attempts, %error, "job step dropped");
+                db.fail_job_as_written(&job, &error, max, now).map(|_| ())
+            }
+            Ended::Stepped(Ok(Ok(Step::Again(at)))) => db.release_job(&job, at, now),
+            Ended::Stepped(Ok(Ok(Step::Done))) => db.finish_job(&job, JobEnd::Done, None, now),
+            Ended::Stepped(Ok(Ok(Step::Failed(error)))) => db.finish_job(&job, JobEnd::Failed, Some(&error), now),
+            Ended::Stepped(Ok(Ok(Step::Cancelled))) => db.finish_job(&job, JobEnd::Cancelled, None, now),
+            Ended::Stepped(Ok(Err(error))) if error.is::<LeaseLost>() => Err(error),
+            Ended::Stepped(Ok(Err(error))) => {
                 let error = format!("{error:#}");
                 tracing::warn!(job = %job.id, kind = job.kind.as_str(), attempts = job.attempts, %error, "job step failed");
                 db.fail_job(&job, &error, max, now).map(|_| ())
             }
-            Err(panic) => {
+            Ended::Stepped(Err(panic)) => {
                 let error = panic
                     .downcast_ref::<&str>()
                     .map(|s| s.to_string())

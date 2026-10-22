@@ -287,3 +287,64 @@ async fn jobs_go_to_their_kinds_handler() {
         ["done", "done", "cancelled", "pending"]
     );
 }
+
+/// A kind whose step hangs while its heartbeats go on.
+struct Hang;
+
+impl Handler for Hang {
+    fn kind(&self) -> JobKind {
+        JobKind::Run
+    }
+
+    fn max_attempts(&self) -> u32 {
+        2
+    }
+
+    fn deadline(&self) -> u64 {
+        60_000
+    }
+
+    fn step<'a>(&'a self, _: &'a Db, job: &'a mut LeasedJob, _: &'a Clock) -> BoxFuture<'a, Result<Step>> {
+        Box::pin(async move {
+            job.checkpoint = Some(json!({"half": true}));
+            std::future::pending().await
+        })
+    }
+}
+
+/// A step that hangs past its kind's deadline is dropped and counts as a
+/// failed attempt: it backs off, keeping what it last wrote, until its
+/// last attempt ends the job. Before the deadline its heartbeats hold it.
+#[tokio::test]
+async fn a_step_past_its_deadline_is_dropped_and_fails_the_attempt() {
+    let (a, b, _file) = two_machines();
+    let (t, c) = clock(0);
+    let w = worker(&c).with(Hang);
+    a.enqueue_job("run_1", JobKind::Run, &json!({}), 0, 0).unwrap();
+    let mut started = 0;
+    for attempt in 1..=2 {
+        let move_clock = async {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            t.store(started + 59_999, SeqCst);
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            assert!(b.claim_job(&JobKind::ALL, started + 59_999).unwrap().is_none(), "held until the deadline");
+            t.store(started + 60_000, SeqCst);
+        };
+        let (ticked, ()) = tokio::time::timeout(Duration::from_secs(5), async { tokio::join!(w.tick(&a), move_clock) })
+            .await
+            .expect("the hung step was dropped");
+        assert!(ticked.unwrap());
+        let row = a.platform_job("run_1").unwrap().unwrap();
+        assert_eq!(row.error.as_deref(), Some("step passed its deadline of 1 min"));
+        assert_eq!(row.checkpoint, None, "the hung step's half-changed job isn't written");
+        if attempt == 1 {
+            assert_eq!((row.state.as_str(), row.next_at), ("pending", 60_000 + RETRY_MS));
+            started = 60_000 + RETRY_MS;
+            t.store(started, SeqCst);
+        } else {
+            assert_eq!(row.state, "failed", "its last attempt ends it");
+        }
+    }
+    assert_eq!(super::span(30 * 60_000), "30 min");
+    assert_eq!(super::span(90_000), "90 s");
+}
