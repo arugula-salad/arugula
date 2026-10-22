@@ -268,3 +268,53 @@ async fn a_page_hears_waking_and_why_a_box_didnt_wake() {
     assert_eq!(String::from_utf8(why).unwrap(), said["why"].as_str().unwrap());
     assert_eq!(r.boxes.resumes.load(SeqCst), 1);
 }
+
+/// The CLI's open (`/api/relay/c` with `x-arugula-wake: 1`) of a paused
+/// box whose old socket comes back to life as the box resumes, as E2B's
+/// can, and whose daemon dials in afresh a while later (M180's redial on
+/// resume, here 900 ms on). The open waits for the new connection and its
+/// stream goes there, never onto the old socket the daemon is about to
+/// drop.
+#[tokio::test]
+async fn a_cli_open_of_a_frozen_hosted_machine_waits_for_the_redial() {
+    let r = rig().await;
+    let frozen = r.dial().await;
+    *r.boxes.state.lock().unwrap() = Some(State::Paused);
+    tokio::time::sleep(Duration::from_millis(600)).await;
+
+    // As the box resumes: the old socket reads again (it answers pings,
+    // and says what it was sent), and the daemon dials in afresh later.
+    let (old_tx, mut old_rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
+    let (new_tx, mut new_rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
+    let resume = async {
+        r.boxes.resumed.notified().await;
+        let mut old = frozen;
+        let revived = tokio::spawn(async move {
+            while let Some(Ok(m)) = old.next().await {
+                if let Message::Binary(b) = m {
+                    let _ = old_tx.send(b[0]);
+                }
+            }
+        });
+        tokio::time::sleep(Duration::from_millis(900)).await;
+        let mut fresh = r.dial().await;
+        tokio::spawn(async move {
+            while let Some(Ok(m)) = fresh.next().await {
+                if let Message::Binary(b) = m {
+                    let _ = new_tx.send(b[0]);
+                }
+            }
+        });
+        Some(revived)
+    };
+    let started = Instant::now();
+    let (opened, revived) = tokio::join!(r.open(true), resume);
+    println!("the CLI's open went through {} ms after it began", started.elapsed().as_millis());
+    assert_eq!(opened.0, 101, "{opened:?}");
+    assert_eq!(r.boxes.resumes.load(SeqCst), 1);
+    let first = tokio::time::timeout(Duration::from_secs(5), new_rx.recv()).await.expect("a stream on the new socket");
+    assert_eq!(first, Some(1), "the open's stream, on the daemon's new connection");
+    assert!(old_rx.try_recv().is_err(), "nothing opened on the old socket");
+    // The hub hung up on the old socket.
+    tokio::time::timeout(Duration::from_secs(5), revived.unwrap()).await.expect("the old socket closed").unwrap();
+}
