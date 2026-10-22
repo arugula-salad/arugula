@@ -12,6 +12,9 @@
 //! (`arugula_platform::chat`, M138), behind this hub's gate.
 
 mod account;
+mod activity;
+#[cfg(test)]
+mod activity_wire;
 mod analytics;
 mod api;
 mod app_login;
@@ -41,6 +44,9 @@ mod gateway_wire;
 #[cfg(test)]
 mod grants_wire;
 mod guest_jump;
+mod hosted;
+#[cfg(test)]
+mod hosted_wire;
 #[cfg(test)]
 mod hub_latency_bench;
 mod hub_port;
@@ -192,6 +198,11 @@ struct Args {
     /// it runs in process.
     #[command(flatten)]
     compute: arugula_platform::compute::Args,
+
+    /// Hosted workspaces (M179): the platform's flags, used when it runs
+    /// in process.
+    #[command(flatten)]
+    hosted: arugula_platform::hosted::Args,
 
     /// The platform's own database (M143): `postgres://` puts it on
     /// Postgres. Without it, a second connection to `--db`, as always.
@@ -370,6 +381,9 @@ pub struct App {
     pub sends: forge_send::Starts,
     pub limits: limit::Limits,
     pub vapid: push::Vapid,
+    /// Control's hosted key (M178): it signs the hosted machines enrolled
+    /// under a project's delegation, and nothing else.
+    pub hosted_key: arugula_e2e::hosted::HostedKey,
     pub hosted: Option<sandboxes::Hosted>,
     /// The GitHub App's slug (M40), when control has one; the App itself
     /// is the platform's (M161). And daemons' subscriptions to its pokes.
@@ -424,6 +438,7 @@ fn platform(
     cloud: Option<arugula_platform::cloud::Cloud>,
     github: Option<arugula_platform::forge::GithubApp>,
     compute: Option<Arc<dyn arugula_platform::compute::Substrate>>,
+    hosted: arugula_platform::hosted::Config,
     http: &reqwest::Client,
     analytics: &analytics::Analytics,
 ) -> (gateway::PlatformAt, Arc<hub_port::InProcess>) {
@@ -433,6 +448,7 @@ fn platform(
     p.cloud = cloud;
     p.github = github;
     p.compute = compute;
+    p.hosted = hosted;
     (gateway::PlatformAt::InProcess(Arc::new(p)), hub)
 }
 
@@ -442,6 +458,7 @@ impl App {
     pub fn for_tests(public_url: &str) -> Self {
         let db = db::Db::memory();
         let vapid = push::Vapid::load(&db).unwrap();
+        let hosted_key = hosted::load_key(&db).unwrap();
         let http = reqwest::Client::new();
         let cfg = arugula_platform::Config {
             public_url: public_url.into(),
@@ -455,6 +472,7 @@ impl App {
             None,
             None,
             None,
+            Default::default(),
             &http,
             &analytics::Analytics::default(),
         );
@@ -482,6 +500,7 @@ impl App {
             sends: Default::default(),
             limits: limit::Limits::new(None),
             vapid,
+            hosted_key,
             hosted: None,
             github_app: None,
             forge: Default::default(),
@@ -595,6 +614,12 @@ fn routes() -> Routes {
         .route("/api/sandboxes", get(sandboxes::list).post(sandboxes::create))
         .route("/api/sandboxes/{id}", axum::routing::delete(sandboxes::delete))
         .route(wire::SANDBOX_DONE, post(sandboxes::done))
+        // Hosted machines under a project's delegation (M178).
+        .route("/api/hosted/delegations", get(hosted::delegations).post(hosted::delegate))
+        .route("/api/hosted/delegations/revoke", post(hosted::revoke))
+        .route(wire::hosted::ENROLL, post(hosted::enroll))
+        .route(wire::hosted::HOSTED_TRUST, get(hosted::trust))
+        .route("/api/hosted/machines/{id}", axum::routing::delete(hosted::remove))
         .route("/api/daemon/github/token", post(forge::daemon_token))
         .route(wire::RELAY_DIAL, get(relay::dial))
         .route("/api/relay/c/{id}", get(relay::client))
@@ -702,6 +727,8 @@ async fn control_json(
         doc_viewer: Some(doc_links::viewer_url(&app.cfg.public_url, app.cfg.block_domain.as_deref())),
         // Where the platform page is (M151), when it has a host.
         platform: app.cfg.platform_host.as_ref().map(|p| p.origin.clone()),
+        // What a project delegation names (M178).
+        hosted_key: Some(app.hosted_key.public()),
     })
 }
 
@@ -788,7 +815,8 @@ fn main() -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
     // database (census.rs), with no server. `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
-    // `notice`: a notice for every account (notice.rs). `platform`: a
+    // `notice`: a notice for every account (notice.rs). `hosted-enrollment`:
+    // what the platform asks as it makes a hosted box (hosted.rs). `platform`: a
     // window's tools, the platform's own code (`arugula_platform::window`).
     let mut argv = std::env::args().skip(1).peekable();
     if argv.peek().is_some_and(|a| a == "census") {
@@ -796,6 +824,9 @@ fn main() -> anyhow::Result<()> {
     }
     if argv.peek().is_some_and(|a| a == "maintenance") {
         return maintenance::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "hosted-enrollment") {
+        return hosted::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "notice") {
         return notice::run(argv.skip(1));
@@ -878,6 +909,7 @@ async fn run() -> anyhow::Result<()> {
         b.replicate();
     }
     let vapid = push::Vapid::load(&db)?;
+    let hosted_key = hosted::load_key(&db)?;
     let hosted = match a.sprites_token.filter(|t| !t.is_empty()) {
         Some(t) => Some(sandboxes::Hosted {
             sprites: sprites::Sprites::new(&a.sprites_url, t)?,
@@ -936,6 +968,7 @@ async fn run() -> anyhow::Result<()> {
     let (platform, hub_port) = if a.platform == "in-process" {
         // A second connection to the same file: the platform never reads
         // the hub's tables (#1153).
+        let hosted = a.hosted.clone().config(a.cloud.cloud_secret_key.as_deref())?;
         let cloud = a.cloud.cloud()?;
         let cfg = arugula_platform::Config {
             public_url: public_url.clone(),
@@ -945,7 +978,7 @@ async fn run() -> anyhow::Result<()> {
         info!("the platform runs in process");
         let github = a.github_app.app(&a.github_api)?;
         let compute = a.compute.clone().substrate()?;
-        platform(a.platform_db.open(&a.db)?, cfg, stripe, cloud, github, compute, &http, &analytics)
+        platform(a.platform_db.open(&a.db)?, cfg, stripe, cloud, github, compute, hosted, &http, &analytics)
     } else {
         // The platform is its own process: this hub is its gateway (M140).
         let key = platform_key.clone().context("--platform is a URL, so ARUGULA_PLATFORM_KEY is needed")?;
@@ -1007,6 +1040,7 @@ async fn run() -> anyhow::Result<()> {
         sends: Default::default(),
         limits: limit::Limits::new(a.trust_proxy_header),
         vapid,
+        hosted_key,
         hosted,
         github_app,
         forge: Default::default(),
@@ -1045,6 +1079,7 @@ async fn run() -> anyhow::Result<()> {
     // process its own binary runs it.
     if let Some(p) = app.platform.local() {
         arugula_platform::cloud::start(p);
+        arugula_platform::hosted::start(p);
         // Chat follows the hub's change feed (M138), and so do projects and
         // grants: a machine that joins gets its `cloud.drive` grant from it.
         arugula_platform::chat::start(p);

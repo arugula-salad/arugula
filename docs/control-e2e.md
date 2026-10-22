@@ -375,7 +375,9 @@ would pass. So the daemon doesn't take the root on control's word. Since
     Its *Devices and machines…* fingerprint and `control.json`'s
     `trust.root` should be the same; if not, `arugulad leave` and join
     again.
-- **Hosted sandboxes** skip the check: control creates the VM through
+- **Hosted machines** (step 5) join under a project's delegation instead
+  ([below](#hosted-machines-a-projects-delegation)).
+- **Hosted sandboxes** (M20, retired in M190) skip the check: control creates the VM through
   its provider and writes the sandbox's `control.json` itself
   (`crates/control/src/sandboxes.rs`). The operator runs that machine, so it
   can read it whatever the keys say. A sandbox is end to end encrypted
@@ -508,6 +510,112 @@ nothing is compared on the way.
   them trusts on first use again. Inviting them to a team by link (#762)
   avoids trusting control at all; the dialog says so beside *Verify*.
 
+### Hosted machines: a project's delegation
+
+A hosted machine (a Cloud workspace, step 5) is `arugulad` in a box the
+operator rents: nobody's device is there to approve its join. So an owner
+approves once per project instead ("Control enrolls hosted machines under
+a project delegation", aru-095; `arugula_e2e::hosted`,
+`crates/control/src/hosted.rs`). This changes what control can do, inside
+that project only.
+
+- **The delegation.** An owner's own device (a browser or the CLI: not a
+  machine, not a recovery code) signs `arugula project delegation v1`: the
+  project, its owner (`team:<id>` or `account:<id>`), control's hosted key
+  (Ed25519, in `/control.json` as `hosted_key`), when, and which device.
+  For a team's project the signer must be an owner in the roster; for a
+  personal project, a device of that account. Devices and machines… has
+  *Hosted machines*: *Allow* signs it, *Stop* revokes it. Control keeps it
+  beside the roster (`project_delegations`, in the hub, which holds the
+  rosters and device chains it's checked against).
+- **The key.** The hub makes its hosted key on first start and keeps it in
+  `settings`, as it keeps its VAPID key. It signs hosted machines'
+  certificates and nothing else. A new key ends every delegation (they
+  name the old one), and owners sign again.
+- **The enrollment.** When the platform makes a box, it asks the hub for
+  a one-time enrollment (`HubPort::hosted_enrollment`), bound to the
+  project and the workspace (`hw_…`), under the project's newest live
+  delegation. Two kinds, both once only:
+  - **a ticket**, made by the hub (32 random bytes), for the box's env
+    (`ARUGULA_HOSTED_TICKET`), good for 15 minutes: boxes started fresh,
+    loam, and testnet;
+  - **the box's sandbox id**, which the platform passes when it creates
+    the box, good for 2 minutes: a box started from a running snapshot
+    (E2B) can't read the env it was made with, but it can read its own
+    sandbox id (`/run/e2b/.E2B_SANDBOX_ID`). The box makes its key when it
+    first sees a new sandbox id. The sandbox id is a bearer secret for those
+    2 minutes: never logged, never in a URL. One enrollment per sandbox id,
+    ever.
+
+  The hub keeps only a hash of either (`hosted_enrollments`).
+- **Enrolling.** The box sends `POST /api/hosted/enroll` once: the ticket
+  or the sandbox id, its new public keys, and its signature over
+  `arugula hosted enroll v1` (the hash, its keys, the time), so it holds
+  the key it enrolls. The hub uses the enrollment up, checks that the
+  delegation is still live, and signs an `arugula hosted machine v1`
+  certificate with the hosted key: the project, its owner, the workspace,
+  the delegation, the machine's keys and name, when. **Fail closed:** a
+  second try is refused (409), even with the right key, and the machine
+  that used the enrollment is removed with it, since control can't tell
+  which of the two is the box; the platform hears it was taken
+  (`HubPort::hosted_enrolled`) and deletes the box. The platform recording
+  the same sandbox id for the same workspace again (a lost answer) gets the
+  same enrollment back; for another workspace, it's taken. A key is one machine's,
+  ever, and a workspace has one machine: enrolling a new box for it
+  removes the old one.
+- **What the box pins.** The enrollment's answer has the certificate, the
+  delegation and its revocations, and who's in the project: for a team's,
+  the team pin, the roster and members' certificates (it serves people as a
+  team machine does); for a personal one, the account's root and
+  certificates. `GET /api/hosted/trust` gives it again.
+- **Clients accept it for its project only** (`hosted::accept`,
+  `acceptHosted` in `web/src/shell/e2e/hosted.ts`). The directory lists a
+  hosted machine only to its project's people, with its certificate,
+  delegation and revocations; the page checks them against what it holds
+  itself (its team's roster and members' certificates, or its own
+  account's chain), not control's word for the machine:
+  - the delegation is signed by a device of one of the project's owners,
+    trusted now (an owner who leaves the owners, or a signing device that's
+    removed, takes the delegation with them: another owner signs again);
+  - the certificate is signed by the key the delegation names, for that
+    project and delegation, made after the delegation and before any
+    revocation of it;
+  - this account is in the project. A device outside it refuses the
+    machine even if it's shown one.
+
+  It's never one of an account's devices: its certificate is its own
+  domain, so `Trust::evaluate` never counts it, it approves nothing, and
+  its keys can't stand for a daemon or a browser of anyone's. The shell
+  shows it as **Hosted: the operator can read** wherever a machine's place
+  is shown.
+- **Routing.** Control routes to a hosted machine only its project's people
+  (a locked team's: its owners), never by a share, never as anyone's own
+  machine. Its signature opens only its own routes and the relay: every
+  route a daemon's signature opens refuses it. It isn't in `daemons`, so
+  nothing that reads a daemon's account (moves, shares, grants, Labs
+  flags) sees it.
+- **Revoking.** Any owner's device signs `arugula project delegation
+  revoke v1`. Nothing more enrolls under it, even an enrollment recorded
+  before. The machines enrolled before stay, as a revoked device's earlier
+  approvals do, until they're removed: by a project owner
+  (`DELETE /api/hosted/machines/{id}`) or when the platform deletes or
+  rebuilds the workspace (`HubPort::hosted_gone`, which also drops an
+  enrollment nobody used). A removed machine is
+  hung up on, and its key signs nothing here again.
+
+**What control can do with a delegation:** within that project, add
+machines the project's people will reach and type into, and read what runs
+in them (it runs the box). That's what the label says, and it's true of any
+VM: whoever runs it can read its memory. **What it can't:** add a hosted
+machine to a project nobody delegated, or after the delegation is revoked,
+without the project's people's pages refusing it; make a hosted machine
+count as anyone's device or approve one; reach any other machine or
+terminal of the project's people (their own machines check devices against
+their own chains, which the hosted key isn't in). **Accepted risks:**
+control writes the certificate's time, so a malicious control could
+backdate one past a revocation (it runs the boxes anyway); and the page's
+team roster is the one control serves, as for team machines.
+
 ## What holds against control
 
 Who can read your terminals, depending on what control (the hosted service,
@@ -521,6 +629,8 @@ or whoever runs yours) does:
 | lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
 | lies about which account a **new browser or phone** is approved into | refused by that device: the approving device's answer to the code it showed doesn't match (approved from a page from before codes: it shows the account fingerprint to check) |
 | lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
+| enrolls a **hosted machine** into a project an owner delegated | can read what runs in it: it runs the box (labelled "Hosted: the operator can read"). Only that project's people reach it, and nobody accepts it after the delegation is revoked |
+| enrolls a hosted machine into a project nobody delegated | refused by every client: no owner's device signed for that project |
 | serves a **modified web client** | can read what that client shows and use its keys while it runs |
 
 The last row is the important limit. The browser client at control's
@@ -1047,10 +1157,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 80 tables in two planes ("Two planes, two trust rules"):
+Control's database has 86 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (33 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (47 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues and deploys. Control reads most of it, and says so here.
+- **The machine plane** (36 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The platform plane** (50 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1075,8 +1185,11 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `share_answers` | metadata | An account's yes or no to a machine shared with it. | yes |  |
 | `daemon_links` | metadata | Until when a machine has a live share link, so control routes link guests to it. | yes |  |
 | `sandboxes` | metadata | A hosted sandbox: its VM's id, the device that asked, a hash of its join ticket, its state. | yes | Sprites |
+| `project_delegations` | metadata | A project delegation (M178): an owner's device's signed word that control may enroll hosted machines into the project, the account that sent it, and the signed revocation that ended it. | yes: its own project's and its disbanded teams' go, and every one it signed. |  |
+| `hosted_enrollments` | metadata | A one-time hosted enrollment (M178): a hash of its ticket or the box's sandbox id, the project, workspace and delegation, when it runs out and when it was used. | yes |  |
+| `hosted_machines` | metadata | A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), its addresses, when it was last seen and removed. | yes |  |
 | `push_subs` | metadata | A browser's signed push subscription: the push service's endpoint and the keys pushes are encrypted to. | yes |  |
-| `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends. | nothing of one |  |
+| `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends, and its hosted key (M178), which signs the hosted machines enrolled under a project's delegation. | nothing of one |  |
 | `notices` | metadata | A notice for an account with no push, made from names control holds ("Ada left Acme"). | yes |  |
 | `labs_flags` | metadata | The Labs flags an account or a team turned on for its machines. | yes: a team's go when the team does. | PostHog |
 | `teams` | metadata | A team: its id, name, founder and founder's root, and whether it's locked. | partly: the teams it founded, or that nobody else is left in, go with it; the rest stay. | PostHog |
@@ -1143,11 +1256,15 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `deploys` | metadata | A deploy to an environment (M217): what it deploys (a commit's sha or an artifact's digest, and where), the plan's digest, its state (S37's, with planned and stale), where its plan is in the environment's log, the run that applied it, who planned it (an account, and the machine when its agent did), and its times. | A deploy waits for an owner's approval and is applied by a driver run on the platform, with every machine asleep. | partly: those of projects that go with it go. The rest stay, naming no planner. |  |
 | `deploy_events` | metadata | An environment's deploy log (M217): append-only, a hash chain per environment that anyone can verify. Each event says which deploy, what happened (planned, requested, approved, denied, canceled, expired, started, succeeded, failed, staled), who (an account, an agent's owner and machine, a run, or the platform), when, a small detail (the source and plan's digest, the run, the approval), and its hash and the one before. | Approving a deploy checks its environment's log (the stale rule), with every machine asleep. | partly: those of projects that go with it go. The rest are kept as written, the account's id in them included: an event is never rewritten, and rewriting one would break its chain. The id names no one once the account is gone, so they show as a deleted account. |  |
 | `platform_migrations` | metadata | Which of the platform's numbered migrations (M142) its database has: each one's number, name, checksum, whether it's additive (older builds may start past it) and when it ran, or that it was found already in place on a database made before migrations. | The platform checks its tables are the shape its code expects before it serves anything, whether or not any machine is up. | nothing of one |  |
+| `hosted_workspaces` | metadata | A hosted workspace (M179): its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the last error, the worker's lease, who made it and when. | The platform makes, wakes, pauses and deletes hosted workspaces' boxes itself, and the page lists them, with every machine asleep. | partly: it stops naming the account as its maker. Workspaces in its personal project and its disbanded teams' projects are deleted, boxes and all, by the worker; their rows stay, marked deleted. | E2B |
+| `hosted_workspace_secrets` | **plaintext** | A secret a hosted workspace takes, by name, and where its value is: sealed here with a key control holds apart from the database, or in the provider's secrets broker. | A hosted workspace's box is made and rebuilt with every machine off. | partly: they go with their workspace, when the worker deletes it. | E2B |
+| `hosted_ports` | metadata | A port a dev server listens on in a hosted workspace (M186), its label, and who made it public and until when (M187). | Previews are served and expire with every machine asleep. | partly: it stops naming the account as who made a port public. They go with their workspace. |  |
 
 ### Who else sees it
 
 - **Litestream's bucket:** Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. On Postgres, the platform's tables go there in its nightly dump instead: encrypted, kept 30 days. Cloud secrets are there sealed, and their key isn't.
 - **Managoat:** Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals.
+- **E2B:** E2B runs hosted workspaces' boxes: it holds their disks and memory, the env and metadata each is made with (the workspace, project, release and template ids), and the secrets in its broker.
 - **PostHog:** PostHog gets product events, when control has a key for it: account, team and machine ids, a machine's version, OS and arch, plans, Labs flags and counts. No names, logins, addresses or content.
 - **Sprites:** Sprites hosts hosted sandboxes: it knows each one's VM.
 - **GitHub:** GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it makes every token control mints and sees each one used, every draft sent goes to it, and it sends the webhooks.

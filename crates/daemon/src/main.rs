@@ -44,6 +44,7 @@ use arugula_mux::holder;
 // The pane host on Windows (M58): the shim's part there.
 #[cfg(windows)]
 use arugula_mux::host;
+mod hosted;
 mod hosts;
 mod http1;
 #[cfg(feature = "editor")]
@@ -491,6 +492,10 @@ fn main() -> anyhow::Result<()> {
     if argv.get(1).map(String::as_str) == Some("_shim") {
         shim::run(&argv[2..]);
     }
+    // A hosted box's reseed (M180), as root: nothing else of the daemon runs.
+    if argv.get(1).map(String::as_str) == Some("_reseed") {
+        hosted::reseed::cli(argv.get(2).map_or("", String::as_str));
+    }
     #[cfg(windows)]
     if argv.get(1).map(String::as_str) == Some("_host") {
         host::run(&argv[2..]);
@@ -724,9 +729,13 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         .await
         .map_err(|e| anyhow::anyhow!("can't listen on {}: {e}", args.listen))?;
     args.listen = listener.local_addr()?;
+    if args.hosted {
+        hosted::headless(&mut args);
+    }
     let mut public_hosts = args.public_hosts.clone();
     let mut owner = args.owner.clone();
-    let local_api = tailscale::LocalApi::find(args.tailscale_socket.as_deref());
+    // A hosted box has no tailnet (M180).
+    let local_api = if args.hosted { None } else { tailscale::LocalApi::find(args.tailscale_socket.as_deref()) };
     let status = match &local_api {
         Some(api) => api
             .settled_status(std::time::Duration::from_secs(30))
@@ -1047,6 +1056,9 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         );
     }
     control.start(app.clone());
+    if args.hosted {
+        hosted::start(&app, state_dir.clone(), args.control_url.clone());
+    }
     if let Some(serve) = mcp_serve {
         let _ = serve.set(mcp::pipe_server(&app));
     }

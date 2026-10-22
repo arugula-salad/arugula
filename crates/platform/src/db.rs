@@ -32,6 +32,7 @@ pub mod cloud;
 pub mod content;
 pub mod deploys;
 pub mod forge;
+pub mod hosted;
 pub mod inbox;
 pub mod issues;
 mod legacy;

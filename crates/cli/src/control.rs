@@ -189,8 +189,25 @@ impl Enrolled {
         let v = self.api("GET", "/api/directory", None)?;
         let mut out = Vec::new();
         let mut pinned = false;
+        let mut teams: Option<Vec<Value>> = None;
         for d in v["daemons"].as_array().into_iter().flatten() {
             let Ok(mut m) = serde_json::from_value::<Listed>(d.clone()) else { continue };
+            if d.get("hosted").is_some_and(|h| !h.is_null()) {
+                // A hosted machine (M178, M180): for its project only, as
+                // this CLI's checks of the project say, never control's word.
+                match self.accept_hosted(&d["hosted"], &mut teams, &mut pinned) {
+                    Ok(cert) => {
+                        m.cert = Some(cert);
+                        out.push(m);
+                    }
+                    Err(why) => {
+                        if debug_http() {
+                            eprintln!("arugula: not trusting the hosted machine {}: {why:#}", m.name);
+                        }
+                    }
+                }
+                continue;
+            }
             if let Some(account) = m.account.clone() {
                 let Ok(chain) = serde_json::from_value::<Chain>(d["chain"].clone()) else { continue };
                 let Some(trust) = chain.trust.filter(|t| t.account == account) else { continue };
@@ -227,6 +244,70 @@ impl Enrolled {
             saved.write()?;
         }
         Ok(out)
+    }
+
+    /// A hosted machine's certificate, made into the one its channel is
+    /// opened with, if this CLI accepts it (`arugula_e2e::hosted::accept`):
+    /// against its team's roster (that team's founder pinned here on first
+    /// sight, as the page does) or this account's own devices.
+    fn accept_hosted(&mut self, v: &Value, teams: &mut Option<Vec<Value>>, pinned: &mut bool) -> anyhow::Result<Cert> {
+        use arugula_e2e::{
+            hosted::{Delegation, DelegationRevoke, HostedCert, Owner, Owners, accept},
+            team::{AccountCerts, Roster, TeamPin},
+        };
+        let cert: HostedCert = serde_json::from_value(v["cert"].clone())?;
+        let d: Delegation = serde_json::from_value(v["delegation"].clone())?;
+        let revokes: Vec<DelegationRevoke> = serde_json::from_value(v["revocations"].clone()).unwrap_or_default();
+        let me = self.cert.account.clone();
+        let ok = match d.owner().context("no owner")? {
+            Owner::Team(id) => {
+                if teams.is_none() {
+                    let t = self.api("GET", "/api/teams", None)?;
+                    *teams = Some(t["teams"].as_array().cloned().unwrap_or_default());
+                }
+                let t = teams.iter().flatten().find(|t| t["team"] == id.as_str()).context("not in its team")?;
+                let pin: TeamPin = serde_json::from_value(t["pin"].clone())?;
+                let roster: Roster = serde_json::from_value(t["roster"].clone())?;
+                let certs: AccountCerts = serde_json::from_value(t["certs"].clone()).unwrap_or_default();
+                let founder = format!("{}.{}", pin.founder, pin.founder_root);
+                let key = format!("team:{id}");
+                match self.pins.get(&key) {
+                    Some(f) if *f != founder => bail!("control says the team's founder is someone else now"),
+                    Some(_) => {}
+                    None => {
+                        self.pins.insert(key, founder);
+                        *pinned = true;
+                    }
+                }
+                accept(&me, &cert, &d, &revokes, &Owners::Team { roster: &roster, certs: &certs })
+            }
+            Owner::Account(_) => {
+                let v = self.api("GET", "/api/devices", None)?;
+                let certs: Vec<Cert> = serde_json::from_value(v["certs"].clone()).unwrap_or_default();
+                let revs: Vec<Revocation> = serde_json::from_value(v["revocations"].clone()).unwrap_or_default();
+                accept(
+                    &me,
+                    &cert,
+                    &d,
+                    &revokes,
+                    &Owners::Account { trust: &self.trust, certs: &certs, revocations: &revs },
+                )
+            }
+        };
+        ok.map_err(|r| anyhow::anyhow!("refused: {}", r.code()))?;
+        // Its keys, to open a channel with; never one of the account's.
+        Ok(Cert {
+            v: 1,
+            account: cert.project.clone(),
+            device: cert.device.clone(),
+            kind: Kind::Daemon,
+            name: cert.name.clone(),
+            noise: cert.noise.clone(),
+            sign: cert.sign.clone(),
+            created: cert.created,
+            approver: String::new(),
+            sig: String::new(),
+        })
     }
 
     /// The account's devices that chain to the pinned root.

@@ -13,15 +13,15 @@ use axum::{
 
 use arugula_control_wire::issues;
 
-use crate::{Platform, billing, chat, cloud, forge, grants, projects};
+use crate::{Platform, billing, chat, cloud, forge, grants, hosted, projects};
 
 /// Every route the platform answers. Each moved here from `routes()` in
 /// `crates/control/src/main.rs` with the same path and methods: billing's
 /// (M139), Cloud's (M137), chat's (M138), then grants'; the platform
 /// page's own (M150); the GitHub App's webhook (M161); linked repos
 /// (M163); their items, each read checked against the viewer (M165);
-/// drafts on them (M170); the inbox (M171); and native issues' (M195),
-/// for agents too (M200).
+/// drafts on them (M170); the inbox (M171); native issues' (M195), for
+/// agents too (M200); and hosted workspaces (M179).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -122,6 +122,9 @@ fn routes() -> Routes {
         .route(issues::AGENT_ISSUE, get(crate::issues::agent::get).patch(crate::issues::agent::patch))
         .route(issues::AGENT_ISSUE_EVENTS, get(crate::issues::agent::events))
         .route("/github/webhook", post(forge::webhook))
+        .route("/api/projects/{project}/workspaces", get(hosted::routes::list).post(hosted::routes::create))
+        .route("/api/projects/{project}/workspaces/{id}", get(hosted::routes::open).delete(hosted::routes::delete))
+        .route("/api/projects/{project}/workspaces/{id}/rebuild", post(hosted::routes::rebuild))
 }
 
 /// The platform's router, for any state the hub's router has (the

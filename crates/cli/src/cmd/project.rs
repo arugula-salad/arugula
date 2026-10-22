@@ -106,7 +106,7 @@ fn within(ms: u64) -> String {
 
 /// A project named on the command line, by its name (any case), among
 /// the account's.
-fn project_id(listed: &Value, name: &str) -> anyhow::Result<String> {
+pub(super) fn project_id(listed: &Value, name: &str) -> anyhow::Result<String> {
     let ids: Vec<String> = listed["projects"]
         .as_array()
         .into_iter()

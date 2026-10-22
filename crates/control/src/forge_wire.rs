@@ -193,7 +193,7 @@ fn sign_header(keys: &DeviceKeys, method: &str, path: &str, body: &[u8]) -> Stri
     format!("v2 {} {ms} {nonce} {}", keys.id(), hex::encode(keys.signature(msg.as_bytes())))
 }
 
-fn daemon(app: &App, account: &str, name: &str) -> DeviceKeys {
+pub(crate) fn daemon(app: &App, account: &str, name: &str) -> DeviceKeys {
     let keys = DeviceKeys::generate();
     let cert = Cert::new(&keys, account, Kind::Daemon, name);
     app.db.put_device(&cert, true, now_ms()).unwrap();
@@ -201,9 +201,9 @@ fn daemon(app: &App, account: &str, name: &str) -> DeviceKeys {
     keys
 }
 
-type Sock = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+pub(crate) type Sock = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
-async fn dial(base: &str, keys: &DeviceKeys) -> Sock {
+pub(crate) async fn dial(base: &str, keys: &DeviceKeys) -> Sock {
     let mut req = format!("{}/api/relay/dial", base.replace("http://", "ws://")).into_client_request().unwrap();
     req.headers_mut().insert("x-arugula-auth", sign_header(keys, "GET", "/api/relay/dial", b"").parse().unwrap());
     tokio_tungstenite::connect_async(req).await.unwrap().0
