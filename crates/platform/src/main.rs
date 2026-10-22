@@ -120,8 +120,13 @@ fn main() -> anyhow::Result<()> {
     // server, and by the nightly dump. `usage`: hosted workspaces' usage
     // and cost (M188), read-only. `rotate-key`: the master key's rotation
     // (M209, `keys::rotate`). `previews`: public previews, and the
-    // operator's takedown (M187).
+    // operator's takedown (M187). `managoat-retire`: deleting what beta
+    // Cloud workspaces left on Managoat (M189, `cloud::retire`).
     let mut argv = std::env::args().skip(1).peekable();
+    if argv.peek().is_some_and(|a| a == "managoat-retire") {
+        argv.next();
+        return arugula_platform::cloud::retire::run("arugula-platform managoat-retire", argv);
+    }
     if argv.peek().is_some_and(|a| {
         ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "previews"].contains(&a.as_str())
     }) {

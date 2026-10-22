@@ -8881,6 +8881,13 @@ a.ws-ov-name, a.ws-ov-pane { text-decoration: none; }
 .cloud-ws-settings-head > h3 { margin-right: auto; }
 .cloud-ws-mid-turn { padding: 8px 12px; border: 1px solid var(--raised-hover); border-radius: 6px; }
 .cloud-ws-mid-turn p { margin: 4px 0; }
+/* Moving a beta Cloud workspace off Managoat (M189): the notice, the move. */
+.cloud-move-notice { margin: 12px; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 6px; }
+.cloud-move-notice p { margin: 0; }
+.cloud-move { margin: 8px 0 12px; }
+.cloud-move-dialog { max-width: 640px; }
+.cloud-move-repos, .cloud-move-makes, .cloud-move-notes { margin: 4px 0 8px; padding-left: 18px; }
+.cloud-move-repos p { margin: 2px 0 6px; }
 .cloud-ws-retry { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .cloud-ws-rebuild-waiting { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); white-space: nowrap; }
 .cloud-ws-rebuild-waiting .control-error { white-space: normal; }

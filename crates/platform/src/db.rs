@@ -30,6 +30,7 @@ use rusqlite::Connection;
 pub mod billing;
 pub mod chat;
 pub mod cloud;
+pub mod cloud_moves;
 pub mod content;
 pub mod deploys;
 pub mod forge;
