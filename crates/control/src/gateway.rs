@@ -195,6 +195,25 @@ impl PlatformPort for PlatformAt {
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::work::Reported>> {
         self.port().hosted_report(machine, report)
     }
+
+    fn hosted_plan<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<Option<arugula_control_wire::hosted::SetupPlan>>> {
+        self.port().hosted_plan(project, workspace, machine)
+    }
+
+    fn hosted_setup<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+        report: &'a arugula_control_wire::hosted::SetupReport,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        self.port().hosted_setup(project, workspace, machine, report)
+    }
 }
 
 /// An out-of-process platform: `PlatformPort` over HTTP, and the way this

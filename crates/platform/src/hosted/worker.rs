@@ -7,7 +7,7 @@
 //! | anything, delete asked | delete every box it has (by its metadata too), then `deleted` |
 //! | `creating` | the create's journal: ask the hub for a ticket (ticket mode), note `sent`, make the box; `sent` with no answer kept: find it by its metadata, never make it again; `made`: record its enrollment by sandbox id |
 //! | `enrolling` | wait for the hub to say its box enrolled, then `ready`; past the enrollment's end, delete the box (fail closed) |
-//! | `ready`, `paused` | a rebuild, wake or pause asked; else read its state (never waking it), and near the provider's runtime cap pause and resume it between turns ([`super::hold`]) |
+//! | `ready`, `paused` | a rebuild (which clears what the old box's setup said), wake or pause asked; else read its state (never waking it), and near the provider's runtime cap pause and resume it between turns ([`super::hold`]) |
 //!
 //! A step that fails for now (the provider or the hub didn't answer) is
 //! tried again in a few seconds, and what it was doing stays asked. A
@@ -141,6 +141,7 @@ async fn step(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64
             job.w.template = None;
             job.built_hash = None;
             job.enroll_until = None;
+            job.new_box = true;
             return Ok((Some(Ask::Rebuild), now));
         }
         Some("wake") => return wake(app, sub, job, now).await,

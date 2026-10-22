@@ -102,11 +102,36 @@ in the platform's log.
 gate): a half-hour turn nobody watches, then the pause; and a box left
 overnight, paused in the morning with its panes still there.
 
+On its first boot the box sets itself up from the spec (M183, #1244), in a
+pane in a session called `setup` that anyone on the project can watch like
+any pane: it clones the repos into `$HOME`, installs the packages with
+apt, then runs the setup script with `bash -e` in the first repo. Its
+daemon reads the spec from the hub's `GET /api/hosted/spec` (signed as the
+hosted machine; the hub asks the platform) and says how it goes at `POST
+/api/hosted/setup`: setting up (with the step), ready, or failed (with the
+step and a fixed reason code). Control never gets the pane's text: `cloud
+ls` and `open` say "failed at <step>: open the setup pane", and `--wait`
+reads a failed setup's last lines from the box over the relay, end to end. A GitHub repo linked to the project is
+cloned with a read-only installation token for that repo alone, minted for
+the clone; any other with the workspace's `GIT_TOKEN` secret (and
+`GIT_USERNAME`, else `x-access-token`). The daemon hands them to git in its
+environment for the clone alone, from a file in memory the setup removes as
+it reads it: nothing lands in a repo's config or on the disk. The spec's
+`env` names take their values from the workspace's secrets, for the setup
+script. Changing the spec shows "rebuild needed" until the box is rebuilt.
+Before a rebuild the CLI asks the box, through the relay, for repos with
+changes or commits on no remote branch (`GET /api/hosted/setup` on the
+daemon), and stops unless `--download FILE` saves them first (a tarball of
+those repos' files that aren't ignored and their `.git`, `GET
+/api/hosted/setup/archive`) or `--force`.
+
 ```
 arugula cloud create dev --repo https://github.com/acme/app --setup setup.sh
 arugula cloud ls                          # every project's; --project <id or name>
-arugula cloud open dev --wait             # wakes a paused box, says its machine
-arugula cloud rebuild dev                 # a new box from the spec
+arugula cloud open dev --wait             # wakes a paused box, says its machine and its setup
+arugula cloud edit dev --setup setup.sh   # rebuild needed
+echo "$TOKEN" | arugula cloud secret set dev GIT_TOKEN
+arugula cloud rebuild dev --download dev.tgz   # a new box from the spec
 arugula cloud delete dev
 ```
 

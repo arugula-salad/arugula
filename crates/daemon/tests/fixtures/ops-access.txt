@@ -22,6 +22,7 @@ host.get GET /api/host Anyone drives=false credential=false
 host.remove DELETE /api/hosts/{name} Owner drives=false credential=false
 host_token.mint POST /api/hosts/{name}/token Owner drives=false credential=false
 host_token.revoke DELETE /api/hosts/{name}/token Owner drives=false credential=false
+hosted_setup.get GET /api/hosted/setup Owner drives=false credential=false
 hosts.list GET /api/hosts Owner drives=false credential=false
 ide.get GET /api/ide Owner drives=false credential=false
 ide.mention POST /api/ide/mention Handler drives=false credential=false

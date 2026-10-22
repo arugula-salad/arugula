@@ -31,6 +31,8 @@ just testnet test control runs              # M212: a run on a hosted box runs o
 just testnet test control github-webhook    # out of process: the GitHub App's webhook lands on the platform (M161)
 ARUGULA_TESTNET_PLATFORM=two just testnet up control  # two platform machines on Postgres (M144)
 just testnet test control platform-fanout platform-handover  # chat and Cloud across the two
+ARUGULA_TESTNET_HOSTED=1 just testnet up control  # hosted workspaces at a fake E2B (M183, hosted.yaml)
+just testnet test control hosted-setup  # M183: a hosted workspace's setup in a pane, rebuild needed, rebuild's warning
 just testnet measure control   # M140: platform routes' latency, in process vs out
 testnet/window.sh              # M141: the first window's runbook, rehearsed, both rollbacks too
 testnet/window2.sh             # M145: SQLite to Postgres, two machines, the nightly dump and drill, rollbacks
@@ -77,6 +79,11 @@ their own in [`forges/`](forges/README.md).
   like a forge's: `git@git:/srv/git/repo.git`. The user `git` has
   `git-shell` and the stack's key. The boxes trust its host key, so a
   `git push` from a box needs only the client's agent forwarded (M51).
+  The same repositories are cloned over HTTPS, `https://git/repo.git`
+  (git-http-backend behind nginx, clones only), with basic auth: the user
+  `x-access-token` and the password in `.state/git_https_password`, as a
+  forge takes a token. Its certificate is `.state/git_https.crt`, self-signed
+  for `git` (`GIT_SSL_CAINFO` on a box). `up.sh` makes all three.
 
 The boxes have one user, `illo`, who logs in with the stack's key only. Agent and
 TCP forwarding are on. `up.sh` writes `testnet/.state/`: the client key,
@@ -191,6 +198,7 @@ The `control` profile's:
 | `github-webhook` | only out of process (M161): a GitHub webhook signed with the App's secret, posted to control's site, lands on the platform (202, its delivery in the platform's log), is a duplicate when sent again, and still one after the `platform` container restarts | signed with another secret, so it's refused |
 | `issues-restart` | only out of process (M206): two native issues (one closed) and comments in the thread on one, written through control's site, read back the same after the `platform` container restarts (issues, timelines, thread, read mark); the next issue and comment are numbered on with no gap, and search finds both (`testnet/platform.ts issues-write`, `issues-read`) | the `platform` container recreated instead, so its database file is new |
 | `platform-fanout` | only with two machines (M144): both answer their health check on the database and exactly one leads; a live stream held on each hears a message posted through the other; a page that dropped from one resumes on the other from its `Last-Event-ID`, without a resync (`testnet/platform.ts fanout`) | `platform2` on a file of its own (`ARUGULA_TESTNET_PLATFORM2_DB` empty): two machines that share no database |
+| `hosted-setup` | only with `ARUGULA_TESTNET_HOSTED=1` at `up` (M183, `hosted.yaml`: the platform in process makes boxes at the fake E2B in `fakes`, which makes none): a team's owner delegates its project and, from the CLI on the bastion, makes a hosted workspace with two repos on `git` (HTTPS) and a setup script, and sets its `GIT_TOKEN`; the real `arugulad --hosted` on box-systemd enrolls with the ticket the platform put in that box's env; its setup runs in a pane in session `setup` that the CLI captures, both repos are cloned (their remotes plain URLs), the script ran in the first, and `cloud open --wait` ends set up; a spec edit shows "rebuild needed"; work on the box that isn't pushed stops `cloud rebuild`, and `--download` saves it and rebuilds (a new box at the fake, the old deleted) | the wrong `GIT_TOKEN`: the clone fails at `clone app`, and `--wait` shows the pane's last lines, read from the box |
 | `platform-handover` | only with two machines: the fake Managoat holds a Cloud workspace's read, so the machine that claimed its job holds it mid-step; that machine is killed; the other takes the job once its lease (120 s) runs out, not before and within seconds after, and sets the workspace up; the killed one is started again (`testnet/platform.ts handover`) | the other machine paused too, so nothing takes the job |
 | `runs` | only out of process on Postgres (M212): the real `arugulad --hosted` in `hosted-box`, enrolled by ticket, takes runs started by hand under the project's standing grant. A run executes once, as `runner`, in its own copy of a repo in /home/user (left as it was), across a platform restart, signed by the box; its pane, watched end to end through control's relay, says what it ran; what it left running is killed; `runner` can't read the daemon's key or reach its port; sent again after the daemon restarts, it isn't run again; an agent run is Claude Code (a stand-in), headless, its login on stdin; a revoke saying `running stop` stops a run and all of `runner`'s processes | the box's ledger is wiped before it's sent again, so it runs twice |
 

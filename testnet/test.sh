@@ -156,6 +156,20 @@
 #           job once its lease runs out (not before, and within seconds
 #           after), and sets the workspace up. Broken: the other machine is
 #           paused too, so nothing takes it.
+#   hosted-setup
+#           Only with ARUGULA_TESTNET_HOSTED=1 at `up` (M183, hosted.yaml): a
+#           team's owner delegates its project and, from the CLI on the
+#           bastion, makes a hosted workspace with two repos on the git
+#           server (over HTTPS) and a setup script, and sets its GIT_TOKEN;
+#           the platform makes its box at the fake E2B, and the real
+#           `arugulad --hosted` on box-systemd enrolls with the ticket in
+#           that box's env. Its setup runs in a pane (session `setup`) the
+#           CLI captures, both repos are cloned and the script ran in the
+#           first, and `cloud open --wait` ends set up; a spec edit shows
+#           "rebuild needed"; work on the box that isn't pushed stops a
+#           rebuild, and `--download` saves it, then rebuilds (a new box at
+#           the fake, the old one deleted). Broken: the wrong GIT_TOKEN, so
+#           the clone fails and the setup says so.
 #   agents  Agents in conversations (M198), signed by a joined box's daemon:
 #           box-systemd joins a person's account; they give it threads.read
 #           and threads.post over their team's project and @mention it in a
@@ -198,6 +212,8 @@ if [ "$PROFILE" = control ]; then
     out) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart github-webhook issues-restart runs" ;;
     two) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart platform-fanout platform-handover" ;;
   esac
+  # Hosted workspaces at the fake E2B (M183).
+  [ "${ARUGULA_TESTNET_HOSTED:-}" != 1 ] || CONTROL_CLAIMS="$CONTROL_CLAIMS hosted-setup"
   [ "$PROFILE" != control ] || CLAIMS="$CONTROL_CLAIMS"
 fi
 
@@ -946,6 +962,103 @@ claim_platform_handover() {
   signin "handover-$$-$RANDOM" > /dev/null || { note "platform-handover: no device signed in"; return 1; }
   plat handover "$ARUGULA_TESTNET_MANAGOAT_PORT" "$TESTNET" ${BREAK:+--break} > "$WORK/handover.json" || return 1
   note "platform-handover: $(cat "$WORK/handover.json")"
+}
+
+# M183: a hosted workspace's setup, end to end (the header says what).
+e2b_boxes() {
+  docker exec "$TESTNET-fakes" node -e "fetch('http://127.0.0.1:9006/_testnet/sandboxes').then((r) => r.json()).then((j) => console.log(JSON.stringify(j)))"
+}
+# The fake's boxes for project $1, oldest first: `live <id> <ticket>` for each
+# it holds, `deleted <id>` for each deleted.
+e2b_project() {
+  docker exec "$TESTNET-fakes" node -e "fetch('http://127.0.0.1:9006/_testnet/sandboxes').then((r) => r.json()).then((j) => {
+    for (const b of j.boxes) if (b.metadata.arugula_project === '$1') { console.log('live', b.sandboxID, b.envVars.ARUGULA_HOSTED_TICKET ?? ''); }
+    for (const id of j.deleted) if ((j.made ?? {})[id] === '$1') console.log('deleted', id);
+  })"
+}
+git_repo() {
+  docker exec "$TESTNET-git" sh -ec "d=/srv/git/$1.git; rm -rf \$d; git init -q --bare -b main \$d; w=\$(mktemp -d)
+    git -C \$w init -q -b main; echo $1 > \$w/README; git -C \$w add README
+    git -C \$w -c user.name=testnet -c user.email=testnet@git commit -q -m first; git -C \$w push -q \$d main
+    chown -R git:git \$d; rm -rf \$w"
+}
+claim_hosted_setup() {
+  local ok=1 box=box-systemd fp team proj tk first got pw out pane rc
+  bastion_tidy() { s bastion 'rm -rf ~/.local/bin/arugula ~/.config/arugula /tmp/dev.tgz' >/dev/null 2>&1 || true; }
+  bastion_tidy
+  fresh "$box" || { note "hosted-setup: couldn't recreate $box"; return 1; }
+  git_repo app && git_repo lib || { note "hosted-setup: no repos on the git server"; return 1; }
+  fp="$(signin "hsetup-$$-$RANDOM" | field fingerprint)"
+  [ -n "$fp" ] || { note "hosted-setup: no device signed in"; return 1; }
+  team="$(dev team-create "setup team" | field team)"
+  proj="$(dev delegate "$team" | field project)"
+  [ -n "$proj" ] || { note "hosted-setup: couldn't delegate the team's project"; return 1; }
+  bastion_login "$fp" || { bastion_tidy; return 1; }
+  bcli() { s bastion ".local/bin/arugula $*"; }
+  # shellcheck disable=SC2016 # run by the setup, on the box
+  printf '%s\n' 'test -f ../lib/README' 'echo "built $(cat README)" > built.txt' |
+    bcli cloud create dev --project "$proj" --repo https://git/app.git --repo https://git/lib.git --setup - > "$WORK/hs-create" ||
+    { note "hosted-setup: no workspace made:"; cat "$WORK/hs-create" >&2; bastion_tidy; return 1; }
+  pw="$(cat "$STATE/git_https_password")"
+  [ -z "$BREAK" ] || pw="not-the-password"
+  printf '%s\n' "$pw" | bcli cloud secret set dev GIT_TOKEN --project "$proj" > /dev/null ||
+    { note "hosted-setup: couldn't set GIT_TOKEN"; ok=0; }
+  # The box the platform made at the fake E2B, and the ticket in its env.
+  for _ in $(seq 1 30); do
+    tk="$(e2b_project "$proj" | awk '$1 == "live" { print $3 }' | tail -1)"
+    [ -n "$tk" ] && break
+    sleep 1
+  done
+  [ -n "$tk" ] || { note "hosted-setup: the platform made no box at the fake E2B: $(e2b_boxes)"; bastion_tidy; return 1; }
+  first="$(e2b_project "$proj" | awk '$1 == "live" { print $2 }' | tail -1)"
+  # The real hosted daemon on box-systemd, with that box's env.
+  docker cp "$ARUGULA_TESTNET_BINARIES/arugulad" "$TESTNET-$box:/usr/local/bin/arugulad" &&
+    docker cp "$STATE/git_https.crt" "$TESTNET-$box:/home/illo/git-ca.crt" &&
+    docker exec "$TESTNET-$box" sh -c 'chmod 755 /usr/local/bin/arugulad && chown illo /home/illo/git-ca.crt' ||
+    { note "hosted-setup: couldn't install arugulad on $box"; bastion_tidy; return 1; }
+  s "$box" 'loginctl enable-linger; echo sbx-testnet > ~/e2b-id' > /dev/null
+  s "$box" systemd-run --user --unit=arugulad-hosted -E "ARUGULA_HOSTED_TICKET=$tk" -E "ARUGULA_CONTROL_URL=$CONTROL_URL" \
+    -E ARUGULA_E2B_ID_FILE=/home/illo/e2b-id -E GIT_SSL_CAINFO=/home/illo/git-ca.crt \
+    /usr/local/bin/arugulad --hosted --listen 127.0.0.1:7690 --state-dir /home/illo/hosted-state > /dev/null 2>&1 ||
+    { note "hosted-setup: arugulad --hosted didn't start"; bastion_tidy; return 1; }
+  # Enrolled, set up: `open --wait` follows the setup to its end.
+  rc=0
+  bcli cloud open dev --project "$proj" --wait > "$WORK/hs-open" 2>&1 || rc=$?
+  if [ "$rc" != 0 ] || ! grep -q "  set up" "$WORK/hs-open"; then
+    note "hosted-setup: not set up (exit $rc):"; cat "$WORK/hs-open" >&2
+    s "$box" journalctl --user -u arugulad-hosted --no-pager -o cat 2>/dev/null | tail -20 >&2
+    s "$box" 'systemctl --user stop arugulad-hosted' > /dev/null 2>&1; bastion_tidy; return 1
+  fi
+  # Its pane, as anyone on the project reaches it: in session `setup`.
+  pane="$(bcli --host dev --json ls 2>/dev/null | tr -d ' \n' | sed -n 's/.*"id":\([0-9]*\),[^}]*"session_name":"setup".*/\1/p' | head -1)"
+  [ -n "$pane" ] || pane="$(bcli --host dev ls 2>/dev/null | awk '/setup/ { sub("%", "", $1); print $1; exit }')"
+  bcli --host dev capture "$pane" 2>/dev/null > "$WORK/hs-pane"
+  grep -q "==> clone app" "$WORK/hs-pane" && grep -q "==> clone lib" "$WORK/hs-pane" && grep -q "Set up." "$WORK/hs-pane" ||
+    { note "hosted-setup: the setup pane (%$pane) doesn't show it:"; cat "$WORK/hs-pane" >&2; ok=0; }
+  [ "$(s "$box" cat app/built.txt 2>/dev/null)" = "built app" ] || { note "hosted-setup: the script didn't run in app"; ok=0; }
+  s "$box" 'git -C app config --get-regexp "^http" ; git -C app remote get-url origin' 2>/dev/null | grep -qx https://git/app.git ||
+    { note "hosted-setup: the clone kept something besides its plain URL"; ok=0; }
+  # A spec edit: rebuild needed.
+  printf 'echo again\n' | bcli cloud edit dev --project "$proj" --setup - > /dev/null || { note "hosted-setup: couldn't edit the spec"; ok=0; }
+  bcli cloud ls --project "$proj" | grep -q "rebuild needed" || { note "hosted-setup: no rebuild needed"; ok=0; }
+  # Work that isn't pushed stops a rebuild; --download saves it first.
+  s "$box" 'echo wip > app/wip.txt'
+  if bcli cloud rebuild dev --project "$proj" > "$WORK/hs-rebuild" 2>&1; then note "hosted-setup: a rebuild didn't warn"; ok=0; fi
+  # The setup's built.txt and the work: neither is pushed.
+  grep -q "app: 2 changed file" "$WORK/hs-rebuild" || { note "hosted-setup: the warning:"; cat "$WORK/hs-rebuild" >&2; ok=0; }
+  bcli cloud rebuild dev --project "$proj" --download /tmp/dev.tgz > "$WORK/hs-rebuild" 2>&1 ||
+    { note "hosted-setup: rebuild --download:"; cat "$WORK/hs-rebuild" >&2; ok=0; }
+  s bastion 'tar -tzf /tmp/dev.tgz' 2>/dev/null | grep -qx app/wip.txt || { note "hosted-setup: the download hasn't the work"; ok=0; }
+  for _ in $(seq 1 20); do
+    got="$(e2b_project "$proj")"
+    grep -qx "deleted $first" <<< "$got" && awk '$1 == "live" { print $2 }' <<< "$got" | grep -qvx "$first" && break
+    sleep 1
+  done
+  grep -qx "deleted $first" <<< "$got" && awk '$1 == "live" { print $2 }' <<< "$got" | grep -qvx "$first" ||
+    { note "hosted-setup: no new box at the fake E2B: $got"; ok=0; }
+  s "$box" 'systemctl --user stop arugulad-hosted' > /dev/null 2>&1
+  bastion_tidy
+  [ "$ok" = 1 ]
 }
 
 failed=""

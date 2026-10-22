@@ -739,6 +739,22 @@ clients = ["daemon"]
 note = "A hosted machine's signed report of a run's state change (M212), checked by the platform with the machine's key and kept with its signature (PlatformPort::hosted_report)."
 
 [[route]]
+method = "GET"
+path = "/api/hosted/spec"  # wire::hosted::SPEC
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "M183: the box's setup, from its workspace's spec, which the hub asks the platform for (its project and workspace are the certificate's). It can hold clone credentials and secrets' values: never logged."
+
+[[route]]
+method = "POST"
+path = "/api/hosted/setup"  # wire::hosted::SETUP
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "M183: how the box's setup goes, kept on its workspace by the platform; only the box's own machine."
+
+[[route]]
 method = "DELETE"
 path = "/api/hosted/machines/{id}"
 process = "hub"
@@ -1478,6 +1494,38 @@ process = "platform"
 auth = "session"
 clients = ["page", "cli"]
 note = "Owners and editors: the workspace's hosted machine is sent the live grant (runs.start) and checks it. It starts nothing: runs start with POST /api/projects/{project}/runs (M214) and the machine pulls them (/api/hosted/work, M212)."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/workspaces/{id}/spec"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Changes a hosted workspace's spec (M183): a project's owner or editor. Its box isn't touched; \"rebuild needed\" shows until it's rebuilt."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/workspaces/{id}/secrets"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "A hosted workspace's secrets' names and where each value is (M183), for its project's members. Never a value."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/workspaces/{id}/secrets/{name}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Sets a hosted workspace's secret (M183), sealed with its project's key (M209): a project's owner or editor. Never answered back."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/workspaces/{id}/secrets/{name}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Removes a hosted workspace's secret (M183): a project's owner or editor."
 
 [[route]]
 method = "GET"

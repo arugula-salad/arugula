@@ -15,6 +15,7 @@ mod conversations;
 mod doc_links;
 mod flags;
 mod fs;
+mod hosted;
 mod hosts;
 mod input;
 mod inspect;
@@ -417,6 +418,7 @@ const HAND_WRITTEN: &[(&str, &str)] = &[
     ("/api/panes/{id}/capture", "plain text"),
     ("/api/panes/{id}/export.cast", "asciicast"),
     ("/api/editors/vsix", "binary download"),
+    ("/api/hosted/setup/archive", "binary download: a tarball"),
     ("/api/panes/{id}/upload", "raw bytes, its own body limit (drives: DRIVES_HAND_WRITTEN)"),
     ("/api/panes/{id}/paste", "types a path into the pane (drives: DRIVES_HAND_WRITTEN)"),
     // Block calls: the arguments depend on the block's type and method (#459).
