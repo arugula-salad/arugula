@@ -383,7 +383,12 @@ export class Device {
    * directory alone. */
   async connect(daemonId: string, direct?: string, timeoutMs = 5000): Promise<E2ESocket> {
     const cert = (await this.trusted()).get(daemonId);
-    if (cert?.kind !== "daemon") throw new Error(`${daemonId} isn't a daemon this account trusts`);
+    // A hosted machine (M178, M180): its Noise key from its hosted
+    // certificate, once this device accepts it for its project, as the page does.
+    const hosted = cert ? undefined : await this.hostedEntry(daemonId);
+    const accepted = hosted && (await this.acceptHosted(hosted.hosted)).ok;
+    const noise = cert?.kind === "daemon" ? cert.noise : accepted ? hosted.hosted.cert.noise : undefined;
+    if (!noise) throw new Error(`${daemonId} isn't a daemon this account trusts`);
     const ws = this.reach(this.control).replace(/^http/, "ws");
     const url = direct ?? `${ws}/api/relay/c/${daemonId}`;
     const headers = direct ? {} : { cookie: this.cookie, origin: this.control };
@@ -397,7 +402,7 @@ export class Device {
       }
     } as typeof WebSocket;
     try {
-      return await E2ESocket.connect([{ url, timeoutMs }], { id: daemonId, noise: cert.noise }, this.keys);
+      return await E2ESocket.connect([{ url, timeoutMs }], { id: daemonId, noise }, this.keys);
     } finally {
       globalThis.WebSocket = orig;
     }
