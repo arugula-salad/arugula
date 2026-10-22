@@ -150,6 +150,12 @@ fn routes() -> Routes {
             axum::routing::patch(runs::change_rule).delete(runs::delete_rule),
         )
         .route("/api/projects/{project}/runs", post(runs::start))
+        .route("/api/projects/{project}/workspaces/{id}/spec", axum::routing::put(hosted::routes::set_spec))
+        .route("/api/projects/{project}/workspaces/{id}/secrets", get(hosted::routes::secrets))
+        .route(
+            "/api/projects/{project}/workspaces/{id}/secrets/{name}",
+            axum::routing::put(hosted::routes::put_secret).delete(hosted::routes::delete_secret),
+        )
 }
 
 /// The platform's router, for any state the hub's router has (the

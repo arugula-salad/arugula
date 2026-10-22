@@ -9,7 +9,9 @@
 #                           platform out of process (M140): the `platform`
 #                           service, with control as its gateway;
 #                           ARUGULA_TESTNET_PLATFORM=two runs two of them on
-#                           Postgres (M144, two.yaml)
+#                           Postgres (M144, two.yaml);
+#                           ARUGULA_TESTNET_HOSTED=1 makes hosted
+#                           workspaces at a fake E2B (M183, hosted.yaml)
 #   testnet/up.sh tailnet   headscale, ts-box and ts-client (S28's comparison)
 #
 # Makes the stack's keys in testnet/.state (.state-<name> for another
@@ -49,7 +51,13 @@ case "$PROFILE" in
         export ARUGULA_TESTNET_PLATFORM_URL=http://platforms:7700 ARUGULA_TESTNET_POSTGRES=1 ;;
       in) unset ARUGULA_TESTNET_PLATFORM_URL ;;
       *) echo "ARUGULA_TESTNET_PLATFORM is in, out or two" >&2; exit 2 ;;
-    esac ;;
+    esac
+    # Hosted workspaces at the fake E2B (M183, hosted.yaml), with the
+    # platform in process.
+    if [ "${ARUGULA_TESTNET_HOSTED:-}" = 1 ]; then
+      [ "${ARUGULA_TESTNET_PLATFORM:-in}" = in ] || { echo "ARUGULA_TESTNET_HOSTED=1 needs ARUGULA_TESTNET_PLATFORM=in" >&2; exit 2; }
+      files="$files -f $HERE/hosted.yaml"
+    fi ;;
   tailnet) boxes="ts-box ts-client"; profiles="--profile tailnet" ;;
   *) echo "usage: testnet/up.sh ssh|control|tailnet" >&2; exit 2 ;;
 esac
@@ -72,6 +80,17 @@ done
 if [ ! -f "$STATE/github-app.pem" ]; then
   ssh-keygen -q -t rsa -b 2048 -m PEM -N '' -C github-app -f "$STATE/github-app.pem"
   rm -f "$STATE/github-app.pem.pub"
+fi
+# The git server's HTTPS (M183): a self-signed certificate for `git`, which
+# the boxes are told to trust (GIT_SSL_CAINFO), and a password for its basic
+# auth, user x-access-token, as a forge takes a token.
+if [ ! -f "$STATE/git_https.crt" ]; then
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 -subj /CN=git \
+    -addext subjectAltName=DNS:git -keyout "$STATE/git_https.key" -out "$STATE/git_https.crt" 2>/dev/null
+fi
+if [ ! -f "$STATE/git_https_password" ]; then
+  openssl rand -hex 16 > "$STATE/git_https_password"
+  printf 'x-access-token:%s\n' "$(openssl passwd -apr1 "$(cat "$STATE/git_https_password")")" > "$STATE/git_htpasswd"
 fi
 # Every profile's hosts, so bringing up one profile doesn't drop another's.
 : > "$STATE/known_hosts.new"
@@ -147,6 +166,8 @@ export ARUGULA_TESTNET_COMPOSE="$files $profiles"
 export ARUGULA_TESTNET_PLATFORM_PORT=${ARUGULA_TESTNET_PLATFORM_PORT:-22983}
 export ARUGULA_TESTNET_PLATFORM2_PORT=${ARUGULA_TESTNET_PLATFORM2_PORT:-22984}
 export ARUGULA_TESTNET_MANAGOAT_PORT=${ARUGULA_TESTNET_MANAGOAT_PORT:-22985}
+# Hosted workspaces at the fake E2B (M183, hosted.yaml): 1, or empty.
+export ARUGULA_TESTNET_HOSTED=${ARUGULA_TESTNET_HOSTED:-}
 ENV
   for _ in $(seq 1 40); do
     curl -fsS "http://127.0.0.1:$cport/control.json" >/dev/null 2>&1 && break

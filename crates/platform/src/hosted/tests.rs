@@ -185,7 +185,7 @@ pub(crate) async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Pla
         template: Some("tpl".into()),
         enroll,
         accounts: vec!["alice".into(), "bob".into(), "vic".into(), "olga".into()],
-        cipher: None,
+        cipher: Some(Arc::new(crate::cloud::secrets::SecretCipher::new(&"5e".repeat(32)).unwrap())),
         ..Default::default()
     };
     let app = Arc::new(p);

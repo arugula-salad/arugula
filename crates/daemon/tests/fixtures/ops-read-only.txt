@@ -8,6 +8,7 @@ fs.list GET /api/fs/list
 fs.recent GET /api/fs/recent
 fs.stat GET /api/fs/stat
 host.get GET /api/host
+hosted_setup.get GET /api/hosted/setup
 hosts.list GET /api/hosts
 ide.get GET /api/ide
 machines.list GET /api/machines

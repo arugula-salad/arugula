@@ -40,7 +40,7 @@ use tracing::Instrument as _;
 
 use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke, Standing},
-    hosted::{EnrollAsk, EnrollGiven, Enrolled, WakeAnswer},
+    hosted::{EnrollAsk, EnrollGiven, Enrolled, SetupPlan, SetupReport, WakeAnswer},
     work::{Report, Reported, Work},
 };
 
@@ -284,6 +284,24 @@ struct WorkArgs {
 struct ReportArgs {
     machine: HostedMachine,
     report: Report,
+}
+
+#[derive(Serialize, Deserialize)]
+struct HostedArgs {
+    project: String,
+    workspace: String,
+    machine: String,
+    #[serde(default)]
+    report: Option<SetupReport>,
+}
+
+fn hosted_args(project: &str, workspace: &str, machine: &str, report: Option<&SetupReport>) -> HostedArgs {
+    HostedArgs {
+        project: project.to_owned(),
+        workspace: workspace.to_owned(),
+        machine: machine.to_owned(),
+        report: report.cloned(),
+    }
 }
 
 fn ids(v: &[String]) -> IdsArgs {
@@ -653,6 +671,25 @@ impl PlatformPort for HttpPlatform {
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
         Box::pin(self.0.call("hosted_report", ReportArgs { machine: machine.clone(), report: report.clone() }))
     }
+
+    fn hosted_plan<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<Option<SetupPlan>>> {
+        Box::pin(self.0.call("hosted_plan", hosted_args(project, workspace, machine, None)))
+    }
+
+    fn hosted_setup<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+        report: &'a SetupReport,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        Box::pin(self.0.call("hosted_setup", hosted_args(project, workspace, machine, Some(report))))
+    }
 }
 
 /// The platform's internal API: every `PlatformPort` method of `port`,
@@ -718,6 +755,15 @@ async fn platform_call(
             "hosted_report" => {
                 let a: ReportArgs = args(&body)?;
                 answer(p.hosted_report(&a.machine, &a.report).await?)?
+            }
+            "hosted_plan" => {
+                let a: HostedArgs = args(&body)?;
+                answer(p.hosted_plan(&a.project, &a.workspace, &a.machine).await?)?
+            }
+            "hosted_setup" => {
+                let a: HostedArgs = args(&body)?;
+                let r = a.report.ok_or_else(|| anyhow::anyhow!("no report"))?;
+                answer(p.hosted_setup(&a.project, &a.workspace, &a.machine, &r).await?)?
             }
             _ => return Ok(None),
         }))

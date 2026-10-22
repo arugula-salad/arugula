@@ -1,0 +1,43 @@
+# Hosted workspaces (M179, M183) on the test stack: control's platform (in
+# process) makes their boxes at the fake E2B in `fakes` (fakes-serve.ts
+# --e2b, web/fixtures/fake-e2b.ts), which makes no box. The hosted-setup
+# claim starts `arugulad --hosted` on box-systemd with the ticket a create
+# put in its env. up.sh adds this file with ARUGULA_TESTNET_HOSTED=1.
+#
+# - The platform's E2B adapter takes plain http only on loopback, so the
+#   fake is reached through a sidecar in control's network namespace, as
+#   two.yaml reaches its fake Managoat.
+# - Boxes enroll by ticket (they boot fresh, not from a snapshot), and
+#   anyone may make one. Secrets are sealed with the stack's own key.
+
+services:
+  control:
+    environment:
+      ARUGULA_E2B_URL: http://127.0.0.1:9006
+      ARUGULA_E2B_API_KEY: e2b-testnet
+      ARUGULA_HOSTED_TEMPLATE: testnet
+      ARUGULA_HOSTED_ENROLL: ticket
+      ARUGULA_HOSTED_ACCOUNTS: "*"
+      ARUGULA_CLOUD_SECRET_KEY: 5ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec0
+      # The platform's worker says what it does to each box.
+      RUST_LOG: arugula_control=debug,arugula_platform=info
+    # The E2B adapter's HTTP client wants the system's roots, as two.yaml's
+    # platforms do.
+    volumes:
+      - /etc/ssl/certs:/etc/ssl/certs:ro
+
+  fakes:
+    command: [node, --experimental-strip-types, --no-warnings, /fixtures/fakes-serve.ts, --e2b]
+
+  e2b-control:
+    profiles: [control]
+    image: node:22-slim
+    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-e2b-control
+    network_mode: service:control
+    command:
+      - node
+      - -e
+      - >-
+        const net = require("net");
+        net.createServer((c) => { const u = net.connect(9006, "fakes"); c.pipe(u).pipe(c);
+          u.on("error", () => c.destroy()); c.on("error", () => u.destroy()); }).listen(9006, "127.0.0.1")

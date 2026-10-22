@@ -21,11 +21,11 @@ use arugula_proto::{
     },
     op::ops::{
         AdapterInstall, AdaptersList, AgentsGet, AgentsRefresh, ClosePane, ConversationOpen, ConversationsList,
-        DocLinkDelete, DocLinkGet, FlagSet, FlagsList, ListPanes, MachineReset, MachinesList, NotifyGet, NotifySet,
-        PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers, PaneFollowUp, PaneInbox,
-        PaneKeys, PaneMouse, PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend, PaneWait, PushKeyGet,
-        PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet, ShellEnvRefresh, TelemetryGet,
-        TelemetryNote, TelemetrySet,
+        DocLinkDelete, DocLinkGet, FlagSet, FlagsList, HostedSetupGet, ListPanes, MachineReset, MachinesList,
+        NotifyGet, NotifySet, PaneAsk, PaneAskWithdraw, PaneAttention, PaneDetection, PaneDiffOf, PaneDrivers,
+        PaneFollowUp, PaneInbox, PaneKeys, PaneMouse, PanePermit, PanePorts, PaneProcess, PanePrompt, PaneSend,
+        PaneWait, PushKeyGet, PushSubscribe, PushTest, RuleForget, RulesForgetAll, RulesList, ShellEnvGet,
+        ShellEnvRefresh, TelemetryGet, TelemetryNote, TelemetrySet,
     },
 };
 use axum::{
@@ -114,7 +114,10 @@ pub fn routes() -> Router<Arc<App>> {
         .op::<PushSubscribe>()
         .op::<PushTest>()
         .op::<NotifyGet>()
-        .op::<NotifySet>();
+        .op::<NotifySet>()
+        // A hosted machine's setup (M183).
+        .op::<HostedSetupGet>()
+        .route("/api/hosted/setup/archive", get(setup_archive));
     // Labs' routes, if this build has them, and the editor's.
     let r = crate::labs::routes(r);
     let r = crate::editors::routes(r);
@@ -1323,6 +1326,39 @@ async fn export(State(app): AppState, Path(id): Path<PaneId>) -> Res<Response> {
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(([(header::CONTENT_TYPE, "application/x-asciicast")], cast).into_response())
+}
+
+/// `GET /api/hosted/setup/archive` (M183): a gzipped tarball of a hosted
+/// box's repos that hold work a rebuild would lose (`hosted::setup::archive`),
+/// streamed as `tar` writes it. 404 when none does.
+async fn setup_archive(State(app): AppState) -> Res<Response> {
+    let child = crate::hosted::setup::archive(app.control.state_dir())
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?
+        .ok_or(ApiError(StatusCode::NOT_FOUND, "no repo here has work that isn't pushed".into()))?;
+    let out = stream::unfold(Some(child), |child| async move {
+        use tokio::io::AsyncReadExt as _;
+        let mut child = child?;
+        let mut buf = vec![0u8; 64 * 1024];
+        let n = match child.stdout.as_mut()?.read(&mut buf).await {
+            Ok(n) => n,
+            Err(e) => return Some((Err(e), None)),
+        };
+        if n == 0 {
+            let _ = child.wait().await;
+            return None;
+        }
+        buf.truncate(n);
+        Some((Ok::<_, std::io::Error>(axum::body::Bytes::from(buf)), Some(child)))
+    });
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/gzip"),
+            (header::CONTENT_DISPOSITION, "attachment; filename=\"unpushed.tar.gz\""),
+        ],
+        axum::body::Body::from_stream(out),
+    )
+        .into_response())
 }
 
 #[derive(Deserialize)]

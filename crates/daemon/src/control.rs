@@ -1332,6 +1332,37 @@ impl Control {
         Ok(res.json().await?)
     }
 
+    /// What this hosted machine's box sets up on its first boot (M183): its
+    /// workspace's spec, with what to clone each repo with. `None`: control
+    /// has no workspace for this machine (made by hand, or one now gone).
+    pub async fn hosted_plan(&self) -> anyhow::Result<Option<arugula_control_wire::hosted::SetupPlan>> {
+        let e = self.enrolled().context("not in control yet")?;
+        let path = arugula_control_wire::hosted::SPEC;
+        let res = self
+            .http
+            .get(format!("{}{path}", e.saved.url))
+            .header(AUTH, self.sign(&e, "GET", path, b""))
+            .send()
+            .await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !res.status().is_success() {
+            bail!("{}", control_said(res).await);
+        }
+        Ok(Some(res.json().await?))
+    }
+
+    /// Tell control how this hosted machine's setup goes (M183).
+    pub async fn hosted_report(&self, r: &arugula_control_wire::hosted::SetupReport) -> anyhow::Result<()> {
+        let e = self.enrolled().context("not in control yet")?;
+        let res = self.post_json(&e, arugula_control_wire::hosted::SETUP, r).send().await?;
+        if !res.status().is_success() {
+            bail!("{}", control_said(res).await);
+        }
+        Ok(())
+    }
+
     /// A hosted machine's refresh (M180): its project as control has it
     /// now (`/api/hosted/trust`), kept where it checks out against what it
     /// pinned. It publishes nothing and asks for no push subscriptions:

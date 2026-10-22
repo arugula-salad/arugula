@@ -16,13 +16,16 @@
 //! - **Reaching.** A hosted machine is reached only by its project's
 //!   people ([`may_reach`]), listed only to them ([`directory`]), and
 //!   signs only its own routes and the relay (`auth::HostedAuth`).
+//! - **Setting up** (M183). It reads its workspace's setup from the
+//!   platform ([`spec`]) and says how it goes ([`setup`]).
 //!   Nothing that reads a daemon's account sees it: it isn't in
 //!   `daemons`.
 
 use std::sync::Arc;
 
 use arugula_control_wire::hosted::{
-    DelegationPost, EnrollAsk, EnrollGiven, EnrollRequest, Enrolled, Enrollment, RevokePost, SANDBOX_MS, TICKET_MS,
+    DelegationPost, EnrollAsk, EnrollGiven, EnrollRequest, Enrolled, Enrollment, RevokePost, SANDBOX_MS, SetupPlan,
+    SetupReport, TICKET_MS,
 };
 use arugula_e2e::{
     Cert, Revocation, Trust,
@@ -401,6 +404,28 @@ pub async fn turn(State(app): State<Arc<App>>, h: HostedAuth, Json(b): Json<Valu
 pub async fn turn_end(State(app): State<Arc<App>>, h: HostedAuth, Path(turn): Path<String>) -> R {
     let ended = app.platform.hosted_turn_end(&h.0.cert.workspace, &h.0.cert.device, &turn).await?;
     Ok(Json(json!({ "ended": ended })))
+}
+
+/// `GET /api/hosted/spec`: what the machine's box sets up on its first boot
+/// (M183), from its workspace's spec, as the platform has it. Its project and
+/// workspace are its certificate's. The answer can hold credentials to clone
+/// with and secrets' values: never logged.
+pub async fn spec(State(app): State<Arc<App>>, h: HostedAuth) -> Result<Json<SetupPlan>, ApiError> {
+    let c = &h.0.cert;
+    match app.platform.hosted_plan(&c.project, &c.workspace, &c.device).await? {
+        Some(plan) => Ok(Json(plan)),
+        None => Err(err(StatusCode::NOT_FOUND, "no hosted workspace for this machine")),
+    }
+}
+
+/// `POST /api/hosted/setup`: how the machine's setup goes (M183), kept on its
+/// workspace by the platform.
+pub async fn setup(State(app): State<Arc<App>>, h: HostedAuth, Json(r): Json<SetupReport>) -> R {
+    let c = &h.0.cert;
+    if !app.platform.hosted_setup(&c.project, &c.workspace, &c.device, &r).await? {
+        return Err(err(StatusCode::NOT_FOUND, "no hosted workspace for this machine"));
+    }
+    Ok(Json(json!({})))
 }
 
 // ---------------------------------------------------------------- people's side

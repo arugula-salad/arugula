@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use arugula_control_wire::{
     forge::Standing,
+    hosted::{SetupPlan, SetupReport},
     work::{Report, Reported, Work},
 };
 
@@ -151,6 +152,33 @@ pub trait PlatformPort: Send + Sync {
         let _ = (machine, report);
         Box::pin(async { anyhow::bail!("this platform doesn't take runs' reports") })
     }
+
+    /// What a hosted machine sets up on its box's first boot (M183), for the
+    /// hub's `GET /api/hosted/spec`: its workspace's spec, with what to clone
+    /// each repo with. `None` when the workspace is gone, or `machine` isn't
+    /// its box. A platform from before M183 doesn't have it.
+    fn hosted_plan<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<Option<SetupPlan>>> {
+        let _ = (project, workspace, machine);
+        Box::pin(async { anyhow::bail!("this platform doesn't set up hosted workspaces") })
+    }
+
+    /// How a hosted machine's setup goes (M183), for the hub's
+    /// `POST /api/hosted/setup`: whether it was kept.
+    fn hosted_setup<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+        report: &'a SetupReport,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        let _ = (project, workspace, machine, report);
+        Box::pin(async { anyhow::bail!("this platform doesn't set up hosted workspaces") })
+    }
 }
 
 /// An account the hub deleted.
@@ -172,7 +200,8 @@ pub struct Deleted {
 /// runs (M210), deploys (M217) and what starts runs (M214), their part of
 /// `account_deleted`; hosted workspaces (M182) `hosted_wake`; hosted
 /// inference (M185) `hosted_turn` and `hosted_turn_end`; hosted machines'
-/// runs (M212) `hosted_work` and `hosted_report`.
+/// runs (M212) `hosted_work` and `hosted_report`; hosted workspaces' setup
+/// (M183) `hosted_plan` and `hosted_setup`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         Box::pin(async move {
@@ -299,5 +328,24 @@ impl PlatformPort for Platform {
         report: &'a Report,
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
         Box::pin(crate::work::report(self, machine, report))
+    }
+
+    fn hosted_plan<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<Option<SetupPlan>>> {
+        Box::pin(crate::hosted::setup::plan(self, project, workspace, machine))
+    }
+
+    fn hosted_setup<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+        report: &'a SetupReport,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        Box::pin(async move { crate::hosted::setup::report(self, project, workspace, machine, report) })
     }
 }

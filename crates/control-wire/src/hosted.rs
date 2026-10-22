@@ -12,6 +12,9 @@
 //!   what it pinned from [`HOSTED_TRUST`] ([`Enrollment`] again).
 //! - When someone opens a hosted machine whose daemon isn't connected, the
 //!   hub asks the platform to wake its box (M182), answered [`WakeAnswer`].
+//! - On its first boot it reads what to set up from [`SPEC`]
+//!   ([`SetupPlan`]), runs that in a pane, and says how it goes at
+//!   [`SETUP`] ([`SetupReport`], M183).
 
 use arugula_e2e::{
     Cert, Revocation, Trust,
@@ -32,6 +35,13 @@ pub const HOSTED_TRUST: &str = "/api/hosted/trust";
 /// (`no_key`, `cap`) and a sentence for the person. Its end is
 /// `POST {HOSTED_TURNS}/{turn}/end`.
 pub const HOSTED_TURNS: &str = "/api/hosted/turns";
+
+/// What a hosted machine sets up on its first boot (`GET`, signed as the
+/// machine), answered [`SetupPlan`] (M183).
+pub const SPEC: &str = "/api/hosted/spec";
+/// How its setup goes (`POST`, signed as the machine), [`SetupReport`],
+/// answered `{}`.
+pub const SETUP: &str = "/api/hosted/setup";
 
 /// How long a ticket the hub makes lasts: a box made from a template is
 /// up in seconds, and one that isn't enrolled by then is made again.
@@ -198,8 +208,128 @@ impl WakeCode {
     }
 }
 
+/// What a hosted machine sets up on its first boot, from its workspace's
+/// spec (M183): its repos with what to clone each with, its packages, its
+/// setup script, and the env its spec takes from its secrets.
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct SetupPlan {
+    /// The hosted workspace (`hw_…`).
+    pub workspace: String,
+    /// The spec's hash: what the box is now built from.
+    pub spec_hash: String,
+    #[serde(default)]
+    pub repos: Vec<SetupRepo>,
+    #[serde(default)]
+    pub packages: Vec<String>,
+    /// A shell script, run after both.
+    #[serde(default)]
+    pub setup: String,
+    /// The spec's env names that have a value here, and those values.
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, String>,
+    /// The spec's env names with no value here: not set, or held by the
+    /// provider's broker.
+    #[serde(default)]
+    pub unset: Vec<String>,
+}
+
+/// A repo to clone, and how.
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct SetupRepo {
+    /// An HTTPS clone URL, with no credentials in it.
+    pub url: String,
+    /// `github_app` (a read-only installation token for this repo alone,
+    /// minted for this clone: a GitHub repo linked to the project),
+    /// `secret` (the workspace's `GIT_TOKEN`), or `none`.
+    pub via: String,
+    /// What to clone with, over HTTP basic auth.
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+}
+
+/// Where a hosted machine's setup is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SetupStatus {
+    SettingUp,
+    Ready,
+    Failed,
+}
+
+impl SetupStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SetupStatus::SettingUp => "setting_up",
+            SetupStatus::Ready => "ready",
+            SetupStatus::Failed => "failed",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "setting_up" => Some(SetupStatus::SettingUp),
+            "ready" => Some(SetupStatus::Ready),
+            "failed" => Some(SetupStatus::Failed),
+            _ => None,
+        }
+    }
+}
+
+/// `POST /api/hosted/setup`: how the setup goes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetupReport {
+    pub status: SetupStatus,
+    /// The step it's on, or the one that failed: `clone app`, `packages`,
+    /// `setup script`.
+    #[serde(default)]
+    pub step: String,
+    /// Why a failed setup stopped, as a fixed code ([`SETUP_REASONS`]):
+    /// never the pane's text, which stays end to end ("Two planes, two
+    /// trust rules"): a client reads it from the box.
+    #[serde(default)]
+    pub reason: String,
+    /// The pane it runs in, on the machine.
+    #[serde(default)]
+    pub pane: Option<u64>,
+    /// The spec's hash it runs.
+    #[serde(default)]
+    pub spec_hash: String,
+}
+
+/// Why a setup failed: `exit` (its step exited non-zero), `pane_closed`
+/// (its pane went before it finished), `start` (it couldn't start: no
+/// home to clone into, or no pane).
+pub const SETUP_REASONS: &[&str] = &["exit", "pane_closed", "start"];
+
 // Never the sandbox id or the ticket: each is a bearer secret while its
-// enrollment lasts.
+// enrollment lasts. Never a clone's password or a secret's value.
+
+impl std::fmt::Debug for SetupPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SetupPlan")
+            .field("workspace", &self.workspace)
+            .field("spec_hash", &self.spec_hash)
+            .field("repos", &self.repos)
+            .field("packages", &self.packages)
+            .field("setup", &self.setup.len())
+            .field("env", &self.env.keys().collect::<Vec<_>>())
+            .field("unset", &self.unset)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for SetupRepo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SetupRepo")
+            .field("url", &self.url)
+            .field("via", &self.via)
+            .field("username", &self.username)
+            .field("password", &self.password.as_ref().map(|_| "…"))
+            .finish()
+    }
+}
 
 impl std::fmt::Debug for EnrollAsk {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -236,5 +366,41 @@ impl std::fmt::Debug for EnrollRequest {
             .field("sign", &self.sign)
             .field("at", &self.at)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A report round-trips with its status in snake case, and a plan's
+    /// Debug never shows a password or a secret's value.
+    #[test]
+    fn setup_wire() {
+        let r = SetupReport {
+            status: SetupStatus::SettingUp,
+            step: "clone app".into(),
+            reason: String::new(),
+            pane: Some(3),
+            spec_hash: "h".into(),
+        };
+        let v = serde_json::to_value(&r).unwrap();
+        assert_eq!(v["status"], "setting_up");
+        assert_eq!(serde_json::from_value::<SetupReport>(v).unwrap(), r);
+        for s in [SetupStatus::SettingUp, SetupStatus::Ready, SetupStatus::Failed] {
+            assert_eq!(SetupStatus::parse(s.as_str()), Some(s));
+        }
+        let plan = SetupPlan {
+            repos: vec![SetupRepo {
+                url: "https://git.example/app".into(),
+                via: "secret".into(),
+                username: Some("x-access-token".into()),
+                password: Some("hunter2".into()),
+            }],
+            env: [("NPM_TOKEN".to_owned(), "s3cret".to_owned())].into(),
+            ..Default::default()
+        };
+        let d = format!("{plan:?}");
+        assert!(d.contains("NPM_TOKEN") && !d.contains("hunter2") && !d.contains("s3cret"), "{d}");
     }
 }

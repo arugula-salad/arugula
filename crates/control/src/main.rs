@@ -629,6 +629,8 @@ fn routes() -> Routes {
         .route("/api/hosted/turns/{turn}/end", post(hosted::turn_end))
         .route(wire::work::WORK, get(hosted_work::work))
         .route(wire::work::WORK_REPORT, post(hosted_work::report))
+        .route(wire::hosted::SPEC, get(hosted::spec))
+        .route(wire::hosted::SETUP, post(hosted::setup))
         .route("/api/hosted/machines/{id}", axum::routing::delete(hosted::remove))
         .route("/api/daemon/github/token", post(forge::daemon_token))
         .route(wire::RELAY_DIAL, get(relay::dial))
