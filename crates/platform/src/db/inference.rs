@@ -95,24 +95,32 @@ impl Db {
     }
 
     /// Keep a project's own key for `provider`, sealed.
-    pub fn set_inference_key(&self, project: &str, provider: &str, sealed: &[u8], by: &str, now: u64) -> Result<()> {
+    pub fn set_inference_key(
+        &self,
+        project: &str,
+        provider: &str,
+        sealed: &crate::keys::Sealed,
+        by: &str,
+        now: u64,
+    ) -> Result<()> {
         self.c().execute(
-            "INSERT INTO project_inference_keys (project_id, provider, sealed, set_by, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT (project_id, provider) DO UPDATE SET sealed = excluded.sealed, set_by = excluded.set_by,
-                 updated_at = excluded.updated_at",
-            params![project, provider, sealed, by, now],
+            "INSERT INTO project_inference_keys (project_id, provider, sealed, key_version, set_by, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (project_id, provider) DO UPDATE SET sealed = excluded.sealed,
+                 key_version = excluded.key_version, set_by = excluded.set_by, updated_at = excluded.updated_at",
+            params![project, provider, sealed.bytes, sealed.key_version, by, now],
         )?;
         Ok(())
     }
 
     /// A project's own keys, sealed: each provider and its sealed key, for
-    /// a box's egress rules and nothing else.
-    pub fn sealed_inference_keys(&self, project: &str) -> Result<Vec<(String, Vec<u8>)>> {
+    /// a box's egress rules and nothing else ([`crate::keys::open_inference`]
+    /// opens one).
+    pub fn sealed_inference_keys(&self, project: &str) -> Result<Vec<(String, crate::keys::Sealed)>> {
         self.c().query_map(
-            "SELECT provider, sealed FROM project_inference_keys WHERE project_id = ?1 ORDER BY provider",
+            "SELECT provider, key_version, sealed FROM project_inference_keys WHERE project_id = ?1 ORDER BY provider",
             params![project],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, crate::keys::Sealed { key_version: r.get(1)?, bytes: r.get(2)? })),
         )
     }
 
@@ -322,19 +330,20 @@ mod tests {
     fn keys_boxes_and_erasing() {
         let db = Db::test();
         let p = db.personal_project("alice", 0).unwrap();
-        db.set_inference_key(&p, "anthropic", &[1], "alice", 1).unwrap();
-        db.set_inference_key(&p, "anthropic", &[2, 3], "alice", 2).unwrap();
-        db.set_inference_key("prj_gone", "openai", &[4], "alice", 2).unwrap();
+        let sealed = |bytes: &[u8]| crate::keys::Sealed { key_version: 1, bytes: bytes.to_vec() };
+        db.set_inference_key(&p, "anthropic", &sealed(&[1]), "alice", 1).unwrap();
+        db.set_inference_key(&p, "anthropic", &sealed(&[2, 3]), "alice", 2).unwrap();
+        db.set_inference_key("prj_gone", "openai", &sealed(&[4]), "alice", 2).unwrap();
         assert_eq!(
             db.inference_keys(&p).unwrap(),
             [ProjectKey { provider: "anthropic".into(), set_by: Some("alice".into()), updated_at: 2 }]
         );
-        assert_eq!(db.sealed_inference_keys(&p).unwrap(), [("anthropic".to_owned(), vec![2, 3])]);
+        assert_eq!(db.sealed_inference_keys(&p).unwrap(), [("anthropic".to_owned(), sealed(&[2, 3]))]);
         assert_eq!(db.drop_orphan_inference_keys().unwrap(), 1, "prj_gone's");
         assert_eq!(db.drop_orphan_inference_keys().unwrap(), 0);
         assert!(db.remove_inference_key(&p, "anthropic").unwrap());
         assert!(!db.remove_inference_key(&p, "anthropic").unwrap());
-        db.set_inference_key(&p, "anthropic", &[5], "alice", 3).unwrap();
+        db.set_inference_key(&p, "anthropic", &sealed(&[5]), "alice", 3).unwrap();
 
         let spec = crate::hosted::Spec::default();
         assert!(matches!(db.add_hosted_workspace("hw_1", &p, "dev", &spec, "alice", 5, 0).unwrap(), Added::Made(_)));

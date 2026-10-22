@@ -452,6 +452,8 @@ fn platform(
     p.cloud = cloud;
     p.github = github;
     p.compute = compute;
+    // The master key (M209), which the hosted config was given.
+    p.secret_key = hosted.cipher.clone();
     p.hosted = hosted;
     (gateway::PlatformAt::InProcess(Arc::new(p)), hub)
 }
@@ -1088,6 +1090,7 @@ async fn run() -> anyhow::Result<()> {
     if let Some(p) = app.platform.local() {
         arugula_platform::cloud::start(p);
         arugula_platform::hosted::start(p);
+        arugula_platform::keys::start(p);
         // The job worker: runs' dispatch (M212) and schedules (M214).
         arugula_platform::work::start(p);
         // Chat follows the hub's change feed (M138), and so do projects and

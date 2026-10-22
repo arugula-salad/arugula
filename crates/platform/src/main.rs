@@ -118,10 +118,12 @@ fn main() -> anyhow::Result<()> {
     // `copy`, `checksums`, `secrets-check`, `migrations`: a window's tools
     // (window.rs, M141, M145), run on the platform's machine beside the
     // server, and by the nightly dump. `usage`: hosted workspaces' usage
-    // and cost (M188), read-only.
+    // and cost (M188), read-only. `rotate-key`: the master key's rotation
+    // (M209, `keys::rotate`).
     let mut argv = std::env::args().skip(1).peekable();
-    if argv.peek().is_some_and(|a| ["copy", "checksums", "secrets-check", "migrations", "usage"].contains(&a.as_str()))
-    {
+    if argv.peek().is_some_and(|a| {
+        ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key"].contains(&a.as_str())
+    }) {
         return arugula_platform::window::run("arugula-platform", argv);
     }
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
@@ -170,6 +172,7 @@ async fn run() -> anyhow::Result<()> {
     let mut p = Platform::new(cfg, db, hub, http, analytics);
     p.stripe = a.billing.stripe()?;
     p.hosted = a.hosted.config(&a.cloud)?;
+    p.secret_key = p.hosted.cipher.clone();
     p.cloud = a.cloud.cloud()?;
     p.compute = a.compute.substrate()?;
     p.github = a.github_app.app(&a.github_api)?;
@@ -180,6 +183,7 @@ async fn run() -> anyhow::Result<()> {
     }
     arugula_platform::cloud::start(&p);
     arugula_platform::hosted::start(&p);
+    arugula_platform::keys::start(&p);
     // The job worker: runs' dispatch (M212) and schedules (M214).
     arugula_platform::work::start(&p);
     // Chat follows the hub's change feed, and so do projects and grants (a

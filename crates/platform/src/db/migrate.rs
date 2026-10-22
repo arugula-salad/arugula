@@ -216,6 +216,12 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0020_run_triggers.sql"),
         additive: true,
     },
+    Migration {
+        version: 21,
+        name: "project_keys",
+        sql: include_str!("../../migrations/sqlite/0021_project_keys.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -340,6 +346,12 @@ const POSTGRES: &[Migration] = &[
         version: 20,
         name: "run_triggers",
         sql: include_str!("../../migrations/postgres/0020_run_triggers.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 21,
+        name: "project_keys",
+        sql: include_str!("../../migrations/postgres/0021_project_keys.sql"),
         additive: true,
     },
 ];

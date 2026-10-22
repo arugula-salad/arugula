@@ -562,7 +562,7 @@ name = "cloud_secrets"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A cloud secret's name and value, sealed with a key control holds apart from the database; control opens it to put it in a Cloud workspace's vault."
+what = "A cloud secret's name and value, sealed with its project's key (project_keys) or, until it's re-sealed, the master key control holds apart from the database; control opens it to put it in a Cloud workspace's vault."
 why_asleep = "Cloud workspaces and runs work with every machine off."
 with_account = "deleted"
 seen_by = ["litestream", "managoat"]
@@ -967,11 +967,33 @@ name = "hosted_workspace_secrets"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A secret a hosted workspace takes, by name, and where its value is: sealed here with a key control holds apart from the database, or in the provider's secrets broker."
+what = "A secret a hosted workspace takes, by name, and where its value is: sealed here with its project's key (project_keys), or in the provider's secrets broker."
 why_asleep = "A hosted workspace's box is made and rebuilt with every machine off."
 with_account = "partly"
 note = "They go with their workspace, when the worker deletes it."
 seen_by = ["litestream", "e2b"]
+
+[[table]]
+name = "project_keys"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A project's data key (M209), which seals that project's secrets, wrapped by the master key control holds apart from the database; which master key wrapped it (a hash of it), when it was made and when it was last re-wrapped. Rotating the master key re-wraps these and nothing else."
+why_asleep = "A project's secrets are opened for its workspaces and deploys with every machine off."
+with_account = "partly"
+note = "A personal project's keys go with it, and so do a disbanded team's; other teams' stay."
+seen_by = ["litestream"]
+
+[[table]]
+name = "project_secrets"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A project's secret that has no table of its own, such as a deploy environment's (M217), by name, sealed with the project's key."
+why_asleep = "Deploys run with every machine off."
+with_account = "partly"
+note = "A personal project's secrets go with it, and so do a disbanded team's; other teams' stay."
+seen_by = ["litestream"]
 
 [[table]]
 name = "hosted_ports"
@@ -1044,7 +1066,7 @@ name = "project_inference_keys"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A project's own inference key (M185), one per provider (Anthropic, OpenAI), sealed with a key control holds apart from the database, who set it and when. Control opens it only to write it into the project's boxes' egress rules, where E2B's proxy sets it on their requests to the provider; it's never answered back."
+what = "A project's own inference key (M185), one per provider (Anthropic, OpenAI), sealed with the project's key (project_keys) or, until it's re-sealed, the master key control holds apart from the database, who set it and when. Control opens it only to write it into the project's boxes' egress rules, where E2B's proxy sets it on their requests to the provider; it's never answered back."
 why_asleep = "A hosted workspace's agents run on the project's key with every other machine asleep, and the page shows whether it's set."
 with_account = "partly"
 note = "It stops naming the account as who set a key. Keys of its personal project and its disbanded teams' projects are dropped by the platform's sweep."

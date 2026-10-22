@@ -113,12 +113,12 @@ pub struct Args {
 }
 
 impl Args {
-    /// The config these flags set up, with two of Cloud's:
-    /// `ARUGULA_CLOUD_SECRET_KEY`, which seals hosted workspaces' secrets as
-    /// it does cloud secrets, and `ARUGULA_CLOUD_ACCOUNTS`, the beta
-    /// allowlist, whose workspaces may run on the platform's key (M185).
+    /// The config these flags set up, with two of Cloud's: the master key
+    /// (`ARUGULA_CLOUD_SECRET_KEY`, and the old one while it's rotated),
+    /// which wraps the project keys that seal hosted workspaces' secrets
+    /// (M209), and `ARUGULA_CLOUD_ACCOUNTS`, the beta allowlist, whose
+    /// workspaces may run on the platform's key (M185).
     pub fn config(self, cloud: &crate::cloud::Args) -> anyhow::Result<Config> {
-        let secret_key = cloud.cloud_secret_key.as_deref();
         let inference = inference::Settings::new(
             &cloud.cloud_accounts,
             &self.hosted_platform_keys,
@@ -133,7 +133,7 @@ impl Args {
             template: self.hosted_template.filter(|t| !t.trim().is_empty()),
             enroll: if self.hosted_enroll == "ticket" { EnrollBy::Ticket } else { EnrollBy::Sandbox },
             accounts: self.hosted_accounts.into_iter().map(|a| a.trim().to_owned()).filter(|a| !a.is_empty()).collect(),
-            cipher: secret_key.filter(|k| !k.is_empty()).map(SecretCipher::new).transpose()?.map(std::sync::Arc::new),
+            cipher: cloud.master_key()?.map(std::sync::Arc::new),
             idle_timeout: self.hosted_idle_timeout.filter(|s| *s > 0).map(Duration::from_secs),
             runtime_cap: self.hosted_runtime_cap.filter(|s| *s > 0).map(Duration::from_secs),
         })
