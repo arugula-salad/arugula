@@ -211,6 +211,13 @@ pub(crate) struct RunArgs {
     #[arg(long, hide = true)]
     pub(crate) sandbox_of_control: bool,
 
+    /// A hosted workspace's box (M180): headless, enrolls itself with the
+    /// ticket in ARUGULA_HOSTED_TICKET or its sandbox id, at
+    /// ARUGULA_CONTROL_URL (else --control), and tells control when it's
+    /// working.
+    #[arg(long, env = "ARUGULA_HOSTED", hide = true)]
+    pub(crate) hosted: bool,
+
     /// A URL clients can reach this daemon at directly, for control's
     /// directory (`https://box.lan:7681`); its host is accepted too. The
     /// tailnet name, if any, is listed without this. Port 0 is the port

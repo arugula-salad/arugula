@@ -169,6 +169,21 @@ pub struct Saved {
     /// When the last move it took was made (#100): older ones are replays.
     #[serde(default)]
     pub moved_at: u64,
+    /// A hosted machine (M178, M180): enrolled into one project under its
+    /// delegation, not one of an account's devices. `cert` is made from
+    /// its hosted certificate, and who gets in is the project's people
+    /// (`crate::hosted::enroll::saved_from`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hosted: Option<HostedPin>,
+}
+
+/// What a hosted machine pinned at enrollment (M178).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostedPin {
+    pub cert: arugula_e2e::hosted::HostedCert,
+    pub delegation: arugula_e2e::hosted::Delegation,
+    #[serde(default)]
+    pub revocations: Vec<arugula_e2e::hosted::DelegationRevoke>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -263,6 +278,9 @@ impl Enrolled {
         let trusted = saved.trust.evaluate(&saved.certs, &saved.revocations);
         let mut others = Vec::new();
         let mut team_roles = HashMap::new();
+        // A hosted workspace's editors have full use of it, as its owners do
+        // (Jake, 2026-10-21); viewers watch. Team machines keep their roles.
+        let hosted = saved.hosted.is_some();
         if let Some(r) = &saved.roster {
             for m in &r.members {
                 if saved.locked && m.role != TeamRole::Owner {
@@ -270,6 +288,7 @@ impl Enrolled {
                 }
                 let who = match m.role {
                     TeamRole::Owner => Principal::Owner,
+                    TeamRole::Editor if hosted => Principal::Owner,
                     TeamRole::Editor | TeamRole::Viewer => {
                         let role = if m.role == TeamRole::Editor { Role::Editor } else { Role::Viewer };
                         team_roles.insert(format!("account:{}", m.account), role);
@@ -459,6 +478,11 @@ pub struct Control {
     /// Where shared Docs are viewed, when and from which control it was read
     /// (`doc_viewer`).
     doc_info: std::sync::Mutex<Option<(std::time::Instant, String, String)>>,
+    /// Whether this machine is working, for control (M180: a hosted
+    /// daemon's `activity`, sent on the relay socket). `None` sends nothing.
+    pub activity: watch::Sender<Option<String>>,
+    /// The VM was resumed (M180): redial the relay now, not after backoff.
+    resumed: tokio::sync::Notify,
 }
 
 /// How talking to control is going, for [`State`].
@@ -630,7 +654,7 @@ impl crate::telemetry::Signer for Control {
     }
 }
 
-fn write_saved(dir: &Path, s: &Saved) -> anyhow::Result<()> {
+pub(crate) fn write_saved(dir: &Path, s: &Saved) -> anyhow::Result<()> {
     crate::store::write_atomic(&dir.join(FILE), &serde_json::to_vec_pretty(s)?)?;
     Ok(())
 }
@@ -686,6 +710,8 @@ impl Control {
             retrying: Default::default(),
             link: std::sync::Mutex::new(Link { dropped: read_dropped(state_dir), ..Default::default() }),
             doc_info: Default::default(),
+            activity: watch::channel(None).0,
+            resumed: tokio::sync::Notify::new(),
         });
         me.reload();
         me
@@ -933,6 +959,14 @@ impl Control {
     /// Look again soon (grants changed here, say).
     pub fn poke(&self) {
         self.nudge.notify_one();
+    }
+
+    /// The VM this daemon runs in was paused and has resumed (M180): its
+    /// relay socket is likely dead, so drop it and dial again at once.
+    /// Only a dial under way or a wait between dials hears it: one that
+    /// starts later is fresh anyway.
+    pub fn resumed(&self) {
+        self.resumed.notify_waiters();
     }
 
     /// Look again now and wait for it (#232): true once a refresh that
@@ -1279,11 +1313,33 @@ impl Control {
         Ok(res.json().await?)
     }
 
+    /// A hosted machine's refresh (M180): its project as control has it
+    /// now (`/api/hosted/trust`), kept where it checks out against what it
+    /// pinned. It publishes nothing and asks for no push subscriptions:
+    /// control answers a hosted machine only there and on the relay.
+    async fn refresh_hosted(&self, e: &Enrolled, number: u64) -> anyhow::Result<bool> {
+        let got: arugula_control_wire::hosted::Enrollment =
+            self.get(e, arugula_control_wire::hosted::HOSTED_TRUST).await?;
+        let saved = crate::hosted::enroll::saved_from(got, &e.keys, Some(&e.saved))?;
+        let changed = serde_json::to_value(&saved).ok() != serde_json::to_value(&e.saved).ok();
+        if changed {
+            write_saved(&self.state_dir, &saved)?;
+        }
+        let next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
+        info!(devices = next.trusted.devices.len(), others = next.others.len(), changed, "hosted: project refreshed");
+        self.install(Some(next));
+        self.refreshed.send_modify(|n| *n = (*n).max(number));
+        Ok(changed)
+    }
+
     /// Fetch certificates (the account's, the team's, people's shared
     /// with); keep what checks out against what this daemon pinned.
     async fn refresh(&self) -> anyhow::Result<bool> {
         let Some(e) = self.enrolled() else { return Ok(false) };
         let number = self.started.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        if e.saved.hosted.is_some() {
+            return self.refresh_hosted(&e, number).await;
+        }
         let moved_to = self.where_control_is(&e.saved.url).await;
         // This machine's version, OS and arch (M100): control keeps them on
         // its row. An older control ignores them.
@@ -1805,10 +1861,18 @@ impl Control {
                             // and a new key asks to join the same control
                             // again.
                             Err(e) if e.is::<Removed>() => {
-                                warn!(error = %e, "this machine was removed from its account; joining again with a new key");
+                                if en.saved.hosted.is_some() {
+                                    warn!(error = %e, "hosted: this machine was removed from its project");
+                                } else {
+                                    warn!(error = %e, "this machine was removed from its account; joining again with a new key");
+                                }
                                 let said = e.downcast_ref::<Removed>().map(|r| r.said.clone()).unwrap_or_default();
                                 me.dropped(&en, said);
-                                rejoin(en.saved.url.clone());
+                                // A hosted machine never joins again: the
+                                // platform makes its box anew (M178).
+                                if en.saved.hosted.is_none() {
+                                    rejoin(en.saved.url.clone());
+                                }
                             }
                             // Refused: control may have dropped it (#325).
                             Err(e) if e.is::<Refused>() => {
@@ -1880,9 +1944,19 @@ async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
         let Some(e) = control.enrolled() else { return };
         let started = std::time::Instant::now();
         let mut wait = None;
-        let r = relay_once(&control, &app, &e, &accept, &raw).await;
+        // A resume (M180) ends the socket and skips the wait: the hub's
+        // wake (M182) is waiting on this dial.
+        let mut now = false;
+        let r = tokio::select! {
+            r = relay_once(&control, &app, &e, &accept, &raw) => r,
+            _ = control.resumed.notified() => {
+                now = true;
+                Ok(())
+            }
+        };
         control.set_link(|l| l.relay = false);
         match r {
+            Ok(()) if now => info!("resumed: dialling control's relay again now"),
             Ok(()) => info!("relay socket closed"),
             Err(err) => {
                 warn!(error = %err, "can't reach control's relay");
@@ -1893,18 +1967,26 @@ async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
         // Control may have hung up because this machine was removed
         // (#330): find out now, not at the next refresh.
         control.poke();
-        if started.elapsed() > Duration::from_secs(30) {
+        if started.elapsed() > Duration::from_secs(30) || now {
             backoff = Duration::from_secs(1);
         }
+        if now {
+            continue;
+        }
         let jitter = Duration::from_millis(u64::from(std::process::id() % 500));
-        tokio::time::sleep(match wait {
+        let pause = match wait {
             // A full relay (#344): wait as long as control asked, and up to
             // as long again, so its daemons don't all come back at once.
             Some(w) => w.max(backoff) + spread(w),
             None => backoff + jitter,
-        })
-        .await;
-        backoff = (backoff * 2).min(Duration::from_secs(60));
+        };
+        tokio::select! {
+            _ = tokio::time::sleep(pause) => backoff = (backoff * 2).min(Duration::from_secs(60)),
+            _ = control.resumed.notified() => {
+                info!("resumed: dialling control's relay again now");
+                backoff = Duration::from_secs(1);
+            }
+        }
     }
 }
 
@@ -1947,7 +2029,7 @@ async fn relay_once(
             crate::forges::from_control(t);
         }
     };
-    let mut out = vec![app.guests.routes_messages(), crate::forges::ops_message()];
+    let mut out = vec![app.guests.routes_messages(), crate::forges::ops_message(), control.activity.subscribe()];
     out.extend(crate::forges::watch_messages());
     let texts = crate::dial::Texts { on_text: &on_text, out, queue: Some(queue) };
     crate::dial::serve_mux(ws, accept, Some(raw), Some(&control.nudge), Some(texts)).await
@@ -2575,6 +2657,7 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
         shared_teams: Default::default(),
         login: String::new(),
         moved_at: 0,
+        hosted: None,
     };
     let joined = Joined {
         place: match &got.team {
@@ -2930,6 +3013,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: "sam".into(),
             moved_at: 0,
+            hosted: None,
         };
         // Into the team it's in: nothing to do.
         assert_eq!(already_in(&s, Some("t1")), "this machine is already in the team t1 on https://c.example");
@@ -3321,6 +3405,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: String::new(),
             moved_at: 0,
+            hosted: None,
         };
         write_saved(&dir, &saved).unwrap();
         let acl = Arc::new(Acl::open(&dir));
@@ -3609,6 +3694,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: String::new(),
             moved_at: 0,
+            hosted: None,
         };
 
         write_saved(&dir, &saved).unwrap();
@@ -3762,6 +3848,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: String::new(),
             moved_at: 0,
+            hosted: None,
         };
         let pin = TeamPin { team: "t1".into(), founder: "a".into(), founder_root: root.device.clone() };
         let d = daemon.device.as_str();
@@ -3832,6 +3919,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: String::new(),
             moved_at: 0,
+            hosted: None,
         };
         let d = daemon.device.as_str();
 
@@ -3846,6 +3934,88 @@ pub(crate) mod tests {
         // Out of the team, its owners are nobody to it.
         take_move(&mut saved, mv(&okeys, &owner, d, None, 7));
         assert_eq!(saved.moved_at, 6);
+    }
+
+    /// M180: on a hosted workspace a team project's editors get in as the
+    /// owner (full use, Jake 2026-10-21) and viewers as viewers; on a team
+    /// machine an editor stays an editor.
+    #[test]
+    fn a_hosted_workspaces_editors_have_full_use() {
+        let (_, owner) = device("o", Kind::Browser);
+        let (_, editor) = device("e", Kind::Browser);
+        let (_, viewer) = device("v", Kind::Browser);
+        let (_, this) = device("o", Kind::Daemon);
+        let member = |account: &str, root: &Cert, role| arugula_e2e::team::Member {
+            account: account.into(),
+            root: root.device.clone(),
+            role,
+            name: account.into(),
+        };
+        let roster = Roster {
+            v: 1,
+            team: "t1".into(),
+            name: "Acme".into(),
+            version: 1,
+            at: 1,
+            members: vec![
+                member("o", &owner, TeamRole::Owner),
+                member("e", &editor, TeamRole::Editor),
+                member("v", &viewer, TeamRole::Viewer),
+            ],
+            spent: vec![],
+            redeem: None,
+            by: String::new(),
+            sig: String::new(),
+        };
+        let team_saved = Saved {
+            url: String::new(),
+            trust: Trust { account: "o".into(), root: owner.device.clone() },
+            cert: this,
+            certs: vec![],
+            revocations: vec![],
+            team: Some(TeamPin { team: "t1".into(), founder: "o".into(), founder_root: owner.device.clone() }),
+            roster: Some(roster),
+            team_certs: [("o", &owner), ("e", &editor), ("v", &viewer)]
+                .into_iter()
+                .map(|(a, c)| (a.to_owned(), (vec![c.clone()], vec![])))
+                .collect(),
+            team_names: Default::default(),
+            locked: false,
+            peers: Default::default(),
+            shared_teams: Default::default(),
+            login: String::new(),
+            moved_at: 0,
+            hosted: None,
+        };
+        let key = arugula_e2e::hosted::HostedKey::generate();
+        let d = arugula_e2e::hosted::Delegation {
+            project: "prj_1".into(),
+            owner: "team:t1".into(),
+            key: key.public(),
+            at: 1,
+            by: owner.device.clone(),
+            sig: String::new(),
+        };
+        let hosted_saved = Saved {
+            hosted: Some(HostedPin {
+                cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
+                delegation: d,
+                revocations: vec![],
+            }),
+            ..team_saved.clone()
+        };
+        let dir = std::env::temp_dir().join(format!("arugula-hosted-roles-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Arc::new(Acl::open(&dir));
+        let who = |saved: &Saved, c: &Cert| {
+            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+            let p = e.others.iter().find(|(x, _)| x.device == c.device).map(|(_, p)| p.clone()).unwrap();
+            (p == Principal::Owner, e.team_roles.get(&format!("account:{}", c.account)).copied())
+        };
+        assert_eq!(who(&hosted_saved, &editor), (true, None));
+        assert_eq!(who(&hosted_saved, &viewer), (false, Some(Role::Viewer)));
+        assert_eq!(who(&hosted_saved, &owner), (true, None));
+        assert_eq!(who(&team_saved, &editor), (false, Some(Role::Editor)));
     }
 
     /// #386: a team's other owner gets in as the owner, but is someone of
@@ -3912,6 +4082,7 @@ pub(crate) mod tests {
             shared_teams: [("t2".to_owned(), shared)].into_iter().collect(),
             login: "mo".into(),
             moved_at: 0,
+            hosted: None,
         };
         let dir = std::env::temp_dir().join(format!("arugula-agent-callers-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -3990,6 +4161,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: String::new(),
             moved_at: 0,
+            hosted: None,
         };
         let dir = std::env::temp_dir().join(format!("arugula-co-owners-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -4078,6 +4250,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: String::new(),
             moved_at: 0,
+            hosted: None,
         };
         let dir = std::env::temp_dir().join(format!("arugula-names-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -4111,6 +4284,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: login.into(),
             moved_at: 0,
+            hosted: None,
         }
     }
 

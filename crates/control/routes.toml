@@ -30,6 +30,12 @@
 #   - `poll_token`: the token a join handed out;
 #   - `app_ticket`: the desktop app's sign-in ticket, its grant and verifier;
 #   - `webhook`: the provider's signature on the body.
+#   - `hosted_enrollment`: a hosted box's one-time ticket or sandbox id,
+#     and its key proving it holds the key it enrolls (M178);
+#   - `hosted`: a live hosted machine's signature (`auth::HostedAuth`),
+#     which no other route takes;
+#   - `daemon_or_hosted`: either a daemon's or a hosted machine's
+#     (`auth::Dialer`).
 # - `clients`: who calls it: `page` (control's web page, in a browser or the
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
@@ -659,6 +665,55 @@ auth = "daemon"
 clients = ["daemon"]
 note = "Hosted sandboxes stay in the hub for now: a candidate for the platform in step 5."
 
+# ---- hub: hosted machines under a project's delegation (M178)
+
+[[route]]
+method = "GET"
+path = "/api/hosted/delegations"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Control's hosted key and the delegations of the projects the session is in."
+
+[[route]]
+method = "POST"
+path = "/api/hosted/delegations"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "An owner's own device's signed delegation: the hub checks it against the roster or the account, and clients check it again."
+
+[[route]]
+method = "POST"
+path = "/api/hosted/delegations/revoke"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "Any owner's own device's signed revocation: nothing more enrolls under it."
+
+[[route]]
+method = "POST"
+path = "/api/hosted/enroll"  # wire::hosted::ENROLL
+process = "hub"
+auth = "hosted_enrollment"
+clients = ["daemon"]
+note = "Once per box, rate-limited like joins. The ticket or sandbox id is never logged."
+
+[[route]]
+method = "GET"
+path = "/api/hosted/trust"  # wire::hosted::HOSTED_TRUST
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+
+[[route]]
+method = "DELETE"
+path = "/api/hosted/machines/{id}"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "A project owner removes a hosted machine."
+
 # ---- forge: the App's webhook is the platform's (M161); the hub keeps
 # daemons' subscriptions and the token route, which ask the platform
 
@@ -692,7 +747,7 @@ note = "A read-only link's viewer (M19): no account; the daemon checks the link'
 method = "GET"
 path = "/api/relay/dial"  # wire::RELAY_DIAL
 process = "hub"
-auth = "daemon"
+auth = "daemon_or_hosted"
 clients = ["daemon"]
 
 [[route]]
@@ -1216,6 +1271,46 @@ process = "platform"
 auth = "cloud_driver"
 clients = ["page", "cli", "daemon"]
 note = "A linked repo's settings (M166): content mirroring on (a member who maintains it on GitHub) or off (its content rows go at once)."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/workspaces"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "A project's hosted workspaces (M179), for its members. Never a box's sandbox id."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/workspaces"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Makes a hosted workspace (M179): a project's owner or editor on ARUGULA_HOSTED_ACCOUNTS; the worker makes its box and records its enrollment."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/workspaces/{id}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Opens a hosted workspace (M179), for its project's members: asks the worker to wake a paused box."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/workspaces/{id}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Deletes a hosted workspace (M179): a project's owner or editor; the worker deletes every box it has."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/workspaces/{id}/rebuild"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Rebuilds a hosted workspace from its spec (M179): a project's owner or editor on ARUGULA_HOSTED_ACCOUNTS."
 
 [[route]]
 method = "GET"

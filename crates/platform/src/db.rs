@@ -31,6 +31,7 @@ pub mod chat;
 pub mod cloud;
 pub mod content;
 pub mod forge;
+pub mod hosted;
 pub mod inbox;
 pub mod issues;
 mod legacy;

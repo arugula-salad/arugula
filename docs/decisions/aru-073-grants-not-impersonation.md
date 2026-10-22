@@ -47,6 +47,10 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/issues/1235"
   - title: "#1236"
     url: "https://github.com/arugula-salad/arugula/issues/1236"
+  - title: "#1317"
+    url: "https://github.com/arugula-salad/arugula/issues/1317"
+  - title: "#1290"
+    url: "https://github.com/arugula-salad/arugula/pull/1290"
 decided_by: "jhgaylor"
 decided_on: "2026-10-20"
 reviews: []
@@ -95,5 +99,13 @@ reached through the same grants: a machine's `cloud.drive` (and the step 6
 powers) cover hosted workspaces in the scopes they name, and the hosted
 machine itself is only trusted for its project ("Control enrolls hosted
 machines under a project delegation").
+
+**The standing project grant** (step 7, #1317). `runs.start` and
+`runs.instruct`, scoped to a project, over its hosted workspaces ("One
+standing grant per project starts runs"). Unlike the other powers it's
+signed by a project owner's device, as S37's standing grant: the platform
+stores it but can't make or widen it, and hosted `arugulad` checks the
+signature. There's one per project. Revoking it stops new runs, and it never
+covers a deploy.
 Where: `crates/platform/src/db/projects.rs` (`grants`), `crates/platform/src/grants.rs`, `crates/platform/src/cloud/` (`CloudDriver`).
-From: #1094, #1122, M130 (#1126), #1263 (step 6), M193 (#1264), M197 (#1268), M175 (#1236).
+From: #1094, #1122, M130 (#1126), #1263 (step 6), M193 (#1264), M197 (#1268), M175 (#1236), #1317 (step 7, planned in #1290).

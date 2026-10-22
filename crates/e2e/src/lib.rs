@@ -9,12 +9,15 @@
 //! - [`channel`]: the Noise IK channel and what travels inside it.
 //! - [`block`]: block channels' grants (M50): a block's frame opening a
 //!   channel to one block with a key the device signed for it.
+//! - [`hosted`]: hosted machines (M178): project delegations, and the
+//!   certificates control signs under them, accepted for one project only.
 //! - [`run`]: a run's lifecycle (S37's eight states, M210) and the event a
 //!   daemon signs when it reports a move.
 
 pub mod block;
 pub mod cert;
 pub mod channel;
+pub mod hosted;
 pub mod keys;
 pub mod mux;
 pub mod push;

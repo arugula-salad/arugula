@@ -56,6 +56,10 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/issues/959"
   - title: "#1002"
     url: "https://github.com/arugula-salad/arugula/issues/1002"
+  - title: "#1317"
+    url: "https://github.com/arugula-salad/arugula/issues/1317"
+  - title: "#1290"
+    url: "https://github.com/arugula-salad/arugula/pull/1290"
 decided_by: "jhgaylor"
 decided_on: "2026-10-21"
 reviews: []
@@ -113,5 +117,12 @@ owner sends ("Forge blocks use the person's own CLI, and agents draft while
 people send", amended). Chat now stores text agents wrote ("Chat lives in
 control, in plain text; terminal content doesn't", amended), and the powers
 join `cloud.drive` in "Grants, not impersonation" (amended).
+
+**An agent's "approve" is never an approval** (step 7, #1317). An agent may
+say "approve" in a thread it can post in, or call a tool, but that never
+approves a deploy, whatever grant it holds, the owner's own machine
+included. Only a project owner's device signature over the deploy's bytes
+does ("A deploy needs an owner device's approval, and agents never
+approve").
 Where: `crates/platform/src/grants.rs`, `crates/platform/src/auth.rs` (`Machine`), `crates/platform/src/chat.rs`, `crates/daemon/src/mcp/tools.rs` (M198, M200).
-From: #1263 (platform roadmap, step 6), M193 (#1264), M197 (#1268), M198 (#1269), M200 (#1271), M202 (#1273), #959 and #1002 (agent grants in teams), M121 and M125 (#1095).
+From: #1263 (platform roadmap, step 6), M193 (#1264), M197 (#1268), M198 (#1269), M200 (#1271), M202 (#1273), #959 and #1002 (agent grants in teams), M121 and M125 (#1095), #1317 (platform step 7).

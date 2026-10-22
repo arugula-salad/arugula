@@ -64,6 +64,14 @@ struct State {
     ops: Vec<(String, arugula_control_wire::forge::DaemonOp)>,
     /// It runs GitHub's authorization for a send (M168).
     authorizes: bool,
+    /// Hosted machines (M179): the projects with a delegation, the
+    /// enrollments asked for, the workspaces whose box enrolled (as which
+    /// machine), and the workspaces said gone.
+    delegated: BTreeSet<String>,
+    enrollments: Vec<crate::hosted::enroll::EnrollAsk>,
+    enrolled: BTreeMap<String, String>,
+    taken: BTreeSet<String>,
+    gone: Vec<String>,
 }
 
 fn done<'a, T: Send + 'a>(t: T) -> BoxFuture<'a, HubResult<T>> {
@@ -118,6 +126,33 @@ impl TestHub {
             Daemon { id: id.into(), account: account.into(), team: team.map(Into::into), name: format!("{id}-box") },
         );
         self.change(ChangeKind::DaemonJoined, id);
+    }
+
+    /// An owner's device delegated `project` to control (M178).
+    pub(crate) fn delegate(&self, project: &str) {
+        self.state.lock().unwrap().delegated.insert(project.into());
+    }
+
+    /// The box of `workspace` enrolled, as `machine`.
+    pub(crate) fn enroll(&self, workspace: &str, machine: &str) {
+        self.state.lock().unwrap().enrolled.insert(workspace.into(), machine.into());
+    }
+
+    /// Someone tried the enrollment of `workspace`'s box again.
+    pub(crate) fn take(&self, workspace: &str) {
+        let mut s = self.state.lock().unwrap();
+        s.enrolled.remove(workspace);
+        s.taken.insert(workspace.into());
+    }
+
+    /// The enrollments the platform asked for, in order.
+    pub(crate) fn enrollments(&self) -> Vec<crate::hosted::enroll::EnrollAsk> {
+        self.state.lock().unwrap().enrollments.clone()
+    }
+
+    /// The workspaces the platform said are gone, in order.
+    pub(crate) fn gone(&self) -> Vec<String> {
+        self.state.lock().unwrap().gone.clone()
     }
 
     /// The account signed in with GitHub as `login`, GitHub's user `id`.
@@ -346,6 +381,62 @@ impl HubPort for TestHub {
         let mut s = self.state.lock().unwrap();
         s.ops.push((daemon.into(), op.clone()));
         done(s.op_answers.get(daemon).cloned().unwrap_or(arugula_control_wire::forge::OpAnswer::Offline))
+    }
+
+    /// Records it once per sandbox id (`Taken` after), for a delegated
+    /// project; a ticket when there's no sandbox id.
+    fn hosted_enrollment<'a>(
+        &'a self,
+        ask: &'a crate::hosted::enroll::EnrollAsk,
+    ) -> BoxFuture<'a, HubResult<crate::hosted::enroll::EnrollGiven>> {
+        use crate::hosted::enroll::EnrollGiven;
+        self.called("hosted_enrollment");
+        let mut s = self.state.lock().unwrap();
+        let given = if !s.delegated.contains(&ask.project) {
+            EnrollGiven::NoDelegation
+        } else if let Some(e) =
+            ask.sandbox.as_ref().and_then(|_| s.enrollments.iter().find(|e| e.sandbox == ask.sandbox))
+        {
+            // The same box again for the same workspace: the one recorded.
+            if (&e.project, &e.workspace) == (&ask.project, &ask.workspace) {
+                EnrollGiven::Ready { ticket: None, expires: now_ms() + 120_000 }
+            } else {
+                EnrollGiven::Taken
+            }
+        } else {
+            let ticket = ask.sandbox.is_none().then(|| format!("ticket-{}", ask.workspace));
+            EnrollGiven::Ready { ticket, expires: now_ms() + 120_000 }
+        };
+        s.enrollments.push(ask.clone());
+        done(given)
+    }
+
+    fn hosted_enrolled<'a>(
+        &'a self,
+        workspaces: &'a [String],
+    ) -> BoxFuture<'a, HubResult<Vec<crate::hosted::enroll::Enrolled>>> {
+        self.called("hosted_enrolled");
+        let s = self.state.lock().unwrap();
+        done(
+            workspaces
+                .iter()
+                .filter_map(|w| {
+                    let taken = s.taken.contains(w);
+                    let machine = if taken { Some(String::new()) } else { s.enrolled.get(w).cloned() };
+                    machine.map(|machine| crate::hosted::enroll::Enrolled { workspace: w.clone(), machine, taken })
+                })
+                .collect(),
+        )
+    }
+
+    fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
+        self.called("hosted_gone");
+        let mut s = self.state.lock().unwrap();
+        for w in workspaces {
+            s.enrolled.remove(w);
+        }
+        s.gone.extend_from_slice(workspaces);
+        done(())
     }
 }
 

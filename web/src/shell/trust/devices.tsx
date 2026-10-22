@@ -15,6 +15,7 @@ import { directory } from "../hosts";
 import { machinePlace, machineState, placeMeans } from "../ui/hosts";
 import type { SessionRow } from "./account";
 import { addedAt, openPanel, QrCode, since } from "./common";
+import { HostedMachines } from "./hosted";
 
 /** #763: for someone sharing with you who wants to verify it's you: a QR
  * code for their camera, and the same as words for over the phone. From
@@ -315,6 +316,7 @@ export function Devices({ s, close }: { s: ControlSession; close: () => void }) 
       <button data-add-machine onClick={openPanel("add")}>
         Add a machine…
       </button>
+      <HostedMachines s={s} />
       <h3 class="control-group">Browsers and phones</h3>
       <p class="dim">They reach your machines.</p>
       {unused.length ? (

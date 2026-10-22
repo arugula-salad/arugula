@@ -74,11 +74,13 @@ fn trusted(app: &App, account: &str) -> anyhow::Result<(Option<Trust>, Vec<Cert>
     Ok((root.map(|root| Trust { account: account.to_owned(), root }), certs, revs))
 }
 
-/// The account's daemons should look at its certificates again now.
+/// The account's daemons should look at its certificates again now, and
+/// so should the hosted machines of its projects (M180).
 fn nudge(app: &App, account: &str) {
-    if let Ok(ds) = app.db.daemons(account) {
-        app.relay.nudge(&ds.into_iter().map(|d| d.id).collect::<Vec<_>>());
-    }
+    let mut ids: Vec<String> =
+        app.db.daemons(account).map(|ds| ds.into_iter().map(|d| d.id).collect()).unwrap_or_default();
+    ids.extend(crate::hosted::of_account(app, account));
+    app.relay.nudge(&ids);
 }
 
 /// A refused enrolment or approval, in the log (#94): which request, the
@@ -977,6 +979,8 @@ pub async fn directory(State(app): State<Arc<App>>, s: crate::auth::Reacher) -> 
             "account": owner, "owner_name": owner_name, "team": team, "chain": crate::teams::chain_of(&app, &owner)?,
         }));
     }
+    // Hosted machines of my projects (M178), with what to check them by.
+    daemons.extend(crate::hosted::directory(&app, &s.account)?);
     // Sessions someone offers to share with me, for me to answer first
     // (a person's to answer: a daemon is told none).
     let mut offers = Vec::new();
