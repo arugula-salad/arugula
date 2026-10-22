@@ -35,7 +35,7 @@
 //
 //   /chat, /chat/:room             chat (the first team's), a room in it
 //   /chat/activity, /chat/search?q=…
-//   /issues/:issue                 an issue
+//   /issues/:issue                 an issue (`?msg=N`: at that comment)
 //   /workspaces, /workspaces/:id[/:tab], /past/:id
 //                                  the reader's own Cloud workspaces
 //
@@ -61,7 +61,7 @@ export type Route =
   | { page: "find"; what: "chat"; room?: string; msg?: number; view?: "activity" | "search"; q?: string }
   | { page: "find"; what: "workspaces"; workspace?: string; tab?: string }
   | { page: "find"; what: "past"; id: string }
-  | { page: "find"; what: "issue"; issue: string }
+  | { page: "find"; what: "issue"; issue: string; msg?: number }
   | { page: "missing"; path: string };
 
 /** An id at the front of a path segment, before its slug: `prj_8f2k`,
@@ -128,7 +128,7 @@ export function parse(path: string, search = ""): Route {
   }
   if (parts[0] === "issues" && parts.length === 2) {
     const issue = idOf(parts[1]);
-    return issue?.startsWith("iss_") ? { page: "find", what: "issue", issue } : missing;
+    return issue?.startsWith("iss_") ? { page: "find", what: "issue", issue, ...msg } : missing;
   }
   if (parts[0] === "past" && parts.length === 2) {
     const id = idOf(parts[1]);
@@ -247,7 +247,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
         return r.room ? `/chat/${s(r.room)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}` : "/chat";
       }
       if (r.what === "past") return `/past/${s(r.id)}`;
-      if (r.what === "issue") return `/issues/${s(r.issue)}`;
+      if (r.what === "issue") return `/issues/${s(r.issue)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
       return `/workspaces${r.workspace ? `/${s(r.workspace)}${r.tab ? `/${s(r.tab)}` : ""}` : ""}`;
     case "missing":
       return r.path;

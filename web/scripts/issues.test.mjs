@@ -69,6 +69,9 @@ test("the issue routes, by id with a slug", () => {
   assert.deepEqual(parse(`/p/${P}/issues/new`), { page: "new-issue", project: P });
   assert.deepEqual(parse(`/p/${P}/issues/${I}-an-old-title`, "?msg=3"), { page: "issue", project: P, issue: I, msg: 3 });
   assert.deepEqual(parse(`/issues/${I}-x`), { page: "find", what: "issue", issue: I });
+  // A push for a mention in its thread (M202) opens it at the message.
+  assert.deepEqual(parse(`/issues/${I}`, "?msg=4"), { page: "find", what: "issue", issue: I, msg: 4 });
+  assert.equal(pathOf({ page: "find", what: "issue", issue: I, msg: 4 }), `/issues/${I}?msg=4`);
   for (const p of [`/p/${P}/issues/12`, `/p/${P}/issues/ch_0123456789abcdef`, `/p/${P}/issues/${I}/x`, "/issues/12", "/issues"]) assert.equal(parse(p).page, "missing", p);
   assert.equal(pathOf({ page: "issue", project: P, issue: I }, names), `/p/${P}-acme/issues/${I}-search-misses-words`);
   for (const r of [

@@ -124,8 +124,8 @@ async fn a_personal_projects_threads_are_its_accounts() {
 /// A private repo's threads need the reader's own GitHub access (M165):
 /// here nobody signed in with GitHub and there's no App to ask, so every
 /// member is refused, and a room made before its repo went private is
-/// hidden from everyone. `forge::viewer_tests::leak_object_threads` has
-/// a member GitHub lets in.
+/// hidden from everyone. `forge::viewer_tests::leak_object_threads` and
+/// the inbox's `forge::mentions_tests` have members GitHub lets in.
 #[tokio::test]
 async fn a_private_repos_threads_need_github_access() {
     let hub = Arc::new(TestHub::default());

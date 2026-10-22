@@ -58,7 +58,7 @@ export function resolve(r: Extract<Route, { page: "find" }>): string | null {
   if (r.what === "issue") {
     // Its project, once the page has read it (the page asks).
     const i = issues.known(r.issue);
-    return i ? pathOf({ page: "issue", project: i.project, issue: i.id }, names) : null;
+    return i ? pathOf({ page: "issue", project: i.project, issue: i.id, ...(r.msg !== undefined ? { msg: r.msg } : {}) }, names) : null;
   }
   return pathOf(r.workspace ? { page: "workspace", project: own, workspace: r.workspace, ...(r.tab ? { tab: r.tab } : {}) } : { page: "workspaces", project: own }, names);
 }

@@ -27,6 +27,9 @@
 //!
 //! A machine's agents reach them through [`agent`]'s routes (M200).
 //!
+//! **The inbox** (M202): an assignee added, or someone an issue's body
+//! newly mentions, gets an entry and a push ([`crate::inbox`]).
+//!
 //! [`db::issues`]: crate::db::issues
 
 pub mod agent;
@@ -341,6 +344,7 @@ pub async fn create(
     list_ok(&wire::IssueListEdit::Set(new.assignees.clone()), &[], &place, false)?;
     let n = db::NewIssue { project: &place.project.id, title, body, labels: &labels, assignees: &new.assignees };
     let issue = app.db.create_issue(&n, by, now_ms())?.ok_or_else(no_project)?;
+    crate::inbox::issue_opened(app, by, &issue).await;
     Ok(issues_wire(app, &[issue]).await?.remove(0))
 }
 
@@ -398,7 +402,9 @@ pub async fn change(
         labels: labels.as_ref().map(edit_of),
         assignees: p.assignees.as_ref().map(edit_of),
     };
+    let old = issue;
     let (issue, events) = app.db.patch_issue(id, &patch, by, now_ms())?.ok_or_else(no_issue)?;
+    crate::inbox::issue_changed(app, by, &old, &issue).await;
     Ok(wire::IssuePatched {
         issue: issues_wire(app, &[issue]).await?.remove(0),
         events: events_wire(app, &events).await?,

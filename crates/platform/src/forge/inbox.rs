@@ -43,6 +43,9 @@
 //! just joined, lands in the inbox without a push. Control has no quiet
 //! hours or push preferences yet; when it does, they apply here.
 //!
+//! **Mentions and assignments on the platform's own objects** (M202) are
+//! entries here too, made when they happen: [`crate::inbox`].
+//!
 //! **Shadow mode** ([`shadow`]): machines opted in report their forge
 //! blocks' attention (items and reasons, no titles), and the platform logs
 //! how often its inbox agrees (docs/control-ops.md).
@@ -70,13 +73,14 @@ use serde_json::json;
 use tracing::{info, warn};
 
 use super::{
+    drafts::Drafter,
     items::names,
     viewer::{self, Viewer},
 };
 use crate::{
     Platform,
     auth::{Machine, Person},
-    db::inbox::{InboxFilter, Sources},
+    db::inbox::{InboxFilter, Sources, THREAD_MENTION},
     hub::PushOptions,
 };
 
@@ -131,7 +135,7 @@ impl Queue {
     }
 
     /// Whether `account` may be pushed for `item` now (and note it).
-    fn may_push(&self, account: &str, item: &str, now: u64) -> bool {
+    pub(crate) fn may_push(&self, account: &str, item: &str, now: u64) -> bool {
         let mut p = self.pushed.lock().unwrap();
         if p.len() > 50_000 {
             p.retain(|_, at| now.saturating_sub(*at) < PUSH_GAP_MS);
@@ -332,7 +336,7 @@ fn changed_at(s: &Sources) -> u64 {
 
 /// A project's members: its account, or its team's (by the latest
 /// roster).
-async fn members(p: &Platform, project: &str) -> anyhow::Result<Vec<String>> {
+pub(crate) async fn members(p: &Platform, project: &str) -> anyhow::Result<Vec<String>> {
     let Some((owner, team)) = p.db.project_holder(project)? else { return Ok(vec![]) };
     if let Some(o) = owner {
         return Ok(vec![o]);
@@ -485,19 +489,20 @@ async fn readable(app: &Platform, v: &Viewer) -> Result<viewer::Readable, ApiErr
 }
 
 /// `GET /api/inbox`: `inbox.list`, the reader's inbox on repos they may
-/// read now.
+/// read now, and for a person their native issues' entries (M202,
+/// [`crate::inbox::entries`]): newest first.
 pub async fn list(
     State(app): State<Arc<Platform>>,
-    v: Viewer,
+    d: Drafter,
     Query(q): Query<InboxQuery>,
 ) -> Result<Json<wire::Inbox>, ApiError> {
+    let v = Viewer::of(&app, &d.account).await?;
     let r = readable(&app, &v).await?;
     let f = InboxFilter { done: q.done, limit: q.limit.unwrap_or(DEFAULT).clamp(1, MOST) };
-    let entries = app
-        .db
-        .inbox(&r, &v.account, &f)?
-        .into_iter()
-        .map(|x| wire::InboxEntry {
+    let mut entries = Vec::new();
+    for x in app.db.inbox(&r, &v.account, &f)? {
+        let room = if x.reason == THREAD_MENTION { app.db.thread_of(&x.item)? } else { None };
+        entries.push(wire::InboxEntry {
             url: url(&x.full_name, &x.kind, x.number),
             item: x.item,
             reason: x.reason,
@@ -511,8 +516,15 @@ pub async fn list(
             updated_at: x.updated_at,
             seen_at: x.seen_at,
             done_at: x.done_at,
-        })
-        .collect();
+            project: None,
+            room,
+        });
+    }
+    if d.machine.is_none() {
+        entries.extend(crate::inbox::entries(&app, &v.account, &f).await?);
+        entries.sort_by(|a, b| (b.created_at, &a.item, &a.reason).cmp(&(a.created_at, &b.item, &b.reason)));
+        entries.truncate(f.limit as usize);
+    }
     Ok(Json(wire::Inbox { entries }))
 }
 
@@ -536,6 +548,10 @@ pub async fn mark_for(
 ) -> Result<wire::InboxMarked, ApiError> {
     if b.reason.as_deref().is_some_and(|r| !wire::INBOX_REASONS.contains(&r)) {
         return Err(err(StatusCode::BAD_REQUEST, "reason: one of the inbox's reasons"));
+    }
+    if item.starts_with("iss_") {
+        let marked = crate::inbox::mark(app, account, &item, b).await?;
+        return Ok(wire::InboxMarked { item, marked });
     }
     let v = Viewer::of(app, account).await?;
     let (r, _) = viewer::item(app, &v, &item).await?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such item"))?;

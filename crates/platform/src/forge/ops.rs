@@ -138,7 +138,8 @@ pub async fn call(
         }
         Op::InboxList(q) => {
             let query = inbox::InboxQuery { done: q.done, limit: q.limit };
-            let Json(listed) = inbox::list(st(), viewer, Query(query)).await?;
+            let who = Drafter { account: d.account.clone(), machine: d.machine.clone() };
+            let Json(listed) = inbox::list(st(), who, Query(query)).await?;
             answer(&op, v, listed)
         }
         Op::InboxMark(m) => {

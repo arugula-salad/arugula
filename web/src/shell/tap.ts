@@ -3,7 +3,8 @@
 // that wants you (M24's reason) at its card on the swarm's rail (M26); a
 // chat push from control (M123) at its message. Once control has a
 // platform page (M156), a chat push or a Cloud workspace's opens there, by
-// id: `platformTap`; an inbox push (M171) at the inbox.
+// id: `platformTap`; an inbox push (M171) at the inbox, or (M202) at the
+// native issue or the thread it's about.
 
 /** A chat push from control (M123): `chat: {room, seq}`, opened on the chat
  * page at that message. Anything that isn't a room's id opens nothing. */
@@ -46,8 +47,16 @@ export function platformTap(n: { chat?: unknown; cloud_run?: unknown; cloud_work
   if (typeof n.cloud_workspace === "string" && /^cw_[0-9a-f]+$/.test(n.cloud_workspace) && typeof n.cloud_tab === "string" && /^cwc_[0-9a-f]+$/.test(n.cloud_tab)) {
     return `/workspaces/${n.cloud_workspace}/${n.cloud_tab}`;
   }
-  // M171: something on a linked repo wants you: the inbox.
-  if (n.inbox && typeof n.inbox === "object") return "/inbox";
+  // M171: something on a linked repo wants you: the inbox. M202: a native
+  // issue opens itself (at the message, for a mention in its thread); a
+  // mention in a mirrored item's thread opens the thread.
+  if (n.inbox && typeof n.inbox === "object") {
+    const i = n.inbox as { item?: unknown; room?: unknown; seq?: unknown };
+    const msg = typeof i.seq === "number" && Number.isInteger(i.seq) ? `?msg=${i.seq}` : "";
+    if (typeof i.item === "string" && /^iss_[0-9a-f]{8,64}$/.test(i.item)) return `/issues/${i.item}${msg}`;
+    if (typeof i.room === "string" && /^[a-z]{2}_[0-9a-f]{8,32}$/.test(i.room)) return `/chat/${i.room}${msg}`;
+    return "/inbox";
+  }
   return undefined;
 }
 

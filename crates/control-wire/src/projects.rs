@@ -426,7 +426,9 @@ pub struct ForgeDraft {
 /// for the same reasons a forge block asks for attention. Each entry is an
 /// item and a reason ([`INBOX_REASONS`]); an item is in it while the
 /// reason holds, and only for those the viewer check lets read its repo
-/// (M165).
+/// (M165). Mentions and assignments on native issues, and mentions in an
+/// item's thread, are entries too (M202), until they're called done; a
+/// native issue's only for its project's members.
 ///
 /// - `GET /api/inbox` ([`Inbox`]): the operation `inbox.list`. Newest
 ///   first, without the entries called done unless the query says
@@ -444,9 +446,19 @@ pub const INBOX_SHADOW: &str = "/api/inbox/shadow";
 /// Why an item is in an inbox: a review is requested from you, your PR's
 /// checks failed, changes are requested on your PR, you're mentioned, an
 /// issue is assigned to you, your PR merged or is approved and green (or
-/// your issue closed), or a draft on it waits for you to send.
-pub const INBOX_REASONS: [&str; 7] =
-    ["review_requested", "checks_failed", "changes_requested", "mentioned", "assigned", "done", "draft"];
+/// your issue closed), a draft on it waits for you to send, or you're
+/// mentioned in its thread on the platform (M202: a mirrored item's; on a
+/// native issue that's `mentioned`).
+pub const INBOX_REASONS: [&str; 8] = [
+    "review_requested",
+    "checks_failed",
+    "changes_requested",
+    "mentioned",
+    "assigned",
+    "done",
+    "draft",
+    "thread_mention",
+];
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -457,11 +469,12 @@ pub struct Inbox {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct InboxEntry {
-    /// The item: `fi_` and 32 hex characters.
+    /// The item: `fi_` and 32 hex characters, or a native issue's `iss_`
+    /// id (M202).
     pub item: String,
     /// One of [`INBOX_REASONS`].
     pub reason: String,
-    /// `OWNER/NAME`.
+    /// `OWNER/NAME`; a native issue's project's name.
     pub repo: String,
     pub number: u64,
     /// `pr` or `issue`.
@@ -469,10 +482,18 @@ pub struct InboxEntry {
     /// `open`, `closed` or `merged`.
     pub state: String,
     pub title: String,
+    /// A GitHub login; a native issue's author's name.
     #[serde(default)]
     pub author: Option<String>,
-    /// The item on GitHub.
+    /// The item on GitHub; a native issue's path on the platform page
+    /// (`/issues/<id>`).
     pub url: String,
+    /// A native issue's project (M202).
+    #[serde(default)]
+    pub project: Option<String>,
+    /// A `thread_mention`'s room: the thread on the item (M202).
+    #[serde(default)]
+    pub room: Option<String>,
     /// When it came into the inbox, and when the item last changed.
     pub created_at: u64,
     pub updated_at: u64,

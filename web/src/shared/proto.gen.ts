@@ -1373,7 +1373,8 @@ export type Inbox = { entries: Array<InboxEntry>, };
 
 export type InboxEntry = { 
 /**
- * The item: `fi_` and 32 hex characters.
+ * The item: `fi_` and 32 hex characters, or a native issue's `iss_`
+ * id (M202).
  */
 item: string, 
 /**
@@ -1381,7 +1382,7 @@ item: string,
  */
 reason: string, 
 /**
- * `OWNER/NAME`.
+ * `OWNER/NAME`; a native issue's project's name.
  */
 repo: string, number: number, 
 /**
@@ -1391,11 +1392,24 @@ kind: string,
 /**
  * `open`, `closed` or `merged`.
  */
-state: string, title: string, author: string | null, 
+state: string, title: string, 
 /**
- * The item on GitHub.
+ * A GitHub login; a native issue's author's name.
+ */
+author: string | null, 
+/**
+ * The item on GitHub; a native issue's path on the platform page
+ * (`/issues/<id>`).
  */
 url: string, 
+/**
+ * A native issue's project (M202).
+ */
+project: string | null, 
+/**
+ * A `thread_mention`'s room: the thread on the item (M202).
+ */
+room: string | null, 
 /**
  * When it came into the inbox, and when the item last changed.
  */

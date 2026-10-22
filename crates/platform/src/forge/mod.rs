@@ -72,6 +72,8 @@ pub mod items;
 pub mod links;
 #[cfg(test)]
 mod links_tests;
+#[cfg(test)]
+mod mentions_tests;
 pub mod ops;
 #[cfg(test)]
 mod ops_tests;
