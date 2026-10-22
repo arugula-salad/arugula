@@ -850,6 +850,15 @@ never a body or a comment's text.
   `forge mirror: drift fixed` with the repo id, the item or check, and
   the fields (never a title). Its tokens are read-only, for the one repo,
   logged with purpose `ingest`.
+- **Merge states.** Lists don't carry a PR's `mergeable_state`, webhooks
+  often say `unknown`, and a base branch that moves changes it with no
+  event. At the end of each backfill and reconcile the poller reads up to
+  10 open PRs (not drafts) one by one (`GET pulls/N`): first those whose
+  state it doesn't know, then green ones whose row is over 15 minutes
+  old, stalest first. That's at most 120 reads an hour per repo, inside
+  the reserve below, and conditional, so an unchanged PR costs nothing.
+  What it learns is never drift. Until it knows, the inbox doesn't call a
+  green PR done.
 - **Failures and uninstalls.** A failed turn waits a minute, doubled for
   each failure in a row (`linked_repos.poll_failures`), up to an hour.
   When GitHub won't mint a token for the repo (404, 422), or the repo's
@@ -938,7 +947,8 @@ fly logs -a arugula-platform | grep 'inbox shadow'
   them: a team's review request (the platform doesn't know a person's
   teams), a block's poll or the platform's recompute catching up,
   `mergeable` (the platform has only GitHub's
-  `mergeable_state`), and an issue someone else opened that you gave
+  `mergeable_state`, and a green PR waits for the poller to learn it, up
+  to a reconcile or two), and an issue someone else opened that you gave
   yourself (the mirror doesn't keep who assigned it, so the platform
   takes it as given to you; one you opened, it takes as your own doing).
 - `inbox shadow: explained`: one line per item left out of the score,

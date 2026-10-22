@@ -22,7 +22,14 @@
 //!   issue you opened counts as one you took yourself, and any other one
 //!   given to you as someone else's doing.
 //! - **Whether a PR can merge:** only GitHub's `mergeable_state` (`dirty`
-//!   is a conflict, `blocked` held by protection), not its `mergeable`.
+//!   is a conflict, `blocked` held by protection), not its `mergeable`,
+//!   and only once GitHub has worked it out: lists never carry it,
+//!   webhooks often say `unknown`, and a base branch that moves changes it
+//!   with no event at all. So a green PR is done ("checks green") only
+//!   with a known state that's neither ([`can_merge`]); none, or
+//!   `unknown`, holds it back like `blocked`. The poller reads each open
+//!   PR whose state it doesn't know, and rechecks green ones, stalest
+//!   first ([`super::poller`]). Merged is done either way.
 //!
 //! **Who.** A project's members whom the viewer check ([`viewer::readers`])
 //! lets read the repo, by the GitHub login they signed in with (the hub's,
@@ -64,7 +71,9 @@ use arugula_control_common::{ApiError, err};
 use arugula_control_wire::projects as wire;
 use arugula_e2e::now_ms;
 use arugula_forge_github::{
-    model::{self, Event, EventKind, Item, ItemKind, ItemState, Me, Pr, Review, ReviewState, Reviewer},
+    model::{
+        self, Check, CheckState, Event, EventKind, Item, ItemKind, ItemState, Me, Pr, Review, ReviewState, Reviewer,
+    },
     parse,
 };
 use axum::{
@@ -84,7 +93,10 @@ use super::{
 use crate::{
     Platform,
     auth::{Machine, Person},
-    db::inbox::{InboxFilter, Sources, THREAD_MENTION},
+    db::{
+        forge::ForgeCheck,
+        inbox::{InboxFilter, Sources, THREAD_MENTION},
+    },
     hub::PushOptions,
 };
 
@@ -194,6 +206,16 @@ pub fn url(full_name: &str, kind: &str, number: u64) -> String {
     format!("https://github.com/{full_name}/{path}/{number}")
 }
 
+/// Whether the mirror knows a PR can merge, as far as "checks green"
+/// goes: GitHub worked its `mergeable_state` out, and it's neither a
+/// conflict (`dirty`) nor held by protection (`blocked`). None, or
+/// `unknown` (GitHub works it out lazily, and lists never carry it), isn't
+/// evidence that it can: the model hears it as `blocked`, and a green PR
+/// isn't done until the poller learns more ([`super::poller`]).
+pub(crate) fn can_merge(merge_state: Option<&str>) -> bool {
+    !matches!(merge_state, None | Some("unknown" | "dirty" | "blocked"))
+}
+
 /// The mirror's rows as the block's model has them: no body unless
 /// content is mirrored, checks from their rows, reviews without text.
 fn model_item(s: &Sources) -> Item {
@@ -215,7 +237,7 @@ fn model_item(s: &Sources) -> Item {
         labels: names(&i.labels),
         assignees: names(&i.assignees),
         mergeable: (i.merge_state.as_deref() == Some("dirty")).then_some(false),
-        blocked: i.merge_state.as_deref() == Some("blocked"),
+        blocked: !can_merge(i.merge_state.as_deref()),
         // A team is `org/slug`, which no login can be.
         requested: names(&i.reviewers)
             .into_iter()
@@ -255,16 +277,14 @@ fn comments(s: &Sources) -> Vec<Event> {
         .collect()
 }
 
-/// A PR as the block's model has it.
-fn model_pr(s: &Sources) -> Pr {
-    let runs: Vec<_> = s
-        .checks
+/// A head's check rows as the block's model has them.
+fn model_checks(rows: &[ForgeCheck]) -> Vec<Check> {
+    let runs: Vec<_> = rows
         .iter()
         .filter(|c| c.kind == "check_run")
         .map(|c| json!({ "name": c.name, "status": c.status, "conclusion": c.conclusion, "html_url": c.url }))
         .collect();
-    let statuses: Vec<_> = s
-        .checks
+    let statuses: Vec<_> = rows
         .iter()
         .filter(|c| c.kind == "status")
         .map(|c| {
@@ -272,7 +292,17 @@ fn model_pr(s: &Sources) -> Pr {
             json!({ "context": c.name, "state": state, "target_url": c.url })
         })
         .collect();
-    let checks = parse::checks(&json!({ "check_runs": runs }), &json!({ "statuses": statuses }));
+    parse::checks(&json!({ "check_runs": runs }), &json!({ "statuses": statuses }))
+}
+
+/// Whether a head's checks roll up green, as the block counts them.
+pub(crate) fn green(rows: &[ForgeCheck]) -> bool {
+    model::rollup(&model_checks(rows)) == Some(CheckState::Success)
+}
+
+/// A PR as the block's model has it.
+fn model_pr(s: &Sources) -> Pr {
+    let checks = model_checks(&s.checks);
     let reviews = s
         .reviews
         .iter()
