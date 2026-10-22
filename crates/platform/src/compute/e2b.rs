@@ -9,6 +9,7 @@
 //! | status | `GET /sandboxes/{id}` |
 //! | list | `GET /v2/sandboxes?metadata=…&state=running,paused`, paged by `X-Next-Token` |
 //! | hold | `POST /sandboxes/{id}/timeout` |
+//! | runs | `GET /events/sandboxes/{id}?types=…paused&types=…killed`, paged by `offset` |
 //!
 //! Every call but create is retried a few times on no answer, 429, 502,
 //! 503 and 504: each is idempotent here (a second pause finds it paused, a
@@ -27,7 +28,7 @@ use reqwest::{Client, Method, Response, StatusCode, Url};
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
-use super::{Create, Created, Error, Paused, Result, Resumed, Sandbox, State, Substrate};
+use super::{Create, Created, Error, Paused, Result, Resumed, Run, Sandbox, State, Substrate};
 
 /// Tries of a retried call, and the longest `Retry-After` waited out.
 const TRIES: u32 = 3;
@@ -166,6 +167,10 @@ struct Detail {
     end_at: String,
     #[serde(default)]
     lifecycle: Option<Lifecycle>,
+    #[serde(default)]
+    cpu_count: Option<u32>,
+    #[serde(rename = "memoryMB", default)]
+    memory_mb: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -190,8 +195,51 @@ impl TryFrom<Detail> for Sandbox {
             started_at: d.started_at,
             end_at: d.end_at,
             pauses_on_timeout: d.lifecycle.map(|l| l.on_timeout == "pause"),
+            cpus: d.cpu_count,
+            memory_mb: d.memory_mb,
         })
     }
+}
+
+/// A lifecycle event (`GET /events/sandboxes/{id}`): a pause's and a
+/// delete's carry the run they ended, as E2B billed it. Nothing else of
+/// it is read (its `sandbox_metadata` is the box's own).
+#[derive(Deserialize)]
+struct Event {
+    id: String,
+    #[serde(rename = "eventData", default)]
+    data: Option<EventData>,
+}
+
+#[derive(Deserialize)]
+struct EventData {
+    #[serde(default)]
+    execution: Option<Execution>,
+}
+
+#[derive(Deserialize)]
+struct Execution {
+    execution_time: u64,
+    vcpu_count: u32,
+    memory_mb: u32,
+    started_at: String,
+}
+
+/// The runs in a box's events, each once: deleting a paused box ends no
+/// run, and an event a page boundary repeated is the same id.
+fn runs_of(events: Vec<Event>, seen: &mut std::collections::BTreeSet<String>) -> Result<Vec<Run>> {
+    let mut out = Vec::new();
+    for e in events {
+        if !seen.insert(e.id) {
+            continue;
+        }
+        let Some(x) = e.data.and_then(|d| d.execution) else { continue };
+        let started_at = arugula_forge_github::util::time(&x.started_at)
+            .and_then(|t| u64::try_from(t).ok())
+            .ok_or(Error::Invalid)?;
+        out.push(Run { started_at, ms: x.execution_time, cpus: x.vcpu_count, memory_mb: x.memory_mb });
+    }
+    Ok(out)
 }
 
 /// E2B's `metadata` filter, as its SDKs write it: each key and value
@@ -326,6 +374,40 @@ impl Substrate for E2b {
             let body = json!({"timeout": seconds(timeout)});
             let r = self.idempotent(Method::POST, self.url(&["sandboxes", id, "timeout"])?, Some(&body)).await?;
             done(r).await
+        })
+    }
+
+    fn runs<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<Option<Vec<Run>>>> {
+        Box::pin(async move {
+            const PAGE: usize = 100;
+            let mut seen = std::collections::BTreeSet::new();
+            let mut all = Vec::new();
+            // Oldest first, so a page's offset holds while new events come.
+            for page in 0..100 {
+                let mut url = self.url(&["events", "sandboxes", id])?;
+                url.query_pairs_mut()
+                    .append_pair("orderAsc", "true")
+                    .append_pair("limit", &PAGE.to_string())
+                    .append_pair("offset", &(page * PAGE).to_string())
+                    .append_pair("types", "sandbox.lifecycle.paused")
+                    .append_pair("types", "sandbox.lifecycle.killed");
+                let r = self.idempotent(Method::GET, url, None).await?;
+                // No such box, none of its events in yet (E2B's lag its
+                // lifecycle by seconds), or (loam) no such record.
+                if r.status() == StatusCode::NOT_FOUND {
+                    return Ok(None);
+                }
+                if !r.status().is_success() {
+                    return Err(failure(r).await);
+                }
+                let events: Vec<Event> = read(r).await?;
+                let n = events.len();
+                all.extend(runs_of(events, &mut seen)?);
+                if n < PAGE {
+                    return Ok(Some(all));
+                }
+            }
+            Err(Error::Invalid)
         })
     }
 }

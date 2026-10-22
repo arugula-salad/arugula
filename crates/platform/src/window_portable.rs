@@ -359,6 +359,27 @@ fn open_as_is(at: &Place, url: &str) -> anyhow::Result<Db> {
     Ok(db)
 }
 
+/// Hosted workspaces' usage at `at` in `[from, to)` (M188), read-only.
+/// Refused, as [`open_as_is`] refuses, on a database this build would
+/// migrate.
+pub fn usage(at: &Place, from: u64, to: u64) -> anyhow::Result<crate::hosted::usage::Report> {
+    fn on(c: &impl Sql, from: u64, to: u64) -> anyhow::Result<crate::hosted::usage::Report> {
+        use crate::db::hosted_usage::{checked, intervals};
+        Ok(crate::hosted::usage::report(&intervals(c, from, to)?, checked(c, from, to)?, from, to))
+    }
+    match at {
+        Place::File(path) => {
+            let c = super::read_only(path)?;
+            let m = migrations_on(&c, Dialect::Sqlite, at)?;
+            if !m.pending.is_empty() {
+                bail!("{at} is behind this build (it would run {:?}): this tool only reads", m.pending);
+            }
+            on(&c, from, to)
+        }
+        Place::Postgres(url) => on(&open_as_is(at, url)?.c(), from, to),
+    }
+}
+
 /// What a snapshot id from `pg_export_snapshot()` looks like
 /// (`00000003-0000001B-1`): checked, since it's spliced into SQL.
 fn snapshot_id(id: &str) -> anyhow::Result<&str> {

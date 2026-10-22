@@ -384,7 +384,7 @@ fn running_env(var: &str) -> Option<(u32, String)> {
 
 /// The first words that make either binary run one of these instead of
 /// serving (and `platform`, control's prefix for them).
-pub const COMMANDS: [&str; 5] = ["copy", "checksums", "secrets-check", "migrations", "platform"];
+pub const COMMANDS: [&str; 6] = ["copy", "checksums", "secrets-check", "migrations", "usage", "platform"];
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -442,6 +442,17 @@ enum What {
         #[arg(long)]
         db: Place,
     },
+    /// How long hosted workspaces' boxes ran, by size and by project, what
+    /// that cost at E2B's prices and per active hour, and E2B's own record
+    /// beside it (M188), read-only.
+    Usage {
+        /// A file, or a `postgres://` URL.
+        #[arg(long)]
+        db: Place,
+        /// The window: this many days back from now.
+        #[arg(long, default_value_t = 7)]
+        days: u64,
+    },
 }
 
 /// `<prog> copy|checksums|secrets-check …`: `prog` is how the operator
@@ -475,6 +486,11 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
             if !m.pending.is_empty() {
                 bail!("this build would migrate {db}: it's at {}", m.applied.last().map_or(0, |a| a.0));
             }
+        }
+        What::Usage { db, days } => {
+            let to = arugula_e2e::now_ms();
+            let r = portable::usage(&db, to.saturating_sub(days * 86_400_000), to)?;
+            print!("{}", r.render(&db.to_string(), days));
         }
         What::SecretsCheck { db } => {
             const VAR: &str = "ARUGULA_CLOUD_SECRET_KEY";

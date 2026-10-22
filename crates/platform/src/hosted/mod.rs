@@ -25,6 +25,9 @@
 //!   (fail closed). Where the box isn't a snapshot (loam, tests:
 //!   `ARUGULA_HOSTED_ENROLL=ticket`), the hub makes a one-time ticket that
 //!   goes in the box's env instead.
+//! - **Usage** (M188): how long each box ran, by its size, is metered from
+//!   the worker's checkpoints and checked against E2B's own record
+//!   ([`usage`]).
 //! - **Not here yet.** Holding a busy box (M181) and the hub waking one on
 //!   connect (M182) plug into the worker and [`ask`]; setup in a visible
 //!   pane and "rebuild needed" on the page are M183's, from
@@ -44,6 +47,7 @@ pub mod enroll;
 pub mod routes;
 #[cfg(test)]
 mod tests;
+pub mod usage;
 pub mod worker;
 
 pub use crate::db::hosted::HostedWorkspace;
@@ -248,5 +252,6 @@ pub fn ask(app: &Platform, workspace: &str, what: Ask) -> anyhow::Result<bool> {
 pub fn start(app: &std::sync::Arc<Platform>) {
     if app.compute.is_some() {
         worker::start(app.clone());
+        usage::start(app.clone());
     }
 }

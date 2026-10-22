@@ -54,7 +54,7 @@ sees = "Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets t
 
 [parties.e2b]
 name = "E2B"
-sees = "E2B runs hosted workspaces' boxes: it holds their disks and memory, the env and metadata each is made with (the workspace, project, release and template ids), and the secrets in its broker."
+sees = "E2B runs hosted workspaces' boxes, so it processes their contents: it holds each box's disk and memory (the repos, files, terminals and agent conversations in it) while the box lives, paused too, the env and metadata each is made with (the workspace, project, release and template ids), and the secrets in its broker. It records each box's runs (when, how long, its size), which it bills by and the platform reads back to check its own usage."
 
 [parties.posthog]
 name = "PostHog"
@@ -906,3 +906,25 @@ why_asleep = "Previews are served and expire with every machine asleep."
 with_account = "partly"
 note = "It stops naming the account as who made a port public. They go with their workspace."
 seen_by = ["litestream"]
+
+[[table]]
+name = "hosted_usage"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "When a hosted workspace's box ran (M188): its workspace, project and box, its size (vCPUs and memory), and each running interval's start and end."
+why_asleep = "The platform meters boxes from their lifecycle, which runs with every machine asleep, and the operator reads what they cost."
+with_account = "none"
+note = "It names no account: a workspace's project and box ids only. It stays when the workspace goes: it's what E2B billed."
+seen_by = ["litestream", "e2b"]
+
+[[table]]
+name = "hosted_usage_provider"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "What E2B says a hosted workspace's box ran (M188), from its lifecycle events: how many runs, their milliseconds, vCPU-milliseconds and MiB-milliseconds, and when it was read."
+why_asleep = "The platform checks its usage against E2B's record with every machine asleep."
+with_account = "none"
+note = "It names no account: a workspace's project and box ids only."
+seen_by = ["litestream", "e2b"]

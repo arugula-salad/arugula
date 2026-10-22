@@ -84,6 +84,11 @@ pub struct HostedJob {
     pub enroll_until: Option<u64>,
     pub deleted_at: Option<u64>,
     pub lease: String,
+    /// What the step learned of the box from the provider (M188's usage).
+    pub seen: crate::hosted::usage::Seen,
+    /// Whether the box runs, for its checkpoint to meter (M188): set by the
+    /// worker after a step that went through, never kept on the row.
+    pub usage: Option<crate::hosted::usage::Observed>,
 }
 
 /// A port in a hosted workspace: its number, its label, who made it public
@@ -230,6 +235,8 @@ impl Db {
                         enroll_until: r.get(18)?,
                         deleted_at: r.get(19)?,
                         lease: String::new(),
+                        seen: Default::default(),
+                        usage: None,
                     })
                 },
             )
@@ -253,7 +260,8 @@ impl Db {
     /// the ask it carried out, cleared unless it was asked again as
     /// something else; a delete asked meanwhile keeps the state `deleting`.
     /// A workspace deleted for good loses its secrets, its ports and its
-    /// thread (M196).
+    /// thread (M196). What the step saw of its box is metered in the same
+    /// transaction ([`crate::hosted::usage`]).
     pub fn checkpoint_hosted(&self, job: &HostedJob, done: Option<Ask>, next: u64, now: u64) -> Result<()> {
         let mut c = self.c();
         let tx = c.immediate()?;
@@ -288,6 +296,9 @@ impl Db {
         )?;
         if changed != 1 {
             bail!("hosted workspace lease lost");
+        }
+        if let Some(o) = &job.usage {
+            super::hosted_usage::meter(&tx, &w.id, &w.project, o)?;
         }
         if job.deleted_at.is_some() {
             tx.execute("DELETE FROM hosted_workspace_secrets WHERE workspace_id = ?1", params![w.id])?;

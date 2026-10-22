@@ -204,3 +204,53 @@ async fn suite(
         run.check("resume an auto-paused box", resumed == Ok(Resumed::Woke), &resumed);
     }
 }
+
+/// M188's reconcile source, live: a box made and paused shows one run in
+/// its lifecycle events (E2B's lag them by seconds), with its size; loam
+/// keeps none. The box is deleted whatever happened.
+#[tokio::test]
+#[ignore = "makes a real box: set ARUGULA_TEST_E2B_URL and ARUGULA_TEST_E2B_KEY"]
+async fn live_runs() {
+    let (Ok(url), Ok(key)) = (std::env::var("ARUGULA_TEST_E2B_URL"), std::env::var("ARUGULA_TEST_E2B_KEY")) else {
+        panic!("set ARUGULA_TEST_E2B_URL and ARUGULA_TEST_E2B_KEY");
+    };
+    let template = std::env::var("ARUGULA_TEST_E2B_TEMPLATE").unwrap_or_else(|_| "base".into());
+    let e2b = E2b::new(&url, key).unwrap();
+    let run_id = format!("m188-{:x}", arugula_e2e::now_ms());
+    let tag: BTreeMap<String, String> = [("arugula_test".into(), "1".into()), ("arugula_run".into(), run_id)].into();
+    let made = e2b
+        .create(&Create { template, env: BTreeMap::new(), metadata: tag.clone(), timeout: Duration::from_secs(60) })
+        .await
+        .unwrap();
+    let body = AssertUnwindSafe(async {
+        let size = e2b.status(&made.id).await.unwrap().unwrap();
+        println!("size: {:?} vCPU, {:?} MiB", size.cpus, size.memory_mb);
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        e2b.pause(&made.id).await.unwrap();
+        // E2B answers 404 ("no events") until its first event lands.
+        let mut runs = None;
+        for _ in 0..30 {
+            runs = e2b.runs(&made.id).await.unwrap();
+            if runs.as_ref().is_some_and(|r| !r.is_empty()) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+        println!("runs: {runs:?}");
+        if url.contains("e2b.dev") {
+            assert!(runs.is_some(), "E2B keeps lifecycle events");
+        }
+        if let Some(runs) = runs {
+            assert_eq!(runs.len(), 1);
+            assert!(runs[0].ms >= 1_000, "{runs:?}");
+            assert_eq!((Some(runs[0].cpus), Some(runs[0].memory_mb)), (size.cpus, size.memory_mb));
+        }
+    })
+    .catch_unwind()
+    .await;
+    e2b.delete(&made.id).await.unwrap();
+    assert!(e2b.list(&tag).await.unwrap().is_empty(), "a box left");
+    if let Err(p) = body {
+        std::panic::resume_unwind(p);
+    }
+}

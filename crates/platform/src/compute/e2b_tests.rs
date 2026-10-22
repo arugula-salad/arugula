@@ -30,6 +30,8 @@ struct Fake {
     made: u32,
     /// Boxes per listing page.
     page: usize,
+    /// Each box's lifecycle events, oldest first (M188's runs).
+    events: BTreeMap<String, Vec<Value>>,
 }
 
 type S = Arc<Mutex<Fake>>;
@@ -174,6 +176,37 @@ async fn action(
     }
 }
 
+/// `GET /events/sandboxes/{id}`: E2B's paging (`offset`, `limit`), its
+/// `types` filter, and a 404 for a box it never had.
+async fn events(AxState(s): AxState<S>, m: Method, uri: Uri, Path(id): Path<String>) -> Response {
+    if let Some(r) = record(&s, &m, &uri, Value::Null) {
+        return r;
+    }
+    let f = s.lock().unwrap();
+    let Some(all) = f.events.get(&id) else { return error(404, None) };
+    let q: Vec<(String, String)> =
+        url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes()).into_owned().collect();
+    let get = |k: &str| q.iter().find(|(n, _)| n == k).map(|(_, v)| v.parse::<usize>().unwrap());
+    let types: Vec<&str> = q.iter().filter(|(n, _)| n == "types").map(|(_, v)| v.as_str()).collect();
+    let kept: Vec<Value> = all.iter().filter(|e| types.contains(&e["type"].as_str().unwrap())).cloned().collect();
+    let from = get("offset").unwrap_or(0).min(kept.len());
+    let end = (from + get("limit").unwrap_or(10)).min(kept.len());
+    Json(kept[from..end].to_vec()).into_response()
+}
+
+fn event(id: u32, kind: &str, run: Option<(&str, u64)>) -> Value {
+    let mut data = json!({"sandbox_metadata": {"arugula_workspace": "hw_1"}});
+    if let Some((started, ms)) = run {
+        data["execution"] = json!({"execution_time": ms, "memory_mb": 2048, "started_at": started, "vcpu_count": 2});
+    }
+    json!({
+        "id": format!("00000000-0000-0000-0000-{id:012}"), "version": "v2", "type": format!("sandbox.lifecycle.{kind}"),
+        "timestamp": "2026-10-22T00:00:00Z", "sandboxId": "sbx1", "sandboxExecutionId": "x",
+        "sandboxTemplateId": "t", "sandboxBuildId": "b", "sandboxTeamId": "00000000-0000-0000-0000-000000000000",
+        "eventData": data,
+    })
+}
+
 async fn fake() -> (E2b, S, String) {
     let s: S = Arc::new(Mutex::new(Fake { page: 100, ..Default::default() }));
     let app = Router::new()
@@ -181,6 +214,7 @@ async fn fake() -> (E2b, S, String) {
         .route("/sandboxes/{id}", any(one))
         .route("/sandboxes/{id}/{what}", post(action))
         .route("/v2/sandboxes/{id}/{what}", post(action))
+        .route("/events/sandboxes/{id}", get(events))
         .route("/health", get(|| async { "ok" }))
         .with_state(s.clone());
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -221,6 +255,32 @@ async fn create_pauses_on_timeout_and_never_auto_resumes() {
     assert!(!shown.contains("secret") && !shown.contains(KEY));
 }
 
+/// A box's runs are its pauses' and its delete's, read across pages, each
+/// once: a delete of a paused box ends no run. A box E2B never had (or a
+/// provider with no events, loam) has no record.
+#[tokio::test]
+async fn runs_are_read_from_lifecycle_events() {
+    let (e2b, s, _) = fake().await;
+    let mut evs = vec![event(0, "created", None)];
+    // 120 pause-resume cycles, a second each: two pages of runs.
+    for i in 0..120u32 {
+        evs.push(event(2 * i + 1, "paused", Some(("2026-10-22T00:00:00Z", 1_000 + u64::from(i)))));
+        evs.push(event(2 * i + 2, "resumed", None));
+    }
+    evs.push(event(999, "killed", Some(("2026-10-22T01:00:00.5Z", 400))));
+    evs.push(event(1000, "killed", None));
+    s.lock().unwrap().events.insert("sbx1".into(), evs);
+    let runs = e2b.runs("sbx1").await.unwrap().unwrap();
+    assert_eq!(runs.len(), 121);
+    assert_eq!(runs[0], Run { started_at: 1_792_627_200_000, ms: 1_000, cpus: 2, memory_mb: 2048 });
+    assert_eq!(runs[120], Run { started_at: 1_792_630_800_500, ms: 400, cpus: 2, memory_mb: 2048 });
+    let paths: Vec<String> = calls(&s).into_iter().map(|c| c.1).filter(|p| p.starts_with("/events/")).collect();
+    assert_eq!(paths.len(), 2, "{paths:?}");
+    assert!(paths[1].contains("offset=100") && paths[1].contains("orderAsc=true"), "{}", paths[1]);
+    assert!(paths[0].contains("types=sandbox.lifecycle.paused&types=sandbox.lifecycle.killed"), "{}", paths[0]);
+    assert_eq!(e2b.runs("nope").await.unwrap(), None);
+}
+
 #[tokio::test]
 async fn status_reads_without_waking() {
     let (e2b, s, _) = fake().await;
@@ -228,6 +288,7 @@ async fn status_reads_without_waking() {
     assert_eq!(e2b.pause(&id).await.unwrap(), Paused::Paused);
     let b = e2b.status(&id).await.unwrap().unwrap();
     assert_eq!((b.state, b.pauses_on_timeout), (State::Paused, Some(true)));
+    assert_eq!((b.cpus, b.memory_mb), (Some(2), Some(512)));
     assert_eq!(b.metadata["arugula_workspace"], "hw_1");
     assert_eq!(e2b.status(&id).await.unwrap().unwrap().state, State::Paused);
     assert!(calls(&s).iter().all(|(_, p, _)| !p.contains("connect") && !p.contains("resume")));

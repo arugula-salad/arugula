@@ -116,9 +116,11 @@ struct Args {
 fn main() -> anyhow::Result<()> {
     // `copy`, `checksums`, `secrets-check`, `migrations`: a window's tools
     // (window.rs, M141, M145), run on the platform's machine beside the
-    // server, and by the nightly dump.
+    // server, and by the nightly dump. `usage`: hosted workspaces' usage
+    // and cost (M188), read-only.
     let mut argv = std::env::args().skip(1).peekable();
-    if argv.peek().is_some_and(|a| ["copy", "checksums", "secrets-check", "migrations"].contains(&a.as_str())) {
+    if argv.peek().is_some_and(|a| ["copy", "checksums", "secrets-check", "migrations", "usage"].contains(&a.as_str()))
+    {
         return arugula_platform::window::run("arugula-platform", argv);
     }
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())

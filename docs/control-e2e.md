@@ -606,7 +606,9 @@ that project only.
 **What control can do with a delegation:** within that project, add
 machines the project's people will reach and type into, and read what runs
 in them (it runs the box). That's what the label says, and it's true of any
-VM: whoever runs it can read its memory. **What it can't:** add a hosted
+VM: whoever runs it can read its memory. So can E2B, which runs the boxes
+for control: it processes what's in them, their disks and memory and the
+secrets in its broker ([Who else sees it](#who-else-sees-it)). **What it can't:** add a hosted
 machine to a project nobody delegated, or after the delegation is revoked,
 without the project's people's pages refusing it; make a hosted machine
 count as anyone's device or approve one; reach any other machine or
@@ -1157,10 +1159,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 83 tables in two planes ("Two planes, two trust rules"):
+Control's database has 85 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (36 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (47 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues. Control reads most of it, and says so here.
+- **The platform plane** (49 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1256,12 +1258,14 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `hosted_workspaces` | metadata | A hosted workspace (M179): its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the last error, the worker's lease, who made it and when. | The platform makes, wakes, pauses and deletes hosted workspaces' boxes itself, and the page lists them, with every machine asleep. | partly: it stops naming the account as its maker. Workspaces in its personal project and its disbanded teams' projects are deleted, boxes and all, by the worker; their rows stay, marked deleted. | E2B |
 | `hosted_workspace_secrets` | **plaintext** | A secret a hosted workspace takes, by name, and where its value is: sealed here with a key control holds apart from the database, or in the provider's secrets broker. | A hosted workspace's box is made and rebuilt with every machine off. | partly: they go with their workspace, when the worker deletes it. | E2B |
 | `hosted_ports` | metadata | A port a dev server listens on in a hosted workspace (M186), its label, and who made it public and until when (M187). | Previews are served and expire with every machine asleep. | partly: it stops naming the account as who made a port public. They go with their workspace. |  |
+| `hosted_usage` | metadata | When a hosted workspace's box ran (M188): its workspace, project and box, its size (vCPUs and memory), and each running interval's start and end. | The platform meters boxes from their lifecycle, which runs with every machine asleep, and the operator reads what they cost. | nothing of one: it names no account: a workspace's project and box ids only. It stays when the workspace goes: it's what E2B billed. | E2B |
+| `hosted_usage_provider` | metadata | What E2B says a hosted workspace's box ran (M188), from its lifecycle events: how many runs, their milliseconds, vCPU-milliseconds and MiB-milliseconds, and when it was read. | The platform checks its usage against E2B's record with every machine asleep. | nothing of one: it names no account: a workspace's project and box ids only. | E2B |
 
 ### Who else sees it
 
 - **Litestream's bucket:** Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. On Postgres, the platform's tables go there in its nightly dump instead: encrypted, kept 30 days. Cloud secrets are there sealed, and their key isn't.
 - **Managoat:** Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals.
-- **E2B:** E2B runs hosted workspaces' boxes: it holds their disks and memory, the env and metadata each is made with (the workspace, project, release and template ids), and the secrets in its broker.
+- **E2B:** E2B runs hosted workspaces' boxes, so it processes their contents: it holds each box's disk and memory (the repos, files, terminals and agent conversations in it) while the box lives, paused too, the env and metadata each is made with (the workspace, project, release and template ids), and the secrets in its broker. It records each box's runs (when, how long, its size), which it bills by and the platform reads back to check its own usage.
 - **PostHog:** PostHog gets product events, when control has a key for it: account, team and machine ids, a machine's version, OS and arch, plans, Labs flags and counts. No names, logins, addresses or content.
 - **Sprites:** Sprites hosts hosted sandboxes: it knows each one's VM.
 - **GitHub:** GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it makes every token control mints and sees each one used, every draft sent goes to it, and it sends the webhooks.
