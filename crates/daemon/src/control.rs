@@ -278,6 +278,9 @@ impl Enrolled {
         let trusted = saved.trust.evaluate(&saved.certs, &saved.revocations);
         let mut others = Vec::new();
         let mut team_roles = HashMap::new();
+        // A hosted workspace's editors have full use of it, as its owners do
+        // (Jake, 2026-10-21); viewers watch. Team machines keep their roles.
+        let hosted = saved.hosted.is_some();
         if let Some(r) = &saved.roster {
             for m in &r.members {
                 if saved.locked && m.role != TeamRole::Owner {
@@ -285,6 +288,7 @@ impl Enrolled {
                 }
                 let who = match m.role {
                     TeamRole::Owner => Principal::Owner,
+                    TeamRole::Editor if hosted => Principal::Owner,
                     TeamRole::Editor | TeamRole::Viewer => {
                         let role = if m.role == TeamRole::Editor { Role::Editor } else { Role::Viewer };
                         team_roles.insert(format!("account:{}", m.account), role);
@@ -3930,6 +3934,88 @@ pub(crate) mod tests {
         // Out of the team, its owners are nobody to it.
         take_move(&mut saved, mv(&okeys, &owner, d, None, 7));
         assert_eq!(saved.moved_at, 6);
+    }
+
+    /// M180: on a hosted workspace a team project's editors get in as the
+    /// owner (full use, Jake 2026-10-21) and viewers as viewers; on a team
+    /// machine an editor stays an editor.
+    #[test]
+    fn a_hosted_workspaces_editors_have_full_use() {
+        let (_, owner) = device("o", Kind::Browser);
+        let (_, editor) = device("e", Kind::Browser);
+        let (_, viewer) = device("v", Kind::Browser);
+        let (_, this) = device("o", Kind::Daemon);
+        let member = |account: &str, root: &Cert, role| arugula_e2e::team::Member {
+            account: account.into(),
+            root: root.device.clone(),
+            role,
+            name: account.into(),
+        };
+        let roster = Roster {
+            v: 1,
+            team: "t1".into(),
+            name: "Acme".into(),
+            version: 1,
+            at: 1,
+            members: vec![
+                member("o", &owner, TeamRole::Owner),
+                member("e", &editor, TeamRole::Editor),
+                member("v", &viewer, TeamRole::Viewer),
+            ],
+            spent: vec![],
+            redeem: None,
+            by: String::new(),
+            sig: String::new(),
+        };
+        let team_saved = Saved {
+            url: String::new(),
+            trust: Trust { account: "o".into(), root: owner.device.clone() },
+            cert: this,
+            certs: vec![],
+            revocations: vec![],
+            team: Some(TeamPin { team: "t1".into(), founder: "o".into(), founder_root: owner.device.clone() }),
+            roster: Some(roster),
+            team_certs: [("o", &owner), ("e", &editor), ("v", &viewer)]
+                .into_iter()
+                .map(|(a, c)| (a.to_owned(), (vec![c.clone()], vec![])))
+                .collect(),
+            team_names: Default::default(),
+            locked: false,
+            peers: Default::default(),
+            shared_teams: Default::default(),
+            login: String::new(),
+            moved_at: 0,
+            hosted: None,
+        };
+        let key = arugula_e2e::hosted::HostedKey::generate();
+        let d = arugula_e2e::hosted::Delegation {
+            project: "prj_1".into(),
+            owner: "team:t1".into(),
+            key: key.public(),
+            at: 1,
+            by: owner.device.clone(),
+            sig: String::new(),
+        };
+        let hosted_saved = Saved {
+            hosted: Some(HostedPin {
+                cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
+                delegation: d,
+                revocations: vec![],
+            }),
+            ..team_saved.clone()
+        };
+        let dir = std::env::temp_dir().join(format!("arugula-hosted-roles-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Arc::new(Acl::open(&dir));
+        let who = |saved: &Saved, c: &Cert| {
+            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+            let p = e.others.iter().find(|(x, _)| x.device == c.device).map(|(_, p)| p.clone()).unwrap();
+            (p == Principal::Owner, e.team_roles.get(&format!("account:{}", c.account)).copied())
+        };
+        assert_eq!(who(&hosted_saved, &editor), (true, None));
+        assert_eq!(who(&hosted_saved, &viewer), (false, Some(Role::Viewer)));
+        assert_eq!(who(&hosted_saved, &owner), (true, None));
+        assert_eq!(who(&team_saved, &editor), (false, Some(Role::Editor)));
     }
 
     /// #386: a team's other owner gets in as the owner, but is someone of

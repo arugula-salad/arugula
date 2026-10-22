@@ -15,7 +15,8 @@
 //                          control's relay: {id, name}
 //   panes NAME             its panes, untouched: {id, name, panes}
 //   team-create NAME       a team, this account its owner: {team}
-//   team-invite TEAM       an Ask me first invite, its one-time key's seed: {code}
+//   team-invite TEAM [ROLE] an Ask me first invite (editor, or viewer), its
+//                          one-time key's seed: {code}
 //   team-accept TEAM CODE  this account asks to join with it (the seed, or
 //                          the whole #askinvite= link): {}
 //   team-admit TEAM        admit everyone who asked: {admitted}
@@ -90,7 +91,7 @@ async function main() {
     case "team-create":
       return out({ team: await d.createTeam(rest[0] ?? "team") });
     case "team-invite":
-      return out({ code: await d.invite(rest[0]) });
+      return out({ code: await d.invite(rest[0], (rest[1] as "editor" | "viewer" | undefined) ?? "editor") });
     case "team-accept":
       await d.acceptInvite(rest[0], rest[1]);
       return out({});
