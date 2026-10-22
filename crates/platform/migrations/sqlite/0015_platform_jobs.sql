@@ -1,4 +1,4 @@
--- 0023: the platform's one leased job table (M208, platform step 7).
+-- 0015: the platform's one leased job table (M208, platform step 7).
 -- Workspaces', runs', deploys' and schedules' background work, each a job
 -- the platform's machines take turns at (`crate::jobs`), as `cloud_jobs`
 -- does for Cloud runs, workspaces and tabs until M190 moves those here.

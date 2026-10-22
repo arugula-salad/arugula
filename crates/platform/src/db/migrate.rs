@@ -186,9 +186,9 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 23,
+        version: 15,
         name: "platform_jobs",
-        sql: include_str!("../../migrations/sqlite/0023_platform_jobs.sql"),
+        sql: include_str!("../../migrations/sqlite/0015_platform_jobs.sql"),
         additive: true,
     },
 ];
@@ -282,9 +282,9 @@ const POSTGRES: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 23,
+        version: 15,
         name: "platform_jobs",
-        sql: include_str!("../../migrations/postgres/0023_platform_jobs.sql"),
+        sql: include_str!("../../migrations/postgres/0015_platform_jobs.sql"),
         additive: true,
     },
 ];
