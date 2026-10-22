@@ -2339,6 +2339,53 @@ pricing page's other figure is Performance at $1,922/month. Fly's
 Managed Postgres page has the plans in between; Basic is the one to stay
 on until the platform's data or connections outgrow its 1 GB of memory.
 
+### The run-log bucket (M213)
+
+Runs on hosted workspaces send their logs and artifacts to an R2 bucket of
+their own, `arugula-run-logs`, through URLs the platform signs; the platform
+reads them back for a project's members (docs/control-e2e.md, "Its log,
+which the platform reads"). Without the four secrets below it's off, and a
+run's log stays in its pane.
+
+1. In Cloudflare: *R2 → Create bucket* `arugula-run-logs` (automatic
+   location). On it, *Settings → Object lifecycle rules → Add rule*: delete
+   objects 30 days after they're uploaded, for the whole bucket. No public
+   access, no custom domain, no CORS rule: every read and write is a signed
+   URL, and the page reads logs through the platform.
+2. *R2 → Manage API tokens → Create API token*: *Object Read & Write*, for
+   `arugula-run-logs` only. Escrow the key id and secret in Infisical
+   (project `arugula`, env `prod`, `/illogical/run-logs`).
+3. On `arugula-platform` (and on the hub too while the platform runs in its
+   process):
+
+   ```
+   fly secrets set -a arugula-platform --stage \
+     ARUGULA_RUN_LOGS_BUCKET=arugula-run-logs \
+     ARUGULA_RUN_LOGS_ENDPOINT=https://<account id>.r2.cloudflarestorage.com \
+     ARUGULA_RUN_LOGS_ACCESS_KEY_ID=… ARUGULA_RUN_LOGS_SECRET_ACCESS_KEY=…
+   ```
+
+   `ARUGULA_RUN_LOGS_REGION` defaults to `auto` (R2's),
+   `ARUGULA_RUN_LOGS_DAYS` to 30 (keep it the same as the bucket's rule), and
+   `ARUGULA_RUN_LOGS_DAILY_GIB` to 5: the most a project's runs send in a
+   day, counting every upload URL signed, used or not. The endpoint is
+   `https` (plain `http` only to localhost, for tests). A token or endpoint
+   set without a bucket refuses to start too.
+4. After the next deploy, `fly logs -a arugula-platform` says `runs' logs go
+   to a bucket`. A platform with a bucket but a missing endpoint or key
+   refuses to start, naming it.
+
+**Usage.** `arugula-platform run-logs --db "$ARUGULA_PLATFORM_DATABASE_URL"`
+on the platform's machine (`arugula-control platform run-logs` on the hub's)
+prints each project's runs, log bytes and artifact bytes in the bucket, as
+the platform's rows say, most first, read-only. The bucket's own size is on
+Cloudflare's R2 page. At R2's prices ($0.015 per GB-month, no egress fee),
+a project that keeps 10 GB of logs costs 15 cents a month.
+
+**The sweep.** Every hour the platform's leader forgets the rows of chunks
+and artifacts past the days, and deletes their files from the bucket (the
+rule does too; this keeps the days if the rule's missing).
+
 ### E2B (hosted workspaces' boxes)
 
 Hosted workspaces (#1235) run on E2B: each is `arugulad --hosted` in an

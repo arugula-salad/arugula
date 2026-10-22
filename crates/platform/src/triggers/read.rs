@@ -297,6 +297,10 @@ pub async fn show(
     Ok(Json(view(&app, &run, true)?))
 }
 
+/// The most pages of runs' logs a person reads in a minute (M213: each may
+/// read the run-log bucket).
+pub const LOG_READS: (&str, usize) = ("run-log-reads", 120);
+
 /// `GET /api/runs/{run}/log`.
 pub async fn log(
     State(app): State<Arc<Platform>>,
@@ -304,6 +308,8 @@ pub async fn log(
     Path(id): Path<String>,
     Query(q): Query<RunLogQuery>,
 ) -> J<RunLogPage> {
+    // A log followed a page every 2 s is 30 a minute.
+    app.limits.check_account_per_minute(LOG_READS, &account)?;
     let run = readable(&app, &account, &id).await?;
     Ok(Json(log_of(&app, &run, &q).await?))
 }

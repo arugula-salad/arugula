@@ -84,6 +84,11 @@ struct Args {
     #[command(flatten)]
     hosted: arugula_platform::hosted::Args,
 
+    /// The run-log bucket (M213): ARUGULA_RUN_LOGS_BUCKET, its endpoint,
+    /// token and days.
+    #[command(flatten)]
+    run_logs: arugula_platform::run_logs::Args,
+
     #[command(flatten)]
     billing: arugula_platform::billing::Args,
 
@@ -120,10 +125,12 @@ fn main() -> anyhow::Result<()> {
     // server, and by the nightly dump. `usage`: hosted workspaces' usage
     // and cost (M188), read-only. `rotate-key`: the master key's rotation
     // (M209, `keys::rotate`). `previews`: public previews, and the
-    // operator's takedown (M187).
+    // operator's takedown (M187). `run-logs`: runs' logs and artifacts in
+    // the run-log bucket, by project (M213), read-only.
     let mut argv = std::env::args().skip(1).peekable();
     if argv.peek().is_some_and(|a| {
-        ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "previews"].contains(&a.as_str())
+        ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "previews", "run-logs"]
+            .contains(&a.as_str())
     }) {
         return arugula_platform::window::run("arugula-platform", argv);
     }
@@ -177,6 +184,7 @@ async fn run() -> anyhow::Result<()> {
     p.cloud = a.cloud.cloud()?;
     p.compute = a.compute.substrate()?;
     p.github = a.github_app.app(&a.github_api)?;
+    p.run_logs = a.run_logs.bucket()?;
     p.paused = a.paused.into();
     let p = Arc::new(p);
     if a.paused {
@@ -187,6 +195,8 @@ async fn run() -> anyhow::Result<()> {
     arugula_platform::keys::start(&p);
     // The job worker: runs' dispatch (M212) and schedules (M214).
     arugula_platform::work::start(&p);
+    // Runs' logs past their days (M213).
+    arugula_platform::run_logs::start(&p);
     // Chat follows the hub's change feed, and so do projects and grants (a
     // machine that joins gets its `cloud.drive` grant from it).
     arugula_platform::chat::start(&p);
