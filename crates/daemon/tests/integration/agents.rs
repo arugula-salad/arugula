@@ -40,7 +40,15 @@ fn an_agent_block_runs_turns_and_asks_before_it_acts() {
         (p["title"].as_str(), p["tool"].as_str(), p["command"].as_str()),
         (Some("touch x"), Some("Bash"), Some("touch x"))
     );
-    let summary = d.get("/api/panes");
+    // The panes' summary follows the block's state a moment later.
+    let mut summary = d.get("/api/panes");
+    for _ in 0..50 {
+        if summary.as_array().unwrap().iter().any(|p| p["id"] == id && p["attention"] == "needs_input") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        summary = d.get("/api/panes");
+    }
     assert!(summary.as_array().unwrap().iter().any(|p| p["id"] == id && p["attention"] == "needs_input"), "{summary}");
     let (status, _) = d.raw(
         "POST",
