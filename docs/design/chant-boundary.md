@@ -43,6 +43,8 @@ terragucci shows the risk on the other side of the line: its CI features were bu
 
 Any platform drives chant through the same calls. #1359 already depends on most of them. I'd write them down as a versioned contract on chant's side and have drivers pin that version instead of a chant version.
 
+![Requested contract changes: plan-only call, device signature verification, configurable ledger remote and handles, release lookup by run ID, and plan freshness reads.](https://share.files.inevitable.fyi/2026-10-22/arugula-chant-contract-changes.png)
+
 | Call | Today | Change |
 |---|---|---|
 | Run an Op | `chant run <op> --json`, exit 0 done, exit 3 gated with `planDigest` | None |
@@ -57,6 +59,8 @@ Any platform drives chant through the same calls. #1359 already depends on most 
 
 ## Small things to fix in step 7
 
+![Step 7 changes from current to proposed behavior: plan before approval, relay the human signature, ask chant about all applies, and use one chant driver.](https://share.files.inevitable.fyi/2026-10-22/arugula-chant-step-7-changes.png)
+
 - The phone signs a description of the deploy and chant plans afterwards, so the owner doesn't see the plan that gets applied. Planning first and signing the digest fixes it. (#1359 `drivers.rs:129-169`, `work_deploy_chant_fly.mjs:122-127`)
 - The relayed approval carries no signature, so it fails on workspaces that require signed approvals. (`work_deploy_chant_fly.mjs:126`; chant `approve.ts:535-545`)
 - "Stale" only counts Arugula's own applies, so a deploy from a laptop or CI doesn't make a plan stale. chant's digest check still runs on the box, so this is limited. (`deploys.rs:24-31`)
@@ -69,6 +73,8 @@ A little. Every deploy is planned by a person or agent, approved by one owner, a
 It doesn't lock anyone in, since chant still deploys from a laptop or CI without the platform. Reading environments, promotion order and approval rules (quorum, approver roles) from chant would let Arugula support those workflows without designing them itself.
 
 ## Rough order
+
+![Proposed rollout by owner: chant and Arugula changes before the step 7 gate, during step 7 execution, and in step 8.](https://share.files.inevitable.fyi/2026-10-22/arugula-chant-rollout.png)
 
 - Before the step 7 gate release: chant adds a ledger remote and handles, accepts a device signature, and adds a plan-only call. Arugula plans first, signs the digest, and passes the signature on.
 - During step 7 execution: Arugula asks chant whether a plan is stale, reads environments from chant, and moves to one chant driver. chant adds the read calls and a trigger field on run records.
