@@ -15,7 +15,7 @@ import { toasts } from "./toast";
 import { AgentsPage } from "./pages/agents";
 import { IssuePage } from "./pages/issue";
 import { IssuesPage, NewIssuePage } from "./pages/issues";
-import { issues } from "./issues/store";
+import { issues } from "../shared/issues/store";
 import { ChatPage } from "./pages/chat";
 import { Home } from "./pages/home";
 import { InboxPage } from "./pages/inbox";

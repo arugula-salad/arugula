@@ -452,3 +452,37 @@ async fn a_demoted_editor_stops_writing_at_once() {
     assert_eq!(new_issue(&base, "e", &p, json!({ "title": "another" })).await.0, 403);
     assert_eq!(get(&base, "e", &format!("/api/issues/{id}")).await.0, 200, "still reads");
 }
+
+/// A change to an issue is heard live by those who see its thread (M203:
+/// a pinned issue block, a phone and the page update together); nobody
+/// outside the project hears it, and an issue nobody opened a thread on
+/// sends nothing.
+#[tokio::test]
+async fn a_change_is_heard_live_by_the_threads_readers() {
+    use std::time::Duration;
+
+    use crate::chat_tests::{hears, open_live};
+
+    let hub = Arc::new(TestHub::default());
+    let (app, base) = serve(hub.clone()).await;
+    let (p, _) = seed(&app, &hub);
+    let (_, one) = new_issue(&base, "a", &p, json!({ "title": "The canary fails" })).await;
+    let id = one["id"].as_str().unwrap().to_owned();
+    let v = open_live(&base, "v", None).await;
+    let c = open_live(&base, "c", None).await;
+    hears(&v, "\"type\":\"hello\"", Duration::from_secs(5)).await;
+    hears(&c, "\"type\":\"hello\"", Duration::from_secs(5)).await;
+
+    // No thread yet: nothing to say it on.
+    assert_eq!(patch(&base, "a", &id, json!({ "title": "The canary fails twice" })).await.0, 200);
+    let (st, room) =
+        call(&base, "v", "POST", "/api/chat/targets", Some(json!({ "kind": "object", "target": id }))).await;
+    assert_eq!(st, 200, "{room}");
+    let room = room["id"].as_str().unwrap().to_owned();
+    assert_eq!(patch(&base, "e", &id, json!({ "state": "closed" })).await.0, 200);
+    let said = format!("\"type\":\"object\",\"room\":\"{room}\",\"target\":\"{id}\"");
+    hears(&v, &said, Duration::from_secs(4)).await;
+    assert_eq!(v.lock().unwrap().matches("\"type\":\"object\"").count(), 1, "once, for the change after the thread");
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(!c.lock().unwrap().contains("\"type\":\"object\""), "c isn't in the project");
+}

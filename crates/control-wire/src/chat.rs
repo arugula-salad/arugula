@@ -410,6 +410,13 @@ pub enum ChatLive {
         room: String,
         seq: i64,
     },
+    /// What a room of kind `object` is on changed (M203: a native issue's
+    /// title, body, state, labels or assignees): read it again. Sent to
+    /// those who see the room; an object nobody has a thread on has none.
+    Object {
+        room: String,
+        target: String,
+    },
     Resync {},
 }
 

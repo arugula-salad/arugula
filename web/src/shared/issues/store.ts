@@ -1,8 +1,10 @@
 // A project's native issues (M201), as the platform's issue routes give
-// them (M195): a page of them, one with its timeline, a new one, a change,
-// and the project's issue home. The issues the page has read are kept by
-// id, for their links' slugs and for an id-only address's project. An
-// issue's comments are its thread (M196): chat's store has them.
+// them (M195) to the reader: a page of them, one with its timeline, a new
+// one, a change, and the project's issue home. Shared since M203: an issue
+// block on control's page reads through it too. The issues the page has
+// read are kept by id, for their links' slugs and for an id-only
+// address's project. An issue's comments are its thread (M196): chat's
+// store has them.
 
 import type {
   IssueEvent,
@@ -13,9 +15,9 @@ import type {
   IssuePatched,
   NativeIssue,
   NewNativeIssue,
-} from "../../shared/proto";
-import { chat } from "../../shared/chat-store";
-import { platformFetch, refusalOf } from "../../shared/maintenance";
+} from "../proto";
+import { chat } from "../chat-store";
+import { platformFetch, refusalOf } from "../maintenance";
 import { queryOf, type IssueFilter } from "./text";
 
 export type { IssueFilter };

@@ -1,4 +1,5 @@
-//! `arugula open`: a browser block on a port or a web page.
+//! `arugula open`: a browser block on a port or a web page, or (M203) a
+//! project's own issue as an issue block (`super::issue_native::open_config`).
 
 use super::Ctx;
 use crate::util::{Pane, env_pane, here, open_block, print_json};
@@ -8,8 +9,13 @@ use serde_json::json;
 
 #[derive(clap::Args)]
 pub struct Args {
-    /// `:PORT[/path]`, or a URL.
+    /// `:PORT[/path]`, a URL, or a project's own issue on Arugula control:
+    /// `iss_…`, or `#N` in the current project (as `arugula issue` finds
+    /// it; `--project` names another).
     target: String,
+    /// The project `#N` is in: its name or id, or `personal`.
+    #[arg(long, env = "ARUGULA_PROJECT")]
+    project: Option<String>,
     /// Split a block instead of opening a tab: `right` for the one this
     /// runs in, or `%N`.
     #[arg(long)]
@@ -24,8 +30,10 @@ pub struct Args {
 
 pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
     let Ctx { sock, json_out, .. } = ctx;
-    let Args { target, split, machine, session } = args;
+    let Args { target, split, machine, session, project } = args;
+    let issue = super::issue_native::is_open_target(&target);
     let config = match target.strip_prefix(':') {
+        _ if issue => super::issue_native::open_config(&target, project.as_deref())?,
         Some(rest) => {
             let (port, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
             let port: u16 = port.parse().with_context(|| format!("not a port: {target}"))?;
@@ -44,7 +52,7 @@ pub fn run(args: Args, ctx: Ctx) -> anyhow::Result<i32> {
         None => None,
     };
     let body = OpenRequest {
-        kind: BlockType::Browser,
+        kind: if issue { BlockType::Forge } else { BlockType::Browser },
         config,
         split,
         host,

@@ -97,6 +97,10 @@ fn policy(method: &Method, path: &str) -> Policy {
         // agent on the owner's CLI too: sharing publishes, and reading the
         // link back reads its key.
         ["api", "blocks", _, "call", "doc_share" | "doc_share_update" | "doc_unshare" | "doc_shares"] => Policy::Owner,
+        // M203: a project's own issue, as this machine read it for its
+        // owner, is the owner's: whoever else sees the block reads it as
+        // themselves on the platform, or not at all.
+        ["api", "blocks", _, "call", "native_issue"] => Policy::Owner,
         // #965: reading a picture is a call (a POST), and a viewer's page
         // shows the Doc's pictures: without this row the default below
         // would ask for an editor.
@@ -339,6 +343,7 @@ mod tests {
         assert_eq!(policy(&p, "/api/blocks/7/call/run_here"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/principals"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/hud"), Policy::Owner);
+        assert_eq!(policy(&p, "/api/blocks/7/call/native_issue"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/why"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/blocks/7/call/graph"), Policy::Owner);
         // #1117: a Cloud workspace block's reads and writes reach control as

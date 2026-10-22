@@ -90,9 +90,11 @@ enum Command {
     ///
     /// For example `call %4 navigate '{"url":"…"}'`.
     Call(cmd::call::Args),
-    /// Open a browser block on a port or a web page.
+    /// Open a browser block on a port or a web page, or a project's issue.
     ///
     /// `:PORT[/path]` is a port on its machine, `https://…` a web page.
+    /// `iss_…` or `#N` is a project's own issue on Arugula control, as an
+    /// issue block that reads it there.
     Open(cmd::open::Args),
     /// Open VS Code on a folder or a file; prints its block.
     ///

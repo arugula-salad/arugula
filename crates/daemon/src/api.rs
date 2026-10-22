@@ -673,6 +673,12 @@ async fn open_block(
     if req.kind == arugula_proto::BlockType::App {
         req.config = crate::labs::app_config(&req.config).await.map_err(bad)?;
     }
+    // Someone else's block is an agent's on a VM (the mux's `guest_block`):
+    // refused before a forge's config is worked out, which asks Arugula
+    // control as this machine for a project's own issue (M203).
+    if req.kind != arugula_proto::BlockType::Agent && who.as_ref().is_some_and(|w| !w.is_owner()) {
+        return Err(ApiError(StatusCode::FORBIDDEN, "guests can start agents; other blocks are the owner's".into()));
+    }
     // A pull request (M36), by its link, OWNER/REPO#N, or N in a clone.
     if req.kind == arugula_proto::BlockType::Forge {
         // M37: a new issue says who asked for it; under an agent (the CLI's
@@ -943,6 +949,12 @@ async fn call(
             && (!owner || foreign(&app, &dev))
         {
             return Err(ApiError(StatusCode::FORBIDDEN, OWN_ACCOUNT_ONLY.into()));
+        }
+        // M203: a project's own issue, as this machine read it, is its
+        // owner's: not a team's other owner's devices (`authz` refuses
+        // everyone else).
+        if b.kind() == arugula_proto::BlockType::Forge && method == "native_issue" && (!owner || foreign(&app, &dev)) {
+            return Err(ApiError(StatusCode::FORBIDDEN, "only the owner can do that".into()));
         }
         // The CLI says when an agent runs it (CLAUDECODE, AI_AGENT): a forge
         // block makes its writes drafts then (M36). A courtesy, not a

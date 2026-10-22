@@ -13,6 +13,8 @@
 //! `personal` is yours), else the project this directory's GitHub repo is
 //! linked to, else your personal one. A GitHub clone that none of your
 //! projects links keeps GitHub's issues, as before.
+//! `arugula open iss_…|#N` (M203) finds its issue by the same rule
+//! ([`open_config`]).
 //!
 //! **Native or GitHub:** the project's issue home says, `--native` and
 //! `--github` override it. GitHub's issues are its blocks', as before
@@ -523,6 +525,30 @@ fn account(projects: &Projects, project: &str, who: &str) -> String {
         .into_iter()
         .find(|(a, n)| a == who || n.eq_ignore_ascii_case(who))
         .map_or_else(|| who.to_owned(), |(a, _)| a)
+}
+
+/// What `arugula open` takes for an issue (M203): `iss_…` or `#N`.
+pub fn is_open_target(target: &str) -> bool {
+    matches!(Ref::parse(target), Ref::Id(_) | Ref::Number(_))
+}
+
+/// The issue block's config for `arugula open iss_…|#N` (M203): a
+/// project's own issue, pinned to the platform's, or GitHub's `#N` in this
+/// clone, by the same rule as `arugula issue` (`project`: `--project`).
+/// An id needs no login: the block reads it as the machine.
+pub fn open_config(target: &str, project: Option<&str>) -> anyhow::Result<Value> {
+    let r = Ref::parse(target);
+    if let Ref::Id(id) = &r {
+        return Ok(json!({ "issue": id }));
+    }
+    let home = Home { project: project.map(str::to_owned), ..Default::default() };
+    match decide(&home, Some(&r))? {
+        Decided::Native(h) => Ok(json!({ "issue": h.issue(&r)?.id })),
+        Decided::GitHub { .. } => {
+            let here = std::env::current_dir().ok().map(|d| d.display().to_string());
+            Ok(json!({ "issue": target.trim(), "dir": here }))
+        }
+    }
 }
 
 impl Here {
@@ -1096,6 +1122,15 @@ mod tests {
     use super::*;
     use arugula_control_wire::projects::{Me, Project, ProjectMember, ProjectTeam};
     use clap::Parser;
+
+    #[test]
+    fn what_open_takes_for_an_issue() {
+        assert!(is_open_target("iss_0123456789abcdef0123456789abcdef"));
+        assert!(is_open_target("#12"));
+        for not in [":3000", "https://example.com", "#x", "12", "iss_01"] {
+            assert!(!is_open_target(not), "{not}");
+        }
+    }
 
     #[test]
     fn targets() {

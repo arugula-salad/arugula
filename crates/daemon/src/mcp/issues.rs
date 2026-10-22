@@ -334,27 +334,17 @@ impl Call<'_> {
         if info.host.is_some() {
             return None;
         }
-        let out = tokio::process::Command::new("git")
-            .arg("-C")
-            .arg(info.cwd?)
-            .args(["remote", "-v"])
-            .env("GIT_OPTIONAL_LOCKS", "0")
-            .output()
-            .await
-            .ok()?;
-        let mut remotes: Vec<(String, String)> = String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .filter_map(|l| {
-                let mut p = l.split_whitespace();
-                Some((p.next()?.to_owned(), p.next()?.to_owned()))
-            })
-            .collect();
-        remotes.sort_by_key(|(name, _)| name != "origin");
-        remotes
-            .iter()
-            .filter_map(|(_, url)| crate::forge::login::parse_remote(url))
-            .find(|(host, _)| host == "github.com")
-            .map(|(_, repo)| repo)
+        github_repo_of(&info.cwd?).await
+    }
+
+    /// M203: the project whose own issue `#N` in `dir` is, when the clone's
+    /// GitHub repo is linked to one whose issue home is native (M199's and
+    /// this module's rule). `None`: the clone's forge's, as before.
+    pub(crate) async fn native_home_of(&self, dir: &str) -> Option<String> {
+        let repo = github_repo_of(dir).await?;
+        let path = format!("{AGENT_ISSUE_HOME}?{}", query(&[("repo", repo)]));
+        let v = self.issues_call(Method::GET, &path, None).await.ok()?;
+        (v["home"] == "native").then(|| v["project"].as_str().map(str::to_owned)).flatten()
     }
 
     /// The current project's id (module docs).
@@ -566,6 +556,32 @@ fn issue_query(q: &IssueQuery) -> String {
     ];
     let pairs: Vec<(&str, String)> = given.into_iter().filter_map(|(k, v)| Some((k, v?))).collect();
     query(&pairs)
+}
+
+/// The GitHub repo (`owner/name`) of the clone at `dir`: its `origin`'s,
+/// else the first remote's that's on github.com.
+async fn github_repo_of(dir: &str) -> Option<String> {
+    let out = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["remote", "-v"])
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .output()
+        .await
+        .ok()?;
+    let mut remotes: Vec<(String, String)> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            let mut p = l.split_whitespace();
+            Some((p.next()?.to_owned(), p.next()?.to_owned()))
+        })
+        .collect();
+    remotes.sort_by_key(|(name, _)| name != "origin");
+    remotes
+        .iter()
+        .filter_map(|(_, url)| crate::forge::login::parse_remote(url))
+        .find(|(host, _)| host == "github.com")
+        .map(|(_, repo)| repo)
 }
 
 #[cfg(test)]
