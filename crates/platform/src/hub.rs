@@ -245,6 +245,22 @@ pub trait HubPort: Send + Sync {
         Box::pin(async { anyhow::bail!("this hub doesn't say projects' delegations") })
     }
 
+    /// Whether `sig` is `device`'s over `body`, and `device` is a browser
+    /// (all the way back to its account's root, as control holds it) of
+    /// one of the owners `owner` (`team:<id>` or `account:<id>`) names:
+    /// what a project's standing grant and its revokes take (M211). A hub
+    /// from before can't say.
+    fn owner_browser_signed<'a>(
+        &'a self,
+        owner: &'a str,
+        device: &'a str,
+        body: &'a str,
+        sig: &'a str,
+    ) -> BoxFuture<'a, HubResult<bool>> {
+        let _ = (owner, device, body, sig);
+        Box::pin(async { anyhow::bail!("this hub doesn't check owners' signatures") })
+    }
+
     /// Whether these machines are working (M180): busy from the start of
     /// an agent turn or a foreground command to its end, as each hosted
     /// daemon last said on its relay socket. Machines that aren't on the

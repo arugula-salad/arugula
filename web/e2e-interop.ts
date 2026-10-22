@@ -5,7 +5,7 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { evaluate, certBody, joinCode, joinMac, splitJoinCode, type Cert } from "./src/shell/e2e/cert.ts";
+import { evaluate, certBody, joinCode, joinMac, revocationBody, splitJoinCode, type Cert, type Revocation } from "./src/shell/e2e/cert.ts";
 import { generateKeys, signText } from "./src/shell/e2e/keys.ts";
 import { daemonNow, E2ESocket, readWelcome } from "./src/shell/e2e/channel.ts";
 import { blockRoutesLabel } from "./src/shell/blocks/block-route.ts";
@@ -50,14 +50,35 @@ check("same join code", (await joinCode(fx.daemon)) === fx.joinCode, fx.joinCode
 // 2. Certificates signed here, evaluated by Rust.
 const root = await generateKeys();
 const phone = await generateKeys();
-const mk = async (k: typeof root, by: typeof root, name: string, created: number): Promise<Cert> => {
-  const c: Cert = { v: 1, account: "acct2", device: k.id, kind: "browser", name, noise: k.noisePub, sign: k.signPub, created, approver: by.id, sig: "" };
+const mk = async (k: typeof root, by: typeof root, name: string, created: number, kind: Cert["kind"] = "browser"): Promise<Cert> => {
+  const c: Cert = { v: 1, account: "acct2", device: k.id, kind, name, noise: k.noisePub, sign: k.signPub, created, approver: by.id, sig: "" };
   c.sig = await signText(by, certBody(c));
   return c;
 };
 const certs = [await mk(root, root, "laptop ✓", 1), await mk(phone, root, "phone", 2)];
 const rust = JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust: { account: "acct2", root: root.id }, certs }) }).toString());
 check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([root.id, phone.id].sort()));
+
+// 2b. A CLI and the desktop app approve machines, CLIs and apps, never a
+// browser: Rust and this code agree.
+{
+  const [cli, app, viaCli, viaApp, appsCli, appsApp] = await Promise.all([1, 2, 3, 4, 5, 6].map(() => generateKeys()));
+  const chain = [
+    await mk(root, root, "laptop ✓", 1),
+    await mk(cli, root, "terminal", 2, "cli"),
+    await mk(app, root, "Arugula app on box", 3, "app"),
+    await mk(viaCli, cli, "a browser the CLI made", 4),
+    await mk(viaApp, app, "a browser the app made", 5),
+    await mk(appsCli, app, "a CLI the app made", 6, "cli"),
+    await mk(appsApp, app, "an app the app made", 7, "app"),
+  ];
+  const trust = { account: "acct2", root: root.id };
+  const want = [root.id, cli.id, app.id, appsCli.id, appsApp.id].sort();
+  const ours = [...(await evaluate(trust, chain)).keys()].sort();
+  check("a CLI or the app never makes a browser (here)", JSON.stringify(ours) === JSON.stringify(want), ours.join(","));
+  const theirs = JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust, certs: chain }) }).toString());
+  check("a CLI or the app never makes a browser (Rust)", JSON.stringify(theirs) === JSON.stringify(want), theirs.join(","));
+}
 
 // 3. A team roster and a presigned invite signed here: Rust and this code
 // agree on each version, and on a tampered one.
@@ -96,6 +117,70 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
   await both("nor a spent key with a space in it", v1, await signRedeem(odd(v2, (x) => (x.spent[0].key += " x")), seed), false);
   await both("nor a member name with a space in it", v1, await signRedeem(odd(v2, (x) => (x.members[1].name = "bob b")), seed), false);
   await both("nor the same invite again", v2, await redeemInvite(v2, inv, seed, { account: "carol", root: bob.id, name: "carol" }), false);
+
+  // A CLI's or the app's key may be a program's: neither makes an owner, a
+  // CLI no editor either, by a roster or a presigned invite; the app makes
+  // editors (Jake, 2026-10-22).
+  const aliceCli = await generateKeys();
+  const aliceApp = await generateKeys();
+  const under = async (k: typeof alice, kind: Cert["kind"]): Promise<Cert> => {
+    const c: Cert = { v: 1, account: "alice", device: k.id, kind, name: kind, noise: k.noisePub, sign: k.signPub, created: 2, approver: alice.id, sig: "" };
+    c.sig = await signText(alice, certBody(c));
+    return c;
+  };
+  tc.alice[0].push(await under(aliceCli, "cli"), await under(aliceApp, "app"));
+  const withBob = (role: "owner" | "editor" | "viewer") => ({ ...v1, version: 2, members: [...v1.members, { account: "bob", root: bob.id, role, name: "bob" }] });
+  for (const [k, by, editors] of [[aliceCli, "a CLI", false], [aliceApp, "the app", true]] as const) {
+    await both(`${by} can't make an owner`, v1, await signRoster(withBob("owner"), k), false);
+    await both(`${by} ${editors ? "makes" : "can't make"} an editor`, v1, await signRoster(withBob("editor"), k), editors);
+    await both(`${by} adds a viewer`, v1, await signRoster(withBob("viewer"), k), true);
+  }
+  await both("a browser makes an owner", v1, await signRoster(withBob("owner"), alice), true);
+  const moved = { ...v1, version: 2, members: [{ account: "alice", root: bob.id, role: "owner" as const, name: "alice" }] };
+  await both("a CLI can't move its owner's own entry to another root", v1, await signRoster(moved, aliceCli), false);
+  const fromCli = await signInvite({ team: pin.team, role: "editor", expires: Date.now() + 86_400_000, key }, aliceCli);
+  await both("a CLI's presigned editor invite doesn't admit", v1, await redeemInvite(v1, fromCli, seed, { account: "bob", root: bob.id, name: "bob" }), false);
+  const fromApp = await signInvite({ team: pin.team, role: "editor", expires: Date.now() + 86_400_000, key }, aliceApp);
+  await both("the app's presigned editor invite admits", v1, await redeemInvite(v1, fromApp, seed, { account: "bob", root: bob.id, name: "bob" }), true);
+
+  // Nor does a CLI remove a browser; it removes a machine.
+  const machine = await generateKeys();
+  const box: Cert = { v: 1, account: "alice", device: machine.id, kind: "daemon", name: "box", noise: machine.noisePub, sign: machine.signPub, created: 3, approver: alice.id, sig: "" };
+  box.sig = await signText(alice, certBody(box));
+  const certs = [...tc.alice[0], box];
+  const revoke = async (device: string, by: typeof alice): Promise<Revocation> => {
+    const r: Revocation = { v: 1, account: "alice", device, at: 10, by: by.id, sig: "" };
+    r.sig = await signText(by, revocationBody(r));
+    return r;
+  };
+  const trust = { account: "alice", root: alice.id };
+  for (const [what, r, gone] of [
+    ["a CLI removing the browser root doesn't count", await revoke(alice.id, aliceCli), false],
+    ["a CLI removing a machine does", await revoke(machine.id, aliceCli), true],
+  ] as const) {
+    const ours = !(await evaluate(trust, certs, [r])).has(r.device);
+    const theirs = !(JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust, certs, revocations: [r] }) }).toString()) as string[]).includes(r.device);
+    check(what, ours === gone && theirs === gone, `ts ${ours}, rust ${theirs}`);
+  }
+  // A recovery code that let a browser in, revoked backdated (`at: 1`) by
+  // a CLI: doesn't count, and that browser stays.
+  const code = await generateKeys();
+  const codeCert: Cert = { v: 1, account: "alice", device: code.id, kind: "recovery", name: "recovery 1", noise: code.noisePub, sign: code.signPub, created: 4, approver: alice.id, sig: "" };
+  codeCert.sig = await signText(alice, certBody(codeCert));
+  const recovered = await generateKeys();
+  const recoveredCert: Cert = { v: 1, account: "alice", device: recovered.id, kind: "browser", name: "new laptop", noise: recovered.noisePub, sign: recovered.signPub, created: 5, approver: code.id, sig: "" };
+  recoveredCert.sig = await signText(code, certBody(recoveredCert));
+  const withCode = [...certs, codeCert, recoveredCert];
+  for (const [what, by, stays] of [
+    ["a CLI revoking a recovery code backdated doesn't take out its browser", aliceCli, true],
+    ["a browser's backdated revoke of it does", alice, false],
+  ] as const) {
+    const r: Revocation = { v: 1, account: "alice", device: code.id, at: 1, by: by.id, sig: "" };
+    r.sig = await signText(by, revocationBody(r));
+    const ours = (await evaluate(trust, withCode, [r])).has(recovered.id);
+    const theirs = (JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust, certs: withCode, revocations: [r] }) }).toString()) as string[]).includes(recovered.id);
+    check(what, ours === stays && theirs === stays, `ts ${ours}, rust ${theirs}`);
+  }
 }
 
 // 3b. Block grants (M50): what control's page mints, Rust's Grant::check

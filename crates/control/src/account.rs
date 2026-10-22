@@ -45,12 +45,16 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::{info, warn};
 
-use crate::{ApiError, App, auth::Session, err};
+use crate::{
+    ApiError, App,
+    auth::{PageSession, Session},
+    err,
+};
 
 type R = Result<Json<Value>, ApiError>;
 
 /// How a session is shown and named: the start of its token's hash.
-const SESSION_ID_LEN: usize = 16;
+pub(crate) const SESSION_ID_LEN: usize = 16;
 
 fn session_cookie(headers: &HeaderMap) -> Option<&str> {
     headers
@@ -126,7 +130,10 @@ pub async fn end_session(State(app): State<Arc<App>>, s: Session, Path(id): Path
 }
 
 /// `POST /api/me/sessions/end-all`: sign out everywhere, here too.
-pub async fn end_all(State(app): State<Arc<App>>, s: Session) -> Response {
+pub async fn end_all(State(app): State<Arc<App>>, s: PageSession) -> Response {
+    if let Err(e) = s.not_app(&app) {
+        return e.into_response();
+    }
     match app.db.drop_sessions(&s.account) {
         Ok(n) => {
             info!(account = s.account, sessions = n, "signed out everywhere");
@@ -180,7 +187,8 @@ pub async fn passkeys(State(app): State<Arc<App>>, s: Session) -> R {
 }
 
 /// `POST /api/me/passkeys/{id}/remove`: never the last way to sign in.
-pub async fn remove_passkey(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>) -> R {
+pub async fn remove_passkey(State(app): State<Arc<App>>, s: PageSession, Path(id): Path<String>) -> R {
+    s.not_app(&app)?;
     match app.db.drop_passkey(&s.account, &id)? {
         Ok(()) => {
             info!(account = s.account, "passkey removed");
@@ -298,7 +306,10 @@ pub struct Confirm {
 }
 
 /// `POST /api/me/delete {confirm}`: delete this account, for good.
-pub async fn delete(State(app): State<Arc<App>>, s: Session, Json(b): Json<Confirm>) -> Response {
+pub async fn delete(State(app): State<Arc<App>>, s: PageSession, Json(b): Json<Confirm>) -> Response {
+    if let Err(e) = s.not_app(&app) {
+        return e.into_response();
+    }
     match delete_account(&app, &s.account, &b.confirm).await {
         Ok(()) => {
             let mut res = Json(json!({ "deleted": true })).into_response();

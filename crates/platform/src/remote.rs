@@ -242,6 +242,14 @@ struct DelegationArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+struct SignedArgs {
+    owner: String,
+    device: String,
+    body: String,
+    sig: String,
+}
+
+#[derive(Serialize, Deserialize)]
 struct OpArgs {
     daemon: String,
     op: DaemonOp,
@@ -471,6 +479,19 @@ impl HubPort for HttpHub {
     fn activity<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<crate::hub::MachineActivity>>> {
         Box::pin(self.0.call("activity", IdsArgs { ids: machines.to_vec() }))
     }
+
+    fn owner_browser_signed<'a>(
+        &'a self,
+        owner: &'a str,
+        device: &'a str,
+        body: &'a str,
+        sig: &'a str,
+    ) -> BoxFuture<'a, HubResult<bool>> {
+        Box::pin(self.0.call(
+            "owner_browser_signed",
+            SignedArgs { owner: owner.into(), device: device.into(), body: body.into(), sig: sig.into() },
+        ))
+    }
 }
 
 /// What one side's internal API answers with: the port it serves, and
@@ -567,6 +588,10 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "live_delegation" => {
                 let a: DelegationArgs = args(&body)?;
                 answer(hub.live_delegation(&a.project, &a.owner).await?)?
+            }
+            "owner_browser_signed" => {
+                let a: SignedArgs = args(&body)?;
+                answer(hub.owner_browser_signed(&a.owner, &a.device, &a.body, &a.sig).await?)?
             }
             _ => return Ok(None),
         }))

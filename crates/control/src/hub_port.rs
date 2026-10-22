@@ -333,6 +333,23 @@ impl HubPort for InProcess {
             crate::hosted::live_delegation_id(&app.db, &app.hosted_key.public(), project, owner)
         })
     }
+
+    fn owner_browser_signed<'a>(
+        &'a self,
+        owner: &'a str,
+        device: &'a str,
+        body: &'a str,
+        sig: &'a str,
+    ) -> BoxFuture<'a, HubResult<bool>> {
+        Box::pin(async move {
+            let app = self.app()?;
+            let Some(o) = arugula_e2e::hosted::Owner::parse(owner) else { return Ok(false) };
+            let Some(people) = crate::hosted::people(&app.db, &o)? else { return Ok(false) };
+            // Here the desktop app's devices from before it had a kind are
+            // refused too (`Cert::is_browser` on every link).
+            Ok(people.owners().browser_signed_by(owner, device, body, sig, arugula_e2e::Cert::is_browser))
+        })
+    }
 }
 
 /// The platform, when it's in this process: what the three calls above

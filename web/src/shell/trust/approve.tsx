@@ -533,6 +533,8 @@ export function DevicePrompt({ s, c, given, done }: { s: ControlSession; c: Cert
   const sealed = s.sealed(c);
   const want = s.pendingCodes.get(c.device) ?? "";
   const code = (given?.code === want ? given : null) ?? typedCode(want, typed);
+  // The app's window doesn't approve a browser or a phone.
+  const mayApprove = s.canApprove(c.kind);
   return (
     <Modal>
       <h2>New device?</h2>
@@ -553,12 +555,19 @@ export function DevicePrompt({ s, c, given, done }: { s: ControlSession; c: Cert
       )}
       {sealed && !(code && code === given) ? <DeviceRest code={want} typed={typed} set={setTyped} /> : null}
       {err ? <p class="control-error">{err}</p> : null}
-      <p class="dim">If you didn't just sign in on it, turn it down.</p>
+      {mayApprove ? (
+        <p class="dim">If you didn't just sign in on it, turn it down.</p>
+      ) : (
+        <p class="dim" data-approve-elsewhere>
+          The desktop app approves machines, CLIs and other apps, not browsers or phones: approve it from a browser or phone of yours. If you
+          didn't just sign in on it, turn it down.
+        </p>
+      )}
       <div class="prompt-buttons">
         <button data-reject onClick={() => act(() => s.reject(c))}>
           Turn down
         </button>
-        <button class="primary" data-approve disabled={sealed && !code} onClick={() => act(() => s.approve(c, code))}>
+        <button class="primary" data-approve disabled={(sealed && !code) || !mayApprove} onClick={() => act(() => s.approve(c, code))}>
           Approve
         </button>
       </div>

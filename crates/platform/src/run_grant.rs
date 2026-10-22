@@ -8,8 +8,8 @@
 //! | Route | Who |
 //! |---|---|
 //! | `GET /api/projects/{project}/runs/grant` | members |
-//! | `POST /api/projects/{project}/runs/grant` (an owner's device's signed grant) | owners, as people or their CLI |
-//! | `POST /api/projects/{project}/runs/grant/revoke` (any owner's device's signed revoke) | owners, as people or their CLI |
+//! | `POST /api/projects/{project}/runs/grant` (an owner's browser's signed grant) | owners |
+//! | `POST /api/projects/{project}/runs/grant/revoke` (any owner's browser's signed revoke) | owners |
 //! | `POST /api/projects/{project}/runs/start` | owners and editors |
 //!
 //! - **What the platform checks** when a grant arrives: it's well formed,
@@ -18,9 +18,11 @@
 //!   `HubPort::live_delegation`), wasn't revoked before it got here, and
 //!   the project has no live one under that delegation (revoke it first).
 //!   One that expired, or names a delegation that isn't live any more, is
-//!   superseded. It can't check the signature (it holds no device keys,
-//!   aru-079), so a grant only an outsider signed is kept and refused by
-//!   every machine. The machines are what's trusted here.
+//!   superseded. It asks the hub whether a browser of one of the project's
+//!   owners signed it, all the way back to that owner's root
+//!   (`HubPort::owner_browser_signed`), and refuses one a CLI or the
+//!   desktop app signed; it holds no device keys itself (aru-079), and the
+//!   machines check again: they're what's trusted here.
 //! - **Offered** ([`GrantView::offer`]) once the project has a hosted
 //!   workspace and no live grant, or one under an old delegation; renewing
 //!   is offered when it expires within [`RENEW_DAYS`]. The shell (control's
@@ -37,9 +39,9 @@
 //!   nothing: runs start with `POST /api/projects/{project}/runs` (M214),
 //!   and the machine pulls them, each checked the same way (M212).
 //!
-//! No agent signs or revokes a grant: these take a person (a session or
-//! their CLI device, which signs with its own key), never a machine's
-//! `cloud.drive`.
+//! No agent signs or revokes a grant: these take a person's browser or
+//! phone, never a CLI's key (an agent on its machine can read it) or a
+//! machine's `cloud.drive`.
 
 use std::sync::Arc;
 
@@ -220,6 +222,7 @@ pub async fn sign(
     if g.project != project || g.owner != owner {
         return Err(err(StatusCode::BAD_REQUEST, "that grant is for another project"));
     }
+    browser_signed(&app, &owner, &g.by, &g.body(), &g.sig).await?;
     if g.caps.len() != CAPS.len() {
         return Err(err(StatusCode::BAD_REQUEST, "a project's standing grant gives runs.start and runs.instruct"));
     }
@@ -282,6 +285,7 @@ pub async fn revoke(
     if r.at.saturating_sub(now_ms()) > SKEW_MS {
         return Err(err(StatusCode::BAD_REQUEST, "that revoke's time is too far from control's clock"));
     }
+    browser_signed(&app, &owner_of(&app, &project)?, &r.by, &r.body(), &r.sig).await?;
     let n = app.db.revoke_run_grants(&r, now_ms())?;
     if n == 0 {
         return Err(err(StatusCode::CONFLICT, "that revoke covers no grant here that isn't revoked already"));
@@ -295,6 +299,26 @@ pub async fn revoke(
     let answers = join_all(machines.iter().map(|m| app.hub.daemon_op(m, &op))).await;
     let told = answers.iter().filter(|a| matches!(a, Ok(OpAnswer::Done { .. }))).count();
     Ok(Json(json!({ "revoked": n, "machines": machines.len(), "told": told })))
+}
+
+/// The reason code when a grant or a revoke isn't a browser owner's.
+pub const NEEDS_BROWSER: &str = "needs_browser";
+
+/// `sig` over `body` is a browser's (one all the way back) of one of the
+/// project's owners, as the hub holds them: a CLI's or the desktop app's
+/// key is refused, as every hosted machine refuses it.
+async fn browser_signed(app: &Platform, owner: &str, by: &str, body: &str, sig: &str) -> Result<(), ApiError> {
+    let ok = app.hub.owner_browser_signed(owner, by, body, sig).await.map_err(|e| {
+        err(StatusCode::SERVICE_UNAVAILABLE, &format!("can't ask control about the signing device: {e:#}"))
+    })?;
+    if !ok {
+        return Err(refusal(
+            StatusCode::FORBIDDEN,
+            NEEDS_BROWSER,
+            "sign the standing grant (and revoke it) from a browser or a phone of one of the project's owners: a CLI's or the desktop app's key may be a program's",
+        ));
+    }
+    Ok(())
 }
 
 /// The refusal codes a machine answers, as `&'static str` for the reply.

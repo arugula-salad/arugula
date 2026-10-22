@@ -1,5 +1,6 @@
-// The overlay's other prompts: the desktop app signing in (M48), a session
-// shared with this account, team invites (#762, presigned or Ask me first)
+// The overlay's other prompts: the desktop app signing in (M48), adding a
+// passkey, a session shared with this account, team invites (#762,
+// presigned or Ask me first)
 // and an owner admitting someone who used one, and what control kept to
 // say (a team joined, #103; a team deleted, #206).
 
@@ -39,7 +40,13 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
                 Check the app shows <b data-app-login-code={a.code}>{a.code}</b>.
               </>
             ) : null}
-            {s.signsApp(a) ? <span data-app-login-device> Allowing also makes it one of your devices, so its window reaches your machines.</span> : null}
+            {s.signsApp(a) ? (
+              <span data-app-login-device>
+                {" "}
+                Allowing also makes it one of your devices, as an app: its window reaches your machines and can approve machines, CLIs and other apps,
+                but not browsers, phones or deploys.
+              </span>
+            ) : null}
           </p>
           {a.same_network ? null : (
             <p class="control-error" data-app-login-elsewhere>
@@ -78,6 +85,66 @@ export function AppLoginPrompt({ s, id }: { s: ControlSession; id: string }) {
   );
 }
 
+/** A passkey made for an account that has some: one of them agrees before
+ * control keeps it, so a session alone can't add one. Its own click, as a
+ * browser asks for a passkey only on one. */
+export function ConfirmPasskey({ s }: { s: ControlSession }) {
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal close={() => s.dropPasskey()}>
+      <h2>Confirm the new passkey</h2>
+      <p data-passkey-confirm>
+        Your new passkey is made. Confirm it with a passkey you already have: nobody adds one to your account without one of yours. Every device
+        of yours hears that it was added.
+      </p>
+      {err ? <p class="control-error">{err}</p> : null}
+      <div class="prompt-buttons">
+        <button onClick={() => s.dropPasskey()}>Cancel</button>
+        <button
+          class="primary"
+          data-passkey-confirm-go
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            s.confirmPasskey().catch((e: Error) => {
+              setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message);
+              setBusy(false);
+            });
+          }}
+        >
+          Confirm with a passkey
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Back from signing in with GitHub again to add a passkey (an account
+ * with none needs a sign-in from the last few minutes): make it now. */
+export function AddPasskeyAgain({ s }: { s: ControlSession }) {
+  const [err, setErr] = useState("");
+  return (
+    <Modal close={clearHash}>
+      <h2>Add a passkey</h2>
+      <p data-add-passkey-again>You signed in with GitHub again. Add the passkey now: it signs you in without GitHub from then on.</p>
+      {err ? <p class="control-error">{err}</p> : null}
+      <div class="prompt-buttons">
+        <button onClick={clearHash}>Not now</button>
+        <button
+          class="primary"
+          data-add-passkey
+          onClick={() =>
+            s.addPasskey().then(clearHash, (e: Error) => setErr(e.name === "NotAllowedError" ? "Cancelled." : e.message))
+          }
+        >
+          Add a passkey
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 /** Back from handing the app its grant (and, from a device, its
  * certificate). */
 export function AppLoginDone() {
@@ -92,13 +159,13 @@ export function AppLoginDone() {
       <h2>Sign in the app?</h2>
       {signed ? (
         <p data-app-login-done>
-          Signed in, and the app is one of your devices now: its window reaches your machines. Its own machine joins separately, with a code, and
-          doesn't need this.
+          Signed in, and the app is one of your devices now: its window reaches your machines. As an app, it approves machines and CLIs, not
+          browsers, phones or deploys. Its own machine joins separately, with a code, and doesn't need this.
         </p>
       ) : (
         <p data-app-login-done>
-          Signed in. Next the app's window asks to be approved as a device, so it reaches your machines: the prompt shows here in a moment. Its own
-          machine joins separately, with a code, and doesn't need this.
+          Signed in. Next the app's window asks to be approved as a device, so it reaches your machines: the prompt shows here in a moment. As an
+          app, it approves machines and CLIs, not browsers, phones or deploys. Its own machine joins separately, with a code, and doesn't need this.
         </p>
       )}
       <div class="prompt-buttons">

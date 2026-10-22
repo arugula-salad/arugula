@@ -172,7 +172,7 @@ pub async fn finish(app: &App, headers: &HeaderMap, q: Callback) -> Response {
 
 /// Revoke a user token at GitHub, with the App's client: best effort (it
 /// expires anyway), and never logged.
-async fn revoke(app: &App, gh: &Github, t: &str) {
+pub(crate) async fn revoke(app: &App, gh: &Github, t: &str) {
     let r = app
         .http
         .delete(format!("{}/applications/{}/token", gh.api, gh.client_id))

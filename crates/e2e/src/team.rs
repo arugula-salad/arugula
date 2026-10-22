@@ -196,9 +196,22 @@ impl AskInvite {
         self.sig = hex::encode(keys.signature(self.body().as_bytes()));
     }
 
-    /// Signed by `by`, a device that may approve.
+    /// Signed by `by`, a device that may approve. One for an owner or an
+    /// editor also needs `by` to be a browser all the way back to its
+    /// account's root ([`AskInvite::raises`], `Trust::browser_chained`),
+    /// as the roster that admits them does.
     pub fn signed_by(&self, by: &Cert) -> bool {
         by.device == self.by && by.kind.approves() && verify_hex(&by.sign, self.body().as_bytes(), &self.sig)
+    }
+
+    /// Whether it makes someone an owner or an editor.
+    pub fn raises(&self) -> bool {
+        self.role != TeamRole::Viewer
+    }
+
+    /// The role it raises someone to, if any ([`raise_ok`]).
+    pub fn raised(&self) -> Option<TeamRole> {
+        self.raises().then_some(self.role)
     }
 
     /// What the one-time key signs for whoever used the link: their
@@ -329,6 +342,28 @@ fn word(s: &str) -> bool {
     !s.is_empty() && s.len() <= 120 && !s.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
+fn rank(r: TeamRole) -> u8 {
+    match r {
+        TeamRole::Owner => 2,
+        TeamRole::Editor => 1,
+        TeamRole::Viewer => 0,
+    }
+}
+
+/// Whether `signer` may sign a paper that raises someone to `raised`:
+/// anything for none; an editor, a browser all the way back to its root
+/// (`browser_chained`) or the desktop app's device; an owner, only such a
+/// browser. Never a CLI's key: an agent on its machine can read it. (The
+/// app's key may be a program's too, but an editor can't make owners,
+/// approve deploys or sign a project's grant.)
+pub fn raise_ok(raised: Option<TeamRole>, signer: &Cert, browser_chained: impl FnOnce() -> bool) -> bool {
+    match raised {
+        None | Some(TeamRole::Viewer) => true,
+        Some(TeamRole::Editor) => signer.from_app() || browser_chained(),
+        Some(TeamRole::Owner) => browser_chained(),
+    }
+}
+
 impl Roster {
     pub fn body(&self) -> String {
         let mut b = format!(
@@ -388,6 +423,41 @@ impl Roster {
         Trust { account: account.to_owned(), root: m.root.clone() }.evaluate(c, r)
     }
 
+    /// Whether this version adds or promotes anyone but `signer` to owner
+    /// or editor since `prev` (from nothing, for a first version): a member
+    /// whose account and root weren't there with at least that role; or
+    /// moves `signer`'s own entry to another root. Only a browser all the
+    /// way back to its root signs that.
+    pub fn raises(&self, prev: Option<&Roster>, signer: &str) -> bool {
+        self.raised(prev, signer).is_some()
+    }
+
+    /// The highest role [`Roster::raises`] makes anyone: `Owner` for an
+    /// owner, or for `signer`'s own entry moved to another root (another
+    /// identity for an owner); `Editor` when it makes editors only; none.
+    /// [`raise_ok`] says who may sign each.
+    pub fn raised(&self, prev: Option<&Roster>, signer: &str) -> Option<TeamRole> {
+        let mut top = None;
+        for m in &self.members {
+            let was = prev.and_then(|p| p.member(&m.account));
+            let raise = if m.account == signer {
+                // The signer's own entry: a raise if it now names another
+                // root (another identity for that account).
+                was.is_some_and(|w| w.root != m.root).then_some(TeamRole::Owner)
+            } else if m.role != TeamRole::Viewer
+                && !was.is_some_and(|w| w.root == m.root && rank(w.role) >= rank(m.role))
+            {
+                Some(m.role)
+            } else {
+                None
+            };
+            if raise.is_some_and(|r| top.is_none_or(|t| rank(r) > rank(t))) {
+                top = raise;
+            }
+        }
+        top
+    }
+
     /// Whether this roster may follow `prev` (or, with none, start the team
     /// as `pin` says): newer, well formed, and signed by a device of an
     /// owner of the previous version (the founder for the first).
@@ -414,13 +484,22 @@ impl Roster {
                 vec![&founder]
             }
         };
-        let signed_by = |account: &str, root: &str, device: &str, body: &str, sig: &str| {
+        // Whether `device` of `account` (from `root`) signed `body`, and
+        // may raise someone to `raised` ([`raise_ok`]).
+        let signed_by = |account: &str, root: &str, device: &str, body: &str, sig: &str, raised: Option<TeamRole>| {
             let (c, r) = certs.get(account).map(|(c, r)| (c.as_slice(), r.as_slice())).unwrap_or((&[], &[]));
-            let trusted = Trust { account: account.to_owned(), root: root.to_owned() }.evaluate(c, r);
-            trusted.get(device).is_some_and(|d| d.kind.approves() && verify_hex(&d.sign, body.as_bytes(), sig))
+            let trust = Trust { account: account.to_owned(), root: root.to_owned() };
+            trust.evaluate(c, r).get(device).is_some_and(|d| {
+                d.kind.approves()
+                    && verify_hex(&d.sign, body.as_bytes(), sig)
+                    && raise_ok(raised, d, || trust.browser_chained(c, device))
+            })
         };
         let body = self.body();
-        if signers.iter().any(|m| signed_by(&m.account, &m.root, &self.by, &body, &self.sig)) {
+        if signers.iter().any(|m| {
+            let raised = self.raised(prev, &m.account);
+            signed_by(&m.account, &m.root, &self.by, &body, &self.sig, raised)
+        }) {
             // Owners write the roster outright; an invite is only for
             // someone who isn't one.
             return self.redeem.is_none();
@@ -453,7 +532,7 @@ impl Roster {
                 .members
                 .iter()
                 .filter(|m| m.role == TeamRole::Owner)
-                .any(|m| signed_by(&m.account, &m.root, &inv.by, &inv.body(), &inv.sig))
+                .any(|m| signed_by(&m.account, &m.root, &inv.by, &inv.body(), &inv.sig, (inv.role != TeamRole::Viewer).then_some(inv.role)))
             // The one-time key vouches for exactly this member here, and
             // signs the version itself. Not the invitee's device: devices
             // are judged as of now, so revoking that one later would stop
@@ -542,6 +621,124 @@ mod tests {
         };
         r.sign_redeem(k);
         r
+    }
+
+    /// A CLI's or the app's key may be a program's: neither makes an owner,
+    /// by a roster or by a presigned invite, and a CLI doesn't make an
+    /// editor either (the app does). Both still add viewers and take people
+    /// out; a browser all the way to its root does everything.
+    #[test]
+    fn only_a_browser_makes_an_owner_or_an_editor() {
+        let (alice, bob, mallory) = (person("alice"), person("bob"), person("mallory"));
+        let pin = TeamPin { team: "t1".into(), founder: "alice".into(), founder_root: alice.cert.device.clone() };
+        let device = |kind: Kind, by: &DeviceKeys| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, "alice", kind, "x");
+            c.sign_with(by);
+            (k, c)
+        };
+        let (cli_k, cli) = device(Kind::Cli, &alice.keys);
+        let (app_k, app) = device(Kind::App, &alice.keys);
+        // A browser a CLI made (no control would keep one now) isn't one.
+        let (laundered_k, laundered) = {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, "alice", Kind::Browser, "laundered");
+            c.sign_with(&cli_k);
+            (k, c)
+        };
+        let mut all = certs(&[&alice, &bob, &mallory]);
+        all.get_mut("alice").unwrap().0.extend([cli, app, laundered]);
+        let v1 = roster(1, vec![member(&alice, TeamRole::Owner), member(&bob, TeamRole::Viewer)], &alice);
+        assert!(v1.follows(None, &pin, &all));
+        let signed = |members: Vec<Member>, k: &DeviceKeys| {
+            let mut r = roster(2, members, &alice);
+            r.sign_with(k);
+            r
+        };
+        let alice_m = member(&alice, TeamRole::Owner);
+        for (role, who) in [(TeamRole::Owner, &mallory), (TeamRole::Editor, &mallory), (TeamRole::Editor, &bob)] {
+            let members = vec![alice_m.clone(), member(who, role)];
+            assert!(!signed(members.clone(), &cli_k).follows(Some(&v1), &pin, &all), "{role:?} by a CLI");
+            // The app makes editors (Jake, 2026-10-22), never owners.
+            assert_eq!(
+                signed(members.clone(), &app_k).follows(Some(&v1), &pin, &all),
+                role == TeamRole::Editor,
+                "{role:?} {} by the app",
+                who.account
+            );
+            assert!(!signed(members.clone(), &laundered_k).follows(Some(&v1), &pin, &all), "by a browser a CLI made");
+            assert!(signed(members, &alice.keys).follows(Some(&v1), &pin, &all), "by the browser");
+        }
+        // Bob's account swapped for another root, as an editor: raising too.
+        let swapped = Member { root: mallory.cert.device.clone(), ..member(&bob, TeamRole::Editor) };
+        assert!(signed(vec![alice_m.clone(), member(&bob, TeamRole::Viewer)], &cli_k).follows(Some(&v1), &pin, &all));
+        let mut v1e = v1.clone();
+        v1e.members[1].role = TeamRole::Editor;
+        v1e.sign_with(&alice.keys);
+        assert!(!signed(vec![alice_m.clone(), swapped], &cli_k).follows(Some(&v1e), &pin, &all));
+        // The CLI's (or the app's) owner moving her own entry to another
+        // root: an owner's raise.
+        let elsewhere = Member { root: mallory.cert.device.clone(), ..alice_m.clone() };
+        assert!(!signed(vec![elsewhere.clone(), member(&bob, TeamRole::Viewer)], &cli_k).follows(
+            Some(&v1),
+            &pin,
+            &all
+        ));
+        assert!(!signed(vec![elsewhere.clone(), member(&bob, TeamRole::Viewer)], &app_k).follows(
+            Some(&v1),
+            &pin,
+            &all
+        ));
+        assert!(signed(vec![elsewhere, member(&bob, TeamRole::Viewer)], &alice.keys).raises(Some(&v1), "alice"));
+        // A team the app founds, with only its owner in it: fine.
+        let mut founded = roster(1, vec![alice_m.clone()], &alice);
+        founded.sign_with(&app_k);
+        assert!(founded.follows(None, &pin, &all));
+        // A viewer, and a removal: the CLI may.
+        assert!(
+            signed(vec![alice_m.clone(), member(&bob, TeamRole::Viewer), member(&mallory, TeamRole::Viewer)], &cli_k)
+                .follows(Some(&v1), &pin, &all)
+        );
+        assert!(signed(vec![alice_m.clone()], &app_k).follows(Some(&v1), &pin, &all));
+        // Presigned invites: an editor's only from a browser; a viewer's from the CLI too.
+        let by = |role, k: &DeviceKeys| {
+            let one = DeviceKeys::generate();
+            let mut inv = Invite {
+                team: "t1".into(),
+                role,
+                expires: 10,
+                key: hex::encode(one.sign_public()),
+                by: String::new(),
+                sig: String::new(),
+            };
+            inv.sign_with(k);
+            (inv, one)
+        };
+        let (inv, k) = by(TeamRole::Editor, &cli_k);
+        assert!(!redeem(&v1, &inv, &k, &mallory).follows(Some(&v1), &pin, &all));
+        let (inv, k) = by(TeamRole::Viewer, &cli_k);
+        assert!(redeem(&v1, &inv, &k, &mallory).follows(Some(&v1), &pin, &all));
+        let (inv, k) = by(TeamRole::Editor, &alice.keys);
+        assert!(redeem(&v1, &inv, &k, &mallory).follows(Some(&v1), &pin, &all));
+        let (inv, k) = by(TeamRole::Editor, &app_k);
+        assert!(redeem(&v1, &inv, &k, &mallory).follows(Some(&v1), &pin, &all), "the app's editor invite");
+        assert!(
+            raise_ok(Some(TeamRole::Editor), &Cert::new(&app_k, "alice", Kind::App, "x"), || false)
+                && !raise_ok(Some(TeamRole::Owner), &Cert::new(&app_k, "alice", Kind::App, "x"), || false)
+                && !raise_ok(Some(TeamRole::Editor), &Cert::new(&cli_k, "alice", Kind::Cli, "x"), || false)
+        );
+        assert!(
+            AskInvite {
+                team: "t1".into(),
+                role: TeamRole::Owner,
+                made: 0,
+                expires: 1,
+                key: String::new(),
+                by: String::new(),
+                sig: String::new()
+            }
+            .raises()
+        );
     }
 
     #[test]

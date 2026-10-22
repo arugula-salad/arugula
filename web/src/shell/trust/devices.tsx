@@ -170,7 +170,8 @@ function SignedIn({ sessions, end }: { sessions: SessionRow[] | null; end: (id: 
 
 /** A device's kind, in a row's words. Machines are under their own
  * heading, so they don't say it. */
-const kindText = (k: Cert["kind"]) => (k === "cli" ? "command line" : k === "recovery" ? "recovery code" : k === "daemon" ? "machine" : "browser or app");
+const kindText = (k: Cert["kind"]) =>
+  k === "cli" ? "command line" : k === "recovery" ? "recovery code" : k === "daemon" ? "machine" : k === "app" ? "desktop app" : "browser or app";
 
 /** What labels a device in a row, a dialog or a banner (#759): its kind
  * and when it was added. Its fingerprint labels it too, but nobody

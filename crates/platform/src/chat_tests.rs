@@ -70,6 +70,9 @@ struct State {
     delegated: BTreeSet<String>,
     /// Projects' live delegation ids (M211), by project.
     delegation_ids: BTreeMap<String, String>,
+    /// Devices whose signatures aren't a browser owner's (M211's grants):
+    /// every other one is.
+    not_browsers: BTreeSet<String>,
     enrollments: Vec<crate::hosted::enroll::EnrollAsk>,
     enrolled: BTreeMap<String, String>,
     taken: BTreeSet<String>,
@@ -140,6 +143,11 @@ impl TestHub {
     }
 
     /// `project`'s live delegation is now `id` (M211), or it has none.
+    /// `device` isn't a browser owner's, for grants and their revokes.
+    pub(crate) fn not_a_browser(&self, device: &str) {
+        self.state.lock().unwrap().not_browsers.insert(device.into());
+    }
+
     pub(crate) fn set_delegation(&self, project: &str, id: Option<&str>) {
         let mut s = self.state.lock().unwrap();
         match id {
@@ -445,6 +453,17 @@ impl HubPort for TestHub {
     fn live_delegation<'a>(&'a self, project: &'a str, _owner: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
         self.called("live_delegation");
         done(self.state.lock().unwrap().delegation_ids.get(project).cloned())
+    }
+
+    fn owner_browser_signed<'a>(
+        &'a self,
+        _owner: &'a str,
+        device: &'a str,
+        _body: &'a str,
+        _sig: &'a str,
+    ) -> BoxFuture<'a, HubResult<bool>> {
+        self.called("owner_browser_signed");
+        done(!self.state.lock().unwrap().not_browsers.contains(device))
     }
 
     fn hosted_enrolled<'a>(

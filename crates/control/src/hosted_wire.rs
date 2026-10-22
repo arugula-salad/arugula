@@ -402,6 +402,38 @@ async fn a_box_asks_the_platform_about_its_turns() {
     assert_eq!(st, 401);
 }
 
+/// The platform asks whether a browser of the project's owners signed a
+/// standing grant (M211), in process and through its own view of the hub:
+/// an owner's browser, yes; the owner's CLI or app, the app's devices from
+/// before it had a kind, an editor's browser or a bad signature, no.
+#[tokio::test]
+async fn the_hub_says_whether_a_browser_owner_signed() {
+    let (c, fran, cy, _) = acme().await;
+    let owner = format!("team:{TEAM}");
+    let device = |kind, name: &str| {
+        let k = DeviceKeys::generate();
+        let mut cert = arugula_e2e::Cert::new(&k, "f1", kind, name);
+        cert.sign_with(&fran);
+        c.app.db.put_device(&cert, true, now_ms()).unwrap();
+        k
+    };
+    let cli = device(arugula_e2e::Kind::Cli, "Arugula CLI");
+    let app = device(arugula_e2e::Kind::App, "Arugula app on box");
+    let old_app = device(arugula_e2e::Kind::Browser, "Arugula app on geek");
+    let body = "arugula project grant v1\n...";
+    let sig = |k: &DeviceKeys| hex::encode(k.signature(body.as_bytes()));
+    let crate::gateway::PlatformAt::InProcess(p) = &c.app.platform else { panic!("in process") };
+    for (k, want) in [(&fran, true), (&cli, false), (&app, false), (&old_app, false), (&cy, false)] {
+        let here = c.app.hub_port.owner_browser_signed(&owner, &k.id(), body, &sig(k)).await.unwrap();
+        let there = p.hub.owner_browser_signed(&owner, &k.id(), body, &sig(k)).await.unwrap();
+        assert_eq!((here, there), (want, want), "{}", k.id());
+    }
+    assert!(!c.app.hub_port.owner_browser_signed(&owner, &fran.id(), body, &sig(&cli)).await.unwrap(), "another key's");
+    assert!(
+        !c.app.hub_port.owner_browser_signed("team:0000000000000000", &fran.id(), body, &sig(&fran)).await.unwrap()
+    );
+}
+
 /// M184: a project person's own machine is routed to the project's hosted
 /// machine while it holds a live cloud.drive grant, and not once its owner
 /// revokes it; a machine outside the project never is.

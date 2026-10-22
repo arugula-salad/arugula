@@ -30,7 +30,12 @@ mod census;
 mod chat_bench;
 #[cfg(test)]
 mod chat_wire;
+mod clients;
+mod compat;
 mod db;
+#[cfg(test)]
+mod device_kinds_wire;
+mod device_review;
 mod doc_links;
 #[cfg(test)]
 mod doc_links_wire;
@@ -546,6 +551,7 @@ fn routes() -> Routes {
         .route("/api/app-login/{id}", get(app_login::show))
         .route("/api/app-login/{id}/allow", post(app_login::allow))
         .route("/auth/passkey/register", post(passkey::register_start))
+        .route("/auth/passkey/register/step-up", post(passkey::register_step_up))
         .route("/auth/passkey/register/finish", post(passkey::register_finish))
         .route("/auth/passkey/login", post(passkey::login_start))
         .route("/auth/passkey/login/finish", post(passkey::login_finish))
@@ -666,6 +672,10 @@ pub fn router(app: Arc<App>) -> Router {
         .layer(axum::middleware::from_fn_with_state(app.clone(), analytics::requests))
         .layer(axum::middleware::from_fn_with_state(app.clone(), account::note_agent))
         .layer(axum::middleware::from_fn_with_state(app.clone(), moved))
+        // routes.toml's `clients`: a CLI's signature only where it says `cli`.
+        .layer(axum::middleware::from_fn(clients::gate))
+        // No `app` certificates for clients from before them.
+        .layer(axum::middleware::from_fn(compat::strip))
         .layer(axum::middleware::from_fn_with_state(app.clone(), auth::verify_daemon))
         .layer(axum::middleware::map_response_with_state(app.clone(), headers))
         // A block's origin never reaches anything above (M50).
@@ -827,7 +837,8 @@ pub fn origin_of(url: &str) -> anyhow::Result<String> {
 
 fn main() -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
-    // database (census.rs), with no server. `maintenance`: the switch
+    // database (census.rs), with no server; `device-review` another
+    // (device_review.rs). `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
     // `notice`: a notice for every account (notice.rs). `hosted-enrollment`:
     // what the platform asks as it makes a hosted box (hosted.rs). `platform`: a
@@ -835,6 +846,9 @@ fn main() -> anyhow::Result<()> {
     let mut argv = std::env::args().skip(1).peekable();
     if argv.peek().is_some_and(|a| a == "census") {
         return census::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "device-review") {
+        return device_review::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "maintenance") {
         return maintenance::run(argv.skip(1));

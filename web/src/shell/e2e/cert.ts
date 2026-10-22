@@ -11,7 +11,9 @@ import { cat, sha256 } from "./noise.ts";
 
 const subtle = globalThis.crypto.subtle;
 
-export type Kind = "browser" | "cli" | "daemon" | "recovery";
+/** `app`: the desktop app's window (`Kind::App`): it connects, and
+ * approves machines, CLIs and apps, never a browser. */
+export type Kind = "browser" | "cli" | "daemon" | "recovery" | "app";
 
 export interface Cert {
   v: number;
@@ -35,7 +37,32 @@ export interface Revocation {
   sig: string;
 }
 
-export const approves = (k: Kind) => k === "browser" || k === "cli" || k === "recovery";
+export const approves = (k: Kind) => k === "browser" || k === "cli" || k === "recovery" || k === "app";
+
+/** Whether a `by` device may sign a certificate of `kind` (`Kind::certifies`):
+ * a CLI's or the app's key may be a program's on its computer, so neither
+ * makes a browser, nor a recovery code (which would make one). */
+export function certifies(by: Kind, kind: Kind): boolean {
+  switch (by) {
+    case "browser":
+      return true;
+    case "recovery":
+      return kind !== "daemon";
+    case "cli":
+      return kind === "cli" || kind === "daemon";
+    case "app":
+      return kind === "app" || kind === "cli" || kind === "daemon";
+    default:
+      return false;
+  }
+}
+
+/** The desktop app's device (`Cert::from_app`): an `app` one, or a
+ * `browser` one the app named before it had a kind. */
+export const fromApp = (c: Cert) => c.kind === "app" || (c.kind === "browser" && /^(arugula|illogical) app/i.test(c.name));
+
+/** May be an account's first device (`Kind::roots`): not the app. */
+export const roots = (k: Kind) => k === "browser" || k === "cli";
 
 export function hex(b: Uint8Array): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
@@ -105,12 +132,12 @@ export async function evaluate(
     if (depth > 64 || (r !== undefined && r <= at)) return undefined;
     for (const c of byId.get(id) ?? []) {
       if (id === trust.root) {
-        if (c.approver === c.device && approves(c.kind) && c.kind !== "recovery" && (await signedBy(c, c))) return c;
+        if (c.approver === c.device && roots(c.kind) && (await signedBy(c, c))) return c;
         continue;
       }
       if (c.approver === c.device) continue;
       const a = await valid(revoked, c.approver, c.created, depth + 1);
-      if (!a || !approves(a.kind) || (a.kind === "recovery" && c.kind === "daemon")) continue;
+      if (!a || !certifies(a.kind, c.kind)) continue;
       if (await signedBy(c, a)) return c;
     }
     return undefined;
@@ -121,7 +148,12 @@ export async function evaluate(
     for (const r of revocations) {
       if (r.v !== 1 || r.account !== trust.account) continue;
       const s = await valid(revoked, r.by, r.at, 0);
-      if (s && approves(s.kind) && (await verify(s.sign, revocationBody(r), r.sig))) next.set(r.device, Math.min(next.get(r.device) ?? Infinity, r.at));
+      // A browser or a phone is removed only by a browser all the way back
+      // to the root (`Trust::evaluate`).
+      // A recovery code too: one revoked backdated takes out the browser it let in.
+      const ofBrowser = (byId.get(r.device) ?? []).some((c) => c.kind === "browser" || c.kind === "recovery");
+      if (s && approves(s.kind) && (await verify(s.sign, revocationBody(r), r.sig)) && (!ofBrowser || chainedIn(trust.root, byId, r.by, browserLink(r.by))))
+        next.set(r.device, Math.min(next.get(r.device) ?? Infinity, r.at));
     }
     revoked = next;
   }
@@ -131,6 +163,42 @@ export async function evaluate(
     if (c) out.set(id, c);
   }
   return out;
+}
+
+/** A link of a browser chain to `device` (`browser_link`): `device` a
+ * browser, a link before it a browser or a recovery code. */
+const browserLink = (device: string) => (c: Cert) => c.kind === "browser" || (c.kind === "recovery" && c.device !== device);
+
+/** Whether `device` and every device that certified it back to the root
+ * (the root included) passes `link` (`Trust::chained`): every certificate
+ * kept for an id on the way counts, a self-signed one must be the root,
+ * and a chain longer than 64 refuses. Signatures aren't checked here. */
+function chainedIn(root: string, byId: Map<string, Cert[]>, device: string, link: (c: Cert) => boolean): boolean {
+  const next = [device];
+  const seen = new Set<string>();
+  while (next.length) {
+    const id = next.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (seen.size > 64) return false;
+    const these = byId.get(id);
+    if (!these) return false;
+    for (const c of these) {
+      if (!link(c)) return false;
+      if (c.approver === c.device) {
+        if (c.device !== root) return false;
+      } else next.push(c.approver);
+    }
+  }
+  return true;
+}
+
+/** `kind: browser` on every link back to the root (`Trust::browser_chained`):
+ * what may make a team's owner or editor, or remove a browser or a phone. */
+export async function browserChained(trust: { account: string; root: string }, certs: Cert[], device: string): Promise<boolean> {
+  const byId = new Map<string, Cert[]>();
+  for (const c of certs) if (c.account === trust.account && (await checkForm(c))) byId.set(c.device, [...(byId.get(c.device) ?? []), c]);
+  return chainedIn(trust.root, byId, device, browserLink(device));
 }
 
 /** The code a joining daemon prints, recomputed from its certificate. */

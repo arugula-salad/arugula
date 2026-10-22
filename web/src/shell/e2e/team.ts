@@ -2,7 +2,7 @@
 // browsers sign each new version; the same rules as daemons decide which
 // follow.
 
-import { approves, evaluate, hex, unhex, type Cert, type Revocation } from "./cert.ts";
+import { approves, browserChained, evaluate, fromApp, hex, unhex, type Cert, type Revocation } from "./cert.ts";
 import { signText, type DeviceKeys } from "./keys.ts";
 import { newKeyPair } from "./noise.ts";
 
@@ -146,7 +146,9 @@ export async function askOk(
   for (const o of r.members.filter((m) => m.role === "owner")) {
     const [c, rv] = certs[o.account] ?? [[], []];
     const d = (await evaluate({ account: o.account, root: o.root }, c, rv)).get(i.by);
-    if (d && approves(d.kind) && (await verify(d.sign, askInviteBody(i), i.sig))) return o.account;
+    // One for an owner or an editor, only from a browser all the way back.
+    const ok = !!d && (await raiseOk(i.role === "viewer" ? null : i.role, d, () => browserChained({ account: o.account, root: o.root }, c, i.by)));
+    if (d && approves(d.kind) && ok && (await verify(d.sign, askInviteBody(i), i.sig))) return o.account;
   }
   return null;
 }
@@ -244,21 +246,54 @@ function wellFormed(r: Roster): boolean {
 
 const sameMember = (a: Member, b: Member) => a.account === b.account && a.root === b.root && a.role === b.role && a.name === b.name;
 
+const RANK: Record<TeamRole, number> = { owner: 2, editor: 1, viewer: 0 };
+
+/** The highest role `r` raises anyone to since `prev` (`Roster::raised`):
+ * `owner` for an owner, or for `signer`'s own entry moved to another root;
+ * `editor` when it makes editors only; else null. */
+export function raised(r: Roster, prev: Roster | null, signer: string): TeamRole | null {
+  let top: TeamRole | null = null;
+  for (const m of r.members) {
+    const was = prev?.members.find((p) => p.account === m.account);
+    let raise: TeamRole | null = null;
+    // The signer's own entry: an owner's raise if it now names another root.
+    if (m.account === signer) raise = was && was.root !== m.root ? "owner" : null;
+    else if (m.role !== "viewer" && !(was && was.root === m.root && RANK[was.role] >= RANK[m.role])) raise = m.role;
+    if (raise && (!top || RANK[raise] > RANK[top])) top = raise;
+  }
+  return top;
+}
+
+/** Whether `r` raises anyone (`Roster::raises`). */
+export const raises = (r: Roster, prev: Roster | null, signer: string) => raised(r, prev, signer) !== null;
+
+/** Whether `signer` may sign a paper raising someone to `role`
+ * (`team::raise_ok`): an owner only from a browser all the way back, an
+ * editor from that or the desktop app's device, never a CLI. */
+export async function raiseOk(role: TeamRole | null, signer: Cert, chained: () => Promise<boolean>): Promise<boolean> {
+  if (!role || role === "viewer") return true;
+  if (role === "editor" && fromApp(signer)) return true;
+  return chained();
+}
+
 /** Whether `r` may follow `prev` (or start the team, as `pin` says). */
 export async function follows(r: Roster, prev: Roster | null, pin: TeamPin, certs: AccountCerts): Promise<boolean> {
   const spent = r.spent ?? [];
   if (!wellFormed(r) || r.team !== pin.team) return false;
   if (prev && r.version <= prev.version) return false;
-  const signedBy = async (account: string, root: string, device: string, body: string, sig: string) => {
+  // And may raise someone to `raised` (`raise_ok`): an owner only from a
+  // browser all the way back, an editor from that or the desktop app.
+  const signedBy = async (account: string, root: string, device: string, body: string, sig: string, raised: TeamRole | null) => {
     const [c, rv] = certs[account] ?? [[], []];
     const d = (await evaluate({ account, root }, c, rv)).get(device);
-    return !!d && d.kind !== "daemon" && (await verify(d.sign, body, sig));
+    return !!d && d.kind !== "daemon" && (await verify(d.sign, body, sig)) && (await raiseOk(raised, d, () => browserChained({ account, root }, c, device)));
   };
+
   const body = rosterBody(r);
   const signers: Pick<Member, "account" | "root">[] = prev
     ? prev.members.filter((m) => m.role === "owner")
     : [{ account: pin.founder, root: pin.founder_root }];
-  for (const m of signers) if (await signedBy(m.account, m.root, r.by, body, r.sig)) return !r.redeem;
+  for (const m of signers) if (await signedBy(m.account, m.root, r.by, body, r.sig, raised(r, prev, m.account))) return !r.redeem;
   // A presigned invite (`Roster::follows`): the version before, plus the
   // invitee at the end, the invite spent, signed by the one-time key.
   if (!prev || !r.redeem) return false;
@@ -287,6 +322,6 @@ export async function follows(r: Roster, prev: Roster | null, pin: TeamPin, cert
   )
     return false;
   let byOwner = false;
-  for (const o of prev.members.filter((x) => x.role === "owner")) byOwner ||= await signedBy(o.account, o.root, inv.by, inviteBody(inv), inv.sig);
+  for (const o of prev.members.filter((x) => x.role === "owner")) byOwner ||= await signedBy(o.account, o.root, inv.by, inviteBody(inv), inv.sig, inv.role === "viewer" ? null : inv.role);
   return byOwner && (await verify(inv.key, redeemBody(inv, r.version, m), r.redeem.proof)) && (await verify(inv.key, body, r.sig));
 }

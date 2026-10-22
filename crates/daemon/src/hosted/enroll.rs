@@ -93,8 +93,10 @@ pub async fn enroll(url: &str, claim: &Claim, state_dir: &Path) -> Result<(), No
     }
     let keys = DeviceKeys::load_or_create(&key).map_err(NotEnrolled::Failed)?;
     let req = request(claim, &keys, now_ms());
-    let http =
-        crate::roots::http().timeout(Duration::from_secs(20)).build().map_err(|e| NotEnrolled::Failed(e.into()))?;
+    let http = crate::control::control_http()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(|e| NotEnrolled::Failed(e.into()))?;
     let res = http
         .post(format!("{url}{}", hosted::ENROLL))
         .json(&req)

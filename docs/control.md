@@ -487,6 +487,21 @@ on the same machine as its agents, so an agent with a shell there can act
 through `arugula` as you, unlabelled, `arugula grants add` included (as it
 can `arugula grants restore` for `cloud.drive` today).
 
+**What a CLI login can't do.** Its signature counts only on the routes
+routes.toml lists for `cli` (401 `page_only` on the rest). It can't allow
+the desktop app's sign-in, add a passkey, enroll or approve a device,
+approve a machine's join, make recovery codes, or approve a deploy: those
+need control's page in a browser, by its cookie, and adding a passkey or
+approving a deploy needs a passkey too. A CLI device approves only CLIs
+and machines (no command does today), never a browser. Its key also can't make a team's owner or editor, and the app's can't
+make an owner (it makes editors); neither removes a browser or a phone:
+daemons and pages refuse those papers unless a browser all the way back to
+the account's root signed them. The desktop app's
+window is an `app` device: it reaches your machines and approves machines,
+CLIs and apps, but not browsers, phones, recovery codes or deploys.
+[control-e2e.md](control-e2e.md#page-only-actions-need-a-browser-and-a-passkey)
+has the details.
+
 **Agents reading and posting (M198).** With those grants, the `arugula`
 MCP server's agents on that machine use four tools, each a call to the
 platform signed by the machine (the daemon keeps no thread of its own):

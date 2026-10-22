@@ -104,7 +104,7 @@ device nobody trusted. Now:
 **A device certificate** is what control stores and hands out:
 
 ```
-{ v: 1, account, device: <id>, name, kind: browser|cli|daemon|recovery,
+{ v: 1, account, device: <id>, name, kind: browser|cli|daemon|recovery|app,
   noise: <x25519 pub>, sign: <ed25519 pub>, created, team? }
   + approver: <device id>, sig: Ed25519(approver.sign, canonical JSON)
 ```
@@ -116,6 +116,30 @@ device nobody trusted. Now:
   approved with the code it shows rather than a fingerprint to compare
   (the first 8 bytes of SHA-256 of `noise‖sign`, which a page from before
   codes still shows).
+- **Who signs what** (`Kind::certifies`, the page's `certifies`): a
+  browser signs any kind. A recovery code signs people's devices, not
+  machines. A CLI signs CLIs and machines, and the desktop app (`app`)
+  signs apps, CLIs and machines: their keys sit where a program on their
+  computer can read them, so neither makes a browser, nor a recovery code
+  (which would make one). The app is never an account's first device.
+  Daemons and pages drop a certificate that breaks this, wherever it is in
+  the chain.
+- **What only a browser all the way back does** (`Trust::browser_chained`:
+  the device and every device that certified it, the root included, are
+  `browser`): make a team's owner (a roster that adds or promotes anyone
+  but its signer to owner, or moves its signer's own entry to another
+  root, and an owner's Ask me first invite) and remove a browser, a phone
+  or a recovery code. A team's editor (a roster, a presigned or Ask me
+  first invite) comes from that or the desktop app's device, never a CLI
+  (`team::raise_ok`; Jake, 2026-10-22). Daemons and pages ignore such a
+  paper from anything else. A CLI or the app still adds viewers, removes
+  machines, CLIs and apps, and moves machines.
+- The app's devices from before it had a kind are `browser` certificates
+  it named ("Arugula app on …"). Control holds them to `Cert::is_browser`
+  on every link, the root included: they, and browsers they certified,
+  make no new browsers, recovery codes, owners or editors, and remove no
+  browsers. What they did before stands. The deploy approval (M218) asks
+  the same of every link.
 - A daemon's own certificate is signed by the device that approved its
   `join` code. When the approver puts it in a team, that device also
   signs the choice (`illogical team join v1`: the daemon, the team, its
@@ -436,11 +460,11 @@ The desktop app's window signs in through the person's browser
   (PKCE). A link someone else started can't sign their app in as you: their
   app isn't listening on your computer. The page still warns when the app
   asked from another network than the browser's.
-- **Allow makes the app a device.** The app's own sign-in page (served by
-  the app, not control) makes the window's device keys and sends their
-  public half with the ask. Control shows them to the browser, and a
-  browser that's one of the account's devices signs a certificate for them
-  when the person presses Allow. The certificate and the root that browser
+- **Allow makes the app a device, an `app` one.** The app's own sign-in
+  page (served by the app, not control) makes the window's device keys and
+  sends their public half with the ask. Control shows them to the browser,
+  and a browser that's one of the account's devices signs an `app`
+  certificate for them when the person presses Allow. The certificate and the root that browser
   pinned go with the grant to the loopback port, never through control.
   The app hands the keys (PKCS#8, in the redeem link's fragment) and the
   certificate to control's page in its window, which takes the keys as its
@@ -461,6 +485,16 @@ The desktop app's window signs in through the person's browser
   private keys leave WebCrypto once, from the app's sign-in page to the
   window's, through the app (in memory) and a URL fragment the page clears
   at once; they're stored as any browser's are from then on.
+- **Why `app`, not `browser`:** the grant and the certificate go to
+  whatever listens on `127.0.0.1:<port>`, which on that computer could be
+  another program, an agent's included. So the window's device reaches the
+  account's machines and approves machines, CLIs and other apps, but never
+  a browser, a phone, recovery codes or a deploy. The prompt says so. A
+  session the hand-over made (`sessions.via = app`) enrolls an `app`
+  device only. Daemons and CLIs from before `app` can't read one, so
+  control leaves `app` certificates out of what it answers a client that
+  doesn't send `x-arugula-features: app-devices` (`compat.rs`): such a
+  daemon doesn't let the app's window in until it's updated.
 - **Older apps and controls:** an app from before #758 sends no keys and
   no `features: ["no-code"]`, so control gives it a code and the page shows
   it, as before. A newer app on an older control gets a code back and shows
@@ -637,8 +671,9 @@ project as its resource.
   every hosted workspace of the project, running whatever command the
   project's runs start, until the grant expires or is revoked. It never
   covers a deploy.
-- **The grant.** An owner's own device (a browser or the CLI, as for a
-  delegation) signs `arugula project grant v1`: its id, the project and its
+- **The grant.** An owner's browser or phone, one that's a browser all
+  the way back to its account's root (`Owners::browser_signed`; recovery
+  codes count on the way), signs `arugula project grant v1`: its id, the project and its
   owner, the project's live delegation, `resource hosted`, `to platform`,
   the powers (`runs.instruct`, `runs.start`), when, when it expires, and
   which device. The page and the CLI give 90 days unless the owner picks
@@ -646,27 +681,33 @@ project as its resource.
   Devices and machines… has *Runs on hosted workspaces* under *Hosted
   machines*: *Allow runs* signs it, on a computer or the phone, and
   *Renew* signs a revoke and a new grant when it's about to expire (or
-  *Sign again* when the project's delegation changed). `arugula runs
-  grant sign` signs it with the CLI's device. The platform's project
-  settings show it, and offer it once the project has a hosted workspace.
+  *Sign again* when the project's delegation changed). Not the CLI or the
+  desktop app: their keys may be a program's on their computer, so
+  `arugula runs grant sign` and `revoke` send you to the page, and the
+  app's window has those buttons off. The platform's project settings
+  show it, and offer it once the project has a hosted workspace.
 - **The platform keeps it, and can't make or widen it.** It stores the
   signed bytes and the signature (`run_grants`), one live grant a project
   (not revoked, expired or superseded), and reads the grant back from
   those bytes only. It takes a grant only if it names the project's live
-  delegation (the hub's word); one that expired, or names a delegation
-  that isn't live any more, is superseded by the next. It holds no device
-  keys, so it can't check the signature itself; the hosted machines do.
+  delegation (the hub's word), and only if the hub says a browser of one
+  of the project's owners signed it, all the way back
+  (`HubPort::owner_browser_signed`, with `Cert::is_browser` on every link),
+  and the same of a revoke. One that expired, or names a delegation that
+  isn't live any more, is superseded by the next. It holds no device keys
+  itself; the hosted machines check again.
 - **Each start carries it.** The platform asks the workspace's machine
   over the relay (`runs.start`, a typed op), with the grant and the
   newest revoke of the project's grants. The machine checks, with what it
   pinned at enrollment (the team's roster and members' certificates, or
-  the account's chain): the grant is signed by a device of one of the
-  project's owners, trusted now; it's for the machine's own project and
+  the account's chain): the grant is signed by a browser of one of the
+  project's owners, trusted now and a browser all the way back; it's for the machine's own project and
   owner and names the delegation it was enrolled under; that delegation
   isn't revoked; it covers what's asked; it hasn't expired; no owner's
   revoke covers it. If any check fails, nothing starts and the refusal's
   code comes back.
-- **Revoking.** Any owner's device signs `arugula project grant revoke v2`
+- **Revoking.** Any owner's browser (all the way back, as for the grant)
+  signs `arugula project grant revoke v2`
   (the project, a delegation, `running finish` or `running stop`, when, by).
   It names no grant: it takes back every grant of the project under that
   delegation made at or before its time, so whoever relays it can't point
@@ -1309,6 +1350,47 @@ only an approval does.
 - Control's session cookie is for control's API only (directory, approvals,
   invites). Daemons never accept it.
 
+### Page-only actions need a browser and a passkey
+
+A CLI's login signs its requests with a key file on its machine, where
+an agent can read it. So it's a session only where routes.toml's
+`clients` lists `cli` (`clients::gate`, 401 `page_only` elsewhere). What
+only the page does takes the session cookie alone (`auth::PageSession`):
+
+- allowing the desktop app's sign-in (a CLI could otherwise allow a
+  sign-in it started itself and redeem it for a cookie);
+- enrolling and approving devices, and machines' joins;
+- recovery codes;
+- adding a passkey.
+
+**Adding a passkey** (`passkey.rs`) takes more than a session, since
+attestation is `none` and a passkey made in software can claim to verify
+anyone. Never from the desktop app's window (`sessions.via = app`), and:
+
+- an account with a browser or a phone: one of them (a browser all the
+  way back) signs the account, the new passkey's id and the
+  registration's challenge (`arugula add passkey device v1`);
+- an account with a passkey also confirms the new one with one of its own,
+  with user verification, over a challenge that hashes the account and the
+  new passkey's id (`arugula add passkey v1`);
+- an account with neither (GitHub only, no browser) needs a GitHub sign-in
+  from the last ten minutes; the page sends the person through GitHub
+  again first, with `prompt=select_account` so GitHub asks rather than
+  redirecting by itself. A code that comes back to a browser that didn't
+  start that sign-in is still exchanged, and its token revoked, so it
+  signs nobody in anywhere;
+- every device of the account gets a push ("A passkey was added to your
+  account") naming the device that signed for it, or else how the session
+  signed in and its User-Agent (what a session says its device is is a
+  claim), and the passkey keeps both.
+
+Sessions made before `via` that look like the app's window (they said
+they're one of its devices, or their User-Agent names it) are marked
+`app` when the column comes.
+
+Every WebAuthn ceremony is refused from inside another site's frame
+(`crossOrigin`, `topOrigin`).
+
 ## Chat
 
 Since M122 (S41, #978), chat is control's, in plain text: this is the
@@ -1392,9 +1474,9 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 |---|---|---|---|---|
 | `accounts` | metadata | An account: its id, its root device, its display name, and its answer about page telemetry. | yes | PostHog |
 | `identities` | metadata | A sign-in identity: the provider, its id for the person, and their login. | yes | GitHub |
-| `sessions` | metadata | A sign-in session: a hash of its token, the browser's User-Agent, its device, when it ends. | yes |  |
+| `sessions` | metadata | A sign-in session: a hash of its token, the browser's User-Agent, its device, how it signed in (GitHub, a passkey, or the desktop app's hand-over), when it ends. | yes |  |
 | `app_sessions` | metadata | A session on the platform page's host (app.arugula.io, M152): a hash of its token, its account, the hub session it was made from (it ends when that one does), when it ends. | yes |  |
-| `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it, whether it gives PRF. | yes |  |
+| `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF. | yes |  |
 | `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
 | `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |
 | `revocations` | metadata | A signed revocation of a device's or machine's key. | yes |  |

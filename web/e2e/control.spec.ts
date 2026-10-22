@@ -495,7 +495,8 @@ test("an older desktop app signs in through the browser with a code, then is app
   const app = await (await browser.newContext()).newPage();
   await app.addInitScript(() => Object.assign(window, { __arugulaApp: { name: "Arugula app on test-mac" } }));
   await app.goto(`${base}/#app-redeem=${t.ticket}.${grant}.${verifier}`);
-  // It says it's the app being approved, by name (#326).
+  // It says it's the app being approved, by name (#326), and asks as an
+  // app device.
   await expect(app.getByText("Approve this app as a device")).toBeVisible();
   await expect(app.locator("[data-waiting-browser]")).toContainText("the Arugula app on test-mac");
   const code = await deviceCode(app);
@@ -570,6 +571,8 @@ test("the desktop app signs in through the browser with no code, and Allow makes
   expect(handed.cert.sign).toBe(keys.sign);
   const laptopId = await laptop.evaluate(() => window.__arugula.control!.keys.id);
   expect(handed.cert.approver).toBe(laptopId);
+  // An app device, not a browser: whatever listens on the port gets it.
+  expect((handed.cert as { kind?: string }).kind).toBe("app");
 
   // The app's window takes its keys and the certificate: a device at once,
   // with no "Approve this app as a device" screen.
@@ -579,6 +582,10 @@ test("the desktop app signs in through the browser with no code, and Allow makes
   await expect.poll(() => hostNames(app), { timeout: 20_000 }).toEqual(["box", "mac"]);
   await expect(app.getByText("Approve this app as a device")).toHaveCount(0);
   expect(await app.evaluate(() => window.__arugula.control!.keys.signPub)).toBe(keys.sign);
+  expect(await app.evaluate(() => window.__arugula.control!.enrollment!.cert.kind)).toBe("app");
+  // It approves machines, not browsers or phones; the laptop approves both.
+  expect(await app.evaluate(() => [window.__arugula.control!.canApprove("daemon"), window.__arugula.control!.canApprove("browser")])).toEqual([true, false]);
+  expect(await laptop.evaluate(() => window.__arugula.control!.canApprove("browser"))).toBe(true);
   await showHost(app, "mac");
   await shell(app, "air");
   const id = await app.evaluate(() => window.__arugula.control!.keys.id);

@@ -123,7 +123,9 @@ export function RecoveryAndName({ s }: { s: ControlSession }) {
           {left === 0 ? "No recovery codes left." : `${left} recovery code${left === 1 ? "" : "s"} left.`}
         </span>{" "}
         {renewing ? "New codes replace these: the old ones stop working. " : ""}
+        {s.canApprove("recovery") ? null : <span data-codes-elsewhere>Make new ones from a browser or phone: the desktop app doesn't. </span>}
         <button
+          hidden={!s.canApprove("recovery")}
           class={renewing ? "control-linkish danger" : "control-linkish"}
           data-new-codes
           onClick={() => {

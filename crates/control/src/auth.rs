@@ -6,7 +6,10 @@
 //! - **The CLI** (M49) is a `cli` device: it joins with a code, as a
 //!   daemon does, and then signs each request as a daemon does (below).
 //!   A signed request from an approved CLI device is a session for its
-//!   account, with no cookie to ride on, so it needs no origin.
+//!   account, with no cookie to ride on, so it needs no origin; but only
+//!   on routes whose routes.toml row lists `cli` (`clients::gate`). Its key
+//!   is a file an agent on its machine can read, so what only the page does
+//!   takes the cookie alone ([`PageSession`]).
 //! - **Daemons** sign each request with their enrolled Ed25519 key:
 //!   `x-arugula-auth: v2 <device id> <ms> <nonce> <sig>` over
 //!   `illogical daemon auth v2\n<METHOD>\n<path and query>\n<ms>\n<nonce>\n<sha256 of the body, hex>\n`,
@@ -31,7 +34,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 
-use crate::{ApiError, App, db::hosted::HostedRow, err};
+use crate::{ApiError, App, db::hosted::HostedRow, err, refusal};
 
 pub const SESSION_COOKIE: &str = "ilg_session";
 const STATE_COOKIE: &str = "ilg_oauth";
@@ -124,6 +127,46 @@ impl FromRequestParts<Arc<App>> for Session {
             a.set(&account);
         }
         Ok(Session { account })
+    }
+}
+
+/// A signed-in person on control's page, by their session cookie alone:
+/// what only the page does takes this, not [`Session`]. No signature
+/// stands in for it, a CLI's included: allowing the desktop app's sign-in,
+/// adding a passkey, enrolling and approving devices, recovery codes.
+pub struct PageSession {
+    pub account: String,
+    /// The hash of the cookie's token: this sign-in's row in `sessions`.
+    pub token_hash: String,
+}
+
+impl FromRequestParts<Arc<App>> for PageSession {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, app: &Arc<App>) -> Result<Self, ApiError> {
+        if parts.extensions.get::<Signed>().is_some() || parts.extensions.get::<HostedSigned>().is_some() {
+            return Err(refusal(StatusCode::UNAUTHORIZED, crate::clients::PAGE_ONLY, crate::clients::PAGE_ONLY_SAY));
+        }
+        let s = Session::from_request_parts(parts, app).await?;
+        let token_hash = cookie(&parts.headers, SESSION_COOKIE).map(hash).unwrap_or_default();
+        Ok(PageSession { account: s.account, token_hash })
+    }
+}
+
+impl PageSession {
+    /// Not the desktop app's window (`via = app`): what it can't do, a
+    /// browser's or a phone's page can (deleting the account, removing a
+    /// passkey, signing out everywhere). Refused with what to do.
+    pub fn not_app(&self, app: &App) -> Result<(), ApiError> {
+        let via = app.db.session_info(&self.token_hash, now_ms())?.and_then(|i| i.via);
+        if via.as_deref() == Some(Via::App.as_str()) {
+            return Err(refusal(
+                StatusCode::FORBIDDEN,
+                "app_window",
+                "do this from a browser or a phone that's signed in: the desktop app's window can't",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -426,6 +469,10 @@ impl axum::extract::OptionalFromRequestParts<Arc<App>> for DaemonAuth {
 #[derive(Deserialize)]
 pub struct Start {
     next: Option<String>,
+    /// Signing in again to add a first passkey: GitHub asks which account,
+    /// so it takes the person's click, not a redirect GitHub answers alone.
+    #[serde(default)]
+    reauth: bool,
 }
 
 /// Only paths on this site, never `//elsewhere`.
@@ -447,11 +494,12 @@ pub async fn github_start(State(app): State<Arc<App>>, headers: HeaderMap, Query
     };
     let state = token();
     let next = safe_next(q.next.as_deref());
-    let url = url::Url::parse_with_params(
-        &format!("{}/login/oauth/authorize", gh.url),
-        &[("client_id", gh.client_id.as_str()), ("redirect_uri", &callback_url(&app, &headers)), ("state", &state)],
-    )
-    .unwrap();
+    let callback = callback_url(&app, &headers);
+    let mut params = vec![("client_id", gh.client_id.as_str()), ("redirect_uri", &callback), ("state", &state)];
+    if q.reauth {
+        params.push(("prompt", "select_account"));
+    }
+    let url = url::Url::parse_with_params(&format!("{}/login/oauth/authorize", gh.url), &params).unwrap();
     let mut res = Redirect::to(url.as_str()).into_response();
     let value = format!("{state}.{}", base64_url(next.as_bytes()));
     res.headers_mut().append(header::SET_COOKIE, set_cookie(&app, STATE_COOKIE, &value, 600));
@@ -502,7 +550,7 @@ pub async fn github_callback(
     }
     match github_finish(&app, &headers, q).await {
         Ok((account, next)) => {
-            let cookie = match start_session(&app, &account) {
+            let cookie = match start_session(&app, &account, kept_via(&app, &headers, Via::Github)) {
                 Ok(c) => c,
                 Err(e) => return e.into_response(),
             };
@@ -527,11 +575,18 @@ async fn github_finish(app: &App, headers: &HeaderMap, q: Callback) -> Result<(S
         return Err(e);
     }
     let (code, state) = q.code.zip(q.state).ok_or("missing code")?;
-    let (want, next) =
-        cookie(headers, STATE_COOKIE).and_then(|c| c.split_once('.')).ok_or("the sign-in took too long; try again")?;
-    if want != state {
-        return Err("state mismatch; try again".into());
-    }
+    let kept = cookie(headers, STATE_COOKIE).and_then(|c| c.split_once('.'));
+    let Some((_, next)) = kept.filter(|(want, _)| *want == state) else {
+        // A code this browser didn't start a sign-in for (someone sent
+        // the link): used up all the same, as GitHub's codes work once, so
+        // it signs nobody in anywhere else; its token goes at once.
+        if let Ok(t) = exchange(app, gh, &code, &callback_url(app, headers)).await {
+            crate::forge_send::revoke(app, gh, &t).await;
+        }
+        return Err(
+            if kept.is_none() { "the sign-in took too long; try again" } else { "state mismatch; try again" }.into()
+        );
+    };
     let next = safe_next(unbase64_url(next).as_deref());
     let access = exchange(app, gh, &code, &callback_url(app, headers)).await?;
     let user: GithubUser = app
@@ -581,11 +636,42 @@ pub(crate) async fn exchange(app: &App, gh: &crate::Github, code: &str, redirect
     tok.access_token.ok_or_else(|| tok.error_description.unwrap_or_else(|| "no token".into()))
 }
 
-/// A new session for `account`: the Set-Cookie for it.
-pub fn start_session(app: &App, account: &str) -> Result<HeaderValue, ApiError> {
+/// How a session was signed in, kept on its row: adding a passkey to an
+/// account with none asks for a GitHub sign-in a few minutes old.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Via {
+    Github,
+    Passkey,
+    /// The desktop app's window, from a browser's hand-over
+    /// (`app_login`).
+    App,
+}
+
+impl Via {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Via::Github => "github",
+            Via::Passkey => "passkey",
+            Via::App => "app",
+        }
+    }
+}
+
+/// How a new sign-in from this request counts: `via`, unless the request
+/// comes from the desktop app's window (its session says `app`), which
+/// stays the app's, so the window can't make itself a browser's session by
+/// signing in again (with a passkey or GitHub).
+pub fn kept_via(app: &App, headers: &HeaderMap, via: Via) -> Via {
+    let now = cookie(headers, SESSION_COOKIE).and_then(|t| app.db.session_info(&hash(t), now_ms()).ok().flatten());
+    if now.is_some_and(|i| i.via.as_deref() == Some(Via::App.as_str())) { Via::App } else { via }
+}
+
+/// A new session for `account`, signed in `via`: the Set-Cookie for it.
+pub fn start_session(app: &App, account: &str, via: Via) -> Result<HeaderValue, ApiError> {
     let t = token();
     let now = now_ms();
     app.db.add_session(&hash(&t), account, now, now + SESSION_DAYS * 86_400_000)?;
+    app.db.set_session_via(&hash(&t), via.as_str())?;
     Ok(set_cookie(app, SESSION_COOKIE, &t, SESSION_DAYS * 86_400))
 }
 
@@ -614,6 +700,99 @@ mod tests {
         assert_eq!(safe_next(Some("https://evil.example")), "/");
         assert_eq!(safe_next(Some("/\\evil.example")), "/");
         assert_eq!(safe_next(None), "/");
+    }
+
+    /// A GitHub sign-in's code is used up even when it reaches a browser
+    /// that didn't start that sign-in (someone sent the link): it signs
+    /// nobody in, then or later, and its token goes at once. Signing in
+    /// again to add a passkey asks GitHub for the account picker.
+    #[tokio::test]
+    async fn a_code_without_its_sign_in_is_used_up() {
+        use std::sync::{Arc as A, Mutex};
+
+        use axum::{
+            Json, Router,
+            routing::{delete, get, post},
+        };
+        use serde_json::json;
+
+        #[derive(Default)]
+        struct Seen {
+            codes: Vec<String>,
+            revoked: usize,
+        }
+        let seen: A<Mutex<Seen>> = A::default();
+        let s2 = seen.clone();
+        let s3 = seen.clone();
+        let gh = Router::new()
+            .route(
+                "/login/oauth/access_token",
+                post(move |body: String| async move {
+                    s2.lock().unwrap().codes.push(body);
+                    Json(json!({ "access_token": "ghu_test", "token_type": "bearer" }))
+                }),
+            )
+            .route("/user", get(|| async { Json(json!({ "id": 7, "login": "jake-gh" })) }))
+            .route(
+                "/applications/cid/token",
+                delete(move || async move {
+                    s3.lock().unwrap().revoked += 1;
+                    StatusCode::NO_CONTENT
+                }),
+            );
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let api = format!("http://{}", l.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(l, gh).await.unwrap() });
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", l.local_addr().unwrap());
+        let mut app = App::for_tests(&base);
+        app.cfg.github =
+            Some(crate::Github { client_id: "cid".into(), client_secret: "s".into(), url: api.clone(), api });
+        let app = app.start();
+        let svc = crate::router(app.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
+        tokio::spawn(async move { axum::serve(l, svc).await.unwrap() });
+        let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+
+        // The re-auth asks GitHub for the account picker; a sign-in doesn't.
+        let start = |q: &str| http.get(format!("{base}/auth/github{q}")).send();
+        let r = start("?reauth=true&next=/%23add-passkey").await.unwrap();
+        let to = r.headers()[header::LOCATION].to_str().unwrap().to_owned();
+        assert!(to.contains("prompt=select_account"), "{to}");
+        let state_cookie = r.headers()[header::SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_owned();
+        let state = state_cookie.split_once('=').unwrap().1.split_once('.').unwrap().0.to_owned();
+        assert!(!start("").await.unwrap().headers()[header::LOCATION].to_str().unwrap().contains("prompt="));
+
+        // A code with no sign-in here, or another one's: refused, but used.
+        let back = |code: &str, st: &str, cookie: Option<&str>| {
+            let mut r = http.get(format!("{base}/auth/github/callback?code={code}&state={st}"));
+            if let Some(c) = cookie {
+                r = r.header(header::COOKIE, c);
+            }
+            r.send()
+        };
+        assert_eq!(back("sent-1", "x", None).await.unwrap().status(), 400);
+        assert_eq!(back("sent-2", "x", Some(&state_cookie)).await.unwrap().status(), 400);
+        {
+            let s = seen.lock().unwrap();
+            assert!(
+                s.codes.iter().any(|b| b.contains("code=sent-1")) && s.codes.iter().any(|b| b.contains("code=sent-2"))
+            );
+            assert_eq!(s.revoked, 2, "their tokens went");
+        }
+        // Its own: signed in, a GitHub sign-in, back where it asked.
+        let r = back("mine", &state, Some(&state_cookie)).await.unwrap();
+        assert_eq!(r.status(), 303);
+        assert_eq!(r.headers()[header::LOCATION], "/#add-passkey");
+        let token = r
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .find_map(|v| {
+                v.strip_prefix(&format!("{SESSION_COOKIE}=")).map(|v| v.split(';').next().unwrap().to_owned())
+            })
+            .unwrap();
+        assert_eq!(app.db.session_info(&hash(&token), now_ms()).unwrap().unwrap().via.as_deref(), Some("github"));
     }
 
     #[test]

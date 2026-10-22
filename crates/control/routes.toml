@@ -16,7 +16,8 @@
 # - `auth`: what control checks before it acts:
 #   - `public`: nothing (some are rate-limited; `note` says what stands in);
 #   - `session`: a signed-in person, by their cookie, or a CLI device by its
-#     signature (`auth::Session`);
+#     signature (`auth::Session`) where `clients` lists `cli`; what only the
+#     page does takes the cookie alone (`auth::PageSession`);
 #   - `daemon`: an enrolled daemon's signature (`auth::DaemonAuth`);
 #   - `daemon_optional`: a daemon's signature when there is one, and nothing
 #     otherwise;
@@ -40,7 +41,9 @@
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
 #   link or a redirect, with no page of control's), `github` and `stripe`
-#   (their webhooks), `operator` (by hand).
+#   (their webhooks), `operator` (by hand). Enforced for the CLI: a CLI
+#   device's signature is refused (401, `page_only`) on every route that
+#   doesn't list `cli` (`clients::gate`).
 # - `note`: anything the rest doesn't say.
 #
 # Not routes, so not here: what a block's origin or the docs origin is
@@ -146,7 +149,15 @@ path = "/auth/passkey/register"
 process = "hub"
 auth = "sign_in"
 clients = ["page"]
-note = "A new account's first passkey, or one more for the session's account."
+note = "A new account's first passkey, or one more for the session's account: that one needs one of its passkeys to agree (`register/step-up`) or, with none, a GitHub sign-in from the last ten minutes."
+
+[[route]]
+method = "POST"
+path = "/auth/passkey/register/step-up"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "The challenge one of the account's passkeys signs to add a new one: it names the account and the new passkey's id."
 
 [[route]]
 method = "POST"
@@ -439,7 +450,7 @@ method = "GET"
 path = "/api/teams"
 process = "hub"
 auth = "session"
-clients = ["page"]
+clients = ["page", "cli"]
 
 [[route]]
 method = "POST"
@@ -846,7 +857,7 @@ method = "POST"
 path = "/api/chat/targets"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "cli"]
 
 [[route]]
 method = "POST"
@@ -881,14 +892,14 @@ method = "GET"
 path = "/api/chat/rooms/{id}/messages"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "cli"]
 
 [[route]]
 method = "POST"
 path = "/api/chat/rooms/{id}/messages"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "cli"]
 
 [[route]]
 method = "PATCH"
@@ -1317,7 +1328,7 @@ method = "GET"
 path = "/api/projects"  # wire::projects::PROJECTS
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "cli"]
 
 [[route]]
 method = "GET"
@@ -1550,16 +1561,16 @@ method = "POST"
 path = "/api/projects/{project}/runs/grant"
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
-note = "An owner's device's signed grant, kept as signed: it must name the project's live delegation (HubPort::live_delegation) and expire within 366 days. The platform can't check the signature (hosted machines do) and never makes one. One live grant a project. Not a machine's cloud.drive: agents never sign one."
+clients = ["page"]
+note = "An owner's browser's signed grant, kept as signed: it must name the project's live delegation (HubPort::live_delegation), expire within 366 days, and be signed by a browser of one of the project's owners that's a browser all the way back (HubPort::owner_browser_signed; hosted machines check again). Never a CLI's or the desktop app's key. One live grant a project. Not a machine's cloud.drive: agents never sign one."
 
 [[route]]
 method = "POST"
 path = "/api/projects/{project}/runs/grant/revoke"
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
-note = "Any owner's device's signed revoke of every grant of the project under a delegation made by its time: no new starts, and every hosted machine of the project is told (runs.revoke)."
+clients = ["page"]
+note = "Any owner's browser's signed revoke (a browser all the way back, as for the grant) of every grant of the project under a delegation made by its time: no new starts, and every hosted machine of the project is told (runs.revoke)."
 
 [[route]]
 method = "POST"

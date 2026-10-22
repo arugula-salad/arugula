@@ -20,15 +20,20 @@
 //!    ticket to the account and answers with a one-time grant, which the
 //!    page hands to `http://127.0.0.1:<port>/arugula-signin`: only the
 //!    app on this computer hears it. A browser that's one of the account's
-//!    devices also signs a certificate for the app's keys and hands it over
-//!    the same way (`&cert=`), with the account root it pinned.
+//!    devices also signs an `app` certificate for the app's keys and hands
+//!    it over the same way (`&cert=`), with the account root it pinned.
+//!    Only a browser's page allows, by its cookie: a CLI's signature would
+//!    let a CLI allow a sign-in it started itself.
 //! 3. The app's webview opens control's page with
 //!    `#app-redeem=<id>.<grant>.<verifier>[.<noise key>.<sign key>.<cert>]`,
 //!    which posts the first three to `POST /auth/app/{id}/redeem` (from
 //!    control's own origin, as JSON) and gets the session cookie there. With
 //!    a certificate, it takes the keys as its own and enrolls with it, so
 //!    it's a device at once; without one, it's a new device that a trusted
-//!    device approves, as any browser is.
+//!    device approves, as any browser is. Either way it's an `app` device
+//!    (`Kind::App`), never a browser: whatever listens on the loopback port
+//!    gets the grant and the certificate, and on that computer that could
+//!    be an agent. A session the hand-over made enrolls nothing else.
 //!
 //! The certificate never passes through control before the app has it: if
 //! control showed the browser keys of its own, the app finds the certificate
@@ -56,7 +61,7 @@ use serde_json::{Value, json};
 
 use crate::{
     ApiError, App,
-    auth::{Session, hash, start_session, token},
+    auth::{PageSession, Via, hash, start_session, token},
     err,
 };
 
@@ -250,7 +255,7 @@ pub async fn show(
     State(app): State<Arc<App>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
-    _s: Session,
+    _s: PageSession,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     let t = app
@@ -274,8 +279,14 @@ pub async fn show(
 
 /// `POST /api/app-login/{id}/allow`: this account, for that app. The
 /// answer says where to hand the grant: the app's loopback port, on the
-/// computer this page is on.
-pub async fn allow(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>) -> Result<Json<Value>, ApiError> {
+/// computer this page is on. Only a browser's page allows one, by its
+/// cookie: a CLI's signature can't, or it could allow a sign-in it started
+/// itself and redeem it for a session.
+pub async fn allow(
+    State(app): State<Arc<App>>,
+    s: PageSession,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
     let (grant, port) = app.app_logins.allow(&id, &s.account, now_ms()).ok_or_else(|| {
         err(StatusCode::NOT_FOUND, "that sign-in expired or was already used; start it again in the app")
     })?;
@@ -305,7 +316,7 @@ pub async fn redeem(
     let account = app.app_logins.redeem(&id, &b.grant, &b.verifier, now_ms()).ok_or_else(|| {
         err(StatusCode::NOT_FOUND, "that sign-in expired or was already used; start it again in the app")
     })?;
-    let cookie = start_session(&app, &account)?;
+    let cookie = start_session(&app, &account, Via::App)?;
     app.analytics.signed_in(&account, "app", false);
     let mut res = StatusCode::NO_CONTENT.into_response();
     res.headers_mut().append(header::SET_COOKIE, cookie);

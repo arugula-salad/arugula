@@ -97,7 +97,7 @@ name = "sessions"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A sign-in session: a hash of its token, the browser's User-Agent, its device, when it ends."
+what = "A sign-in session: a hash of its token, the browser's User-Agent, its device, how it signed in (GitHub, a passkey, or the desktop app's hand-over), when it ends."
 with_account = "deleted"
 seen_by = ["litestream"]
 
@@ -115,7 +115,7 @@ name = "passkeys"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A passkey's public key, its sign count, what keeps it, the browser that added it, whether it gives PRF."
+what = "A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF."
 with_account = "deleted"
 seen_by = ["litestream"]
 
