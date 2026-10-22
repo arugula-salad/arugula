@@ -28,17 +28,20 @@
 //!   for a run whose upload the platform refused: the log stays in the
 //!   pane, and the run goes on.
 
+#[cfg(unix)]
+use std::io::Read as _;
 use std::{
-    io::Read as _,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
 
 use anyhow::{Context as _, Result};
+#[cfg(unix)]
+use arugula_control_wire::run_logs::MAX_ARTIFACT_BYTES;
 use arugula_control_wire::run_logs::{
-    ARTIFACTS_DIR, CHUNK_BYTES, MAX_ARTIFACT_BYTES, MAX_ARTIFACTS, MAX_CHUNK_BYTES, Upload, UploadGiven, Uploaded,
-    WORK_UPLOAD, WORK_UPLOADED, good_artifact_name,
+    ARTIFACTS_DIR, CHUNK_BYTES, MAX_ARTIFACTS, MAX_CHUNK_BYTES, Upload, UploadGiven, Uploaded, WORK_UPLOAD,
+    WORK_UPLOADED, good_artifact_name,
 };
 use arugula_mux::store::PaneLog;
 use serde::{Deserialize, Serialize};
