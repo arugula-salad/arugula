@@ -536,6 +536,12 @@ pub fn sample(db: &crate::db::Db) {
          INSERT INTO issues (search_id, id, project_id, number, title, body, author, labels, created_at, updated_at)
              VALUES (3, 'iss_1', 'prj_t', 1, 'Rehearsal notes', 'the canary held', 'acct-a', '[\"ops\"]', 24, 24);
          INSERT INTO issue_events (id, issue_id, kind, actor, at) VALUES (5, 'iss_1', 'opened', 'acct-a', 24);
+         INSERT INTO runs (id, project_id, trigger_kind, op, op_hash, state, started_by, last_seq, created_at, started_at)
+             VALUES ('run_1', 'prj_t', 'manual', 'arugula op v1\n', 'ab', 'running', 'acct-a', 2, 25, 26);
+         INSERT INTO run_events (run_id, seq, from_state, to_state, at, daemon, sig)
+             VALUES ('run_1', 1, NULL, 'pending', 25, NULL, NULL), ('run_1', 2, 'pending', 'running', 26, 'd1', 'cd');
+         INSERT INTO run_artifacts (run_id, name, size, digest, bucket_key, created_at)
+             VALUES ('run_1', 'out.txt', 3, 'sha256:ef', 'prj_t/run_1/out.txt', 27);
          INSERT INTO cloud_notifications (conversation, account, request, next_attempt)
              VALUES ('c2', 'acct-a', 'q2', 1), ('c1', 'acct-a', 'q1', 1);
          DELETE FROM cloud_notifications WHERE conversation = 'c2';

@@ -9,6 +9,8 @@
 //! - [`channel`]: the Noise IK channel and what travels inside it.
 //! - [`block`]: block channels' grants (M50): a block's frame opening a
 //!   channel to one block with a key the device signed for it.
+//! - [`run`]: a run's lifecycle (S37's eight states, M210) and the event a
+//!   daemon signs when it reports a move.
 
 pub mod block;
 pub mod cert;
@@ -16,6 +18,7 @@ pub mod channel;
 pub mod keys;
 pub mod mux;
 pub mod push;
+pub mod run;
 pub mod team;
 
 #[cfg(test)]

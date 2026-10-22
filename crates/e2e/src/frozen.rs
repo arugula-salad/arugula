@@ -4,7 +4,8 @@
 //! changed byte orphans every stored signature and key. The expected
 //! bytes are hex, so a find-and-replace across the repo can't change them
 //! along with the code. Block grants (M50) came after the rename and say
-//! "arugula …"; they're pinned here too, since browsers sign the same bytes.
+//! "arugula …"; they're pinned here too, since browsers sign the same bytes,
+//! and so are run events (M210), which daemons sign and anyone may check.
 
 use serde_json::json;
 
@@ -58,6 +59,15 @@ fn signed_domains_never_change() {
         by: "d".into(),
         sig: String::new(),
     };
+    let run = crate::run::Event {
+        run: "r",
+        seq: 1,
+        from: None,
+        to: crate::run::State::Pending,
+        at: 1,
+        detail: "{}",
+        daemon: "d",
+    };
     let pin = TeamPin { team: "t".into(), founder: "a".into(), founder_root: "r".into() };
 
     let cases = [
@@ -73,6 +83,8 @@ fn signed_domains_never_change() {
         (HEADER.to_owned(), "696c6c6f676963616c2d6465766963652d6b65792031"),
         // Born after the rename (M50), so "arugula"; frozen all the same.
         (first_line(grant.body()), "61727567756c6120626c6f636b206772616e74207631"),
+        // Run events (M210), which hosted daemons sign.
+        (first_line(run.body()), "61727567756c612072756e206576656e74207631"),
     ];
     for (got, want) in cases {
         assert_eq!(got, text(want), "a frozen domain changed (#504)");

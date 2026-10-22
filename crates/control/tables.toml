@@ -831,6 +831,39 @@ note = "Those of issues that go, go. The rest stay, naming no actor, and it's ta
 seen_by = ["litestream"]
 
 [[table]]
+name = "runs"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A project's run (M210): the workspace it runs on, what started it (a schedule, a forge event, or someone by hand: an account, and the machine when its agent did), the S37 operation it runs and its hash, its state (one of S37's eight), the standing grant it may run under, its times, exit code, and the chant ledger entry a release run wrote. The operation is in plain text: its command, directory and instruction (S37 decision 6)."
+why_asleep = "Scheduled and event runs start, and their state is shown and checked, with every person's machine asleep."
+with_account = "partly"
+note = "The runs of projects that go with it go. The rest stay, naming no one who started them."
+seen_by = ["litestream"]
+
+[[table]]
+name = "run_events"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A run's history, append-only: each change of state, numbered in the run, when, a small detail as its reporter wrote it (an exit code, why it failed), and, when the run's daemon reported it, that daemon's id and its signature over the change."
+why_asleep = "A run's history shows, and is checked, with every machine asleep."
+with_account = "partly"
+note = "Those of runs that go, go. The rest stay as written: they name daemons, not people, and a signature names its signer."
+seen_by = ["litestream"]
+
+[[table]]
+name = "run_artifacts"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "What a run left behind: each file's name, size, digest and key in the run bucket. The files themselves are in the bucket (M213), not here."
+why_asleep = "A run's artifacts are listed and fetched with every machine asleep."
+with_account = "partly"
+note = "Those of runs that go, go; their files expire from the bucket."
+seen_by = ["litestream"]
+
+[[table]]
 name = "platform_migrations"
 plane = "platform"
 process = "platform"
