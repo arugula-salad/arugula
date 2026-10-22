@@ -727,8 +727,9 @@ claim_hosted() {
 # - a revoke saying `running stop` stops a run going, and kills everything
 #   of `runner`'s;
 # - an agent run is Claude Code (a stand-in here), headless, with the
-#   instruction, its login on its standard input and never on a command
-#   line.
+#   instruction, on a turn M185's gate gave it: the platform's key pays
+#   (the workspace's maker is on the allowlist), and the agent holds only
+#   the placeholder the provider's proxy fills in, never the box's login.
 # BREAK: the box's ledger is wiped before the run comes again, so it runs
 # twice.
 pq() { docker exec "$TESTNET-postgres" psql -U postgres -d platform -tAc "$1"; }
@@ -747,7 +748,7 @@ wait_state() {
 }
 runner_procs() { hroot sh -c 'pgrep -u runner | wc -l'; }
 claim_runs() {
-  local ok=1 acct proj ws tk dev run pane marker="/tmp/m212-ran-$$" n port
+  local ok=1 acct proj ws tk dev run pane marker="/tmp/m212-ran-$$" n port rules
   pq "SELECT 1" > /dev/null 2>&1 || { note "runs: the platform isn't on the stack's Postgres (ARUGULA_TESTNET_POSTGRES=1)"; return 1; }
   hroot pkill -f 'arugulad --hosted' 2>/dev/null || true
   hroot sh -c 'rm -rf /home/user/.local /home/user/arugulad.log /home/user/app /home/runner/work /tmp/m212-*'
@@ -773,9 +774,15 @@ claim_runs() {
     [ -n "$dev" ] && break; sleep 0.5
   done
   [ -n "$dev" ] || { note "runs: the box didn't enroll:"; hbox tail -20 /home/user/arugulad.log >&2; return 1; }
-  # As M179's worker records it once the hub says the box enrolled.
-  pq "INSERT INTO hosted_workspaces (id, project_id, name, spec, spec_hash, state, machine, created_by, created_at, updated_at)
-      VALUES ('$ws', '$proj', 'runs', '{}', '', 'ready', '$dev', '$acct', 0, 0)" > /dev/null
+  # As M179's worker records it once the hub says the box enrolled: made by
+  # an account on the platform's allowlist (compose.yaml), and with the
+  # digest of the egress rules it made the box with (M185), which set the
+  # platform's Anthropic key from E2B's broker. No compute provider here.
+  rules="$(python3 -c 'import hashlib, json, sys
+r = {"api.anthropic.com": {"x-api-key": "${e2b.secrets.arugula-platform-anthropic}"}}
+print(hashlib.sha256(json.dumps(r, separators=(",", ":")).encode()).hexdigest())')"
+  pq "INSERT INTO hosted_workspaces (id, project_id, name, spec, spec_hash, state, machine, created_by, rules, created_at, updated_at)
+      VALUES ('$ws', '$proj', 'runs', '{}', '', 'ready', '$dev', 'acct-testnet-runs-maker', '$rules', 0, 0)" > /dev/null
   devs "$WORK/rowner.json" grant-sign | grep -q '"grant"' || { note "runs: the owner couldn't sign the standing grant"; return 1; }
 
   # A run in its own copy of the repo, still going when the platform
@@ -820,12 +827,16 @@ claim_runs() {
   pq "UPDATE runs SET state = 'succeeded', last_seq = 3 WHERE id = '$run'" > /dev/null
   [ -z "$BREAK" ] || { hroot pkill -f 'arugulad --hosted'; return 1; }
 
-  # An agent run: Claude Code, headless, its login on its standard input.
+  # An agent run: Claude Code, headless, on a turn the platform's key pays
+  # for, holding the placeholder key and not the box's login.
   run="$(devs "$WORK/rowner.json" agent-run "$ws" "fix the build" | field run)"
-  wait_state "$run" succeeded 60 || { ok=0; hbox tail -30 /home/user/arugulad.log >&2; }
-  [ "$(hroot cat /tmp/m212-claude)" = "-p fix the build --output-format text --dangerously-skip-permissions key:sk-testnet-m212" ] ||
+  wait_state "$run" succeeded 60 ||
+    { ok=0; pq "SELECT detail FROM run_events WHERE run_id = '$run' ORDER BY seq DESC LIMIT 1" >&2; hbox tail -30 /home/user/arugulad.log >&2; }
+  [ "$(hroot cat /tmp/m212-claude)" = "-p fix the build --output-format text --dangerously-skip-permissions key:arugula-brokered" ] ||
     { note "runs: the agent got: $(hroot cat /tmp/m212-claude)"; ok=0; }
   hroot sh -c 'ls /home/user/.local/state/arugula/work/*.login' > /dev/null 2>&1 && { note "runs: an agent's login file stayed"; ok=0; }
+  [ "$(pq "SELECT pays || ' ' || (ended_at IS NOT NULL)::text FROM hosted_turns WHERE workspace_id = '$ws'")" = "platform true" ] ||
+    { note "runs: the agent's turn: $(pq "SELECT pays, ended_at FROM hosted_turns WHERE workspace_id = '$ws'")"; ok=0; }
 
   # A revoke that says `running stop` stops a run going, and what it left.
   run="$(devs "$WORK/rowner.json" run-start "$ws" -- sh -c "(sleep 600 &); sleep 300" | field run)"
