@@ -973,6 +973,16 @@ they go to the other machine at once, not when their leases run out.
   is still free. A machine that dies holding a job leaves it to the other
   when the lease runs out; every checkpoint checks the lease, so a worker
   that comes back late can't overwrite its successor.
+- **Platform jobs** (`platform_jobs`, M208: workspaces, runs, deploys and
+  schedules) take the same claim, but a stricter lease (`crate::jobs`):
+  every write is refused once the lease has run out, even before another
+  machine takes the job, and a step longer than the lease keeps it with a
+  heartbeat every 40 s (at most 6 min ahead). A step whose heartbeat finds
+  the lease lost is dropped, and so is one that runs past its kind's
+  deadline (30 min unless the kind says otherwise). A failed, panicked or
+  dropped step backs off from 10 s, doubling to an hour, and a job claimed
+  its kind's most times in a row ends `failed`. The machines' clocks must
+  agree to well within the 2 min lease. No kind uses them yet; the Cloud kinds move there in M190.
 - **Chat's live events**: each is a row of `chat_events`, numbered across
   both machines; `pg_notify` wakes the other machine, which sends its own
   streams what it hadn't (`chat::Hub::catch_up`), and every machine reads

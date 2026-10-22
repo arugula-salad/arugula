@@ -34,6 +34,7 @@ pub mod hosted;
 pub mod hosted_usage;
 pub mod inbox;
 pub mod issues;
+pub mod jobs;
 mod legacy;
 pub mod migrate;
 pub mod mirror;
