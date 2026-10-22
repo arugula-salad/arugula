@@ -214,6 +214,19 @@ impl PlatformPort for PlatformAt {
     ) -> BoxFuture<'a, anyhow::Result<bool>> {
         self.port().hosted_setup(project, workspace, machine, report)
     }
+
+    fn machine_drives<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, anyhow::Result<bool>> {
+        self.port().machine_drives(daemon, account)
+    }
+
+    fn hosted_transcript<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        transcript: &'a arugula_control_wire::transcripts::TranscriptPost,
+    ) -> BoxFuture<'a, anyhow::Result<arugula_platform::Archived>> {
+        self.port().hosted_transcript(workspace, machine, transcript)
+    }
 }
 
 /// An out-of-process platform: `PlatformPort` over HTTP, and the way this

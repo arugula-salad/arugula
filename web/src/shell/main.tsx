@@ -1,4 +1,4 @@
-import { AgentDialogLayer } from "./ui/agent-dialog";
+import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
 import { cloudPanes, cloudWorkspaces } from "../shared/cloud";
 import { chat } from "../shared/chat-store";
 import { cloudFleet } from "./cloud-fleet";
@@ -447,6 +447,32 @@ if (fromHash) {
   history.replaceState(null, "", "/");
 }
 if (!linkTarget) void registerWorker(openPane);
+
+// M184: the platform page's hosted workspace opens its machine here
+// (`#machine=<id>`), and its + Agent Start an agent on it (`&agent`), once
+// the machine is in the list.
+const toMachine = /^#machine=([0-9A-Za-z_-]+)(&agent)?$/.exec(location.hash);
+if (toMachine) {
+  const [, id, agent] = toMachine;
+  const go = () => {
+    const host = directory.list?.hosts.find((h) => h.id === id)?.name;
+    if (!host) return false;
+    directory.select(host);
+    if (agent)
+      untilShown((c) => {
+        if (!c.connected || directory.current !== host) return false;
+        startAgent(c, {});
+        return true;
+      });
+    return true;
+  };
+  if (!go()) {
+    const off = directory.subscribe(() => {
+      if (go()) off();
+    });
+  }
+  history.replaceState(null, "", "/");
+}
 
 // The desktop app's notification when control drops this machine, and its
 // Daemon menu (#325): Join… and Join again… open Getting started at the

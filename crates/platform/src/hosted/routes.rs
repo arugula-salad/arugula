@@ -4,6 +4,7 @@
 //!
 //! | Route | Who |
 //! |---|---|
+//! | `GET /api/workspaces` (every project's the caller is in) | members |
 //! | `GET /api/projects/{project}/workspaces` | members |
 //! | `POST /api/projects/{project}/workspaces` | owners and editors, on `ARUGULA_HOSTED_ACCOUNTS` |
 //! | `GET /api/projects/{project}/workspaces/{id}` (open: wakes a paused box) | members |
@@ -49,6 +50,21 @@ pub struct NewWorkspace {
     pub name: String,
     #[serde(default)]
     pub spec: Spec,
+}
+
+/// `GET /api/workspaces`: the hosted workspaces of every project the
+/// caller is in (M184, for MCP's `list kind cloud_workspaces`).
+#[derive(Debug, Serialize)]
+pub struct AllWorkspaces {
+    pub workspaces: Vec<Listed>,
+}
+
+/// A hosted workspace, with its project's name.
+#[derive(Debug, Serialize)]
+pub struct Listed {
+    #[serde(flatten)]
+    pub workspace: HostedWorkspace,
+    pub project_name: String,
 }
 
 /// That hosted workspaces are set up here.
@@ -262,4 +278,33 @@ pub async fn delete_secret(
     }
     info!(%account, %project, workspace = %w.id, name, "removed a hosted workspace's secret");
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Every hosted workspace in the caller's projects: its personal one's,
+/// then each team's, by name. None where hosted workspaces aren't set up
+/// (rather than a refusal: MCP lists Managoat's beside these).
+pub async fn all(
+    State(app): State<Arc<Platform>>,
+    CloudDriver(Person { account }): CloudDriver,
+) -> Result<Json<AllWorkspaces>, ApiError> {
+    let mut workspaces = Vec::new();
+    if app.compute.is_none() {
+        return Ok(Json(AllWorkspaces { workspaces }));
+    }
+    let mut projects = Vec::new();
+    if let Some(id) = crate::projects::personal_project(&app, &account).await? {
+        projects.push((id, "Personal".to_owned()));
+    }
+    let ids = app.cache.teams_of(&*app.hub, &account).await?;
+    let mut teams: Vec<_> = app.cache.teams(&*app.hub, &ids).await?.into_values().collect();
+    teams.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
+    for t in teams.into_iter().filter(|t| t.role(&account).is_some()) {
+        projects.push((app.db.team_project(&t.id, &t.name, now_ms())?, t.name.clone()));
+    }
+    for (project, name) in projects {
+        for w in app.db.hosted_workspaces(&project)? {
+            workspaces.push(Listed { workspace: w, project_name: name.clone() });
+        }
+    }
+    Ok(Json(AllWorkspaces { workspaces }))
 }

@@ -175,9 +175,11 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
     let out = Arc::new(Out::new(ch, out));
     let caller = Caller { account: device.account.clone(), device: device.device.clone(), name: device.name.clone() };
     // #399: another machine, for this one's agents: requests to `/api/a2a/`
-    // and nothing else (no mux, no panes, no hands).
+    // and nothing else (no mux, no panes, no hands). M184: on a hosted
+    // machine, a project person's own machine drives it: any request.
     if device.kind == Kind::Daemon {
-        return serve_agent_caller(app, inbound, out, who, device, principal, caller).await;
+        let full = app.control.drives(&who);
+        return serve_machine(app, inbound, out, who, device, principal, caller, full).await;
     }
     let ch = out.ch.clone();
 
@@ -289,8 +291,10 @@ fn agents_only(path: &str) -> bool {
 
 /// A daemon's channel (#399): its requests under `/api/a2a/` answered as
 /// its account, anything else refused, and closed when it's no longer let
-/// in.
-async fn serve_agent_caller(
+/// in. `full` (M184, a hosted machine's driver): every request, as its
+/// principal says, and closed when it no longer drives this one.
+#[allow(clippy::too_many_arguments)]
+async fn serve_machine(
     app: Arc<App>,
     mut inbound: mpsc::Receiver<Vec<u8>>,
     out: Arc<Out>,
@@ -298,8 +302,10 @@ async fn serve_agent_caller(
     device: arugula_e2e::Cert,
     principal: crate::acl::Principal,
     caller: Caller,
+    full: bool,
 ) -> anyhow::Result<()> {
-    info!(device = device.device, account = device.account, name = device.name, "agent channel open");
+    let what = if full { "driving channel" } else { "agent channel" };
+    info!(device = device.device, account = device.account, name = device.name, "{what} open");
     let router = crate::server::channel_router(app.clone());
     let ch = out.ch.clone();
     let mut changed = app.control.changed.subscribe();
@@ -309,7 +315,7 @@ async fn serve_agent_caller(
                 let Some(w) = w else { break Ok(()) };
                 match ch.open(&w) {
                     Ok(None) => {}
-                    Ok(Some(Msg::Request { id, head, body })) if agents_only(&head.path) => {
+                    Ok(Some(Msg::Request { id, head, body })) if full || agents_only(&head.path) => {
                         tokio::spawn(answer(router.clone(), out.clone(), id, head, body, principal.clone(), caller.clone()));
                     }
                     Ok(Some(Msg::Request { id, .. })) => {
@@ -322,14 +328,14 @@ async fn serve_agent_caller(
                 }
             }
             Ok(()) = changed.changed() => {
-                if app.control.device(&who).is_none() {
-                    info!(device = device.device, "machine no longer let in: closing its agent channel");
+                if app.control.device(&who).is_none() || (full && !app.control.drives(&who)) {
+                    info!(device = device.device, "machine no longer let in: closing its {what}");
                     break Ok(());
                 }
             }
         }
     };
-    info!(device = device.device, "agent channel closed");
+    info!(device = device.device, "{what} closed");
     r
 }
 

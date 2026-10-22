@@ -774,6 +774,9 @@ pub async fn join_approve(
         crate::sandboxes::enrolled(&app, sandbox, &c).await?;
     }
     app.db.approve_join(&code, &c, team.as_ref().map(|(t, sig)| (t.as_str(), sig.as_str())), b.mac.as_deref())?;
+    // M184: its projects' hosted machines let it drive them: they look
+    // again now, not at their next refresh.
+    app.relay.nudge(&crate::hosted::of_account(&app, &s.account));
     let props = json!({
         "rejoin": known, "sandbox": j.sandbox.is_some(), "with_code": b.mac.is_some(),
         "asked_for_team": j.team.is_some(), "urls": j.urls.len(),

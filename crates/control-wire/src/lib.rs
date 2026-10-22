@@ -32,6 +32,7 @@ pub mod push;
 pub mod runs;
 pub mod team;
 pub mod telemetry;
+pub mod transcripts;
 pub mod work;
 
 pub use join::{CliJoinRequest, JoinPoll, JoinProof, JoinRequest, JoinStarted, JoinTeam, PollQuery};

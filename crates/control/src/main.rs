@@ -45,6 +45,7 @@ mod gateway_wire;
 mod grants_wire;
 mod guest_jump;
 mod hosted;
+mod hosted_agents;
 #[cfg(test)]
 mod hosted_wire;
 mod hosted_work;
@@ -632,6 +633,7 @@ fn routes() -> Routes {
         .route(wire::hosted::SPEC, get(hosted::spec))
         .route(wire::hosted::SETUP, post(hosted::setup))
         .route("/api/hosted/machines/{id}", axum::routing::delete(hosted::remove))
+        .route(arugula_control_wire::transcripts::HOSTED_TRANSCRIPTS, post(hosted_agents::transcript))
         .route("/api/daemon/github/token", post(forge::daemon_token))
         .route(wire::RELAY_DIAL, get(relay::dial))
         .route("/api/relay/c/{id}", get(relay::client))
