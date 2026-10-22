@@ -1,14 +1,16 @@
 # gitleaks' default rules, minus lock files (their package names trip the
 # generic rule: "libcrux-secrets" in a Cargo.lock, and they hold no secrets)
 # and the Doc link test vector (#1066), whose key is the bytes 0 to 31 and
-# opens nothing but that fixture.
+# opens nothing but that fixture, and the hosted-machine fixture (M178),
+# whose keys are made-up test keys the Rust and web verifiers share.
 [extend]
 useDefault = true
 
 [allowlist]
-description = "lock files, and the Doc link test vector"
+description = "lock files, the Doc link test vector, and the hosted-machine fixture"
 paths = [
   '''(^|/)Cargo\.lock$''',
   '''(^|/)pnpm-lock\.yaml$''',
   '''(^|/)crates/daemon/tests/fixtures/docs/link-vector\.json$''',
+  '''(^|/)web/scripts/hosted\.fixture\.json$''',
 ]
