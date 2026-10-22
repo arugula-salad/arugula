@@ -153,6 +153,23 @@ impl FromRequestParts<Arc<App>> for PageSession {
     }
 }
 
+impl PageSession {
+    /// Not the desktop app's window (`via = app`): what it can't do, a
+    /// browser's or a phone's page can (deleting the account, removing a
+    /// passkey, signing out everywhere). Refused with what to do.
+    pub fn not_app(&self, app: &App) -> Result<(), ApiError> {
+        let via = app.db.session_info(&self.token_hash, now_ms())?.and_then(|i| i.via);
+        if via.as_deref() == Some(Via::App.as_str()) {
+            return Err(refusal(
+                StatusCode::FORBIDDEN,
+                "app_window",
+                "do this from a browser or a phone that's signed in: the desktop app's window can't",
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Someone reaching a machine through the relay: a signed-in person, or
 /// (#399) one of their daemons, which reaches another machine's agents for
 /// its own agents. The daemon on the other end decides what a daemon may

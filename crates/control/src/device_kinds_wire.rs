@@ -328,3 +328,28 @@ async fn a_recovery_code_goes_only_from_a_browser_and_now() {
         assert_eq!(st, want, "{v}");
     }
 }
+
+/// The desktop app's window can't delete the account, remove a passkey or
+/// sign out everywhere; a browser's page can.
+#[tokio::test]
+async fn the_apps_window_doesnt_delete_remove_passkeys_or_sign_out_everywhere() {
+    let c = control(|_| {}).await;
+    person(&c.app, "jake", "a1");
+    c.app.db.add_passkey("pk1", "a1", -8, &[7; 32], 1).unwrap();
+    c.app.db.add_passkey("pk2", "a1", -8, &[8; 32], 1).unwrap();
+    let app = session_via(&c, "a1", Via::App);
+    for (path, body) in [
+        ("/api/me/delete", json!({ "confirm": "jake" })),
+        ("/api/me/passkeys/pk1/remove", json!({})),
+        ("/api/me/sessions/end-all", json!({})),
+    ] {
+        let (st, v) = c.as_person(&app, "POST", path, Some(body)).await;
+        assert_eq!((st, v["reason"].as_str()), (403, Some("app_window")), "{path}: {v}");
+    }
+    assert_eq!(c.app.db.passkey_count("a1").unwrap(), 2);
+    let browser = session(&c.app, "a1");
+    let (st, v) = c.as_person(&browser, "POST", "/api/me/passkeys/pk1/remove", Some(json!({}))).await;
+    assert_eq!(st, 200, "{v}");
+    let (st, v) = c.as_person(&browser, "POST", "/api/me/sessions/end-all", Some(json!({}))).await;
+    assert!(st < 300, "{st} {v}");
+}
