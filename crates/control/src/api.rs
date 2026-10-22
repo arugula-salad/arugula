@@ -543,7 +543,7 @@ pub async fn join(
     // where it runs, approved on a signed-in device.
     match b.cert.kind {
         Kind::Daemon => {}
-        Kind::Cli if b.urls.is_empty() && b.team.is_none() && b.ticket.is_none() && b.proof.is_some() => {}
+        Kind::Cli if b.urls.is_empty() && b.team.is_none() && b.proof.is_some() => {}
         Kind::Cli => {
             return Err(err(StatusCode::BAD_REQUEST, "a CLI joins with its key's proof and nothing else"));
         }
@@ -573,23 +573,8 @@ pub async fn join(
         }
         None => None,
     };
-    let sandbox = match &b.ticket {
-        Some(t) => {
-            Some(crate::sandboxes::ticket(&app, t)?.ok_or_else(|| err(StatusCode::FORBIDDEN, "that ticket is spent"))?)
-        }
-        None => None,
-    };
-    let asked = app.db.add_join(
-        &code,
-        &b.cert,
-        &hash(&poll),
-        &b.urls,
-        b.team.as_deref(),
-        sandbox.as_deref(),
-        &b.features,
-        proven,
-        now_ms(),
-    )?;
+    let asked =
+        app.db.add_join(&code, &b.cert, &hash(&poll), &b.urls, b.team.as_deref(), &b.features, proven, now_ms())?;
     // Another join from this machine is waiting (#329), and this request
     // didn't prove it holds the key: it doesn't take that one over.
     if asked == crate::db::Asked::Taken {
@@ -604,7 +589,7 @@ pub async fn join(
         &format!("device:{}", b.cert.device),
         "machine join started",
         json!({
-            "kind": b.cert.kind.as_str(), "team": b.team.is_some(), "sandbox": sandbox.is_some(),
+            "kind": b.cert.kind.as_str(), "team": b.team.is_some(),
             "proven": proven, "urls": b.urls.len(),
         }),
     );
@@ -769,16 +754,12 @@ pub async fn join_approve(
     if let Some((team, _)) = &team {
         app.db.set_daemon_team(&c.device, team)?;
     }
-    if let Some(sandbox) = &j.sandbox {
-        app.db.set_sandbox_daemon(sandbox, &c.device)?;
-        crate::sandboxes::enrolled(&app, sandbox, &c).await?;
-    }
     app.db.approve_join(&code, &c, team.as_ref().map(|(t, sig)| (t.as_str(), sig.as_str())), b.mac.as_deref())?;
     // M184: its projects' hosted machines let it drive them: they look
     // again now, not at their next refresh.
     app.relay.nudge(&crate::hosted::of_account(&app, &s.account));
     let props = json!({
-        "rejoin": known, "sandbox": j.sandbox.is_some(), "with_code": b.mac.is_some(),
+        "rejoin": known, "with_code": b.mac.is_some(),
         "asked_for_team": j.team.is_some(), "urls": j.urls.len(),
     });
     match &team {
@@ -950,12 +931,10 @@ pub async fn directory(State(app): State<Arc<App>>, s: crate::auth::Reacher) -> 
         .daemons(&s.account)?
         .into_iter()
         .map(|d| {
-            // A hosted sandbox is reached through its provider, which wakes it.
-            let sandbox = app.db.sandbox_of_daemon(&d.id).ok().flatten();
-            let online = app.relay.online(&d.id) || sandbox.is_some();
+            let online = app.relay.online(&d.id);
             // One of my machines may be a team's (I joined it for them, M30).
             let team = app.db.daemon_team(&d.id).ok().flatten();
-            let mut v = json!({ "id": d.id, "name": d.name, "urls": d.urls, "last_seen": d.last_seen, "online": online, "sandbox": sandbox, "team": team });
+            let mut v = json!({ "id": d.id, "name": d.name, "urls": d.urls, "last_seen": d.last_seen, "online": online, "team": team });
             if chat && !takes_chat_import(&app, &d.id) {
                 v["chat_update"] = json!(true);
             }

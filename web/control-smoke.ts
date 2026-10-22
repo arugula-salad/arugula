@@ -31,7 +31,7 @@ async function freePort(): Promise<number> {
   await new Promise((ok) => s.close(ok));
   return port;
 }
-const [CONTROL, GITHUB, DAEMON, SPY, PUSH, STRIPE, SPRITES] = await Promise.all(Array.from({ length: 7 }, freePort));
+const [CONTROL, GITHUB, DAEMON, SPY, PUSH, STRIPE] = await Promise.all(Array.from({ length: 6 }, freePort));
 const WHSEC = "whsec_smoke";
 const base = `http://127.0.0.1:${CONTROL}`;
 const target = process.env.TARGET_DIR ?? "../target/debug";
@@ -152,13 +152,12 @@ try {
       ...["--github-client-id", "id", "--github-client-secret", "secret"],
       ...["--github-url", `http://127.0.0.1:${GITHUB}`, "--github-api", `http://127.0.0.1:${GITHUB}`],
       ...["--push-host", `127.0.0.1:${PUSH}`],
-      // Billing against a fake Stripe, with no free relay allowance (M22),
-      // and hosted sandboxes against a fake Sprites API (M20).
+      // Billing against a fake Stripe, with no free relay allowance (M22).
       ...["--stripe-api", `http://127.0.0.1:${STRIPE}`, "--stripe-seat-price", "price_seat", "--stripe-minutes-price", "price_min"],
-      ...["--relay-free-mb", "0", "--sprites-url", `http://127.0.0.1:${SPRITES}`, "--sandbox-binary", "/bin/true"],
+      ...["--relay-free-mb", "0"],
     ], {
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, RUST_LOG: "arugula_control=debug", STRIPE_SECRET_KEY: "sk_test_x", STRIPE_WEBHOOK_SECRET: WHSEC, SPRITES_TOKEN: "t" },
+      env: { ...process.env, RUST_LOG: "arugula_control=debug", STRIPE_SECRET_KEY: "sk_test_x", STRIPE_WEBHOOK_SECRET: WHSEC },
     }),
   );
   procs.at(-1)!.stdout!.on("data", (d: Buffer) => controlLog.push(d));
@@ -427,9 +426,6 @@ try {
   check("a free account over its relay allowance sees the warning", bill.relay.warning && bill.relay.bytes > 0, JSON.stringify(bill.relay));
   // A fake Stripe: records what control asks for.
   const { server: stripeServer, calls: stripeCalls } = fakeStripe(STRIPE);
-  // A fake Sprites API that can't make anything (a sandbox still counts
-  // from when it's asked for until it's deleted).
-  const fakeSprites = createServer((req, res) => res.writeHead(req.method === "DELETE" ? 204 : 500).end()).listen(SPRITES, "127.0.0.1");
   // The team: the laptop's account owns it.
   const team = "0123456789abcdef";
   const v1 = await signRoster(
@@ -437,8 +433,6 @@ try {
     laptop,
   );
   await me.api("/api/teams", { roster: v1 });
-  // Hosted VMs need a paid plan once billing is on.
-  check("hosted VMs need a paid plan", await me.api("/api/sandboxes", { device: laptop.id }).then(() => false, (e: Error) => /paid plan/.test(e.message)));
   const co = await me.api<{ url: string }>("/api/billing/checkout", { team });
   const cs = stripeCalls.find((c) => c.path === "/v1/checkout/sessions")!.form;
   check("checkout for the team: 1 seat, and metered minutes", co.url.includes("checkout") && cs.get("line_items[0][quantity]") === "1" && cs.get("line_items[1][price]") === "price_min");
@@ -466,19 +460,14 @@ try {
   await me.api(`/api/teams/${team}/roster`, { roster: v2 });
   const seats = stripeCalls.filter((c) => c.path === "/v1/subscription_items/si_seat").at(-1)?.form.get("quantity");
   check("adding a member adds a seat", seats === "2", `${seats}`);
-  // Sandbox minutes, now on the team's plan: one asked for and deleted.
-  const sbx = await me.api<{ id: string }>("/api/sandboxes", { device: laptop.id });
-  await sleep(500);
-  await me.api(`/api/sandboxes/${sbx.id}`, undefined, "DELETE").catch(() => {});
+  // No minutes to meter since hosted sandboxes went (M190).
   await me.api("/api/billing/report", {});
   const meter = stripeCalls.filter((c) => c.path === "/v1/billing/meter_events");
-  const minutes = meter.reduce((n, c) => n + Number(c.form.get("payload[value]")), 0);
-  check("sandbox minutes reported to Stripe", minutes === 1 && meter[0]?.form.get("payload[stripe_customer_id]") === "cus_1", `${minutes}`);
-  // What Stripe would invoice at $8 a seat and 1¢ a minute.
-  const invoice = Number(seats) * 800 + minutes * 1;
-  check("the invoice adds up: 2 seats and 1 minute", invoice === 1601, `${invoice}¢`);
+  check("no minutes reported to Stripe", meter.length === 0, `${meter.length}`);
+  // What Stripe would invoice at $8 a seat.
+  const invoice = Number(seats) * 800;
+  check("the invoice adds up: 2 seats", invoice === 1600, `${invoice}¢`);
   stripeServer.close();
-  fakeSprites.close();
 
   // 9. A machine expecting another account (as if control swapped in one
   // of its own) doesn't take the approval, and pins nothing.

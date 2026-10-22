@@ -28,7 +28,7 @@ or an account skip without it and name what's missing
 | `cargo nextest run --workspace` (in `just test`) | unit tests in every crate, and the daemon's integration tests in `crates/daemon/tests/`, `ssh.rs` and `reboot.rs` among them (Docker); the [client fixtures](#client-fixtures) both ways | Linux and macOS |
 | `just e2e-interop` (in `just test`) | the browser's end-to-end crypto (`web/src/shell/e2e`) against Rust's (`crates/e2e`): certificate vectors made by `crates/e2e/examples/interop.rs` and the ones checked in (`crates/e2e/fixtures/`), and a Noise handshake with its `responder` | Linux and macOS |
 | `just test-platform-postgres` | the platform's tests (`arugula-platform`) again on Postgres 17, in a container of their own: `ARUGULA_TEST_POSTGRES_URL` gives each test a schema there (`Db::test`) where it would have SQLite in memory | Linux (Docker) |
-| `just control-smoke` (in `just test`) | `web/control-smoke.ts`: a fake GitHub, Stripe, push service and Sprites API, the real `arugula-control` and real daemons; headless devices sign in, enroll, approve the daemons' join codes and reach them directly and through the relay; the CLI (M49) logs in with a code the device approves and, with no daemon of its own, runs, lists and captures on one machine directly and one through the relay | Linux and macOS |
+| `just control-smoke` (in `just test`) | `web/control-smoke.ts`: a fake GitHub, Stripe and push service, the real `arugula-control` and real daemons; headless devices sign in, enroll, approve the daemons' join codes and reach them directly and through the relay; the CLI (M49) logs in with a code the device approves and, with no daemon of its own, runs, lists and captures on one machine directly and one through the relay | Linux and macOS |
 | `just e2e` | the Playwright specs in `web/e2e/` against throwaway daemons (`just e2e <url>` tests a running one): the `chrome` project, and `webkit` for `*.webkit.spec.ts` | Linux (Playwright's Chromium and WebKit) |
 | `just journey [j1\|j2a\|j2b\|j2c\|j5\|j6]` | a new user's journeys ([below](#a-new-users-journeys)): one person from no account to a terminal, two people linking up, someone who won't read docs, and two people on a tailnet with no control; each ends with an annotated graph in `web/journey-reports/` (local, never committed) | Linux, in the e2e shards (they're specs in `web/e2e/`) |
 | `just e2e-webkit` | only the `webkit` project: Safari's engine, for device keys (#94) and the one-click invite (#137) | macOS |
@@ -500,7 +500,8 @@ since the specs run `../target/debug/*`.
 Make temp directories in `beforeAll`, not at the top of a spec: Playwright
 loads each spec in the runner as well as the worker (#62).
 `E2E_DAEMON_LOG=<file>` keeps the test daemon's debug log, and
-`E2E_CONTROL_LOG=1` shows control's output in `sandboxes.spec.ts`.
+`E2E_CONTROL_LOG=1` shows control's output in the specs that start one
+(`blocks-control.spec.ts`, `doc-share.spec.ts`).
 
 The whole run shares one browser, and Playwright closes only the contexts
 its `context` fixture made. A context a spec opens with

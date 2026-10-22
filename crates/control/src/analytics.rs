@@ -3,7 +3,7 @@
 //! someone else runs never reports to anyone.
 //!
 //! Events are about control's own metadata: sign-ins, devices, joins,
-//! teams, invites, billing, hosted sandboxes, cloud runs, relay sockets
+//! teams, invites, billing, hosted workspaces, cloud runs, relay sockets
 //! and the requests people make. A person is their account id (no name,
 //! login or address), a team is a `team` group, and nothing carries an IP
 //! (`$geoip_disable`). Control never sees terminal bytes, so no event can

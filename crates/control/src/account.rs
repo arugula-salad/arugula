@@ -284,11 +284,10 @@ pub async fn preview(State(app): State<Arc<App>>, s: Session) -> R {
     p.pays = pays(&app, &s.account, &p).await?;
     p.blockers.splice(0..0, app.platform.delete_blockers(&s.account, false).await?);
     let machines = app.db.daemons(&s.account)?.len();
-    let vms = app.db.sandboxes(&s.account)?.iter().filter(|x| x.deleted.is_none()).count();
     Ok(Json(json!({
         "confirm": p.confirm,
         "disband": p.disband.iter().map(|(id, name, others)| json!({ "team": id, "name": name, "others": others })).collect::<Vec<_>>(),
-        "blockers": p.blockers, "pays": p.pays, "machines": machines, "vms": vms,
+        "blockers": p.blockers, "pays": p.pays, "machines": machines,
         "stays_in": p.tell.iter().map(|(_, name, _)| name).collect::<Vec<_>>(),
     })))
 }
@@ -328,14 +327,6 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
     // Managoat, in its worker), and refuses until it's done.
     if let Some(why) = app.platform.delete_blockers(account, true).await?.first() {
         return Err(err(StatusCode::CONFLICT, why));
-    }
-    // Hosted VMs go the way they always do.
-    for x in app.db.sandboxes(account)? {
-        if x.deleted.is_none()
-            && let Err(e) = crate::sandboxes::remove(app, &x.id).await
-        {
-            warn!(sandbox = x.id, error = %e, "can't delete a deleted account's hosted VM");
-        }
     }
     // Who to tell, and which machines to nudge, before the rows go.
     let mut nudge: Vec<String> = Vec::new();

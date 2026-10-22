@@ -1,7 +1,6 @@
 // Adding a machine (#98): the no-machines screen with the account's menu
 // (#97) and any team it's waiting on (#103), the install and join steps, a
-// team's join command (#332), a hosted VM (M20), and looking up a join
-// code.
+// team's join command (#332), and looking up a join code.
 
 import { useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
@@ -13,7 +12,6 @@ import { MenuLayer } from "../../shared/ui/menu";
 import type { ControlSession, Team } from "../control";
 import { splitJoinCode } from "../e2e/cert.ts";
 import { AccountButton } from "../ui/app-bar";
-import { useControl } from "./common";
 
 /** Ready, but no machine to show yet: the account's menu (#97), any team
  * this account is waiting on (#103), and how to add a machine (#98). */
@@ -92,7 +90,6 @@ export function AddMachine({ s }: { s: ControlSession }) {
       <p class="dim">
         A <i>machine</i> runs your terminals; a <i>device</i> (this browser, your phone) reaches them.
       </p>
-      {s.sandboxesOpen ? <HostedVm s={s} /> : null}
     </div>
   );
 }
@@ -107,23 +104,6 @@ export function TeamJoin({ s, t, here }: { s: ControlSession; t: Team; here?: bo
       </span>
       <CopyText text={`arugulad join ${s.info.url} --team ${t.team}`} {...(here ? { "data-team-join": true } : { "data-team-join-step": t.team })} />
     </>
-  );
-}
-
-/** A hosted VM (M20): no machine of your own needed. */
-function HostedVm({ s }: { s: ControlSession }) {
-  useControl(s);
-  const [err, setErr] = useState("");
-  const starting = s.starting ? s.sandboxes.find((x) => x.id === s.starting) : undefined;
-  return (
-    <div class="hosted-vm">
-      <p>No machine to hand? Use a hosted VM: a fresh Linux machine, deleted when you close its last tab.</p>
-      <button class="primary" data-start-vm disabled={!!starting && !starting.state.startsWith("failed")} onClick={() => s.startSandbox().catch((e: Error) => setErr(e.message))}>
-        {starting && !starting.state.startsWith("failed") ? `Starting (${starting.state})…` : "Start a hosted VM"}
-      </button>
-      {starting?.state.startsWith("failed") ? <p class="control-error">{starting.state}</p> : null}
-      {err ? <p class="control-error">{err}</p> : null}
-    </div>
   );
 }
 

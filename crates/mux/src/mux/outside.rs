@@ -38,8 +38,6 @@ pub trait People: Send + Sync + Debug {
     fn co_owners(&self) -> Vec<Principal>;
     /// People who have a team role here, connected or not.
     fn team_people(&self) -> Vec<Principal>;
-    /// A hosted sandbox's last session closed (M20).
-    fn sandbox_done(self: Arc<Self>);
 }
 
 /// The Claude Code conversations on this machine (#146).

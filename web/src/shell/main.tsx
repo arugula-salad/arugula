@@ -110,12 +110,6 @@ if (session) {
     },
   });
   session.subscribe(() => {
-    // A hosted VM this browser started: show it once it's up.
-    const started = session.starting && session.daemons.find((d) => d.sandbox === session.starting);
-    if (started) {
-      session.starting = null;
-      queueMicrotask(() => directory.select(started.name));
-    }
     directory.setControl(
       session.daemons.map((d) => ({
         name: d.name,
@@ -204,7 +198,6 @@ const connect = () => {
   if (session) {
     const c = client;
     directory.setPath(null);
-    let hadSessions = false;
     let pinned = false;
     c.subscribe(() => {
       if (c !== client) return;
@@ -216,14 +209,6 @@ const connect = () => {
       if (c.connected && c.state && !c.state.roles && !pinned && id && session.owns(id)) {
         pinned = true;
         void syncPins(c, session).catch(() => (pinned = false));
-      }
-      // A hosted VM whose last tab closed is done (M20): delete it.
-      const n = c.state?.sessions.length ?? 0;
-      if (n > 0) hadSessions = true;
-      const vm = session.daemons.find((d) => d.id === c.e2e?.daemon.id)?.sandbox;
-      if (vm && hadSessions && n === 0 && c.connected) {
-        hadSessions = false;
-        void session.deleteSandbox(vm);
       }
     });
   }

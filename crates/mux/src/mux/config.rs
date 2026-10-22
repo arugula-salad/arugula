@@ -38,8 +38,6 @@ pub struct Config {
     pub notify: Arc<dyn super::Notify>,
     /// Who else is on the team, through Arugula control.
     pub people: Arc<dyn super::People>,
-    /// A hosted sandbox (M20): when its last session closes, it's done.
-    pub sandbox_of_control: bool,
     /// What to call the owner to others (M13): their login, else "owner".
     pub owner_name: String,
     /// The owner's picture, if the tailnet gave one.

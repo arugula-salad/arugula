@@ -3497,12 +3497,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   user-select: all;
 }
 
-.hosted-vm {
-  margin: 12px 0;
-  padding-top: 12px;
-  border-top: 1px solid var(--divider);
-}
-
 /* No machines yet (#97, #98): the account's menu on top, then the steps.
  * It scrolls, since the steps outgrow a phone. */
 .control-page {

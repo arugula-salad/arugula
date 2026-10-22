@@ -101,7 +101,7 @@ export function fleetLabel(name: string): string {
   return `${n === undefined ? "" : `${n} pane${n === 1 ? "" : "s"} · `}${machineState(name)}${at ? ` · ${at.place}` : ""}`;
 }
 
-/** More for the host menu (control mode: adding a machine, hosted VMs). */
+/** More for the host menu (control mode: adding a machine). */
 let extras: () => MenuItem[] = () => [];
 export function setHostMenuExtras(f: () => MenuItem[]) {
   extras = f;
