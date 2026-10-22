@@ -217,8 +217,66 @@ pub fn driver_argv(driver: &str) -> Result<Vec<String>, Refused> {
             Ok(vec!["node".into(), "--input-type=module".into(), "-e".into(), CHANT_FLY.into()])
         }
         "fake" => Err(Refused("driver", "this box doesn't run the fake driver".into())),
+        arugula_e2e::deploy::apps_platform::DRIVER => {
+            let exe = std::env::current_exe()
+                .map_err(|e| Refused("driver", format!("this box can't find its own daemon: {e}")))?;
+            let mut argv = vec![exe.to_string_lossy().into_owned(), "_apps-platform".into()];
+            argv.extend(apps_platform_test_flags());
+            Ok(argv)
+        }
         other => Err(Refused("driver", format!("this box has no {} driver yet", printable(other)))),
     }
+}
+
+/// What applies deploy `d` on this box: [`driver_argv`], and for a driver
+/// that reads them, the operation this machine checked, on its command
+/// line (which the driver's shell builds from this daemon's words, and
+/// nothing it reads can change), not only in its environment.
+pub fn driver_argv_for(d: &DeployWork) -> Result<Vec<String>, Refused> {
+    let mut argv = driver_argv(&d.driver)?;
+    if d.driver == arugula_e2e::deploy::apps_platform::DRIVER {
+        let o = &d.operation;
+        for (flag, v) in [
+            ("--deploy", &d.deploy),
+            ("--environment", &o.environment_name),
+            ("--kind", &o.source_kind),
+            ("--ref", &o.source_ref),
+            ("--where", &o.source_where),
+            ("--plan", &o.plan),
+        ] {
+            argv.extend([flag.to_owned(), v.clone()]);
+        }
+        // A roll back (M220's): the plan names the deploy it goes back to.
+        if let Some(r) = &d.roll_back {
+            argv.extend(["--roll-back".to_owned(), r.deploy.clone()]);
+        }
+    }
+    Ok(argv)
+}
+
+/// Where the apps-platform driver pushes and asks, on a box that runs the
+/// fake driver too (tests and testnet only): a directory of bare
+/// repositories for GitHub (`ARUGULA_HOSTED_APPS_PLATFORM_GIT`), a fake
+/// app (`ARUGULA_HOSTED_APPS_PLATFORM_HEALTH`), a fake GitHub API
+/// (`ARUGULA_HOSTED_APPS_PLATFORM_API`), and no wait for Flux.
+fn apps_platform_test_flags() -> Vec<String> {
+    if !fake_on() {
+        return vec![];
+    }
+    let mut flags = vec![];
+    for (var, flag) in [
+        ("ARUGULA_HOSTED_APPS_PLATFORM_GIT", "--git-base"),
+        ("ARUGULA_HOSTED_APPS_PLATFORM_HEALTH", "--health-base"),
+        ("ARUGULA_HOSTED_APPS_PLATFORM_API", "--api-base"),
+    ] {
+        if let Some(v) = std::env::var(var).ok().filter(|v| !v.is_empty()) {
+            flags.extend([flag.to_owned(), v]);
+        }
+    }
+    if !flags.is_empty() {
+        flags.extend(["--settle-ms".into(), "0".into(), "--poll-ms".into(), "200".into()]);
+    }
+    flags
 }
 
 /// A secret's name: an environment variable's, and not one the driver's
@@ -896,7 +954,7 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
             return Err(format!("deploy_applied: {} was applied on this machine already", d.deploy));
         }
         started(&app, &l.run).await?;
-        let argv = driver_argv(&d.driver).map_err(|r| r.1)?;
+        let argv = driver_argv_for(&d).map_err(|r| r.1)?;
         let given = secrets(&app, &l.run, &d.secrets).await?;
         revocable = given.iter().filter_map(|s| s.revoke.clone().map(|u| (u, s.value.clone()))).collect();
         let pipe = match ResultPipe::new() {
@@ -1229,8 +1287,9 @@ mod tests {
 
     #[test]
     fn only_drivers_this_box_knows_run() {
-        assert_eq!(driver_argv("apps-platform").unwrap_err().0, "driver");
         assert_eq!(driver_argv("chant-fly").unwrap()[..3], ["node", "--input-type=module", "-e"]);
+        let ap = driver_argv("apps-platform").unwrap();
+        assert_eq!(ap[1], "_apps-platform", "the daemon itself, as the apps-platform driver: {ap:?}");
         assert!(good_name("FLY_API_TOKEN") && !good_name("1X") && !good_name("a") && !good_name("A B"));
     }
 

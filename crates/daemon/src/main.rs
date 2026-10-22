@@ -499,6 +499,11 @@ fn main() -> anyhow::Result<()> {
     if argv.get(1).map(String::as_str) == Some("_reseed") {
         hosted::reseed::cli(argv.get(2).map_or("", String::as_str));
     }
+    // The apps-platform driver's apply (M222), as a deploy's run user:
+    // nothing else of the daemon runs.
+    if argv.get(1).map(String::as_str) == Some("_apps-platform") {
+        work::apps_platform::cli(&argv[2..]);
+    }
     #[cfg(windows)]
     if argv.get(1).map(String::as_str) == Some("_host") {
         host::run(&argv[2..]);

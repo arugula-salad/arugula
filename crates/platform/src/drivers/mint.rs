@@ -7,9 +7,12 @@
 //! `github_token_mints` (`deploy`), and revoked at GitHub when the run ends
 //! by the box itself when its driver ends (the token as its own bearer),
 //! and by the platform ([`revoke_run`], tried a few times); it lasts an
-//! hour at most if both miss. The App's private key never leaves the platform. A Fly deploy
-//! token scoped to one org (M220's chant→Fly driver) is the next kind: it
-//! joins [`Mint`] there.
+//! hour at most if both miss. The App's private key never leaves the
+//! platform. The second (M222's apps-platform driver) writes: an
+//! installation token for one named repository (the driver's list),
+//! `contents: write` and nothing more, minted, logged (`deploy:contents`)
+//! and revoked the same way. A Fly deploy token scoped to one org (M220's
+//! chant→Fly driver) is the next kind: it joins [`Mint`] there.
 
 use anyhow::{Context as _, Result, bail};
 use arugula_control_wire::work::Secret;
@@ -27,13 +30,16 @@ pub enum Mint {
     /// (`owner/name`, a commit's `where`), through the platform's GitHub
     /// App.
     GithubRead { name: &'static str },
+    /// An installation token that writes `repo`'s contents (`owner/name`)
+    /// and nothing else, through the platform's GitHub App.
+    GithubWrite { name: &'static str, repo: &'static str },
 }
 
 impl Mint {
     /// The name the run gets it under.
     pub fn name(&self) -> &'static str {
         match self {
-            Mint::GithubRead { name } => name,
+            Mint::GithubRead { name } | Mint::GithubWrite { name, .. } => name,
         }
     }
 }
@@ -59,16 +65,32 @@ pub async fn mint(app: &Platform, m: Mint, d: &Deploy, run: &str) -> Result<Secr
                 .with_context(|| format!("the GitHub App isn't installed on {repo}"))?;
             let caller = Caller::of(app, "platform");
             let (token, _) = gh.deploy_token(&caller, install.id, Repo::Name(repo)).await?;
-            app.deploy_tokens
-                .0
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .entry(run.to_owned())
-                .or_default()
-                .push(token.clone());
-            Ok(Secret { name: name.to_owned(), value: token, revoke: Some(gh.revoke_url()) })
+            Ok(held(app, run, name, token, gh.revoke_url()))
+        }
+        Mint::GithubWrite { name, repo } => {
+            let gh = app.github.as_ref().context("this platform has no GitHub App to mint a token with")?;
+            let install = gh
+                .installation(&app.http, repo)
+                .await?
+                .with_context(|| format!("the GitHub App isn't installed on {repo}"))?;
+            let caller = Caller::of(app, "platform");
+            let (token, _) = gh.deploy_write_token(&caller, install.id, Repo::Name(repo)).await?;
+            Ok(held(app, run, name, token, gh.revoke_url()))
         }
     }
+}
+
+/// Keep `token` to revoke when `run` ends, and hand it over as `name`,
+/// with where the box revokes it itself (`revoke`).
+fn held(app: &Platform, run: &str, name: &str, token: String, revoke: String) -> Secret {
+    app.deploy_tokens
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry(run.to_owned())
+        .or_default()
+        .push(token.clone());
+    Secret { name: name.to_owned(), value: token, revoke: Some(revoke) }
 }
 
 /// Revoke what was minted for `run`: its run ended.

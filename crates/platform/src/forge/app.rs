@@ -106,6 +106,9 @@ enum Scope {
     /// A deploy's run (M219): its source's contents, read-only, for that
     /// run alone.
     Deploy,
+    /// A deploy's run that commits (M222's apps-platform driver): one
+    /// repository's contents, written, for that run alone.
+    DeployWrite,
 }
 
 impl Scope {
@@ -113,6 +116,7 @@ impl Scope {
         match self {
             Scope::Read(_) => read_only(),
             Scope::Deploy => json!({ "metadata": "read", "contents": "read" }),
+            Scope::DeployWrite => json!({ "metadata": "read", "contents": "write" }),
             Scope::Send(Writes::Issues) => json!({ "metadata": "read", "issues": "write" }),
             Scope::Send(Writes::PullRequests) => json!({ "metadata": "read", "pull_requests": "write" }),
             Scope::Send(Writes::Both) => json!({ "metadata": "read", "issues": "write", "pull_requests": "write" }),
@@ -124,6 +128,7 @@ impl Scope {
             Scope::Read(Purpose::Ingest) => "ingest",
             Scope::Read(Purpose::Read) => "read",
             Scope::Deploy => "deploy",
+            Scope::DeployWrite => "deploy:contents",
             Scope::Send(Writes::Issues) => "send:issues",
             Scope::Send(Writes::PullRequests) => "send:pull_requests",
             Scope::Send(Writes::Both) => "send:issues+pull_requests",
@@ -523,6 +528,19 @@ impl GithubApp {
     /// it lasts an hour at most anyway. `(token, expires_at)`.
     pub async fn deploy_token(&self, c: &Caller<'_>, install: u64, repo: Repo<'_>) -> anyhow::Result<(String, String)> {
         let (secret, expires_at, _) = self.mint(c, install, repo, Scope::Deploy).await?;
+        Ok((secret, expires_at))
+    }
+
+    /// A token that writes one repository's contents for one deploy's run
+    /// (M222): as [`GithubApp::deploy_token`], minted now (and logged),
+    /// never cached, revoked by its holder when the run ends.
+    pub async fn deploy_write_token(
+        &self,
+        c: &Caller<'_>,
+        install: u64,
+        repo: Repo<'_>,
+    ) -> anyhow::Result<(String, String)> {
+        let (secret, expires_at, _) = self.mint(c, install, repo, Scope::DeployWrite).await?;
         Ok((secret, expires_at))
     }
 

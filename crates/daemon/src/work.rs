@@ -87,6 +87,9 @@ use crate::{mux::Api, server::App};
 #[path = "work_deploy.rs"]
 mod deploy;
 
+#[path = "work_apps_platform.rs"]
+pub mod apps_platform;
+
 /// The ledger's directory, in the state directory.
 pub const DIR: &str = "work";
 /// How often the machine asks for work.

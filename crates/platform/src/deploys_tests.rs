@@ -890,3 +890,58 @@ fn recorded_only_over_the_operation_and_never_stale() {
     assert!(db.deploy_approvals(&two).unwrap().is_empty());
     assert_eq!(db.verify_deploy_log(&env.id).unwrap(), Ok(7));
 }
+
+/// M222: an apps-platform environment plans only a full commit of one of
+/// the list's organization's repositories, and a deploy shows the plan's
+/// text (the list, the pointer's path, the commit), whose digest is its
+/// plan.
+#[tokio::test]
+async fn an_apps_platform_plan_names_the_list_and_the_pointer() {
+    let (_hub, _app, base, t, _) = seeded().await;
+    let (st, env) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/projects/{t}/environments"),
+        Some(json!({ "name": "home", "driver": "apps-platform" })),
+    )
+    .await;
+    assert_eq!(st, 200, "{env}");
+    let env = env["id"].as_str().unwrap();
+    // The read token's name is the driver's; the write token's may be the
+    // environment's own (a fine-grained token instead of the mint).
+    let envs = format!("/api/projects/{t}/environments");
+    let with = |name: &str, secrets: &[&str]| {
+        Some(json!({ "name": name, "driver": "apps-platform", "secret_names": secrets }))
+    };
+    let (st, v) = call(&base, "a", "POST", &envs, with("home2", &["SOURCE_TOKEN"])).await;
+    assert_eq!(st, 400, "{v}");
+    assert!(v.to_string().contains("SOURCE_TOKEN is the token"), "{v}");
+    assert_eq!(call(&base, "a", "POST", &envs, with("home3", &["APPS_PLATFORM_TOKEN"])).await.0, 200);
+    let sha = "d".repeat(40);
+    let plan = |kind: &str, sha: &str, place: &str| {
+        Some(json!({ "environment": env, "source": { "kind": kind, "ref": sha, "where": place } }))
+    };
+    let path = format!("/api/projects/{t}/deploys");
+    for (body, why) in [
+        (plan("commit", &sha, "acme/app"), "arugula-salad/<app>"),
+        (plan("commit", &sha, "arugula-salad/planter-apps"), "arugula-salad/<app>"),
+        (plan("artifact", &sha, "arugula-salad/app"), "not an artifact"),
+        (plan("commit", "deadbeef", "arugula-salad/app"), "full commit sha"),
+    ] {
+        let (st, v) = call(&base, "a", "POST", &path, body).await;
+        assert_eq!(st, 400, "{v}");
+        assert!(v.to_string().contains(why), "{v}");
+    }
+    let (st, d) = call(&base, "a", "POST", &path, plan("commit", &sha, "arugula-salad/app")).await;
+    assert_eq!(st, 200, "{d}");
+    let text = d["plan_text"].as_str().unwrap();
+    assert_eq!(digest(text), d["plan"].as_str().unwrap(), "the text is what the digest is over");
+    assert!(
+        text.contains("driver apps-platform\n")
+            && text.contains("repo arugula-salad/planter-apps")
+            && text.contains("path apps/app.yaml\n")
+            && text.contains(&format!("at commit {sha};")),
+        "{text}"
+    );
+}

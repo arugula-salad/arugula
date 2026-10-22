@@ -91,6 +91,8 @@ struct Fake {
     /// revoked with (M219).
     revoke_at: Arc<Mutex<Option<String>>>,
     revoked: Arc<Mutex<Vec<String>>>,
+    /// The secrets it gives a deploy's run, when not `APP_TOKEN` (M222).
+    given: Arc<Mutex<Option<Vec<Secret>>>>,
 }
 
 impl Fake {
@@ -130,6 +132,7 @@ impl Fake {
             purpose: Default::default(),
             revoke_at: Default::default(),
             revoked: Default::default(),
+            given: Default::default(),
         }
     }
 
@@ -333,12 +336,15 @@ async fn secrets(Axum(f): Axum<Fake>, Json(a): Json<SecretsAsk>) -> Json<Secrets
     Json(if again {
         SecretsGiven::Refused { why: "once per run".into() }
     } else {
+        let given = f.given.lock().unwrap().clone();
         SecretsGiven::Given {
-            secrets: vec![Secret {
-                name: "APP_TOKEN".into(),
-                value: SECRET.into(),
-                revoke: f.revoke_at.lock().unwrap().clone(),
-            }],
+            secrets: given.unwrap_or_else(|| {
+                vec![Secret {
+                    name: "APP_TOKEN".into(),
+                    value: SECRET.into(),
+                    revoke: f.revoke_at.lock().unwrap().clone(),
+                }]
+            }),
         }
     })
 }
@@ -638,15 +644,27 @@ fn a_run_a_crash_interrupts_fails_and_never_runs_again() {
 /// A deploy of `source` to production, approved by `by` (the account's
 /// own browser, or someone else's key), with a passkey over the approval.
 fn deploy_item(f: &Fake, run: &str, dep: &str, source: &str, by: &DeviceKeys) -> WorkItem {
+    deploy_item_by(f, run, dep, source, by, ("fake", "acme/app", &["APP_TOKEN"]))
+}
+
+/// As [`deploy_item`], by `driver`, of a commit of `place`, with `secrets`.
+fn deploy_item_by(
+    f: &Fake,
+    run: &str,
+    dep: &str,
+    source: &str,
+    by: &DeviceKeys,
+    (driver, place, secrets): (&str, &str, &[&str]),
+) -> WorkItem {
     use base64::Engine as _;
     let op = Operation {
         project: PROJECT.into(),
         environment: "env_1".into(),
         environment_name: "production".into(),
-        plan: arugula_e2e::deploy::plan_digest("fake", "production", "commit", source, "acme/app"),
+        plan: arugula_e2e::deploy::plan_digest(driver, "production", "commit", source, place),
         source_kind: "commit".into(),
         source_ref: source.into(),
-        source_where: "acme/app".into(),
+        source_where: place.into(),
         planned: "cd".repeat(32),
     };
     let approval = Approval::new(by, dep, &op, "acct1", Decision::Once, arugula_e2e::now_ms() + 3_600_000);
@@ -655,7 +673,7 @@ fn deploy_item(f: &Fake, run: &str, dep: &str, source: &str, by: &DeviceKeys) ->
     let mut data = Sha256::digest(b"c.test").to_vec();
     data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
     let run_op =
-        Op { deploy: Some(DeployApply { deploy: dep.into(), driver: "fake".into(), op: op.hash() }), ..Op::default() }
+        Op { deploy: Some(DeployApply { deploy: dep.into(), driver: driver.into(), op: op.hash() }), ..Op::default() }
             .encode(&f.device());
     WorkItem {
         run: run.into(),
@@ -677,8 +695,8 @@ fn deploy_item(f: &Fake, run: &str, dep: &str, source: &str, by: &DeviceKeys) ->
                 authenticator_data: b64.encode(&data),
                 signature: "c2ln".into(),
             }),
-            driver: "fake".into(),
-            secrets: vec!["APP_TOKEN".into()],
+            driver: driver.into(),
+            secrets: secrets.iter().map(|s| s.to_string()).collect(),
             settings: Default::default(),
             roll_back: None,
             approval_id: None,
@@ -904,4 +922,169 @@ fn a_hosted_runs_log_and_artifact_go_to_the_bucket() {
     assert_eq!(states(&f.reports_of(&b)), ran(1));
     assert_eq!(f.uploads_of(&b), (vec![], vec![]));
     assert!(!f.objects.lock().unwrap().keys().any(|k| k.starts_with(&b)));
+}
+
+/// git in `dir`, as a test's own user.
+fn git(dir: &Path, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@t")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@t")
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// A bare repository at `<remotes>/<repo>.git` holding `files`, one
+/// commit, fetchable by sha as GitHub's are: that commit.
+fn bare_with(root: &Path, repo: &str, files: &[(&str, &str)]) -> String {
+    let bare = root.join("remotes").join(format!("{repo}.git"));
+    std::fs::create_dir_all(&bare).unwrap();
+    git(&bare, &["init", "--quiet", "--bare", "--initial-branch=main"]);
+    git(&bare, &["config", "uploadpack.allowAnySHA1InWant", "true"]);
+    let w = root.join("seed").join(repo);
+    std::fs::create_dir_all(&w).unwrap();
+    git(&w, &["init", "--quiet", "--initial-branch=main"]);
+    for (f, body) in files {
+        let p = w.join(f);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, body).unwrap();
+    }
+    git(&w, &["add", "-A"]);
+    git(&w, &["commit", "--quiet", "-m", "seed"]);
+    git(&w, &["push", "--quiet", &bare.to_string_lossy(), "main"]);
+    git(&w, &["rev-parse", "HEAD"])
+}
+
+/// M222: the apps-platform driver on a deploy's box, through the daemon:
+/// its tokens come on the driver's standard input, `arugulad
+/// _apps-platform` pins the app's pointer in the list (a bare repository
+/// standing in for GitHub), waits for the app (a fake answering its health
+/// path), and the run succeeds. The commit changes the pointer only, and
+/// neither token is on disk or in the pane.
+#[test]
+fn a_deploy_box_applies_an_apps_platform_deploy() {
+    const WRITE: &str = "ghs_m222writeTOKENneverOnDisk000000000"; // gitleaks:allow
+    const READ: &str = "ghs_m222readTOKENneverOnDisk0000000000"; // gitleaks:allow
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    // A deploy's box (M219): only one applies a deploy. It stops after,
+    // so what its pane said is read from the bucket (M213).
+    let f = Fake::new();
+    *f.purpose.lock().unwrap() = Some("deploy".into());
+    *f.given.lock().unwrap() = Some(vec![
+        Secret { name: "APPS_PLATFORM_TOKEN".into(), value: WRITE.into(), revoke: None },
+        Secret { name: "SOURCE_TOKEN".into(), value: READ.into(), revoke: None },
+    ]);
+    let url = serve(&rt, f.clone());
+    let marks: PathBuf = std::env::temp_dir().join(format!("arugula-apps-platform-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&marks);
+    std::fs::create_dir_all(&marks).unwrap();
+    let list_head = bare_with(&marks, "arugula-salad/planter-apps", &[("apps/.gitkeep", "")]);
+    let sha = bare_with(&marks, "arugula-salad/beds-smoke", &[("app.yaml", "name: beds-smoke\nhealth: /healthz\n")]);
+    // The app: 200 at its health path, counted; and GitHub's API, taking
+    // the tokens' revokes.
+    let asked = Arc::new(Mutex::new(0u32));
+    let revoked = Arc::new(Mutex::new(Vec::<String>::new()));
+    let health = rt.block_on(async {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let at = format!("http://{}", l.local_addr().unwrap());
+        let (asked, revoked) = (asked.clone(), revoked.clone());
+        tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+            while let Ok((mut s, _)) = l.accept().await {
+                let mut buf = vec![0u8; 2048];
+                let n = s.read(&mut buf).await.unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).into_owned();
+                let ok = req.starts_with("GET /healthz ");
+                *asked.lock().unwrap() += u32::from(ok);
+                let revoke = req.starts_with("DELETE /installation/token ");
+                if revoke {
+                    let auth = req
+                        .lines()
+                        .find_map(|l| l.to_ascii_lowercase().strip_prefix("authorization: bearer ").map(str::to_owned));
+                    revoked.lock().unwrap().push(auth.unwrap_or_default());
+                }
+                let status = if ok {
+                    "200 OK"
+                } else if revoke {
+                    "204 No Content"
+                } else {
+                    "404 Not Found"
+                };
+                let _ = s.write_all(format!("HTTP/1.1 {status}\r\ncontent-length: 0\r\n\r\n").as_bytes()).await;
+            }
+        });
+        at
+    });
+    let d = arugulad!("appsplatform")
+        .no_wisp()
+        .no_tailscale()
+        .home_in_state()
+        .args(["--hosted"])
+        .env("ARUGULA_HOSTED_TICKET", "ticket-1")
+        .env("ARUGULA_CONTROL_URL", &url)
+        .env("ARUGULA_WORK_PULL_MS", "150")
+        .env("ARUGULA_HOSTED_RUN_USER", "")
+        // No `runner` user here: a deploy's box refuses that, but in tests.
+        .env("ARUGULA_HOSTED_TESTS_UNSAFE", "1")
+        .env("ARUGULA_HOSTED_FAKE_DRIVER", "1")
+        .env("ARUGULA_HOSTED_APPS_PLATFORM_GIT", format!("{}/", marks.join("remotes").display()))
+        .env("ARUGULA_HOSTED_APPS_PLATFORM_HEALTH", &health)
+        .env("ARUGULA_HOSTED_APPS_PLATFORM_API", &health)
+        .env("RUST_LOG", "info")
+        .args(["--log-file", &marks.join("arugulad.log").to_string_lossy()])
+        .wait_secs(30)
+        .start();
+    wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
+    let run = run_id('c');
+    let dep = format!("dep_{}", "3".repeat(32));
+    let item = deploy_item_by(
+        &f,
+        &run,
+        &dep,
+        &sha,
+        &f.root,
+        ("apps-platform", "arugula-salad/beds-smoke", &["APPS_PLATFORM_TOKEN", "SOURCE_TOKEN"]),
+    );
+    f.items.lock().unwrap().push(item);
+    wait(&marks, &f, "the deploy ran", || f.reports_of(&run).len() == 2);
+    let reports = f.reports_of(&run);
+    let (logs, _) = f.uploads_of(&run);
+    let mut all = Vec::new();
+    for u in &logs {
+        let Upload::Log { n, .. } = u else { unreachable!() };
+        all.extend_from_slice(&f.objects.lock().unwrap()[&format!("{run}/log/{n}")]);
+    }
+    let text = String::from_utf8_lossy(&all).into_owned();
+    assert_eq!(
+        states(&reports),
+        [(3, "approved".into(), "running".into()), (4, "running".into(), "succeeded".into())],
+        "{text}"
+    );
+    assert!(text.contains("apps-platform: pushed ") && text.contains("/healthz is ready"), "{text}");
+    assert!(*asked.lock().unwrap() >= 3, "it waited for the app");
+    assert_eq!(
+        *revoked.lock().unwrap(),
+        [WRITE.to_ascii_lowercase(), READ.to_ascii_lowercase()],
+        "both tokens revoked from the box"
+    );
+    let list = marks.join("remotes/arugula-salad/planter-apps.git");
+    assert_eq!(git(&list, &["rev-parse", "main^"]), list_head, "one commit");
+    assert_eq!(git(&list, &["diff-tree", "--no-commit-id", "--name-only", "-r", "main"]), "apps/beds-smoke.yaml");
+    let pointer = git(&list, &["show", "main:apps/beds-smoke.yaml"]);
+    assert!(pointer.contains(&format!("  ref:\n    commit: {sha}")), "{pointer}");
+    std::thread::sleep(Duration::from_millis(300));
+    for token in [WRITE, READ] {
+        assert!(!text.contains(token), "a token is in the pane: {text}");
+        let found: Vec<PathBuf> =
+            [d.state.as_path(), marks.as_path()].iter().flat_map(|dir| holding(dir, token.as_bytes())).collect();
+        assert!(found.is_empty(), "a token is on disk: {found:?}");
+    }
+    let _ = std::fs::remove_dir_all(&marks);
 }
