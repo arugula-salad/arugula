@@ -2,10 +2,9 @@
 //! `pull_request_review`, `pull_request_review_comment`, `issues`,
 //! `issue_comment`, `check_run` and `status` events for a linked repo
 //! (not one unlinked) become `forge_items`, `forge_checks` and
-//! `forge_events` rows, in the webhook's own request and before its pokes
-//! go to the hub. GitHub's payloads are mapped with `arugula-forge-github`'s
-//! parse code where it fits (an item); checks and events keep GitHub's own
-//! words and times.
+//! `forge_events` rows, in the webhook's own request. GitHub's payloads are
+//! mapped with `arugula-forge-github`'s parse code where it fits (an item);
+//! checks and events keep GitHub's own words and times.
 //!
 //! - **Metadata only** in these rows. Never a body, a review's text or a
 //!   comment's: a comment is an event that one was made. The same webhook
@@ -25,7 +24,7 @@
 //!   head's checks and its inbox rows (`db::mirror::delete_item`). Its
 //!   drafts stay, for M170: a send to it fails and says why.
 //! - A row that fails to write is logged and left to the poller
-//!   ([`super::poller`]), which finds it as drift; the pokes go as before.
+//!   ([`super::poller`]), which finds it as drift.
 
 use std::{collections::HashMap, sync::Mutex, time::Instant};
 

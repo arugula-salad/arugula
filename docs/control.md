@@ -146,9 +146,9 @@ on one keeps the draft on the platform (M170).
 machine's owner is a pin onto the platform's item (`pin: {kind,
 global_id}` in its config and state, kept in `layout.json`): the daemon
 reads the item, its checks and its events from the platform, at most every
-10 seconds while it's drawn and at once on a poke, and makes no GitHub call
-for it. It looks as a block read from GitHub does, less the description
-and comments' text, which the mirror doesn't keep. Unlinked repos, Forgejo,
+10 seconds while it's drawn, and makes no GitHub call for it. It looks as
+a block read from GitHub does, less the description and comments' text,
+which the mirror doesn't keep. Unlinked repos, Forgejo,
 GitLab and machines outside control read as before. The platform says it's
 unlinked: the block reads GitHub again. The platform can't be reached: the
 block shows what it said last for 10 minutes, then reads GitHub until it
@@ -157,6 +157,15 @@ comment, review or merge from a pinned block still goes out with their `gh`
 until sends are the platform's (M168). A machine reporting for M171's
 shadow period (`ARUGULA_INBOX_SHADOW`) doesn't pin, so its report stays
 GitHub's word.
+
+**No pokes from control (M174, #1220).** Until then, a machine's GitHub
+blocks heard the App's webhooks from control as pokes, and read at once.
+That relay is gone. Control answers a machine's subscription
+(`forge.watch`) with an empty list, so a machine from before 0.57 keeps
+its blocks polling GitHub with its own `gh` login, as it would on a
+tailnet. On 0.57 and later, a linked repo's blocks are pins; an unlinked
+repo's blocks poll. Forgejo and GitLab webhooks to the machine are as
+before.
 
 **Native issue pins (M203, #1274).** A project's own issue opens as an
 issue block too: `show` kind issue with `iss_…`, or `#N` in the current

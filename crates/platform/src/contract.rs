@@ -392,15 +392,15 @@ async fn cloud(f: &dyn Fixture) {
     assert!(!hub.can_drive_cloud(&m, "acct-cl").await.unwrap(), "a revoked grant");
 }
 
-/// Relaying a webhook's pokes (M161): to no daemon when none watches the
-/// repository, nothing for no pokes. Who hears one is `forge_wire`'s, over
-/// real relay sockets.
+/// A webhook's pokes (M161): retired in M174, so the hub relays none and
+/// answers 0, never an error, to a platform from before that still hands
+/// them over.
 async fn pokes(f: &dyn Fixture) {
     let hub = f.hub();
     let poke = arugula_control_wire::forge::Poke {
         provider: "github".into(),
         host: "github.com".into(),
-        repo: "nobody/watches".into(),
+        repo: "jhgaylor/hud".into(),
         number: Some(1),
         event: "pull_request".into(),
         delivery: "d-contract".into(),

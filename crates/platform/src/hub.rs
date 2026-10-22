@@ -3,8 +3,8 @@
 //!
 //! The platform never reads a hub table. Who someone is, their name, their
 //! teams, which machine is whose and who may reach it, Labs flags, billing's
-//! meters, push, relaying forge pokes, and what changed since it last
-//! looked all come through this trait. In process it's `hub_port::InProcess` in `arugula-control`,
+//! meters, push, and what changed since it last looked all come through
+//! this trait. In process it's `hub_port::InProcess` in `arugula-control`,
 //! over the hub's own state; once the platform is its own process (M140)
 //! it's the same calls over the private network, checked by the same
 //! contract tests (`contract`, with the `contract` feature).
@@ -158,14 +158,15 @@ pub trait HubPort: Send + Sync {
     /// [`personal_project`]: HubPort::personal_project
     fn team_project<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Option<String>>>;
 
-    /// Relay a GitHub webhook's pokes (M161) to the daemons watching each
-    /// repository over their relay sockets, as `forge.poke` messages, the
-    /// same bytes as before the webhook moved: how many messages went. The
-    /// hub keeps the subscriptions, and this, until M174 retires the relay.
-    /// A hub from before M161 doesn't have it.
+    /// A GitHub webhook's pokes (M161), which the hub relayed to the
+    /// daemons watching each repository until M174 retired the relay. Now
+    /// it relays nothing and answers 0, and the platform doesn't call it.
+    /// It stays while a deployed platform from before M174 might (a
+    /// platform rolled back past the hub), so that platform's webhooks
+    /// still answer GitHub 202, not 502.
     fn forge_pokes<'a>(&'a self, pokes: &'a [Poke]) -> BoxFuture<'a, HubResult<u32>> {
         let _ = pokes;
-        Box::pin(async { anyhow::bail!("this hub doesn't relay forge pokes") })
+        Box::pin(async { Ok(0) })
     }
 
     /// The account's GitHub identity (M163), if it signed in with GitHub:

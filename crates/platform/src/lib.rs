@@ -2,10 +2,9 @@
 //! platform", #1150): chat, Cloud and billing, and step 1's projects and
 //! grants, which deploy as often as they like without dropping a relayed
 //! terminal. The hub (`arugula-control`) keeps identity, devices, rosters,
-//! the relay, push, block and doc origins, the jump host, daemons' forge
-//! subscriptions and pokes (until M174) and telemetry, and stays the
-//! gateway: every platform path stays on control's own site ("Platform
-//! paths stay on control.arugula.io forever").
+//! the relay, push, block and doc origins, the jump host and telemetry,
+//! and stays the gateway: every platform path stays on control's own site
+//! ("Platform paths stay on control.arugula.io forever").
 //!
 //! The seam:
 //! - [`HubPort`] is everything the platform asks the hub. The platform

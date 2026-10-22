@@ -660,7 +660,7 @@ clients = ["daemon"]
 note = "Hosted sandboxes stay in the hub for now: a candidate for the platform in step 5."
 
 # ---- forge: the App's webhook is the platform's (M161); the hub keeps
-# daemons' subscriptions and the token route, which ask the platform
+# the token route, which asks the platform. The poke relay is retired (M174)
 
 [[route]]
 method = "POST"
@@ -668,7 +668,7 @@ path = "/github/webhook"
 process = "platform"
 auth = "webhook"
 clients = ["github"]
-note = "GitHub's signature, checked by the platform (M161), which hands the pokes to the hub to relay. The URL is set on the GitHub App, so the path never changes."
+note = "GitHub's signature, checked by the platform (M161), which writes a linked repo's rows. No pokes go to daemons since M174. The URL is set on the GitHub App, so the path never changes."
 
 [[route]]
 method = "POST"

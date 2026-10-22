@@ -33,8 +33,6 @@ pub const ENROLLS: (&str, usize) = ("enroll", 30);
 pub const TEAMS: (&str, usize) = ("team", 20);
 /// Invite links made, per account.
 pub const TEAM_INVITES: (&str, usize) = ("team-invite", 120);
-/// `forge.watch` messages, per daemon.
-pub const FORGE_WATCHES: (&str, usize) = ("forge-watch", 120);
 // Repositories looked up at GitHub for the first time are counted by the
 // platform since M161 (`arugula_platform::forge::FORGE_LOOKUPS`).
 /// Shares offered to other accounts, per daemon (each shows a prompt).
