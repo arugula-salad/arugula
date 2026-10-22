@@ -72,6 +72,7 @@ mod run_grant_tests;
 pub mod timing;
 pub mod triggers;
 pub mod window;
+pub mod work;
 
 pub use hub::HubPort;
 pub use port::{Deleted, PlatformPort, TurnAnswer};

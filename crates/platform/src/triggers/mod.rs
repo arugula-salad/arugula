@@ -16,7 +16,10 @@
 //!   linked repo's events.
 //!
 //! The rows, and how a trigger makes exactly one run, are
-//! [`crate::db::triggers`]'s.
+//! [`crate::db::triggers`]'s. Schedules' ticks ([`schedule::Ticks`]) run on
+//! the platform's one job worker, beside runs' dispatch
+//! ([`crate::work::start`]): one machine fires a schedule at a time (the
+//! job's lease).
 
 //!
 //! **Who's answerable.** A schedule or a rule fires only while the person
@@ -43,18 +46,7 @@ use arugula_e2e::team::TeamRole;
 use axum::http::StatusCode;
 use futures_util::future::BoxFuture;
 
-use crate::{
-    Platform,
-    jobs::{self, Worker},
-};
-
-/// The job worker for schedules, on every machine: four workers, each
-/// claiming due `schedule` jobs (one machine fires a schedule at a time:
-/// the job's lease).
-pub fn start(app: &Arc<Platform>) {
-    let ticks = schedule::Ticks { gate: Arc::new(Members(app.clone())) };
-    jobs::start(app.clone(), Worker::new().with(ticks));
-}
+use crate::Platform;
 
 /// Whether the maker of a schedule or a rule may still start runs on its
 /// project as it fires.

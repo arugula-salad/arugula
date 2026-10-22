@@ -61,6 +61,22 @@ services:
       - ${ARUGULA_TESTNET_STATE:-./.state}:/keys:ro
     networks: [inner]
 
+  # A hosted workspace's box (M212's `runs` claim): M177's users, on the
+  # inner network only, with the stack's binaries. The claim starts
+  # `arugulad --hosted` in it.
+  hosted-box:
+    profiles: [control]
+    build: ./hosted
+    image: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-hosted
+    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-hosted-box
+    hostname: hosted-box
+    init: true
+    # arugulad's iptables rules keep runs off its ports (M212).
+    cap_add: [NET_ADMIN]
+    volumes:
+      - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
+    networks: [inner]
+
   # A git server (bare repositories over ssh) for M51's `git push` from a
   # pane with the agent forwarded through `arugula --ssh`. git@git:repo.git.
   git:
@@ -110,6 +126,8 @@ services:
       # own file otherwise, as always.
       ARUGULA_PLATFORM_DATABASE_URL: ${ARUGULA_TESTNET_POSTGRES:+postgres://postgres:testnet@postgres:5432/platform}
       RUST_LOG: arugula_control=debug
+      # Anyone here may start runs on a hosted workspace (M212's `runs`).
+      ARUGULA_HOSTED_ACCOUNTS: "*"
       STRIPE_SECRET_KEY: sk_test_testnet
       STRIPE_WEBHOOK_SECRET: whsec_testnet
       # The platform (M140): in process unless `up.sh control` was asked
@@ -167,6 +185,8 @@ services:
       # On `postgres` with ARUGULA_TESTNET_POSTGRES=1 (M143), as control's.
       ARUGULA_PLATFORM_DATABASE_URL: ${ARUGULA_TESTNET_POSTGRES:+postgres://postgres:testnet@postgres:5432/platform}
       RUST_LOG: arugula_platform=debug
+      # Anyone here may start runs on a hosted workspace (M212's `runs`).
+      ARUGULA_HOSTED_ACCOUNTS: "*"
       STRIPE_SECRET_KEY: sk_test_testnet
       STRIPE_WEBHOOK_SECRET: whsec_testnet
       ARUGULA_PLATFORM_KEY: *platform-key

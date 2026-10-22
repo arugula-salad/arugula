@@ -72,6 +72,8 @@ mod fs;
 #[cfg(feature = "labs")]
 mod guest_ssh;
 mod hand;
+#[cfg(unix)]
+mod hosted_work;
 mod hosts;
 #[cfg(feature = "editor")]
 mod ide;

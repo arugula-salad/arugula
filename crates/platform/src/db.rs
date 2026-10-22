@@ -46,6 +46,7 @@ pub mod objects;
 pub mod pg;
 pub mod projects;
 pub mod run_grants;
+pub mod run_work;
 pub mod runs;
 pub mod sql;
 pub mod triggers;
