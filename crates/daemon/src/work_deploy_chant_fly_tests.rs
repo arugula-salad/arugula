@@ -75,8 +75,10 @@ push() {
   if reachable && git push -q origin chant/lifecycle:chant/lifecycle 2>/dev/null; then return 0; fi
   echo "warning: The push to the remote did not land: the push of chant/lifecycle to \"origin\" failed" >&2
 }
+# macOS may have no sha256sum (its Tart VMs don't): shasum there.
+sha256() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi; }
 sha=$(git rev-parse HEAD)
-plan="sha256:$(printf 'plan %s %s' "$sha" "$(cat "$FAKE_DIR/plan-salt" 2>/dev/null)" | sha256sum | cut -c1-64)"
+plan="sha256:$(printf 'plan %s %s' "$sha" "$(cat "$FAKE_DIR/plan-salt" 2>/dev/null)" | sha256 | cut -c1-64)"
 case "$1 $2" in
   "run release")
     ledger || { echo '{"version":1,"op":"release","status":"fail"}'; exit 1; }

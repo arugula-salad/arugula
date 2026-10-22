@@ -1001,6 +1001,11 @@ async fn resume(app: &Arc<App>) {
                     }
                     tokio::time::sleep(Duration::from_millis(250)).await;
                 }
+                // A restored pane replays its history before it adopts what
+                // its shim kept: until then it isn't running, nor ended.
+                if let Some(h) = h.clone() {
+                    let _ = tokio::task::spawn_blocking(move || h.begun(Duration::from_secs(30))).await;
+                }
                 let panes = match h {
                     Some(_) => app.mux.api(Api::Panes).await.unwrap_or_default(),
                     None => vec![],
