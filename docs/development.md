@@ -219,6 +219,9 @@ daemon's update check read it.
    this repo's `main`, so a change to them is live within 5 minutes of
    merging.
 
+Instead of step 2, a release can run as a deploy, approved from an
+owner's phone: [control-ops.md](control-ops.md#releasing-arugula-as-a-deploy-m221).
+
 **The app (`app-v*`)**, only when `crates/desktop` changes:
 
 1. Notes go in `docs/releases/app-X.Y.Z.md`, merged to main.

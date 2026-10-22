@@ -797,3 +797,70 @@ async fn chant_fly_links_chants_ledger_and_rolls_back_to_what_it_kept() {
     assert!(run.chant_ledger.is_some());
     assert!(app.db.verify_deploy_log(&env).unwrap().is_ok());
 }
+
+/// Arugula's own release on the platform (M221): its box is handed the
+/// bump and the lane and one token's name to be minted; nothing is minted
+/// for a project the platform no longer names; and what the box reports
+/// (the tag, published) succeeds the deploy, its log keeping the tag and
+/// the release's page.
+#[tokio::test]
+async fn arugula_release_is_handed_its_settings_and_mints_only_for_arugulas_project() {
+    let (hub, app, base, t, _fake) = world().await;
+    crate::drivers::arugula_release::TEST_PROJECTS.lock().unwrap().push(t.clone());
+    let body = json!({ "name": "release", "driver": "arugula-release", "settings": { "lane": "daemon" } });
+    let (st, env) = call(&base, "a", "POST", &format!("/api/projects/{t}/environments"), Some(body)).await;
+    assert_eq!(st, 200, "{env}");
+    let env = env["id"].as_str().unwrap().to_owned();
+    let sha = "a1".repeat(20);
+    let body =
+        json!({ "environment": env, "source": { "kind": "commit", "ref": sha, "where": "arugula-salad/arugula" } });
+    let (st, d) = call(&base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
+    assert_eq!(st, 200, "{d}");
+    let id = d["id"].as_str().unwrap().to_owned();
+    let (st, d) = call(&base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
+    assert_eq!(st, 200, "{d}");
+    let op = d["operation"]["hash"].as_str().unwrap().to_owned();
+    let a = devices(&hub, "a");
+    let (st, d) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/deploys/{id}/approve"),
+        Some(signed(&a.phone, "a", &id, &op, Decision::Once)),
+    )
+    .await;
+    assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
+
+    let m = boot(&app, &hub, &id).await;
+    let w = pull(&app, &m, &[TAKES_RUN, TAKES_DEPLOY]).await;
+    let dw = w.items[0].deploy.clone().unwrap();
+    assert_eq!((dw.settings["bump"].as_str(), dw.settings["lane"].as_str()), ("patch", "daemon"));
+    assert_eq!(dw.secrets, ["RELEASE_TOKEN"], "the minted token's name only");
+    assert!(arugula_e2e::drivers::planned(&dw.driver, &dw.operation, &dw.settings, None));
+    let run = app.db.run(&app.db.deploy_run(&id).unwrap().unwrap().run).unwrap().unwrap();
+    work::report(&app, &m.m, &m.report(&run, RunState::Approved, RunState::Running, now_ms(), "{}")).await.unwrap();
+    // The platform stops naming the project: nothing is minted.
+    crate::drivers::arugula_release::TEST_PROJECTS.lock().unwrap().retain(|p| p != &t);
+    match ask(&app, &m, &run.id).await {
+        SecretsGiven::Refused { why } => assert!(why.contains("only Arugula's own project"), "{why}"),
+        other => panic!("{other:?}"),
+    }
+    let end = json!({ "exit": 0, "result": {
+        "tag": "v0.59.1", "version": "0.59.1", "commit": "e".repeat(40), "main": "d".repeat(40),
+        "release": "https://github.com/arugula-salad/arugula/releases/tag/v0.59.1", "published": true,
+        "workflow": { "run": "https://github.com/arugula-salad/arugula/actions/runs/39845854046",
+                      "conclusion": "failure", "failed_jobs": ["template", "extension"] },
+    } })
+    .to_string();
+    let run = app.db.run(&run.id).unwrap().unwrap();
+    assert_eq!(
+        work::report(&app, &m.m, &m.report(&run, RunState::Running, RunState::Succeeded, now_ms(), &end))
+            .await
+            .unwrap(),
+        Reported::Taken
+    );
+    assert_eq!(state(&app, &id), State::Succeeded);
+    let kept = app.db.deploy_history(&id).unwrap().pop().unwrap().detail_json().unwrap();
+    assert_eq!(kept["tag"], "v0.59.1", "{kept}");
+    assert_eq!(kept["release"], "https://github.com/arugula-salad/arugula/releases/tag/v0.59.1");
+}

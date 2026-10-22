@@ -978,3 +978,54 @@ async fn an_apps_platform_plan_names_the_list_and_the_pointer() {
         "{text}"
     );
 }
+
+/// M221: Arugula's own release, for the project the platform names only.
+/// Another project can't make an environment for it; the one named can,
+/// holding no secret (its token is minted); it plans only a full commit of
+/// arugula-salad/arugula, and the plan says the bump, the lane and that it
+/// never rolls back.
+#[tokio::test]
+async fn an_arugula_release_is_planned_only_in_arugulas_project() {
+    let (_hub, _app, base, t, _) = seeded().await;
+    let envs = format!("/api/projects/{t}/environments");
+    let release = |name: &str, secrets: &[&str], settings: Value| {
+        Some(json!({ "name": name, "driver": "arugula-release", "secret_names": secrets, "settings": settings }))
+    };
+    let (st, v) = call(&base, "a", "POST", &envs, release("release", &[], json!({}))).await;
+    assert_eq!(st, 403, "not the project the platform names: {v}");
+    assert!(v.to_string().contains("only Arugula's own project"), "{v}");
+    crate::drivers::arugula_release::TEST_PROJECTS.lock().unwrap().push(t.clone());
+    let (st, v) = call(&base, "a", "POST", &envs, release("release2", &["RELEASE_TOKEN"], json!({}))).await;
+    assert_eq!(st, 400, "the minted token's name: {v}");
+    let (st, v) = call(&base, "a", "POST", &envs, release("release3", &[], json!({ "bump": "huge" }))).await;
+    assert_eq!(st, 400, "{v}");
+    let (st, env) = call(&base, "a", "POST", &envs, release("release", &[], json!({ "bump": "minor" }))).await;
+    assert_eq!(st, 200, "{env}");
+    assert_eq!(env["settings"], json!({ "bump": "minor", "lane": "daemon" }), "{env}");
+    let env = env["id"].as_str().unwrap();
+    let sha = "e".repeat(40);
+    let plan = |sha: &str, place: &str| {
+        Some(json!({ "environment": env, "source": { "kind": "commit", "ref": sha, "where": place } }))
+    };
+    let path = format!("/api/projects/{t}/deploys");
+    for (body, why) in [
+        (plan(&sha, "acme/arugula"), "arugula-salad/arugula only"),
+        (plan("deadbeef", "arugula-salad/arugula"), "full 40-hex id"),
+    ] {
+        let (st, v) = call(&base, "a", "POST", &path, body).await;
+        assert_eq!(st, 400, "{v}");
+        assert!(v.to_string().contains(why), "{v}");
+    }
+    let (st, d) = call(&base, "a", "POST", &path, plan(&sha, "arugula-salad/arugula")).await;
+    assert_eq!(st, 200, "{d}");
+    let text = d["plan_text"].as_str().unwrap();
+    assert_eq!(digest(text), d["plan"].as_str().unwrap(), "the text is what the digest is over");
+    for says in [
+        "driver arugula-release\n".to_owned(),
+        "setting bump minor\nsetting lane daemon\n".to_owned(),
+        format!("run scripts/release bump minor {sha}"),
+        "no roll back".to_owned(),
+    ] {
+        assert!(text.contains(&says), "{says:?} in {text}");
+    }
+}

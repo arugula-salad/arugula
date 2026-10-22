@@ -35,6 +35,9 @@
 //! from what that deploy's log kept ([`Driver::roll_back_to`]).
 //!
 //! **chant→Fly** ([`chant_fly::ChantFly`]) is the first real driver.
+//! **arugula-release** ([`arugula_release::ArugulaRelease`], M221) is
+//! Arugula's own release, for Arugula's own project only
+//! ([`Driver::allowed_in`]).
 //!
 //! **The fake driver** ([`fake::Fake`], `fake`) is for tests and testnet:
 //! environments may name it only where the platform says so
@@ -42,6 +45,7 @@
 //! say so too.
 
 pub mod apps_platform;
+pub mod arugula_release;
 pub mod chant_fly;
 pub mod fake;
 pub mod mint;
@@ -128,6 +132,14 @@ pub trait Driver: Send + Sync {
         None
     }
 
+    /// Whether `project`'s environments may use it at all (M221): checked
+    /// when an environment is made, when a deploy is planned, and before
+    /// anything is minted for its run. `Err` why not.
+    fn allowed_in(&self, project: &str) -> Result<(), String> {
+        let _ = project;
+        Ok(())
+    }
+
     /// The short-lived tokens it mints at apply, each from a long-lived
     /// credential the platform keeps, given to the run with the
     /// environment's secrets.
@@ -210,6 +222,7 @@ pub fn exited_0(run: &Run) -> Verdict {
 
 static CHANT_FLY: chant_fly::ChantFly = chant_fly::ChantFly;
 static APPS_PLATFORM: apps_platform::AppsPlatform = apps_platform::AppsPlatform;
+static ARUGULA_RELEASE: arugula_release::ArugulaRelease = arugula_release::ArugulaRelease;
 static FAKE: fake::Fake = fake::Fake;
 
 /// Whether environments here may name the fake driver: tests, and a
@@ -223,6 +236,7 @@ pub fn driver(name: &str) -> Option<&'static dyn Driver> {
     match name {
         "chant-fly" => Some(&CHANT_FLY),
         "apps-platform" => Some(&APPS_PLATFORM),
+        arugula_release::NAME => Some(&ARUGULA_RELEASE),
         fake::NAME if fake_allowed() => Some(&FAKE),
         _ => None,
     }
