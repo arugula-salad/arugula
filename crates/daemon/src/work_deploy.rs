@@ -432,7 +432,11 @@ pub fn mark_applied(dir: &std::path::Path, deploy: &str, run: &str) -> bool {
         let mut f = std::fs::OpenOptions::new().write(true).create_new(true).open(&p)?;
         std::io::Write::write_all(&mut f, run.as_bytes())?;
         f.sync_all()?;
-        std::fs::File::open(dir.join(DIR).join("deploys"))?.sync_all()
+        // The directory's entry too (Windows can't open a directory as a
+        // file, and needn't).
+        #[cfg(unix)]
+        std::fs::File::open(dir.join(DIR).join("deploys"))?.sync_all()?;
+        Ok(())
     })();
     made.is_ok()
 }
