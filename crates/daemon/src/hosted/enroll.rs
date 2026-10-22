@@ -135,7 +135,9 @@ pub fn request(claim: &Claim, keys: &DeviceKeys, at: u64) -> hosted::EnrollReque
 /// it's described. At enrollment that description is control's word (the
 /// operator can read the box anyway: "Hosted: the operator can read"); after
 /// it, a team's roster must follow the one it holds, as a team machine's
-/// does, and the project, team and account root can't change.
+/// does, and the project, team and account root can't change. Removals
+/// (of a member's or the account's devices, and of the delegation) are
+/// kept: a refresh adds to them, never takes from them.
 ///
 /// Who gets in is the project's people: a team's members by their roles
 /// (owners as the owner), or an account's own devices.
@@ -168,6 +170,9 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
     if let Some(p) = prev.and_then(|p| p.hosted.as_ref()) {
         ensure!(p.cert == cert, "control sent another certificate for this machine");
     }
+    // Removals once seen stay (a refresh adds, never takes away): control
+    // leaving one out mustn't let a removed device count again.
+    let revocations = kept(revocations, prev.and_then(|p| p.hosted.as_ref()).map(|h| h.revocations.as_slice()));
     let (account, trust, own_certs, own_revocations, team, roster, team_certs) = match delegation.owner() {
         Some(Owner::Team(id)) => {
             let pin = team.context("a team's project came without its team")?;
@@ -187,11 +192,20 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
                 }
             }
             ensure!(r.team == pin.team && r.well_formed(), "the team's roster isn't well formed");
+            // Each member's removed devices, as the box last held them, stay
+            // removed; a member control leaves out keeps them for later.
+            let mut certs = certs;
+            for (a, (_, revs)) in prev.iter().flat_map(|p| &p.team_certs) {
+                if r.member(a).is_none() {
+                    continue;
+                }
+                let e = certs.entry(a.clone()).or_default();
+                e.1 = kept(std::mem::take(&mut e.1), Some(revs));
+            }
             ensure!(
                 delegation.signed_for(&Owners::Team { roster: &r, certs: &certs }),
                 "the delegation isn't signed by an owner of the team"
             );
-            let mut certs = certs;
             certs.retain(|a, _| r.member(a).is_some());
             let trust = Trust { account: pin.founder.clone(), root: pin.founder_root.clone() };
             (pin.founder.clone(), trust, vec![], vec![], Some(pin), Some(r), certs)
@@ -202,6 +216,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             if let Some(p) = prev {
                 ensure!(p.trust.root == t.root, "control changed the account's root");
             }
+            let account_revocations = kept(account_revocations, prev.map(|p| p.revocations.as_slice()));
             ensure!(
                 delegation.signed_for(&Owners::Account {
                     trust: &t,
@@ -243,6 +258,17 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         moved_at: 0,
         hosted: Some(HostedPin { cert, delegation, revocations }),
     })
+}
+
+/// `new` and every one of `old` it leaves out: what a refresh says was
+/// removed is added to what the box held, never taken from it.
+fn kept<T: PartialEq + Clone>(mut new: Vec<T>, old: Option<&[T]>) -> Vec<T> {
+    for o in old.unwrap_or_default() {
+        if !new.contains(o) {
+            new.push(o.clone());
+        }
+    }
+    new
 }
 
 /// Enroll with this box's claim, trying again while control can't be
@@ -313,6 +339,132 @@ mod tests {
             account_revocations: vec![],
         };
         (got, root)
+    }
+
+    /// A device approved by `by`, of `account`.
+    fn approved(account: &str, by: &DeviceKeys) -> (DeviceKeys, Cert) {
+        let k = DeviceKeys::generate();
+        let mut c = Cert::new(&k, account, Kind::Browser, "phone");
+        c.sign_with(by);
+        (k, c)
+    }
+
+    #[test]
+    fn an_account_devices_removal_stays_when_control_leaves_it_out() {
+        let keys = DeviceKeys::generate();
+        let (mut got, root) = enrollment(&keys);
+        let (_, phone) = approved("acct1", &root);
+        got.account_certs.push(phone.clone());
+        let held = |s: &Saved| s.trust.evaluate(&s.certs, &s.revocations).get(&phone.device).is_some();
+        let first = saved_from(got.clone(), &keys, None).unwrap();
+        assert!(held(&first));
+        // The phone is removed; then control drops the removal.
+        let mut removed = got.clone();
+        removed.account_revocations.push(arugula_e2e::Revocation::new("acct1", &phone.device, &root));
+        let second = saved_from(removed, &keys, Some(&first)).unwrap();
+        assert!(!held(&second));
+        let third = saved_from(got, &keys, Some(&second)).unwrap();
+        assert!(!held(&third), "a removal dropped by control counts again");
+        assert_eq!(third.revocations.len(), 1);
+    }
+
+    /// A team's project: owner `o` (who signs the delegation and the
+    /// roster), editor `e`, and `e`'s phone, approved by `e`'s laptop.
+    struct Team {
+        got: hosted::Enrollment,
+        o: DeviceKeys,
+        e: DeviceKeys,
+        phone: Cert,
+    }
+
+    fn team(keys: &DeviceKeys) -> Team {
+        use arugula_e2e::team::{Member, Roster, TeamPin, TeamRole};
+        let device = |account: &str| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, account, Kind::Browser, "laptop");
+            c.sign_with(&k);
+            (k, c)
+        };
+        let ((o, o_cert), (e, e_cert)) = (device("o"), device("e"));
+        let (_, phone) = approved("e", &e);
+        let member =
+            |a: &str, c: &Cert, role| Member { account: a.into(), root: c.device.clone(), role, name: a.into() };
+        let mut roster = Roster {
+            v: 1,
+            team: "t1".into(),
+            name: "Acme".into(),
+            version: 1,
+            at: 1,
+            members: vec![member("o", &o_cert, TeamRole::Owner), member("e", &e_cert, TeamRole::Editor)],
+            spent: vec![],
+            redeem: None,
+            by: String::new(),
+            sig: String::new(),
+        };
+        roster.sign_with(&o);
+        let key = HostedKey::generate();
+        let mut d = Delegation {
+            project: "prj_1".into(),
+            owner: "team:t1".into(),
+            key: key.public(),
+            at: 1,
+            by: String::new(),
+            sig: String::new(),
+        };
+        d.sign_with(&o);
+        let (noise, sign) = (hex::encode(keys.noise_public), hex::encode(keys.sign_public()));
+        let mut cert = HostedCert::new(&d, "hw_1", "box", &noise, &sign, 2);
+        key.sign(&mut cert);
+        let got = hosted::Enrollment {
+            url: "http://control".into(),
+            cert,
+            delegation: d,
+            revocations: vec![],
+            team: Some(TeamPin { team: "t1".into(), founder: "o".into(), founder_root: o_cert.device.clone() }),
+            roster: Some(roster),
+            certs: [("o".to_owned(), (vec![o_cert], vec![])), ("e".to_owned(), (vec![e_cert, phone.clone()], vec![]))]
+                .into_iter()
+                .collect(),
+            trust: None,
+            account_certs: vec![],
+            account_revocations: vec![],
+        };
+        Team { got, o, e, phone }
+    }
+
+    #[test]
+    fn a_team_members_removal_stays_and_a_newer_roster_still_applies() {
+        use arugula_e2e::team::TeamRole;
+        let keys = DeviceKeys::generate();
+        let Team { got, o, e, phone } = team(&keys);
+        let has_phone = |s: &Saved| s.roster.as_ref().unwrap().devices("e", &s.team_certs).get(&phone.device).is_some();
+        let first = saved_from(got.clone(), &keys, None).unwrap();
+        assert!(has_phone(&first));
+        // The editor removes the phone; then control drops the removal.
+        let mut removed = got.clone();
+        removed.certs.get_mut("e").unwrap().1.push(arugula_e2e::Revocation::new("e", &phone.device, &e));
+        let second = saved_from(removed, &keys, Some(&first)).unwrap();
+        assert!(!has_phone(&second));
+        let third = saved_from(got.clone(), &keys, Some(&second)).unwrap();
+        assert!(!has_phone(&third), "a removal dropped by control counts again");
+        // Control leaving the member out of a refresh altogether keeps it too.
+        let mut left_out = got.clone();
+        left_out.certs.remove("e");
+        let fourth = saved_from(left_out, &keys, Some(&third)).unwrap();
+        assert!(!has_phone(&saved_from(got.clone(), &keys, Some(&fourth)).unwrap()));
+
+        // A newer roster an owner signed still applies: the editor made a
+        // viewer. Control can't roll it back to the version before.
+        let mut newer = got.clone();
+        let mut r = newer.roster.clone().unwrap();
+        r.version = 2;
+        r.members[1].role = TeamRole::Viewer;
+        r.sign_with(&o);
+        newer.roster = Some(r);
+        let fifth = saved_from(newer, &keys, Some(&fourth)).unwrap();
+        let role = |s: &Saved| s.roster.as_ref().unwrap().member("e").unwrap().role;
+        assert_eq!(role(&fifth), TeamRole::Viewer);
+        assert_eq!(role(&saved_from(got, &keys, Some(&fifth)).unwrap()), TeamRole::Viewer);
     }
 
     #[test]
