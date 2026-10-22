@@ -1,0 +1,5 @@
+{
+  "name": "arugulad",
+  "cmd": ["/usr/local/bin/arugulad", "--hosted"],
+  "user": "user"
+}

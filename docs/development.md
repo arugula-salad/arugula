@@ -206,7 +206,11 @@ daemon's update check read it.
    succeeds), then its `control` job deploys the hosted control, with no
    approval step, and fails unless control then answers and runs the tag's
    image (the `FLY_API_TOKEN` secret; [control-ops.md](control-ops.md#deploys),
-   [The platform](control-ops.md#the-platform)). It builds no app.
+   [The platform](control-ops.md#the-platform)). Its `template` job
+   builds a hosted workspace's E2B template, `arugula-workspace:vX.Y.Z`,
+   from the same build (the `E2B_API_KEY` secret;
+   [control-ops.md](control-ops.md#hosted-workspaces-template)). It builds
+   no app.
 3. Running daemons find it within 12 hours and offer *Update now*
    (`arugulad update` from a terminal); `install.sh` picks it up by
    itself. The site and the docs for users are
