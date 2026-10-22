@@ -345,7 +345,8 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
 - `ARUGULA_CLOUD_SECRET_KEY`: the master key. It wraps each project's
   data key, which seals that project's secrets and its own inference keys
   ("Secrets' keys" below). Without it, a project can't set an inference
-  key. `ARUGULA_CLOUD_SECRET_KEY_PREVIOUS` is set only while it's rotated.
+  key. `ARUGULA_CLOUD_SECRET_KEY_NEXT` and `ARUGULA_CLOUD_SECRET_KEY_PREVIOUS`
+  are set only while it's rotated. Set but empty, it stops the platform.
 - `ARUGULA_CLOUD_ACCOUNTS`: who may use Cloud workspaces (`*` for all),
   and whose hosted workspaces run on the platform's inference key (M185;
   there, `*` is no one: only accounts named).
@@ -376,45 +377,77 @@ and `ARUGULA_CLOUD_RUNTIME`, stale with `ARUGULA_CLOUD_MODELS` set.
 Each project has its own data key, in `project_keys`, wrapped by the
 master key (`ARUGULA_CLOUD_SECRET_KEY`). A project's secrets are sealed
 with its data key: cloud secrets, hosted workspaces' secrets, its own
-inference keys (M185), and `project_secrets` (an environment's, M217). One project's key never opens
-another project's secrets (`crates/platform/src/keys.rs`).
+inference keys (M185), and `project_secrets` (an environment's, M217). One
+project's key never opens another project's secrets
+(`crates/platform/src/keys.rs`). A project that's gone gets no key.
+
+`ARUGULA_CLOUD_SECRET_KEY` set but empty stops the platform at start: it
+never runs as if there were no key. A project's own inference key that
+won't open is an error, never a reason to pay with the platform's key.
 
 **Re-sealing.** Before M209 the master key sealed each secret itself
 (`key_version` 0). The platform re-seals those with their project's key
 at start and then hourly, one row per transaction, and opens both kinds
 meanwhile. A crash halfway loses nothing, and running it again finishes
-the job. `secrets-check` says how many are still sealed the old way. A
-build from before M209 can't open what's been re-sealed: rolling back past
-M209 leaves cloud secrets closed until you roll forward again.
+the job. `secrets-check` says how many are still sealed the old way.
+
+A build from before M209 (the other machine during a rolling deploy, or a
+rollback) can't open what's been re-sealed. When it writes a secret, it
+seals it with the master key and leaves the row's `key_version`. The
+platform opens such a row with the master key and re-seals it on the
+next pass. Rolling back past M209 leaves re-sealed secrets closed until
+you roll forward again.
 
 **The list of environments.** `crates/control/secrets.toml` lists the
 deploy environments whose secrets the platform keeps, and the names of
-their secrets. A test fails if code names one that isn't listed.
+their secrets. Code names one with
+`arugula_platform::environment_secret!("env", "NAME")`, which doesn't
+compile for a secret the file doesn't list.
 
 #### Rotating the master key
 
 Rotation re-wraps the data keys with a new master key. No secret is
-touched. It's safe to run again. Both platform machines have both keys
-for the whole time, so nothing stops opening.
+touched. It's safe to run again. It goes in two steps, so that every
+machine can open what any other wraps the whole time: first every
+machine learns the new key only to open with, then the new key starts
+wrapping. Each machine logs its keys' ids at start ("the master key, by
+id"). A key's id is a hash of it, never the key, and
+`project_keys.master_id` says which key wrapped each data key.
 
-1. Make a new key and escrow it in Infisical (`arugula` prod, beside the
-   old one) **before** anything else:
-   `openssl rand -hex 32`.
-2. Give the platform both keys. This restarts it. From now on it seals
-   with the new key and opens with either one:
+Try it on a copy of production's data first ("Checking a migration on a
+copy" has how to make one).
+
+1. **Make a new key** and escrow it in Infisical (`arugula` prod, beside
+   the old one) before anything else: `openssl rand -hex 32`.
+2. **Open with it.** Give the platform the new key as the next one. This
+   restarts it, and nothing is wrapped with the new key yet:
 
    ```
-   fly secrets set -a arugula-platform \
+   fly secrets set -a arugula-platform ARUGULA_CLOUD_SECRET_KEY_NEXT=<new>
+   ```
+
+   Wait until both machines log the new id as `next`.
+3. **Wrap with it.** Make the new key current and the old one previous, in
+   one deploy. A machine that restarts first wraps with the new key, and
+   one that hasn't restarted yet opens that with its next key:
+
+   ```
+   fly secrets set -a arugula-platform --stage \
        ARUGULA_CLOUD_SECRET_KEY=<new> ARUGULA_CLOUD_SECRET_KEY_PREVIOUS=<old>
+   fly secrets unset -a arugula-platform --stage ARUGULA_CLOUD_SECRET_KEY_NEXT
+   fly secrets deploy -a arugula-platform
    ```
 
-   When the platform runs in process, set both on `illogical-control`
-   instead.
-3. Re-wrap. The tool reads both keys from the running server (else from
-   this shell). It first re-seals any secret the old key sealed itself.
-   It stops, re-wrapping nothing, if any such secret is left. Then it
-   re-wraps every data key the old key wrapped and opens every secret with
-   the new key alone:
+   Wait until both machines log the new id as `master` and the old one as
+   `previous`. From here, sealing anything re-wraps that project's key
+   first. When the platform runs in process, set these on
+   `illogical-control` instead.
+4. **Re-wrap the rest.** The tool reads both keys from the running server
+   (else from this shell). It re-seals any secret the old key sealed
+   itself, re-wraps every data key the old key wraps, then opens every
+   secret with the new key alone. It does what it can and lists what it
+   couldn't, row by row. Then it fails, so run it again once those are
+   fixed:
 
    ```
    plat rotate-key --db env:ARUGULA_PLATFORM_DATABASE_URL
@@ -424,19 +457,15 @@ for the whole time, so nothing stops opening.
    #   every secret opens with the new key alone
    ```
 
-   On a file it's `--db /data/platform.db`. A data key wrapped by neither
-   key is named, and the rest are still re-wrapped.
-4. `plat secrets-check --db env:ARUGULA_PLATFORM_DATABASE_URL`: every
-   secret opens with the new key alone.
-5. Drop the old key: `fly secrets unset -a arugula-platform
-   ARUGULA_CLOUD_SECRET_KEY_PREVIOUS`. Keep it in Infisical until the
-   next nightly dump has been restored with the new one.
-
-A key's id is a hash of it, never the key. `project_keys.master_id` says
-which key wrapped each data key.
-
-Try it on a copy of production's data first ("Checking a migration on a
-copy" has how to make one).
+   On a file it's `--db /data/platform.db`.
+5. **Check.** `plat secrets-check --db env:ARUGULA_PLATFORM_DATABASE_URL`:
+   every secret opens with the new key alone. It warns while
+   `ARUGULA_CLOUD_SECRET_KEY_PREVIOUS` is set but wraps no project key, and
+   so does the platform, hourly.
+6. **Drop the old key:** `fly secrets unset -a arugula-platform
+   ARUGULA_CLOUD_SECRET_KEY_PREVIOUS`. Until then the old key still opens
+   everything it wrapped, so don't leave it set. Keep it in Infisical until
+   the next nightly dump has been restored with the new one.
 
 ### Daemon census
 

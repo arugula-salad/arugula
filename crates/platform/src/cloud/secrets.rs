@@ -8,8 +8,10 @@
 //! with their project's key ([`crate::keys::reseal`]).
 //!
 //! While the master key is rotated (docs/control-ops.md) the server has
-//! the old one too, as `ARUGULA_CLOUD_SECRET_KEY_PREVIOUS`: it opens with
-//! either and seals only with the new one.
+//! two: first the new one only to open with
+//! (`ARUGULA_CLOUD_SECRET_KEY_NEXT`), so that every machine can open what
+//! it will wrap, then the new one to seal with and the old one
+//! (`ARUGULA_CLOUD_SECRET_KEY_PREVIOUS`) only to open with.
 //!
 //! [`wrap`]: SecretCipher::wrap
 use anyhow::{Context, Result, bail};
@@ -41,11 +43,24 @@ impl Master {
 pub struct SecretCipher {
     current: Master,
     previous: Option<Master>,
+    next: Option<Master>,
 }
 
 impl SecretCipher {
     pub fn new(hex_key: &str) -> Result<Self> {
-        Ok(Self { current: Master::new(hex_key)?, previous: None })
+        Ok(Self { current: Master::new(hex_key)?, previous: None, next: None })
+    }
+
+    /// This key, opening with `next` too (a rotation's new key, before it
+    /// seals anything) when it's given and not empty.
+    pub fn with_next(self, next: Option<&str>) -> Result<Self> {
+        let next = next.filter(|k| !k.trim().is_empty()).map(Master::new).transpose()?;
+        anyhow::ensure!(
+            next.as_ref()
+                .is_none_or(|n| n.id != self.current.id && Some(&n.id) != self.previous.as_ref().map(|p| &p.id)),
+            "ARUGULA_CLOUD_SECRET_KEY_NEXT is the same key as another one given"
+        );
+        Ok(Self { next, ..self })
     }
 
     /// This key, opening with `previous` too (a rotation's old key) when
@@ -53,15 +68,22 @@ impl SecretCipher {
     pub fn with_previous(self, previous: Option<&str>) -> Result<Self> {
         let previous = previous.filter(|k| !k.trim().is_empty()).map(Master::new).transpose()?;
         anyhow::ensure!(
-            previous.as_ref().is_none_or(|p| p.id != self.current.id),
-            "ARUGULA_CLOUD_SECRET_KEY_PREVIOUS is the same key as ARUGULA_CLOUD_SECRET_KEY"
+            previous
+                .as_ref()
+                .is_none_or(|p| p.id != self.current.id && Some(&p.id) != self.next.as_ref().map(|n| &n.id)),
+            "ARUGULA_CLOUD_SECRET_KEY_PREVIOUS is the same key as another one given"
         );
         Ok(Self { previous, ..self })
     }
 
-    /// The current key alone, without the previous one.
+    /// The current key alone, without the previous or next one.
     pub fn without_previous(&self) -> Self {
-        Self { current: self.current.clone(), previous: None }
+        Self { current: self.current.clone(), previous: None, next: None }
+    }
+
+    /// Every key this opens with: the current one first.
+    fn openers(&self) -> impl Iterator<Item = &Master> {
+        std::iter::once(&self.current).chain(&self.previous).chain(&self.next)
     }
 
     /// The current key's id: 16 hex characters of a hash of it, which
@@ -76,6 +98,11 @@ impl SecretCipher {
         self.previous.as_ref().map(|p| p.id.as_str())
     }
 
+    /// The next key's id, while there is one.
+    pub fn next_id(&self) -> Option<&str> {
+        self.next.as_ref().map(|n| n.id.as_str())
+    }
+
     /// Seal `data_key`, version `version` of `project`'s, with the current
     /// key (bound to both).
     pub(crate) fn wrap(&self, project: &str, version: i64, data_key: &[u8; 32]) -> Result<Vec<u8>> {
@@ -84,10 +111,10 @@ impl SecretCipher {
     }
 
     /// Open a data key that the master key with id `master` wrapped:
-    /// the current key or the previous one.
+    /// the current key, the previous one or the next one.
     pub(crate) fn unwrap(&self, master: &str, project: &str, version: i64, wrapped: &[u8]) -> Result<[u8; 32]> {
-        let key = std::iter::once(&self.current)
-            .chain(&self.previous)
+        let key = self
+            .openers()
             .find(|k| k.id == master)
             .with_context(|| format!("project {project}'s key is wrapped by master key {master}, which this isn't"))?;
         let aad = serde_json::to_vec(&("arugula-project-key-v1", project, version))?;
@@ -103,11 +130,11 @@ impl SecretCipher {
     }
 
     /// Open a secret sealed with the master key itself ([`seal`](Self::seal)),
-    /// with the current key or the previous one.
+    /// with the current key, the previous one or the next one.
     pub fn open(&self, account: &str, name: &str, sealed: &[u8]) -> Result<String> {
         let aad = serde_json::to_vec(&("arugula-cloud-secret-v1", account, name))?;
-        let value = std::iter::once(&self.current)
-            .chain(&self.previous)
+        let value = self
+            .openers()
             .find_map(|k| open_with(&k.aead, &aad, sealed).ok())
             .context("could not decrypt cloud secret")?;
         String::from_utf8(value).context("invalid cloud secret encoding")
@@ -175,5 +202,21 @@ mod tests {
         assert!(both.unwrap(both.id(), "prj_b", 1, &wrapped).is_err(), "bound to its project");
         assert!(both.unwrap(both.id(), "prj_a", 2, &wrapped).is_err(), "and its version");
         assert!(both.unwrap("0000000000000000", "prj_a", 1, &wrapped).is_err(), "and its master key");
+    }
+
+    /// The next key opens what it wrapped, and wraps nothing.
+    #[test]
+    fn a_next_key_only_opens() {
+        let (old, new) = ("01".repeat(32), "02".repeat(32));
+        let by_new = SecretCipher::new(&new).unwrap();
+        let wrapped = by_new.wrap("prj_a", 1, &[9; 32]).unwrap();
+        let waiting = SecretCipher::new(&old).unwrap().with_next(Some(&new)).unwrap();
+        assert_eq!(waiting.unwrap(by_new.id(), "prj_a", 1, &wrapped).unwrap(), [9; 32]);
+        assert_eq!(waiting.id(), SecretCipher::new(&old).unwrap().id(), "it still wraps with the old one");
+        assert_eq!(waiting.next_id(), Some(by_new.id()));
+        let mine = waiting.wrap("prj_a", 1, &[9; 32]).unwrap();
+        assert!(by_new.unwrap(waiting.id(), "prj_a", 1, &mine).is_err());
+        assert!(SecretCipher::new(&old).unwrap().with_next(Some(&old)).is_err());
+        assert!(SecretCipher::new(&new).unwrap().with_previous(Some(&old)).unwrap().with_next(Some(&old)).is_err());
     }
 }

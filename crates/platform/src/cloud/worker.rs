@@ -987,15 +987,16 @@ mod tests {
 
     fn cloud_workspace(app: &Platform) -> crate::db::cloud::CloudWorkspace {
         let cipher = app.cloud.as_ref().unwrap().secret_cipher.as_ref().unwrap();
+        let project = app.db.personal_project("a", 1).unwrap();
         let sealed = crate::keys::seal_value(
             &app.db.c(),
             cipher,
-            "prj_a",
+            &project,
             &crate::keys::cloud_name("a", "GITHUB_TOKEN"),
             "repo-secret",
         )
         .unwrap();
-        app.db.put_cloud_secret("a", "prj_a", "GITHUB_TOKEN", &sealed).unwrap();
+        app.db.put_cloud_secret("a", &project, "GITHUB_TOKEN", &sealed).unwrap();
         let mut spec: crate::db::cloud::CloudWorkspaceSpec = serde_json::from_value(json!({
             "name":"App box",
             "repositories":[{"url":"https://github.com/example/app","secret":"GITHUB_TOKEN"},
@@ -1617,15 +1618,16 @@ mod tests {
         let (app, fake, server) = serve(Fake::default()).await;
         let created = cloud_workspace(&app);
         let cipher = app.cloud.as_ref().unwrap().secret_cipher.as_ref().unwrap();
+        let project = app.db.personal_project("a", 1).unwrap();
         let sealed = crate::keys::seal_value(
             &app.db.c(),
             cipher,
-            "prj_a",
+            &project,
             &crate::keys::cloud_name("a", "NPM_TOKEN"),
             "npm-secret",
         )
         .unwrap();
-        app.db.put_cloud_secret("a", "prj_a", "NPM_TOKEN", &sealed).unwrap();
+        app.db.put_cloud_secret("a", &project, "NPM_TOKEN", &sealed).unwrap();
         run(&app, 0, 60).await;
         let (base, routes) = routes(&app).await;
         let mut spec = serde_json::to_value(&created.saved_spec).unwrap();

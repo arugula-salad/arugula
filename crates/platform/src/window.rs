@@ -353,10 +353,10 @@ fn read_only(path: &Path) -> anyhow::Result<Connection> {
 }
 
 /// Secrets in the file at `path` and the project keys that seal them,
-/// tried with `key` ([`crate::keys::check`]). Values are never kept.
-pub fn secrets_open(path: &Path, key: &str) -> anyhow::Result<crate::keys::Checked> {
-    let cipher = crate::cloud::secrets::SecretCipher::new(key)?;
-    crate::keys::check(&read_only(path)?, &cipher)
+/// tried with `key` ([`crate::keys::check`]), and how many project keys
+/// `previous` (a rotation's old key) still wraps. Values are never kept.
+pub fn secrets_open(path: &Path, key: &str, previous: Option<&str>) -> anyhow::Result<crate::keys::Checked> {
+    crate::keys::check_with(&read_only(path)?, key, previous)
 }
 
 /// `var` as the running server (this same binary, not this command) has
@@ -521,11 +521,25 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
             let Some((key, whose)) = key_from(VAR)? else {
                 bail!("no {VAR}: neither the running server nor this shell has one")
             };
-            let checked = portable::secrets_open(&db, &key)?;
+            let previous = key_from("ARUGULA_CLOUD_SECRET_KEY_PREVIOUS")?.map(|(k, _)| k);
+            let checked = portable::secrets_open(&db, &key, previous.as_deref())?;
             println!("secrets in {db}, with {whose} key:");
             println!("  {} open", checked.opened);
             if checked.by_master > 0 {
                 println!("  {} of them sealed with the master key itself, still to be re-sealed", checked.by_master);
+            }
+            if checked.orphaned > 0 {
+                println!("  {} of projects that are gone, not tried", checked.orphaned);
+            }
+            match checked.previous_wraps {
+                Some(0) => println!(
+                    "  warning: ARUGULA_CLOUD_SECRET_KEY_PREVIOUS is set and wraps no project key: unset it, or the \
+                     old key still opens what it ever wrapped"
+                ),
+                Some(n) => {
+                    println!("  {n} project keys still wrapped by ARUGULA_CLOUD_SECRET_KEY_PREVIOUS: run rotate-key")
+                }
+                None => {}
             }
             for (owner, name) in &checked.failed {
                 println!("  doesn't open: {owner} {name}");
@@ -562,6 +576,15 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
             let r = crate::keys::rotate(&database, &keys)?;
             println!("  {} secrets the old key sealed itself, re-sealed with their project's key first", r.resealed);
             println!("  {} project keys re-wrapped, {} already were", r.rewrapped, r.already);
+            for f in &r.failed {
+                println!("  failed: {f}");
+            }
+            if !r.failed.is_empty() {
+                bail!(
+                    "{} things didn't rotate: keep ARUGULA_CLOUD_SECRET_KEY_PREVIOUS, fix them, run it again",
+                    r.failed.len()
+                );
+            }
             println!("  every secret opens with the new key alone");
         }
     }

@@ -187,19 +187,17 @@ pub struct Plan {
 /// The plan for a workspace in `project` that `maker` made: the project's
 /// own key, else the platform's for its maker, else none. A project key
 /// that can't be opened (no `ARUGULA_CLOUD_SECRET_KEY`, or another one) is
-/// as good as none, and said in the log.
+/// an error, never a reason to pay with the platform's key.
 pub fn plan(app: &Platform, project: &str, maker: Option<&str>) -> anyhow::Result<Plan> {
     let mut own = BTreeMap::new();
     for (name, sealed) in app.db.sealed_inference_keys(project)? {
         let Some(p) = Provider::parse(&name) else { continue };
-        let opened =
-            app.hosted.cipher.as_deref().map(|c| keys::open_inference(&app.db.c(), c, project, p.as_str(), &sealed));
-        match opened {
-            Some(Ok(key)) => {
-                own.insert(p, key);
-            }
-            _ => warn!(%project, provider = p.as_str(), "can't open a project's inference key"),
-        }
+        let cipher = app.hosted.cipher.as_deref().ok_or_else(|| {
+            anyhow::anyhow!("project {project} has its own {} key, and this control has no key to open it", p.as_str())
+        })?;
+        let key = keys::open_inference(&app.db.c(), cipher, project, p.as_str(), &sealed)
+            .map_err(|e| anyhow::anyhow!("project {project}'s own {} key doesn't open: {e:#}", p.as_str()))?;
+        own.insert(p, key);
     }
     let mut plan = Plan { payers: BTreeMap::new(), rules: Rules::new() };
     for p in Provider::ALL {

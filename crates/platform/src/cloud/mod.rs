@@ -55,6 +55,11 @@ pub struct Args {
     /// (docs/control-ops.md): it still opens what it wrapped.
     #[arg(long, env = "ARUGULA_CLOUD_SECRET_KEY_PREVIOUS", hide_env_values = true)]
     pub cloud_secret_key_previous: Option<String>,
+    /// The master key after this one, only while it's rotated, before it
+    /// seals anything: it opens what a machine that has it as
+    /// ARUGULA_CLOUD_SECRET_KEY wraps.
+    #[arg(long, env = "ARUGULA_CLOUD_SECRET_KEY_NEXT", hide_env_values = true)]
+    pub cloud_secret_key_next: Option<String>,
     /// Limited beta allowlist; empty disables access for all accounts. Hosted
     /// workspaces these accounts make run on the platform's inference key
     /// (M185, `hosted::inference`).
@@ -84,12 +89,21 @@ pub struct Args {
 
 impl Args {
     /// The master key these flags give (M209: it wraps each project's data
-    /// key, [`crate::keys`]), with the previous one while it's rotated.
+    /// key, [`crate::keys`]), with the previous or next one while it's
+    /// rotated. Unset is none; set but empty is refused, as any key that
+    /// isn't one is.
     pub fn master_key(&self) -> Result<Option<secrets::SecretCipher>> {
         self.cloud_secret_key
             .as_deref()
-            .filter(|k| !k.is_empty())
-            .map(|k| secrets::SecretCipher::new(k)?.with_previous(self.cloud_secret_key_previous.as_deref()))
+            .map(|k| {
+                anyhow::ensure!(
+                    !k.trim().is_empty(),
+                    "ARUGULA_CLOUD_SECRET_KEY is set but empty: unset it, or give a key"
+                );
+                secrets::SecretCipher::new(k)?
+                    .with_previous(self.cloud_secret_key_previous.as_deref())?
+                    .with_next(self.cloud_secret_key_next.as_deref())
+            })
             .transpose()
     }
 

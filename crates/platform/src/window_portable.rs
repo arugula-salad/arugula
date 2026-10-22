@@ -620,14 +620,13 @@ fn check(report: &Report, from: &Place, to: &Place) -> anyhow::Result<()> {
 
 /// Secrets at `at` that open with `key`, as [`super::secrets_open`] does
 /// for a file.
-pub fn secrets_open(at: &Place, key: &str) -> anyhow::Result<crate::keys::Checked> {
+pub fn secrets_open(at: &Place, key: &str, previous: Option<&str>) -> anyhow::Result<crate::keys::Checked> {
     match at {
-        Place::File(path) => super::secrets_open(path, key),
+        Place::File(path) => super::secrets_open(path, key, previous),
         Place::Postgres(url) => {
-            let cipher = crate::cloud::secrets::SecretCipher::new(key)?;
             let db = open_as_is(at, url)?;
             anyhow::ensure!(db.dialect() == Dialect::Postgres, "not Postgres");
-            crate::keys::check(&db.c(), &cipher)
+            crate::keys::check_with(&db.c(), key, previous)
         }
     }
 }

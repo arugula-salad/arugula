@@ -11,10 +11,23 @@ fn master(hex: &str) -> SecretCipher {
     SecretCipher::new(hex).unwrap()
 }
 
+/// Personal projects, as the platform makes them.
+fn projects(db: &Db, ids: &[&str]) {
+    for id in ids {
+        db.c()
+            .execute(
+                "INSERT INTO projects (id, account_id, name, is_default, created_at) VALUES (?1, ?1, 'Personal', TRUE, 1)",
+                params![id],
+            )
+            .unwrap();
+    }
+}
+
 /// Two projects' cloud secrets, a hosted workspace's and a project's own
 /// inference key, sealed as they were before M209: with the master key
 /// itself.
 fn before_m209(db: &Db, master: &SecretCipher) {
+    projects(db, &["prj_a", "prj_b"]);
     let c = db.c();
     for (account, project, name, value) in
         [("alice", "prj_a", "GITHUB_TOKEN", "ghp_alice"), ("bob", "prj_b", "NPM_TOKEN", "npm_bob")]
@@ -97,6 +110,7 @@ fn sealed_bytes(db: &Db) -> Vec<Vec<u8>> {
 fn a_projects_key_cant_open_another_projects_secrets() {
     let db = Db::test();
     let m = master(OLD);
+    projects(&db, &["prj_a", "prj_b"]);
     seal(&db, &m, "prj_a", "environment/env_1/FLY_API_TOKEN", "fly-a").unwrap();
     seal(&db, &m, "prj_b", "environment/env_2/FLY_API_TOKEN", "fly-b").unwrap();
     assert_eq!(open(&db, &m, "prj_a", "environment/env_1/FLY_API_TOKEN").unwrap().as_deref(), Some("fly-a"));
@@ -124,6 +138,17 @@ fn a_projects_key_cant_open_another_projects_secrets() {
     assert!(db.mentions("fly-a").is_empty() && db.mentions("only-a").is_empty());
     assert!(remove(&db, "prj_b", "environment/env_2/FLY_API_TOKEN").unwrap());
     assert!(!remove(&db, "prj_b", "environment/env_2/FLY_API_TOKEN").unwrap());
+
+    // Another table's sealed value, put in project_secrets under its own
+    // name, doesn't open as one: the table is bound too.
+    let cloud = seal_value(&db.c(), &m, "prj_a", &cloud_name("alice", "T"), "cloud-a").unwrap();
+    db.c()
+        .execute(
+            "INSERT INTO project_secrets (project_id, name, key_version, sealed, updated_at) VALUES ('prj_a', ?1, ?2, ?3, 1)",
+            params![cloud_name("alice", "T"), cloud.key_version, cloud.bytes],
+        )
+        .unwrap();
+    assert!(open(&db, &m, "prj_a", &cloud_name("alice", "T")).is_err());
 }
 
 /// Making a project's key twice keeps the first; a new key seals with
@@ -132,6 +157,7 @@ fn a_projects_key_cant_open_another_projects_secrets() {
 fn a_project_has_one_key_until_it_is_rotated() {
     let db = Db::test();
     let m = master(OLD);
+    projects(&db, &["prj_a"]);
     let c = db.c();
     let first = current_key(&c, &m, "prj_a").unwrap();
     assert_eq!(current_key(&c, &m, "prj_a").unwrap(), first);
@@ -140,6 +166,8 @@ fn a_project_has_one_key_until_it_is_rotated() {
         c.query_row("SELECT master_id FROM project_keys WHERE project_id = 'prj_a'", params![], |r| r.get(0)).unwrap();
     assert_eq!(master_id, m.id());
     assert!(data_key(&c, &master(NEW), "prj_a", 1).is_err(), "another master key doesn't open it");
+    assert!(current_key(&c, &m, "prj_gone").is_err(), "a project that isn't there gets none");
+    assert_eq!(wrapped_by(&c, m.id()).unwrap(), 1);
 }
 
 /// Re-sealing stops halfway and starts again without losing a secret:
@@ -151,7 +179,7 @@ fn reseal_is_idempotent_and_survives_stopping_halfway() {
     let m = master(OLD);
     before_m209(&db, &m);
     assert_eq!(values(&db, &m), VALUES);
-    assert_eq!(check(&db.c(), &m).unwrap(), Checked { opened: 4, by_master: 4, failed: vec![] });
+    assert_eq!(check(&db.c(), &m).unwrap(), Checked { opened: 4, by_master: 4, ..Default::default() });
 
     // Stopped after one row, as a crash between rows would.
     let first = reseal(&db, &m, 1).unwrap();
@@ -182,7 +210,7 @@ fn reseal_is_idempotent_and_survives_stopping_halfway() {
     let after = sealed_bytes(&db);
     assert_eq!(reseal(&db, &m, usize::MAX).unwrap(), Resealed::default(), "nothing left to do");
     assert_eq!(sealed_bytes(&db), after, "and nothing rewritten");
-    assert_eq!(check(&db.c(), &m).unwrap(), Checked { opened: 4, by_master: 0, failed: vec![] });
+    assert_eq!(check(&db.c(), &m).unwrap(), Checked { opened: 4, ..Default::default() });
     // A broker secret has no value here, and stays that way.
     assert_eq!(db.hosted_secret_sealed("hw_1", "ANTHROPIC_KEY").unwrap(), None);
 }
@@ -195,6 +223,7 @@ fn reseal_leaves_what_it_cant_do() {
     let db = Db::test();
     let m = master(OLD);
     before_m209(&db, &m);
+    projects(&db, &["prj_c"]);
     let c = db.c();
     c.execute(
         "INSERT INTO cloud_secrets (account, name, sealed, project_id) VALUES ('carol', 'T', ?1, 'prj_c')",
@@ -211,7 +240,7 @@ fn reseal_leaves_what_it_cant_do() {
 
     // Changed under it: the newer value wins.
     let store = &STORES[0];
-    let row = store.read(&db.c(), true).unwrap().pop().unwrap();
+    let row = store.read(&db.c()).unwrap().into_iter().find(|r| r.a == "carol").unwrap();
     let newer = Sealed { key_version: MASTER, bytes: master(NEW).seal("carol", "T", "newer").unwrap() };
     db.put_cloud_secret("carol", "prj_c", "T", &newer).unwrap();
     assert!(!reseal_row(&db, &master(NEW), store, &row).unwrap());
@@ -234,14 +263,17 @@ fn rotation_rewraps_project_keys_and_every_secret_still_opens() {
 
     let both = master(NEW).with_previous(Some(OLD)).unwrap();
     let r = rotate(&db, &both).unwrap();
-    assert_eq!(r, Rotated { resealed: 2, rewrapped: 2, already: 0 });
+    // Re-sealing first re-wrapped the keys it sealed with; the rest
+    // re-wrapped them all.
+    assert_eq!((r.resealed, r.rewrapped + r.already, r.failed.len()), (2, 2, 0), "{r:?}");
     let new = master(NEW);
     assert_eq!(values(&db, &new), VALUES);
     assert_eq!(
         open(&db, &new, "prj_a", &environment_name("env_1", "FLY_API_TOKEN")).unwrap().as_deref(),
         Some("fly-a")
     );
-    assert_eq!(check(&db.c(), &new).unwrap(), Checked { opened: 5, by_master: 0, failed: vec![] });
+    assert_eq!(check(&db.c(), &new).unwrap(), Checked { opened: 5, ..Default::default() });
+    assert_eq!(check_with(&db.c(), NEW, Some(OLD)).unwrap().previous_wraps, Some(0), "the old key can go");
     let failed = check(&db.c(), &old).unwrap().failed;
     assert_eq!(failed.len(), 7, "the old key opens nothing now: {failed:?}");
     let master_ids: Vec<(String, Option<i64>)> = db
@@ -253,22 +285,159 @@ fn rotation_rewraps_project_keys_and_every_secret_still_opens() {
     // Secrets untouched by a rotation.
     let before = sealed_bytes(&db);
     let third = master("03".repeat(32).as_str()).with_previous(Some(NEW)).unwrap();
-    assert_eq!(rotate(&db, &third).unwrap(), Rotated { resealed: 0, rewrapped: 2, already: 0 });
+    assert_eq!(check_with(&db.c(), NEW, Some(NEW)).unwrap().previous_wraps, Some(2));
+    assert_eq!(rotate(&db, &third).unwrap(), Rotated { rewrapped: 2, ..Default::default() });
     assert_eq!(sealed_bytes(&db), before);
-    assert_eq!(rotate(&db, &third).unwrap(), Rotated { resealed: 0, rewrapped: 0, already: 2 }, "again: nothing");
+    assert_eq!(rotate(&db, &third).unwrap(), Rotated { already: 2, ..Default::default() }, "again: nothing");
     assert_eq!(values(&db, &third.without_previous()), VALUES);
 }
 
 /// A rotation with a project key that neither key wrapped re-wraps the
-/// rest and says which.
+/// rest, and says, row by row, what it couldn't do.
 #[test]
 fn rotation_names_keys_it_cant_rewrap() {
     let db = Db::test();
+    projects(&db, &["prj_a", "prj_y", "prj_z"]);
     seal(&db, &master(OLD), "prj_a", "A", "a").unwrap();
+    seal(&db, &master(OLD), "prj_y", "Y", "y").unwrap();
     seal(&db, &master("04".repeat(32).as_str()), "prj_z", "Z", "z").unwrap();
-    let e = rotate(&db, &master(NEW).with_previous(Some(OLD)).unwrap()).unwrap_err();
-    assert!(e.to_string().contains("prj_z version 1"), "{e}");
+    let r = rotate(&db, &master(NEW).with_previous(Some(OLD)).unwrap()).unwrap();
+    assert_eq!(r.rewrapped, 2, "{r:?}");
+    assert!(r.failed[0].contains("prj_z version 1") && r.failed[0].contains("neither key"), "{r:?}");
+    assert!(r.failed.iter().any(|f| f.contains("prj_z Z")), "and it doesn't open after: {r:?}");
     assert_eq!(open(&db, &master(NEW), "prj_a", "A").unwrap().as_deref(), Some("a"));
+    assert_eq!(open(&db, &master(NEW), "prj_y", "Y").unwrap().as_deref(), Some("y"));
+}
+
+/// A build from before M209 writing over a re-sealed row seals it with the
+/// master key and leaves its version: it still opens, and the next re-seal
+/// seals it with its project's key again.
+#[test]
+fn a_row_an_old_build_wrote_over_still_opens_and_is_resealed() {
+    let db = Db::test();
+    let m = master(OLD);
+    before_m209(&db, &m);
+    reseal(&db, &m, usize::MAX).unwrap();
+    assert_eq!(key_versions(&db), [1, 1, 1, 1]);
+    // The upserts as main had them before M209, which don't know key_version.
+    let c = db.c();
+    let old_put = match c.dialect() {
+        crate::db::migrate::Dialect::Sqlite => {
+            "INSERT INTO cloud_secrets(account,name,sealed,project_id) VALUES(?1,?2,?3,?4)
+             ON CONFLICT(account,name) DO UPDATE SET sealed=excluded.sealed"
+        }
+        crate::db::migrate::Dialect::Postgres => {
+            "INSERT INTO cloud_secrets(account,name,sealed,project_id) VALUES(?1,?2,?3,?4)
+             ON CONFLICT(project_id,name) DO UPDATE SET sealed=excluded.sealed"
+        }
+    };
+    c.execute(old_put, params!["alice", "GITHUB_TOKEN", m.seal("alice", "GITHUB_TOKEN", "ghp_new").unwrap(), "prj_a"])
+        .unwrap();
+    c.execute(
+        "INSERT INTO hosted_workspace_secrets (workspace_id, name, store, sealed, updated_at) VALUES ('hw_1', 'DB_URL', 'sealed', ?1, 2)
+         ON CONFLICT (workspace_id, name) DO UPDATE SET store = excluded.store, sealed = excluded.sealed,
+             updated_at = excluded.updated_at",
+        params![m.seal("hw_1", "DB_URL", "postgres://new").unwrap()],
+    )
+    .unwrap();
+    c.execute(
+        "INSERT INTO project_inference_keys (project_id, provider, sealed, set_by, updated_at) VALUES ('prj_a', 'anthropic', ?1, 'alice', 2)
+         ON CONFLICT (project_id, provider) DO UPDATE SET sealed = excluded.sealed, set_by = excluded.set_by,
+             updated_at = excluded.updated_at",
+        params![m.seal("prj_a", "inference:anthropic", "sk-ant-new").unwrap()],
+    )
+    .unwrap();
+    drop(c);
+    assert_eq!(key_versions(&db), [1, 1, 1, 1], "they kept their version");
+    let now = ["ghp_new", "npm_bob", "postgres://new", "sk-ant-new"];
+    assert_eq!(values(&db, &m), now, "and still open");
+    assert_eq!(check(&db.c(), &m).unwrap(), Checked { opened: 4, by_master: 3, ..Default::default() });
+
+    assert_eq!(reseal(&db, &m, usize::MAX).unwrap(), Resealed { resealed: 3, left: vec![] });
+    assert_eq!(values(&db, &m), now);
+    assert_eq!(check(&db.c(), &m).unwrap(), Checked { opened: 4, ..Default::default() });
+    assert_eq!(reseal(&db, &m, usize::MAX).unwrap(), Resealed::default());
+}
+
+/// Sealing once the master key's rotated re-wraps the project's key first,
+/// so nothing sealed after needs the old key, even before `rotate-key`.
+#[test]
+fn sealing_after_the_switch_rewraps_the_projects_key_first() {
+    let db = Db::test();
+    projects(&db, &["prj_a"]);
+    seal(&db, &master(OLD), "prj_a", "A", "a").unwrap();
+    let switched = master(NEW).with_previous(Some(OLD)).unwrap();
+    assert_eq!(wrapped_by(&db.c(), master(OLD).id()).unwrap(), 1);
+    seal(&db, &switched, "prj_a", "B", "b").unwrap();
+    assert_eq!(wrapped_by(&db.c(), master(OLD).id()).unwrap(), 0, "re-wrapped before it sealed");
+    for (name, value) in [("A", "a"), ("B", "b")] {
+        assert_eq!(open(&db, &master(NEW), "prj_a", name).unwrap().as_deref(), Some(value));
+    }
+}
+
+/// The rotation's two steps across two machines: once every machine can
+/// open with the next key, the one that switched first wraps with it and
+/// the one that hasn't yet still opens what it wraps, and the other way.
+#[test]
+fn two_machines_mid_rotation_open_each_others_keys() {
+    let db = Db::test();
+    projects(&db, &["prj_a", "prj_b"]);
+    let waiting = master(OLD).with_next(Some(NEW)).unwrap();
+    let switched = master(NEW).with_previous(Some(OLD)).unwrap();
+    seal(&db, &switched, "prj_a", "A", "by-switched").unwrap();
+    seal(&db, &waiting, "prj_b", "B", "by-waiting").unwrap();
+    assert_eq!(open(&db, &waiting, "prj_a", "A").unwrap().as_deref(), Some("by-switched"));
+    assert_eq!(open(&db, &switched, "prj_b", "B").unwrap().as_deref(), Some("by-waiting"));
+    // The machine that switched seals to b too: it re-wraps b's key, which
+    // the waiting machine still opens.
+    seal(&db, &switched, "prj_b", "C", "c").unwrap();
+    assert_eq!(open(&db, &waiting, "prj_b", "B").unwrap().as_deref(), Some("by-waiting"));
+    assert_eq!(open(&db, &waiting, "prj_b", "C").unwrap().as_deref(), Some("c"));
+    // Without the next key, the waiting machine couldn't have.
+    assert!(open(&db, &master(OLD), "prj_a", "A").is_err());
+}
+
+/// A project that's gone gets no key: its rows aren't re-sealed, and the
+/// check doesn't count them.
+#[test]
+fn a_gone_projects_rows_are_left_alone() {
+    let db = Db::test();
+    let m = master(OLD);
+    before_m209(&db, &m);
+    db.c().execute("DELETE FROM projects WHERE id = 'prj_b'", params![]).unwrap();
+    assert_eq!(check(&db.c(), &m).unwrap(), Checked { opened: 2, by_master: 2, orphaned: 2, ..Default::default() });
+    let r = reseal(&db, &m, usize::MAX).unwrap();
+    assert_eq!(r.resealed, 2);
+    assert_eq!(r.left, ["cloud_secrets bob NPM_TOKEN", "hosted_workspace_secrets hw_1 DB_URL"]);
+    assert!(seal_value(&db.c(), &m, "prj_b", "X", "x").is_err());
+    let keys: Vec<String> = db.c().query_map("SELECT project_id FROM project_keys", params![], |r| r.get(0)).unwrap();
+    assert_eq!(keys, ["prj_a"]);
+    let r = rotate(&db, &master(NEW).with_previous(Some(OLD)).unwrap()).unwrap();
+    assert!(r.failed.iter().all(|f| f.contains("still sealed with the master key itself")), "{r:?}");
+    assert_eq!(r.rewrapped, 1);
+}
+
+/// The compile-time reader of `secrets.toml` finds a listed secret under
+/// its own environment only.
+#[test]
+fn secrets_toml_is_read_at_compile_time() {
+    let toml = br#"
+[[environment]]
+name = "arugula-release"
+what = "x, \"quoted\""
+secrets = ["FLY_API_TOKEN", "GH_TOKEN"]
+
+[[environment]]
+name = "other"
+what = "y"
+secrets = []
+"#;
+    assert!(listed_in(toml, b"arugula-release", b"FLY_API_TOKEN"));
+    assert!(listed_in(toml, b"arugula-release", b"GH_TOKEN"));
+    assert!(!listed_in(toml, b"arugula-release", b"FLY_API"));
+    assert!(!listed_in(toml, b"arugula", b"FLY_API_TOKEN"));
+    assert!(!listed_in(toml, b"other", b"FLY_API_TOKEN"));
+    assert!(!is_listed("arugula-release", "NOT_LISTED_ANYWHERE"));
 }
 
 /// Deleting an account takes its personal project's keys and secrets.
@@ -276,17 +445,10 @@ fn rotation_names_keys_it_cant_rewrap() {
 fn a_deleted_accounts_project_keys_go() {
     let db = Db::test();
     let m = master(OLD);
-    let c = db.c();
-    c.execute(
-        "INSERT INTO projects (id, account_id, name, is_default, created_at) VALUES ('prj_a', 'alice', 'Personal', TRUE, 1),
-             ('prj_b', 'bob', 'Personal', TRUE, 1)",
-        params![],
-    )
-    .unwrap();
-    drop(c);
+    projects(&db, &["prj_a", "prj_b"]);
     seal(&db, &m, "prj_a", "A", "a").unwrap();
     seal(&db, &m, "prj_b", "B", "b").unwrap();
-    let d = crate::Deleted { account: "alice".into(), machines: vec![], disbanded: vec![] };
+    let d = crate::Deleted { account: "prj_a".into(), machines: vec![], disbanded: vec![] };
     crate::db::projects::erase_account(&db.c(), &d).unwrap();
     let left: Vec<Value> = db
         .c()
