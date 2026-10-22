@@ -158,6 +158,7 @@ pub(crate) fn view(app: &Platform, run: &Run, full: bool) -> anyhow::Result<RunV
         started_at: run.started_at,
         ended_at: run.ended_at,
         exit_code: run.exit_code,
+        chant_ledger: run.chant_ledger.clone(),
         pane,
         events,
         artifacts,

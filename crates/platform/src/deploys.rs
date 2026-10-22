@@ -245,7 +245,10 @@ fn refused(r: Refusal) -> ApiError {
 }
 
 fn environment_json(e: &Environment) -> Value {
-    json!({ "id": e.id, "project": e.project, "name": e.name, "driver": e.driver, "secret_names": e.secret_names })
+    json!({
+        "id": e.id, "project": e.project, "name": e.name, "driver": e.driver, "secret_names": e.secret_names,
+        "settings": e.settings,
+    })
 }
 
 /// A deploy as the routes answer it: with its environment, project,
@@ -260,6 +263,12 @@ pub(crate) async fn deploy_json(
     reader_owns: bool,
 ) -> Result<Value, ApiError> {
     let (_, op) = app.db.deploy_operation(&d.id)?.ok_or_else(no_deploy)?;
+    // The plan's text (M220), made again from what it names: what an owner
+    // reads before they approve, when it's still the plan's (its digest).
+    let roll_back = app.db.deploy_roll_back(&d.id)?;
+    let plan_text = Some(crate::drivers::plan_with(&env.driver, env, &d.source, roll_back.as_ref()))
+        .filter(|p| p.digest == d.plan_digest)
+        .map(|p| p.text);
     let approvals: Vec<Value> = app
         .db
         .deploy_approvals(&d.id)?
@@ -351,6 +360,8 @@ pub(crate) async fn deploy_json(
         "environment": environment_json(env),
         "source": { "kind": d.source.kind.as_str(), "ref": d.source.reference, "where": d.source.place },
         "plan": d.plan_digest,
+        "plan_text": plan_text,
+        "roll_back": roll_back,
         "state": d.state.as_str(),
         "run": d.run,
         "planned_by": d.planned_by,
@@ -386,10 +397,14 @@ pub struct NewEnvironment {
     driver: String,
     #[serde(default)]
     secret_names: Vec<String>,
+    /// Its driver's settings (M220): chant-fly's `fly_app`, `chant_dir`,
+    /// `chant_op` and `fly_config`.
+    #[serde(default)]
+    settings: arugula_e2e::drivers::Settings,
 }
 
 /// `POST /api/projects/{project}/environments {name, driver,
-/// secret_names?}`: make one, as an owner.
+/// secret_names?, settings?}`: make one, as an owner.
 pub async fn create_environment(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -401,11 +416,15 @@ pub async fn create_environment(
     if role != TeamRole::Owner {
         return Err(refusal(StatusCode::FORBIDDEN, NOT_AN_OWNER, "only the project's owners make its environments"));
     }
-    let env = app.db.create_environment(&p.id, &b.name, &b.driver, &b.secret_names, now_ms()).map_err(|e| {
-        match e.downcast_ref::<crate::db::Taken>() {
-            Some(_) => err(StatusCode::CONFLICT, &format!("the project has an environment called {}", b.name)),
-            None => err(StatusCode::BAD_REQUEST, &format!("{e:#}")),
-        }
+    // Its driver's settings, defaults filled in (M220): the plan names them.
+    let settings = match crate::drivers::driver(&b.driver) {
+        Some(d) => d.settings(&b.settings).map_err(|why| err(StatusCode::BAD_REQUEST, &why))?,
+        None => b.settings.clone(),
+    };
+    let env = app.db.create_environment_with(&p.id, &b.name, &b.driver, &b.secret_names, &settings, now_ms());
+    let env = env.map_err(|e| match e.downcast_ref::<crate::db::Taken>() {
+        Some(_) => err(StatusCode::CONFLICT, &format!("the project has an environment called {}", b.name)),
+        None => err(StatusCode::BAD_REQUEST, &format!("{e:#}")),
     })?;
     Ok(Json(environment_json(&env)))
 }
@@ -474,6 +493,10 @@ pub struct Plan {
     /// from when it's left out, and checked against when it isn't.
     #[serde(default)]
     plan: Option<String>,
+    /// A roll back (M220): back to `source`, which the environment ran
+    /// before, with what that deploy ran (as its log kept it).
+    #[serde(default)]
+    roll_back: bool,
 }
 
 /// Why a plan was refused: it isn't the environment's driver's.
@@ -489,6 +512,10 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
     let kind = SourceKind::parse(&b.source.kind)
         .ok_or_else(|| err(StatusCode::BAD_REQUEST, "a deploy's source is a commit or an artifact"))?;
     let source = Source { kind, reference: b.source.reference, place: b.source.place };
+    // chant→Fly deploys a commit by its full id only (M220).
+    if !arugula_e2e::drivers::source_ok(&env.driver, kind.as_str(), &source.reference) {
+        return Err(err(StatusCode::BAD_REQUEST, "this environment's driver deploys a commit, by its full 40-hex id"));
+    }
     // The driver's plan (M219): it names the driver, so the approval over
     // its digest binds the driver too, and a box checks it again.
     let driver = crate::drivers::driver(&env.driver)
@@ -501,7 +528,27 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
             &format!("the environment's secret {bad} isn't one the {} driver takes: take it out first", env.driver),
         ));
     }
-    let plan = driver.plan(&env, &source).digest;
+    // Its settings as its driver takes them (M220): an environment made
+    // before they were checked is refused until it's made again.
+    if driver.settings(&env.settings).ok().as_ref() != Some(&env.settings) {
+        let why = driver.settings(&env.settings).err().unwrap_or_else(|| "they're missing a default".into());
+        return Err(err(StatusCode::CONFLICT, &format!("the environment's settings aren't its driver's: {why}")));
+    }
+    let (plan, roll_back) = if b.roll_back {
+        let (from, kept) = app.db.last_succeeded_of(&env.id, &source)?.ok_or_else(|| {
+            err(StatusCode::CONFLICT, "a roll back goes back to a source this environment ran: it never ran that one")
+        })?;
+        let to = driver.roll_back_to(&kept).ok_or_else(|| {
+            err(StatusCode::CONFLICT, "that deploy's log didn't keep what it ran, so it can't be gone back to")
+        })?;
+        let r = arugula_e2e::drivers::RollBack { deploy: from, to };
+        let p = driver
+            .plan_roll_back(&env, &source, &r)
+            .ok_or_else(|| err(StatusCode::CONFLICT, "the environment's driver doesn't roll back"))?;
+        (p.digest, Some(r))
+    } else {
+        (driver.plan(&env, &source).digest, None)
+    };
     // One spelling of a digest, so the same plan reads the same everywhere.
     if b.plan.is_some_and(|given| given.to_ascii_lowercase() != plan) {
         return Err(refusal(
@@ -510,7 +557,7 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
             "that plan isn't the environment's driver's plan for this source: leave it out, and the platform makes it",
         ));
     }
-    let new = NewDeploy { environment: &env.id, source: &source, plan_digest: &plan };
+    let new = NewDeploy { environment: &env.id, source: &source, plan_digest: &plan, roll_back: roll_back.as_ref() };
     let d = app
         .db
         .plan_deploy(&new, by, now_ms())

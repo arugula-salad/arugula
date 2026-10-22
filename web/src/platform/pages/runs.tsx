@@ -32,7 +32,7 @@ import { toast } from "../toast";
 import { mayWrite, nameIn } from "./issues";
 import { Missing } from "./project";
 import { runs, type HostedWorkspace, type RunArtifacts, type RunFilter, type RunLogPage, type RunSpec, type RunView } from "../runs";
-import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, ended, eventDetail, keepLatest, paneLink, runTitle, startedBy, stripAnsi, tone, took } from "../runs-text";
+import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, startedBy, stripAnsi, tone, took } from "../runs-text";
 
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -561,6 +561,20 @@ function RunDetail({ p, id, msg }: { p: PlatformProject; id: string; msg?: numbe
             <pre data-run-op>{run.op}</pre>
           </details>
         </dd>
+        {run.chant_ledger ? (
+          <>
+            <dt>chant's ledger</dt>
+            <dd data-run-chant-ledger>
+              {httpsOnly(run.chant_ledger) ? (
+                <a href={run.chant_ledger} target="_blank" rel="noopener noreferrer">
+                  The release's entry ↗
+                </a>
+              ) : (
+                <code>{run.chant_ledger}</code>
+              )}
+            </dd>
+          </>
+        ) : null}
         <dt>Where</dt>
         <dd>
           Hosted workspace <code>{run.workspace ?? "—"}</code>, machine <code>{run.daemon.slice(0, 12)}</code>

@@ -93,3 +93,31 @@ export async function signApproval(a: Omit<Approval, "sig">, key: CryptoKey): Pr
   const sig = await crypto.subtle.sign("Ed25519", key, new TextEncoder().encode(approvalBody(a)));
   return { ...a, sig: hex(new Uint8Array(sig)) };
 }
+
+/** A deploy's plan as an owner reads it (M220): its text, checked against
+ * the digest the operation names, and what it says of a roll back. */
+export interface CheckedPlan {
+  text: string;
+  /** Its driver, from its `driver` line. */
+  driver: string;
+  /** A roll back: the deploy it goes back to, and the image it runs again. */
+  rollBack: { deploy: string; image: string | null } | null;
+}
+
+/** `text` is the plan whose SHA-256 is `digest` (the operation's `plan`),
+ * in `arugula deploy plan v1`'s shape: what it says, or why not. Read only
+ * from the hashed text, never from what the platform says beside it. */
+export async function checkPlan(text: unknown, digest: string): Promise<CheckedPlan | string> {
+  if (typeof text !== "string" || !text) return "the platform didn't show its plan";
+  if ((await sha256Hex(text)) !== digest) return "its plan's text isn't the plan you'd sign";
+  const lines = text.split("\n");
+  if (lines[0] !== "arugula deploy plan v1" || !lines[1]?.startsWith("driver ")) return "its plan's text can't be read";
+  const driver = lines[1].slice("driver ".length);
+  const back = lines.find((l) => l.startsWith("roll back to "));
+  const image = lines.find((l) => l.startsWith("back image "));
+  return {
+    text,
+    driver,
+    rollBack: back ? { deploy: back.slice("roll back to ".length), image: image ? image.slice("back image ".length) : null } : null,
+  };
+}

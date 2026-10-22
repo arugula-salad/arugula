@@ -18,14 +18,35 @@
 //! platform keeps says so ([`Driver::mints`]): the box gets only the short
 //! one. Never a kubeconfig.
 //!
+//! **Settings** (M220): what a driver needs that isn't secret (chant→Fly's
+//! Fly app, where its chant op is) is the environment's, checked when it's
+//! made ([`Driver::settings`]); the plan names each, so the approval
+//! covers them, and a box checks them again
+//! (`arugula_e2e::drivers::planned`).
+//!
+//! **What the apply reported** (M220): a driver's box half ends its run
+//! with what it did (its run's last event's `result`): the driver checks it
+//! ([`Driver::verify`]), the deploy's log keeps what it says
+//! ([`Driver::kept`]), and the run links chant's ledger entry
+//! ([`Driver::ledger`], aru-098).
+//!
+//! **Roll back** (M220): a deploy back to a source the environment ran
+//! before, planned ([`Driver::plan_roll_back`]) and approved as any other,
+//! from what that deploy's log kept ([`Driver::roll_back_to`]).
+//!
+//! **chant→Fly** ([`chant_fly::ChantFly`]) is the first real driver.
+//!
 //! **The fake driver** ([`fake::Fake`], `fake`) is for tests and testnet:
 //! environments may name it only where the platform says so
 //! (`ARUGULA_PLATFORM_FAKE_DRIVER=1`), and boxes run it only where they
 //! say so too.
 
+pub mod chant_fly;
 pub mod fake;
 pub mod mint;
 
+use arugula_e2e::drivers::{RollBack, Settings};
+use serde_json::{Map, Value};
 use sha2::{Digest as _, Sha256};
 
 pub use mint::{Held, Mint, mint, revoke_run};
@@ -66,7 +87,30 @@ pub trait Driver: Send + Sync {
 
     /// The plan for deploying `source` to `env`: what a person reads
     /// before they approve, its digest the deploy's `plan`.
-    fn plan(&self, env: &Environment, source: &Source) -> Planned;
+    fn plan(&self, env: &Environment, source: &Source) -> Planned {
+        plan_with(self.name(), env, source, None)
+    }
+
+    /// Its settings on an environment, defaults filled in: `Err` why
+    /// they're not ones it takes.
+    fn settings(&self, given: &Settings) -> Result<Settings, String> {
+        arugula_e2e::drivers::settings(self.name(), given)
+    }
+
+    /// The plan for rolling `env` back to `source`, which `to` (an earlier
+    /// deploy of it that succeeded) ran: `None` when its target doesn't
+    /// roll back.
+    fn plan_roll_back(&self, env: &Environment, source: &Source, to: &RollBack) -> Option<Planned> {
+        (self.rolls_back() && arugula_e2e::drivers::roll_back_ok(self.name(), &env.settings, to))
+            .then(|| plan_with(self.name(), env, source, Some(to)))
+    }
+
+    /// What a roll back to a deploy goes back to, from what its log kept
+    /// when it succeeded ([`Driver::kept`]): `None` when it can't.
+    fn roll_back_to(&self, kept: &Value) -> Option<Settings> {
+        let _ = kept;
+        self.rolls_back().then(Settings::new)
+    }
 
     /// The secret names it takes (`arugula_e2e::deploy::driver_secrets`):
     /// an environment holds only these, and a box hands it only these.
@@ -82,9 +126,25 @@ pub trait Driver: Send + Sync {
         vec![]
     }
 
-    /// Whether `d`, applied by `run` (ended `succeeded`), did what it was
-    /// asked.
-    fn verify(&self, d: &Deploy, run: &Run) -> Verdict;
+    /// Whether `d` (to `env`), applied by `run` (ended `succeeded`), did
+    /// what it was asked, by what the run reported it did (`Null` when
+    /// nothing).
+    fn verify(&self, env: &Environment, d: &Deploy, run: &Run, reported: &Value) -> Verdict;
+
+    /// What the deploy's log keeps of what its run reported: checked, each
+    /// of the shape it must have for this environment and deploy.
+    fn kept(&self, env: &Environment, d: &Deploy, reported: &Value) -> Map<String, Value> {
+        let _ = (env, d, reported);
+        Map::new()
+    }
+
+    /// The entry in chant's ledger the run wrote (aru-098), which the run
+    /// links: `None` for a driver that doesn't write one, or one that isn't
+    /// a link to the deploy's own repository.
+    fn ledger(&self, env: &Environment, d: &Deploy, reported: &Value) -> Option<String> {
+        let _ = (env, d, reported);
+        None
+    }
 
     /// Whether its target rolls back: a deploy of the environment's last
     /// source that succeeded, planned and approved as any other is.
@@ -93,9 +153,9 @@ pub trait Driver: Send + Sync {
     }
 }
 
-/// A driver whose box half isn't built yet (M220's chant→Fly, M222's
-/// apps-platform): environments may name it, deploys may be planned and
-/// approved, and a box refuses to apply it until its driver lands.
+/// A driver whose box half isn't built yet (M222's apps-platform):
+/// environments may name it, deploys may be planned and approved, and a
+/// box refuses to apply it until its driver lands.
 ///
 /// Each driver's target must refuse a deploy id it applied (`DEPLOY_ID`),
 /// since each deploy's box is new and can't know: chant→Fly by chant's
@@ -107,25 +167,24 @@ impl Driver for Unbuilt {
         self.0
     }
 
-    fn plan(&self, env: &Environment, source: &Source) -> Planned {
-        plan_of(self.0, env, source)
-    }
-
-    fn verify(&self, _: &Deploy, run: &Run) -> Verdict {
+    fn verify(&self, _: &Environment, _: &Deploy, run: &Run, _: &Value) -> Verdict {
         exited_0(run)
     }
 }
 
-/// The plan every driver here makes ([`arugula_e2e::deploy::plan_text`]):
-/// it names the driver, so the approval (over its digest) binds the
-/// driver, and a box recomputes it before it applies.
-pub fn plan_of(driver: &str, env: &Environment, source: &Source) -> Planned {
-    Planned::of(arugula_e2e::deploy::plan_text(
+/// The plan every driver here makes ([`arugula_e2e::drivers::plan_text`]):
+/// it names the driver, the environment's settings and the roll back, so
+/// the approval (over its digest) binds them, and a box recomputes it
+/// before it applies.
+pub fn plan_with(driver: &str, env: &Environment, source: &Source, roll_back: Option<&RollBack>) -> Planned {
+    Planned::of(arugula_e2e::drivers::plan_text(
         driver,
         &env.name,
         source.kind.as_str(),
         &source.reference,
         &source.place,
+        &env.settings,
+        roll_back,
     ))
 }
 
@@ -138,7 +197,7 @@ pub fn exited_0(run: &Run) -> Verdict {
     }
 }
 
-static CHANT_FLY: Unbuilt = Unbuilt("chant-fly");
+static CHANT_FLY: chant_fly::ChantFly = chant_fly::ChantFly;
 static APPS_PLATFORM: Unbuilt = Unbuilt("apps-platform");
 static FAKE: fake::Fake = fake::Fake;
 

@@ -1,6 +1,6 @@
 # A hosted workspace's box (M177, #1238): the static arugulad and arugula
 # (`just static`), the ACP adapters Claude Code and Codex run through, Codex
-# itself, Node, git and gh, all pinned here. A release builds it as E2B's
+# itself, Node, git, gh and flyctl, all pinned here. A release builds it as E2B's
 # template `arugula-workspace`, tagged with its version, snapshotted with
 # `arugulad --hosted` already running (scripts/ci-hosted-template). The same
 # file builds the image loam runs, FROM loam's e2b image instead
@@ -27,6 +27,10 @@ ARG NODE_VERSION=22.23.3
 ARG NODE_SHA256=df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de
 ARG GH_VERSION=2.103.0
 ARG GH_SHA256=fdd768eb70f6409f80fcfa9f3a1c0adf0fc98d827ab3ce0bed2ac22762c5d786
+# flyctl, which the chant→Fly deploy driver runs (M220): the version
+# release.yml's Fly deploys use.
+ARG FLYCTL_VERSION=0.4.104
+ARG FLYCTL_SHA256=4023d2a4f5e76198197f80bde74271184b200b9034bb16d799acba373714bfbc
 ARG CLAUDE_ACP=@agentclientprotocol/claude-agent-acp@0.85.0
 ARG CODEX_ACP=@agentclientprotocol/codex-acp@2.1.0
 ARG CODEX=@openai/codex@0.163.0
@@ -50,6 +54,12 @@ RUN set -eu; cd /tmp; f="gh_${GH_VERSION}_linux_amd64.tar.gz"; \
     echo "$GH_SHA256  $f" | sha256sum -c -; \
     tar -xzf "$f" --strip-components=2 -C /usr/local/bin "gh_${GH_VERSION}_linux_amd64/bin/gh"; \
     rm "$f"; gh --version
+
+RUN set -eu; cd /tmp; f="flyctl_${FLYCTL_VERSION}_Linux_x86_64.tar.gz"; \
+    curl -fsSLO "https://github.com/superfly/flyctl/releases/download/v$FLYCTL_VERSION/$f"; \
+    echo "$FLYCTL_SHA256  $f" | sha256sum -c -; \
+    tar -xzf "$f" -C /usr/local/bin flyctl; \
+    rm "$f"; flyctl version
 
 # Codex's CLI, which codex-acp drives (the daemon installs codex-acp without
 # its bundled copy).
