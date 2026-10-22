@@ -22,6 +22,12 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/blob/main/docs/plan-archive.md#m17-illogical-control-accounts-devices-enrollment-directory"
   - title: "M19"
     url: "https://github.com/arugula-salad/arugula/blob/main/docs/plan-archive.md#m19-teams-sharing-roles-team-daemons-invites"
+  - title: "#1235"
+    url: "https://github.com/arugula-salad/arugula/issues/1235"
+  - title: "#1236"
+    url: "https://github.com/arugula-salad/arugula/issues/1236"
+  - title: "#1239"
+    url: "https://github.com/arugula-salad/arugula/issues/1239"
 decided_by: "jhgaylor"
 decided_on: "2026-10-06"
 reviews: []
@@ -38,3 +44,12 @@ the account's pinned root, so control can't add a reader; team rosters are
 signed by an owner's device of the previous version.
 Where: `crates/e2e/src/cert.rs`, `crates/e2e/src/team.rs`.
 From: [M17](docs/plan-archive.md#m17-illogical-control-accounts-devices-enrollment-directory), [M19](docs/plan-archive.md#m19-teams-sharing-roles-team-daemons-invites), S15.
+
+**Project delegation** (step 5, #1235, Jake, 2026-10-21). An unattended
+hosted machine has no device to approve it, so an owner's device signs once
+per project that control may enroll hosted machines into it ("Control
+enrolls hosted machines under a project delegation"). Those machines get
+project-scoped certificates: clients accept them only for that project,
+never for an account's personal trust, and show them as "Hosted: the
+operator can read". Revoking the delegation stops new enrollments. From:
+M175 (#1236), M178 (#1239).

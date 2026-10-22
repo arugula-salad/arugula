@@ -20,6 +20,12 @@ supersedes: []
 evidence:
   - title: "#1094"
     url: "https://github.com/arugula-salad/arugula/issues/1094"
+  - title: "#1235"
+    url: "https://github.com/arugula-salad/arugula/issues/1235"
+  - title: "#1236"
+    url: "https://github.com/arugula-salad/arugula/issues/1236"
+  - title: "#1245"
+    url: "https://github.com/arugula-salad/arugula/issues/1245"
 decided_by: "jhgaylor"
 decided_on: "2026-10-19"
 reviews: []
@@ -55,3 +61,11 @@ these routes. Behaviour doesn't change, but the owner can revoke it machine
 by machine, and a machine without a live grant is refused. It's per machine
 because the daemon signs every MCP call as itself; narrowing it to the
 owner's own agents is a later daemon change. From: M130 (#1126).
+
+Step 5 (#1235, Jake, 2026-10-21) keeps the power for hosted workspaces.
+A hosted workspace is a machine in a project ("A hosted machine is arugulad
+in a rented sandbox"), so `cloud` and `read_cloud` are retargeted to hosted
+workspaces, and `run`, `start_agent`, `read_output` and `show` reach the
+workspace's machine like any machine's, through grants ("Grants, not
+impersonation"). The Managoat paths in `crates/daemon/src/mcp/cloud.rs` go
+in M190. From: M175 (#1236), M184 (#1245).

@@ -67,6 +67,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-080](docs/decisions/aru-080-the-hub-signs-people-in-to-the-platform-page.md): The hub signs people in to the platform page
 - [aru-085](docs/decisions/aru-085-sending-as-a-person-uses-a-one-use-user-token-fa.md): Sending as a person uses a one-use user token, falling back to their machine
 - [aru-086](docs/decisions/aru-086-private-items-are-shown-per-viewer-by-their-own.md): Private items are shown per viewer, by their own GitHub access
+- [aru-095](docs/decisions/aru-095-control-enrolls-hosted-machines-under-a-project.md): Control enrolls hosted machines under a project delegation
 
 ## Clients
 
@@ -108,6 +109,8 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-087](docs/decisions/aru-087-the-daemon-s-forge-reader-stays-for-unlinked-rep.md): The daemon's forge reader stays for unlinked repos; linked repos' blocks are pins
 - [aru-090](docs/decisions/aru-090-threads-hang-off-any-object.md): Threads hang off any object
 - [aru-091](docs/decisions/aru-091-agents-are-in-conversations.md): Agents are in conversations
+- [aru-094](docs/decisions/aru-094-hosted-machines-pause-only-between-turns.md): Hosted machines pause only between turns
+- [aru-096](docs/decisions/aru-096-hosted-inference-strangers-bring-their-own-key.md): Hosted inference: strangers bring their own key
 
 ## Federation and control
 
@@ -129,6 +132,9 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-084](docs/decisions/aru-084-the-platform-mirrors-linked-github-repos-metadat.md): The platform mirrors linked GitHub repos: metadata, with content opt-in
 - [aru-088](docs/decisions/aru-088-a-project-owns-numbered-issues.md): A project owns numbered issues
 - [aru-089](docs/decisions/aru-089-taking-custody-of-issues-stays-reversible.md): Taking custody of issues stays reversible
+- [aru-092](docs/decisions/aru-092-a-hosted-machine-is-arugulad-in-a-rented-sandbox.md): A hosted machine is arugulad in a rented sandbox
+- [aru-093](docs/decisions/aru-093-the-substrate-is-built-to-e2b-s-api.md): The substrate is built to E2B's API
+- [aru-097](docs/decisions/aru-097-public-previews-live-on-a-registrable-domain-of.md): Public previews live on a registrable domain of their own
 
 ## Build and release
 

@@ -43,6 +43,10 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/issues/1264"
   - title: "#1268"
     url: "https://github.com/arugula-salad/arugula/issues/1268"
+  - title: "#1235"
+    url: "https://github.com/arugula-salad/arugula/issues/1235"
+  - title: "#1236"
+    url: "https://github.com/arugula-salad/arugula/issues/1236"
 decided_by: "jhgaylor"
 decided_on: "2026-10-20"
 reviews: []
@@ -86,5 +90,10 @@ machine's owner grants them, per scope, and only over scopes the owner can
 read. A call without one is refused with a message saying how to grant it,
 and a revoke takes effect on the next call. They're still per machine, so
 what an agent writes is labelled with its machine, not the agent.
+**Hosted machines** (step 5, #1235). A hosted workspace's machine is
+reached through the same grants: a machine's `cloud.drive` (and the step 6
+powers) cover hosted workspaces in the scopes they name, and the hosted
+machine itself is only trusted for its project ("Control enrolls hosted
+machines under a project delegation").
 Where: `crates/platform/src/db/projects.rs` (`grants`), `crates/platform/src/grants.rs`, `crates/platform/src/cloud/` (`CloudDriver`).
-From: #1094, #1122, M130 (#1126), #1263 (step 6), M193 (#1264), M197 (#1268).
+From: #1094, #1122, M130 (#1126), #1263 (step 6), M193 (#1264), M197 (#1268), M175 (#1236).
