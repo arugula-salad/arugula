@@ -1,13 +1,18 @@
-//! A hosted machine's runs (M212): the hub's two routes for them, which
-//! take only a hosted machine's signature (`auth::HostedAuth`), so a
-//! person's machine never gets work. The runs are the platform's
-//! (`arugula_platform::work`): the hub says which machine asked, from the
-//! hosted certificate it checked, with the key its reports are signed with,
-//! and passes the call on (`PlatformPort::hosted_work`, `hosted_report`).
+//! A hosted machine's runs (M212): the hub's routes for them, which take
+//! only a hosted machine's signature (`auth::HostedAuth`), so a person's
+//! machine never gets work, nor a URL to upload a run's log to (M213). The
+//! runs are the platform's (`arugula_platform::work`, `run_logs`): the hub
+//! says which machine asked, from the hosted certificate it checked, with
+//! the key its reports are signed with, and passes the call on
+//! (`PlatformPort::hosted_work`, `hosted_report`, `hosted_upload`,
+//! `hosted_uploaded`).
 
 use std::sync::Arc;
 
-use arugula_control_wire::work::{Report, Reported, Work};
+use arugula_control_wire::{
+    run_logs::{Upload, UploadGiven, Uploaded},
+    work::{Report, Reported, Work},
+};
 use arugula_platform::{PlatformPort as _, work::HostedMachine};
 use axum::{
     Json,
@@ -46,6 +51,25 @@ pub async fn report(
     Json(r): Json<Report>,
 ) -> Result<Json<Reported>, ApiError> {
     Ok(Json(app.platform.hosted_report(&machine(&h.0), &r).await?))
+}
+
+/// `POST /api/hosted/work/upload`: a URL to put one of its run's log
+/// chunks or artifacts at (M213).
+pub async fn upload(
+    State(app): State<Arc<App>>,
+    h: HostedAuth,
+    Json(u): Json<Upload>,
+) -> Result<Json<UploadGiven>, ApiError> {
+    Ok(Json(app.platform.hosted_upload(&machine(&h.0), &u).await?))
+}
+
+/// `POST /api/hosted/work/uploaded`: it put them; the platform records them.
+pub async fn uploaded(
+    State(app): State<Arc<App>>,
+    h: HostedAuth,
+    Json(u): Json<Upload>,
+) -> Result<Json<Uploaded>, ApiError> {
+    Ok(Json(app.platform.hosted_uploaded(&machine(&h.0), &u).await?))
 }
 
 #[cfg(test)]
@@ -178,9 +202,16 @@ mod tests {
         let (_, v) = c.signed(&k, "GET", pq, None).await;
         assert_eq!(v, json!({ "items": [], "revokes": [] }));
 
-        // A person's machine: neither route.
+        // Its log (M213): this control has no run-log bucket, so it's off.
+        let up = json!({ "kind": "log", "run": run, "n": 0, "offset": 0, "size": 1, "sha256": "0".repeat(64) });
+        let (st, v) = c.signed(&k, "POST", "/api/hosted/work/upload", Some(&up)).await;
+        assert_eq!((st, v), (200, json!({ "kind": "off" })));
+
+        // A person's machine: none of the routes.
         let mine = daemon(&c.app, "m1", "laptop");
         assert_eq!(c.signed(&mine, "GET", pq, None).await.0, 401);
         assert_eq!(c.signed(&mine, "POST", "/api/hosted/work/report", Some(&report)).await.0, 401);
+        assert_eq!(c.signed(&mine, "POST", "/api/hosted/work/upload", Some(&up)).await.0, 401);
+        assert_eq!(c.signed(&mine, "POST", "/api/hosted/work/uploaded", Some(&up)).await.0, 401);
     }
 }

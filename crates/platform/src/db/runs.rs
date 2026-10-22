@@ -46,6 +46,16 @@ use super::{
 };
 use crate::Deleted;
 
+/// The runs [`Db::move_run`] moved in this process, by id: what a read
+/// waiting for a run to move listens to (M216, `crate::triggers::read`).
+static MOVED: std::sync::LazyLock<tokio::sync::broadcast::Sender<String>> =
+    std::sync::LazyLock::new(|| tokio::sync::broadcast::channel(256).0);
+
+/// Hear of each run moved in this process from now on.
+pub fn moves() -> tokio::sync::broadcast::Receiver<String> {
+    MOVED.subscribe()
+}
+
 /// A new run's id: `run_` and 32 hex characters, beside `prj_` for
 /// projects.
 fn new_id() -> String {
@@ -117,6 +127,16 @@ pub struct Run {
     pub exit_code: Option<i64>,
     /// The chant ledger entry a release run wrote.
     pub chant_ledger: Option<String>,
+}
+
+/// Which of a project's runs a list keeps ([`Db::runs_of`]): all of them
+/// by default.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RunFilter<'a> {
+    pub state: Option<State>,
+    pub trigger: Option<TriggerKind>,
+    /// A run spec's id, as its trigger's source names it.
+    pub spec: Option<&'a str>,
 }
 
 /// One change of a run's state.
@@ -521,6 +541,32 @@ impl Db {
         )
     }
 
+    /// A project's latest runs, newest first: only those that match `f`
+    /// (M216's state, M215's trigger and spec).
+    pub fn runs_of(&self, project: &str, f: &RunFilter, limit: u32) -> Result<Vec<Run>> {
+        let c = self.c();
+        // The spec a trigger's source names (`{"spec": …}`).
+        let spec = match c.dialect() {
+            super::migrate::Dialect::Sqlite => "json_extract(trigger_source, '$.spec')",
+            super::migrate::Dialect::Postgres => "(CAST(trigger_source AS jsonb) ->> 'spec')",
+        };
+        c.query_map(
+            &format!(
+                "SELECT {COLS} FROM runs WHERE project_id = ?1
+                     AND (?2 = '' OR state = ?2) AND (?3 = '' OR trigger_kind = ?3) AND (?4 = '' OR {spec} = ?4)
+                 ORDER BY created_at DESC, id DESC LIMIT ?5"
+            ),
+            params![
+                project,
+                f.state.map_or("", State::as_str),
+                f.trigger.map_or("", TriggerKind::as_str),
+                f.spec.unwrap_or(""),
+                limit
+            ],
+            run_row,
+        )
+    }
+
     /// A run's history, oldest first.
     pub fn run_events(&self, run: &str) -> Result<Vec<Event>> {
         self.c().query_map(
@@ -601,6 +647,9 @@ impl Db {
         )?;
         add_event(&tx, &event)?;
         tx.commit()?;
+        // Whoever waits on it here hears now (M216); the platform's other
+        // machines' waiters look again on their own.
+        let _ = MOVED.send(run.id.clone());
         Ok(Ok((run, event)))
     }
 

@@ -375,9 +375,7 @@ async fn relay(app: Arc<App>, origin_key: String, req: Request) -> Response {
         Ok(up) => up,
         Err(e) => return e.into_response(),
     };
-    // Unknown and not connected look the same (an M20 sandbox, reached
-    // through its provider rather than a relay socket, is neither here). A
-    // paused hosted machine isn't woken for a block (M182 wakes it for the
+    // Unknown and not connected look the same. A paused hosted machine isn't woken for a block (M182 wakes it for the
     // page's own channel, which has a session).
     let Some(owner) = block_owner(&app, &daemon) else { return plain(StatusCode::NOT_FOUND, UNREACHABLE) };
     let Some(mux) = app.relay.daemon_mux(&daemon) else { return plain(StatusCode::NOT_FOUND, UNREACHABLE) };

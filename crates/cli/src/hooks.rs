@@ -79,6 +79,12 @@ const READ_RULES: &[&str] = &[
     "Bash(arugula hooks status:*)",
     "Bash(arugula hosts)",
     "Bash(arugula shares)",
+    // M216: reading runs. Starting one is `arugula run:*`'s prefix, which
+    // is acting (and the CLI refuses an agent's start).
+    "Bash(arugula runs list:*)",
+    "Bash(arugula runs ls:*)",
+    "Bash(arugula runs show:*)",
+    "Bash(arugula runs logs:*)",
     // The MCP tools with `read_only_hint` in crates/daemon/src/mcp/tools.rs
     // (the CLI can't depend on the daemon; docs/mcp-permissions.json lists
     // the same, and a test here checks it).
@@ -94,6 +100,7 @@ const READ_RULES: &[&str] = &[
     "mcp__arugula__read_cloud",
     "mcp__arugula__read_thread",
     "mcp__arugula__search_threads",
+    "mcp__arugula__read_run",
 ];
 
 /// What `install` adds beside [`READ_RULES`], without `--allow-acting`
@@ -143,6 +150,7 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__link_repo",
     "mcp__arugula__post_thread",
     "mcp__arugula__issue_write",
+    "mcp__arugula__start_run",
 ];
 
 #[derive(Subcommand)]
@@ -797,6 +805,10 @@ mod tests {
             "Bash(arugula hooks status:*)",
             "Bash(arugula hosts)",
             "Bash(arugula shares)",
+            "Bash(arugula runs list:*)",
+            "Bash(arugula runs ls:*)",
+            "Bash(arugula runs show:*)",
+            "Bash(arugula runs logs:*)",
             "mcp__arugula__read_output",
             "mcp__arugula__wait",
             "mcp__arugula__list",
@@ -809,6 +821,7 @@ mod tests {
             "mcp__arugula__read_cloud",
             "mcp__arugula__read_thread",
             "mcp__arugula__search_threads",
+            "mcp__arugula__read_run",
         ];
         assert_eq!(READ_RULES, read);
         let acting_cli = [

@@ -4,14 +4,13 @@
 //! - **Personal** is free: one person, any number of daemons, relay
 //!   traffic up to a monthly allowance.
 //! - **Team** is per seat (each member in the signed roster).
-//! - **Hosted sandboxes** are by the minute, on a paid plan.
+//! - **Minutes** go to Stripe as meter events. They were hosted
+//!   sandboxes', which are retired (M190), so the hub reports none.
 //!
 //! Upgrading goes through Stripe Checkout; Stripe tells control what
-//! happened through signed webhooks. Seat counts follow the roster;
-//! sandbox minutes go to Stripe as meter events. Over the relay allowance
-//! a free account sees a warning, and past twice that its relayed traffic
-//! slows down. With billing on, hosted sandboxes need a paid plan, and
-//! running ones are never stopped for it.
+//! happened through signed webhooks. Seat counts follow the roster. Over
+//! the relay allowance a free account sees a warning, and past twice that
+//! its relayed traffic slows down.
 //!
 //! The platform's since M139 (#1156): plans and what's been reported are
 //! its own tables (`db::billing`); teams, and the relay and sandbox meters,
@@ -426,7 +425,7 @@ pub async fn report_usage(p: &Platform) {
     }
 }
 
-/// Who pays for an account's sandboxes: its own plan, else its team's.
+/// Who pays for an account's minutes: its own plan, else its team's.
 async fn payer(p: &Platform, account: &str) -> anyhow::Result<Option<String>> {
     let mut owners = vec![format!("account:{account}")];
     owners.extend(p.cache.teams_of(&*p.hub, account).await?.into_iter().map(|t| format!("team:{t}")));

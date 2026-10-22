@@ -43,8 +43,6 @@ pub trait Fixture: Send + Sync {
     fn flag(&self, owner: &str, name: &str, on: Option<bool>) -> anyhow::Result<()>;
     /// Bytes the relay carried for an account on the day `ms` falls in.
     fn relay_bytes(&self, account: &str, ms: u64, bytes: u64) -> anyhow::Result<()>;
-    /// A hosted sandbox of the account's, running from `from` to `to` (ms).
-    fn sandbox(&self, account: &str, id: &str, from: u64, to: u64) -> anyhow::Result<()>;
     /// The account deletes itself.
     fn delete(&self, account: &str) -> anyhow::Result<()>;
     /// A push subscription of one of the account's approved devices, at
@@ -293,18 +291,16 @@ async fn meters(f: &dyn Fixture) {
     f.relay_bytes("acct-mt", until - 3_600_000, 1_000).unwrap();
     f.relay_bytes("acct-mt", month_start + 1, 500).unwrap();
     f.relay_bytes("acct-mt", month_start - 1, 9_999).unwrap();
-    f.sandbox("acct-mt", "sbx-mt-1", until - 3 * min, until - min).unwrap();
-    f.sandbox("acct-mt", "sbx-mt-2", until - 100 * min, until - 90 * min).unwrap();
     let got = hub.meters(&ids(&["acct-mt", "acct-none"]), until - 10 * min, until).await.unwrap();
     assert_eq!(
         got,
         [
-            Meter { account: "acct-mt".into(), relay_bytes: 1_500, sandbox_minutes: 2 },
+            Meter { account: "acct-mt".into(), relay_bytes: 1_500, sandbox_minutes: 0 },
             Meter { account: "acct-none".into(), relay_bytes: 0, sandbox_minutes: 0 },
         ],
-        "this month's relay bytes; sandbox minutes in the window; one per account asked"
+        "this month's relay bytes; no sandbox minutes since hosted sandboxes went (M190); one per account asked"
     );
-    assert!(hub.metered_accounts().await.unwrap().contains(&"acct-mt".to_owned()));
+    assert!(hub.metered_accounts().await.unwrap().is_empty());
 }
 
 async fn push(f: &dyn Fixture) {

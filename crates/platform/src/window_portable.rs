@@ -406,6 +406,22 @@ pub fn previews(at: &Place, off: Option<&str>) -> anyhow::Result<(bool, Vec<crat
     Ok((taken, db.public_previews(arugula_e2e::now_ms())?))
 }
 
+/// Runs' logs and artifacts at `at`, by project (M213), read-only, refused
+/// as [`usage`] is on a database this build would migrate.
+pub fn run_log_usage(at: &Place) -> anyhow::Result<Vec<crate::db::run_logs::Usage>> {
+    match at {
+        Place::File(path) => {
+            let c = super::read_only(path)?;
+            let m = migrations_on(&c, Dialect::Sqlite, at)?;
+            if !m.pending.is_empty() {
+                bail!("{at} is behind this build (it would run {:?}): this tool only reads", m.pending);
+            }
+            crate::db::run_logs::usage(&c)
+        }
+        Place::Postgres(url) => crate::db::run_logs::usage(&open_as_is(at, url)?.c()),
+    }
+}
+
 /// What a snapshot id from `pg_export_snapshot()` looks like
 /// (`00000003-0000001B-1`): checked, since it's spliced into SQL.
 fn snapshot_id(id: &str) -> anyhow::Result<&str> {

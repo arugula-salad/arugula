@@ -4,6 +4,7 @@
 import { chat } from "../shared/chat-store";
 import { cloudWorkspaces } from "../shared/cloud";
 import { issues } from "../shared/issues/store";
+import { runs } from "./runs";
 import { current, pathOf, type Route } from "./router";
 import { session } from "./session";
 
@@ -25,6 +26,8 @@ export function roomPath(room: string, msg?: number): string {
   // An issue's thread (M196) is on its issue's page.
   const r = chat.room(room);
   if (r?.kind === "object" && r.project && r.target?.startsWith("iss_")) return pathOf({ page: "issue", project: r.project, issue: r.target, msg }, names);
+  // And a run's (M215) on its run's.
+  if (r?.kind === "object" && r.project && r.target?.startsWith("run_")) return pathOf({ page: "run", project: r.project, run: r.target, msg }, names);
   const project = projectOfRoom(room);
   return project ? pathOf({ page: "chat", project, room, msg }, names) : "/";
 }
@@ -59,6 +62,11 @@ export function resolve(r: Extract<Route, { page: "find" }>): string | null {
     // Its project, once the page has read it (the page asks).
     const i = issues.known(r.issue);
     return i ? pathOf({ page: "issue", project: i.project, issue: i.id, ...(r.msg !== undefined ? { msg: r.msg } : {}) }, names) : null;
+  }
+  if (r.what === "run") {
+    // Its project, once the page has read it (the page asks).
+    const x = runs.known(r.run);
+    return x ? pathOf({ page: "run", project: x.project, run: x.id, ...(r.msg !== undefined ? { msg: r.msg } : {}) }, names) : null;
   }
   return pathOf(r.workspace ? { page: "workspace", project: own, workspace: r.workspace, ...(r.tab ? { tab: r.tab } : {}) } : { page: "workspaces", project: own }, names);
 }

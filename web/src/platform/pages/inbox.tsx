@@ -3,8 +3,9 @@
 // reasons a forge block asks for attention, grouped by reason; and the
 // drafts waiting for them to send (M170's list). Mentions and assignments
 // on native issues, and mentions in a mirrored item's thread, are entries
-// too (M202). Each entry opens the item (on GitHub; a native issue on its
-// page; a thread's mention in the thread), and can be marked seen or done.
+// too (M202), and runs that failed (M215). Each entry opens the item (on
+// GitHub; a native issue or a run on its page; a thread's mention in the
+// thread), and can be marked seen or done.
 // Read through the viewer check: a private repo's items show only to those
 // GitHub lets read it, and a native issue's to its project's members.
 
@@ -34,6 +35,7 @@ const GROUPS: [string, string[], string][] = [
   ["review_requested", ["review_requested"], "Reviews requested"],
   ["changes_requested", ["changes_requested"], "Changes requested"],
   ["checks_failed", ["checks_failed"], "Checks failed"],
+  ["run_failed", ["run_failed"], "Runs failed"],
   ["mentioned", ["mentioned", "thread_mention"], "Mentions"],
   ["assigned", ["assigned"], "Assigned to you"],
   ["done", ["done"], "Merged, closed or ready"],
@@ -43,6 +45,7 @@ const GROUPS: [string, string[], string][] = [
  * the thread (both here), anything else on GitHub. */
 function linkOf(e: InboxEntry): { href: string; here: boolean } {
   if (e.project && e.item.startsWith("iss_")) return { href: pathOf({ page: "issue", project: e.project, issue: e.item }, names), here: true };
+  if (e.project && e.item.startsWith("run_")) return { href: pathOf({ page: "run", project: e.project, run: e.item }, names), here: true };
   if (e.reason === "thread_mention" && e.room) return { href: pathOf({ page: "find", what: "chat", room: e.room }), here: true };
   return { href: e.url, here: false };
 }
@@ -104,15 +107,13 @@ export function InboxPage() {
                 return (
                   <li key={key} class={e.seen_at ? "seen" : "unseen"} data-inbox-entry={e.item} data-inbox-reason={e.reason}>
                     <a class="platform-inbox-item" href={link.href} {...away} onClick={open}>
-                      <span class="platform-inbox-ref">
-                        {e.repo}#{e.number}
-                      </span>{" "}
+                      <span class="platform-inbox-ref">{e.kind === "run" ? `${e.repo}:` : `${e.repo}#${e.number}`}</span>{" "}
                       <span class="platform-inbox-title">{e.title}</span>
                     </a>
                     <div class="dim platform-inbox-meta">
-                      {e.kind === "pr" ? "PR" : "Issue"} · {STATE[e.state] ?? e.state}
+                      {e.kind === "pr" ? "PR" : e.kind === "run" ? "Run" : "Issue"} · {STATE[e.state] ?? e.state}
                       {e.reason === "thread_mention" ? " · in its thread" : ""}
-                      {e.author ? ` · by ${e.author}` : ""}
+                      {e.author ? ` · ${e.kind === "run" ? "started by" : "by"} ${e.author}` : ""}
                     </div>
                     <div class="platform-inbox-actions">
                       {!e.seen_at && (

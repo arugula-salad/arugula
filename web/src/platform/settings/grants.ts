@@ -23,13 +23,23 @@ export function powersFor(kind: AgentScope["kind"]): string[] {
   return kind === "project" ? ["threads.read", "threads.post", "issues.write"] : ["threads.read", "threads.post"];
 }
 
-/** A machine's live agent grants over a scope. */
-export function liveOver(grants: Grant[], machine: string, s: AgentScope): Grant[] {
+/** What the runs switch gives over a project (M216): its agents read the
+ * project's runs, and start its run specs as yours. */
+export const RUN_POWERS = ["runs.read", "runs.start"];
+
+/** What the commands switch gives over a project (M216): its agents start
+ * commands and instructions of their own there, as yours. */
+export const COMMAND_POWERS = ["runs.command"];
+
+/** A machine's live agent grants over a scope: of `powers`, or (without)
+ * those in conversations. */
+export function liveOver(grants: Grant[], machine: string, s: AgentScope, powers?: string[]): Grant[] {
   return grants.filter(
     (g) =>
       g.live &&
       g.subject.id === machine &&
       g.power !== "cloud.drive" &&
+      (powers ? powers.includes(g.power) : !g.power.startsWith("runs.")) &&
       g.scope.kind === s.kind &&
       (s.kind === "account" || g.scope.id === s.id),
   );

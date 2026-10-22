@@ -15,7 +15,6 @@ import { TelemetryAsk } from "../../shared/ui/account-telemetry";
 import type { MenuItem } from "../../shared/ui/menu";
 import { Modal } from "../../shared/ui/modal";
 import { ADD_PASSKEY_HASH, DEVICE_HASH, inviteInHash, JOIN_HASH, type ControlSession } from "../control";
-import { directory } from "../hosts";
 import { SharedDocs } from "../ui/shared-docs";
 import { AccountPanel } from "./account";
 import { DeviceLinkPrompt, DevicePrompt, JoinPrompt } from "./approve";
@@ -124,12 +123,9 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
 
 /** For the host menu. */
 export function controlMenuItems(s: ControlSession): MenuItem[] {
-  const shown = s.daemons.find((d) => d.name === directory.current);
   return [
     "separator",
     ...(s.stale ? [{ header: "Control unreachable" } as MenuItem] : []),
-    ...(s.sandboxesOpen ? [{ label: "New hosted VM", run: () => void s.startSandbox() }] : []),
-    ...(shown?.sandbox ? [{ label: "Delete this VM", run: () => void s.deleteSandbox(shown.sandbox!) }] : []),
     { label: "Add a machine…", run: openPanel("add") },
   ];
 }

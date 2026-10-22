@@ -28,6 +28,13 @@
 //! reaches more than its owner: a revoked grant refuses the next call, and
 //! one whose owner left the team stops within [`cache::DELAY`].
 //!
+//! **Agents and runs (M216, platform step 7).** Three more, over a project
+//! only, given and asked the same way: `runs.read` (its agents read the
+//! project's runs), `runs.start` (they start its run specs) and
+//! `runs.command` (they start a command or an instruction of their own),
+//! each start as its owner may (an owner or editor on the hosted beta's
+//! list). None is ever an approval.
+//!
 //! [`cache::DELAY`]: crate::cache::DELAY
 
 use std::sync::Arc;
@@ -45,7 +52,7 @@ use serde_json::{Value, json};
 use crate::{
     Platform,
     auth::{Machine, Person},
-    db::projects::{AGENT_POWERS, CLOUD_DRIVE, Grant, ISSUES_WRITE},
+    db::projects::{AGENT_POWERS, CLOUD_DRIVE, Grant, ISSUES_WRITE, RUN_POWERS},
     hub::HubResult,
 };
 
@@ -107,15 +114,28 @@ pub(crate) async fn owner_reads(
     }
 }
 
+/// Whether `power` is an agent's (M197's in conversations, M216's over
+/// runs).
+pub fn is_agent_power(power: &str) -> bool {
+    AGENT_POWERS.contains(&power) || RUN_POWERS.contains(&power)
+}
+
+/// Whether an agent's `power` is over a project only, never the owner's
+/// DMs.
+fn project_only(power: &str) -> bool {
+    power == ISSUES_WRITE || RUN_POWERS.contains(&power)
+}
+
 /// How the owner gives this grant, for a refusal.
 fn how_to_grant(machine_name: &str, power: &str, scope: &AgentScope, scope_name: &str) -> String {
     let flag = match scope {
         AgentScope::Project(p) => format!("--project {p}"),
         AgentScope::Account(_) => "--dms".to_owned(),
     };
+    let switch = if RUN_POWERS.contains(&power) { "Agents and runs" } else { "Agents in conversations" };
     format!(
         "its owner gives it with `arugula grants add {machine_name} {power} {flag}`, or turns on {machine_name} for \
-         {scope_name} under Settings, Agents in conversations, on the platform page"
+         {scope_name} under Settings, {switch}, on the platform page"
     )
 }
 
@@ -132,7 +152,7 @@ pub async fn agent_may(
     power: &str,
     scope: &AgentScope,
 ) -> Result<AgentPrincipal, ApiError> {
-    if !AGENT_POWERS.contains(&power) || (power == ISSUES_WRITE && matches!(scope, AgentScope::Account(_))) {
+    if !is_agent_power(power) || (project_only(power) && matches!(scope, AgentScope::Account(_))) {
         return Err(err(StatusCode::BAD_REQUEST, &format!("{power} isn't a power over that")));
     }
     let owner = &machine.account;
@@ -301,27 +321,28 @@ pub enum GiveScope {
 /// `cloud.drive` is over the account (no scope); `threads.read`,
 /// `threads.post` and `issues.write` take a scope, `{kind: "project", id}`
 /// for a project the giver reads, or `{kind: "account"}` for their DMs
-/// (threads only).
+/// (threads only); `runs.read` and `runs.start` (M216) a project.
 pub async fn give(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Give>) -> R {
     let scope = match (b.power.as_str(), b.scope) {
         (CLOUD_DRIVE, None) => None,
         (CLOUD_DRIVE, Some(_)) => {
             return Err(err(StatusCode::BAD_REQUEST, "cloud.drive is over your account: no scope"));
         }
-        (p, Some(scope)) if AGENT_POWERS.contains(&p) => Some(match scope {
+        (p, Some(scope)) if is_agent_power(p) => Some(match scope {
             GiveScope::Project { id } => AgentScope::Project(id),
-            GiveScope::Account if p == ISSUES_WRITE => {
-                return Err(err(StatusCode::BAD_REQUEST, "issues.write is over a project, not your DMs"));
+            GiveScope::Account if project_only(p) => {
+                return Err(err(StatusCode::BAD_REQUEST, &format!("{p} is over a project, not your DMs")));
             }
             GiveScope::Account => AgentScope::Account(s.account.clone()),
         }),
-        (p, None) if AGENT_POWERS.contains(&p) => {
+        (p, None) if is_agent_power(p) => {
             return Err(err(StatusCode::BAD_REQUEST, "an agent's power is over a project or your DMs: say which"));
         }
         _ => {
             return Err(err(
                 StatusCode::BAD_REQUEST,
-                "the powers there are to give are cloud.drive, threads.read, threads.post and issues.write",
+                "the powers there are to give are cloud.drive, threads.read, threads.post, issues.write, runs.read, \
+                 runs.start and runs.command",
             ));
         }
     };

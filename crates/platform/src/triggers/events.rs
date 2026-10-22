@@ -198,6 +198,7 @@ pub async fn fire(
                 trigger: TriggerKind::Event,
                 source: &source,
                 started_by: &rule.id,
+                started_by_agent: None,
                 key: Some(&key),
             };
             db.fire_rule(&rule, &start, now)

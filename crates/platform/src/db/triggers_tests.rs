@@ -50,6 +50,7 @@ fn start<'a>(spec: &'a RunSpec, source: &'a Value, key: Option<&'a str>) -> Star
         trigger: TriggerKind::Event,
         source,
         started_by: "rru_1",
+        started_by_agent: None,
         key,
     }
 }

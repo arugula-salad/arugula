@@ -11,9 +11,12 @@ use axum::{
     routing::{MethodRouter, get, post},
 };
 
-use arugula_control_wire::issues;
+use arugula_control_wire::{issues, runs as wire_runs};
 
-use crate::{Platform, billing, chat, cloud, forge, grants, hosted, projects, run_grant, triggers::routes as runs};
+use crate::{
+    Platform, billing, chat, cloud, forge, grants, hosted, projects, run_grant, run_logs,
+    triggers::{agent as run_agents, routes as runs},
+};
 
 /// Every route the platform answers. Each moved here from `routes()` in
 /// `crates/control/src/main.rs` with the same path and methods: billing's
@@ -23,7 +26,8 @@ use crate::{Platform, billing, chat, cloud, forge, grants, hosted, projects, run
 /// drafts on them (M170); the inbox (M171); native issues' (M195), for
 /// agents too (M200); hosted workspaces (M179) and their inference keys
 /// (M185); the standing project grant for runs (M211); what starts runs
-/// (M214); and hosted agents' archived transcripts (M184).
+/// (M214); reading runs, and a machine's agents' runs (M216); runs'
+/// artifacts (M213); and hosted agents' archived transcripts (M184).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -57,6 +61,9 @@ fn routes() -> Routes {
         .route("/api/cloud/workspaces/{id}/tabs/{tab}/requests/{request}", post(cloud::tabs::answer))
         .route("/api/cloud/workspaces/{id}/rebuild", post(cloud::rebuild::rebuild).delete(cloud::rebuild::cancel))
         .route("/api/cloud/workspaces/{id}/retry", post(cloud::rebuild::retry))
+        .route("/api/cloud/workspaces/{id}/move", get(cloud::moving::plan).post(cloud::moving::go))
+        .route("/api/cloud/workspaces/{id}/move/bundle", get(cloud::moving::bundle))
+        .route("/api/cloud/moving", get(cloud::moving::overview))
         .route("/api/cloud/past-tabs", get(cloud::tabs::past))
         .route("/api/cloud/past-tabs/{tab}", get(cloud::tabs::past_show))
         .route("/api/cloud/past-tabs/{tab}/events", get(cloud::tabs::past_events))
@@ -154,7 +161,14 @@ fn routes() -> Routes {
             "/api/projects/{project}/run-specs/{spec}/rules/{id}",
             axum::routing::patch(runs::change_rule).delete(runs::delete_rule),
         )
-        .route("/api/projects/{project}/runs", post(runs::start))
+        .route("/api/projects/{project}/runs", get(crate::triggers::read::list).post(runs::start))
+        // Reading runs, and a machine's agents' runs (M216).
+        .route(wire_runs::RUN, get(crate::triggers::read::show))
+        .route(wire_runs::RUN_LOG, get(crate::triggers::read::log))
+        .route(wire_runs::AGENT_RUN_REACH, get(run_agents::reach))
+        .route(wire_runs::AGENT_PROJECT_RUNS, get(run_agents::list).post(run_agents::start))
+        .route(wire_runs::AGENT_RUN, get(run_agents::show))
+        .route(wire_runs::AGENT_RUN_LOG, get(run_agents::log))
         .route("/api/projects/{project}/workspaces/{id}/spec", axum::routing::put(hosted::routes::set_spec))
         .route("/api/projects/{project}/workspaces/{id}/secrets", get(hosted::routes::secrets))
         .route(
@@ -164,6 +178,9 @@ fn routes() -> Routes {
         .route("/api/workspaces", get(hosted::routes::all))
         .route("/api/projects/{project}/transcripts", get(hosted::transcripts::list))
         .route("/api/projects/{project}/transcripts/{id}", get(hosted::transcripts::read))
+        // Runs' artifacts (M213); their logs are read through RUN_LOG above.
+        .route("/api/projects/{project}/runs/{run}/artifacts", get(run_logs::routes::list))
+        .route("/api/projects/{project}/runs/{run}/artifacts/{name}", get(run_logs::routes::artifact))
 }
 
 /// The platform's router, for any state the hub's router has (the

@@ -339,6 +339,9 @@ pub struct Start<'a> {
     pub source: &'a Value,
     /// The account that started it by hand, or the schedule's or rule's id.
     pub started_by: &'a str,
+    /// The machine whose agent started it by hand (M216), for its owner
+    /// (`started_by`).
+    pub started_by_agent: Option<&'a str>,
     /// What the trigger made it for, so it makes one ([`super::runs::create_run_in`]).
     pub key: Option<&'a str>,
 }
@@ -407,7 +410,7 @@ pub fn start_in(c: &impl Sql, s: &Start, now: u64) -> Result<Started> {
         source: s.source,
         op: &op,
         started_by: s.started_by,
-        started_by_agent: None,
+        started_by_agent: s.started_by_agent,
         grant: grant.as_deref(),
     };
     let Some((run, made)) = runs::create_run_in(c, &new, s.key, now)? else { return Ok(Started::NoProject) };
@@ -464,6 +467,7 @@ pub fn fire(c: &impl Sql, s: &Schedule, next_at: u64, refused: Option<&'static s
                 trigger: TriggerKind::Schedule,
                 source: &source,
                 started_by: &s.id,
+                started_by_agent: None,
                 key: Some(&key),
             };
             start_in(c, &start, now)?

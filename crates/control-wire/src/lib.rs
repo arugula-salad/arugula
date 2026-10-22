@@ -29,6 +29,7 @@ pub mod join;
 pub mod maintenance;
 pub mod projects;
 pub mod push;
+pub mod run_logs;
 pub mod runs;
 pub mod team;
 pub mod telemetry;
@@ -66,9 +67,6 @@ pub const PUSH_SUBS: &str = "/api/daemon/push-subs";
 /// A daemon has control relay an encrypted notification (`POST`),
 /// [`PushRequest`], answered [`PushAnswer`].
 pub const PUSH: &str = "/api/daemon/push";
-/// A hosted sandbox's last session closed (`POST`, no body), answered
-/// [`Ack`].
-pub const SANDBOX_DONE: &str = "/api/daemon/sandbox-done";
 /// The daemon's WebSocket to the relay (`GET`), [`DialQuery`].
 pub const RELAY_DIAL: &str = "/api/relay/dial";
 

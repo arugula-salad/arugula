@@ -41,6 +41,7 @@ use tracing::Instrument as _;
 use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke, Standing},
     hosted::{EnrollAsk, EnrollGiven, Enrolled, SetupPlan, SetupReport, WakeAnswer},
+    run_logs::{Upload, UploadGiven, Uploaded},
     work::{Report, Reported, Work},
 };
 
@@ -335,6 +336,12 @@ struct PreviewArgs {
     id: String,
     #[serde(default)]
     workspace: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct UploadArgs {
+    machine: HostedMachine,
+    upload: Upload,
 }
 
 fn ids(v: &[String]) -> IdsArgs {
@@ -769,6 +776,22 @@ impl PlatformPort for HttpPlatform {
         };
         Box::pin(self.0.call("hosted_transcript", a))
     }
+
+    fn hosted_upload<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        upload: &'a Upload,
+    ) -> BoxFuture<'a, anyhow::Result<UploadGiven>> {
+        Box::pin(self.0.call("hosted_upload", UploadArgs { machine: machine.clone(), upload: upload.clone() }))
+    }
+
+    fn hosted_uploaded<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        upload: &'a Upload,
+    ) -> BoxFuture<'a, anyhow::Result<Uploaded>> {
+        Box::pin(self.0.call("hosted_uploaded", UploadArgs { machine: machine.clone(), upload: upload.clone() }))
+    }
 }
 
 /// The platform's internal API: every `PlatformPort` method of `port`,
@@ -854,6 +877,14 @@ async fn platform_call(
             }
             "public_preview" => answer(p.public_preview(&args::<PreviewArgs>(&body)?.id).await?)?,
             "public_ports" => answer(p.public_ports(&args::<PreviewArgs>(&body)?.workspace).await?)?,
+            "hosted_upload" => {
+                let a: UploadArgs = args(&body)?;
+                answer(p.hosted_upload(&a.machine, &a.upload).await?)?
+            }
+            "hosted_uploaded" => {
+                let a: UploadArgs = args(&body)?;
+                answer(p.hosted_uploaded(&a.machine, &a.upload).await?)?
+            }
             _ => return Ok(None),
         }))
     }
@@ -1119,6 +1150,10 @@ mod tests {
         };
         let e = p.hosted_report(&m, &r).await.unwrap_err().to_string();
         assert!(e.contains("doesn't take runs' reports"), "{e}");
+        // M213's two, the same way.
+        let u = Upload::Log { run: "run_1".into(), n: 0, offset: 0, size: 1, sha256: "0".repeat(64) };
+        assert_eq!(p.hosted_upload(&m, &u).await.unwrap(), UploadGiven::Off);
+        assert!(matches!(p.hosted_uploaded(&m, &u).await.unwrap(), Uploaded::Refused { .. }));
 
         let wrong = HttpPlatform::new(&base, PrincipalKey::new(&[9; 32]).unwrap()).unwrap();
         let e = wrong.chat_on("on").await.unwrap_err().to_string();

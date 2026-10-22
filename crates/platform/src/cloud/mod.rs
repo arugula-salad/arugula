@@ -11,9 +11,13 @@
 pub mod account;
 pub mod files;
 pub mod migration;
+pub mod moving;
+#[cfg(test)]
+mod moving_tests;
 pub mod notifications;
 pub mod provider;
 pub mod rebuild;
+pub mod retire;
 pub mod secrets;
 pub mod tabs;
 pub mod worker;

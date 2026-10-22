@@ -3,9 +3,9 @@
 # `control` job runs it. `just control-deploy` is the same deploy from a
 # laptop, for hotfixes.
 #
-#   ci-control-deploy deploy TAG DIR   deploy DIR's arugula-control and
-#                                      arugulad (x86_64 musl, `just static`)
-#                                      as packaging/control's image, labelled
+#   ci-control-deploy deploy TAG DIR   deploy DIR's arugula-control
+#                                      (x86_64 musl, `just static`) as
+#                                      packaging/control's image, labelled
 #                                      TAG, then `check` it
 #   ci-control-deploy check TAG        control answers /control.json, and
 #                                      every machine runs TAG's image with
@@ -82,8 +82,8 @@ deploy() {
   ctx=$(mktemp -d)
   # shellcheck disable=SC2064 # $ctx now, not at exit
   trap "rm -rf '$ctx'" EXIT
-  cp "$dir/arugula-control" "$dir/arugulad" packaging/control/Dockerfile "$toml" "$ctx"/
-  chmod +x "$ctx/arugula-control" "$ctx/arugulad"
+  cp "$dir/arugula-control" packaging/control/Dockerfile "$toml" "$ctx"/
+  chmod +x "$ctx/arugula-control"
   (cd "$ctx" && flyctl deploy --local-only --ha=false --image-label "$tag")
   check "$tag"
 }

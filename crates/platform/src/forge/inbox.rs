@@ -589,7 +589,7 @@ pub async fn mark_for(
     if b.reason.as_deref().is_some_and(|r| !wire::INBOX_REASONS.contains(&r)) {
         return Err(err(StatusCode::BAD_REQUEST, "reason: one of the inbox's reasons"));
     }
-    if item.starts_with("iss_") {
+    if item.starts_with("iss_") || item.starts_with("run_") {
         let marked = crate::inbox::mark(app, account, &item, b).await?;
         return Ok(wire::InboxMarked { item, marked });
     }

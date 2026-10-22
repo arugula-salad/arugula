@@ -218,7 +218,7 @@ impl HubPort for InProcess {
         })
     }
 
-    fn meters<'a>(&'a self, accounts: &'a [String], since: u64, until: u64) -> BoxFuture<'a, HubResult<Vec<Meter>>> {
+    fn meters<'a>(&'a self, accounts: &'a [String], _since: u64, until: u64) -> BoxFuture<'a, HubResult<Vec<Meter>>> {
         Box::pin(async move {
             let app = self.app()?;
             let month = &crate::day(until)[..7];
@@ -228,7 +228,8 @@ impl HubPort for InProcess {
                     Ok(Meter {
                         account: a.clone(),
                         relay_bytes: app.db.relay_bytes_month(a, month)?,
-                        sandbox_minutes: app.db.sandbox_minutes(a, since, until)?,
+                        // Hosted sandboxes (M20) are gone (M190).
+                        sandbox_minutes: 0,
                     })
                 })
                 .collect()
@@ -236,7 +237,8 @@ impl HubPort for InProcess {
     }
 
     fn metered_accounts(&self) -> BoxFuture<'_, HubResult<Vec<String>>> {
-        Box::pin(async move { self.app()?.db.sandbox_accounts() })
+        // Nobody: they were the accounts that had hosted sandboxes (M190).
+        Box::pin(async move { Ok(Vec::new()) })
     }
 
     fn changes(&self, after: u64, limit: u32) -> BoxFuture<'_, HubResult<ChangePage>> {
@@ -605,11 +607,6 @@ mod tests {
 
         fn relay_bytes(&self, account: &str, ms: u64, bytes: u64) -> anyhow::Result<()> {
             self.app.db.add_relay_bytes(account, &crate::day(ms), bytes)
-        }
-
-        fn sandbox(&self, account: &str, id: &str, from: u64, to: u64) -> anyhow::Result<()> {
-            self.app.db.add_sandbox(id, account, "", id, from)?;
-            self.app.db.end_sandbox(id, to)
         }
 
         fn delete(&self, account: &str) -> anyhow::Result<()> {

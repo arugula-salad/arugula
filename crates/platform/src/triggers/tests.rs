@@ -204,7 +204,7 @@ async fn serve() -> (Arc<Platform>, String, String) {
 }
 
 /// [`serve`], and its hub.
-async fn serve_hub() -> (Arc<Platform>, String, String, Arc<TestHub>) {
+pub(super) async fn serve_hub() -> (Arc<Platform>, String, String, Arc<TestHub>) {
     let hub = Arc::new(TestHub::default());
     hub.team(
         "t",

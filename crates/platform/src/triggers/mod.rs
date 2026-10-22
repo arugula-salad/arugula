@@ -7,8 +7,11 @@
 //!   ([`routes`]) and with `arugula runs` (the page's part is M215): a
 //!   name, the hosted workspace, and a command or an instruction.
 //! - **By hand** ([`routes::start`]): a person, or a CLI device as its
-//!   account, starts a spec or a command. A machine's agent doesn't, here:
-//!   MCP (M216) does, under the project's standing grant (M211).
+//!   account, starts a spec or a command. A machine's agent starts one
+//!   through MCP ([`agent`], M216), with its owner's `runs.start` grant,
+//!   as its owner's start, under the project's standing grant (M211).
+//! - **Reading** ([`read`], M216): a run's state, timeline and log, for
+//!   the CLI and, with `runs.read`, a machine's agents.
 //! - **Schedules** ([`schedule`]): the platform schedules, and the machine
 //!   executes. That answers `docs/platform-features.md`'s question: a
 //!   schedule keeps ticking with every person's machine asleep.
@@ -36,7 +39,9 @@
 //! an agent's prompt unquoted: what a run does is its spec's operation, and
 //! only that.
 
+pub mod agent;
 pub mod events;
+pub mod read;
 pub mod routes;
 pub mod schedule;
 
@@ -94,5 +99,7 @@ impl Gate for Open {
     }
 }
 
+#[cfg(test)]
+mod agent_tests;
 #[cfg(test)]
 mod tests;

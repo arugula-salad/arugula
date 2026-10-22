@@ -453,8 +453,8 @@ pub const INBOX_SHADOW: &str = "/api/inbox/shadow";
 /// issue is assigned to you, your PR merged or is approved and green (or
 /// your issue closed), a draft on it waits for you to send, or you're
 /// mentioned in its thread on the platform (M202: a mirrored item's; on a
-/// native issue that's `mentioned`).
-pub const INBOX_REASONS: [&str; 8] = [
+/// native issue that's `mentioned`), or a run failed (M215).
+pub const INBOX_REASONS: [&str; 9] = [
     "review_requested",
     "checks_failed",
     "changes_requested",
@@ -463,6 +463,7 @@ pub const INBOX_REASONS: [&str; 8] = [
     "done",
     "draft",
     "thread_mention",
+    "run_failed",
 ];
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -474,26 +475,27 @@ pub struct Inbox {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct InboxEntry {
-    /// The item: `fi_` and 32 hex characters, or a native issue's `iss_`
-    /// id (M202).
+    /// The item: `fi_` and 32 hex characters, a native issue's `iss_` id
+    /// (M202), or a run's `run_` id (M215).
     pub item: String,
     /// One of [`INBOX_REASONS`].
     pub reason: String,
-    /// `OWNER/NAME`; a native issue's project's name.
+    /// `OWNER/NAME`; a native issue's or a run's project's name.
     pub repo: String,
+    /// 0 for a run.
     pub number: u64,
-    /// `pr` or `issue`.
+    /// `pr`, `issue` or `run`.
     pub kind: String,
-    /// `open`, `closed` or `merged`.
+    /// `open`, `closed` or `merged`; a run's state.
     pub state: String,
     pub title: String,
     /// A GitHub login; a native issue's author's name.
     #[serde(default)]
     pub author: Option<String>,
-    /// The item on GitHub; a native issue's path on the platform page
-    /// (`/issues/<id>`).
+    /// The item on GitHub; a native issue's or a run's path on the
+    /// platform page (`/issues/<id>`, `/runs/<id>`).
     pub url: String,
-    /// A native issue's project (M202).
+    /// A native issue's or a run's project (M202, M215).
     #[serde(default)]
     pub project: Option<String>,
     /// A `thread_mention`'s room: the thread on the item (M202).

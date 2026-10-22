@@ -15,6 +15,9 @@
 //! | `PATCH`, `DELETE /api/projects/{project}/run-specs/{spec}/rules/{id}` | owners and editors (turning one on: on the list) |
 //! | `POST /api/projects/{project}/runs` (a spec, or a command or instruction on a workspace) | owners and editors, on the list |
 //!
+//! Reading runs, and a machine's agents' routes, are [`super::read`]'s
+//! and [`super::agent`]'s (M216).
+//!
 //! `{project}` is an id, or `personal`; `{spec}` a spec's id or its name
 //! in the project. A project someone isn't a member of, and a spec,
 //! schedule or rule that isn't the project's, are 404.
@@ -166,7 +169,7 @@ fn bad(why: &str) -> ApiError {
 
 /// A member who may change the project's specs and start its runs: not a
 /// team's viewer, and (`beta`) on the hosted workspaces' list.
-async fn changer(app: &Platform, account: &str, project: &str, beta: bool) -> Result<String, ApiError> {
+pub(crate) async fn changer(app: &Platform, account: &str, project: &str, beta: bool) -> Result<String, ApiError> {
     let (project, role) = membership(app, account, project, true).await?;
     if role == TeamRole::Viewer {
         return Err(err(StatusCode::FORBIDDEN, "a viewer can't change a project's runs"));
@@ -461,38 +464,56 @@ pub async fn start(
     Json(b): Json<StartRun>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), ApiError> {
     let project = changer(&app, &account, &project, true).await?;
+    let run = start_as(&app, &project, &account, None, &b)?;
+    Ok((StatusCode::CREATED, Json(run_json(&run))))
+}
+
+/// Start `b` in `project` for `account` (who may: [`changer`]), by hand
+/// or (`agent`: the machine) by its agent (M216): the run, `pending` with
+/// its job queued, under the project's live standing grant if it has one.
+pub(crate) fn start_as(
+    app: &Platform,
+    project: &str,
+    account: &str,
+    agent: Option<&str>,
+    b: &StartRun,
+) -> Result<Run, ApiError> {
     let (spec, op, workspace) = match &b.spec {
         Some(name) => {
             if b.op != Operation::default() || b.workspace.is_some() {
                 return Err(bad("a spec, or a command or instruction: not both"));
             }
-            let spec = spec_of(&app, &project, name)?;
+            let spec = spec_of(app, project, name)?;
             let (op, workspace) = (spec.op.clone(), spec.workspace.clone());
             (Some(spec), op, workspace)
         }
         None => {
             check_op(&b.op)?;
-            (None, b.op.clone(), workspace_of(&app, &project, b.workspace.as_deref())?)
+            (None, b.op.clone(), workspace_of(app, project, b.workspace.as_deref())?)
         }
     };
-    let source = match &spec {
+    let mut source = match &spec {
         Some(s) => json!({ "spec": s.id, "by": account }),
         None => json!({ "by": account }),
     };
+    if let Some(machine) = agent {
+        source["agent"] = json!(machine);
+    }
     let start = Start {
-        project: &project,
+        project,
         workspace: &workspace,
         op: &op,
         trigger: TriggerKind::Manual,
         source: &source,
-        started_by: &account,
+        started_by: account,
+        started_by_agent: agent,
         key: None,
     };
     match app.db.start_run(&start, now_ms())? {
         Started::Made(run) | Started::Already(run) => {
-            info!(%account, %project, run = %run.id, spec = ?spec.map(|s| s.id), "started a run by hand");
-            app.analytics.capture(&account, "run started", json!({ "trigger": "manual" }));
-            Ok((StatusCode::CREATED, Json(run_json(&run))))
+            info!(%account, %project, run = %run.id, spec = ?spec.map(|s| s.id), agent, "started a run by hand");
+            app.analytics.capture(account, "run started", json!({ "trigger": "manual" }));
+            Ok(run)
         }
         Started::NoMachine => Err(err(
             StatusCode::CONFLICT,

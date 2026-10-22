@@ -104,8 +104,6 @@ export interface DirDaemon {
   online: boolean;
   last_seen: number | null;
   cert: Cert;
-  /** A hosted sandbox's id (M20), if it is one. */
-  sandbox?: string | null;
   /** Someone else's (M19): its owner account and their login, and the
    * team it belongs to, if any. */
   account?: string;
@@ -1514,7 +1512,6 @@ export class ControlSession {
       // account's devices, and nothing outside their project.
       for (const d of hosted) daemons.push(...(await this.acceptHosted(d, devs)));
       this.daemons = daemons;
-      await this.loadSandboxes();
       await this.loadBilling();
       this.stale = false;
       try {
@@ -1567,55 +1564,6 @@ export class ControlSession {
   async upgrade(team?: string) {
     const r = await api<{ url: string }>("/api/billing/checkout", { team }, platformFetch);
     location.href = r.url;
-  }
-
-  // ---- hosted sandboxes (M20)
-
-  sandboxes: { id: string; state: string; device: string; join: { code: string; cert: Cert } | null }[] = [];
-  /** Hosted sandboxes are open to this account. */
-  sandboxesOpen = false;
-  /** One this browser asked for, to show when it's up. */
-  starting: string | null = null;
-
-  async loadSandboxes() {
-    const r = await api<{ sandboxes: ControlSession["sandboxes"]; open: boolean }>("/api/sandboxes").catch(() => null);
-    if (!r) return;
-    this.sandboxes = r.sandboxes;
-    this.sandboxesOpen = r.open;
-    // The device that asked approves its sandbox's daemon by itself: the
-    // code is recomputed from the key, as for any join.
-    for (const s of r.sandboxes) {
-      if (!s.join || s.device !== this.keys.id) continue;
-      if ((await joinCode(s.join.cert)) !== s.join.code) continue;
-      const signed: Cert = { ...s.join.cert, account: this.account, approver: this.keys.id, sig: "" };
-      signed.sig = await signText(this.keys, certBody(signed));
-      await api(`/api/joins/${s.join.code}/approve`, { cert: signed }).catch(() => {});
-    }
-  }
-
-  /** A hosted VM (M20); resolves with its id once asked for. */
-  async startSandbox(): Promise<string> {
-    const r = await api<{ id: string }>("/api/sandboxes", { device: this.keys.id });
-    this.starting = r.id;
-    this.emit();
-    // Poll quickly while it starts: approve its join, then wait for its
-    // daemon in the directory.
-    void (async () => {
-      for (let i = 0; i < 180 && this.starting === r.id; i++) {
-        await new Promise((res) => setTimeout(res, 1000));
-        await this.refresh();
-        if (this.daemons.some((d) => d.sandbox === r.id)) break;
-        const s = this.sandboxes.find((x) => x.id === r.id);
-        if (s?.state.startsWith("failed")) break;
-      }
-      this.emit();
-    })();
-    return r.id;
-  }
-
-  async deleteSandbox(id: string) {
-    await fetch(`/api/sandboxes/${id}`, { method: "DELETE" });
-    await this.refresh();
   }
 
   // ---- teams and people (M19)
@@ -2003,12 +1951,10 @@ export class ControlSession {
     const d = this.daemons.find((x) => x.id === id);
     if (!d) return undefined;
     const ws = this.info.url.replace(/^http/, "ws");
-    // Hosted sandboxes go through their provider, a socket each; the rest
-    // share the page's one socket to the relay (M25).
-    const mux = d.sandbox ? undefined : `${ws}/api/relay/m`;
+    // Every machine shares the page's one socket to the relay (M25).
+    const mux = `${ws}/api/relay/m`;
     // M50: blocks on control's block origins, where control serves them.
-    // A hosted sandbox's daemon doesn't dial control's relay, so not there.
-    const blockDomain = d.sandbox ? undefined : this.info.block_domain;
+    const blockDomain = this.info.block_domain;
     const hosted = d.hosted ? { project: d.hosted.project, workspace: d.hosted.workspace } : undefined;
     return { daemon: { id: d.id, noise: d.cert.noise }, direct: d.urls, relay: `${ws}/api/relay/c/${d.id}`, mux, keys: this.keys, blockDomain, hosted };
   }

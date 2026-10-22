@@ -191,16 +191,6 @@ CREATE TABLE IF NOT EXISTS push_subs (
     account TEXT NOT NULL,
     body TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS sandboxes (
-    id TEXT PRIMARY KEY,
-    account TEXT NOT NULL,
-    device TEXT NOT NULL,
-    ticket_hash TEXT NOT NULL,
-    state TEXT NOT NULL,
-    created INTEGER NOT NULL,
-    deleted INTEGER,
-    daemon TEXT
-);
 CREATE TABLE IF NOT EXISTS usage (
     account TEXT NOT NULL,
     day TEXT NOT NULL,
@@ -258,9 +248,6 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     }
     if !has("joins", "team")? {
         conn.execute_batch("ALTER TABLE joins ADD COLUMN team TEXT")?;
-    }
-    if !has("joins", "sandbox")? {
-        conn.execute_batch("ALTER TABLE joins ADD COLUMN sandbox TEXT")?;
     }
     if !has("joins", "team_sig")? {
         conn.execute_batch("ALTER TABLE joins ADD COLUMN team_sig TEXT")?;
@@ -392,6 +379,12 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // #1095: agents are out of chat, and the conversation an offer named
     // (#857) with them.
     conn.execute_batch("DROP TABLE IF EXISTS daemon_offer_reasons")?;
+    // M190: hosted sandboxes (M20) are retired for hosted workspaces, and
+    // the join ticket they joined with.
+    conn.execute_batch("DROP TABLE IF EXISTS sandboxes")?;
+    if has("joins", "sandbox")? {
+        conn.execute_batch("ALTER TABLE joins DROP COLUMN sandbox")?;
+    }
     Ok(())
 }
 
@@ -414,16 +407,6 @@ pub struct Team {
     pub founder: String,
     pub founder_root: String,
     pub locked: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SandboxRow {
-    pub id: String,
-    pub account: String,
-    pub device: String,
-    pub state: String,
-    pub created: u64,
-    pub deleted: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -527,8 +510,6 @@ pub struct Join {
     pub account: Option<String>,
     /// A team daemon's team (M19).
     pub team: Option<String>,
-    /// A hosted sandbox's (M20): its requester approves it by itself.
-    pub sandbox: Option<String>,
     /// The approver's signature putting it in `team` (#100).
     pub team_sig: Option<String>,
     /// Turned down, on the device named here (#100).
@@ -1257,7 +1238,6 @@ impl Db {
         poll_hash: &str,
         urls: &[String],
         team: Option<&str>,
-        sandbox: Option<&str>,
         features: &str,
         proven: bool,
         now: u64,
@@ -1286,8 +1266,8 @@ impl Db {
                 )?;
             } else {
                 tx.execute(
-                    "UPDATE joins SET cert = ?2, poll_hash = ?3, urls = ?4, created = ?5, team = ?6, sandbox = ?7,
-                     features = ?8, proven = ?9, replaced = ?10 WHERE code = ?1",
+                    "UPDATE joins SET cert = ?2, poll_hash = ?3, urls = ?4, created = ?5, team = ?6,
+                     features = ?7, proven = ?8, replaced = ?9 WHERE code = ?1",
                     params![
                         code,
                         serde_json::to_string(cert)?,
@@ -1295,7 +1275,6 @@ impl Db {
                         serde_json::to_string(urls)?,
                         now,
                         team,
-                        sandbox,
                         features,
                         proven,
                         replaced
@@ -1306,8 +1285,8 @@ impl Db {
             return Ok(Asked::Waiting);
         }
         tx.execute(
-            "INSERT OR REPLACE INTO joins (code, cert, poll_hash, urls, created, account, team, sandbox, features, proven)
-             VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, ?8, ?9)",
+            "INSERT OR REPLACE INTO joins (code, cert, poll_hash, urls, created, account, team, features, proven)
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7, ?8)",
             params![
                 code,
                 serde_json::to_string(cert)?,
@@ -1315,7 +1294,6 @@ impl Db {
                 serde_json::to_string(urls)?,
                 now,
                 team,
-                sandbox,
                 features,
                 proven
             ],
@@ -1328,7 +1306,7 @@ impl Db {
         Ok(self
             .c()
             .query_row(
-                "SELECT cert, poll_hash, urls, created, account, team, sandbox, team_sig, rejected,
+                "SELECT cert, poll_hash, urls, created, account, team, team_sig, rejected,
                  COALESCE(features, ''), proven, replaced, mac FROM joins
                  WHERE code = ?1 AND created >= ?2",
                 params![code, now.saturating_sub(JOIN_TTL_MS)],
@@ -1340,13 +1318,12 @@ impl Db {
                         created: r.get(3)?,
                         account: r.get(4)?,
                         team: r.get(5)?,
-                        sandbox: r.get(6)?,
-                        team_sig: r.get(7)?,
-                        rejected: r.get(8)?,
-                        features: r.get(9)?,
-                        proven: r.get(10)?,
-                        replaced: r.get(11)?,
-                        mac: r.get(12)?,
+                        team_sig: r.get(6)?,
+                        rejected: r.get(7)?,
+                        features: r.get(8)?,
+                        proven: r.get(9)?,
+                        replaced: r.get(10)?,
+                        mac: r.get(11)?,
                     })
                 },
             )
@@ -2120,133 +2097,6 @@ impl Db {
         )?)
     }
 
-    /// Accounts that ever had a sandbox.
-    pub fn sandbox_accounts(&self) -> anyhow::Result<Vec<String>> {
-        let c = self.c();
-        let mut q = c.prepare("SELECT DISTINCT account FROM sandboxes")?;
-        let rows = q.query_map([], |r| r.get(0))?;
-        Ok(rows.collect::<Result<_, _>>()?)
-    }
-
-    // ---- hosted sandboxes (M20)
-
-    pub fn add_sandbox(
-        &self,
-        id: &str,
-        account: &str,
-        device: &str,
-        ticket_hash: &str,
-        now: u64,
-    ) -> anyhow::Result<()> {
-        self.c().execute(
-            "INSERT INTO sandboxes (id, account, device, ticket_hash, state, created) VALUES (?1, ?2, ?3, ?4, 'creating', ?5)",
-            params![id, account, device, ticket_hash, now],
-        )?;
-        Ok(())
-    }
-
-    pub fn set_sandbox_state(&self, id: &str, state: &str) -> anyhow::Result<()> {
-        self.c().execute("UPDATE sandboxes SET state = ?2 WHERE id = ?1", params![id, state])?;
-        Ok(())
-    }
-
-    fn sandbox_row(r: &rusqlite::Row) -> rusqlite::Result<SandboxRow> {
-        Ok(SandboxRow {
-            id: r.get(0)?,
-            account: r.get(1)?,
-            device: r.get(2)?,
-            state: r.get(3)?,
-            created: r.get(4)?,
-            deleted: r.get(5)?,
-        })
-    }
-
-    pub fn sandboxes(&self, account: &str) -> anyhow::Result<Vec<SandboxRow>> {
-        let c = self.c();
-        let mut q = c.prepare(
-            "SELECT id, account, device, state, created, deleted FROM sandboxes WHERE account = ?1 ORDER BY created",
-        )?;
-        let rows = q.query_map(params![account], Self::sandbox_row)?;
-        Ok(rows.collect::<Result<_, _>>()?)
-    }
-
-    pub fn sandbox(&self, id: &str) -> anyhow::Result<Option<SandboxRow>> {
-        Ok(self
-            .c()
-            .query_row(
-                "SELECT id, account, device, state, created, deleted FROM sandboxes WHERE id = ?1",
-                params![id],
-                Self::sandbox_row,
-            )
-            .optional()?)
-    }
-
-    /// The sandbox a join ticket belongs to (before its daemon joined).
-    pub fn sandbox_by_ticket(&self, ticket_hash: &str) -> anyhow::Result<Option<String>> {
-        Ok(self
-            .c()
-            .query_row(
-                "SELECT id FROM sandboxes WHERE ticket_hash = ?1 AND daemon IS NULL AND deleted IS NULL",
-                params![ticket_hash],
-                |r| r.get(0),
-            )
-            .optional()?)
-    }
-
-    /// A join waiting for a sandbox's requester: its code and certificate.
-    pub fn sandbox_join(&self, sandbox: &str, now: u64) -> anyhow::Result<Option<(String, serde_json::Value)>> {
-        Ok(self
-            .c()
-            .query_row(
-                "SELECT code, cert FROM joins WHERE sandbox = ?1 AND account IS NULL AND created >= ?2",
-                params![sandbox, now.saturating_sub(JOIN_TTL_MS)],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-            )
-            .optional()?
-            .map(|(code, cert)| (code, serde_json::from_str(&cert).unwrap_or_default())))
-    }
-
-    pub fn set_sandbox_daemon(&self, id: &str, daemon: &str) -> anyhow::Result<()> {
-        self.c().execute("UPDATE sandboxes SET daemon = ?2, state = 'running' WHERE id = ?1", params![id, daemon])?;
-        Ok(())
-    }
-
-    pub fn sandbox_daemon(&self, id: &str) -> anyhow::Result<Option<String>> {
-        Ok(self
-            .c()
-            .query_row("SELECT daemon FROM sandboxes WHERE id = ?1", params![id], |r| r.get(0))
-            .optional()?
-            .flatten())
-    }
-
-    /// The live sandbox a daemon is in, if it is one.
-    pub fn sandbox_of_daemon(&self, daemon: &str) -> anyhow::Result<Option<String>> {
-        Ok(self
-            .c()
-            .query_row("SELECT id FROM sandboxes WHERE daemon = ?1 AND deleted IS NULL", params![daemon], |r| r.get(0))
-            .optional()?)
-    }
-
-    pub fn end_sandbox(&self, id: &str, now: u64) -> anyhow::Result<()> {
-        self.c().execute("UPDATE sandboxes SET deleted = ?2, state = 'deleted' WHERE id = ?1", params![id, now])?;
-        Ok(())
-    }
-
-    /// Sandbox minutes (M22): from creation to deletion (or now).
-    pub fn sandbox_minutes(&self, account: &str, since: u64, now: u64) -> anyhow::Result<u64> {
-        let c = self.c();
-        let mut q = c.prepare(
-            "SELECT created, deleted FROM sandboxes WHERE account = ?1 AND (deleted IS NULL OR deleted > ?2)",
-        )?;
-        let rows = q.query_map(params![account, since], |r| Ok((r.get::<_, u64>(0)?, r.get::<_, Option<u64>>(1)?)))?;
-        let mut ms = 0u64;
-        for row in rows {
-            let (start, end) = row?;
-            ms += end.unwrap_or(now).saturating_sub(start.max(since));
-        }
-        Ok(ms.div_ceil(60_000))
-    }
-
     // ---- Labs flags (#347)
 
     /// The flags `owner` (`account:ID` or `team:ID`) set, by name.
@@ -2466,7 +2316,6 @@ impl Db {
             "DELETE FROM share_answers WHERE account = ?1",
             "DELETE FROM push_subs WHERE account = ?1",
             "DELETE FROM notices WHERE account = ?1",
-            "DELETE FROM sandboxes WHERE account = ?1",
             "DELETE FROM labs_flags WHERE owner = 'account:' || ?1",
             "DELETE FROM usage WHERE account = ?1",
             "DELETE FROM team_requests WHERE account = ?1",

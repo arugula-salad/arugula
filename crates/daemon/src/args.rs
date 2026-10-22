@@ -99,22 +99,7 @@ pub(crate) enum Command {
         /// control, whose link has no secret to answer.
         #[arg(long, value_name = "FINGERPRINT")]
         account: Option<String>,
-        /// A hosted sandbox's one-time ticket (control passes it).
-        #[arg(long, hide = true)]
-        ticket: Option<String>,
         /// The daemon's state directory [default: as the daemon's].
-        #[arg(long, env = "ARUGULA_STATE_DIR")]
-        state_dir: Option<PathBuf>,
-    },
-    /// A hosted sandbox: make this daemon's key and write its
-    /// certificate request to `out`, for control to fetch through the
-    /// provider (it then writes control.json back).
-    #[command(hide = true)]
-    JoinRequest {
-        #[arg(long)]
-        name: String,
-        #[arg(long)]
-        out: PathBuf,
         #[arg(long, env = "ARUGULA_STATE_DIR")]
         state_dir: Option<PathBuf>,
     },
@@ -201,15 +186,10 @@ pub(crate) struct RunArgs {
     #[arg(long = "public-host")]
     pub(crate) public_hosts: Vec<String>,
 
-    /// Don't keep a socket open to control's relay: control reaches this
-    /// daemon through its provider's proxy (a hosted sandbox).
+    /// Don't keep a socket open to control's relay: clients reach this
+    /// daemon only at its own addresses.
     #[arg(long, hide = true)]
     pub(crate) no_relay: bool,
-
-    /// A hosted sandbox: when the last session closes, ask control
-    /// to delete it.
-    #[arg(long, hide = true)]
-    pub(crate) sandbox_of_control: bool,
 
     /// A hosted workspace's box (M180): headless, enrolls itself with the
     /// ticket in ARUGULA_HOSTED_TICKET or its sandbox id, at
@@ -566,14 +546,8 @@ mod tests {
             "--guest-ssh",
             "--guest-ssh-host",
         ];
-        let hidden_internals = [
-            "--guest-machines",
-            "--static-dir",
-            "--log-file",
-            "--no-relay",
-            "--sandbox-of-control",
-            "--provider-token-sha256",
-        ];
+        let hidden_internals =
+            ["--guest-machines", "--static-dir", "--log-file", "--no-relay", "--provider-token-sha256"];
         let help = |on: bool| labs_command(on).render_long_help().to_string();
         let (off, on) = (help(false), help(true));
         for flag in labs {

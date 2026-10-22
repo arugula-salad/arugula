@@ -248,7 +248,7 @@ fn refused(r: Refused) -> OpAnswer {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use arugula_control_wire::hosted;
     use arugula_e2e::{
         Cert, DeviceKeys, Kind, Trust,
@@ -261,7 +261,7 @@ mod tests {
     /// A hosted machine of an account's project, enrolled under a
     /// delegation from the account's root device; and the account's phone,
     /// another of its devices.
-    fn machine() -> (Saved, Delegation, DeviceKeys, DeviceKeys) {
+    pub(crate) fn machine() -> (Saved, Delegation, DeviceKeys, DeviceKeys) {
         let root = DeviceKeys::generate();
         let mut root_cert = Cert::new(&root, "acct1", Kind::Browser, "laptop");
         root_cert.sign_with(&root);

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use arugula_control_wire::{
     forge::Standing,
     hosted::{SetupPlan, SetupReport},
+    run_logs::{Upload, UploadGiven, Uploaded},
     transcripts::TranscriptPost,
     work::{Report, Reported, Work},
 };
@@ -218,6 +219,29 @@ pub trait PlatformPort: Send + Sync {
         let _ = workspace;
         Box::pin(async { Ok(vec![]) })
     }
+
+    /// A URL for a hosted machine to put one of its run's log chunks or
+    /// artifacts at (M213), for the hub's `POST /api/hosted/work/upload`. A
+    /// platform from before M213 keeps no run logs.
+    fn hosted_upload<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        upload: &'a Upload,
+    ) -> BoxFuture<'a, anyhow::Result<UploadGiven>> {
+        let _ = (machine, upload);
+        Box::pin(async { Ok(UploadGiven::Off) })
+    }
+
+    /// A hosted machine says it put `upload` (M213), for the hub's `POST
+    /// /api/hosted/work/uploaded`: recorded once the bucket has it.
+    fn hosted_uploaded<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        upload: &'a Upload,
+    ) -> BoxFuture<'a, anyhow::Result<Uploaded>> {
+        let _ = (machine, upload);
+        Box::pin(async { Ok(Uploaded::Refused { why: "this platform keeps no run logs".into() }) })
+    }
 }
 
 /// An account the hub deleted.
@@ -239,8 +263,9 @@ pub struct Deleted {
 /// runs (M210), deploys (M217) and what starts runs (M214), their part of
 /// `account_deleted`; hosted workspaces (M182) `hosted_wake`; hosted
 /// inference (M185) `hosted_turn` and `hosted_turn_end`; hosted machines'
-/// runs (M212) `hosted_work` and `hosted_report`; hosted workspaces' setup
-/// (M183) `hosted_plan` and `hosted_setup`; hosted workspaces' agents (M184)
+/// runs (M212) `hosted_work` and `hosted_report`, and their logs (M213)
+/// `hosted_upload` and `hosted_uploaded`; hosted workspaces' setup (M183)
+/// `hosted_plan` and `hosted_setup`; hosted workspaces' agents (M184)
 /// `machine_drives` and `hosted_transcript`; public previews (M187)
 /// `public_preview` and `public_ports`.
 impl PlatformPort for Platform {
@@ -253,23 +278,29 @@ impl PlatformPort for Platform {
 
     fn account_deleted<'a>(&'a self, deleted: &'a Deleted) -> BoxFuture<'a, anyhow::Result<()>> {
         Box::pin(async move {
-            let mut c = self.db.c();
-            let tx = c.transaction()?;
-            db::billing::erase_account(&tx, deleted)?;
-            // Before the projects go: their hosted workspaces are deleted.
-            db::hosted::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
-            db::inference::erase_account(&tx, deleted)?;
-            db::hosted_transcripts::erase_account(&tx, deleted)?;
-            db::projects::erase_account(&tx, deleted)?;
-            db::forge::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
-            db::issues::erase_account(&tx, deleted)?;
-            db::runs::erase_account(&tx, deleted)?;
-            db::deploys::erase_account(&tx, deleted)?;
-            db::triggers::erase_account(&tx, deleted)?;
-            let rooms = crate::chat::erase_account(&tx, deleted)?;
-            tx.commit()?;
-            drop(c);
+            // The connection never lives across the bucket's await.
+            let (rooms, run_files) = {
+                let mut c = self.db.c();
+                let tx = c.transaction()?;
+                db::billing::erase_account(&tx, deleted)?;
+                // Before the projects go: their hosted workspaces are deleted.
+                db::hosted::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
+                db::inference::erase_account(&tx, deleted)?;
+                db::hosted_transcripts::erase_account(&tx, deleted)?;
+                db::projects::erase_account(&tx, deleted)?;
+                db::forge::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
+                db::issues::erase_account(&tx, deleted)?;
+                // Before the runs go: their files in the run-log bucket.
+                let run_files = db::run_logs::erase_account(&tx)?;
+                db::runs::erase_account(&tx, deleted)?;
+                db::deploys::erase_account(&tx, deleted)?;
+                db::triggers::erase_account(&tx, deleted)?;
+                let rooms = crate::chat::erase_account(&tx, deleted)?;
+                tx.commit()?;
+                (rooms, run_files)
+            };
             crate::chat::account_gone(self, &rooms);
+            crate::run_logs::delete_files(self, &run_files, arugula_e2e::now_ms()).await;
             crate::cloud::account::account_deleted(self, &deleted.account)?;
             Ok(())
         })
@@ -410,5 +441,21 @@ impl PlatformPort for Platform {
 
     fn public_ports<'a>(&'a self, workspace: &'a str) -> BoxFuture<'a, anyhow::Result<Vec<(u16, String)>>> {
         Box::pin(async move { crate::hosted::previews::public_ports(self, workspace) })
+    }
+
+    fn hosted_upload<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        upload: &'a Upload,
+    ) -> BoxFuture<'a, anyhow::Result<UploadGiven>> {
+        Box::pin(crate::run_logs::upload(self, machine, upload))
+    }
+
+    fn hosted_uploaded<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        upload: &'a Upload,
+    ) -> BoxFuture<'a, anyhow::Result<Uploaded>> {
+        Box::pin(crate::run_logs::uploaded(self, machine, upload))
     }
 }

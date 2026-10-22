@@ -99,11 +99,15 @@ pub struct Dispatch {
     pub app: Arc<Platform>,
 }
 
-/// Fail a run the platform won't send, or that no machine took, saying why.
-fn fail(db: &Db, run: &str, from: State, reason: &str, now: u64) -> Result<()> {
+/// Fail a run the platform won't send, or that no machine took, saying
+/// why, and tell its people (M215's inbox).
+async fn fail(app: &Platform, db: &Db, run: &str, from: State, reason: &str, now: u64) -> Result<()> {
     let detail = json!({ "reason": reason }).to_string();
     match db.move_run(run, &Move::Control { from, to: State::Failed, at: now, detail: &detail })? {
-        Ok(_) => info!(run, reason, "run failed before it reached its machine"),
+        Ok((failed, _)) => {
+            info!(run, reason, "run failed before it reached its machine");
+            crate::inbox::run_failed(app, &failed).await;
+        }
         // It moved meanwhile (its machine took it): what it says stands.
         Err(r) => info!(run, refused = %r, "a run's dispatch didn't fail it"),
     }
@@ -135,7 +139,7 @@ impl Dispatch {
             } else {
                 "gone: its hosted workspace was deleted or made again"
             };
-            fail(db, &run.id, run.state, reason, now)?;
+            fail(&self.app, db, &run.id, run.state, reason, now).await?;
             return Ok(Step::Done);
         };
         let mut cp = match job.checkpoint.as_ref().and_then(|c| serde_json::from_value::<Checkpoint>(c.clone()).ok()) {
@@ -173,7 +177,15 @@ impl Dispatch {
         // Not taken: nothing pulled it for that long (a machine that's
         // busy with another run pulls it, and it waits).
         if waiting && now.saturating_sub(seen) > TAKE_MS {
-            fail(db, &run.id, run.state, "not_taken: its hosted workspace didn't ask for it in 15 minutes", now)?;
+            fail(
+                &self.app,
+                db,
+                &run.id,
+                run.state,
+                "not_taken: its hosted workspace didn't ask for it in 15 minutes",
+                now,
+            )
+            .await?;
             return Ok(Step::Done);
         }
         // Running: its machine says it's busy until the run ends, which
@@ -259,6 +271,9 @@ pub async fn report(app: &Platform, m: &HostedMachine, r: &Report) -> Result<Rep
     match app.db.move_run(&r.run, &Move::Daemon(&checked))? {
         Ok((run, _)) => {
             info!(run = run.id, machine = m.machine, from = %from, to = %to, "a hosted machine moved its run");
+            if run.state == State::Failed {
+                crate::inbox::run_failed(app, &run).await;
+            }
             Ok(Reported::Taken)
         }
         Err(why) => {

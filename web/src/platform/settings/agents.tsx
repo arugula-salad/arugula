@@ -3,13 +3,15 @@
 // there, and write the project's issues. Off until you turn one on, and
 // only over what you read; what they write is labelled as your agent's,
 // and every room they reach says so. The same grants as `arugula grants
-// add` (`/api/grants`, the platform's).
+// add` (`/api/grants`, the platform's). And (M216) two switches per
+// project: its agents read the project's runs and start its run specs, and
+// (apart) start commands of their own there.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { session } from "../session";
-import { liveOver, machinesOf, powersFor, type AgentScope, type Grant } from "./grants";
+import { COMMAND_POWERS, liveOver, machinesOf, powersFor, RUN_POWERS, type AgentScope, type Grant } from "./grants";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {
@@ -40,15 +42,23 @@ export function AgentGrants() {
     ...session.projects.map((p) => ({ kind: "project" as const, id: p.id, name: p.team ? `${p.name}'s channels and issues` : "Your personal project" })),
     { kind: "account", name: "Your DMs" },
   ];
-  const turn = async (machine: string, s: AgentScope, on: boolean) => {
+  const projects: AgentScope[] = session.projects.map((p) => ({
+    kind: "project" as const,
+    id: p.id,
+    name: p.team ? p.name : "Your personal project",
+  }));
+  const turn = async (machine: string, s: AgentScope, on: boolean, which?: "runs" | "commands") => {
     setErr("");
-    setBusy(`${machine}/${s.id ?? "dms"}`);
+    setBusy(`${which ? `${which}/` : ""}${machine}/${s.id ?? "dms"}`);
+    const powers = which === "runs" ? RUN_POWERS : which === "commands" ? COMMAND_POWERS : powersFor(s.kind);
     try {
       if (on) {
         const scope = s.kind === "project" ? { kind: "project", id: s.id } : { kind: "account" };
-        for (const power of powersFor(s.kind)) await call("/api/grants", { daemon: machine, power, scope });
+        for (const power of powers) await call("/api/grants", { daemon: machine, power, scope });
       } else {
-        for (const g of liveOver(grants, machine, s)) await call(`/api/grants/${encodeURIComponent(g.id)}/revoke`, {});
+        for (const g of liveOver(grants, machine, s, which ? powers : undefined)) {
+          await call(`/api/grants/${encodeURIComponent(g.id)}/revoke`, {});
+        }
       }
     } catch (e) {
       setErr((e as Error).message);
@@ -87,6 +97,43 @@ export function AgentGrants() {
               </label>
             );
           })}
+        </div>
+      ))}
+      <h2>Agents and runs</h2>
+      <p class="dim">
+        Let the agents on one of your machines read a project's runs and start its run specs on its hosted workspaces, and, apart, start
+        commands of their own there. Off until you turn them on, and never more than you can do: a run they start is yours, labelled as
+        started by your agent on that machine. They never approve anything.
+      </p>
+      {machines.map((m) => (
+        <div class="agent-grants" data-agent-runs={m.id} key={m.id}>
+          <h3>{m.name}</h3>
+          {projects.flatMap((s) =>
+            (
+              [
+                ["runs", RUN_POWERS, "read its runs and start its run specs"],
+                ["commands", COMMAND_POWERS, "start commands of their own"],
+              ] as const
+            ).map(([which, powers, what]) => {
+              const live = liveOver(grants, m.id, s, [...powers]);
+              const key = `${which}/${m.id}/${s.id}`;
+              const all = powers.every((p) => live.some((g) => g.power === p));
+              return (
+                <label class="control-confirm" key={key}>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    data-agent-runs-switch={key}
+                    checked={live.length > 0}
+                    disabled={busy === key}
+                    onChange={(e) => void turn(m.id, s, (e.target as HTMLInputElement).checked, which)}
+                  />{" "}
+                  {s.name}: {what}
+                  {live.length > 0 && !all && <span class="dim"> (only {live.map((g) => g.power).join(", ")})</span>}
+                </label>
+              );
+            }),
+          )}
         </div>
       ))}
       {err ? <p class="control-error">{err}</p> : null}

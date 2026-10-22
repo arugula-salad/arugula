@@ -8,9 +8,14 @@
 //!   runs once, and after the daemon restarts too it only sends its reports
 //!   again;
 //! - a run whose grant was signed by someone else, or whose operation
-//!   doesn't hash to its hash, fails without running.
+//!   doesn't hash to its hash, fails without running;
+//! - M213: a run's log goes to the bucket in chunks through the URLs
+//!   control signs, all of it, and its artifact with its digest, before
+//!   its end is reported; with no bucket, the run runs and its log stays
+//!   in its pane.
 
 use std::{
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -21,6 +26,7 @@ use std::{
 
 use arugula_control_wire::{
     hosted::{EnrollRequest, Enrollment},
+    run_logs::{Upload, UploadGiven, Uploaded},
     work::{Report, Work, WorkItem},
 };
 use arugula_e2e::{
@@ -32,10 +38,11 @@ use arugula_e2e::{
 use arugula_testkit::arugulad;
 use axum::{
     Json, Router,
-    extract::{State as Axum, ws::WebSocketUpgrade},
-    http::StatusCode,
+    body::Bytes,
+    extract::{Path as AxumPath, RawQuery, State as Axum, ws::WebSocketUpgrade},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use serde_json::json;
 use sha2::{Digest as _, Sha256};
@@ -63,6 +70,14 @@ struct Fake {
     turns: Arc<Mutex<Vec<String>>>,
     /// Reports aren't taken: the platform is down.
     down: Arc<AtomicBool>,
+    /// The bucket's objects, by key (M213).
+    objects: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
+    /// The uploads control recorded, in order.
+    recorded: Arc<Mutex<Vec<Upload>>>,
+    /// Puts the bucket refused, and why.
+    refused: Arc<Mutex<Vec<String>>>,
+    /// No run-log bucket.
+    off: Arc<AtomicBool>,
 }
 
 impl Fake {
@@ -94,7 +109,17 @@ impl Fake {
             turns: Default::default(),
             again: Default::default(),
             down: Default::default(),
+            objects: Default::default(),
+            recorded: Default::default(),
+            refused: Default::default(),
+            off: Default::default(),
         }
+    }
+
+    /// What control recorded of `run`'s log, in order, and its artifacts.
+    fn uploads_of(&self, run: &str) -> (Vec<Upload>, Vec<Upload>) {
+        let all: Vec<Upload> = self.recorded.lock().unwrap().iter().filter(|u| u.run() == run).cloned().collect();
+        all.into_iter().partition(|u| matches!(u, Upload::Log { .. }))
     }
 
     fn device(&self) -> String {
@@ -211,6 +236,65 @@ async fn report(Axum(f): Axum<Fake>, Json(r): Json<Report>) -> Response {
     Json(json!({ "kind": "taken" })).into_response()
 }
 
+fn key(u: &Upload) -> String {
+    match u {
+        Upload::Log { run, n, .. } => format!("{run}/log/{n}"),
+        Upload::Artifact { run, name, .. } => format!("{run}/artifacts/{name}"),
+    }
+}
+
+/// A URL as the platform signs one: for one key, its size signed.
+async fn upload(Axum(f): Axum<Fake>, Json(u): Json<Upload>) -> Json<UploadGiven> {
+    if f.off.load(SeqCst) {
+        return Json(UploadGiven::Off);
+    }
+    let url = format!(
+        "{}/bucket/{}?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=id%2F20261022%2Fauto%2Fs3%2Faws4_request\
+         &X-Amz-Date=20261022T000000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=content-length%3Bhost\
+         &X-Amz-Signature={}&size={}",
+        f.url.lock().unwrap(),
+        key(&u),
+        "ab".repeat(32),
+        u.size()
+    );
+    Json(UploadGiven::Put { url, expires_at: u64::MAX })
+}
+
+/// The bucket: a put with the URL's shape and exactly its signed size.
+async fn bucket(
+    Axum(f): Axum<Fake>,
+    AxumPath(key): AxumPath<String>,
+    RawQuery(q): RawQuery,
+    headers: HeaderMap,
+    body: Bytes,
+) -> StatusCode {
+    let q = q.unwrap_or_default();
+    let size = q.split('&').find_map(|kv| kv.strip_prefix("size=")).unwrap_or_default().to_owned();
+    let length = headers.get("content-length").and_then(|v| v.to_str().ok()).unwrap_or_default().to_owned();
+    let signed = ["X-Amz-Algorithm=AWS4-HMAC-SHA256", "X-Amz-SignedHeaders=content-length%3Bhost", "X-Amz-Signature="]
+        .iter()
+        .all(|p| q.contains(p));
+    if !signed || length != size || body.len().to_string() != size {
+        f.refused.lock().unwrap().push(format!("{key}: {q} length {length}"));
+        return StatusCode::FORBIDDEN;
+    }
+    f.objects.lock().unwrap().insert(key, body.to_vec());
+    StatusCode::OK
+}
+
+/// Recorded once the bucket has it, with its size and digest.
+async fn uploaded(Axum(f): Axum<Fake>, Json(u): Json<Upload>) -> Json<Uploaded> {
+    let there = f.objects.lock().unwrap().get(&key(&u)).cloned();
+    if !there.is_some_and(|b| b.len() as u64 == u.size() && hex::encode(Sha256::digest(&b)) == u.sha256()) {
+        return Json(Uploaded::Refused { why: "not in the bucket".into() });
+    }
+    let mut r = f.recorded.lock().unwrap();
+    if !r.contains(&u) {
+        r.push(u);
+    }
+    Json(Uploaded::Kept)
+}
+
 /// M185's gate: a hosted box asks before each agent turn; any may run.
 async fn turn(Axum(f): Axum<Fake>, Json(b): Json<serde_json::Value>) -> Json<serde_json::Value> {
     f.turns.lock().unwrap().push(format!("start {}", b["agent"].as_str().unwrap_or_default()));
@@ -233,6 +317,10 @@ fn serve(rt: &tokio::runtime::Runtime, f: Fake) -> String {
             .route("/api/hosted/work/report", post(report))
             .route("/api/hosted/turns", post(turn))
             .route("/api/hosted/turns/{turn}/end", post(turn_end))
+            .route("/api/hosted/work/upload", post(upload))
+            .route("/api/hosted/work/uploaded", post(uploaded))
+            // A chunk is 4 MiB: past axum's 2 MB default.
+            .route("/bucket/{*key}", put(bucket).layer(axum::extract::DefaultBodyLimit::max(16 << 20)))
             .with_state(f.clone());
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let at = format!("http://{}", l.local_addr().unwrap());
@@ -412,4 +500,64 @@ fn a_hosted_machine_runs_each_run_once() {
     wait(&marks, &f, "the turn ended", || f.turns.lock().unwrap().len() == 2);
     assert_eq!(*f.turns.lock().unwrap(), ["start claude", "end trn_1"]);
     let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// M213: a run's log goes to the bucket in chunks, every byte of its
+/// pane's output in order, and its artifact with its digest, all before
+/// its end is reported. With no bucket, a run runs, and nothing is sent.
+#[test]
+fn a_hosted_runs_log_and_artifact_go_to_the_bucket() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::new();
+    let url = serve(&rt, f.clone());
+    let d = arugulad!("hostedlogs")
+        .no_wisp()
+        .no_tailscale()
+        .args(["--hosted"])
+        .env("ARUGULA_HOSTED_TICKET", "ticket-1")
+        .env("ARUGULA_CONTROL_URL", &url)
+        .env("ARUGULA_WORK_PULL_MS", "150")
+        .env("ARUGULA_HOSTED_RUN_USER", "")
+        .wait_secs(30)
+        .start();
+    d.wait_for("the box enrolled", || !f.device().is_empty());
+
+    // More than a chunk (4 MiB) of output, then an artifact.
+    let a = run_id('a');
+    let script = "seq 1 900000; echo the-end; printf 'hi\\n' > \"$ARUGULA_ARTIFACTS/out.txt\"; \
+                  ln -s /etc/passwd \"$ARUGULA_ARTIFACTS/passwd\"";
+    f.items.lock().unwrap().push(f.item(&a, script, f.grant(&f.root)));
+    d.wait_for("run a reported", || f.reports_of(&a).len() == 2);
+    assert_eq!(states(&f.reports_of(&a)), ran(1));
+    // Before its end was reported, everything went.
+    let (logs, artifacts) = f.uploads_of(&a);
+    assert!(logs.len() >= 2, "{logs:?}");
+    let mut all = Vec::new();
+    for (i, u) in logs.iter().enumerate() {
+        let Upload::Log { n, offset, size, .. } = u else { unreachable!() };
+        assert_eq!((*n as usize, *offset), (i, all.len() as u64), "chunks follow each other");
+        assert!(*size <= 4 * 1024 * 1024);
+        all.extend_from_slice(&f.objects.lock().unwrap()[&format!("{a}/log/{n}")]);
+    }
+    let text = String::from_utf8_lossy(&all);
+    assert!(text.starts_with(&format!("arugula run {a} · operation sha256:")), "{}", &text[..200]);
+    assert!(text.contains("\r\n899999\r\n900000\r\nthe-end"), "the whole log, in order");
+    assert_eq!(text.matches("\r\n450000\r\n").count(), 1);
+    let want = Upload::Artifact {
+        run: a.clone(),
+        name: "out.txt".into(),
+        size: 3,
+        sha256: hex::encode(Sha256::digest(b"hi\n")),
+    };
+    assert_eq!(artifacts, vec![want], "the file, not the link");
+    assert!(f.refused.lock().unwrap().is_empty(), "{:?}", f.refused.lock().unwrap());
+
+    // No bucket: the run runs, and nothing's sent.
+    f.off.store(true, SeqCst);
+    let b = run_id('b');
+    f.items.lock().unwrap().push(f.item(&b, "echo quiet", f.grant(&f.root)));
+    d.wait_for("run b reported", || f.reports_of(&b).len() == 2);
+    assert_eq!(states(&f.reports_of(&b)), ran(1));
+    assert_eq!(f.uploads_of(&b), (vec![], vec![]));
+    assert!(!f.objects.lock().unwrap().keys().any(|k| k.starts_with(&b)));
 }
