@@ -1,0 +1,252 @@
+//! Hosted workspaces (M179, #1240): `arugulad --hosted` in a box on the
+//! compute provider ([`crate::compute`], M176), in a project ("A hosted
+//! machine is arugulad in a rented sandbox", aru-092). The platform keeps
+//! what a workspace is (its [`Spec`]), where it runs (its box), and drives
+//! the box's lifecycle on its leased [`worker`]: create, wake, pause,
+//! delete and rebuild. Nothing reaches into the box from here: its daemon
+//! dials out and brings terminals, agents and previews itself.
+//!
+//! - **Who.** A project's members list and open its workspaces; its owners
+//!   and editors (not a team's viewers) create, rebuild and delete them
+//!   ([`routes`]). Making one also needs the account on
+//!   `ARUGULA_HOSTED_ACCOUNTS`.
+//! - **A box** is made from the current release's template ([`template`])
+//!   with the metadata `arugula_workspace`, `arugula_project`,
+//!   `arugula_release` and `arugula_template`. It pauses (memory and disk
+//!   kept) when its timeout passes, and only a wake resumes it. A create is
+//!   never sent twice: after a lost answer the box is found by its metadata.
+//! - **Enrolling** ("Control enrolls hosted machines under a project
+//!   delegation", aru-095). A box from a running snapshot can't read the env
+//!   it was made with, so it enrolls by its sandbox id: once the box is made,
+//!   the platform asks the hub to record a one-time enrollment for that id
+//!   ([`enroll`], about two minutes). The sandbox id is a bearer secret for
+//!   that window: it's never logged, answered or put in a URL. A box that
+//!   doesn't enroll in time, or whose enrollment the hub refuses, is deleted
+//!   (fail closed). Where the box isn't a snapshot (loam, tests:
+//!   `ARUGULA_HOSTED_ENROLL=ticket`), the hub makes a one-time ticket that
+//!   goes in the box's env instead.
+//! - **Not here yet.** Holding a busy box (M181) and the hub waking one on
+//!   connect (M182) plug into the worker and [`ask`]; setup in a visible
+//!   pane and "rebuild needed" on the page are M183's, from
+//!   [`HostedWorkspace::rebuild_needed`].
+//!
+//! The provider's key never reaches a client or a box, and neither does an
+//! inference key ([`crate::compute`]).
+
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
+
+use crate::{Platform, cloud::secrets::SecretCipher};
+
+pub mod enroll;
+pub mod routes;
+#[cfg(test)]
+mod tests;
+pub mod worker;
+
+pub use crate::db::hosted::HostedWorkspace;
+
+/// Hosted workspaces' flags and their env vars.
+#[derive(clap::Args, Debug, Clone, Default)]
+#[group(id = "hosted")]
+pub struct Args {
+    /// The template new boxes are made from. M177 records a template per
+    /// release, and its lookup takes over from this flag.
+    #[arg(long, env = "ARUGULA_HOSTED_TEMPLATE")]
+    pub hosted_template: Option<String>,
+    /// How a new box enrolls: `sandbox` (by its sandbox id, for a box made
+    /// from a running snapshot) or `ticket` (a one-time ticket in its env,
+    /// for loam and testnet, whose boxes boot fresh).
+    #[arg(long, env = "ARUGULA_HOSTED_ENROLL", default_value = "sandbox", value_parser = ["sandbox", "ticket"])]
+    pub hosted_enroll: String,
+    /// Who may make hosted workspaces: account ids, comma-separated, or `*`.
+    /// Empty: nobody.
+    #[arg(long, env = "ARUGULA_HOSTED_ACCOUNTS", value_delimiter = ',')]
+    pub hosted_accounts: Vec<String>,
+}
+
+impl Args {
+    /// The config these flags set up. `secret_key` is
+    /// `ARUGULA_CLOUD_SECRET_KEY`, which seals hosted workspaces' secrets
+    /// as it does cloud secrets.
+    pub fn config(self, secret_key: Option<&str>) -> anyhow::Result<Config> {
+        Ok(Config {
+            template: self.hosted_template.filter(|t| !t.trim().is_empty()),
+            enroll: if self.hosted_enroll == "ticket" { EnrollBy::Ticket } else { EnrollBy::Sandbox },
+            accounts: self.hosted_accounts.into_iter().map(|a| a.trim().to_owned()).filter(|a| !a.is_empty()).collect(),
+            cipher: secret_key.filter(|k| !k.is_empty()).map(SecretCipher::new).transpose()?.map(std::sync::Arc::new),
+        })
+    }
+}
+
+/// How a new box enrolls ([`Args::hosted_enroll`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum EnrollBy {
+    /// By its sandbox id, which it reads from `/run/e2b/.E2B_SANDBOX_ID`.
+    #[default]
+    Sandbox,
+    /// By a one-time ticket in its env (`ARUGULA_HOSTED_TICKET`).
+    Ticket,
+}
+
+/// What hosted workspaces run with, beside [`Platform::compute`].
+#[derive(Clone, Default)]
+pub struct Config {
+    pub template: Option<String>,
+    pub enroll: EnrollBy,
+    pub accounts: Vec<String>,
+    /// Seals [`crate::db::hosted`]'s secrets, when there's a key.
+    pub cipher: Option<std::sync::Arc<SecretCipher>>,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("template", &self.template)
+            .field("enroll", &self.enroll)
+            .field("accounts", &self.accounts)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Config {
+    /// Whether this account may make hosted workspaces.
+    pub fn allows(&self, account: &str) -> bool {
+        self.accounts.iter().any(|a| a == account || a == "*")
+    }
+}
+
+/// The template a new box is made from: the current release's.
+///
+/// The seam for M177, which records a template per release: until its
+/// lookup lands, `ARUGULA_HOSTED_TEMPLATE` names it.
+pub fn template(app: &Platform) -> Option<String> {
+    app.hosted.template.clone()
+}
+
+/// What the box carries for [`crate::compute::Substrate::list`].
+pub fn metadata(workspace: &str, project: &str, template: &str) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        ("arugula_workspace".into(), workspace.into()),
+        ("arugula_project".into(), project.into()),
+        ("arugula_release".into(), env!("CARGO_PKG_VERSION").into()),
+        ("arugula_template".into(), template.into()),
+    ])
+}
+
+/// A new hosted workspace's id: `hw_` and 32 hex characters, beside
+/// `prj_`'s.
+pub fn new_id() -> String {
+    format!("hw_{}", hex::encode(arugula_e2e::random::<16>()))
+}
+
+/// What a hosted workspace is built from (M183 runs it in a visible pane).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Spec {
+    /// HTTPS clone URLs, with no credentials in them.
+    #[serde(default)]
+    pub repos: Vec<String>,
+    /// Packages to install.
+    #[serde(default)]
+    pub packages: Vec<String>,
+    /// A shell script run after both.
+    #[serde(default)]
+    pub setup: String,
+    /// The names of env vars it takes from its secrets.
+    #[serde(default)]
+    pub env: Vec<String>,
+}
+
+const MAX_REPOS: usize = 10;
+const MAX_PACKAGES: usize = 50;
+const MAX_SETUP: usize = 64 * 1024;
+const MAX_ENV: usize = 32;
+
+impl Spec {
+    /// Why it can't be kept, if it can't.
+    pub fn check(&self) -> Result<(), String> {
+        if self.repos.len() > MAX_REPOS {
+            return Err(format!("at most {MAX_REPOS} repos"));
+        }
+        if let Some(r) = self.repos.iter().find(|r| !crate::cloud::https_repository(r)) {
+            return Err(format!("{r:?} isn't an HTTPS clone URL without credentials"));
+        }
+        if self.packages.len() > MAX_PACKAGES {
+            return Err(format!("at most {MAX_PACKAGES} packages"));
+        }
+        let package = |p: &str| {
+            !p.is_empty()
+                && p.len() <= 100
+                && !p.starts_with('-')
+                && p.bytes().all(|b| b.is_ascii_alphanumeric() || b"._+-:=@/".contains(&b))
+        };
+        if let Some(p) = self.packages.iter().find(|p| !package(p)) {
+            return Err(format!("{p:?} isn't a package name"));
+        }
+        if self.setup.len() > MAX_SETUP {
+            return Err(format!("the setup script is over {} KiB", MAX_SETUP / 1024));
+        }
+        if self.env.len() > MAX_ENV {
+            return Err(format!("at most {MAX_ENV} env names"));
+        }
+        if let Some(n) = self.env.iter().find(|n| !crate::cloud::secrets::valid_name(n)) {
+            return Err(format!("{n:?} isn't an env name a workspace may take"));
+        }
+        Ok(())
+    }
+
+    /// Its SHA-256, hex: what "rebuild needed" compares.
+    pub fn hash(&self) -> String {
+        hex::encode(Sha256::digest(serde_json::to_vec(self).unwrap_or_default()))
+    }
+}
+
+/// A workspace's name: 1–64 letters, digits, `-`, `_` and `.`, starting
+/// with a letter or digit.
+pub fn good_name(name: &str) -> bool {
+    name.len() <= 64
+        && name.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric())
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+}
+
+/// What someone may ask of a workspace that the worker does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ask {
+    /// Resume a paused box (M182's wake on connect asks this too).
+    Wake,
+    /// Pause a running box. Only between turns: M181 asks, never while its
+    /// daemon reports busy.
+    Pause,
+    /// Delete the box and make it again from the spec.
+    Rebuild,
+    Delete,
+}
+
+impl Ask {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Ask::Wake => "wake",
+            Ask::Pause => "pause",
+            Ask::Rebuild => "rebuild",
+            Ask::Delete => "delete",
+        }
+    }
+}
+
+/// Ask the worker to do `what` to a workspace: whether it was taken. A
+/// delete always is (until it's done), a rebuild unless a delete is asked,
+/// and a wake or a pause only of a box that's paused or running with
+/// nothing else asked.
+pub fn ask(app: &Platform, workspace: &str, what: Ask) -> anyhow::Result<bool> {
+    app.db.ask_hosted(workspace, what, arugula_e2e::now_ms())
+}
+
+/// The lifecycle's background work, when this platform has a compute
+/// provider.
+pub fn start(app: &std::sync::Arc<Platform>) {
+    if app.compute.is_some() {
+        worker::start(app.clone());
+    }
+}

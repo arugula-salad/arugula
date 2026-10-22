@@ -78,6 +78,11 @@ struct Args {
     #[command(flatten)]
     compute: arugula_platform::compute::Args,
 
+    /// Hosted workspaces (M179): ARUGULA_HOSTED_TEMPLATE,
+    /// ARUGULA_HOSTED_ENROLL and ARUGULA_HOSTED_ACCOUNTS.
+    #[command(flatten)]
+    hosted: arugula_platform::hosted::Args,
+
     #[command(flatten)]
     billing: arugula_platform::billing::Args,
 
@@ -161,6 +166,7 @@ async fn run() -> anyhow::Result<()> {
     }
     let mut p = Platform::new(cfg, db, hub, http, analytics);
     p.stripe = a.billing.stripe()?;
+    p.hosted = a.hosted.config(a.cloud.cloud_secret_key.as_deref())?;
     p.cloud = a.cloud.cloud()?;
     p.compute = a.compute.substrate()?;
     p.github = a.github_app.app(&a.github_api)?;
@@ -170,6 +176,7 @@ async fn run() -> anyhow::Result<()> {
         info!("paused: no cloud worker, approval pushes, usage reports or grant follower until restarted without it");
     }
     arugula_platform::cloud::start(&p);
+    arugula_platform::hosted::start(&p);
     // Chat follows the hub's change feed, and so do projects and grants (a
     // machine that joins gets its `cloud.drive` grant from it).
     arugula_platform::chat::start(&p);

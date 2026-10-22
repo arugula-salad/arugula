@@ -199,6 +199,11 @@ struct Args {
     #[command(flatten)]
     compute: arugula_platform::compute::Args,
 
+    /// Hosted workspaces (M179): the platform's flags, used when it runs
+    /// in process.
+    #[command(flatten)]
+    hosted: arugula_platform::hosted::Args,
+
     /// The platform's own database (M143): `postgres://` puts it on
     /// Postgres. Without it, a second connection to `--db`, as always.
     #[command(flatten)]
@@ -433,6 +438,7 @@ fn platform(
     cloud: Option<arugula_platform::cloud::Cloud>,
     github: Option<arugula_platform::forge::GithubApp>,
     compute: Option<Arc<dyn arugula_platform::compute::Substrate>>,
+    hosted: arugula_platform::hosted::Config,
     http: &reqwest::Client,
     analytics: &analytics::Analytics,
 ) -> (gateway::PlatformAt, Arc<hub_port::InProcess>) {
@@ -442,6 +448,7 @@ fn platform(
     p.cloud = cloud;
     p.github = github;
     p.compute = compute;
+    p.hosted = hosted;
     (gateway::PlatformAt::InProcess(Arc::new(p)), hub)
 }
 
@@ -465,6 +472,7 @@ impl App {
             None,
             None,
             None,
+            Default::default(),
             &http,
             &analytics::Analytics::default(),
         );
@@ -960,6 +968,7 @@ async fn run() -> anyhow::Result<()> {
     let (platform, hub_port) = if a.platform == "in-process" {
         // A second connection to the same file: the platform never reads
         // the hub's tables (#1153).
+        let hosted = a.hosted.clone().config(a.cloud.cloud_secret_key.as_deref())?;
         let cloud = a.cloud.cloud()?;
         let cfg = arugula_platform::Config {
             public_url: public_url.clone(),
@@ -969,7 +978,7 @@ async fn run() -> anyhow::Result<()> {
         info!("the platform runs in process");
         let github = a.github_app.app(&a.github_api)?;
         let compute = a.compute.clone().substrate()?;
-        platform(a.platform_db.open(&a.db)?, cfg, stripe, cloud, github, compute, &http, &analytics)
+        platform(a.platform_db.open(&a.db)?, cfg, stripe, cloud, github, compute, hosted, &http, &analytics)
     } else {
         // The platform is its own process: this hub is its gateway (M140).
         let key = platform_key.clone().context("--platform is a URL, so ARUGULA_PLATFORM_KEY is needed")?;
@@ -1070,6 +1079,7 @@ async fn run() -> anyhow::Result<()> {
     // process its own binary runs it.
     if let Some(p) = app.platform.local() {
         arugula_platform::cloud::start(p);
+        arugula_platform::hosted::start(p);
         // Chat follows the hub's change feed (M138), and so do projects and
         // grants: a machine that joins gets its `cloud.drive` grant from it.
         arugula_platform::chat::start(p);
