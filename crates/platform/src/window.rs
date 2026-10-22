@@ -386,7 +386,8 @@ fn running_env(var: &str) -> Option<(u32, String)> {
 
 /// The first words that make either binary run one of these instead of
 /// serving (and `platform`, control's prefix for them).
-pub const COMMANDS: [&str; 7] = ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "platform"];
+pub const COMMANDS: [&str; 8] =
+    ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "previews", "platform"];
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -465,6 +466,18 @@ enum What {
         #[arg(long)]
         db: Place,
     },
+    /// The public previews that are public now (M187): id, workspace,
+    /// project, port, who made it public and until when. With `--off`,
+    /// takes one down at once first (an abuse report): the hub and the
+    /// machine stop serving it within a minute.
+    Previews {
+        /// A file, or a `postgres://` URL.
+        #[arg(long)]
+        db: Place,
+        /// The preview to take down: its id, host or URL.
+        #[arg(long)]
+        off: Option<String>,
+    },
 }
 
 /// `var` as the running server has it, else as this shell does, and
@@ -515,6 +528,27 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
             let to = arugula_e2e::now_ms();
             let r = portable::usage(&db, to.saturating_sub(days * 86_400_000), to)?;
             print!("{}", r.render(&db.to_string(), days));
+        }
+        What::Previews { db, off } => {
+            let (taken, list) = portable::previews(&db, off.as_deref())?;
+            if let Some(o) = &off {
+                println!("{}", if taken { format!("took down {o}") } else { format!("no public preview {o}") });
+            }
+            println!("{} public previews in {db}", list.len());
+            for p in &list {
+                println!(
+                    "{}  {} ({})  port {}  by {}  until {}",
+                    p.id,
+                    p.workspace,
+                    p.project,
+                    p.port,
+                    p.by.as_deref().unwrap_or("(deleted account)"),
+                    p.until
+                );
+            }
+            if off.is_some() && !taken {
+                bail!("nothing taken down");
+            }
         }
         What::SecretsCheck { db } => {
             const VAR: &str = "ARUGULA_CLOUD_SECRET_KEY";

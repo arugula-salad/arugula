@@ -227,6 +227,17 @@ impl PlatformPort for PlatformAt {
     ) -> BoxFuture<'a, anyhow::Result<arugula_platform::Archived>> {
         self.port().hosted_transcript(workspace, machine, transcript)
     }
+
+    fn public_preview<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<Option<arugula_platform::PublicPreview>>> {
+        self.port().public_preview(id)
+    }
+
+    fn public_ports<'a>(&'a self, workspace: &'a str) -> BoxFuture<'a, anyhow::Result<Vec<(u16, String)>>> {
+        self.port().public_ports(workspace)
+    }
 }
 
 /// An out-of-process platform: `PlatformPort` over HTTP, and the way this

@@ -45,6 +45,7 @@ pub mod migrate;
 pub mod mirror;
 pub mod objects;
 pub mod pg;
+pub mod previews;
 pub mod projects;
 pub mod run_grants;
 pub mod run_work;

@@ -18,7 +18,7 @@ use arugula_control_wire::{
     work::{Report, Reported, Work},
 };
 
-pub use crate::hosted::{inference::TurnAnswer, transcripts::Archived};
+pub use crate::hosted::{inference::TurnAnswer, previews::PublicPreview, transcripts::Archived};
 use crate::{
     Platform, billing, db,
     forge::{
@@ -202,6 +202,22 @@ pub trait PlatformPort: Send + Sync {
         let _ = (workspace, machine, transcript);
         Box::pin(async { anyhow::bail!("this platform doesn't archive hosted transcripts") })
     }
+
+    /// The public preview with this id (M187), if it's public now: which
+    /// workspace, machine and port the hub serves it from. A platform from
+    /// before M187 has none.
+    fn public_preview<'a>(&'a self, id: &'a str) -> BoxFuture<'a, anyhow::Result<Option<PublicPreview>>> {
+        let _ = id;
+        Box::pin(async { Ok(None) })
+    }
+
+    /// A hosted machine asks which of its workspace's ports are public now
+    /// (M187), and under which ids, before it serves one. A platform from
+    /// before M187 has none.
+    fn public_ports<'a>(&'a self, workspace: &'a str) -> BoxFuture<'a, anyhow::Result<Vec<(u16, String)>>> {
+        let _ = workspace;
+        Box::pin(async { Ok(vec![]) })
+    }
 }
 
 /// An account the hub deleted.
@@ -225,7 +241,8 @@ pub struct Deleted {
 /// inference (M185) `hosted_turn` and `hosted_turn_end`; hosted machines'
 /// runs (M212) `hosted_work` and `hosted_report`; hosted workspaces' setup
 /// (M183) `hosted_plan` and `hosted_setup`; hosted workspaces' agents (M184)
-/// `machine_drives` and `hosted_transcript`.
+/// `machine_drives` and `hosted_transcript`; public previews (M187)
+/// `public_preview` and `public_ports`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         Box::pin(async move {
@@ -385,5 +402,13 @@ impl PlatformPort for Platform {
         transcript: &'a TranscriptPost,
     ) -> BoxFuture<'a, anyhow::Result<Archived>> {
         Box::pin(crate::hosted::transcripts::archive(self, workspace, machine, transcript.clone()))
+    }
+
+    fn public_preview<'a>(&'a self, id: &'a str) -> BoxFuture<'a, anyhow::Result<Option<PublicPreview>>> {
+        Box::pin(async move { crate::hosted::previews::lookup(self, id) })
+    }
+
+    fn public_ports<'a>(&'a self, workspace: &'a str) -> BoxFuture<'a, anyhow::Result<Vec<(u16, String)>>> {
+        Box::pin(async move { crate::hosted::previews::public_ports(self, workspace) })
     }
 }

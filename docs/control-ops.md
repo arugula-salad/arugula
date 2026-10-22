@@ -139,6 +139,24 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
     refresh. With it, port and editor blocks open on them with no block
     flags (no `--block-listen`); their own page doesn't offer those
     blocks, since it can't show them.
+- **Public previews** (M187, optional): `ARUGULA_PREVIEW_DOMAIN`
+  (`arugula.site` for the hosted one), read by both the hub and the
+  platform, lets a project's owners and editors give a hosted workspace's
+  port a public address, `<id>.<domain>`, for 7 days unless renewed
+  ([control-e2e.md](control-e2e.md#public-previews)). Off when unset.
+  - Use a registrable domain of its own, used for nothing else: a
+    stranger's page must share no site with control's cookies or with
+    block origins. Control refuses to start with control's own host, the
+    block domain or the platform page's host, or a parent or child of one.
+  - Point a wildcard DNS name (`*.<domain>`) at the hub, with a wildcard
+    certificate. **The hub terminates HTTPS for it and sees public
+    previews' traffic in plain text** (they're public; members' previews
+    stay end to end). On those hosts it serves only previews and its own
+    short "not public" and "asleep" pages.
+  - Set the same value on the platform, which makes the ids and answers
+    the URLs. Without it there, nothing can be made public.
+  - Abuse and takedown: "Public previews" under "Operating the hosted
+    one".
 - **Shared Docs** (#1064): always on, and idle until a machine calls. With
   a block domain, anyone opens a link at `docs.<domain>` (a fixed label,
   so the wildcard DNS name and certificate cover it); without one, at
@@ -2353,6 +2371,83 @@ boxes (their disks and memory, and its broker's secrets): docs/control-e2e.md
   which is `fly ssh console -a arugula-platform -C "/arugula-platform usage --db env:ARUGULA_PLATFORM_DATABASE_URL --days 7"`.
   E2B's console (its usage tab) has the bill itself; the two should agree
   within the time a box takes to start and pause.
+
+### Public previews
+
+A hosted workspace's port that one of its project's owners or editors
+makes public is served to anyone at `https://<id>.arugula.site` (M187,
+#1248; [control-e2e.md](control-e2e.md#public-previews)). The hub
+terminates HTTPS for the domain and reaches the box over its relay
+socket, so it sees those pages in plain text: they're public.
+
+- **Abuse contact:** `abuse@arugula.io` (Jake's choice, 2026-10-22).
+  Reports name the preview's address.
+- **Taking one down at once.** On the platform's machine, by its id, host
+  or URL:
+
+  ```
+  fly ssh console -a arugula-platform -C "/arugula-platform previews --db env:ARUGULA_PLATFORM_DATABASE_URL --off https://<id>.arugula.site"
+  ```
+
+  It clears the port's public columns in `hosted_ports` (who made it
+  public stays in the platform's log). The hub stops routing the id within
+  15 seconds and the box refuses it within 20, whichever comes first;
+  open WebSockets close within 20 seconds. The same command without
+  `--off` lists every preview that's public now: id, workspace, project,
+  port, who made it public and until when. Making the port public again
+  gives it a new id, so the reported link stays dead. With the platform in
+  process it's `arugula-control platform previews --db <control.db>`.
+  To find the person behind one, the workspace's project and `public_by`
+  are in that listing.
+- **Turning them all off:** unset `ARUGULA_PREVIEW_DOMAIN` on both apps
+  (a restart each). The hub then serves nothing on the domain and the
+  platform makes nothing public; the rows stay, and come back when it's
+  set again, until they expire.
+- **Paused boxes** aren't woken for a stranger: the page says the
+  preview is asleep (Jake, 2026-10-22: waking boxes for strangers would
+  let anyone with a link run up a project's compute).
+- **One site for all previews.** `arugula.site` isn't on the Public
+  Suffix List, so browsers see every preview as the same site. Control
+  strips `Domain` from previews' `Set-Cookie`, so one can't set a cookie
+  for another. Not submitting it for now (Jake, 2026-10-22): revisit if
+  it's abused.
+
+**DNS and the certificate** (done 2026-10-22):
+
+- Fly's wildcard certificate `*.arugula.site` on `illogical-control`
+  (`fly certs show "*.arugula.site" -a illogical-control`).
+- Cloudflare, zone `arugula.site`, all DNS-only (not proxied: Fly
+  terminates TLS): `*.arugula.site` A and AAAA to the hub's addresses
+  (`fly ips list -a illogical-control`), and `_acme-challenge.arugula.site`
+  CNAME to the target `fly certs show` names, which Fly's wildcard
+  validation needs. Universal SSL on the zone didn't get in the way this
+  time (it did for `arugula.run`).
+- To make them again elsewhere: `fly certs add "*.<domain>" -a <hub app>`,
+  then those three records, made with a token that can edit the zone:
+
+  ```
+  Z=$(curl -s -H "Authorization: Bearer $CF_TOKEN" \
+    "https://api.cloudflare.com/client/v4/zones?name=<domain>" | jq -r '.result[0].id')
+  rec() { curl -s -X POST -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" \
+    "https://api.cloudflare.com/client/v4/zones/$Z/dns_records" \
+    --data "{\"type\":\"$1\",\"name\":\"$2\",\"content\":\"$3\",\"proxied\":false,\"ttl\":300}" | jq .success; }
+  rec A    '*.<domain>' '<hub v4>'
+  rec AAAA '*.<domain>' '<hub v6>'
+  rec CNAME '_acme-challenge.<domain>' '<target from fly certs show>'
+  ```
+
+**Putting it live** (at a release):
+
+1. Release with M187, so the hub, the platform and the hosted daemon in
+   the template all carry it.
+2. `ARUGULA_PREVIEW_DOMAIN = "arugula.site"` in the `[env]` of both
+   `packaging/control/fly.toml` and `packaging/platform/fly.toml`, and
+   deploy the platform, then the hub. `curl -sI
+   https://0123456789abcdef0123456789abcdef.arugula.site` then answers 404
+   with control's "No preview here" page.
+3. A live check: make a port of a test workspace public (`arugula cloud
+   preview public <workspace> <port>`), open it in a private window, then
+   `arugula cloud preview off` and see it go within a minute.
 
 ### Checking a migration on a copy
 
