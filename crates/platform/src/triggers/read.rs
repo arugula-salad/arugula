@@ -172,8 +172,14 @@ pub(crate) fn list_of(app: &Platform, project: &str, q: &RunListQuery) -> Result
         Some(s) => Some(runs::State::parse(s).ok_or_else(|| err(StatusCode::BAD_REQUEST, "no such run state"))?),
         None => None,
     };
+    let trigger = match q.trigger.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(t) => Some(runs::TriggerKind::parse(t).ok_or_else(|| err(StatusCode::BAD_REQUEST, "no such trigger"))?),
+        None => None,
+    };
+    let spec = q.spec.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let limit = q.limit.unwrap_or(LIST_DEFAULT).clamp(1, LIST_MAX);
-    let runs = app.db.runs_of(project, state, limit)?;
+    let f = runs::RunFilter { state, trigger, spec };
+    let runs = app.db.runs_of(project, &f, limit)?;
     let runs = runs.iter().map(|r| view(app, r, false)).collect::<anyhow::Result<_>>()?;
     Ok(RunList { project: project.to_owned(), runs })
 }

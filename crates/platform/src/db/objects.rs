@@ -64,6 +64,20 @@ impl Db {
         )
     }
 
+    /// The runs with these ids (`run_…`, M210): each one's id and project.
+    /// One statement; an id that isn't there isn't in the list.
+    pub fn run_places(&self, ids: &[&str]) -> anyhow::Result<Vec<(String, String)>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        c.query_map(
+            &format!("SELECT id, project_id FROM runs WHERE {}", in_json(&c, "id", 1)),
+            params![json_list(ids)?],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
     /// The live hosted workspaces with these ids (`hw_…`, M179): each one's
     /// id, project and name. One statement; an id that isn't there, or
     /// names a deleted workspace, isn't in the list.

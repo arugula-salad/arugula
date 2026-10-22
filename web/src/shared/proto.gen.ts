@@ -1373,8 +1373,8 @@ export type Inbox = { entries: Array<InboxEntry>, };
 
 export type InboxEntry = { 
 /**
- * The item: `fi_` and 32 hex characters, or a native issue's `iss_`
- * id (M202).
+ * The item: `fi_` and 32 hex characters, a native issue's `iss_` id
+ * (M202), or a run's `run_` id (M215).
  */
 item: string, 
 /**
@@ -1382,15 +1382,19 @@ item: string,
  */
 reason: string, 
 /**
- * `OWNER/NAME`; a native issue's project's name.
+ * `OWNER/NAME`; a native issue's or a run's project's name.
  */
-repo: string, number: number, 
+repo: string, 
 /**
- * `pr` or `issue`.
+ * 0 for a run.
+ */
+number: number, 
+/**
+ * `pr`, `issue` or `run`.
  */
 kind: string, 
 /**
- * `open`, `closed` or `merged`.
+ * `open`, `closed` or `merged`; a run's state.
  */
 state: string, title: string, 
 /**
@@ -1398,12 +1402,12 @@ state: string, title: string,
  */
 author: string | null, 
 /**
- * The item on GitHub; a native issue's path on the platform page
- * (`/issues/<id>`).
+ * The item on GitHub; a native issue's or a run's path on the
+ * platform page (`/issues/<id>`, `/runs/<id>`).
  */
 url: string, 
 /**
- * A native issue's project (M202).
+ * A native issue's or a run's project (M202, M215).
  */
 project: string | null, 
 /**
@@ -2415,6 +2419,48 @@ export type Reviewer = { "user": string } | { "team": string };
 export type Role = "viewer" | "editor" | "owner";
 
 /**
+ * Something a run left behind (M213).
+ */
+export type RunArtifactView = { name: string, size: number, digest: string, created_at: number, };
+
+/**
+ * One change of a run's state.
+ */
+export type RunEventView = { seq: number, from: string | null, to: string, at: number, 
+/**
+ * What its reporter said (an exit code, a reason, the pane).
+ */
+detail: Record<string, unknown>, 
+/**
+ * The machine that reported it, signed; none when control did.
+ */
+daemon: string | null, };
+
+/**
+ * [`PROJECT_RUNS`]' answer.
+ */
+export type RunList = { project: string, runs: Array<RunView>, };
+
+/**
+ * A page of a run's durable log (M213: hosted workspaces only, kept 30
+ * days).
+ */
+export type RunLogPage = { run: string, 
+/**
+ * Whether the platform keeps a log for it. Until it does, the run's
+ * pane is where its output is.
+ */
+kept: boolean, text: string, offset: number, next_offset: number, 
+/**
+ * The run has ended and this page reaches the end of its log.
+ */
+end: boolean, 
+/**
+ * Why there's no log, or what to do for the rest.
+ */
+note: string | null, };
+
+/**
  * What a rerun would act on: an Actions run (its number in the repo) and
  * job.
  */
@@ -2478,6 +2524,60 @@ export type RunResponse = { pane: number, };
  * Credentials belong in the secret store, never in this record.
  */
 export type RunSpec = { agent_id: string, agent_version: number, agent: AgentDefinition, model: string, runtime: string, repository: string, git_ref: string, repository_secret?: string | null, prompt: string, };
+
+/**
+ * A run, as the CLI and a machine's agents read it.
+ */
+export type RunView = { id: string, project: string, 
+/**
+ * The hosted workspace (`hw_…`) it runs on.
+ */
+workspace: string | null, 
+/**
+ * `manual`, `schedule` or `event`.
+ */
+trigger: string, 
+/**
+ * Which spec, schedule or event: what an event's payload said is
+ * untrusted text, for showing.
+ */
+source: Record<string, unknown>, 
+/**
+ * The S37 operation it runs (`arugula op v1`), and its SHA-256.
+ */
+op: string, op_hash: string, 
+/**
+ * The machine it runs on.
+ */
+daemon: string, 
+/**
+ * S37's: `pending`, `approved`, `running`, `succeeded`, `failed`,
+ * `denied`, `canceled` or `expired`.
+ */
+state: string, 
+/**
+ * The account that started it (an agent's owner's), or the schedule's
+ * or rule's id.
+ */
+started_by: string, 
+/**
+ * The machine whose agent started it.
+ */
+started_by_agent: string | null, 
+/**
+ * The standing grant it runs under; without one it waits for an
+ * approval.
+ */
+grant: string | null, last_seq: number, created_at: number, started_at: number | null, ended_at: number | null, exit_code: number | null, 
+/**
+ * The pane it runs in on its machine (its `running` event says): its
+ * live view, which the project's people watch end to end.
+ */
+pane: number | null, 
+/**
+ * Its timeline, oldest first (left out of a list).
+ */
+events?: Array<RunEventView>, artifacts?: Array<RunArtifactView>, };
 
 export type SendDraft = { 
 /**

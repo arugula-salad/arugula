@@ -81,6 +81,27 @@ test("Cloud's list and past runs and tabs", () => {
   for (const r of [{ page: "workspaces", project: P }, { page: "past", project: P, id: "run_00ff11ee" }]) assert.deepEqual(parse(pathOf(r)), r);
 });
 
+test("runs and a run (M215)", () => {
+  const R = "run_0123456789abcdef0123456789abcdef";
+  const S = "rsp_0123456789abcdef0123456789abcdef";
+  assert.deepEqual(parse(`/p/${P}-x/runs`), { page: "runs", project: P });
+  assert.deepEqual(parse(`/p/${P}/runs`, `?state=failed&trigger=schedule&spec=${S}`), { page: "runs", project: P, state: "failed", trigger: "schedule", spec: S });
+  assert.deepEqual(parse(`/p/${P}/runs`, "?state=Fail%20ed&spec=..%2Fx"), { page: "runs", project: P }, "only words and a spec's id");
+  assert.deepEqual(parse(`/p/${P}/runs/${R}`, "?msg=3"), { page: "run", project: P, run: R, msg: 3 });
+  assert.equal(parse(`/p/${P}/runs/iss_0123abcd`).page, "missing");
+  assert.equal(parse(`/p/${P}/runs/${R}/x`).page, "missing");
+  assert.deepEqual(parse(`/runs/${R}`), { page: "find", what: "run", run: R });
+  assert.equal(parse("/runs/cw_0123abcd").page, "missing");
+  for (const r of [
+    { page: "runs", project: P, state: "failed", trigger: "manual", spec: S },
+    { page: "run", project: P, run: R, msg: 4 },
+    { page: "find", what: "run", run: R },
+  ]) {
+    assert.deepEqual(parse(...pathOf(r, names).split(/(?=\?)/)), r);
+  }
+  assert.equal(pathOf({ page: "run", project: P, run: R }, names), `/p/${P}-arugula-team/runs/${R}`);
+});
+
 test("id-only addresses, for links that don't know the project", () => {
   assert.deepEqual(parse("/chat"), { page: "find", what: "chat" });
   assert.deepEqual(parse("/chat/ch_0123456789abcdef", "?msg=7"), { page: "find", what: "chat", room: "ch_0123456789abcdef", msg: 7 });

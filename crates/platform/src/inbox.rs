@@ -8,7 +8,11 @@
 //! - an `@` naming someone in a native issue's body (when it's opened, or
 //!   newly in an edit), or in its thread (its comments): `mentioned`;
 //! - an `@` naming someone in the thread on a mirrored PR or issue (M196):
-//!   `thread_mention`, on the item, kept apart from its GitHub reasons.
+//!   `thread_mention`, on the item, kept apart from its GitHub reasons;
+//! - a run that failed (M215): `run_failed`, on the run, for whoever
+//!   started it (a person, or the person who made the schedule or rule
+//!   that did) and the project's owners, while they're its members. Even
+//!   for one's own run: nobody watches a run end.
 //!
 //! Nobody gets one for what they did themselves (an agent's is its
 //! owner's). A mention names only those who see the object: chat's
@@ -38,7 +42,7 @@ use std::collections::HashMap;
 
 use arugula_control_common::ApiError;
 use arugula_control_wire::{chat as chat_wire, projects as wire};
-use arugula_e2e::now_ms;
+use arugula_e2e::{now_ms, team::TeamRole};
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 use tracing::{info, warn};
@@ -50,8 +54,12 @@ use crate::{
         chat::Room,
         inbox::{InboxFilter, NativeRow},
         issues::{self as db, Actor},
+        runs::{Run, TriggerKind},
     },
-    forge::inbox::{INBOX_PUSHES, members},
+    forge::{
+        inbox::{INBOX_PUSHES, members},
+        links::membership,
+    },
     hub::PushOptions,
 };
 
@@ -61,6 +69,8 @@ pub use crate::db::inbox::THREAD_MENTION;
 pub const MENTIONED: &str = "mentioned";
 /// A native issue given to someone.
 pub const ASSIGNED: &str = "assigned";
+/// A run that failed (M215).
+pub const RUN_FAILED: &str = "run_failed";
 
 /// The reason a mention in the thread on `target` is, or `None` when it
 /// isn't the inbox's (a workspace's thread, for now): chat pushes it.
@@ -266,6 +276,85 @@ pub fn thread_mentioned(
     notify(app, &n, to, quiet)
 }
 
+/// What a run did, in a line: its spec's name, or its command or
+/// instruction.
+fn run_what(app: &Platform, run: &Run) -> anyhow::Result<String> {
+    if let Some(spec) = run.source["spec"].as_str()
+        && let Some(s) = app.db.run_spec_by_id(spec)?
+    {
+        return Ok(s.name);
+    }
+    let line = match arugula_e2e::run::Op::decode(&run.op) {
+        Some((_, op)) => match op.instruction {
+            Some(i) => i.lines().next().unwrap_or_default().to_owned(),
+            None => op.argv.join(" "),
+        },
+        None => String::new(),
+    };
+    let line: String = line.chars().take(80).collect();
+    Ok(if line.is_empty() { run.id.clone() } else { line })
+}
+
+/// The person behind a run: who started it by hand (an agent's owner),
+/// or who made the schedule or rule that started it.
+fn run_starter(app: &Platform, run: &Run) -> anyhow::Result<Option<String>> {
+    Ok(match run.trigger {
+        TriggerKind::Manual => Some(run.started_by.clone()).filter(|a| !a.is_empty()),
+        TriggerKind::Schedule => app.db.run_schedule(&run.started_by)?.and_then(|s| s.created_by),
+        TriggerKind::Event => app.db.run_rule(&run.started_by)?.and_then(|r| r.created_by),
+    })
+}
+
+/// A run failed (M215): an entry for whoever started it and the project's
+/// owners, members now, and one push each. Never fails the move: what goes
+/// wrong is logged.
+pub async fn run_failed(app: &Platform, run: &Run) {
+    if let Err(e) = run_failed_or(app, run).await {
+        warn!(run = %run.id, error = format!("{e:#}"), "inbox: a run failed");
+    }
+}
+
+async fn run_failed_or(app: &Platform, run: &Run) -> anyhow::Result<()> {
+    let Some(project) = app.db.issue_project(&run.project)? else { return Ok(()) };
+    let starter = run_starter(app, run)?;
+    let mut to: Vec<String> = Vec::new();
+    match (&project.account, &project.team) {
+        (Some(a), _) => to.push(a.clone()),
+        (None, Some(team)) => {
+            let Some(t) = app.cache.team(&*app.hub, team).await? else { return Ok(()) };
+            if let Some(s) = starter.as_ref().filter(|s| t.role(s).is_some()) {
+                to.push(s.clone());
+            }
+            for m in &t.members {
+                if t.role(&m.account) == Some(TeamRole::Owner) && !to.contains(&m.account) {
+                    to.push(m.account.clone());
+                }
+            }
+        }
+        (None, None) => {}
+    }
+    if to.is_empty() {
+        return Ok(());
+    }
+    let why = run.exit_code.map_or_else(|| "failed".to_owned(), |c| format!("failed (exit {c})"));
+    let mine = |a: &String| starter.as_ref() == Some(a);
+    let to = to
+        .into_iter()
+        .map(|a| {
+            let w = if mine(&a) { format!("your run {why}") } else { format!("a run {why}") };
+            (a, vec![(RUN_FAILED, w)])
+        })
+        .collect();
+    let n = Notice {
+        item: &run.id,
+        what: format!("{}:", project.name),
+        body: run_what(app, run)?,
+        tap: json!({ "item": run.id }),
+    };
+    notify(app, &n, to, &[])?;
+    Ok(())
+}
+
 /// The reader's entries on native issues, as the inbox lists them: those
 /// in projects they may read now, newest first.
 pub async fn entries(app: &Platform, account: &str, f: &InboxFilter) -> Result<Vec<wire::InboxEntry>, ApiError> {
@@ -305,19 +394,77 @@ pub async fn entries(app: &Platform, account: &str, f: &InboxFilter) -> Result<V
         project: Some(r.project),
         room: None,
     };
-    Ok(rows
+    let mut out: Vec<wire::InboxEntry> = rows
         .into_iter()
         .filter_map(|r| {
             let name = projects.get(&r.project).cloned().flatten()?;
             Some(entry(r, &name))
         })
-        .collect())
+        .collect();
+    out.extend(run_entries(app, account, f).await?);
+    Ok(out)
 }
 
-/// A person's marks on a native issue's entries: 404 unless they may read
-/// it.
+/// The reader's entries on runs (M215): those of projects they're a
+/// member of now. `repo` is the project's name, `title` what ran, and
+/// `author` who's behind it.
+async fn run_entries(app: &Platform, account: &str, f: &InboxFilter) -> Result<Vec<wire::InboxEntry>, ApiError> {
+    let rows = app.db.run_inbox(account, f)?;
+    let mut projects: HashMap<String, Option<String>> = HashMap::new();
+    let mut out = Vec::new();
+    for r in rows {
+        if !projects.contains_key(&r.project) {
+            let name = match membership(app, account, &r.project, false).await {
+                Ok(_) => app.db.issue_project(&r.project)?.map(|p| p.name),
+                Err(ApiError(StatusCode::NOT_FOUND | StatusCode::FORBIDDEN, ..)) => None,
+                Err(ApiError(status, said, _)) => {
+                    warn!(project = %r.project, %status, said, "inbox: a project's runs left out");
+                    None
+                }
+            };
+            projects.insert(r.project.clone(), name);
+        }
+        let Some(name) = projects.get(&r.project).cloned().flatten() else { continue };
+        let Some(run) = app.db.run(&r.item)? else { continue };
+        let author = match run_starter(app, &run)? {
+            Some(a) => Some(chat::name_of(app, &a).await?),
+            None => None,
+        };
+        out.push(wire::InboxEntry {
+            url: format!("/runs/{}", r.item),
+            title: run_what(app, &run)?,
+            item: r.item,
+            reason: r.reason,
+            repo: name,
+            number: 0,
+            kind: "run".into(),
+            state: r.state,
+            author,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            seen_at: r.seen_at,
+            done_at: r.done_at,
+            project: Some(r.project),
+            room: None,
+        });
+    }
+    Ok(out)
+}
+
+/// A person's marks on a native issue's or a run's entries: 404 unless
+/// they may read it.
 pub async fn mark(app: &Platform, account: &str, item: &str, b: &wire::InboxMark) -> Result<u32, ApiError> {
     let nothing = || arugula_control_common::err(StatusCode::NOT_FOUND, "no such item");
+    if item.starts_with("run_") {
+        let run = app.db.run(item)?.ok_or_else(nothing)?;
+        match membership(app, account, &run.project, false).await {
+            Ok(_) => {}
+            Err(ApiError(StatusCode::NOT_FOUND | StatusCode::FORBIDDEN, ..)) => return Err(nothing()),
+            Err(e) => return Err(e),
+        }
+        let n = app.db.mark_run_inbox(account, item, b.reason.as_deref(), (b.seen, b.done), now_ms())?;
+        return Ok(n as u32);
+    }
     let issue = app.db.issue(item)?.ok_or_else(nothing)?;
     match crate::issues::place(app, Actor::person(account), &issue.project, false).await {
         Ok(_) => {}

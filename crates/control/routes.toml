@@ -1401,7 +1401,7 @@ method = "GET"
 path = "/api/projects/{project}/run-specs"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 note = "A project's run specs, each with its schedules and rules (M214): any member."
 
 [[route]]
@@ -1409,7 +1409,7 @@ method = "POST"
 path = "/api/projects/{project}/run-specs"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 note = "Makes a run spec: a name, a hosted workspace, and a command or an instruction. Owners and editors on ARUGULA_HOSTED_ACCOUNTS."
 
 [[route]]
@@ -1433,7 +1433,7 @@ method = "DELETE"
 path = "/api/projects/{project}/run-specs/{spec}"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 note = "Deletes a run spec with its schedules and rules: owners and editors."
 
 [[route]]
@@ -1441,7 +1441,7 @@ method = "POST"
 path = "/api/projects/{project}/run-specs/{spec}/schedules"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 note = "Adds a cron schedule in a time zone, at most every 5 minutes: owners and editors on ARUGULA_HOSTED_ACCOUNTS."
 
 [[route]]
@@ -1449,7 +1449,7 @@ method = "PATCH"
 path = "/api/projects/{project}/run-specs/{spec}/schedules/{id}"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 note = "Changes a schedule's expression or zone, or turns it on or off: owners and editors (on ARUGULA_HOSTED_ACCOUNTS to turn one on or change it)."
 
 [[route]]
@@ -1457,7 +1457,7 @@ method = "DELETE"
 path = "/api/projects/{project}/run-specs/{spec}/schedules/{id}"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 note = "Deletes a schedule: owners and editors."
 
 [[route]]
@@ -1465,7 +1465,7 @@ method = "POST"
 path = "/api/projects/{project}/run-specs/{spec}/rules"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 note = "Adds an event rule: a PR opened, a check failed or a push, on a linked repo and branch, with an hourly cap. Owners and editors on ARUGULA_HOSTED_ACCOUNTS; only an owner lets it take events from forks and outside the repo."
 
 [[route]]
@@ -1473,7 +1473,7 @@ method = "PATCH"
 path = "/api/projects/{project}/run-specs/{spec}/rules/{id}"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 note = "Turns a rule on or off, or changes its hourly cap or whether it takes outsiders' events: owners and editors (on ARUGULA_HOSTED_ACCOUNTS to turn one on or widen it; an owner to take outsiders)."
 
 [[route]]
@@ -1481,7 +1481,7 @@ method = "DELETE"
 path = "/api/projects/{project}/run-specs/{spec}/rules/{id}"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 note = "Deletes a rule: owners and editors."
 
 [[route]]
@@ -1489,7 +1489,7 @@ method = "POST"
 path = "/api/projects/{project}/runs"
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 note = "Starts a run by hand (M214): a spec, or a command or instruction on a hosted workspace, pending with its job queued. A person or a CLI device, never a machine: owners and editors on ARUGULA_HOSTED_ACCOUNTS."
 
 # ---- platform: reading runs (M216)
@@ -1500,15 +1500,15 @@ method = "GET"
 path = "/api/projects/{project}/runs"  # wire::runs::PROJECT_RUNS
 process = "platform"
 auth = "session"
-clients = ["cli"]
-note = "A project's runs, newest first (by state if asked): any member."
+clients = ["page", "cli"]
+note = "A project's runs, newest first (by state, trigger or run spec if asked; M215's runs page): any member."
 
 [[route]]
 method = "GET"
 path = "/api/runs/{run}"  # wire::runs::RUN
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 note = "A run with its timeline, artifacts and the pane it runs in: its project's members. With since and wait, answers once it has a later event or has ended (at most 15 s): at most 8 open per account, 2000 an hour."
 
 [[route]]
@@ -1516,7 +1516,7 @@ method = "GET"
 path = "/api/runs/{run}/log"  # wire::runs::RUN_LOG
 process = "platform"
 auth = "session"
-clients = ["cli"]
+clients = ["page", "cli"]
 note = "A page of a run's durable log, by byte offset or its tail (M213 keeps it; until then kept: false, naming the run's pane): its project's members."
 
 [[route]]

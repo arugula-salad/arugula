@@ -24,6 +24,8 @@ import { Installed, ProjectSettings } from "./pages/project-settings";
 import { SettingsPage } from "./pages/settings";
 import { PastPage, WorkspacesPage } from "./pages/workspace";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
+import { RunPage, RunsPage } from "./pages/runs";
+import { runs } from "./runs";
 
 export function PlatformPage() {
   useSubscribe((fn) => session.subscribe(fn));
@@ -40,11 +42,14 @@ export function PlatformPage() {
   return <Shell>{body(r, lost)}</Shell>;
 }
 
-/** `lost`: the issue an id-only address names, when it couldn't be read. */
+/** `lost`: the issue or run an id-only address names, when it couldn't be
+ * read. */
 function body(r: Route, lost: string | null) {
   switch (r.page) {
     case "find":
-      return r.what === "issue" && lost === r.issue ? <Missing what="That issue isn't one you can read (or it's gone)." /> : <p class="platform-section dim">Finding it…</p>;
+      if (r.what === "issue" && lost === r.issue) return <Missing what="That issue isn't one you can read (or it's gone)." />;
+      if (r.what === "run" && lost === r.run) return <Missing what="That run isn't one you can read (or it's gone)." />;
+      return <p class="platform-section dim">Finding it…</p>;
     case "home":
       return <Home />;
     case "project":
@@ -55,6 +60,10 @@ function body(r: Route, lost: string | null) {
       return <NewIssuePage project={r.project} />;
     case "issue":
       return <IssuePage project={r.project} issue={r.issue} msg={r.msg} />;
+    case "runs":
+      return <RunsPage project={r.project} filter={{ state: r.state, trigger: r.trigger, spec: r.spec }} />;
+    case "run":
+      return <RunPage project={r.project} run={r.run} msg={r.msg} />;
     case "workspaces":
       return (
         <>
@@ -130,16 +139,17 @@ function Toast() {
 function useFind(r: Route): string | null {
   useSubscribe((fn) => chat.subscribe(fn));
   useSubscribe((fn) => issues.subscribe(fn));
+  useSubscribe((fn) => runs.subscribe(fn));
   const to = r.page === "find" && session.state === "ready" ? resolve(r) : null;
-  // An issue's project is the issue's to say: read it once.
-  const ask = r.page === "find" && r.what === "issue" && session.state === "ready" && !to ? r.issue : null;
+  // An issue's or a run's project is its own to say: read it once.
+  const ask = r.page === "find" && (r.what === "issue" || r.what === "run") && session.state === "ready" && !to ? (r.what === "issue" ? r.issue : r.run) : null;
   // The one that couldn't be read, while the address names it: going
   // anywhere else and back asks again.
   const [lost, setLost] = useState<string | null>(null);
   useEffect(() => {
     setLost(null);
     let live = true;
-    if (ask) issues.get(ask).catch(() => live && setLost(ask));
+    if (ask) (ask.startsWith("run_") ? runs.get(ask) : issues.get(ask)).catch(() => live && setLost(ask));
     return () => void (live = false);
   }, [ask]);
   useEffect(() => {

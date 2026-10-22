@@ -205,6 +205,24 @@ command in a pane here. An agent (`CLAUDECODE` or `AI_AGENT` set) reads
 runs through the CLI but can't start or change them there: the CLI acts
 as its person.
 
+**The runs page (M215).** The platform page has a project's runs at
+`/p/<project>/runs`, narrowed by state, by how they started (`trigger`:
+`manual`, `schedule`, `event`) and by run spec (`spec`), which the list
+route takes too. Owners and editors on `ARUGULA_HOSTED_ACCOUNTS` start a
+run there (a spec, or a command) and add and remove specs, schedules and
+rules. A run's page (`/p/<project>/runs/<run>`, or `/runs/<run>` from a
+push) shows who or what started it, the exact command its operation runs
+and the operation's hash, its durable log (M213: from its tail, Earlier a
+page at a time, and followed every few seconds while the run goes), its
+artifacts (each through M213's signed download), its timeline, and its
+thread: an object
+room on the run's id, for its project's members (`chat::objects`). While a
+run goes, the page waits on `GET /api/runs/{run}` for its next event, and
+links its pane on control's page, where its machine is: the platform page
+has no machines. A run that fails is an inbox entry (`run_failed`) for
+whoever started it (the person who made its schedule or rule, for one of
+theirs) and the project's owners, with one push each; a tap opens the run.
+
 **Whose key a hosted agent runs on (M185, #1246).** Keys never enter the
 box: E2B's egress proxy sets the key on the box's requests to
 `api.anthropic.com` and `api.openai.com`, over the placeholder the agents

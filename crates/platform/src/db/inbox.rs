@@ -83,6 +83,19 @@ pub struct NativeRow {
     pub updated_at: u64,
 }
 
+/// One entry of a member's inbox on a run (M215): one that failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunRow {
+    pub item: String,
+    pub reason: String,
+    pub seen_at: Option<u64>,
+    pub done_at: Option<u64>,
+    pub created_at: u64,
+    pub project: String,
+    pub state: String,
+    pub updated_at: u64,
+}
+
 /// A mention in the thread on a mirrored item (M202): kept apart from the
 /// item's GitHub reasons, which [`Db::set_inbox`] works out.
 pub const THREAD_MENTION: &str = "thread_mention";
@@ -354,6 +367,19 @@ impl Db {
         self.mark_rows(account, item, reason, seen, done, now, "SELECT id FROM issues")
     }
 
+    /// Mark a run's entries (M215), for someone the caller found may read
+    /// it.
+    pub fn mark_run_inbox(
+        &self,
+        account: &str,
+        item: &str,
+        reason: Option<&str>,
+        (seen, done): (Option<bool>, Option<bool>),
+        now: u64,
+    ) -> anyhow::Result<usize> {
+        self.mark_rows(account, item, reason, seen, done, now, "SELECT id FROM runs")
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn mark_rows(
         &self,
@@ -432,6 +458,35 @@ impl Db {
                     title: r.get(8)?,
                     author: r.get(9)?,
                     updated_at: r.get(10)?,
+                })
+            },
+        )
+    }
+
+    /// An account's entries on runs (M215), newest first. The caller keeps
+    /// those whose project they may still read.
+    pub fn run_inbox(&self, account: &str, f: &InboxFilter) -> anyhow::Result<Vec<RunRow>> {
+        let done = if f.done { "" } else { " AND x.done_at IS NULL" };
+        self.c().query_map(
+            &format!(
+                "SELECT x.item, x.reason, x.seen_at, x.done_at, x.created_at, r.project_id, r.state,
+                     COALESCE(r.ended_at, r.created_at)
+                 FROM inbox_items x JOIN runs r ON r.id = x.item
+                 WHERE x.account = ?1{done}
+                 ORDER BY x.created_at DESC, x.item, x.reason LIMIT {}",
+                f.limit
+            ),
+            params![account],
+            |r| {
+                Ok(RunRow {
+                    item: r.get(0)?,
+                    reason: r.get(1)?,
+                    seen_at: r.get(2)?,
+                    done_at: r.get(3)?,
+                    created_at: r.get(4)?,
+                    project: r.get(5)?,
+                    state: r.get(6)?,
+                    updated_at: r.get(7)?,
                 })
             },
         )

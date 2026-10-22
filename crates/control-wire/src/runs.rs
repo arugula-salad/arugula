@@ -96,6 +96,12 @@ pub struct RunListQuery {
     /// Only runs in this state (`pending`, `running`, `succeeded`, ...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    /// Only runs started this way: `manual`, `schedule` or `event` (M215).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<String>,
+    /// Only runs of this run spec, by its id (M215).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spec: Option<String>,
     /// At most this many (default 20, at most 100).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
@@ -150,6 +156,7 @@ pub struct AgentRunStart {
 
 /// A run, as the CLI and a machine's agents read it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunView {
     pub id: String,
     pub project: String,
@@ -161,6 +168,7 @@ pub struct RunView {
     /// Which spec, schedule or event: what an event's payload said is
     /// untrusted text, for showing.
     #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, unknown>"))]
     pub source: serde_json::Value,
     /// The S37 operation it runs (`arugula op v1`), and its SHA-256.
     #[serde(default)]
@@ -203,6 +211,7 @@ pub struct RunView {
 
 /// One change of a run's state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunEventView {
     pub seq: u64,
     #[serde(default)]
@@ -211,6 +220,7 @@ pub struct RunEventView {
     pub at: u64,
     /// What its reporter said (an exit code, a reason, the pane).
     #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, unknown>"))]
     pub detail: serde_json::Value,
     /// The machine that reported it, signed; none when control did.
     #[serde(default)]
@@ -219,6 +229,7 @@ pub struct RunEventView {
 
 /// Something a run left behind (M213).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunArtifactView {
     pub name: String,
     pub size: u64,
@@ -228,6 +239,7 @@ pub struct RunArtifactView {
 
 /// [`PROJECT_RUNS`]' answer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunList {
     pub project: String,
     pub runs: Vec<RunView>,
@@ -236,6 +248,7 @@ pub struct RunList {
 /// A page of a run's durable log (M213: hosted workspaces only, kept 30
 /// days).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RunLogPage {
     pub run: String,
     /// Whether the platform keeps a log for it. Until it does, the run's
