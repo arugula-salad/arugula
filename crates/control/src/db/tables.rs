@@ -352,7 +352,8 @@ fn render(m: &Manifest) -> String {
     let _ = writeln!(
         s,
         "- **The platform plane** ({} tables) is what has to exist while every machine is asleep: \
-         billing and usage, chat, Shared Docs, Cloud workspaces, and linked repos' PRs and issues. Control reads most of it, \
+         billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and \
+         issues, and projects' native issues. Control reads most of it, \
          and says so here.\n",
         count(Plane::Platform)
     );
@@ -360,7 +361,7 @@ fn render(m: &Manifest) -> String {
         "Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. \
          **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, \
          signed statements), ciphertext (encrypted to keys control never holds), or plaintext \
-         (what people wrote, or a secret control can read). **Gone with the account** is what \
+         (what people or their agents wrote, or a secret control can read). **Gone with the account** is what \
          deleting an account does to its rows.\n",
     );
     for (plane, title) in [(Plane::Machine, "The machine plane"), (Plane::Platform, "The platform plane")] {

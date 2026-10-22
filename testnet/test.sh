@@ -119,6 +119,13 @@
 #           sent again it's a duplicate, and still one after the platform's
 #           container restarts (the delivery is in its database, not its
 #           memory). Broken: signed with another secret, so it's refused.
+#   issues-restart
+#           Only with the platform out of process (M206): native issues, their
+#           timelines and the thread on one, written through control's own
+#           site, read back the same after the platform's container
+#           restarts; the next issue and comment are numbered on with no
+#           gap, and search finds both. Broken: the container is recreated
+#           instead, so its database file is new.
 #   platform-fanout
 #           Only with two platform machines (ARUGULA_TESTNET_PLATFORM=two,
 #           M144): both answer their health check on the database and
@@ -174,7 +181,7 @@ if [ "$PROFILE" = control ]; then
   # A platform of its own to restart, only out of process; two of them to
   # share chat and Cloud (M144).
   case "${ARUGULA_TESTNET_PLATFORM:-in}" in
-    out) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart github-webhook" ;;
+    out) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart github-webhook issues-restart" ;;
     two) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart platform-fanout platform-handover" ;;
   esac
   [ "$PROFILE" != control ] || CLAIMS="$CONTROL_CLAIMS"
@@ -703,6 +710,20 @@ claim_github_webhook() {
   done
   duplicate "$st" || { note "github-webhook: after the platform's restart: $st $(cat "$WORK/hook.json")"; return 1; }
   note "github-webhook: $d landed on the platform, and was known again after its restart"
+}
+
+claim_issues_restart() {
+  signin "issues-$$-$RANDOM" > /dev/null || { note "issues-restart: no device signed in"; return 1; }
+  plat issues-write > "$WORK/issues.json" || { note "issues-restart: couldn't write issues"; return 1; }
+  if [ -n "$BREAK" ]; then
+    # shellcheck disable=SC2086 # the files and profiles up.sh used
+    docker compose $ARUGULA_TESTNET_COMPOSE up -d --force-recreate --no-deps --wait platform >/dev/null 2>&1
+  else
+    docker restart "$TESTNET-platform" >/dev/null
+  fi
+  plat issues-read "$WORK/issues.json" > "$WORK/issues-read.json" ||
+    { note "issues-restart: what was written didn't read back after the restart"; return 1; }
+  note "issues-restart: $(cat "$WORK/issues-read.json")"
 }
 
 # platform2 recreated, on Postgres or (BREAK=1) a file of its own.

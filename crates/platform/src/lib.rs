@@ -61,6 +61,8 @@ pub mod page;
 mod port;
 pub mod projects;
 pub mod remote;
+#[cfg(test)]
+mod restart_tests;
 mod router;
 pub mod timing;
 pub mod window;
