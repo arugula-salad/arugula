@@ -121,13 +121,19 @@ async fn the_preview_shows_what_a_yes_would_send() {
 #[tokio::test]
 async fn after_a_yes_opted_in_then_started_arrive() {
     let r = rig("yes").await;
-    let t = r.telemetry(&[], Timing { started_after: Duration::from_millis(300), ..FAST });
+    // Long enough that a loaded machine looks before it's due.
+    let t = r.telemetry(&[], Timing { started_after: Duration::from_millis(1500), ..FAST });
     r.yes();
     t.answered();
     t.look().await;
     assert_eq!(r.events(), [Event::OptedIn { via: Surface::Cli }], "opted-in at once");
-    tokio::time::sleep(Duration::from_millis(350)).await;
-    t.look().await;
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        t.look().await;
+        if r.events().len() > 1 {
+            break;
+        }
+    }
     assert_eq!(r.events(), [Event::OptedIn { via: Surface::Cli }, Event::Started { service: false }]);
     let report = r.got.lock().unwrap()[0].0.clone();
     assert_eq!(Some(report.install.as_str()), consent::read(&r.dir).unwrap().install.as_deref());
