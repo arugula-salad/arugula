@@ -642,3 +642,138 @@ async fn a_box_outlives_neither_its_deploy_nor_its_longest_life() {
     use crate::jobs::Handler as _;
     assert_eq!(Apply { app: app.clone() }.max_attempts(), u32::MAX, "never given up on");
 }
+
+/// What chant→Fly's box reports at its run's end (M220): chant's ledger
+/// entry, chant's record and Fly's image and health.
+fn chant_fly_end(exit: i32, sha: &str, image: &str, healthy: bool) -> String {
+    let sha = crate::deploys_tests::full(sha);
+    json!({
+        "exit": exit,
+        "result": {
+            "chant_ledger": format!("https://github.com/acme/app/blob/{}/github/releases.jsonl#L1", sha.replace('0', "f")),
+            "chant_record": { "component": "acme", "env": "github", "digest": format!("sha256:{}", &sha[..8]), "gitSha": sha },
+            "fly": { "app": "acme-web", "image": image, "healthy": healthy },
+        },
+    })
+    .to_string()
+}
+
+/// Plan (as b, `roll_back` or not), ask, and approve (a's phone): its id.
+async fn chant_fly_approved(base: &str, hub: &TestHub, t: &str, env: &str, sha: &str, roll_back: bool) -> String {
+    let body = json!({
+        "environment": env, "source": { "kind": "commit", "ref": crate::deploys_tests::full(sha), "where": "acme/app" },
+        "roll_back": roll_back,
+    });
+    let (st, d) = call(base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
+    assert_eq!(st, 200, "{d}");
+    let id = d["id"].as_str().unwrap().to_owned();
+    let (st, d) = call(base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
+    assert_eq!(st, 200, "{d}");
+    let op = d["operation"]["hash"].as_str().unwrap().to_owned();
+    let a = devices(hub, "a");
+    let (st, d) = call(
+        base,
+        "a",
+        "POST",
+        &format!("/api/deploys/{id}/approve"),
+        Some(signed(&a.phone, "a", &id, &op, Decision::Once)),
+    )
+    .await;
+    assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
+    id
+}
+
+/// Its box applies it: pulls it (and checks the plan names the settings
+/// and roll back it was handed), starts it, and ends it with `end`.
+async fn chant_fly_applied(app: &Arc<Platform>, hub: &TestHub, id: &str, end: &str) -> (Run, DeployWork) {
+    let m = boot(app, hub, id).await;
+    let w = pull(app, &m, &[TAKES_RUN, TAKES_DEPLOY]).await;
+    let dw = w.items[0].deploy.clone().unwrap();
+    assert!(
+        arugula_e2e::drivers::planned(&dw.driver, &dw.operation, &dw.settings, dw.roll_back.as_ref()),
+        "the box finds the approved plan names what it was handed"
+    );
+    let run = app.db.run(&app.db.deploy_run(id).unwrap().unwrap().run).unwrap().unwrap();
+    work::report(app, &m.m, &m.report(&run, RunState::Approved, RunState::Running, now_ms(), "{}")).await.unwrap();
+    let run = app.db.run(&run.id).unwrap().unwrap();
+    let to = if end.contains(r#""exit":0"#) { RunState::Succeeded } else { RunState::Failed };
+    assert_eq!(
+        work::report(app, &m.m, &m.report(&run, RunState::Running, to, now_ms(), end)).await.unwrap(),
+        Reported::Taken
+    );
+    (app.db.run(&run.id).unwrap().unwrap(), dw)
+}
+
+/// chant→Fly end to end on the platform (M220): the box is handed the
+/// environment's settings and the approval's id; what it reports is
+/// checked (Fly healthy, chant's entry), kept in the log, and the run
+/// links chant's ledger entry, a failed apply's too. A roll back goes back
+/// to a source the environment ran, with the image its log kept, in a
+/// plan of its own that the box checks too.
+#[tokio::test]
+async fn chant_fly_links_chants_ledger_and_rolls_back_to_what_it_kept() {
+    let (hub, app, base, t, _fake) = world().await;
+    let body = json!({
+        "name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN"],
+        "settings": { "fly_app": "acme-web", "chant_dir": "ops", "chant_env": "github" },
+    });
+    let (st, env) = call(&base, "a", "POST", &format!("/api/projects/{t}/environments"), Some(body)).await;
+    assert_eq!(st, 200, "{env}");
+    assert_eq!(
+        env["settings"],
+        json!({ "fly_app": "acme-web", "chant_dir": "ops", "chant_env": "github", "chant_op": "release", "chant_digest": "plan" })
+    );
+    let env = env["id"].as_str().unwrap().to_owned();
+    assert_eq!(set_secret(&base, "a", &env, "FLY_API_TOKEN").await.0, 200);
+
+    // A release that goes well.
+    let good = chant_fly_approved(&base, &hub, &t, &env, "aaa1", false).await;
+    let image1 = &format!("registry.fly.io/acme-web:deployment-1@sha256:{}", "1".repeat(64));
+    let (run, dw) = chant_fly_applied(&app, &hub, &good, &chant_fly_end(0, "aaa1", image1, true)).await;
+    assert_eq!(dw.settings["fly_app"], "acme-web");
+    assert!(dw.roll_back.is_none());
+    assert!(dw.approval_id.as_deref().is_some_and(|a| a.starts_with("apv_")), "{dw:?}");
+    assert_eq!(state(&app, &good), State::Succeeded);
+    assert_eq!(
+        run.chant_ledger,
+        Some(format!("https://github.com/acme/app/blob/aaa1{}/github/releases.jsonl#L1", "f".repeat(36)))
+    );
+    let ok = app.db.deploy_history(&good).unwrap().pop().unwrap().detail_json().unwrap();
+    assert_eq!(
+        (ok["image"].as_str(), ok["chant_digest"].as_str()),
+        (Some(image1.as_str()), Some("sha256:aaa10000")),
+        "{ok}"
+    );
+
+    // One that went out but isn't healthy: failed, paged, its entry linked.
+    let bad = chant_fly_approved(&base, &hub, &t, &env, "bbb2", false).await;
+    let image2 = &format!("registry.fly.io/acme-web:deployment-2@sha256:{}", "2".repeat(64));
+    let (run, _) = chant_fly_applied(&app, &hub, &bad, &chant_fly_end(0, "bbb2", image2, false)).await;
+    assert_eq!(state(&app, &bad), State::Failed);
+    assert!(run.chant_ledger.as_deref().is_some_and(|l| l.contains("/blob/bbb2f")), "{run:?}");
+    let failed = app.db.deploy_history(&bad).unwrap().pop().unwrap().detail_json().unwrap();
+    assert_eq!(failed["reason"], json!("its Fly app isn't healthy after the apply"));
+
+    // Back to what ran before: never to a source it didn't run.
+    let never = json!({
+        "environment": env, "source": { "kind": "commit", "ref": crate::deploys_tests::full("ccc3"), "where": "acme/app" },
+        "roll_back": true,
+    });
+    let (st, v) = call(&base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(never)).await;
+    assert_eq!(st, 409, "{v}");
+    let back = chant_fly_approved(&base, &hub, &t, &env, "aaa1", true).await;
+    let (_, d) = call(&base, "a", "GET", &format!("/api/deploys/{back}"), None).await;
+    assert_eq!(
+        (d["roll_back"]["deploy"].as_str(), d["roll_back"]["to"]["image"].as_str()),
+        (Some(good.as_str()), Some(image1.as_str()))
+    );
+    assert!(
+        d["plan_text"].as_str().unwrap().contains(&format!("flyctl deploy --app acme-web --image {image1}")),
+        "{d}"
+    );
+    let (run, dw) = chant_fly_applied(&app, &hub, &back, &chant_fly_end(0, "aaa1", image1, true)).await;
+    assert_eq!(dw.roll_back.as_ref().map(|r| r.deploy.as_str()), Some(good.as_str()));
+    assert_eq!(state(&app, &back), State::Succeeded);
+    assert!(run.chant_ledger.is_some());
+    assert!(app.db.verify_deploy_log(&env).unwrap().is_ok());
+}

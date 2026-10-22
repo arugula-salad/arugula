@@ -22,10 +22,12 @@ import {
   DEFAULT_LIFE_MS,
   actorOf,
   approvalBody,
+  checkPlan,
   eventCanonical,
   parseOperation,
   sha256Hex,
   signApproval,
+  type CheckedPlan,
   type Decision,
   type DeployEvent,
   type Operation,
@@ -42,6 +44,8 @@ interface Deploy {
   environment: { id: string; name: string; driver: string };
   source: { kind: string; ref: string; where: string };
   plan: string;
+  /** The plan's text (M220): what its digest is over. */
+  plan_text: string | null;
   state: string;
   planned_by: string;
   planned_by_name: string;
@@ -57,6 +61,8 @@ interface Deploy {
 interface Checked {
   op: Operation;
   planner: string;
+  /** The plan's text, which hashes to the operation's `plan` (M220). */
+  plan: CheckedPlan;
 }
 
 /** The deploy's operation and its `planned` event check out: the bytes hash
@@ -91,7 +97,12 @@ async function check(d: Deploy): Promise<Checked | string> {
   const who = actorOf(e.actor);
   if (!who || who.account !== d.planned_by || (who.machine ?? null) !== (d.agent?.machine ?? null)) return "who planned it doesn't match its log";
   const name = d.planned_by_name || "someone";
-  return { op, planner: who.machine ? `${name}'s agent on ${d.agent?.machine_name || who.machine}` : name };
+  // What the driver will do, as the operation's plan digest binds it: the
+  // text must hash to it, or it isn't what's being signed (M220).
+  const plan = await checkPlan(d.plan_text, op.plan);
+  if (typeof plan === "string") return plan;
+  if (plan.driver !== d.environment.driver) return "its plan names another driver than its environment's";
+  return { op, plan, planner: who.machine ? `${name}'s agent on ${d.agent?.machine_name || who.machine}` : name };
 }
 
 const b64u = (b: ArrayBuffer) =>
@@ -189,6 +200,25 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
               <b>{d.project.name}</b>: {ok.op.source.kind} <code>{ok.op.source.ref.slice(0, 12)}</code> from <code>{ok.op.source.where}</code>, planned
               by {ok.planner}.
             </p>
+          ) : null}
+          {ok?.plan.rollBack ? (
+            <p class="control-error" data-deploy-roll-back={ok.plan.rollBack.deploy}>
+              This is a roll back to <code>{ok.plan.rollBack.deploy}</code>
+              {ok.plan.rollBack.image ? (
+                <>
+                  , running the image <code>{ok.plan.rollBack.image}</code> again
+                </>
+              ) : null}
+              .
+            </p>
+          ) : null}
+          {ok ? (
+            <>
+              <p class="dim">What its driver will do (the plan you sign):</p>
+              <pre class="deploy-op" data-deploy-plan>
+                {ok.plan.text}
+              </pre>
+            </>
           ) : null}
           <p class="dim">The operation you sign:</p>
           <pre class="deploy-op" data-deploy-op>

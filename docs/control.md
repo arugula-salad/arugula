@@ -540,6 +540,82 @@ The box can't check the passkey's signature yet: only the hub keeps
 passkeys' public keys. It checks the passkey's challenge and that it
 verified the person.
 
+**The chant→Fly driver (M220).** An environment with the `chant-fly`
+driver releases a commit with the repository's own chant op, onto Fly. An
+owner makes it with its settings and its secrets' names:
+
+```
+POST /api/projects/{project}/environments
+{"name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN", "GITHUB_TOKEN"],
+ "settings": {"fly_app": "acme-web", "chant_env": "github", "chant_dir": "ops"}}
+```
+
+Settings (each starts with a letter or a digit):
+- `fly_app` and `chant_env` are required. `chant_env` is the environment
+  chant's release ledger records the release under.
+- `chant_dir` (the chant member, from the repository's root) defaults to
+  `.`, and `chant_op` to `release`. `fly_config` (a `fly.toml` in the
+  repository) is used by a roll back.
+- `chant_gates`: the only gates the driver approves, comma separated.
+  Left out, it approves each gate of the op it stops at, never another
+  op's.
+- `npm_scripts: "true"` lets `npm ci` run install scripts. Without it,
+  `npm ci --ignore-scripts`.
+- `chant_github: "true"` gives the op `GITHUB_TOKEN` too, for an op that
+  pushes, such as a release that tags.
+- `chant_digest`: `plan` (the default) or `image`. With `image`, the
+  release record's digest must be the image Fly runs. With `plan`, Fly
+  must run a different image than before.
+
+Secrets:
+- `FLY_API_TOKEN` must be a deploy token for the one app that expires
+  within 30 days: `fly tokens create deploy -a <app> -x 720h`. The box
+  reads its caveats with `flyctl tokens debug` and refuses an org token or
+  one that lives longer. Nothing of the repository's runs before that
+  check.
+- `GITHUB_TOKEN` must be able to push the repository, because chant's
+  ledger (`chant/lifecycle`) goes to origin. The driver checks it can push
+  before anything runs. Only the driver's own `git fetch`, `push` and
+  `ls-remote` use it, through a credential helper for `https://github.com`.
+
+**The repository's chant op runs with `FLY_API_TOKEN`** in its environment:
+that's how it deploys. `npm ci` and `chant components release` get neither
+token. The plan says all of this, and the deploy's page shows it
+(`plan_text`). The approval dialog checks that the text hashes to the
+plan it signs, and says not to approve if it doesn't.
+
+On the box, the driver:
+1. checks out the commit by its full id, exactly;
+2. runs `npm ci` and `chant run <op> --json` in the chant member;
+3. at each gate, runs `chant approve <op> <gate> --approver <account>
+   --relayed-by arugula --note "..."`, then runs the op again. The note
+   names the platform's deploy, approval, approving device, operation hash
+   and run.
+
+chant's records then say:
+- the gate's resolution: `resolvedBy` is the approver's account id (not
+  their email), `relayedBy` is `arugula`, with the note and the plan's
+  digest;
+- the release: `actor` is `arugula`, `approver` is the account id.
+
+The driver finds the release record this run added for the commit in
+`chant_env`, pushes chant's ledger, and checks the app with `flyctl
+status`: every started machine's checks must pass, on one image. It says
+what it did on fd 3, a pipe only it holds, not on its output. The platform
+keeps only a link to that line in the deploy's own repository on GitHub
+(`https://github.com/<repo>/blob/<commit>/….jsonl#L<n>`) and an image of
+the app's by digest. The run links the entry (its `chant_ledger`, shown on
+the run's page), a failed apply's too. The deploy succeeds only if Fly is
+healthy, the entry reached origin, and the record is tied to what Fly runs.
+
+**Rolling back** is a new deploy, planned with `"roll_back": true` and the
+commit to go back to. That commit must be one the environment ran, and the
+image comes from that deploy's log. It's approved like any other deploy.
+The box runs `flyctl deploy --app <app> --image <image>` and checks the app
+runs that image, healthy. Then `chant components release` records the
+release again in chant's ledger, as the approver, and the run links that
+entry.
+
 **Agents in conversations (M197).** Three more powers let a machine's
 agents into its owner's conversations: `threads.read` and `threads.post`
 over a project (a team's channels are its default project's; an object's

@@ -29,7 +29,7 @@ fn production(db: &Db, project_id: &str) -> Environment {
 
 fn plan(db: &Db, env: &str, sha: &str, by: &Actor, at: u64) -> Deploy {
     let source = commit(sha);
-    db.plan_deploy(&NewDeploy { environment: env, source: &source, plan_digest: &digest(sha) }, by, at)
+    db.plan_deploy(&NewDeploy { environment: env, source: &source, plan_digest: &digest(sha), roll_back: None }, by, at)
         .unwrap()
         .unwrap()
 }
@@ -166,7 +166,7 @@ fn a_deploy_moves_through_s37s_states() {
     assert_eq!(record(&db, "dep_none", EventKind::Canceled, &jake(), 15), Err(Refusal::Gone));
     assert!(
         db.plan_deploy(
-            &NewDeploy { environment: "env_none", source: &commit("a"), plan_digest: &digest("a") },
+            &NewDeploy { environment: "env_none", source: &commit("a"), plan_digest: &digest("a"), roll_back: None },
             &jake(),
             1
         )
@@ -200,7 +200,7 @@ fn agents_never_approve() {
     assert_eq!(approve(&db, &d.id, 5), Err(Refusal::State(State::Denied)));
     assert!(
         db.plan_deploy(
-            &NewDeploy { environment: &env.id, source: &commit("b"), plan_digest: &digest("b") },
+            &NewDeploy { environment: &env.id, source: &commit("b"), plan_digest: &digest("b"), roll_back: None },
             &Actor::Platform,
             6
         )

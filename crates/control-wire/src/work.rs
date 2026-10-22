@@ -109,6 +109,19 @@ pub struct DeployWork {
     /// from [`WORK_SECRETS`], while the run runs.
     #[serde(default)]
     pub secrets: Vec<String>,
+    /// The environment's driver settings (M220): the plan names them, so
+    /// the machine checks them against the approved plan
+    /// (`arugula_e2e::drivers::planned`).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub settings: arugula_e2e::drivers::Settings,
+    /// For a roll back (M220): the earlier deploy it goes back to, and what
+    /// that ran. The plan names it too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roll_back: Option<arugula_e2e::drivers::RollBack>,
+    /// The approval's id (`apv_`), for the driver to note where it records
+    /// it (chant's approve note).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval_id: Option<String>,
 }
 
 /// A passkey's assertion as the hub checked it (M218): each base64url.

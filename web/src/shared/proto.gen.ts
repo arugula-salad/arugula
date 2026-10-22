@@ -2570,6 +2570,11 @@ started_by_agent: string | null,
  */
 grant: string | null, last_seq: number, created_at: number, started_at: number | null, ended_at: number | null, exit_code: number | null, 
 /**
+ * A release's entry in chant's ledger (M220, aru-098): a link to its
+ * line on GitHub, which the platform checked is one.
+ */
+chant_ledger?: string | null, 
+/**
  * The pane it runs in on its machine (its `running` event says): its
  * live view, which the project's people watch end to end.
  */

@@ -24,6 +24,7 @@ pub mod block;
 pub mod cert;
 pub mod channel;
 pub mod deploy;
+pub mod drivers;
 pub mod hosted;
 pub mod keys;
 pub mod mux;

@@ -135,9 +135,22 @@ async fn geek(base: &str, method: &str, path: &str, body: Option<Value>) -> (u16
 }
 
 /// The chant-fly driver's plan for commit `sha` of acme/app to production
-/// (M219: the platform makes it, and checks a plan it's given).
+/// (M219: the platform makes it, and checks a plan it's given), with the
+/// settings [`production`] gives it (M220: defaults filled in).
 fn driver_plan(sha: &str) -> String {
-    arugula_e2e::deploy::plan_digest("chant-fly", "production", "commit", sha, "acme/app")
+    let settings = [
+        ("fly_app", "acme-app"),
+        ("chant_env", "github"),
+        ("chant_dir", "."),
+        ("chant_op", "release"),
+        ("chant_digest", "plan"),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_owned(), v.to_owned()))
+    .collect();
+    let text =
+        arugula_e2e::drivers::plan_text("chant-fly", "production", "commit", &full(sha), "acme/app", &settings, None);
+    hex::encode(Sha256::digest(text.as_bytes()))
 }
 
 pub(crate) fn digest(s: &str) -> String {
@@ -145,7 +158,13 @@ pub(crate) fn digest(s: &str) -> String {
 }
 
 fn plan_body(env: &str, sha: &str) -> Option<Value> {
-    Some(json!({ "environment": env, "source": { "kind": "commit", "ref": sha, "where": "acme/app" } }))
+    Some(json!({ "environment": env, "source": { "kind": "commit", "ref": full(sha), "where": "acme/app" } }))
+}
+
+/// A short hex id as a full commit id (chant-fly deploys only those,
+/// M220): padded with zeros to 40.
+pub(crate) fn full(sha: &str) -> String {
+    format!("{sha:0<40}")
 }
 
 /// An account's test passkey (Ed25519), the same every time.
@@ -230,6 +249,7 @@ async fn production(base: &str, t: &str) -> String {
         &format!("/api/projects/{t}/environments"),
         Some(json!({
             "name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN"],
+            "settings": { "fly_app": "acme-app", "chant_env": "github" },
         })),
     )
     .await;
@@ -272,10 +292,39 @@ async fn an_owners_phone_approves_and_the_log_keeps_its_signature() {
     )
     .await;
     assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_AN_OWNER)), "only an owner makes one: {v}");
+    // chant-fly needs its Fly app (M220), and takes only its own settings.
+    for settings in [
+        json!({}),
+        json!({ "fly_app": "acme-app" }),
+        json!({ "fly_app": "acme-app", "chant_env": "github", "token": "x" }),
+        json!({ "fly_app": "acme-app", "chant_env": "-x" }),
+    ] {
+        let (st, v) = call(
+            &base,
+            "a",
+            "POST",
+            &format!("/api/projects/{t}/environments"),
+            Some(json!({ "name": "staging", "driver": "chant-fly", "settings": settings })),
+        )
+        .await;
+        assert_eq!(st, 400, "{v}");
+    }
+
+    // A full commit id only (M220): never a branch or a short id.
+    for r in ["main", "deadbeef"] {
+        let body = json!({ "environment": env, "source": { "kind": "commit", "ref": r, "where": "acme/app" } });
+        let (st, v) = call(&base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
+        assert_eq!(st, 400, "{r}: {v}");
+    }
 
     let (id, op) = asked(&base, "b", &t, &env, "deadbeef").await;
     let (st, d) = call(&base, "x", "GET", &format!("/api/deploys/{id}"), None).await;
     assert_eq!((st, &d["may_approve"]), (200, &json!(false)), "a viewer reads it: {d}");
+    // The plan an owner reads (M220) is the one the operation names.
+    let text = d["plan_text"].as_str().unwrap();
+    assert_eq!(digest(text), driver_plan("deadbeef"), "{text}");
+    assert!(text.contains("chant run release") && text.contains("Fly app acme-app"), "{text}");
+    assert_eq!(d["environment"]["settings"]["fly_app"], "acme-app");
     let body = d["operation"]["body"].as_str().unwrap();
     assert!(
         body.starts_with(&format!(
@@ -793,7 +842,7 @@ fn recorded_only_over_the_operation_and_never_stale() {
     let plan = |at| {
         let d = db
             .plan_deploy(
-                &NewDeploy { environment: &env.id, source: &source, plan_digest: &digest("p") },
+                &NewDeploy { environment: &env.id, source: &source, plan_digest: &digest("p"), roll_back: None },
                 &Actor::person("a"),
                 at,
             )

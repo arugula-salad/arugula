@@ -114,6 +114,9 @@ pub struct Environment {
     /// The names of the secrets a driver run gets, sorted. Their values
     /// are sealed per project (M209), never here.
     pub secret_names: Vec<String>,
+    /// Its driver's settings (M220): what it needs that isn't secret, as
+    /// `arugula_e2e::drivers::settings` checks them. The plan names them.
+    pub settings: arugula_e2e::drivers::Settings,
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -433,7 +436,8 @@ pub struct Event {
     pub at: u64,
     /// A small JSON object:
     /// - `planned`: `source` (`kind`, `ref`, `where`) and `plan` (the
-    ///   plan's digest);
+    ///   plan's digest), and for a roll back (M220) `roll_back` (the deploy
+    ///   it goes back to, and what that ran);
     /// - `started`: `run`;
     /// - `staled`: `after` (the deploy that applied) and `seq` (its event);
     /// - `approved`, `denied`: the approval ([`VerifiedApproval::detail`]);
@@ -859,9 +863,13 @@ pub struct NewDeploy<'a> {
     pub environment: &'a str,
     pub source: &'a Source,
     pub plan_digest: &'a str,
+    /// A roll back (M220): the earlier deploy it goes back to and what that
+    /// ran, kept in the `planned` event (so the approval, over that event's
+    /// hash, covers it too).
+    pub roll_back: Option<&'a arugula_e2e::drivers::RollBack>,
 }
 
-const ENV_COLS: &str = "id, project_id, name, driver, secret_names, created_at, updated_at";
+const ENV_COLS: &str = "id, project_id, name, driver, secret_names, created_at, updated_at, settings";
 pub(super) const DEPLOY_COLS: &str = "id, environment_id, source_kind, source_ref, source_where, plan_digest, state, planned_seq, \
                            run_id, planned_by, planned_by_agent, created_at, updated_at";
 pub(super) const EVENT_COLS: &str = "environment_id, seq, deploy_id, kind, actor, at, detail, prev_hash, hash";
@@ -875,6 +883,7 @@ fn environment_row(r: &Row) -> Result<Environment> {
         secret_names: serde_json::from_str(&r.get::<String>(4)?)?,
         created_at: r.get(5)?,
         updated_at: r.get(6)?,
+        settings: serde_json::from_str(&r.get::<String>(7)?)?,
     })
 }
 
@@ -1221,6 +1230,20 @@ impl Db {
         secret_names: &[String],
         at: u64,
     ) -> Result<Environment> {
+        self.create_environment_with(project, name, driver, secret_names, &Default::default(), at)
+    }
+
+    /// [`Db::create_environment`] with its driver's settings (M220), as
+    /// given: the route checks them first (`arugula_e2e::drivers::settings`).
+    pub fn create_environment_with(
+        &self,
+        project: &str,
+        name: &str,
+        driver: &str,
+        secret_names: &[String],
+        settings: &arugula_e2e::drivers::Settings,
+        at: u64,
+    ) -> Result<Environment> {
         if !valid_environment_name(name) {
             bail!("{name:?} isn't an environment's name: a-z, 0-9 and -, up to 40");
         }
@@ -1232,10 +1255,19 @@ impl Db {
         self.c()
             .query_row(
                 &format!(
-                    "INSERT INTO environments (id, project_id, name, driver, secret_names, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6) RETURNING {ENV_COLS}"
+                    "INSERT INTO environments (id, project_id, name, driver, secret_names, created_at, updated_at,
+                         settings)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7) RETURNING {ENV_COLS}"
                 ),
-                params![new_environment_id(), project, name, driver, serde_json::to_string(&names)?, at],
+                params![
+                    new_environment_id(),
+                    project,
+                    name,
+                    driver,
+                    serde_json::to_string(&names)?,
+                    at,
+                    serde_json::to_string(settings)?
+                ],
                 environment_row,
             )
             .map_err(taken)
@@ -1298,10 +1330,13 @@ impl Db {
             return Ok(None);
         }
         let id = new_deploy_id();
-        let detail = json!({
+        let mut detail = json!({
             "source": { "kind": s.kind.as_str(), "ref": s.reference, "where": s.place },
             "plan": new.plan_digest,
         });
+        if let Some(r) = new.roll_back {
+            detail["roll_back"] = serde_json::to_value(r)?;
+        }
         let e = append(&tx, new.environment, &id, EventKind::Planned, by, at, &detail)?;
         let d = tx.query_row(
             &format!(
@@ -1408,6 +1443,31 @@ impl Db {
             params![environment],
             event_row,
         )
+    }
+
+    /// The roll back a deploy was planned as (M220), from its `planned`
+    /// event: `None` for a deploy forward.
+    pub fn deploy_roll_back(&self, deploy: &str) -> Result<Option<arugula_e2e::drivers::RollBack>> {
+        let planned = self.deploy_history(deploy)?.into_iter().find(|e| e.kind == EventKind::Planned.as_str());
+        let Some(e) = planned else { return Ok(None) };
+        Ok(match e.detail_json()?.get("roll_back") {
+            Some(r) => Some(serde_json::from_value(r.clone())?),
+            None => None,
+        })
+    }
+
+    /// What the newest `succeeded` event of a deploy of `source` in
+    /// `environment` kept (M220), with that deploy's id: what a roll back
+    /// to `source` goes back to.
+    pub fn last_succeeded_of(&self, environment: &str, source: &Source) -> Result<Option<(String, serde_json::Value)>> {
+        let events = self.deploy_events(environment)?;
+        for e in events.iter().rev().filter(|e| e.kind == EventKind::Succeeded.as_str()) {
+            let Some(d) = self.deploy(&e.deploy)? else { continue };
+            if d.source == *source {
+                return Ok(Some((d.id, e.detail_json()?)));
+            }
+        }
+        Ok(None)
     }
 
     /// One deploy's events, oldest first.

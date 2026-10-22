@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { actorOf, approvalBody, eventCanonical, parseOperation, sha256Hex, signApproval } from "../src/shell/e2e/deploy.ts";
+import { actorOf, approvalBody, checkPlan, eventCanonical, parseOperation, sha256Hex, signApproval } from "../src/shell/e2e/deploy.ts";
 import { platformTap } from "../src/shell/tap.ts";
 import { parse, pathOf } from "../src/platform/paths.ts";
 
@@ -65,4 +65,27 @@ test("a deploy's push opens its card on the platform page", () => {
   assert.deepEqual(parse(`/deploys/${id}`), { page: "deploy", deploy: id });
   assert.equal(pathOf({ page: "deploy", deploy: id }), `/deploys/${id}`);
   assert.equal(parse("/deploys/dep_x").page, "missing");
+});
+
+// M220: the dialog shows the plan's text only when it hashes to the plan
+// the operation names, and calls out a roll back and its image.
+test("a plan's text is shown only when it's the plan signed", async () => {
+  const text =
+    "arugula deploy plan v1\ndriver chant-fly\nenvironment production\nsource commit " +
+    "a".repeat(40) +
+    "\nwhere acme/app\nsetting fly_app acme-web\nroll back to dep_" +
+    "1".repeat(32) +
+    "\nback image registry.fly.io/acme-web:deployment-1@sha256:" +
+    "0".repeat(64) +
+    "\ndoes: fly deploy\n";
+  const digest = await sha256Hex(text);
+  const ok = await checkPlan(text, digest);
+  assert.equal(ok.driver, "chant-fly");
+  assert.deepEqual(ok.rollBack, { deploy: "dep_" + "1".repeat(32), image: "registry.fly.io/acme-web:deployment-1@sha256:" + "0".repeat(64) });
+  const forward = text.replace(/roll back to .*\nback image .*\n/, "");
+  assert.equal((await checkPlan(forward, await sha256Hex(forward))).rollBack, null);
+  // Another app, the same digest: not the plan signed.
+  assert.equal(await checkPlan(text.replace("acme-web\n", "acme-evil\n"), digest), "its plan's text isn't the plan you'd sign");
+  assert.equal(await checkPlan(null, digest), "the platform didn't show its plan");
+  assert.equal(await checkPlan("x\n", await sha256Hex("x\n")), "its plan's text can't be read");
 });

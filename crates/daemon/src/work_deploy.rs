@@ -65,6 +65,22 @@ printf 'applied %s\n' "$DEPLOY_SOURCE_REF" > "$HOME/applied" && echo "fake drive
 case "$DEPLOY_SOURCE_REF" in fail*) echo "fake driver: failing part way" >&2; exit 3;; esac
 echo "fake driver: done""#;
 
+/// The chant→Fly driver's apply (M220, `work_deploy_chant_fly.mjs`): run
+/// with `node`, as the plan the owner approved says
+/// (`arugula_e2e::drivers::plan_text`). It says what it did on fd 3
+/// ([`RESULT_FD`]).
+pub const CHANT_FLY: &str = include_str!("work_deploy_chant_fly.mjs");
+
+/// The fd a driver says what its apply did on (M220): a pipe only it is
+/// given (not its standard output, which what it runs shares), whose JSON
+/// object is reported with the run's end, and which the platform checks and
+/// keeps (chant's ledger entry, Fly's image and health).
+#[cfg(unix)]
+pub const RESULT_FD: i32 = 3;
+
+/// The most a driver's result holds, in bytes.
+const MAX_RESULT: usize = 2048;
+
 /// Whether this machine is a deploy's box (M219): control enrolled it for
 /// one deploy's run. Nobody gets in, it takes that run only, and it stops
 /// once the run's end is reported.
@@ -102,7 +118,9 @@ pub fn harden_sudo(as_: &RunAs) -> Result<(), Refused> {
         .flatten()
         .map(|u| u.name)
         .ok_or_else(|| refuse("no user name"))?;
-    let rule = format!("{me} ALL=({}) NOPASSWD: ALL\n", as_.user);
+    // `closefrom_override`: the driver's result pipe (fd 3, M220) reaches
+    // it through `sudo -C 4`.
+    let rule = format!("{me} ALL=({}) NOPASSWD: ALL\nDefaults:{me} closefrom_override\n", as_.user);
     // The narrow rule in, the blanket one out; the user's password locked
     // and its admin groups gone, so nothing gives it root back.
     let script = format!(
@@ -195,6 +213,9 @@ fn fake_on() -> bool {
 pub fn driver_argv(driver: &str) -> Result<Vec<String>, Refused> {
     match driver {
         "fake" if fake_on() => Ok(vec!["/bin/sh".into(), "-c".into(), FAKE.into()]),
+        arugula_e2e::drivers::CHANT_FLY => {
+            Ok(vec!["node".into(), "--input-type=module".into(), "-e".into(), CHANT_FLY.into()])
+        }
         "fake" => Err(Refused("driver", "this box doesn't run the fake driver".into())),
         other => Err(Refused("driver", format!("this box has no {} driver yet", printable(other)))),
     }
@@ -251,9 +272,17 @@ pub fn check(app: &App, item: &WorkItem, d: &DeployWork) -> Result<(), Refused> 
         .as_ref()
         .map(|p| PasskeyParts { client_data_json: &p.client_data_json, authenticator_data: &p.authenticator_data });
     check_apply(&d.approval, o, &d.deploy, &owners, pk, now_ms()).map_err(|r| Refused(r.code(), r.says().into()))?;
-    // The plan the owner approved names the driver: the platform can't
-    // swap in another.
-    if !o.planned_for(&d.driver) {
+    // The plan the owner approved names the driver, its settings and the
+    // roll back (M220): the platform can't swap in another driver, another
+    // Fly app, or another image to go back to.
+    let settings_ok = arugula_e2e::drivers::settings(&d.driver, &d.settings).is_ok_and(|s| s == d.settings);
+    let roll_back_ok =
+        d.roll_back.as_ref().is_none_or(|r| arugula_e2e::drivers::roll_back_ok(&d.driver, &d.settings, r));
+    let source_ok = arugula_e2e::drivers::source_ok(&d.driver, &o.source_kind, &o.source_ref);
+    if !settings_ok || !roll_back_ok || !source_ok {
+        return Err(Refused("op_form", "the deploy's settings aren't ones its driver takes".into()));
+    }
+    if !arugula_e2e::drivers::planned(&d.driver, o, &d.settings, d.roll_back.as_ref()) {
         return Err(Refused("plan_driver", "the approved plan isn't this driver's plan for this deploy".into()));
     }
     // Each deploy applies on this box once, and a box applies one deploy.
@@ -488,6 +517,7 @@ fn driver_command(
     argv: &[String],
     as_: Option<&RunAs>,
     dir: &std::path::Path,
+    result: &ResultPipe,
 ) -> tokio::process::Command {
     let work = work_dir(run, as_, dir);
     let user = as_.map_or_else(|| "arugula".to_owned(), |a| a.user.clone());
@@ -508,6 +538,15 @@ fn driver_command(
         ("DEPLOY_SOURCE_WHERE", o.source_where.clone()),
         ("DEPLOY_PLAN", o.plan.clone()),
         ("DEPLOY_SECRETS", names.join(" ")),
+        // M220: who approved it (chant's approve gate records them), the
+        // settings and the roll back the plan names.
+        ("DEPLOY_RUN", run.to_owned()),
+        ("DEPLOY_APPROVER", d.approval.account.clone()),
+        ("DEPLOY_APPROVED_BY", d.approval.by.clone()),
+        ("DEPLOY_APPROVAL", d.approval_id.clone().unwrap_or_default()),
+        ("DEPLOY_OP_HASH", d.approval.op.clone()),
+        ("DEPLOY_SETTINGS", serde_json::to_string(&d.settings).unwrap_or_default()),
+        ("DEPLOY_ROLL_BACK", d.roll_back.as_ref().and_then(|r| serde_json::to_string(r).ok()).unwrap_or_default()),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_owned(), v))
@@ -516,7 +555,8 @@ fn driver_command(
     let mut c = match as_ {
         Some(a) => {
             let mut c = tokio::process::Command::new("sudo");
-            c.args(["-n", "-u", &a.user, "--", "env", "-i"]);
+            // `-C 4`: fd 3, its result pipe, stays open through sudo.
+            c.args(["-n", "-C", "4", "-u", &a.user, "--", "env", "-i"]);
             c.args(env.iter().map(|(k, v)| format!("{k}={v}")));
             c.args(["/bin/bash", "--noprofile", "--norc", "-c", &script]);
             c
@@ -528,7 +568,91 @@ fn driver_command(
         }
     };
     c.current_dir("/").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    result.give(&mut c);
     c
+}
+
+/// The driver's result pipe (M220): its write end becomes the driver's fd
+/// 3, its read end stays here. Unix only: a deploy's box is Linux.
+#[cfg(unix)]
+pub struct ResultPipe {
+    r: std::os::fd::OwnedFd,
+    w: std::os::fd::OwnedFd,
+}
+
+#[cfg(unix)]
+impl ResultPipe {
+    pub fn new() -> Result<Self, String> {
+        let (r, w) = nix::unistd::pipe2(nix::fcntl::OFlag::O_CLOEXEC).map_err(|e| format!("its result pipe: {e}"))?;
+        Ok(Self { r, w })
+    }
+
+    /// Make the write end `c`'s fd 3 (dup2 leaves the copy open across
+    /// exec).
+    fn give(&self, c: &mut tokio::process::Command) {
+        use std::os::fd::AsRawFd as _;
+        let w = self.w.as_raw_fd();
+        // SAFETY: dup2 is async-signal-safe, and nothing else runs in the
+        // child between fork and exec.
+        unsafe {
+            c.pre_exec(move || {
+                if nix::libc::dup2(w, RESULT_FD) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+
+    /// The driver has its own copy: this one goes, so the pipe ends with
+    /// the driver.
+    fn spawned(self) -> std::os::fd::OwnedFd {
+        drop(self.w);
+        self.r
+    }
+}
+
+/// What's in the driver's result pipe once every writer is gone: at most
+/// [`MAX_RESULT`] bytes, never waiting.
+#[cfg(unix)]
+fn read_result(fd: std::os::fd::OwnedFd) -> Vec<u8> {
+    use std::io::Read as _;
+    let mut f = std::fs::File::from(fd);
+    let _ = nix::fcntl::fcntl(&f, nix::fcntl::FcntlArg::F_SETFL(nix::fcntl::OFlag::O_NONBLOCK));
+    let mut out = Vec::new();
+    let mut buf = [0u8; 1024];
+    while out.len() <= MAX_RESULT {
+        match f.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => out.extend_from_slice(&buf[..n]),
+        }
+    }
+    out
+}
+
+/// Not on Windows: a deploy's box is Linux.
+#[cfg(not(unix))]
+pub struct ResultPipe;
+
+#[cfg(not(unix))]
+impl ResultPipe {
+    pub fn new() -> Result<Self, String> {
+        Err("a deploy's driver runs on a Linux box only".into())
+    }
+
+    fn give(&self, _: &mut tokio::process::Command) {}
+
+    fn spawned(self) -> NoPipe {
+        NoPipe
+    }
+}
+
+#[cfg(not(unix))]
+pub struct NoPipe;
+
+#[cfg(not(unix))]
+fn read_result(_: NoPipe) -> Vec<u8> {
+    Vec::new()
 }
 
 /// Send the run's reports until its `running` is answered (at most a
@@ -687,7 +811,7 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
     let dir = app.control.state_dir().to_owned();
     let Some(d) = item.deploy.clone() else { return };
     let run_id = l.run.clone();
-    let finish = |end: Result<i32, String>| {
+    let finish = |end: Result<i32, String>, result: Option<serde_json::Value>| {
         let (app, run) = (app.clone(), run_id.clone());
         async move {
             RUNNING.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
@@ -697,9 +821,17 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
             }
             let Some((keys, me, ..)) = me(&app) else { return };
             let dir = app.control.state_dir().to_owned();
+            // What the driver said it did (M220), with its exit.
+            let exited = |code: i32| {
+                let mut v = serde_json::json!({ "exit": code });
+                if let Some(r) = &result {
+                    v["result"] = r.clone();
+                }
+                v
+            };
             let ended = update(&dir, &run, |now| match &end {
-                Ok(0) => now.push(&keys, &me, State::Succeeded, serde_json::json!({ "exit": 0 })),
-                Ok(code) => now.push(&keys, &me, State::Failed, serde_json::json!({ "exit": code })),
+                Ok(0) => now.push(&keys, &me, State::Succeeded, exited(0)),
+                Ok(code) => now.push(&keys, &me, State::Failed, exited(*code)),
                 Err(why) => {
                     // Already failed (refused by control): nothing more.
                     if now.state == State::Running.as_str() {
@@ -718,10 +850,12 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
             }
         }
     };
-    let Some((keys, me, ..)) = me(&app) else { return finish(Err("this machine left control".into())).await };
+    let Some((keys, me, ..)) = me(&app) else {
+        return finish(Err("this machine left control".into()), None).await;
+    };
     let (pane, epoch, fifo, mut out) = match pane(&app, &l, &d).await {
         Ok(p) => p,
-        Err(why) => return finish(Err(format!("start: {why}"))).await,
+        Err(why) => return finish(Err(format!("start: {why}")), None).await,
     };
     let o = &d.operation;
     let banner = format!(
@@ -754,6 +888,8 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
     let said = |why: &str| format!("arugula: {}\n", printable(why));
     // The short-lived tokens it was given, to revoke when its driver ends.
     let mut revocable: Vec<(String, String)> = Vec::new();
+    // What the driver said it did, on its result pipe (M220).
+    let mut said_on_fd: Vec<u8> = Vec::new();
     let end = async {
         // Once per deploy on this machine, marked before anything runs.
         if !mark_applied(&dir, &d.deploy, &l.run) {
@@ -763,7 +899,16 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
         let argv = driver_argv(&d.driver).map_err(|r| r.1)?;
         let given = secrets(&app, &l.run, &d.secrets).await?;
         revocable = given.iter().filter_map(|s| s.revoke.clone().map(|u| (u, s.value.clone()))).collect();
-        let mut child = match driver_command(&l.run, &d, &argv, as_.as_ref(), &dir).spawn() {
+        let pipe = match ResultPipe::new() {
+            Ok(p) => p,
+            Err(e) => {
+                wipe(given);
+                return Err(e);
+            }
+        };
+        let spawned = driver_command(&l.run, &d, &argv, as_.as_ref(), &dir, &pipe).spawn();
+        let result_r = pipe.spawned();
+        let mut child = match spawned {
             Ok(c) => c,
             Err(e) => {
                 wipe(given);
@@ -811,10 +956,24 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
         }
         drop(tx);
         wipe(given);
-        while let Some(chunk) = rx.recv().await {
-            let _ = out.write_all(&chunk).await;
-        }
-        let status = child.wait().await.map_err(|e| format!("its driver: {e}"))?;
+        // Its output to the pane while it runs; once it ends, everything the
+        // run user left goes first (M220), so nothing it started writes after
+        // the end or holds its output open.
+        let ran = async {
+            let status = child.wait().await;
+            if let Some(a) = &as_ {
+                kill_all(a).await;
+            }
+            status
+        };
+        let shown = async {
+            while let Some(chunk) = rx.recv().await {
+                let _ = out.write_all(&chunk).await;
+            }
+        };
+        let (status, ()) = tokio::join!(ran, shown);
+        said_on_fd = read_result(result_r);
+        let status = status.map_err(|e| format!("its driver: {e}"))?;
         status.code().ok_or_else(|| "stopped".to_owned())
     }
     .await;
@@ -824,12 +983,13 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
     // Its tokens are revoked by the box itself, the token as its own
     // bearer (the platform tries too).
     revoke_tokens(std::mem::take(&mut revocable)).await;
-    let tail = match &end {
+    let result = result_of(&said_on_fd);
+    let tail_line = match &end {
         Ok(0) => said("the deploy was applied"),
         Ok(code) => said(&format!("the driver exited {code}")),
         Err(why) => said(why),
     };
-    let _ = out.write_all(tail.as_bytes()).await;
+    let _ = out.write_all(tail_line.as_bytes()).await;
     let _ = out.flush().await;
     drop(out);
     // The pane has its end; the FIFO goes once it's read it.
@@ -842,7 +1002,7 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
     let _ = follower.await;
     crate::run_logs::finish(&app, &l.run, pane, epoch, as_.as_ref()).await;
     remove_home(as_.as_ref(), &work_dir(&l.run, as_.as_ref(), &dir)).await;
-    finish(end).await;
+    finish(end, result).await;
 }
 
 /// Revoke each short-lived token at its revoke URL, the token as its own
@@ -877,6 +1037,20 @@ async fn revoke_tokens(tokens: Vec<(String, String)>) {
         wipe_bytes(token.into_bytes());
     }
 }
+
+/// What a driver said its apply did (M220): the JSON object it wrote on
+/// its result pipe, if it's one of at most [`MAX_RESULT`] bytes.
+pub fn result_of(said: &[u8]) -> Option<serde_json::Value> {
+    if said.len() > MAX_RESULT {
+        return None;
+    }
+    serde_json::from_slice::<serde_json::Value>(said).ok().filter(serde_json::Value::is_object)
+}
+
+// A deploy's box is Linux: the driver's result on fd 3, node and bash.
+#[cfg(all(test, unix))]
+#[path = "work_deploy_chant_fly_tests.rs"]
+mod chant_fly_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1055,7 +1229,16 @@ mod tests {
 
     #[test]
     fn only_drivers_this_box_knows_run() {
-        assert_eq!(driver_argv("chant-fly").unwrap_err().0, "driver");
+        assert_eq!(driver_argv("apps-platform").unwrap_err().0, "driver");
+        assert_eq!(driver_argv("chant-fly").unwrap()[..3], ["node", "--input-type=module", "-e"]);
         assert!(good_name("FLY_API_TOKEN") && !good_name("1X") && !good_name("a") && !good_name("A B"));
+    }
+
+    #[test]
+    fn a_drivers_result_is_one_small_object() {
+        assert_eq!(result_of(br#"{"a":2}"#).unwrap()["a"], 2);
+        assert!(result_of(b"[1]").is_none(), "an object only");
+        assert!(result_of(format!("{{\"a\":\"{}\"}}", "x".repeat(3000)).as_bytes()).is_none());
+        assert!(result_of(b"").is_none());
     }
 }

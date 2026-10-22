@@ -37,7 +37,9 @@
 //!   short-lived tokens minted then ([`crate::drivers::Mint`]), and never
 //!   given again.
 //! - **Ended by its run.** The run's end ends the deploy: `succeeded` once
-//!   the driver's check passes ([`crate::drivers::Driver::verify`]), else
+//!   the driver's check passes ([`crate::drivers::Driver::verify`], over
+//!   what the box reported its apply did, M220: its log keeps what the
+//!   driver takes of it, and the run links chant's ledger entry), else
 //!   `failed`, which pages its project's owners with the run's log
 //!   ([`page`]), once. A run that ended before it started cancels the
 //!   deploy, with no `started`; when its box refused it (the approval
@@ -446,6 +448,7 @@ pub fn deploy_work(db: &Db, run: &str) -> Result<Option<DeployWork>> {
     if let Some(d) = drivers::driver(&env.driver) {
         secrets.extend(d.mints(&env).iter().map(|m| m.name().to_owned()));
     }
+    let roll_back = db.deploy_roll_back(&dr.deploy)?;
     Ok(Some(DeployWork {
         deploy: dr.deploy,
         operation,
@@ -456,9 +459,20 @@ pub fn deploy_work(db: &Db, run: &str) -> Result<Option<DeployWork>> {
             authenticator_data: p.authenticator_data,
             signature: p.signature,
         }),
+        roll_back,
+        approval_id: Some(dr.approval),
         driver: dr.driver,
         secrets,
+        settings: env.settings,
     }))
+}
+
+/// What a run's box reported its apply did (M220): its last event's
+/// `result`, `Null` when none.
+fn reported_result(db: &Db, run: &Run) -> Result<Value> {
+    let last = db.run_events(&run.id)?.pop();
+    let detail: Value = last.and_then(|e| serde_json::from_str(&e.detail).ok()).unwrap_or_default();
+    Ok(detail.get("result").cloned().unwrap_or_default())
 }
 
 /// Why a run ended, from its last event: its reason, or its exit code.
@@ -540,19 +554,37 @@ pub async fn reported(app: &Platform, run: &Run) -> Result<Option<Reported>> {
     }
     let at = run.ended_at.unwrap_or(now);
     let env = db.environment(&d.environment)?.context("a deploy's environment is gone")?;
-    let verdict = match (run.state, drivers::driver(&env.driver)) {
-        (RunState::Succeeded, Some(driver)) => driver.verify(&d, run),
+    let driver = drivers::driver(&env.driver);
+    // What the box said it did (M220): the run links chant's ledger entry
+    // whenever it wrote one, a failed apply's too (aru-098), and the log
+    // keeps what the driver checked of it.
+    let result = reported_result(db, run)?;
+    let kept = driver.map(|dr| dr.kept(&env, &d, &result)).unwrap_or_default();
+    if let Some(entry) = driver.and_then(|dr| dr.ledger(&env, &d, &result))
+        && db.link_chant_ledger(&run.id, &entry)?
+    {
+        info!(deploy = d.id, run = run.id, entry, "a deploy's run linked chant's ledger entry");
+    }
+    let verdict = match (run.state, driver) {
+        (RunState::Succeeded, Some(driver)) => driver.verify(&env, &d, run, &result),
         (RunState::Succeeded, None) => Verdict::Unhealthy(format!("there's no driver {} here to check it", env.driver)),
         _ => Verdict::Unhealthy(why_it_ended(db, run)?),
     };
+    let with_kept = |mut v: Value| {
+        if let Some(m) = v.as_object_mut() {
+            m.extend(kept.clone());
+        }
+        v
+    };
     match verdict {
         Verdict::Healthy => {
-            if db.record_deploy(&d.id, EventKind::Succeeded, &by, at, json!({ "run": run.id }))?.is_ok() {
+            let detail = with_kept(json!({ "run": run.id }));
+            if db.record_deploy(&d.id, EventKind::Succeeded, &by, at, detail)?.is_ok() {
                 info!(deploy = d.id, run = run.id, "a deploy was applied");
             }
         }
         Verdict::Unhealthy(why) => {
-            let detail = json!({ "run": run.id, "reason": why });
+            let detail = with_kept(json!({ "run": run.id, "reason": why }));
             if db.record_deploy(&d.id, EventKind::Failed, &by, at, detail)?.is_ok() {
                 warn!(deploy = d.id, run = run.id, why, "a deploy's apply failed");
                 page(app, &d.id, &run.id, &why).await;

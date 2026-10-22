@@ -198,6 +198,10 @@ pub struct RunView {
     pub ended_at: Option<u64>,
     #[serde(default)]
     pub exit_code: Option<i64>,
+    /// A release's entry in chant's ledger (M220, aru-098): a link to its
+    /// line on GitHub, which the platform checked is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chant_ledger: Option<String>,
     /// The pane it runs in on its machine (its `running` event says): its
     /// live view, which the project's people watch end to end.
     #[serde(default)]

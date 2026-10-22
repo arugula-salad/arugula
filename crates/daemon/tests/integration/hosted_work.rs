@@ -599,6 +599,9 @@ fn deploy_item(f: &Fake, run: &str, dep: &str, source: &str, by: &DeviceKeys) ->
             }),
             driver: "fake".into(),
             secrets: vec!["APP_TOKEN".into()],
+            settings: Default::default(),
+            roll_back: None,
+            approval_id: None,
         }),
     }
 }

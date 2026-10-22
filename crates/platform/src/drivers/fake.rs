@@ -5,9 +5,9 @@
 //! must catch), and fails part way when the source's reference starts with
 //! `fail`. It verifies by its run's exit, and rolls back.
 
-use super::{Driver, Planned, Verdict, exited_0};
+use super::{Driver, Verdict, exited_0};
 use crate::db::{
-    deploys::{Deploy, Environment, Source},
+    deploys::{Deploy, Environment},
     runs::Run,
 };
 
@@ -21,11 +21,7 @@ impl Driver for Fake {
         NAME
     }
 
-    fn plan(&self, env: &Environment, source: &Source) -> Planned {
-        super::plan_of(NAME, env, source)
-    }
-
-    fn verify(&self, _: &Deploy, run: &Run) -> Verdict {
+    fn verify(&self, _: &Environment, _: &Deploy, run: &Run, _: &serde_json::Value) -> Verdict {
         exited_0(run)
     }
 

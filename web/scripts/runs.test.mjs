@@ -4,7 +4,7 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { argvOf, commandLine, decodeOp, eventDetail, keepLatest, paneLink, runTitle, runsQuery, startedBy, stripAnsi, took } from "../src/platform/runs-text.ts";
+import { argvOf, commandLine, httpsOnly, decodeOp, eventDetail, keepLatest, paneLink, runTitle, runsQuery, startedBy, stripAnsi, took } from "../src/platform/runs-text.ts";
 
 const b64 = (s) => Buffer.from(s, "utf8").toString("base64");
 const op = (lines) => `arugula op v1\ndaemon d1\n${lines.join("\n")}\n`;
@@ -73,4 +73,9 @@ test("a followed log keeps its latest pages, about 4 MiB", () => {
   assert.deepEqual(pages.map((p) => p.n), [1, 2]);
   assert.deepEqual(keepLatest(pages, page(3, 20), 8).map((p) => p.n), [3], "never the newest");
   assert.equal(keepLatest([], page(0, 1)).length, 1);
+});
+
+test("a chant ledger link is a link only when it's https (M220)", () => {
+  assert.equal(httpsOnly("https://github.com/acme/app/blob/" + "a".repeat(40) + "/github/releases.jsonl#L3"), true);
+  for (const bad of ["javascript:alert(1)", "http://github.com/x", "data:text/html,x", "chant:acme/app", "not a url"]) assert.equal(httpsOnly(bad), false, bad);
 });

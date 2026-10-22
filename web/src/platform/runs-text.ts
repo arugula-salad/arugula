@@ -206,3 +206,13 @@ export function keepLatest<T extends { text: string }>(pages: T[], next: T, most
   while (out.length > 1 && size > most) size -= out.shift()!.text.length;
   return out;
 }
+
+/** Whether `url` may be a link: an https URL, nothing else (a run's chant
+ * ledger entry, M220, is what its box reported). */
+export function httpsOnly(url: string): boolean {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
