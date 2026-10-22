@@ -11,6 +11,27 @@ const OPEN = 1;
 const DATA = 2;
 const CLOSE = 3;
 const OPENED = 4;
+/** M182: as OPEN, and a hosted machine that's asleep is woken. */
+const OPEN_WAKE = 5;
+/** M182: what's become of a hosted machine's box, as JSON (WakeSaid). */
+const WAKE = 6;
+
+/** How long an open waits once control says it's waking the machine's
+ * box: control gives up on it first (crates/control/src/wake.rs). */
+export const WAKE_MS = 50_000;
+
+/** What control says of a hosted machine's box (M182): `waking` as it
+ * starts to wake it, then `failed` (`code`, `why`) or `asleep` (nobody
+ * asked to wake it) before the channel's close. */
+export interface WakeSaid {
+  /** `awake` is the page's own: the machine answered after waking, `ms`
+   * from the open (shown a moment: the phone's gate reads it, #1243). */
+  state: "waking" | "asleep" | "failed" | "awake";
+  /** `gone`, `refused`, `unavailable`, `starting`, `failed` or `silent`. */
+  code?: string;
+  why?: string;
+  ms?: number;
+}
 
 /** The close code (try again later) control's relay closes a browser's
  * socket with when it's at its ceiling (#344), saying why. */
@@ -49,6 +70,8 @@ class MuxChannel implements SocketLike {
   reason = "";
   /** Set when control's relay was full (#344). */
   full = false;
+  /** M182: what control last said of a hosted machine's box. */
+  wake: WakeSaid | undefined;
   private mux: RelayMux;
   readonly chan: number;
   readonly url: string;
@@ -96,7 +119,7 @@ export class RelayMux {
   private ws: WebSocket | null = null;
   private ready: Promise<WebSocket> | null = null;
   private next = 1;
-  private chans = new Map<number, { ch: MuxChannel; opened: (ok: boolean) => void }>();
+  private chans = new Map<number, { ch: MuxChannel; opened: (ok: boolean) => void; said?: (w: WakeSaid) => void }>();
   /** #369: when the shared socket last brought anything, for any channel. */
   private heardAt = 0;
 
@@ -161,6 +184,15 @@ export class RelayMux {
       c.opened(true);
     } else if (b[0] === DATA) {
       c.ch.onmessage?.({ data: payload.slice().buffer });
+    } else if (b[0] === WAKE) {
+      let w: WakeSaid;
+      try {
+        w = JSON.parse(new TextDecoder().decode(payload)) as WakeSaid;
+      } catch {
+        return;
+      }
+      c.ch.wake = w;
+      c.said?.(w);
     } else if (b[0] === CLOSE) {
       c.ch.reason = new TextDecoder().decode(payload);
       this.chans.delete(chan);
@@ -185,16 +217,19 @@ export class RelayMux {
     this.chans.delete(chan);
   }
 
-  /** A channel to daemon `id`, once control has its stream up. */
-  async open(id: string, timeoutMs: number): Promise<SocketLike> {
+  /** A channel to daemon `id`, once control has its stream up. `wake`
+   * (M182): a hosted machine that's asleep is woken, and `said` hears
+   * what control says of its box; the open waits longer while it wakes. */
+  async open(id: string, timeoutMs: number, wake = false, said?: (w: WakeSaid) => void): Promise<SocketLike> {
     const ws = await this.socket(timeoutMs);
     const chan = this.next++;
     const ch = new MuxChannel(this, chan, `${this.url}#${id}`);
     return new Promise((res, rej) => {
-      const t = setTimeout(() => {
+      const giveUp = () => {
         ch.close();
         rej(new Error(`timed out: ${id} through ${this.url}`));
-      }, timeoutMs);
+      };
+      let t = setTimeout(giveUp, timeoutMs);
       this.chans.set(chan, {
         ch,
         opened: (ok) => {
@@ -202,10 +237,17 @@ export class RelayMux {
           if (ok) res(ch);
           // Control answered, but no channel: the shared socket works, so
           // a socket of its own wouldn't do better.
-          else rej(Object.assign(new Error(ch.reason || `couldn't reach ${id}`), { refused: true, full: ch.full }));
+          else rej(Object.assign(new Error(ch.reason || `couldn't reach ${id}`), { refused: true, full: ch.full, wake: ch.wake }));
+        },
+        said: (w) => {
+          if (w.state === "waking") {
+            clearTimeout(t);
+            t = setTimeout(giveUp, WAKE_MS);
+          }
+          said?.(w);
         },
       });
-      ws.send(frame(OPEN, chan, new TextEncoder().encode(id)));
+      ws.send(frame(wake ? OPEN_WAKE : OPEN, chan, new TextEncoder().encode(id)));
     });
   }
 }

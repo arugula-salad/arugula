@@ -10,6 +10,8 @@
 //!   what to pin ([`Enrollment`]).
 //! - From then on it signs its requests as any machine does, and refreshes
 //!   what it pinned from [`HOSTED_TRUST`] ([`Enrollment`] again).
+//! - When someone opens a hosted machine whose daemon isn't connected, the
+//!   hub asks the platform to wake its box (M182), answered [`WakeAnswer`].
 
 use arugula_e2e::{
     Cert, Revocation, Trust,
@@ -143,6 +145,51 @@ pub struct DelegationPost {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RevokePost {
     pub revoke: DelegationRevoke,
+}
+
+/// What the platform answers the hub's ask to wake a hosted workspace's
+/// box (`PlatformPort::hosted_wake`, M182): someone opened its machine and
+/// its daemon isn't connected.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WakeAnswer {
+    /// Its box runs (it was resumed, or it was running): its daemon dials
+    /// in again in a moment.
+    Awake,
+    /// It didn't wake: why, for the person who opened it.
+    Failed { code: WakeCode, why: String },
+}
+
+/// Why a box didn't wake. The page offers rebuild for each but
+/// `starting`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WakeCode {
+    /// The box is gone at the provider, or the workspace was deleted.
+    Gone,
+    /// The provider said no.
+    Refused,
+    /// The provider didn't answer in time; the platform keeps trying.
+    Unavailable,
+    /// The workspace's box is being made or made again.
+    Starting,
+    /// The workspace failed earlier and waits for a rebuild.
+    Failed,
+    /// The box woke, but its daemon didn't dial in (the hub's word).
+    Silent,
+}
+
+impl WakeCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WakeCode::Gone => "gone",
+            WakeCode::Refused => "refused",
+            WakeCode::Unavailable => "unavailable",
+            WakeCode::Starting => "starting",
+            WakeCode::Failed => "failed",
+            WakeCode::Silent => "silent",
+        }
+    }
 }
 
 // Never the sandbox id or the ticket: each is a bearer secret while its

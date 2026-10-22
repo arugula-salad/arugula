@@ -51,7 +51,9 @@ const LOST_MS: u64 = 60_000;
 /// hub's answer may lag the box's enroll).
 const ENROLL_GRACE_MS: u64 = 30_000;
 
-const GONE: &str = "The box is gone at the provider. Rebuild the workspace to make another.";
+pub(crate) const GONE: &str = "The box is gone at the provider. Rebuild the workspace to make another.";
+/// A wake the provider didn't answer: it's tried again, and still asked.
+pub(crate) const UNAVAILABLE: &str = "The compute provider isn't answering. Arugula keeps trying to wake the box.";
 const NOT_MADE: &str = "The provider didn't make the box. Rebuild the workspace to try again.";
 
 /// Two workers on each of the platform's machines, as the cloud worker
@@ -72,7 +74,11 @@ pub fn start(app: Arc<Platform>) {
                     app.busy.fetch_sub(1, SeqCst);
                 }
                 let wait = if worked { 50 } else { 1_000 };
-                tokio::time::sleep(Duration::from_millis(wait)).await;
+                // A wake someone's waiting on (M182) starts a tick now.
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_millis(wait)) => {}
+                    _ = app.wakes.kicked() => {}
+                }
             }
         });
     }
@@ -97,6 +103,7 @@ pub(crate) async fn tick_at(app: &Platform, now: u64) -> Result<bool> {
         }
     };
     app.db.checkpoint_hosted(&job, done, next, now)?;
+    app.wakes.stepped();
     Ok(true)
 }
 
@@ -337,7 +344,8 @@ async fn enrolling(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now
     Ok((None, now + ENROLLING_MS))
 }
 
-/// Resume a paused box (M182's wake on connect asks for this too).
+/// Resume a paused box, or one that may have paused itself since the
+/// worker last looked (M182's wake on connect asks for that).
 async fn wake(sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<Step> {
     let Some(sandbox) = job.sandbox.clone() else { return Ok(with(fail(job, GONE, now), Ask::Wake)) };
     match sub.resume(&sandbox, IDLE_TIMEOUT).await {
@@ -351,7 +359,13 @@ async fn wake(sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<Step
             job.w.error = Some(format!("Waking the box failed: {e}"));
             Ok((Some(Ask::Wake), now + PAUSED_MS))
         }
-        Err(e) => Err(e.into()),
+        // Not now: still asked, and tried again soon. Whoever waits on the
+        // wake (M182) hears so.
+        Err(e) => {
+            tracing::warn!(workspace = %job.w.id, error = %e, "a hosted box's wake will be tried again");
+            job.w.error = Some(UNAVAILABLE.into());
+            Ok((None, now + RETRY_MS))
+        }
     }
 }
 

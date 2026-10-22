@@ -31,6 +31,12 @@
 //                          {ok, why?, role?}
 //   routed ID              whether control's relay routes this person to ID:
 //                          {routed}
+//   open NAME [SECS] [--no-wake]
+//                          open it as the page does (M182: waking a hosted
+//                          machine that's asleep, unless --no-wake): ms from
+//                          the open to its hello and to its first pane's
+//                          screen, and what control said of its box:
+//                          {id, name, hello, ready, said}
 
 import { readFileSync } from "node:fs";
 import { fingerprint } from "../src/shell/e2e/cert.ts";
@@ -50,6 +56,8 @@ const [control] = opt("--control");
 const via = Object.fromEntries(opt("--via").map((v) => [v.slice(0, v.indexOf("=")), v.slice(v.indexOf("=") + 1)]));
 const [login] = opt("--login");
 const [name] = opt("--name");
+const noWake = args.includes("--no-wake");
+if (noWake) args.splice(args.indexOf("--no-wake"), 1);
 const [cmd, ...rest] = args;
 const out = (v: unknown) => console.log(JSON.stringify(v));
 
@@ -112,9 +120,13 @@ async function main() {
     }
     case "routed":
       return out({ routed: await d.routed(rest[0]) });
+    case "open": {
+      const box = await find(rest[0]);
+      return out({ id: box.id, name: box.name, ...(await d.open(box.id, { wake: !noWake, timeoutMs: secs(rest[1], 30) })) });
+    }
     default:
       throw new Error(
-        `unknown command ${cmd ?? "(none)"}: signin, approve, devices, online, pane, panes, team-create, team-invite, team-accept, team-admit, delegate, undelegate, hosted-entry, hosted-accept, routed`,
+        `unknown command ${cmd ?? "(none)"}: signin, approve, devices, online, pane, panes, team-create, team-invite, team-accept, team-admit, delegate, undelegate, hosted-entry, hosted-accept, routed, open`,
       );
   }
 }

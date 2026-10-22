@@ -10,7 +10,8 @@
 // - A host is `connected`, `stale` (it dropped; its panes stay, greyed,
 //   from the last summary, with when it was last heard), `offline` (never
 //   reached, or gone a while), `asleep` (a sandbox whose provider says it
-//   sleeps: never woken just to be counted) or `capped` (over the
+//   sleeps, or a hosted machine whose box is paused, M182: never woken
+//   just to be counted) or `capped` (over the
 //   connection cap: shown from what was last known).
 // - Connects go through a small limiter with jitter, so a laptop waking
 //   with 20 hosts doesn't open 20 sockets at once, and a slow or dead host
@@ -339,6 +340,11 @@ export class Fleet {
       if (this.stats.wakeAt && this.stats.allBackMs === null && this.everyoneBack()) {
         this.stats.allBackMs = Date.now() - this.stats.wakeAt;
       }
+    } else if (c.box?.state === "asleep") {
+      // M182: a hosted machine whose box is paused: shown from its last
+      // summary, and woken only when it's opened.
+      e.state = "asleep";
+      e.lostAt ??= Date.now();
     } else if (was === "connected") {
       e.state = "stale";
       e.lostAt = Date.now();

@@ -40,7 +40,7 @@ use tracing::Instrument as _;
 
 use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke, Standing},
-    hosted::{EnrollAsk, EnrollGiven, Enrolled},
+    hosted::{EnrollAsk, EnrollGiven, Enrolled, WakeAnswer},
 };
 
 use crate::{
@@ -245,6 +245,13 @@ struct SendArgs {
     draft: String,
     #[serde(default)]
     token: Option<UserToken>,
+}
+
+/// `PlatformPort::hosted_wake` (M182).
+#[derive(Serialize, Deserialize)]
+struct WakeArgs {
+    project: String,
+    workspace: String,
 }
 
 fn ids(v: &[String]) -> IdsArgs {
@@ -553,6 +560,11 @@ impl PlatformPort for HttpPlatform {
         let a = SendArgs { account: account.to_owned(), draft: draft.to_owned(), token };
         Box::pin(self.0.call("send_draft", a))
     }
+
+    fn hosted_wake<'a>(&'a self, project: &'a str, workspace: &'a str) -> BoxFuture<'a, anyhow::Result<WakeAnswer>> {
+        let a = WakeArgs { project: project.to_owned(), workspace: workspace.to_owned() };
+        Box::pin(self.0.call("hosted_wake", a))
+    }
 }
 
 /// The platform's internal API: every `PlatformPort` method of `port`,
@@ -598,6 +610,10 @@ async fn platform_call(
             "send_draft" => {
                 let a: SendArgs = args(&body)?;
                 answer(p.send_draft(&a.account, &a.draft, a.token).await?)?
+            }
+            "hosted_wake" => {
+                let a: WakeArgs = args(&body)?;
+                answer(p.hosted_wake(&a.project, &a.workspace).await?)?
             }
             _ => return Ok(None),
         }))
@@ -777,6 +793,16 @@ mod tests {
             ) -> BoxFuture<'a, anyhow::Result<TokenAnswer>> {
                 Box::pin(async { Ok(TokenAnswer::Refused { status: 404, error: "no App".into() }) })
             }
+            fn hosted_wake<'a>(
+                &'a self,
+                project: &'a str,
+                workspace: &'a str,
+            ) -> BoxFuture<'a, anyhow::Result<WakeAnswer>> {
+                let why = format!("{project} {workspace}");
+                Box::pin(async move {
+                    Ok(WakeAnswer::Failed { code: arugula_control_wire::hosted::WakeCode::Refused, why })
+                })
+            }
         }
         let base = serve(serve_platform(Arc::new(Plans), key())).await;
         let p = HttpPlatform::new(&base, key()).unwrap();
@@ -787,6 +813,11 @@ mod tests {
         p.roster_changed("t").await.unwrap();
         let e = p.account_deleted(&Deleted { account: "a".into(), machines: vec![], disbanded: vec![] }).await;
         assert!(format!("{:#}", e.unwrap_err()).contains("not now"), "an error crosses as an error");
+        let woke = p.hosted_wake("prj_a", "hw_a").await.unwrap();
+        assert_eq!(
+            woke,
+            WakeAnswer::Failed { code: arugula_control_wire::hosted::WakeCode::Refused, why: "prj_a hw_a".into() }
+        );
 
         let wrong = HttpPlatform::new(&base, PrincipalKey::new(&[9; 32]).unwrap()).unwrap();
         let e = wrong.chat_on("on").await.unwrap_err().to_string();

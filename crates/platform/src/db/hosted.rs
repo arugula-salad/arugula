@@ -196,9 +196,12 @@ impl Db {
                  WHERE id = ?1 AND deleted_at IS NULL AND COALESCE(asked, '') <> 'delete'
                      AND state NOT IN ('deleting', 'deleted')"
             ),
+            // `ready` too: a box pauses itself at its timeout before the
+            // worker sees it (M182 wakes on connect). A new wake's answer
+            // is its own: what an earlier one said goes.
             Ask::Wake => format!(
-                "UPDATE hosted_workspaces SET asked = 'wake', updated_at = ?2, {DUE_NOW}
-                 WHERE id = ?1 AND deleted_at IS NULL AND asked IS NULL AND state = 'paused'"
+                "UPDATE hosted_workspaces SET asked = 'wake', error = NULL, updated_at = ?2, {DUE_NOW}
+                 WHERE id = ?1 AND deleted_at IS NULL AND asked IS NULL AND state IN ('paused', 'ready')"
             ),
             Ask::Pause => format!(
                 "UPDATE hosted_workspaces SET asked = 'pause', updated_at = ?2, {DUE_NOW}
@@ -501,7 +504,7 @@ mod tests {
     fn asks_follow_the_state() {
         let db = Db::test();
         made(db.add_hosted_workspace("hw_1", "prj_a", "dev", &spec(), "alice", 5, 0).unwrap());
-        assert!(!db.ask_hosted("hw_1", Ask::Wake, 1).unwrap(), "not paused");
+        assert!(!db.ask_hosted("hw_1", Ask::Wake, 1).unwrap(), "not made yet");
         assert!(!db.ask_hosted("hw_1", Ask::Pause, 1).unwrap(), "not running");
         let mut job = db.claim_hosted(1).unwrap().unwrap();
         job.w.state = "paused".into();

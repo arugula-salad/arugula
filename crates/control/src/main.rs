@@ -75,6 +75,9 @@ mod teams;
 mod telemetry;
 #[cfg(test)]
 mod two_sites;
+mod wake;
+#[cfg(test)]
+mod wake_wire;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
