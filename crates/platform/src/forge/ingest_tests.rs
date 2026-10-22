@@ -364,7 +364,7 @@ fn count(app: &Platform, sql: &str) -> u64 {
 }
 
 /// A PR opened on GitHub is a row by the time the webhook's answered,
-/// well inside 5 s, and its pokes still go to the hub.
+/// well inside 5 s. No pokes go to the hub (M174).
 #[tokio::test]
 async fn a_pr_opened_is_a_row_at_once() {
     let (_gh, app, base, hub) = serve().await;
@@ -381,9 +381,7 @@ async fn a_pr_opened_is_a_row_at_once() {
     assert!(l.arrival_p95 < 1000, "{l:?}");
     assert!(l.event_p95 < 5000, "GitHub's second, then the row: {l:?}");
     assert_eq!(count(&app, "SELECT count(*) FROM forge_events WHERE kind = 'opened'"), 1);
-    // The pokes, as before.
-    let pokes = hub.pokes();
-    assert_eq!((pokes.len(), pokes[0].number, pokes[0].repo.as_str()), (1, Some(5), "acme/app"));
+    assert!(hub.pokes().is_empty(), "the poke relay is retired");
 }
 
 /// A late redelivery of an older change doesn't overwrite a newer row.
@@ -538,8 +536,8 @@ async fn a_review_is_an_event_and_no_text_is_kept() {
     assert!(app.db.mentions("SECRET").is_empty(), "{:?}", app.db.mentions("SECRET"));
 }
 
-/// A repo that isn't linked, or was unlinked, gets no rows; its pokes
-/// still go.
+/// A repo that isn't linked, or was unlinked, gets no rows, and no pokes
+/// go for it either (M174).
 #[tokio::test]
 async fn an_unlinked_repo_gets_no_rows() {
     let (_gh, app, base, hub) = serve().await;
@@ -554,7 +552,7 @@ async fn an_unlinked_repo_gets_no_rows() {
     for t in ["forge_items", "forge_events", "forge_checks"] {
         assert_eq!(count(&app, &format!("SELECT count(*) FROM {t}")), 0, "{t}");
     }
-    assert_eq!(hub.pokes().len(), 2);
+    assert!(hub.pokes().is_empty());
     // Nor does the poller read it.
     assert_eq!(poller::tick(&app, now_ms()).await.unwrap(), None);
 }

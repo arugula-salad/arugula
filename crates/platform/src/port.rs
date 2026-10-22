@@ -49,7 +49,9 @@ pub trait PlatformPort: Send + Sync {
     /// `may()` is the platform's): live, so its pokes come, or why not.
     /// `github` is the account's GitHub identity, if it signed in with
     /// GitHub; `fresh`, that a daemon just asked, not the heartbeat. One
-    /// per repository, in the order asked.
+    /// per repository, in the order asked. A hub since M174 doesn't ask: it
+    /// relays no pokes. It stays while a hub from before might (the
+    /// platform deploys first).
     fn forge_standing<'a>(
         &'a self,
         account: &'a str,

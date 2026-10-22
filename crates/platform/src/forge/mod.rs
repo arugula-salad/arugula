@@ -5,16 +5,17 @@
 //!
 //! - **Webhooks** ([`webhook`]): `POST /github/webhook` stays on control's
 //!   site (aru-076), forwarded by the hub's gateway. Signature and dedupe
-//!   are here; the pokes go to the hub, which relays them to daemons.
+//!   are here, and a linked repo's events become the mirror's rows. The
+//!   hub relayed them to daemons as pokes until M174.
 //! - **Who may hear about a repository** ([`standing`]): the account signed
 //!   in to control with GitHub, the App is installed where the repository
 //!   lives, and that installation is the person's own account, or GitHub
 //!   says they're a collaborator on it ([`GithubApp::may`], kept by
 //!   [`viewer::access`] in the database, which GitHub's events drop on
 //!   every machine). Both by the
-//!   person's numeric GitHub id. The hub asks it for each daemon's
-//!   `forge.watch` and heartbeat (`PlatformPort::forge_standing`): it keeps
-//!   the subscriptions, which live as long as a daemon's relay socket.
+//!   person's numeric GitHub id. Hubs before M174 asked it for each
+//!   daemon's `forge.watch` and heartbeat (`PlatformPort::forge_standing`),
+//!   which stays while one might.
 //! - **Hosted boxes** ([`token`]): the hub's `POST /api/daemon/github/token`
 //!   asks for a read-only installation token for one repository
 //!   (`PlatformPort::github_token`), for an account the same rule allows.
@@ -90,7 +91,7 @@ mod webhook;
 pub use app::{
     Caller, GithubApp, GithubUser, Install, Purpose, ReadToken, Repo, RepoRole, WriteToken, Writes, epoch_of, parse_pem,
 };
-pub use webhook::{pokes, signed, webhook};
+pub use webhook::{signed, webhook};
 
 /// Repositories looked up at GitHub for the first time in a while (not
 /// the heartbeat's re-checks), per account per hour: what a burst of

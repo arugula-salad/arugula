@@ -393,8 +393,8 @@ approval step.
 
 Control is two processes ("Control is two processes: a hub and a
 platform", #1150): the hub (`arugula-control`: identity, devices, rosters,
-the relay, push, block and doc origins, the jump host, daemons' forge
-subscriptions and pokes, telemetry) and the platform (`arugula-platform`:
+the relay, push, block and doc origins, the jump host, telemetry) and
+the platform (`arugula-platform`:
 chat, Cloud, billing, projects and grants, and the GitHub App's webhook
 and key, M161). The platform runs in one of two ways, from the same binaries:
 
@@ -511,11 +511,12 @@ resync.
 to `control.arugula.io/github/webhook` (nothing changes on GitHub): the
 hub's gateway forwards it to the platform, which checks the signature,
 records the delivery (`github_webhook_deliveries`, 7 days, pruned hourly)
-and hands the pokes back to the hub (`HubPort::forge_pokes`), which relays
-them to daemons as before. The hub's `forge.watch` answers and
-`/api/daemon/github/token` ask the platform (`PlatformPort::forge_standing`,
-`github_token`); the token crosses the private network in the answer,
-signed like every internal call, and is never logged.
+and writes a linked repo's rows (M164). The hub's
+`/api/daemon/github/token` asks the platform (`PlatformPort::github_token`);
+the token crosses the private network in the answer, signed like every
+internal call, and is never logged. Until M174 the platform also handed
+each webhook's pokes to the hub, which relayed them to the daemons
+watching the repository; see "The poke relay, retired" below.
 
 | Secret | `illogical-control` (hub) | `arugula-platform` |
 |---|---|---|
@@ -570,9 +571,10 @@ that tag. Nothing here is printed.
    - In the App's settings (Advanced, Recent Deliveries), redeliver a
      recent delivery: `202`, and the platform's log has `webhook handed to
      the hub` with its delivery id. Redeliver it again: `200`,
-     `{"duplicate":true}`.
+     `{"duplicate":true}`. (Since M174 the answer is `{"taken":true}` and
+     there's no `handed to the hub` line.)
    - A machine with a PR block open still hears pokes (its block says
-     live).
+     live). Not since M174.
 5. **Later**, once no rollback past M161 or to in process is planned,
    take the hub's copies away (a restart):
    `fly secrets unset -a illogical-control GITHUB_APP_WEBHOOK_SECRET GITHUB_APP_PRIVATE_KEY`.
@@ -582,9 +584,36 @@ GITHUB_APP_ID`), and every webhook is refused with 503 and `this control
 has no GitHub App: the platform has no GitHub App key`, logged as an error
 on the platform and as `the platform answered with an error` on the hub.
 GitHub keeps the failed deliveries, to redeliver once the secrets are set
-(then restart the platform). The hub also logs an error when daemons'
-watches or tokens find the platform without an App while it has
+(then restart the platform). The hub also logs an error when a hosted
+box's token finds the platform without an App while it has
 `GITHUB_APP_ID`. Daemons' blocks poll meanwhile.
+
+**The poke relay, retired** (M174, #1220). From M40 to M174 a daemon told
+the hub which github.com repos it had blocks on (`forge.watch` on its relay
+socket), heard every minute where each stood (`forge.watching`, the
+heartbeat), and heard the App's webhooks as `forge.poke`, so its blocks
+polled at once and slowly between. Since M172 a linked repo's blocks are
+pins onto the platform's mirror, and since M174 the relay is gone:
+- The hub answers every `forge.watch` with an empty
+  `{"t":"forge.watching","repos":[]}`, and says nothing else: no
+  heartbeat, no pokes, no `forge-watch` rate limit. A daemon told nothing
+  is live on nothing, so its blocks poll GitHub with its own `gh` login,
+  as they do on a tailnet without control. No daemon errors on it.
+- The platform's webhook writes rows and answers `202 {"taken":true}`. It
+  hands nothing to the hub.
+- `HubPort::forge_pokes` stays, answering 0, while a platform from before
+  M174 might call it (one rolled back past the hub): its webhooks still
+  answer GitHub 202, not 502. `PlatformPort::forge_standing` stays while
+  a hub from before might call it (the platform deploys first). Both go a
+  release later.
+- `/api/daemon/github/token` (hosted boxes' read token) is not part of the
+  relay, and stays.
+- Forgejo and GitLab blocks' own webhooks to the daemon are unchanged.
+
+Deploy order is the usual one, platform first. A new platform with an old
+hub: the hub keeps answering watches as before, but no pokes reach it.
+An old platform (a rollback) with a new hub: its pokes are taken, and go
+nowhere.
 
 **The App's write permissions** (M167, #1213). The App gains
 `issues: write` and `pull_requests: write`, and nothing else, so a draft
@@ -664,7 +693,7 @@ never a body or a comment's text.
 - **Webhooks write rows.** `pull_request`, `pull_request_review`,
   `pull_request_review_comment`, `issues`, `issue_comment`, `check_run`
   and `status` events for a linked repo write its rows in the webhook's
-  own request, before the pokes go. A row is only overwritten by a
+  own request. A row is only overwritten by a
   payload whose GitHub `updated_at` is newer, so a late redelivery
   changes nothing. GitHub's times are whole seconds: two payloads from
   the same second that disagree leave the row as it was and put the item

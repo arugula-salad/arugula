@@ -2,21 +2,16 @@
 //! M161. Each is checked against `X-Hub-Signature-256` (HMAC-SHA256 of the
 //! body with the App's webhook secret, compared in constant time) and
 //! deduplicated by `X-GitHub-Delivery` in `github_webhook_deliveries`, kept
-//! 7 days, so a redelivery is known after a deploy. What's kept of it is a
-//! *poke*: `{provider: github, host: github.com, repo, number?, event,
-//! delivery}`, one per pull request or issue it names (check runs, suites
-//! and workflow runs through their `pull_requests`; a status, or a run on a
-//! fork's PR, is repo-wide: no number). The hub relays the pokes to the
-//! daemons watching the repository (`HubPort::forge_pokes`) until M174.
-//! Before the pokes, a linked repo's payload writes the forge mirror's
-//! rows (M164, [`super::ingest`]): its metadata, never a body or a
-//! comment's text. Nothing else of the payload goes anywhere, and only the
-//! event, delivery, repository and count are logged.
+//! 7 days, so a redelivery is known after a deploy. A linked repo's payload
+//! writes the forge mirror's rows (M164, [`super::ingest`]): its metadata,
+//! never a body or a comment's text. Until M174 the hub also relayed each
+//! event to the daemons watching the repository as pokes; that relay is
+//! retired, and nothing else of the payload goes anywhere. Only the event,
+//! delivery and repository are logged.
 
 use std::sync::Arc;
 
 use arugula_control_common::err;
-use arugula_control_wire::forge::Poke;
 use arugula_e2e::now_ms;
 use axum::{
     Json,
@@ -46,37 +41,7 @@ pub fn signed(secret: &str, header: Option<&str>, body: &[u8]) -> bool {
     mac.verify_slice(&sig).is_ok()
 }
 
-/// The pokes an event makes: one per pull request or issue it names, or
-/// one for the whole repository.
-pub fn pokes(event: &str, delivery: &str, v: &Value) -> Vec<Poke> {
-    let Some(repo) = v["repository"]["full_name"].as_str().filter(|r| r.contains('/')) else { return vec![] };
-    let prs = |list: &Value| -> Vec<u64> {
-        list.as_array().into_iter().flatten().filter_map(|p| p["number"].as_u64()).collect()
-    };
-    let mut numbers: Vec<u64> = match event {
-        "pull_request" | "pull_request_review" | "pull_request_review_comment" | "pull_request_review_thread" => {
-            v["pull_request"]["number"].as_u64().into_iter().collect()
-        }
-        "issues" | "issue_comment" => v["issue"]["number"].as_u64().into_iter().collect(),
-        "check_run" => prs(&v["check_run"]["pull_requests"]),
-        "check_suite" => prs(&v["check_suite"]["pull_requests"]),
-        "workflow_run" => prs(&v["workflow_run"]["pull_requests"]),
-        _ => vec![],
-    };
-    numbers.sort_unstable();
-    numbers.dedup();
-    let one = |number| Poke {
-        provider: "github".to_owned(),
-        host: "github.com".to_owned(),
-        repo: repo.to_owned(),
-        number,
-        event: event.to_owned(),
-        delivery: delivery.to_owned(),
-    };
-    if numbers.is_empty() { vec![one(None)] } else { numbers.into_iter().map(|n| one(Some(n))).collect() }
-}
-
-/// `POST /github/webhook`: the App's events, handed to the hub as pokes.
+/// `POST /github/webhook`: the App's events, kept as the mirror's rows.
 pub async fn webhook(State(p): State<Arc<Platform>>, headers: HeaderMap, body: Bytes) -> Response {
     let came = std::time::Instant::now();
     let Some(gh) = &p.github else {
@@ -127,24 +92,9 @@ pub async fn webhook(State(p): State<Arc<Platform>>, headers: HeaderMap, body: B
         let _ = p.db.forget_delivery(&delivery);
         return err(StatusCode::INTERNAL_SERVER_ERROR, "couldn't drop kept access answers").into_response();
     }
-    // M164: a linked repo's rows, before its pokes go.
+    // M164: a linked repo's rows. M174: no pokes go to the hub.
     super::ingest::webhook(&p, &event, &delivery, &v, came);
-    let pokes = pokes(&event, &delivery, &v);
-    if pokes.is_empty() {
-        return (StatusCode::ACCEPTED, Json(json!({ "relayed": 0 }))).into_response();
-    }
-    match p.hub.forge_pokes(&pokes).await {
-        Ok(relayed) => {
-            info!(%event, %delivery, pokes = pokes.len(), relayed, "webhook handed to the hub");
-            (StatusCode::ACCEPTED, Json(json!({ "relayed": relayed }))).into_response()
-        }
-        Err(e) => {
-            // Forgotten, so GitHub's redelivery is taken.
-            warn!(%event, %delivery, error = format!("{e:#}"), "the hub didn't take a webhook's pokes");
-            let _ = p.db.forget_delivery(&delivery);
-            err(StatusCode::BAD_GATEWAY, "couldn't reach control's hub").into_response()
-        }
-    }
+    (StatusCode::ACCEPTED, Json(json!({ "taken": true }))).into_response()
 }
 
 #[cfg(test)]
@@ -165,39 +115,5 @@ mod tests {
         assert!(!signed("whsec", Some("sha1=abc"), body));
         assert!(!signed("whsec", Some("sha256=zz"), body));
         assert!(!signed("", Some(&good), body));
-    }
-
-    #[test]
-    fn what_a_poke_keeps() {
-        let pr = json!({ "action": "review_requested", "repository": { "full_name": "jhgaylor/hud" },
-            "pull_request": { "number": 7, "title": "secret title", "body": "secret body" } });
-        let p = pokes("pull_request", "d1", &pr);
-        assert_eq!(
-            p,
-            vec![Poke {
-                provider: "github".into(),
-                host: "github.com".into(),
-                repo: "jhgaylor/hud".into(),
-                number: Some(7),
-                event: "pull_request".into(),
-                delivery: "d1".into()
-            }]
-        );
-        let wire = serde_json::to_string(&p[0]).unwrap();
-        assert!(!wire.contains("secret"), "{wire}");
-        let c = json!({ "repository": { "full_name": "o/r" }, "issue": { "number": 3, "pull_request": {} } });
-        assert_eq!(pokes("issue_comment", "d", &c)[0].number, Some(3));
-        let run = json!({ "repository": { "full_name": "o/r" },
-            "check_run": { "head_sha": "abc", "pull_requests": [{ "number": 2 }, { "number": 9 }, { "number": 2 }] } });
-        assert_eq!(pokes("check_run", "d", &run).iter().map(|p| p.number).collect::<Vec<_>>(), vec![Some(2), Some(9)]);
-        // A fork's PR (no pull_requests) and a status: the whole repository.
-        let fork = json!({ "repository": { "full_name": "o/r" }, "check_suite": { "pull_requests": [] } });
-        assert_eq!(pokes("check_suite", "d", &fork)[0].number, None);
-        let st = json!({ "repository": { "full_name": "o/r" }, "sha": "abc", "state": "failure" });
-        assert_eq!(pokes("status", "d", &st)[0].number, None);
-        let wr =
-            json!({ "repository": { "full_name": "o/r" }, "workflow_run": { "pull_requests": [{ "number": 4 }] } });
-        assert_eq!(pokes("workflow_run", "d", &wr)[0].number, Some(4));
-        assert!(pokes("push", "d", &json!({})).is_empty());
     }
 }

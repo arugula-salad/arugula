@@ -1,10 +1,11 @@
 //! M40 end to end inside control: its real router on a port, a fake
 //! GitHub API that checks the App's JWT, and daemons on the relay socket
-//! (signed as daemons sign) that subscribe and hear pokes. Since M161 the
-//! App is the platform's: in process first, then with the platform as its
-//! own server behind the hub's gateway, where a webhook lands on the
-//! platform, the hub relays its pokes, and a restarted platform still knows
-//! a delivery it took.
+//! (signed as daemons sign). Since M161 the App is the platform's: in
+//! process first, then with the platform as its own server behind the
+//! hub's gateway, where a webhook lands on the platform and a restarted
+//! platform still knows a delivery it took. Since M174 the poke relay is
+//! retired: an old daemon's `forge.watch` hears an empty `forge.watching`,
+//! and no webhook reaches a daemon.
 
 use std::{
     net::SocketAddr,
@@ -241,8 +242,21 @@ async fn hook(base: &str, event: &str, delivery: &str, body: &Value, signature: 
     (r.status().as_u16(), r.json().await.unwrap_or_default())
 }
 
+/// No `forge.poke` or `forge.watching` within `ms`: nothing after the one
+/// answer.
+async fn quiet(s: &mut Sock, ms: u64) {
+    if let Some(m) = text(s, ms).await {
+        panic!("a daemon heard {m}");
+    }
+}
+
+/// M174: daemons from before 0.57 still say `forge.watch` on their relay
+/// socket. Each hears an empty `forge.watching` (live on nothing, so its
+/// blocks poll with its own login), and nothing after: no heartbeat, and
+/// no poke for a webhook on a repository it named. The webhook is still
+/// checked, deduped and taken; a hosted box still gets its token.
 #[tokio::test]
-async fn webhooks_poke_only_subscribed_daemons_of_allowed_accounts() {
+async fn old_daemons_hear_an_empty_watching_and_no_pokes() {
     let (pem, public) = forge::tests::throwaway_key();
     let h: Shared = Arc::new(Mutex::new(Hub { public, ..Hub::default() }));
     let api = fake_github(h.clone()).await;
@@ -265,8 +279,8 @@ async fn webhooks_poke_only_subscribed_daemons_of_allowed_accounts() {
     let (k1, k2, k3) = (daemon(&app, "a1", "geek"), daemon(&app, "a2", "theirs"), daemon(&app, "a3", "pk"));
     let svc = crate::router(app.clone()).into_make_service_with_connect_info::<SocketAddr>();
     tokio::spawn(async move { axum::serve(l, svc).await.unwrap() });
-    tokio::spawn(forge::heartbeat(app.clone(), Duration::from_millis(700)));
 
+    // The bytes a 0.56 daemon sends.
     let watch = json!({ "t": "forge.watch", "repos": ["jhgaylor/hud", "acme/tool", "nobody/x", "bad/../x"] });
     let mut socks = Vec::new();
     for k in [&k1, &k2, &k3] {
@@ -274,55 +288,29 @@ async fn webhooks_poke_only_subscribed_daemons_of_allowed_accounts() {
         s.send(Message::Text(watch.to_string().into())).await.unwrap();
         socks.push(s);
     }
-    let live = |v: &Value| -> Vec<(String, bool)> {
-        v["repos"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|r| (r["repo"].as_str().unwrap().to_owned(), r["live"] == true))
-            .collect()
-    };
-    let w1 = text(&mut socks[0], 3000).await.expect("d1 hears where it stands");
-    assert_eq!(w1["t"], "forge.watching");
-    assert_eq!(
-        live(&w1),
-        vec![("acme/tool".into(), true), ("jhgaylor/hud".into(), true), ("nobody/x".into(), false)],
-        "{w1}"
-    );
-    assert!(w1["repos"][2]["why"].as_str().unwrap().contains("isn't installed on nobody"), "{w1}");
-    let w2 = text(&mut socks[1], 3000).await.unwrap();
-    assert!(live(&w2).iter().all(|(_, l)| !l), "a stranger hears nothing: {w2}");
-    assert!(w2["repos"][0]["why"].as_str().unwrap().contains("collaborator"), "{w2}");
-    let w3 = text(&mut socks[2], 3000).await.unwrap();
-    assert!(w3["repos"][0]["why"].as_str().unwrap().contains("sign in to control with GitHub"), "{w3}");
-    // The access check minted a token for acme/tool, read-only, that one
-    // repository.
-    let minted = h.lock().unwrap().minted.clone();
-    assert!(
-        minted.iter().any(|m| m["installation"] == 12
-            && m["body"]["repositories"] == json!(["tool"])
-            && m["body"]["permissions"]["pull_requests"] == "read"),
-        "{minted:?}"
-    );
-    assert!(minted.iter().all(|m| m["body"]["permissions"].as_object().unwrap().values().all(|v| v == "read")));
+    for s in &mut socks {
+        let w = text(s, 3000).await.expect("an answer");
+        assert_eq!(w, json!({ "t": "forge.watching", "repos": [] }));
+    }
+    // Asked again (a block opened): the same answer, each time.
+    socks[0].send(Message::Text(watch.to_string().into())).await.unwrap();
+    assert_eq!(text(&mut socks[0], 3000).await.unwrap(), json!({ "t": "forge.watching", "repos": [] }));
+    // Other text isn't a watch, and isn't answered.
+    socks[0].send(Message::Text(json!({ "t": "forge.nothing" }).to_string().into())).await.unwrap();
+    // No access check asked GitHub anything for a watch.
+    assert!(h.lock().unwrap().minted.is_empty());
+    assert!(h.lock().unwrap().asked.is_empty());
 
-    // A signed event: only Jake's daemon hears, and only the poke.
+    // A signed event on a repository they named: taken, and nobody hears.
     let pr = json!({ "action": "review_requested", "repository": { "full_name": "jhgaylor/hud" },
         "pull_request": { "number": 7, "title": "a private title", "body": "private words" } });
     let (st, v) = hook(&base, "pull_request", "del-1", &pr, Some(sig(&pr.to_string()))).await;
-    assert_eq!((st, v["relayed"].as_u64()), (202, Some(1)), "{v}");
-    let p = loop {
-        let m = text(&mut socks[0], 3000).await.unwrap();
-        if m["t"] == "forge.poke" {
-            break m;
-        }
-    };
-    assert_eq!(
-        p["poke"],
-        json!({ "provider": "github", "host": "github.com", "repo": "jhgaylor/hud", "number": 7,
-            "event": "pull_request", "delivery": "del-1" })
-    );
-    assert!(!p.to_string().contains("private"));
+    assert_eq!((st, v["taken"].as_bool()), (202, Some(true)), "{v}");
+    assert!(v.get("relayed").is_none(), "{v}");
+    let run = json!({ "repository": { "full_name": "acme/tool" },
+        "check_run": { "head_sha": "abc", "pull_requests": [{ "number": 3 }, { "number": 5 }] } });
+    let (st, _) = hook(&base, "check_run", "del-6", &run, Some(sig(&run.to_string()))).await;
+    assert_eq!(st, 202);
     // GitHub redelivers: once is enough.
     let (st, v) = hook(&base, "pull_request", "del-1", &pr, Some(sig(&pr.to_string()))).await;
     assert_eq!((st, v["duplicate"].as_bool()), (200, Some(true)));
@@ -338,37 +326,10 @@ async fn webhooks_poke_only_subscribed_daemons_of_allowed_accounts() {
     let ping = json!({ "zen": "Design for failure.", "hook_id": 1 });
     let (st, v) = hook(&base, "ping", "del-5", &ping, Some(sig(&ping.to_string()))).await;
     assert_eq!((st, v["pong"].as_bool()), (200, Some(true)));
-    // A check run on an org's repository Jake collaborates on: his daemon,
-    // for both PRs it names.
-    let run = json!({ "repository": { "full_name": "acme/tool" },
-        "check_run": { "head_sha": "abc", "pull_requests": [{ "number": 3 }, { "number": 5 }] } });
-    let (st, v) = hook(&base, "check_run", "del-6", &run, Some(sig(&run.to_string()))).await;
-    assert_eq!((st, v["relayed"].as_u64()), (202, Some(2)));
-    let mut got = vec![];
-    while got.len() < 2 {
-        let m = text(&mut socks[0], 3000).await.unwrap();
-        if m["t"] == "forge.poke" {
-            got.push(m["poke"]["number"].as_u64().unwrap());
-        }
+    // No poke, and no heartbeat, on any socket.
+    for s in &mut socks {
+        quiet(s, 1500).await;
     }
-    assert_eq!(got, vec![3, 5]);
-    // Nothing reached the others (beyond heartbeats).
-    for s in &mut socks[1..] {
-        while let Some(m) = text(s, 300).await {
-            assert_eq!(m["t"], "forge.watching", "{m}");
-        }
-    }
-    // The heartbeat comes again.
-    let mut beat = false;
-    for _ in 0..5 {
-        if let Some(m) = text(&mut socks[0], 1500).await
-            && m["t"] == "forge.watching"
-        {
-            beat = true;
-            break;
-        }
-    }
-    assert!(beat, "no heartbeat");
 
     // A hosted box reads through the App: a token for one repository.
     let ask = |k: &DeviceKeys, repo: &str| {
@@ -408,56 +369,31 @@ async fn webhooks_poke_only_subscribed_daemons_of_allowed_accounts() {
         .await
         .unwrap();
     assert_eq!(unsigned.status(), 401);
-    // M167: each mint (the access check's for acme/tool, the box's for
-    // jhgaylor/hud) is in the token log, read-only, for one repository,
-    // naming who it was for. A token used again inside the platform (an
-    // access check's) adds no row; one handed to a box again does, `read
-    // (cached)`, naming the box's account even when the token was first
-    // minted for someone else's access check (the stranger's, on hud).
+    // M167: each mint (the box's for jhgaylor/hud, the renamed login's
+    // access check on acme/tool) is in the token log, read-only, for one
+    // repository, naming who it was for. A token used again inside the
+    // platform (an access check's) adds no row; one handed to a box again
+    // does, `read (cached)`, naming the box's account.
     let rows = every_mint_logged(&h, &app.platform.inner().db);
     let boxes: Vec<&Value> = rows.iter().filter(|r| r["caller"] == "a1" && r["repo_id"] == 101).collect();
     assert_eq!(boxes.len(), 2, "a row for each of the box's two asks: {rows:?}");
     assert!(boxes.iter().any(|r| r["purpose"] == "read (cached)"), "{rows:?}");
     let row = |repo: u64| rows.iter().find(|r| r["repo_id"] == repo).unwrap_or_else(|| panic!("{rows:?}"));
     assert_eq!(row(102)["installation_id"], 12);
-    assert!(["a1", "a2"].contains(&row(102)["caller"].as_str().unwrap()), "{rows:?}");
+    assert_eq!(row(102)["caller"], "a4", "{rows:?}");
     assert_eq!((row(101)["installation_id"].as_u64(), row(101)["purpose"].as_str()), (Some(11), Some("read")));
     assert!(rows.iter().all(|r| !r["permissions"].as_str().unwrap().contains("write")), "{rows:?}");
-
-    // Jake's daemon hangs up: its subscription goes with the socket.
-    let s = socks.remove(0);
-    drop(s);
-    for _ in 0..50 {
-        if app.forge.route("jhgaylor/hud").is_empty() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    assert!(app.forge.route("jhgaylor/hud").is_empty());
-    let pr2 = json!({ "repository": { "full_name": "jhgaylor/hud" }, "pull_request": { "number": 7 } });
-    let (_, v) = hook(&base, "pull_request", "del-7", &pr2, Some(sig(&pr2.to_string()))).await;
-    assert_eq!(v["relayed"], 0);
 }
 
 fn the_app(api: &str, pem: &str) -> GithubApp {
     GithubApp::new("42".into(), "arugula-test".into(), SECRET.into(), api, parse_pem(pem).unwrap())
 }
 
-/// Wait for the next `forge.poke`, past heartbeats.
-async fn poke(s: &mut Sock) -> Value {
-    loop {
-        let m = text(s, 3000).await.expect("a poke");
-        if m["t"] == "forge.poke" {
-            return m;
-        }
-    }
-}
-
 /// M161: the platform as its own server, on a database file of its own,
 /// behind the hub's gateway. A signed webhook to the hub lands on the
-/// platform, which records the delivery and hands the pokes to the hub over
-/// `HubPort`; the daemon watching hears the same bytes as ever. The access
-/// check and the hosted box's token are the platform's, asked over
+/// platform, which records the delivery; since M174 no daemon hears of it,
+/// and an old daemon's `forge.watch` hears an empty answer from the hub
+/// alone. The hosted box's token is the platform's, asked over
 /// `PlatformPort`. A platform started again on the same database, with
 /// nothing in memory, knows the delivery when GitHub sends it again; one
 /// with no App refuses it with an error.
@@ -474,27 +410,20 @@ async fn webhooks_land_on_the_platform_out_of_process() {
     s.hub.db.account_for("github", "2", "stranger", "a2", now).unwrap();
     let (k1, k2) = (daemon(&s.hub, "a1", "geek"), daemon(&s.hub, "a2", "theirs"));
 
-    // Where each repository stands is the platform's answer.
+    // An old daemon's watch: the hub answers it, empty.
     let mut sock = dial(&s.base, &k1).await;
     let watch = json!({ "t": "forge.watch", "repos": ["jhgaylor/hud", "nobody/x"] });
     sock.send(Message::Text(watch.to_string().into())).await.unwrap();
-    let w = text(&mut sock, 3000).await.expect("where it stands");
-    assert_eq!(w["t"], "forge.watching");
-    assert_eq!((w["repos"][0]["live"].as_bool(), w["repos"][1]["live"].as_bool()), (Some(true), Some(false)), "{w}");
-    assert!(w["repos"][1]["why"].as_str().unwrap().contains("isn't installed on nobody"), "{w}");
+    let w = text(&mut sock, 3000).await.expect("an answer");
+    assert_eq!(w, json!({ "t": "forge.watching", "repos": [] }));
 
     // A signed event through the hub's gateway: the platform takes it, and
-    // the daemon hears the poke.
+    // the daemon hears nothing.
     let pr = json!({ "action": "opened", "repository": { "full_name": "jhgaylor/hud" },
         "pull_request": { "number": 7, "title": "a private title" } });
     let (st, v) = hook(&s.base, "pull_request", "del-1", &pr, Some(sig(&pr.to_string()))).await;
-    assert_eq!((st, v["relayed"].as_u64()), (202, Some(1)), "{v}");
-    let p = poke(&mut sock).await;
-    assert_eq!(
-        p,
-        json!({ "t": "forge.poke", "poke": { "provider": "github", "host": "github.com", "repo": "jhgaylor/hud",
-            "number": 7, "event": "pull_request", "delivery": "del-1" } })
-    );
+    assert_eq!((st, v["taken"].as_bool()), (202, Some(true)), "{v}");
+    quiet(&mut sock, 1000).await;
     let recorded = |db: &arugula_platform::db::Db, d: &str| db.delivery_event(d).unwrap();
     assert_eq!(recorded(&s.platform.db, "del-1").as_deref(), Some("pull_request"), "the platform recorded it");
     // A bad signature is refused, and not recorded.
@@ -532,7 +461,7 @@ async fn webhooks_land_on_the_platform_out_of_process() {
     let (st, v) = hook(&again.base, "pull_request", "del-1", &pr, Some(sig(&pr.to_string()))).await;
     assert_eq!((st, v["duplicate"].as_bool()), (200, Some(true)), "{v}");
     let (st, v) = hook(&again.base, "pull_request", "del-3", &pr, Some(sig(&pr.to_string()))).await;
-    assert_eq!((st, v["relayed"].as_u64()), (202, Some(0)), "a new one is taken: {v}");
+    assert_eq!((st, v["taken"].as_bool()), (202, Some(true)), "a new one is taken: {v}");
     assert!(recorded(&again.platform.db, "del-3").is_some());
     for ext in ["", "-wal", "-shm"] {
         let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
