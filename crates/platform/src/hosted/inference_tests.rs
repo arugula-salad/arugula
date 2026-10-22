@@ -155,6 +155,23 @@ async fn a_stranger_brings_a_key() {
     assert_eq!((status, no["reason"].as_str()), (403, Some("no_key")));
 }
 
+/// With no key for the agent's provider, a turn is told so (`no_key`),
+/// even when the box's rules can't be set; with a key, rules that can't
+/// be set are a 503, never a turn on a key the box doesn't have.
+#[tokio::test]
+async fn no_key_is_said_even_when_the_rules_cant_be_set() {
+    let (hub, fake, app, base, project) = serve(&["anthropic"], CAPS).await;
+    let w = &ready(&hub, &app, &base, &project, "alice", "box-a").await;
+    // The box is gone from the provider, and its rules are stale.
+    fake.boxes.lock().unwrap().clear();
+    app.db.set_hosted_rules(w, "stale").unwrap();
+    let (status, no) = turn(&app, w, "box-a", "claude").await;
+    assert_eq!((status, no["reason"].as_str()), (403, Some("no_key")), "{no}");
+    assert_eq!(key(&base, "alice", &project, "anthropic", Some(SK)).await.0, 200);
+    let (status, later) = turn(&app, w, "box-a", "claude").await;
+    assert_eq!((status, later["reason"].as_str()), (503, None), "{later}");
+}
+
 /// A control with no key to seal them with keeps no inference keys.
 #[tokio::test]
 async fn no_sealing_key_no_project_keys() {
