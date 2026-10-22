@@ -91,8 +91,10 @@ fn skip_locked(c: &impl Sql) -> &'static str {
 }
 
 /// Every row the mirror holds of a repo, but its link: its items and
-/// what's on them, its drafts, and inbox rows of its items.
+/// what's on them, its drafts, inbox rows of its items, and the threads on
+/// its items (M196).
 fn purge_rows(c: &impl Sql, repo_id: u64) -> anyhow::Result<()> {
+    super::objects::drop_item_threads(c, repo_id)?;
     c.execute(
         "DELETE FROM inbox_items WHERE item IN (SELECT id FROM forge_items WHERE repo_id = ?1)",
         params![repo_id],

@@ -10,7 +10,8 @@
 //!
 //! - A room's `scope` is what it belongs to, and what deleting takes it
 //!   with: `team:<id>` (a channel or a DM), `machine:<id>` (the thread on a
-//!   pane or a session there), or `account:<id>` (an archive, M124).
+//!   pane or a session there), `account:<id>` (an archive, M124), or
+//!   `project:<id>` (the thread on an object in that project, M196).
 //! - Control numbers messages per room (`seq`), in the same transaction
 //!   that moves the room's `last_seq`. M124's import numbers old messages
 //!   0 and below, before the room's own.
@@ -166,7 +167,7 @@ fn marks(n: usize) -> String {
 /// `col` is one of the texts in the JSON array that parameter `?n` holds:
 /// one statement, prepared once, however long the list (a page of rooms'
 /// reads, below), where `IN (?, ?, …)` is a statement for each length.
-fn in_json(c: &impl Sql, col: &str, n: u8) -> String {
+pub(super) fn in_json(c: &impl Sql, col: &str, n: u8) -> String {
     match c.dialect() {
         Dialect::Sqlite => format!("{col} IN (SELECT value FROM json_each(?{n}))"),
         Dialect::Postgres => format!("{col} IN (SELECT jsonb_array_elements_text(CAST(?{n} AS jsonb)))"),
@@ -174,7 +175,7 @@ fn in_json(c: &impl Sql, col: &str, n: u8) -> String {
 }
 
 /// A list as the JSON array [`in_json`] takes.
-fn json_list<T: AsRef<str>>(v: &[T]) -> Result<String> {
+pub(super) fn json_list<T: AsRef<str>>(v: &[T]) -> Result<String> {
     Ok(serde_json::to_string(&v.iter().map(AsRef::as_ref).collect::<Vec<_>>())?)
 }
 
@@ -238,6 +239,19 @@ impl Db {
             .optional()
     }
 
+    /// The thread on an object (M196) in a project's scope, by the
+    /// object's global id: one per project, so a repo relinked to another
+    /// project gets a new one there.
+    pub fn chat_room_on(&self, scope: &str, target: &str) -> Result<Option<Room>> {
+        self.c()
+            .query_row(
+                &format!("SELECT {ROOM_COLS} FROM chat_rooms WHERE kind = 'object' AND scope = ?1 AND target = ?2"),
+                params![scope, target],
+                room_row,
+            )
+            .optional()
+    }
+
     /// The DM between two people in a scope.
     pub fn chat_dm(&self, scope: &str, a: &str, b: &str) -> Result<Option<Room>> {
         self.c()
@@ -255,8 +269,10 @@ impl Db {
 
     /// A new room, with its members (a DM's two people), in `project`: a
     /// team's channel belongs to the team's default project
-    /// (`crate::projects::team_project`); DMs and threads to none. Fails with
-    /// [`super::Taken`] for a channel name or a pane's room already there.
+    /// (`crate::projects::team_project`), and an object's thread to the
+    /// object's (M196); DMs and pane threads to none. Fails with
+    /// [`super::Taken`] for a channel name, or a pane's or an object's room,
+    /// already there.
     pub fn add_chat_room(&self, room: &Room, members: &[&str], project: Option<&str>) -> Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
@@ -287,9 +303,10 @@ impl Db {
     }
 
     /// Every room in these scopes (team channels and DMs), on these
-    /// machines (pane and session threads), or with `account` a member of
-    /// it by row (its DMs and archives), each once, in no particular order.
-    /// One statement: a chat list's first.
+    /// machines (pane and session threads), with `account` a member of it
+    /// by row (its DMs and archives), or on an object in a project of
+    /// `account`'s or of these scopes' teams (M196), each once, in no
+    /// particular order. One statement: a chat list's first.
     pub fn chat_rooms_seen(&self, scopes: &[String], machines: &[String], account: &str) -> Result<Vec<Room>> {
         let c = self.c();
         c.query_map(
@@ -297,9 +314,12 @@ impl Db {
                 // A UNION, not ORs: each part keeps its index.
                 "SELECT {ROOM_COLS} FROM chat_rooms WHERE {}
                  UNION SELECT {ROOM_COLS} FROM chat_rooms WHERE {}
-                 UNION SELECT {ROOM_COLS} FROM chat_rooms WHERE id IN (SELECT room FROM chat_members WHERE account = ?3)",
+                 UNION SELECT {ROOM_COLS} FROM chat_rooms WHERE id IN (SELECT room FROM chat_members WHERE account = ?3)
+                 UNION SELECT {ROOM_COLS} FROM chat_rooms WHERE kind = 'object' AND scope IN
+                     (SELECT 'project:' || id FROM projects WHERE account_id = ?3 OR {})",
                 in_json(&c, "scope", 1),
-                in_json(&c, "machine", 2)
+                in_json(&c, "machine", 2),
+                in_json(&c, "('team:' || team_id)", 1)
             ),
             params![json_list(scopes)?, json_list(machines)?, account],
             room_row,
@@ -840,7 +860,7 @@ impl Db {
 }
 
 /// Every room in a scope, and all that's in them.
-fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: &str) -> Result<()> {
+pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::Param) -> Result<()> {
     // Which first: `cond` may read `chat_members`, which goes too.
     let ids: Vec<String> =
         tx.query_map(&format!("SELECT id FROM chat_rooms WHERE {cond}"), params![arg], |r| r.get(0))?;
@@ -872,6 +892,9 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     }
     // Its machines' old conversations, archived under it (M124).
     drop_rooms_where(tx, "scope = 'account:' || ?1", account)?;
+    // The threads on objects in projects that went with it (its personal
+    // ones, its disbanded teams'): projects are erased first.
+    drop_rooms_where(tx, "kind = ?1 AND scope NOT IN (SELECT 'project:' || id FROM projects)", "object")?;
     tx.execute(
         "UPDATE chat_messages SET author = '', text = '', quote = NULL, ref_machine = NULL, ref_pane = NULL,
          mentions = '[]', imported = NULL, deleted = coalesce(deleted, ?2) WHERE author = ?1",

@@ -27,6 +27,9 @@
 //!
 //! - an archive (an old conversation a machine brought in, M124): its
 //!   members, each from when they joined it, read-only.
+//! - the thread on an object (an issue, a mirrored PR or issue, M196): its
+//!   project's members, and for a private repo's item only those with their
+//!   own access to it ([`objects`]).
 //!
 //! Anyone else gets 404, as if the room weren't there.
 //!
@@ -74,9 +77,12 @@ use crate::{
     db::{
         Db, Taken,
         chat::{Message, NewChatEvent, NewMessage, OldMessage, Page, Room, Search, UnreadAsk, Word},
+        objects::Holder,
     },
     hub::{Account, Daemon, Flags, PushOptions, Team},
 };
+
+pub(crate) mod objects;
 
 type J<T> = Result<Json<T>, ApiError>;
 
@@ -180,6 +186,10 @@ struct Facts {
     /// more per room (a round trip each on Postgres). Empty for one room's
     /// facts, whose callers may write in between: those read the database.
     page: PageReads,
+    /// Object threads' projects (whose each is), and what their targets
+    /// name (M196).
+    projects: HashMap<String, Holder>,
+    objects: HashMap<String, objects::Object>,
 }
 
 #[derive(Default)]
@@ -213,6 +223,17 @@ impl Facts {
         let mut teams: Vec<String> =
             rooms.iter().filter_map(|r| r.scope.strip_prefix("team:").map(str::to_owned)).collect();
         teams.extend(daemons.values().filter_map(|d| d.team.clone()));
+        // Object threads: their projects, those projects' teams, and what
+        // their targets name, each read once for all of them.
+        let on_objects: Vec<&Room> = rooms.iter().copied().filter(|r| r.kind == "object").collect();
+        let mut held: Vec<String> =
+            on_objects.iter().filter_map(|r| objects::project_of(r)).map(str::to_owned).collect();
+        held.sort();
+        held.dedup();
+        let projects = app.db.project_holders(&held)?;
+        teams.extend(projects.values().filter_map(|h| h.team.clone()));
+        let targets: Vec<&str> = on_objects.iter().filter_map(|r| r.target.as_deref()).collect();
+        let objects = objects::find(app, &targets)?;
         teams.sort();
         teams.dedup();
         // The threads on others' machines: whether the reader may reach them.
@@ -266,6 +287,8 @@ impl Facts {
             asked: asked.into_iter().collect(),
             reach,
             page,
+            projects,
+            objects,
         })
     }
 
@@ -353,6 +376,7 @@ async fn sight(app: &Platform, facts: &Facts, account: &str, room: &Room) -> any
             _ => None,
         },
         ("archive", _) => app.db.chat_member_from(&room.id, account)?,
+        ("object", _) => objects::sight(app, facts, account, room).await?,
         _ => None,
     })
 }
@@ -376,6 +400,8 @@ fn writable(app: &Platform, facts: &Facts, room: &Room, account: &str) -> anyhow
     Ok(match (room.kind.as_str(), room.scope.strip_prefix("team:")) {
         ("channel", _) => true,
         ("pane" | "session", _) => !watching(app, facts, account, room)?,
+        // Every member who sees it, a team's viewers too.
+        ("object", _) => true,
         // Both still in the team: one who left ends it for the other.
         ("dm", Some(team)) => facts.members(app, &room.id)?.iter().all(|a| facts.role(team, a).is_some()),
         _ => false,
@@ -421,6 +447,7 @@ async fn audience(app: &Platform, room: &Room) -> anyhow::Result<Vec<String>> {
             }
             v
         }
+        ("object", _) => objects::audience(&facts, room),
         _ => app.db.chat_members(&room.id)?,
     };
     maybe.sort();
@@ -455,6 +482,7 @@ fn kind_of(kind: &str) -> ChatKind {
         "dm" => ChatKind::Dm,
         "pane" => ChatKind::Pane,
         "session" => ChatKind::Session,
+        "object" => ChatKind::Object,
         _ => ChatKind::Archive,
     }
 }
@@ -499,6 +527,7 @@ fn listed_as(
         machine: room.machine.clone(),
         machine_name,
         target: room.target.clone(),
+        project: objects::project_of(room).map(str::to_owned),
         with,
         last: room.last_seq,
         read,
@@ -1144,6 +1173,7 @@ pub async fn open_target(State(app): State<Arc<Platform>>, s: Person, Json(b): J
     let kind = match b.kind {
         wire::ChatTargetKind::Pane => "pane",
         wire::ChatTargetKind::Session => "session",
+        wire::ChatTargetKind::Object => return open_object(&app, &s.account, &b.target).await,
     };
     let nothing = || err(StatusCode::NOT_FOUND, "no such pane or session");
     if !valid_target(&b.target) {
@@ -1181,6 +1211,49 @@ pub async fn open_target(State(app): State<Arc<Platform>>, s: Person, Json(b): J
         Err(e) => return Err(e.into()),
     }
     Ok(Json(listed(&app, &facts, &s.account, &room, from)?))
+}
+
+/// The thread on an object (M196, made the first time), for a member of
+/// its project who may read it ([`objects`]).
+async fn open_object(app: &Platform, account: &str, target: &str) -> J<ChatRoom> {
+    let nothing = || err(StatusCode::NOT_FOUND, "no such object");
+    let obj = objects::resolve(app, target)?;
+    let scope = objects::project_scope(&obj.project);
+    let room = Room {
+        id: new_id("ob_"),
+        scope: scope.clone(),
+        kind: "object".into(),
+        name: obj.name.clone(),
+        machine: None,
+        target: Some(target.to_owned()),
+        created_by: account.to_owned(),
+        created: now_ms(),
+        archived: None,
+        last_seq: 0,
+    };
+    let facts = Facts::of(app, Some(account), &[&room]).await?;
+    objects::check_open(app, &facts, account, target, &obj).await?;
+    // There already in this project. A repo relinked to another project
+    // gets a room of its own there; the old one stays the old project's,
+    // which no longer sees it (`objects::sight`).
+    let there = |r: Room| async move {
+        let facts = Facts::of(app, Some(account), &[&r]).await?;
+        let from = sight(app, &facts, account, &r).await?.ok_or_else(nothing)?;
+        Ok::<_, ApiError>(Json(listed(app, &facts, account, &r, from)?))
+    };
+    if let Some(r) = app.db.chat_room_on(&scope, target)? {
+        return there(r).await;
+    }
+    // No `MAX_THREADS` here: the objects bound their rooms, one each, and a
+    // big linked repo would reach any cap on its own.
+    app.limits.check_account(CHAT_ROOMS, account)?;
+    match app.db.add_chat_room(&room, &[], Some(&obj.project)) {
+        Ok(()) => app.chat.room(&app.db, &room.id),
+        // Someone made it just now.
+        Err(e) if e.is::<Taken>() => return there(app.db.chat_room_on(&scope, target)?.ok_or_else(nothing)?).await,
+        Err(e) => return Err(e.into()),
+    }
+    Ok(Json(listed(app, &facts, account, &room, 0)?))
 }
 
 /// `GET /api/chat/rooms/{id}`: the room, and who sees it.
@@ -1478,6 +1551,7 @@ pub async fn delete(
         || match room.scope.split_once(':') {
             Some(("team", team)) => facts.role(team, &s.account) == Some(TeamRole::Owner),
             Some(("machine", machine)) => facts.owner(machine) == Some(s.account.as_str()),
+            Some(("project", _)) => objects::owns(&facts, &room, &s.account),
             _ => false,
         };
     if !may {
@@ -1563,6 +1637,7 @@ pub async fn search(State(app): State<Arc<Platform>>, s: Person, Query(q): Query
         let in_team = match &q.team {
             Some(t) => {
                 r.scope == team_scope(t)
+                    || objects::team_of(&facts, &r) == Some(t.as_str())
                     || r.machine
                         .as_deref()
                         .is_some_and(|m| facts.daemons.get(m).and_then(|d| d.team.as_deref()) == Some(t.as_str()))
@@ -1629,6 +1704,10 @@ fn check_reader_lists(lists: &[ChatReaderList]) -> Result<(), ApiError> {
     {
         return Err(err(StatusCode::BAD_REQUEST, "at most 500 threads of 500 readers each, by their ids"));
     }
+    // An object's thread is its project's members', never a machine's say.
+    if lists.iter().any(|t| t.kind == wire::ChatTargetKind::Object) {
+        return Err(err(StatusCode::BAD_REQUEST, "a machine names its panes' and sessions' readers only"));
+    }
     Ok(())
 }
 
@@ -1636,6 +1715,8 @@ fn target_kind(k: wire::ChatTargetKind) -> &'static str {
     match k {
         wire::ChatTargetKind::Pane => "pane",
         wire::ChatTargetKind::Session => "session",
+        // Refused before it gets here (`check_reader_lists`, `daemon_import`).
+        wire::ChatTargetKind::Object => "object",
     }
 }
 
@@ -1781,7 +1862,7 @@ pub async fn daemon_import(
     let (machine, owner) = chat_machine(&app, d).await?;
     check_reader_lists(&b.readers)?;
     if b.threads.len() + b.archives.len() > wire::MAX_IMPORT_ROOMS
-        || b.threads.iter().any(|t| !valid_target(&t.target))
+        || b.threads.iter().any(|t| !valid_target(&t.target) || t.kind == wire::ChatTargetKind::Object)
         || b.archives.iter().any(|a| !valid_target(&a.id) || a.members.len() > wire::MAX_READERS)
     {
         return Err(err(StatusCode::BAD_REQUEST, "at most 500 threads and conversations, by their ids"));

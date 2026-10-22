@@ -182,7 +182,7 @@ export type ChatHit = { room: string, message: ChatMessage, };
 /**
  * What a room is.
  */
-export type ChatKind = "channel" | "dm" | "pane" | "session" | "archive";
+export type ChatKind = "channel" | "dm" | "pane" | "session" | "archive" | "object";
 
 /**
  * What `GET /api/chat/live` sends, one JSON object per event (no event
@@ -262,8 +262,9 @@ export type ChatNewDm = { with: string, };
 export type ChatOpen = { stream: string, room: string | null, };
 
 /**
- * `POST /api/chat/targets`: the thread about a pane or a session, made
- * the first time by someone who may read it.
+ * `POST /api/chat/targets`: the thread about a pane or a session, or an
+ * object (M196, `machine` empty), made the first time by someone who may
+ * read it.
  */
 export type ChatOpenTarget = { machine: string, kind: ChatTargetKind, target: string, };
 
@@ -339,9 +340,13 @@ name: string,
  */
 machine: string | null, machine_name: string | null, 
 /**
- * The pane or session id there.
+ * The pane or session id there, or an object thread's global id.
  */
 target: string | null, 
+/**
+ * The project an object thread is in (M196).
+ */
+project: string | null, 
 /**
  * A DM's other person.
  */
@@ -388,7 +393,7 @@ export type ChatRooms = { rooms: Array<ChatRoom>, };
 /**
  * What a daemon's thread is about.
  */
-export type ChatTargetKind = "pane" | "session";
+export type ChatTargetKind = "pane" | "session" | "object";
 
 export type Check = { name: string, source: CheckSource, state: CheckState, allow_failure: boolean, 
 /**

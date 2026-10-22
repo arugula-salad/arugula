@@ -48,6 +48,10 @@ pub enum ChatKind {
     Session,
     /// An old conversation brought in from a machine, read-only (M124).
     Archive,
+    /// The thread on an object (M196), by its global id: a native issue
+    /// (`iss_`) or a mirrored GitHub PR or issue (`fi_`). Its people are
+    /// its project's members.
+    Object,
 }
 
 /// What a daemon's thread is about.
@@ -57,6 +61,9 @@ pub enum ChatKind {
 pub enum ChatTargetKind {
     Pane,
     Session,
+    /// An object, by its global id, on no machine (M196): only opened by
+    /// people, never in a daemon's reader list.
+    Object,
 }
 
 impl ChatTargetKind {
@@ -64,6 +71,7 @@ impl ChatTargetKind {
         match self {
             ChatTargetKind::Pane => ChatKind::Pane,
             ChatTargetKind::Session => ChatKind::Session,
+            ChatTargetKind::Object => ChatKind::Object,
         }
     }
 }
@@ -90,8 +98,11 @@ pub struct ChatRoom {
     /// The machine a pane's or session's room is on, and its name.
     pub machine: Option<String>,
     pub machine_name: Option<String>,
-    /// The pane or session id there.
+    /// The pane or session id there, or an object thread's global id.
     pub target: Option<String>,
+    /// The project an object thread is in (M196).
+    #[serde(default)]
+    pub project: Option<String>,
     /// A DM's other person.
     pub with: Option<ChatPerson>,
     /// The newest message's number, and the reader's read mark.
@@ -210,11 +221,13 @@ pub struct ChatNewDm {
     pub with: String,
 }
 
-/// `POST /api/chat/targets`: the thread about a pane or a session, made
-/// the first time by someone who may read it.
+/// `POST /api/chat/targets`: the thread about a pane or a session, or an
+/// object (M196, `machine` empty), made the first time by someone who may
+/// read it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatOpenTarget {
+    #[serde(default)]
     pub machine: String,
     pub kind: ChatTargetKind,
     pub target: String,
