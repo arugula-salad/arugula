@@ -492,6 +492,10 @@ fn main() -> anyhow::Result<()> {
     if argv.get(1).map(String::as_str) == Some("_shim") {
         shim::run(&argv[2..]);
     }
+    // A hosted box's reseed (M180), as root: nothing else of the daemon runs.
+    if argv.get(1).map(String::as_str) == Some("_reseed") {
+        hosted::reseed::cli(argv.get(2).map_or("", String::as_str));
+    }
     #[cfg(windows)]
     if argv.get(1).map(String::as_str) == Some("_host") {
         host::run(&argv[2..]);
@@ -1053,7 +1057,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     }
     control.start(app.clone());
     if args.hosted {
-        hosted::start(&app, state_dir.clone(), args.control_url.clone(), name.clone());
+        hosted::start(&app, state_dir.clone(), args.control_url.clone());
     }
     if let Some(serve) = mcp_serve {
         let _ = serve.set(mcp::pipe_server(&app));

@@ -169,6 +169,21 @@ pub struct Saved {
     /// When the last move it took was made (#100): older ones are replays.
     #[serde(default)]
     pub moved_at: u64,
+    /// A hosted machine (M178, M180): enrolled into one project under its
+    /// delegation, not one of an account's devices. `cert` is made from
+    /// its hosted certificate, and who gets in is the project's people
+    /// (`crate::hosted::enroll::saved_from`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hosted: Option<HostedPin>,
+}
+
+/// What a hosted machine pinned at enrollment (M178).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HostedPin {
+    pub cert: arugula_e2e::hosted::HostedCert,
+    pub delegation: arugula_e2e::hosted::Delegation,
+    #[serde(default)]
+    pub revocations: Vec<arugula_e2e::hosted::DelegationRevoke>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -635,7 +650,7 @@ impl crate::telemetry::Signer for Control {
     }
 }
 
-fn write_saved(dir: &Path, s: &Saved) -> anyhow::Result<()> {
+pub(crate) fn write_saved(dir: &Path, s: &Saved) -> anyhow::Result<()> {
     crate::store::write_atomic(&dir.join(FILE), &serde_json::to_vec_pretty(s)?)?;
     Ok(())
 }
@@ -1294,11 +1309,33 @@ impl Control {
         Ok(res.json().await?)
     }
 
+    /// A hosted machine's refresh (M180): its project as control has it
+    /// now (`/api/hosted/trust`), kept where it checks out against what it
+    /// pinned. It publishes nothing and asks for no push subscriptions:
+    /// control answers a hosted machine only there and on the relay.
+    async fn refresh_hosted(&self, e: &Enrolled, number: u64) -> anyhow::Result<bool> {
+        let got: arugula_control_wire::hosted::Enrollment =
+            self.get(e, arugula_control_wire::hosted::HOSTED_TRUST).await?;
+        let saved = crate::hosted::enroll::saved_from(got, &e.keys, Some(&e.saved))?;
+        let changed = serde_json::to_value(&saved).ok() != serde_json::to_value(&e.saved).ok();
+        if changed {
+            write_saved(&self.state_dir, &saved)?;
+        }
+        let next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
+        info!(devices = next.trusted.devices.len(), others = next.others.len(), changed, "hosted: project refreshed");
+        self.install(Some(next));
+        self.refreshed.send_modify(|n| *n = (*n).max(number));
+        Ok(changed)
+    }
+
     /// Fetch certificates (the account's, the team's, people's shared
     /// with); keep what checks out against what this daemon pinned.
     async fn refresh(&self) -> anyhow::Result<bool> {
         let Some(e) = self.enrolled() else { return Ok(false) };
         let number = self.started.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        if e.saved.hosted.is_some() {
+            return self.refresh_hosted(&e, number).await;
+        }
         let moved_to = self.where_control_is(&e.saved.url).await;
         // This machine's version, OS and arch (M100): control keeps them on
         // its row. An older control ignores them.
@@ -1820,10 +1857,18 @@ impl Control {
                             // and a new key asks to join the same control
                             // again.
                             Err(e) if e.is::<Removed>() => {
-                                warn!(error = %e, "this machine was removed from its account; joining again with a new key");
+                                if en.saved.hosted.is_some() {
+                                    warn!(error = %e, "hosted: this machine was removed from its project");
+                                } else {
+                                    warn!(error = %e, "this machine was removed from its account; joining again with a new key");
+                                }
                                 let said = e.downcast_ref::<Removed>().map(|r| r.said.clone()).unwrap_or_default();
                                 me.dropped(&en, said);
-                                rejoin(en.saved.url.clone());
+                                // A hosted machine never joins again: the
+                                // platform makes its box anew (M178).
+                                if en.saved.hosted.is_none() {
+                                    rejoin(en.saved.url.clone());
+                                }
                             }
                             // Refused: control may have dropped it (#325).
                             Err(e) if e.is::<Refused>() => {
@@ -2608,6 +2653,7 @@ pub async fn join_finish(p: JoinPending) -> anyhow::Result<Approved> {
         shared_teams: Default::default(),
         login: String::new(),
         moved_at: 0,
+        hosted: None,
     };
     let joined = Joined {
         place: match &got.team {
@@ -2963,6 +3009,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: "sam".into(),
             moved_at: 0,
+            hosted: None,
         };
         // Into the team it's in: nothing to do.
         assert_eq!(already_in(&s, Some("t1")), "this machine is already in the team t1 on https://c.example");
@@ -3354,6 +3401,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: String::new(),
             moved_at: 0,
+            hosted: None,
         };
         write_saved(&dir, &saved).unwrap();
         let acl = Arc::new(Acl::open(&dir));
@@ -3642,6 +3690,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: String::new(),
             moved_at: 0,
+            hosted: None,
         };
 
         write_saved(&dir, &saved).unwrap();
@@ -3795,6 +3844,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: String::new(),
             moved_at: 0,
+            hosted: None,
         };
         let pin = TeamPin { team: "t1".into(), founder: "a".into(), founder_root: root.device.clone() };
         let d = daemon.device.as_str();
@@ -3865,6 +3915,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: String::new(),
             moved_at: 0,
+            hosted: None,
         };
         let d = daemon.device.as_str();
 
@@ -3945,6 +3996,7 @@ pub(crate) mod tests {
             shared_teams: [("t2".to_owned(), shared)].into_iter().collect(),
             login: "mo".into(),
             moved_at: 0,
+            hosted: None,
         };
         let dir = std::env::temp_dir().join(format!("arugula-agent-callers-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -4023,6 +4075,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: String::new(),
             moved_at: 0,
+            hosted: None,
         };
         let dir = std::env::temp_dir().join(format!("arugula-co-owners-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -4111,6 +4164,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: String::new(),
             moved_at: 0,
+            hosted: None,
         };
         let dir = std::env::temp_dir().join(format!("arugula-names-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -4144,6 +4198,7 @@ pub(crate) mod tests {
             shared_teams: Default::default(),
             login: login.into(),
             moved_at: 0,
+            hosted: None,
         }
     }
 

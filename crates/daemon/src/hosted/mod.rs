@@ -24,6 +24,7 @@
 
 pub mod activity;
 pub mod enroll;
+pub mod reseed;
 pub mod resume;
 
 use std::{
@@ -79,6 +80,9 @@ pub fn fresh_box(state_dir: &Path, id: &str) -> anyhow::Result<std::convert::Inf
         }
     }
     crate::store::write_atomic(&state_dir.join(BOX_FILE), id.as_bytes())?;
+    // Before anything here makes a key: the kernel's randomness, which the
+    // snapshot shared too.
+    reseed::fresh(id);
     info!(sandbox = id, "hosted: a new box; starting over with keys of its own");
     exec_self()
 }
@@ -98,7 +102,7 @@ fn exec_self() -> anyhow::Result<std::convert::Infallible> {
 
 /// What a hosted daemon runs beside the usual: the resume watch, busy and
 /// idle, and, until it's in control, waiting for its box and enrolling.
-pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String, name: String) {
+pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
     let control = app.control.clone();
     let c = control.clone();
     resume::watch(Arc::new(move || c.resumed()));
@@ -120,7 +124,7 @@ pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String, name: Stri
             return;
         }
         let c = control.clone();
-        enroll::run(url, name, ticket, state_dir, id_file, move || c.poke()).await;
+        enroll::run(url, ticket, state_dir, id_file, move || c.poke()).await;
     });
 }
 
