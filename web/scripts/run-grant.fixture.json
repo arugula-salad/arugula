@@ -1,0 +1,60 @@
+{
+  "body": "arugula project grant v1\nid 0123456789abcdef0123456789abcdef\nproject prj_1\nowner account:acct1\ndelegation 017b544b71e654f70c0a0fda7f9993b0\nresource hosted\nto platform\ncaps runs.instruct\ncaps runs.start\nmade 3000\nexpires never\nby 4439457f6ef4c3ff\n",
+  "delegation": {
+    "at": 2000,
+    "by": "4439457f6ef4c3ff",
+    "key": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+    "owner": "account:acct1",
+    "project": "prj_1",
+    "sig": "9edb8102888849443cae68b38f061cfcfdd9cea9a679b5fc224c08ad172f26be72e74c5a7e62984ae659f6e86fcc71864447310f29ea0f528beaaba0d17c2b03"
+  },
+  "expiring": {
+    "by": "4439457f6ef4c3ff",
+    "caps": [
+      "runs.instruct",
+      "runs.start"
+    ],
+    "delegation": "017b544b71e654f70c0a0fda7f9993b0",
+    "expires": 9000,
+    "id": "fedcba9876543210fedcba9876543210",
+    "made": 3000,
+    "owner": "account:acct1",
+    "project": "prj_1",
+    "sig": "991d2f0a2839acd985d8d97190f0ea530e44b744f20285b09ba6a80283bef34600300d3e5e85706eb2bfe4228c7c855ce14bdd17b000c4fc2eb1520b8b664a08"
+  },
+  "grant": {
+    "by": "4439457f6ef4c3ff",
+    "caps": [
+      "runs.instruct",
+      "runs.start"
+    ],
+    "delegation": "017b544b71e654f70c0a0fda7f9993b0",
+    "expires": null,
+    "id": "0123456789abcdef0123456789abcdef",
+    "made": 3000,
+    "owner": "account:acct1",
+    "project": "prj_1",
+    "sig": "1476617d6ac8f0ecb2ec7ddd4f3f35dc1bd615f3d24d1f644a27e061d561e92d5c3fb58c9d9b65de6a53efea63929f7b422473a37c461c7930e84862224f590a"
+  },
+  "revoke": {
+    "at": 4000,
+    "by": "4439457f6ef4c3ff",
+    "delegation": "017b544b71e654f70c0a0fda7f9993b0",
+    "project": "prj_1",
+    "running": "stop",
+    "sig": "8165971086501fa372fa97cc05a4d7bce1365e24c9754717ef65140a5185c1b5c803014201773965f28bab3ca062f69ff164f19b72e63f75096cf05dd3cb4d07"
+  },
+  "revoke_body": "arugula project grant revoke v2\nproject prj_1\ndelegation 017b544b71e654f70c0a0fda7f9993b0\nrunning stop\nat 4000\nby 4439457f6ef4c3ff\n",
+  "root": {
+    "account": "acct1",
+    "approver": "4439457f6ef4c3ff",
+    "created": 1000,
+    "device": "4439457f6ef4c3ff",
+    "kind": "browser",
+    "name": "laptop",
+    "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+    "sig": "dd68dab693f0b7bbb1e42984604ee47d3c60d588951bb8527a07587aba496cb56fbd68b910db63d8fd8c479c1a353f8bd4d26081be14198e17268c2bad5b060d",
+    "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+    "v": 1
+  }
+}

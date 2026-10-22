@@ -126,6 +126,20 @@
 #           restarts; the next issue and comment are numbered on with no
 #           gap, and search finds both. Broken: the container is recreated
 #           instead, so its database file is new.
+#   runs    Only with the platform out of process on Postgres (M212): runs
+#           on a hosted workspace (the real `arugulad --hosted` in
+#           hosted-box, enrolled by ticket, under the project's standing
+#           grant, started by hand). A run executes once, as `runner`, in
+#           its own copy of a repo in /home/user (left as it was), across a
+#           platform restart, with events signed by the box; its pane,
+#           watched end to end through control's relay, says what it ran;
+#           what it left running is killed. `runner` can't read the
+#           daemon's key or reach its port (`user` can). Sent again after the
+#           box's daemon restarts, it isn't run again. An agent run is
+#           Claude Code (a stand-in), headless, its login on stdin. A revoke
+#           saying `running stop` stops a run and all of `runner`'s
+#           processes. Broken: the box's ledger is wiped first, so it runs
+#           twice.
 #   platform-fanout
 #           Only with two platform machines (ARUGULA_TESTNET_PLATFORM=two,
 #           M144): both answer their health check on the database and
@@ -181,7 +195,7 @@ if [ "$PROFILE" = control ]; then
   # A platform of its own to restart, only out of process; two of them to
   # share chat and Cloud (M144).
   case "${ARUGULA_TESTNET_PLATFORM:-in}" in
-    out) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart github-webhook issues-restart" ;;
+    out) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart github-webhook issues-restart runs" ;;
     two) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart platform-fanout platform-handover" ;;
   esac
   [ "$PROFILE" != control ] || CLAIMS="$CONTROL_CLAIMS"
@@ -660,6 +674,136 @@ claim_hosted() {
   hosted_box --ticket "$tk" | grep -q '"status":409' || { note "hosted: a ticket worked twice"; ok=0; }
   if devs "$WORK/hmate.json" hosted-entry "$id" > /dev/null 2>&1; then note "hosted: a contested machine stays"; ok=0; fi
   kill "$pid" 2>/dev/null
+  [ "$ok" = 1 ]
+}
+
+# M212: runs on a hosted workspace. The box is `hosted-box` running the
+# real `arugulad --hosted`, enrolled by a ticket under the account's
+# delegation; the platform's row for its workspace is written as M179's
+# worker would once the box enrolled (no compute provider here). Runs start
+# by hand (M214) under the project's standing grant (M211). Needs the
+# platform out of process on Postgres (`ARUGULA_TESTNET_PLATFORM=out
+# ARUGULA_TESTNET_POSTGRES=1 just testnet up control`). Checked:
+# - a run executes once, as `runner`, in its own copy of a repo in
+#   /home/user (which it doesn't change), and outlives a platform restart;
+#   its events are signed by the box; its pane, watched end to end through
+#   control's relay, says what it ran; what it left running is killed when
+#   it ends;
+# - `runner` can't read the daemon's key, and can't reach the daemon's port
+#   on loopback (the box's iptables rules), which `user` can;
+# - sent again, after the box's daemon restarts too, it isn't run again;
+# - a revoke saying `running stop` stops a run going, and kills everything
+#   of `runner`'s;
+# - an agent run is Claude Code (a stand-in here), headless, with the
+#   instruction, its login on its standard input and never on a command
+#   line.
+# BREAK: the box's ledger is wiped before the run comes again, so it runs
+# twice.
+pq() { docker exec "$TESTNET-postgres" psql -U postgres -d platform -tAc "$1"; }
+hbox() { docker exec -u user -e HOME=/home/user "$TESTNET-hosted-box" "$@"; }
+hroot() { docker exec "$TESTNET-hosted-box" "$@"; }
+hosted_daemon() {
+  docker exec -d -u user -e HOME=/home/user -e ARUGULA_HOSTED_TICKET="$1" -e ARUGULA_CONTROL_URL="$CONTROL_URL" \
+    -e ARUGULA_WORK_PULL_MS=1000 -e RUST_LOG=info -e ANTHROPIC_API_KEY=sk-testnet-m212 "$TESTNET-hosted-box" \
+    sh -c 'exec /opt/arugula/arugulad --hosted >> /home/user/arugulad.log 2>&1'
+}
+run_state() { pq "SELECT state FROM runs WHERE id = '$1'"; }
+wait_state() {
+  local run="$1" want="$2" secs="${3:-60}"
+  for _ in $(seq 1 $((secs * 2))); do [ "$(run_state "$run")" = "$want" ] && return 0; sleep 0.5; done
+  note "runs: $run is $(run_state "$run"), not $want"; return 1
+}
+runner_procs() { hroot sh -c 'pgrep -u runner | wc -l'; }
+claim_runs() {
+  local ok=1 acct proj ws tk dev run pane marker="/tmp/m212-ran-$$" n port
+  pq "SELECT 1" > /dev/null 2>&1 || { note "runs: the platform isn't on the stack's Postgres (ARUGULA_TESTNET_POSTGRES=1)"; return 1; }
+  hroot pkill -f 'arugulad --hosted' 2>/dev/null || true
+  hroot sh -c 'rm -rf /home/user/.local /home/user/arugulad.log /home/user/app /home/runner/work /tmp/m212-*'
+  # The workspace's repo, as M183's setup leaves it: `user`'s, default umask.
+  hbox sh -c 'git init -q /home/user/app && cd /home/user/app && echo one > file &&
+    git -c user.email=t@t -c user.name=t add file && git -c user.email=t@t -c user.name=t commit -qm one'
+  # A Claude Code that says what it was asked, and whether its login came.
+  # shellcheck disable=SC2016 # the stand-in's own words
+  printf '#!/bin/sh\necho "$* key:${ANTHROPIC_API_KEY:-none}" > /tmp/m212-claude\n' > "$WORK/claude"
+  docker cp "$WORK/claude" "$TESTNET-hosted-box:/usr/local/bin/claude" && hroot chmod 755 /usr/local/bin/claude
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
+  acct="$(devs "$WORK/rowner.json" signin --control "$CONTROL_URL" $CONTROL_VIA --login "rowner$$" | field account)"
+  [ -n "$acct" ] || { note "runs: the owner didn't sign in"; return 1; }
+  proj="$(devs "$WORK/rowner.json" delegate | field project)"
+  [ -n "$proj" ] || { note "runs: no delegation"; return 1; }
+  ws="hw_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  tk="$(enrollment --project "$proj" --owner "account:$acct" --workspace "$ws" --name hosted-box | field ticket)"
+  [ -n "$tk" ] || { note "runs: no enrollment"; return 1; }
+  hosted_daemon "$tk"
+  for _ in $(seq 1 60); do
+    dev="$(hbox sh -c 'cat ~/.local/state/arugula/control.json 2>/dev/null' |
+      python3 -c 'import json, sys; print(json.load(sys.stdin)["hosted"]["cert"]["device"])' 2>/dev/null)"
+    [ -n "$dev" ] && break; sleep 0.5
+  done
+  [ -n "$dev" ] || { note "runs: the box didn't enroll:"; hbox tail -20 /home/user/arugulad.log >&2; return 1; }
+  # As M179's worker records it once the hub says the box enrolled.
+  pq "INSERT INTO hosted_workspaces (id, project_id, name, spec, spec_hash, state, machine, created_by, created_at, updated_at)
+      VALUES ('$ws', '$proj', 'runs', '{}', '', 'ready', '$dev', '$acct', 0, 0)" > /dev/null
+  devs "$WORK/rowner.json" grant-sign | grep -q '"grant"' || { note "runs: the owner couldn't sign the standing grant"; return 1; }
+
+  # A run in its own copy of the repo, still going when the platform
+  # restarts, leaving a process behind.
+  run="$(devs "$WORK/rowner.json" run-start "$ws" --dir /home/user/app -- sh -c \
+    "echo ran >> $marker; id -un > $marker.who; pwd > $marker.pwd; echo two > file; (sleep 600 &); sleep 12; echo done" | field run)"
+  [ -n "$run" ] || { note "runs: no run started"; return 1; }
+  wait_state "$run" running 30 || { hbox tail -30 /home/user/arugulad.log >&2; return 1; }
+  docker restart "$TESTNET-platform" > /dev/null
+  wait_state "$run" succeeded 60 || { ok=0; hbox tail -30 /home/user/arugulad.log >&2; }
+  pq "SELECT seq, from_state, to_state, daemon IS NOT NULL FROM run_events WHERE run_id = '$run' ORDER BY seq" > "$WORK/runs-events"
+  [ "$(tr '\n' ' ' < "$WORK/runs-events")" = "1||pending|f 2|pending|running|t 3|running|succeeded|t " ] ||
+    { note "runs: its events:"; cat "$WORK/runs-events" >&2; ok=0; }
+  [ "$(hroot cat "$marker.who")" = runner ] || { note "runs: it ran as $(hroot cat "$marker.who")"; ok=0; }
+  [ "$(hroot cat "$marker.pwd")" = "/home/runner/work/$run/repo" ] || { note "runs: it ran in $(hroot cat "$marker.pwd")"; ok=0; }
+  [ "$(hbox cat /home/user/app/file)" = one ] || { note "runs: it changed user's repo"; ok=0; }
+  [ "$(hroot cat "/home/runner/work/$run/repo/file")" = two ] || { note "runs: its copy isn't its own"; ok=0; }
+  [ "$(runner_procs)" = 0 ] || { note "runs: runner still runs $(runner_procs) processes after the run"; ok=0; }
+  # Its pane, watched end to end through control's relay, says what ran.
+  pane="$(pq "SELECT detail FROM run_events WHERE run_id = '$run' AND seq = 2" | sed -n 's/.*"pane":\([0-9]*\).*/\1/p')"
+  devs "$WORK/rowner.json" watch "$dev" "$pane" "arugula run $run" 20 > /dev/null || { note "runs: its pane isn't watchable"; ok=0; }
+  # As `runner`: not the daemon's key, nor its port; `user` reaches the port.
+  hroot sudo -u runner sh -c 'cat /home/user/.local/state/arugula/daemon.key' > /dev/null 2>&1 &&
+    { note "runs: runner reads the daemon's key"; ok=0; }
+  port="$(hbox cat /home/user/.local/state/arugula/listen | sed 's/.*://')"
+  hroot sudo -u runner bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null &&
+    { note "runs: runner reaches the daemon's port $port"; ok=0; }
+  hbox bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" || { note "runs: user can't reach the daemon's port $port"; ok=0; }
+
+  # The platform sends it again (its run set back, its job due), and the
+  # daemon restarts in between: it isn't run again.
+  pq "UPDATE runs SET state = 'pending', last_seq = 1 WHERE id = '$run'" > /dev/null
+  hroot pkill -f 'arugulad --hosted'
+  [ -z "$BREAK" ] || hbox rm -rf /home/user/.local/state/arugula/work
+  pq "UPDATE platform_jobs SET state = 'pending', next_at = 0, lease_until = 0 WHERE id = '$run'" > /dev/null
+  hosted_daemon "$tk"
+  # Ten pulls or so, each handing it out again.
+  sleep 12
+  n="$(hroot sh -c "wc -l < $marker")"
+  [ "$n" = 1 ] || { note "runs: it ran $n times"; ok=0; }
+  [ "$(run_state "$run")" = pending ] || { note "runs: the replay moved: $(run_state "$run")"; ok=0; }
+  pq "UPDATE runs SET state = 'succeeded', last_seq = 3 WHERE id = '$run'" > /dev/null
+  [ -z "$BREAK" ] || { hroot pkill -f 'arugulad --hosted'; return 1; }
+
+  # An agent run: Claude Code, headless, its login on its standard input.
+  run="$(devs "$WORK/rowner.json" agent-run "$ws" "fix the build" | field run)"
+  wait_state "$run" succeeded 60 || { ok=0; hbox tail -30 /home/user/arugulad.log >&2; }
+  [ "$(hroot cat /tmp/m212-claude)" = "-p fix the build --output-format text --dangerously-skip-permissions key:sk-testnet-m212" ] ||
+    { note "runs: the agent got: $(hroot cat /tmp/m212-claude)"; ok=0; }
+  hroot sh -c 'ls /home/user/.local/state/arugula/work/*.login' > /dev/null 2>&1 && { note "runs: an agent's login file stayed"; ok=0; }
+
+  # A revoke that says `running stop` stops a run going, and what it left.
+  run="$(devs "$WORK/rowner.json" run-start "$ws" -- sh -c "(sleep 600 &); sleep 300" | field run)"
+  wait_state "$run" running 30 || ok=0
+  devs "$WORK/rowner.json" grant-revoke "" stop > /dev/null || { note "runs: couldn't revoke"; ok=0; }
+  wait_state "$run" failed 30 || ok=0
+  pq "SELECT detail FROM run_events WHERE run_id = '$run' ORDER BY seq DESC LIMIT 1" | grep -q "grant was revoked" ||
+    { note "runs: it failed with $(pq "SELECT detail FROM run_events WHERE run_id = '$run' ORDER BY seq DESC LIMIT 1")"; ok=0; }
+  [ "$(runner_procs)" = 0 ] || { note "runs: runner still runs $(runner_procs) processes after the stop"; ok=0; }
+  hroot pkill -f 'arugulad --hosted' 2>/dev/null || true
   [ "$ok" = 1 ]
 }
 

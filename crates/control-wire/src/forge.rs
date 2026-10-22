@@ -180,6 +180,10 @@ tag!(
 /// The typed ops this build's daemon does when control asks (M168).
 pub const OPS: &[&str] = &["forge.send"];
 
+/// The run ops (M211) every daemon of this build knows: one that isn't a
+/// hosted machine answers them `cant`.
+pub const RUN_OPS: &[&str] = &["runs.start", "runs.revoke"];
+
 /// `{"t": "ops", "ops": [...]}`, daemon to control, on connecting: the
 /// [`DaemonOp`]s it knows. A daemon that never says knows none, and control
 /// answers [`OpAnswer::Unknown`] for it without asking.
@@ -193,7 +197,7 @@ pub struct Ops {
 impl Ops {
     /// What this build knows.
     pub fn ours() -> Self {
-        Ops { t: OpsTag, ops: OPS.iter().map(|s| (*s).to_owned()).collect() }
+        Ops { t: OpsTag, ops: OPS.iter().chain(RUN_OPS).map(|s| (*s).to_owned()).collect() }
     }
 }
 
@@ -235,12 +239,21 @@ pub enum DaemonOp {
     /// `gh` login, because the person pressed Send (M168).
     #[serde(rename = "forge.send")]
     ForgeSend(ForgeSend),
+    /// Start under the project's standing grant, on a hosted machine
+    /// (M211; [`crate::runs`]).
+    #[serde(rename = "runs.start")]
+    RunStart(crate::runs::RunStart),
+    /// The project's standing grant was revoked (M211).
+    #[serde(rename = "runs.revoke")]
+    RunRevoke(crate::runs::RunRevoke),
 }
 
 impl DaemonOp {
     pub fn name(&self) -> &'static str {
         match self {
             DaemonOp::ForgeSend(_) => "forge.send",
+            DaemonOp::RunStart(_) => "runs.start",
+            DaemonOp::RunRevoke(_) => "runs.revoke",
         }
     }
 }

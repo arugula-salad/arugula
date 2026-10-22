@@ -2,8 +2,9 @@
 //! `platform_jobs` ([`crate::db::jobs`]), hands it to its kind's
 //! [`Handler`] for one bounded step, and writes back what the step said:
 //! due again, done, or failed (with a back-off). Workspaces, runs, deploys
-//! and schedules each bring a handler (M210, M214, M217); none does yet,
-//! so nothing starts the worker.
+//! and schedules each bring a handler (M212, M214, M217): runs' dispatch
+//! ([`crate::work::Dispatch`]) and schedules' ([`crate::triggers::schedule::Ticks`]),
+//! which [`crate::work::start`] runs on one worker.
 //!
 //! It is `cloud::worker`'s loop, kept apart until M190 moves the Cloud
 //! kinds here: four workers on each machine, a claim leases its job for
@@ -235,8 +236,8 @@ impl Worker {
 }
 
 /// Four workers on this machine, each claiming a step at a time while the
-/// platform isn't paused or stopping. Nothing calls it until a kind has a
-/// handler (M210).
+/// platform isn't paused or stopping: [`crate::work::start`], with every
+/// kind's handler.
 pub fn start(app: Arc<Platform>, worker: Worker) {
     let worker = Arc::new(worker);
     for _ in 0..4 {

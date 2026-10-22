@@ -15,6 +15,7 @@ getrandom = { workspace = true }
 hex = { workspace = true }
 hkdf = { workspace = true }
 p256 = { workspace = true, features = ["ecdh"] }
+base64 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

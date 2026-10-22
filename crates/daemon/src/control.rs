@@ -922,6 +922,13 @@ impl Control {
         Ok(serde_json::from_slice(&got)?)
     }
 
+    /// GET from control, signed as this machine, if it's in control (a
+    /// hosted machine's work, M212).
+    pub async fn get_signed<T: serde::de::DeserializeOwned>(&self, path_and_query: &str) -> anyhow::Result<T> {
+        let e = self.enrolled().ok_or_else(|| anyhow::anyhow!("this machine isn't in control"))?;
+        self.get(&e, path_and_query).await
+    }
+
     /// Send a request to control and read its answer, waiting out a
     /// maintenance window (M141) for as long as `patience` lasts (`None`:
     /// not at all). `build` makes the request afresh for each try, so each
@@ -1338,18 +1345,27 @@ impl Control {
             self.get(e, arugula_control_wire::hosted::HOSTED_TRUST).await?;
         let saved = crate::hosted::enroll::saved_from(got, &e.keys, Some(&e.saved))?;
         let changed = serde_json::to_value(&saved).ok() != serde_json::to_value(&e.saved).ok();
-        if changed {
-            write_saved(&self.state_dir, &saved)?;
-        }
+        let wrote = changed && self.save_refreshed(&saved)?;
         let next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
         info!(devices = next.trusted.devices.len(), others = next.others.len(), changed, "hosted: project refreshed");
         self.install(Some(next));
         self.refreshed.send_modify(|n| *n = (*n).max(number));
-        Ok(changed)
+        Ok(wrote)
+    }
+
+    /// Save what a refresh found, unless the machine left while it was
+    /// under way: saving would join it again. True if it saved.
+    fn save_refreshed(&self, saved: &Saved) -> anyhow::Result<bool> {
+        if !self.state_dir.join(FILE).exists() {
+            return Ok(false);
+        }
+        write_saved(&self.state_dir, saved)?;
+        Ok(true)
     }
 
     /// Fetch certificates (the account's, the team's, people's shared
-    /// with); keep what checks out against what this daemon pinned.
+    /// with); keep what checks out against what this daemon pinned. True
+    /// if it saved `control.json` (something changed).
     async fn refresh(&self) -> anyhow::Result<bool> {
         let Some(e) = self.enrolled() else { return Ok(false) };
         let number = self.started.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
@@ -1489,9 +1505,7 @@ impl Control {
             )
             || saved.team_certs != e.saved.team_certs
             || saved.team_names != e.saved.team_names;
-        if changed {
-            write_saved(&self.state_dir, &saved)?;
-        }
+        let wrote = changed && self.save_refreshed(&saved)?;
         let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
         if next.trusted.get(&next.saved.cert.device).is_none() {
             warn!("this daemon's own certificate no longer checks out (revoked?)");
@@ -1504,7 +1518,7 @@ impl Control {
         info!(devices = next.trusted.devices.len(), others = next.others.len(), changed, "certificates refreshed");
         self.install(Some(next));
         self.refreshed.send_modify(|n| *n = (*n).max(number));
-        Ok(changed)
+        Ok(wrote)
     }
 
     /// Notify people through control (M21): every verified subscription
@@ -1858,7 +1872,13 @@ impl Control {
                     };
                     if last_refresh.is_none_or(|t| t.elapsed() >= every) {
                         last_refresh = Some(std::time::Instant::now());
-                        match me.refresh().await {
+                        let refreshed = me.refresh().await;
+                        // Past its own save only: a leave or a join again
+                        // while it was under way is noticed next time round.
+                        if matches!(refreshed, Ok(true)) {
+                            stamp = file_stamp(&me.state_dir);
+                        }
+                        match refreshed {
                             // Roles may have changed: re-filter everyone.
                             // Someone an invite waits for may be reachable.
                             // Beside the loop: a slow control doesn't hold up
@@ -1902,7 +1922,6 @@ impl Control {
                                 me.set_link(|l| l.refresh_error = Some(e.to_string()));
                             }
                         }
-                        stamp = file_stamp(&me.state_dir);
                     }
                     if me.dropped_now() {
                         // Nothing to dial: control would refuse it.
@@ -3605,6 +3624,36 @@ pub(crate) mod tests {
 
         assert!(waiting.await.unwrap());
         assert_eq!(c.push_report(1, "t", "b", None, to_bea).await.matched, 1, "the refresh that saw the grant");
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
+    /// A leave while a refresh is under way is noticed when it's over, and
+    /// the refresh doesn't write `control.json` back. The loop used to take
+    /// the file's stamp after every refresh, so a removal in the middle of
+    /// one looked like nothing changed: the daemon stayed joined until a
+    /// restart (the desktop app's join test, whose leave came 3 s after
+    /// the join, as the first refresh's retry went out).
+    #[tokio::test]
+    async fn a_leave_during_a_refresh_is_noticed() {
+        let mut r = rig("leave-mid-refresh").await;
+        let c = r.daemon().await;
+        while r.at_peers.try_recv().is_ok() {}
+
+        let held = r.hold.clone().lock_owned().await;
+        c.poke();
+        r.at_peers.recv().await.unwrap();
+        std::fs::remove_file(r.dir.join(FILE)).unwrap();
+        // Something the refresh would save: it mustn't join again by it.
+        r.fake.lock().unwrap().routed = true;
+        r.grant();
+        drop(held);
+
+        let t = std::time::Instant::now();
+        while c.enrolled().is_some() && t.elapsed() < Duration::from_secs(10) {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(c.enrolled().is_none(), "the daemon noticed it left");
+        assert!(!r.dir.join(FILE).exists(), "and the refresh didn't save it again");
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 

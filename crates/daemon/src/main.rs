@@ -50,6 +50,7 @@ mod http1;
 #[cfg(feature = "editor")]
 mod ide;
 mod install;
+mod work;
 use arugula_mux::inventory;
 mod invite;
 use arugula_mux::keys;
@@ -967,7 +968,7 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     // So do Cloud workspace blocks read theirs (#1117).
     cloud_workspace::init(control.clone());
     // M185: a hosted box's agent turns ask the platform whose key pays.
-    agent::hosted::init(control.clone());
+    agent::hosted::init(control.clone(), args.hosted);
     // M40: forge blocks' live updates (control's GitHub App, hooks here).
     forges::start(state_dir.clone(), Some(&control), direct_urls.clone());
     // Claude Code's IDE (M28): its relay keeps the connections.

@@ -462,6 +462,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> anyhow::Result<()> {
     for m in &d.machines {
         c.execute("DELETE FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1", params![m])?;
     }
+    super::run_grants::erase_account(c, account)?;
     Ok(())
 }
 

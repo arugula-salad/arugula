@@ -29,8 +29,10 @@ pub mod join;
 pub mod maintenance;
 pub mod projects;
 pub mod push;
+pub mod runs;
 pub mod team;
 pub mod telemetry;
+pub mod work;
 
 pub use join::{CliJoinRequest, JoinPoll, JoinProof, JoinRequest, JoinStarted, JoinTeam, PollQuery};
 pub use push::{PushAnswer, PushRequest, PushSubs};

@@ -71,8 +71,7 @@ pub enum CloudCmd {
         #[arg(long)]
         project: Option<String>,
     },
-    /// The project's own inference keys, which its hosted agents run on
-    /// (M185).
+    /// The project's own inference keys, which its hosted agents run on.
     ///
     /// `set anthropic` or `set openai` reads the key from stdin (asked for
     /// without echo on a terminal): an owner of the project. Control keeps
@@ -213,7 +212,7 @@ fn path(project: &str, w: &Value) -> String {
 }
 
 /// `--project`: an id, a name, or (without it) the personal one.
-fn project_of(e: &Enrolled, project: Option<&str>) -> anyhow::Result<String> {
+pub(super) fn project_of(e: &Enrolled, project: Option<&str>) -> anyhow::Result<String> {
     match project {
         None => Ok("personal".into()),
         Some(p) if p.starts_with("prj_") => Ok(p.to_owned()),

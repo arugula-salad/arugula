@@ -67,8 +67,13 @@ pub mod remote;
 #[cfg(test)]
 mod restart_tests;
 mod router;
+pub mod run_grant;
+#[cfg(test)]
+mod run_grant_tests;
 pub mod timing;
+pub mod triggers;
 pub mod window;
+pub mod work;
 
 pub use hub::HubPort;
 pub use port::{Deleted, PlatformPort, TurnAnswer};

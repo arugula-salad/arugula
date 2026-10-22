@@ -35,7 +35,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates \
  && apt-get update -qq --snapshot "$APT_SNAPSHOT" \
  && apt-get install -y -qq --no-install-recommends \
-      bash curl git less openssh-client procps sudo tmux xz-utils \
+      bash curl git iptables less openssh-client procps sudo tmux xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
 RUN set -eu; cd /tmp; f="node-v$NODE_VERSION-linux-x64.tar.xz"; \
@@ -64,6 +64,19 @@ RUN id -u user >/dev/null 2>&1 || { userdel -r ubuntu 2>/dev/null; useradd -m -u
  && echo 'user ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/user && chmod 0440 /etc/sudoers.d/user \
  && echo 'user ALL=(root) NOPASSWD: /usr/local/bin/arugulad _reseed *' > /etc/sudoers.d/arugulad-reseed \
  && chmod 0440 /etc/sudoers.d/arugulad-reseed
+
+# Runs the platform starts (M212) run as `runner`, with `sudo -n -u runner`
+# from arugulad, an empty environment and a pty of their own:
+# - no sudo of its own;
+# - in `user`'s group, so it reads /home/user (0750) and the repos there
+#   (cloned with the default umask: group-readable, never group-writable),
+#   and works only in its own copy under /home/runner/work;
+# - never arugulad's state directory (0700), where its keys, its enrollment
+#   and the grant revokes it heard are;
+# - kept off the daemon's and the provider's ports on loopback by arugulad's
+#   iptables rules (owner match), made before its first run.
+RUN useradd -m -u 1001 -s /bin/bash runner && usermod -aG user runner && chmod 0750 /home/user \
+ && echo 'Defaults>runner env_reset, use_pty' > /etc/sudoers.d/runner && chmod 0440 /etc/sudoers.d/runner
 
 COPY arugulad /usr/local/bin/arugulad
 COPY arugula /usr/local/bin/arugula

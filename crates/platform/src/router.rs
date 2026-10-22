@@ -13,7 +13,7 @@ use axum::{
 
 use arugula_control_wire::issues;
 
-use crate::{Platform, billing, chat, cloud, forge, grants, hosted, projects};
+use crate::{Platform, billing, chat, cloud, forge, grants, hosted, projects, run_grant, triggers::routes as runs};
 
 /// Every route the platform answers. Each moved here from `routes()` in
 /// `crates/control/src/main.rs` with the same path and methods: billing's
@@ -21,8 +21,9 @@ use crate::{Platform, billing, chat, cloud, forge, grants, hosted, projects};
 /// page's own (M150); the GitHub App's webhook (M161); linked repos
 /// (M163); their items, each read checked against the viewer (M165);
 /// drafts on them (M170); the inbox (M171); native issues' (M195), for
-/// agents too (M200); hosted workspaces (M179); and their inference keys
-/// (M185).
+/// agents too (M200); hosted workspaces (M179) and their inference keys
+/// (M185); the standing project grant for runs (M211); and what starts
+/// runs (M214).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -131,6 +132,24 @@ fn routes() -> Routes {
             "/api/projects/{project}/inference-keys/{provider}",
             axum::routing::put(hosted::inference::set_key).delete(hosted::inference::clear_key),
         )
+        // The standing project grant (M211).
+        .route("/api/projects/{project}/runs/grant", get(run_grant::show).post(run_grant::sign))
+        .route("/api/projects/{project}/runs/grant/revoke", post(run_grant::revoke))
+        .route("/api/projects/{project}/runs/start", post(run_grant::start))
+        // What starts runs (M214).
+        .route("/api/projects/{project}/run-specs", get(runs::list).post(runs::create))
+        .route("/api/projects/{project}/run-specs/{spec}", get(runs::show).patch(runs::update).delete(runs::delete))
+        .route("/api/projects/{project}/run-specs/{spec}/schedules", post(runs::add_schedule))
+        .route(
+            "/api/projects/{project}/run-specs/{spec}/schedules/{id}",
+            axum::routing::patch(runs::change_schedule).delete(runs::delete_schedule),
+        )
+        .route("/api/projects/{project}/run-specs/{spec}/rules", post(runs::add_rule))
+        .route(
+            "/api/projects/{project}/run-specs/{spec}/rules/{id}",
+            axum::routing::patch(runs::change_rule).delete(runs::delete_rule),
+        )
+        .route("/api/projects/{project}/runs", post(runs::start))
 }
 
 /// The platform's router, for any state the hub's router has (the
