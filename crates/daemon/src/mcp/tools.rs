@@ -267,6 +267,10 @@ pub struct WaitArgs {
     /// prompted isn't taken for done before it starts.
     #[serde(default)]
     pub after: Option<u64>,
+    /// Or a run in Arugula control (run_…, from start_run), not pane: until
+    /// it ends (until command_end).
+    #[serde(default)]
+    pub run: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema, Default)]
@@ -1204,7 +1208,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "wait",
             title: "Wait for a pane",
-            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+            description: "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
             args: Args::One(schema_for_type::<WaitArgs>),
             read_only: true,
             destructive: false,
@@ -1500,6 +1504,31 @@ fn all_defs() -> Vec<Def> {
             read_only: false,
             destructive: true,
             idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
+        // M216: a project's runs, through the owner's grants.
+        Def {
+            name: super::runs::START_TOOL,
+            title: "Start a run",
+            description: super::runs::START_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::runs::StartRunArgs>),
+            read_only: false,
+            destructive: true,
+            idempotent: false,
+            open_world: true,
+            flag: None,
+            output: None,
+        },
+        Def {
+            name: super::runs::READ_TOOL,
+            title: "Read a run",
+            description: super::runs::READ_DESCRIPTION,
+            args: Args::One(schema_for_type::<super::runs::ReadRunArgs>),
+            read_only: true,
+            destructive: false,
+            idempotent: true,
             open_world: true,
             flag: None,
             output: None,
@@ -1934,6 +1963,14 @@ impl<'a> Call<'a> {
             },
             ("forge_read" | "forge_draft", Some(kind)) => self.forge_ops(name, kind, args).await,
             ("issue_write", Some(kind)) => self.issue_write(kind, args).await,
+            ("start_run", _) => match parse(args) {
+                Ok(a) => self.start_run(a).await,
+                Err(e) => Err(e),
+            },
+            ("read_run", _) => match parse(args) {
+                Ok(a) => self.read_run(a).await,
+                Err(e) => Err(e),
+            },
             ("read_cloud", Some(kind)) => self.read_cloud(kind, args).await,
             ("cloud", Some(kind)) => self.drive_cloud(kind, args).await,
             ("list", Some("threads")) => match parse::<NoArgs>(args) {
@@ -2730,6 +2767,16 @@ impl<'a> Call<'a> {
     }
 
     async fn wait(&self, a: WaitArgs) -> Out {
+        // M216: a run, in control.
+        if let Some(run) = &a.run {
+            if a.pane.is_some() || a.tab.is_some() || a.cloud_workspace.is_some() {
+                return Err("give a pane, a Cloud workspace's tab, or a run: one of them".into());
+            }
+            if !matches!(a.until, Until::CommandEnd | Until::Exit) {
+                return Err("a run waits until it ends: until command_end".into());
+            }
+            return self.wait_run(run, Self::limit(a.timeout)).await;
+        }
         // #1094: a Cloud workspace's tab, in control.
         if let Some(tab) = &a.tab {
             if a.pane.is_some() {
@@ -4443,7 +4490,7 @@ mod tests {
     #[test]
     fn annotations_are_honest() {
         let all = list(Scope::Full, fl(false));
-        assert_eq!(all.len(), 28 - NO_FORGE);
+        assert_eq!(all.len(), 30 - NO_FORGE);
         let ro: Vec<&str> = all
             .iter()
             .filter(|t| t.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true))
@@ -4462,6 +4509,7 @@ mod tests {
             "read_cloud",
             "read_thread",
             "search_threads",
+            "read_run",
         ];
         want.retain(|n| crate::forges::BUILT || !FORGE_TOOLS.contains(n));
         assert_eq!(ro, want);
@@ -4586,9 +4634,9 @@ mod tests {
         for name in THREAD_TOOLS {
             assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");
         }
-        assert_eq!(every.len(), 30);
-        assert_eq!(defs(fl(false)).len(), 28 - NO_FORGE);
-        assert_eq!(defs(fl(true)).len(), 30 - NO_FORGE);
+        assert_eq!(every.len(), 32);
+        assert_eq!(defs(fl(false)).len(), 30 - NO_FORGE);
+        assert_eq!(defs(fl(true)).len(), 32 - NO_FORGE);
         assert_eq!(every.len(), defs(fl(false)).len() + 2 + NO_FORGE, "and delegate and doc");
     }
 

@@ -394,7 +394,9 @@ enum Command {
     },
     /// Runs on a project's hosted workspaces, on Arugula control.
     ///
-    /// `start` runs a spec (`--spec NAME`) or a command after `--` by hand;
+    /// `list`, `show RUN` and `logs RUN [--follow]` read them (logs: the
+    /// platform's log of a run, or its pane while it runs). `start` runs a
+    /// spec (`--spec NAME`) or a command after `--` by hand;
     /// `spec add|ls|rm` keeps named runs; `schedule add SPEC --cron EXPR
     /// [--tz ZONE]` runs one on a schedule; `rule add SPEC --on
     /// pr-opened|check-failed|push [--repo] [--branch]` on a linked repo's

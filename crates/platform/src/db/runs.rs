@@ -46,6 +46,16 @@ use super::{
 };
 use crate::Deleted;
 
+/// The runs [`Db::move_run`] moved in this process, by id: what a read
+/// waiting for a run to move listens to (M216, `crate::triggers::read`).
+static MOVED: std::sync::LazyLock<tokio::sync::broadcast::Sender<String>> =
+    std::sync::LazyLock::new(|| tokio::sync::broadcast::channel(256).0);
+
+/// Hear of each run moved in this process from now on.
+pub fn moves() -> tokio::sync::broadcast::Receiver<String> {
+    MOVED.subscribe()
+}
+
 /// A new run's id: `run_` and 32 hex characters, beside `prj_` for
 /// projects.
 fn new_id() -> String {
@@ -521,6 +531,20 @@ impl Db {
         )
     }
 
+    /// A project's latest runs, newest first, those in `state` only if
+    /// given (M216).
+    pub fn runs_of(&self, project: &str, state: Option<State>, limit: u32) -> Result<Vec<Run>> {
+        let Some(state) = state else { return self.project_runs(project, limit) };
+        self.c().query_map(
+            &format!(
+                "SELECT {COLS} FROM runs WHERE project_id = ?1 AND state = ?2
+                 ORDER BY created_at DESC, id DESC LIMIT ?3"
+            ),
+            params![project, state.as_str(), limit],
+            run_row,
+        )
+    }
+
     /// A run's history, oldest first.
     pub fn run_events(&self, run: &str) -> Result<Vec<Event>> {
         self.c().query_map(
@@ -601,6 +625,9 @@ impl Db {
         )?;
         add_event(&tx, &event)?;
         tx.commit()?;
+        // Whoever waits on it here hears now (M216); the platform's other
+        // machines' waiters look again on their own.
+        let _ = MOVED.send(run.id.clone());
         Ok(Ok((run, event)))
     }
 

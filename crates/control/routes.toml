@@ -1445,6 +1445,33 @@ auth = "session"
 clients = ["cli"]
 note = "Starts a run by hand (M214): a spec, or a command or instruction on a hosted workspace, pending with its job queued. A person or a CLI device, never a machine: owners and editors on ARUGULA_HOSTED_ACCOUNTS."
 
+# ---- platform: reading runs (M216)
+# A run's state, timeline and log, for `arugula runs list|show|logs`.
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/runs"  # wire::runs::PROJECT_RUNS
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "A project's runs, newest first (by state if asked): any member."
+
+[[route]]
+method = "GET"
+path = "/api/runs/{run}"  # wire::runs::RUN
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "A run with its timeline, artifacts and the pane it runs in: its project's members. With since and wait, answers once it has a later event or has ended (at most 15 s): at most 8 open per account, 2000 an hour."
+
+[[route]]
+method = "GET"
+path = "/api/runs/{run}/log"  # wire::runs::RUN_LOG
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "A page of a run's durable log, by byte offset or its tail (M213 keeps it; until then kept: false, naming the run's pane): its project's members."
+
 # ---- platform: the standing project grant for runs (M211)
 
 [[route]]
@@ -1783,6 +1810,54 @@ path = "/api/daemon/issues/{id}/events"  # wire::issues::AGENT_ISSUE_EVENTS
 process = "platform"
 auth = "daemon"
 clients = ["daemon"]
+
+# ---- platform: runs for a machine's agents (M216)
+# MCP's start_run, read_run and wait on a run, signed by the machine. The
+# machine needs its owner's grant over the project, asked on every call:
+# `runs.read` to read, `runs.start` to start a run spec, `runs.command` to
+# start a command or an instruction of its own. A start is its owner's by
+# hand (an owner or editor on ARUGULA_HOSTED_ACCOUNTS), recorded with the
+# machine, under the project's standing grant. Never an approval.
+
+[[route]]
+method = "GET"
+path = "/api/daemon/runs/reach"  # wire::runs::AGENT_RUN_REACH
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "The projects the machine's run grants reach, as its owner reads them now: for capabilities."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/projects/{project}/runs"  # wire::runs::AGENT_PROJECT_RUNS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A project's runs: `runs.read`."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/runs"  # wire::runs::AGENT_PROJECT_RUNS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Starts a run as the owner's, labelled with the machine (started_by_agent): a run spec with `runs.start`, a command or an instruction of its own with `runs.command`, and the owner an owner or editor on ARUGULA_HOSTED_ACCOUNTS. 60 an hour."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/runs/{run}"  # wire::runs::AGENT_RUN
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A run with its timeline: `runs.read`. With since and wait, answers once it moves or ends (at most 15 s), which MCP's wait asks again until it ends: at most 8 open per account and per machine, 2000 an hour apart from other reads."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/runs/{run}/log"  # wire::runs::AGENT_RUN_LOG
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "A page of a run's durable log: `runs.read`."
 
 # ---- platform: billing
 

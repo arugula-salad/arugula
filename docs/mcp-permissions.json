@@ -4,14 +4,15 @@
       "mcp__arugula__read_output", "mcp__arugula__wait", "mcp__arugula__list", "mcp__arugula__capabilities",
       "mcp__arugula__history", "mcp__arugula__read_forge", "mcp__arugula__forge_read",
       "mcp__arugula__read_invite", "mcp__arugula__read_file", "mcp__arugula__read_cloud",
-      "mcp__arugula__read_thread", "mcp__arugula__search_threads"
+      "mcp__arugula__read_thread", "mcp__arugula__search_threads", "mcp__arugula__read_run"
     ],
     "ask": [
       "mcp__arugula__run", "mcp__arugula__send_input", "mcp__arugula__attach", "mcp__arugula__close",
       "mcp__arugula__show", "mcp__arugula__start_agent", "mcp__arugula__prompt_agent",
       "mcp__arugula__agent_respond", "mcp__arugula__draft", "mcp__arugula__forge_draft",
       "mcp__arugula__invite_person", "mcp__arugula__device_call", "mcp__arugula__cloud",
-      "mcp__arugula__link_repo", "mcp__arugula__post_thread", "mcp__arugula__issue_write"
+      "mcp__arugula__link_repo", "mcp__arugula__post_thread", "mcp__arugula__issue_write",
+      "mcp__arugula__start_run"
     ]
   }
 }

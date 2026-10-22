@@ -135,8 +135,8 @@ an agent's prompt unquoted. A push rule needs the
 App subscribed to **Push** events (with *Contents: read*), which its
 installers approve: until then push rules don't fire. Owners and editors on
 `ARUGULA_HOSTED_ACCOUNTS` change them and start runs. Only a person or a
-CLI device does: a machine's agent starts runs through MCP (M216), under
-the project's standing grant (M211). The code is in
+CLI device does: a machine's agent starts runs through MCP (M216, below),
+under the project's standing grant (M211). The code is in
 `crates/platform/src/triggers/` and `db/triggers.rs`.
 
 ```
@@ -145,7 +145,22 @@ arugula runs schedule add nightly --cron '0 3 * * *' --tz America/Chicago
 arugula runs rule add nightly --on check-failed --branch main
 arugula runs start --spec nightly            # by hand; or a command after --
 arugula runs spec ls                         # with their schedules and rules
+arugula runs list --state failed             # newest first
+arugula runs show run_…                      # its timeline and artifacts
+arugula runs logs run_… --follow             # its output, until it ends
 ```
+
+Any member reads a project's runs: `GET /api/projects/{project}/runs`,
+`GET /api/runs/{run}` (with `since` and `wait`, it answers once the run
+has a later event or has ended, waiting at most 15 seconds) and
+`GET /api/runs/{run}/log` (`crates/platform/src/triggers/read.rs`). `logs`
+reads the platform's durable copy of the log where it keeps one (M213 fills
+in `run_log::page`). Until then it reads the run's pane on its hosted
+machine end to end, as `arugula tail` reads a pane, while the run goes
+and after. It's `arugula runs start`, not `arugula run`, which runs a
+command in a pane here. An agent (`CLAUDECODE` or `AI_AGENT` set) reads
+runs through the CLI but can't start or change them there: the CLI acts
+as its person.
 
 **Whose key a hosted agent runs on (M185, #1246).** Keys never enter the
 box: E2B's egress proxy sets the key on the box's requests to
@@ -410,3 +425,41 @@ aru-085); given a native issue they refuse and point to `issue_write`.
 and `/api/daemon/issues/{id}[/events]`
 (`crates/platform/src/issues/agent.rs`); a comment is a post to the
 issue's thread by its id.
+
+**Agents and runs (M216).** Three more powers let a machine's agents at
+a project's runs, each over one project, off until the owner gives it:
+`runs.read` (its runs, their timelines and logs), `runs.start` (start one
+of its run specs) and `runs.command` (start a command or an instruction of
+the agent's own there). A spec is what the project's people wrote down to
+run; an agent's own command could be anything, so it's a power of its own.
+
+```
+arugula grants add geek runs.read runs.start --project acme
+arugula grants add geek runs.command --project acme
+```
+
+or two switches per machine and project under Settings, Agents and runs, on
+the platform page. A run an agent starts is its owner's start by hand: the
+owner must be one of the project's owners or editors on
+`ARUGULA_HOSTED_ACCOUNTS`, it's recorded with the machine
+(`started_by_agent`), and it runs under the project's live standing grant
+like any trigger's, or waits for an approval without one. No power is an
+approval of anything: a deploy's is an owner device's (M218). The MCP
+tools are `start_run` (a spec, a command or an instruction, on one of the
+project's hosted boxes), `read_run` (a run's state, timeline and a page of
+its log by byte offset, or a project's latest runs) and `wait` with `run`
+(until it ends, then the log's tail). `start_run` is in the permission
+snippet's ask list, `read_run` in its allow list, and an agent a guest
+stands behind is refused. `capabilities` says whether they're live
+(`control.runs`). An agent reads a run's log only once the platform keeps
+it (M213): this machine can't read the run's pane on its box, since a
+machine reaches another only for its agents (`/api/a2a/`). The routes are
+`/api/daemon/runs/reach`, `/api/daemon/projects/{project}/runs` (`GET`,
+`POST`) and `/api/daemon/runs/{run}[/log]`
+(`crates/platform/src/triggers/agent.rs`).
+
+A read that waits (`since` and `wait`) is woken when its platform machine
+moves the run, and looks every 2 seconds for a move another machine made.
+At most 8 are open at once per account and per machine (429 past that,
+and `wait` backs off), and they're counted per hour apart from other
+reads (2000), so long waits don't use up a machine's reads.

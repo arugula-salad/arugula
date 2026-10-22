@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { agentLines, authorLabel } from "../src/shared/chat/agents.ts";
-import { liveOver, machinesOf, powersFor } from "../src/platform/settings/grants.ts";
+import { COMMAND_POWERS, liveOver, machinesOf, powersFor, RUN_POWERS } from "../src/platform/settings/grants.ts";
 
 const msg = (over) => ({ author: "a1", name: "Jake", agent: null, ...over });
 
@@ -59,4 +59,21 @@ test("the switches read a machine's live agent grants over one scope", () => {
   assert.deepEqual(machinesOf(grants), [{ id: "d2", name: "d2" }, { id: "d1", name: "geek" }]);
   assert.deepEqual(powersFor("account"), ["threads.read", "threads.post"]);
   assert.ok(powersFor("project").includes("issues.write"));
+});
+
+test("the runs and commands switches read only their own grants, and the conversations switch none of them", () => {
+  const g = (id, power, live = true) => ({
+    id,
+    subject: { kind: "daemon", id: "d1", name: "geek" },
+    power,
+    scope: { kind: "project", id: "prj_1" },
+    live,
+  });
+  const grants = [g("g1", "threads.read"), g("g2", "runs.read"), g("g3", "runs.start", false), g("g4", "runs.command")];
+  const p = { kind: "project", id: "prj_1", name: "" };
+  const ids = (l) => l.map((x) => x.id);
+  assert.deepEqual(ids(liveOver(grants, "d1", p)), ["g1"]);
+  assert.deepEqual(ids(liveOver(grants, "d1", p, RUN_POWERS)), ["g2"]);
+  assert.deepEqual(ids(liveOver(grants, "d1", p, COMMAND_POWERS)), ["g4"]);
+  assert.deepEqual(RUN_POWERS, ["runs.read", "runs.start"]);
 });

@@ -487,7 +487,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -567,6 +567,14 @@
           "pattern": {
             "default": null,
             "description": "For until: match, a regular expression.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "default": null,
+            "description": "Or a run in Arugula control (run_…, from start_run), not pane: until\nit ends (until command_end).",
             "type": [
               "string",
               "null"
@@ -765,6 +773,10 @@
                   "null"
                 ]
               },
+              "runs": {
+                "$ref": "#/$defs/RunsReach",
+                "description": "Whether you can start and read runs on the user's projects from\nhere (M216)."
+              },
               "state": {
                 "description": "`not_joined`, `joined` or `dropped`.",
                 "type": "string"
@@ -786,7 +798,8 @@
               "connected",
               "teams",
               "cloud",
-              "threads"
+              "threads",
+              "runs"
             ],
             "type": "object"
           },
@@ -859,6 +872,56 @@
             },
             "required": [
               "inbox",
+              "note"
+            ],
+            "type": "object"
+          },
+          "RunsProject": {
+            "description": "A project a machine's run grants reach.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "powers": {
+                "description": "runs.read, runs.start.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "powers"
+            ],
+            "type": "object"
+          },
+          "RunsReach": {
+            "description": "The projects in control whose runs agents here reach (M216): through\ngrants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live run grant\n(runs.read or runs.start) over a project its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "projects": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/RunsProject"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "projects",
               "note"
             ],
             "type": "object"
@@ -3187,6 +3250,143 @@
       },
       "name": "issue_write",
       "title": "Write to a native issue"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Start a run"
+      },
+      "description": "Start a run on one of a project's hosted boxes in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "box": {
+            "default": null,
+            "description": "Which of the project's hosted boxes: its name or id (hw_…). Needed\nwhen it has more than one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "command": {
+            "default": [],
+            "description": "Or a command: the program and its arguments, not through a shell\n([\"sh\", \"-c\", \"...\"] for one).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "directory": {
+            "default": null,
+            "description": "Where it runs: an absolute directory on the box (default its home).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instruction": {
+            "default": null,
+            "description": "Or an instruction to an agent (Claude Code, headless).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "description": "The project in Arugula control: its id (prj_…), or personal.",
+            "type": "string"
+          },
+          "recipe": {
+            "default": null,
+            "description": "With instruction: the agent recipe to run it as.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spec": {
+            "default": null,
+            "description": "A run spec of the project, by its name or id: what it runs and on\nwhich box.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "title": "StartRunArgs",
+        "type": "object"
+      },
+      "name": "start_run",
+      "title": "Start a run"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a run"
+      },
+      "description": "Read a run in Arugula control (with this machine's runs.read grant over its project): its state, exit code, timeline, and a page of its log by byte offset (pass next_offset back as offset for more). Without run: a project's latest runs. wait with run waits for one to end.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "max_chars": {
+            "default": null,
+            "description": "At most this many characters of log (default 16000, at most 40000).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "offset": {
+            "default": null,
+            "description": "The log from this byte offset (a previous read's next_offset).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "Without run: the project, its id (prj_…) or personal.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "default": null,
+            "description": "The run (run_…). Without it: a project's latest runs.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "Without run: only runs in this state (pending, running, succeeded,\nfailed, canceled, ...).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "ReadRunArgs",
+        "type": "object"
+      },
+      "name": "read_run",
+      "title": "Read a run"
     }
   ],
   "block, labs true": [
@@ -3703,7 +3903,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -3783,6 +3983,14 @@
           "pattern": {
             "default": null,
             "description": "For until: match, a regular expression.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "default": null,
+            "description": "Or a run in Arugula control (run_…, from start_run), not pane: until\nit ends (until command_end).",
             "type": [
               "string",
               "null"
@@ -4071,6 +4279,10 @@
                   "null"
                 ]
               },
+              "runs": {
+                "$ref": "#/$defs/RunsReach",
+                "description": "Whether you can start and read runs on the user's projects from\nhere (M216)."
+              },
               "state": {
                 "description": "`not_joined`, `joined` or `dropped`.",
                 "type": "string"
@@ -4092,7 +4304,8 @@
               "connected",
               "teams",
               "cloud",
-              "threads"
+              "threads",
+              "runs"
             ],
             "type": "object"
           },
@@ -4165,6 +4378,56 @@
             },
             "required": [
               "inbox",
+              "note"
+            ],
+            "type": "object"
+          },
+          "RunsProject": {
+            "description": "A project a machine's run grants reach.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "powers": {
+                "description": "runs.read, runs.start.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "powers"
+            ],
+            "type": "object"
+          },
+          "RunsReach": {
+            "description": "The projects in control whose runs agents here reach (M216): through\ngrants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live run grant\n(runs.read or runs.start) over a project its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "projects": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/RunsProject"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "projects",
               "note"
             ],
             "type": "object"
@@ -6658,6 +6921,143 @@
       },
       "name": "issue_write",
       "title": "Write to a native issue"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Start a run"
+      },
+      "description": "Start a run on one of a project's hosted boxes in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "box": {
+            "default": null,
+            "description": "Which of the project's hosted boxes: its name or id (hw_…). Needed\nwhen it has more than one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "command": {
+            "default": [],
+            "description": "Or a command: the program and its arguments, not through a shell\n([\"sh\", \"-c\", \"...\"] for one).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "directory": {
+            "default": null,
+            "description": "Where it runs: an absolute directory on the box (default its home).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instruction": {
+            "default": null,
+            "description": "Or an instruction to an agent (Claude Code, headless).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "description": "The project in Arugula control: its id (prj_…), or personal.",
+            "type": "string"
+          },
+          "recipe": {
+            "default": null,
+            "description": "With instruction: the agent recipe to run it as.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spec": {
+            "default": null,
+            "description": "A run spec of the project, by its name or id: what it runs and on\nwhich box.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "title": "StartRunArgs",
+        "type": "object"
+      },
+      "name": "start_run",
+      "title": "Start a run"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a run"
+      },
+      "description": "Read a run in Arugula control (with this machine's runs.read grant over its project): its state, exit code, timeline, and a page of its log by byte offset (pass next_offset back as offset for more). Without run: a project's latest runs. wait with run waits for one to end.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "max_chars": {
+            "default": null,
+            "description": "At most this many characters of log (default 16000, at most 40000).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "offset": {
+            "default": null,
+            "description": "The log from this byte offset (a previous read's next_offset).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "Without run: the project, its id (prj_…) or personal.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "default": null,
+            "description": "The run (run_…). Without it: a project's latest runs.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "Without run: only runs in this state (pending, running, succeeded,\nfailed, canceled, ...).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "ReadRunArgs",
+        "type": "object"
+      },
+      "name": "read_run",
+      "title": "Read a run"
     }
   ],
   "full, labs false": [
@@ -7148,7 +7548,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -7228,6 +7628,14 @@
           "pattern": {
             "default": null,
             "description": "For until: match, a regular expression.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "default": null,
+            "description": "Or a run in Arugula control (run_…, from start_run), not pane: until\nit ends (until command_end).",
             "type": [
               "string",
               "null"
@@ -7426,6 +7834,10 @@
                   "null"
                 ]
               },
+              "runs": {
+                "$ref": "#/$defs/RunsReach",
+                "description": "Whether you can start and read runs on the user's projects from\nhere (M216)."
+              },
               "state": {
                 "description": "`not_joined`, `joined` or `dropped`.",
                 "type": "string"
@@ -7447,7 +7859,8 @@
               "connected",
               "teams",
               "cloud",
-              "threads"
+              "threads",
+              "runs"
             ],
             "type": "object"
           },
@@ -7520,6 +7933,56 @@
             },
             "required": [
               "inbox",
+              "note"
+            ],
+            "type": "object"
+          },
+          "RunsProject": {
+            "description": "A project a machine's run grants reach.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "powers": {
+                "description": "runs.read, runs.start.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "powers"
+            ],
+            "type": "object"
+          },
+          "RunsReach": {
+            "description": "The projects in control whose runs agents here reach (M216): through\ngrants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live run grant\n(runs.read or runs.start) over a project its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "projects": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/RunsProject"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "projects",
               "note"
             ],
             "type": "object"
@@ -9848,6 +10311,143 @@
       },
       "name": "issue_write",
       "title": "Write to a native issue"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Start a run"
+      },
+      "description": "Start a run on one of a project's hosted boxes in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "box": {
+            "default": null,
+            "description": "Which of the project's hosted boxes: its name or id (hw_…). Needed\nwhen it has more than one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "command": {
+            "default": [],
+            "description": "Or a command: the program and its arguments, not through a shell\n([\"sh\", \"-c\", \"...\"] for one).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "directory": {
+            "default": null,
+            "description": "Where it runs: an absolute directory on the box (default its home).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instruction": {
+            "default": null,
+            "description": "Or an instruction to an agent (Claude Code, headless).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "description": "The project in Arugula control: its id (prj_…), or personal.",
+            "type": "string"
+          },
+          "recipe": {
+            "default": null,
+            "description": "With instruction: the agent recipe to run it as.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spec": {
+            "default": null,
+            "description": "A run spec of the project, by its name or id: what it runs and on\nwhich box.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "title": "StartRunArgs",
+        "type": "object"
+      },
+      "name": "start_run",
+      "title": "Start a run"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a run"
+      },
+      "description": "Read a run in Arugula control (with this machine's runs.read grant over its project): its state, exit code, timeline, and a page of its log by byte offset (pass next_offset back as offset for more). Without run: a project's latest runs. wait with run waits for one to end.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "max_chars": {
+            "default": null,
+            "description": "At most this many characters of log (default 16000, at most 40000).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "offset": {
+            "default": null,
+            "description": "The log from this byte offset (a previous read's next_offset).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "Without run: the project, its id (prj_…) or personal.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "default": null,
+            "description": "The run (run_…). Without it: a project's latest runs.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "Without run: only runs in this state (pending, running, succeeded,\nfailed, canceled, ...).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "ReadRunArgs",
+        "type": "object"
+      },
+      "name": "read_run",
+      "title": "Read a run"
     }
   ],
   "full, labs true": [
@@ -10364,7 +10964,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -10444,6 +11044,14 @@
           "pattern": {
             "default": null,
             "description": "For until: match, a regular expression.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "default": null,
+            "description": "Or a run in Arugula control (run_…, from start_run), not pane: until\nit ends (until command_end).",
             "type": [
               "string",
               "null"
@@ -10732,6 +11340,10 @@
                   "null"
                 ]
               },
+              "runs": {
+                "$ref": "#/$defs/RunsReach",
+                "description": "Whether you can start and read runs on the user's projects from\nhere (M216)."
+              },
               "state": {
                 "description": "`not_joined`, `joined` or `dropped`.",
                 "type": "string"
@@ -10753,7 +11365,8 @@
               "connected",
               "teams",
               "cloud",
-              "threads"
+              "threads",
+              "runs"
             ],
             "type": "object"
           },
@@ -10826,6 +11439,56 @@
             },
             "required": [
               "inbox",
+              "note"
+            ],
+            "type": "object"
+          },
+          "RunsProject": {
+            "description": "A project a machine's run grants reach.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "powers": {
+                "description": "runs.read, runs.start.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "powers"
+            ],
+            "type": "object"
+          },
+          "RunsReach": {
+            "description": "The projects in control whose runs agents here reach (M216): through\ngrants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live run grant\n(runs.read or runs.start) over a project its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "projects": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/RunsProject"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "projects",
               "note"
             ],
             "type": "object"
@@ -13319,6 +13982,143 @@
       },
       "name": "issue_write",
       "title": "Write to a native issue"
+    },
+    {
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+        "title": "Start a run"
+      },
+      "description": "Start a run on one of a project's hosted boxes in Arugula control: a run spec of the project by name, a command, or an instruction to an agent (Claude Code, headless). It runs there, not here, in a pane the project's people watch, under the project's standing grant (without one it waits for an owner to approve it). Your person's grants say where you may, over the project: runs.start for a run spec, runs.command for a command or an instruction of your own. Never more than their role: it's recorded as theirs, started by their agent on this machine. Returns the run (run_…) at once, pending; wait with run follows it, read_run reads its timeline and log.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "box": {
+            "default": null,
+            "description": "Which of the project's hosted boxes: its name or id (hw_…). Needed\nwhen it has more than one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "command": {
+            "default": [],
+            "description": "Or a command: the program and its arguments, not through a shell\n([\"sh\", \"-c\", \"...\"] for one).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "directory": {
+            "default": null,
+            "description": "Where it runs: an absolute directory on the box (default its home).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "instruction": {
+            "default": null,
+            "description": "Or an instruction to an agent (Claude Code, headless).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "description": "The project in Arugula control: its id (prj_…), or personal.",
+            "type": "string"
+          },
+          "recipe": {
+            "default": null,
+            "description": "With instruction: the agent recipe to run it as.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spec": {
+            "default": null,
+            "description": "A run spec of the project, by its name or id: what it runs and on\nwhich box.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "title": "StartRunArgs",
+        "type": "object"
+      },
+      "name": "start_run",
+      "title": "Start a run"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a run"
+      },
+      "description": "Read a run in Arugula control (with this machine's runs.read grant over its project): its state, exit code, timeline, and a page of its log by byte offset (pass next_offset back as offset for more). Without run: a project's latest runs. wait with run waits for one to end.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "max_chars": {
+            "default": null,
+            "description": "At most this many characters of log (default 16000, at most 40000).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "offset": {
+            "default": null,
+            "description": "The log from this byte offset (a previous read's next_offset).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "Without run: the project, its id (prj_…) or personal.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "default": null,
+            "description": "The run (run_…). Without it: a project's latest runs.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "Without run: only runs in this state (pending, running, succeeded,\nfailed, canceled, ...).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "ReadRunArgs",
+        "type": "object"
+      },
+      "name": "read_run",
+      "title": "Read a run"
     }
   ],
   "read, labs false": [
@@ -13400,7 +14200,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -13480,6 +14280,14 @@
           "pattern": {
             "default": null,
             "description": "For until: match, a regular expression.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "default": null,
+            "description": "Or a run in Arugula control (run_…, from start_run), not pane: until\nit ends (until command_end).",
             "type": [
               "string",
               "null"
@@ -13678,6 +14486,10 @@
                   "null"
                 ]
               },
+              "runs": {
+                "$ref": "#/$defs/RunsReach",
+                "description": "Whether you can start and read runs on the user's projects from\nhere (M216)."
+              },
               "state": {
                 "description": "`not_joined`, `joined` or `dropped`.",
                 "type": "string"
@@ -13699,7 +14511,8 @@
               "connected",
               "teams",
               "cloud",
-              "threads"
+              "threads",
+              "runs"
             ],
             "type": "object"
           },
@@ -13772,6 +14585,56 @@
             },
             "required": [
               "inbox",
+              "note"
+            ],
+            "type": "object"
+          },
+          "RunsProject": {
+            "description": "A project a machine's run grants reach.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "powers": {
+                "description": "runs.read, runs.start.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "powers"
+            ],
+            "type": "object"
+          },
+          "RunsReach": {
+            "description": "The projects in control whose runs agents here reach (M216): through\ngrants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live run grant\n(runs.read or runs.start) over a project its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "projects": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/RunsProject"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "projects",
               "note"
             ],
             "type": "object"
@@ -14769,6 +15632,69 @@
       },
       "name": "search_threads",
       "title": "Search conversations"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a run"
+      },
+      "description": "Read a run in Arugula control (with this machine's runs.read grant over its project): its state, exit code, timeline, and a page of its log by byte offset (pass next_offset back as offset for more). Without run: a project's latest runs. wait with run waits for one to end.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "max_chars": {
+            "default": null,
+            "description": "At most this many characters of log (default 16000, at most 40000).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "offset": {
+            "default": null,
+            "description": "The log from this byte offset (a previous read's next_offset).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "Without run: the project, its id (prj_…) or personal.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "default": null,
+            "description": "The run (run_…). Without it: a project's latest runs.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "Without run: only runs in this state (pending, running, succeeded,\nfailed, canceled, ...).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "ReadRunArgs",
+        "type": "object"
+      },
+      "name": "read_run",
+      "title": "Read a run"
     }
   ],
   "read, labs true": [
@@ -14850,7 +15776,7 @@
         "readOnlyHint": true,
         "title": "Wait for a pane"
       },
-      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
+      "description": "Wait until a pane's command ends, its process exits, its output matches a pattern, or it's idle or asks for input (an agent's approval or question). Or a Cloud workspace's tab (cloud_workspace and tab, not pane) until idle or needs_input. Or a run in Arugula control (run, not pane) until it ends. Answers \"still running\" with the offset after timeout seconds (default 100): call it again.",
       "inputSchema": {
         "$defs": {
           "PaneArg": {
@@ -14930,6 +15856,14 @@
           "pattern": {
             "default": null,
             "description": "For until: match, a regular expression.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "default": null,
+            "description": "Or a run in Arugula control (run_…, from start_run), not pane: until\nit ends (until command_end).",
             "type": [
               "string",
               "null"
@@ -15134,6 +16068,10 @@
                   "null"
                 ]
               },
+              "runs": {
+                "$ref": "#/$defs/RunsReach",
+                "description": "Whether you can start and read runs on the user's projects from\nhere (M216)."
+              },
               "state": {
                 "description": "`not_joined`, `joined` or `dropped`.",
                 "type": "string"
@@ -15155,7 +16093,8 @@
               "connected",
               "teams",
               "cloud",
-              "threads"
+              "threads",
+              "runs"
             ],
             "type": "object"
           },
@@ -15228,6 +16167,56 @@
             },
             "required": [
               "inbox",
+              "note"
+            ],
+            "type": "object"
+          },
+          "RunsProject": {
+            "description": "A project a machine's run grants reach.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "powers": {
+                "description": "runs.read, runs.start.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "powers"
+            ],
+            "type": "object"
+          },
+          "RunsReach": {
+            "description": "The projects in control whose runs agents here reach (M216): through\ngrants this machine's owner gave it.",
+            "properties": {
+              "live": {
+                "description": "This machine is joined to control and holds a live run grant\n(runs.read or runs.start) over a project its owner reads.",
+                "type": "boolean"
+              },
+              "note": {
+                "description": "What to use, or why not.",
+                "type": "string"
+              },
+              "projects": {
+                "description": "What its grants reach.",
+                "items": {
+                  "$ref": "#/$defs/RunsProject"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "live",
+              "projects",
               "note"
             ],
             "type": "object"
@@ -16225,6 +17214,69 @@
       },
       "name": "search_threads",
       "title": "Search conversations"
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "Read a run"
+      },
+      "description": "Read a run in Arugula control (with this machine's runs.read grant over its project): its state, exit code, timeline, and a page of its log by byte offset (pass next_offset back as offset for more). Without run: a project's latest runs. wait with run waits for one to end.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "max_chars": {
+            "default": null,
+            "description": "At most this many characters of log (default 16000, at most 40000).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "offset": {
+            "default": null,
+            "description": "The log from this byte offset (a previous read's next_offset).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "Without run: the project, its id (prj_…) or personal.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "default": null,
+            "description": "The run (run_…). Without it: a project's latest runs.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "default": null,
+            "description": "Without run: only runs in this state (pending, running, succeeded,\nfailed, canceled, ...).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "ReadRunArgs",
+        "type": "object"
+      },
+      "name": "read_run",
+      "title": "Read a run"
     }
   ]
 }
