@@ -13,7 +13,8 @@
 //! [`billing`], M139; Cloud's in [`cloud`], M137; chat's in [`chat`], M138;
 //! projects, team members and grants in [`projects`]; the forge mirror in
 //! [`forge`], M162; native issues in [`issues`], M194; runs in [`runs`],
-//! M210; environments and deploys in [`deploys`], M217), and flips their
+//! M210; environments and deploys in [`deploys`], M217; what starts runs
+//! in [`triggers`], M214), and flips their
 //! `process` in `crates/control/tables.toml` to `platform`. Their tables
 //! are made and changed only by numbered migrations ([`migrate`], M142).
 
@@ -44,8 +45,11 @@ pub mod mirror;
 pub mod objects;
 pub mod pg;
 pub mod projects;
+pub mod run_grants;
+pub mod run_work;
 pub mod runs;
 pub mod sql;
+pub mod triggers;
 
 pub use pg::Listening;
 pub use sql::{Conn, Sql};

@@ -21,6 +21,7 @@ import type { WakeSaid } from "../src/shell/e2e/relaymux.ts";
 import { mint } from "../src/shell/blocks/through-control.ts";
 import { generateKeys, signText, type DeviceKeys } from "../src/shell/e2e/keys.ts";
 import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "../src/shell/e2e/hosted.ts";
+import { signGrant, signGrantRevoke, type ProjectGrant } from "../src/shell/e2e/run-grant.ts";
 import { askBody, askOk, inviteKey, newInviteKey, signAskInvite, signRoster, teamJoinBody, word, type AccountCerts, type AskInvite, type Roster, type TeamPin, type TeamRole } from "../src/shell/e2e/team.ts";
 
 const subtle = globalThis.crypto.subtle;
@@ -340,6 +341,44 @@ export class Device {
     return n;
   }
 
+  /** As an owner, sign the project's standing grant for runs (M211) under
+   * its live delegation, as control's page does. */
+  async signRunGrant(team?: string): Promise<{ project: string; grant: string }> {
+    const p = await this.project(team);
+    const { key, delegations } = await this.api<{ key: string; delegations: { delegation: Delegation; revoke: DelegationRevoke | null }[] }>("/api/hosted/delegations");
+    const live = delegations.find((x) => x.delegation.project === p.id && x.delegation.key === key && !x.revoke);
+    if (!live) throw new Error(`project ${p.id} has no live delegation`);
+    const grant = await signGrant(live.delegation, this.keys);
+    await this.api(`/api/projects/${p.id}/runs/grant`, { grant });
+    return { project: p.id, grant: grant.id };
+  }
+
+  /** As an owner, revoke the project's standing grant; `stop`: the runs
+   * going stop too. */
+  async revokeRunGrant(team?: string, stop = false): Promise<{ project: string; grant: string; told: number }> {
+    const p = await this.project(team);
+    const v = await this.api<{ grant: { grant: ProjectGrant } | null }>(`/api/projects/${p.id}/runs/grant`);
+    if (!v.grant) throw new Error(`project ${p.id} has no standing grant`);
+    const revoke = await signGrantRevoke(p.id, v.grant.grant.delegation, stop ? "stop" : "finish", this.keys);
+    const r = await this.api<{ told: number }>(`/api/projects/${p.id}/runs/grant/revoke`, { revoke });
+    return { project: p.id, grant: v.grant.grant.id, told: r.told };
+  }
+
+  /** Start a run of `argv` on a hosted workspace of the account's project,
+   * or TEAM's (M214's start by hand; under the live grant, M211): its id. */
+  async startRun(workspace: string, argv: string[], team?: string, directory?: string): Promise<{ run: string; state: string }> {
+    const p = await this.project(team);
+    const r = await this.api<{ id: string; state: string }>(`/api/projects/${p.id}/runs`, { workspace, argv, directory });
+    return { run: r.id, state: r.state };
+  }
+
+  /** Start an agent run (M212): Claude Code with `instruction`, headless. */
+  async startAgentRun(workspace: string, instruction: string, team?: string): Promise<{ run: string; state: string }> {
+    const p = await this.project(team);
+    const r = await this.api<{ id: string; state: string }>(`/api/projects/${p.id}/runs`, { workspace, instruction });
+    return { run: r.id, state: r.state };
+  }
+
   /** A hosted machine as the directory lists it here, with its proof. */
   async hostedEntry(id: string): Promise<(Listed & { team: string | null; hosted: HostedProof }) | undefined> {
     const all = (await this.api<{ daemons: (Listed & { team: string | null; hosted?: HostedProof })[] }>("/api/directory")).daemons;
@@ -608,6 +647,36 @@ export class Device {
       frame.set(input, 13);
       sock.sendBinary(frame);
       await wait(`${marker}-42`, () => out.includes(`${marker}-42`));
+      return out;
+    } finally {
+      sock.close();
+    }
+  }
+
+  /** Watch pane `pane` of a daemon over control's relay, end to end, as
+   * a phone does, until its output shows `text`: what it showed. */
+  async watch(daemonId: string, pane: number, text: string, timeoutMs = 15_000): Promise<string> {
+    const sock = await this.connect(daemonId);
+    try {
+      const texts: string[] = [];
+      let out = "";
+      sock.onText = (t) => texts.push(t);
+      sock.onBinary = (b) => {
+        if ((b[0] === 1 || b[0] === 2) && new DataView(b.buffer, b.byteOffset).getUint32(1) === pane) {
+          out += new TextDecoder().decode(b.subarray(13));
+        }
+      };
+      sock.start();
+      const until = Date.now() + timeoutMs;
+      while (!texts.some((t) => t.includes('"hello"'))) {
+        if (Date.now() > until) throw new Error("no hello from the daemon");
+        await sleep(100);
+      }
+      sock.sendText(JSON.stringify({ type: "attach", panes: [{ pane, offset: null }] }));
+      while (!out.includes(text)) {
+        if (Date.now() > until) throw new Error(`pane ${pane} didn't show ${text}; it showed ${JSON.stringify(out.slice(-300))}`);
+        await sleep(100);
+      }
       return out;
     } finally {
       sock.close();

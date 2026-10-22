@@ -15,6 +15,8 @@ pub mod doc_links;
 pub mod hosted;
 pub mod platform;
 #[cfg(test)]
+mod secrets_list;
+#[cfg(test)]
 mod tables;
 
 use std::{path::Path, sync::Mutex};

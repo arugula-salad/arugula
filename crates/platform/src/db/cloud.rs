@@ -533,7 +533,13 @@ impl Db {
     }
     /// Keep a sealed secret in the account's personal `project` (M129:
     /// `crate::projects::personal_project`).
-    pub fn put_cloud_secret(&self, account: &str, project: &str, name: &str, sealed: &[u8]) -> Result<()> {
+    pub fn put_cloud_secret(
+        &self,
+        account: &str,
+        project: &str,
+        name: &str,
+        sealed: &crate::keys::Sealed,
+    ) -> Result<()> {
         // Keyed by account on SQLite, by project on Postgres (M143): the
         // same row, as an account's secrets are in its personal project.
         let c = self.c();
@@ -543,10 +549,10 @@ impl Db {
         };
         c.execute(
             &format!(
-                "INSERT INTO cloud_secrets(account,name,sealed,project_id) VALUES(?1,?2,?3,?4)
-                 ON CONFLICT({key}) DO UPDATE SET sealed=excluded.sealed"
+                "INSERT INTO cloud_secrets(account,name,sealed,project_id,key_version) VALUES(?1,?2,?3,?4,?5)
+                 ON CONFLICT({key}) DO UPDATE SET sealed=excluded.sealed,key_version=excluded.key_version"
             ),
-            params![account, name, sealed, project],
+            params![account, name, sealed.bytes, project, sealed.key_version],
         )?;
         Ok(())
     }
@@ -1140,12 +1146,15 @@ impl Db {
         Ok(())
     }
 
-    /// One sealed secret of the account's, read when the vault is filled.
-    pub fn cloud_secret(&self, account: &str, name: &str) -> Result<Option<Vec<u8>>> {
+    /// One sealed secret of the account's and its project, read when the
+    /// vault is filled ([`crate::keys::open_cloud`] opens it).
+    pub fn cloud_secret(&self, account: &str, name: &str) -> Result<Option<(Option<String>, crate::keys::Sealed)>> {
         self.c()
-            .query_row("SELECT sealed FROM cloud_secrets WHERE account=?1 AND name=?2", params![account, name], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT project_id,key_version,sealed FROM cloud_secrets WHERE account=?1 AND name=?2",
+                params![account, name],
+                |r| Ok((r.get(0)?, crate::keys::Sealed { key_version: r.get(1)?, bytes: r.get(2)? })),
+            )
             .optional()
     }
 }
@@ -1996,8 +2005,10 @@ mod tests {
         let db = test_db();
         let run = run(&db, "a", &spec());
         db.create_cloud_agent("a", spec().agent).unwrap();
-        db.put_cloud_secret("a", "prj_a", "TOKEN", b"sealed").unwrap();
-        db.put_cloud_secret("b", "prj_b", "TOKEN", b"other-owner").unwrap();
+        db.put_cloud_secret("a", "prj_a", "TOKEN", &crate::keys::Sealed { key_version: 1, bytes: b"sealed".to_vec() })
+            .unwrap();
+        db.put_cloud_secret("b", "prj_b", "TOKEN", &crate::keys::Sealed { key_version: 1, bytes: b"other".to_vec() })
+            .unwrap();
         assert_eq!(db.active_cloud_runs("a").unwrap(), 1);
         let job = db.claim_cloud_job(0).unwrap().unwrap();
         db.checkpoint_cloud_job(&job, "cancelled", Some(&serde_json::json!({})), None).unwrap();

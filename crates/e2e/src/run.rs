@@ -167,9 +167,120 @@ impl Event<'_> {
     }
 }
 
+/// What a run does: S37's operation (q3), a command or an instruction to
+/// an agent (from recipe `agent`, or the default), in `directory` or the
+/// workspace's home. Its bytes ([`Op::encode`]) are what a run's hash, its
+/// standing grant and any approval name; the daemon that runs it reads
+/// them back ([`Op::decode`]). M214's run specs make them, M212's hosted
+/// machines run them.
+///
+/// ```text
+/// arugula op v1
+/// daemon <the target daemon's device id>
+/// kind <run|agent>
+/// session -
+/// pane - -
+/// cwd <base64|->
+/// argv <base64>            (once per argument, in order; kind run)
+/// text <base64>            (kind agent)
+/// agent <recipe name|->    (kind agent)
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Op {
+    pub argv: Vec<String>,
+    pub instruction: Option<String>,
+    pub agent: Option<String>,
+    pub directory: Option<String>,
+}
+
+fn b64(s: &str) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(s.as_bytes())
+}
+
+fn unb64(s: &str) -> Option<String> {
+    use base64::Engine as _;
+    String::from_utf8(base64::engine::general_purpose::STANDARD.decode(s).ok()?).ok()
+}
+
+impl Op {
+    /// S37's kind: `run` for a command, `agent` for an instruction.
+    pub fn kind(&self) -> &'static str {
+        if self.instruction.is_some() { "agent" } else { "run" }
+    }
+
+    /// The operation's bytes, for `daemon`. Frozen once shipped.
+    pub fn encode(&self, daemon: &str) -> String {
+        let cwd = self.directory.as_deref().map_or_else(|| "-".to_owned(), b64);
+        let mut op = format!("arugula op v1\ndaemon {daemon}\nkind {}\nsession -\npane - -\ncwd {cwd}\n", self.kind());
+        for a in &self.argv {
+            op.push_str(&format!("argv {}\n", b64(a)));
+        }
+        if let Some(i) = &self.instruction {
+            op.push_str(&format!("text {}\nagent {}\n", b64(i), self.agent.as_deref().unwrap_or("-")));
+        }
+        op
+    }
+
+    /// The daemon `op` is for, and what it does: only from exactly the
+    /// bytes [`Op::encode`] makes (anything else, an extra line or one out
+    /// of place, is `None`).
+    pub fn decode(op: &str) -> Option<(String, Op)> {
+        let mut out = Op::default();
+        let mut daemon = None;
+        for (i, line) in op.strip_suffix('\n')?.split('\n').enumerate() {
+            let (name, value) = line.split_once(' ')?;
+            match (i, name) {
+                (0, "arugula") => {}
+                (1, "daemon") => daemon = Some(value.to_owned()),
+                (2..=4, "kind" | "session" | "pane") => {}
+                (5, "cwd") if value != "-" => out.directory = Some(unb64(value)?),
+                (5, "cwd") => {}
+                (_, "argv") => out.argv.push(unb64(value)?),
+                (_, "text") => out.instruction = Some(unb64(value)?),
+                (_, "agent") if value != "-" => out.agent = Some(value.to_owned()),
+                (_, "agent") => {}
+                _ => return None,
+            }
+        }
+        let daemon = daemon.filter(|d| !d.is_empty() && !d.contains(' '))?;
+        if out.instruction.is_none() && out.argv.is_empty() {
+            return None;
+        }
+        (out.encode(&daemon) == op).then_some((daemon, out))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_operation_reads_back_only_as_written() {
+        let run = Op { argv: vec!["make".into(), "it's".into()], directory: Some("/w".into()), ..Op::default() };
+        let bytes = run.encode("d1");
+        assert_eq!(
+            bytes,
+            "arugula op v1\ndaemon d1\nkind run\nsession -\npane - -\ncwd L3c=\nargv bWFrZQ==\nargv aXQncw==\n"
+        );
+        assert_eq!(Op::decode(&bytes), Some(("d1".into(), run)));
+        let agent = Op { instruction: Some("fix it".into()), agent: Some("claude".into()), ..Op::default() };
+        assert_eq!(Op::decode(&agent.encode("d1")), Some(("d1".into(), agent)));
+        let plain = Op { argv: vec!["ls".into()], ..Op::default() };
+        assert_eq!(Op::decode(&plain.encode("d1")).unwrap().1, plain);
+        for bad in [
+            bytes.replace("kind run", "kind agent"),
+            bytes.replace("session -", "session s1"),
+            bytes.replace("pane - -", "pane 3 1"),
+            format!("{bytes}env HOME\n"),
+            bytes.replace("argv bWFrZQ==\nargv aXQncw==\n", ""),
+            bytes.trim_end().to_owned(),
+            bytes.replace("arugula op v1", "arugula op v2"),
+            bytes.replace("bWFrZQ==", "!!"),
+        ] {
+            assert_eq!(Op::decode(&bad), None, "{bad:?}");
+        }
+    }
 
     #[test]
     fn states_round_trip_and_dead_ends_stay_dead() {

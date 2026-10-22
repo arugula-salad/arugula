@@ -9,8 +9,8 @@
 //!   filled.
 //! - **A project brings its own key**, one per provider, set and cleared
 //!   by its owners and shown as set or not, never read back. The platform
-//!   keeps it sealed (`ARUGULA_CLOUD_SECRET_KEY`, bound to the project and
-//!   the provider) and opens it only to write it into its boxes' rules:
+//!   keeps it sealed with the project's key ([`crate::keys`], bound to the
+//!   project and the provider) and opens it only to write it into its boxes' rules:
 //!   at create and rebuild, on a wake, at a turn's start, and on every
 //!   running box when it's set or cleared. E2B's proxy holds it there, per
 //!   box, so no account-wide cap on secrets applies.
@@ -65,6 +65,7 @@ use crate::{
     compute::{self, Rules},
     db::inference::{Cap, HostedBox, Pays, ProjectKey, Started},
     forge::links::membership,
+    keys,
 };
 
 /// The caps when nothing says otherwise: two turns at once, a hundred a
@@ -130,11 +131,6 @@ impl Provider {
             Provider::OpenAi => ("authorization".into(), format!("Bearer {key}")),
         }
     }
-
-    /// What a project's key is sealed under, beside its project.
-    fn sealed_as(self) -> String {
-        format!("inference:{}", self.as_str())
-    }
 }
 
 /// The broker's secret for the platform's key, which the operator keeps:
@@ -191,17 +187,17 @@ pub struct Plan {
 /// The plan for a workspace in `project` that `maker` made: the project's
 /// own key, else the platform's for its maker, else none. A project key
 /// that can't be opened (no `ARUGULA_CLOUD_SECRET_KEY`, or another one) is
-/// as good as none, and said in the log.
+/// an error, never a reason to pay with the platform's key.
 pub fn plan(app: &Platform, project: &str, maker: Option<&str>) -> anyhow::Result<Plan> {
     let mut own = BTreeMap::new();
     for (name, sealed) in app.db.sealed_inference_keys(project)? {
         let Some(p) = Provider::parse(&name) else { continue };
-        match app.hosted.cipher.as_deref().map(|c| c.open(project, &p.sealed_as(), &sealed)) {
-            Some(Ok(key)) => {
-                own.insert(p, key);
-            }
-            _ => warn!(%project, provider = p.as_str(), "can't open a project's inference key"),
-        }
+        let cipher = app.hosted.cipher.as_deref().ok_or_else(|| {
+            anyhow::anyhow!("project {project} has its own {} key, and this control has no key to open it", p.as_str())
+        })?;
+        let key = keys::open_inference(&app.db.c(), cipher, project, p.as_str(), &sealed)
+            .map_err(|e| anyhow::anyhow!("project {project}'s own {} key doesn't open: {e:#}", p.as_str()))?;
+        own.insert(p, key);
     }
     let mut plan = Plan { payers: BTreeMap::new(), rules: Rules::new() };
     for p in Provider::ALL {
@@ -457,7 +453,7 @@ pub async fn set_key(
             "this control can't keep inference keys (it has no key to seal them)",
         ));
     };
-    let sealed = cipher.seal(&project, &p.sealed_as(), value)?;
+    let sealed = keys::seal_value(&app.db.c(), cipher, &project, &keys::inference_name(p.as_str()), value)?;
     app.db.set_inference_key(&project, p.as_str(), &sealed, &account, now_ms())?;
     info!(%account, %project, provider = p.as_str(), "set a project's inference key");
     app.analytics.capture(&account, "inference key set", serde_json::json!({ "provider": p.as_str() }));

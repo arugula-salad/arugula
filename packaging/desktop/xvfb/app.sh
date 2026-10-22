@@ -53,6 +53,17 @@ wait_for() {
     sleep 0.2
   done
 }
+. "$here/drag.sh"
+# The window's geometry (X, Y, WIDTH, HEIGHT), and conditions on it.
+geometry() { eval "$(xdotool getwindowgeometry --shell "$1")"; }
+placed() { geometry "$1"; [ "$X" = 100 ] && [ "$Y" = 100 ] && [ "$WIDTH" = 1000 ] && [ "$HEIGHT" = 700 ]; }
+maximized() { geometry "$1"; [ "$WIDTH" -ge 1270 ] && [ "$HEIGHT" -ge 850 ]; }
+restored() { geometry "$1"; [ "$WIDTH" -lt 1270 ]; }
+iconic() { xprop -id "$1" WM_STATE 2>/dev/null | grep -qi iconic; }
+# Every recording pane's size, as the panes have them: the window's page
+# sends a shown pane's new size once it has laid out at a new window size.
+pane_sizes() { cat "$REC_DIR"/*/size 2>/dev/null | tr '\n' ' '; }
+sizes_moved_from() { [ "$(pane_sizes)" != "$1" ]; }
 
 Xvfb :99 -screen 0 1280x900x24 -nolisten tcp >/dev/null 2>&1 &
 pids+=($!)
@@ -144,38 +155,37 @@ claim_titlebar() {
   else
     bad titlebar "the window has decorations: ${hints:-no _MOTIF_WM_HINTS}"
   fi
+  geometry "$w"
+  local was="${WIDTH}x$HEIGHT" sizes; sizes=$(pane_sizes)
   xdotool windowsize "$w" 1000 700 windowmove "$w" 100 100
-  sleep 1
-  eval "$(xdotool getwindowgeometry --shell "$w")"
-  local x0=$X y0=$Y
-  # Drag the header's empty middle (.bar-fill) 150 right and 80 down. At
-  # 1000 wide (M113) the rail is the left 56px, the machine and session
-  # end near 300, and command search starts near 550 (the window's
-  # buttons take the right 120): 420 is between them.
-  xdotool mousemove --window "$w" $((WIDTH / 2 - 80)) 16 mousedown 1 sleep 0.3 \
-    mousemove_relative 50 30 sleep 0.2 mousemove_relative 100 50 sleep 0.3 mouseup 1
-  sleep 1
-  eval "$(xdotool getwindowgeometry --shell "$w")"
-  if [ $((X - x0)) -ge 100 ] && [ $((Y - y0)) -ge 50 ]; then
-    ok titlebar "dragging the bar moved the window from $x0,$y0 to $X,$Y"
+  wait_for 10 placed "$w" || bad titlebar "the window didn't take 1000x700 at 100,100 (${WIDTH}x$HEIGHT at $X,$Y)"
+  # And the page has laid out at it, which on a loaded machine comes well
+  # after the window took it: until then the header is the one at the
+  # app's 1280 wide (the sidebar open), where 420 is on the machine's
+  # name, which doesn't drag however long it's held.
+  [ "$was" = 1000x700 ] || wait_for 20 sizes_moved_from "$sizes" ||
+    bad titlebar "the page didn't lay out at 1000x700 (its panes: $(pane_sizes))"
+  # Drag the header's empty middle (.bar-fill) right and down. At 1000
+  # wide (M113) the rail is the left 56px, the machine and session end
+  # near 300, and command search starts near 550 (the window's buttons
+  # take the right 120): 420 is between them.
+  drag "$w" $((WIDTH / 2 - 80)) 16
+  if dragged; then
+    ok titlebar "dragging the bar moved the window from $x0,$y0 to $X,$Y$(pressed)"
   else
     bad titlebar "dragging the bar left the window at $X,$Y (was $x0,$y0)"
   fi
   # The client's buttons: minimize, maximize, close from the right, 40 wide.
   xdotool mousemove --window "$w" $((WIDTH - 60)) 16 click 1
-  sleep 1.5
-  eval "$(xdotool getwindowgeometry --shell "$w")"
-  if [ "$WIDTH" -ge 1270 ] && [ "$HEIGHT" -ge 850 ]; then
+  if wait_for 10 maximized "$w"; then
     ok titlebar "its maximize button filled the screen (${WIDTH}x$HEIGHT)"
   else
     bad titlebar "after its maximize button the window is ${WIDTH}x$HEIGHT"
   fi
   xdotool mousemove --window "$w" $((WIDTH - 60)) 16 click 1
-  sleep 1
-  eval "$(xdotool getwindowgeometry --shell "$w")"
+  wait_for 10 restored "$w" || bad titlebar "its maximize button again left the window ${WIDTH}x$HEIGHT"
   xdotool mousemove --window "$w" $((WIDTH - 100)) 16 click 1
-  sleep 1.5
-  if xprop -id "$w" WM_STATE | grep -qi iconic; then
+  if wait_for 10 iconic "$w"; then
     ok titlebar "its minimize button minimized it"
   else
     bad titlebar "after its minimize button: $(xprop -id "$w" WM_STATE | tr '\n' ' ')"
@@ -205,15 +215,10 @@ claim_bare() {
     sleep 2
     local w; w=$(window)
     xdotool windowsize "$w" 1000 700 windowmove "$w" 100 100
-    sleep 1
-    eval "$(xdotool getwindowgeometry --shell "$w")"
-    local x0=$X y0=$Y
-    xdotool mousemove --window "$w" $((WIDTH / 2)) 12 mousedown 1 sleep 0.3 \
-      mousemove_relative 50 30 sleep 0.2 mousemove_relative 100 50 sleep 0.3 mouseup 1
-    sleep 1
-    eval "$(xdotool getwindowgeometry --shell "$w")"
-    if [ $((X - x0)) -ge 100 ] && [ $((Y - y0)) -ge 50 ]; then
-      ok bare "dragging the top strip of a page with no drag markup moved the window from $x0,$y0 to $X,$Y"
+    wait_for 10 placed "$w" || bad bare "the window didn't take 1000x700 at 100,100 (${WIDTH}x$HEIGHT at $X,$Y)"
+    drag "$w" $((WIDTH / 2)) 12
+    if dragged; then
+      ok bare "dragging the top strip of a page with no drag markup moved the window from $x0,$y0 to $X,$Y$(pressed)"
     else
       bad bare "dragging the plain page's top strip left the window at $X,$Y (was $x0,$y0)"
     fi
@@ -228,9 +233,7 @@ claim_bare() {
       bad bare "a drag in the page's body moved the window ($x0,$y0 -> $X,$Y)"
     fi
     xdotool mousemove --window "$w" $((WIDTH / 2)) 12 click --repeat 2 --delay 80 1
-    sleep 1.5
-    eval "$(xdotool getwindowgeometry --shell "$w")"
-    if [ "$WIDTH" -ge 1270 ] && [ "$HEIGHT" -ge 850 ]; then
+    if wait_for 10 maximized "$w"; then
       ok bare "a double-click on the strip maximized it (${WIDTH}x$HEIGHT)"
     else
       bad bare "after a double-click on the strip the window is ${WIDTH}x$HEIGHT"

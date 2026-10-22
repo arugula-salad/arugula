@@ -220,9 +220,11 @@ fn secrets_open_only_with_their_key() {
     let d = Dir::new();
     let hub = d.at("control.db");
     hub_file(&hub);
-    assert_eq!(secrets_open(&hub, SAMPLE_KEY).unwrap(), (1, vec![]));
+    let opened = crate::keys::Checked { opened: 1, by_master: 1, ..Default::default() };
+    assert_eq!(secrets_open(&hub, SAMPLE_KEY, None).unwrap(), opened);
     let wrong = "02".repeat(32);
-    assert_eq!(secrets_open(&hub, &wrong).unwrap(), (0, vec![("acct-a".into(), "GITHUB_TOKEN".into())]));
+    let failed = vec![("acct-a".into(), "GITHUB_TOKEN".into())];
+    assert_eq!(secrets_open(&hub, &wrong, None).unwrap(), crate::keys::Checked { failed, ..Default::default() });
 }
 
 /// The second window's copy (M145), to Postgres and back: every count and
@@ -269,7 +271,7 @@ fn a_copy_to_postgres_and_back_matches() {
     assert_eq!(found.len(), 2, "search finds the copied words");
     let words = [crate::db::chat::Word { text: "canary".into(), prefix: false }];
     assert_eq!(pg.search_issues("prj_t", &words, 10).unwrap().len(), 1, "and the copied issues");
-    assert_eq!(portable::secrets_open(&to, SAMPLE_KEY).unwrap(), (1, vec![]));
+    assert_eq!(portable::secrets_open(&to, SAMPLE_KEY, None).unwrap().failed, vec![]);
     let again = portable::copy(&file, &to, false).unwrap_err();
     assert!(again.to_string().contains("already holds"), "{again}");
 
@@ -337,7 +339,7 @@ fn the_read_only_tools_never_migrate_postgres() {
     let m = portable::migrations(&at).unwrap();
     assert_eq!(m.pending, vec![last]);
     assert!(m.render(&at).contains("would run"), "{}", m.render(&at));
-    for e in [portable::checksums(&at).unwrap_err(), portable::secrets_open(&at, SAMPLE_KEY).unwrap_err()] {
+    for e in [portable::checksums(&at).unwrap_err(), portable::secrets_open(&at, SAMPLE_KEY, None).unwrap_err()] {
         assert!(e.to_string().contains("this tool only reads"), "{e}");
     }
     let n: i64 = pg

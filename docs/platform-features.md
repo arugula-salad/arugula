@@ -108,7 +108,12 @@ back to Cowork, and nothing covers them yet.
 
 - **Jake:** should scheduled runs live in the daemon (a machine that's off
   doesn't run them) or in control (which can wake a machine, but must not read
-  it)?
+  it)? **Answered (platform step 7, M214):** the platform schedules, and the
+  machine executes. A project's run specs keep their schedules and event
+  rules in the platform, which makes each run and hands it to the project's
+  hosted workspace. A tick missed while the platform is down runs once. Runs
+  on personal machines are out of step 7. See "Runs and their triggers" in
+  [control.md](control.md).
 - **Jake:** do we take MCP Apps upstream to the ACP adapters, or draw them only
   for Arugula's own tools?
 - **Jake:** stay on `codex-acp`, or add a block on the Codex app-server?

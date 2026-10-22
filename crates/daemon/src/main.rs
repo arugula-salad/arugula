@@ -50,6 +50,7 @@ mod http1;
 #[cfg(feature = "editor")]
 mod ide;
 mod install;
+mod work;
 use arugula_mux::inventory;
 mod invite;
 use arugula_mux::keys;

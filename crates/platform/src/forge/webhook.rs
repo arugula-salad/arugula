@@ -10,8 +10,9 @@
 //! daemons watching the repository (`HubPort::forge_pokes`) until M174.
 //! Before the pokes, a linked repo's payload writes the forge mirror's
 //! rows (M164, [`super::ingest`]): its metadata, never a body or a
-//! comment's text. Nothing else of the payload goes anywhere, and only the
-//! event, delivery, repository and count are logged.
+//! comment's text. Then the runs its event rules start (M214,
+//! [`crate::triggers::events`]). Nothing else of the payload goes anywhere,
+//! and only the event, delivery, repository and count are logged.
 
 use std::sync::Arc;
 
@@ -129,6 +130,12 @@ pub async fn webhook(State(p): State<Arc<Platform>>, headers: HeaderMap, body: B
     }
     // M164: a linked repo's rows, before its pokes go.
     super::ingest::webhook(&p, &event, &delivery, &v, came);
+    // M214: the runs its event rules start. One that failed is tried again
+    // on GitHub's redelivery: its key keeps the rest from starting twice.
+    if !crate::triggers::events::webhook(&p, &event, &delivery, &v).await {
+        let _ = p.db.forget_delivery(&delivery);
+        return err(StatusCode::INTERNAL_SERVER_ERROR, "couldn't start the event's runs").into_response();
+    }
     let pokes = pokes(&event, &delivery, &v);
     if pokes.is_empty() {
         return (StatusCode::ACCEPTED, Json(json!({ "relayed": 0 }))).into_response();

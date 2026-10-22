@@ -26,6 +26,8 @@ just testnet test control agents # M198: a box's agent reads and posts in a chan
 ARUGULA_TESTNET_PLATFORM=out just testnet up control  # the platform out of process (M140)
 just testnet test control platform-restart  # out of process: a relayed session outlives a platform restart
 just testnet test control issues-restart    # out of process: native issues and their threads outlive a platform restart
+ARUGULA_TESTNET_PLATFORM=out ARUGULA_TESTNET_POSTGRES=1 just testnet up control
+just testnet test control runs              # M212: a run on a hosted box runs once, across platform and daemon restarts
 just testnet test control github-webhook    # out of process: the GitHub App's webhook lands on the platform (M161)
 ARUGULA_TESTNET_PLATFORM=two just testnet up control  # two platform machines on Postgres (M144)
 just testnet test control platform-fanout platform-handover  # chat and Cloud across the two
@@ -53,7 +55,7 @@ not run. CI never sets it. The claims expect fresh boxes: after installing anyth
 | Profile | Services | Status | For |
 |---|---|---|---|
 | `ssh` | `bastion`, `box-bare`, `box-systemd`, `git` | validated | S28, M51, M52's install step, #26 |
-| `control` | `ssh`'s, and `control`, `fakes`, `postgres`; `platform` too with `ARUGULA_TESTNET_PLATFORM=out`, and `platform2` with `two` | validated | M52's join, the relay, a box with no way out, the platform out of process (M140), on Postgres (M143) and on two machines (M144) |
+| `control` | `ssh`'s, and `control`, `fakes`, `postgres`, `hosted-box` (M212); `platform` too with `ARUGULA_TESTNET_PLATFORM=out`, and `platform2` with `two` | validated | M52's join, the relay, a box with no way out, the platform out of process (M140), on Postgres (M143) and on two machines (M144) |
 | `tailnet` | `headscale`, `ts-box`, `ts-client` | validated | S28's tailnet comparison |
 
 The relay is part of `control`, and Forgejo and GitLab have a stack of
@@ -190,6 +192,7 @@ The `control` profile's:
 | `issues-restart` | only out of process (M206): two native issues (one closed) and comments in the thread on one, written through control's site, read back the same after the `platform` container restarts (issues, timelines, thread, read mark); the next issue and comment are numbered on with no gap, and search finds both (`testnet/platform.ts issues-write`, `issues-read`) | the `platform` container recreated instead, so its database file is new |
 | `platform-fanout` | only with two machines (M144): both answer their health check on the database and exactly one leads; a live stream held on each hears a message posted through the other; a page that dropped from one resumes on the other from its `Last-Event-ID`, without a resync (`testnet/platform.ts fanout`) | `platform2` on a file of its own (`ARUGULA_TESTNET_PLATFORM2_DB` empty): two machines that share no database |
 | `platform-handover` | only with two machines: the fake Managoat holds a Cloud workspace's read, so the machine that claimed its job holds it mid-step; that machine is killed; the other takes the job once its lease (120 s) runs out, not before and within seconds after, and sets the workspace up; the killed one is started again (`testnet/platform.ts handover`) | the other machine paused too, so nothing takes the job |
+| `runs` | only out of process on Postgres (M212): the real `arugulad --hosted` in `hosted-box`, enrolled by ticket, takes runs started by hand under the project's standing grant. A run executes once, as `runner`, in its own copy of a repo in /home/user (left as it was), across a platform restart, signed by the box; its pane, watched end to end through control's relay, says what it ran; what it left running is killed; `runner` can't read the daemon's key or reach its port; sent again after the daemon restarts, it isn't run again; an agent run is Claude Code (a stand-in), headless, its login on stdin; a revoke saying `running stop` stops a run and all of `runner`'s processes | the box's ledger is wiped before it's sent again, so it runs twice |
 
 `just testnet measure control [samples]` (`measure-control.sh`) times a
 few routes from the host as a signed-in person (`GET /api/me` for the

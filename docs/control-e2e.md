@@ -649,6 +649,131 @@ control writes the certificate's time, so a malicious control could
 backdate one past a revocation (it runs the boxes anyway); and the page's
 team roster is the one control serves, as for team machines.
 
+### Runs on hosted machines: the standing project grant
+
+Scheduled and event runs start on a project's hosted workspaces with every
+owner's device asleep (platform step 7). An owner's device signs, per
+project, that the platform may ("One standing grant per project starts
+runs", aru-099; `arugula_e2e::project_grant`, `crates/platform/src/run_grant.rs`,
+`crates/daemon/src/hosted/runs.rs`). It's S37's standing grant with a
+project as its resource.
+
+- **What it allows.** The platform may start runs, and instruct them, on
+  every hosted workspace of the project, running whatever command the
+  project's runs start, until the grant expires or is revoked. It never
+  covers a deploy.
+- **The grant.** An owner's own device (a browser or the CLI, as for a
+  delegation) signs `arugula project grant v1`: its id, the project and its
+  owner, the project's live delegation, `resource hosted`, `to platform`,
+  the powers (`runs.instruct`, `runs.start`), when, when it expires, and
+  which device. The page and the CLI give 90 days unless the owner picks
+  (at most 366); the platform refuses one with no expiry or a longer one.
+  Devices and machines… has *Runs on hosted workspaces* under *Hosted
+  machines*: *Allow runs* signs it, on a computer or the phone, and
+  *Renew* signs a revoke and a new grant when it's about to expire (or
+  *Sign again* when the project's delegation changed). `arugula runs
+  grant sign` signs it with the CLI's device. The platform's project
+  settings show it, and offer it once the project has a hosted workspace.
+- **The platform keeps it, and can't make or widen it.** It stores the
+  signed bytes and the signature (`run_grants`), one live grant a project
+  (not revoked, expired or superseded), and reads the grant back from
+  those bytes only. It takes a grant only if it names the project's live
+  delegation (the hub's word); one that expired, or names a delegation
+  that isn't live any more, is superseded by the next. It holds no device
+  keys, so it can't check the signature itself; the hosted machines do.
+- **Each start carries it.** The platform asks the workspace's machine
+  over the relay (`runs.start`, a typed op), with the grant and the
+  newest revoke of the project's grants. The machine checks, with what it
+  pinned at enrollment (the team's roster and members' certificates, or
+  the account's chain): the grant is signed by a device of one of the
+  project's owners, trusted now; it's for the machine's own project and
+  owner and names the delegation it was enrolled under; that delegation
+  isn't revoked; it covers what's asked; it hasn't expired; no owner's
+  revoke covers it. If any check fails, nothing starts and the refusal's
+  code comes back.
+- **Revoking.** Any owner's device signs `arugula project grant revoke v2`
+  (the project, a delegation, `running finish` or `running stop`, when, by).
+  It names no grant: it takes back every grant of the project under that
+  delegation made at or before its time, so whoever relays it can't point
+  it at another grant, and a grant signed after it is a new one. The
+  platform stops starting at once, and relays it to every hosted machine
+  of the project (`runs.revoke`), and again with every later start. A
+  machine checks a revoke's signature once, when it first hears it, and
+  keeps the newest (`<state>/run-grant-revokes.json`): after that it counts
+  without being checked again, so the platform can't bring a grant back by
+  leaving the revoke out, or by dropping its signer's certificate from what
+  it sends. The kept file fails closed: once one was kept, a missing or
+  unreadable file refuses every start. It's in arugulad's state directory,
+  which runs must never be able to write (M212). `running stop` also stops
+  the runs going: each machine stops everything they started, and they
+  fail, saying the grant was revoked.
+- **It gates only what the platform starts.** People's own use of a hosted
+  machine (its owners and editors) doesn't go through it.
+
+**What control can do with a grant:** start and instruct runs on that
+project's hosted workspaces until it expires or is revoked, at times it
+chooses. A machine that heard a revoke keeps it; one that never heard it
+(control dropped it) honours the grant until it expires, which is why it
+expires. **What it can't:** make a grant, widen one (another power, a
+later expiry, another project or delegation), point a revoke at another
+grant, or bring back one a machine has heard revoked.
+
+**Running one** (M212; `crates/platform/src/work.rs`,
+`crates/daemon/src/work.rs`). A run is S37's operation (`arugula op v1`,
+`arugula_e2e::run::Op`): a command and its arguments, or an instruction for
+an agent, and a directory, for one hosted machine.
+
+- **Only to a hosted machine.** The run's job checks that the machine its
+  operation names is its hosted workspace's box. A run for any other
+  machine (a person's) fails, saying so, and never reaches it.
+- **The machine pulls it.** A hosted machine asks for its work every few
+  seconds, signed as itself (`GET /api/hosted/work`; only a hosted
+  machine's signature opens it), and at once when a start names a run.
+  Control answers every run that's ready for it and hasn't started, again
+  and again until it starts, and the project's revokes every time. A
+  paused box is woken for its run. One run goes at a time on a machine.
+  A run nobody asks for in 15 minutes fails.
+- **Checked again on the machine.** The operation's bytes must hash to the
+  run's hash; it must be for this machine, project and workspace; its
+  directory must be under the box user's home and not hidden; and the
+  grant must pass the checks above. Otherwise the run fails, with the
+  check's name, and nothing starts.
+- **At most once.** Before it starts anything, the machine makes the run's
+  ledger entry (`<state>/work/ID.json`, made once, fsynced), saying
+  `running`. It never starts an id with an entry again, or one whose entry
+  can't be read, whatever control sends; it only sends again the reports
+  control hasn't taken. A run it finds `running` after a restart with no
+  pane fails ("interrupted by a restart; not run again").
+- **As another user, in its own copy.** The command runs as `runner`
+  (`sudo -n -u runner`, an empty environment, a pty of its own), which:
+  - has no sudo, and can't read arugulad's state directory (the machine's
+    keys, its enrollment, the revokes it kept) or write anything of the
+    box user's;
+  - reads the box user's repos through their group, and works only in its
+    own copy (a clone, under `~runner/work/ID`, which is also its `HOME`);
+  - can't reach the daemon's ports, the provider's agent or the privileged
+    ports on loopback (iptables rules the daemon makes before the first
+    run; until they're in, nothing runs).
+  When a run ends, or is stopped, everything `runner` runs is killed.
+- **In a pane.** A new pane in the `runs` session, an ordinary end-to-end
+  pane its project's people watch as any. Its first lines and its tab say
+  which run it is, the operation's hash and the exact command, with
+  anything that wouldn't print as itself escaped.
+- **Agent runs** are Claude Code, headless (`claude -p`), with the
+  instruction, as `runner` in the run's copy. Its login reaches it on its
+  standard input, never on a command line, and its exit is the run's.
+- **Reported, signed.** `running` (with the pane and the operation's
+  hash), then `succeeded` or `failed` (the exit code), each signed by the
+  machine (`arugula run event v1`) and kept with its signature
+  (`POST /api/hosted/work/report`).
+
+**What control can do with runs:** under a standing grant, nothing signed
+by a person binds the command, so control chooses it, on that project's
+hosted workspaces. Each run's events say, signed by the machine, which
+operation it ran, and its pane shows it. **What it can't:** run anything on
+a person's machine, run a run twice, or report a run's state for the
+machine.
+
 ## What holds against control
 
 Who can read your terminals, depending on what control (the hosted service,
@@ -664,6 +789,7 @@ or whoever runs yours) does:
 | lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
 | enrolls a **hosted machine** into a project an owner delegated | can read what runs in it: it runs the box (labelled "Hosted: the operator can read"). Only that project's people reach it, and nobody accepts it after the delegation is revoked |
 | enrolls a hosted machine into a project nobody delegated | refused by every client: no owner's device signed for that project |
+| starts runs on a project's hosted workspaces | only under an owner's signed standing grant, which each machine checks; refused once a machine has heard it revoked, and by every machine once it expires |
 | serves a **modified web client** | can read what that client shows and use its keys while it runs |
 
 The last row is the important limit. The browser client at control's
@@ -1261,10 +1387,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 94 tables in two planes ("Two planes, two trust rules"):
+Control's database has 100 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (36 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (58 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (64 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1327,7 +1453,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `doc_link_parts` | ciphertext | A Shared Doc's snapshot, in parts, encrypted to the key in the link's fragment. | A shared Doc opens while the machine that shared it sleeps. | yes |  |
 | `cloud_agents` | **plaintext** | A cloud agent's definition: its name, instructions, skills, MCP servers and the names of the secrets it uses. | Cloud workspaces and runs work with every machine off. | yes | Managoat |
 | `cloud_runs` | **plaintext** | A cloud run: the agent, model, repository and prompt it ran with, its state, and its result. | Cloud workspaces and runs work with every machine off. | yes | Managoat |
-| `cloud_secrets` | **plaintext** | A cloud secret's name and value, sealed with a key control holds apart from the database; control opens it to put it in a Cloud workspace's vault. | Cloud workspaces and runs work with every machine off. | yes | Managoat |
+| `cloud_secrets` | **plaintext** | A cloud secret's name and value, sealed with its project's key (project_keys) or, until it's re-sealed, the master key control holds apart from the database; control opens it to put it in a Cloud workspace's vault. | Cloud workspaces and runs work with every machine off. | yes | Managoat |
 | `cloud_run_secrets` | **plaintext** | The secrets a cloud run started with, sealed as cloud_secrets are. | Cloud workspaces and runs work with every machine off. | yes | Managoat |
 | `cloud_jobs` | **plaintext** | The worker's job for a run, a Cloud workspace or a tab: what it was asked (the spec), Managoat's ids, its lease. | Control's worker drives Cloud workspaces with every machine off. | yes | Managoat |
 | `cloud_requests` | **plaintext** | What an agent in the cloud asks someone to approve, and the answer. | An agent in the cloud asks while every machine is off. | yes | Managoat |
@@ -1356,21 +1482,27 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `issues` | **plaintext** | A project's native issue, in plain text: its number in the project, title, body, state and close reason, who opened it, labels, assignees (accounts), where it was exported to on GitHub, and its times. One an agent opened under its machine's issues.write grant (M197) keeps the machine's owner as its author and names the machine. Its comments are its thread's chat messages. | A project's issues are read, written, searched and put in inboxes by control with every machine asleep, so control reads their text (aru-088). | partly: the issues of projects that go with it go. The rest stay, with their text, naming no author, and it's taken off assignees. |  |
 | `issues_fts` | **plaintext** | The full-text index of native issues' titles and bodies (SQLite FTS5; on Postgres it's a generated column of issues). | Control searches a project's issues itself, with every machine asleep. | partly: as issues: it's rebuilt from them. |  |
 | `issue_events` | **plaintext** | A native issue's timeline: opened, edited, closed, reopened, labelled, assigned, exported, with who (an account, and the machine when its agent did it) and when, and a small detail: an edit's old title (the text that makes it plaintext), a close's reason, the label or assignee, where it was exported to. | An issue's timeline shows with every machine asleep. | partly: those of issues that go, go. The rest stay, naming no actor, and it's taken out of assignment events. |  |
-| `platform_jobs` | **plaintext** | The platform's leased background work (M208): one job per workspace, run, deploy or schedule, with its kind, what it was asked, how far it got, its state, its failures in a row and the last one's error, when it's next due, and which machine's lease holds it until when. | Runs, deploys and schedules move on with every machine asleep, and a platform machine that dies mid-step leaves its job to another. | partly: a job goes with what it's for (a project's run or deploy) when that goes. No kind uses it yet (M210 is the first). |  |
-| `runs` | **plaintext** | A project's run (M210): the workspace it runs on, what started it (a schedule, a forge event, or someone by hand: an account, and the machine when its agent did), the S37 operation it runs, its hash and the daemon it names (the only one whose reports move the run), its state (one of S37's eight), the standing grant it may run under, its times, exit code, and the chant ledger entry a release run wrote. The operation is in plain text: its command, directory and instruction (S37 decision 6). | Scheduled and event runs start, and their state is shown and checked, with every person's machine asleep. | partly: the runs of projects that go with it go. The rest stay, naming no one who started them. |  |
+| `platform_jobs` | **plaintext** | The platform's leased background work (M208): one job per workspace, run, deploy or schedule, with its kind, what it was asked, how far it got, its state, its failures in a row and the last one's error, when it's next due, and which machine's lease holds it until when. | Runs, deploys and schedules move on with every machine asleep, and a platform machine that dies mid-step leaves its job to another. | partly: a job goes with what it's for (a project's run, deploy or schedule) when that goes. Schedules use it (M214), and runs and deploys will. |  |
+| `runs` | **plaintext** | A project's run (M210): the workspace it runs on, what started it (a schedule, a forge event, or someone by hand: an account, and the machine when its agent did), the S37 operation it runs, its hash and the daemon it names (the only one whose reports move the run), its state (one of S37's eight), the standing grant it may run under, its times, exit code, the chant ledger entry a release run wrote, and what a trigger made it for (a schedule's tick or a rule's event, M214). The operation is in plain text: its command, directory and instruction (S37 decision 6). | Scheduled and event runs start, and their state is shown and checked, with every person's machine asleep. | partly: the runs of projects that go with it go. The rest stay, naming no one who started them. |  |
+| `run_specs` | **plaintext** | A project's run specs (M214): a name, the hosted workspace it runs on, and what it runs: a command (its arguments) or an instruction to an agent (and the agent's recipe), and the directory; who made and last changed it, and when. The command and instruction are in plain text, as a run's operation is. | Schedules and event rules start a spec's runs with every person's machine asleep. | partly: the specs of projects that go with it go, with their schedules and rules. The rest stay, naming no one who made or changed them. |  |
+| `run_schedules` | metadata | A run spec's schedules (M214): a cron expression and its time zone, whether it's on, its next tick, the tick it last fired for, the run that made and why a tick made none, and who made it. Its job on platform_jobs fires it. | The platform schedules and the hosted workspace executes: a schedule ticks with every person's machine asleep. | partly: those of specs that go, go (with their jobs). The rest stay, naming no one who made them. |  |
+| `run_rules` | metadata | A run spec's event rules (M214): a linked repo's event (a PR opened, a check failed, a push), the repo and branch it's on or any, whether it's on, whether it takes events from forks and outside the repo, its hourly cap, and who made it. | A GitHub event starts a spec's run with every person's machine asleep. | partly: those of specs that go, go. The rest stay, naming no one who made them. |  |
 | `run_events` | **plaintext** | A run's history, append-only (never changed, and never deleted while its run is there): each change of state, numbered in the run, when, a small detail (the daemon's exit code, control's reason for failing it, the approval an approved run was approved by), and, when the run's daemon reported it, that daemon's id and its signature over the change. | A run's history shows, and is checked, with every machine asleep. | partly: those of runs that go, go. The rest stay as written: they name daemons, not people, and a signature names its signer. |  |
 | `run_artifacts` | metadata | What a run left behind: each file's name, size, digest and key in the run bucket. The files themselves are in the bucket (M213), not here. | A run's artifacts are listed and fetched with every machine asleep. | partly: those of runs that go, go; their files expire from the bucket. |  |
 | `platform_migrations` | metadata | Which of the platform's numbered migrations (M142) its database has: each one's number, name, checksum, whether it's additive (older builds may start past it) and when it ran, or that it was found already in place on a database made before migrations. | The platform checks its tables are the shape its code expects before it serves anything, whether or not any machine is up. | nothing of one |  |
 | `hosted_workspaces` | metadata | A hosted workspace (M179): its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the digest of its egress rules (M185), the last error, the worker's lease, who made it and when. | The platform makes, wakes, pauses and deletes hosted workspaces' boxes itself, and the page lists them, with every machine asleep. | partly: it stops naming the account as its maker. Workspaces in its personal project and its disbanded teams' projects are deleted, boxes and all, by the worker; their rows stay, marked deleted. | E2B |
-| `hosted_workspace_secrets` | **plaintext** | A secret a hosted workspace takes, by name, and where its value is: sealed here with a key control holds apart from the database, or in the provider's secrets broker. | A hosted workspace's box is made and rebuilt with every machine off. | partly: they go with their workspace, when the worker deletes it. | E2B |
+| `hosted_workspace_secrets` | **plaintext** | A secret a hosted workspace takes, by name, and where its value is: sealed here with its project's key (project_keys), or in the provider's secrets broker. | A hosted workspace's box is made and rebuilt with every machine off. | partly: they go with their workspace, when the worker deletes it. | E2B |
+| `project_keys` | **plaintext** | A project's data key (M209), which seals that project's secrets, wrapped by the master key control holds apart from the database; which master key wrapped it (a hash of it), when it was made and when it was last re-wrapped. Rotating the master key re-wraps these and nothing else. | A project's secrets are opened for its workspaces and deploys with every machine off. | partly: a personal project's keys go with it, and so do a disbanded team's; other teams' stay. |  |
+| `project_secrets` | **plaintext** | A project's secret that has no table of its own, such as a deploy environment's (M217), by name, sealed with the project's key. | Deploys run with every machine off. | partly: a personal project's secrets go with it, and so do a disbanded team's; other teams' stay. |  |
 | `hosted_ports` | metadata | A port a dev server listens on in a hosted workspace (M186), its label, and who made it public and until when (M187). | Previews are served and expire with every machine asleep. | partly: it stops naming the account as who made a port public. They go with their workspace. |  |
 | `hosted_usage` | metadata | When a hosted workspace's box ran (M188): its workspace, project and box, its size (vCPUs and memory), and each running interval's start and end. | The platform meters boxes from their lifecycle, which runs with every machine asleep, and the operator reads what they cost. | nothing of one: it names no account: a workspace's project and box ids only. It stays when the workspace goes: it's what E2B billed. | E2B |
 | `hosted_usage_provider` | metadata | What E2B says a hosted workspace's box ran (M188), from its lifecycle events: how many runs, their milliseconds, vCPU-milliseconds and MiB-milliseconds, and when it was read. | The platform checks its usage against E2B's record with every machine asleep. | nothing of one: it names no account: a workspace's project and box ids only. | E2B |
 | `environments` | metadata | A project's environment (M217): its name in the project, the driver that applies its deploys (chant-fly, apps-platform), the names of the secrets a driver run gets (never their values: those are sealed per project, M209), and its times. | Deploys are planned, approved and applied through control with every machine asleep. | partly: those of projects that go with it go. |  |
 | `deploys` | metadata | A deploy to an environment (M217): what it deploys (a commit's sha or an artifact's digest, and where), the plan's digest, its state (S37's, with planned and stale), where its plan is in the environment's log, the run that applied it, who planned it (an account, and the machine when its agent did), and its times. | A deploy waits for an owner's approval and is applied by a driver run on the platform, with every machine asleep. | partly: those of projects that go with it go. The rest stay, naming no planner. |  |
 | `deploy_events` | metadata | An environment's deploy log (M217): append-only, a hash chain per environment that anyone can verify. Each event says which deploy, what happened (planned, requested, approved, denied, canceled, expired, started, succeeded, failed, staled), who (an account, an agent's owner and machine, a run, or the platform), when, a small detail (the source and plan's digest, the run, the approval), and its hash and the one before. | Approving a deploy checks its environment's log (the stale rule), with every machine asleep. | partly: those of projects that go with it go. The rest are kept as written, the account's id in them included: an event is never rewritten, and rewriting one would break its chain. The id names no one once the account is gone, so they show as a deleted account. |  |
-| `project_inference_keys` | **plaintext** | A project's own inference key (M185), one per provider (Anthropic, OpenAI), sealed with a key control holds apart from the database, who set it and when. Control opens it only to write it into the project's boxes' egress rules, where E2B's proxy sets it on their requests to the provider; it's never answered back. | A hosted workspace's agents run on the project's key with every other machine asleep, and the page shows whether it's set. | partly: it stops naming the account as who set a key. Keys of its personal project and its disbanded teams' projects are dropped by the platform's sweep. | E2B |
+| `project_inference_keys` | **plaintext** | A project's own inference key (M185), one per provider (Anthropic, OpenAI), sealed with the project's key (project_keys) or, until it's re-sealed, the master key control holds apart from the database, who set it and when. Control opens it only to write it into the project's boxes' egress rules, where E2B's proxy sets it on their requests to the provider; it's never answered back. | A hosted workspace's agents run on the project's key with every other machine asleep, and the page shows whether it's set. | partly: it stops naming the account as who set a key. Keys of its personal project and its disbanded teams' projects are dropped by the platform's sweep. | E2B |
 | `hosted_turns` | metadata | An agent turn on a hosted workspace's box (M185): the workspace, the provider, whose key paid (the project's or the platform's), the account whose caps a platform turn counts against, and when it started and ended. Kept 30 days. | Caps on the platform's key are checked when a hosted box starts a turn, with every other machine asleep. | partly: it stops naming the account; the turns stay until they're 30 days old. |  |
+| `run_grants` | metadata | A project's standing grant for runs (M211): the bytes a project owner's device signed (that the platform may start and instruct runs on the project's hosted workspaces, under its delegation, until it expires) and the signature, its id, the delegation and signing device it names, when it was made and when it expires, who sent it and when, and when a newer grant replaced it; and once revoked (a revoke takes back every grant of the project under its delegation made by its time), the revoke's signed bytes, signature and time, when the platform took it, and whether the runs going were to stop. | Scheduled and event runs start under it with every owner's device asleep, and the platform sends it to the hosted machine with each start. | partly: it stops naming the account as who sent it. The grants of its personal project and its disbanded teams' projects are deleted. A grant its devices signed stays, and hosted machines stop accepting it once those devices aren't an owner's. |  |
 
 ### Who else sees it
 

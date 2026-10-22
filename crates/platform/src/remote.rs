@@ -41,6 +41,7 @@ use tracing::Instrument as _;
 use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke, Standing},
     hosted::{EnrollAsk, EnrollGiven, Enrolled, WakeAnswer},
+    work::{Report, Reported, Work},
 };
 
 use crate::{
@@ -51,6 +52,7 @@ use crate::{
         send::{Outcome, UserToken},
     },
     hub::{Account, ChangePage, Daemon, Flags, HubPort, HubResult, Meter, PushOptions, Pushed, Resolved, Team},
+    work::HostedMachine,
 };
 
 /// Where the hub's internal API is mounted.
@@ -233,6 +235,12 @@ struct WorkspacesArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+struct DelegationArgs {
+    project: String,
+    owner: String,
+}
+
+#[derive(Serialize, Deserialize)]
 struct OpArgs {
     daemon: String,
     op: DaemonOp,
@@ -264,6 +272,18 @@ struct TurnArgs {
     agent: String,
     #[serde(default)]
     turn: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct WorkArgs {
+    machine: HostedMachine,
+    takes: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ReportArgs {
+    machine: HostedMachine,
+    report: Report,
 }
 
 fn ids(v: &[String]) -> IdsArgs {
@@ -392,6 +412,12 @@ impl HubPort for HttpHub {
         Box::pin(self.0.call("hosted_gone", WorkspacesArgs { workspaces: workspaces.to_vec() }))
     }
 
+    fn live_delegation<'a>(&'a self, project: &'a str, owner: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        Box::pin(
+            self.0.call("live_delegation", DelegationArgs { project: project.to_owned(), owner: owner.to_owned() }),
+        )
+    }
+
     fn activity<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<crate::hub::MachineActivity>>> {
         Box::pin(self.0.call("activity", IdsArgs { ids: machines.to_vec() }))
     }
@@ -488,6 +514,10 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "hosted_enrolled" => answer(hub.hosted_enrolled(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
             "hosted_gone" => answer(hub.hosted_gone(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
             "activity" => answer(hub.activity(&args::<IdsArgs>(&body)?.ids).await?)?,
+            "live_delegation" => {
+                let a: DelegationArgs = args(&body)?;
+                answer(hub.live_delegation(&a.project, &a.owner).await?)?
+            }
             _ => return Ok(None),
         }))
     }
@@ -607,6 +637,22 @@ impl PlatformPort for HttpPlatform {
         };
         Box::pin(self.0.call("hosted_turn_end", a))
     }
+
+    fn hosted_work<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        takes: &'a [String],
+    ) -> BoxFuture<'a, anyhow::Result<Work>> {
+        Box::pin(self.0.call("hosted_work", WorkArgs { machine: machine.clone(), takes: takes.to_vec() }))
+    }
+
+    fn hosted_report<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        report: &'a Report,
+    ) -> BoxFuture<'a, anyhow::Result<Reported>> {
+        Box::pin(self.0.call("hosted_report", ReportArgs { machine: machine.clone(), report: report.clone() }))
+    }
 }
 
 /// The platform's internal API: every `PlatformPort` method of `port`,
@@ -664,6 +710,14 @@ async fn platform_call(
             "hosted_turn_end" => {
                 let a: TurnArgs = args(&body)?;
                 answer(p.hosted_turn_end(&a.workspace, &a.machine, &a.turn).await?)?
+            }
+            "hosted_work" => {
+                let a: WorkArgs = args(&body)?;
+                answer(p.hosted_work(&a.machine, &a.takes).await?)?
+            }
+            "hosted_report" => {
+                let a: ReportArgs = args(&body)?;
+                answer(p.hosted_report(&a.machine, &a.report).await?)?
             }
             _ => return Ok(None),
         }))
@@ -893,6 +947,20 @@ mod tests {
             woke,
             WakeAnswer::Failed { code: arugula_control_wire::hosted::WakeCode::Refused, why: "prj_a hw_a".into() }
         );
+        // M212's two calls cross, with the hosted machine the hub vouches for.
+        let m = HostedMachine { project: "p".into(), workspace: "hw".into(), machine: "d".into(), sign: "k".into() };
+        assert_eq!(p.hosted_work(&m, &["run".into()]).await.unwrap(), Work::default());
+        let r = Report {
+            run: "run_1".into(),
+            seq: 2,
+            from: "pending".into(),
+            to: "running".into(),
+            at: 1,
+            detail: "{}".into(),
+            sig: String::new(),
+        };
+        let e = p.hosted_report(&m, &r).await.unwrap_err().to_string();
+        assert!(e.contains("doesn't take runs' reports"), "{e}");
 
         let wrong = HttpPlatform::new(&base, PrincipalKey::new(&[9; 32]).unwrap()).unwrap();
         let e = wrong.chat_on("on").await.unwrap_err().to_string();

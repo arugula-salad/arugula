@@ -19,6 +19,8 @@
 //!   `--control`), and then dials the relay like any machine.
 //! - **Redials at once after a resume** ([`resume`]).
 //! - **Says busy or idle** on its relay socket ([`activity`]).
+//! - **Takes runs** from the platform and runs each at most once
+//!   (`crate::work`, M212).
 //!
 //! It holds nothing else on the platform's behalf.
 
@@ -26,6 +28,7 @@ pub mod activity;
 pub mod enroll;
 pub mod reseed;
 pub mod resume;
+pub mod runs;
 
 use std::{
     path::{Path, PathBuf},
@@ -107,6 +110,8 @@ pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
     let c = control.clone();
     resume::watch(Arc::new(move || c.resumed()));
     activity::start(app.mux.clone(), control.activity.clone());
+    // Its runs (M212), once it's in control.
+    crate::work::start(app.clone());
     if control.enrolled().is_some() {
         return;
     }

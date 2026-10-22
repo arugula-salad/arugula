@@ -29,6 +29,7 @@ import {
 } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
 import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
+import { expiresIn, signGrant, signGrantRevoke, type GrantRevoke, type ProjectGrant } from "./e2e/run-grant.ts";
 import type { E2ETarget } from "./client";
 import { desktopApp } from "../shared/desktop";
 import { platformFetch, refusalOf } from "../shared/maintenance";
@@ -1703,6 +1704,43 @@ export class ControlSession {
     await api("/api/hosted/delegations/revoke", { revoke: await signRevoke(d, this.keys) });
   }
 
+  // ---- the standing project grant for runs (M211), kept by the platform
+
+  /** The project's standing grant, and whether one is offered. */
+  async runGrant(project: string): Promise<RunGrantView> {
+    return api(`/api/projects/${encodeURIComponent(project)}/runs/grant`, undefined, platformFetch);
+  }
+
+  /** As an owner, let the platform start and instruct runs on every
+   * hosted workspace of `d`'s project for `days`, signed by this device.
+   * `after`: a revoke this replaces, which it must be made after. */
+  async signRunGrant(d: Delegation, days: number, after?: GrantRevoke): Promise<void> {
+    const made = Math.max(Date.now(), (after?.at ?? 0) + 1);
+    const grant = await signGrant(d, this.keys, expiresIn(days, made), undefined, made);
+    await api(`/api/projects/${encodeURIComponent(d.project)}/runs/grant`, { grant }, platformFetch);
+  }
+
+  /** As an owner, take back every grant of `project` under each of
+   * `delegations` made by now (the live one, as the hub says, and the one
+   * the platform's grant names): no new runs; `stop` stops the ones going
+   * too. A revoke names no grant, so the platform can't point it
+   * elsewhere. The revokes signed, for a renewal. */
+  async revokeRunGrants(project: string, delegations: string[], stop: boolean): Promise<GrantRevoke[]> {
+    const out: GrantRevoke[] = [];
+    const at = Date.now();
+    for (const d of [...new Set(delegations)]) {
+      const revoke = await signGrantRevoke(project, d, stop ? "stop" : "finish", this.keys, at);
+      try {
+        await api(`/api/projects/${encodeURIComponent(project)}/runs/grant/revoke`, { revoke }, platformFetch);
+        out.push(revoke);
+      } catch (e) {
+        // It covered no grant under that delegation: nothing to take back.
+        if (!(e instanceof HttpError && e.status === 409)) throw e;
+      }
+    }
+    return out;
+  }
+
   /** The teams this browser pinned and checked, for a machine of this
    * account's to check their rosters by (#233): `<founder>.<founder's
    * root>` by team. */
@@ -2227,4 +2265,21 @@ export class ControlSession {
     if (forgetDevice) await forget(location.origin);
     location.href = "/";
   }
+}
+
+/** `GET /api/projects/{project}/runs/grant` (M211). */
+export interface RunGrantView {
+  project: string;
+  owner: string;
+  role: "owner" | "editor" | "viewer";
+  grant: { grant: ProjectGrant; body: string; posted_by: string | null; created_at: number } | null;
+  past: { grant: ProjectGrant; revoke: GrantRevoke | null; revoked_at: number | null; superseded_at: number | null }[];
+  /** The project's live delegation, as the hub says. */
+  delegation: string | null;
+  /** The grant names another delegation than the live one: sign again. */
+  stale: boolean;
+  /** The grant expires within two weeks: renew it. */
+  renew: boolean;
+  workspaces: number;
+  offer: boolean;
 }

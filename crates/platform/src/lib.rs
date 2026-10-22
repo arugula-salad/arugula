@@ -57,6 +57,7 @@ mod hub_calls_tests;
 pub mod inbox;
 pub mod issues;
 pub mod jobs;
+pub mod keys;
 #[cfg(test)]
 mod object_threads_tests;
 pub mod page;
@@ -66,8 +67,13 @@ pub mod remote;
 #[cfg(test)]
 mod restart_tests;
 mod router;
+pub mod run_grant;
+#[cfg(test)]
+mod run_grant_tests;
 pub mod timing;
+pub mod triggers;
 pub mod window;
+pub mod work;
 
 pub use hub::HubPort;
 pub use port::{Deleted, PlatformPort, TurnAnswer};
@@ -126,6 +132,9 @@ pub struct Platform {
     /// Hosted workspaces' template, how their boxes enroll, and who may make
     /// them (M179).
     pub hosted: hosted::Config,
+    /// The master key (`ARUGULA_CLOUD_SECRET_KEY`, and the old one while
+    /// it's rotated), which wraps each project's data key ([`keys`]).
+    pub secret_key: Option<Arc<cloud::secrets::SecretCipher>>,
     /// Wakes asked of hosted workspaces' boxes (M182): one at a time per
     /// workspace, and the worker started on them at once.
     pub wakes: hosted::wake::Wakes,
@@ -215,6 +224,7 @@ impl Platform {
             cloud: None,
             compute: None,
             hosted: Default::default(),
+            secret_key: None,
             wakes: Default::default(),
             github: None,
             chat,

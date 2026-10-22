@@ -51,6 +51,7 @@ mod guest_jump;
 mod hosted;
 #[cfg(test)]
 mod hosted_wire;
+mod hosted_work;
 #[cfg(test)]
 mod hub_latency_bench;
 mod hub_port;
@@ -455,6 +456,8 @@ fn platform(
     p.cloud = cloud;
     p.github = github;
     p.compute = compute;
+    // The master key (M209), which the hosted config was given.
+    p.secret_key = hosted.cipher.clone();
     p.hosted = hosted;
     (gateway::PlatformAt::InProcess(Arc::new(p)), hub)
 }
@@ -629,6 +632,8 @@ fn routes() -> Routes {
         .route(wire::hosted::HOSTED_TRUST, get(hosted::trust))
         .route(wire::hosted::HOSTED_TURNS, post(hosted::turn))
         .route("/api/hosted/turns/{turn}/end", post(hosted::turn_end))
+        .route(wire::work::WORK, get(hosted_work::work))
+        .route(wire::work::WORK_REPORT, post(hosted_work::report))
         .route("/api/hosted/machines/{id}", axum::routing::delete(hosted::remove))
         .route("/api/daemon/github/token", post(forge::daemon_token))
         .route(wire::RELAY_DIAL, get(relay::dial))
@@ -1094,6 +1099,9 @@ async fn run() -> anyhow::Result<()> {
     if let Some(p) = app.platform.local() {
         arugula_platform::cloud::start(p);
         arugula_platform::hosted::start(p);
+        arugula_platform::keys::start(p);
+        // The job worker: runs' dispatch (M212) and schedules (M214).
+        arugula_platform::work::start(p);
         // Chat follows the hub's change feed (M138), and so do projects and
         // grants: a machine that joins gets its `cloud.drive` grant from it.
         arugula_platform::chat::start(p);

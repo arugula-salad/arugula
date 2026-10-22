@@ -392,6 +392,23 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::cloud::CloudCmd,
     },
+    /// Runs on a project's hosted workspaces, on Arugula control.
+    ///
+    /// `start` runs a spec (`--spec NAME`) or a command after `--` by hand;
+    /// `spec add|ls|rm` keeps named runs; `schedule add SPEC --cron EXPR
+    /// [--tz ZONE]` runs one on a schedule; `rule add SPEC --on
+    /// pr-opened|check-failed|push [--repo] [--branch]` on a linked repo's
+    /// event (owner or editor on the project). `grant` shows the project's
+    /// standing grant for runs; `grant sign` signs it with this CLI's device
+    /// (a project owner), so its runs start with every device asleep;
+    /// `grant revoke` takes it back (`--stop`: the runs going stop too). Not
+    /// `arugula run`, which runs a command in a pane here. `--project` names
+    /// a project by id or name; the default is your personal one. Needs
+    /// `arugula login`.
+    Runs {
+        #[command(subcommand)]
+        cmd: cmd::runs::RunsCmd,
+    },
     /// A project's linked GitHub repos on Arugula control.
     ///
     /// `link OWNER/REPO` links one (you need admin or maintain on it on
@@ -666,6 +683,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Cloud { cmd } = cli.cmd {
         return cmd::cloud::run(cmd, cli.json);
     }
+    if let Command::Runs { cmd } = cli.cmd {
+        return cmd::runs::run(cmd, cli.json);
+    }
     if let Command::Project { cmd } = cli.cmd {
         return cmd::project::run(cmd, cli.json);
     }
@@ -786,6 +806,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         | Command::Logout
         | Command::Grants { .. }
         | Command::Cloud { .. }
+        | Command::Runs { .. }
         | Command::Project { .. }
         | Command::Draft { .. }
         | Command::Forge { .. } => {

@@ -92,7 +92,8 @@ pub fn start(mux: MuxHandle, out: tokio::sync::watch::Sender<Option<String>>) {
         let mut signal = Signal::default();
         loop {
             let Some(panes) = mux.api(Api::Panes).await else { return };
-            let busy = panes.iter().any(|p| busy(&p.info));
+            // A run (M212) is busy until it ends, whatever its pane shows.
+            let busy = crate::work::running() || panes.iter().any(|p| busy(&p.info));
             let (say, wait) = signal.see(busy, Instant::now(), now_ms());
             if let Some(a) = say {
                 debug!(busy = a.busy, "activity");
