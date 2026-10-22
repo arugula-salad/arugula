@@ -1,7 +1,9 @@
 // Hosted machines in Devices and machines (M178): the ones this browser
 // accepted for a project, labelled "Hosted: the operator can read", and,
 // for each project this account owns, whether control may enroll them
-// (the project delegation, signed here by this device).
+// (the project delegation, signed here by this device). Allow is offered
+// only where hosted workspaces are open to the account (the platform's
+// `hosted`); a delegation already made is shown with Stop either way.
 
 import { useEffect, useState } from "preact/hooks";
 import { api, type ControlSession } from "../control";
@@ -15,6 +17,8 @@ interface Listed {
   key: string;
   delegations: { id: string; delegation: Delegation; revoke: DelegationRevoke | null }[];
   projects: { id: string; name: string; owner: string }[];
+  /** Hosted workspaces are open to this account: Allow is offered. */
+  open: boolean;
 }
 
 export function HostedMachines({ s }: { s: ControlSession }) {
@@ -27,13 +31,16 @@ export function HostedMachines({ s }: { s: ControlSession }) {
     const projects = (p?.projects ?? [])
       .filter((x) => !x.team || x.team.role === "owner")
       .map((x) => ({ id: x.id, name: x.team ? x.name : "Personal", owner: x.team ? `team:${x.team.id}` : `account:${s.account}` }));
-    setList({ ...d, projects });
+    setList({ ...d, projects, open: !!p?.hosted });
   };
   useEffect(() => void load().catch((e: Error) => setErr(e.message)), []);
   const hosted = s.daemons.filter((d) => d.hosted);
-  if (!hosted.length && !list?.projects.length) return null;
   const live = (p: Listed["projects"][number]) =>
     list?.delegations.find((x) => x.delegation.project === p.id && x.delegation.owner === p.owner && x.delegation.key === list.key && !x.revoke);
+  // Where hosted workspaces are open, every project owned; elsewhere only
+  // those already delegated, to stop.
+  const projects = list ? list.projects.filter((p) => list.open || live(p)) : [];
+  if (!hosted.length && !projects.length) return null;
   const act = (id: string, f: () => Promise<unknown>) => async () => {
     setBusy(id);
     setErr("");
@@ -71,9 +78,9 @@ export function HostedMachines({ s }: { s: ControlSession }) {
           ))}
         </ul>
       ) : null}
-      {list?.projects.length ? (
+      {projects.length ? (
         <ul class="control-devices" data-delegations>
-          {list.projects.map((p) => {
+          {projects.map((p) => {
             const d = live(p);
             return (
               <li key={p.id} data-project={p.id} data-delegated={d ? "yes" : "no"}>
@@ -95,7 +102,7 @@ export function HostedMachines({ s }: { s: ControlSession }) {
           })}
         </ul>
       ) : null}
-      {list?.projects.length ? (
+      {projects.length ? (
         <p class="dim control-explain">
           <b>Allow</b> signs, with this device, that control may enroll hosted machines into the project until you stop it. Stopping ends new
           ones; the ones there stay until they're removed.

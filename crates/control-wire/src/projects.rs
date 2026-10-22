@@ -18,6 +18,11 @@ pub const PROJECTS: &str = "/api/projects";
 pub struct Projects {
     pub me: Me,
     pub projects: Vec<Project>,
+    /// Hosted workspaces are open to this person (M179's allowlist): only
+    /// then does the shell offer to delegate a project to control (M178).
+    /// A platform from before leaves it out.
+    #[serde(default)]
+    pub hosted: bool,
 }
 
 /// The signed-in person, as the hub knows them.
