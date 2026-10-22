@@ -253,6 +253,11 @@ struct Args {
     #[arg(long = "push-host", hide = true)]
     push_hosts: Vec<String>,
 
+    /// Take shared Docs whatever the disk looks like (tests: a CI pod's
+    /// disk is its node's, which other pods fill).
+    #[arg(long, hide = true)]
+    no_disk_guard: bool,
+
     /// Behind a proxy that puts the client's IP in a header (Fly:
     /// `Fly-Client-IP`), use it for rate limits. Only set this when every
     /// request comes through that proxy.
@@ -1002,8 +1007,9 @@ async fn run() -> anyhow::Result<()> {
         guest_routes: Default::default(),
         blocks: Default::default(),
         analytics,
-        // The database's directory, whose disk shared Docs fill.
-        docs: doc_links::Docs::at(db_dir),
+        // The database's directory, whose disk shared Docs fill. Without
+        // one, the guard has no disk to read and lets every part in.
+        docs: if a.no_disk_guard { Default::default() } else { doc_links::Docs::at(db_dir) },
         platform,
         maintenance: Default::default(),
         hub_port,

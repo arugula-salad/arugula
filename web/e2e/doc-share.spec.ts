@@ -84,6 +84,9 @@ async function rig(blockDomain: string | null, browser?: Page): Promise<Rig> {
         ...["--listen", ANY, "--public-url", "http://127.0.0.1:0", "--db", db, ...(blockDomain ? ["--block-domain", blockDomain] : [])],
         ...["--github-client-id", "id", "--github-client-secret", "s", "--static-dir", "dist"],
         ...["--github-url", github, "--github-api", github],
+        // The database is on the machine's disk, which a CI pod shares
+        // with its node, and other pods can fill that past the guard's 80%.
+        "--no-disk-guard",
       ],
       { stdio: process.env.E2E_CONTROL_LOG ? "inherit" : "ignore" },
     ),
