@@ -904,7 +904,7 @@ registerBlock("forge", (client, id): BlockView => {
   // M203: a project's own issue is a forge block too, drawn by the
   // platform page's issue view.
   let state: ForgeState | NativeIssueState | null = null;
-  const draw = () => render(isNativeIssue(state) ? <NativeIssueBlock s={state} refresh={() => void client.api(`/api/blocks/${id}/call/refresh`, {})} /> : <ForgeBlock client={client} id={id} s={state} />, host);
+  const draw = () => render(isNativeIssue(state) ? <NativeIssueBlock client={client} block={id} s={state} refresh={() => void client.api(`/api/blocks/${id}/call/refresh`, {})} /> : <ForgeBlock client={client} id={id} s={state} />, host);
   draw();
   const off = client.subscribe(draw);
   return {

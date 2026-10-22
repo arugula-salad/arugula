@@ -2,6 +2,11 @@
 //! pin, `pin: {kind: "issue", global_id: "iss_…"}` in its config (kept in
 //! `layout.json`), onto the platform's issue: nothing of it is kept here
 //! but its id, number, project and title.
+//! - **Whose it is.** It's read as the machine's owner, and its state goes
+//!   to everyone who sees the pane (teammates, guests), so the state says
+//!   only its id and number. The issue itself (and the kept title) is the
+//!   owner's, by the `native_issue` call (`authz`: the owner's only).
+//!   Anyone else reads it as themselves on the platform, or sees `#N`.
 //!
 //! - **Opening one.** `show` kind issue and `arugula open` with `iss_…`,
 //!   or `#N` in a project ([`open_config`]). MCP's `#N` is the platform's
@@ -126,8 +131,8 @@ fn issue_kind() -> ItemKind {
     ItemKind::Issue
 }
 
-/// What clients draw: the issue as the platform said it last, and how
-/// that stands.
+/// What clients draw, which goes to everyone who sees the pane: how the
+/// read stands, and nothing of the issue but its number.
 #[derive(Debug, Clone, Serialize)]
 struct State {
     kind: ItemKind,
@@ -137,10 +142,8 @@ struct State {
     /// The pin, with `stale` while the platform can't be reached.
     pin: ForgePin,
     number: Option<u64>,
-    project: Option<String>,
-    title: Option<String>,
-    /// The platform's issue, as this machine read it last.
-    issue: Option<Issue>,
+    /// This machine holds a read of it, for its owner (`native_issue`).
+    read: bool,
     /// When the platform last answered (ms).
     read_ms: Option<u64>,
     /// Why it isn't shown: no grant, not the owner's, gone.
@@ -155,6 +158,8 @@ pub struct NativeIssue {
     me: Weak<NativeIssue>,
     config: Mutex<Config>,
     state: Mutex<State>,
+    /// The platform's issue, as this machine read it last: the owner's.
+    issue: Mutex<Option<Issue>>,
     live: Live,
     reading: tokio::sync::Mutex<()>,
 }
@@ -172,9 +177,7 @@ impl NativeIssue {
             native: true,
             pin: config.pin.clone(),
             number: config.number,
-            project: config.project.clone(),
-            title: config.title.clone(),
-            issue: None,
+            read: false,
             read_ms: None,
             error: None,
             loading: true,
@@ -185,6 +188,7 @@ impl NativeIssue {
             me: me.clone(),
             config: Mutex::new(config),
             state: Mutex::new(state),
+            issue: Mutex::new(None),
             live: Live::default(),
             reading: tokio::sync::Mutex::new(()),
         });
@@ -213,6 +217,7 @@ impl NativeIssue {
 
     fn took(&self, got: Result<Issue, Got>) {
         let mut st = self.state.lock().unwrap();
+        let mut issue = self.issue.lock().unwrap();
         st.loading = false;
         match got {
             Ok(i) => {
@@ -223,23 +228,45 @@ impl NativeIssue {
                     c.title = Some(i.title.clone());
                 }
                 st.number = Some(i.number);
-                st.project = Some(i.project.clone());
-                st.title = Some(i.title.clone());
-                st.issue = Some(i);
+                st.read = true;
                 st.read_ms = Some(now_ms());
                 st.error = None;
                 st.pin.stale = None;
+                *issue = Some(i);
             }
             // What it said last stays: the platform may be back next read.
             Err(Got::Later(why)) => st.pin.stale = Some(why),
             // Refused (no grant, not the owner's any more, gone): nothing
-            // of it is shown, and the refusal says why.
+            // of it stays, here or in `layout.json`, and the refusal says
+            // why.
             Err(Got::Refused(why)) => {
-                st.issue = None;
+                {
+                    let mut c = self.config.lock().unwrap();
+                    (c.number, c.project, c.title) = (None, None, None);
+                }
+                *issue = None;
+                st.number = None;
+                st.read = false;
                 st.error = Some(why);
                 st.pin.stale = None;
             }
         }
+    }
+
+    /// What the owner sees of it (`native_issue`): the issue as this
+    /// machine read it last, else what's kept of it, and how that stands.
+    fn owners(&self) -> Value {
+        let c = self.config.lock().unwrap().clone();
+        let st = self.state.lock().unwrap();
+        json!({
+            "issue": *self.issue.lock().unwrap(),
+            "number": c.number,
+            "project": c.project,
+            "title": c.title,
+            "read_ms": st.read_ms,
+            "stale": st.pin.stale,
+            "error": st.error,
+        })
     }
 
     fn watch(&self, round: u64) {
@@ -253,13 +280,14 @@ impl NativeIssue {
         });
     }
 
+    /// Its line for everyone who sees the pane: its number and id, never
+    /// its title.
     fn line(&self) -> String {
         let st = self.state.lock().unwrap();
         let id = &st.pin.global_id;
-        match (&st.issue, st.number, &st.title) {
-            (Some(i), _, _) => format!("#{} {} ({}) · {id}", i.number, i.title, state_word(i)),
-            (None, Some(n), Some(t)) => format!("#{n} {t} · {id}"),
-            _ => format!("Issue {id}"),
+        match st.number {
+            Some(n) => format!("#{n} · {id}"),
+            None => format!("Issue {id}"),
         }
     }
 }
@@ -289,13 +317,6 @@ impl From<CloudRefused> for Got {
     }
 }
 
-fn state_word(i: &Issue) -> String {
-    match (i.state.as_str(), i.close_reason.as_deref()) {
-        ("closed", Some(r)) if r != "completed" => format!("closed: {}", r.replace('_', " ")),
-        (s, _) => s.to_owned(),
-    }
-}
-
 impl Block for NativeIssue {
     fn kind(&self) -> BlockType {
         BlockType::Forge
@@ -309,17 +330,11 @@ impl Block for NativeIssue {
         serde_json::to_value(&*self.state.lock().unwrap()).unwrap_or_default()
     }
 
+    /// As `capture --text` gives it, to whoever may capture the pane: no
+    /// title or body (the owner's, by `native_issue`).
     fn text(&self) -> String {
         let mut out = format!("{}\n", self.line());
         let st = self.state.lock().unwrap();
-        if let Some(i) = &st.issue {
-            if !i.labels.is_empty() {
-                out.push_str(&format!("labels: {}\n", i.labels.join(", ")));
-            }
-            if !i.body.trim().is_empty() {
-                out.push_str(&format!("\n{}\n", i.body.trim_end()));
-            }
-        }
         if let Some(s) = &st.pin.stale {
             out.push_str(&format!("(as Arugula control said it last: {s})\n"));
         }
@@ -339,6 +354,9 @@ impl Block for NativeIssue {
                 Ok(me.state())
             }),
             "state" => Box::pin(async move { Ok(me.state()) }),
+            // The owner's only (`authz`, and the handler for another
+            // account's devices).
+            "native_issue" => Box::pin(async move { Ok(me.owners()) }),
             m => {
                 let e = format!(
                     "{}: a project's own issue changes on the platform page, with `arugula issue`, or through MCP",
@@ -367,13 +385,7 @@ impl Block for NativeIssue {
 
     fn summary(&self) -> Summary {
         let st = self.state.lock().unwrap();
-        Summary {
-            title: match (st.number, &st.title) {
-                (Some(n), Some(t)) => Some(format!("#{n} {t}")),
-                _ => None,
-            },
-            ..Default::default()
-        }
+        Summary { title: st.number.map(|n| format!("#{n}")), ..Default::default() }
     }
 }
 

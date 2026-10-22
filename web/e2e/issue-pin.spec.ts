@@ -97,7 +97,12 @@ test("an issue opens as a block in geek's workspace, read as Alice", async ({ br
   );
   expect(granted).toBe(200);
   const read = await call(alice, "POST", `/api/blocks/${block}/call/refresh`, {});
-  expect((read.body as { issue: { title: string } | null }).issue?.title).toBe(TITLE);
+  const shown = (read.body as { read: boolean; number: number | null; title?: unknown; issue?: unknown });
+  // What everyone who sees the pane gets: its number, never its text.
+  expect([shown.read, shown.number, shown.title, shown.issue]).toEqual([true, 1, undefined, undefined]);
+  // The issue itself is the owner's, by its own call.
+  const own = await call(alice, "POST", `/api/blocks/${block}/call/native_issue`, {});
+  expect((own.body as { issue: { title: string } | null }).issue?.title).toBe(TITLE);
 
   // A comment from the block is a message in its thread.
   const box = view.locator(".thread-compose textarea");

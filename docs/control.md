@@ -174,7 +174,13 @@ machine's `threads.read` grant over the project (what it reads, its
 agents read: `read_forge` on the block is M200's read). It reads again
 every minute while the block is drawn, and at once when a page showing it
 hears it changed. The platform can't be reached: the block shows what it
-said last, and says so. Without a grant, it says how to give one.
+said last, and says so. Without a grant, it says how to give one, and
+forgets what it read (its title too). What the daemon read is the owner's:
+the block's state, its text and the pane list, which everyone who sees the
+pane gets, say only `#N`, and the issue itself is the owner's
+`native_issue` call. A teammate or a guest looking at the pane reads it as
+themselves on control's page, or sees `#N` and that they can't read it
+there. Only the owner opens one.
 
 ```
 arugula pr view acme/app#7                # no block; also `issue view`
