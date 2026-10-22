@@ -257,15 +257,15 @@ fn the_hub_names_no_platform_table() {
 
 /// What a window copies (`arugula_platform::window`, M141) is every
 /// `process = "platform"` table but `platform_migrations`, which each
-/// file's own migration runner keeps, and `chat_fts`, an index rebuilt
-/// from the copied messages.
+/// file's own migration runner keeps, and the FTS5 indexes (`chat_fts`,
+/// `issues_fts`), made again from the copied rows.
 #[test]
 fn a_window_copies_every_platform_table() {
     let m = manifest();
     let mut listed: Vec<String> = m
         .table
         .iter()
-        .filter(|t| t.process == Process::Platform && t.name != "platform_migrations" && t.name != "chat_fts")
+        .filter(|t| t.process == Process::Platform && t.name != "platform_migrations" && !t.name.ends_with("_fts"))
         .map(|t| t.name.clone())
         .collect();
     listed.sort();

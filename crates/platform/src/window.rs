@@ -508,7 +508,8 @@ pub const SAMPLE_KEY: &str = "01010101010101010101010101010101010101010101010101
 
 /// A few rows in several of the platform's tables, the way the platform
 /// writes them (tests, here and in control): rooms, members and messages
-/// that search finds, a read mark, projects, a grant, the feed's position,
+/// that search finds, a read mark, projects, an issue search finds and its
+/// timeline, a grant, the feed's position,
 /// cloud notifications with a gap in their rowids, and a cloud secret
 /// sealed with [`SAMPLE_KEY`]. Accounts `acct-a` and `acct-b`.
 #[cfg(any(test, feature = "contract"))]
@@ -531,6 +532,10 @@ pub fn sample(db: &crate::db::Db) {
          INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
              VALUES ('g1', 'daemon', 'd1', 'cloud.drive', 'account', 'acct-a', 'acct-a', 30);
          INSERT INTO hub_feed (reader, seq) VALUES ('projects', 1234);
+         UPDATE projects SET last_issue = 1 WHERE id = 'prj_t';
+         INSERT INTO issues (search_id, id, project_id, number, title, body, author, labels, created_at, updated_at)
+             VALUES (3, 'iss_1', 'prj_t', 1, 'Rehearsal notes', 'the canary held', 'acct-a', '[\"ops\"]', 24, 24);
+         INSERT INTO issue_events (id, issue_id, kind, actor, at) VALUES (5, 'iss_1', 'opened', 'acct-a', 24);
          INSERT INTO cloud_notifications (conversation, account, request, next_attempt)
              VALUES ('c2', 'acct-a', 'q2', 1), ('c1', 'acct-a', 'q1', 1);
          DELETE FROM cloud_notifications WHERE conversation = 'c2';

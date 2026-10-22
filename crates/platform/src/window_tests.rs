@@ -89,6 +89,7 @@ fn a_copy_moves_every_row_and_proves_it() {
         7
     );
     assert_eq!(count(&platform, "SELECT count(*) FROM chat_fts WHERE chat_fts MATCH 'rehearsal'"), 2);
+    assert_eq!(count(&platform, "SELECT rowid FROM issues_fts WHERE issues_fts MATCH 'canary'"), 3, "issues' too");
 }
 
 /// The rowids some queries order by survive (a delete left a gap).
@@ -266,6 +267,8 @@ fn a_copy_to_postgres_and_back_matches() {
     let search = crate::db::chat::Search { words: &words, ..Default::default() };
     let found = pg.chat_search(&["r1".into()], &search, 10).unwrap();
     assert_eq!(found.len(), 2, "search finds the copied words");
+    let words = [crate::db::chat::Word { text: "canary".into(), prefix: false }];
+    assert_eq!(pg.search_issues("prj_t", &words, 10).unwrap().len(), 1, "and the copied issues");
     assert_eq!(portable::secrets_open(&to, SAMPLE_KEY).unwrap(), (1, vec![]));
     let again = portable::copy(&file, &to, false).unwrap_err();
     assert!(again.to_string().contains("already holds"), "{again}");
@@ -284,6 +287,7 @@ fn a_copy_to_postgres_and_back_matches() {
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(rowids, [2, 3], "the rowids queries order by, kept");
+    assert_eq!(count(&d.at("back.db"), "SELECT rowid FROM issues_fts WHERE issues_fts MATCH 'canary'"), 3);
 }
 
 /// `migrations` reads what a database has applied without running
