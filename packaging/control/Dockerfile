@@ -16,8 +16,6 @@ RUN wget -qO /ls.tgz "https://github.com/benbjohnson/litestream/releases/downloa
 
 FROM gcr.io/distroless/static-debian12
 COPY arugula-control /arugula-control
-# The daemon hosted sandboxes run (M20).
-COPY arugulad /arugulad
 COPY --from=litestream /litestream /litestream
 EXPOSE 7690
 ENTRYPOINT ["/arugula-control"]

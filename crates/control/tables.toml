@@ -60,10 +60,6 @@ sees = "E2B runs hosted workspaces' boxes, so it processes their contents: it ho
 name = "PostHog"
 sees = "PostHog gets product events, when control has a key for it: account, team and machine ids, a machine's version, OS and arch, plans, Labs flags and counts. No names, logins, addresses or content."
 
-[parties.sprites]
-name = "Sprites"
-sees = "Sprites hosts hosted sandboxes: it knows each one's VM."
-
 [parties.github]
 name = "GitHub"
 sees = "GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it makes every token control mints and sees each one used, every draft sent goes to it, and it sends the webhooks."
@@ -217,15 +213,6 @@ holds = "metadata"
 what = "Until when a machine has a live share link, so control routes link guests to it."
 with_account = "deleted"
 seen_by = ["litestream"]
-
-[[table]]
-name = "sandboxes"
-plane = "machine"
-process = "hub"
-holds = "metadata"
-what = "A hosted sandbox: its VM's id, the device that asked, a hash of its join ticket, its state."
-with_account = "deleted"
-seen_by = ["litestream", "sprites"]
 
 [[table]]
 name = "project_delegations"

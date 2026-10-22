@@ -14,9 +14,6 @@ pub struct JoinRequest {
     /// A machine that belongs to a team (M19), not a person.
     #[serde(default)]
     pub team: Option<String>,
-    /// A hosted sandbox's one-time ticket (M20).
-    #[serde(default)]
-    pub ticket: Option<String>,
     /// What the daemon understands, comma-separated (older ones send none).
     #[serde(default)]
     pub features: String,

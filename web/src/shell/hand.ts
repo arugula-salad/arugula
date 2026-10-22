@@ -296,7 +296,7 @@ class Hand {
       if (!this.clients.has("")) this.add("", new Client("", undefined, true));
       return;
     }
-    const want = new Set(s.daemons.filter((d) => !d.sandbox).map((d) => d.id));
+    const want = new Set(s.daemons.map((d) => d.id));
     for (const [id, c] of this.clients) {
       if (!want.has(id)) {
         c.close();

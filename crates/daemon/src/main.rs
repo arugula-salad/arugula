@@ -554,7 +554,7 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Uninstall) => install::uninstall(),
         Some(Command::Update { yes }) => selfupdate::cli(yes, &args.run.update_url),
         Some(Command::Sandbox) => labs::supervise_sandbox(),
-        Some(Command::Join { url, name, team, account, ticket, state_dir }) => {
+        Some(Command::Join { url, name, team, account, state_dir }) => {
             let name = name.unwrap_or_else(|| hostname().unwrap_or_else(|| "arugula".into()));
             let dir = state_dir.unwrap_or_else(default_state_dir);
             tokio::runtime::Runtime::new()?.block_on(control::join(
@@ -562,7 +562,6 @@ fn main() -> anyhow::Result<()> {
                 &name,
                 team.as_deref(),
                 account.as_deref(),
-                ticket.as_deref(),
                 &dir,
             ))?;
             if daemon_running(&dir) {
@@ -571,9 +570,6 @@ fn main() -> anyhow::Result<()> {
                 println!("  arugulad isn't running here: start it with `arugulad install`.");
             }
             Ok(())
-        }
-        Some(Command::JoinRequest { name, out, state_dir }) => {
-            control::join_request(&name, &out, &state_dir.unwrap_or_else(default_state_dir))
         }
         Some(Command::Flags { name, switch, state_dir }) => {
             flags_cli(name.as_deref(), switch, &state_dir.unwrap_or_else(default_state_dir))
@@ -986,7 +982,6 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
         acl: acl.clone(),
         notify: Arc::new(push::Notifier { push: push.clone(), control: control.clone() }),
         people: control.clone(),
-        sandbox_of_control: args.sandbox_of_control,
         owner_name: owner_login.clone().unwrap_or_else(|| "owner".into()),
         owner_pic: None,
         guest_machines: args.guest_machines,

@@ -32,7 +32,6 @@ interface DeletePreview {
   blockers: string[];
   pays: string[];
   machines: number;
-  vms: number;
   stays_in: string[];
 }
 
@@ -214,7 +213,6 @@ function DeleteAccount({ s, back }: { s: ControlSession; back: () => void }) {
             <li>
               your devices, and your {p.machines} machine{p.machines === 1 ? "" : "s"}: they stop reaching control (Arugula keeps running on them, reachable only locally);
             </li>
-            {p.vms ? <li>your {p.vms} hosted VM{p.vms === 1 ? "" : "s"}, which are deleted;</li> : null}
             {p.disband.map((t) => (
               <li key={t.team} data-disband={t.team}>
                 the team <b>{t.name}</b>, which you founded{t.others ? `: its ${t.others} other member${t.others === 1 ? " loses" : "s lose"} it, and its machines go back to their owners` : ""};

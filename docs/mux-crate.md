@@ -300,8 +300,6 @@ pub trait People: Send + Sync {
     fn owns_here(&self, account: &str) -> bool;
     fn co_owners(&self) -> Vec<Principal>;
     fn team_people(&self) -> Vec<Principal>;
-    /// A hosted sandbox's last session closed (M20).
-    fn sandbox_done(&self);
 }
 ```
 

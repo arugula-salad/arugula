@@ -2,7 +2,7 @@
 
 Written 2026-10-01, from the control spike ([spikes/s15-control](../spikes/s15-control/README.md)).
 This is the design the control track builds: accounts and devices, the
-end-to-end relay, teams, hosted sandboxes and push. It turns the control track's promise
+end-to-end relay, teams and push. It turns the control track's promise
 (plan-archive.md, "Control track") into mechanisms: **control can refuse service,
 but it can't read.** That promise has limits, set out in
 [What holds against control](#what-holds-against-control): the client code
@@ -377,12 +377,6 @@ would pass. So the daemon doesn't take the root on control's word. Since
     again.
 - **Hosted machines** (step 5) join under a project's delegation instead
   ([below](#hosted-machines-a-projects-delegation)).
-- **Hosted sandboxes** (M20, retired in M190) skip the check: control creates the VM through
-  its provider and writes the sandbox's `control.json` itself
-  (`crates/control/src/sandboxes.rs`). The operator runs that machine, so it
-  can read it whatever the keys say. A sandbox is end to end encrypted
-  against the network, not against control. Its join has no link, so no
-  secret.
 
 ### Approving a new browser or phone: the code it shows
 
@@ -1132,8 +1126,7 @@ page that framed them with `postMessage`. Every message carries
 
 - **When:** a port or editor block whose state has a `site_key`, on a
   machine this page reaches through a control whose `/control.json` says
-  `block_domain`: a hosted machine's too (M186). Not an M20 hosted
-  sandbox's (its daemon doesn't dial control's relay). The frame is `<page's scheme>//b-<site_key>.<block
+  `block_domain`: a hosted machine's too (M186). The frame is `<page's scheme>//b-<site_key>.<block
   domain>[:<page's port>]` plus the daemon's `src` made a path.
 - **The editor's `src`:** code-server opens a file from VS Code's
   `payload` (`[["openFile","vscode-remote://<host>/path"]]`), where the
@@ -1386,9 +1379,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 101 tables in two planes ("Two planes, two trust rules"):
+Control's database has 100 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (36 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (35 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (65 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1413,7 +1406,6 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `daemon_offer_pushes` | metadata | When an account was last pushed about a shared machine. | yes |  |
 | `share_answers` | metadata | An account's yes or no to a machine shared with it. | yes |  |
 | `daemon_links` | metadata | Until when a machine has a live share link, so control routes link guests to it. | yes |  |
-| `sandboxes` | metadata | A hosted sandbox: its VM's id, the device that asked, a hash of its join ticket, its state. | yes | Sprites |
 | `project_delegations` | metadata | A project delegation (M178): an owner's device's signed word that control may enroll hosted machines into the project, the account that sent it, and the signed revocation that ended it. | yes: its own project's and its disbanded teams' go, and every one it signed. |  |
 | `hosted_enrollments` | metadata | A one-time hosted enrollment (M178): a hash of its ticket or the box's sandbox id, the project, workspace and delegation, when it runs out and when it was used. | yes |  |
 | `hosted_machines` | metadata | A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), its addresses, when it was last seen and removed. | yes |  |
@@ -1510,7 +1502,6 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 - **Managoat:** Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals.
 - **E2B:** E2B runs hosted workspaces' boxes, so it processes their contents: it holds each box's disk and memory (the repos, files, terminals and agent conversations in it) while the box lives, paused too, the env and metadata each is made with (the workspace, project, release and template ids), its egress rules (which hold projects' own inference keys, and name the platform's), and the platform's inference keys in its secrets broker. It records each box's runs (when, how long, its size), which it bills by and the platform reads back to check its own usage.
 - **PostHog:** PostHog gets product events, when control has a key for it: account, team and machine ids, a machine's version, OS and arch, plans, Labs flags and counts. No names, logins, addresses or content.
-- **Sprites:** Sprites hosts hosted sandboxes: it knows each one's VM.
 - **GitHub:** GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it makes every token control mints and sees each one used, every draft sent goes to it, and it sends the webhooks.
 - **Stripe:** Stripe bills, when control has a key for it: it holds the customers and subscriptions control keeps ids for, and gets sandbox minutes.
 

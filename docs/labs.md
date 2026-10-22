@@ -119,11 +119,6 @@ leaves the rest. (The empty `labs` file of 0.24 to 0.28 was moved into
   m2:src/main.rs`, `arugula fs cat m2:~/log.txt`, `arugula agent --machine
   m3 …`, and `arugula --host s1 ls` for a sandbox with a resident daemon
   (`arugula hosts promote`), which wakes it.
-- **Control:** *New hosted VM* and *Delete this VM* in the host menu,
-  offered when control says hosted sandboxes are open (not by the `labs`
-  file). Hosted sandboxes run on control's provider, which writes their
-  trust files, so their operator can read them; deleting an account
-  deletes its hosted VMs.
 
 ### Where machines come from
 

@@ -1,5 +1,5 @@
-//! Who control trusts for outgoing TLS (GitHub, Stripe, Sprites,
-//! Managoat), in both processes. The
+//! Who control trusts for outgoing TLS (GitHub, Stripe, Managoat,
+//! E2B), in both processes. The
 //! platform's roots first. On a machine with none (a bare container image
 //! without `ca-certificates`, where someone runs the static binary
 //! themselves) reqwest's client won't build, and control used to stop at

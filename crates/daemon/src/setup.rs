@@ -435,7 +435,7 @@ pub fn rejoin(app: Arc<App>, url: String) {
 async fn start_join(app: &Arc<App>, url: &str, team: Option<&str>) -> Value {
     let name = app.hosts.name().to_owned();
     let dir = app.control.state_dir().to_owned();
-    match crate::control::join_start(url, &name, team, None, &dir, "Getting started").await {
+    match crate::control::join_start(url, &name, team, &dir, "Getting started").await {
         Ok(p) => {
             let pending = Pending {
                 code: p.whole_code(),
