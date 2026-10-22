@@ -57,8 +57,13 @@ RUN npm install -g --no-fund --no-audit "$CODEX" && npm cache clean --force && c
 
 # The workspace's user, `user` at uid 1000 with sudo, as on E2B's base (whose
 # build makes it before this runs; Ubuntu's image has `ubuntu` there).
+# `arugulad _reseed` (M180) is named on its own, so a new box from the
+# snapshot can still reseed the kernel's randomness before it makes any key
+# if the blanket rule ever goes.
 RUN id -u user >/dev/null 2>&1 || { userdel -r ubuntu 2>/dev/null; useradd -m -u 1000 -s /bin/bash user; } \
- && echo 'user ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/user && chmod 0440 /etc/sudoers.d/user
+ && echo 'user ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/user && chmod 0440 /etc/sudoers.d/user \
+ && echo 'user ALL=(root) NOPASSWD: /usr/local/bin/arugulad _reseed *' > /etc/sudoers.d/arugulad-reseed \
+ && chmod 0440 /etc/sudoers.d/arugulad-reseed
 
 COPY arugulad /usr/local/bin/arugulad
 COPY arugula /usr/local/bin/arugula
