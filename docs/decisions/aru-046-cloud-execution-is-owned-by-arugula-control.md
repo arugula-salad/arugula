@@ -20,6 +20,10 @@ supersedes: []
 evidence:
   - title: "#1039"
     url: "https://github.com/arugula-salad/arugula/issues/1039"
+  - title: "#1235"
+    url: "https://github.com/arugula-salad/arugula/issues/1235"
+  - title: "#1236"
+    url: "https://github.com/arugula-salad/arugula/issues/1236"
 decided_by: "jhgaylor"
 decided_on: "2026-10-16"
 reviews: []
@@ -72,3 +76,14 @@ Where: `crates/platform/src/cloud/`, `crates/platform/src/db/cloud.rs`,
 `web/src/platform/cloud/launch.tsx`, [managed cloud agents](docs/managoat.md),
 `spikes/s40-cloud-workspaces/PLAN.md`.
 From: Jake's managed-platform integration decisions, 2026-10-16; #1039.
+
+**Step 5 (#1235, Jake, 2026-10-21): a Cloud workspace becomes a hosted
+`arugulad`.** It runs in a rented sandbox attached to a project ("A hosted
+machine is arugulad in a rented sandbox", "The substrate is built to E2B's
+API"), with terminals, agent blocks and previews through the daemon, and
+pauses only between turns. Managoat stops being the Cloud workspace
+backend: beta workspaces are recreated on E2B, and the Managoat path is
+deleted 14 days after the notice (M189). The M20 hosted-sandbox product
+(`arugulad` in a Sprites VM) is retired with it (M190). Control still owns
+the account and inference configuration ("Hosted inference: strangers bring
+their own key"). From: M175 (#1236).
