@@ -514,7 +514,7 @@ fn write(tx: &impl Sql, read: &Read, replace: bool, to: &Place) -> anyhow::Resul
             held.join(", ")
         );
     }
-    for (t, _, _) in read.tables.iter().rev() {
+    for t in super::emptying(read.tables.iter().map(|(t, _, _)| t.as_str())) {
         tx.execute(&format!("DELETE FROM \"{t}\""), params![])?;
     }
     for (t, cols, rows) in &read.tables {
