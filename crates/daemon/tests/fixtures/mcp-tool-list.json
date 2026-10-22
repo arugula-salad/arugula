@@ -2999,7 +2999,7 @@
             "type": "boolean"
           },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) for its thread.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nworkspace's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
           }
         },
@@ -3059,7 +3059,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "room": {
-            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) to comment on it.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nworkspace's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
@@ -6470,7 +6470,7 @@
             "type": "boolean"
           },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) for its thread.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nworkspace's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
           }
         },
@@ -6530,7 +6530,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "room": {
-            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) to comment on it.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nworkspace's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
@@ -9660,7 +9660,7 @@
             "type": "boolean"
           },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) for its thread.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nworkspace's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
           }
         },
@@ -9720,7 +9720,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "room": {
-            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) to comment on it.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nworkspace's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
@@ -13131,7 +13131,7 @@
             "type": "boolean"
           },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) for its thread.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nworkspace's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
           }
         },
@@ -13191,7 +13191,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "room": {
-            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) to comment on it.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nworkspace's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
@@ -14723,7 +14723,7 @@
             "type": "boolean"
           },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) for its thread.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nworkspace's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
           }
         },
@@ -16179,7 +16179,7 @@
             "type": "boolean"
           },
           "room": {
-            "description": "The room's id (list kind threads), or an issue's or PR's id\n(iss_…, fi_…) for its thread.",
+            "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nworkspace's id (iss_…, fi_…, hw_…) for its thread.",
             "type": "string"
           }
         },

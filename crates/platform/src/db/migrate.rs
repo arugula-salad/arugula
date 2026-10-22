@@ -174,6 +174,18 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
+        version: 13,
+        name: "hosted_workspaces",
+        sql: include_str!("../../migrations/sqlite/0013_hosted_workspaces.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 14,
+        name: "hosted_usage",
+        sql: include_str!("../../migrations/sqlite/0014_hosted_usage.sql"),
+        additive: true,
+    },
+    Migration {
         version: 23,
         name: "platform_jobs",
         sql: include_str!("../../migrations/sqlite/0023_platform_jobs.sql"),
@@ -255,6 +267,18 @@ const POSTGRES: &[Migration] = &[
         version: 12,
         name: "issue_home",
         sql: include_str!("../../migrations/postgres/0012_issue_home.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 13,
+        name: "hosted_workspaces",
+        sql: include_str!("../../migrations/postgres/0013_hosted_workspaces.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 14,
+        name: "hosted_usage",
+        sql: include_str!("../../migrations/postgres/0014_hosted_usage.sql"),
         additive: true,
     },
     Migration {

@@ -73,6 +73,27 @@ rows (items, checks, events, content, drafts and inbox rows) go within a day
 again to the same project first. Linking it to another project instead
 purges the old project's rows at once.
 
+**Hosted workspaces (M179, #1240).** A hosted workspace is `arugulad` in
+a box at the platform's compute provider (E2B, `crates/platform/src/compute`),
+in a project. It enrolls into the project under the project's delegation
+(M178) and shows in its machines. A project's members list and open its
+workspaces; its owners and editors make, rebuild and delete them, and
+making a box also needs the account on `ARUGULA_HOSTED_ACCOUNTS`. The
+platform's worker makes each box from the current release's template
+(`ARUGULA_HOSTED_TEMPLATE` until M177's lookup), records its one-time
+enrollment with the hub by sandbox id (or puts a ticket in its env, with
+`ARUGULA_HOSTED_ENROLL=ticket`, for boxes that boot fresh), and deletes a box
+that doesn't enroll in time. A create whose answer was lost is found by the
+box's metadata, never sent twice (`crates/platform/src/hosted/`).
+
+```
+arugula cloud create dev --repo https://github.com/acme/app --setup setup.sh
+arugula cloud ls                          # every project's; --project <id or name>
+arugula cloud open dev --wait             # wakes a paused box, says its machine
+arugula cloud rebuild dev                 # a new box from the spec
+arugula cloud delete dev
+```
+
 **Bodies and comments (M166, #1212).** The platform keeps a linked repo's
 PRs and issues as metadata. Opening one (`GET
 /api/forge/items/{id}/content`) reads its body, comments, reviews' text

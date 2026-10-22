@@ -409,6 +409,10 @@ async fn pokes(f: &dyn Fixture) {
     assert_eq!(hub.forge_pokes(&[]).await.unwrap(), 0);
     // M163: who someone is on GitHub; nobody, for an account that isn't.
     assert_eq!(hub.github_user("acct-none").await.unwrap(), None);
+    // M180: a machine that isn't on the relay says nothing about whether
+    // it's working. What a connected one says is `relay`'s, over a socket.
+    assert!(hub.activity(&ids(&["d-not-connected"])).await.unwrap().is_empty());
+    assert!(hub.activity(&[]).await.unwrap().is_empty());
 }
 
 /// Every change after `after`, a page of `limit` at a time.

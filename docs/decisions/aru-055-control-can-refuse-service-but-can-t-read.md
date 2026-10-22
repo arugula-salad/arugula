@@ -24,6 +24,10 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/blob/main/docs/plan-archive.md#m18-relay-and-end-to-end-encryption"
   - title: "docs/control-e2e.md"
     url: "https://github.com/arugula-salad/arugula/blob/main/docs/control-e2e.md"
+  - title: "#1317"
+    url: "https://github.com/arugula-salad/arugula/issues/1317"
+  - title: "#1290"
+    url: "https://github.com/arugula-salad/arugula/pull/1290"
 decided_by: "jhgaylor"
 decided_on: "2026-10-06"
 reviews: []
@@ -48,5 +52,11 @@ asleep, and only what `crates/control/tables.toml` lists. Chat is one case
 of it (M122, "Chat lives in control, in plain text"):
 control reads a team's chat, and the lines someone chooses to quote from a
 pane into it. A pane's output, input and scrollback stay end to end.
+
+**Exception: run logs and artifacts on hosted workspaces** (step 7, #1317).
+The platform reads a run's durable log and its artifacts when the run is on
+a hosted workspace, kept 30 days ("Run logs on hosted workspaces are
+readable by the platform"). The live view is still the end-to-end pane, and
+nothing is uploaded from a personal machine.
 Where: `crates/e2e/src/channel.rs`, `crates/control/src/relay.rs`, `crates/daemon/src/e2e.rs`.
-From: [Control track](docs/plan-archive.md#control-track-s15-m17m22-added-2026-10-01), [M18](docs/plan-archive.md#m18-relay-and-end-to-end-encryption), docs/control-e2e.md.
+From: [Control track](docs/plan-archive.md#control-track-s15-m17m22-added-2026-10-01), [M18](docs/plan-archive.md#m18-relay-and-end-to-end-encryption), docs/control-e2e.md, #1317 (platform step 7, planned in #1290).

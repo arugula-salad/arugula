@@ -164,7 +164,7 @@ PROFILE="${1:-ssh}"; shift || true
 CFG="$STATE/ssh_config"
 BREAK="${BREAK:-}"
 SSH_CLAIMS="login jump no-route bare bytes agent linger"
-CONTROL_CLAIMS="signin reach relay unreachable cli team platform platform-page agents"
+CONTROL_CLAIMS="signin reach relay unreachable cli team hosted platform platform-page agents"
 
 need_docker
 
@@ -605,6 +605,61 @@ claim_team() {
   s bastion ".local/bin/arugula --host box-systemd capture $pane" 2>/dev/null | grep -q "ATTACH-box-systemd-$$-42" ||
     { note "team: a capture after attach doesn't show what was typed"; ok=0; }
   bastion_tidy
+  [ "$ok" = 1 ]
+}
+
+# M178: an owner's device delegates the team's project; control enrolls a
+# hosted box under it (testnet/hosted-box.ts stands in for `arugulad
+# --hosted`, M180), with the enrollment the platform would record
+# (`arugula-control hosted-enrollment`); a teammate accepts it and is routed
+# to it, an outsider refuses it and isn't; revoking stops the next
+# enrollment. BREAK: the teammate (an editor) delegates instead, and is
+# refused.
+hosted_box() {
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
+  node --experimental-strip-types --no-warnings "$HERE/hosted-box.ts" --control "$CONTROL_URL" $CONTROL_VIA "$@"
+}
+enrollment() {
+  docker exec "$TESTNET-control" /opt/arugula/arugula-control hosted-enrollment --db /var/lib/arugula-control/control.db "$@"
+}
+claim_hosted() {
+  local ok=1 team code proj tk id pid who
+  for who in howner hmate hout; do
+    # shellcheck disable=SC2086 # CONTROL_VIA is several words
+    devs "$WORK/$who.json" signin --control "$CONTROL_URL" $CONTROL_VIA --login "$who$$" > /dev/null ||
+      { note "hosted: $who didn't sign in"; return 1; }
+  done
+  team="$(devs "$WORK/howner.json" team-create "hosted team" | field team)"
+  code="$(devs "$WORK/howner.json" team-invite "$team" | field code)"
+  devs "$WORK/hmate.json" team-accept "$team" "$code" > /dev/null || { note "hosted: couldn't ask to join"; return 1; }
+  devs "$WORK/howner.json" team-admit "$team" | grep -q '"admitted":1' || { note "hosted: not let in"; return 1; }
+  if [ -n "$BREAK" ]; then who=hmate; else who=howner; fi
+  proj="$(devs "$WORK/$who.json" delegate "$team" | field project)"
+  [ -n "$proj" ] || { note "hosted: $who couldn't delegate the project"; return 1; }
+  tk="$(enrollment --project "$proj" --owner "team:$team" --workspace "hw_testnet$$" --name hosted-box | field ticket)"
+  [ -n "$tk" ] || { note "hosted: no enrollment"; return 1; }
+  hosted_box --ticket "$tk" --hold 40 > "$WORK/hosted-box.out" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 40); do grep -q '"dialed":true' "$WORK/hosted-box.out" && break; sleep 0.5; done
+  id="$(field device < "$WORK/hosted-box.out")"
+  grep -q '"dialed":true' "$WORK/hosted-box.out" || { note "hosted: the box didn't enroll and dial:"; cat "$WORK/hosted-box.out" >&2; kill "$pid"; return 1; }
+  # The teammate: listed, accepted for the project, routed.
+  devs "$WORK/hmate.json" hosted-entry "$id" > "$WORK/hosted-entry.json" || { note "hosted: the teammate isn't told of it"; ok=0; }
+  devs "$WORK/hmate.json" hosted-accept "$WORK/hosted-entry.json" | grep -q '"ok":true' || { note "hosted: the teammate refuses it"; ok=0; }
+  devs "$WORK/hmate.json" routed "$id" | grep -q '"routed":true' || { note "hosted: the teammate isn't routed to it"; ok=0; }
+  # The outsider: not listed, refuses it when shown it, not routed.
+  if devs "$WORK/hout.json" hosted-entry "$id" > /dev/null 2>&1; then note "hosted: an outsider is told of it"; ok=0; fi
+  devs "$WORK/hout.json" hosted-accept "$WORK/hosted-entry.json" | grep -q '"why":"not_in_project"' || { note "hosted: an outsider accepts it"; ok=0; }
+  devs "$WORK/hout.json" routed "$id" | grep -q '"routed":false' || { note "hosted: an outsider is routed to it"; ok=0; }
+  # Revoking stops the next enrollment.
+  devs "$WORK/howner.json" undelegate "$team" | grep -q '"revoked":1' || { note "hosted: nothing to revoke"; ok=0; }
+  enrollment --project "$proj" --owner "team:$team" --workspace "hw_testnet2$$" | grep -q '"kind":"no_delegation"' ||
+    { note "hosted: an enrollment after revoking"; ok=0; }
+  # Fail closed: the ticket again is refused, and the machine that used it
+  # goes too.
+  hosted_box --ticket "$tk" | grep -q '"status":409' || { note "hosted: a ticket worked twice"; ok=0; }
+  if devs "$WORK/hmate.json" hosted-entry "$id" > /dev/null 2>&1; then note "hosted: a contested machine stays"; ok=0; fi
+  kill "$pid" 2>/dev/null
   [ "$ok" = 1 ]
 }
 

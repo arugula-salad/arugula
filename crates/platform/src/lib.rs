@@ -50,6 +50,7 @@ pub mod contract;
 pub mod db;
 pub mod forge;
 pub mod grants;
+pub mod hosted;
 pub mod hub;
 #[cfg(test)]
 mod hub_calls_tests;
@@ -119,9 +120,12 @@ pub struct Platform {
     pub stripe: Option<billing::Stripe>,
     /// Cloud workspaces (M137), when this control has a Managoat key.
     pub cloud: Option<cloud::Cloud>,
-    /// Hosted workspaces' boxes (M176), when this platform has an E2B key.
-    /// Nothing drives it yet: M179 will.
+    /// Hosted workspaces' boxes (M176), when this platform has an E2B key:
+    /// [`hosted`]'s worker drives them (M179).
     pub compute: Option<Arc<dyn compute::Substrate>>,
+    /// Hosted workspaces' template, how their boxes enroll, and who may make
+    /// them (M179).
+    pub hosted: hosted::Config,
     /// The GitHub App (M40, here since M161), when this control has its id
     /// and key: its webhook, `may()` and installation tokens.
     pub github: Option<forge::GithubApp>,
@@ -207,6 +211,7 @@ impl Platform {
             stripe: None,
             cloud: None,
             compute: None,
+            hosted: Default::default(),
             github: None,
             chat,
             cache: Default::default(),

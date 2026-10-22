@@ -40,6 +40,8 @@ export interface HostRef {
    * the team's name. */
   ownerId?: string;
   teamName?: string;
+  /** M178: a hosted machine, its project's only. */
+  hosted?: boolean;
 }
 
 /** M30: whose a pane is, for clustering by person: you, a teammate (by

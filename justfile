@@ -121,6 +121,11 @@ platform-deploy: static
 control-census days="30":
     fly ssh console -a illogical-control -C "/arugula-control census --db /data/control.db --days {{days}}"
 
+# Hosted workspaces' usage and cost on E2B, read-only (docs/control-ops.md,
+# "E2B (hosted workspaces' boxes)").
+platform-usage days="7":
+    fly ssh console -a arugula-platform -C "/arugula-platform usage --db env:ARUGULA_PLATFORM_DATABASE_URL --days {{days}}"
+
 # The macOS daemon and CLI for Intel Macs, cross-compiled on Apple silicon
 # (or built natively on an Intel Mac): target/x86_64-apple-darwin/release/.
 # Then `just dist` and `just desktop x86_64`.

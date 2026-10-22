@@ -15,11 +15,24 @@
 //                          control's relay: {id, name}
 //   panes NAME             its panes, untouched: {id, name, panes}
 //   team-create NAME       a team, this account its owner: {team}
-//   team-invite TEAM       an Ask me first invite, its one-time key's seed: {code}
+//   team-invite TEAM [ROLE] an Ask me first invite (editor, or viewer), its
+//                          one-time key's seed: {code}
 //   team-accept TEAM CODE  this account asks to join with it (the seed, or
 //                          the whole #askinvite= link): {}
 //   team-admit TEAM        admit everyone who asked: {admitted}
+//   delegate [TEAM]        as an owner, let control enroll hosted machines into
+//                          the account's project, or TEAM's (M178):
+//                          {project, owner, delegation}
+//   undelegate [TEAM]      take its delegations back: {revoked}
+//   hosted-entry ID        a hosted machine as the directory lists it here,
+//                          proof and all (exit 1 if it isn't listed)
+//   hosted-accept FILE     whether this device accepts the hosted machine whose
+//                          entry (hosted-entry's output) is in FILE:
+//                          {ok, why?, role?}
+//   routed ID              whether control's relay routes this person to ID:
+//                          {routed}
 
+import { readFileSync } from "node:fs";
 import { fingerprint } from "../src/shell/e2e/cert.ts";
 import { Device } from "./device.ts";
 
@@ -78,14 +91,31 @@ async function main() {
     case "team-create":
       return out({ team: await d.createTeam(rest[0] ?? "team") });
     case "team-invite":
-      return out({ code: await d.invite(rest[0]) });
+      return out({ code: await d.invite(rest[0], (rest[1] as "editor" | "viewer" | undefined) ?? "editor") });
     case "team-accept":
       await d.acceptInvite(rest[0], rest[1]);
       return out({});
     case "team-admit":
       return out({ admitted: await d.admitAll(rest[0]) });
+    case "delegate":
+      return out(await d.delegate(rest[0]));
+    case "undelegate":
+      return out({ revoked: await d.undelegate(rest[0]) });
+    case "hosted-entry": {
+      const e = await d.hostedEntry(rest[0]);
+      if (!e) throw new Error(`control lists no hosted machine ${rest[0]} here`);
+      return out(e);
+    }
+    case "hosted-accept": {
+      const e = JSON.parse(readFileSync(rest[0], "utf8"));
+      return out(await d.acceptHosted(e.hosted));
+    }
+    case "routed":
+      return out({ routed: await d.routed(rest[0]) });
     default:
-      throw new Error(`unknown command ${cmd ?? "(none)"}: signin, approve, devices, online, pane, panes, team-create, team-invite, team-accept, team-admit`);
+      throw new Error(
+        `unknown command ${cmd ?? "(none)"}: signin, approve, devices, online, pane, panes, team-create, team-invite, team-accept, team-admit, delegate, undelegate, hosted-entry, hosted-accept, routed`,
+      );
   }
 }
 

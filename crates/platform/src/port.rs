@@ -113,6 +113,8 @@ impl PlatformPort for Platform {
             let mut c = self.db.c();
             let tx = c.transaction()?;
             db::billing::erase_account(&tx, deleted)?;
+            // Before the projects go: their hosted workspaces are deleted.
+            db::hosted::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
             db::projects::erase_account(&tx, deleted)?;
             db::forge::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
             db::issues::erase_account(&tx, deleted)?;

@@ -48,6 +48,9 @@ enum Auth {
     PollToken,
     AppTicket,
     Webhook,
+    HostedEnrollment,
+    Hosted,
+    DaemonOrHosted,
 }
 
 #[derive(Deserialize, PartialEq)]

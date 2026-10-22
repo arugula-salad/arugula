@@ -300,7 +300,7 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
 - `ARUGULA_E2B_API_KEY`, `ARUGULA_E2B_URL` (`https://api.e2b.dev` unless
   set; loam's is `https://api.e2b.<loam domain>`): hosted workspaces'
   boxes (`compute/`, M176), the platform's only. Never sent to a client or
-  put in a box. Not set yet: nothing drives a box before M179.
+  put in a box. Not set yet: see "E2B" below.
 - `ARUGULA_CLOUD_SECRET_KEY`: encrypts cloud secrets at rest.
 - `ARUGULA_CLOUD_ACCOUNTS`: who may use Cloud workspaces (`*` for all).
 - `ARUGULA_CLOUD_MODELS`: the `runtime:model` pairs a Cloud workspace's
@@ -2130,6 +2130,49 @@ So hosted control's platform runs about $45 a month above the hub. The
 pricing page's other figure is Performance at $1,922/month. Fly's
 Managed Postgres page has the plans in between; Basic is the one to stay
 on until the platform's data or connections outgrow its 1 GB of memory.
+
+### E2B (hosted workspaces' boxes)
+
+Hosted workspaces (#1235) run on E2B: each is `arugulad --hosted` in an
+E2B box that the platform makes, pauses, wakes and deletes
+(`crates/platform/src/compute/`, `hosted/`). E2B processes what's in the
+boxes (their disks and memory, and its broker's secrets): docs/control-e2e.md
+("Who else sees it") and the privacy page say so.
+
+- **The account.** One E2B team for hosted control. Jake signs it up for
+  Pro when hosted workspaces go live (M192): $150 a month plus usage, and
+  Pro's limits (a box runs at most 24 hours before it must pause; Hobby's
+  is 1 hour). Until then only the test key below drives boxes.
+- **Keys.** `ARUGULA_E2B_API_KEY` is a Fly secret on `arugula-platform`
+  only (never the hub's, never in a box), kept in Infisical (project
+  `arugula`, env `prod`). `ARUGULA_E2B_URL` stays unset for E2B's cloud
+  (loam's is `https://api.e2b.<loam domain>`). Tests use another key,
+  under `/illogical/control-tests`: their boxes carry `arugula_test=1`
+  and are deleted after. The release job's template build has its own
+  repository secret (M177's "Hosted workspaces' template").
+- **The template** is built per release by release.yml's `template` job:
+  see "Hosted workspaces' template" (M177). Nothing about it is set here.
+- **The bill.** E2B bills per second while a box runs: $0.000014 per
+  vCPU-second and $0.0000045 per GiB-second (<https://e2b.dev/pricing>,
+  checked 2026-10-21), storage free, and nothing while a box is paused.
+  So a 2 vCPU, 2 GiB box costs $0.13 an hour it runs. The prices are one
+  constant, `hosted::usage::PRICES`: change it (and its date) when E2B's
+  page does.
+- **Usage.** The platform meters each box's running time, by size, from
+  its own lifecycle (`hosted_usage`, M188), and checks it against E2B's
+  record: E2B has no usage API, but its lifecycle events carry each run
+  as billed, which the platform's leader reads back for every box that
+  stopped (`hosted_usage_provider`). `arugula-platform usage` prints the
+  hours by size and by project, what they cost, the cost per active hour
+  and how far the platform's metering is from E2B's record, read-only:
+
+  ```
+  just platform-usage 7
+  ```
+
+  which is `fly ssh console -a arugula-platform -C "/arugula-platform usage --db env:ARUGULA_PLATFORM_DATABASE_URL --days 7"`.
+  E2B's console (its usage tab) has the bill itself; the two should agree
+  within the time a box takes to start and pause.
 
 ### Checking a migration on a copy
 

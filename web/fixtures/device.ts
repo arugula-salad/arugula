@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { certBody, deviceMac, evaluate, joinCode, joinMac, revocationBody, splitJoinCode, unhex, type Cert, type Revocation } from "../src/shell/e2e/cert.ts";
 import { E2ESocket } from "../src/shell/e2e/channel.ts";
 import { generateKeys, signText, type DeviceKeys } from "../src/shell/e2e/keys.ts";
+import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "../src/shell/e2e/hosted.ts";
 import { askBody, askOk, inviteKey, newInviteKey, signAskInvite, signRoster, teamJoinBody, word, type AccountCerts, type AskInvite, type Roster, type TeamPin, type TeamRole } from "../src/shell/e2e/team.ts";
 
 const subtle = globalThis.crypto.subtle;
@@ -290,6 +291,76 @@ export class Device {
     return evaluate({ account: this.account, root: this.root }, all.certs, all.revocations ?? []);
   }
 
+  // ---- hosted machines (M178), as an owner's page and a member's do
+
+  /** This account's project: its own, or a team's (by team id). */
+  async project(team?: string): Promise<{ id: string; owner: string }> {
+    const { projects } = await this.api<{ projects: { id: string; team: { id: string } | null }[] }>("/api/projects");
+    const p = projects.find((x) => (team ? x.team?.id === team : !x.team));
+    if (!p) throw new Error(`no project for ${team ? `team ${team}` : "this account"}`);
+    return { id: p.id, owner: team ? `team:${team}` : `account:${this.account}` };
+  }
+
+  /** As an owner, let control enroll hosted machines into the project. */
+  async delegate(team?: string): Promise<{ project: string; owner: string; delegation: string }> {
+    const p = await this.project(team);
+    const { key } = await this.api<{ key: string }>("/api/hosted/delegations");
+    const d = await signDelegation(p.id, p.owner, key, this.keys);
+    const r = await this.api<{ id: string }>("/api/hosted/delegations", { delegation: d });
+    return { project: p.id, owner: p.owner, delegation: r.id };
+  }
+
+  /** As an owner, take back the project's live delegations. How many. */
+  async undelegate(team?: string): Promise<number> {
+    const p = await this.project(team);
+    const { delegations } = await this.api<{ delegations: { delegation: Delegation; revoke: DelegationRevoke | null }[] }>("/api/hosted/delegations");
+    let n = 0;
+    for (const x of delegations) {
+      if (x.delegation.project !== p.id || x.revoke) continue;
+      await this.api("/api/hosted/delegations/revoke", { revoke: await signRevoke(x.delegation, this.keys) });
+      n++;
+    }
+    return n;
+  }
+
+  /** A hosted machine as the directory lists it here, with its proof. */
+  async hostedEntry(id: string): Promise<(Listed & { team: string | null; hosted: HostedProof }) | undefined> {
+    const all = (await this.api<{ daemons: (Listed & { team: string | null; hosted?: HostedProof })[] }>("/api/directory")).daemons;
+    const d = all.find((x) => x.id === id || x.name === id);
+    return d?.hosted ? (d as Listed & { team: string | null; hosted: HostedProof }) : undefined;
+  }
+
+  /** Whether this device accepts a hosted machine (its proof as the
+   * directory lists it, here or to someone else), as the page does:
+   * against its team's roster or its own account's chain. */
+  async acceptHosted(proof: HostedProof): Promise<Awaited<ReturnType<typeof acceptHosted>>> {
+    const owner = proof.delegation.owner;
+    if (owner.startsWith("team:")) {
+      const t = await this.team(owner.slice(5)).catch(() => null);
+      if (!t) return { ok: false, why: "not_in_project" };
+      return acceptHosted(this.account, proof, { team: t.roster, certs: t.certs });
+    }
+    const all = await this.api<{ certs: Cert[]; revocations?: Revocation[] }>("/api/devices");
+    return acceptHosted(this.account, proof, { account: { account: this.account, root: this.root }, certs: all.certs, revocations: all.revocations ?? [] });
+  }
+
+  /** Whether control's relay routes this device's person to `id`: the
+   * socket opens (control spliced it), or it doesn't. */
+  async routed(id: string, timeoutMs = 5000): Promise<boolean> {
+    const url = `${this.reach(this.control).replace(/^http/, "ws")}/api/relay/c/${id}`;
+    const Ws = globalThis.WebSocket as unknown as new (u: string, o: unknown) => WebSocket;
+    const ws = new Ws(url, { headers: { cookie: this.cookie, origin: this.control } });
+    try {
+      return await new Promise<boolean>((res) => {
+        const t = setTimeout(() => res(false), timeoutMs);
+        ws.onopen = () => (clearTimeout(t), res(true));
+        ws.onerror = () => (clearTimeout(t), res(false));
+      });
+    } finally {
+      ws.close();
+    }
+  }
+
   async directory(): Promise<Listed[]> {
     return (await this.api<{ daemons: Listed[] }>("/api/directory")).daemons;
   }
@@ -312,7 +383,12 @@ export class Device {
    * directory alone. */
   async connect(daemonId: string, direct?: string, timeoutMs = 5000): Promise<E2ESocket> {
     const cert = (await this.trusted()).get(daemonId);
-    if (cert?.kind !== "daemon") throw new Error(`${daemonId} isn't a daemon this account trusts`);
+    // A hosted machine (M178, M180): its Noise key from its hosted
+    // certificate, once this device accepts it for its project, as the page does.
+    const hosted = cert ? undefined : await this.hostedEntry(daemonId);
+    const accepted = hosted && (await this.acceptHosted(hosted.hosted)).ok;
+    const noise = cert?.kind === "daemon" ? cert.noise : accepted ? hosted.hosted.cert.noise : undefined;
+    if (!noise) throw new Error(`${daemonId} isn't a daemon this account trusts`);
     const ws = this.reach(this.control).replace(/^http/, "ws");
     const url = direct ?? `${ws}/api/relay/c/${daemonId}`;
     const headers = direct ? {} : { cookie: this.cookie, origin: this.control };
@@ -326,7 +402,7 @@ export class Device {
       }
     } as typeof WebSocket;
     try {
-      return await E2ESocket.connect([{ url, timeoutMs }], { id: daemonId, noise: cert.noise }, this.keys);
+      return await E2ESocket.connect([{ url, timeoutMs }], { id: daemonId, noise }, this.keys);
     } finally {
       globalThis.WebSocket = orig;
     }

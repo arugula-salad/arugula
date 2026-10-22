@@ -10,6 +10,7 @@ pub mod call;
 pub mod capture;
 pub mod claude;
 pub mod close;
+pub mod cloud;
 pub mod describe;
 pub mod diff;
 pub mod edit;
