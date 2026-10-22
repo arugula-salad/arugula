@@ -33,7 +33,7 @@ use crate::{control::CloudRefused, mux::Api};
 #[derive(Deserialize, JsonSchema)]
 pub struct ReadThreadArgs {
     /// The room's id (list kind threads), or an issue's, PR's or hosted
-    /// workspace's id (iss_…, fi_…, hw_…) for its thread.
+    /// box's id (iss_…, fi_…, hw_…) for its thread.
     pub room: String,
     /// Messages after this seq, oldest first (a previous read's
     /// next_after_seq). Without it or before_seq: the newest page.
@@ -54,7 +54,7 @@ pub struct ReadThreadArgs {
 #[derive(Deserialize, JsonSchema)]
 pub struct PostThreadArgs {
     /// The room's id (list kind threads), or an issue's, PR's or hosted
-    /// workspace's id (iss_…, fi_…, hw_…) to comment on it.
+    /// box's id (iss_…, fi_…, hw_…) to comment on it.
     pub room: String,
     /// The message, in markdown; @login mentions a person there.
     pub text: String,
