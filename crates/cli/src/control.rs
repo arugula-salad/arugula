@@ -132,6 +132,13 @@ impl Enrolled {
     /// is one) for up to five minutes, saying so on stderr; which 503s are
     /// sent again is [`maintenance::may_retry`]'s.
     pub(crate) fn api(&self, method: &str, path: &str, body: Option<&Value>) -> anyhow::Result<Value> {
+        let (status, got) = self.api_raw(method, path, body)?;
+        json_answer(status, got).map_err(|e| e.context(format!("control at {}", self.url)))
+    }
+
+    /// [`api`](Self::api)'s answer as it came, status and body: for one
+    /// that isn't JSON (an export as Markdown), or a status to tell apart.
+    pub(crate) fn api_raw(&self, method: &str, path: &str, body: Option<&Value>) -> anyhow::Result<(u16, Vec<u8>)> {
         let bytes = body.map(|b| b.to_string()).unwrap_or_default();
         let u = self.url()?;
         let mut waits = maintenance::Waits::new(maintenance::Patience::AGENT);
@@ -171,7 +178,7 @@ impl Enrolled {
             if maintenance::is_maintenance(status, &got) {
                 bail!("{}", maintenance::MAINTENANCE_SAID);
             }
-            return json_answer(status, got).map_err(|e| e.context(format!("control at {}", self.url)));
+            return Ok((status, got));
         }
     }
 

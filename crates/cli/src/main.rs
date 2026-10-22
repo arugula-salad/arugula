@@ -148,8 +148,19 @@ enum Command {
     /// agent, it's a draft a person sends); `issue comment %N` comments; `issue
     /// agent %N` starts an agent on it in a worktree and branch of its own, in a
     /// tab with the issue. On a repo linked on Arugula control, with no block:
-    /// `issue view|comment OWNER/REPO#N`, `issue list` and `issue create
-    /// OWNER/REPO`.
+    /// `issue view|comment OWNER/REPO#N`, `issue list OWNER/REPO` and `issue
+    /// create OWNER/REPO`.
+    ///
+    /// A project's own issues on Arugula control (no block, no daemon; needs
+    /// `arugula login`): `issue new|list|show|comment|close|reopen|edit|export`,
+    /// and `issue agent`. `#N` or `N` is a number in the current project,
+    /// `iss_…` any issue you can read. The current project is `--project
+    /// NAME|ID` (or `$ARUGULA_PROJECT`; `personal` is yours), else the project
+    /// this directory's GitHub repo is linked to, else your personal one; a
+    /// GitHub clone that none of your projects links keeps GitHub's issues.
+    /// Its issue home says whether they're native or GitHub's; `--native` and
+    /// `--github` override it. `issue list` on a GitHub home lists the linked
+    /// repo's issues from Arugula control.
     #[command(args_conflicts_with_subcommands = true)]
     Issue(cmd::issue::Args),
     /// Type a pane's failed command again.
@@ -621,7 +632,7 @@ fn main() {
     }
 }
 
-fn real_main(cli: Cli) -> anyhow::Result<i32> {
+fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     ask_about_telemetry(&cli);
     if let Command::Join(args) = &cli.cmd {
         return cmd::join::run(args, &cli);
@@ -651,8 +662,10 @@ fn real_main(cli: Cli) -> anyhow::Result<i32> {
     {
         return done;
     }
-    if let Command::Issue(args) = &cli.cmd
-        && let Some(done) = cmd::issue::on_control(args, cli.json)
+    // A linked repo's issues on control (M169), and a project's own on the
+    // platform (M199): no daemon.
+    if let Command::Issue(args) = &mut cli.cmd
+        && let Some(done) = cmd::issue::on_control(args, cli.json).or_else(|| cmd::issue::on_platform(args, cli.json))
     {
         return done;
     }
