@@ -71,6 +71,7 @@ pub mod run_grant;
 #[cfg(test)]
 mod run_grant_tests;
 pub mod run_log;
+pub mod run_logs;
 pub mod timing;
 pub mod triggers;
 pub mod window;
@@ -167,6 +168,9 @@ pub struct Platform {
     /// The linked repos' items whose inbox to work out again (M171), as
     /// this machine's ingest wrote them, and its pushes lately.
     pub inbox: forge::inbox::Queue,
+    /// The run-log bucket (M213), when this platform has one: hosted runs'
+    /// logs and artifacts go there.
+    pub run_logs: Option<run_logs::Bucket>,
 }
 
 impl Platform {
@@ -236,6 +240,7 @@ impl Platform {
             stopping: Default::default(),
             busy: Default::default(),
             inbox: Default::default(),
+            run_logs: None,
         }
     }
 }

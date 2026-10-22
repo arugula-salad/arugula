@@ -51,6 +51,8 @@
 //! - **Revokes stop runs.** A revoke that says `running stop`, relayed or
 //!   with a pull, stops the runs going under the grants it covers
 //!   ([`stop_revoked`]).
+//! - **Its log and artifacts** go to the run-log bucket as it runs and
+//!   when it ends, before its end is reported (M213, [`crate::run_logs`]).
 //! - **Busy while it runs** ([`running`]): the machine says it's working
 //!   (M180's activity), so the platform holds its box (M181) and it doesn't
 //!   pause mid-run.
@@ -66,7 +68,10 @@ use std::{
     time::Duration,
 };
 
-use arugula_control_wire::work::{Report, Reported, TAKES_RUN, WORK_REPORT, Work, WorkItem, WorkQuery};
+use arugula_control_wire::{
+    run_logs::ARTIFACTS_ENV,
+    work::{Report, Reported, TAKES_RUN, WORK_REPORT, Work, WorkItem, WorkQuery},
+};
 use arugula_e2e::{
     now_ms,
     project_grant::ProjectGrant,
@@ -157,6 +162,9 @@ pub struct Ledger {
     pub turn: Option<String>,
     #[serde(default)]
     pub events: Vec<Kept>,
+    /// What's been sent of its log and artifacts (M213).
+    #[serde(default)]
+    pub logs: crate::run_logs::Sent,
 }
 
 impl Ledger {
@@ -244,16 +252,16 @@ pub fn write(dir: &Path, l: &Ledger) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Change run `run`'s entry as it is on disk, under the ledger's lock, so
-/// two writers (a run's end, a report's answer) never undo each other:
-/// what it is now.
-pub fn update(dir: &Path, run: &str, f: impl FnOnce(&mut Ledger)) -> anyhow::Result<Ledger> {
+/// Change run `run`'s entry with `f`, written and fsynced, if it's there:
+/// one writer at a time, so a change made meanwhile (control's answers)
+/// isn't lost.
+pub fn update(dir: &Path, run: &str, f: impl FnOnce(&mut Ledger)) -> anyhow::Result<Option<Ledger>> {
     let path = ledger_path(dir, run).ok_or_else(|| anyhow::anyhow!("not a run's id: {run:?}"))?;
     let _held = LEDGER.lock().unwrap_or_else(|e| e.into_inner());
-    let mut l = read(dir, run)?.ok_or_else(|| anyhow::anyhow!("no ledger entry for {run}"))?;
+    let Some(mut l) = read(dir, run)? else { return Ok(None) };
     f(&mut l);
     crate::store::write_atomic(&path, &serde_json::to_vec_pretty(&l)?)?;
-    Ok(l)
+    Ok(Some(l))
 }
 
 /// Every run in the ledger that reads. One that doesn't is said, and is
@@ -447,7 +455,8 @@ pub struct Agent<'a> {
 /// config trusts though `user` owns it, else a copy), and the
 /// command. An agent's login ([`Agent::login`]) is a file of this
 /// daemon's the outer shell reads and removes, which reaches the run on its
-/// standard input, never on a command line.
+/// standard input, never on a command line. `$ARUGULA_ARTIFACTS` names the
+/// directory it leaves its artifacts in (M213): `artifacts`, made empty.
 pub fn pane_command(
     run: &str,
     op_hash: &str,
@@ -455,6 +464,7 @@ pub fn pane_command(
     src: Option<&Path>,
     as_: Option<&RunAs>,
     agent: &Agent<'_>,
+    artifacts: &Path,
 ) -> Result<String, Refused> {
     let Agent { claude, login, env: env_extra } = *agent;
     let (cmd, shown) = what(op, claude)?;
@@ -463,6 +473,7 @@ pub fn pane_command(
         quote(&printable(&format!("arugula run {run} · operation sha256:{op_hash}"))),
         quote(&printable(&shown))
     );
+    let a = quote(&artifacts.to_string_lossy());
     let Some(as_) = as_ else {
         // Tests only: as this daemon's own user, where it is, with the
         // agent's environment besides its own.
@@ -472,11 +483,13 @@ pub fn pane_command(
             .map(|(k, v)| format!(" {k}={}", quote(v)))
             .collect();
         let env = if env.is_empty() { String::new() } else { format!("env{env} ") };
-        return Ok(format!("{banner}; exec {env}{cmd}"));
+        return Ok(format!(
+            "{banner}; rm -rf -- {a}; mkdir -p -m 700 -- {a}; export {ARTIFACTS_ENV}={a}; exec {env}{cmd}"
+        ));
     };
     let work = as_.work(run);
     let mut inner = format!(
-        "set -e; w={}; rm -rf -- \"$w\"; mkdir -p -m 700 -- \"$w\"; cd -- \"$w\"; ",
+        "set -e; w={}; rm -rf -- \"$w\"; mkdir -p -m 700 -- \"$w\"; cd -- \"$w\"; mkdir -p -m 700 -- {a}; ",
         quote(&work.to_string_lossy())
     );
     if let Some(src) = src {
@@ -492,7 +505,8 @@ pub fn pane_command(
     }
     inner.push_str(&format!("set +e; exec {cmd}"));
     let mut env = format!(
-        "env -i HOME={h} USER={u} LOGNAME={u} SHELL=/bin/bash PATH={RUN_PATH} TERM=xterm-256color LANG=C.UTF-8",
+        "env -i HOME={h} USER={u} LOGNAME={u} SHELL=/bin/bash PATH={RUN_PATH} TERM=xterm-256color LANG=C.UTF-8 \
+         {ARTIFACTS_ENV}={a}",
         h = quote(&work.to_string_lossy()),
         u = as_.user
     );
@@ -716,6 +730,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         grant: item.grant.clone(),
         turn: None,
         events: vec![],
+        logs: Default::default(),
     };
     let checked = check(app, &item, &me, &project, &workspace).and_then(|(op, src)| {
         let as_ = run_as()?;
@@ -786,6 +801,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         None => None,
     };
     let claude = claude_bin();
+    let artifacts = crate::run_logs::artifacts_dir(&dir, &item.run, as_.as_ref());
     let command = match pane_command(
         &item.run,
         &item.op_hash,
@@ -793,6 +809,7 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         src.as_deref(),
         as_.as_ref(),
         &Agent { claude: claude.as_deref(), login, env: &env_extra },
+        &artifacts,
     ) {
         Ok(c) => c,
         Err(Refused(code, why)) => return fail(l, format!("{code}: {why}")),
@@ -879,15 +896,24 @@ async fn ended(
 /// ended.
 async fn watch(app: Arc<App>, l: Ledger, events: Option<tokio::sync::broadcast::Receiver<arugula_proto::Event>>) {
     let Some(pane) = l.pane else { return };
+    // Its log goes to the run-log bucket as it runs (M213).
+    let (done, follow) = tokio::sync::watch::channel(false);
+    let follower = tokio::spawn(crate::run_logs::follow(app.clone(), l.run.clone(), pane, l.epoch, follow));
     let mut end = ended(&app, pane, l.epoch, events).await;
-    if let Ok(Some(as_)) = run_as() {
-        kill_all(&as_).await;
+    let as_ = run_as().ok().flatten();
+    if let Some(as_) = &as_ {
+        kill_all(as_).await;
     }
     let dir = app.control.state_dir().to_owned();
     let _ = std::fs::remove_file(dir.join(DIR).join(format!("{}.login", l.run)));
     if let (Some(turn), Some(g)) = (l.turn.clone(), crate::agent::hosted::gate()) {
         g.end(turn).await;
     }
+    // The rest of its log and its artifacts, before its end is reported,
+    // while the box is still busy with it.
+    let _ = done.send(true);
+    let _ = follower.await;
+    crate::run_logs::finish(&app, &l.run, pane, l.epoch, as_.as_ref()).await;
     RUNNING.fetch_sub(1, Ordering::SeqCst);
     if let Some(why) = STOPPING.lock().unwrap_or_else(|e| e.into_inner()).remove(&l.run) {
         end = Err(why);
@@ -901,7 +927,8 @@ async fn watch(app: Arc<App>, l: Ledger, events: Option<tokio::sync::broadcast::
         Err(why) => now.push(&keys, &me, State::Failed, serde_json::json!({ "reason": why })),
     });
     match ended {
-        Ok(now) => info!(run = now.run, state = now.state, "hosted: a run ended"),
+        Ok(Some(now)) => info!(run = now.run, state = now.state, "hosted: a run ended"),
+        Ok(None) => warn!(run = l.run, "hosted: a run's ledger entry is gone"),
         Err(e) => warn!(run = l.run, error = %format!("{e:#}"), "hosted: can't write the ledger"),
     }
     send(&app, &l.run).await;
@@ -987,7 +1014,8 @@ async fn send(app: &App, run: &str) {
                 k.answered = true;
             }
         }) {
-            Ok(now) => now,
+            Ok(Some(now)) => now,
+            Ok(None) => return,
             Err(e) => {
                 warn!(run, error = %format!("{e:#}"), "hosted: can't write the ledger");
                 return;
@@ -1114,7 +1142,8 @@ mod tests {
     #[test]
     fn a_pane_says_what_it_runs_and_runs_it_as_the_run_user() {
         let op = Op { argv: vec!["echo".into(), "it's\x1b[2J\u{202e}".into()], ..Op::default() };
-        let mine = pane_command("run_1", "abc", &op, None, None, &Agent::default()).unwrap();
+        let dir = crate::hosted::scratch("pane-command");
+        let mine = pane_command("run_1", "abc", &op, None, None, &Agent::default(), &dir.join("a")).unwrap();
         assert_eq!(
             sh(&mine),
             "arugula run run_1 · operation sha256:abc\n$ 'echo' 'it'\\''s\\u{1b}[2J\\u{202e}'\nit's\x1b[2J\u{202e}\n"
@@ -1122,12 +1151,14 @@ mod tests {
         let as_ = RunAs { user: "runner".into(), home: "/home/runner".into() };
         let src = Path::new("/home/user/app");
         let op = Op { argv: vec!["echo".into(), "it's".into()], ..Op::default() };
-        let theirs = pane_command("run_1", "abc", &op, Some(src), Some(&as_), &Agent::default()).unwrap();
+        let artifacts = as_.work("run_1").join(".arugula/artifacts");
+        let theirs = pane_command("run_1", "abc", &op, Some(src), Some(&as_), &Agent::default(), &artifacts).unwrap();
         assert!(
             theirs.contains("; exec sudo -n -u runner -- env -i HOME='/home/runner/work/run_1' USER=runner "),
             "{theirs}"
         );
         assert!(theirs.contains("/bin/bash --noprofile --norc -c "), "{theirs}");
+        assert!(theirs.contains(" ARUGULA_ARTIFACTS='/home/runner/work/run_1/.arugula/artifacts' "), "{theirs}");
         assert!(theirs.ends_with(" < /dev/null"), "{theirs}");
         // The inner script, once the outer shell unquotes it: a fresh
         // directory of its own, its own copy, then the command.
@@ -1169,6 +1200,7 @@ mod tests {
             None,
             Some(&as_),
             &Agent { claude: Some(claude), login: Some(("ANTHROPIC_API_KEY", file)), env: &[] },
+            Path::new("/home/runner/work/run_1/.arugula/artifacts"),
         )
         .unwrap();
         assert!(
@@ -1223,6 +1255,7 @@ mod tests {
             grant: None,
             turn: None,
             events: vec![],
+            logs: Default::default(),
         }
     }
 

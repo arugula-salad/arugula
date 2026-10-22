@@ -37,7 +37,7 @@
 # What control never holds, for the doc.
 never = [
     "private keys of any device or machine: Noise, signing, passkeys",
-    "terminal bytes, snapshots, logs, scrollback; the lines of a pane nobody quoted into chat",
+    "terminal bytes, snapshots, logs, scrollback; the lines of a pane nobody quoted into chat. One exception: a run on a hosted workspace sends its log to the run-log bucket (below), which the platform reads",
     "link keys (a link's fragment), and Shared Docs' keys",
     "the push payloads machines send, in the clear",
     "a person's own credentials: GitHub's OAuth token (used once at sign-in), the one-use user token a send is made with (used for one call, then revoked), forge tokens",
@@ -47,6 +47,10 @@ never = [
 [parties.litestream]
 name = "Litestream's bucket"
 sees = "Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. On Postgres, the platform's tables go there in its nightly dump instead: encrypted, kept 30 days. Cloud secrets are there sealed, and their key isn't."
+
+[parties.run_logs]
+name = "The run-log bucket"
+sees = "Runs on hosted workspaces (and only those) send their logs, the whole of their pane's output, and the files they leave as artifacts to a bucket in Cloudflare R2 (M213), through URLs the platform signs for one run at a time. The platform reads them and serves them to the project's members, with every machine asleep. The bucket deletes them after 30 days, and the platform forgets their rows then. A person's own machines never send any."
 
 [parties.managoat]
 name = "Managoat"
@@ -920,10 +924,32 @@ name = "run_artifacts"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "What a run left behind: each file's name, size, digest and key in the run bucket. The files themselves are in the bucket (M213), not here."
+what = "What a run left behind: each file's name, size, digest and key in the run-log bucket. The files themselves are in the bucket (M213), not here."
 why_asleep = "A run's artifacts are listed and fetched with every machine asleep."
 with_account = "partly"
-note = "Those of runs that go, go; their files expire from the bucket."
+note = "Those of runs that go, go; their files expire from the bucket. Every row goes after 30 days, as the bucket's files do."
+seen_by = ["litestream", "run_logs"]
+
+[[table]]
+name = "run_log_chunks"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Where a hosted run's log is in the run-log bucket (M213): each chunk's number, its offset and size in the pane's output, its SHA-256 and its key. The log itself is in the bucket, which the platform reads."
+why_asleep = "A run's log is read on the platform page and by the CLI with every machine asleep."
+with_account = "partly"
+note = "Those of runs that go with their projects, go. Every row goes after 30 days, as the bucket's files do."
+seen_by = ["litestream", "run_logs"]
+
+[[table]]
+name = "run_upload_urls"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Each upload URL the platform signed for a hosted run (M213): its key in the run-log bucket, log or artifact, its size, when it was signed and when it expires. They count against the run's caps and the project's daily bytes while they're out."
+why_asleep = "Hosted runs send their logs while every person's machine is asleep, and the caps hold then too."
+with_account = "partly"
+note = "Those of runs that go with their projects, go, and their files with them. Every row goes a day after its URL expires; the file at a key nobody said they used goes from the bucket then."
 seen_by = ["litestream"]
 
 [[table]]

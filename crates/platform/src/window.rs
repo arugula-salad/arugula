@@ -386,8 +386,8 @@ fn running_env(var: &str) -> Option<(u32, String)> {
 
 /// The first words that make either binary run one of these instead of
 /// serving (and `platform`, control's prefix for them).
-pub const COMMANDS: [&str; 8] =
-    ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "previews", "platform"];
+pub const COMMANDS: [&str; 9] =
+    ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "previews", "run-logs", "platform"];
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -478,6 +478,14 @@ enum What {
         #[arg(long)]
         off: Option<String>,
     },
+    /// Runs' logs and artifacts in the run-log bucket (M213), by project,
+    /// as the platform's rows say (the bucket's rule keeps them 30 days),
+    /// read-only.
+    RunLogs {
+        /// A file, or a `postgres://` URL.
+        #[arg(long)]
+        db: Place,
+    },
 }
 
 /// `var` as the running server has it, else as this shell does, and
@@ -549,6 +557,10 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
             if off.is_some() && !taken {
                 bail!("nothing taken down");
             }
+        }
+        What::RunLogs { db } => {
+            let u = portable::run_log_usage(&db)?;
+            print!("{}", crate::run_logs::render_usage(&u, &db.to_string()));
         }
         What::SecretsCheck { db } => {
             const VAR: &str = "ARUGULA_CLOUD_SECRET_KEY";

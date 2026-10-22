@@ -729,6 +729,22 @@ clients = ["daemon"]
 note = "M183: how the box's setup goes, kept on its workspace by the platform; only the box's own machine."
 
 [[route]]
+method = "POST"
+path = "/api/hosted/work/upload"  # wire::run_logs::WORK_UPLOAD
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A presigned PUT for one of a hosted machine's own run's log chunks or artifacts, in the run-log bucket (M213; PlatformPort::hosted_upload). A person's machine never gets one."
+
+[[route]]
+method = "POST"
+path = "/api/hosted/work/uploaded"  # wire::run_logs::WORK_UPLOADED
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A hosted machine put a run's log chunk or artifact: the platform heads it in the bucket and records it (M213; PlatformPort::hosted_uploaded)."
+
+[[route]]
 method = "DELETE"
 path = "/api/hosted/machines/{id}"
 process = "hub"
@@ -1502,6 +1518,22 @@ process = "platform"
 auth = "session"
 clients = ["cli"]
 note = "A page of a run's durable log, by byte offset or its tail (M213 keeps it; until then kept: false, naming the run's pane): its project's members."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/runs/{run}/artifacts"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A hosted run's artifacts in the run-log bucket, each with its digest and a presigned GET that lasts an hour (M213): any member."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/runs/{run}/artifacts/{name}"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A redirect to a presigned GET of a hosted run's artifact (M213): any member."
 
 # ---- platform: the standing project grant for runs (M211)
 

@@ -164,6 +164,24 @@ CLI device does: a machine's agent starts runs through MCP (M216, below),
 under the project's standing grant (M211). The code is in
 `crates/platform/src/triggers/` and `db/triggers.rs`.
 
+**Run logs and artifacts (M213).** A run on a hosted workspace sends its
+log (its pane's output, every byte) and the files it leaves in
+`$ARUGULA_ARTIFACTS` to the run-log bucket, in chunks of about 4 MiB as it
+runs and the rest when it ends, before it reports its end. The platform
+reads them: a project's members read the log a page at a time (`GET
+/api/runs/{run}/log?offset=N`, M216's, which `arugula runs logs` and MCP's
+`read_run` use), list its artifacts with signed links (`GET
+/api/projects/{project}/runs/{run}/artifacts`) and fetch one
+(`…/artifacts/{name}`), with every machine asleep. Only hosted runs send
+any: a person's machine never does. The bucket keeps them 30 days, and the
+platform forgets its rows then too. The bucket is S3-compatible (Cloudflare
+R2 for the hosted control), set with `ARUGULA_RUN_LOGS_BUCKET`,
+`ARUGULA_RUN_LOGS_ENDPOINT`, `ARUGULA_RUN_LOGS_ACCESS_KEY_ID` and
+`ARUGULA_RUN_LOGS_SECRET_ACCESS_KEY` (and `ARUGULA_RUN_LOGS_DAYS`, 30);
+without it, a run's log stays in its pane. `arugula-platform run-logs --db
+…` shows the operator the bytes kept per project. The code is in
+`crates/platform/src/run_logs/` and `crates/daemon/src/run_logs.rs`.
+
 ```
 arugula runs spec add nightly --workspace dev --dir /work/app -- just e2e
 arugula runs schedule add nightly --cron '0 3 * * *' --tz America/Chicago

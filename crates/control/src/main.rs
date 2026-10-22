@@ -193,6 +193,11 @@ struct Args {
     #[command(flatten)]
     hosted: arugula_platform::hosted::Args,
 
+    /// The run-log bucket (M213): the platform's flags, used when it runs
+    /// in process.
+    #[command(flatten)]
+    run_logs: arugula_platform::run_logs::Args,
+
     /// The platform's own database (M143): `postgres://` puts it on
     /// Postgres. Without it, a second connection to `--db`, as always.
     #[command(flatten)]
@@ -432,6 +437,7 @@ fn platform(
     github: Option<arugula_platform::forge::GithubApp>,
     compute: Option<Arc<dyn arugula_platform::compute::Substrate>>,
     hosted: arugula_platform::hosted::Config,
+    run_logs: Option<arugula_platform::run_logs::Bucket>,
     http: &reqwest::Client,
     analytics: &analytics::Analytics,
 ) -> (gateway::PlatformAt, Arc<hub_port::InProcess>) {
@@ -444,6 +450,7 @@ fn platform(
     // The master key (M209), which the hosted config was given.
     p.secret_key = hosted.cipher.clone();
     p.hosted = hosted;
+    p.run_logs = run_logs;
     (gateway::PlatformAt::InProcess(Arc::new(p)), hub)
 }
 
@@ -468,6 +475,7 @@ impl App {
             None,
             None,
             Default::default(),
+            None,
             &http,
             &analytics::Analytics::default(),
         );
@@ -619,6 +627,8 @@ fn routes() -> Routes {
         .route(wire::work::WORK_REPORT, post(hosted_work::report))
         .route(wire::hosted::SPEC, get(hosted::spec))
         .route(wire::hosted::SETUP, post(hosted::setup))
+        .route(wire::run_logs::WORK_UPLOAD, post(hosted_work::upload))
+        .route(wire::run_logs::WORK_UPLOADED, post(hosted_work::uploaded))
         .route("/api/hosted/machines/{id}", axum::routing::delete(hosted::remove))
         .route(arugula_control_wire::transcripts::HOSTED_TRANSCRIPTS, post(hosted_agents::transcript))
         .route("/api/daemon/github/token", post(forge::daemon_token))
@@ -983,7 +993,8 @@ async fn run() -> anyhow::Result<()> {
         info!("the platform runs in process");
         let github = a.github_app.app(&a.github_api)?;
         let compute = a.compute.clone().substrate()?;
-        platform(a.platform_db.open(&a.db)?, cfg, stripe, cloud, github, compute, hosted, &http, &analytics)
+        let run_logs = a.run_logs.bucket()?;
+        platform(a.platform_db.open(&a.db)?, cfg, stripe, cloud, github, compute, hosted, run_logs, &http, &analytics)
     } else {
         // The platform is its own process: this hub is its gateway (M140).
         let key = platform_key.clone().context("--platform is a URL, so ARUGULA_PLATFORM_KEY is needed")?;
@@ -1089,6 +1100,8 @@ async fn run() -> anyhow::Result<()> {
         arugula_platform::keys::start(p);
         // The job worker: runs' dispatch (M212) and schedules (M214).
         arugula_platform::work::start(p);
+        // Runs' logs past their days (M213).
+        arugula_platform::run_logs::start(p);
         // Chat follows the hub's change feed (M138), and so do projects and
         // grants: a machine that joins gets its `cloud.drive` grant from it.
         arugula_platform::chat::start(p);

@@ -49,6 +49,7 @@ pub mod pg;
 pub mod previews;
 pub mod projects;
 pub mod run_grants;
+pub mod run_logs;
 pub mod run_work;
 pub mod runs;
 pub mod sql;

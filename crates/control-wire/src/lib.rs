@@ -29,6 +29,7 @@ pub mod join;
 pub mod maintenance;
 pub mod projects;
 pub mod push;
+pub mod run_logs;
 pub mod runs;
 pub mod team;
 pub mod telemetry;
