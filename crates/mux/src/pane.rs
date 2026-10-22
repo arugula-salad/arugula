@@ -335,6 +335,8 @@ enum Cmd {
     /// How the agent's screen reads now, rule by rule (`describe
     /// --detection`); `None` when no agent's screen is read.
     Detection(Sender<Option<Detection>>),
+    /// Answered once the pane has begun what it was started with.
+    Begun(Sender<()>),
     Close,
 }
 
@@ -472,6 +474,14 @@ impl PaneHandle {
     }
     pub fn status(&self) -> Status {
         self.status.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+    /// Wait until the pane has begun what it was started with: a restored
+    /// pane replays its history first, and until then [`Self::running`]
+    /// and [`Self::status`] don't yet say whether it adopted a program
+    /// that outlived the last daemon. False if it didn't answer in time.
+    pub fn begun(&self, timeout: Duration) -> bool {
+        let (tx, rx) = bounded(1);
+        self.tx.send(Cmd::Begun(tx)).is_ok() && rx.recv_timeout(timeout).is_ok()
     }
     /// The pane's screen, scrollback or last command as text, ANSI or HTML.
     pub fn capture(&self, format: CaptureFormat, scope: CaptureScope) -> Option<String> {
@@ -1574,6 +1584,9 @@ fn run(mut st: State, rx: Receiver<Cmd>, program: Receiver<Cmd>) {
             }
             Cmd::Checkpoint(done) => {
                 st.checkpoint();
+                let _ = done.send(());
+            }
+            Cmd::Begun(done) => {
                 let _ = done.send(());
             }
             Cmd::Capture { format, scope, reply } => {
