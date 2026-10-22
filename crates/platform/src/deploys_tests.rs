@@ -1022,3 +1022,80 @@ async fn an_arugula_release_is_planned_only_in_arugulas_project() {
     assert_eq!(st, 409, "{v}");
     assert!(v.to_string().contains("no GitHub App to mint RELEASE_TOKEN"), "{v}");
 }
+
+/// What the page makes an environment with (M252): the drivers the project
+/// may name, each one's settings, and which of its secrets the platform
+/// mints for each run (an environment never holds an `always` one). Its
+/// members read it; arugula-release only where it's allowed.
+#[tokio::test]
+async fn the_drivers_a_project_may_name_say_their_settings_and_secrets() {
+    let (_hub, _app, base, t, _) = seeded().await;
+    let path = format!("/api/projects/{t}/drivers");
+    let (st, _) = call(&base, "c", "GET", &path, None).await;
+    assert_eq!(st, 404, "not in the team");
+    let (st, v) = call(&base, "x", "GET", &path, None).await;
+    assert_eq!(st, 200, "a viewer reads it: {v}");
+    let names: Vec<&str> = v["drivers"].as_array().unwrap().iter().map(|d| d["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["chant-fly", "apps-platform", "fake"], "{v}");
+    let driver =
+        |v: &Value, n: &str| v["drivers"].as_array().unwrap().iter().find(|d| d["name"] == n).cloned().unwrap();
+    let fly = driver(&v, "chant-fly");
+    assert_eq!(
+        fly["secrets"],
+        json!([{ "name": "FLY_API_TOKEN", "minted": null }, { "name": "GITHUB_TOKEN", "minted": "unless_held" }])
+    );
+    assert_eq!(
+        fly["settings"][0],
+        json!({ "name": "fly_app", "required": true, "default": null, "choices": [],
+        "about": "The Fly app it deploys." })
+    );
+    assert_eq!(fly["rolls_back"], json!(true));
+    assert_eq!(
+        driver(&v, "apps-platform")["secrets"],
+        json!([{ "name": "APPS_PLATFORM_TOKEN", "minted": "unless_held" }, { "name": "SOURCE_TOKEN", "minted": "always" }])
+    );
+    assert_eq!(driver(&v, "fake")["settings"], json!([]));
+
+    crate::drivers::arugula_release::TEST_PROJECTS.lock().unwrap().push(t.clone());
+    let (_, v) = call(&base, "a", "GET", &path, None).await;
+    let release = driver(&v, "arugula-release");
+    assert_eq!(
+        release["secrets"],
+        json!([{ "name": "RELEASE_TOKEN", "minted": "always" }, { "name": "RELEASE_READ_TOKEN", "minted": "always" }])
+    );
+    assert_eq!(release["settings"][0]["choices"], json!(["patch", "minor", "major"]));
+}
+
+/// A deploy names its environment by id or (M252) by its name in the
+/// project, from a person or an agent; another project's environment of
+/// that name isn't found.
+#[tokio::test]
+async fn a_deploy_names_its_environment_by_name_too() {
+    let (_hub, _app, base, t, u) = seeded().await;
+    let env = production(&base, &t).await;
+    let (st, v) = call(
+        &base,
+        "c",
+        "POST",
+        &format!("/api/projects/{u}/environments"),
+        Some(json!({ "name": "staging", "driver": "fake", "secret_names": ["APP_TOKEN"] })),
+    )
+    .await;
+    assert_eq!(st, 200, "{v}");
+    let path = format!("/api/projects/{t}/deploys");
+    let (st, d) = call(&base, "b", "POST", &path, plan_body("production", "deadbeef")).await;
+    assert_eq!((st, &d["environment"]["id"]), (200, &json!(env)), "{d}");
+    assert_eq!(d["plan"], json!(driver_plan("deadbeef")), "the same plan as by its id");
+    for name in ["staging", "nope", ""] {
+        let (st, v) = call(&base, "b", "POST", &path, plan_body(name, "deadbeef")).await;
+        assert_eq!(st, 404, "{name}: {v}");
+    }
+    let (st, g) =
+        call(&base, "a", "POST", "/api/grants", give("geek", DEPLOYS_PLAN, json!({ "kind": "project", "id": t })))
+            .await;
+    assert_eq!(st, 200, "{g}");
+    let (st, d) =
+        geek(&base, "POST", &format!("/api/daemon/projects/{t}/deploys"), plan_body("production", "beef")).await;
+    assert_eq!((st, &d["environment"]["id"], &d["agent"]["machine"]), (200, &json!(env), &json!("geek")), "{d}");
+    assert!(d["plan_text"].as_str().unwrap().contains("fly_app acme-app"), "{d}");
+}

@@ -594,7 +594,7 @@ commit of `arugula-salad/arugula`, by its full id. Its box:
 deployed the same way.
 
 **Its credentials** are two installation tokens of the platform's GitHub
-App (illogical-by-arugula), minted for the run, for
+App (`arugula-io`, App id 5171453), minted for the run, for
 `arugula-salad/arugula` alone: `RELEASE_TOKEN` (`contents: write`,
 revoked right after the push) and `RELEASE_READ_TOKEN` (Actions and
 contents, read-only, to follow the workflow within the App's rate limit).
@@ -605,14 +605,18 @@ before.
 
 **Set up once:**
 
-- The App gets **Contents: write** on its installation in arugula-salad
-  (it already reads Actions), and a **bypass** on main's ruleset (the push
-  to main is the bump merged in, not a PR). Nothing else.
+- The App (`arugula-io`) gets **Contents: write** on its installation in
+  arugula-salad (it already reads Actions), and a **bypass** on the
+  "binaries check" ruleset, whose required status check would otherwise
+  refuse the push (the push to main is the bump merged in, not a PR).
+  Nothing else.
 - The platform's `ARUGULA_PLATFORM_RELEASE_PROJECT` names Arugula's
   project id (`prj_…`; comma separated for more). No other project can
   make an `arugula-release` environment, plan with it, or have its token
   minted. Unset, nobody can.
-- An owner makes the environment, with no secrets:
+- An owner makes the environment, with no secrets: on the platform page,
+  the project's settings, Environments, New environment, driver
+  `arugula-release` (it's offered only in that project), or:
 
   ```
   POST /api/projects/{project}/environments
@@ -625,14 +629,16 @@ before.
   (`release`, `release-minor`, `release-app`).
 
 **Each release:** merge the notes to main, find the newest green commit
-(`just green`), and plan a deploy of it to the environment:
+(`just green`), and plan a deploy of it to the environment: Deploy… on
+the project's settings page, or
 
 ```
-POST /api/projects/{project}/deploys
-{"environment": "env_…", "source": {"kind": "commit", "ref": "<40-hex sha>", "where": "arugula-salad/arugula"}}
+arugula deploys plan --project <prj_…> --env release --commit <40-hex sha> --repo arugula-salad/arugula
+arugula deploys request dep_…
 ```
 
-Then ask for approval, and approve it on the phone. The plan in the dialog
+(`POST /api/projects/{project}/deploys` and `/api/deploys/{id}/request`
+underneath). Then approve it on the phone. The plan in the dialog
 says the commit, the bump and the lane, what runs, and that it never rolls
 back. It doesn't say the version number: that's the next one after the
 higher of the commit's and main's, as `just release` picks it. The run's

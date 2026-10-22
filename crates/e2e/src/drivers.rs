@@ -345,6 +345,68 @@ fn chant_fly_does(source_ref: &str, source_where: &str, s: &Settings, roll_back:
     t
 }
 
+/// A setting a driver takes, as a page asks for it when an environment is
+/// made (M252): its name, whether it must be given, the default
+/// [`settings`] fills in, the only values it takes (when it's a choice),
+/// and what it is, in words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct SettingField {
+    pub name: &'static str,
+    pub required: bool,
+    pub default: Option<&'static str>,
+    pub choices: &'static [&'static str],
+    pub about: &'static str,
+}
+
+const fn field(
+    name: &'static str,
+    required: bool,
+    default: Option<&'static str>,
+    choices: &'static [&'static str],
+    about: &'static str,
+) -> SettingField {
+    SettingField { name, required, default, choices, about }
+}
+
+const CHANT_FLY_FIELDS: &[SettingField] = &[
+    field(FLY_APP, true, None, &[], "The Fly app it deploys."),
+    field(CHANT_ENV, true, None, &[], "The environment chant's release ledger records its releases under."),
+    field(CHANT_DIR, false, Some("."), &[], "The chant member, from the repository's root."),
+    field(CHANT_OP, false, Some("release"), &[], "The chant op it runs."),
+    field(FLY_CONFIG, false, None, &[], "The fly.toml a roll back deploys with."),
+    field(CHANT_GATES, false, None, &[], "The only gates it approves, comma separated: any other stops the deploy."),
+    field(NPM_SCRIPTS, false, None, &["true"], "npm ci runs the packages' install scripts."),
+    field(CHANT_GITHUB, false, None, &["true"], "chant's op gets GITHUB_TOKEN too (an op that pushes)."),
+    field(
+        CHANT_DIGEST_IS,
+        false,
+        Some("plan"),
+        &["plan", "image"],
+        "What the release record's digest is: the plan's, or the image Fly runs after.",
+    ),
+];
+
+const ARUGULA_RELEASE_FIELDS: &[SettingField] = &[
+    field(arugula_release::BUMP, false, Some("patch"), &["patch", "minor", "major"], "The version it bumps."),
+    field(
+        arugula_release::LANE,
+        false,
+        Some("daemon"),
+        &["daemon", "app"],
+        "daemon (a v* tag) or app (an app-v* tag).",
+    ),
+];
+
+/// The settings `driver` takes, in the order a page asks for them (M252).
+/// A driver without settings takes none.
+pub fn setting_fields(driver: &str) -> &'static [SettingField] {
+    match driver {
+        CHANT_FLY => CHANT_FLY_FIELDS,
+        arugula_release::DRIVER => ARUGULA_RELEASE_FIELDS,
+        _ => &[],
+    }
+}
+
 /// SHA-256 of [`plan_text`], hex.
 pub fn plan_digest(driver: &str, op: &Operation, settings: &Settings, roll_back: Option<&RollBack>) -> String {
     hex::encode(Sha256::digest(
@@ -364,6 +426,8 @@ mod tests {
     use super::*;
 
     const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+    const BUMP_: &str = arugula_release::BUMP;
+    const LANE_: &str = arugula_release::LANE;
 
     fn op(plan: String) -> Operation {
         Operation {
@@ -384,6 +448,41 @@ mod tests {
 
     fn image(n: char) -> String {
         format!("registry.fly.io/acme-web:deployment-1@sha256:{}", n.to_string().repeat(64))
+    }
+
+    /// What a page asks for is what [`settings`] takes (M252): every
+    /// setting, once; the required ones alone are enough; each default is
+    /// the one filled in; each choice is taken.
+    #[test]
+    fn setting_fields_are_the_settings_a_driver_takes() {
+        assert!(setting_fields("fake").is_empty() && setting_fields("apps-platform").is_empty());
+        for (driver, taken) in [(CHANT_FLY, CHANT_FLY_SETTINGS), (arugula_release::DRIVER, &[BUMP_, LANE_][..])] {
+            let fields = setting_fields(driver);
+            let mut names: Vec<&str> = fields.iter().map(|f| f.name).collect();
+            names.sort_unstable();
+            let mut want = taken.to_vec();
+            want.sort_unstable();
+            assert_eq!(names, want, "{driver}");
+            let given: Settings = fields
+                .iter()
+                .filter(|f| f.required)
+                .map(|f| (f.name.to_owned(), if f.name == CHANT_ENV { "github" } else { "acme-web" }.to_owned()))
+                .collect();
+            let filled = settings(driver, &given).unwrap();
+            for f in fields {
+                assert_eq!(
+                    filled.get(f.name).map(String::as_str),
+                    f.default.or(given.get(f.name).map(String::as_str)),
+                    "{driver} {}",
+                    f.name
+                );
+                for c in f.choices {
+                    let mut with = given.clone();
+                    with.insert(f.name.to_owned(), (*c).to_owned());
+                    assert!(settings(driver, &with).is_ok(), "{driver} {}={c}", f.name);
+                }
+            }
+        }
     }
 
     #[test]

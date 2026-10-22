@@ -1998,6 +1998,14 @@ clients = ["page", "cli"]
 note = "Makes an environment (a name, a driver, its secrets' names): owners."
 
 [[route]]
+method = "GET"
+path = "/api/projects/{project}/drivers"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The drivers its environments may be made with (M252): each one's settings, the secret names it takes, and which the platform mints for each run instead. For its members."
+
+[[route]]
 method = "POST"
 path = "/api/environments/{id}/secrets/{name}"
 process = "platform"
@@ -2011,7 +2019,7 @@ path = "/api/projects/{project}/deploys"
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
-note = "Plans a deploy (an environment, a source and the plan's digest): owners and editors."
+note = "Plans a deploy (an environment by its id or name, a source and the plan's digest): owners and editors."
 
 [[route]]
 method = "GET"

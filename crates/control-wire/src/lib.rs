@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod activity;
 pub mod chat;
+pub mod deploys;
 pub mod forge;
 pub mod forge_ops;
 pub mod hosted;

@@ -11,6 +11,7 @@ pub mod capture;
 pub mod claude;
 pub mod close;
 pub mod cloud;
+pub mod deploys;
 pub mod describe;
 pub mod diff;
 pub mod edit;
