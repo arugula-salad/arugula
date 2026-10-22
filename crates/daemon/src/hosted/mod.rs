@@ -24,10 +24,13 @@
 //!   (`crate::work`, M212).
 //! - **Sets its box up** on its first boot, in a pane anyone on the project
 //!   can watch ([`setup`], M183).
+//! - **Archives closed agent blocks' transcripts** to its project
+//!   ([`archive`], M184).
 //!
 //! It holds nothing else on the platform's behalf.
 
 pub mod activity;
+pub mod archive;
 pub mod enroll;
 pub mod reseed;
 pub mod resume;
@@ -126,6 +129,7 @@ pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
     // Its runs (M212), once it's in control.
     crate::work::start(app.clone());
     setup::start(app.clone(), state_dir.clone());
+    archive::start(control.clone());
     if control.enrolled().is_some() {
         return;
     }

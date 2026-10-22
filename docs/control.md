@@ -200,6 +200,24 @@ arugula cloud key ls --project acme
 arugula cloud key clear anthropic --project acme
 ```
 
+**Agents on hosted workspaces (M184, #1245).** A hosted workspace's agent
+blocks are its machine's, as on a laptop: + Agent on the platform page's
+workspace (`/p/:project/workspaces/hw_…`) opens Start an agent on control's
+page with its machine picked (`#machine=<id>&agent`), and everyone in the
+project sees the same blocks. An agent on one of a person's own machines
+drives it over MCP: `list kind cloud_workspaces` lists hosted workspaces
+first (`kind: hosted`), `cloud` and `read_cloud` take their `hw_…` ids
+(a tab is an agent block, by pane number; `diff`, `git_status`, `files`
+and `file` read on its machine), and `run`, `start_agent`, `prompt_agent`,
+`agent_respond`, `send_input`, `read_output`, `read_file`, `wait`, `show`,
+`close` and `list` take `cloud_workspace` to work on its machine. The
+person's machine reaches it through control's relay, only with a live
+`cloud.drive` grant, and the hosted machine lets in the project's owners'
+and editors' machines as their person (a viewer's reach its agents only):
+`crates/daemon/src/mcp/hosted.rs`. When an agent block there closes, the
+machine archives its transcript to the platform, read only under the
+project (`GET /api/projects/{project}/transcripts`).
+
 **Bodies and comments (M166, #1212).** The platform keeps a linked repo's
 PRs and issues as metadata. Opening one (`GET
 /api/forge/items/{id}/content`) reads its body, comments, reviews' text

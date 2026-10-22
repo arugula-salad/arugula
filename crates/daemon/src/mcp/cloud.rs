@@ -11,6 +11,10 @@
 //! Whoever may run things here (a teammate with run rights, a guest's
 //! agent) drives the owner's Cloud workspaces through it. That was decided
 //! (Jake, 2026-10-19), and docs/control.md says so.
+//!
+//! Hosted workspaces (`hw_…`, M184) are machines: each tool here takes one
+//! where it takes a Cloud workspace's id, and goes to its machine
+//! (`hosted.rs`). The Managoat paths here go in M190.
 
 use std::time::Duration;
 
@@ -35,7 +39,8 @@ const END_PAGES: usize = 50;
 
 #[derive(Deserialize, JsonSchema)]
 pub struct CloudWorkspaceArgs {
-    /// The Cloud workspace's id (cw_…, from list kind cloud_workspaces).
+    /// The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,
+    /// from list kind cloud_workspaces).
     pub cloud_workspace: String,
 }
 
@@ -122,6 +127,14 @@ pub struct CloudRepository {
 pub struct CloudCreateArgs {
     /// Its name.
     pub name: String,
+    /// A project (its prj_… id, or personal): a hosted Cloud workspace in
+    /// it, a machine of the project's (only url is read of each repository,
+    /// and secrets are env names its box takes). Without it: the account's
+    /// own Cloud workspace, as before.
+    // Read from the call's arguments as they came (`hosted_create`).
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub project: Option<String>,
     /// The repositories to check out on its machine.
     #[serde(default)]
     pub repositories: Vec<CloudRepository>,
@@ -537,9 +550,15 @@ impl Call<'_> {
     // ------------------------------------------------------------ list
 
     pub(crate) async fn list_cloud_workspaces(&self) -> Out {
-        let v = self.cloud_get("/api/cloud/workspaces").await?;
+        // M184: hosted workspaces first; Managoat's beside them until M189.
+        let hosted = self.hosted_rows().await;
+        let v = match self.cloud_get("/api/cloud/workspaces").await {
+            Ok(v) => v,
+            Err(_) if !hosted.is_empty() => json!({ "cloud_workspaces": [] }),
+            Err(e) => return Err(e),
+        };
         let all = v["cloud_workspaces"].as_array().cloned().unwrap_or_default();
-        let rows: Vec<Value> = all
+        let managoat: Vec<Value> = all
             .iter()
             .map(|w| {
                 let id = w["id"].as_str().unwrap_or_default();
@@ -550,12 +569,13 @@ impl Call<'_> {
                     .map(|r| json!({ "url": r["url"], "mount": r["mount"] }))
                     .collect();
                 json!({
-                    "id": id, "name": w["name"], "status": w["status"], "setup_step": w["setup_step"],
+                    "kind": "managoat", "id": id, "name": w["name"], "status": w["status"], "setup_step": w["setup_step"],
                     "error": w["error"], "stale": w["stale"], "rebuild_queued": w["rebuild_queued"],
                     "repositories": repositories, "link": self.cloud_link(id, None),
                 })
             })
             .collect();
+        let rows: Vec<Value> = hosted.into_iter().chain(managoat).collect();
         let summary = match rows.len() {
             0 => "No Cloud workspaces yet: cloud {kind: create} makes one.".to_owned(),
             n => format!(
@@ -575,6 +595,9 @@ impl Call<'_> {
     }
 
     pub(crate) async fn list_cloud_tabs(&self, a: CloudWorkspaceArgs) -> Out {
+        if super::hosted::is_hosted(&a.cloud_workspace) {
+            return self.hosted_tabs(a.cloud_workspace.trim()).await;
+        }
         let v = self.cloud_get(&format!("{}/tabs", workspace_path(&a.cloud_workspace)?)).await?;
         let tabs = v["cloud_tabs"].as_array().cloned().unwrap_or_default();
         let summary = match tabs.len() {
@@ -625,6 +648,12 @@ impl Call<'_> {
     /// `show` kind `cloud_workspace`: the block, once control says the
     /// workspace (and tab) are there.
     pub(crate) async fn show_cloud_workspace(&self, a: ShowCloudArgs) -> Out {
+        if super::hosted::is_hosted(&a.cloud_workspace) {
+            return Err(format!(
+                "{} is a machine: show (with workspace {0}) puts a block beside a pane on it, and list with workspace shows its panes",
+                a.cloud_workspace.trim()
+            ));
+        }
         let workspace = id("cloud_workspace", "cw_", &a.cloud_workspace)?;
         let tab = a.tab.as_deref().map(|t| id("cloud_tab", "cwc_", t)).transpose()?;
         // Asked first, so a workspace that isn't there (or a control that
@@ -683,6 +712,10 @@ impl Call<'_> {
 
     pub(crate) async fn read_cloud(&self, kind: &str, args: Value) -> Out {
         use super::tools::parse;
+        if let Some(w) = args["cloud_workspace"].as_str().filter(|w| super::hosted::is_hosted(w)) {
+            let w = w.trim().to_owned();
+            return self.hosted_read(kind, &w, args).await;
+        }
         match kind {
             "events" => {
                 let a: CloudEventsArgs = parse(args)?;
@@ -817,8 +850,16 @@ impl Call<'_> {
 
     pub(crate) async fn drive_cloud(&self, kind: &str, args: Value) -> Out {
         use super::tools::parse;
+        if let Some(w) = args["cloud_workspace"].as_str().filter(|w| super::hosted::is_hosted(w)) {
+            let w = w.trim().to_owned();
+            return self.hosted_drive(kind, &w, args).await;
+        }
         match kind {
             "create" => {
+                if let Some(project) = args["project"].as_str().filter(|p| !p.trim().is_empty()) {
+                    let project = project.trim().to_owned();
+                    return self.hosted_create(&project, &args).await;
+                }
                 let a: CloudCreateArgs = parse(args)?;
                 let repositories: Vec<Value> = a
                     .repositories
@@ -998,6 +1039,10 @@ impl Call<'_> {
         after: Option<u64>,
         limit: Duration,
     ) -> Out {
+        if super::hosted::is_hosted(workspace) {
+            let until = if until == TabUntil::Idle { "idle" } else { "needs_input" };
+            return self.hosted_wait(workspace.trim(), tab, until, Some(limit.as_secs_f64())).await;
+        }
         let path = tab_path(workspace, tab)?;
         let what = match until {
             TabUntil::Idle => format!("waiting for {tab} to finish"),

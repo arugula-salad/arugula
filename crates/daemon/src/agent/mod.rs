@@ -2997,6 +2997,15 @@ impl Agent {
     }
 }
 
+/// When a block's directory was made (ms), or now.
+fn block_made(dir: &Path) -> u64 {
+    std::fs::metadata(dir)
+        .and_then(|m| m.created().or_else(|_| m.modified()))
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or_else(arugula_e2e::now_ms, |d| d.as_millis() as u64)
+}
+
 impl Block for Agent {
     fn kind(&self) -> BlockType {
         if self.chat { BlockType::Chat } else { BlockType::Agent }
@@ -3099,7 +3108,23 @@ impl Block for Agent {
     }
 
     fn close(&self) {
+        // M184: on a hosted machine, its transcript goes to the project.
+        let text = self.text();
         let mut g = self.inner.lock().unwrap();
+        crate::hosted::archive::closed(
+            &self.ctx.rt,
+            crate::hosted::archive::Closed {
+                block: self.ctx.id.into(),
+                agent: serde_json::to_value(g.cfg.def.agent)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    .unwrap_or_default(),
+                title: g.shown_title().unwrap_or_else(|| g.cfg.def.label()),
+                cwd: g.cfg.cwd.clone(),
+                started_at: block_made(&self.ctx.dir),
+                text,
+            },
+        );
         g.closing = true;
         if let Some(l) = g.link.take() {
             l.stop();
