@@ -129,7 +129,7 @@ pub struct CloseArgs {
     /// completed (the default), not_planned or duplicate.
     #[serde(default)]
     pub reason: Option<String>,
-    /// A comment to leave first.
+    /// A comment to leave with it, posted once the close has landed.
     #[serde(default)]
     pub comment: Option<String>,
     #[serde(default)]
@@ -206,7 +206,7 @@ pub(crate) const WRITE: &[Kind] = &[
     },
     Kind {
         name: "close",
-        description: "Close an issue (completed, not_planned or duplicate), with a comment first if given.",
+        description: "Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.",
         schema: schema_for_type::<CloseArgs>,
         flag: None,
     },
@@ -494,11 +494,20 @@ impl Call<'_> {
             "close" => {
                 let a: CloseArgs = args(a)?;
                 if let Some(c) = a.comment.filter(|c| !c.trim().is_empty()) {
+                    // Closed first: a refused close leaves no comment behind.
                     let i = self.native_issue(&native(&a.issue)?, a.project.as_deref()).await?;
-                    self.comment_on(&i, c).await?;
                     let id = i["id"].as_str().unwrap_or_default().to_owned();
                     let p = IssuePatch { state: Some("closed".into()), reason: a.reason, ..Default::default() };
-                    return self.change(&id, patch(p)?).await;
+                    let mut closed = self.change(&id, patch(p)?).await?;
+                    let said = closed["summary"].as_str().unwrap_or_default().to_owned();
+                    closed["summary"] = json!(match self.comment_on(&closed["issue"], c).await {
+                        Ok(v) => {
+                            closed["comment"] = v["comment"].clone();
+                            format!("{said}; commented as seq {} in its thread", v["comment"]["seq"])
+                        }
+                        Err(e) => format!("{said}; the comment wasn't posted: {e}"),
+                    });
+                    return Ok(closed);
                 }
                 let p = IssuePatch { state: Some("closed".into()), reason: a.reason, ..Default::default() };
                 (a.issue, a.project, patch(p)?)

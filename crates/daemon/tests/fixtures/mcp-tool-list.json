@@ -3077,7 +3077,7 @@
         "readOnlyHint": false,
         "title": "Write to a native issue"
       },
-      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment first if given.\n- reopen {issue, project?}: Open a closed issue again.",
+      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -3107,7 +3107,7 @@
           },
           "comment": {
             "default": null,
-            "description": "close: A comment to leave first.",
+            "description": "close: A comment to leave with it, posted once the close has landed.",
             "type": [
               "string",
               "null"
@@ -6540,7 +6540,7 @@
         "readOnlyHint": false,
         "title": "Write to a native issue"
       },
-      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment first if given.\n- reopen {issue, project?}: Open a closed issue again.",
+      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -6570,7 +6570,7 @@
           },
           "comment": {
             "default": null,
-            "description": "close: A comment to leave first.",
+            "description": "close: A comment to leave with it, posted once the close has landed.",
             "type": [
               "string",
               "null"
@@ -9722,7 +9722,7 @@
         "readOnlyHint": false,
         "title": "Write to a native issue"
       },
-      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment first if given.\n- reopen {issue, project?}: Open a closed issue again.",
+      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -9752,7 +9752,7 @@
           },
           "comment": {
             "default": null,
-            "description": "close: A comment to leave first.",
+            "description": "close: A comment to leave with it, posted once the close has landed.",
             "type": [
               "string",
               "null"
@@ -13185,7 +13185,7 @@
         "readOnlyHint": false,
         "title": "Write to a native issue"
       },
-      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment first if given.\n- reopen {issue, project?}: Open a closed issue again.",
+      "description": "Write to Arugula's own (native) issues in Arugula control, at once: what you write lands now, labelled as your person's agent on this machine, never as them. An issue is #N (in the current project: project, else the one this clone's GitHub repo is linked to, else your person's personal project) or iss_…. Their grants say what you may do (issues.write to file and change, threads.post to comment; changing reads it first, with threads.read), and never more than their role. GitHub's PRs and issues aren't written here: draft and forge_draft make drafts that wait for a person to send them.\n- create {title, assignees?, body?, labels?, project?}: File a new issue in a project (issues.write).\n- comment {issue, text, project?}: Comment on an issue: a post in its thread (threads.post).\n- edit {issue, body?, project?, title?}: Change an issue's title or body.\n- label {issue, add?, project?, remove?}: Add labels to an issue or take them off.\n- assign {issue, add?, project?, remove?}: Assign people in the project to an issue, or unassign them.\n- close {issue, comment?, project?, reason?}: Close an issue (completed, not_planned or duplicate), with a comment if given, posted once it's closed.\n- reopen {issue, project?}: Open a closed issue again.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
@@ -13215,7 +13215,7 @@
           },
           "comment": {
             "default": null,
-            "description": "close: A comment to leave first.",
+            "description": "close: A comment to leave with it, posted once the close has landed.",
             "type": [
               "string",
               "null"

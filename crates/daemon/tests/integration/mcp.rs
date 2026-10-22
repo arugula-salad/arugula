@@ -2103,6 +2103,11 @@ async fn fake_native(f: FakeNative) -> String {
                   "at": 1, "detail": {} }] }))
             .into_response(),
             ("PATCH", ["api", "daemon", "issues", id]) => {
+                if !f.granted.load(Ordering::SeqCst) {
+                    let why = "geek has no issues.write grant over acme";
+                    return (StatusCode::FORBIDDEN, Json(json!({ "error": why, "reason": "agent_ungranted" })))
+                        .into_response();
+                }
                 let Some(at) = find(id) else { return no(StatusCode::NOT_FOUND, "no such issue") };
                 let mut issues = f.issues.lock().unwrap();
                 let i = &mut issues[at];
@@ -2213,10 +2218,16 @@ async fn an_agent_files_comments_on_and_closes_a_native_issue() {
 
     let commented = call(&s, "issue_write", json!({ "kind": "comment", "issue": "#1", "text": "bisected it" })).await;
     assert_eq!(commented["comment"]["seq"], 1, "{commented}");
+    // A refused close leaves no comment behind.
+    fake.granted.store(false, Ordering::SeqCst);
+    let close = json!({ "kind": "close", "issue": id, "reason": "completed", "comment": "fixed" });
+    assert!(refused(&s, "issue_write", close).await.contains("issues.write"));
+    assert_eq!(fake.comments.lock().unwrap().len(), 1, "no stray comment");
+    fake.granted.store(true, Ordering::SeqCst);
     let closed =
         call(&s, "issue_write", json!({ "kind": "close", "issue": id, "reason": "completed", "comment": "fixed" }))
             .await;
-    assert_eq!(closed["issue"]["state"], "closed", "{closed}");
+    assert_eq!((&closed["issue"]["state"], &closed["comment"]["seq"]), (&json!("closed"), &json!(2)), "{closed}");
 
     // Read back: read_forge and forge_read take its number or id.
     let read = call(&s, "read_forge", json!({ "block": "#1" })).await;
@@ -2245,8 +2256,10 @@ async fn an_agent_files_comments_on_and_closes_a_native_issue() {
     assert!(at.contains(&"GET /api/daemon/issue-home?repo=acme%2Fapp"), "the pane's clone: {at:?}");
     assert!(at.contains(&"GET /api/daemon/projects/prj_1/issues/1"), "{at:?}");
     assert!(at.contains(&format!("POST /api/daemon/chat/rooms/{id}/messages").as_str()), "{at:?}");
-    let close = calls.iter().find(|(a, _, _)| a.starts_with("PATCH ")).unwrap();
-    assert_eq!(close.2, json!({ "state": "closed", "reason": "completed" }), "{close:?}");
+    let close = calls.iter().rposition(|(a, _, _)| a.starts_with("PATCH ")).unwrap();
+    assert_eq!(calls[close].2, json!({ "state": "closed", "reason": "completed" }), "{:?}", calls[close]);
+    let comment = calls.iter().rposition(|(a, _, _)| a.ends_with("/messages") && a.starts_with("POST ")).unwrap();
+    assert!(close < comment, "closed, then commented: {at:?}");
     let ops: Vec<&Value> =
         calls.iter().filter(|(a, _, _)| a == "POST /api/forge/ops").map(|(_, _, b)| &b["op"]).collect();
     assert_eq!(ops, [&json!("draft.create")], "one draft, no send");
