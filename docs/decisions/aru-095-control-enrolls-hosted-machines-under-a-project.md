@@ -47,6 +47,8 @@ reviews: []
 constrains:
   - "path:crates/e2e/src/cert.rs"
   - "path:crates/e2e/src/team.rs"
+  - "path:crates/e2e/src/hosted.rs"
+  - "path:crates/control/src/hosted.rs"
   - "path:docs/control-e2e.md"
 ---
 
@@ -59,9 +61,18 @@ project P, until revoked" (Jake, 2026-10-21, #1235).
 
 - **Stored with the project's roster,** signed by an owner's device like the
   roster itself.
-- **Enrollment.** At create, the platform hands the box a one-time project
-  ticket. The box presents it, and control enrolls it under the delegation
-  with a **project-scoped certificate**.
+- **Enrollment.** At create, the platform records a one-time enrollment
+  for the box, bound to the project and the workspace: a **ticket** the hub
+  makes, for the box's env (boxes started fresh, loam, testnet), or, for a
+  box started from a running E2B snapshot (which can't read the env it was
+  made with), the box's **sandbox id**, good for about two minutes (Jake,
+  2026-10-21). The box presents it with its new key, once, and control
+  enrolls it under the delegation with a **project-scoped certificate**
+  signed with control's hosted key. **Fail closed:** a second try is
+  refused, and the platform deletes a box that finds its enrollment taken;
+  an enrollment whose delegation was revoked since is refused too. The
+  sandbox id is a bearer secret for its window: never logged, never in a
+  URL.
 - **Only for that project.** Clients accept such a machine only for project
   P. Personal devices never trust it for anything else.
 - **Labelled.** The shell and the platform page show it as "Hosted: the
@@ -72,5 +83,8 @@ project P, until revoked" (Jake, 2026-10-21, #1235).
 
 `docs/control-e2e.md` says what control can and can't do with a
 delegation.
-Where: `crates/e2e/src/cert.rs`, `crates/e2e/src/team.rs`, `docs/control-e2e.md` (M178).
+Where: `crates/e2e/src/hosted.rs` (the delegation, its revocation, the
+certificate, and what clients accept), `crates/control/src/hosted.rs`
+(delegating, enrolling, routing), `web/src/shell/e2e/hosted.ts`,
+`docs/control-e2e.md` ("Hosted machines: a project's delegation") (M178).
 From: #1235 (platform roadmap, step 5), M175 (#1236), M178 (#1239), M179 (#1240), M180 (#1241).

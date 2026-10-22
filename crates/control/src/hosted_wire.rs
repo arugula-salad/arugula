@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use arugula_control_wire::hosted::{EnrollAsk, EnrollGiven, Enrollment};
+use arugula_control_wire::hosted::{EnrollAsk, EnrollGiven, Enrolled, Enrollment};
 use arugula_e2e::{
     DeviceKeys, Trust,
     hosted::{Delegation, DelegationRevoke, HostedRefusal, Owners, accept, enroll_proof_body},
@@ -152,8 +152,6 @@ async fn an_owner_delegates_control_enrolls_a_box_and_only_the_project_reaches_i
     let e: Enrollment = serde_json::from_value(e).unwrap();
     assert_eq!((e.cert.device.as_str(), e.cert.workspace.as_str()), (boxk.id().as_str(), "hw_1"));
     assert_eq!(e.team.as_ref().unwrap().team, TEAM);
-    let (st, _) = c.post("/api/hosted/enroll", &enroll_body(&DeviceKeys::generate(), Some(&ticket), None)).await;
-    assert_eq!(st, 409, "a ticket works once");
 
     // It signs its own routes, and nothing a daemon's signature opens.
     assert_eq!(c.signed_get(&boxk, "/api/hosted/trust").await, 200);
@@ -227,6 +225,8 @@ async fn an_owner_delegates_control_enrolls_a_box_and_only_the_project_reaches_i
     assert!(!c.app.relay.online(&boxk.id()));
     assert_eq!(c.signed_get(&boxk, "/api/hosted/trust").await, 410);
     assert_eq!(c.reach(&cy_s, &boxk.id()).await, 404);
+    let (st, _) = c.post("/api/hosted/enroll", &enroll_body(&DeviceKeys::generate(), Some(&ticket), None)).await;
+    assert_eq!(st, 409, "a ticket works once");
 }
 
 #[tokio::test]
@@ -245,9 +245,12 @@ async fn a_snapshot_box_enrolls_once_by_its_sandbox_id() {
     let sbx = "isb7fz2k1q0x9example";
     let given = c.app.hub_port.hosted_enrollment(&ask(owner, "hw_9", Some(sbx))).await.unwrap();
     assert!(matches!(given, EnrollGiven::Ready { ticket: None, .. }), "{given:?}");
-    // One enrollment per sandbox, ever.
+    // Asked again for the same box (a lost answer): the same enrollment.
+    // For another workspace: one enrollment per sandbox, ever.
     let again = c.app.hub_port.hosted_enrollment(&ask(owner, "hw_9", Some(sbx))).await.unwrap();
-    assert_eq!(again, EnrollGiven::Taken);
+    assert_eq!(again, given);
+    let other = c.app.hub_port.hosted_enrollment(&ask(owner, "hw_8", Some(sbx))).await.unwrap();
+    assert_eq!(other, EnrollGiven::Taken);
     // Neither credential, both, or a wrong one: refused.
     let k = DeviceKeys::generate();
     let mut both = enroll_body(&k, Some("t"), None);
@@ -258,9 +261,9 @@ async fn a_snapshot_box_enrolls_once_by_its_sandbox_id() {
     assert_eq!(st, 200, "{e}");
     let e: Enrollment = serde_json::from_value(e).unwrap();
     assert_eq!(e.trust.as_ref().map(|t| t.account.as_str()), Some("m1"));
-    // Fail closed: a second box with the same sandbox id is refused.
-    let (st, _) = c.post("/api/hosted/enroll", &enroll_body(&DeviceKeys::generate(), None, Some(sbx))).await;
-    assert_eq!(st, 409);
+    let ws = ["hw_9".to_owned()];
+    let enrolled = c.app.hub_port.hosted_enrolled(&ws).await.unwrap();
+    assert_eq!(enrolled, vec![Enrolled { workspace: "hw_9".into(), machine: k.id(), taken: false }]);
 
     // Mine to reach (routed: it isn't on the relay, so 503), and nobody
     // else's.
@@ -272,9 +275,41 @@ async fn a_snapshot_box_enrolls_once_by_its_sandbox_id() {
     assert!(accept("m1", &e.cert, &e.delegation, &[], &owners).is_ok());
     assert_eq!(accept("y1", &e.cert, &e.delegation, &[], &owners), Err(HostedRefusal::NotInProject));
 
-    // A rebuild: the platform removes the workspace's machine.
-    assert_eq!(c.app.hub_port.hosted_remove("hw_9").await.unwrap(), 1);
+    // Fail closed: a second box with the same sandbox id is refused, and
+    // the machine that used it goes too; the platform hears it was taken.
+    let (st, _) = c.post("/api/hosted/enroll", &enroll_body(&DeviceKeys::generate(), None, Some(sbx))).await;
+    assert_eq!(st, 409);
     assert_eq!(c.signed_get(&k, "/api/hosted/trust").await, 410);
+    let enrolled = c.app.hub_port.hosted_enrolled(&ws).await.unwrap();
+    assert_eq!(enrolled, vec![Enrolled { workspace: "hw_9".into(), machine: String::new(), taken: true }]);
+}
+
+#[tokio::test]
+async fn a_gone_box_takes_its_machine_and_unused_enrollment() {
+    let c = control(|_| {}).await;
+    let me = person(&c.app, "me", "m1");
+    let me_s = session(&c.app, "m1");
+    let d = delegation(&c, "account:m1", &me);
+    c.as_person(&me_s, "POST", "/api/hosted/delegations", Some(json!({ "delegation": d }))).await;
+    let EnrollGiven::Ready { ticket: Some(t), .. } =
+        c.app.hub_port.hosted_enrollment(&ask("account:m1", "hw_1", None)).await.unwrap()
+    else {
+        panic!("no ticket")
+    };
+    let k = DeviceKeys::generate();
+    assert_eq!(c.post("/api/hosted/enroll", &enroll_body(&k, Some(&t), None)).await.0, 200);
+    // A rebuild: the old box is gone, and the new one's enrollment, made
+    // before it, isn't used yet.
+    let unused = c.app.hub_port.hosted_enrollment(&ask("account:m1", "hw_1", Some("isbnew"))).await.unwrap();
+    assert!(matches!(unused, EnrollGiven::Ready { .. }));
+    c.app.hub_port.hosted_gone(&["hw_1".to_owned()]).await.unwrap();
+    assert_eq!(c.signed_get(&k, "/api/hosted/trust").await, 410);
+    assert!(c.app.hub_port.hosted_enrolled(&["hw_1".to_owned()]).await.unwrap().is_empty());
+    let (st, _) = c.post("/api/hosted/enroll", &enroll_body(&DeviceKeys::generate(), None, Some("isbnew"))).await;
+    assert_eq!(st, 404, "its unused enrollment went with it");
+    // The used ticket stays used.
+    let (st, _) = c.post("/api/hosted/enroll", &enroll_body(&DeviceKeys::generate(), Some(&t), None)).await;
+    assert_eq!(st, 409);
 }
 
 #[tokio::test]

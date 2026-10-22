@@ -29,7 +29,9 @@ CREATE TABLE IF NOT EXISTS project_delegations (
 CREATE INDEX IF NOT EXISTS project_delegations_owner ON project_delegations (owner);
 -- One enrollment, by the SHA-256 of its ticket or sandbox id (`via`):
 -- once, until `expires`. A used one stays until it would have expired,
--- so a second try is refused, not taken for a new one.
+-- so a second try is refused, not taken for a new one; `device` is the
+-- machine that used it, and `contested` says a second try came (fail
+-- closed: that machine is removed, and the platform deletes the box).
 CREATE TABLE IF NOT EXISTS hosted_enrollments (
     hash TEXT PRIMARY KEY,
     via TEXT NOT NULL,
@@ -40,8 +42,11 @@ CREATE TABLE IF NOT EXISTS hosted_enrollments (
     delegation TEXT NOT NULL,
     created INTEGER NOT NULL,
     expires INTEGER NOT NULL,
-    used INTEGER
+    used INTEGER,
+    device TEXT,
+    contested INTEGER
 );
+CREATE INDEX IF NOT EXISTS hosted_enrollments_workspace ON hosted_enrollments (workspace);
 -- An enrolled hosted machine: its certificate (JSON), signed with
 -- control's hosted key. One live machine per workspace.
 CREATE TABLE IF NOT EXISTS hosted_machines (
@@ -74,14 +79,24 @@ pub struct HostedRow {
     pub last_seen: Option<u64>,
 }
 
+/// What recording an enrollment did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Recorded {
+    New,
+    /// The same one, recorded before: until this time.
+    Again(u64),
+    /// That credential is another workspace's.
+    Taken,
+}
+
 /// What became of an enrollment someone tried.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Taken {
     /// Theirs, now: the project, owner, workspace, name and delegation it
     /// was for.
     Fresh { project: String, owner: String, workspace: String, name: String, delegation: String },
-    /// Used already: fail closed.
-    Used,
+    /// Used already: fail closed. The machine that used it, removed now.
+    Used(Option<String>),
     /// No such enrollment, or it ran out.
     Missing,
 }
@@ -148,9 +163,10 @@ impl Db {
         Ok(n > 0)
     }
 
-    /// Record a one-time enrollment. False when one by that hash exists
-    /// already, used or not: a sandbox id is enrolled once, ever (until
-    /// its row is swept, long after the box is gone).
+    /// Record a one-time enrollment. A sandbox id is enrolled once, ever
+    /// (until its row is swept, long after the box is gone): asked again
+    /// for the same workspace it's the same enrollment (a lost answer, sent
+    /// again), and for another it's taken.
     #[allow(clippy::too_many_arguments)]
     pub fn add_enrollment(
         &self,
@@ -163,17 +179,73 @@ impl Db {
         delegation: &str,
         now: u64,
         expires: u64,
-    ) -> anyhow::Result<bool> {
-        let c = self.c();
+    ) -> anyhow::Result<Recorded> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
         // Swept a day after they'd have expired.
-        c.execute("DELETE FROM hosted_enrollments WHERE expires < ?1", params![now.saturating_sub(86_400_000)])?;
-        let n = c.execute(
-            "INSERT OR IGNORE INTO hosted_enrollments
-             (hash, via, project, owner, workspace, name, delegation, created, expires)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![hash, via, project, owner, workspace, name, delegation, now, expires],
+        tx.execute("DELETE FROM hosted_enrollments WHERE expires < ?1", params![now.saturating_sub(86_400_000)])?;
+        let was: Option<(String, String, u64)> = tx
+            .query_row(
+                "SELECT project, workspace, expires FROM hosted_enrollments WHERE hash = ?1",
+                params![hash],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let out = match was {
+            Some((p, w, expires)) if p == project && w == workspace => Recorded::Again(expires),
+            Some(_) => Recorded::Taken,
+            None => {
+                tx.execute(
+                    "INSERT INTO hosted_enrollments
+                     (hash, via, project, owner, workspace, name, delegation, created, expires)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    params![hash, via, project, owner, workspace, name, delegation, now, expires],
+                )?;
+                Recorded::New
+            }
+        };
+        tx.commit()?;
+        Ok(out)
+    }
+
+    /// The machine that used an enrollment.
+    pub fn enrolled_as(&self, hash: &str, device: &str) -> anyhow::Result<()> {
+        self.c().execute("UPDATE hosted_enrollments SET device = ?2 WHERE hash = ?1", params![hash, device])?;
+        Ok(())
+    }
+
+    /// Of these workspaces, which have a live machine, and which had their
+    /// enrollment contested (the platform deletes those boxes).
+    pub fn hosted_enrolled(&self, workspaces: &[String]) -> anyhow::Result<Vec<(String, Option<String>, bool)>> {
+        let c = self.c();
+        let mut live = c.prepare("SELECT id FROM hosted_machines WHERE workspace = ?1 AND removed IS NULL")?;
+        let mut contested = c.prepare(
+            "SELECT contested IS NOT NULL FROM hosted_enrollments WHERE workspace = ?1 ORDER BY created DESC LIMIT 1",
         )?;
-        Ok(n > 0)
+        let mut out = Vec::new();
+        for w in workspaces {
+            let machine: Option<String> = live.query_row(params![w], |r| r.get(0)).optional()?;
+            let taken: bool = contested.query_row(params![w], |r| r.get(0)).optional()?.unwrap_or(false);
+            if machine.is_some() || taken {
+                out.push((w.clone(), machine, taken));
+            }
+        }
+        Ok(out)
+    }
+
+    /// These workspaces' boxes are gone: their machines are removed, and
+    /// enrollments nobody used are dropped (used ones stay, so a sandbox id
+    /// never enrolls twice). The machines' ids, to hang up on.
+    pub fn hosted_gone(&self, workspaces: &[String], now: u64) -> anyhow::Result<Vec<String>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let mut gone = Vec::new();
+        for w in workspaces {
+            gone.extend(remove_where(&tx, "workspace = ?1", w, now)?);
+            tx.execute("DELETE FROM hosted_enrollments WHERE workspace = ?1 AND used IS NULL", params![w])?;
+        }
+        tx.commit()?;
+        Ok(gone)
     }
 
     /// Use an enrollment, once: in one statement, so two tries at once get
@@ -200,7 +272,17 @@ impl Db {
             .optional()?;
         let taken = match row {
             None => Taken::Missing,
-            Some((_, _, true)) => Taken::Used,
+            Some((_, _, true)) => {
+                // Fail closed: a second try means someone else has the
+                // credential. The machine that used it goes too.
+                tx.execute("UPDATE hosted_enrollments SET contested = ?2 WHERE hash = ?1", params![hash, now])?;
+                let device: Option<String> =
+                    tx.query_row("SELECT device FROM hosted_enrollments WHERE hash = ?1", params![hash], |r| r.get(0))?;
+                if let Some(d) = &device {
+                    remove_where(&tx, "id = ?1", d, now)?;
+                }
+                Taken::Used(device)
+            }
             Some((_, expires, false)) if expires <= now => Taken::Missing,
             Some((fresh, ..)) => {
                 tx.execute("UPDATE hosted_enrollments SET used = ?2 WHERE hash = ?1", params![hash, now])?;
@@ -289,16 +371,6 @@ impl Db {
         let gone = remove_where(&tx, "id = ?1", id, now)?;
         tx.commit()?;
         Ok(!gone.is_empty())
-    }
-
-    /// Remove a workspace's machine (the platform deleted or rebuilds it):
-    /// the ids removed.
-    pub fn remove_workspace(&self, workspace: &str, now: u64) -> anyhow::Result<Vec<String>> {
-        let mut c = self.c();
-        let tx = c.transaction()?;
-        let gone = remove_where(&tx, "workspace = ?1", workspace, now)?;
-        tx.commit()?;
-        Ok(gone)
     }
 }
 

@@ -34,7 +34,7 @@ pub const SANDBOX_MS: u64 = 2 * 60 * 1000;
 
 /// What the platform asks of the hub as it creates a box: a one-time
 /// enrollment into `project` for workspace `workspace`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EnrollAsk {
     pub project: String,
     /// `team:<id>` or `account:<id>`: who the project belongs to, as the
@@ -53,7 +53,7 @@ pub struct EnrollAsk {
 }
 
 /// What the hub answers an [`EnrollAsk`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EnrollGiven {
     /// Recorded: until `expires` (ms), once. `ticket` is the one to put in
@@ -70,8 +70,21 @@ pub enum EnrollGiven {
     Taken,
 }
 
+/// A workspace whose box enrolled, and the hosted machine it is
+/// (`HubPort::hosted_enrolled`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Enrolled {
+    pub workspace: String,
+    /// The machine's device id; empty when `taken` removed it.
+    pub machine: String,
+    /// Someone tried the box's enrollment again: fail closed, the machine
+    /// that used it was removed, and the platform deletes the box.
+    #[serde(default)]
+    pub taken: bool,
+}
+
 /// `POST /api/hosted/enroll`, once per box.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct EnrollRequest {
     /// The ticket from `ARUGULA_HOSTED_TICKET`; or
     #[serde(default)]
@@ -130,4 +143,45 @@ pub struct DelegationPost {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RevokePost {
     pub revoke: DelegationRevoke,
+}
+
+// Never the sandbox id or the ticket: each is a bearer secret while its
+// enrollment lasts.
+
+impl std::fmt::Debug for EnrollAsk {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EnrollAsk")
+            .field("project", &self.project)
+            .field("owner", &self.owner)
+            .field("workspace", &self.workspace)
+            .field("name", &self.name)
+            .field("sandbox", &self.sandbox.as_ref().map(|_| "…"))
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for EnrollGiven {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EnrollGiven::Ready { ticket, expires } => f
+                .debug_struct("Ready")
+                .field("ticket", &ticket.as_ref().map(|_| "…"))
+                .field("expires", expires)
+                .finish(),
+            EnrollGiven::NoDelegation => f.write_str("NoDelegation"),
+            EnrollGiven::Taken => f.write_str("Taken"),
+        }
+    }
+}
+
+impl std::fmt::Debug for EnrollRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EnrollRequest")
+            .field("ticket", &self.ticket.as_ref().map(|_| "…"))
+            .field("sandbox", &self.sandbox.as_ref().map(|_| "…"))
+            .field("noise", &self.noise)
+            .field("sign", &self.sign)
+            .field("at", &self.at)
+            .finish()
+    }
 }

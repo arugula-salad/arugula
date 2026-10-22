@@ -375,7 +375,9 @@ would pass. So the daemon doesn't take the root on control's word. Since
     Its *Devices and machines…* fingerprint and `control.json`'s
     `trust.root` should be the same; if not, `arugulad leave` and join
     again.
-- **Hosted sandboxes** skip the check: control creates the VM through
+- **Hosted machines** (step 5) join under a project's delegation instead
+  ([below](#hosted-machines-a-projects-delegation)).
+- **Hosted sandboxes** (M20, retired in M190) skip the check: control creates the VM through
   its provider and writes the sandbox's `control.json` itself
   (`crates/control/src/sandboxes.rs`). The operator runs that machine, so it
   can read it whatever the keys say. A sandbox is end to end encrypted
@@ -508,6 +510,112 @@ nothing is compared on the way.
   them trusts on first use again. Inviting them to a team by link (#762)
   avoids trusting control at all; the dialog says so beside *Verify*.
 
+### Hosted machines: a project's delegation
+
+A hosted machine (a Cloud workspace, step 5) is `arugulad` in a box the
+operator rents: nobody's device is there to approve its join. So an owner
+approves once per project instead ("Control enrolls hosted machines under
+a project delegation", aru-095; `arugula_e2e::hosted`,
+`crates/control/src/hosted.rs`). This changes what control can do, inside
+that project only.
+
+- **The delegation.** An owner's own device (a browser or the CLI: not a
+  machine, not a recovery code) signs `arugula project delegation v1`: the
+  project, its owner (`team:<id>` or `account:<id>`), control's hosted key
+  (Ed25519, in `/control.json` as `hosted_key`), when, and which device.
+  For a team's project the signer must be an owner in the roster; for a
+  personal project, a device of that account. Devices and machines… has
+  *Hosted machines*: *Allow* signs it, *Stop* revokes it. Control keeps it
+  beside the roster (`project_delegations`, in the hub, which holds the
+  rosters and device chains it's checked against).
+- **The key.** The hub makes its hosted key on first start and keeps it in
+  `settings`, as it keeps its VAPID key. It signs hosted machines'
+  certificates and nothing else. A new key ends every delegation (they
+  name the old one), and owners sign again.
+- **The enrollment.** When the platform makes a box, it asks the hub for
+  a one-time enrollment (`HubPort::hosted_enrollment`), bound to the
+  project and the workspace (`hw_…`), under the project's newest live
+  delegation. Two kinds, both once only:
+  - **a ticket**, made by the hub (32 random bytes), for the box's env
+    (`ARUGULA_HOSTED_TICKET`), good for 15 minutes: boxes started fresh,
+    loam, and testnet;
+  - **the box's sandbox id**, which the platform passes when it creates
+    the box, good for 2 minutes: a box started from a running snapshot
+    (E2B) can't read the env it was made with, but it can read its own
+    sandbox id (`/run/e2b/.E2B_SANDBOX_ID`). The box makes its key when it
+    first sees a new sandbox id. The sandbox id is a bearer secret for those
+    2 minutes: never logged, never in a URL. One enrollment per sandbox id,
+    ever.
+
+  The hub keeps only a hash of either (`hosted_enrollments`).
+- **Enrolling.** The box sends `POST /api/hosted/enroll` once: the ticket
+  or the sandbox id, its new public keys, and its signature over
+  `arugula hosted enroll v1` (the hash, its keys, the time), so it holds
+  the key it enrolls. The hub uses the enrollment up, checks that the
+  delegation is still live, and signs an `arugula hosted machine v1`
+  certificate with the hosted key: the project, its owner, the workspace,
+  the delegation, the machine's keys and name, when. **Fail closed:** a
+  second try is refused (409), even with the right key, and the machine
+  that used the enrollment is removed with it, since control can't tell
+  which of the two is the box; the platform hears it was taken
+  (`HubPort::hosted_enrolled`) and deletes the box. The platform recording
+  the same sandbox id for the same workspace again (a lost answer) gets the
+  same enrollment back; for another workspace, it's taken. A key is one machine's,
+  ever, and a workspace has one machine: enrolling a new box for it
+  removes the old one.
+- **What the box pins.** The enrollment's answer has the certificate, the
+  delegation and its revocations, and who's in the project: for a team's,
+  the team pin, the roster and members' certificates (it serves people as a
+  team machine does); for a personal one, the account's root and
+  certificates. `GET /api/hosted/trust` gives it again.
+- **Clients accept it for its project only** (`hosted::accept`,
+  `acceptHosted` in `web/src/shell/e2e/hosted.ts`). The directory lists a
+  hosted machine only to its project's people, with its certificate,
+  delegation and revocations; the page checks them against what it holds
+  itself (its team's roster and members' certificates, or its own
+  account's chain), not control's word for the machine:
+  - the delegation is signed by a device of one of the project's owners,
+    trusted now (an owner who leaves the owners, or a signing device that's
+    removed, takes the delegation with them: another owner signs again);
+  - the certificate is signed by the key the delegation names, for that
+    project and delegation, made after the delegation and before any
+    revocation of it;
+  - this account is in the project. A device outside it refuses the
+    machine even if it's shown one.
+
+  It's never one of an account's devices: its certificate is its own
+  domain, so `Trust::evaluate` never counts it, it approves nothing, and
+  its keys can't stand for a daemon or a browser of anyone's. The shell
+  shows it as **Hosted: the operator can read** wherever a machine's place
+  is shown.
+- **Routing.** Control routes to a hosted machine only its project's people
+  (a locked team's: its owners), never by a share, never as anyone's own
+  machine. Its signature opens only its own routes and the relay: every
+  route a daemon's signature opens refuses it. It isn't in `daemons`, so
+  nothing that reads a daemon's account (moves, shares, grants, Labs
+  flags) sees it.
+- **Revoking.** Any owner's device signs `arugula project delegation
+  revoke v1`. Nothing more enrolls under it, even an enrollment recorded
+  before. The machines enrolled before stay, as a revoked device's earlier
+  approvals do, until they're removed: by a project owner
+  (`DELETE /api/hosted/machines/{id}`) or when the platform deletes or
+  rebuilds the workspace (`HubPort::hosted_gone`, which also drops an
+  enrollment nobody used). A removed machine is
+  hung up on, and its key signs nothing here again.
+
+**What control can do with a delegation:** within that project, add
+machines the project's people will reach and type into, and read what runs
+in them (it runs the box). That's what the label says, and it's true of any
+VM: whoever runs it can read its memory. **What it can't:** add a hosted
+machine to a project nobody delegated, or after the delegation is revoked,
+without the project's people's pages refusing it; make a hosted machine
+count as anyone's device or approve one; reach any other machine or
+terminal of the project's people (their own machines check devices against
+their own chains, which the hosted key isn't in). **Accepted risks:**
+control writes the certificate's time, so a malicious control could
+backdate one past a revocation (it runs the boxes anyway); and the page's
+team roster is the one control serves, as for team machines.
+
 ## What holds against control
 
 Who can read your terminals, depending on what control (the hosted service,
@@ -521,6 +629,8 @@ or whoever runs yours) does:
 | lies at **join** about which account a machine joins | refused by the machine: the approving device's answer to the secret in its link doesn't match (an older daemon or CLI: caught by the account fingerprint, if you compare it) |
 | lies about which account a **new browser or phone** is approved into | refused by that device: the approving device's answer to the code it showed doesn't match (approved from a page from before codes: it shows the account fingerprint to check) |
 | lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
+| enrolls a **hosted machine** into a project an owner delegated | can read what runs in it: it runs the box (labelled "Hosted: the operator can read"). Only that project's people reach it, and nobody accepts it after the delegation is revoked |
+| enrolls a hosted machine into a project nobody delegated | refused by every client: no owner's device signed for that project |
 | serves a **modified web client** | can read what that client shows and use its keys while it runs |
 
 The last row is the important limit. The browser client at control's

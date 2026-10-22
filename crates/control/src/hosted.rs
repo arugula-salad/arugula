@@ -22,7 +22,7 @@
 use std::sync::Arc;
 
 use arugula_control_wire::hosted::{
-    DelegationPost, EnrollAsk, EnrollGiven, EnrollRequest, Enrollment, RevokePost, SANDBOX_MS, TICKET_MS,
+    DelegationPost, EnrollAsk, EnrollGiven, EnrollRequest, Enrolled, Enrollment, RevokePost, SANDBOX_MS, TICKET_MS,
 };
 use arugula_e2e::{
     Cert, Revocation, Trust,
@@ -43,7 +43,7 @@ use crate::{
     auth::{HostedAuth, Session, hash, token},
     db::{
         Db,
-        hosted::{DelegationRow, HostedRow, Taken},
+        hosted::{DelegationRow, HostedRow, Recorded, Taken},
     },
     err,
 };
@@ -207,23 +207,46 @@ pub(crate) fn ask(db: &Db, key: &str, a: &EnrollAsk) -> anyhow::Result<EnrollGiv
         }
     };
     let name: String = a.name.chars().filter(|c| !c.is_control()).take(64).collect();
-    let fresh =
-        db.add_enrollment(&hash(&credential), via, &a.project, &a.owner, &a.workspace, &name, &d.id(), now, expires)?;
-    if !fresh {
-        return Ok(EnrollGiven::Taken);
+    match db.add_enrollment(
+        &hash(&credential),
+        via,
+        &a.project,
+        &a.owner,
+        &a.workspace,
+        &name,
+        &d.id(),
+        now,
+        expires,
+    )? {
+        Recorded::New => {
+            info!(project = a.project, workspace = a.workspace, via, "a hosted enrollment recorded");
+            Ok(EnrollGiven::Ready { ticket, expires })
+        }
+        // Asked again for the same box (a lost answer): the same one.
+        Recorded::Again(expires) => Ok(EnrollGiven::Ready { ticket: None, expires }),
+        Recorded::Taken => Ok(EnrollGiven::Taken),
     }
-    info!(project = a.project, workspace = a.workspace, via, "a hosted enrollment recorded");
-    Ok(EnrollGiven::Ready { ticket, expires })
 }
 
-/// `HubPort::hosted_remove`: the platform deleted (or rebuilds) a
-/// workspace: its machine goes. How many did.
-pub(crate) fn remove_workspace(app: &App, workspace: &str) -> anyhow::Result<u32> {
-    let gone = app.db.remove_workspace(workspace, now_ms())?;
-    for id in &gone {
-        app.relay.drop_daemon(id);
+/// `HubPort::hosted_enrolled`: which of these workspaces' boxes enrolled,
+/// as which machine, and whose enrollment someone else tried too.
+pub(crate) fn enrolled(app: &App, workspaces: &[String]) -> anyhow::Result<Vec<Enrolled>> {
+    Ok(app
+        .db
+        .hosted_enrolled(workspaces)?
+        .into_iter()
+        .map(|(workspace, machine, taken)| Enrolled { workspace, machine: machine.unwrap_or_default(), taken })
+        .collect())
+}
+
+/// `HubPort::hosted_gone`: these workspaces' boxes are gone (deleted or
+/// made again): their machines leave the project and are hung up on, and
+/// enrollments nobody used are dropped.
+pub(crate) fn gone(app: &App, workspaces: &[String]) -> anyhow::Result<()> {
+    for id in app.db.hosted_gone(workspaces, now_ms())? {
+        app.relay.drop_daemon(&id);
     }
-    Ok(gone.len() as u32)
+    Ok(())
 }
 
 // ---------------------------------------------------------------- the box's side
@@ -288,7 +311,12 @@ pub async fn enroll(
         Taken::Fresh { project, owner, workspace, name, delegation } => (project, owner, workspace, name, delegation),
         // Fail closed: the box that finds its enrollment taken is deleted
         // by the platform.
-        Taken::Used => return Err(err(StatusCode::CONFLICT, "this enrollment was used already")),
+        Taken::Used(machine) => {
+            if let Some(m) = machine {
+                app.relay.drop_daemon(&m);
+            }
+            return Err(err(StatusCode::CONFLICT, "this enrollment was used already"));
+        }
         Taken::Missing => return Err(err(StatusCode::NOT_FOUND, "no such enrollment, or it ran out")),
     };
     // The delegation may have been revoked since the enrollment was made:
@@ -321,6 +349,7 @@ pub async fn enroll(
     for old in app.db.add_hosted(&cert, now)? {
         app.relay.drop_daemon(&old);
     }
+    app.db.enrolled_as(&credential, &cert.device)?;
     info!(project, workspace, device = cert.device, "a hosted machine enrolled");
     let row = HostedRow { cert, urls: vec![], last_seen: None };
     crate::reply(&enrollment(&app, &row)?)

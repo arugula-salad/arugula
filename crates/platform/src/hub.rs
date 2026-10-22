@@ -37,7 +37,7 @@ use std::collections::BTreeMap;
 use arugula_control_common::Principal;
 use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke},
-    hosted::{EnrollAsk, EnrollGiven},
+    hosted::{EnrollAsk, EnrollGiven, Enrolled},
 };
 use arugula_e2e::team::TeamRole;
 use futures_util::future::BoxFuture;
@@ -216,12 +216,22 @@ pub trait HubPort: Send + Sync {
         Box::pin(async { anyhow::bail!("this hub doesn't enroll hosted machines") })
     }
 
-    /// A hosted workspace is deleted or rebuilt (M178): its machine is
-    /// removed and hung up on. How many machines went. A hub from before
-    /// M178 can't.
-    fn hosted_remove<'a>(&'a self, workspace: &'a str) -> BoxFuture<'a, HubResult<u32>> {
-        let _ = workspace;
+    /// Of these hosted workspaces (M178), the ones whose box has enrolled,
+    /// and as which machine; and the ones whose enrollment someone tried
+    /// again (`taken`: fail closed, the platform deletes the box). A hub
+    /// from before M178 can't say.
+    fn hosted_enrolled<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<Vec<Enrolled>>> {
+        let _ = workspaces;
         Box::pin(async { anyhow::bail!("this hub doesn't enroll hosted machines") })
+    }
+
+    /// These hosted workspaces' boxes are gone (deleted, or made again,
+    /// M178): the machines they enrolled as leave their projects and are
+    /// hung up on, and an enrollment not yet used is dropped. A hub from
+    /// before M178 has none to drop.
+    fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
+        let _ = workspaces;
+        Box::pin(async { Ok(()) })
     }
 }
 

@@ -40,7 +40,7 @@ use tracing::Instrument as _;
 
 use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke, Standing},
-    hosted::{EnrollAsk, EnrollGiven},
+    hosted::{EnrollAsk, EnrollGiven, Enrolled},
 };
 
 use crate::{
@@ -228,8 +228,8 @@ struct SendAuthArgs {
 }
 
 #[derive(Serialize, Deserialize)]
-struct WorkspaceArgs {
-    workspace: String,
+struct WorkspacesArgs {
+    workspaces: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -365,8 +365,12 @@ impl HubPort for HttpHub {
         Box::pin(self.0.call("hosted_enrollment", ask.clone()))
     }
 
-    fn hosted_remove<'a>(&'a self, workspace: &'a str) -> BoxFuture<'a, HubResult<u32>> {
-        Box::pin(self.0.call("hosted_remove", WorkspaceArgs { workspace: workspace.to_owned() }))
+    fn hosted_enrolled<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<Vec<Enrolled>>> {
+        Box::pin(self.0.call("hosted_enrolled", WorkspacesArgs { workspaces: workspaces.to_vec() }))
+    }
+
+    fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
+        Box::pin(self.0.call("hosted_gone", WorkspacesArgs { workspaces: workspaces.to_vec() }))
     }
 }
 
@@ -458,7 +462,8 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
                 answer(hub.daemon_op(&a.daemon, &a.op).await?)?
             }
             "hosted_enrollment" => answer(hub.hosted_enrollment(&args::<EnrollAsk>(&body)?).await?)?,
-            "hosted_remove" => answer(hub.hosted_remove(&args::<WorkspaceArgs>(&body)?.workspace).await?)?,
+            "hosted_enrolled" => answer(hub.hosted_enrolled(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
+            "hosted_gone" => answer(hub.hosted_gone(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
             _ => return Ok(None),
         }))
     }

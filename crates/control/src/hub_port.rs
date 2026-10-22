@@ -307,8 +307,15 @@ impl HubPort for InProcess {
         })
     }
 
-    fn hosted_remove<'a>(&'a self, workspace: &'a str) -> BoxFuture<'a, HubResult<u32>> {
-        Box::pin(async move { crate::hosted::remove_workspace(&*self.app()?, workspace) })
+    fn hosted_enrolled<'a>(
+        &'a self,
+        workspaces: &'a [String],
+    ) -> BoxFuture<'a, HubResult<Vec<arugula_control_wire::hosted::Enrolled>>> {
+        Box::pin(async move { crate::hosted::enrolled(&*self.app()?, workspaces) })
+    }
+
+    fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
+        Box::pin(async move { crate::hosted::gone(&*self.app()?, workspaces) })
     }
 }
 
