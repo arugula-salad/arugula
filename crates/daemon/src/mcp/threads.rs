@@ -1,0 +1,299 @@
+//! Agents in conversations (M198): `list` kind `threads`, `read_thread`,
+//! `search_threads` and `post_thread`, over the team channels, DMs and
+//! object threads (an issue's comments, a PR's thread) that this machine's
+//! owner gave it grants for (M197).
+//!
+//! They live on control's platform, never here: each call is a
+//! `/api/daemon/chat/...` route signed with this machine's key, and the
+//! platform asks the machine's grants again every time (aru-091; M125 took
+//! the daemon's own threads out, and they stay out). What an agent posts
+//! is the owner's, labelled "<owner>'s agent on <machine>" for everyone.
+//! An `@` and this machine's name (`@geek`) mentions its agents where its
+//! `threads.read` grant reaches the room; `read_thread` with `mentions_only` reads those.
+//! Nothing wakes an agent on a mention.
+//!
+//! An agent a guest stands behind may not use them: they read and post as
+//! the owner.
+
+use std::time::Duration;
+
+use arugula_control_wire::chat::{AGENT_ROOMS, AGENT_SEARCH, agent_messages};
+use reqwest::Method;
+use rmcp::handler::server::common::schema_for_type;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use super::{
+    results::{ThreadScope, ThreadsReach},
+    tools::{Call, Kind, NoArgs, Out, done},
+};
+use crate::{control::CloudRefused, mux::Api};
+
+#[derive(Deserialize, JsonSchema)]
+pub struct ReadThreadArgs {
+    /// The room's id (list kind threads), or an issue's or PR's id
+    /// (iss_…, fi_…) for its thread.
+    pub room: String,
+    /// Messages after this seq, oldest first (a previous read's
+    /// next_after_seq). Without it or before_seq: the newest page.
+    #[serde(default)]
+    pub after_seq: Option<i64>,
+    /// The page before this seq.
+    #[serde(default)]
+    pub before_seq: Option<i64>,
+    /// At most this many (default 50, at most 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Only the messages that mention this machine's agents (@ and its
+    /// name).
+    #[serde(default)]
+    pub mentions_only: bool,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct PostThreadArgs {
+    /// The room's id (list kind threads), or an issue's or PR's id
+    /// (iss_…, fi_…) to comment on it.
+    pub room: String,
+    /// The message, in markdown; @login mentions a person there.
+    pub text: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SearchThreadsArgs {
+    /// Words (mea* for a prefix), with in:#channel, from:@login or
+    /// has:quote.
+    pub q: String,
+    /// Only one team's rooms (its id).
+    #[serde(default)]
+    pub team: Option<String>,
+}
+
+/// `list`'s kind.
+pub(crate) const LIST: Kind = Kind {
+    name: "threads",
+    description: "The conversations agents here may read or post in, through grants this machine's owner gave in Arugula control: team channels, their DMs, and the threads on issues and PRs. Each with its id, kind, name, newest seq, the newest seq that mentions this machine's agents, and what you may do there (threads.read, threads.post). Also what the grants reach.",
+    schema: schema_for_type::<NoArgs>,
+    flag: None,
+};
+
+pub(crate) const READ_TOOL: &str = "read_thread";
+pub(crate) const POST_TOOL: &str = "post_thread";
+pub(crate) const SEARCH_TOOL: &str = "search_threads";
+
+pub(crate) const READ_DESCRIPTION: &str = "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.";
+pub(crate) const POST_DESCRIPTION: &str = "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.";
+pub(crate) const SEARCH_DESCRIPTION: &str = "Search the conversations in Arugula control this machine's agents may read (threads.read): words (mea* a prefix), in:#channel, from:@login, has:quote. Newest first, at most 50.";
+
+/// What a refusal says to an agent.
+fn said(e: CloudRefused) -> String {
+    match e {
+        CloudRefused::NotJoined => "this machine hasn't joined Arugula control, where conversations live: ask your person to join it (Getting started on the web page, or `arugulad join`)".into(),
+        CloudRefused::OldControl | CloudRefused::Said { status: 405, .. } => {
+            "this Arugula control doesn't have agents in conversations yet".into()
+        }
+        e => e.to_string(),
+    }
+}
+
+/// `#general`, `DM with Sam`, `issue #12`.
+fn room_name(r: &Value) -> String {
+    let name = r["name"].as_str().unwrap_or("?");
+    match r["kind"].as_str() {
+        Some("channel") => format!("#{name}"),
+        Some("dm") => format!("DM with {}", r["with"]["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("?")),
+        _ => name.to_owned(),
+    }
+}
+
+/// Who wrote it: a person, or "<owner>'s agent on <machine>".
+fn by(m: &Value) -> String {
+    let name = m["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("someone");
+    match m["agent"]["machine_name"].as_str() {
+        Some(machine) => format!("{name}'s agent on {machine}"),
+        None => name.to_owned(),
+    }
+}
+
+/// A message as an agent reads it.
+fn message(m: &Value, mention: &str) -> Value {
+    json!({
+        "seq": m["seq"], "at": m["at"], "by": by(m), "author": m["author"], "agent": m["agent"],
+        "text": m["text"], "quote": m["quote"], "deleted": m["deleted"].is_u64(),
+        "mentions_you": m["mentions"].as_array().is_some_and(|a| a.iter().any(|x| x == mention)),
+    })
+}
+
+fn query(pairs: &[(&str, String)]) -> String {
+    let mut q = url::form_urlencoded::Serializer::new(String::new());
+    for (k, v) in pairs {
+        q.append_pair(k, v);
+    }
+    q.finish()
+}
+
+impl Call<'_> {
+    /// They read and post as this machine's owner: only the owner's own
+    /// agents may.
+    async fn owners_agent(&self, tool: &str) -> Result<(), String> {
+        if let Some(me) = self.me()
+            && self.app().mux.api(|r| Api::GuestBehind(me, r)).await.flatten().is_some()
+        {
+            return Err(format!("{tool} reads and posts as this machine's owner: only their own agents may"));
+        }
+        Ok(())
+    }
+
+    async fn threads_call(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
+        self.app().control.cloud(method, path, body.as_ref()).await.map_err(said)
+    }
+
+    /// How this machine's agents are named in a message's mentions.
+    fn mention(&self) -> String {
+        let id = self.app().control.enrolled().map(|e| e.keys.id()).unwrap_or_default();
+        format!("{}{id}", arugula_control_wire::chat::AGENT_MENTION)
+    }
+
+    /// `list` kind `threads`.
+    pub(crate) async fn list_threads(&self) -> Out {
+        self.owners_agent("list kind threads").await?;
+        let v = self.threads_call(Method::GET, AGENT_ROOMS, None).await?;
+        let rooms = v["rooms"].as_array().cloned().unwrap_or_default();
+        let summary = match rooms.len() {
+            0 => "No conversations: this machine's owner hasn't given its agents a thread grant (`arugula grants add <machine> threads.read --project <id>` or `--dms`, or Settings, Agents in conversations, on the platform page).".to_owned(),
+            n => format!(
+                "{n}: {}",
+                rooms
+                    .iter()
+                    .map(|r| {
+                        let mut s = format!("{} {} ({})", r["id"].as_str().unwrap_or("?"), room_name(r), r["powers"]
+                            .as_array()
+                            .map(|p| p.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "))
+                            .unwrap_or_default());
+                        if let Some(m) = r["last_mention"].as_i64() {
+                            s += &format!(", mentioned you at seq {m} of {}", r["last"]);
+                        }
+                        s
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ),
+        };
+        done(summary, json!({ "threads": rooms, "reach": v["reach"] }))
+    }
+
+    /// `read_thread`.
+    pub(crate) async fn read_thread(&self, a: ReadThreadArgs) -> Out {
+        self.owners_agent(READ_TOOL).await?;
+        let mut q = vec![];
+        if let Some(s) = a.after_seq {
+            q.push(("after", s.to_string()));
+        } else if let Some(s) = a.before_seq {
+            q.push(("before", s.to_string()));
+        }
+        if let Some(l) = a.limit {
+            q.push(("limit", l.to_string()));
+        }
+        if a.mentions_only {
+            q.push(("mentions", "true".to_owned()));
+        }
+        let path = format!("{}?{}", agent_messages(a.room.trim()), query(&q));
+        let v = self.threads_call(Method::GET, &path, None).await?;
+        let me = self.mention();
+        let messages: Vec<Value> = v["messages"].as_array().into_iter().flatten().map(|m| message(m, &me)).collect();
+        let room = &v["room"];
+        let next =
+            messages.last().map_or_else(|| a.after_seq.map_or(room["last"].clone(), Value::from), |m| m["seq"].clone());
+        let lines: Vec<String> = messages
+            .iter()
+            .map(|m| {
+                format!("[{}] {}: {}", m["seq"], m["by"].as_str().unwrap_or("?"), m["text"].as_str().unwrap_or(""))
+            })
+            .collect();
+        let summary = format!(
+            "{} ({}), {} message(s){}{}",
+            room_name(room),
+            room["id"].as_str().unwrap_or("?"),
+            messages.len(),
+            if a.mentions_only { " that mention you" } else { "" },
+            if lines.is_empty() { String::new() } else { format!(":\n{}", lines.join("\n")) },
+        );
+        done(summary, json!({ "room": room, "messages": messages, "more": v["more"], "next_after_seq": next }))
+    }
+
+    /// `post_thread`.
+    pub(crate) async fn post_thread(&self, a: PostThreadArgs) -> Out {
+        self.owners_agent(POST_TOOL).await?;
+        let body = json!({ "text": a.text });
+        let v = self.threads_call(Method::POST, &agent_messages(a.room.trim()), Some(body)).await?;
+        let mut summary =
+            format!("Posted as seq {} in {}, labelled as your person's agent on this machine", v["seq"], a.room.trim());
+        if let Some(u) = v["unreached"].as_array().filter(|u| !u.is_empty()) {
+            let words: Vec<&str> = u.iter().filter_map(Value::as_str).collect();
+            summary += &format!(" (@{} reached nobody there)", words.join(", @"));
+        }
+        done(summary, v)
+    }
+
+    /// `search_threads`.
+    pub(crate) async fn search_threads(&self, a: SearchThreadsArgs) -> Out {
+        self.owners_agent(SEARCH_TOOL).await?;
+        let mut q = vec![("q", a.q)];
+        if let Some(t) = a.team {
+            q.push(("team", t));
+        }
+        let v = self.threads_call(Method::GET, &format!("{AGENT_SEARCH}?{}", query(&q)), None).await?;
+        let me = self.mention();
+        let found: Vec<Value> = v["found"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|h| json!({ "room": h["room"], "message": message(&h["message"], &me) }))
+            .collect();
+        let summary = match found.len() {
+            0 => "Nothing found.".to_owned(),
+            n => format!(
+                "{n}: {}",
+                found
+                    .iter()
+                    .map(|h| format!(
+                        "{} [{}] {}: {}",
+                        h["room"].as_str().unwrap_or("?"),
+                        h["message"]["seq"],
+                        h["message"]["by"].as_str().unwrap_or("?"),
+                        h["message"]["text"].as_str().unwrap_or("")
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+        };
+        done(summary, json!({ "found": found }))
+    }
+
+    /// Whether thread tools are live here, for `capabilities`: joined, and
+    /// a live thread grant over something its owner reads.
+    pub(super) async fn threads_reach(&self) -> ThreadsReach {
+        let asked =
+            tokio::time::timeout(Duration::from_secs(3), self.app().control.cloud_now(Method::GET, AGENT_ROOMS, None));
+        let v = match asked.await {
+            Ok(Ok(v)) => v,
+            Ok(Err(e)) => return ThreadsReach { live: false, scopes: vec![], note: said(e) },
+            Err(_) => {
+                return ThreadsReach {
+                    live: false,
+                    scopes: vec![],
+                    note: "Arugula control didn't answer in time".into(),
+                };
+            }
+        };
+        let scopes: Vec<ThreadScope> = serde_json::from_value(v["reach"].clone()).unwrap_or_default();
+        let live = scopes.iter().any(|s| s.powers.iter().any(|p| p.starts_with("threads.")));
+        let note = if live {
+            "read_thread, search_threads and post_thread reach these (list kind threads lists the rooms). Your posts are labelled as your person's agent on this machine; nothing wakes you on a mention.".into()
+        } else {
+            "This machine's owner hasn't given its agents a thread grant: `arugula grants add <machine> threads.read --project <id>` (or --dms), or Settings, Agents in conversations, on the platform page.".into()
+        };
+        ThreadsReach { live, scopes, note }
+    }
+}

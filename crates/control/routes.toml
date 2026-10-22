@@ -830,6 +830,40 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 
+# A machine's agents in conversations (M198): MCP's thread tools list,
+# read, search and post in the rooms its owner's grants reach (M197:
+# `threads.read`, `threads.post`), asked again on every call. `{id}` is a
+# room's id, or an object's global id for its thread.
+
+[[route]]
+method = "GET"
+path = "/api/daemon/chat/rooms"  # wire::chat::AGENT_ROOMS
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "GET"
+path = "/api/daemon/chat/rooms/{id}/messages"  # wire::chat::agent_messages
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/daemon/chat/rooms/{id}/messages"  # wire::chat::agent_messages
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Labelled as the owner's agent on the machine; nobody is woken."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/chat/search"  # wire::chat::AGENT_SEARCH
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+
 # ---- platform: Cloud
 
 [[route]]

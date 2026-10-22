@@ -22,7 +22,7 @@ use arugula_proto::{
     forge::{Draft, ForgeWant},
 };
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[cfg(feature = "labs")]
@@ -381,6 +381,34 @@ pub struct ControlJoined {
     pub teams: Vec<String>,
     /// Whether you can drive the user's Cloud workspaces from here.
     pub cloud: CloudReach,
+    /// Whether you can read and post in the user's conversations from here
+    /// (M198).
+    pub threads: ThreadsReach,
+}
+
+/// The conversations in control that agents here reach (M198): through
+/// grants this machine's owner gave it.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ThreadsReach {
+    /// This machine is joined to control and holds a live thread grant
+    /// (threads.read or threads.post) over something its owner reads.
+    pub live: bool,
+    /// What its grants reach.
+    pub scopes: Vec<ThreadScope>,
+    /// What to use, or why not.
+    pub note: String,
+}
+
+/// A scope a machine's agent grants reach.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ThreadScope {
+    /// `project` (its channels, issues and their threads) or `account`
+    /// (the owner's DMs).
+    pub kind: String,
+    pub id: String,
+    pub name: String,
+    /// threads.read, threads.post, issues.write.
+    pub powers: Vec<String>,
 }
 
 /// The owner's Cloud workspaces in control, as agents here reach them

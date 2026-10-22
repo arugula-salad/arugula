@@ -89,6 +89,13 @@ fn prefix(target: &str) -> Option<Prefix> {
     }
 }
 
+/// Whether `target` is an object's global id by its shape (`iss_…`,
+/// `fi_…`, `cw_…`), not a room's: an agent names an object's thread by it
+/// (M198).
+pub(super) fn is_object(target: &str) -> bool {
+    prefix(target).is_some()
+}
+
 /// The objects these ids name, by id: one statement per kind for all of
 /// them. An id that names nothing (an unknown prefix, a row that isn't
 /// there, an unlinked repo's item, a workspace for now) isn't in the map.

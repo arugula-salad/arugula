@@ -21,6 +21,7 @@ just testnet test control cli  # M49: the CLI logged in, reaching a direct and a
 just testnet test control team # #254: the CLI reaching a team machine of another account
 just testnet test control platform # M140: chat and Cloud through control's own site
 just testnet test control platform-page # M151: the platform page on app.control.test
+just testnet test control agents # M198: a box's agent reads and posts in a channel over MCP, granted
 ARUGULA_TESTNET_PLATFORM=out just testnet up control  # the platform out of process (M140)
 just testnet test control platform-restart  # out of process: a relayed session outlives a platform restart
 just testnet test control github-webhook    # out of process: the GitHub App's webhook lands on the platform (M161)

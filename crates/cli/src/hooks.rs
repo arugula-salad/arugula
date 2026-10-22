@@ -92,6 +92,8 @@ const READ_RULES: &[&str] = &[
     "mcp__arugula__read_invite",
     "mcp__arugula__read_file",
     "mcp__arugula__read_cloud",
+    "mcp__arugula__read_thread",
+    "mcp__arugula__search_threads",
 ];
 
 /// What `install` adds beside [`READ_RULES`], without `--allow-acting`
@@ -139,6 +141,7 @@ const ACTING_RULES: &[&str] = &[
     "mcp__arugula__device_call",
     "mcp__arugula__cloud",
     "mcp__arugula__link_repo",
+    "mcp__arugula__post_thread",
 ];
 
 #[derive(Subcommand)]
@@ -803,6 +806,8 @@ mod tests {
             "mcp__arugula__read_invite",
             "mcp__arugula__read_file",
             "mcp__arugula__read_cloud",
+            "mcp__arugula__read_thread",
+            "mcp__arugula__search_threads",
         ];
         assert_eq!(READ_RULES, read);
         let acting_cli = [

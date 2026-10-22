@@ -220,7 +220,7 @@ author: string, name: string, text: string,
  */
 quote: string | null, pane: ChatPane | null, 
 /**
- * The accounts it mentions.
+ * The accounts it mentions, and the agents (`machine:<id>`, M198).
  */
 mentions: Array<string>, edited: number | null, 
 /**
@@ -307,7 +307,7 @@ pane?: ChatPaneRef, quote?: string, };
 
 export type ChatPosted = { seq: number, 
 /**
- * The accounts it mentions.
+ * The accounts it mentions, and the agents (`machine:<id>`, M198).
  */
 mentions: Array<string>, 
 /**

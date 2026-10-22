@@ -199,7 +199,7 @@ pub struct ChatMessage {
     /// Lines the poster chose from a pane, copied in (decision 1).
     pub quote: Option<String>,
     pub pane: Option<ChatPane>,
-    /// The accounts it mentions.
+    /// The accounts it mentions, and the agents (`machine:<id>`, M198).
     pub mentions: Vec<String>,
     pub edited: Option<u64>,
     /// When it was deleted: its text, quote and pane are gone.
@@ -312,7 +312,7 @@ pub struct ChatPushed {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatPosted {
     pub seq: i64,
-    /// The accounts it mentions.
+    /// The accounts it mentions, and the agents (`machine:<id>`, M198).
     pub mentions: Vec<String>,
     /// `@words` that named nobody who sees the room.
     pub unreached: Vec<String>,
@@ -530,3 +530,98 @@ pub struct ChatImported {
 /// daemon with more sends several, a long thread in parts, oldest first.
 pub const MAX_IMPORT_ROOMS: usize = 500;
 pub const MAX_IMPORT_BODY: usize = 768 << 10;
+
+// ---------------------------------------------------------------- agents
+
+/// The rooms a machine's agents reach (`GET`, M198): every team channel,
+/// DM and object thread its owner's live `threads.read` or `threads.post`
+/// grants reach, [`AgentRooms`]. Signed by the machine; MCP's thread tools
+/// call it, and the rest below.
+pub const AGENT_ROOMS: &str = "/api/daemon/chat/rooms";
+
+/// Searching the rooms an agent may read (`GET`, [`ChatSearchQuery`]),
+/// answered [`ChatFound`].
+pub const AGENT_SEARCH: &str = "/api/daemon/chat/search";
+
+/// A room's messages as an agent reads them (`GET`,
+/// [`AgentMessagesQuery`], answered [`AgentMessages`]), and an agent's
+/// post there (`POST` a [`ChatPost`], answered [`ChatPosted`]). `room` is
+/// a room's id, or an object's global id (`iss_…`, `fi_…`) for its thread,
+/// made the first time.
+pub fn agent_messages(room: &str) -> String {
+    format!("{AGENT_ROOMS}/{room}/messages")
+}
+
+/// How a message's `mentions` names a machine's agents: `machine:` and the
+/// machine's id. An `@` and the machine's name (`@geek`, `@geek's agent`)
+/// mentions them where their `threads.read` grant reaches the room. Nobody is
+/// pushed for it, and nothing wakes an agent: they read it with
+/// [`AgentMessagesQuery::mentions`].
+pub const AGENT_MENTION: &str = "machine:";
+
+/// [`AGENT_ROOMS`]' answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentRooms {
+    pub rooms: Vec<AgentRoom>,
+    /// What the machine's live agent grants reach, among what its owner
+    /// reads now.
+    pub reach: Vec<AgentReach>,
+}
+
+/// A room as a machine's agents see it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentRoom {
+    pub id: String,
+    pub kind: ChatKind,
+    /// A channel's or DM's team.
+    pub team: Option<String>,
+    /// A channel's name (without `#`), or an object thread's (`issue #12`).
+    pub name: String,
+    /// An object thread's global id, and its project.
+    pub target: Option<String>,
+    pub project: Option<String>,
+    /// A DM's other person.
+    pub with: Option<ChatPerson>,
+    /// The newest message's number, and the newest that mentions this
+    /// machine's agents.
+    pub last: i64,
+    pub last_mention: Option<i64>,
+    /// `threads.read`, `threads.post`.
+    pub powers: Vec<String>,
+    /// Whether its agents may post here now.
+    pub writable: bool,
+}
+
+/// A scope a machine's agent grants reach.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentReach {
+    /// `project` (its issues and object threads; a team's default
+    /// project, its channels too) or `account` (the owner's DMs).
+    pub kind: String,
+    pub id: String,
+    /// The project's name, or `your DMs`.
+    pub name: String,
+    /// `threads.read`, `threads.post`, `issues.write`.
+    pub powers: Vec<String>,
+}
+
+/// A page of [`agent_messages`]: as [`ChatMessagesQuery`], and `mentions`
+/// for only those that mention this machine's agents.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentMessagesQuery {
+    #[serde(default)]
+    pub after: Option<i64>,
+    #[serde(default)]
+    pub before: Option<i64>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+    #[serde(default)]
+    pub mentions: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentMessages {
+    pub room: AgentRoom,
+    pub messages: Vec<ChatMessage>,
+    pub more: bool,
+}

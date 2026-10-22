@@ -135,6 +135,15 @@
 #           job once its lease runs out (not before, and within seconds
 #           after), and sets the workspace up. Broken: the other machine is
 #           paused too, so nothing takes it.
+#   agents  Agents in conversations (M198), signed by a joined box's daemon:
+#           box-systemd joins a person's account; they give it threads.read
+#           and threads.post over their team's project and @mention it in a
+#           channel. `arugula mcp` on the box (over ssh, as Claude runs it)
+#           finds the mention with read_thread, answers with post_thread,
+#           and its capabilities say thread tools are live; the person
+#           reads the answer labelled as their agent on box-systemd; after
+#           the read grant is revoked, read_thread is refused. Broken: no
+#           grant given, so the box's first read is refused.
 #
 # Needs `testnet/up.sh <profile>` first. Exit codes: 0 every claim held, 1 a
 # claim failed or there's no Docker (ARUGULA_SKIP_DOCKER=1 makes that a
@@ -148,7 +157,7 @@ PROFILE="${1:-ssh}"; shift || true
 CFG="$STATE/ssh_config"
 BREAK="${BREAK:-}"
 SSH_CLAIMS="login jump no-route bare bytes agent linger"
-CONTROL_CLAIMS="signin reach relay unreachable cli team platform platform-page"
+CONTROL_CLAIMS="signin reach relay unreachable cli team platform platform-page agents"
 
 need_docker
 
@@ -608,6 +617,15 @@ claim_platform() {
 
 # The platform page on its own host (M151). Every answer there has the
 # page's headers and no Set-Cookie.
+claim_agents() {
+  local box=box-systemd fp
+  fresh "$box" || { note "agents: couldn't recreate $box"; return 1; }
+  fp="$(signin "agents-$$-$RANDOM" | field fingerprint)"
+  [ -n "$fp" ] || { note "agents: no device signed in"; return 1; }
+  join_box "$box" "$fp" || return 1
+  plat agents "$box" "$CFG" ${BREAK:+--break} > "$WORK/agents.json" || { note "agents: through MCP on $box:"; return 1; }
+}
+
 claim_platform_page() {
   local host="${PLATFORM_HOST:-app.control.test}" ctl="${CONTROL_URL#http://}" port="$ARUGULA_TESTNET_CONTROL_PORT" rc=0 js p
   local csp="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
