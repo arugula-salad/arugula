@@ -440,14 +440,17 @@ impl Db {
 }
 
 /// What deleting an account takes from here, inside the platform's
-/// `account_deleted` transaction: its personal projects, its place in every
+/// `account_deleted` transaction: its personal projects (and their keys and
+/// secrets, [`crate::keys::erase_projects`]), its place in every
 /// team's projection, the disbanded teams' projects and projections, and
 /// grants to its machines, over it, or that it gave.
 pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> anyhow::Result<()> {
     let account = &d.account;
+    crate::keys::erase_projects(c, "SELECT id FROM projects WHERE account_id = ?1", account)?;
     c.execute("DELETE FROM projects WHERE account_id = ?1", params![account])?;
     c.execute("DELETE FROM team_members WHERE account_id = ?1", params![account])?;
     for t in &d.disbanded {
+        crate::keys::erase_projects(c, "SELECT id FROM projects WHERE team_id = ?1", t)?;
         c.execute("DELETE FROM projects WHERE team_id = ?1", params![t])?;
         c.execute("DELETE FROM team_members WHERE team_id = ?1", params![t])?;
     }

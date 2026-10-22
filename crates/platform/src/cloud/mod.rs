@@ -51,6 +51,10 @@ pub struct Args {
     /// Separate 32-byte hex encryption key for user cloud secrets. Back up with deployment secrets.
     #[arg(long, env = "ARUGULA_CLOUD_SECRET_KEY", hide_env_values = true)]
     pub cloud_secret_key: Option<String>,
+    /// The master key before this one, only while it's rotated
+    /// (docs/control-ops.md): it still opens what it wrapped.
+    #[arg(long, env = "ARUGULA_CLOUD_SECRET_KEY_PREVIOUS", hide_env_values = true)]
+    pub cloud_secret_key_previous: Option<String>,
     /// Limited beta allowlist; empty disables access for all accounts.
     #[arg(long, env = "ARUGULA_CLOUD_ACCOUNTS", value_delimiter = ',')]
     pub cloud_accounts: Vec<String>,
@@ -76,6 +80,16 @@ pub struct Args {
 }
 
 impl Args {
+    /// The master key these flags give (M209: it wraps each project's data
+    /// key, [`crate::keys`]), with the previous one while it's rotated.
+    pub fn master_key(&self) -> Result<Option<secrets::SecretCipher>> {
+        self.cloud_secret_key
+            .as_deref()
+            .filter(|k| !k.is_empty())
+            .map(|k| secrets::SecretCipher::new(k)?.with_previous(self.cloud_secret_key_previous.as_deref()))
+            .transpose()
+    }
+
     /// The Cloud these flags set up: none without a Managoat key.
     pub fn cloud(self) -> Result<Option<Cloud>> {
         for (name, set) in [
@@ -87,9 +101,10 @@ impl Args {
                 tracing::warn!("{name} does nothing: Cloud runs were retired, and Cloud workspaces have no caps");
             }
         }
+        let secret_cipher = self.master_key()?;
         Ok(match self.cloud_provider_key.filter(|k| !k.is_empty()) {
             Some(key) => Some(Cloud {
-                secret_cipher: self.cloud_secret_key.as_deref().map(secrets::SecretCipher::new).transpose()?,
+                secret_cipher,
                 provider: provider::Provider::new(&self.cloud_provider_url, key)?,
                 accounts: self.cloud_accounts,
                 models: configured_models(self.cloud_model, self.cloud_runtime, &self.cloud_models)?,
@@ -455,7 +470,14 @@ pub async fn put_secret(
         return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "secret limit reached"));
     }
     let project = personal_project(&app, &session.account).await?;
-    app.db.put_cloud_secret(&session.account, &project, &name, &cipher.seal(&session.account, &name, &input.value)?)?;
+    let sealed = crate::keys::seal_value(
+        &app.db.c(),
+        cipher,
+        &project,
+        &crate::keys::cloud_name(&session.account, &name),
+        &input.value,
+    )?;
+    app.db.put_cloud_secret(&session.account, &project, &name, &sealed)?;
     app.analytics.capture(&session.account, "cloud secret saved", json!({}));
     Ok(Json(json!({"name":name})))
 }

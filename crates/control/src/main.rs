@@ -448,6 +448,8 @@ fn platform(
     p.cloud = cloud;
     p.github = github;
     p.compute = compute;
+    // The master key (M209), which the hosted config was given.
+    p.secret_key = hosted.cipher.clone();
     p.hosted = hosted;
     (gateway::PlatformAt::InProcess(Arc::new(p)), hub)
 }
@@ -968,7 +970,7 @@ async fn run() -> anyhow::Result<()> {
     let (platform, hub_port) = if a.platform == "in-process" {
         // A second connection to the same file: the platform never reads
         // the hub's tables (#1153).
-        let hosted = a.hosted.clone().config(a.cloud.cloud_secret_key.as_deref())?;
+        let hosted = a.hosted.clone().config(a.cloud.master_key()?.map(Arc::new))?;
         let cloud = a.cloud.cloud()?;
         let cfg = arugula_platform::Config {
             public_url: public_url.clone(),
@@ -1080,6 +1082,7 @@ async fn run() -> anyhow::Result<()> {
     if let Some(p) = app.platform.local() {
         arugula_platform::cloud::start(p);
         arugula_platform::hosted::start(p);
+        arugula_platform::keys::start(p);
         // Chat follows the hub's change feed (M138), and so do projects and
         // grants: a machine that joins gets its `cloud.drive` grant from it.
         arugula_platform::chat::start(p);

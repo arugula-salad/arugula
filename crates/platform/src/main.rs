@@ -116,9 +116,13 @@ struct Args {
 fn main() -> anyhow::Result<()> {
     // `copy`, `checksums`, `secrets-check`, `migrations`: a window's tools
     // (window.rs, M141, M145), run on the platform's machine beside the
-    // server, and by the nightly dump.
+    // server, and by the nightly dump. `rotate-key`: the master key's
+    // rotation (M209, `keys::rotate`).
     let mut argv = std::env::args().skip(1).peekable();
-    if argv.peek().is_some_and(|a| ["copy", "checksums", "secrets-check", "migrations"].contains(&a.as_str())) {
+    if argv
+        .peek()
+        .is_some_and(|a| ["copy", "checksums", "secrets-check", "migrations", "rotate-key"].contains(&a.as_str()))
+    {
         return arugula_platform::window::run("arugula-platform", argv);
     }
     tokio::runtime::Builder::new_multi_thread().enable_all().build()?.block_on(run())
@@ -166,7 +170,8 @@ async fn run() -> anyhow::Result<()> {
     }
     let mut p = Platform::new(cfg, db, hub, http, analytics);
     p.stripe = a.billing.stripe()?;
-    p.hosted = a.hosted.config(a.cloud.cloud_secret_key.as_deref())?;
+    p.secret_key = a.cloud.master_key()?.map(Arc::new);
+    p.hosted = a.hosted.config(p.secret_key.clone())?;
     p.cloud = a.cloud.cloud()?;
     p.compute = a.compute.substrate()?;
     p.github = a.github_app.app(&a.github_api)?;
@@ -177,6 +182,7 @@ async fn run() -> anyhow::Result<()> {
     }
     arugula_platform::cloud::start(&p);
     arugula_platform::hosted::start(&p);
+    arugula_platform::keys::start(&p);
     // Chat follows the hub's change feed, and so do projects and grants (a
     // machine that joins gets its `cloud.drive` grant from it).
     arugula_platform::chat::start(&p);

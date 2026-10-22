@@ -597,28 +597,16 @@ fn check(report: &Report, from: &Place, to: &Place) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Cloud secrets at `at` that open with `key`, and the `(account, name)`
-/// of each that doesn't, as [`super::secrets_open`] does for a file.
-pub fn secrets_open(at: &Place, key: &str) -> anyhow::Result<(u64, Vec<(String, String)>)> {
+/// Secrets at `at` that open with `key`, as [`super::secrets_open`] does
+/// for a file.
+pub fn secrets_open(at: &Place, key: &str) -> anyhow::Result<crate::keys::Checked> {
     match at {
         Place::File(path) => super::secrets_open(path, key),
         Place::Postgres(url) => {
             let cipher = crate::cloud::secrets::SecretCipher::new(key)?;
             let db = open_as_is(at, url)?;
             anyhow::ensure!(db.dialect() == Dialect::Postgres, "not Postgres");
-            let rows: Vec<(String, String, Vec<u8>)> = db.c().query_map(
-                "SELECT account, name, sealed FROM cloud_secrets ORDER BY account, name",
-                params![],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )?;
-            let (mut opened, mut failed) = (0, Vec::new());
-            for (account, name, sealed) in rows {
-                match cipher.open(&account, &name, &sealed) {
-                    Ok(_) => opened += 1,
-                    Err(_) => failed.push((account, name)),
-                }
-            }
-            Ok((opened, failed))
+            crate::keys::check(&db.c(), &cipher)
         }
     }
 }

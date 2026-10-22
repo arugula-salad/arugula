@@ -339,22 +339,11 @@ fn read_only(path: &Path) -> anyhow::Result<Connection> {
     Ok(c)
 }
 
-/// Cloud secrets in the file at `path` that open with `key`, and the
-/// `(account, name)` of each that doesn't. Values are never kept.
-pub fn secrets_open(path: &Path, key: &str) -> anyhow::Result<(u64, Vec<(String, String)>)> {
+/// Secrets in the file at `path` and the project keys that seal them,
+/// tried with `key` ([`crate::keys::check`]). Values are never kept.
+pub fn secrets_open(path: &Path, key: &str) -> anyhow::Result<crate::keys::Checked> {
     let cipher = crate::cloud::secrets::SecretCipher::new(key)?;
-    let c = read_only(path)?;
-    let mut q = c.prepare("SELECT account, name, sealed FROM cloud_secrets ORDER BY account, name")?;
-    let rows = q.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Vec<u8>>(2)?)))?;
-    let (mut opened, mut failed) = (0, Vec::new());
-    for row in rows {
-        let (account, name, sealed) = row?;
-        match cipher.open(&account, &name, &sealed) {
-            Ok(_) => opened += 1,
-            Err(_) => failed.push((account, name)),
-        }
-    }
-    Ok((opened, failed))
+    crate::keys::check(&read_only(path)?, &cipher)
 }
 
 /// `var` as the running server (this same binary, not this command) has
@@ -384,7 +373,7 @@ fn running_env(var: &str) -> Option<(u32, String)> {
 
 /// The first words that make either binary run one of these instead of
 /// serving (and `platform`, control's prefix for them).
-pub const COMMANDS: [&str; 5] = ["copy", "checksums", "secrets-check", "migrations", "platform"];
+pub const COMMANDS: [&str; 6] = ["copy", "checksums", "secrets-check", "migrations", "rotate-key", "platform"];
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -434,17 +423,39 @@ enum What {
         #[arg(long)]
         db: Place,
     },
-    /// Whether every cloud secret in the database opens with the cloud
-    /// secret key: the running server's, else ARUGULA_CLOUD_SECRET_KEY
-    /// here. Prints no value.
+    /// Whether every secret in the database, and every project key that
+    /// seals them, opens with the master key: the running server's
+    /// ARUGULA_CLOUD_SECRET_KEY, else this shell's. Prints no value.
     SecretsCheck {
         /// A file, or a `postgres://` URL.
         #[arg(long)]
         db: Place,
     },
+    /// Rotate the master key (M209): re-wrap every project key with the
+    /// new one, ARUGULA_CLOUD_SECRET_KEY, that the old one,
+    /// ARUGULA_CLOUD_SECRET_KEY_PREVIOUS, wrapped; both the running
+    /// server's, else this shell's. No secret is touched. Safe to run
+    /// again. docs/control-ops.md has the runbook.
+    RotateKey {
+        /// A file, or a `postgres://` URL, at this build's migrations.
+        #[arg(long)]
+        db: Place,
+    },
 }
 
-/// `<prog> copy|checksums|secrets-check …`: `prog` is how the operator
+/// `var` as the running server has it, else as this shell does, and
+/// whose it is.
+fn key_from(var: &str) -> anyhow::Result<Option<(String, String)>> {
+    Ok(match running_env(var) {
+        Some((pid, k)) if !k.is_empty() => Some((k, format!("the running server's (pid {pid})"))),
+        _ => match std::env::var(var) {
+            Ok(k) if !k.is_empty() => Some((k, format!("{var} in this shell"))),
+            _ => None,
+        },
+    })
+}
+
+/// `<prog> copy|checksums|secrets-check|migrations|rotate-key …`: `prog` is how the operator
 /// called it (`arugula-platform`, or `arugula-control platform`).
 pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()> {
     let a = Args::parse_from(std::iter::once(prog.to_owned()).chain(args));
@@ -478,25 +489,51 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
         }
         What::SecretsCheck { db } => {
             const VAR: &str = "ARUGULA_CLOUD_SECRET_KEY";
-            let (key, whose) = match running_env(VAR) {
-                Some((pid, k)) => (k, format!("the running server's (pid {pid})")),
-                None => match std::env::var(VAR) {
-                    Ok(k) if !k.is_empty() => (k, format!("{VAR} in this shell")),
-                    _ => bail!("no {VAR}: neither the running server nor this shell has one"),
-                },
+            let Some((key, whose)) = key_from(VAR)? else {
+                bail!("no {VAR}: neither the running server nor this shell has one")
             };
-            let (opened, failed) = portable::secrets_open(&db, &key)?;
-            println!("cloud secrets in {db}, with {whose} key:");
-            println!("  {opened} open");
-            for (account, name) in &failed {
-                println!("  doesn't open: {account} {name}");
+            let checked = portable::secrets_open(&db, &key)?;
+            println!("secrets in {db}, with {whose} key:");
+            println!("  {} open", checked.opened);
+            if checked.by_master > 0 {
+                println!("  {} of them sealed with the master key itself, still to be re-sealed", checked.by_master);
             }
-            if !failed.is_empty() {
-                bail!("{} of {} cloud secrets don't open with this key", failed.len(), opened + failed.len() as u64);
+            for (owner, name) in &checked.failed {
+                println!("  doesn't open: {owner} {name}");
             }
-            if opened == 0 {
+            if !checked.failed.is_empty() {
+                bail!(
+                    "{} of {} secrets and project keys don't open with this key",
+                    checked.failed.len(),
+                    checked.opened + checked.failed.len() as u64
+                );
+            }
+            if checked.opened == 0 {
                 println!("  (there are none, so this proves nothing about the key)");
             }
+        }
+        What::RotateKey { db } => {
+            let (new, old) = ("ARUGULA_CLOUD_SECRET_KEY", "ARUGULA_CLOUD_SECRET_KEY_PREVIOUS");
+            let Some((new_key, whose)) = key_from(new)? else { bail!("no {new}: the new master key") };
+            let Some((old_key, _)) = key_from(old)? else { bail!("no {old}: the old master key, to rotate from") };
+            let keys = crate::cloud::secrets::SecretCipher::new(&new_key)?.with_previous(Some(&old_key))?;
+            let m = portable::migrations(&db)?;
+            if !m.pending.is_empty() {
+                bail!("{db} isn't at this build's migrations: run it with the build the platform runs");
+            }
+            let database = match &db {
+                Place::File(path) => crate::db::Db::open(path)?,
+                Place::Postgres(url) => crate::db::Db::open_url(url)?,
+            };
+            println!(
+                "rotating {db}'s master key to {} from {} (keys: {whose})",
+                keys.id(),
+                keys.previous_id().unwrap_or("")
+            );
+            let r = crate::keys::rotate(&database, &keys)?;
+            println!("  {} secrets the old key sealed itself, re-sealed with their project's key first", r.resealed);
+            println!("  {} project keys re-wrapped, {} already were", r.rewrapped, r.already);
+            println!("  every secret opens with the new key alone");
         }
     }
     Ok(())

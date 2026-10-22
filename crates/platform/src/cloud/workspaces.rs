@@ -203,9 +203,10 @@ async fn send_settings(app: &Platform, id: &str) -> anyhow::Result<bool> {
     let wanted = s.spec.secret_names();
     let mut held = s.vault_secrets.clone();
     for name in wanted.iter().filter(|n| !s.vault_secrets.contains(n)) {
-        let sealed = app.db.cloud_secret(&s.account, name)?.context("a secret it names was deleted")?;
+        let (project, sealed) = app.db.cloud_secret(&s.account, name)?.context("a secret it names was deleted")?;
         let cipher = cloud.secret_cipher.as_ref().context("cloud secrets key is unavailable")?;
-        p.put_vault_secret(&s.vault, name, &cipher.open(&s.account, name, &sealed)?).await?;
+        let value = crate::keys::open_cloud(&app.db.c(), cipher, &s.account, name, project.as_deref(), &sealed)?;
+        p.put_vault_secret(&s.vault, name, &value).await?;
         held.push(name.clone());
         app.db.cloud_workspace_vault_secrets(id, &held)?;
     }
@@ -247,7 +248,16 @@ mod tests {
         let app = crate::cloud::tests::test_app();
         let cipher = app.cloud.as_ref().unwrap().secret_cipher.as_ref().unwrap();
         app.db
-            .put_cloud_secret("a", "prj_a", "GITHUB_TOKEN", &cipher.seal("a", "GITHUB_TOKEN", "token").unwrap())
+            .put_cloud_secret(
+                "a",
+                "prj_a",
+                "GITHUB_TOKEN",
+                // Sealed the way it was before M209: it still opens.
+                &crate::keys::Sealed {
+                    key_version: crate::keys::MASTER,
+                    bytes: cipher.seal("a", "GITHUB_TOKEN", "token").unwrap(),
+                },
+            )
             .unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}/api/cloud/workspaces", listener.local_addr().unwrap());

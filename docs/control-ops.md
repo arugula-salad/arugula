@@ -301,7 +301,9 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
   set; loam's is `https://api.e2b.<loam domain>`): hosted workspaces'
   boxes (`compute/`, M176), the platform's only. Never sent to a client or
   put in a box. Not set yet: nothing drives a box before M179.
-- `ARUGULA_CLOUD_SECRET_KEY`: encrypts cloud secrets at rest.
+- `ARUGULA_CLOUD_SECRET_KEY`: the master key. It wraps each project's
+  data key, which seals that project's secrets ("Secrets' keys" below).
+  `ARUGULA_CLOUD_SECRET_KEY_PREVIOUS` is set only while it's rotated.
 - `ARUGULA_CLOUD_ACCOUNTS`: who may use Cloud workspaces (`*` for all).
 - `ARUGULA_CLOUD_MODELS`: the `runtime:model` pairs a Cloud workspace's
   tabs may run on, the first the default. `ARUGULA_CLOUD_MODEL` and
@@ -324,6 +326,73 @@ Unset on 2026-10-20 (M132), their values kept in Infisical under
 code reads `ARUGULA_SANDBOX_ACCOUNTS`, so renaming it would have turned
 hosted sandboxes on for the accounts it listed), and `ARUGULA_CLOUD_MODEL`
 and `ARUGULA_CLOUD_RUNTIME`, stale with `ARUGULA_CLOUD_MODELS` set.
+
+### Secrets' keys (M209)
+
+Each project has its own data key, in `project_keys`, wrapped by the
+master key (`ARUGULA_CLOUD_SECRET_KEY`). A project's secrets are sealed
+with its data key: cloud secrets, hosted workspaces' secrets, and
+`project_secrets` (an environment's, M217). One project's key never opens
+another project's secrets (`crates/platform/src/keys.rs`).
+
+**Re-sealing.** Before M209 the master key sealed each secret itself
+(`key_version` 0). The platform re-seals those with their project's key
+at start and then hourly, one row per transaction, and opens both kinds
+meanwhile. A crash halfway loses nothing, and running it again finishes
+the job. `secrets-check` says how many are still sealed the old way. A
+build from before M209 can't open what's been re-sealed: rolling back past
+M209 leaves cloud secrets closed until you roll forward again.
+
+**The list of environments.** `crates/control/secrets.toml` lists the
+deploy environments whose secrets the platform keeps, and the names of
+their secrets. A test fails if code names one that isn't listed.
+
+#### Rotating the master key
+
+Rotation re-wraps the data keys with a new master key. No secret is
+touched. It's safe to run again. Both platform machines have both keys
+for the whole time, so nothing stops opening.
+
+1. Make a new key and escrow it in Infisical (`arugula` prod, beside the
+   old one) **before** anything else:
+   `openssl rand -hex 32`.
+2. Give the platform both keys. This restarts it. From now on it seals
+   with the new key and opens with either one:
+
+   ```
+   fly secrets set -a arugula-platform \
+       ARUGULA_CLOUD_SECRET_KEY=<new> ARUGULA_CLOUD_SECRET_KEY_PREVIOUS=<old>
+   ```
+
+   When the platform runs in process, set both on `illogical-control`
+   instead.
+3. Re-wrap. The tool reads both keys from the running server (else from
+   this shell). It first re-seals any secret the old key sealed itself.
+   It stops, re-wrapping nothing, if any such secret is left. Then it
+   re-wraps every data key the old key wrapped and opens every secret with
+   the new key alone:
+
+   ```
+   plat rotate-key --db env:ARUGULA_PLATFORM_DATABASE_URL
+   # rotating …'s master key to <new id> from <old id> (keys: the running server's (pid N))
+   #   0 secrets the old key sealed itself, re-sealed with their project's key first
+   #   12 project keys re-wrapped, 0 already were
+   #   every secret opens with the new key alone
+   ```
+
+   On a file it's `--db /data/platform.db`. A data key wrapped by neither
+   key is named, and the rest are still re-wrapped.
+4. `plat secrets-check --db env:ARUGULA_PLATFORM_DATABASE_URL`: every
+   secret opens with the new key alone.
+5. Drop the old key: `fly secrets unset -a arugula-platform
+   ARUGULA_CLOUD_SECRET_KEY_PREVIOUS`. Keep it in Infisical until the
+   next nightly dump has been restored with the new one.
+
+A key's id is a hash of it, never the key. `project_keys.master_id` says
+which key wrapped each data key.
+
+Try it on a copy of production's data first ("Checking a migration on a
+copy" has how to make one).
 
 ### Daemon census
 

@@ -56,6 +56,7 @@ pub mod hub;
 mod hub_calls_tests;
 pub mod inbox;
 pub mod issues;
+pub mod keys;
 #[cfg(test)]
 mod object_threads_tests;
 pub mod page;
@@ -125,6 +126,9 @@ pub struct Platform {
     /// Hosted workspaces' template, how their boxes enroll, and who may make
     /// them (M179).
     pub hosted: hosted::Config,
+    /// The master key (`ARUGULA_CLOUD_SECRET_KEY`, and the old one while
+    /// it's rotated), which wraps each project's data key ([`keys`]).
+    pub secret_key: Option<Arc<cloud::secrets::SecretCipher>>,
     /// The GitHub App (M40, here since M161), when this control has its id
     /// and key: its webhook, `may()` and installation tokens.
     pub github: Option<forge::GithubApp>,
@@ -211,6 +215,7 @@ impl Platform {
             cloud: None,
             compute: None,
             hosted: Default::default(),
+            secret_key: None,
             github: None,
             chat,
             cache: Default::default(),

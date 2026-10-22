@@ -68,15 +68,16 @@ pub struct Args {
 }
 
 impl Args {
-    /// The config these flags set up. `secret_key` is
-    /// `ARUGULA_CLOUD_SECRET_KEY`, which seals hosted workspaces' secrets
-    /// as it does cloud secrets.
-    pub fn config(self, secret_key: Option<&str>) -> anyhow::Result<Config> {
+    /// The config these flags set up. `master` is the master key
+    /// (`ARUGULA_CLOUD_SECRET_KEY`, [`Platform::secret_key`]), which wraps
+    /// the project keys that seal hosted workspaces' secrets
+    /// ([`crate::keys`]).
+    pub fn config(self, master: Option<std::sync::Arc<SecretCipher>>) -> anyhow::Result<Config> {
         Ok(Config {
             template: self.hosted_template.filter(|t| !t.trim().is_empty()),
             enroll: if self.hosted_enroll == "ticket" { EnrollBy::Ticket } else { EnrollBy::Sandbox },
             accounts: self.hosted_accounts.into_iter().map(|a| a.trim().to_owned()).filter(|a| !a.is_empty()).collect(),
-            cipher: secret_key.filter(|k| !k.is_empty()).map(SecretCipher::new).transpose()?.map(std::sync::Arc::new),
+            cipher: master,
         })
     }
 }

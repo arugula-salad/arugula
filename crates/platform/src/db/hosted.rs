@@ -324,15 +324,22 @@ impl Db {
     }
 
     /// Keep a secret's name for a workspace, its value sealed here
-    /// (`Some`, with `hosted::Config::cipher`) or in the provider's broker.
-    pub fn set_hosted_secret(&self, workspace: &str, name: &str, sealed: Option<&[u8]>, now: u64) -> Result<()> {
+    /// (`Some`, with the project's key: [`crate::keys::seal_value`] with
+    /// [`crate::keys::hosted_name`]) or in the provider's broker.
+    pub fn set_hosted_secret(
+        &self,
+        workspace: &str,
+        name: &str,
+        sealed: Option<&crate::keys::Sealed>,
+        now: u64,
+    ) -> Result<()> {
         let store = if sealed.is_some() { "sealed" } else { "broker" };
         self.c().execute(
-            "INSERT INTO hosted_workspace_secrets (workspace_id, name, store, sealed, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO hosted_workspace_secrets (workspace_id, name, store, sealed, key_version, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT (workspace_id, name) DO UPDATE SET store = excluded.store, sealed = excluded.sealed,
-                 updated_at = excluded.updated_at",
-            params![workspace, name, store, sealed, now],
+                 key_version = excluded.key_version, updated_at = excluded.updated_at",
+            params![workspace, name, store, sealed.map(|s| &s.bytes), sealed.map_or(0, |s| s.key_version), now],
         )?;
         Ok(())
     }
@@ -346,14 +353,18 @@ impl Db {
         )
     }
 
-    /// A secret's sealed value, when it's sealed here.
-    pub fn hosted_secret_sealed(&self, workspace: &str, name: &str) -> Result<Option<Vec<u8>>> {
+    /// A secret's sealed value, when it's sealed here
+    /// ([`crate::keys::open_hosted`] opens it).
+    pub fn hosted_secret_sealed(&self, workspace: &str, name: &str) -> Result<Option<crate::keys::Sealed>> {
         Ok(self
             .c()
             .query_row(
-                "SELECT sealed FROM hosted_workspace_secrets WHERE workspace_id = ?1 AND name = ?2",
+                "SELECT key_version, sealed FROM hosted_workspace_secrets WHERE workspace_id = ?1 AND name = ?2",
                 params![workspace, name],
-                |r| r.get::<Option<Vec<u8>>>(0),
+                |r| {
+                    let key_version = r.get(0)?;
+                    Ok(r.get::<Option<Vec<u8>>>(1)?.map(|bytes| crate::keys::Sealed { key_version, bytes }))
+                },
             )
             .optional()?
             .flatten())
@@ -515,13 +526,14 @@ mod tests {
     fn secrets_and_ports() {
         let db = Db::test();
         made(db.add_hosted_workspace("hw_1", "prj_a", "dev", &spec(), "alice", 5, 0).unwrap());
-        db.set_hosted_secret("hw_1", "NPM_TOKEN", Some(&[1, 2, 3]), 1).unwrap();
+        let sealed = crate::keys::Sealed { key_version: 1, bytes: vec![1, 2, 3] };
+        db.set_hosted_secret("hw_1", "NPM_TOKEN", Some(&sealed), 1).unwrap();
         db.set_hosted_secret("hw_1", "ANTHROPIC_KEY", None, 1).unwrap();
         assert_eq!(
             db.hosted_secret_names("hw_1").unwrap(),
             [("ANTHROPIC_KEY".to_owned(), "broker".to_owned()), ("NPM_TOKEN".to_owned(), "sealed".to_owned())]
         );
-        assert_eq!(db.hosted_secret_sealed("hw_1", "NPM_TOKEN").unwrap(), Some(vec![1, 2, 3]));
+        assert_eq!(db.hosted_secret_sealed("hw_1", "NPM_TOKEN").unwrap(), Some(sealed));
         assert_eq!(db.hosted_secret_sealed("hw_1", "ANTHROPIC_KEY").unwrap(), None);
         assert!(db.remove_hosted_secret("hw_1", "ANTHROPIC_KEY").unwrap());
         db.set_hosted_port("hw_1", 3000, "web", 1).unwrap();
