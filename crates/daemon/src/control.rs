@@ -459,6 +459,11 @@ pub struct Control {
     /// Where shared Docs are viewed, when and from which control it was read
     /// (`doc_viewer`).
     doc_info: std::sync::Mutex<Option<(std::time::Instant, String, String)>>,
+    /// Whether this machine is working, for control (M180: a hosted
+    /// daemon's `activity`, sent on the relay socket). `None` sends nothing.
+    pub activity: watch::Sender<Option<String>>,
+    /// The VM was resumed (M180): redial the relay now, not after backoff.
+    resumed: tokio::sync::Notify,
 }
 
 /// How talking to control is going, for [`State`].
@@ -686,6 +691,8 @@ impl Control {
             retrying: Default::default(),
             link: std::sync::Mutex::new(Link { dropped: read_dropped(state_dir), ..Default::default() }),
             doc_info: Default::default(),
+            activity: watch::channel(None).0,
+            resumed: tokio::sync::Notify::new(),
         });
         me.reload();
         me
@@ -933,6 +940,14 @@ impl Control {
     /// Look again soon (grants changed here, say).
     pub fn poke(&self) {
         self.nudge.notify_one();
+    }
+
+    /// The VM this daemon runs in was paused and has resumed (M180): its
+    /// relay socket is likely dead, so drop it and dial again at once.
+    /// Only a dial under way or a wait between dials hears it: one that
+    /// starts later is fresh anyway.
+    pub fn resumed(&self) {
+        self.resumed.notify_waiters();
     }
 
     /// Look again now and wait for it (#232): true once a refresh that
@@ -1880,9 +1895,19 @@ async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
         let Some(e) = control.enrolled() else { return };
         let started = std::time::Instant::now();
         let mut wait = None;
-        let r = relay_once(&control, &app, &e, &accept, &raw).await;
+        // A resume (M180) ends the socket and skips the wait: the hub's
+        // wake (M182) is waiting on this dial.
+        let mut now = false;
+        let r = tokio::select! {
+            r = relay_once(&control, &app, &e, &accept, &raw) => r,
+            _ = control.resumed.notified() => {
+                now = true;
+                Ok(())
+            }
+        };
         control.set_link(|l| l.relay = false);
         match r {
+            Ok(()) if now => info!("resumed: dialling control's relay again now"),
             Ok(()) => info!("relay socket closed"),
             Err(err) => {
                 warn!(error = %err, "can't reach control's relay");
@@ -1893,18 +1918,26 @@ async fn keep_relay(control: Arc<Control>, app: Arc<App>) {
         // Control may have hung up because this machine was removed
         // (#330): find out now, not at the next refresh.
         control.poke();
-        if started.elapsed() > Duration::from_secs(30) {
+        if started.elapsed() > Duration::from_secs(30) || now {
             backoff = Duration::from_secs(1);
         }
+        if now {
+            continue;
+        }
         let jitter = Duration::from_millis(u64::from(std::process::id() % 500));
-        tokio::time::sleep(match wait {
+        let pause = match wait {
             // A full relay (#344): wait as long as control asked, and up to
             // as long again, so its daemons don't all come back at once.
             Some(w) => w.max(backoff) + spread(w),
             None => backoff + jitter,
-        })
-        .await;
-        backoff = (backoff * 2).min(Duration::from_secs(60));
+        };
+        tokio::select! {
+            _ = tokio::time::sleep(pause) => backoff = (backoff * 2).min(Duration::from_secs(60)),
+            _ = control.resumed.notified() => {
+                info!("resumed: dialling control's relay again now");
+                backoff = Duration::from_secs(1);
+            }
+        }
     }
 }
 
@@ -1947,7 +1980,7 @@ async fn relay_once(
             crate::forges::from_control(t);
         }
     };
-    let mut out = vec![app.guests.routes_messages(), crate::forges::ops_message()];
+    let mut out = vec![app.guests.routes_messages(), crate::forges::ops_message(), control.activity.subscribe()];
     out.extend(crate::forges::watch_messages());
     let texts = crate::dial::Texts { on_text: &on_text, out, queue: Some(queue) };
     crate::dial::serve_mux(ws, accept, Some(raw), Some(&control.nudge), Some(texts)).await

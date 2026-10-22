@@ -35,6 +35,7 @@
 use std::collections::BTreeMap;
 
 use arugula_control_common::Principal;
+pub use arugula_control_wire::activity::MachineActivity;
 use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke},
     hosted::{EnrollAsk, EnrollGiven, Enrolled},
@@ -232,6 +233,16 @@ pub trait HubPort: Send + Sync {
     fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
         let _ = workspaces;
         Box::pin(async { Ok(()) })
+    }
+
+    /// Whether these machines are working (M180): busy from the start of
+    /// an agent turn or a foreground command to its end, as each hosted
+    /// daemon last said on its relay socket. Machines that aren't on the
+    /// relay, or never said, are left out: treat them as idle. Order isn't
+    /// promised. A hub from before M180 can't.
+    fn activity<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<MachineActivity>>> {
+        let _ = machines;
+        Box::pin(async { anyhow::bail!("this hub doesn't say whether machines are working") })
     }
 }
 

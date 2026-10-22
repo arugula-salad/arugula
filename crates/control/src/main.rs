@@ -12,6 +12,9 @@
 //! (`arugula_platform::chat`, M138), behind this hub's gate.
 
 mod account;
+mod activity;
+#[cfg(test)]
+mod activity_wire;
 mod analytics;
 mod api;
 mod app_login;
