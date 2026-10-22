@@ -73,6 +73,11 @@ struct Args {
     #[command(flatten)]
     cloud: arugula_platform::cloud::Args,
 
+    /// Hosted workspaces' boxes (M176): ARUGULA_E2B_URL and
+    /// ARUGULA_E2B_API_KEY.
+    #[command(flatten)]
+    compute: arugula_platform::compute::Args,
+
     #[command(flatten)]
     billing: arugula_platform::billing::Args,
 
@@ -157,6 +162,7 @@ async fn run() -> anyhow::Result<()> {
     let mut p = Platform::new(cfg, db, hub, http, analytics);
     p.stripe = a.billing.stripe()?;
     p.cloud = a.cloud.cloud()?;
+    p.compute = a.compute.substrate()?;
     p.github = a.github_app.app(&a.github_api)?;
     p.paused = a.paused.into();
     let p = Arc::new(p);

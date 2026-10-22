@@ -188,6 +188,11 @@ struct Args {
     #[command(flatten)]
     cloud: arugula_platform::cloud::Args,
 
+    /// Hosted workspaces' boxes (M176): the platform's flags, used when
+    /// it runs in process.
+    #[command(flatten)]
+    compute: arugula_platform::compute::Args,
+
     /// The platform's own database (M143): `postgres://` puts it on
     /// Postgres. Without it, a second connection to `--db`, as always.
     #[command(flatten)]
@@ -411,12 +416,14 @@ impl App {
 /// The platform in process, on its own connection to `db` (memory for
 /// tests), and the `HubPort` it reaches the hub through, attached by
 /// [`App::start`].
+#[allow(clippy::too_many_arguments)]
 fn platform(
     db: arugula_platform::db::Db,
     cfg: arugula_platform::Config,
     stripe: Option<arugula_platform::billing::Stripe>,
     cloud: Option<arugula_platform::cloud::Cloud>,
     github: Option<arugula_platform::forge::GithubApp>,
+    compute: Option<Arc<dyn arugula_platform::compute::Substrate>>,
     http: &reqwest::Client,
     analytics: &analytics::Analytics,
 ) -> (gateway::PlatformAt, Arc<hub_port::InProcess>) {
@@ -425,6 +432,7 @@ fn platform(
     p.stripe = stripe;
     p.cloud = cloud;
     p.github = github;
+    p.compute = compute;
     (gateway::PlatformAt::InProcess(Arc::new(p)), hub)
 }
 
@@ -443,6 +451,7 @@ impl App {
         let (platform, hub_port) = platform(
             arugula_platform::db::Db::memory(),
             cfg,
+            None,
             None,
             None,
             None,
@@ -935,7 +944,8 @@ async fn run() -> anyhow::Result<()> {
         };
         info!("the platform runs in process");
         let github = a.github_app.app(&a.github_api)?;
-        platform(a.platform_db.open(&a.db)?, cfg, stripe, cloud, github, &http, &analytics)
+        let compute = a.compute.clone().substrate()?;
+        platform(a.platform_db.open(&a.db)?, cfg, stripe, cloud, github, compute, &http, &analytics)
     } else {
         // The platform is its own process: this hub is its gateway (M140).
         let key = platform_key.clone().context("--platform is a URL, so ARUGULA_PLATFORM_KEY is needed")?;

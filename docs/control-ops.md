@@ -297,6 +297,10 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
   `backup.rs`, read by Litestream from the environment it inherits).
 - `ARUGULA_MANAGOAT_API_KEY`: Cloud workspaces' provider. Without it,
   Cloud workspaces are off.
+- `ARUGULA_E2B_API_KEY`, `ARUGULA_E2B_URL` (`https://api.e2b.dev` unless
+  set; loam's is `https://api.e2b.<loam domain>`): hosted workspaces'
+  boxes (`compute/`, M176), the platform's only. Never sent to a client or
+  put in a box. Not set yet: nothing drives a box before M179.
 - `ARUGULA_CLOUD_SECRET_KEY`: encrypts cloud secrets at rest.
 - `ARUGULA_CLOUD_ACCOUNTS`: who may use Cloud workspaces (`*` for all).
 - `ARUGULA_CLOUD_MODELS`: the `runtime:model` pairs a Cloud workspace's
