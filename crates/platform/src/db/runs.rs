@@ -2,7 +2,7 @@
 //! on a workspace, their history and what they left behind. Who may start
 //! or move one is the routes' (M212, M214); this is storage and the one
 //! place a run's state changes ([`Db::move_run`]). The tables, with notes
-//! on their columns, are made by `0020_runs`.
+//! on their columns, are made by `0016_runs`.
 //!
 //! - **States** are S37's eight, and a run moves only as S37 allows
 //!   ([`State::may_become`], in `arugula_e2e::run`, which the daemon

@@ -1,5 +1,6 @@
 target/
 /node_modules/
+/packaging/hosted/node_modules/
 /.cargo/claude-ide/
 spikes/*/work/
 /dist/

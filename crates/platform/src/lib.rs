@@ -56,6 +56,7 @@ pub mod hub;
 mod hub_calls_tests;
 pub mod inbox;
 pub mod issues;
+pub mod jobs;
 #[cfg(test)]
 mod object_threads_tests;
 pub mod page;

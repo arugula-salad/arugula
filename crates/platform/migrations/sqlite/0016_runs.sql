@@ -1,4 +1,4 @@
--- 0020: runs (M210, platform step 7). A project's runs, each one S37
+-- 0016: runs (M210, platform step 7). A project's runs, each one S37
 -- operation on a workspace, with its append-only history of state changes
 -- and what it left behind. Times are milliseconds since the epoch. JSON is
 -- text. `db::runs` has the rules.
