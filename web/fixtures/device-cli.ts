@@ -37,8 +37,19 @@
 //                          the open to its hello and to its first pane's
 //                          screen, and what control said of its box:
 //                          {id, name, hello, ready, said}
+//   preview ID PORT|BLOCK:SITEKEY --blocks DOMAIN:PORT [--entry FILE] [--to HOST:PORT]
+//                          M186: GET / of a port on ID through its block
+//                          origin, http://b-<site key>.DOMAIN:PORT, as a
+//                          block's frame does. PORT opens a port block over
+//                          this device's channel; BLOCK:SITEKEY tries one
+//                          already open, with the Noise key from FILE
+//                          (hosted-entry's output). With --to, block origins
+//                          on [::1]:PORT (where *.localhost resolves) are
+//                          forwarded to HOST:PORT (control as published):
+//                          {block, site_key, status?, body?, refused?}
 
 import { readFileSync } from "node:fs";
+import { createServer, connect as tcp } from "node:net";
 import { fingerprint } from "../src/shell/e2e/cert.ts";
 import { Device } from "./device.ts";
 
@@ -58,6 +69,9 @@ const [login] = opt("--login");
 const [name] = opt("--name");
 const noWake = args.includes("--no-wake");
 if (noWake) args.splice(args.indexOf("--no-wake"), 1);
+const [blocks] = opt("--blocks");
+const [entry] = opt("--entry");
+const [to] = opt("--to");
 const [cmd, ...rest] = args;
 const out = (v: unknown) => console.log(JSON.stringify(v));
 
@@ -124,9 +138,34 @@ async function main() {
       const box = await find(rest[0]);
       return out({ id: box.id, name: box.name, ...(await d.open(box.id, { wake: !noWake, timeoutMs: secs(rest[1], 30) })) });
     }
+    case "preview": {
+      if (!blocks) throw new Error("preview needs --blocks DOMAIN:PORT");
+      const [domain, port] = [blocks.slice(0, blocks.lastIndexOf(":")), blocks.slice(blocks.lastIndexOf(":") + 1)];
+      if (to) {
+        const [h, p] = [to.slice(0, to.lastIndexOf(":")), Number(to.slice(to.lastIndexOf(":") + 1))];
+        const fwd = createServer((c) => {
+          const u = tcp(p, h);
+          c.pipe(u).pipe(c);
+          c.on("error", () => u.destroy());
+          u.on("error", () => c.destroy());
+        });
+        await new Promise<void>((res) => fwd.listen(Number(port), "::1", res));
+        fwd.unref();
+      }
+      const known = rest[1].includes(":") ? { id: rest[1].split(":")[0], siteKey: rest[1].split(":")[1] } : undefined;
+      const noise = entry ? (JSON.parse(readFileSync(entry, "utf8")) as { hosted: { cert: { noise: string } } }).hosted.cert.noise : undefined;
+      const id = known ? rest[0] : (await find(rest[0])).id;
+      const r = await d.preview(id, {
+        port: known ? undefined : Number(rest[1]),
+        block: known,
+        noise,
+        origin: (key) => `http://b-${key}.${domain}:${port}`,
+      });
+      return out({ block: r.block, site_key: r.siteKey, status: r.status, body: r.body, refused: r.refused });
+    }
     default:
       throw new Error(
-        `unknown command ${cmd ?? "(none)"}: signin, approve, devices, online, pane, panes, team-create, team-invite, team-accept, team-admit, delegate, undelegate, hosted-entry, hosted-accept, routed, open`,
+        `unknown command ${cmd ?? "(none)"}: signin, approve, devices, online, pane, panes, team-create, team-invite, team-accept, team-admit, delegate, undelegate, hosted-entry, hosted-accept, routed, open, preview`,
       );
   }
 }
