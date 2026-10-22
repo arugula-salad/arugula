@@ -26,6 +26,9 @@ use crate::{Platform, auth::Machine, db::issues::Actor};
 
 /// Reads a machine's agents make, per hour (a list, a search, an issue).
 const AGENT_ISSUE_READS: (&str, usize) = ("issue-agent-read", 3_600);
+/// Writes a machine's agents make, per hour (a new issue, a change). Each
+/// lands at once and may push people, so fewer than reads.
+pub(crate) const AGENT_ISSUE_WRITES: (&str, usize) = ("issue-agent-write", 300);
 
 fn actor(d: &Machine) -> Actor<'_> {
     Actor { account: &d.account, agent: Some(&d.daemon) }
@@ -83,6 +86,7 @@ pub async fn create(
     Path(project): Path<String>,
     Json(new): Json<wire::NewIssue>,
 ) -> J<wire::Issue> {
+    app.limits.check_daemon(AGENT_ISSUE_WRITES, &d.daemon)?;
     Ok(Json(super::create(&app, actor(&d), &project, &new).await?))
 }
 
@@ -110,6 +114,7 @@ pub async fn patch(
     Path(id): Path<String>,
     Json(p): Json<wire::IssuePatch>,
 ) -> J<wire::IssuePatched> {
+    app.limits.check_daemon(AGENT_ISSUE_WRITES, &d.daemon)?;
     Ok(Json(super::change(&app, actor(&d), &id, &p).await?))
 }
 

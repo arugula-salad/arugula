@@ -172,3 +172,26 @@ async fn an_agents_current_project() {
         assert!(v["error"].as_str().unwrap().contains("name the project"), "{v}");
     }
 }
+
+/// A machine's agents write at most [`AGENT_ISSUE_WRITES`] an hour: past
+/// it a new issue or a change is refused (429), and reads still answer.
+#[tokio::test]
+async fn an_agents_writes_are_rate_limited() {
+    use crate::issues::agent::AGENT_ISSUE_WRITES;
+    let (_hub, app, base, t, _u) = seeded().await;
+    for power in [ISSUES_WRITE, THREADS_READ] {
+        let (st, g) =
+            call(&base, "a", "POST", "/api/grants", give("geek", power, json!({ "kind": "project", "id": t }))).await;
+        assert_eq!(st, 200, "{g}");
+    }
+    let issues = agent_project_issues(&t);
+    let (st, made) = geek(&base, "POST", &issues, Some(json!({ "title": "one" }))).await;
+    assert_eq!(st, 200, "{made}");
+    let id = made["id"].as_str().unwrap().to_owned();
+    // The rest of the hour's writes, used up.
+    while app.limits.check_daemon(AGENT_ISSUE_WRITES, "geek").is_ok() {}
+    assert_eq!(geek(&base, "POST", &issues, Some(json!({ "title": "two" }))).await.0, 429);
+    let close = Some(json!({ "state": "closed" }));
+    assert_eq!(geek(&base, "PATCH", &agent_issue(&id), close).await.0, 429);
+    assert_eq!(geek(&base, "GET", &agent_issue(&id), None).await.0, 200, "reads still answer");
+}
