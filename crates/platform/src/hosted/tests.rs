@@ -42,6 +42,8 @@ pub(crate) struct Fake {
     pub(super) resume_ms: AtomicU32,
     pub(super) resume_error: Mutex<Option<compute::Error>>,
     pub(crate) calls: Mutex<Vec<String>>,
+    /// Each box's egress rules as last set (M185).
+    pub(super) rules: Mutex<BTreeMap<String, compute::Rules>>,
 }
 
 impl Fake {
@@ -55,7 +57,7 @@ impl Fake {
         self.boxes.lock().unwrap().values().cloned().collect()
     }
 
-    fn creates(&self) -> Vec<Create> {
+    pub(super) fn creates(&self) -> Vec<Create> {
         self.creates.lock().unwrap().clone()
     }
 
@@ -157,6 +159,14 @@ impl Substrate for Fake {
             Some(b) if b.state == State::Running => Ok(()),
             _ => Err(compute::Error::NotFound),
         })
+    }
+
+    fn set_rules<'a>(&'a self, id: &'a str, rules: &'a compute::Rules) -> BoxFuture<'a, compute::Result<()>> {
+        if !self.boxes.lock().unwrap().get(id).is_some_and(|b| b.state == State::Running) {
+            return ready(Err(compute::Error::NotFound));
+        }
+        self.rules.lock().unwrap().insert(id.into(), rules.clone());
+        ready(Ok(()))
     }
 }
 

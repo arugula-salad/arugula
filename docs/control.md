@@ -110,6 +110,34 @@ arugula cloud rebuild dev                 # a new box from the spec
 arugula cloud delete dev
 ```
 
+**Whose key a hosted agent runs on (M185, #1246).** Keys never enter the
+box: E2B's egress proxy sets the key on the box's requests to
+`api.anthropic.com` and `api.openai.com`, over the placeholder the agents
+hold (`ANTHROPIC_API_KEY=arugula-brokered`). A project brings its own key,
+one per provider: its owners set it, the platform keeps it sealed
+(`ARUGULA_CLOUD_SECRET_KEY`) and shows it as set or not, never read back,
+and writes it into each of the project's boxes' egress rules (at create and
+rebuild, on a wake, at a turn's start, and on every running box when it's
+set or cleared). E2B's proxy holds it there; E2B's API answers a box's rules
+back to whoever holds the platform's E2B key. Without one, a workspace made
+by an account on the beta allowlist (`ARUGULA_CLOUD_ACCOUNTS`) runs on the
+platform's key, for the providers `ARUGULA_HOSTED_PLATFORM_KEYS` lists: a
+dedicated key with a hard monthly spend limit at the provider, kept as an
+E2B secret, with per-account caps on agent turns for fairness. Before each
+agent turn the box's daemon asks (`POST /api/hosted/turns`, signed as its
+hosted machine; the hub hands it to the platform), which brings the box's
+rules up to date and says whose key pays, or why the turn can't run: no key
+(with how to add one) or a cap (with which). The caps bound agent turns
+only: a member who runs `claude` in a terminal on an allowlisted account's
+box uses the platform's key too, within its spend limit
+(`crates/platform/src/hosted/inference.rs`).
+
+```
+arugula cloud key set anthropic --project acme   # reads the key from stdin
+arugula cloud key ls --project acme
+arugula cloud key clear anthropic --project acme
+```
+
 **Bodies and comments (M166, #1212).** The platform keeps a linked repo's
 PRs and issues as metadata. Opening one (`GET
 /api/forge/items/{id}/content`) reads its body, comments, reviews' text

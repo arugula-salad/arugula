@@ -301,8 +301,52 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
   set; loam's is `https://api.e2b.<loam domain>`): hosted workspaces'
   boxes (`compute/`, M176), the platform's only. Never sent to a client or
   put in a box. Not set yet: see "E2B" below.
-- `ARUGULA_CLOUD_SECRET_KEY`: encrypts cloud secrets at rest.
-- `ARUGULA_CLOUD_ACCOUNTS`: who may use Cloud workspaces (`*` for all).
+- `ARUGULA_HOSTED_PLATFORM_KEYS` (`anthropic`, `openai`, comma-separated):
+  which providers the platform's own inference key pays for, for hosted
+  workspaces made by accounts on `ARUGULA_CLOUD_ACCOUNTS` (M185). **The spend
+  bound is the provider's**: each is a key of its own, for hosted boxes
+  only, with a hard monthly spend limit set at the provider. The turn caps
+  below are fairness between accounts, not the bound. The keys aren't Fly
+  secrets and the platform never holds them: each is an E2B secret, named
+  `arugula-platform-anthropic` and `arugula-platform-openai`, which a box's
+  egress rules name. Infisical (arugula prod, `/illogical/control`) keeps
+  the record. To make one (Jake, at M192):
+
+  1. **Anthropic:** in the Claude Console, make a workspace for hosted boxes
+     (`arugula-hosted`), set its monthly spend limit (Workspace → Limits),
+     and make an API key in that workspace. **OpenAI:** make a project
+     (`arugula-hosted`), set its monthly spend limit with "Enforce a hard
+     limit" on (Project → Limits; past it, requests get a 429
+     `project_spend_limit_exceeded`), and make a project key.
+  2. Keep it in Infisical as `ARUGULA_HOSTED_ANTHROPIC_KEY` /
+     `ARUGULA_HOSTED_OPENAI_KEY`, beside the limit you set.
+  3. Put it in E2B with the platform's E2B key. It takes effect on the next
+     request from every box, paused ones when they wake; rotating is the
+     same call to `POST /secrets/<name>`:
+
+     ```
+     curl -s https://api.e2b.dev/secrets -H "X-API-Key: $E2B_API_KEY" \
+       -H 'content-type: application/json' \
+       -d '{"name": "arugula-platform-anthropic", "value": "'"$KEY"'"}'
+     # rotating: POST /secrets/arugula-platform-anthropic {"value": ...}
+     ```
+  4. Add the provider to `ARUGULA_HOSTED_PLATFORM_KEYS`.
+
+  These are the only E2B secrets Arugula uses. Projects' own keys aren't
+  E2B secrets: the platform keeps them sealed with `ARUGULA_CLOUD_SECRET_KEY`
+  and writes them into each box's egress rules, which E2B holds per box
+  (and answers back to the E2B key's holder).
+- `ARUGULA_HOSTED_CONCURRENT_TURNS` (2), `ARUGULA_HOSTED_DAILY_TURNS` (100),
+  `ARUGULA_HOSTED_TURN_MINUTES` (120): caps on agent turns that run on the
+  platform's key, per account: at once, per UTC day, and minutes per UTC
+  day. A project's own key has none. The old `ARUGULA_CLOUD_DAILY_RUNS`,
+  `ARUGULA_CLOUD_CONCURRENT_RUNS` and `ARUGULA_CLOUD_RUN_MINUTES` do
+  nothing.
+- `ARUGULA_CLOUD_SECRET_KEY`: encrypts cloud secrets at rest, and projects'
+  own inference keys (M185): without it, a project can't set one.
+- `ARUGULA_CLOUD_ACCOUNTS`: who may use Cloud workspaces (`*` for all),
+  and whose hosted workspaces run on the platform's inference key (M185;
+  there, `*` is no one: only accounts named).
 - `ARUGULA_CLOUD_MODELS`: the `runtime:model` pairs a Cloud workspace's
   tabs may run on, the first the default. `ARUGULA_CLOUD_MODEL` and
   `ARUGULA_CLOUD_RUNTIME` are only read when it's unset

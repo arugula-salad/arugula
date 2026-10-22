@@ -34,6 +34,10 @@
 //! - **Pausing only between turns** (M181, "Hosted machines pause only
 //!   between turns", aru-094): the leader [`hold`]s a box while its daemon
 //!   says it's busy, and lets it pause itself when it's idle or silent.
+//! - **Inference** ([`inference`], M185): agents in the box reach their
+//!   model through the provider's egress proxy, which fills in the key:
+//!   the project's own, or the platform's, under caps, for workspaces made
+//!   by an account on the beta allowlist. No key is ever in the box.
 //! - **Not here yet.** Setup in a visible pane and "rebuild needed" on the
 //!   page are M183's, from [`HostedWorkspace::rebuild_needed`].
 //!
@@ -49,6 +53,9 @@ use crate::{Platform, cloud::secrets::SecretCipher};
 
 pub mod enroll;
 pub mod hold;
+pub mod inference;
+#[cfg(test)]
+mod inference_tests;
 pub mod routes;
 #[cfg(test)]
 mod tests;
@@ -86,14 +93,43 @@ pub struct Args {
     /// ([`hold::E2B_PRO_RUNTIME`] unless set; E2B's Hobby plan is 3600).
     #[arg(long, env = "ARUGULA_HOSTED_RUNTIME_CAP")]
     pub hosted_runtime_cap: Option<u64>,
+    /// Which providers the platform's own inference key covers (M185), for
+    /// workspaces made by accounts on ARUGULA_CLOUD_ACCOUNTS: `anthropic`,
+    /// `openai`, comma-separated. Each is a dedicated key with a hard
+    /// monthly spend limit at the provider, which the operator keeps as an
+    /// E2B secret named `arugula-platform-<provider>` (docs/control-ops.md);
+    /// the platform never holds it. Empty: the platform's key pays for
+    /// nothing, and every project brings its own.
+    #[arg(long, env = "ARUGULA_HOSTED_PLATFORM_KEYS", value_delimiter = ',', value_parser = ["anthropic", "openai"])]
+    pub hosted_platform_keys: Vec<String>,
+    /// Caps on agent turns that run on the platform's key, per account
+    /// (M185): at once, per UTC day, and minutes per UTC day.
+    #[arg(long, env = "ARUGULA_HOSTED_CONCURRENT_TURNS", default_value_t = inference::CAPS.concurrent)]
+    pub hosted_concurrent_turns: u64,
+    #[arg(long, env = "ARUGULA_HOSTED_DAILY_TURNS", default_value_t = inference::CAPS.daily)]
+    pub hosted_daily_turns: u64,
+    #[arg(long, env = "ARUGULA_HOSTED_TURN_MINUTES", default_value_t = inference::CAPS.minutes)]
+    pub hosted_turn_minutes: u64,
 }
 
 impl Args {
-    /// The config these flags set up. `secret_key` is
-    /// `ARUGULA_CLOUD_SECRET_KEY`, which seals hosted workspaces' secrets
-    /// as it does cloud secrets.
-    pub fn config(self, secret_key: Option<&str>) -> anyhow::Result<Config> {
+    /// The config these flags set up, with two of Cloud's:
+    /// `ARUGULA_CLOUD_SECRET_KEY`, which seals hosted workspaces' secrets as
+    /// it does cloud secrets, and `ARUGULA_CLOUD_ACCOUNTS`, the beta
+    /// allowlist, whose workspaces may run on the platform's key (M185).
+    pub fn config(self, cloud: &crate::cloud::Args) -> anyhow::Result<Config> {
+        let secret_key = cloud.cloud_secret_key.as_deref();
+        let inference = inference::Settings::new(
+            &cloud.cloud_accounts,
+            &self.hosted_platform_keys,
+            inference::Caps {
+                concurrent: self.hosted_concurrent_turns,
+                daily: self.hosted_daily_turns,
+                minutes: self.hosted_turn_minutes,
+            },
+        );
         Ok(Config {
+            inference,
             template: self.hosted_template.filter(|t| !t.trim().is_empty()),
             enroll: if self.hosted_enroll == "ticket" { EnrollBy::Ticket } else { EnrollBy::Sandbox },
             accounts: self.hosted_accounts.into_iter().map(|a| a.trim().to_owned()).filter(|a| !a.is_empty()).collect(),
@@ -127,6 +163,8 @@ pub struct Config {
     /// holds.
     pub idle_timeout: Option<Duration>,
     pub runtime_cap: Option<Duration>,
+    /// Whose key agents run on, and the caps on the platform's (M185).
+    pub inference: inference::Settings,
 }
 
 impl std::fmt::Debug for Config {
@@ -137,6 +175,7 @@ impl std::fmt::Debug for Config {
             .field("accounts", &self.accounts)
             .field("idle_timeout", &self.idle_timeout)
             .field("runtime_cap", &self.runtime_cap)
+            .field("inference", &self.inference)
             .finish_non_exhaustive()
     }
 }
@@ -291,5 +330,6 @@ pub fn start(app: &std::sync::Arc<Platform>) {
         worker::start(app.clone());
         usage::start(app.clone());
         hold::start(app.clone());
+        inference::start(app.clone());
     }
 }

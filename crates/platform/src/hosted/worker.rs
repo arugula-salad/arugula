@@ -210,6 +210,11 @@ async fn create(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u
                     }
                 }
             }
+            // Whose key its agents run on (M185): the rules' digest is kept
+            // beside the box (they can hold a project's key), so a turn's
+            // start sees what it was given.
+            let rules = super::inference::rules_for(app, &job.w.project, job.w.created_by.as_deref())?;
+            app.db.set_hosted_rules(&job.w.id, &super::inference::digest(&rules))?;
             job.stage = "sent".into();
             job.stage_at = Some(now);
             job.w.template = Some(template.clone());
@@ -221,6 +226,7 @@ async fn create(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u
                     env,
                     metadata: super::metadata(&job.w.id, &job.w.project, &template),
                     timeout: app.hosted.idle_timeout(),
+                    rules,
                 })
                 .await;
             match made {
@@ -354,11 +360,18 @@ async fn enrolling(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now
 }
 
 /// Resume a paused box, or one that may have paused itself since the
-/// worker last looked (M182's wake on connect asks for that).
+/// worker last looked (M182's wake on connect asks for that), and bring its
+/// egress rules up to date: a project's key may have changed while it
+/// slept (M185).
 async fn wake(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<Step> {
     let Some(sandbox) = job.sandbox.clone() else { return Ok(with(fail(job, GONE, now), Ask::Wake)) };
     match sub.resume(&sandbox, app.hosted.idle_timeout()).await {
         Ok(_) => {
+            if let Some(b) = app.db.hosted_box_of(&job.w.id)?
+                && !super::inference::refresh(app, &b).await?
+            {
+                tracing::warn!(workspace = %job.w.id, "a woken box's key will catch up at its next turn");
+            }
             job.w.state = "ready".into();
             job.w.error = None;
             Ok((Some(Ask::Wake), now + READY_MS))

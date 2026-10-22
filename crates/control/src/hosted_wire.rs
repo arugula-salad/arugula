@@ -336,3 +336,47 @@ async fn deleting_the_owner_takes_its_hosted_machines_and_delegations() {
     assert!(c.app.db.delegations_of(&["account:m1".into()]).unwrap().is_empty());
     assert!(c.app.db.mentions("m1").iter().all(|m| !m.starts_with("hosted") && !m.starts_with("project_delegations")));
 }
+
+/// M185: a box asks before an agent turn, signed as its hosted machine,
+/// and the hub hands it to the platform for the workspace and machine its
+/// certificate names (the platform's answer is its own tests'); nobody
+/// else's signature gets there.
+#[tokio::test]
+async fn a_box_asks_the_platform_about_its_turns() {
+    let (c, fran, cy, _ox) = acme().await;
+    let fran_s = session(&c.app, "f1");
+    let owner = format!("team:{TEAM}");
+    let d = delegation(&c, &owner, &fran);
+    let (st, _) = c.as_person(&fran_s, "POST", "/api/hosted/delegations", Some(json!({ "delegation": d }))).await;
+    assert_eq!(st, 200);
+    let EnrollGiven::Ready { ticket: Some(ticket), .. } =
+        c.app.hub_port.hosted_enrollment(&ask(&owner, "hw_1", None)).await.unwrap()
+    else {
+        panic!("no ticket")
+    };
+    let boxk = DeviceKeys::generate();
+    assert_eq!(c.post("/api/hosted/enroll", &enroll_body(&boxk, Some(&ticket), None)).await.0, 200);
+
+    let signed_post = |keys: &DeviceKeys, path: &str, body: &[u8]| {
+        c.http
+            .post(format!("{}{path}", c.base))
+            .header("x-arugula-auth", v2(keys, "POST", path, body))
+            .header("content-type", "application/json")
+            .body(body.to_vec())
+            .send()
+    };
+    let body = br#"{"agent":"claude"}"#;
+    let r = signed_post(&boxk, "/api/hosted/turns", body).await.unwrap();
+    // This control's platform has no such workspace: it says so, through
+    // the hub.
+    assert_eq!(r.status(), 404);
+    let v: Value = r.json().await.unwrap();
+    assert_eq!(v["error"], "this machine isn't a live hosted workspace");
+    let r = signed_post(&boxk, "/api/hosted/turns/ht_1/end", b"").await.unwrap();
+    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()["ended"].clone()), (200, json!(false)));
+
+    // A person's device, and no signature at all, aren't a hosted machine.
+    assert_eq!(signed_post(&cy, "/api/hosted/turns", body).await.unwrap().status(), 401);
+    let (st, _) = c.as_person(&fran_s, "POST", "/api/hosted/turns", Some(json!({ "agent": "claude" }))).await;
+    assert_eq!(st, 401);
+}

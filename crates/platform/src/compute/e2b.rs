@@ -10,6 +10,10 @@
 //! | list | `GET /v2/sandboxes?metadata=…&state=running,paused`, paged by `X-Next-Token` |
 //! | hold | `POST /sandboxes/{id}/timeout` |
 //! | runs | `GET /events/sandboxes/{id}?types=…paused&types=…killed`, paged by `offset` |
+//! | set_rules | `PUT /sandboxes/{id}/network` (`rules`; 404: paused or gone) |
+//!
+//! A create's rules go in its `network.rules`. They can hold a key, so
+//! they're only ever in a request's body, never in an error or a log.
 //!
 //! Every call but create is retried a few times on no answer, 429, 502,
 //! 503 and 504: each is idempotent here (a second pause finds it paused, a
@@ -37,7 +41,7 @@ use reqwest::{Client, Method, Response, StatusCode, Url};
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
-use super::{Create, Created, Error, Paused, Result, Resumed, Run, Sandbox, State, Substrate};
+use super::{Create, Created, Error, Paused, Result, Resumed, Rules, Run, Sandbox, State, Substrate};
 
 /// Tries of a retried call, and the longest `Retry-After` waited out.
 const TRIES: u32 = 3;
@@ -147,6 +151,13 @@ async fn read<T: DeserializeOwned>(r: Response) -> Result<T> {
 /// A successful answer with no body, else its failure.
 async fn done(r: Response) -> Result<()> {
     if r.status().is_success() { Ok(()) } else { Err(failure(r).await) }
+}
+
+/// Rules as E2B's `network.rules`: per host, one rule that sets headers.
+fn network_rules(rules: &Rules) -> Value {
+    let hosts: serde_json::Map<String, Value> =
+        rules.iter().map(|(host, headers)| (host.clone(), json!([{"transform": {"headers": headers}}]))).collect();
+    Value::Object(hosts)
 }
 
 fn seconds(d: Duration) -> u64 {
@@ -274,7 +285,7 @@ fn metadata_query(metadata: &BTreeMap<String, String>) -> String {
 impl Substrate for E2b {
     fn create<'a>(&'a self, b: &'a Create) -> BoxFuture<'a, Result<Created>> {
         Box::pin(async move {
-            let body = json!({
+            let mut body = json!({
                 "templateID": b.template,
                 "timeout": seconds(b.timeout),
                 "autoPause": true,
@@ -285,6 +296,9 @@ impl Substrate for E2b {
                 "metadata": b.metadata,
                 "envVars": b.env,
             });
+            if !b.rules.is_empty() {
+                body["network"] = json!({"rules": network_rules(&b.rules)});
+            }
             let r = self.send(Method::POST, self.url(&["v2", "sandboxes"])?, Some(&body)).await?;
             if !r.status().is_success() {
                 // An unknown template is a 404, which isn't "no such box".
@@ -433,6 +447,14 @@ impl Substrate for E2b {
                 }
             }
             Err(Error::Invalid)
+        })
+    }
+
+    fn set_rules<'a>(&'a self, id: &'a str, rules: &'a Rules) -> BoxFuture<'a, Result<()>> {
+        Box::pin(async move {
+            let body = json!({"rules": network_rules(rules)});
+            let r = self.idempotent(Method::PUT, self.url(&["sandboxes", id, "network"])?, Some(&body)).await?;
+            done(r).await
         })
     }
 }

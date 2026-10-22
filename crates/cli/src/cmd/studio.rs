@@ -84,7 +84,7 @@ pub fn run(cmd: Option<StudioCmd>, ctx: Ctx) -> anyhow::Result<i32> {
 
 /// A secret from stdin: piped, the first line; on a terminal, asked for
 /// without echo.
-fn secret_input(prompt: &str) -> anyhow::Result<String> {
+pub(crate) fn secret_input(prompt: &str) -> anyhow::Result<String> {
     use std::io::IsTerminal;
     let stdin = std::io::stdin();
     let tty = stdin.is_terminal();
