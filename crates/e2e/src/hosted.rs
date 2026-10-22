@@ -1,7 +1,7 @@
 //! Hosted machines (M178): `arugulad` in a box the operator runs, enrolled
 //! into one project by control under that project's delegation. Design in
-//! docs/control-e2e.md, "Hosted machines", and the project delegation
-//! record (M175).
+//! docs/control-e2e.md, "Hosted machines: a project's delegation", and
+//! "Control enrolls hosted machines under a project delegation" (aru-095).
 //!
 //! An unattended box has no device present to sign its join, so an owner's
 //! device signs once, per project, that control may enroll hosted machines
