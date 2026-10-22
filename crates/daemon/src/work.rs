@@ -1139,6 +1139,8 @@ mod tests {
         String::from_utf8_lossy(&out.stdout).into_owned()
     }
 
+    // Hosted boxes are Linux: its paths and shell.
+    #[cfg(unix)]
     #[test]
     fn a_pane_says_what_it_runs_and_runs_it_as_the_run_user() {
         let op = Op { argv: vec!["echo".into(), "it's\x1b[2J\u{202e}".into()], ..Op::default() };
