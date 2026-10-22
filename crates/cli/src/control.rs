@@ -127,6 +127,12 @@ impl Enrolled {
         Url::parse(&self.url)
     }
 
+    /// This CLI's device keys: what signs a project's standing grant for
+    /// runs, as a browser's would (M211).
+    pub(crate) fn keys(&self) -> &DeviceKeys {
+        &self.keys
+    }
+
     /// A request to control, signed with this CLI's key. It waits out a
     /// maintenance window on control's chat and Cloud routes (M141, `grants`
     /// is one) for up to five minutes, saying so on stderr; which 503s are

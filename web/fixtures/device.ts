@@ -19,6 +19,7 @@ import { certBody, deviceMac, evaluate, joinCode, joinMac, revocationBody, split
 import { E2ESocket } from "../src/shell/e2e/channel.ts";
 import { generateKeys, signText, type DeviceKeys } from "../src/shell/e2e/keys.ts";
 import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "../src/shell/e2e/hosted.ts";
+import { signGrant, signGrantRevoke, type ProjectGrant } from "../src/shell/e2e/run-grant.ts";
 import { askBody, askOk, inviteKey, newInviteKey, signAskInvite, signRoster, teamJoinBody, word, type AccountCerts, type AskInvite, type Roster, type TeamPin, type TeamRole } from "../src/shell/e2e/team.ts";
 
 const subtle = globalThis.crypto.subtle;
@@ -321,6 +322,29 @@ export class Device {
       n++;
     }
     return n;
+  }
+
+  /** As an owner, sign the project's standing grant for runs (M211) under
+   * its live delegation, as control's page does. */
+  async signRunGrant(team?: string): Promise<{ project: string; grant: string }> {
+    const p = await this.project(team);
+    const { key, delegations } = await this.api<{ key: string; delegations: { delegation: Delegation; revoke: DelegationRevoke | null }[] }>("/api/hosted/delegations");
+    const live = delegations.find((x) => x.delegation.project === p.id && x.delegation.key === key && !x.revoke);
+    if (!live) throw new Error(`project ${p.id} has no live delegation`);
+    const grant = await signGrant(live.delegation, this.keys);
+    await this.api(`/api/projects/${p.id}/runs/grant`, { grant });
+    return { project: p.id, grant: grant.id };
+  }
+
+  /** As an owner, revoke the project's standing grant; `stop`: the runs
+   * going stop too. */
+  async revokeRunGrant(team?: string, stop = false): Promise<{ project: string; grant: string; told: number }> {
+    const p = await this.project(team);
+    const v = await this.api<{ grant: { grant: ProjectGrant } | null }>(`/api/projects/${p.id}/runs/grant`);
+    if (!v.grant) throw new Error(`project ${p.id} has no standing grant`);
+    const revoke = await signGrantRevoke(v.grant.grant, stop ? "stop" : "finish", this.keys);
+    const r = await this.api<{ told: number }>(`/api/projects/${p.id}/runs/grant/revoke`, { revoke });
+    return { project: p.id, grant: v.grant.grant.id, told: r.told };
   }
 
   /** A hosted machine as the directory lists it here, with its proof. */

@@ -1005,3 +1005,14 @@ why_asleep = "Approving a deploy checks its environment's log (the stale rule), 
 with_account = "partly"
 note = "Those of projects that go with it go. The rest are kept as written, the account's id in them included: an event is never rewritten, and rewriting one would break its chain. The id names no one once the account is gone, so they show as a deleted account."
 seen_by = ["litestream"]
+
+[[table]]
+name = "run_grants"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A project's standing grant for runs (M211): the bytes a project owner's device signed (that the platform may start and instruct runs on the project's hosted workspaces, under its delegation) and the signature, its id, the delegation and signing device it names, when it was made and when it expires, who sent it and when; and once revoked, the revoke's signed bytes and signature, when, and whether the runs going were to stop."
+why_asleep = "Scheduled and event runs start under it with every owner's device asleep, and the platform sends it to the hosted machine with each start."
+with_account = "partly"
+note = "It stops naming the account as who sent it. The grants of its personal project and its disbanded teams' projects are deleted. A grant its devices signed stays, and hosted machines stop accepting it once those devices aren't an owner's."
+seen_by = ["litestream"]

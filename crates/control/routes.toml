@@ -1312,6 +1312,40 @@ auth = "cloud_driver"
 clients = ["cli", "daemon"]
 note = "Rebuilds a hosted workspace from its spec (M179): a project's owner or editor on ARUGULA_HOSTED_ACCOUNTS."
 
+# ---- platform: the standing project grant for runs (M211)
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/runs/grant"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project's standing grant for runs, its past ones, and whether one is offered (it has a hosted workspace and no grant), for its members."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/runs/grant"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "An owner's device's signed grant, kept as signed: the platform can't check the signature (hosted machines do) and never makes one. One live grant a project. Not a machine's cloud.drive: agents never sign one."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/runs/grant/revoke"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Any owner's device's signed revoke: no new starts, and every hosted machine of the project is told (runs.revoke)."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/runs/start"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Owners and editors: the workspace's hosted machine is sent the live grant (runs.start) and checks it. Until M212 it carries no operation."
+
 [[route]]
 method = "GET"
 path = "/api/projects/{project}/items"  # wire::projects::PROJECT_ITEMS

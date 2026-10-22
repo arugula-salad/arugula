@@ -400,6 +400,18 @@ enum Command {
         #[command(subcommand)]
         cmd: cmd::project::ProjectCmd,
     },
+    /// Runs on a project's hosted workspaces, on Arugula control.
+    ///
+    /// `grant` shows the project's standing grant for runs; `grant sign`
+    /// signs it with this CLI's device (a project owner), so the platform
+    /// may start and instruct runs there with every device asleep; `grant
+    /// revoke` takes it back (`--stop`: the runs going stop too).
+    /// `--project` names a project by id or name; the default is your
+    /// personal one. Needs `arugula login`.
+    Runs {
+        #[command(subcommand)]
+        cmd: cmd::runs::RunsCmd,
+    },
     /// Drafts on your linked repos' PRs and issues, on Arugula control.
     ///
     /// Comments, reviews and new issues that you (`--draft`) or your agents
@@ -667,6 +679,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Project { cmd } = cli.cmd {
         return cmd::project::run(cmd, cli.json);
     }
+    if let Command::Runs { cmd } = cli.cmd {
+        return cmd::runs::run(cmd, cli.json);
+    }
     if let Command::Draft { cmd } = cli.cmd {
         return cmd::forge_ops::draft(cmd, cli.json);
     }
@@ -785,6 +800,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         | Command::Grants { .. }
         | Command::Cloud { .. }
         | Command::Project { .. }
+        | Command::Runs { .. }
         | Command::Draft { .. }
         | Command::Forge { .. } => {
             unreachable!("handled before connecting")

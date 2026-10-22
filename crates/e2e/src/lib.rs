@@ -13,6 +13,8 @@
 //!   certificates control signs under them, accepted for one project only.
 //! - [`run`]: a run's lifecycle (S37's eight states, M210) and the event a
 //!   daemon signs when it reports a move.
+//! - [`project_grant`]: the standing project grant (M211): an owner's
+//!   device lets the platform start runs on the project's hosted machines.
 
 pub mod block;
 pub mod cert;
@@ -20,6 +22,7 @@ pub mod channel;
 pub mod hosted;
 pub mod keys;
 pub mod mux;
+pub mod project_grant;
 pub mod push;
 pub mod run;
 pub mod team;

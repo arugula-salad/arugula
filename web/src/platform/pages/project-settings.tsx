@@ -4,6 +4,7 @@
 // sends the person to GitHub to install it, and GitHub sends them back to
 // `/installed`, which comes here with the repo filled in. Each linked repo
 // has a switch for content mirroring (M166), with what turning it on means.
+// Then its standing grant for runs (M211).
 
 import { useEffect, useState } from "preact/hooks";
 import type { LinkedRepo, LinkedRepos } from "../../shared/proto.gen";
@@ -13,6 +14,7 @@ import { names } from "../links";
 import { go, pathOf, REPO } from "../router";
 import { session } from "../session";
 import { Missing } from "./project";
+import { RunGrant } from "../settings/runs";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
  * with the rest of the answer. */
@@ -139,6 +141,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
         <p class="dim">A team's owners and editors link repos.</p>
       )}
       {err && <p class="control-error" data-link-error>{err}</p>}
+      <RunGrant project={p.id} />
     </section>
   );
 }

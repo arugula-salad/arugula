@@ -29,6 +29,7 @@ import {
 } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
 import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
+import { signGrant, signGrantRevoke, type GrantRevoke, type ProjectGrant } from "./e2e/run-grant.ts";
 import type { E2ETarget } from "./client";
 import { desktopApp } from "../shared/desktop";
 import { platformFetch, refusalOf } from "../shared/maintenance";
@@ -1568,6 +1569,28 @@ export class ControlSession {
     await api("/api/hosted/delegations/revoke", { revoke: await signRevoke(d, this.keys) });
   }
 
+  // ---- the standing project grant for runs (M211), kept by the platform
+
+  /** The project's standing grant, and whether one is offered. */
+  async runGrant(project: string): Promise<RunGrantView> {
+    return api(`/api/projects/${encodeURIComponent(project)}/runs/grant`, undefined, platformFetch);
+  }
+
+  /** As an owner, let the platform start and instruct runs on the
+   * project's hosted workspaces under its delegation `d`, signed by this
+   * device. */
+  async signRunGrant(d: Delegation): Promise<void> {
+    const grant = await signGrant(d, this.keys);
+    await api(`/api/projects/${encodeURIComponent(d.project)}/runs/grant`, { grant }, platformFetch);
+  }
+
+  /** As an owner, take the grant back: no new runs; `stop` stops the ones
+   * going too. */
+  async revokeRunGrant(g: ProjectGrant, stop: boolean): Promise<void> {
+    const revoke = await signGrantRevoke(g, stop ? "stop" : "finish", this.keys);
+    await api(`/api/projects/${encodeURIComponent(g.project)}/runs/grant/revoke`, { revoke }, platformFetch);
+  }
+
   /** The teams this browser pinned and checked, for a machine of this
    * account's to check their rosters by (#233): `<founder>.<founder's
    * root>` by team. */
@@ -2070,4 +2093,15 @@ export class ControlSession {
     if (forgetDevice) await forget(location.origin);
     location.href = "/";
   }
+}
+
+/** `GET /api/projects/{project}/runs/grant` (M211). */
+export interface RunGrantView {
+  project: string;
+  owner: string;
+  role: "owner" | "editor" | "viewer";
+  grant: { grant: ProjectGrant; body: string; posted_by: string | null; created_at: number; revoke: GrantRevoke | null; revoked_at: number | null } | null;
+  past: { grant: ProjectGrant; revoke: GrantRevoke | null; revoked_at: number | null }[];
+  workspaces: number;
+  offer: boolean;
 }

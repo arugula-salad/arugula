@@ -26,6 +26,7 @@ pub mod activity;
 pub mod enroll;
 pub mod reseed;
 pub mod resume;
+pub mod runs;
 
 use std::{
     path::{Path, PathBuf},

@@ -43,6 +43,7 @@ pub mod mirror;
 pub mod objects;
 pub mod pg;
 pub mod projects;
+pub mod run_grants;
 pub mod runs;
 pub mod sql;
 

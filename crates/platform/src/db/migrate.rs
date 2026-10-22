@@ -191,16 +191,17 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0015_platform_jobs.sql"),
         additive: true,
     },
-    Migration {
-        version: 16,
-        name: "runs",
-        sql: include_str!("../../migrations/sqlite/0016_runs.sql"),
-        additive: true,
-    },
+    Migration { version: 16, name: "runs", sql: include_str!("../../migrations/sqlite/0016_runs.sql"), additive: true },
     Migration {
         version: 17,
         name: "deploys",
         sql: include_str!("../../migrations/sqlite/0017_deploys.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 18,
+        name: "run_grants",
+        sql: include_str!("../../migrations/sqlite/0018_run_grants.sql"),
         additive: true,
     },
 ];
@@ -309,6 +310,12 @@ const POSTGRES: &[Migration] = &[
         version: 17,
         name: "deploys",
         sql: include_str!("../../migrations/postgres/0017_deploys.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 18,
+        name: "run_grants",
+        sql: include_str!("../../migrations/postgres/0018_run_grants.sql"),
         additive: true,
     },
 ];
