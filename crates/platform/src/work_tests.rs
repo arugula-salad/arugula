@@ -28,13 +28,13 @@ use crate::{
 };
 
 /// A hosted machine: its keys, and what the hub says of it.
-struct Machine {
-    keys: DeviceKeys,
-    m: HostedMachine,
+pub(crate) struct Machine {
+    pub(crate) keys: DeviceKeys,
+    pub(crate) m: HostedMachine,
 }
 
 impl Machine {
-    fn new(project: &str, workspace: &str) -> Self {
+    pub(crate) fn new(project: &str, workspace: &str) -> Self {
         let keys = DeviceKeys::generate();
         let m = HostedMachine {
             project: project.into(),
@@ -46,7 +46,7 @@ impl Machine {
     }
 
     /// Its report of `run` moving `from` `to`, as event `seq`.
-    fn report(&self, run: &str, seq: u64, from: State, to: State, detail: &str) -> Report {
+    pub(crate) fn report(&self, run: &str, seq: u64, from: State, to: State, detail: &str) -> Report {
         let ev = arugula_e2e::run::Event { run, seq, from: Some(from), to, at: 50, detail, daemon: &self.m.machine };
         Report {
             run: run.into(),
@@ -60,15 +60,15 @@ impl Machine {
     }
 }
 
-struct World {
-    app: Arc<Platform>,
-    project: String,
-    clock: Arc<AtomicU64>,
-    worker: Worker,
+pub(crate) struct World {
+    pub(crate) app: Arc<Platform>,
+    pub(crate) project: String,
+    pub(crate) clock: Arc<AtomicU64>,
+    pub(crate) worker: Worker,
 }
 
 impl World {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let hub = Arc::new(TestHub::default());
         let p = Platform::new(Default::default(), Db::test(), hub, reqwest::Client::new(), Default::default());
         let app = Arc::new(p);
@@ -83,7 +83,7 @@ impl World {
     }
 
     /// A hosted workspace whose box enrolled as `m`, in `state`.
-    fn workspace(&self, id: &str, m: &Machine, state: &str) {
+    pub(crate) fn workspace(&self, id: &str, m: &Machine, state: &str) {
         let made =
             self.app.db.add_hosted_workspace(id, &self.project, id, &Default::default(), "alice", 10, 1).unwrap();
         assert!(matches!(made, crate::db::hosted::Added::Made(_)));
@@ -99,7 +99,7 @@ impl World {
 
     /// A run of `echo hi` on `daemon`, in workspace `ws`, under a grant
     /// (or not).
-    fn run(&self, daemon: &str, ws: &str, grant: Option<&str>) -> String {
+    pub(crate) fn run(&self, daemon: &str, ws: &str, grant: Option<&str>) -> String {
         let op =
             format!("arugula op v1\ndaemon {daemon}\nkind run\nsession -\npane - -\ncwd -\nargv ZWNobw==\nargv aGk=\n");
         let new = NewRun {
@@ -116,7 +116,7 @@ impl World {
     }
 
     /// Every step due now.
-    async fn settle(&self) {
+    pub(crate) async fn settle(&self) {
         for _ in 0..20 {
             if !self.worker.tick(&self.app.db).await.unwrap() {
                 return;
@@ -125,19 +125,19 @@ impl World {
         panic!("the worker never settled");
     }
 
-    fn at(&self, ms: u64) {
+    pub(crate) fn at(&self, ms: u64) {
         self.clock.store(ms, SeqCst);
     }
 
-    async fn ready(&self, m: &Machine) -> Vec<String> {
+    pub(crate) async fn ready(&self, m: &Machine) -> Vec<String> {
         work(&self.app, &m.m, &[TAKES_RUN.into()]).await.unwrap().items.into_iter().map(|i| i.run).collect()
     }
 
-    fn state(&self, run: &str) -> State {
+    pub(crate) fn state(&self, run: &str) -> State {
         self.app.db.run(run).unwrap().unwrap().state
     }
 
-    fn job(&self, run: &str) -> String {
+    pub(crate) fn job(&self, run: &str) -> String {
         self.app.db.platform_job(run).unwrap().unwrap().state
     }
 }

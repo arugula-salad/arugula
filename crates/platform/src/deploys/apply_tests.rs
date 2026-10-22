@@ -34,18 +34,30 @@ use crate::{
     work::{self, Dispatch},
 };
 
+/// A stall in a deploy's apply step, just before it makes the deploy's
+/// box (M223): for that deploy, run once there.
+#[allow(clippy::type_complexity)]
+pub(crate) static STALL: std::sync::Mutex<Option<(String, Box<dyn FnOnce() + Send>)>> = std::sync::Mutex::new(None);
+
+pub(crate) fn stall_point(deploy: &str) {
+    let f = STALL.lock().unwrap().take_if(|(d, _)| d == deploy);
+    if let Some((_, f)) = f {
+        f();
+    }
+}
+
 const KEY: &str = "0303030303030303030303030303030303030303030303030303030303030303"; // gitleaks:allow
 const SECRET: &str = "s3cr3t-m219-value";
 
 /// Team t (a owns it, b edits, x views), with a's devices and passkey, on a
 /// platform that keeps secrets and makes hosted boxes (the fake substrate,
 /// enrolling by sandbox id), its project delegated.
-async fn world() -> (Arc<TestHub>, Arc<Platform>, String, String, Arc<Fake>) {
+pub(crate) async fn world() -> (Arc<TestHub>, Arc<Platform>, String, String, Arc<Fake>) {
     world_with(false).await
 }
 
 /// [`world`], with a run-log bucket (M213) when `logs`.
-async fn world_with(logs: bool) -> (Arc<TestHub>, Arc<Platform>, String, String, Arc<Fake>) {
+pub(crate) async fn world_with(logs: bool) -> (Arc<TestHub>, Arc<Platform>, String, String, Arc<Fake>) {
     let hub = Arc::new(TestHub::default());
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
     let mut p = Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
@@ -71,14 +83,14 @@ async fn world_with(logs: bool) -> (Arc<TestHub>, Arc<Platform>, String, String,
 }
 
 /// A hosted machine: its keys, and what the hub says of it.
-struct Machine {
-    keys: DeviceKeys,
-    m: HostedMachine,
+pub(crate) struct Machine {
+    pub(crate) keys: DeviceKeys,
+    pub(crate) m: HostedMachine,
 }
 
 impl Machine {
     /// A machine of workspace `ws` of `project`, as the hub would say.
-    fn new(project: &str, ws: &str) -> Self {
+    pub(crate) fn new(project: &str, ws: &str) -> Self {
         let keys = DeviceKeys::generate();
         let m = HostedMachine {
             project: project.into(),
@@ -90,7 +102,7 @@ impl Machine {
     }
 
     /// Its signed report of `run` moving `from` `to` at `at`.
-    fn report(&self, run: &Run, from: RunState, to: RunState, at: u64, detail: &str) -> Report {
+    pub(crate) fn report(&self, run: &Run, from: RunState, to: RunState, at: u64, detail: &str) -> Report {
         let seq = run.last_seq + 1;
         let ev =
             arugula_e2e::run::Event { run: &run.id, seq, from: Some(from), to, at, detail, daemon: &self.m.machine };
@@ -106,12 +118,12 @@ impl Machine {
     }
 }
 
-fn worker(app: &Arc<Platform>) -> Worker {
+pub(crate) fn worker(app: &Arc<Platform>) -> Worker {
     Worker::new().with(Apply { app: app.clone() }).with(Dispatch { app: app.clone() })
 }
 
 /// Every job step due now, a few times over.
-async fn settle(app: &Arc<Platform>) {
+pub(crate) async fn settle(app: &Arc<Platform>) {
     let w = worker(app);
     for _ in 0..10 {
         let _ = w.tick(&app.db).await;
@@ -120,7 +132,7 @@ async fn settle(app: &Arc<Platform>) {
 }
 
 /// Every job step due at `at`, by a worker whose clock says so.
-async fn settle_at(app: &Arc<Platform>, at: u64) {
+pub(crate) async fn settle_at(app: &Arc<Platform>, at: u64) {
     let w = worker(app).clock(Clock::new(move || at));
     for _ in 0..10 {
         let _ = w.tick(&app.db).await;
@@ -128,7 +140,7 @@ async fn settle_at(app: &Arc<Platform>, at: u64) {
 }
 
 /// A deploy's box, by the deploy: its id and project.
-fn box_of(app: &Platform, deploy: &str) -> Option<(String, String)> {
+pub(crate) fn box_of(app: &Platform, deploy: &str) -> Option<(String, String)> {
     app.db
         .c()
         .query_row(
@@ -142,7 +154,7 @@ fn box_of(app: &Platform, deploy: &str) -> Option<(String, String)> {
 /// The approved deploy's job makes its box, the hosted worker makes it on
 /// the provider and records its enrollment, the box enrolls as a new
 /// machine, and the job makes its run there: that machine.
-async fn boot(app: &Arc<Platform>, hub: &TestHub, deploy: &str) -> Machine {
+pub(crate) async fn boot(app: &Arc<Platform>, hub: &TestHub, deploy: &str) -> Machine {
     settle(app).await;
     let now = now_ms();
     drive(app, now).await;
@@ -155,14 +167,14 @@ async fn boot(app: &Arc<Platform>, hub: &TestHub, deploy: &str) -> Machine {
 }
 
 /// The deploy's box, as the platform keeps it.
-fn its_box(app: &Platform, deploy: &str) -> crate::db::hosted::HostedWorkspace {
+pub(crate) fn its_box(app: &Platform, deploy: &str) -> crate::db::hosted::HostedWorkspace {
     let (b, project) = box_of(app, deploy).unwrap();
     app.db.hosted_any(&project, &b).unwrap().unwrap()
 }
 
 /// The deploy's job deletes its box, and the hosted worker does it: the
 /// provider has no box left, and the workspace is `deleted`.
-async fn deleted(app: &Arc<Platform>, fake: &Fake, deploy: &str) {
+pub(crate) async fn deleted(app: &Arc<Platform>, fake: &Fake, deploy: &str) {
     for i in 1..4 {
         settle_at(app, now_ms() + i * 40_000).await;
         drive(app, now_ms() + i * 40_000 + 5_000).await;
@@ -172,7 +184,7 @@ async fn deleted(app: &Arc<Platform>, fake: &Fake, deploy: &str) {
 }
 
 /// t's environment `production` with the fake driver and one secret, set.
-async fn production(base: &str, t: &str) -> String {
+pub(crate) async fn production(base: &str, t: &str) -> String {
     let (st, env) = call(
         base,
         "a",
@@ -185,12 +197,19 @@ async fn production(base: &str, t: &str) -> String {
     env["id"].as_str().unwrap().to_owned()
 }
 
-async fn set_secret(base: &str, who: &str, env: &str, name: &str) -> (u16, Value) {
+pub(crate) async fn set_secret(base: &str, who: &str, env: &str, name: &str) -> (u16, Value) {
     call(base, who, "POST", &format!("/api/environments/{env}/secrets/{name}"), Some(json!({ "value": SECRET }))).await
 }
 
 /// Planned by b and approved by a's phone, good until `expires`.
-async fn approved(base: &str, hub: &TestHub, t: &str, env: &str, sha: &str, expires: u64) -> (String, String) {
+pub(crate) async fn approved(
+    base: &str,
+    hub: &TestHub,
+    t: &str,
+    env: &str,
+    sha: &str,
+    expires: u64,
+) -> (String, String) {
     let a = devices(hub, "a");
     let (id, op) = asked(base, "b", t, env, sha).await;
     let body = if expires == 0 {
@@ -203,11 +222,11 @@ async fn approved(base: &str, hub: &TestHub, t: &str, env: &str, sha: &str, expi
     (id, op)
 }
 
-fn state(app: &Platform, deploy: &str) -> State {
+pub(crate) fn state(app: &Platform, deploy: &str) -> State {
     app.db.deploy(deploy).unwrap().unwrap().state
 }
 
-async fn pull(app: &Platform, m: &Machine, takes: &[&str]) -> Work {
+pub(crate) async fn pull(app: &Platform, m: &Machine, takes: &[&str]) -> Work {
     let takes: Vec<String> = takes.iter().map(|t| (*t).to_owned()).collect();
     work::work(app, &m.m, &takes).await.unwrap()
 }

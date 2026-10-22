@@ -122,6 +122,8 @@ impl Dispatch {
         }
         let Some(run) = db.run(&job.id)? else { return Ok(Step::Done) };
         if run.state.terminal() {
+            // A deploy's run whose deploy's job gave up: its owners hear.
+            crate::deploys::apply::page_unpaged(&self.app, &run.id).await?;
             return Ok(Step::Done);
         }
         let waiting = matches!(run.state, State::Pending | State::Approved);
@@ -335,4 +337,4 @@ pub fn start(app: &Arc<Platform>) {
 
 #[cfg(test)]
 #[path = "work_tests.rs"]
-mod tests;
+pub(crate) mod tests;
