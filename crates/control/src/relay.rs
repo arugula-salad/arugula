@@ -32,11 +32,7 @@ use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tracing::{info, warn};
 
-use crate::{
-    App,
-    auth::{DaemonAuth, Session},
-    err,
-};
+use crate::{App, auth::Session, err};
 
 const PING_EVERY: Duration = Duration::from_secs(15);
 /// A text message on a daemon's socket: "fetch your certificates now".
@@ -446,30 +442,36 @@ impl Relay {
 
 pub async fn dial(
     State(app): State<Arc<App>>,
-    d: DaemonAuth,
+    d: crate::auth::Dialer,
     Query(q): Query<arugula_control_wire::DialQuery>,
     up: WebSocketUpgrade,
 ) -> Response {
     let urls = q.direct_urls();
-    let id = d.cert.device.clone();
-    let ticket = match app.relay.admit(&app.db, &d.cert.account, true, app.cfg.billing) {
+    let (id, hosted) = (d.id.clone(), d.hosted);
+    let ticket = match app.relay.admit(&app.db, &d.account, true, app.cfg.billing) {
         Ok(t) => t,
         Err(why) => {
-            note_refused(&app, &d.cert.account, "machine", &why);
+            note_refused(&app, &d.account, "machine", &why);
             return refuse(why, false, up);
         }
     };
-    if let Err(e) = app.db.seen(&id, urls.as_deref(), now_ms()) {
+    if let Err(e) = seen(&app, &id, hosted, urls.as_deref()) {
         warn!(error = %e, "recording a daemon");
     }
     // Mux frames (at most a window of data and a header) and forge text.
     up.max_message_size(DAEMON_MAX_MESSAGE)
         .max_frame_size(DAEMON_MAX_MESSAGE)
         .read_buffer_size(DAEMON_READ_BUFFER)
-        .on_upgrade(move |ws| daemon_socket(app, id, ws, ticket))
+        .on_upgrade(move |ws| daemon_socket(app, id, hosted, ws, ticket))
 }
 
-async fn daemon_socket(app: Arc<App>, id: String, ws: WebSocket, ticket: Ticket) {
+/// A machine on the relay was heard from: a hosted one (M178) is kept
+/// apart from daemons.
+fn seen(app: &App, id: &str, hosted: bool, urls: Option<&[String]>) -> anyhow::Result<()> {
+    if hosted { app.db.hosted_seen(id, urls, now_ms()) } else { app.db.seen(id, urls, now_ms()) }
+}
+
+async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, ticket: Ticket) {
     let (mux, mut out) = Mux::new(None);
     let stop = Arc::new(tokio::sync::Notify::new());
     let nudge = Arc::new(tokio::sync::Notify::new());
@@ -521,7 +523,7 @@ async fn daemon_socket(app: Arc<App>, id: String, ws: WebSocket, ticket: Ticket)
                 if heard.elapsed() > DEAD_AFTER || tx.send(Message::Ping(Default::default())).await.is_err() {
                     break;
                 }
-                let _ = app.db.seen(&id, None, now_ms());
+                let _ = seen(&app, &id, hosted, None);
             }
             _ = stop.notified() => break,
             _ = ticket.gone() => break,
@@ -536,7 +538,7 @@ async fn daemon_socket(app: Arc<App>, id: String, ws: WebSocket, ticket: Ticket)
     drop(live);
     app.forge.drop_daemon(&id, generation);
     app.guest_routes.drop_daemon(&id, generation);
-    let _ = app.db.seen(&id, None, now_ms());
+    let _ = seen(&app, &id, hosted, None);
     info!(daemon = %id, "daemon left the relay");
     app.analytics.capture(
         &ticket.account,

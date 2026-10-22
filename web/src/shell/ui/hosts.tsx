@@ -11,6 +11,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../../shared/ui/menu";
 import { openSwarm } from "../swarm/route";
 import { controlMenuItems, controlState, subscribeControlState } from "./control-state";
+import { HOSTED_LABEL, HOSTED_MEANS } from "../../shared/hosted";
 
 function seen(name: string): string {
   const h = directory.find(name);
@@ -87,6 +88,8 @@ function placeIn(name: string): { place: string; means: string } | null {
   const h = fleet?.host(name);
   if (!directory.control || !h) return null;
   const team = h.team ? (h.teamName ?? "a team") : null;
+  // M178: a hosted machine says so wherever its place is shown.
+  if (h.hosted) return { place: team ? `In ${team} · ${HOSTED_LABEL}` : HOSTED_LABEL, means: HOSTED_MEANS };
   return { place: machinePlace(team, h.owner), means: placeMeans(team, h.owner) };
 }
 

@@ -35,7 +35,10 @@
 use std::collections::BTreeMap;
 
 use arugula_control_common::Principal;
-use arugula_control_wire::forge::{DaemonOp, OpAnswer, Poke};
+use arugula_control_wire::{
+    forge::{DaemonOp, OpAnswer, Poke},
+    hosted::{EnrollAsk, EnrollGiven},
+};
 use arugula_e2e::team::TeamRole;
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
@@ -201,6 +204,24 @@ pub trait HubPort: Send + Sync {
     fn daemon_op<'a>(&'a self, daemon: &'a str, op: &'a DaemonOp) -> BoxFuture<'a, HubResult<OpAnswer>> {
         let _ = (daemon, op);
         Box::pin(async { anyhow::bail!("this hub can't ask machines to do ops") })
+    }
+
+    /// Record a one-time enrollment for a hosted box the platform is
+    /// making (M178), under the project's live delegation: by a ticket the
+    /// hub makes (for the box's env) or by the box's sandbox id. The box
+    /// enrolls with it once, at the hub's `/api/hosted/enroll`. A hub from
+    /// before M178 can't.
+    fn hosted_enrollment<'a>(&'a self, ask: &'a EnrollAsk) -> BoxFuture<'a, HubResult<EnrollGiven>> {
+        let _ = ask;
+        Box::pin(async { anyhow::bail!("this hub doesn't enroll hosted machines") })
+    }
+
+    /// A hosted workspace is deleted or rebuilt (M178): its machine is
+    /// removed and hung up on. How many machines went. A hub from before
+    /// M178 can't.
+    fn hosted_remove<'a>(&'a self, workspace: &'a str) -> BoxFuture<'a, HubResult<u32>> {
+        let _ = workspace;
+        Box::pin(async { anyhow::bail!("this hub doesn't enroll hosted machines") })
     }
 }
 

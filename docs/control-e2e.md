@@ -1075,8 +1075,11 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `share_answers` | metadata | An account's yes or no to a machine shared with it. | yes |  |
 | `daemon_links` | metadata | Until when a machine has a live share link, so control routes link guests to it. | yes |  |
 | `sandboxes` | metadata | A hosted sandbox: its VM's id, the device that asked, a hash of its join ticket, its state. | yes | Sprites |
+| `project_delegations` | metadata | A project delegation (M178): an owner's device's signed word that control may enroll hosted machines into the project, the account that sent it, and the signed revocation that ended it. | yes: its own project's and its disbanded teams' go, and every one it signed. |  |
+| `hosted_enrollments` | metadata | A one-time hosted enrollment (M178): a hash of its ticket or the box's sandbox id, the project, workspace and delegation, when it runs out and when it was used. | yes |  |
+| `hosted_machines` | metadata | A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), its addresses, when it was last seen and removed. | yes |  |
 | `push_subs` | metadata | A browser's signed push subscription: the push service's endpoint and the keys pushes are encrypted to. | yes |  |
-| `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends. | nothing of one |  |
+| `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends, and its hosted key (M178), which signs the hosted machines enrolled under a project's delegation. | nothing of one |  |
 | `notices` | metadata | A notice for an account with no push, made from names control holds ("Ada left Acme"). | yes |  |
 | `labs_flags` | metadata | The Labs flags an account or a team turned on for its machines. | yes: a team's go when the team does. | PostHog |
 | `teams` | metadata | A team: its id, name, founder and founder's root, and whether it's locked. | partly: the teams it founded, or that nobody else is left in, go with it; the rest stay. | PostHog |

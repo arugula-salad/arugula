@@ -12,6 +12,7 @@
 
 pub mod changes;
 pub mod doc_links;
+pub mod hosted;
 pub mod platform;
 #[cfg(test)]
 mod tables;
@@ -551,6 +552,7 @@ impl Db {
         )?;
         conn.execute_batch(SCHEMA)?;
         conn.execute_batch(doc_links::SCHEMA)?;
+        conn.execute_batch(hosted::SCHEMA)?;
         conn.execute_batch(changes::SCHEMA)?;
         conn.execute_batch(platform::SCHEMA)?;
         migrate(&conn)?;
@@ -564,6 +566,7 @@ impl Db {
         let conn = arugula_control_common::sqlite::memory();
         conn.execute_batch(SCHEMA).unwrap();
         conn.execute_batch(doc_links::SCHEMA).unwrap();
+        conn.execute_batch(hosted::SCHEMA).unwrap();
         conn.execute_batch(changes::SCHEMA).unwrap();
         conn.execute_batch(platform::SCHEMA).unwrap();
         migrate(&conn).unwrap();
@@ -2276,6 +2279,9 @@ impl Db {
             named.extend(q.query_map(params![a], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?);
         }
         named.extend(daemons.iter().cloned());
+        // Hosted machines (M178) aren't in `daemons`: theirs go here.
+        let hosted = hosted::erase(&tx, a, e.disband)?;
+        named.extend(hosted.iter().cloned());
         let mut moved: Vec<String> = Vec::new();
         for t in e.disband {
             named.insert(t.clone());
@@ -2382,7 +2388,7 @@ impl Db {
         };
         platform::untold(&tx, &deleted, arugula_e2e::now_ms())?;
         tx.commit()?;
-        Ok(daemons)
+        Ok(daemons.into_iter().chain(hosted).collect())
     }
 
     /// Whether `device` was a machine of an account that's been deleted.

@@ -28,6 +28,7 @@ import {
   type Enrollment,
 } from "./e2e/keys.ts";
 import { newKeyPair } from "./e2e/noise.ts";
+import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "./e2e/hosted.ts";
 import type { E2ETarget } from "./client";
 import { desktopApp } from "../shared/desktop";
 import { platformFetch, refusalOf } from "../shared/maintenance";
@@ -112,12 +113,17 @@ export interface DirDaemon {
   /** M124: one of mine from before chat moved to control, with chat on:
    * its threads stay on it until it's updated. */
   chat_update?: boolean;
+  /** M178: a hosted machine, accepted for this project only (labelled
+   * "Hosted: the operator can read" wherever it's shown). */
+  hosted?: { project: string; workspace: string; role: TeamRole };
 }
 
 /** Another account's machine as the directory lists it, with that account's
- * certificates to check it by. */
-interface ForeignEntry extends Omit<DirDaemon, "cert"> {
+ * certificates to check it by; or a hosted machine (M178), with its
+ * certificate and its project's delegation. */
+interface ForeignEntry extends Omit<DirDaemon, "cert" | "hosted"> {
   chain?: { trust: { account: string; root: string } | null; certs: Cert[]; revocations: Revocation[] };
+  hosted?: HostedProof;
 }
 
 export interface JoinRequest {
@@ -1350,8 +1356,13 @@ export class ControlSession {
       this.used = new Map(Object.entries(devs.used ?? {}));
       this.passkeyDevices = new Set(devs.passkeys ?? []);
       const daemons: DirDaemon[] = [];
+      const hosted: ForeignEntry[] = [];
       for (const d of dir.daemons) {
-        const { chain, ...entry } = d;
+        const { chain, hosted: proof, ...entry } = d;
+        if (proof) {
+          hosted.push(d);
+          continue;
+        }
         let cert = this.trusted.get(d.id);
         // Someone else's machine: by their account's certificates, from
         // the root this browser pinned for them on first sight.
@@ -1360,9 +1371,13 @@ export class ControlSession {
         }
         if (cert?.kind === "daemon") daemons.push({ ...entry, cert });
       }
-      this.daemons = daemons;
       this.offers = dir.offers ?? [];
       await this.loadTeams();
+      // Hosted machines (M178), checked against what this browser holds:
+      // its team's roster, or its own account's chain. Never one of its
+      // account's devices, and nothing outside their project.
+      for (const d of hosted) daemons.push(...(await this.acceptHosted(d, devs)));
+      this.daemons = daemons;
       await this.loadSandboxes();
       await this.loadBilling();
       this.stale = false;
@@ -1513,6 +1528,46 @@ export class ControlSession {
     this.teams = out;
   }
 
+  /** A hosted machine from the directory, if this browser accepts it for
+   * its project (M178): as a machine of that project only. */
+  private async acceptHosted(d: ForeignEntry, devs: { certs: Cert[]; revocations: Revocation[] }): Promise<DirDaemon[]> {
+    const e = this.enrollment;
+    const { chain: _chain, hosted: proof, ...entry } = d;
+    if (!e || !proof) return [];
+    const owner = proof.delegation.owner;
+    const team = owner.startsWith("team:") ? this.teams.find((t) => `team:${t.team}` === owner && t.verified) : undefined;
+    const owners = team
+      ? { team: team.roster, certs: team.certs }
+      : { account: { account: e.account, root: e.root }, certs: devs.certs, revocations: devs.revocations };
+    const ok = await acceptHosted(e.account, proof, owners);
+    if (!ok.ok) return [];
+    const c = proof.cert;
+    // Its keys, to open a channel with; never in the account's trust.
+    const cert: Cert = { v: 1, account: c.project, device: c.device, kind: "daemon", name: c.name, noise: c.noise, sign: c.sign, created: c.created, approver: "", sig: "" };
+    return [{ ...entry, cert, hosted: { project: ok.project, workspace: ok.workspace, role: ok.role } }];
+  }
+
+  // ---- project delegations (M178)
+
+  /** Control's hosted key and the delegations of this account's projects. */
+  async delegations(): Promise<{ key: string; delegations: { id: string; delegation: Delegation; revoke: DelegationRevoke | null; by_account: string }[] }> {
+    return api("/api/hosted/delegations");
+  }
+
+  /** As an owner, let control enroll hosted machines into `project`
+   * (owned by `team:<id>` or `account:<id>`), signed by this device. */
+  async delegate(project: string, owner: string): Promise<string> {
+    const { key } = await this.delegations();
+    const d = await signDelegation(project, owner, key, this.keys);
+    const r = await api<{ id: string }>("/api/hosted/delegations", { delegation: d });
+    return r.id;
+  }
+
+  /** As an owner, take a delegation back: nothing more enrolls under it. */
+  async undelegate(d: Delegation): Promise<void> {
+    await api("/api/hosted/delegations/revoke", { revoke: await signRevoke(d, this.keys) });
+  }
+
   /** The teams this browser pinned and checked, for a machine of this
    * account's to check their rosters by (#233): `<founder>.<founder's
    * root>` by team. */
@@ -1525,7 +1580,7 @@ export class ControlSession {
   /** A machine of this account's own: not a team's, not someone else's. */
   owns(id: string): boolean {
     const d = this.daemons.find((x) => x.id === id);
-    return !!d && (!d.account || d.account === this.account) && !d.team;
+    return !!d && (!d.account || d.account === this.account) && !d.team && !d.hosted;
   }
 
   sawJoined() {

@@ -41,6 +41,9 @@ mod gateway_wire;
 #[cfg(test)]
 mod grants_wire;
 mod guest_jump;
+mod hosted;
+#[cfg(test)]
+mod hosted_wire;
 #[cfg(test)]
 mod hub_latency_bench;
 mod hub_port;
@@ -370,6 +373,9 @@ pub struct App {
     pub sends: forge_send::Starts,
     pub limits: limit::Limits,
     pub vapid: push::Vapid,
+    /// Control's hosted key (M178): it signs the hosted machines enrolled
+    /// under a project's delegation, and nothing else.
+    pub hosted_key: arugula_e2e::hosted::HostedKey,
     pub hosted: Option<sandboxes::Hosted>,
     /// The GitHub App's slug (M40), when control has one; the App itself
     /// is the platform's (M161). And daemons' subscriptions to its pokes.
@@ -442,6 +448,7 @@ impl App {
     pub fn for_tests(public_url: &str) -> Self {
         let db = db::Db::memory();
         let vapid = push::Vapid::load(&db).unwrap();
+        let hosted_key = hosted::load_key(&db).unwrap();
         let http = reqwest::Client::new();
         let cfg = arugula_platform::Config {
             public_url: public_url.into(),
@@ -482,6 +489,7 @@ impl App {
             sends: Default::default(),
             limits: limit::Limits::new(None),
             vapid,
+            hosted_key,
             hosted: None,
             github_app: None,
             forge: Default::default(),
@@ -595,6 +603,12 @@ fn routes() -> Routes {
         .route("/api/sandboxes", get(sandboxes::list).post(sandboxes::create))
         .route("/api/sandboxes/{id}", axum::routing::delete(sandboxes::delete))
         .route(wire::SANDBOX_DONE, post(sandboxes::done))
+        // Hosted machines under a project's delegation (M178).
+        .route("/api/hosted/delegations", get(hosted::delegations).post(hosted::delegate))
+        .route("/api/hosted/delegations/revoke", post(hosted::revoke))
+        .route(wire::hosted::ENROLL, post(hosted::enroll))
+        .route(wire::hosted::HOSTED_TRUST, get(hosted::trust))
+        .route("/api/hosted/machines/{id}", axum::routing::delete(hosted::remove))
         .route("/api/daemon/github/token", post(forge::daemon_token))
         .route(wire::RELAY_DIAL, get(relay::dial))
         .route("/api/relay/c/{id}", get(relay::client))
@@ -702,6 +716,8 @@ async fn control_json(
         doc_viewer: Some(doc_links::viewer_url(&app.cfg.public_url, app.cfg.block_domain.as_deref())),
         // Where the platform page is (M151), when it has a host.
         platform: app.cfg.platform_host.as_ref().map(|p| p.origin.clone()),
+        // What a project delegation names (M178).
+        hosted_key: Some(app.hosted_key.public()),
     })
 }
 
@@ -788,7 +804,8 @@ fn main() -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
     // database (census.rs), with no server. `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
-    // `notice`: a notice for every account (notice.rs). `platform`: a
+    // `notice`: a notice for every account (notice.rs). `hosted-enrollment`:
+    // what the platform asks as it makes a hosted box (hosted.rs). `platform`: a
     // window's tools, the platform's own code (`arugula_platform::window`).
     let mut argv = std::env::args().skip(1).peekable();
     if argv.peek().is_some_and(|a| a == "census") {
@@ -796,6 +813,9 @@ fn main() -> anyhow::Result<()> {
     }
     if argv.peek().is_some_and(|a| a == "maintenance") {
         return maintenance::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "hosted-enrollment") {
+        return hosted::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "notice") {
         return notice::run(argv.skip(1));
@@ -878,6 +898,7 @@ async fn run() -> anyhow::Result<()> {
         b.replicate();
     }
     let vapid = push::Vapid::load(&db)?;
+    let hosted_key = hosted::load_key(&db)?;
     let hosted = match a.sprites_token.filter(|t| !t.is_empty()) {
         Some(t) => Some(sandboxes::Hosted {
             sprites: sprites::Sprites::new(&a.sprites_url, t)?,
@@ -1007,6 +1028,7 @@ async fn run() -> anyhow::Result<()> {
         sends: Default::default(),
         limits: limit::Limits::new(a.trust_proxy_header),
         vapid,
+        hosted_key,
         hosted,
         github_app,
         forge: Default::default(),
