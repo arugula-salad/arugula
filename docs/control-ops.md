@@ -782,6 +782,70 @@ fly logs -a arugula-platform | grep 'inbox shadow'
 Fly keeps logs only a few days, so ship them where they last (or collect
 the lines daily) for the two weeks.
 
+**M173 go-live** (#1219). Turning the mirror on for real people's repos is
+Jake's go. Until then nothing is linked, so the platform mirrors nothing.
+In order:
+
+1. **Before.** The release with M159–M172 is on both apps. The real App's
+   write permissions and access events are approved on Jake's
+   installations ("The App's write permissions", "The App's access events"
+   above). The privacy notice and the site's forge page are updated the
+   same day (arugula-salad/site): they reverse the forge page's "only
+   'something changed'".
+2. **Link 10 or more repos,** Jake's and one team's. Jake, signed in with
+   GitHub, on each project's settings page on the platform page, or:
+
+   ```sh
+   arugula project link jhgaylor/<repo>                          # Jake's own project
+   arugula project link <org>/<repo> --project <team's project>  # a team owner or editor
+   arugula project ls                                            # --project for the team's
+   ```
+
+   The team's org owner installs the App on their organization first (a
+   link answers `install_app`, with the page, until they do). Leave content
+   mirroring off unless the team asks for it. Each repo's first poller turn
+   is a backfill: `forge mirror: poller turn` with `backfill` and its
+   repo id, within a few minutes.
+3. **The inbox shadow on Jake's machines.** In each daemon's environment,
+   `ARUGULA_INBOX_SHADOW=1`, then restart the daemon:
+   - Linux: `systemctl --user edit arugulad` with
+     `[Service]` and `Environment=ARUGULA_INBOX_SHADOW=1`, then
+     `systemctl --user restart arugulad`.
+   - macOS, `arugulad install`'s agent: the same key under
+     `EnvironmentVariables` in `~/Library/LaunchAgents/arugulad.plist`
+     (reinstalls keep it), then
+     `launchctl kickstart -k gui/$(id -u)/arugulad`.
+
+   Check each: an `inbox shadow` line naming its `daemon` within 15
+   minutes. Its machine needs forge blocks open on linked repos to
+   compare anything; a shadowing daemon doesn't pin, so its blocks keep
+   reading GitHub.
+4. **Read the numbers every day,** from the lines above
+   ("Reading the mirror's numbers", "The inbox's shadow period"):
+
+   | Number | Line | Field | Holds when |
+   |---|---|---|---|
+   | Webhook to row | `forge mirror: webhook to row` | `event_p95_ms` | under 5000 |
+   | Drift | `forge mirror: drift today` (every machine) | `drift` over `items`, summed | under 1 per 1000 a day |
+   | Rate budget | `forge mirror: rate budget` | `used_pct`, `backing_off` | never backing off for long |
+   | Inbox shadow | `inbox shadow` (every machine) | `agree / compared`, summed | 99% or more |
+
+   Fly keeps only a few days of logs, so keep each day's lines:
+
+   ```sh
+   fly logs -a arugula-platform --no-tail | grep -E "forge mirror:|inbox shadow" > m173-$(date -u +%F).log
+   ```
+
+   The lines carry repo and item ids, never titles; keep the files off
+   the public repo anyway.
+5. **Post the numbers on #1204** for two weeks: each day's four numbers,
+   the repo count, and every `inbox shadow: disagree` explained (the kinds
+   listed above). M173 is done when they hold for two weeks.
+6. **Stop** if installers refuse the permission upgrade, or a team objects
+   to content custody (#1204). `arugula project unlink` stops reading a
+   repo at once and purges its rows within a day; pinned blocks go back to
+   reading GitHub with their own login.
+
 **Making the app** (once, before M141). It lives in `iad`, beside its
 Managed Postgres, which Fly doesn't offer in `ewr`; the hub stays in `ewr`,
 about 5 ms away:

@@ -1106,7 +1106,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `forge_events` | metadata | What happened to a linked repo's PR or issue, as metadata: reviews and their state, review requests, state changes, with who and when. No text. | Inboxes are computed from them with every machine asleep. | nothing of one | GitHub |
 | `forge_content` | **plaintext** | A linked repo's PR and issue bodies, comments, reviews' text and review comments (with their file, line and the comment they answer), with author and times. Only for a repo whose project turned on content mirroring (M166); turning it off deletes them at once, and an unlink or an uninstall purges them within a day. | A project that opted in searches PR text with every machine asleep. | nothing of one | GitHub |
 | `drafts` | **plaintext** | A comment, review or new issue for a linked repo, waiting for a person to send it: the project, the person it's for (and the agent and machine that wrote it, if one did), the target, the text, its state, and where it landed once sent. | A person sends a draft from a phone with every machine asleep. | yes: its drafts, and those in projects that go with it. | GitHub |
-| `inbox_items` | metadata | A member's inbox: an item (a linked repo's PR or issue, or a native issue), why it's there (a review requested, a mention, an assignment, failed checks, a mention in its thread), and when it came, was seen and was done. | The inbox is computed and pushed by the platform with every machine asleep, and mentions and assignments reach it as they happen. | yes |  |
+| `inbox_items` | metadata | A member's inbox: an item (a linked repo's PR or issue, or a native issue), why it's there (a review requested, failed checks, changes requested, a mention, an assignment, merged or approved and green, a draft waiting, a mention in its thread), and when it came, was seen and was done. A linked repo's item only for members GitHub lets read it. | The inbox is computed and pushed by the platform with every machine asleep, and mentions and assignments reach it as they happen. | yes |  |
 | `github_token_mints` | metadata | The audit log of every GitHub token the platform minted: installation or user token, the installation and repo, the permissions, who it was for, what for, and when. Never the token. | Tokens are minted for reads, ingest and sends with every machine asleep. | kept: its mints stay in the audit log, naming it, so a token can be traced after the account goes, for as long as the log keeps a mint: a year, pruned hourly. | GitHub |
 | `forge_refetch` | metadata | What the forge mirror's poller reads again from GitHub at its repo's next turn (M164): a linked repo's id and an item's kind and number, or a head commit's SHA, that two answers gave in the same second and disagreed on, and when. | Webhooks arrive and the poller runs with every machine asleep, and a row two answers disagreed on is put right within a turn. | nothing of one | GitHub |
 | `forge_access` | metadata | What GitHub said about a person's access to a repository (M165): their numeric GitHub id, the repository's name and owner, why not if not, and when it was asked by the database's clock. Kept 10 minutes, so every machine of the platform gives the same answer, to a read of a private repo's items, a daemon's live updates and a hosted box's token. | Private repos' items are read from the platform with every machine asleep, each read checked against the reader's own GitHub access. | kept: an answer names a GitHub id, not an account: it stops being used after 10 minutes, and goes at the next hourly prune. | GitHub |
@@ -1118,11 +1118,11 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 
 ### Who else sees it
 
-- **Litestream's bucket:** Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. Cloud secrets are there sealed, and their key isn't.
+- **Litestream's bucket:** Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. On Postgres, the platform's tables go there in its nightly dump instead: encrypted, kept 30 days. Cloud secrets are there sealed, and their key isn't.
 - **Managoat:** Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals.
 - **PostHog:** PostHog gets product events, when control has a key for it: account, team and machine ids, a machine's version, OS and arch, plans, Labs flags and counts. No names, logins, addresses or content.
 - **Sprites:** Sprites hosts hosted sandboxes: it knows each one's VM.
-- **GitHub:** GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it sees every token control mints and every draft sent, and it sends the webhooks.
+- **GitHub:** GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it makes every token control mints and sees each one used, every draft sent goes to it, and it sends the webhooks.
 - **Stripe:** Stripe bills, when control has a key for it: it holds the customers and subscriptions control keeps ids for, and gets sandbox minutes.
 
 ### Never stored
@@ -1131,7 +1131,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 - terminal bytes, snapshots, logs, scrollback; the lines of a pane nobody quoted into chat
 - link keys (a link's fragment), and Shared Docs' keys
 - the push payloads machines send, in the clear
-- a person's own credentials: GitHub's OAuth token (used once at sign-in), forge tokens
+- a person's own credentials: GitHub's OAuth token (used once at sign-in), the one-use user token a send is made with (used for one call, then revoked), forge tokens
 
 <!-- End of what `just control-tables` writes. -->
 
