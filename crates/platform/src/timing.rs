@@ -304,6 +304,21 @@ impl HubPort for Timed {
     ) -> BoxFuture<'a, HubResult<arugula_control_wire::forge::OpAnswer>> {
         timed!(self.0.daemon_op(daemon, op))
     }
+    fn hosted_enrollment<'a>(
+        &'a self,
+        ask: &'a arugula_control_wire::hosted::EnrollAsk,
+    ) -> BoxFuture<'a, HubResult<arugula_control_wire::hosted::EnrollGiven>> {
+        timed!(self.0.hosted_enrollment(ask))
+    }
+    fn hosted_enrolled<'a>(
+        &'a self,
+        workspaces: &'a [String],
+    ) -> BoxFuture<'a, HubResult<Vec<arugula_control_wire::hosted::Enrolled>>> {
+        timed!(self.0.hosted_enrolled(workspaces))
+    }
+    fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
+        timed!(self.0.hosted_gone(workspaces))
+    }
 }
 
 #[cfg(test)]

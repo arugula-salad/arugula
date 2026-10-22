@@ -264,6 +264,10 @@ async fn a_snapshot_box_enrolls_once_by_its_sandbox_id() {
     let ws = ["hw_9".to_owned()];
     let enrolled = c.app.hub_port.hosted_enrolled(&ws).await.unwrap();
     assert_eq!(enrolled, vec![Enrolled { workspace: "hw_9".into(), machine: k.id(), taken: false }]);
+    // The same through the platform's own view of the hub (its timing
+    // wrapper forwards each call).
+    let crate::gateway::PlatformAt::InProcess(p) = &c.app.platform else { panic!("in process") };
+    assert_eq!(p.hub.hosted_enrolled(&ws).await.unwrap(), enrolled);
 
     // Mine to reach (routed: it isn't on the relay, so 503), and nobody
     // else's.
