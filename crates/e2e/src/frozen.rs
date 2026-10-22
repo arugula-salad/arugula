@@ -68,6 +68,18 @@ fn signed_domains_never_change() {
         detail: "{}",
         daemon: "d",
     };
+    let project_grant: crate::project_grant::ProjectGrant = serde_json::from_value(json!({
+        "id": "i", "project": "p", "owner": "account:a", "delegation": "d", "caps": ["runs.start"], "made": 1, "by": "d",
+    }))
+    .unwrap();
+    let grant_revoke = crate::project_grant::GrantRevoke {
+        project: "p".into(),
+        delegation: "d".into(),
+        running: crate::project_grant::Running::Finish,
+        at: 1,
+        by: "d".into(),
+        sig: String::new(),
+    };
     let pin = TeamPin { team: "t".into(), founder: "a".into(), founder_root: "r".into() };
 
     let cases = [
@@ -85,6 +97,9 @@ fn signed_domains_never_change() {
         (first_line(grant.body()), "61727567756c6120626c6f636b206772616e74207631"),
         // Run events (M210), which hosted daemons sign.
         (first_line(run.body()), "61727567756c612072756e206576656e74207631"),
+        // The standing project grant and its revoke (M211; the revoke is v2).
+        (first_line(project_grant.body()), "61727567756c612070726f6a656374206772616e74207631"),
+        (first_line(grant_revoke.body()), "61727567756c612070726f6a656374206772616e74207265766f6b65207632"),
     ];
     for (got, want) in cases {
         assert_eq!(got, text(want), "a frozen domain changed (#504)");

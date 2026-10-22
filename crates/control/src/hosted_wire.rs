@@ -133,6 +133,12 @@ async fn an_owner_delegates_control_enrolls_a_box_and_only_the_project_reaches_i
     let (_, list) = c.as_person(&cy_s, "GET", "/api/hosted/delegations", None).await;
     assert_eq!(list["key"], json!(c.app.hosted_key.public()));
     assert_eq!(list["delegations"][0]["id"], json!(d.id()), "teammates see it");
+    // The platform asks which delegation is live (M211), in process and
+    // through its own view of the hub.
+    assert_eq!(c.app.hub_port.live_delegation(PROJECT, &owner).await.unwrap(), Some(d.id()));
+    assert_eq!(c.app.hub_port.live_delegation(PROJECT, "team:0000000000000000").await.unwrap(), None);
+    let crate::gateway::PlatformAt::InProcess(p) = &c.app.platform else { panic!("in process") };
+    assert_eq!(p.hub.live_delegation(PROJECT, &owner).await.unwrap(), Some(d.id()));
     let (_, list) = c.as_person(&ox_s, "GET", "/api/hosted/delegations", None).await;
     assert_eq!(list["delegations"], json!([]));
 
@@ -208,6 +214,7 @@ async fn an_owner_delegates_control_enrolls_a_box_and_only_the_project_reaches_i
     assert_eq!(st, 200, "{v}");
     let given = c.app.hub_port.hosted_enrollment(&ask(&owner, "hw_3", None)).await.unwrap();
     assert_eq!(given, EnrollGiven::NoDelegation);
+    assert_eq!(c.app.hub_port.live_delegation(PROJECT, &owner).await.unwrap(), None, "none live now");
     let (st, _) = c.post("/api/hosted/enroll", &enroll_body(&DeviceKeys::generate(), Some(&early), None)).await;
     assert_eq!(st, 403);
     // What enrolled before stays, still accepted with the revocation.

@@ -290,7 +290,7 @@ async fn agents_draft_people_send() {
     assert_eq!(v["draft"]["state"], "sent");
     let asked = hub.ops_asked();
     assert_eq!(asked.len(), 1);
-    let DaemonOp::ForgeSend(op) = &asked[0].1;
+    let DaemonOp::ForgeSend(op) = &asked[0].1 else { panic!("{asked:?}") };
     assert_eq!(asked[0].0, "geek");
     assert_eq!(
         (op.account.as_str(), op.repo.as_str(), op.number, op.kind.as_str(), op.body.as_str()),
@@ -422,7 +422,13 @@ async fn the_cli_sends_through_the_typed_ops() {
     assert_eq!(v["result"], json!({ "url": "https://github.com/acme/app/pull/1#c", "draft": id }));
     let (s, v) = op("issue.create", json!({ "repo": "acme/app", "title": "Bug", "body": "b" })).await;
     assert_eq!((s, v["result"]["url"].as_str()), (200, Some("https://github.com/acme/app/pull/1#c")), "{v}");
-    let kinds: Vec<String> =
-        hub.ops_asked().into_iter().map(|(_, DaemonOp::ForgeSend(s))| format!("{} {}", s.kind, s.body)).collect();
+    let kinds: Vec<String> = hub
+        .ops_asked()
+        .into_iter()
+        .filter_map(|(_, op)| match op {
+            DaemonOp::ForgeSend(s) => Some(format!("{} {}", s.kind, s.body)),
+            _ => None,
+        })
+        .collect();
     assert_eq!(kinds, ["comment from the terminal", "issue b"]);
 }

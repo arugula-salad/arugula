@@ -1027,3 +1027,14 @@ why_asleep = "Caps on the platform's key are checked when a hosted box starts a 
 with_account = "partly"
 note = "It stops naming the account; the turns stay until they're 30 days old."
 seen_by = ["litestream"]
+
+[[table]]
+name = "run_grants"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A project's standing grant for runs (M211): the bytes a project owner's device signed (that the platform may start and instruct runs on the project's hosted workspaces, under its delegation, until it expires) and the signature, its id, the delegation and signing device it names, when it was made and when it expires, who sent it and when, and when a newer grant replaced it; and once revoked (a revoke takes back every grant of the project under its delegation made by its time), the revoke's signed bytes, signature and time, when the platform took it, and whether the runs going were to stop."
+why_asleep = "Scheduled and event runs start under it with every owner's device asleep, and the platform sends it to the hosted machine with each start."
+with_account = "partly"
+note = "It stops naming the account as who sent it. The grants of its personal project and its disbanded teams' projects are deleted. A grant its devices signed stays, and hosted machines stop accepting it once those devices aren't an owner's."
+seen_by = ["litestream"]

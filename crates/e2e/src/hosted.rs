@@ -317,7 +317,7 @@ impl Owners<'_> {
     /// owner's own devices, trusted now: for a team, of an account the
     /// roster makes an owner; for an account, of that account. The owner
     /// named must be this one.
-    fn may_sign(&self, owner: &str, device: &str, body: &str, sig: &str) -> bool {
+    pub(crate) fn may_sign(&self, owner: &str, device: &str, body: &str, sig: &str) -> bool {
         if Owner::parse(owner) != Some(self.owner()) {
             return false;
         }

@@ -324,6 +324,13 @@ impl HubPort for InProcess {
     ) -> BoxFuture<'a, HubResult<Vec<arugula_platform::hub::MachineActivity>>> {
         Box::pin(async move { Ok(self.app()?.relay.activity.of(machines)) })
     }
+
+    fn live_delegation<'a>(&'a self, project: &'a str, owner: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        Box::pin(async move {
+            let app = self.app()?;
+            crate::hosted::live_delegation_id(&app.db, &app.hosted_key.public(), project, owner)
+        })
+    }
 }
 
 /// The platform, when it's in this process: what the three calls above

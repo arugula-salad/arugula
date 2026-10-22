@@ -203,6 +203,13 @@ fn live_delegation(db: &Db, key: &str, project: &str, owner: &Owner) -> anyhow::
 
 // ---------------------------------------------------------------- the platform's side
 
+/// `HubPort::live_delegation` (M211): the id of `project`'s live
+/// delegation for `owner`, naming `key`, if it has one.
+pub(crate) fn live_delegation_id(db: &Db, key: &str, project: &str, owner: &str) -> anyhow::Result<Option<String>> {
+    let Some(owner) = Owner::parse(owner) else { return Ok(None) };
+    Ok(live_delegation(db, key, project, &owner)?.map(|d| d.id()))
+}
+
 /// `HubPort::hosted_enrollment`: record a one-time enrollment for a box
 /// the platform is making, under a live delegation naming `key`.
 pub(crate) fn ask(db: &Db, key: &str, a: &EnrollAsk) -> anyhow::Result<EnrollGiven> {

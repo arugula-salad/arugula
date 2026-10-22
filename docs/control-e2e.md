@@ -618,6 +618,74 @@ control writes the certificate's time, so a malicious control could
 backdate one past a revocation (it runs the boxes anyway); and the page's
 team roster is the one control serves, as for team machines.
 
+### Runs on hosted machines: the standing project grant
+
+Scheduled and event runs start on a project's hosted workspaces with every
+owner's device asleep (platform step 7). An owner's device signs, per
+project, that the platform may ("One standing grant per project starts
+runs", aru-099; `arugula_e2e::project_grant`, `crates/platform/src/run_grant.rs`,
+`crates/daemon/src/hosted/runs.rs`). It's S37's standing grant with a
+project as its resource.
+
+- **What it allows.** The platform may start runs, and instruct them, on
+  every hosted workspace of the project, running whatever command the
+  project's runs start, until the grant expires or is revoked. It never
+  covers a deploy.
+- **The grant.** An owner's own device (a browser or the CLI, as for a
+  delegation) signs `arugula project grant v1`: its id, the project and its
+  owner, the project's live delegation, `resource hosted`, `to platform`,
+  the powers (`runs.instruct`, `runs.start`), when, when it expires, and
+  which device. The page and the CLI give 90 days unless the owner picks
+  (at most 366); the platform refuses one with no expiry or a longer one.
+  Devices and machines… has *Runs on hosted workspaces* under *Hosted
+  machines*: *Allow runs* signs it, on a computer or the phone, and
+  *Renew* signs a revoke and a new grant when it's about to expire (or
+  *Sign again* when the project's delegation changed). `arugula runs
+  grant sign` signs it with the CLI's device. The platform's project
+  settings show it, and offer it once the project has a hosted workspace.
+- **The platform keeps it, and can't make or widen it.** It stores the
+  signed bytes and the signature (`run_grants`), one live grant a project
+  (not revoked, expired or superseded), and reads the grant back from
+  those bytes only. It takes a grant only if it names the project's live
+  delegation (the hub's word); one that expired, or names a delegation
+  that isn't live any more, is superseded by the next. It holds no device
+  keys, so it can't check the signature itself; the hosted machines do.
+- **Each start carries it.** The platform asks the workspace's machine
+  over the relay (`runs.start`, a typed op), with the grant and the
+  newest revoke of the project's grants. The machine checks, with what it
+  pinned at enrollment (the team's roster and members' certificates, or
+  the account's chain): the grant is signed by a device of one of the
+  project's owners, trusted now; it's for the machine's own project and
+  owner and names the delegation it was enrolled under; that delegation
+  isn't revoked; it covers what's asked; it hasn't expired; no owner's
+  revoke covers it. If any check fails, nothing starts and the refusal's
+  code comes back.
+- **Revoking.** Any owner's device signs `arugula project grant revoke v2`
+  (the project, a delegation, `running finish` or `running stop`, when, by).
+  It names no grant: it takes back every grant of the project under that
+  delegation made at or before its time, so whoever relays it can't point
+  it at another grant, and a grant signed after it is a new one. The
+  platform stops starting at once, and relays it to every hosted machine
+  of the project (`runs.revoke`), and again with every later start. A
+  machine checks a revoke's signature once, when it first hears it, and
+  keeps the newest (`<state>/run-grant-revokes.json`): after that it counts
+  without being checked again, so the platform can't bring a grant back by
+  leaving the revoke out, or by dropping its signer's certificate from what
+  it sends. The kept file fails closed: once one was kept, a missing or
+  unreadable file refuses every start. It's in arugulad's state directory,
+  which runs must never be able to write (M212). `running stop` also stops
+  the runs going (once there are runs to stop).
+- **It gates only what the platform starts.** People's own use of a hosted
+  machine (its owners and editors) doesn't go through it.
+
+**What control can do with a grant:** start and instruct runs on that
+project's hosted workspaces until it expires or is revoked, at times it
+chooses. A machine that heard a revoke keeps it; one that never heard it
+(control dropped it) honours the grant until it expires, which is why it
+expires. **What it can't:** make a grant, widen one (another power, a
+later expiry, another project or delegation), point a revoke at another
+grant, or bring back one a machine has heard revoked.
+
 ## What holds against control
 
 Who can read your terminals, depending on what control (the hosted service,
@@ -633,6 +701,7 @@ or whoever runs yours) does:
 | lies about who **@name** is when you share with them | believed on the first share unless you verify them; after that the share stops, saying their key changed |
 | enrolls a **hosted machine** into a project an owner delegated | can read what runs in it: it runs the box (labelled "Hosted: the operator can read"). Only that project's people reach it, and nobody accepts it after the delegation is revoked |
 | enrolls a hosted machine into a project nobody delegated | refused by every client: no owner's device signed for that project |
+| starts runs on a project's hosted workspaces | only under an owner's signed standing grant, which each machine checks; refused once a machine has heard it revoked, and by every machine once it expires |
 | serves a **modified web client** | can read what that client shows and use its keys while it runs |
 
 The last row is the important limit. The browser client at control's
@@ -1189,10 +1258,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 94 tables in two planes ("Two planes, two trust rules"):
+Control's database has 95 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (36 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (58 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (59 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1299,6 +1368,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `deploy_events` | metadata | An environment's deploy log (M217): append-only, a hash chain per environment that anyone can verify. Each event says which deploy, what happened (planned, requested, approved, denied, canceled, expired, started, succeeded, failed, staled), who (an account, an agent's owner and machine, a run, or the platform), when, a small detail (the source and plan's digest, the run, the approval), and its hash and the one before. | Approving a deploy checks its environment's log (the stale rule), with every machine asleep. | partly: those of projects that go with it go. The rest are kept as written, the account's id in them included: an event is never rewritten, and rewriting one would break its chain. The id names no one once the account is gone, so they show as a deleted account. |  |
 | `project_inference_keys` | **plaintext** | A project's own inference key (M185), one per provider (Anthropic, OpenAI), sealed with a key control holds apart from the database, who set it and when. Control opens it only to write it into the project's boxes' egress rules, where E2B's proxy sets it on their requests to the provider; it's never answered back. | A hosted workspace's agents run on the project's key with every other machine asleep, and the page shows whether it's set. | partly: it stops naming the account as who set a key. Keys of its personal project and its disbanded teams' projects are dropped by the platform's sweep. | E2B |
 | `hosted_turns` | metadata | An agent turn on a hosted workspace's box (M185): the workspace, the provider, whose key paid (the project's or the platform's), the account whose caps a platform turn counts against, and when it started and ended. Kept 30 days. | Caps on the platform's key are checked when a hosted box starts a turn, with every other machine asleep. | partly: it stops naming the account; the turns stay until they're 30 days old. |  |
+| `run_grants` | metadata | A project's standing grant for runs (M211): the bytes a project owner's device signed (that the platform may start and instruct runs on the project's hosted workspaces, under its delegation, until it expires) and the signature, its id, the delegation and signing device it names, when it was made and when it expires, who sent it and when, and when a newer grant replaced it; and once revoked (a revoke takes back every grant of the project under its delegation made by its time), the revoke's signed bytes, signature and time, when the platform took it, and whether the runs going were to stop. | Scheduled and event runs start under it with every owner's device asleep, and the platform sends it to the hosted machine with each start. | partly: it stops naming the account as who sent it. The grants of its personal project and its disbanded teams' projects are deleted. A grant its devices signed stays, and hosted machines stop accepting it once those devices aren't an owner's. |  |
 
 ### Who else sees it
 

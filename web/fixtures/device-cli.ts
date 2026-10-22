@@ -24,6 +24,11 @@
 //                          the account's project, or TEAM's (M178):
 //                          {project, owner, delegation}
 //   undelegate [TEAM]      take its delegations back: {revoked}
+//   grant-sign [TEAM]      as an owner, sign the project's standing grant for
+//                          runs (M211) under its live delegation: {project, grant}
+//   grant-revoke [TEAM] [stop]
+//                          revoke it (`stop`: the runs going stop too):
+//                          {project, grant, told}
 //   hosted-entry ID        a hosted machine as the directory lists it here,
 //                          proof and all (exit 1 if it isn't listed)
 //   hosted-accept FILE     whether this device accepts the hosted machine whose
@@ -123,6 +128,10 @@ async function main() {
       return out(await d.delegate(rest[0]));
     case "undelegate":
       return out({ revoked: await d.undelegate(rest[0]) });
+    case "grant-sign":
+      return out(await d.signRunGrant(rest[0] || undefined));
+    case "grant-revoke":
+      return out(await d.revokeRunGrant(rest[0] || undefined, rest[1] === "stop"));
     case "hosted-entry": {
       const e = await d.hostedEntry(rest[0]);
       if (!e) throw new Error(`control lists no hosted machine ${rest[0]} here`);
@@ -165,7 +174,7 @@ async function main() {
     }
     default:
       throw new Error(
-        `unknown command ${cmd ?? "(none)"}: signin, approve, devices, online, pane, panes, team-create, team-invite, team-accept, team-admit, delegate, undelegate, hosted-entry, hosted-accept, routed, open, preview`,
+        `unknown command ${cmd ?? "(none)"}: signin, approve, devices, online, pane, panes, team-create, team-invite, team-accept, team-admit, delegate, undelegate, grant-sign, grant-revoke, hosted-entry, hosted-accept, routed, open, preview`,
       );
   }
 }

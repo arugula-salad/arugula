@@ -1328,6 +1328,40 @@ auth = "cloud_driver"
 clients = ["cli", "daemon"]
 note = "Rebuilds a hosted workspace from its spec (M179): a project's owner or editor on ARUGULA_HOSTED_ACCOUNTS."
 
+# ---- platform: the standing project grant for runs (M211)
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/runs/grant"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project's standing grant for runs, its past ones, the project's live delegation (the hub's word), and whether one is offered (a hosted workspace and no live grant, or one under an old delegation) or due for renewal, for its members."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/runs/grant"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "An owner's device's signed grant, kept as signed: it must name the project's live delegation (HubPort::live_delegation) and expire within 366 days. The platform can't check the signature (hosted machines do) and never makes one. One live grant a project. Not a machine's cloud.drive: agents never sign one."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/runs/grant/revoke"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Any owner's device's signed revoke of every grant of the project under a delegation made by its time: no new starts, and every hosted machine of the project is told (runs.revoke)."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/runs/start"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Owners and editors: the workspace's hosted machine is sent the live grant (runs.start) and checks it. Until M212 it carries no operation."
+
 [[route]]
 method = "GET"
 path = "/api/projects/{project}/inference-keys"
