@@ -28,10 +28,12 @@
 //! - **Usage** (M188): how long each box ran, by its size, is metered from
 //!   the worker's checkpoints and checked against E2B's own record
 //!   ([`usage`]).
-//! - **Not here yet.** Holding a busy box (M181) and the hub waking one on
-//!   connect (M182) plug into the worker and [`ask`]; setup in a visible
-//!   pane and "rebuild needed" on the page are M183's, from
-//!   [`HostedWorkspace::rebuild_needed`].
+//! - **Waking on connect** (M182): when someone opens a workspace's machine
+//!   and its daemon isn't connected, the hub asks the platform to wake its
+//!   box, and the worker resumes it ([`wake`]).
+//! - **Not here yet.** Holding a busy box (M181) plugs into the worker and
+//!   [`ask`]; setup in a visible pane and "rebuild needed" on the page are
+//!   M183's, from [`HostedWorkspace::rebuild_needed`].
 //!
 //! The provider's key never reaches a client or a box, and neither does an
 //! inference key ([`crate::compute`]).
@@ -48,6 +50,9 @@ pub mod routes;
 #[cfg(test)]
 mod tests;
 pub mod usage;
+pub mod wake;
+#[cfg(test)]
+mod wake_tests;
 pub mod worker;
 
 pub use crate::db::hosted::HostedWorkspace;
@@ -218,7 +223,8 @@ pub fn good_name(name: &str) -> bool {
 /// What someone may ask of a workspace that the worker does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ask {
-    /// Resume a paused box (M182's wake on connect asks this too).
+    /// Resume a paused box, or one that may have paused itself (M182's
+    /// wake on connect).
     Wake,
     /// Pause a running box. Only between turns: M181 asks, never while its
     /// daemon reports busy.

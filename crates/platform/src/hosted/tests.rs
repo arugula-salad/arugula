@@ -26,19 +26,24 @@ use crate::{
 };
 
 /// A provider in memory. `lose_next`: the next create makes its box but
-/// answers nothing; `refuse_next`: it makes nothing and says no.
+/// answers nothing; `refuse_next`: it makes nothing and says no. A resume
+/// is counted (`resumes`), takes `resume_ms`, and fails with `resume_error`
+/// while it's set (M182).
 #[derive(Default)]
-struct Fake {
-    boxes: Mutex<BTreeMap<String, Sandbox>>,
+pub(super) struct Fake {
+    pub(super) boxes: Mutex<BTreeMap<String, Sandbox>>,
     creates: Mutex<Vec<Create>>,
     deleted: Mutex<Vec<String>>,
     n: AtomicU32,
     lose_next: AtomicBool,
     refuse_next: AtomicBool,
+    pub(super) resumes: AtomicU32,
+    pub(super) resume_ms: AtomicU32,
+    pub(super) resume_error: Mutex<Option<compute::Error>>,
 }
 
 impl Fake {
-    fn boxes(&self) -> Vec<Sandbox> {
+    pub(super) fn boxes(&self) -> Vec<Sandbox> {
         self.boxes.lock().unwrap().values().cloned().collect()
     }
 
@@ -47,7 +52,7 @@ impl Fake {
     }
 
     /// Its timeout passed: the box paused itself.
-    fn pause_all(&self) {
+    pub(super) fn pause_all(&self) {
         for b in self.boxes.lock().unwrap().values_mut() {
             b.state = State::Paused;
         }
@@ -86,14 +91,24 @@ impl Substrate for Fake {
     }
 
     fn resume<'a>(&'a self, id: &'a str, _: Duration) -> BoxFuture<'a, compute::Result<Resumed>> {
-        let mut boxes = self.boxes.lock().unwrap();
-        ready(match boxes.get_mut(id) {
-            None => Err(compute::Error::NotFound),
-            Some(b) if b.state == State::Paused => {
-                b.state = State::Running;
-                Ok(Resumed::Woke)
+        Box::pin(async move {
+            self.resumes.fetch_add(1, SeqCst);
+            let ms = self.resume_ms.load(SeqCst);
+            if ms > 0 {
+                tokio::time::sleep(Duration::from_millis(ms.into())).await;
             }
-            Some(_) => Ok(Resumed::Running),
+            if let Some(e) = self.resume_error.lock().unwrap().clone() {
+                return Err(e);
+            }
+            let mut boxes = self.boxes.lock().unwrap();
+            match boxes.get_mut(id) {
+                None => Err(compute::Error::NotFound),
+                Some(b) if b.state == State::Paused => {
+                    b.state = State::Running;
+                    Ok(Resumed::Woke)
+                }
+                Some(_) => Ok(Resumed::Running),
+            }
         })
     }
 
@@ -132,7 +147,7 @@ impl Substrate for Fake {
 /// alice owns team t1, bob edits it, vic views it; olga is elsewhere.
 /// The platform has the fake provider, template `tpl`, and lets anyone
 /// make workspaces but carol.
-async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, String, String) {
+pub(super) async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, String, String) {
     let hub = Arc::new(TestHub::default());
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("vic", TeamRole::Viewer)]);
     hub.team("t2", &[("olga", TeamRole::Owner), ("carol", TeamRole::Owner)]);
@@ -156,7 +171,7 @@ async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, Str
 }
 
 /// Every step due at `now`.
-async fn drive(app: &Platform, now: u64) {
+pub(super) async fn drive(app: &Platform, now: u64) {
     for _ in 0..50 {
         if !worker::tick_at(app, now).await.unwrap() {
             return;
@@ -165,7 +180,7 @@ async fn drive(app: &Platform, now: u64) {
     panic!("the worker never settled");
 }
 
-async fn make(base: &str, who: &str, project: &str, name: &str) -> (u16, Value) {
+pub(super) async fn make(base: &str, who: &str, project: &str, name: &str) -> (u16, Value) {
     let spec = json!({ "repos": ["https://github.com/acme/app"], "packages": ["ripgrep"], "setup": "make" });
     call(base, who, "POST", &format!("/api/projects/{project}/workspaces"), Some(json!({ "name": name, "spec": spec })))
         .await

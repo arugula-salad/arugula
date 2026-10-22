@@ -153,6 +153,14 @@ impl PlatformPort for PlatformAt {
     ) -> BoxFuture<'a, anyhow::Result<arugula_platform::forge::send::Outcome>> {
         self.port().send_draft(account, draft, token)
     }
+
+    fn hosted_wake<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::hosted::WakeAnswer>> {
+        self.port().hosted_wake(project, workspace)
+    }
 }
 
 /// An out-of-process platform: `PlatformPort` over HTTP, and the way this
