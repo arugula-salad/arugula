@@ -140,6 +140,8 @@ pub fn cli(sandbox: &str) -> ! {
 /// A new box: reseed the kernel's generator as root, else mix fresh bytes
 /// in as this user. True when it reseeded.
 pub fn fresh(sandbox: &str) -> bool {
+    // Hosted boxes are Linux; elsewhere this only builds.
+    #[cfg(unix)]
     if nix::unistd::geteuid().is_root() {
         let (bytes, bits) = mix(sandbox);
         return report(reseed_kernel(&bytes, bits));
@@ -205,6 +207,7 @@ mod tests {
         assert!(bits == 0 || bits == 512, "{bits}");
     }
 
+    #[cfg(unix)]
     #[test]
     fn reseeding_needs_root() {
         if nix::unistd::geteuid().is_root() {
