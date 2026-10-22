@@ -163,8 +163,63 @@ export class TerminalView {
     this.term.attachCustomKeyEventHandler((e) => this.keys(e));
     this.takeFiles();
     this.term.open(this.host);
+    this.mirrorTextarea();
     this.touchScroll();
     this.offAppearance = onAppearance(() => this.applyTheme());
+  }
+
+  /** A phone keyboard (Gboard) edits xterm.js's hidden textarea anywhere,
+   * not just at its end: a tapped suggestion replaces a word. xterm.js
+   * diffs the textarea as if text were only added at the end, so it sends
+   * the whole textarea again (xtermjs/xterm.js#3600), and it reads the
+   * textarea before Gboard's edit lands, so keys go missing. After the
+   * IME's keys (keyCode 229), outside a composition, take that input over:
+   * keep what the terminal was sent, and on each change erase back to where
+   * it differs and type the rest, so the line matches the textarea. Other
+   * keys, and compositions (CJK), stay with xterm.js. */
+  private mirrorTextarea() {
+    const ta = this.term.textarea;
+    if (!ta) return;
+    let sent = ta.value;
+    let composing = false;
+    let ime = false;
+    const resync = () => queueMicrotask(() => (sent = ta.value));
+    // Capture on the host runs before xterm.js's listeners on the textarea.
+    this.host.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.target !== ta || composing || e.isComposing) return;
+        ime = e.keyCode === 229;
+        if (ime) e.stopImmediatePropagation();
+      },
+      true,
+    );
+    this.host.addEventListener(
+      "input",
+      (e) => {
+        if (e.target !== ta || composing || (e as InputEvent).isComposing) return;
+        // A key xterm.js sent itself typed this.
+        if (!ime) return resync();
+        e.stopImmediatePropagation();
+        if (ta.value === sent) return;
+        let same = 0;
+        while (same < sent.length && same < ta.value.length && sent[same] === ta.value[same]) same++;
+        // Don't split a surrogate pair.
+        if (same > 0 && /[\uD800-\uDBFF]/.test(sent[same - 1])) same--;
+        const erase = [...sent.slice(same)].length;
+        const data = "\x7f".repeat(erase) + ta.value.slice(same);
+        sent = ta.value;
+        this.term.input(data, true);
+      },
+      true,
+    );
+    this.host.addEventListener("compositionstart", () => (composing = true), true);
+    this.host.addEventListener("compositionend", () => (composing = false), true);
+    // xterm.js empties the textarea on Enter, Ctrl+C and blur, and sends
+    // compositions itself: start again from what's there.
+    this.term.onData(resync);
+    ta.addEventListener("focus", resync);
+    ta.addEventListener("blur", resync);
   }
 
   /** xterm.js 6 scrolls on the wheel only (its viewport is VS Code's
