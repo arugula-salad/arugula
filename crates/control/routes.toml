@@ -1274,6 +1274,46 @@ note = "A linked repo's settings (M166): content mirroring on (a member who main
 
 [[route]]
 method = "GET"
+path = "/api/projects/{project}/workspaces"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "A project's hosted workspaces (M179), for its members. Never a box's sandbox id."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/workspaces"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Makes a hosted workspace (M179): a project's owner or editor on ARUGULA_HOSTED_ACCOUNTS; the worker makes its box and records its enrollment."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/workspaces/{id}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Opens a hosted workspace (M179), for its project's members: asks the worker to wake a paused box."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/workspaces/{id}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Deletes a hosted workspace (M179): a project's owner or editor; the worker deletes every box it has."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/workspaces/{id}/rebuild"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Rebuilds a hosted workspace from its spec (M179): a project's owner or editor on ARUGULA_HOSTED_ACCOUNTS."
+
+[[route]]
+method = "GET"
 path = "/api/projects/{project}/items"  # wire::projects::PROJECT_ITEMS
 process = "platform"
 auth = "cloud_driver"

@@ -378,6 +378,18 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::grants::GrantsCmd>,
     },
+    /// A project's hosted workspaces on Arugula control.
+    ///
+    /// `create NAME` makes one (owner or editor on the project; `--repo`,
+    /// `--package`, `--setup` and `--env` say what it's built from), `ls`
+    /// lists them, `open` wakes one and says its machine, `rebuild` makes
+    /// its box again from its spec, `delete` takes it and its box away.
+    /// `--project` names a project by id or name; the default is your
+    /// personal one. Needs `arugula login`.
+    Cloud {
+        #[command(subcommand)]
+        cmd: cmd::cloud::CloudCmd,
+    },
     /// A project's linked GitHub repos on Arugula control.
     ///
     /// `link OWNER/REPO` links one (you need admin or maintain on it on
@@ -649,6 +661,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Grants { cmd } = cli.cmd {
         return cmd::grants::run(cmd, cli.json);
     }
+    if let Command::Cloud { cmd } = cli.cmd {
+        return cmd::cloud::run(cmd, cli.json);
+    }
     if let Command::Project { cmd } = cli.cmd {
         return cmd::project::run(cmd, cli.json);
     }
@@ -768,6 +783,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         | Command::Login(_)
         | Command::Logout
         | Command::Grants { .. }
+        | Command::Cloud { .. }
         | Command::Project { .. }
         | Command::Draft { .. }
         | Command::Forge { .. } => {

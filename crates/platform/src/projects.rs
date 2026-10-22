@@ -116,10 +116,10 @@ pub async fn list(State(app): State<Arc<Platform>>, s: Person) -> Result<Json<Pr
 }
 
 /// Whether hosted workspaces are open to `account`, so the shell offers to
-/// delegate its projects (M178). M179's allowlist (`ARUGULA_HOSTED_ACCOUNTS`)
-/// answers it; until that lands, nobody.
-fn hosted_open(_app: &Platform, _account: &str) -> bool {
-    false
+/// delegate its projects (M178): this platform has a compute provider, and
+/// the account is on M179's allowlist (`ARUGULA_HOSTED_ACCOUNTS`).
+fn hosted_open(app: &Platform, account: &str) -> bool {
+    app.compute.is_some() && app.hosted.allows(account)
 }
 
 /// Apply the hub's change feed from where this last got to, to its end.

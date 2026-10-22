@@ -52,6 +52,10 @@ sees = "Litestream copies the whole database to a bucket (Cloudflare R2, for the
 name = "Managoat"
 sees = "Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals."
 
+[parties.e2b]
+name = "E2B"
+sees = "E2B runs hosted workspaces' boxes: it holds their disks and memory, the env and metadata each is made with (the workspace, project, release and template ids), and the secrets in its broker."
+
 [parties.posthog]
 name = "PostHog"
 sees = "PostHog gets product events, when control has a key for it: account, team and machine ids, a machine's version, OS and arch, plans, Labs flags and counts. No names, logins, addresses or content."
@@ -866,4 +870,39 @@ holds = "metadata"
 what = "Which of the platform's numbered migrations (M142) its database has: each one's number, name, checksum, whether it's additive (older builds may start past it) and when it ran, or that it was found already in place on a database made before migrations."
 why_asleep = "The platform checks its tables are the shape its code expects before it serves anything, whether or not any machine is up."
 with_account = "none"
+seen_by = ["litestream"]
+
+# ---- hosted workspaces (M179, platform step 5)
+
+[[table]]
+name = "hosted_workspaces"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A hosted workspace (M179): its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the last error, the worker's lease, who made it and when."
+why_asleep = "The platform makes, wakes, pauses and deletes hosted workspaces' boxes itself, and the page lists them, with every machine asleep."
+with_account = "partly"
+note = "It stops naming the account as its maker. Workspaces in its personal project and its disbanded teams' projects are deleted, boxes and all, by the worker; their rows stay, marked deleted."
+seen_by = ["litestream", "e2b"]
+
+[[table]]
+name = "hosted_workspace_secrets"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A secret a hosted workspace takes, by name, and where its value is: sealed here with a key control holds apart from the database, or in the provider's secrets broker."
+why_asleep = "A hosted workspace's box is made and rebuilt with every machine off."
+with_account = "partly"
+note = "They go with their workspace, when the worker deletes it."
+seen_by = ["litestream", "e2b"]
+
+[[table]]
+name = "hosted_ports"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A port a dev server listens on in a hosted workspace (M186), its label, and who made it public and until when (M187)."
+why_asleep = "Previews are served and expire with every machine asleep."
+with_account = "partly"
+note = "It stops naming the account as who made a port public. They go with their workspace."
 seen_by = ["litestream"]
