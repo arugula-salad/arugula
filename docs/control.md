@@ -110,6 +110,43 @@ arugula cloud rebuild dev                 # a new box from the spec
 arugula cloud delete dev
 ```
 
+**Runs and their triggers (M214, platform step 7).** A run executes on one
+of a project's hosted workspaces. It starts by hand, on a schedule, or on a
+linked repo's event, and the platform makes it `pending` and queues its job
+for the workspace's machine (M212). A **run spec** is a named run kept in
+the project: the workspace, and a command or an instruction to an agent.
+Its **schedules** are cron expressions (five fields, at most every 5
+minutes) in a time zone. The platform fires them, so they keep ticking with
+every person's machine asleep. A tick missed while the platform is down
+fires once, and two platform machines or a restart never fire one twice.
+Its **rules** start it on a PR opened, a check failed or a push, on a
+linked repo and branch (`*` matches any run of characters). Each event
+starts it once, however often GitHub delivers it. By default a rule
+refuses events from outside the repo: a PR from a fork or by someone who
+isn't the repo's owner, member or collaborator, and a check run whose head
+isn't in the repo. A fork's branch names never match. Only an owner lets a
+rule take them (`outsiders`). Each rule starts at most 20 runs an hour,
+unless it says otherwise (`max_per_hour`). A schedule or a rule fires only
+while the person who made it is still an owner or editor of the project,
+on `ARUGULA_HOSTED_ACCOUNTS`; otherwise it passes with no run and says why.
+What an event's source says is untrusted text, written by whoever caused
+it: it's shown quoted, and never reaches a run's environment, command or
+an agent's prompt unquoted. A push rule needs the
+App subscribed to **Push** events (with *Contents: read*), which its
+installers approve: until then push rules don't fire. Owners and editors on
+`ARUGULA_HOSTED_ACCOUNTS` change them and start runs. Only a person or a
+CLI device does: a machine's agent starts runs through MCP (M216), under
+the project's standing grant (M211). The code is in
+`crates/platform/src/triggers/` and `db/triggers.rs`.
+
+```
+arugula runs spec add nightly --workspace dev --dir /work/app -- just e2e
+arugula runs schedule add nightly --cron '0 3 * * *' --tz America/Chicago
+arugula runs rule add nightly --on check-failed --branch main
+arugula runs start --spec nightly            # by hand; or a command after --
+arugula runs spec ls                         # with their schedules and rules
+```
+
 **Whose key a hosted agent runs on (M185, #1246).** Keys never enter the
 box: E2B's egress proxy sets the key on the box's requests to
 `api.anthropic.com` and `api.openai.com`, over the placeholder the agents

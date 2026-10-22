@@ -28,9 +28,12 @@
 //! - **Exit codes** come only from the daemon, and only on a run that was
 //!   running: `succeeded` exited 0, `failed` didn't (or has none: stopped,
 //!   interrupted).
-//! - **The job** that carries a run to its workspace isn't here: M212 and
-//!   M214 enqueue it on `platform_jobs` (M208) beside the run they make
-//!   with [`Db::create_run`].
+//! - **The job** that carries a run to its workspace is its `run` job on
+//!   `platform_jobs` (M208), which [`dispatch`] queues beside the run, in
+//!   the same transaction ([`create_run_in`]); M212 steps it.
+//! - **A trigger's key** (M214): a run a schedule's tick or a rule's event
+//!   made names it in `trigger_key`, unique, so that tick or event makes
+//!   one run however often it's seen.
 
 use anyhow::{Context as _, Result, bail};
 pub use arugula_e2e::run::State;
@@ -424,62 +427,85 @@ fn op_daemon(op: &str) -> Option<&str> {
     (!id.is_empty() && !id.contains(' ')).then_some(id)
 }
 
+/// [`Db::create_run`] in the caller's transaction, `key` naming what a
+/// trigger made it for (M214: a schedule's tick, a rule's event). A run
+/// with that key already there is answered instead, and nothing is made:
+/// `true` when this made it. `None`: there's no such project.
+pub fn create_run_in(c: &impl Sql, new: &NewRun, key: Option<&str>, at: u64) -> Result<Option<(Run, bool)>> {
+    let Some(daemon) = op_daemon(new.op) else {
+        bail!("a run's spec is an S37 operation (`arugula op v1`, then `daemon <id>`)");
+    };
+    if !new.source.is_object() {
+        bail!("a run's trigger source is a JSON object");
+    }
+    let op_hash = hex::encode(Sha256::digest(new.op.as_bytes()));
+    let made = c
+        .query_row(
+            &format!(
+                "INSERT INTO runs (id, project_id, workspace_id, trigger_kind, trigger_source, op, op_hash,
+                     daemon, state, started_by, started_by_agent, grant_id, last_seq, created_at, trigger_key)
+                 SELECT ?1, id, ?2, ?3, ?4, ?5, ?6, ?12, 'pending', ?7, ?8, ?9, 1, ?10, ?13 FROM projects
+                 WHERE id = ?11
+                 ON CONFLICT (trigger_key) WHERE trigger_key IS NOT NULL DO NOTHING
+                 RETURNING {COLS}"
+            ),
+            params![
+                new_id(),
+                new.workspace,
+                new.trigger.as_str(),
+                new.source.to_string(),
+                new.op,
+                op_hash,
+                new.started_by,
+                new.started_by_agent,
+                new.grant,
+                at,
+                new.project,
+                daemon,
+                key
+            ],
+            run_row,
+        )
+        .optional()?;
+    let Some(run) = made else {
+        let Some(key) = key else { return Ok(None) };
+        let there = c
+            .query_row(&format!("SELECT {COLS} FROM runs WHERE trigger_key = ?1"), params![key], run_row)
+            .optional()?;
+        return Ok(there.map(|run| (run, false)));
+    };
+    let first = Event {
+        run: run.id.clone(),
+        seq: 1,
+        from: None,
+        to: State::Pending,
+        at,
+        detail: "{}".into(),
+        daemon: None,
+        sig: None,
+    };
+    add_event(c, &first)?;
+    Ok(Some((run, true)))
+}
+
+/// Hand run `id` to its workspace (M212 carries it there): its `run` job on
+/// `platform_jobs`, queued in the caller's transaction, beside the run a
+/// trigger made (M214). The job's id is the run's, so asking twice queues
+/// one: `false` when it was there already.
+pub fn dispatch(c: &impl Sql, id: &str, now: u64) -> Result<bool> {
+    super::jobs::enqueue(c, id, super::jobs::JobKind::Run, &serde_json::json!({ "run": id }), now, now)
+}
+
 impl Db {
     /// Make a run in `project`, `pending`, with its first event (control's).
     /// `None`: there's no such project. Its job is the caller's (M212,
     /// M214).
     pub fn create_run(&self, new: &NewRun, at: u64) -> Result<Option<Run>> {
-        let Some(daemon) = op_daemon(new.op) else {
-            bail!("a run's spec is an S37 operation (`arugula op v1`, then `daemon <id>`)");
-        };
-        if !new.source.is_object() {
-            bail!("a run's trigger source is a JSON object");
-        }
-        let op_hash = hex::encode(Sha256::digest(new.op.as_bytes()));
         let mut c = self.c();
         let tx = c.transaction()?;
-        let Some(run) = tx
-            .query_row(
-                &format!(
-                    "INSERT INTO runs (id, project_id, workspace_id, trigger_kind, trigger_source, op, op_hash,
-                         daemon, state, started_by, started_by_agent, grant_id, last_seq, created_at)
-                     SELECT ?1, id, ?2, ?3, ?4, ?5, ?6, ?12, 'pending', ?7, ?8, ?9, 1, ?10 FROM projects
-                     WHERE id = ?11
-                     RETURNING {COLS}"
-                ),
-                params![
-                    new_id(),
-                    new.workspace,
-                    new.trigger.as_str(),
-                    new.source.to_string(),
-                    new.op,
-                    op_hash,
-                    new.started_by,
-                    new.started_by_agent,
-                    new.grant,
-                    at,
-                    new.project,
-                    daemon
-                ],
-                run_row,
-            )
-            .optional()?
-        else {
-            return Ok(None);
-        };
-        let first = Event {
-            run: run.id.clone(),
-            seq: 1,
-            from: None,
-            to: State::Pending,
-            at,
-            detail: "{}".into(),
-            daemon: None,
-            sig: None,
-        };
-        add_event(&tx, &first)?;
+        let made = create_run_in(&tx, new, None, at)?;
         tx.commit()?;
-        Ok(Some(run))
+        Ok(made.map(|(run, _)| run))
     }
 
     pub fn run(&self, id: &str) -> Result<Option<Run>> {

@@ -1075,6 +1075,8 @@ Row-level instead of the old lock:
 | Editing or deleting a message | the message's row `FOR UPDATE` (the room's byte count) |
 | Importing a machine's old threads | the room's row `FOR UPDATE` |
 | A deploy's events, chained in `seq` order (M217) | the environment's row `FOR UPDATE`, and `(environment_id, seq)`'s unique index |
+| Firing a run schedule's tick (M214) | its `platform_jobs` lease, held in the firing transaction (`Db::under_lease`), the tick's `next_at` compared and set, and `runs.trigger_key`'s unique index |
+| A run an event rule starts (M214) | `runs.trigger_key`'s unique index, `ON CONFLICT DO NOTHING`, then read |
 | Sending an approval push | each push taken for 30 s (`UPDATE … WHERE next_attempt <= now`) before it's sent |
 | Giving `cloud.drive` back | `grants_live`'s unique index, `ON CONFLICT DO NOTHING`, then read |
 | Default projects, grants on join | unique indexes, `ON CONFLICT DO NOTHING` (as before) |

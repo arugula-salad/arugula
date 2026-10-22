@@ -14,8 +14,8 @@ Arugula is MIT OR Apache-2.0. Its binaries include the software below.
 - **The web client** bundles npm packages: xterm.js, preact, fzstd and three.js (below). three.js draws the swarm's city and loads only when that theme is picked.
 - **Rust crates**, by license:
 
-- Apache License 2.0 (280)
-- MIT License (62)
+- Apache License 2.0 (284)
+- MIT License (71)
 - Unicode License v3 (20)
 - BSD 3-Clause "New" or "Revised" License (11)
 - ISC License (5)
@@ -1523,6 +1523,9 @@ Used by:
 - [anstyle-query 1.1.5](https://github.com/rust-cli/anstyle.git)
 - [anstyle 1.0.14](https://github.com/rust-cli/anstyle.git)
 - [colorchoice 1.0.5](https://github.com/rust-cli/anstyle.git)
+- [derive_builder 0.20.2](https://github.com/colin-kiegel/rust-derive-builder)
+- [derive_builder_core 0.20.2](https://github.com/colin-kiegel/rust-derive-builder)
+- [derive_builder_macro 0.20.2](https://github.com/colin-kiegel/rust-derive-builder)
 - [fallible-iterator 0.2.0](https://github.com/sfackler/rust-fallible-iterator)
 - [fallible-iterator 0.3.0](https://github.com/sfackler/rust-fallible-iterator)
 - [fallible-streaming-iterator 0.1.9](https://github.com/sfackler/fallible-streaming-iterator)
@@ -5685,6 +5688,7 @@ Used by:
 - [dyn-clone 1.0.20](https://github.com/dtolnay/dyn-clone)
 - [enum_dispatch 0.3.13](https://gitlab.com/antonok/enum_dispatch)
 - [half 2.7.1](https://github.com/VoidStarKat/half-rs)
+- [ident_case 1.0.1](https://github.com/TedDriggs/ident_case)
 - [int-enum 1.2.0](https://github.com/Juici/int-enum-rs)
 - [itoa 1.0.18](https://github.com/dtolnay/itoa)
 - [kem 0.3.0](https://github.com/RustCrypto/traits)
@@ -7163,6 +7167,38 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ## MIT License
 
 Used by:
+- [darling 0.20.11](https://github.com/TedDriggs/darling)
+- [darling_core 0.20.11](https://github.com/TedDriggs/darling)
+- [darling_macro 0.20.11](https://github.com/TedDriggs/darling)
+
+```
+MIT License
+
+Copyright (c) 2017 Ted Driggs
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
 - [schemars 1.2.2](https://github.com/GREsau/schemars)
 - [schemars_derive 1.2.2](https://github.com/GREsau/schemars)
 
@@ -7170,6 +7206,37 @@ Used by:
 MIT License
 
 Copyright (c) 2019 Graham Esau
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
+- [strum 0.27.2](https://github.com/Peternator7/strum)
+- [strum_macros 0.27.2](https://github.com/Peternator7/strum)
+
+```
+MIT License
+
+Copyright (c) 2019 Peter Glotfelty
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -7444,6 +7511,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 Used by:
 - [aho-corasick 1.1.5](https://github.com/BurntSushi/aho-corasick)
 - [byteorder 1.5.0](https://github.com/BurntSushi/byteorder)
+- [jiff-core 0.1.1](https://github.com/BurntSushi/jiff)
+- [jiff-tzdb 0.1.9](https://github.com/BurntSushi/jiff)
+- [jiff 0.2.38](https://github.com/BurntSushi/jiff)
 - [memchr 2.8.3](https://github.com/BurntSushi/memchr)
 - [walkdir 2.5.0](https://github.com/BurntSushi/walkdir)
 
@@ -7686,6 +7756,35 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+
+```
+
+## MIT License
+
+Used by:
+- [croner 4.0.1](https://github.com/hexagon/croner-rust)
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2023 Hexagon <github.com/Hexagon>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ```
 

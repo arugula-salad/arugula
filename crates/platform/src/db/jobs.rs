@@ -254,16 +254,43 @@ pub fn checkpoint(tx: &impl Sql, job: &LeasedJob, release_at: Option<u64>, now: 
     })
 }
 
+/// [`Db::enqueue_job`] in the caller's transaction: a job queued with the
+/// rows it's for, or not at all.
+pub fn enqueue(tx: &impl Sql, id: &str, kind: JobKind, payload: &Value, next_at: u64, now: u64) -> Result<bool> {
+    let added = tx.execute(
+        "INSERT INTO platform_jobs(id,kind,payload,next_at,created,updated) VALUES(?1,?2,?3,?4,?5,?5)
+         ON CONFLICT DO NOTHING",
+        params![id, kind.as_str(), serde_json::to_string(payload)?, next_at, now],
+    )?;
+    Ok(added == 1)
+}
+
+/// Queue job `id`, or make the one there due at `next_at`, in the caller's
+/// transaction: for a job that stands for something lasting (a schedule,
+/// M214) whose time changed. One that had ended is pending again, its
+/// failures forgotten. One a step holds now keeps its lease, and is asked
+/// to look again: its `cancel` is set, so its holder's hand-back makes it
+/// due at once (rather than when the step, which read the old state, said)
+/// and the next step sees the change. A kind that's requeued so reads
+/// `cancel` as "look again", not "stop", and clears it ([`Db::uncancel_job`]).
+pub fn requeue(tx: &impl Sql, id: &str, kind: JobKind, payload: &Value, next_at: u64, now: u64) -> Result<()> {
+    tx.execute(
+        "INSERT INTO platform_jobs(id,kind,payload,next_at,created,updated) VALUES(?1,?2,?3,?4,?5,?5)
+         ON CONFLICT (id) DO UPDATE SET next_at=?4,updated=?5,
+             cancel=CASE WHEN platform_jobs.state='pending' AND platform_jobs.lease_until>?5 THEN TRUE ELSE FALSE END,
+             attempts=CASE WHEN platform_jobs.state='pending' THEN platform_jobs.attempts ELSE 0 END,
+             error=CASE WHEN platform_jobs.state='pending' THEN platform_jobs.error ELSE NULL END,
+             state='pending'",
+        params![id, kind.as_str(), serde_json::to_string(payload)?, next_at, now],
+    )?;
+    Ok(())
+}
+
 impl Db {
     /// Queue a job, due at `next_at`. `false` if a job with this id is
     /// there already (a create racing the same request on another machine).
     pub fn enqueue_job(&self, id: &str, kind: JobKind, payload: &Value, next_at: u64, now: u64) -> Result<bool> {
-        let added = self.c().execute(
-            "INSERT INTO platform_jobs(id,kind,payload,next_at,created,updated) VALUES(?1,?2,?3,?4,?5,?5)
-             ON CONFLICT DO NOTHING",
-            params![id, kind.as_str(), serde_json::to_string(payload)?, next_at, now],
-        )?;
-        Ok(added == 1)
+        enqueue(&self.c(), id, kind, payload, next_at, now)
     }
 
     /// [`Db::claim_job_within`], every kind allowed [`MAX_ATTEMPTS`].
@@ -450,6 +477,17 @@ impl Db {
             ),
             params![job.id, job.lease, now, encode(job)?, end.as_str(), error],
         )?)
+    }
+
+    /// Clear `job`'s `cancel` under its lease: for a kind that reads it as
+    /// "look again" ([`requeue`]) once it has.
+    pub fn uncancel_job(&self, job: &LeasedJob, now: u64) -> Result<()> {
+        changed_one(self.c().execute(
+            &format!("UPDATE platform_jobs SET cancel=FALSE,updated=?3 WHERE {HELD}"),
+            params![job.id, job.lease, now],
+        )?)?;
+        job.cancel.store(false, Ordering::SeqCst);
+        Ok(())
     }
 
     /// Ask job `id` to stop: its handler sees it at its next claim, which is

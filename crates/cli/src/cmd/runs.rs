@@ -1,29 +1,59 @@
-//! `arugula runs grant`: a project's standing grant for runs on Arugula
-//! control (M211, "One standing grant per project starts runs"). An owner
-//! signs it with this CLI's device key, as a browser signs it on control's
-//! page: the platform may start and instruct runs on the project's hosted
-//! workspaces, under the project's delegation, with every device asleep.
-//! Each hosted machine checks the signature. A grant lasts 90 days unless
-//! `--days` says otherwise (at most 366). `revoke` signs a revoke of every
-//! grant the project has under its delegation, made by now: no new runs,
-//! and with `--stop` the ones going stop too.
-//!
-//! An agent (CLAUDECODE or AI_AGENT set) can see the grant but not sign or
-//! revoke one: this CLI signs as your device, and agents never approve.
+//! `arugula runs`: what starts a project's runs on Arugula control (M214).
+//! A run executes on one of the project's hosted workspaces; `start` asks
+//! for one by hand, and run specs (with their schedules and event rules)
+//! start them on their own. Through control, as this CLI's account
+//! (`arugula login`). Not `arugula run`: that's a command in a pane here.
 
 use anyhow::bail;
-use arugula_e2e::{
-    hosted::Delegation,
-    now_ms,
-    project_grant::{GrantRevoke, ProjectGrant, Running},
-};
 use serde_json::{Value, json};
 
-use super::project::project_id;
-use crate::{control::Enrolled, http, util::print_json};
+use crate::control::Enrolled;
+use crate::util::print_json;
 
 #[derive(clap::Subcommand)]
 pub enum RunsCmd {
+    /// Start a run by hand: a spec, or a command after `--`.
+    ///
+    /// It runs on the project's hosted workspace (`--workspace` when it
+    /// has more than one). Needs owner or editor on the project.
+    Start {
+        /// A run spec's name or id.
+        #[arg(long, conflicts_with_all = ["command", "instruction"])]
+        spec: Option<String>,
+        /// The hosted workspace's name or id.
+        #[arg(long)]
+        workspace: Option<String>,
+        /// Where it runs (an absolute path); the workspace's home without.
+        #[arg(long)]
+        dir: Option<String>,
+        /// An instruction to an agent, instead of a command.
+        #[arg(long, conflicts_with = "command")]
+        instruction: Option<String>,
+        /// The agent's recipe, with `--instruction`.
+        #[arg(long, requires = "instruction")]
+        agent: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+        /// The command and its arguments.
+        #[arg(last = true)]
+        command: Vec<String>,
+    },
+    /// A project's run specs: named runs, with their schedules and rules.
+    Spec {
+        #[command(subcommand)]
+        cmd: SpecCmd,
+    },
+    /// A run spec's cron schedules.
+    Schedule {
+        #[command(subcommand)]
+        cmd: ScheduleCmd,
+    },
+    /// A run spec's event rules: a linked repo's PR opened, check failed,
+    /// or push.
+    Rule {
+        #[command(subcommand)]
+        cmd: RuleCmd,
+    },
     /// The project's standing grant for runs on its hosted workspaces.
     ///
     /// `show` (the default) says whether there is one and who signed it,
@@ -31,206 +61,288 @@ pub enum RunsCmd {
     /// has a delegation for hosted machines), and `revoke` takes it back.
     Grant {
         #[command(subcommand)]
-        cmd: Option<GrantCmd>,
+        cmd: Option<super::runs_grant::GrantCmd>,
         #[command(flatten)]
-        which: Which,
+        which: super::runs_grant::Which,
     },
 }
 
 #[derive(clap::Subcommand)]
-pub enum GrantCmd {
-    /// Whether the project has a standing grant, and its past ones.
-    Show,
-    /// Sign the project's standing grant with this CLI's device.
-    ///
-    /// The platform may then start and instruct runs on every hosted
-    /// workspace of the project, running whatever command the project's
-    /// runs start, until it expires or is revoked. Deploys still ask every
-    /// time.
-    Sign {
-        /// How many days it lasts (1 to 366).
-        #[arg(long, default_value_t = 90, value_parser = clap::value_parser!(u64).range(1..=366))]
-        days: u64,
-    },
-    /// Revoke it: no new runs. The ones going finish, unless `--stop`.
-    Revoke {
-        /// Stop the runs going too.
+pub enum SpecCmd {
+    /// Make a run spec: a command after `--`, or `--instruction`.
+    Add {
+        /// Its name in the project: letters, digits, `-`, `_` and `.`.
+        name: String,
+        /// The hosted workspace it runs on (name or id).
         #[arg(long)]
-        stop: bool,
+        workspace: String,
+        #[arg(long)]
+        dir: Option<String>,
+        #[arg(long, conflicts_with = "command")]
+        instruction: Option<String>,
+        #[arg(long, requires = "instruction")]
+        agent: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(last = true)]
+        command: Vec<String>,
+    },
+    /// The project's run specs, with their schedules and rules.
+    #[command(visible_alias = "list")]
+    Ls {
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Delete a run spec, with its schedules and rules.
+    #[command(visible_alias = "delete")]
+    Rm {
+        spec: String,
+        #[arg(long)]
+        project: Option<String>,
     },
 }
 
-#[derive(clap::Args)]
-pub struct Which {
-    /// The project: its id (prj_…) or name. Default: your personal one.
-    #[arg(long, global = true)]
-    project: Option<String>,
+#[derive(clap::Subcommand)]
+pub enum ScheduleCmd {
+    /// Run a spec on a cron schedule: five fields, at most every 5 minutes.
+    Add {
+        spec: String,
+        /// Such as `0 9 * * 1-5` (9:00 on weekdays) or `@daily`.
+        #[arg(long)]
+        cron: String,
+        /// IANA's name for the time zone; UTC without.
+        #[arg(long)]
+        tz: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Turn a schedule on.
+    On {
+        spec: String,
+        id: String,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Turn a schedule off.
+    Off {
+        spec: String,
+        id: String,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Delete a schedule.
+    #[command(visible_alias = "delete")]
+    Rm {
+        spec: String,
+        id: String,
+        #[arg(long)]
+        project: Option<String>,
+    },
 }
 
-const DAY_MS: u64 = 24 * 60 * 60 * 1000;
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum On {
+    PrOpened,
+    CheckFailed,
+    Push,
+}
+
+impl On {
+    fn wire(self) -> &'static str {
+        match self {
+            On::PrOpened => "pr_opened",
+            On::CheckFailed => "check_failed",
+            On::Push => "push",
+        }
+    }
+}
+
+#[derive(clap::Subcommand)]
+pub enum RuleCmd {
+    /// Run a spec on a linked repo's event.
+    Add {
+        spec: String,
+        #[arg(long, value_enum)]
+        on: On,
+        /// `OWNER/REPO`, linked to the project; any of its repos without.
+        #[arg(long)]
+        repo: Option<String>,
+        /// A branch (`*` for any run of characters): a PR's base, a
+        /// check's or a push's branch. Any without.
+        #[arg(long)]
+        branch: Option<String>,
+        /// Also take events from forks and from people who aren't the
+        /// repo's owners, members or collaborators (an owner's call).
+        #[arg(long)]
+        outsiders: bool,
+        /// The most runs it starts in an hour (20 without).
+        #[arg(long)]
+        max_per_hour: Option<u32>,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Turn a rule on.
+    On {
+        spec: String,
+        id: String,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Turn a rule off.
+    Off {
+        spec: String,
+        id: String,
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// Delete a rule.
+    #[command(visible_alias = "delete")]
+    Rm {
+        spec: String,
+        id: String,
+        #[arg(long)]
+        project: Option<String>,
+    },
+}
+
+/// The operation fields a spec or a start sends.
+fn op(command: Vec<String>, instruction: Option<String>, agent: Option<String>, dir: Option<String>) -> Value {
+    let mut o = json!({});
+    if !command.is_empty() {
+        o["argv"] = json!(command);
+    }
+    if let Some(i) = instruction {
+        o["instruction"] = json!(i);
+    }
+    if let Some(a) = agent {
+        o["agent"] = json!(a);
+    }
+    if let Some(d) = dir {
+        o["directory"] = json!(d);
+    }
+    o
+}
 
 pub fn run(cmd: RunsCmd, json_out: bool) -> anyhow::Result<i32> {
+    let cmd = match cmd {
+        RunsCmd::Grant { cmd, which } => return super::runs_grant::run(cmd, which, json_out),
+        other => other,
+    };
     let Some(e) = Enrolled::load()? else {
         bail!("this CLI isn't logged in to Arugula control: `arugula login` first");
     };
-    let RunsCmd::Grant { cmd, which } = cmd;
-    let project = match &which.project {
-        Some(p) if p.starts_with("prj_") => p.clone(),
-        Some(p) => project_id(&e.api("GET", "/api/projects", None)?, p)?,
-        None => "personal".into(),
-    };
-    let path = format!("/api/projects/{project}/runs/grant");
-    let cmd = cmd.unwrap_or(GrantCmd::Show);
-    if !matches!(cmd, GrantCmd::Show) && http::agent() {
-        bail!(
-            "an agent doesn't sign or revoke a project's standing grant: this CLI signs as your device, \
-             and agents never approve. Ask the person to run it, or to use control's page"
-        );
-    }
-    let view = e.api("GET", &path, None)?;
-    match cmd {
-        GrantCmd::Show => {
-            if json_out {
-                print_json(&view);
-            } else {
-                print!("{}", shown(&view));
-            }
-        }
-        GrantCmd::Sign { days } => {
-            if !view["grant"].is_null() && view["stale"] != true {
-                bail!("this project has a standing grant: `arugula runs grant revoke` it before signing another");
-            }
-            let project = view["project"].as_str().unwrap_or(&project).to_owned();
-            let d = delegation(&e, &project, view["owner"].as_str().unwrap_or_default())?;
-            let now = now_ms();
-            let mut g = ProjectGrant::new(&d, now, Some(now + days * DAY_MS));
-            g.sign_with(e.keys());
-            let kept = e.api("POST", &path, Some(&json!({ "grant": g })))?;
-            if json_out {
-                print_json(&kept);
-            } else {
-                println!(
-                    "Signed the standing grant {}: the platform may start and instruct runs on every hosted workspace of \
-                     the project for {days} days, unless it's revoked.",
-                    g.id
-                );
-            }
-        }
-        GrantCmd::Revoke { stop } => {
-            // Under the project's live delegation, as the hub says, and the
-            // one the platform's live grant names if that's another: a
-            // revoke names no grant, so the platform can't point it
-            // elsewhere.
-            let project = view["project"].as_str().unwrap_or(&project).to_owned();
-            let owner = view["owner"].as_str().unwrap_or_default();
-            let mut delegations: Vec<String> = delegation(&e, &project, owner).map(|d| d.id()).into_iter().collect();
-            if let Some(d) = view["grant"]["grant"]["delegation"].as_str()
-                && !delegations.iter().any(|x| x == d)
-            {
-                delegations.push(d.to_owned());
-            }
-            if delegations.is_empty() {
-                bail!("this project has no delegation and no standing grant to revoke");
-            }
-            let running = if stop { Running::Stop } else { Running::Finish };
-            let at = now_ms();
-            let (mut revoked, mut told, mut last) = (0, 0, Value::Null);
-            for d in &delegations {
-                let r = GrantRevoke::new(&project, d, running, at, e.keys());
-                match e.api("POST", &format!("{path}/revoke"), Some(&json!({ "revoke": r }))) {
-                    Ok(done) => {
-                        revoked += done["revoked"].as_u64().unwrap_or(0);
-                        told += done["told"].as_u64().unwrap_or(0);
-                        last = done;
-                    }
-                    // It covered no grant there: nothing to revoke under it.
-                    Err(err) if format!("{err:#}").contains("covers no grant") => {}
-                    Err(err) => return Err(err),
+    let project = |p: Option<String>| super::cloud::project_of(&e, p.as_deref());
+    let specs = |p: &str| format!("/api/projects/{p}/run-specs");
+    let out = match cmd {
+        RunsCmd::Grant { .. } => unreachable!("answered above"),
+        RunsCmd::Start { spec, workspace, dir, instruction, agent, project: p, command } => {
+            let mut body = match spec {
+                Some(s) => json!({ "spec": s }),
+                None if command.is_empty() && instruction.is_none() => {
+                    bail!("say what to run: `--spec NAME`, `--instruction TEXT`, or a command after `--`")
                 }
+                None => op(command, instruction, agent, dir),
+            };
+            if let Some(w) = workspace {
+                body["workspace"] = json!(w);
             }
-            if revoked == 0 {
-                bail!("this project has no standing grant to revoke");
-            }
-            if json_out {
-                print_json(&last);
-            } else {
-                let what = if stop { "; the runs going are to stop" } else { "; the runs going finish" };
+            let run = e.api("POST", &format!("/api/projects/{}/runs", project(p)?), Some(&body))?;
+            if !json_out {
                 println!(
-                    "Revoked the project's standing grant: no new runs{what} ({told} hosted machine(s) told now)."
+                    "{}  {}  on {}",
+                    run["id"].as_str().unwrap_or_default(),
+                    run["state"].as_str().unwrap_or_default(),
+                    run["workspace"].as_str().unwrap_or_default()
                 );
+                return Ok(0);
             }
+            run
         }
-    }
+        RunsCmd::Spec { cmd: SpecCmd::Add { name, workspace, dir, instruction, agent, project: p, command } } => {
+            if command.is_empty() && instruction.is_none() {
+                bail!("say what it runs: a command after `--`, or `--instruction TEXT`");
+            }
+            let mut body = op(command, instruction, agent, dir);
+            body["name"] = json!(name);
+            body["workspace"] = json!(workspace);
+            e.api("POST", &specs(&project(p)?), Some(&body))?
+        }
+        RunsCmd::Spec { cmd: SpecCmd::Ls { project: p } } => {
+            let listed = e.api("GET", &specs(&project(p)?), None)?;
+            if !json_out {
+                let all = listed["specs"].as_array().cloned().unwrap_or_default();
+                if all.is_empty() {
+                    println!("No run specs.");
+                }
+                for s in &all {
+                    println!("{}", spec_lines(s));
+                }
+                return Ok(0);
+            }
+            listed
+        }
+        RunsCmd::Spec { cmd: SpecCmd::Rm { spec, project: p } } => {
+            e.api("DELETE", &format!("{}/{spec}", specs(&project(p)?)), None)?;
+            json!({ "deleted": spec })
+        }
+        RunsCmd::Schedule { cmd } => {
+            let (spec, p, method, tail, body) = match cmd {
+                ScheduleCmd::Add { spec, cron, tz, project: p } => {
+                    (spec, p, "POST", String::new(), Some(json!({ "cron": cron, "timezone": tz })))
+                }
+                ScheduleCmd::On { spec, id, project: p } => (spec, p, "PATCH", id, Some(json!({ "enabled": true }))),
+                ScheduleCmd::Off { spec, id, project: p } => (spec, p, "PATCH", id, Some(json!({ "enabled": false }))),
+                ScheduleCmd::Rm { spec, id, project: p } => (spec, p, "DELETE", id, None),
+            };
+            let path = format!("{}/{spec}/schedules{}", specs(&project(p)?), slash(&tail));
+            e.api(method, &path, body.as_ref())?
+        }
+        RunsCmd::Rule { cmd } => {
+            let (spec, p, method, tail, body) = match cmd {
+                RuleCmd::Add { spec, on, repo, branch, outsiders, max_per_hour, project: p } => {
+                    let body = json!({ "event": on.wire(), "repo": repo, "branch": branch,
+                        "outsiders": outsiders, "max_per_hour": max_per_hour });
+                    (spec, p, "POST", String::new(), Some(body))
+                }
+                RuleCmd::On { spec, id, project: p } => (spec, p, "PATCH", id, Some(json!({ "enabled": true }))),
+                RuleCmd::Off { spec, id, project: p } => (spec, p, "PATCH", id, Some(json!({ "enabled": false }))),
+                RuleCmd::Rm { spec, id, project: p } => (spec, p, "DELETE", id, None),
+            };
+            let path = format!("{}/{spec}/rules{}", specs(&project(p)?), slash(&tail));
+            e.api(method, &path, body.as_ref())?
+        }
+    };
+    // A delete answers nothing.
+    print_json(&if out == json!("") { json!({ "ok": true }) } else { out });
     Ok(0)
 }
 
-/// The project's live delegation for hosted machines, from control (the
-/// hub keeps them, M178): what the grant names.
-fn delegation(e: &Enrolled, project: &str, owner: &str) -> anyhow::Result<Delegation> {
-    let listed = e.api("GET", "/api/hosted/delegations", None)?;
-    let key = listed["key"].as_str().unwrap_or_default();
-    let live = listed["delegations"].as_array().into_iter().flatten().find(|l| {
-        let d = &l["delegation"];
-        d["project"] == project && d["owner"] == owner && d["key"] == key && l["revoke"].is_null()
-    });
-    match live {
-        Some(l) => Ok(serde_json::from_value(l["delegation"].clone())?),
-        None => bail!(
-            "this project has no delegation for hosted machines: an owner allows them first (Devices and machines, \
-             Hosted machines, on control's page)"
-        ),
-    }
+fn slash(id: &str) -> String {
+    if id.is_empty() { String::new() } else { format!("/{id}") }
 }
 
-fn day(ms: u64) -> String {
-    crate::hosts::ago(ms)
-}
-
-/// A time to come, as days from now.
-fn when(ms: u64) -> String {
-    let days = ms.saturating_sub(now_ms()).div_ceil(DAY_MS);
-    if days == 1 { "tomorrow".into() } else { format!("{days} days from now") }
-}
-
-/// The grant, in a few lines.
-fn shown(v: &Value) -> String {
-    let mut out = String::new();
-    let g = &v["grant"]["grant"];
-    if g.is_null() {
-        out.push_str("No standing grant: runs don't start on this project's hosted workspaces.\n");
-        if v["offer"] == true {
-            out.push_str(
-                "It has hosted workspaces: an owner signs one with `arugula runs grant sign`, or on control's page.\n",
-            );
-        }
-    } else {
-        let expires =
-            g["expires"].as_u64().map_or_else(|| "until revoked".to_owned(), |e| format!("until {}", when(e)));
-        out.push_str(&format!(
-            "Standing grant {}: the platform may start and instruct runs (any command the project's runs start) on \
-             every hosted workspace of the project, {expires}.\nSigned by device {} {}.\n",
-            g["id"].as_str().unwrap_or_default(),
-            g["by"].as_str().unwrap_or_default(),
-            g["made"].as_u64().map(day).unwrap_or_default(),
-        ));
-        if v["stale"] == true {
-            out.push_str(
-                "It names a delegation that isn't the project's live one: sign it again (`arugula runs grant sign`).\n",
-            );
-        } else if v["renew"] == true {
-            out.push_str("It expires soon: revoke it and sign it again to keep runs starting.\n");
+/// A spec, then a line for each schedule and rule.
+fn spec_lines(s: &Value) -> String {
+    let t = |v: &Value, k: &str| v[k].as_str().unwrap_or_default().to_owned();
+    let what = match s["instruction"].as_str() {
+        Some(i) => format!("agent: {i}"),
+        None => s["argv"].as_array().into_iter().flatten().filter_map(Value::as_str).collect::<Vec<_>>().join(" "),
+    };
+    let mut out = format!("{:<20} {}  on {}  {what}", t(s, "name"), t(s, "id"), t(s, "workspace"));
+    for c in s["schedules"].as_array().into_iter().flatten() {
+        let on = if c["enabled"] == true { "" } else { "  (off)" };
+        out.push_str(&format!("\n  schedule {}  {} {}{on}", t(c, "id"), t(c, "cron"), t(c, "timezone")));
+        if let Some(e) = c["last_error"].as_str() {
+            out.push_str(&format!("  last tick: {e}"));
         }
     }
-    for p in v["past"].as_array().into_iter().flatten() {
-        let id = p["grant"]["id"].as_str().unwrap_or_default();
-        if let Some(at) = p["revoked_at"].as_u64() {
-            let stop = if p["revoke"]["running"] == "stop" { ", runs stopped" } else { "" };
-            out.push_str(&format!("Revoked {}: grant {id}{stop}\n", day(at)));
-        } else if let Some(at) = p["superseded_at"].as_u64() {
-            out.push_str(&format!("Replaced {}: grant {id}\n", day(at)));
-        } else {
-            out.push_str(&format!("Expired: grant {id}\n"));
-        }
+    for r in s["rules"].as_array().into_iter().flatten() {
+        let on = if r["enabled"] == true { "" } else { "  (off)" };
+        let repo = r["repo"].as_str().unwrap_or("any repo");
+        let branch = r["branch"].as_str().unwrap_or("any branch");
+        let outside = if r["outsiders"] == true { ", outsiders too" } else { "" };
+        let cap = r["max_per_hour"].as_u64().unwrap_or_default();
+        out.push_str(&format!("\n  rule {}  {} on {repo}, {branch}{outside}, {cap}/h{on}", t(r, "id"), t(r, "event")));
     }
     out
 }
@@ -241,34 +353,48 @@ mod tests {
     use clap::Parser;
 
     #[test]
-    fn the_commands_parse() {
+    fn commands_parse() {
         for argv in [
-            &["arugula", "runs", "grant"][..],
-            &["arugula", "runs", "grant", "show", "--project", "Acme"],
-            &["arugula", "runs", "grant", "--project", "prj_1", "sign", "--days", "30"],
-            &["arugula", "runs", "grant", "sign"],
-            &["arugula", "runs", "grant", "revoke", "--stop", "--project", "Acme"],
+            &["arugula", "runs", "start", "--project", "Acme", "--", "just", "test"][..],
+            &["arugula", "runs", "start", "--spec", "nightly"],
+            &[
+                "arugula",
+                "runs",
+                "start",
+                "--instruction",
+                "triage the failure",
+                "--agent",
+                "fixer",
+                "--workspace",
+                "dev",
+            ],
+            &["arugula", "runs", "spec", "add", "nightly", "--workspace", "dev", "--dir", "/work", "--", "just", "e2e"],
+            &["arugula", "runs", "spec", "ls", "--project", "prj_x"],
+            &["arugula", "runs", "spec", "rm", "nightly"],
+            &["arugula", "runs", "schedule", "add", "nightly", "--cron", "0 3 * * *", "--tz", "America/Chicago"],
+            &["arugula", "runs", "schedule", "off", "nightly", "rsc_1"],
+            &["arugula", "runs", "rule", "add", "nightly", "--on", "check-failed", "--branch", "main"],
+            &["arugula", "runs", "rule", "add", "nightly", "--on", "pr-opened", "--outsiders", "--max-per-hour", "5"],
+            &["arugula", "runs", "rule", "rm", "nightly", "rru_1"],
         ] {
             assert!(crate::Cli::try_parse_from(argv).is_ok(), "{argv:?}");
         }
         for argv in [
-            &["arugula", "runs", "grant", "sign", "--days", "0"][..],
-            &["arugula", "runs", "grant", "sign", "--days", "400"],
+            &["arugula", "runs", "start", "--spec", "x", "--", "ls"][..],
+            &["arugula", "runs", "rule", "add", "x", "--on", "deployed"],
         ] {
             assert!(crate::Cli::try_parse_from(argv).is_err(), "{argv:?}");
         }
     }
 
     #[test]
-    fn what_show_says() {
-        let none = json!({ "grant": null, "past": [], "offer": true });
-        assert!(shown(&none).contains("arugula runs grant sign"));
-        let g = json!({ "id": "abc", "by": "dev1", "made": 1, "expires": null });
-        let stale = json!({ "grant": { "grant": g }, "past": [], "stale": true });
-        assert!(shown(&stale).contains("sign it again"));
-        let live = json!({ "grant": { "grant": g }, "past": [{ "grant": { "id": "old" }, "revoke": { "running": "stop" }, "revoked_at": 1 }] });
-        let s = shown(&live);
-        assert!(s.contains("Standing grant abc") && s.contains("device dev1") && s.contains("until revoked"), "{s}");
-        assert!(s.contains("grant old, runs stopped"), "{s}");
+    fn spec_lines_say_what_it_runs() {
+        let s = json!({ "name": "nightly", "id": "rsp_1", "workspace": "hw_1", "argv": ["just", "e2e"],
+            "schedules": [{ "id": "rsc_1", "cron": "0 3 * * *", "timezone": "UTC", "enabled": false }],
+            "rules": [{ "id": "rru_1", "event": "push", "branch": "main", "enabled": true, "max_per_hour": 20 }] });
+        let l = spec_lines(&s);
+        assert!(l.starts_with("nightly") && l.contains("just e2e"), "{l}");
+        assert!(l.contains("schedule rsc_1  0 3 * * * UTC  (off)"), "{l}");
+        assert!(l.contains("rule rru_1  push on any repo, main, 20/h"), "{l}");
     }
 }

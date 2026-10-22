@@ -275,6 +275,8 @@ fn platform(db: Db, hub: &Arc<TestHub>, api: &str) -> Arc<Platform> {
 fn platform_with(db: Db, hub: &Arc<TestHub>, api: &str, settings: Settings) -> Arc<Platform> {
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
     let mut p = Platform::new(cfg, db, hub.clone(), reqwest::Client::new(), Default::default());
+    // Event rules' makers (M214) are on the hosted beta's list.
+    p.hosted = crate::hosted::Config { accounts: vec!["alice".into()], ..Default::default() };
     let mut app = GithubApp::new("1".into(), "arugula-test".into(), SECRET.into(), api, throwaway_key());
     app.ingest.settings = settings;
     p.github = Some(app);
@@ -1017,4 +1019,47 @@ async fn a_deleted_issue_goes() {
     assert_eq!(count(&app, "SELECT count(*) FROM forge_events"), 0);
     assert_eq!(count(&app, "SELECT count(*) FROM inbox_items"), 0);
     assert_eq!(count(&app, "SELECT count(*) FROM drafts"), 1, "M170's");
+}
+
+/// M214: a linked repo's PR opened, through the webhook, starts the run
+/// its project's rule asks for, once however often GitHub delivers it.
+/// One whose rule failed is answered 500 and forgotten, so GitHub's
+/// redelivery of it starts the run.
+#[tokio::test]
+async fn a_webhook_starts_its_rules_runs() {
+    use crate::db::triggers::{RuleEvent, tests as t};
+    use arugula_e2e::team::TeamRole;
+    let (_gh, app, base, hub) = serve().await;
+    hub.team("t", &[("alice", TeamRole::Owner)]);
+    t::seed(&app.db);
+    link(&app, REPO, now_ms());
+    let spec = app.db.add_run_spec("prj_a", "review", "hw_a", &t::cmd(&["just", "review"]), "alice", 1).unwrap();
+    app.db.add_run_rule(&spec, RuleEvent::PrOpened, None, Some("main"), false, 20, "alice", 1).unwrap();
+    let opened = |n: u64| {
+        let mut v = json!({ "action": "opened", "repository": repository(REPO), "sender": { "login": "bob", "id": 2 },
+            "pull_request": pr(n, "Fix the thing", "open", now_ms(), "abc") });
+        v["pull_request"]["author_association"] = json!("MEMBER");
+        v["pull_request"]["head"]["repo"] = repository(REPO);
+        v
+    };
+    assert_eq!(hook(&base, "pull_request", "d1", &opened(5)).await, 202);
+    let runs = t::runs_in(&app.db, "prj_a");
+    assert_eq!(runs.len(), 1);
+    assert_eq!(
+        (runs[0].source["event"].as_str(), runs[0].source["detail"]["number"].as_u64()),
+        (Some("pr_opened"), Some(5))
+    );
+    assert_eq!(t::run_jobs(&app.db, &runs[0].id), 1);
+    // A duplicate delivery is dropped; a redelivery under a new id makes no
+    // second run either.
+    assert_eq!(hook(&base, "pull_request", "d1", &opened(5)).await, 200);
+    assert_eq!(hook(&base, "pull_request", "d2", &opened(5)).await, 202);
+    assert_eq!(t::runs_in(&app.db, "prj_a").len(), 1);
+
+    // The runs table away: the rule fails, the delivery is forgotten.
+    app.db.c().execute("ALTER TABLE runs RENAME TO runs_away", params![]).unwrap();
+    assert_eq!(hook(&base, "pull_request", "d3", &opened(6)).await, 500);
+    app.db.c().execute("ALTER TABLE runs_away RENAME TO runs", params![]).unwrap();
+    assert_eq!(hook(&base, "pull_request", "d3", &opened(6)).await, 202, "redelivered");
+    assert_eq!(t::runs_in(&app.db, "prj_a").len(), 2);
 }

@@ -1328,6 +1328,107 @@ auth = "cloud_driver"
 clients = ["cli", "daemon"]
 note = "Rebuilds a hosted workspace from its spec (M179): a project's owner or editor on ARUGULA_HOSTED_ACCOUNTS."
 
+# ---- platform: what starts runs (M214, platform step 7)
+# A project's run specs, their schedules and event rules, and runs started
+# by hand. A person or a CLI device: a machine's agent starts runs through
+# MCP (M216), under the project's standing grant (M211).
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/run-specs"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "A project's run specs, each with its schedules and rules (M214): any member."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/run-specs"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "Makes a run spec: a name, a hosted workspace, and a command or an instruction. Owners and editors on ARUGULA_HOSTED_ACCOUNTS."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/run-specs/{spec}"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "One run spec, by id or name, with its schedules and rules: any member."
+
+[[route]]
+method = "PATCH"
+path = "/api/projects/{project}/run-specs/{spec}"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "Changes a run spec's name, workspace or operation: owners and editors on ARUGULA_HOSTED_ACCOUNTS."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/run-specs/{spec}"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "Deletes a run spec with its schedules and rules: owners and editors."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/run-specs/{spec}/schedules"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "Adds a cron schedule in a time zone, at most every 5 minutes: owners and editors on ARUGULA_HOSTED_ACCOUNTS."
+
+[[route]]
+method = "PATCH"
+path = "/api/projects/{project}/run-specs/{spec}/schedules/{id}"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "Changes a schedule's expression or zone, or turns it on or off: owners and editors (on ARUGULA_HOSTED_ACCOUNTS to turn one on or change it)."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/run-specs/{spec}/schedules/{id}"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "Deletes a schedule: owners and editors."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/run-specs/{spec}/rules"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "Adds an event rule: a PR opened, a check failed or a push, on a linked repo and branch, with an hourly cap. Owners and editors on ARUGULA_HOSTED_ACCOUNTS; only an owner lets it take events from forks and outside the repo."
+
+[[route]]
+method = "PATCH"
+path = "/api/projects/{project}/run-specs/{spec}/rules/{id}"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "Turns a rule on or off, or changes its hourly cap or whether it takes outsiders' events: owners and editors (on ARUGULA_HOSTED_ACCOUNTS to turn one on or widen it; an owner to take outsiders)."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/run-specs/{spec}/rules/{id}"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "Deletes a rule: owners and editors."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/runs"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "Starts a run by hand (M214): a spec, or a command or instruction on a hosted workspace, pending with its job queued. A person or a CLI device, never a machine: owners and editors on ARUGULA_HOSTED_ACCOUNTS."
+
 # ---- platform: the standing project grant for runs (M211)
 
 [[route]]

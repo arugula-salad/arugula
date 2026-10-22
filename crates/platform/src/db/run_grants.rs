@@ -33,6 +33,17 @@ pub struct StoredGrant {
     pub superseded_at: Option<u64>,
 }
 
+/// [`Db::live_run_grant`] in the caller's transaction (M214: a run a
+/// trigger makes names it).
+pub fn live_in(c: &impl Sql, project: &str, now: u64) -> Result<Option<StoredGrant>> {
+    c.query_row(
+        &format!("SELECT {COLUMNS} FROM run_grants WHERE project_id = ?1 AND {LIVE}"),
+        params![project, now],
+        row,
+    )
+    .optional()
+}
+
 const COLUMNS: &str = "body, sig, posted_by, created_at, revoke_body, revoke_sig, revoked_at, superseded_at";
 
 /// What makes a row the project's live grant at `?2` (ms).
@@ -125,13 +136,7 @@ impl Db {
 
     /// The project's live grant at `now`, if it has one.
     pub fn live_run_grant(&self, project: &str, now: u64) -> Result<Option<StoredGrant>> {
-        self.c()
-            .query_row(
-                &format!("SELECT {COLUMNS} FROM run_grants WHERE project_id = ?1 AND {LIVE}"),
-                params![project, now],
-                row,
-            )
-            .optional()
+        live_in(&self.c(), project, now)
     }
 
     /// A grant of the project's, by its id.
@@ -198,7 +203,7 @@ pub(crate) fn erase_account(c: &impl Sql, account: &str) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use arugula_e2e::{
         DeviceKeys,
         hosted::{Delegation, HostedKey},
@@ -218,7 +223,7 @@ mod tests {
         }
     }
 
-    fn grant(project: &str, keys: &DeviceKeys, made: u64) -> ProjectGrant {
+    pub(crate) fn grant(project: &str, keys: &DeviceKeys, made: u64) -> ProjectGrant {
         grant_under(&delegation(project, keys, 1), keys, made, None)
     }
 

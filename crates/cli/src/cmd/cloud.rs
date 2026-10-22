@@ -212,7 +212,7 @@ fn path(project: &str, w: &Value) -> String {
 }
 
 /// `--project`: an id, a name, or (without it) the personal one.
-fn project_of(e: &Enrolled, project: Option<&str>) -> anyhow::Result<String> {
+pub(super) fn project_of(e: &Enrolled, project: Option<&str>) -> anyhow::Result<String> {
     match project {
         None => Ok("personal".into()),
         Some(p) if p.starts_with("prj_") => Ok(p.to_owned()),
