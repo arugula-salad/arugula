@@ -367,6 +367,18 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // before, which counts as none.
     if !has("sessions", "via")? {
         conn.execute_batch("ALTER TABLE sessions ADD COLUMN via TEXT")?;
+        // The desktop app's windows signed in before sessions said how:
+        // those that said they're one of its devices (by kind, or by the
+        // name it gave its devices before they had a kind), or whose
+        // User-Agent says so. They make no passkeys and enroll only `app`
+        // devices from now on.
+        conn.execute_batch(
+            "UPDATE sessions SET via = 'app' WHERE via IS NULL AND (
+                 agent LIKE '%Arugula%' OR agent LIKE '%Tauri%'
+                 OR device IN (SELECT id FROM devices WHERE kind = 'app' OR (kind = 'browser' AND (
+                     cert LIKE '%\"name\":\"Arugula app%' OR cert LIKE '%\"name\":\"illogical app%')))
+             )",
+        )?;
     }
     // Which device (as its session said) and which session added each
     // passkey.
@@ -488,7 +500,10 @@ pub struct SessionInfo {
     pub created: u64,
     /// `github`, `passkey` or `app` (`auth::Via`); none from before.
     pub via: Option<String>,
+    /// The device it said it is: a claim, not a proof.
     pub device: Option<String>,
+    /// What it said it runs in (its User-Agent).
+    pub agent: String,
 }
 
 #[derive(Debug, Clone)]
@@ -834,10 +849,18 @@ impl Db {
         Ok(self
             .c()
             .query_row(
-                "SELECT s.account, s.created, s.via, s.device FROM sessions s JOIN accounts a ON a.id = s.account
-                 WHERE s.token_hash = ?1 AND s.expires > ?2",
+                "SELECT s.account, s.created, s.via, s.device, COALESCE(s.agent, '') FROM sessions s
+                 JOIN accounts a ON a.id = s.account WHERE s.token_hash = ?1 AND s.expires > ?2",
                 params![token_hash, now],
-                |r| Ok(SessionInfo { account: r.get(0)?, created: r.get(1)?, via: r.get(2)?, device: r.get(3)? }),
+                |r| {
+                    Ok(SessionInfo {
+                        account: r.get(0)?,
+                        created: r.get(1)?,
+                        via: r.get(2)?,
+                        device: r.get(3)?,
+                        agent: r.get(4)?,
+                    })
+                },
             )
             .optional()?)
     }
@@ -2576,6 +2599,42 @@ mod tests {
     use arugula_e2e::{Cert, Kind};
 
     use super::*;
+
+    /// Sessions from before they said how they signed in: the desktop app's
+    /// windows, by the device they said they are or their User-Agent, are
+    /// marked as the app's when the column comes; the rest stay unknown.
+    #[test]
+    fn the_apps_old_sessions_are_marked() {
+        let db = Db::memory();
+        db.account_for("github", "1", "a", "acct-a", 1).unwrap();
+        let dev = |kind, name: &str| {
+            let c = Cert::new(&arugula_e2e::DeviceKeys::generate(), "acct-a", kind, name);
+            db.put_device(&c, true, 1).unwrap();
+            c.device
+        };
+        let (old_app, app, browser) =
+            (dev(Kind::Browser, "Arugula app on geek"), dev(Kind::App, "x"), dev(Kind::Browser, "Chrome on Mac"));
+        for (t, device, agent) in [
+            ("s1", Some(&old_app), ""),
+            ("s2", Some(&app), ""),
+            ("s3", Some(&browser), "Mozilla/5.0 Chrome"),
+            ("s4", None, "Arugula/0.50 (Tauri)"),
+            ("s5", None, "Mozilla/5.0 Safari"),
+        ] {
+            db.add_session(t, "acct-a", 1, i64::MAX as u64).unwrap();
+            if let Some(d) = device {
+                db.set_session_device(t, "acct-a", d).unwrap();
+            }
+            db.set_session_agent(t, agent).unwrap();
+        }
+        db.conn().execute_batch("ALTER TABLE sessions DROP COLUMN via").unwrap();
+        migrate(&db.conn()).unwrap();
+        let via = |t| db.session_info(t, 2).unwrap().unwrap().via;
+        assert_eq!(
+            ["s1", "s2", "s3", "s4", "s5"].map(via),
+            [Some("app".into()), Some("app".into()), None, Some("app".into()), None]
+        );
+    }
 
     /// #102: a GitHub account goes by its login, a passkey one by the name
     /// it chose; rosters and requests get one word, never "you".

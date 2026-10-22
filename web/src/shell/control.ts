@@ -417,6 +417,9 @@ const prfOf = (cred: PublicKeyCredential) => (cred.getClientExtensionResults() a
  * browser is a working device of that account already: it keeps its own.
  * Whether it took them. */
 async function takePrfKeys(prf: PrfOut | undefined, account: string, provider: string | null | undefined): Promise<boolean> {
+  // The desktop app's window is an app device: it never takes a passkey's
+  // browser keys.
+  if (appWindow()) return false;
   const r = prf?.results;
   if (!r?.first || !r.second) return false;
   const e = await loadEnrollment(location.origin);
@@ -472,7 +475,20 @@ export const ADD_PASSKEY_HASH = "#add-passkey";
  * one waits for one of them to agree ([`PasskeyToConfirm`]). For one with
  * none and no GitHub sign-in from the last few minutes, the page goes
  * through GitHub's sign-in again first, and comes back to `#add-passkey`. */
-export async function passkeyRegister(name?: string): Promise<PasskeyToConfirm | null> {
+/** What one of the account's browsers or phones signs to add a passkey
+ * (`add_passkey_device_body`): the account, the new passkey's id and the
+ * registration's challenge. */
+export const addPasskeyDeviceBody = (account: string, credential: string, challenge: string) =>
+  `arugula add passkey device v1\naccount ${account}\ncredential ${credential}\nchallenge ${challenge}\n`;
+
+/** This page's device, to sign for a passkey added to its account. */
+export interface PasskeySigner {
+  account: string;
+  id: string;
+  sign: (text: string) => Promise<string>;
+}
+
+export async function passkeyRegister(name?: string, device?: PasskeySigner): Promise<PasskeyToConfirm | null> {
   type Options = {
     challenge: string;
     rp: PublicKeyCredentialRpEntity;
@@ -482,18 +498,21 @@ export async function passkeyRegister(name?: string): Promise<PasskeyToConfirm |
     attestation: AttestationConveyancePreference;
     timeout: number;
     step_up?: "passkey" | null;
+    device_sig?: boolean;
   };
   let o: Options;
   try {
     o = await api<Options>("/auth/passkey/register", name === undefined ? {} : { name });
   } catch (e) {
     if (e instanceof HttpError && e.body.reason === "reauth") {
-      location.assign(`/auth/github?next=${encodeURIComponent(location.pathname + ADD_PASSKEY_HASH)}`);
+      location.assign(`/auth/github?reauth=true&next=${encodeURIComponent(location.pathname + ADD_PASSKEY_HASH)}`);
       return null;
     }
     throw e;
   }
-  const { step_up, ...opts } = o;
+  const { step_up, device_sig, ...opts } = o;
+  // An account with a browser or a phone: this one signs for the passkey.
+  if (device_sig && !device) throw new Error("Add a passkey from a browser or a phone that's one of your devices.");
   const cred = (await navigator.credentials.create({
     publicKey: {
       ...opts,
@@ -507,11 +526,13 @@ export async function passkeyRegister(name?: string): Promise<PasskeyToConfirm |
   // #764: some authenticators give PRF output as the passkey is made;
   // others say only that they will, at sign-in.
   const prf = prfOf(cred);
+  const id = b64u(cred.rawId);
   const finish = {
-    id: b64u(cred.rawId),
+    id,
     clientDataJSON: b64u(r.clientDataJSON),
     attestationObject: b64u(r.attestationObject),
     prf: prf?.enabled ?? (prf?.results ? true : undefined),
+    ...(device_sig && device ? { device: { id: device.id, sig: await device.sign(addPasskeyDeviceBody(device.account, id, o.challenge)) } } : {}),
   };
   if (step_up === "passkey") {
     const options = await api<PasskeyToConfirm["options"]>("/auth/passkey/register/step-up", { id: finish.id });
@@ -1048,7 +1069,7 @@ export class ControlSession {
         }
       }
       const prf = await prfDevice();
-      this.fromPasskey = prf?.device === this.keys.id ? prf.name : null;
+      this.fromPasskey = prf?.device === this.keys.id && !appWindow() ? prf.name : null;
       if (this.enrollment && this.enrollment.cert.device !== this.keys.id) {
         // #94: the key this browser enrolled with didn't come back from
         // its storage (WebKit loses X25519 keys there), so it would sign
@@ -1205,6 +1226,8 @@ export class ControlSession {
    * this browser's own, approved as any new browser is; a device the
    * account doesn't have yet is approved once, then pinned. */
   private async rejoin(): Promise<boolean> {
+    // Never as a browser in the desktop app's window.
+    if (appWindow()) return false;
     const k = this.keys;
     const all = await api<{ trust: { account: string; root: string } | null; certs: Cert[]; revocations: Revocation[] }>("/api/devices");
     const removed = all.revocations.some((r) => r.device === k.id);
@@ -1237,6 +1260,7 @@ export class ControlSession {
    * output this browser takes its keys: the device another browser with
    * that passkey enrolled, or one approved once for all of them. */
   async usePasskey() {
+    if (appWindow()) throw new Error("The desktop app's window is approved from a browser or a phone of yours, not with a passkey.");
     const old = this.keys.id;
     if (!(await passkeySignIn())) throw new Error("That passkey can't stand in for an approval. Approve this browser instead.");
     // The request with this browser's old keys goes from the list.
@@ -1345,7 +1369,8 @@ export class ControlSession {
   /** A passkey for the account signed in: kept at once for an account with
    * none, and once one of its own agrees for an account with some. */
   async addPasskey() {
-    const waiting = await passkeyRegister();
+    const signer = this.enrollment ? { account: this.account, id: this.keys.id, sign: (t: string) => signText(this.keys, t) } : undefined;
+    const waiting = await passkeyRegister(undefined, signer);
     if (waiting) {
       this.passkeyToConfirm = waiting;
       this.emit();
@@ -2099,13 +2124,22 @@ export class ControlSession {
   }
 
   /** Whether this device may approve one of `kind` (`Kind::certifies`):
-   * the desktop app, and its devices from before it had a kind, approve
-   * machines, CLIs and apps, not browsers, phones or recovery codes
-   * (unless it's the account's first device). */
+   * the desktop app, its devices from before it had a kind, and anything
+   * they certified approve machines, CLIs and apps, not browsers, phones
+   * or recovery codes. */
   canApprove(kind: Kind): boolean {
     const me = this.enrollment?.cert;
     if (!me || !certifies(me.kind, kind)) return false;
-    return !(fromApp(me) && (kind === "browser" || kind === "recovery") && me.device !== this.enrollment?.root);
+    if (kind !== "browser" && kind !== "recovery") return true;
+    // A browser's own all the way back to the root, as control asks.
+    let c: Cert | undefined = me;
+    for (let i = 0; c && i < 64; i++) {
+      // A recovery code that let a browser in counts on the way back.
+      if (!(c.kind === "recovery" && c !== me) && (c.kind !== "browser" || fromApp(c))) return false;
+      if (c.approver === c.device) return c.device === this.enrollment?.root;
+      c = this.trusted.get(c.approver);
+    }
+    return false;
   }
 
   /** Allow it: control answers with the app's loopback address, which this

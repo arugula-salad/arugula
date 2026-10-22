@@ -136,8 +136,51 @@ fn session_of(app: &App, headers: &HeaderMap) -> Option<(String, SessionInfo)> {
     Some((hash, info))
 }
 
+/// The desktop app's window, signed in by a browser's hand-over: it makes
+/// no passkeys (its keys may be a program's on that computer).
+fn from_app(info: &SessionInfo) -> Result<(), ApiError> {
+    if info.via.as_deref() == Some(auth::Via::App.as_str()) {
+        return Err(refusal(
+            StatusCode::FORBIDDEN,
+            "app_window",
+            "add a passkey in a browser or on a phone: the desktop app's window doesn't",
+        ));
+    }
+    Ok(())
+}
+
+/// The account's browsers and phones that are ones all the way back to its
+/// root (`api::browser_all_the_way`): one of them signs for a passkey
+/// added to an account that has any.
+fn browser_devices(app: &App, account: &str) -> anyhow::Result<Vec<arugula_e2e::Cert>> {
+    let Some(root) = app.db.account(account)?.and_then(|a| a.root) else { return Ok(vec![]) };
+    let (certs, _) = app.db.devices(account)?;
+    let revs = app.db.revocations(account)?;
+    let trust = arugula_e2e::Trust { account: account.to_owned(), root };
+    let now = trust.evaluate(&certs, &revs);
+    Ok(now
+        .devices
+        .into_values()
+        .filter(|c| c.is_browser() && crate::api::browser_all_the_way(&trust, &certs, &c.device))
+        .collect())
+}
+
+/// What one of the account's browsers or phones signs to add a passkey:
+/// the account, the new passkey's id and the registration's challenge. The
+/// page's `addPasskeyDeviceBody` is the same text.
+pub fn add_passkey_device_body(account: &str, credential: &str, challenge: &str) -> String {
+    format!("arugula add passkey device v1\naccount {account}\ncredential {credential}\nchallenge {challenge}\n")
+}
+
+/// A device's signature over [`add_passkey_device_body`].
+#[derive(Deserialize, Clone)]
+pub struct DeviceSig {
+    id: String,
+    sig: String,
+}
+
 /// A GitHub sign-in from the last [`REAUTH_MS`]: what adding a first
-/// passkey to an account takes.
+/// passkey to an account with no browser or phone takes.
 fn fresh_github(info: &SessionInfo) -> bool {
     info.via.as_deref() == Some(auth::Via::Github.as_str()) && now_ms().saturating_sub(info.created) <= REAUTH_MS
 }
@@ -184,15 +227,15 @@ pub async fn register_start(
     let account = session.as_ref().map(|(_, i)| i.account.clone());
     // Signed in: one more for the account, confirmed with a passkey it has,
     // or (with none) a fresh GitHub sign-in.
-    let have = match &account {
-        Some(a) => app.db.passkey_ids(a)?,
-        None => vec![],
+    let (have, browsers) = match &account {
+        Some(a) => (app.db.passkey_ids(a)?, browser_devices(&app, a)?),
+        None => (vec![], vec![]),
     };
-    if let Some((_, info)) = &session
-        && have.is_empty()
-        && !fresh_github(info)
-    {
-        return Err(reauth());
+    if let Some((_, info)) = &session {
+        from_app(info)?;
+        if have.is_empty() && browsers.is_empty() && !fresh_github(info) {
+            return Err(reauth());
+        }
     }
     let name = match &account {
         Some(a) => app.db.account(a)?.map(|x| x.name).unwrap_or_default(),
@@ -221,6 +264,9 @@ pub async fn register_start(
         "timeout": CHALLENGE_TTL_MS,
         // Once it's made, one of these confirms it (`register_step_up`).
         "step_up": if have.is_empty() { None } else { Some("passkey") },
+        // And one of the account's browsers or phones signs for it
+        // (`add_passkey_device_body`).
+        "device_sig": !browsers.is_empty(),
     })))
 }
 
@@ -241,6 +287,7 @@ pub async fn register_step_up(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     same_origin(&app, &headers)?;
     let (_, info) = session_of(&app, &headers).ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in first"))?;
+    from_app(&info)?;
     let have = app.db.passkey_ids(&info.account)?;
     if have.is_empty() {
         return Err(err(StatusCode::CONFLICT, "this account has no passkey to confirm with"));
@@ -275,6 +322,10 @@ pub struct Registration {
     /// (`register_step_up`'s challenge).
     #[serde(default)]
     step_up: Option<Assertion>,
+    /// For an account with a browser or a phone: one of them signing for
+    /// this one ([`add_passkey_device_body`]).
+    #[serde(default)]
+    device: Option<DeviceSig>,
 }
 
 /// A ceremony's client data, as the browser wrote it. Only one run in
@@ -435,15 +486,19 @@ async fn register(
     let Some(Purpose::Register { account, name }) = app.passkeys.take(&cd.challenge) else {
         return Err(bad("that request expired; try again"));
     };
-    // One more for a signed-in account: its own session still, and
-    // confirmed (a passkey it has, or a fresh GitHub sign-in).
+    // One more for a signed-in account: its own session still (not the
+    // desktop app's window), and confirmed: a browser or a phone of its
+    // signs, a passkey it has agrees, or (with neither) a fresh GitHub
+    // sign-in.
     let added_by = match &account {
         Some(a) => {
             let (hash, info) = session_of(app, headers)
                 .filter(|(_, i)| i.account == *a)
                 .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in again"))?;
-            confirm_adding(app, site, a, &r.id, &info, r.step_up.as_ref())?;
-            Some((hash, info))
+            from_app(&info)?;
+            let device =
+                confirm_adding(app, site, a, &r.id, &cd.challenge, &info, r.step_up.as_ref(), r.device.as_ref())?;
+            Some((hash, info, device))
         }
         None => None,
     };
@@ -484,9 +539,11 @@ async fn register(
     if let Some(prf) = r.prf {
         app.db.passkey_prf(&r.id, prf)?;
     }
-    if let Some((hash, info)) = &added_by {
-        app.db.note_passkey_added(&r.id, info.device.as_deref(), &hash[..crate::account::SESSION_ID_LEN])?;
-        tell_devices(app, &account, info.device.as_deref(), provider);
+    if let Some((hash, info, device)) = &added_by {
+        // The device is the one that signed for it, not what the sign-in
+        // said it is.
+        app.db.note_passkey_added(&r.id, device.as_deref(), &hash[..crate::account::SESSION_ID_LEN])?;
+        tell_devices(app, &account, device.as_deref(), info, provider);
     }
     app.analytics.capture(
         &account,
@@ -496,20 +553,48 @@ async fn register(
     Ok((account, provider, cookie))
 }
 
-/// Adding `credential` to `account`, which `info` is signed in to: with
-/// passkeys, `step_up` is one of them agreeing (UV, over the challenge
-/// [`register_step_up`] made for this account and this credential);
-/// without, the session is a GitHub sign-in from the last ten minutes.
+/// Adding `credential` to `account` (registered over `challenge`), which
+/// `info` is signed in to. With a browser or a phone, one of them signs
+/// for it (`device`); with passkeys, one of them agrees (`step_up`: UV,
+/// over the challenge [`register_step_up`] made for this account and this
+/// credential); with neither, the session is a GitHub sign-in from the last
+/// ten minutes. The device that signed, if one did.
+#[allow(clippy::too_many_arguments)]
 fn confirm_adding(
     app: &App,
     site: &Site,
     account: &str,
     credential: &str,
+    challenge: &str,
     info: &SessionInfo,
     step_up: Option<&Assertion>,
-) -> Result<(), ApiError> {
-    if app.db.passkey_ids(account)?.is_empty() {
-        return if fresh_github(info) { Ok(()) } else { Err(reauth()) };
+    device: Option<&DeviceSig>,
+) -> Result<Option<String>, ApiError> {
+    let browsers = browser_devices(app, account)?;
+    let signed = match device {
+        Some(d) => browsers.iter().find(|c| {
+            c.device == d.id
+                && arugula_e2e::cert::verify_hex(
+                    &c.sign,
+                    add_passkey_device_body(account, credential, challenge).as_bytes(),
+                    &d.sig,
+                )
+        }),
+        None => None,
+    };
+    if !browsers.is_empty() && signed.is_none() {
+        return Err(refusal(
+            StatusCode::FORBIDDEN,
+            "device_sig",
+            "add a passkey from a browser or a phone that's one of your devices: it signs for the new passkey",
+        ));
+    }
+    let have = app.db.passkey_ids(account)?;
+    if have.is_empty() {
+        if browsers.is_empty() && !fresh_github(info) {
+            return Err(reauth());
+        }
+        return Ok(signed.map(|c| c.device.clone()));
     }
     let no = || refusal(StatusCode::FORBIDDEN, "step_up", "confirm with one of your passkeys to add another");
     let a = step_up.ok_or_else(no)?;
@@ -527,14 +612,25 @@ fn confirm_adding(
         return Err(no());
     }
     app.db.passkey_used(&a.id, count, now_ms())?;
-    Ok(())
+    Ok(signed.map(|c| c.device.clone()))
 }
 
-/// Every device of the account hears that a passkey was added, and where.
-fn tell_devices(app: &Arc<App>, account: &str, device: Option<&str>, provider: Option<&str>) {
-    let from = device
-        .and_then(|d| app.db.device(account, d).ok().flatten())
-        .map_or_else(|| "a browser signed in to it".to_owned(), |(c, _)| format!("\"{}\"", c.name));
+/// Every device of the account hears that a passkey was added: by the
+/// device that signed for it, or else by how the session signed in and
+/// what it said it runs in.
+fn tell_devices(app: &Arc<App>, account: &str, device: Option<&str>, info: &SessionInfo, provider: Option<&str>) {
+    let from = match device.and_then(|d| app.db.device(account, d).ok().flatten()) {
+        Some((c, _)) => format!("\"{}\"", c.name),
+        None => {
+            let how = match info.via.as_deref() {
+                Some("github") => "a GitHub sign-in",
+                Some("passkey") => "a passkey sign-in",
+                _ => "a sign-in",
+            };
+            let ua: String = info.agent.chars().take(120).collect();
+            if ua.is_empty() { how.to_owned() } else { format!("{how} ({ua})") }
+        }
+    };
     let what = provider.map_or_else(|| "A passkey".to_owned(), |p| format!("A passkey ({p})"));
     crate::push::notify(
         app,
@@ -736,6 +832,7 @@ mod tests {
             attestation: B64.encode(&att_bytes),
             prf: None,
             step_up: None,
+            device: None,
         };
         let (account, provider, cookie) = register(&app, &h, r).await.unwrap();
         assert_eq!(provider, Some("Windows Hello"));
@@ -835,6 +932,7 @@ mod tests {
             attestation: B64.encode(&att_bytes),
             prf: Some(false),
             step_up: None,
+            device: None,
         };
         register(&app, &old, r).await.unwrap();
 
@@ -915,6 +1013,7 @@ mod tests {
                 attestation: B64.encode(&att_bytes),
                 prf: None,
                 step_up,
+                device: None,
             }
         }
 
@@ -968,7 +1067,7 @@ mod tests {
     #[tokio::test]
     async fn a_first_passkey_takes_a_fresh_github_sign_in() {
         let app = App::for_tests(ORIGIN).start();
-        for (via, age) in [(auth::Via::Github, REAUTH_MS + 60_000), (auth::Via::App, 0), (auth::Via::Passkey, 0)] {
+        for (via, age) in [(auth::Via::Github, REAUTH_MS + 60_000), (auth::Via::Passkey, 0)] {
             let h = signed_in(&app, "acct-old", via, age);
             assert_eq!(start(&app, &h).await.map_err(reason).err(), Some(Some(REAUTH)), "{via:?}, {age} ms old");
         }
@@ -1077,11 +1176,90 @@ mod tests {
         app.cfg.push_hosts = vec![host];
         let app = app.start();
         let opts = start(&app, &h).await.unwrap();
-        register(&app, &h, Authn::new(3).create(opts["challenge"].as_str().unwrap(), None)).await.unwrap();
+        assert_eq!(opts["device_sig"], true);
+        let challenge = opts["challenge"].as_str().unwrap();
+        let a = Authn::new(3);
+        let mut r = a.create(challenge, None);
+        r.device = Some(DeviceSig {
+            id: keys.id(),
+            sig: hex::encode(keys.signature(add_passkey_device_body("acct-p", &a.id(), challenge).as_bytes())),
+        });
+        register(&app, &h, r).await.unwrap();
         let n = phone.next().await.expect("a push");
         assert_eq!(n["title"], "A passkey was added to your account");
         assert!(n["body"].as_str().unwrap().contains("\"Firefox on Linux\""), "{n}");
         assert_eq!(app.db.passkeys("acct-p").unwrap()[0].added_device.as_deref(), Some(keys.id().as_str()));
+    }
+
+    /// An account with a browser or a phone adds a passkey only with one of
+    /// them signing for it: not a CLI's or the app's key, not for another
+    /// passkey or another registration, not a GitHub sign-in instead. Its
+    /// push names that device, not what the sign-in said it is.
+    #[tokio::test]
+    async fn a_browser_of_the_account_signs_for_a_new_passkey() {
+        use arugula_e2e::{Cert, DeviceKeys, Kind};
+        let app = App::for_tests(ORIGIN).start();
+        let h = signed_in(&app, "acct-d", auth::Via::Github, 0);
+        let root = DeviceKeys::generate();
+        let mut rc = Cert::new(&root, "acct-d", Kind::Browser, "Safari on iPhone");
+        rc.sign_with(&root);
+        app.db.put_device(&rc, true, now_ms()).unwrap();
+        let other = |kind| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, "acct-d", kind, "x");
+            c.sign_with(&root);
+            app.db.put_device(&c, true, now_ms()).unwrap();
+            k
+        };
+        let (cli, appk) = (other(Kind::Cli), other(Kind::App));
+        let sig = |k: &DeviceKeys, cred: &str, ch: &str| DeviceSig {
+            id: k.id(),
+            sig: hex::encode(k.signature(add_passkey_device_body("acct-d", cred, ch).as_bytes())),
+        };
+        async fn attempt_with(
+            app: &Arc<App>,
+            h: &HeaderMap,
+            seed: u8,
+            device: &dyn Fn(&str, &str) -> Option<DeviceSig>,
+        ) -> Result<String, ApiError> {
+            let a = Authn::new(seed);
+            let opts = start(app, h).await.unwrap();
+            let ch = opts["challenge"].as_str().unwrap().to_owned();
+            let mut r = a.create(&ch, None);
+            r.device = device(&a.id(), &ch);
+            register(app, h, r).await.map(|r| r.0)
+        }
+        assert_eq!(
+            attempt_with(&app, &h, 20, &|_, _| None).await.map_err(reason).err(),
+            Some(Some("device_sig")),
+            "a fresh GitHub sign-in isn't it"
+        );
+        assert!(attempt_with(&app, &h, 21, &|c, ch| Some(sig(&cli, c, ch))).await.is_err(), "a CLI's key");
+        assert!(attempt_with(&app, &h, 22, &|c, ch| Some(sig(&appk, c, ch))).await.is_err(), "the app's key");
+        assert!(
+            attempt_with(&app, &h, 23, &|_, ch| Some(sig(&root, "another", ch))).await.is_err(),
+            "for another passkey"
+        );
+        assert!(
+            attempt_with(&app, &h, 24, &|c, _| Some(sig(&root, c, "another"))).await.is_err(),
+            "for another registration"
+        );
+        assert_eq!(attempt_with(&app, &h, 25, &|c, ch| Some(sig(&root, c, ch))).await.unwrap(), "acct-d");
+        assert_eq!(app.db.passkeys("acct-d").unwrap()[0].added_device.as_deref(), Some(root.id().as_str()));
+    }
+
+    /// The desktop app's window makes no passkeys.
+    #[tokio::test]
+    async fn the_apps_window_makes_no_passkeys() {
+        let app = App::for_tests(ORIGIN).start();
+        let h = signed_in(&app, "acct-w", auth::Via::App, 0);
+        assert_eq!(start(&app, &h).await.map_err(reason).err(), Some(Some("app_window")));
+        let mine = Authn::new(30);
+        app.db.add_passkey(&mine.id(), "acct-w", EDDSA, &mine.key.verifying_key().to_bytes(), 1).unwrap();
+        assert_eq!(step_up(&app, &h, &Authn::new(31).id()).await.map_err(reason).err(), Some(Some("app_window")));
+        let challenge = app.passkeys.issue(Purpose::Register { account: Some("acct-w".into()), name: "w".into() });
+        let r = register(&app, &h, Authn::new(31).create(&challenge, None)).await;
+        assert_eq!(r.map_err(reason).err(), Some(Some("app_window")));
     }
 
     /// Every ceremony refuses one run in a frame of another site's page,

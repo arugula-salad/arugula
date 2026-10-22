@@ -449,6 +449,10 @@ impl axum::extract::OptionalFromRequestParts<Arc<App>> for DaemonAuth {
 #[derive(Deserialize)]
 pub struct Start {
     next: Option<String>,
+    /// Signing in again to add a first passkey: GitHub asks which account,
+    /// so it takes the person's click, not a redirect GitHub answers alone.
+    #[serde(default)]
+    reauth: bool,
 }
 
 /// Only paths on this site, never `//elsewhere`.
@@ -470,11 +474,12 @@ pub async fn github_start(State(app): State<Arc<App>>, headers: HeaderMap, Query
     };
     let state = token();
     let next = safe_next(q.next.as_deref());
-    let url = url::Url::parse_with_params(
-        &format!("{}/login/oauth/authorize", gh.url),
-        &[("client_id", gh.client_id.as_str()), ("redirect_uri", &callback_url(&app, &headers)), ("state", &state)],
-    )
-    .unwrap();
+    let callback = callback_url(&app, &headers);
+    let mut params = vec![("client_id", gh.client_id.as_str()), ("redirect_uri", &callback), ("state", &state)];
+    if q.reauth {
+        params.push(("prompt", "select_account"));
+    }
+    let url = url::Url::parse_with_params(&format!("{}/login/oauth/authorize", gh.url), &params).unwrap();
     let mut res = Redirect::to(url.as_str()).into_response();
     let value = format!("{state}.{}", base64_url(next.as_bytes()));
     res.headers_mut().append(header::SET_COOKIE, set_cookie(&app, STATE_COOKIE, &value, 600));
@@ -550,11 +555,18 @@ async fn github_finish(app: &App, headers: &HeaderMap, q: Callback) -> Result<(S
         return Err(e);
     }
     let (code, state) = q.code.zip(q.state).ok_or("missing code")?;
-    let (want, next) =
-        cookie(headers, STATE_COOKIE).and_then(|c| c.split_once('.')).ok_or("the sign-in took too long; try again")?;
-    if want != state {
-        return Err("state mismatch; try again".into());
-    }
+    let kept = cookie(headers, STATE_COOKIE).and_then(|c| c.split_once('.'));
+    let Some((_, next)) = kept.filter(|(want, _)| *want == state) else {
+        // A code this browser didn't start a sign-in for (someone sent
+        // the link): used up all the same, as GitHub's codes work once, so
+        // it signs nobody in anywhere else; its token goes at once.
+        if let Ok(t) = exchange(app, gh, &code, &callback_url(app, headers)).await {
+            crate::forge_send::revoke(app, gh, &t).await;
+        }
+        return Err(
+            if kept.is_none() { "the sign-in took too long; try again" } else { "state mismatch; try again" }.into()
+        );
+    };
     let next = safe_next(unbase64_url(next).as_deref());
     let access = exchange(app, gh, &code, &callback_url(app, headers)).await?;
     let user: GithubUser = app
@@ -659,6 +671,99 @@ mod tests {
         assert_eq!(safe_next(Some("https://evil.example")), "/");
         assert_eq!(safe_next(Some("/\\evil.example")), "/");
         assert_eq!(safe_next(None), "/");
+    }
+
+    /// A GitHub sign-in's code is used up even when it reaches a browser
+    /// that didn't start that sign-in (someone sent the link): it signs
+    /// nobody in, then or later, and its token goes at once. Signing in
+    /// again to add a passkey asks GitHub for the account picker.
+    #[tokio::test]
+    async fn a_code_without_its_sign_in_is_used_up() {
+        use std::sync::{Arc as A, Mutex};
+
+        use axum::{
+            Json, Router,
+            routing::{delete, get, post},
+        };
+        use serde_json::json;
+
+        #[derive(Default)]
+        struct Seen {
+            codes: Vec<String>,
+            revoked: usize,
+        }
+        let seen: A<Mutex<Seen>> = A::default();
+        let s2 = seen.clone();
+        let s3 = seen.clone();
+        let gh = Router::new()
+            .route(
+                "/login/oauth/access_token",
+                post(move |body: String| async move {
+                    s2.lock().unwrap().codes.push(body);
+                    Json(json!({ "access_token": "ghu_test", "token_type": "bearer" }))
+                }),
+            )
+            .route("/user", get(|| async { Json(json!({ "id": 7, "login": "jake-gh" })) }))
+            .route(
+                "/applications/cid/token",
+                delete(move || async move {
+                    s3.lock().unwrap().revoked += 1;
+                    StatusCode::NO_CONTENT
+                }),
+            );
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let api = format!("http://{}", l.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(l, gh).await.unwrap() });
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", l.local_addr().unwrap());
+        let mut app = App::for_tests(&base);
+        app.cfg.github =
+            Some(crate::Github { client_id: "cid".into(), client_secret: "s".into(), url: api.clone(), api });
+        let app = app.start();
+        let svc = crate::router(app.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
+        tokio::spawn(async move { axum::serve(l, svc).await.unwrap() });
+        let http = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+
+        // The re-auth asks GitHub for the account picker; a sign-in doesn't.
+        let start = |q: &str| http.get(format!("{base}/auth/github{q}")).send();
+        let r = start("?reauth=true&next=/%23add-passkey").await.unwrap();
+        let to = r.headers()[header::LOCATION].to_str().unwrap().to_owned();
+        assert!(to.contains("prompt=select_account"), "{to}");
+        let state_cookie = r.headers()[header::SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_owned();
+        let state = state_cookie.split_once('=').unwrap().1.split_once('.').unwrap().0.to_owned();
+        assert!(!start("").await.unwrap().headers()[header::LOCATION].to_str().unwrap().contains("prompt="));
+
+        // A code with no sign-in here, or another one's: refused, but used.
+        let back = |code: &str, st: &str, cookie: Option<&str>| {
+            let mut r = http.get(format!("{base}/auth/github/callback?code={code}&state={st}"));
+            if let Some(c) = cookie {
+                r = r.header(header::COOKIE, c);
+            }
+            r.send()
+        };
+        assert_eq!(back("sent-1", "x", None).await.unwrap().status(), 400);
+        assert_eq!(back("sent-2", "x", Some(&state_cookie)).await.unwrap().status(), 400);
+        {
+            let s = seen.lock().unwrap();
+            assert!(
+                s.codes.iter().any(|b| b.contains("code=sent-1")) && s.codes.iter().any(|b| b.contains("code=sent-2"))
+            );
+            assert_eq!(s.revoked, 2, "their tokens went");
+        }
+        // Its own: signed in, a GitHub sign-in, back where it asked.
+        let r = back("mine", &state, Some(&state_cookie)).await.unwrap();
+        assert_eq!(r.status(), 303);
+        assert_eq!(r.headers()[header::LOCATION], "/#add-passkey");
+        let token = r
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .find_map(|v| {
+                v.strip_prefix(&format!("{SESSION_COOKIE}=")).map(|v| v.split(';').next().unwrap().to_owned())
+            })
+            .unwrap();
+        assert_eq!(app.db.session_info(&hash(&token), now_ms()).unwrap().unwrap().via.as_deref(), Some("github"));
     }
 
     #[test]
