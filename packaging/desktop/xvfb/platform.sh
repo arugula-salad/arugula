@@ -95,6 +95,8 @@ geometry() { eval "$(xdotool getwindowgeometry --shell "$1")"; }
 maximized() { geometry "$1"; [ "$WIDTH" -ge 1270 ] && [ "$HEIGHT" -ge 850 ]; }
 restored() { geometry "$1"; [ "$WIDTH" -lt 1270 ]; }
 iconic() { xprop -id "$1" WM_STATE 2>/dev/null | grep -qi iconic; }
+placed() { geometry "$1"; [ "$X" = 100 ] && [ "$Y" = 100 ] && [ "$WIDTH" = 1000 ] && [ "$HEIGHT" = 700 ]; }
+. "$here/drag.sh"
 
 Xvfb :99 -screen 0 1280x900x24 -nolisten tcp >/dev/null 2>&1 &
 pids+=($!)
@@ -166,15 +168,10 @@ echo "ok: minimize() minimized it"
 xdotool windowactivate --sync "$w" 2>/dev/null || xdotool windowmap "$w"
 sleep 1
 xdotool windowsize "$w" 1000 700 windowmove "$w" 100 100
-sleep 1
-geometry "$w"
-x0=$X y0=$Y
-xdotool mousemove --window "$w" $((WIDTH / 2)) 12 mousedown 1 sleep 0.3 \
-  mousemove_relative 50 30 sleep 0.2 mousemove_relative 100 50 sleep 0.3 mouseup 1
-sleep 1
-geometry "$w"
-[ $((X - x0)) -ge 100 ] && [ $((Y - y0)) -ge 50 ] || fail "dragging the platform page's top strip left the window at $X,$Y (was $x0,$y0)"
-echo "ok: dragging the platform page's top strip moved the window from $x0,$y0 to $X,$Y (start_dragging)"
+wait_for 10 placed "$w" || fail "the window didn't take 1000x700 at 100,100 (${WIDTH}x$HEIGHT at $X,$Y)"
+drag "$w" $((WIDTH / 2)) 12
+dragged || fail "dragging the platform page's top strip left the window at $X,$Y (was $x0,$y0)"
+echo "ok: dragging the platform page's top strip moved the window from $x0,$y0 to $X,$Y (start_dragging)$(pressed)"
 xdotool mousemove --window "$w" $((WIDTH / 2)) 12 click --repeat 2 --delay 80 1
 wait_for 10 maximized "$w" || fail "a double-click on the platform page's strip left the window ${WIDTH}x$HEIGHT"
 echo "ok: a double-click on its strip maximized it (internal_toggle_maximize, ${WIDTH}x$HEIGHT)"

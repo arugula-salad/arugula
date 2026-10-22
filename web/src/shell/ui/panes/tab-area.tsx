@@ -79,8 +79,11 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
   // The active pane when the effect runs, not when it rendered: a pane
   // picked from the keyboard (Ctrl+Shift+N) in the frame between would
   // otherwise lose the keys to the one before it.
+  // Not from a dialog that has them, though: this runs after the next
+  // paint, and a palette opened in between (Enter on a tab, then
+  // Ctrl+Shift+P) lost what was typed into it to the terminal's shell.
   useEffect(() => {
-    if (stale()) return;
+    if (stale() || inDialog()) return;
     const now = client.active(tab.id) ?? null;
     if (!phone && now !== null) client.viewOf(now)?.focus();
   }, [client, tab.id, active, phone]);
@@ -147,3 +150,6 @@ export function TabArea({ client, tab, cell, phone }: { client: Client; tab: Tab
     </div>
   );
 }
+
+/** The keys are in a dialog: the palette, a prompt, a picker. */
+const inDialog = () => !!document.activeElement?.closest('[role="dialog"], [role="alertdialog"]');
