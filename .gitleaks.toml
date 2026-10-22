@@ -13,4 +13,5 @@ paths = [
   '''(^|/)pnpm-lock\.yaml$''',
   '''(^|/)crates/daemon/tests/fixtures/docs/link-vector\.json$''',
   '''(^|/)web/scripts/hosted\.fixture\.json$''',
+  '''(^|/)web/scripts/run-grant\.fixture\.json$''',
 ]
