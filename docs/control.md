@@ -456,6 +456,19 @@ A block's card on a linked repo sends a platform draft from its machine
 with the owner's login, as its own drafts go, and tells the platform
 (`POST /api/forge/drafts/{id}/machine`: `start`, then `sent` or `failed`).
 
+**Agents and deploys (M218).** `deploys.plan` over a project lets a
+machine's agents plan its deploys and ask its owners to approve them:
+
+```
+arugula grants add geek deploys.plan --project acme
+```
+
+It's off until the owner gives it, and it's a switch of its own per machine
+and project under Settings, Agents and deploys. Asks are limited per
+project. No grant approves a deploy. An owner approves on their phone or
+in a browser: the device's signature over the deploy's operation, and a
+passkey's assertion over the approval, which the hub checks.
+
 **Agents in conversations (M197).** Three more powers let a machine's
 agents into its owner's conversations: `threads.read` and `threads.post`
 over a project (a team's channels are its default project's; an object's

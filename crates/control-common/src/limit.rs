@@ -67,6 +67,15 @@ impl Limits {
         self.count(what, format!("account:{account}"), "too many of those lately; try again later")
     }
 
+    /// Take back the last use [`Limits::check_account`] counted for
+    /// `account`: for what turned out not to happen (M218: an ask that was
+    /// refused).
+    pub fn uncount_account(&self, what: (&'static str, usize), account: &str) {
+        if let Some(v) = self.seen.lock().unwrap().get_mut(&(what.0, format!("account:{account}"))) {
+            v.pop();
+        }
+    }
+
     /// Count one use by a daemon; refuse once over the limit.
     pub fn check_daemon(&self, what: (&'static str, usize), daemon: &str) -> Result<(), ApiError> {
         self.count(what, format!("daemon:{daemon}"), "too many of those from this machine lately; try again later")
@@ -162,6 +171,8 @@ mod tests {
         assert!(l.check_account(("t", 1), "a").is_err());
         assert!(l.check_account(("t", 1), "b").is_ok());
         assert!(l.check_daemon(("t", 1), "a").is_ok(), "a daemon with the same id is another bucket");
+        l.uncount_account(("t", 1), "a");
+        assert!(l.check_account(("t", 1), "a").is_ok(), "a use taken back is free again");
         l.check_all(("u", 1)).unwrap();
         assert!(l.check_all(("u", 1)).is_err());
     }

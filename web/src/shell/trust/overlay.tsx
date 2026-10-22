@@ -18,6 +18,7 @@ import { ADD_PASSKEY_HASH, DEVICE_HASH, inviteInHash, JOIN_HASH, type ControlSes
 import { SharedDocs } from "../ui/shared-docs";
 import { AccountPanel } from "./account";
 import { DeviceLinkPrompt, DevicePrompt, JoinPrompt } from "./approve";
+import { DEPLOY_HASH, DeployPrompt } from "./deploy";
 import { openPanel, useControl, usedLink, type Panel } from "./common";
 import { AddDevice, Devices } from "./devices";
 import { AddMachine } from "./machines";
@@ -71,6 +72,9 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   const appLogin = /^#app=([0-9a-f]{16,128})$/.exec(hash)?.[1];
   if (appLogin && !s.pending[0]) return <AppLoginPrompt s={s} id={appLogin} />;
   if (hash === "#app-done" && !s.pending[0]) return <AppLoginDone />;
+  // M218: a deploy's approval, from the platform page's Approve or Deny.
+  const deploy = DEPLOY_HASH.exec(hash)?.[1];
+  if (deploy) return <DeployPrompt key={deploy} s={s} id={deploy} />;
   const invite = inviteInHash(hash) ?? inviteInHash(usedLink);
   if (invite)
     return invite.presigned ? (

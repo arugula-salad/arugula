@@ -67,3 +67,7 @@ contract = []
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# Test passkeys (M218): the test hub checks an Ed25519 assertion as the hub does.
+ed25519-dalek = { workspace = true }

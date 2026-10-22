@@ -700,9 +700,63 @@ pub struct VerifiedApproval {
     expires: u64,
     /// The device's signature, hex.
     signature: String,
+    /// The passkey assertion the hub checked over the approval's bytes
+    /// (M218): `None` only for tests' unchecked ones.
+    passkey: Option<PasskeyProof>,
+}
+
+/// A passkey's assertion, as the hub checked it (M218): each base64url.
+/// With the passkey's public key (the hub's), anyone can check it again
+/// from the log.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PasskeyProof {
+    pub id: String,
+    pub client_data_json: String,
+    pub authenticator_data: String,
+    pub signature: String,
 }
 
 impl VerifiedApproval {
+    /// M218's verifier (`crate::deploys::verify`) makes one this way, and
+    /// nothing else does: once the approving device is one of the
+    /// account's that counts (a browser's, chained to its root, not
+    /// revoked), its signature checks out over `approval`'s bytes, and
+    /// `op` (the deploy's operation as the log has it now) hashes to what
+    /// it signed.
+    pub(crate) fn from_checked(
+        approval: &arugula_e2e::deploy::Approval,
+        op: &arugula_e2e::deploy::Operation,
+        passkey: PasskeyProof,
+    ) -> Self {
+        Self {
+            deploy: approval.deploy.clone(),
+            plan_digest: op.plan.clone(),
+            planned_hash: op.planned.clone(),
+            op: approval.op.clone(),
+            account: approval.account.clone(),
+            device: approval.by.clone(),
+            decision: match approval.decision {
+                arugula_e2e::deploy::Decision::Once => Decision::Once,
+                arugula_e2e::deploy::Decision::Deny => Decision::Deny,
+            },
+            expires: approval.expires,
+            signature: approval.sig.clone(),
+            passkey: Some(passkey),
+        }
+    }
+
+    pub fn passkey(&self) -> Option<&PasskeyProof> {
+        self.passkey.as_ref()
+    }
+
+    pub fn op(&self) -> &str {
+        &self.op
+    }
+
+    pub fn signature(&self) -> &str {
+        &self.signature
+    }
+
     /// One made without checking anything: tests only. M218's verifier is
     /// the only other constructor.
     #[cfg(test)]
@@ -728,6 +782,7 @@ impl VerifiedApproval {
             decision,
             expires,
             signature: signature.into(),
+            passkey: None,
         }
     }
 
@@ -762,7 +817,7 @@ impl VerifiedApproval {
     /// What its event's detail holds: enough, with the event's deploy and
     /// actor, to check the signature from the log.
     pub fn detail(&self) -> serde_json::Value {
-        json!({
+        let mut d = json!({
             "decision": self.decision.as_str(),
             "plan": self.plan_digest,
             "planned": self.planned_hash,
@@ -770,7 +825,18 @@ impl VerifiedApproval {
             "device": self.device,
             "expires": self.expires,
             "signature": self.signature,
-        })
+        });
+        // M218: the passkey's assertion the hub checked over the
+        // approval's bytes.
+        if let Some(p) = &self.passkey {
+            d["passkey"] = json!({
+                "id": p.id,
+                "client_data_json": p.client_data_json,
+                "authenticator_data": p.authenticator_data,
+                "signature": p.signature,
+            });
+        }
+        d
     }
 }
 
@@ -789,9 +855,9 @@ pub struct NewDeploy<'a> {
 }
 
 const ENV_COLS: &str = "id, project_id, name, driver, secret_names, created_at, updated_at";
-const DEPLOY_COLS: &str = "id, environment_id, source_kind, source_ref, source_where, plan_digest, state, planned_seq, \
+pub(super) const DEPLOY_COLS: &str = "id, environment_id, source_kind, source_ref, source_where, plan_digest, state, planned_seq, \
                            run_id, planned_by, planned_by_agent, created_at, updated_at";
-const EVENT_COLS: &str = "environment_id, seq, deploy_id, kind, actor, at, detail, prev_hash, hash";
+pub(super) const EVENT_COLS: &str = "environment_id, seq, deploy_id, kind, actor, at, detail, prev_hash, hash";
 
 fn environment_row(r: &Row) -> Result<Environment> {
     Ok(Environment {
@@ -805,7 +871,7 @@ fn environment_row(r: &Row) -> Result<Environment> {
     })
 }
 
-fn deploy_row(r: &Row) -> Result<Deploy> {
+pub(super) fn deploy_row(r: &Row) -> Result<Deploy> {
     let kind: String = r.get(2)?;
     let state: String = r.get(6)?;
     Ok(Deploy {
@@ -827,7 +893,7 @@ fn deploy_row(r: &Row) -> Result<Deploy> {
     })
 }
 
-fn event_row(r: &Row) -> Result<Event> {
+pub(super) fn event_row(r: &Row) -> Result<Event> {
     Ok(Event {
         environment: r.get(0)?,
         seq: r.get(1)?,
@@ -921,7 +987,7 @@ fn last_apply(c: &impl Sql, environment: &str, deploy: &str) -> Result<Option<(u
 
 /// A deploy's `planned` event: where the stale rule starts from, never the
 /// row's copy of its seq.
-fn planned_event(c: &impl Sql, deploy: &str) -> Result<Option<Event>> {
+pub(super) fn planned_event(c: &impl Sql, deploy: &str) -> Result<Option<Event>> {
     c.query_row(
         &format!(
             "SELECT {EVENT_COLS} FROM deploy_events WHERE deploy_id = ?1 AND kind = 'planned' ORDER BY seq LIMIT 1"
@@ -934,7 +1000,7 @@ fn planned_event(c: &impl Sql, deploy: &str) -> Result<Option<Event>> {
 
 /// A deploy's row and its `planned` event, which must agree on its
 /// environment. `None`: there's no such deploy.
-fn deploy_and_plan(c: &impl Sql, deploy: &str) -> Result<Option<(Deploy, Event)>> {
+pub(super) fn deploy_and_plan(c: &impl Sql, deploy: &str) -> Result<Option<(Deploy, Event)>> {
     let Some(d) = c
         .query_row(&format!("SELECT {DEPLOY_COLS} FROM deploys WHERE id = ?1"), params![deploy], deploy_row)
         .optional()?
@@ -1345,6 +1411,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute("DELETE FROM environments WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("DELETE FROM deploy_events WHERE environment_id NOT IN (SELECT id FROM environments)", params![])?;
     c.execute("DELETE FROM deploys WHERE environment_id NOT IN (SELECT id FROM environments)", params![])?;
+    super::deploy_approvals::erase_account(c)?;
     c.execute("UPDATE deploys SET planned_by = '', planned_by_agent = NULL WHERE planned_by = ?1", params![d.account])?;
     Ok(())
 }

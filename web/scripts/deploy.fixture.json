@@ -1,0 +1,18 @@
+{
+  "approval": {
+    "account": "acct1",
+    "by": "0231cdd300519920",
+    "decision": "once",
+    "deploy": "dep_00112233445566778899aabbccddeeff",
+    "expires": 1800000000000,
+    "op": "1fd3b1c7e0bdbfca87c195da7e6edf44b5e668e4596980bf46bd6643ef6f316e",
+    "sig": "6a7fca1a6b922868628bf54184d24d4cb733007ced9e31f623c789e75349ed31dbedf7f5961515340381bdd5b35c000ce9ab057cd4cad03904b68968487ef208"
+  },
+  "approval_body": "arugula deploy approval v1\ndeploy dep_00112233445566778899aabbccddeeff\nop 1fd3b1c7e0bdbfca87c195da7e6edf44b5e668e4596980bf46bd6643ef6f316e\naccount acct1\ndecision once\nexpires 1800000000000\nby 0231cdd300519920\n",
+  "operation": {
+    "body": "arugula deploy op v1\nproject prj_1\nenvironment env_1\nname production\nplan abababababababababababababababababababababababababababababababab\nsource commit deadbeef\nwhere acme/app\nplanned efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef\n",
+    "hash": "1fd3b1c7e0bdbfca87c195da7e6edf44b5e668e4596980bf46bd6643ef6f316e"
+  },
+  "seed": "0707070707070707070707070707070707070707070707070707070707070707",
+  "sign": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
+}

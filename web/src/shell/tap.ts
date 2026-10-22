@@ -4,7 +4,8 @@
 // chat push from control (M123) at its message. Once control has a
 // platform page (M156), a chat push or a Cloud workspace's opens there, by
 // id: `platformTap`; an inbox push (M171) at the inbox, or (M202) at the
-// native issue or the thread it's about.
+// native issue or the thread it's about; a deploy waiting for approval
+// (M218) at its card.
 
 /** A chat push from control (M123): `chat: {room, seq}`, opened on the chat
  * page at that message. Anything that isn't a room's id opens nothing. */
@@ -36,7 +37,9 @@ export function tapUrl(n: { pane?: number; daemon?: string; reason?: unknown }):
 /** M156: where a chat push or a Cloud one opens on the platform page (an
  * id-only path, which the page puts in its project), or undefined for a
  * push that isn't one of those. */
-export function platformTap(n: { chat?: unknown; cloud_run?: unknown; cloud_workspace?: unknown; cloud_tab?: unknown; inbox?: unknown }): string | undefined {
+export function platformTap(n: { chat?: unknown; cloud_run?: unknown; cloud_workspace?: unknown; cloud_tab?: unknown; inbox?: unknown; deploy?: unknown }): string | undefined {
+  // M218: a deploy waiting for an owner's approval.
+  if (typeof n.deploy === "string" && /^dep_[0-9a-f]{32}$/.test(n.deploy)) return `/deploys/${n.deploy}`;
   const c = n.chat as { room?: unknown; seq?: unknown } | undefined;
   if (c && typeof c.room === "string" && /^[a-z]{2}_[0-9a-f]{8,32}$/.test(c.room)) {
     const msg = typeof c.seq === "number" && Number.isInteger(c.seq) ? `?msg=${c.seq}` : "";

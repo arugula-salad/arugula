@@ -57,7 +57,10 @@ pub const CLOUD_DRIVE: &str = "cloud.drive";
 pub const THREADS_READ: &str = "threads.read";
 pub const THREADS_POST: &str = "threads.post";
 pub const ISSUES_WRITE: &str = "issues.write";
-pub const AGENT_POWERS: [&str; 3] = [THREADS_READ, THREADS_POST, ISSUES_WRITE];
+/// An agent's power to plan a project's deploys and ask for their approval
+/// (M218), over a project only. Never an approval: no grant is.
+pub const DEPLOYS_PLAN: &str = "deploys.plan";
+pub const AGENT_POWERS: [&str; 4] = [THREADS_READ, THREADS_POST, ISSUES_WRITE, DEPLOYS_PLAN];
 
 /// An agent's powers over a project's runs (M216, platform step 7): its
 /// machine's agents read the project's runs and their logs (`runs.read`),
@@ -416,7 +419,7 @@ impl Db {
         c.query_map(
             &format!(
                 "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = 'daemon' AND revoked_at IS NULL
-                 AND power IN (?, ?, ?) AND ({}) ORDER BY granted_by, subject_id, power",
+                 AND power IN (?, ?, ?, ?) AND ({}) ORDER BY granted_by, subject_id, power",
                 ors.join(" OR ")
             ),
             &super::sql::list(&args),
@@ -430,10 +433,10 @@ impl Db {
         self.c().query_map(
             &format!(
                 "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1
-                 AND granted_by = ?2 AND revoked_at IS NULL AND power IN (?3, ?4, ?5)
+                 AND granted_by = ?2 AND revoked_at IS NULL AND power IN (?3, ?4, ?5, ?6)
                  ORDER BY scope_kind, scope_id, power"
             ),
-            params![daemon, by, AGENT_POWERS[0], AGENT_POWERS[1], AGENT_POWERS[2]],
+            params![daemon, by, AGENT_POWERS[0], AGENT_POWERS[1], AGENT_POWERS[2], AGENT_POWERS[3]],
             grant_row,
         )
     }

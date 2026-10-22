@@ -8,11 +8,13 @@
 // thread), and can be marked seen or done.
 // Read through the viewer check: a private repo's items show only to those
 // GitHub lets read it, and a native issue's to its project's members.
+// Deploys waiting for the reader's approval (M218) come first, as cards.
 
 import { useEffect, useState } from "preact/hooks";
 import type { Inbox, InboxEntry } from "../../shared/proto.gen";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { DraftList, useMyDrafts } from "../drafts";
+import { WaitingDeploys, useWaitingDeploys } from "./deploy";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { toast } from "../toast";
@@ -57,6 +59,7 @@ export function InboxPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const mine = useMyDrafts();
+  const deploys = useWaitingDeploys();
   const load = () =>
     call<Inbox>("GET", "/api/inbox").then(
       (v) => {
@@ -80,13 +83,14 @@ export function InboxPage() {
   };
   const shown = (entries ?? []).filter((e) => e.reason !== "draft");
   const drafts = mine.drafts ?? [];
-  const empty = entries !== null && mine.drafts !== null && shown.length === 0 && drafts.length === 0;
+  const empty = entries !== null && mine.drafts !== null && deploys !== null && shown.length === 0 && drafts.length === 0 && deploys.length === 0;
   return (
     <section class="platform-section platform-inbox" data-platform-inbox>
       <h1>Inbox</h1>
       {error && <p class="control-error">{error}</p>}
       {entries === null && !error && <p class="dim">Loading…</p>}
       {empty && <p class="dim" data-inbox-empty>Nothing wants you right now.</p>}
+      <WaitingDeploys list={deploys} />
       {GROUPS.map(([reason, reasons, heading]) => {
         const group = shown.filter((e) => reasons.includes(e.reason));
         if (group.length === 0) return null;

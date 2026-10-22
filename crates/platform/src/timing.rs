@@ -334,6 +334,21 @@ impl HubPort for Timed {
     ) -> BoxFuture<'a, HubResult<bool>> {
         timed!(self.0.owner_browser_signed(owner, device, body, sig))
     }
+
+    fn device_trust<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<crate::hub::DeviceTrust>>> {
+        timed!(self.0.device_trust(account))
+    }
+    fn team_rosters<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Vec<arugula_e2e::team::Roster>>> {
+        timed!(self.0.team_rosters(team))
+    }
+    fn verify_passkey<'a>(
+        &'a self,
+        account: &'a str,
+        challenge: &'a str,
+        assertion: &'a crate::hub::PasskeyAssertion,
+    ) -> BoxFuture<'a, HubResult<crate::hub::PasskeyVerdict>> {
+        timed!(self.0.verify_passkey(account, challenge, assertion))
+    }
 }
 
 #[cfg(test)]

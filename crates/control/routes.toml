@@ -1965,6 +1965,105 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 
+# ---- platform: deploys and their approval (M218, platform step 7)
+# A project's environments and deploys (M217's storage). Members read; owners
+# and editors (or their agents) plan and ask; only an owner approves or
+# denies, from a browser, with their device's signature over the deploy's
+# operation (`arugula_e2e::deploy`). Agents plan and ask, and never approve:
+# the approve and deny routes refuse a machine's signature and a CLI's login,
+# and there's no machine route that approves.
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/environments"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project's environments, for its members."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/environments"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Makes an environment (a name, a driver, its secrets' names): owners."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/deploys"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Plans a deploy (an environment, a source and the plan's digest): owners and editors."
+
+[[route]]
+method = "GET"
+path = "/api/deploys/waiting"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Deploys waiting for the reader's approval, in projects they own."
+
+[[route]]
+method = "GET"
+path = "/api/deploys/{id}"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A deploy with its operation's bytes and hash, approvals and log, for its project's members."
+
+[[route]]
+method = "POST"
+path = "/api/deploys/{id}/request"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Asks for its approval: owners and editors. Pushes each owner a card."
+
+[[route]]
+method = "POST"
+path = "/api/deploys/{id}/approve"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Approves it once: an owner, from a browser's session only (a CLI's login is refused), with a signature by one of their browser devices (browsers back to the account's root) over the operation, checked against the devices the hub keeps, and a passkey's assertion over the approval's bytes, which the hub checks. The stale rule is checked in the same transaction."
+
+[[route]]
+method = "POST"
+path = "/api/deploys/{id}/deny"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Denies it, signed and confirmed with a passkey as an approval is."
+
+# A machine's agents: plan, ask and read, never approve. The owner's role is
+# the ceiling, and the machine needs its owner's `deploys.plan` grant over the
+# project (off until given), asked on every call. Asks are limited per project.
+
+[[route]]
+method = "POST"
+path = "/api/daemon/projects/{project}/deploys"
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Plans a deploy as the owner's agent: `deploys.plan`, and the owner an owner or editor."
+
+[[route]]
+method = "GET"
+path = "/api/daemon/deploys/{id}"
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+
+[[route]]
+method = "POST"
+path = "/api/daemon/deploys/{id}/request"
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Asks the project's owners to approve it, and pushes them a card. All an agent does past planning."
+
 # ---- platform: runs for a machine's agents (M216)
 # MCP's start_run, read_run and wait on a run, signed by the machine. The
 # machine needs its owner's grant over the project, asked on every call:

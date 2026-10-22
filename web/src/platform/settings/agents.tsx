@@ -1,6 +1,7 @@
 // Agents in conversations (M197): per machine, a switch per project (and
 // one for your DMs) that lets its agents read and post in the threads
-// there, and write the project's issues. Off until you turn one on, and
+// there, and write the project's issues. And (M218) a switch per project
+// that lets them plan its deploys and ask for approval: never approve. Off until you turn one on, and
 // only over what you read; what they write is labelled as your agent's,
 // and every room they reach says so. The same grants as `arugula grants
 // add` (`/api/grants`, the platform's). And (M216) two switches per
@@ -11,7 +12,17 @@ import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { session } from "../session";
-import { COMMAND_POWERS, liveOver, machinesOf, powersFor, RUN_POWERS, type AgentScope, type Grant } from "./grants";
+import {
+  COMMAND_POWERS,
+  DEPLOYS_PLAN,
+  deployGrant,
+  liveOver,
+  machinesOf,
+  powersFor,
+  RUN_POWERS,
+  type AgentScope,
+  type Grant,
+} from "./grants";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {
@@ -47,6 +58,19 @@ export function AgentGrants() {
     id: p.id,
     name: p.team ? p.name : "Your personal project",
   }));
+  const turnDeploys = async (machine: string, project: string, on: boolean) => {
+    setErr("");
+    setBusy(`${machine}/deploys/${project}`);
+    try {
+      const g = deployGrant(grants, machine, project);
+      if (on && !g) await call("/api/grants", { daemon: machine, power: DEPLOYS_PLAN, scope: { kind: "project", id: project } });
+      if (!on && g) await call(`/api/grants/${encodeURIComponent(g.id)}/revoke`, {});
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+    await load();
+    setBusy("");
+  };
   const turn = async (machine: string, s: AgentScope, on: boolean, which?: "runs" | "commands") => {
     setErr("");
     setBusy(`${which ? `${which}/` : ""}${machine}/${s.id ?? "dms"}`);
@@ -134,6 +158,32 @@ export function AgentGrants() {
               );
             }),
           )}
+        </div>
+      ))}
+      <h2>Agents and deploys</h2>
+      <p class="dim">
+        Let the agents on one of your machines plan a project's deploys and ask its owners to approve them. Off until you turn it on. An agent never
+        approves a deploy: an owner does, on their phone or in a browser, with a passkey.
+      </p>
+      {machines.map((m) => (
+        <div class="agent-grants" data-deploy-grants={m.id} key={m.id}>
+          <h3>{m.name}</h3>
+          {session.projects.map((p) => {
+            const key = `${m.id}/deploys/${p.id}`;
+            return (
+              <label class="control-confirm" key={key}>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  data-deploy-switch={key}
+                  checked={!!deployGrant(grants, m.id, p.id)}
+                  disabled={busy === key}
+                  onChange={(e) => void turnDeploys(m.id, p.id, (e.target as HTMLInputElement).checked)}
+                />{" "}
+                {p.team ? p.name : "Your personal project"}
+              </label>
+            );
+          })}
         </div>
       ))}
       {err ? <p class="control-error">{err}</p> : null}

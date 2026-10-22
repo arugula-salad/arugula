@@ -32,6 +32,8 @@
 //                                  something of them, and drafts waiting
 //   /agents                        the cloud agent library
 //   /settings                      account settings
+//   /deploys/:deploy               a deploy (M218): its card, approvals
+//                                  and log; a push for one opens here
 //
 // And addresses that name only an id, for links from places that don't
 // know its project (the shell, an old link, a push): the page finds the
@@ -64,6 +66,7 @@ export type Route =
   | { page: "inbox" }
   | { page: "agents" }
   | { page: "settings" }
+  | { page: "deploy"; deploy: string }
   /** An id-only address, to be put where it belongs (`resolve`). */
   | { page: "find"; what: "chat"; room?: string; msg?: number; view?: "activity" | "search"; q?: string }
   | { page: "find"; what: "workspaces"; workspace?: string; tab?: string }
@@ -152,6 +155,7 @@ export function parse(path: string, search = ""): Route {
     const project = idOf(p ?? "");
     return project && repo && REPO.test(repo) ? { page: "installed", project, repo } : { page: "installed" };
   }
+  if (parts[0] === "deploys" && parts.length === 2 && /^dep_[0-9a-f]{32}$/.test(parts[1])) return { page: "deploy", deploy: parts[1] };
   if (parts[0] === "dm" && parts.length === 2) {
     const room = idOf(parts[1]);
     return room ? { page: "dm", room, ...msg } : missing;
@@ -273,6 +277,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return "/agents";
     case "settings":
       return "/settings";
+    case "deploy":
+      return `/deploys/${r.deploy}`;
     case "find":
       if (r.what === "chat") {
         if (r.view === "activity") return "/chat/activity";

@@ -334,6 +334,138 @@
   padding: 4px 0;
 }
 
+/* A deploy's card (M218): where it goes and its state, what it deploys,
+   the plan's digest in full, the operation an approval signs, and Approve
+   and Deny, which open on control's page. */
+.deploy-cards {
+  display: grid;
+  gap: 12px;
+}
+
+.deploy-card {
+  padding: 14px;
+  border: 1px solid var(--raised);
+  border-radius: 8px;
+  background: var(--surface);
+  min-width: 0;
+}
+
+.deploy-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.platform-section .deploy-card h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.deploy-state {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.deploy-state-pending {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.deploy-state-stale,
+.deploy-state-denied,
+.deploy-state-failed {
+  color: var(--danger, var(--dim));
+}
+
+.deploy-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 12px 0;
+}
+
+.deploy-facts dt {
+  color: var(--dim);
+}
+
+.deploy-facts dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.deploy-digest {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  font-size: 12px;
+}
+
+.deploy-op summary {
+  cursor: pointer;
+  color: var(--dim);
+}
+
+.deploy-op pre {
+  margin: 8px 0;
+  padding: 8px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 12px;
+  background: var(--bg);
+  border-radius: 6px;
+}
+
+.deploy-note {
+  color: var(--dim);
+}
+
+.deploy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.deploy-actions .button {
+  box-sizing: border-box;
+  min-height: 40px;
+  min-width: 96px;
+  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--raised);
+  border-radius: 8px;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.platform-section .deploy-actions .button.primary {
+  border-color: var(--accent);
+  color: var(--on-color);
+}
+
+.deploy-why {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+}
+
+@media (max-width: 520px) {
+  .deploy-facts {
+    grid-template-columns: 1fr;
+  }
+  .deploy-facts dt {
+    margin-top: 4px;
+  }
+  .deploy-actions .button {
+    flex: 1;
+  }
+}
+
 /* Runs (M215): the list's dots say going, good, bad or neither; a run's
    facts, its log and its timeline. The list, its filters and the thread
    are the issues' (shared/issues/issues.css). */

@@ -299,6 +299,40 @@ impl HubPort for InProcess {
         Box::pin(async move { Ok(self.app()?.relay.ask(daemon, op).await) })
     }
 
+    fn device_trust<'a>(
+        &'a self,
+        account: &'a str,
+    ) -> BoxFuture<'a, HubResult<Option<arugula_platform::hub::DeviceTrust>>> {
+        Box::pin(async move {
+            let app = self.app()?;
+            let Some(root) = app.db.account(account)?.and_then(|a| a.root) else { return Ok(None) };
+            let (certs, _) = app.db.devices(account)?;
+            Ok(Some(arugula_platform::hub::DeviceTrust { root, certs, revocations: app.db.revocations(account)? }))
+        })
+    }
+
+    fn team_rosters<'a>(&'a self, team: &'a str) -> BoxFuture<'a, HubResult<Vec<arugula_e2e::team::Roster>>> {
+        Box::pin(async move {
+            let app = self.app()?;
+            app.db.rosters(team, 0)?.iter().map(|b| teams::parse(b)).collect()
+        })
+    }
+
+    fn verify_passkey<'a>(
+        &'a self,
+        account: &'a str,
+        challenge: &'a str,
+        assertion: &'a arugula_platform::hub::PasskeyAssertion,
+    ) -> BoxFuture<'a, HubResult<arugula_platform::hub::PasskeyVerdict>> {
+        Box::pin(async move {
+            let app = self.app()?;
+            Ok(match crate::passkey::verify_for(&app, account, challenge, assertion)? {
+                Ok(()) => arugula_platform::hub::PasskeyVerdict { ok: true, why: String::new() },
+                Err(why) => arugula_platform::hub::PasskeyVerdict { ok: false, why },
+            })
+        })
+    }
+
     fn hosted_enrollment<'a>(
         &'a self,
         ask: &'a arugula_control_wire::hosted::EnrollAsk,
