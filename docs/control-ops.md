@@ -775,9 +775,12 @@ fly logs -a arugula-platform | grep 'inbox shadow'
 - `inbox shadow: disagree`: one line per disagreement, with the `item` id
   and both sides' reasons (`block`, `platform`). Expect some, and explain
   them: a team's review request (the platform doesn't know a person's
-  teams), mentions where content isn't mirrored, a block's poll or the
-  platform's recompute catching up, and `mergeable` (the platform has only
-  GitHub's `mergeable_state`).
+  teams), mentions where content isn't mirrored (`why="content not
+  mirrored"` on the line), a block's poll or the platform's recompute
+  catching up, `mergeable` (the platform has only GitHub's
+  `mergeable_state`), and an issue someone else opened that you gave
+  yourself (the mirror doesn't keep who assigned it, so the platform
+  takes it as given to you; one you opened, it takes as your own doing).
 
 Fly keeps logs only a few days, so ship them where they last (or collect
 the lines daily) for the two weeks.
