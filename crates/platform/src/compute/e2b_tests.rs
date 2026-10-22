@@ -246,6 +246,7 @@ async fn create_pauses_on_timeout_and_never_auto_resumes() {
     assert_eq!(body["autoPause"], true);
     assert_eq!(body["autoPauseMemory"], true);
     assert_eq!(body["autoResume"], json!({"enabled": false}));
+    assert_eq!(body["secure"], true, "envd takes anyone in a box made without it");
     assert_eq!(body["timeout"], 300);
     assert_eq!(body["templateID"], "base");
     assert_eq!(body["envVars"], json!({"ARUGULA_HOSTED_TICKET": "t1"}));
@@ -253,6 +254,27 @@ async fn create_pauses_on_timeout_and_never_auto_resumes() {
     assert!(!body.to_string().contains(KEY), "the key goes in a header, never a body");
     let shown = format!("{made:?}{e2b:?}");
     assert!(!shown.contains("secret") && !shown.contains(KEY));
+}
+
+/// A create answered without an envd access token made a box whose envd
+/// takes anyone: it's deleted and the create refused.
+#[tokio::test]
+async fn create_refuses_a_box_whose_envd_is_open() {
+    let (e2b, s, _) = fake().await;
+    for token in [Value::Null, json!("")] {
+        let open = json!({"sandboxID": "sbx9", "templateID": "base", "clientID": "x", "envdVersion": "0.6.10",
+            "envdAccessToken": token});
+        s.lock().unwrap().failures.push_back((StatusCode::CREATED, Json(open)).into_response());
+        assert_eq!(
+            e2b.create(&workspace("hw_1")).await,
+            Err(Error::Refused { status: 201, code: Some("envd_not_secured".into()) })
+        );
+        let (method, path, _) = calls(&s).pop().unwrap();
+        assert_eq!((method.as_str(), path.as_str()), ("DELETE", "/sandboxes/sbx9"));
+    }
+    let open = json!({"sandboxID": "sbx9", "templateID": "base", "clientID": "x", "envdVersion": "0.6.10"});
+    s.lock().unwrap().failures.push_back((StatusCode::CREATED, Json(open)).into_response());
+    assert!(e2b.create(&workspace("hw_1")).await.is_err());
 }
 
 /// A box's runs are its pauses' and its delete's, read across pages, each
