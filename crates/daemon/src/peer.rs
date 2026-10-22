@@ -32,7 +32,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::control::Control;
+use crate::control::{Control, Enrolled};
 
 /// How long one request to another machine may take, the handshake
 /// included.
@@ -71,6 +71,22 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
         if id == e.saved.cert.device {
             continue;
         }
+        if !d["hosted"].is_null() {
+            match accept_hosted(&e, id, &d["hosted"]) {
+                // M184: its project's machine, accepted for that project only.
+                Ok((project, cert)) => out.push(Machine {
+                    id: id.to_owned(),
+                    name: d["name"].as_str().unwrap_or(id).to_owned(),
+                    account: project,
+                    owner: String::new(),
+                    team: d["team"].as_str().map(str::to_owned),
+                    online: d["online"].as_bool().unwrap_or(false),
+                    cert,
+                }),
+                Err(why) => tracing::debug!(machine = id, %why, "not trusting a hosted machine"),
+            }
+            continue;
+        }
         let account = d["account"].as_str().unwrap_or(&own).to_owned();
         let cert = if account == own {
             e.trusted.get(id).cloned()
@@ -95,6 +111,56 @@ pub async fn machines(control: &Control) -> anyhow::Result<Vec<Machine>> {
         });
     }
     Ok(out)
+}
+
+/// A hosted machine (M178), if this daemon accepts it: its project and the
+/// certificate its channel is opened with. Checked as
+/// the page and the CLI check it (`arugula_e2e::hosted::accept`), against
+/// what this daemon holds itself, never control's word: this account's
+/// own chain for a personal project; for a team's, a roster checked from
+/// its pin (this machine's own team's, or one the owner's browser pinned
+/// here, #233).
+fn accept_hosted(e: &Enrolled, id: &str, v: &serde_json::Value) -> anyhow::Result<(String, Cert)> {
+    use arugula_e2e::hosted::{Delegation, DelegationRevoke, HostedCert, Owner, Owners, accept};
+    let cert: HostedCert = serde_json::from_value(v["cert"].clone())?;
+    let d: Delegation = serde_json::from_value(v["delegation"].clone())?;
+    let revokes: Vec<DelegationRevoke> = serde_json::from_value(v["revocations"].clone()).unwrap_or_default();
+    anyhow::ensure!(cert.device == id, "its certificate is another machine's");
+    let me = &e.saved.cert.account;
+    let accepted = match d.owner().ok_or_else(|| anyhow::anyhow!("its delegation names no owner"))? {
+        Owner::Team(team) => {
+            let (roster, certs) = match (&e.saved.roster, e.saved.shared_teams.get(&team)) {
+                (Some(r), _) if r.team == team => (r, &e.saved.team_certs),
+                (_, Some(t)) => (&t.roster, &t.certs),
+                _ => anyhow::bail!(
+                    "its team isn't one this machine knows: open control's page in a browser of this account once, which pins your teams here"
+                ),
+            };
+            accept(me, &cert, &d, &revokes, &Owners::Team { roster, certs })
+        }
+        Owner::Account(_) => accept(
+            me,
+            &cert,
+            &d,
+            &revokes,
+            &Owners::Account { trust: &e.saved.trust, certs: &e.saved.certs, revocations: &e.saved.revocations },
+        ),
+    }
+    .map_err(|r| anyhow::anyhow!("refused: {}", r.code()))?;
+    // Its keys, to open a channel with; never one of an account's.
+    let c = Cert {
+        v: 1,
+        account: accepted.project.clone(),
+        device: cert.device.clone(),
+        kind: Kind::Daemon,
+        name: cert.name.clone(),
+        noise: cert.noise.clone(),
+        sign: cert.sign.clone(),
+        created: cert.created,
+        approver: String::new(),
+        sig: String::new(),
+    };
+    Ok((accepted.project, c))
 }
 
 /// The machine named `which` (its name, or its id), as [`machines`] lists
@@ -133,6 +199,29 @@ pub async fn request(
     };
     let body = body.map(|b| serde_json::to_vec(b).unwrap_or_default()).unwrap_or_default();
     tokio::time::timeout(TIMEOUT, send(control, m, head, body))
+        .await
+        .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))?
+}
+
+/// A JSON `POST` to `m` that may take up to `limit` (M184: an MCP call
+/// forwarded to a hosted machine, which may wait on a turn): its status
+/// and body.
+pub async fn post_waiting(
+    control: &Control,
+    m: &Machine,
+    path: &str,
+    body: &serde_json::Value,
+    limit: Duration,
+) -> anyhow::Result<(u16, Vec<u8>)> {
+    let head = RequestHead {
+        method: "POST".into(),
+        path: path.into(),
+        content_type: Some("application/json".to_owned()),
+        stream: false,
+        headers: Default::default(),
+    };
+    let body = serde_json::to_vec(body)?;
+    tokio::time::timeout(limit + TIMEOUT, send(control, m, head, body))
         .await
         .map_err(|_| anyhow::anyhow!("{} didn't answer in time", m.name))?
 }

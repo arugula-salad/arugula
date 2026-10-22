@@ -13,10 +13,12 @@ use serde::{Deserialize, Serialize};
 
 use arugula_control_wire::{
     forge::Standing,
+    hosted::{SetupPlan, SetupReport},
+    transcripts::TranscriptPost,
     work::{Report, Reported, Work},
 };
 
-pub use crate::hosted::inference::TurnAnswer;
+pub use crate::hosted::{inference::TurnAnswer, transcripts::Archived};
 use crate::{
     Platform, billing, db,
     forge::{
@@ -151,6 +153,55 @@ pub trait PlatformPort: Send + Sync {
         let _ = (machine, report);
         Box::pin(async { anyhow::bail!("this platform doesn't take runs' reports") })
     }
+
+    /// What a hosted machine sets up on its box's first boot (M183), for the
+    /// hub's `GET /api/hosted/spec`: its workspace's spec, with what to clone
+    /// each repo with. `None` when the workspace is gone, or `machine` isn't
+    /// its box. A platform from before M183 doesn't have it.
+    fn hosted_plan<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<Option<SetupPlan>>> {
+        let _ = (project, workspace, machine);
+        Box::pin(async { anyhow::bail!("this platform doesn't set up hosted workspaces") })
+    }
+
+    /// How a hosted machine's setup goes (M183), for the hub's
+    /// `POST /api/hosted/setup`: whether it was kept.
+    fn hosted_setup<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+        report: &'a SetupReport,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        let _ = (project, workspace, machine, report);
+        Box::pin(async { anyhow::bail!("this platform doesn't set up hosted workspaces") })
+    }
+
+    /// Whether `daemon` holds a live `cloud.drive` grant for `account`
+    /// (M184): the relay routes a machine to a hosted workspace's machine
+    /// only then, as the Cloud routes check it ("Grants, not
+    /// impersonation"). A platform from before M184 doesn't say: refused.
+    fn machine_drives<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, anyhow::Result<bool>> {
+        let _ = (daemon, account);
+        Box::pin(async { anyhow::bail!("this platform doesn't route machines to hosted workspaces") })
+    }
+
+    /// A closed agent block's transcript from the hosted machine `machine`,
+    /// whose certificate names `workspace` (M184): kept read only under its
+    /// project, or why not. A platform from before M184 doesn't have it.
+    fn hosted_transcript<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        transcript: &'a TranscriptPost,
+    ) -> BoxFuture<'a, anyhow::Result<Archived>> {
+        let _ = (workspace, machine, transcript);
+        Box::pin(async { anyhow::bail!("this platform doesn't archive hosted transcripts") })
+    }
 }
 
 /// An account the hub deleted.
@@ -172,7 +223,9 @@ pub struct Deleted {
 /// runs (M210), deploys (M217) and what starts runs (M214), their part of
 /// `account_deleted`; hosted workspaces (M182) `hosted_wake`; hosted
 /// inference (M185) `hosted_turn` and `hosted_turn_end`; hosted machines'
-/// runs (M212) `hosted_work` and `hosted_report`.
+/// runs (M212) `hosted_work` and `hosted_report`; hosted workspaces' setup
+/// (M183) `hosted_plan` and `hosted_setup`; hosted workspaces' agents (M184)
+/// `machine_drives` and `hosted_transcript`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         Box::pin(async move {
@@ -189,6 +242,7 @@ impl PlatformPort for Platform {
             // Before the projects go: their hosted workspaces are deleted.
             db::hosted::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
             db::inference::erase_account(&tx, deleted)?;
+            db::hosted_transcripts::erase_account(&tx, deleted)?;
             db::projects::erase_account(&tx, deleted)?;
             db::forge::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
             db::issues::erase_account(&tx, deleted)?;
@@ -299,5 +353,37 @@ impl PlatformPort for Platform {
         report: &'a Report,
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
         Box::pin(crate::work::report(self, machine, report))
+    }
+
+    fn hosted_plan<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<Option<SetupPlan>>> {
+        Box::pin(crate::hosted::setup::plan(self, project, workspace, machine))
+    }
+
+    fn hosted_setup<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+        report: &'a SetupReport,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        Box::pin(async move { crate::hosted::setup::report(self, project, workspace, machine, report) })
+    }
+
+    fn machine_drives<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, anyhow::Result<bool>> {
+        Box::pin(crate::grants::can_drive_cloud(self, daemon, account))
+    }
+
+    fn hosted_transcript<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        transcript: &'a TranscriptPost,
+    ) -> BoxFuture<'a, anyhow::Result<Archived>> {
+        Box::pin(crate::hosted::transcripts::archive(self, workspace, machine, transcript.clone()))
     }
 }

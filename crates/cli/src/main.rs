@@ -382,10 +382,12 @@ enum Command {
     ///
     /// `create NAME` makes one (owner or editor on the project; `--repo`,
     /// `--package`, `--setup` and `--env` say what it's built from), `ls`
-    /// lists them, `open` wakes one and says its machine, `rebuild` makes
-    /// its box again from its spec, `delete` takes it and its box away.
-    /// `key set anthropic|openai` gives the project its own inference key
-    /// (from stdin; never in the box), `key clear` and `key ls`.
+    /// lists them (and how each one's setup goes), `open` wakes one and
+    /// says its machine, `edit` changes its spec, `secret` sets what it
+    /// clones with and takes as env, `rebuild` makes its box again from its
+    /// spec (asking the box for unpushed work first), `delete` takes it and
+    /// its box away. `key set anthropic|openai` gives the project its own
+    /// inference key (from stdin; never in the box), `key clear` and `key ls`.
     /// `--project` names a project by id or name; the default is your
     /// personal one. Needs `arugula login`.
     Cloud {

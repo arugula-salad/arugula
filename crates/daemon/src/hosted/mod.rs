@@ -10,9 +10,10 @@
 //!   and state directory. When a new box's sandbox id shows up
 //!   (`/run/e2b/.E2B_SANDBOX_ID`, which envd writes at `/init`), the daemon
 //!   removes everything it made that must differ per box ([`PER_BOX`]: its
-//!   keys and tokens), notes the id in `<state>/hosted-box`, and starts over
-//!   in place (`exec`), making them anew ([`fresh_box`]). A start whose
-//!   noted id is the box's own is that box's: it enrolls.
+//!   keys, its tokens and what its setup did), notes the id in
+//!   `<state>/hosted-box`, and starts over in place (`exec`), making them
+//!   anew ([`fresh_box`]). A start whose noted id is the box's own is that
+//!   box's: it enrolls.
 //! - **Enrolls itself** ([`enroll`]) with a ticket in its environment
 //!   (`ARUGULA_HOSTED_TICKET`, when it starts after the box is made: loam,
 //!   testnet) or else its sandbox id, at `ARUGULA_CONTROL_URL` (or
@@ -21,14 +22,20 @@
 //! - **Says busy or idle** on its relay socket ([`activity`]).
 //! - **Takes runs** from the platform and runs each at most once
 //!   (`crate::work`, M212).
+//! - **Sets its box up** on its first boot, in a pane anyone on the project
+//!   can watch ([`setup`], M183).
+//! - **Archives closed agent blocks' transcripts** to its project
+//!   ([`archive`], M184).
 //!
 //! It holds nothing else on the platform's behalf.
 
 pub mod activity;
+pub mod archive;
 pub mod enroll;
 pub mod reseed;
 pub mod resume;
 pub mod runs;
+pub mod setup;
 
 use std::{
     path::{Path, PathBuf},
@@ -48,10 +55,18 @@ const BOX_FILE: &str = "hosted-box";
 
 /// What a daemon makes for itself in its state directory and must not
 /// share with another box: its key in control, its id, the local token,
-/// web push's key, MCP's key, and the IDE relay's (off here, but an older
-/// template may have them).
-pub const PER_BOX: &[&str] =
-    &["daemon.key", "daemon-id", "local-token", "push/vapid.key", "mcp/key", "ide/token", "ide/port"];
+/// web push's key, MCP's key, the IDE relay's (off here, but an older
+/// template may have them), and what its setup did.
+pub const PER_BOX: &[&str] = &[
+    "daemon.key",
+    "daemon-id",
+    "local-token",
+    "push/vapid.key",
+    "mcp/key",
+    "ide/token",
+    "ide/port",
+    setup::STATE_FILE,
+];
 
 /// Settle a hosted daemon's flags: nothing on the machine to integrate
 /// with, and nobody to ask.
@@ -104,7 +119,8 @@ fn exec_self() -> anyhow::Result<std::convert::Infallible> {
 }
 
 /// What a hosted daemon runs beside the usual: the resume watch, busy and
-/// idle, and, until it's in control, waiting for its box and enrolling.
+/// idle, its box's setup once it's in control, and, until then, waiting for
+/// its box and enrolling.
 pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
     let control = app.control.clone();
     let c = control.clone();
@@ -112,6 +128,8 @@ pub fn start(app: &Arc<App>, state_dir: PathBuf, control_url: String) {
     activity::start(app.mux.clone(), control.activity.clone());
     // Its runs (M212), once it's in control.
     crate::work::start(app.clone());
+    setup::start(app.clone(), state_dir.clone());
+    archive::start(control.clone());
     if control.enrolled().is_some() {
         return;
     }

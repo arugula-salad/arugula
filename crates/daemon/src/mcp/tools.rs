@@ -15,7 +15,7 @@ use arugula_proto::{
     op::ops::{ClosePane, ConversationOpen, ConversationsList, ListPanes},
 };
 use rmcp::{
-    Peer, RoleServer,
+    RoleServer,
     handler::server::common::schema_for_type,
     model::{CallToolResult, ContentBlock, ProgressNotificationParam, ProgressToken, Tool, ToolAnnotations},
     service::RequestContext,
@@ -257,7 +257,9 @@ pub struct WaitArgs {
     /// Seconds before answering "still running" (default 100).
     #[serde(default)]
     pub timeout: Option<f64>,
-    /// A Cloud workspace's id (cw_…), with tab.
+    /// A Cloud workspace's id (cw_…), with tab. Or a hosted one's
+    /// (hw_…): with tab (one of its agent blocks), or with pane to wait on
+    /// its machine.
     #[serde(default)]
     pub cloud_workspace: Option<String>,
     /// A Cloud workspace's tab (cwc_…), to wait until idle or needs_input.
@@ -1421,7 +1423,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "read_cloud",
             title: "Read a Cloud workspace",
-            description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine.",
+            description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine. A hosted Cloud workspace (hw_…) is a machine of a project: its tabs are its agent blocks, by pane number, and reading one wakes it.",
             args: Args::Kinds { kinds: table(super::cloud::READ), default: None },
             read_only: true,
             destructive: false,
@@ -1433,7 +1435,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "cloud",
             title: "Drive a Cloud workspace",
-            description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild or retry. The user sees it all on control's page. Changing a Cloud workspace's settings or deleting one is theirs, on that page.",
+            description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild or retry. The user sees it all on control's page. Changing a Cloud workspace's settings or deleting one is theirs, on that page. A hosted Cloud workspace (hw_…, made with project) is a machine of the project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace.",
             args: Args::Kinds { kinds: table(super::cloud::DRIVE), default: None },
             read_only: false,
             destructive: true,
@@ -1657,6 +1659,8 @@ pub fn list(scope: Scope, on: On) -> Vec<Tool> {
                     (kinds_text(d.description, kinds, *default), grouped_schema(kinds, *default))
                 }
             };
+            // M184: the machine tools reach a hosted workspace's machine too.
+            let schema = super::hosted::with_workspace(d.name, schema);
             let tool = Tool::new(d.name, description, schema).with_title(d.title).with_annotations(
                 ToolAnnotations::with_title(d.title)
                     .read_only(d.read_only)
@@ -1788,6 +1792,11 @@ fn strip_formats(v: &mut Value) {
 }
 
 /// A result, with the `summary` sentence in it.
+/// Whether `tool` only reads (a read-only token may call it).
+pub(crate) fn read_only_tool(tool: &str) -> bool {
+    all_defs().into_iter().find(|d| d.name == tool).is_some_and(|d| d.read_only)
+}
+
 pub(crate) fn done(summary: impl Into<String>, v: impl Serialize) -> Out {
     let mut v = serde_json::to_value(v).map_err(|e| e.to_string())?;
     v["summary"] = Value::String(summary.into());
@@ -1805,14 +1814,22 @@ pub struct Call<'a> {
     caller: Caller,
     /// The client's name (`claude-code`), for "started by mcp:<client>".
     client: String,
-    peer: Peer<RoleServer>,
     progress: Option<ProgressToken>,
-    ctx: RequestContext<RoleServer>,
+    /// The MCP request, when there is one: a call another machine sends
+    /// for a hosted workspace (M184, `hosted.rs`) has none, so no progress
+    /// and no headers.
+    ctx: Option<RequestContext<RoleServer>>,
 }
 
 impl<'a> Call<'a> {
     pub fn new(app: &'a Arc<App>, caller: Caller, client: String, ctx: &RequestContext<RoleServer>) -> Self {
-        Self { app, caller, client, peer: ctx.peer.clone(), progress: ctx.meta.get_progress_token(), ctx: ctx.clone() }
+        Self { app, caller, client, progress: ctx.meta.get_progress_token(), ctx: Some(ctx.clone()) }
+    }
+
+    /// A call with no MCP request behind it (M184: another machine's, for
+    /// this hosted one).
+    pub(crate) fn detached(app: &'a Arc<App>, caller: Caller, client: String) -> Self {
+        Self { app, caller, client, progress: None, ctx: None }
     }
 
     pub(crate) fn app(&self) -> &'a Arc<App> {
@@ -1827,8 +1844,18 @@ impl<'a> Call<'a> {
         Driver { who: self.by(), name: self.by() }
     }
 
-    pub async fn dispatch(&self, name: &str, args: Value) -> CallToolResult {
+    pub async fn dispatch(&self, name: &str, mut args: Value) -> CallToolResult {
         let fail = |e: String| CallToolResult::error(vec![ContentBlock::text(e)]);
+        // M184: on a hosted workspace's machine instead.
+        if let Some(w) = super::hosted::take_workspace(name, &mut args) {
+            return match w {
+                Ok(w) => match self.on_workspace(name, &w, args).await {
+                    Ok(v) => CallToolResult::structured(v),
+                    Err(e) => fail(e),
+                },
+                Err(e) => fail(e),
+            };
+        }
         let on = flags::on(self.app.control.state_dir());
         let (def, kind, args) = match route(name, args, on) {
             Ok(r) => r,
@@ -2158,7 +2185,7 @@ impl<'a> Call<'a> {
 
     /// #379: the `CLAUDE_CONFIG_DIR` the stdio bridge sent for its client.
     fn claude_config_dir(&self) -> Option<String> {
-        let parts = self.ctx.extensions.get::<axum::http::request::Parts>()?;
+        let parts = self.ctx.as_ref()?.extensions.get::<axum::http::request::Parts>()?;
         let d = parts.headers.get("arugula-claude-config-dir")?.to_str().ok()?.trim();
         (!d.is_empty()).then(|| d.to_owned())
     }
@@ -2243,12 +2270,12 @@ impl<'a> Call<'a> {
     }
 
     async fn notify(&self, done: f64, total: Option<f64>, message: String) {
-        let Some(token) = &self.progress else { return };
+        let (Some(token), Some(ctx)) = (&self.progress, &self.ctx) else { return };
         let mut p = ProgressNotificationParam::new(token.clone(), done).with_message(message);
         if let Some(t) = total {
             p = p.with_total(t);
         }
-        let _ = self.peer.notify_progress(p).await;
+        let _ = ctx.peer.notify_progress(p).await;
     }
 
     /// `fut`, with progress every 15s, for at most `limit`: `None` if it
@@ -2263,7 +2290,7 @@ impl<'a> Call<'a> {
             tokio::select! {
                 r = &mut fut => return Some(r),
                 _ = &mut deadline => return None,
-                _ = self.ctx.ct.cancelled() => return None,
+                _ = async { match &self.ctx { Some(c) => c.ct.cancelled().await, None => std::future::pending().await } } => return None,
                 _ = tick.tick() => {
                     let secs = start.elapsed().as_secs_f64();
                     self.notify(secs, Some(limit.as_secs_f64()), format!("{what}: {}s", secs.round())).await;

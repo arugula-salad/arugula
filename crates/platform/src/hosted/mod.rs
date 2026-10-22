@@ -25,6 +25,9 @@
 //!   (fail closed). Where the box isn't a snapshot (loam, tests:
 //!   `ARUGULA_HOSTED_ENROLL=ticket`), the hub makes a one-time ticket that
 //!   goes in the box's env instead.
+//! - **Agents** (M184): an agent block on the box is the daemon's, as on
+//!   any machine; when one closes, its transcript is archived here, read
+//!   only under the project ([`transcripts`]).
 //! - **Usage** (M188): how long each box ran, by its size, is metered from
 //!   the worker's checkpoints and checked against E2B's own record
 //!   ([`usage`]).
@@ -38,8 +41,10 @@
 //!   model through the provider's egress proxy, which fills in the key:
 //!   the project's own, or the platform's, under caps, for workspaces made
 //!   by an account on the beta allowlist. No key is ever in the box.
-//! - **Not here yet.** Setup in a visible pane and "rebuild needed" on the
-//!   page are M183's, from [`HostedWorkspace::rebuild_needed`].
+//! - **Setup** (M183): on its first boot the box reads its spec, with what
+//!   to clone each repo with, and runs it in a pane; its daemon says how it
+//!   goes, kept on the workspace ([`setup`]). A spec changed since the box
+//!   was built shows as [`HostedWorkspace::rebuild_needed`].
 //!
 //! The provider's key never reaches a client or a box, and neither does an
 //! inference key ([`crate::compute`]).
@@ -57,8 +62,12 @@ pub mod inference;
 #[cfg(test)]
 mod inference_tests;
 pub mod routes;
+pub mod setup;
+#[cfg(test)]
+mod setup_tests;
 #[cfg(test)]
 mod tests;
+pub mod transcripts;
 pub mod usage;
 pub mod wake;
 #[cfg(test)]
@@ -220,7 +229,8 @@ pub fn new_id() -> String {
     format!("hw_{}", hex::encode(arugula_e2e::random::<16>()))
 }
 
-/// What a hosted workspace is built from (M183 runs it in a visible pane).
+/// What a hosted workspace is built from ([`setup`] runs it in a visible
+/// pane).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Spec {
     /// HTTPS clone URLs, with no credentials in them.

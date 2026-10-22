@@ -750,12 +750,36 @@ clients = ["daemon"]
 note = "A hosted machine's signed report of a run's state change (M212), checked by the platform with the machine's key and kept with its signature (PlatformPort::hosted_report)."
 
 [[route]]
+method = "GET"
+path = "/api/hosted/spec"  # wire::hosted::SPEC
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "M183: the box's setup, from its workspace's spec, which the hub asks the platform for (its project and workspace are the certificate's). It can hold clone credentials and secrets' values: never logged."
+
+[[route]]
+method = "POST"
+path = "/api/hosted/setup"  # wire::hosted::SETUP
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "M183: how the box's setup goes, kept on its workspace by the platform; only the box's own machine."
+
+[[route]]
 method = "DELETE"
 path = "/api/hosted/machines/{id}"
 process = "hub"
 auth = "session"
 clients = ["page"]
 note = "A project owner removes a hosted machine."
+
+[[route]]
+method = "POST"
+path = "/api/hosted/transcripts"  # wire::transcripts::HOSTED_TRANSCRIPTS
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A hosted machine archives a closed agent block's transcript (M184): kept read only by the platform under the project its certificate's workspace is in (PlatformPort::hosted_transcript), only from the machine that workspace enrolled as."
 
 # ---- forge: the App's webhook is the platform's (M161); the hub keeps
 # daemons' subscriptions and the token route, which ask the platform
@@ -799,6 +823,7 @@ path = "/api/relay/c/{id}"
 process = "hub"
 auth = "session_or_daemon"
 clients = ["page", "daemon", "cli"]
+note = "A machine reaches a hosted workspace's machine only with a live cloud.drive grant (M184, PlatformPort::machine_drives)."
 
 [[route]]
 method = "GET"
@@ -1491,6 +1516,38 @@ clients = ["page", "cli"]
 note = "Owners and editors: the workspace's hosted machine is sent the live grant (runs.start) and checks it. It starts nothing: runs start with POST /api/projects/{project}/runs (M214) and the machine pulls them (/api/hosted/work, M212)."
 
 [[route]]
+method = "PUT"
+path = "/api/projects/{project}/workspaces/{id}/spec"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Changes a hosted workspace's spec (M183): a project's owner or editor. Its box isn't touched; \"rebuild needed\" shows until it's rebuilt."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/workspaces/{id}/secrets"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "A hosted workspace's secrets' names and where each value is (M183), for its project's members. Never a value."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/workspaces/{id}/secrets/{name}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Sets a hosted workspace's secret (M183), sealed with its project's key (M209): a project's owner or editor. Never answered back."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/workspaces/{id}/secrets/{name}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Removes a hosted workspace's secret (M183): a project's owner or editor."
+
+[[route]]
 method = "GET"
 path = "/api/projects/{project}/inference-keys"
 process = "platform"
@@ -1513,6 +1570,30 @@ process = "platform"
 auth = "session"
 clients = ["cli"]
 note = "Clears a project's own inference key (M185): a project's owner. It leaves every running box's egress rules at once, and a paused box's when it wakes."
+
+[[route]]
+method = "GET"
+path = "/api/workspaces"
+process = "platform"
+auth = "cloud_driver"
+clients = ["daemon"]
+note = "The hosted workspaces of every project the caller is in (M184), for MCP's list kind cloud_workspaces; none where hosted workspaces aren't set up."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/transcripts"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+note = "A project's archived agent transcripts from its hosted workspaces (M184), newest first, for its members; ?workspace= keeps to one."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/transcripts/{id}"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "daemon"]
+note = "One archived agent transcript, with its text (M184), for the project's members. Read only."
 
 [[route]]
 method = "GET"

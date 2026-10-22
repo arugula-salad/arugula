@@ -40,6 +40,7 @@ export const FRAGMENTS: Fragment[] = [
   { route: "#overview", why: "A machine's sessions at a glance (M111): the shell's.", where: ["shell/ui/places.tsx", "shell/ui/shell/overview.tsx"] },
   { route: "#agents", why: "The machine's agents (#403): the shell's.", where: ["shell/ui/agents-route.ts", "shell/ui/agents-page.tsx", "shell/ui/shell/rail.tsx"] },
   { route: "#pane=", why: "A pane to show, from a notification or the swarm.", where: ["shell/main.tsx"] },
+  { route: "#machine=", why: "A machine to show (M184: a hosted workspace's, from the platform page), and with `&agent` Start an agent on it.", where: ["shell/main.tsx"] },
   { route: "#getting-started=", why: "The getting-started guide at a step.", where: ["shell/main.tsx"] },
   { route: "#developer", why: "The developer settings dialog.", where: ["shell/ui/developer.tsx"] },
   { route: "#lend=", why: "Lending this device to an agent on or off (S33).", where: ["shell/hand.ts"] },
@@ -51,7 +52,7 @@ export const FRAGMENTS: Fragment[] = [
  * route, or note it. */
 export const HASH_LISTENERS: { where: string; why: string }[] = [
   { where: "shared/telemetry.ts", why: "Notes which view is open (M103), never the fragment itself." },
-  { where: "shell/main.tsx", why: "Reads `#pane=` and `#link=`, and redirects the platform's old routes." },
+  { where: "shell/main.tsx", why: "Reads `#pane=`, `#machine=` and `#link=`, and redirects the platform's old routes." },
   { where: "shell/swarm/route.ts", why: "`#swarm`." },
   { where: "shell/trust/gate.tsx", why: "The sign-in screens follow `#join=`, `#device=` and invites." },
   { where: "shell/trust/overlay.tsx", why: "The overlay's prompts follow the secret fragments above." },

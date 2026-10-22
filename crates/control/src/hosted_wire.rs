@@ -19,7 +19,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use crate::{
     auth::hash,
     db::Team,
-    routing_wire::{Control, control, member, person, roster, session, v2},
+    routing_wire::{Control, control, daemon, member, person, roster, session, v2},
 };
 
 const TEAM: &str = "00aa11bb22cc33dd";
@@ -80,6 +80,20 @@ impl Control {
             format!("{}/api/relay/c/{id}", self.base.replace("http://", "ws://")).into_client_request().unwrap();
         req.headers_mut().insert("cookie", cookie.parse().unwrap());
         req.headers_mut().insert("origin", self.base.parse().unwrap());
+        match tokio_tungstenite::connect_async(req).await {
+            Ok((_, r)) => r.status().as_u16(),
+            Err(tokio_tungstenite::tungstenite::Error::Http(r)) => r.status().as_u16(),
+            Err(e) => panic!("{e}"),
+        }
+    }
+}
+
+impl Control {
+    /// A machine's relay socket to `id` (M184): its upgrade's status.
+    async fn reach_as_machine(&self, keys: &DeviceKeys, id: &str) -> u16 {
+        let path = format!("/api/relay/c/{id}");
+        let mut req = format!("{}{path}", self.base.replace("http://", "ws://")).into_client_request().unwrap();
+        req.headers_mut().insert("x-arugula-auth", v2(keys, "GET", &path, b"").parse().unwrap());
         match tokio_tungstenite::connect_async(req).await {
             Ok((_, r)) => r.status().as_u16(),
             Err(tokio_tungstenite::tungstenite::Error::Http(r)) => r.status().as_u16(),
@@ -418,4 +432,46 @@ async fn the_hub_says_whether_a_browser_owner_signed() {
     assert!(
         !c.app.hub_port.owner_browser_signed("team:0000000000000000", &fran.id(), body, &sig(&fran)).await.unwrap()
     );
+}
+
+/// M184: a project person's own machine is routed to the project's hosted
+/// machine while it holds a live cloud.drive grant, and not once its owner
+/// revokes it; a machine outside the project never is.
+#[tokio::test]
+async fn a_machine_reaches_a_hosted_one_only_with_cloud_drive() {
+    let (c, fran, _cy, _ox) = acme().await;
+    let (fran_s, cy_s) = (session(&c.app, "f1"), session(&c.app, "c1"));
+    let owner = format!("team:{TEAM}");
+    let d = delegation(&c, &owner, &fran);
+    let (st, _) = c.as_person(&fran_s, "POST", "/api/hosted/delegations", Some(json!({ "delegation": d }))).await;
+    assert_eq!(st, 200);
+    let EnrollGiven::Ready { ticket: Some(ticket), .. } =
+        c.app.hub_port.hosted_enrollment(&ask(&owner, "hw_1", None)).await.unwrap()
+    else {
+        panic!("no ticket")
+    };
+    let boxk = DeviceKeys::generate();
+    assert_eq!(c.post("/api/hosted/enroll", &enroll_body(&boxk, Some(&ticket), None)).await.0, 200);
+    let mut req = format!("{}/api/relay/dial", c.base.replace("http://", "ws://")).into_client_request().unwrap();
+    req.headers_mut().insert("x-arugula-auth", v2(&boxk, "GET", "/api/relay/dial", b"").parse().unwrap());
+    let (_socket, _) = tokio_tungstenite::connect_async(req).await.expect("it dials the relay");
+    for _ in 0..50 {
+        if c.app.relay.online(&boxk.id()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let laptop = daemon(&c.app, "c1", "laptop");
+    let elsewhere = daemon(&c.app, "x1", "elsewhere");
+    assert_eq!(c.reach_as_machine(&laptop, &boxk.id()).await, 101, "Cy's machine, with its grant");
+    assert_eq!(c.reach_as_machine(&elsewhere, &boxk.id()).await, 404, "not the project's");
+    let (_, listed) = c.as_person(&cy_s, "GET", "/api/grants", None).await;
+    let grant = listed["grants"].as_array().unwrap().iter().find(|g| g["subject"]["id"] == json!(laptop.id())).unwrap();
+    let id = grant["id"].as_str().unwrap();
+    let (st, _) = c.as_person(&cy_s, "POST", &format!("/api/grants/{id}/revoke"), Some(json!({}))).await;
+    assert_eq!(st, 200);
+    assert_eq!(c.reach_as_machine(&laptop, &boxk.id()).await, 403, "its grant revoked");
+    // People are routed as before.
+    assert_eq!(c.reach(&cy_s, &boxk.id()).await, 101);
 }

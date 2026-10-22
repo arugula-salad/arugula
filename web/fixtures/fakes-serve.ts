@@ -8,17 +8,20 @@
 // read of the workspace named N (control names each after its Cloud
 // workspace) until `POST /release` (or 60 s), and `GET /held` says who sent
 // it (the platform machine's address) and lists each request's sender and
-// time since `?since=`.
-//   node --experimental-strip-types fakes-serve.ts [--managoat]
+// time since `?since=`. With `--e2b` (testnet/hosted.yaml), a fake E2B on
+// 9006 (fake-e2b.ts).
+//   node --experimental-strip-types fakes-serve.ts [--managoat] [--e2b]
 
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
+import { fakeE2b } from "./fake-e2b.ts";
 import { fakeGithub, fakeManagoat, fakePush, fakeStripe } from "./fakes.ts";
 
 const host = "0.0.0.0";
 fakeGithub(9001, host);
 fakeStripe(9002, host);
 fakePush(9003, host);
+if (process.argv.includes("--e2b")) fakeE2b(9006, host);
 const managoat = process.argv.includes("--managoat");
 if (managoat) {
   let armed: string | null = null;

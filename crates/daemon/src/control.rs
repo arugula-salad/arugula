@@ -261,6 +261,12 @@ pub struct Enrolled {
     /// This account's own machines and its team's; with `open_agents`,
     /// every member's of the teams the owner pinned (the A2A-only grant).
     pub agent_callers: Vec<(Cert, Principal)>,
+    /// M184: on a hosted machine, the project's people's own machines that
+    /// drive it (MCP's `run`, `start_agent`, `read_output`, `show`), as
+    /// their person would be: its owners' and editors' (the owner here),
+    /// never a viewer's. Control routes one only while it holds a live
+    /// `cloud.drive` grant. Empty anywhere else.
+    pub drivers: Vec<(Cert, Principal)>,
     /// #399: this machine offers agents, so its teams' members' daemons get
     /// in to call them (and control is told to route those accounts).
     pub open_agents: bool,
@@ -334,7 +340,55 @@ impl Enrolled {
             }
         }
         let agent_callers = Self::agent_callers(&saved, &trusted, open_agents);
-        Self { saved, keys, trusted, others, agent_callers, open_agents, team_roles, shared_roles, push: Vec::new() }
+        let drivers = Self::drivers(&saved, &trusted);
+        Self {
+            saved,
+            keys,
+            trusted,
+            others,
+            agent_callers,
+            drivers,
+            open_agents,
+            team_roles,
+            shared_roles,
+            push: Vec::new(),
+        }
+    }
+
+    /// The machines that drive this one (M184): on a hosted machine only,
+    /// the daemons of its project's people who have full use of it (a
+    /// personal project's account; a team's owners and editors, a locked
+    /// team's owners), as the owner, as their browsers are. Their
+    /// requests reach everything here, MCP included.
+    fn drivers(saved: &Saved, trusted: &Trusted) -> Vec<(Cert, Principal)> {
+        if saved.hosted.is_none() {
+            return Vec::new();
+        }
+        let mut out: Vec<(Cert, Principal)> = Vec::new();
+        let mut add = |c: Cert| {
+            if c.kind == Kind::Daemon && c.device != saved.cert.device && !out.iter().any(|(o, _)| o.device == c.device)
+            {
+                out.push((c, Principal::Owner));
+            }
+        };
+        for c in trusted.devices.values() {
+            add(c.clone());
+        }
+        if let Some(r) = &saved.roster {
+            for m in &r.members {
+                let full = match m.role {
+                    TeamRole::Owner => true,
+                    TeamRole::Editor => !saved.locked,
+                    TeamRole::Viewer => false,
+                };
+                if full {
+                    for c in r.devices(&m.account, &saved.team_certs).devices.into_values() {
+                        add(c);
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// The daemons that may call this machine's agents (#399), each as its
@@ -1188,6 +1242,13 @@ impl Control {
     /// Who a Noise key belongs to, if this daemon lets them in: a device of
     /// its own account (the owner), a team member's, or someone's a session
     /// was shared with.
+    /// M184: whether the machine with this key drives this hosted one
+    /// ([`Enrolled::drivers`]), rather than only calling its agents.
+    pub fn drives(&self, noise: &[u8]) -> bool {
+        let key = hex::encode(noise);
+        self.enrolled().is_some_and(|e| e.drivers.iter().any(|(c, _)| c.noise == key))
+    }
+
     pub fn device(&self, noise: &[u8]) -> Option<(Cert, Principal)> {
         let e = self.enrolled()?;
         if let Some(c) = e.trusted.by_noise(noise).filter(|c| c.kind.connects()) {
@@ -1195,6 +1256,10 @@ impl Control {
         }
         let key = hex::encode(noise);
         if let Some(found) = e.others.iter().find(|(c, _)| c.noise == key) {
+            return Some(found.clone());
+        }
+        // M184: a project person's machine driving this hosted one.
+        if let Some(found) = e.drivers.iter().find(|(c, _)| c.noise == key) {
             return Some(found.clone());
         }
         // #399: a daemon calling this machine's agents (e2e.rs keeps it to
@@ -1339,6 +1404,37 @@ impl Control {
             bail!("{}", control_said(res).await);
         }
         Ok(res.json().await?)
+    }
+
+    /// What this hosted machine's box sets up on its first boot (M183): its
+    /// workspace's spec, with what to clone each repo with. `None`: control
+    /// has no workspace for this machine (made by hand, or one now gone).
+    pub async fn hosted_plan(&self) -> anyhow::Result<Option<arugula_control_wire::hosted::SetupPlan>> {
+        let e = self.enrolled().context("not in control yet")?;
+        let path = arugula_control_wire::hosted::SPEC;
+        let res = self
+            .http
+            .get(format!("{}{path}", e.saved.url))
+            .header(AUTH, self.sign(&e, "GET", path, b""))
+            .send()
+            .await?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !res.status().is_success() {
+            bail!("{}", control_said(res).await);
+        }
+        Ok(Some(res.json().await?))
+    }
+
+    /// Tell control how this hosted machine's setup goes (M183).
+    pub async fn hosted_report(&self, r: &arugula_control_wire::hosted::SetupReport) -> anyhow::Result<()> {
+        let e = self.enrolled().context("not in control yet")?;
+        let res = self.post_json(&e, arugula_control_wire::hosted::SETUP, r).send().await?;
+        if !res.status().is_success() {
+            bail!("{}", control_said(res).await);
+        }
+        Ok(())
     }
 
     /// A hosted machine's refresh (M180): its project as control has it
@@ -4112,6 +4208,99 @@ pub(crate) mod tests {
         ] {
             assert_eq!(c.block_signer(&c2.device).is_some(), ok, "{who}");
         }
+    }
+
+    /// M184: on a hosted workspace, its owners' and editors' machines drive
+    /// it as the owner, a viewer's don't (its agents only), and nothing
+    /// drives a team machine that way; a locked team's editors don't either.
+    #[test]
+    fn a_hosted_workspaces_people_machines_drive_it() {
+        let (o_keys, owner) = device("o", Kind::Browser);
+        let (e_keys, editor) = device("e", Kind::Browser);
+        let (v_keys, viewer) = device("v", Kind::Browser);
+        let (_, this) = device("o", Kind::Daemon);
+        let machine = |account: &str, by: &DeviceKeys| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, account, Kind::Daemon, "laptop");
+            c.sign_with(by);
+            c
+        };
+        let (o_box, e_box, v_box) = (machine("o", &o_keys), machine("e", &e_keys), machine("v", &v_keys));
+        let member = |account: &str, root: &Cert, role| arugula_e2e::team::Member {
+            account: account.into(),
+            root: root.device.clone(),
+            role,
+            name: account.into(),
+        };
+        let roster = Roster {
+            v: 1,
+            team: "t1".into(),
+            name: "Acme".into(),
+            version: 1,
+            at: 1,
+            members: vec![
+                member("o", &owner, TeamRole::Owner),
+                member("e", &editor, TeamRole::Editor),
+                member("v", &viewer, TeamRole::Viewer),
+            ],
+            spent: vec![],
+            redeem: None,
+            by: String::new(),
+            sig: String::new(),
+        };
+        let key = arugula_e2e::hosted::HostedKey::generate();
+        let d = arugula_e2e::hosted::Delegation {
+            project: "prj_1".into(),
+            owner: "team:t1".into(),
+            key: key.public(),
+            at: 1,
+            by: owner.device.clone(),
+            sig: String::new(),
+        };
+        let team_saved = Saved {
+            url: String::new(),
+            trust: Trust { account: "o".into(), root: owner.device.clone() },
+            cert: this,
+            certs: vec![],
+            revocations: vec![],
+            team: Some(TeamPin { team: "t1".into(), founder: "o".into(), founder_root: owner.device.clone() }),
+            roster: Some(roster),
+            team_certs: [("o", &owner, &o_box), ("e", &editor, &e_box), ("v", &viewer, &v_box)]
+                .into_iter()
+                .map(|(a, c, m)| (a.to_owned(), (vec![c.clone(), m.clone()], vec![])))
+                .collect(),
+            team_names: Default::default(),
+            locked: false,
+            peers: Default::default(),
+            shared_teams: Default::default(),
+            login: String::new(),
+            moved_at: 0,
+            hosted: None,
+        };
+        let hosted_saved = Saved {
+            hosted: Some(HostedPin {
+                cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
+                delegation: d,
+                revocations: vec![],
+            }),
+            ..team_saved.clone()
+        };
+        let dir = std::env::temp_dir().join(format!("arugula-hosted-drivers-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let acl = Arc::new(Acl::open(&dir));
+        let drivers = |saved: &Saved| {
+            let e = Enrolled::build(saved.clone(), Arc::new(DeviceKeys::generate()), &acl, false);
+            assert!(e.drivers.iter().all(|(_, p)| *p == Principal::Owner));
+            let mut ids: Vec<String> = e.drivers.iter().map(|(c, _)| c.account.clone()).collect();
+            ids.sort();
+            ids
+        };
+        assert_eq!(drivers(&hosted_saved), ["e", "o"]);
+        assert!(drivers(&team_saved).is_empty(), "a team machine has no drivers");
+        assert_eq!(drivers(&Saved { locked: true, ..hosted_saved.clone() }), ["o"]);
+        // The viewer's machine still calls its agents.
+        let e = Enrolled::build(hosted_saved, Arc::new(DeviceKeys::generate()), &acl, false);
+        assert!(e.agent_callers.iter().any(|(c, p)| c.device == v_box.device && !p.is_owner()));
     }
 
     /// #386: a team's other owner gets in as the owner, but is someone of

@@ -40,7 +40,7 @@ use tracing::Instrument as _;
 
 use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke, Standing},
-    hosted::{EnrollAsk, EnrollGiven, Enrolled, WakeAnswer},
+    hosted::{EnrollAsk, EnrollGiven, Enrolled, SetupPlan, SetupReport, WakeAnswer},
     work::{Report, Reported, Work},
 };
 
@@ -292,6 +292,40 @@ struct WorkArgs {
 struct ReportArgs {
     machine: HostedMachine,
     report: Report,
+}
+
+#[derive(Serialize, Deserialize)]
+struct HostedArgs {
+    project: String,
+    workspace: String,
+    machine: String,
+    #[serde(default)]
+    report: Option<SetupReport>,
+}
+
+fn hosted_args(project: &str, workspace: &str, machine: &str, report: Option<&SetupReport>) -> HostedArgs {
+    HostedArgs {
+        project: project.to_owned(),
+        workspace: workspace.to_owned(),
+        machine: machine.to_owned(),
+        report: report.cloned(),
+    }
+}
+
+/// A machine and the account it acts for (M184's `machine_drives`).
+#[derive(Serialize, Deserialize)]
+struct DrivesArgs {
+    daemon: String,
+    account: String,
+}
+
+/// A hosted machine's transcript (M184): its workspace and machine, as the
+/// hub's hosted certificate names them.
+#[derive(Serialize, Deserialize)]
+struct TranscriptArgs {
+    workspace: String,
+    machine: String,
+    transcript: arugula_control_wire::transcripts::TranscriptPost,
 }
 
 fn ids(v: &[String]) -> IdsArgs {
@@ -678,6 +712,44 @@ impl PlatformPort for HttpPlatform {
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
         Box::pin(self.0.call("hosted_report", ReportArgs { machine: machine.clone(), report: report.clone() }))
     }
+
+    fn hosted_plan<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<Option<SetupPlan>>> {
+        Box::pin(self.0.call("hosted_plan", hosted_args(project, workspace, machine, None)))
+    }
+
+    fn hosted_setup<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+        report: &'a SetupReport,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        Box::pin(self.0.call("hosted_setup", hosted_args(project, workspace, machine, Some(report))))
+    }
+
+    fn machine_drives<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, anyhow::Result<bool>> {
+        let a = DrivesArgs { daemon: daemon.to_owned(), account: account.to_owned() };
+        Box::pin(self.0.call("machine_drives", a))
+    }
+
+    fn hosted_transcript<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        transcript: &'a arugula_control_wire::transcripts::TranscriptPost,
+    ) -> BoxFuture<'a, anyhow::Result<crate::Archived>> {
+        let a = TranscriptArgs {
+            workspace: workspace.to_owned(),
+            machine: machine.to_owned(),
+            transcript: transcript.clone(),
+        };
+        Box::pin(self.0.call("hosted_transcript", a))
+    }
 }
 
 /// The platform's internal API: every `PlatformPort` method of `port`,
@@ -743,6 +815,23 @@ async fn platform_call(
             "hosted_report" => {
                 let a: ReportArgs = args(&body)?;
                 answer(p.hosted_report(&a.machine, &a.report).await?)?
+            }
+            "hosted_plan" => {
+                let a: HostedArgs = args(&body)?;
+                answer(p.hosted_plan(&a.project, &a.workspace, &a.machine).await?)?
+            }
+            "hosted_setup" => {
+                let a: HostedArgs = args(&body)?;
+                let r = a.report.ok_or_else(|| anyhow::anyhow!("no report"))?;
+                answer(p.hosted_setup(&a.project, &a.workspace, &a.machine, &r).await?)?
+            }
+            "machine_drives" => {
+                let a: DrivesArgs = args(&body)?;
+                answer(p.machine_drives(&a.daemon, &a.account).await?)?
+            }
+            "hosted_transcript" => {
+                let a: TranscriptArgs = args(&body)?;
+                answer(p.hosted_transcript(&a.workspace, &a.machine, &a.transcript).await?)?
             }
             _ => return Ok(None),
         }))
