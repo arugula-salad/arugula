@@ -11,6 +11,8 @@
 -- `trigger_source` a small JSON object saying which (the schedule, the
 -- forge event). `op` is the S37 operation's bytes (`arugula op v1`), and
 -- `op_hash` their SHA-256 in hex: what an approval or a grant names.
+-- `daemon` is the device the operation names (its `daemon` line): the
+-- only one whose reports move the run.
 -- `state` is one of S37's eight, moved only with an event in
 -- `run_events` (`last_seq` is the latest one's). `started_by` is the
 -- account that started it (by hand; an agent's run keeps its owner's
@@ -27,6 +29,7 @@ CREATE TABLE runs (
     trigger_source TEXT COLLATE pg_c_utf8 NOT NULL DEFAULT '{}',
     op TEXT COLLATE pg_c_utf8 NOT NULL,
     op_hash TEXT COLLATE pg_c_utf8 NOT NULL,
+    daemon TEXT COLLATE pg_c_utf8 NOT NULL,
     state TEXT COLLATE pg_c_utf8 NOT NULL DEFAULT 'pending' CHECK (
         state IN ('pending', 'approved', 'denied', 'canceled', 'expired', 'running', 'succeeded', 'failed')
     ),
@@ -49,8 +52,9 @@ CREATE INDEX runs_started_by ON runs (started_by);
 -- `detail` is a small JSON object (an exit code, why it failed), kept as
 -- the reporter wrote it. A change a daemon reported names it in `daemon`
 -- with its signature (`arugula run event v1`, `arugula_e2e::run`, hex) in
--- `sig`; one control recorded has neither. Rows are never changed: only
--- deleting the run's project takes them.
+-- `sig`; one control recorded has neither. Rows are never changed, and
+-- never deleted while their run is there: only deleting the run (with its
+-- project) takes them.
 CREATE TABLE run_events (
     run_id TEXT COLLATE pg_c_utf8 NOT NULL,
     seq BIGINT NOT NULL,
@@ -70,6 +74,16 @@ END;
 $$;
 CREATE TRIGGER run_events_append_only BEFORE UPDATE ON run_events
     FOR EACH ROW EXECUTE FUNCTION run_events_append_only();
+CREATE FUNCTION run_events_kept() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM runs WHERE id = OLD.run_id) THEN
+        RAISE EXCEPTION 'run_events are append-only: delete the run first';
+    END IF;
+    RETURN OLD;
+END;
+$$;
+CREATE TRIGGER run_events_kept BEFORE DELETE ON run_events
+    FOR EACH ROW EXECUTE FUNCTION run_events_kept();
 
 -- What a run left behind: a file by name, its size in bytes, its digest
 -- (`sha256:` and hex) and where it is in the run bucket (M213).

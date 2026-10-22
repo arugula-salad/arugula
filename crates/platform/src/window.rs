@@ -81,6 +81,18 @@ pub fn tables() -> Vec<String> {
         .collect()
 }
 
+/// The order `--replace` empties `tables` in: the reverse of the order
+/// they're made in, but the tables in [`GUARDS`] first.
+pub(crate) fn emptying<'a>(tables: impl DoubleEndedIterator<Item = &'a str>) -> Vec<&'a str> {
+    let mut out: Vec<&str> = tables.rev().collect();
+    out.sort_by_key(|t| !GUARDS.contains(t));
+    out
+}
+
+/// Tables whose rows guard another's: `run_events` refuses a delete while
+/// its run is there (M210), so `runs` is emptied before it.
+const GUARDS: [&str; 1] = ["runs"];
+
 /// One table on both sides of a copy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Table {
@@ -208,7 +220,7 @@ pub fn copy(from: &Path, to: &Path, replace: bool) -> anyhow::Result<Report> {
                 held.join(", ")
             );
         }
-        for t in names.iter().rev() {
+        for t in emptying(names.iter().map(String::as_str)) {
             tx.execute(&format!("DELETE FROM main.\"{t}\""), [])?;
         }
         for t in &names {
@@ -536,8 +548,9 @@ pub fn sample(db: &crate::db::Db) {
          INSERT INTO issues (search_id, id, project_id, number, title, body, author, labels, created_at, updated_at)
              VALUES (3, 'iss_1', 'prj_t', 1, 'Rehearsal notes', 'the canary held', 'acct-a', '[\"ops\"]', 24, 24);
          INSERT INTO issue_events (id, issue_id, kind, actor, at) VALUES (5, 'iss_1', 'opened', 'acct-a', 24);
-         INSERT INTO runs (id, project_id, trigger_kind, op, op_hash, state, started_by, last_seq, created_at, started_at)
-             VALUES ('run_1', 'prj_t', 'manual', 'arugula op v1\n', 'ab', 'running', 'acct-a', 2, 25, 26);
+         INSERT INTO runs (id, project_id, trigger_kind, op, op_hash, daemon, state, started_by, last_seq, created_at,
+                 started_at)
+             VALUES ('run_1', 'prj_t', 'manual', 'arugula op v1\ndaemon d1\n', 'ab', 'd1', 'running', 'acct-a', 2, 25, 26);
          INSERT INTO run_events (run_id, seq, from_state, to_state, at, daemon, sig)
              VALUES ('run_1', 1, NULL, 'pending', 25, NULL, NULL), ('run_1', 2, 'pending', 'running', 26, 'd1', 'cd');
          INSERT INTO run_artifacts (run_id, name, size, digest, bucket_key, created_at)

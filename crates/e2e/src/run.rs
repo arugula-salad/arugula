@@ -98,13 +98,16 @@ impl State {
     }
 
     /// Only the daemon running it may report this state: it's the one that
-    /// knows the process started, or ended well.
+    /// knows the process started, or ended well. `expired` and `failed`
+    /// may come from either, but only the daemon knows an exit code:
+    /// control's `failed` carries a reason instead.
     pub fn daemon_only(self) -> bool {
         matches!(self, State::Running | State::Succeeded)
     }
 
     /// Only control records this state, as the signed objects behind it
-    /// arrive (an approval, a deny, the requester's cancel).
+    /// arrive (an approval, which it must show; a deny; the requester's
+    /// cancel).
     pub fn control_only(self) -> bool {
         matches!(self, State::Pending | State::Approved | State::Denied | State::Canceled)
     }

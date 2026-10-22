@@ -9,6 +9,8 @@
 -- `trigger_source` a small JSON object saying which (the schedule, the
 -- forge event). `op` is the S37 operation's bytes (`arugula op v1`), and
 -- `op_hash` their SHA-256 in hex: what an approval or a grant names.
+-- `daemon` is the device the operation names (its `daemon` line): the
+-- only one whose reports move the run.
 -- `state` is one of S37's eight, moved only with an event in
 -- `run_events` (`last_seq` is the latest one's). `started_by` is the
 -- account that started it (by hand; an agent's run keeps its owner's
@@ -25,6 +27,7 @@ CREATE TABLE runs (
     trigger_source TEXT NOT NULL DEFAULT '{}',
     op TEXT NOT NULL,
     op_hash TEXT NOT NULL,
+    daemon TEXT NOT NULL,
     state TEXT NOT NULL DEFAULT 'pending' CHECK (
         state IN ('pending', 'approved', 'denied', 'canceled', 'expired', 'running', 'succeeded', 'failed')
     ),
@@ -47,8 +50,9 @@ CREATE INDEX runs_started_by ON runs (started_by);
 -- `detail` is a small JSON object (an exit code, why it failed), kept as
 -- the reporter wrote it. A change a daemon reported names it in `daemon`
 -- with its signature (`arugula run event v1`, `arugula_e2e::run`, hex) in
--- `sig`; one control recorded has neither. Rows are never changed: only
--- deleting the run's project takes them.
+-- `sig`; one control recorded has neither. Rows are never changed, and
+-- never deleted while their run is there: only deleting the run (with its
+-- project) takes them.
 CREATE TABLE run_events (
     run_id TEXT NOT NULL,
     seq INTEGER NOT NULL,
@@ -63,6 +67,10 @@ CREATE TABLE run_events (
 );
 CREATE TRIGGER run_events_append_only BEFORE UPDATE ON run_events BEGIN
     SELECT RAISE(ABORT, 'run_events are append-only');
+END;
+CREATE TRIGGER run_events_kept BEFORE DELETE ON run_events
+    WHEN EXISTS (SELECT 1 FROM runs WHERE id = old.run_id) BEGIN
+    SELECT RAISE(ABORT, 'run_events are append-only: delete the run first');
 END;
 
 -- What a run left behind: a file by name, its size in bytes, its digest

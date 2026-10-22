@@ -8,18 +8,26 @@
 //!   ([`State::may_become`], in `arugula_e2e::run`, which the daemon
 //!   shares): one transaction checks the move and writes the run's new
 //!   state and its event, or refuses and writes nothing ([`Refused`]).
-//! - **Events** are append-only: nothing here changes or deletes one but
-//!   deleting the run's project, and the tables refuse an `UPDATE`. Each
-//!   that a daemon reported carries its signature over `arugula run event
-//!   v1` (`arugula_e2e::run::Event`). Checking that signature against the
-//!   daemon's key is the route's job before it calls [`Db::move_run`]
-//!   (M212); this stores it, and refuses a report that isn't next in the
-//!   run's history, so a signed report can't be replayed.
-//! - **Who reports what:** `running` and `succeeded` only a daemon (it's
-//!   the one that knows); `pending`, `approved`, `denied` and `canceled`
-//!   only control, as the signed objects behind them arrive; `expired` and
-//!   `failed` either (control's clock, a dispatch that never reached the
-//!   workspace).
+//! - **Events** are append-only: the tables refuse an `UPDATE`, and a
+//!   `DELETE` while the event's run is there, so only deleting the run
+//!   (with its project) takes them.
+//! - **Who reports what** ([`Move`]):
+//!   - `running` and `succeeded` only the run's own daemon, the one its
+//!     operation names (`daemon <device id>`): it's the one that knows. Its
+//!     report comes as a [`DaemonReport`], which only checking the
+//!     daemon's signature over `arugula run event v1`
+//!     (`arugula_e2e::run::Event`) makes, and it must be the run's next
+//!     event, so a signed report can't be replayed;
+//!   - `approved` only with an [`Approval`] of the run's operation, which
+//!     only the approval's verifier makes (M211, M218);
+//!   - `denied` and `canceled` only control, as the signed objects behind
+//!     them arrive;
+//!   - `expired` and `failed` either: control's clock, or a dispatch that
+//!     never reached the workspace (control's `failed` says why, in
+//!     `reason`).
+//! - **Exit codes** come only from the daemon, and only on a run that was
+//!   running: `succeeded` exited 0, `failed` didn't (or has none: stopped,
+//!   interrupted).
 //! - **The job** that carries a run to its workspace isn't here: M212 and
 //!   M214 enqueue it on `platform_jobs` (M208) beside the run they make
 //!   with [`Db::create_run`].
@@ -87,6 +95,9 @@ pub struct Run {
     pub op: String,
     /// Their SHA-256, hex: what an approval or a grant names.
     pub op_hash: String,
+    /// The daemon it runs on, as its operation names it: the only one
+    /// whose reports move it.
+    pub daemon: String,
     pub state: State,
     /// The account that started it by hand (an agent's owner's, with the
     /// machine in `started_by_agent`), or the schedule's or event's id.
@@ -163,29 +174,94 @@ pub struct NewRun<'a> {
     pub grant: Option<&'a str>,
 }
 
-/// Who reports a move.
-#[derive(Debug, Clone, Copy)]
-pub enum Reporter<'a> {
-    /// Control, as a signed object arrives or by its clock.
-    Control,
-    /// The daemon running it, with the event's number it signed and its
-    /// signature (hex), which the route has checked.
-    Daemon { id: &'a str, seq: u64, sig: &'a str },
+/// A move a run's daemon reported, its signature checked: only
+/// [`DaemonReport::verify`] makes one, so storage is never handed a report
+/// nobody checked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DaemonReport {
+    run: String,
+    daemon: String,
+    seq: u64,
+    from: State,
+    to: State,
+    at: u64,
+    detail: String,
+    sig: String,
 }
 
-/// A change of state asked for.
+impl DaemonReport {
+    /// `report`, if `sig` (hex) is the signature over it of the daemon it
+    /// names, whose Ed25519 key (hex) is `sign_hex`. The caller finds that
+    /// key for `report.daemon` in the hub's directory (M212); whether that
+    /// daemon is the run's own, [`Db::move_run`] checks. `None` when the
+    /// signature doesn't hold, or for a first event (a run's is control's).
+    pub fn verify(report: &arugula_e2e::run::Event, sign_hex: &str, sig: &str) -> Option<Self> {
+        let from = report.from?;
+        report.verify(sign_hex, sig).then(|| Self {
+            run: report.run.into(),
+            daemon: report.daemon.into(),
+            seq: report.seq,
+            from,
+            to: report.to,
+            at: report.at,
+            detail: report.detail.into(),
+            sig: sig.into(),
+        })
+    }
+}
+
+/// An approval of a run's operation (S37 q3, `arugula work approval v1`):
+/// its id, the daemon and operation hash it names, and the device that
+/// signed it. Only the approval's verifier makes one, once it has checked
+/// the signature and that the device is a project owner's (M218, and
+/// M211's grant beside it). Until that verifier lands here nothing but
+/// tests can, so no run is approved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Approval {
+    id: String,
+    daemon: String,
+    op: String,
+    by: String,
+}
+
+impl Approval {
+    #[cfg(test)]
+    pub(crate) fn checked(id: &str, daemon: &str, op: &str, by: &str) -> Self {
+        Self { id: id.into(), daemon: daemon.into(), op: op.into(), by: by.into() }
+    }
+}
+
+/// A change of state asked for. Each says the state its reporter saw the
+/// run in: a move from any other is refused, so two reporters can't both
+/// move it.
 #[derive(Debug, Clone, Copy)]
-pub struct Move<'a> {
-    /// The state the reporter saw it in: a move from any other is refused,
-    /// so two reporters can't both move it.
-    pub from: State,
-    pub to: State,
-    pub at: u64,
-    /// A JSON object's text, at most [`MAX_DETAIL`] bytes. `exit` is the
-    /// process's exit code: 0 for `succeeded`, never 0 for `failed`, and
-    /// only on those two.
-    pub detail: &'a str,
-    pub by: Reporter<'a>,
+pub enum Move<'a> {
+    /// Control records it: `denied`, `canceled`, `expired`, or `failed`
+    /// with a `reason`. `detail` is a JSON object's text, at most
+    /// [`MAX_DETAIL`] bytes, with no exit code.
+    Control { from: State, to: State, at: u64, detail: &'a str },
+    /// An approval of the run's operation arrived: `approved`. Its event's
+    /// detail names it (`approval`, `op`, `by`).
+    Approved { from: State, at: u64, approval: &'a Approval },
+    /// The run's daemon reported it, signed.
+    Daemon(&'a DaemonReport),
+}
+
+impl Move<'_> {
+    fn from(&self) -> State {
+        match self {
+            Move::Control { from, .. } | Move::Approved { from, .. } => *from,
+            Move::Daemon(r) => r.from,
+        }
+    }
+
+    fn to(&self) -> State {
+        match self {
+            Move::Control { to, .. } => *to,
+            Move::Approved { .. } => State::Approved,
+            Move::Daemon(r) => r.to,
+        }
+    }
 }
 
 /// Why a move was refused. Nothing was written.
@@ -197,14 +273,19 @@ pub enum Refused {
     Moved { now: State },
     /// S37 doesn't let a run move so.
     Disallowed { from: State, to: State },
-    /// Only a daemon may report it, or only control.
+    /// Not a move this reporter may make.
     Reporter,
+    /// A daemon's report from another daemon than the run's, or about
+    /// another run.
+    OtherDaemon,
+    /// An approval of another operation, or for another daemon.
+    Approval,
     /// Straight to `running` from `pending` needs a standing grant.
     NoGrant,
     /// A daemon's report that isn't the run's next event.
     Seq { next: u64 },
     /// The detail isn't a JSON object of at most [`MAX_DETAIL`] bytes, or
-    /// its exit code doesn't fit the state.
+    /// doesn't fit the move (an exit code, a reason).
     Detail(&'static str),
 }
 
@@ -215,6 +296,8 @@ impl std::fmt::Display for Refused {
             Refused::Moved { now } => write!(f, "the run is {now} now"),
             Refused::Disallowed { from, to } => write!(f, "a run can't go from {from} to {to}"),
             Refused::Reporter => f.write_str("not a move this reporter may make"),
+            Refused::OtherDaemon => f.write_str("the report isn't from this run's daemon"),
+            Refused::Approval => f.write_str("the approval is for another operation"),
             Refused::NoGrant => f.write_str("the run has no standing grant: it needs an approval"),
             Refused::Seq { next } => write!(f, "the run's next event is {next}"),
             Refused::Detail(why) => f.write_str(why),
@@ -224,8 +307,9 @@ impl std::fmt::Display for Refused {
 
 impl std::error::Error for Refused {}
 
-const COLS: &str = "id, project_id, workspace_id, trigger_kind, trigger_source, op, op_hash, state, started_by, \
-                    started_by_agent, grant_id, last_seq, created_at, started_at, ended_at, exit_code, chant_ledger";
+const COLS: &str = "id, project_id, workspace_id, trigger_kind, trigger_source, op, op_hash, daemon, state, \
+                    started_by, started_by_agent, grant_id, last_seq, created_at, started_at, ended_at, exit_code, \
+                    chant_ledger";
 const EVENT_COLS: &str = "run_id, seq, from_state, to_state, at, detail, daemon, sig";
 const ARTIFACT_COLS: &str = "run_id, name, size, digest, bucket_key, created_at";
 
@@ -243,16 +327,17 @@ fn run_row(r: &Row) -> Result<Run> {
         source: serde_json::from_str(&r.get::<String>(4)?)?,
         op: r.get(5)?,
         op_hash: r.get(6)?,
-        state: state(&r.get::<String>(7)?)?,
-        started_by: r.get(8)?,
-        started_by_agent: r.get(9)?,
-        grant: r.get(10)?,
-        last_seq: r.get(11)?,
-        created_at: r.get(12)?,
-        started_at: r.get(13)?,
-        ended_at: r.get(14)?,
-        exit_code: r.get(15)?,
-        chant_ledger: r.get(16)?,
+        daemon: r.get(7)?,
+        state: state(&r.get::<String>(8)?)?,
+        started_by: r.get(9)?,
+        started_by_agent: r.get(10)?,
+        grant: r.get(11)?,
+        last_seq: r.get(12)?,
+        created_at: r.get(13)?,
+        started_at: r.get(14)?,
+        ended_at: r.get(15)?,
+        exit_code: r.get(16)?,
+        chant_ledger: r.get(17)?,
     })
 }
 
@@ -288,26 +373,55 @@ fn add_event(c: &impl Sql, e: &Event) -> Result<()> {
     Ok(())
 }
 
-/// The exit code `detail` carries, if it's a JSON object that fits `to`.
-fn exit_code(detail: &str, to: State) -> Result<Option<i64>, Refused> {
+/// `detail` as a JSON object, if it is one of at most [`MAX_DETAIL`]
+/// bytes.
+fn detail_object(detail: &str) -> Result<serde_json::Map<String, serde_json::Value>, Refused> {
     if detail.len() > MAX_DETAIL {
         return Err(Refused::Detail("the detail is too long"));
     }
-    let Ok(serde_json::Value::Object(d)) = serde_json::from_str(detail) else {
-        return Err(Refused::Detail("the detail isn't a JSON object"));
-    };
+    match serde_json::from_str(detail) {
+        Ok(serde_json::Value::Object(d)) => Ok(d),
+        _ => Err(Refused::Detail("the detail isn't a JSON object")),
+    }
+}
+
+/// The exit code a daemon's report carries, if it fits the move: only a
+/// run that was running has one, 0 when it succeeded and never 0 when it
+/// failed.
+fn daemon_exit(r: &DaemonReport) -> Result<Option<i64>, Refused> {
+    let d = detail_object(&r.detail)?;
     let exit = match d.get("exit") {
         None => None,
         Some(v) => Some(v.as_i64().ok_or(Refused::Detail("the exit code isn't a number"))?),
     };
-    match (to, exit) {
-        (State::Succeeded, Some(0)) | (State::Failed, None) => Ok(exit),
-        (State::Failed, Some(n)) if n != 0 => Ok(exit),
-        (State::Succeeded, _) => Err(Refused::Detail("a run that succeeded exited 0")),
-        (State::Failed, _) => Err(Refused::Detail("a run that failed didn't exit 0")),
-        (_, None) => Ok(None),
-        (_, Some(_)) => Err(Refused::Detail("only an ended run has an exit code")),
+    match (r.from, r.to, exit) {
+        (_, _, None) if r.to != State::Succeeded => Ok(None),
+        (State::Running, State::Succeeded, Some(0)) => Ok(exit),
+        (State::Running, State::Failed, Some(n)) if n != 0 => Ok(exit),
+        (_, State::Succeeded, _) => Err(Refused::Detail("a run that succeeded exited 0")),
+        (State::Running, State::Failed, _) => Err(Refused::Detail("a run that failed didn't exit 0")),
+        _ => Err(Refused::Detail("only a run that was running has an exit code")),
     }
+}
+
+/// Whether control's detail fits its move: no exit code (only the daemon
+/// knows one), and a `reason` when it fails a run.
+fn control_detail(detail: &str, to: State) -> Result<(), Refused> {
+    let d = detail_object(detail)?;
+    if d.contains_key("exit") {
+        return Err(Refused::Detail("only the run's daemon reports an exit code"));
+    }
+    if to == State::Failed && !d.get("reason").and_then(|r| r.as_str()).is_some_and(|r| !r.is_empty()) {
+        return Err(Refused::Detail("control fails a run with a reason"));
+    }
+    Ok(())
+}
+
+/// The daemon an S37 operation names: its second line, `daemon <id>`.
+fn op_daemon(op: &str) -> Option<&str> {
+    let rest = op.strip_prefix(OP_V1)?;
+    let id = rest.lines().next()?.strip_prefix("daemon ")?;
+    (!id.is_empty() && !id.contains(' ')).then_some(id)
 }
 
 impl Db {
@@ -315,9 +429,9 @@ impl Db {
     /// `None`: there's no such project. Its job is the caller's (M212,
     /// M214).
     pub fn create_run(&self, new: &NewRun, at: u64) -> Result<Option<Run>> {
-        if !new.op.starts_with(OP_V1) {
-            bail!("a run's spec is an S37 operation (`arugula op v1`)");
-        }
+        let Some(daemon) = op_daemon(new.op) else {
+            bail!("a run's spec is an S37 operation (`arugula op v1`, then `daemon <id>`)");
+        };
         if !new.source.is_object() {
             bail!("a run's trigger source is a JSON object");
         }
@@ -328,8 +442,9 @@ impl Db {
             .query_row(
                 &format!(
                     "INSERT INTO runs (id, project_id, workspace_id, trigger_kind, trigger_source, op, op_hash,
-                         state, started_by, started_by_agent, grant_id, last_seq, created_at)
-                     SELECT ?1, id, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, ?8, ?9, 1, ?10 FROM projects WHERE id = ?11
+                         daemon, state, started_by, started_by_agent, grant_id, last_seq, created_at)
+                     SELECT ?1, id, ?2, ?3, ?4, ?5, ?6, ?12, 'pending', ?7, ?8, ?9, 1, ?10 FROM projects
+                     WHERE id = ?11
                      RETURNING {COLS}"
                 ),
                 params![
@@ -343,7 +458,8 @@ impl Db {
                     new.started_by_agent,
                     new.grant,
                     at,
-                    new.project
+                    new.project,
+                    daemon
                 ],
                 run_row,
             )
@@ -391,14 +507,7 @@ impl Db {
     /// Move a run, as S37 allows: its new state and the event saying so,
     /// in one transaction. `Err(Refused)` writes nothing.
     pub fn move_run(&self, id: &str, m: &Move) -> Result<Result<(Run, Event), Refused>> {
-        let exit = match exit_code(m.detail, m.to) {
-            Ok(e) => e,
-            Err(r) => return Ok(Err(r)),
-        };
-        let by_daemon = matches!(m.by, Reporter::Daemon { .. });
-        if (by_daemon && m.to.control_only()) || (!by_daemon && m.to.daemon_only()) {
-            return Ok(Err(Refused::Reporter));
-        }
+        let (from, to) = (m.from(), m.to());
         let mut c = self.c();
         let tx = c.immediate()?;
         let Some(run) = tx
@@ -407,38 +516,52 @@ impl Db {
         else {
             return Ok(Err(Refused::NoRun));
         };
-        if run.state != m.from {
+        if run.state != from {
             return Ok(Err(Refused::Moved { now: run.state }));
         }
-        if !m.from.may_become(m.to) {
-            return Ok(Err(Refused::Disallowed { from: m.from, to: m.to }));
-        }
-        if (m.from, m.to) == (State::Pending, State::Running) && run.grant.is_none() {
-            return Ok(Err(Refused::NoGrant));
+        if !from.may_become(to) {
+            return Ok(Err(Refused::Disallowed { from, to }));
         }
         let seq = run.last_seq + 1;
-        let (daemon, sig) = match m.by {
-            Reporter::Control => (None, None),
-            Reporter::Daemon { id, seq: signed, sig } => {
-                if signed != seq {
+        let checked = match m {
+            Move::Control { detail, .. } => {
+                if !matches!(to, State::Denied | State::Canceled | State::Expired | State::Failed) {
+                    return Ok(Err(Refused::Reporter));
+                }
+                control_detail(detail, to).map(|()| (detail.to_string(), None, None, None))
+            }
+            Move::Approved { approval, .. } => {
+                if approval.op != run.op_hash || approval.daemon != run.daemon {
+                    return Ok(Err(Refused::Approval));
+                }
+                let detail = serde_json::json!({ "approval": approval.id, "op": approval.op, "by": approval.by });
+                Ok((detail.to_string(), None, None, None))
+            }
+            Move::Daemon(r) => {
+                if !matches!(to, State::Running | State::Succeeded | State::Failed | State::Expired) {
+                    return Ok(Err(Refused::Reporter));
+                }
+                if r.run != run.id || r.daemon != run.daemon {
+                    return Ok(Err(Refused::OtherDaemon));
+                }
+                if r.seq != seq {
                     return Ok(Err(Refused::Seq { next: seq }));
                 }
-                (Some(id.to_owned()), Some(sig.to_owned()))
+                daemon_exit(r).map(|exit| (r.detail.clone(), exit, Some(r.daemon.clone()), Some(r.sig.clone())))
             }
         };
-        let event = Event {
-            run: run.id.clone(),
-            seq,
-            from: Some(m.from),
-            to: m.to,
-            at: m.at,
-            detail: m.detail.into(),
-            daemon,
-            sig,
+        let (detail, exit, daemon, sig) = match checked {
+            Ok(c) => c,
+            Err(r) => return Ok(Err(r)),
         };
-        if event.signed().is_some_and(|s| !s.well_formed()) {
-            return Ok(Err(Refused::Reporter));
+        if (from, to) == (State::Pending, State::Running) && run.grant.is_none() {
+            return Ok(Err(Refused::NoGrant));
         }
+        let at = match m {
+            Move::Control { at, .. } | Move::Approved { at, .. } => *at,
+            Move::Daemon(r) => r.at,
+        };
+        let event = Event { run: run.id.clone(), seq, from: Some(from), to, at, detail, daemon, sig };
         let run = tx.query_row(
             &format!(
                 "UPDATE runs SET state = ?2, last_seq = ?3,
@@ -447,7 +570,7 @@ impl Db {
                      exit_code = ?6
                  WHERE id = ?1 RETURNING {COLS}"
             ),
-            params![run.id, m.to.as_str(), seq, m.at, m.to.terminal(), exit],
+            params![run.id, to.as_str(), seq, at, to.terminal(), exit],
             run_row,
         )?;
         add_event(&tx, &event)?;
@@ -504,11 +627,13 @@ impl Db {
 /// (their files expire from the bucket, M213), and the account's name on
 /// the runs that stay. Events keep the daemon that signed them: a
 /// signature names its signer.
+///
+/// The runs go first: `run_events` refuses a delete while its run is
+/// there.
 pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
-    let gone = "SELECT id FROM runs WHERE project_id NOT IN (SELECT id FROM projects)";
-    c.execute(&format!("DELETE FROM run_events WHERE run_id IN ({gone})"), params![])?;
-    c.execute(&format!("DELETE FROM run_artifacts WHERE run_id IN ({gone})"), params![])?;
     c.execute("DELETE FROM runs WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
+    c.execute("DELETE FROM run_events WHERE run_id NOT IN (SELECT id FROM runs)", params![])?;
+    c.execute("DELETE FROM run_artifacts WHERE run_id NOT IN (SELECT id FROM runs)", params![])?;
     c.execute(
         "UPDATE runs SET started_by = '', started_by_agent = NULL WHERE trigger_kind = 'manual' AND started_by = ?1",
         params![d.account],
