@@ -1161,6 +1161,38 @@ clients = ["page", "daemon"]
 
 [[route]]
 method = "GET"
+path = "/api/cloud/workspaces/{id}/move"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "M189: what moving a beta Cloud workspace off Managoat leaves behind, read from its machine (never woken), and what it makes."
+
+[[route]]
+method = "POST"
+path = "/api/cloud/workspaces/{id}/move"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "M189: make it again as a hosted workspace in its project, with its secrets and transcripts. Once: asked again, the same one."
+
+[[route]]
+method = "GET"
+path = "/api/cloud/workspaces/{id}/move/bundle"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "M189: a tar of what a move leaves behind, read through Managoat."
+
+[[route]]
+method = "GET"
+path = "/api/cloud/moving"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "M189: the day beta Cloud workspaces are deleted (ARUGULA_MANAGOAT_DELETE_AFTER), and whether the account may move them."
+
+[[route]]
+method = "GET"
 path = "/api/cloud/past-tabs"
 process = "platform"
 auth = "session"

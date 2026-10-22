@@ -16,6 +16,7 @@ import { CloudTranscript, useCloudConversation } from "./cloud";
 import { CloudWorkspaceSettings } from "./workspace-settings";
 import { CloudWorkspaceChanges } from "./workspace-changes";
 import { RetryCloudWorkspace } from "./workspace-rebuild";
+import { CloudMoveNotice, MoveCloudWorkspace } from "./workspace-move";
 
 /** Re-render on the store and the route; returns the route. */
 export function useCloudWorkspaces() {
@@ -197,6 +198,7 @@ export function CloudWorkspaceMain() {
   if (tab) lastTabs.set(w.id, tab.id);
   return (
     <div class="cloud-ws-view" data-cloud-ws={w.id}>
+      <CloudMoveNotice />
       <CloudWorkspaceFailure w={w} />
       {route.tab ? <CloudTabView key={route.tab} w={w} tab={tab} id={route.tab} /> : <CloudWorkspaceHome w={w} />}
       {dialog}
@@ -276,6 +278,7 @@ function CloudWorkspaceList({ create }: { create: () => void }) {
         <button class="primary" data-create-cloud-workspace onClick={create}>New Cloud workspace</button>
       </div>
       <p class="dim">A Cloud workspace is a machine in the cloud with your repositories on it. Each tab is an agent working there; they share its disk.</p>
+      <CloudMoveNotice />
       {cloudWorkspaces.error && <p role="alert" class="control-error">{cloudWorkspaces.error}</p>}
       {cloudWorkspaces.loaded && !list.length && !cloudWorkspaces.error && <p class="dim">You have no Cloud workspaces yet.</p>}
       <ul class="cloud-ws-list">
@@ -326,6 +329,7 @@ function CloudWorkspaceHome({ w }: { w: CloudWorkspace }) {
         {w.status === "provisioning" && ": installing packages, cloning repositories and running the setup script. Tabs opened now start once it's ready."}
         {w.status === "ready" && w.sandbox_status === "suspended" && ": its machine sleeps until a tab gets a prompt."}
       </p>
+      <MoveCloudWorkspace w={w} />
       <h3>Repositories</h3>
       {spec.repositories.length ? (
         <ul class="cloud-ws-repos">{spec.repositories.map((r) => <li key={r.mount}><span class="mono">{r.mount}</span> · {r.url}{r.ref ? ` @ ${r.ref}` : ""}</li>)}</ul>

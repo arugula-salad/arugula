@@ -182,6 +182,42 @@ workers lease jobs, find a create whose response was lost instead of
 repeating it, and resume after a process restart. Preserve the database
 and encryption key across deployments.
 
+## Moving off Managoat (M189)
+
+Managoat stops being the Cloud workspace backend (#1235): beta Cloud
+workspaces are made again as hosted workspaces, and what's left on
+Managoat is deleted 14 days after the notice.
+
+- **The move.** Each beta Cloud workspace's page offers "Move to the new
+  Cloud workspaces" (`crates/platform/src/cloud/moving.rs`). It first lists
+  each repo's uncommitted and unpushed work, read through Managoat's
+  `git-status` and `diff` (which never wake a parked machine), and offers it
+  as a tar: `unpushed.patch` against the repo's upstream (else
+  `origin/HEAD`), `uncommitted.patch` against HEAD, and the untracked files.
+  Then it makes a hosted workspace in the same project from the spec:
+  repositories become its repos (a ref is checked out by its setup
+  script), apt packages its packages, npm packages an `npm install -g` in
+  its setup script, and environment variables and the cloud secrets it
+  names become its secrets (sealed again with the project's key), with the
+  secret its repositories cloned with as `GIT_TOKEN`. Mounts, the setup
+  timeout and networking don't carry: the dialog says so. Its tabs'
+  transcripts are copied into the project's transcript archive, read only.
+  The Managoat workspace stays as it is. A move asked twice makes one
+  hosted workspace (`cloud_workspaces.moved_to`).
+- **Who.** Only the person whose Cloud workspace it is, and only when the
+  platform has hosted workspaces and their account is on
+  `ARUGULA_HOSTED_ACCOUNTS`.
+- **The notice.** `ARUGULA_MANAGOAT_DELETE_AFTER` (a date, `YYYY-MM-DD`)
+  on the platform puts "Beta Cloud workspaces are deleted on …" on their
+  pages. Unset, nothing says so.
+- **The deletion.** `arugula-platform managoat-retire --dry-run` lists every
+  Managoat workspace, vault and environment in the platform's account and
+  what it would delete; `--execute` deletes those control made (workspaces,
+  then vaults, then environments), and `--all` the rest too. It reads
+  `ARUGULA_MANAGOAT_URL` and `ARUGULA_MANAGOAT_API_KEY`, and never touches
+  the platform's database. Removing the Managoat code and its tables is the
+  PR after it.
+
 ## Verification
 
 The control cloud tests (`cargo test -p arugula-control cloud`) drive the

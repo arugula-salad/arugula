@@ -2382,6 +2382,27 @@ boxes (their disks and memory, and its broker's secrets): docs/control-e2e.md
   E2B's console (its usage tab) has the bill itself; the two should agree
   within the time a box takes to start and pause.
 
+### Retiring Managoat (M189)
+
+Beta Cloud workspaces move to hosted ones from their own pages (see
+docs/managoat.md, "Moving off Managoat"). Jake's call: 14 days' notice,
+then delete.
+
+1. Put the beta accounts on `ARUGULA_HOSTED_ACCOUNTS`, so they can move.
+2. Send the notice, and set `ARUGULA_MANAGOAT_DELETE_AFTER` (the day, 14
+   days on, `YYYY-MM-DD`) on `arugula-platform`: their pages say it.
+3. On the day, list what's left, then delete it:
+
+   ```
+   fly ssh console -a arugula-platform -C "/arugula-platform managoat-retire --dry-run"
+   fly ssh console -a arugula-platform -C "/arugula-platform managoat-retire --execute"
+   ```
+
+   It deletes only what control made (`--all`: everything in the
+   account). A failed delete says so; run it again.
+4. Then the PR that removes the Managoat code, `ARUGULA_MANAGOAT_API_KEY`
+   and the `cloud_*` tables.
+
 ### Public previews
 
 A hosted workspace's port that one of its project's owners or editors
