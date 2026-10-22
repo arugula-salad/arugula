@@ -428,6 +428,19 @@ pub async fn setup(State(app): State<Arc<App>>, h: HostedAuth, Json(r): Json<Set
     Ok(Json(json!({})))
 }
 
+/// `GET /api/hosted/previews` (M187): the machine's workspace's ports
+/// that are public now, which it asks before serving a public preview.
+pub async fn previews(State(app): State<Arc<App>>, h: HostedAuth) -> R {
+    let ports = app.platform.public_ports(&h.0.cert.workspace).await?;
+    let ports = arugula_control_wire::hosted::PublicPorts {
+        ports: ports
+            .into_iter()
+            .map(|(port, preview)| arugula_control_wire::hosted::PublicPort { port, preview })
+            .collect(),
+    };
+    crate::reply(&ports)
+}
+
 // ---------------------------------------------------------------- people's side
 
 /// The session's own device that signed `by`, or a refusal.

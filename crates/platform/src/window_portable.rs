@@ -380,6 +380,32 @@ pub fn usage(at: &Place, from: u64, to: u64) -> anyhow::Result<crate::hosted::us
     }
 }
 
+/// Public previews at `at` (M187): with `off`, takes that one down first
+/// (by its id, or its URL or host). Then the ones public now. Refused, as
+/// [`open_as_is`] refuses, on a database this build would migrate.
+pub fn previews(at: &Place, off: Option<&str>) -> anyhow::Result<(bool, Vec<crate::PublicPreview>)> {
+    let db = match at {
+        Place::File(path) => {
+            let m = migrations_on(&super::read_only(path)?, Dialect::Sqlite, at)?;
+            if !m.pending.is_empty() {
+                bail!("{at} is behind this build (it would run {:?}): run the build the platform runs", m.pending);
+            }
+            Db::open(path)?
+        }
+        Place::Postgres(url) => open_as_is(at, url)?,
+    };
+    let taken = match off {
+        Some(o) => {
+            // `https://<id>.arugula.site/…`, `<id>.arugula.site` or the id.
+            let host = o.split_once("://").map_or(o, |(_, r)| r);
+            let id = host.split(['.', '/', ':']).next().unwrap_or_default();
+            db.take_down_preview(id)?
+        }
+        None => false,
+    };
+    Ok((taken, db.public_previews(arugula_e2e::now_ms())?))
+}
+
 /// What a snapshot id from `pg_export_snapshot()` looks like
 /// (`00000003-0000001B-1`): checked, since it's spliced into SQL.
 fn snapshot_id(id: &str) -> anyhow::Result<&str> {

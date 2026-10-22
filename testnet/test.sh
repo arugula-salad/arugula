@@ -179,6 +179,17 @@
 #           reads the answer labelled as their agent on box-systemd; after
 #           the read grant is revoked, read_thread is refused. Broken: no
 #           grant given, so the box's first read is refused.
+#   public-preview
+#           Only with hosted workspaces at the fake E2B
+#           (ARUGULA_TESTNET_HOSTED=1) and a preview domain
+#           (ARUGULA_TESTNET_PREVIEW_DOMAIN=previews.localhost), M187: a
+#           hosted workspace made with the CLI, the real `arugulad --hosted`
+#           on box-systemd with the ticket its create got, a dev server on
+#           port 5173. An editor makes the port public; a request with no
+#           cookie and no device gets the page at <id>.<preview domain>
+#           through control and the relay; a made-up id gets nothing. Turned
+#           off, it's gone within a minute (the time is noted). Broken: the
+#           port is never made public, so the stranger gets nothing.
 #
 # Needs `testnet/up.sh <profile>` first. Exit codes: 0 every claim held, 1 a
 # claim failed or there's no Docker (ARUGULA_SKIP_DOCKER=1 makes that a
@@ -214,6 +225,11 @@ if [ "$PROFILE" = control ]; then
   esac
   # Hosted workspaces at the fake E2B (M183).
   [ "${ARUGULA_TESTNET_HOSTED:-}" != 1 ] || CONTROL_CLAIMS="$CONTROL_CLAIMS hosted-setup"
+  # Public previews (M187): with hosted workspaces at the fake E2B and a
+  # preview domain on control.
+  PREVIEW_DOMAIN="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$TESTNET-control" 2>/dev/null |
+    sed -n 's/^ARUGULA_PREVIEW_DOMAIN=//p')"
+  [ "${ARUGULA_TESTNET_HOSTED:-}" != 1 ] || [ -z "$PREVIEW_DOMAIN" ] || CONTROL_CLAIMS="$CONTROL_CLAIMS public-preview"
   [ "$PROFILE" != control ] || CLAIMS="$CONTROL_CLAIMS"
 fi
 
@@ -1057,6 +1073,72 @@ claim_hosted_setup() {
   grep -qx "deleted $first" <<< "$got" && awk '$1 == "live" { print $2 }' <<< "$got" | grep -qvx "$first" ||
     { note "hosted-setup: no new box at the fake E2B: $got"; ok=0; }
   s "$box" 'systemctl --user stop arugulad-hosted' > /dev/null 2>&1
+  bastion_tidy
+  [ "$ok" = 1 ]
+}
+
+# M187: a public preview, end to end (the header says what).
+claim_public_preview() {
+  local ok=1 box=box-systemd fp team proj tk url host got t0 gone
+  bastion_tidy() { s bastion 'rm -rf ~/.local/bin/arugula ~/.config/arugula' >/dev/null 2>&1 || true; }
+  bastion_tidy
+  fresh "$box" || { note "public-preview: couldn't recreate $box"; return 1; }
+  fp="$(signin "pubprev-$$-$RANDOM" | field fingerprint)"
+  [ -n "$fp" ] || { note "public-preview: no device signed in"; return 1; }
+  team="$(dev team-create "preview team" | field team)"
+  proj="$(dev delegate "$team" | field project)"
+  [ -n "$proj" ] || { note "public-preview: couldn't delegate the team's project"; return 1; }
+  bastion_login "$fp" || { bastion_tidy; return 1; }
+  bcli() { s bastion ".local/bin/arugula $*"; }
+  bcli cloud create dev --project "$proj" > "$WORK/pp-create" ||
+    { note "public-preview: no workspace made:"; cat "$WORK/pp-create" >&2; bastion_tidy; return 1; }
+  # The ticket the platform's create put in the fake box's env.
+  for _ in $(seq 1 30); do
+    tk="$(e2b_project "$proj" | awk '$1 == "live" { print $3 }' | tail -1)"
+    [ -n "$tk" ] && break
+    sleep 1
+  done
+  [ -n "$tk" ] || { note "public-preview: the platform made no box at the fake E2B"; bastion_tidy; return 1; }
+  docker cp "$ARUGULA_TESTNET_BINARIES/arugulad" "$TESTNET-$box:/usr/local/bin/arugulad" &&
+    docker exec "$TESTNET-$box" chmod 755 /usr/local/bin/arugulad ||
+    { note "public-preview: couldn't install arugulad on $box"; bastion_tidy; return 1; }
+  s "$box" 'loginctl enable-linger; echo sbx-testnet > ~/e2b-id; mkdir -p ~/site; echo PUBLIC-PREVIEW-OK > ~/site/index.html' > /dev/null
+  s "$box" systemd-run --user --unit=arugulad-hosted -E "ARUGULA_HOSTED_TICKET=$tk" -E "ARUGULA_CONTROL_URL=$CONTROL_URL" \
+    -E ARUGULA_E2B_ID_FILE=/home/illo/e2b-id \
+    /usr/local/bin/arugulad --hosted --listen 127.0.0.1:7690 --state-dir /home/illo/hosted-state > /dev/null 2>&1 ||
+    { note "public-preview: arugulad --hosted didn't start"; bastion_tidy; return 1; }
+  s "$box" systemd-run --user --unit=site python3 -m http.server 5173 -d /home/illo/site > /dev/null 2>&1
+  bcli cloud open dev --project "$proj" --wait > "$WORK/pp-open" 2>&1 ||
+    { note "public-preview: never ready:"; cat "$WORK/pp-open" >&2; ok=0; }
+  if [ -z "$BREAK" ]; then
+    bcli cloud preview public dev 5173 --project "$proj" > "$WORK/pp-public" 2>&1 ||
+      { note "public-preview: couldn't make it public:"; cat "$WORK/pp-public" >&2; ok=0; }
+  fi
+  url="$(grep -oE "https?://[0-9a-f]{32}\.${PREVIEW_DOMAIN}[^ ]*" "$WORK/pp-public" 2>/dev/null | head -1)"
+  host="${url#*://}"; host="${host%%/*}"; host="${host%%:*}"
+  [ -n "$host" ] || host="$(printf '%032d' 0).$PREVIEW_DOMAIN"
+  # A stranger: no cookie, no device, through control's published port.
+  stranger() { curl -s -o "$WORK/pp-page" -w '%{http_code}' -H "Host: $host" "http://127.0.0.1:$ARUGULA_TESTNET_CONTROL_PORT/"; }
+  got=""
+  for _ in $(seq 1 20); do got="$(stranger)"; [ "$got" = 200 ] && break; sleep 1; done
+  { [ "$got" = 200 ] && grep -q PUBLIC-PREVIEW-OK "$WORK/pp-page"; } ||
+    { note "public-preview: a stranger got $got at $host:"; head -c 300 "$WORK/pp-page" >&2; ok=0; }
+  note "public-preview: served at $host"
+  got="$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $(printf 'f%.0s' $(seq 32)).$PREVIEW_DOMAIN" \
+    "http://127.0.0.1:$ARUGULA_TESTNET_CONTROL_PORT/")"
+  [ "$got" = 404 ] || { note "public-preview: a made-up id got $got"; ok=0; }
+  # Turned off: gone within a minute.
+  if [ "$ok" = 1 ]; then
+    bcli cloud preview off dev 5173 --project "$proj" > /dev/null || { note "public-preview: couldn't turn it off"; ok=0; }
+    t0=$(date +%s); gone=""
+    for _ in $(seq 1 70); do
+      [ "$(stranger)" = 404 ] && { gone=$(( $(date +%s) - t0 )); break; }
+      sleep 1
+    done
+    if [ -n "$gone" ] && [ "$gone" -lt 60 ]; then note "public-preview: gone ${gone}s after it was turned off"; else
+      note "public-preview: still served a minute after it was turned off"; ok=0; fi
+  fi
+  s "$box" 'systemctl --user stop site arugulad-hosted' > /dev/null 2>&1
   bastion_tidy
   [ "$ok" = 1 ]
 }

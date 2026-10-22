@@ -127,6 +127,11 @@ fn routes() -> Routes {
         .route("/api/projects/{project}/workspaces", get(hosted::routes::list).post(hosted::routes::create))
         .route("/api/projects/{project}/workspaces/{id}", get(hosted::routes::open).delete(hosted::routes::delete))
         .route("/api/projects/{project}/workspaces/{id}/rebuild", post(hosted::routes::rebuild))
+        .route("/api/projects/{project}/workspaces/{id}/ports", get(hosted::previews::list))
+        .route(
+            "/api/projects/{project}/workspaces/{id}/ports/{port}/public",
+            axum::routing::put(hosted::previews::make_public).delete(hosted::previews::make_private),
+        )
         .route("/api/projects/{project}/inference-keys", get(hosted::inference::list_keys))
         .route(
             "/api/projects/{project}/inference-keys/{provider}",

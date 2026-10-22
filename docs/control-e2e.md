@@ -1230,10 +1230,69 @@ on a block origin, through the hosted machine's relay socket.
 - **Never the provider's preview URLs.** E2B's are public by default and
   need a header browsers can't send. A test (`no_provider_preview_urls`
   in `crates/control/src/blocks.rs`) keeps their hosts out of the tree.
-- **Public previews (M187)** are a separate path: a port a member marks
-  public (`hosted_ports.public_by`, `public_until`) is served through the
-  relay on a registrable domain of its own, never under the block domain,
-  since every block origin shares a site with every other.
+- **Public previews (M187)** are a separate path (below): a port a member
+  makes public is served through the relay on a registrable domain of its
+  own, never under the block domain, since every block origin shares a
+  site with every other.
+
+### Public previews
+
+M187 (#1248, aru-097): a port of a hosted workspace that one of its
+project's owners or editors makes public is open to anyone, signed out,
+at `https://<id>.<preview domain>` (`ARUGULA_PREVIEW_DOMAIN`,
+`arugula.site` for the hosted one).
+
+- **Not end to end.** A stranger has no device key to sign a block grant
+  with, so control opens the channel itself. Control terminates HTTPS for
+  the preview domain and brings each request to the hosted machine over
+  its relay socket, on a block channel whose message 1 carries a public
+  grant (`arugula_e2e::preview`) instead of a block grant. **Control sees
+  a public preview's traffic in plain text.** That's acceptable because the
+  page is public: anyone can load it. Members' previews (above) stay end
+  to end on block origins, and nothing about them changes.
+- **The grant** is signed with control's hosted key, the key the project's
+  delegation names and the machine already trusts for its own
+  certificate, under a first line of its own (`arugula public preview
+  grant v1`). It names the machine, one port, the preview's id, the
+  one-off key doing the handshake and an expiry (at most ten minutes from
+  the machine's now, as block grants). It names no block.
+- **The machine decides too.** It serves a public grant only when it's a
+  hosted machine, the grant checks out, the port isn't one of the daemon's
+  own, and control, asked at most every 20 seconds (`GET
+  /api/hosted/previews`, signed as the machine; the platform answers),
+  says that port is public under that id now. If control can't be asked,
+  nothing is served. An open channel (a WebSocket) is checked again every
+  20 seconds and closed once the port isn't public. So control can't open
+  any other port of the machine, and a preview turned off stops within a
+  minute even while control's own cache (15 seconds) lags.
+- **The id** is 32 random hex characters, made fresh each time a port is
+  made public and kept while it's renewed: never the workspace's id, and a
+  link that was turned off stays dead. It's in `hosted_ports.public_id`
+  (platform migration 0024), with who made it public or last renewed it
+  (`public_by`) and until when (`public_until`, 7 days later). Nothing has
+  to run when it passes.
+- **What crosses.** The request's headers, less hop-by-hop ones and what
+  says who or where the visitor is (`Fly-*`, `X-Forwarded-*`,
+  `Forwarded`, `Via`, `CF-*`). Its cookies are the preview's own: nothing
+  of control's is ever sent to this domain, which shares no site with
+  `arugula.io` or `arugula.run`. An answer's `Set-Cookie` loses any
+  `Domain`, so one preview can't set a cookie for another under the
+  shared domain. The machine passes requests from the preview's own pages
+  as local (`Origin` and `Referer` rewritten, as for blocks), but leaves a
+  request from another site with its own `Origin`, so the dev server's own
+  checks still see it; and it adds no frame rules of ours.
+- **Asleep.** A paused box isn't woken for a stranger: control answers
+  503 with a short page that says it's asleep. A member opening the
+  workspace wakes it (M182).
+- **On control's side** (`crates/control/src/previews.rs`): the preview
+  host reaches nothing of control's (no page, cookie, session or API). It
+  takes 20,000 requests an hour per client address and 64 at once per
+  preview, and its traffic is metered against the project, as block
+  sockets are.
+- **Who.** A project's members list its workspaces' ports; its owners and
+  editors make one public, renew it and turn it off (`arugula cloud
+  preview`). The operator lists every public preview and takes any down
+  at once (docs/control-ops.md, "Public previews").
 
 ### Machines with no block flags
 
@@ -1513,7 +1572,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `hosted_workspace_secrets` | **plaintext** | A secret a hosted workspace takes, by name, and where its value is: sealed here with its project's key (project_keys), or in the provider's secrets broker. | A hosted workspace's box is made and rebuilt with every machine off. | partly: they go with their workspace, when the worker deletes it. | E2B |
 | `project_keys` | **plaintext** | A project's data key (M209), which seals that project's secrets, wrapped by the master key control holds apart from the database; which master key wrapped it (a hash of it), when it was made and when it was last re-wrapped. Rotating the master key re-wraps these and nothing else. | A project's secrets are opened for its workspaces and deploys with every machine off. | partly: a personal project's keys go with it, and so do a disbanded team's; other teams' stay. |  |
 | `project_secrets` | **plaintext** | A project's secret that has no table of its own, such as a deploy environment's (M217), by name, sealed with the project's key. | Deploys run with every machine off. | partly: a personal project's secrets go with it, and so do a disbanded team's; other teams' stay. |  |
-| `hosted_ports` | metadata | A port a dev server listens on in a hosted workspace (M186), its label, and who made it public and until when (M187). | Previews are served and expire with every machine asleep. | partly: it stops naming the account as who made a port public. They go with their workspace. |  |
+| `hosted_ports` | metadata | A port of a hosted workspace (M186), its label, and while it's public (M187) its preview id (32 random hex characters, the label of its host under the preview domain), who made it public or last renewed it, and until when. | Previews are served and expire with every machine asleep. | partly: it stops naming the account as who made a port public. They go with their workspace. |  |
 | `hosted_transcripts` | **plaintext** | A closed agent block's transcript from a hosted workspace's box (M184): its project, workspace, machine and block, the agent, its title and working directory, when it ran, and its text (prompts, the agent's messages and tool calls, cut to 768 KiB), kept read only. | A project's people read what its hosted workspaces' agents did after the box is paused, rebuilt or deleted. | partly: those of its personal project and its disbanded teams' projects go. A team's stay with its project: its other people read them. |  |
 | `hosted_usage` | metadata | When a hosted workspace's box ran (M188): its workspace, project and box, its size (vCPUs and memory), and each running interval's start and end. | The platform meters boxes from their lifecycle, which runs with every machine asleep, and the operator reads what they cost. | nothing of one: it names no account: a workspace's project and box ids only. It stays when the workspace goes: it's what E2B billed. | E2B |
 | `hosted_usage_provider` | metadata | What E2B says a hosted workspace's box ran (M188), from its lifecycle events: how many runs, their milliseconds, vCPU-milliseconds and MiB-milliseconds, and when it was read. | The platform checks its usage against E2B's record with every machine asleep. | nothing of one: it names no account: a workspace's project and box ids only. | E2B |

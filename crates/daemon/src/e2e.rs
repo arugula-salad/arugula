@@ -155,6 +155,11 @@ async fn serve(app: Arc<App>, mut inbound: mpsc::Receiver<Vec<u8>>, out: mpsc::S
         .ok_or_else(|| anyhow::anyhow!("closed before the handshake"))?;
     let enrolled = app.control.enrolled().ok_or_else(|| anyhow::anyhow!("not enrolled in control"))?;
     let (responder, who, payload) = Responder::read(&enrolled.keys, &prologue(&enrolled.keys.id()), &m1)?;
+    // A public preview (M187): control, for a stranger, with a grant
+    // signed with its hosted key for one public port.
+    if let Ok(hello) = arugula_e2e::preview::PublicHello::decode(&payload) {
+        return crate::public_preview::serve(app, &enrolled, responder, who, hello, inbound, out).await;
+    }
     // A block's frame (M50): a one-off key and its grant, not a device.
     if !payload.is_empty() {
         return crate::block_channel::serve(app, &enrolled.keys.id(), responder, who, &payload, inbound, out).await;

@@ -119,10 +119,11 @@ fn main() -> anyhow::Result<()> {
     // (window.rs, M141, M145), run on the platform's machine beside the
     // server, and by the nightly dump. `usage`: hosted workspaces' usage
     // and cost (M188), read-only. `rotate-key`: the master key's rotation
-    // (M209, `keys::rotate`).
+    // (M209, `keys::rotate`). `previews`: public previews, and the
+    // operator's takedown (M187).
     let mut argv = std::env::args().skip(1).peekable();
     if argv.peek().is_some_and(|a| {
-        ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key"].contains(&a.as_str())
+        ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "previews"].contains(&a.as_str())
     }) {
         return arugula_platform::window::run("arugula-platform", argv);
     }

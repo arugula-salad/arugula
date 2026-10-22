@@ -1437,6 +1437,17 @@ impl Control {
         Ok(())
     }
 
+    /// A hosted machine's ports that are public now, and their preview ids
+    /// (M187): what control says, asked each time (`public_preview.rs`
+    /// caches it). An error when this isn't a hosted machine.
+    pub(crate) async fn public_ports(&self) -> anyhow::Result<Vec<(u16, String)>> {
+        let e = self.enrolled().ok_or_else(|| anyhow::anyhow!("not enrolled in control"))?;
+        anyhow::ensure!(e.saved.hosted.is_some(), "not a hosted machine");
+        let got: arugula_control_wire::hosted::PublicPorts =
+            self.get(&e, arugula_control_wire::hosted::HOSTED_PREVIEWS).await?;
+        Ok(got.ports.into_iter().map(|p| (p.port, p.preview)).collect())
+    }
+
     /// A hosted machine's refresh (M180): its project as control has it
     /// now (`/api/hosted/trust`), kept where it checks out against what it
     /// pinned. It publishes nothing and asks for no push subscriptions:

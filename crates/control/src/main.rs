@@ -67,6 +67,9 @@ mod plans;
 mod platform_host;
 #[cfg(test)]
 mod platform_host_wire;
+mod previews;
+#[cfg(test)]
+mod previews_wire;
 mod push;
 #[cfg(test)]
 mod push_notices;
@@ -329,6 +332,8 @@ pub struct Config {
     pub also_redirect: bool,
     /// Blocks' origins are `b-<key>.<this>` (M50, `blocks.rs`).
     pub block_domain: Option<String>,
+    /// Public previews are `<id>.<this>` (M187, `previews.rs`).
+    pub preview_domain: Option<String>,
     /// The platform page's host (M151, `platform_host.rs`), and where its
     /// files come from when the platform is in process.
     pub platform_host: Option<platform_host::PlatformHost>,
@@ -411,6 +416,9 @@ pub struct App {
     pub guest_routes: guest_jump::Routes,
     /// Blocks' relay sockets open (M50).
     pub blocks: blocks::Open,
+    /// Public previews: the platform's recent answers, and requests open
+    /// (M187).
+    pub previews: previews::Previews,
     /// Product analytics, when they're on.
     pub analytics: analytics::Analytics,
     /// Shared Docs: the disk guard and the open counts (#1064).
@@ -498,6 +506,7 @@ impl App {
                 sites: vec![Site::new(public_url).unwrap()],
                 also_redirect: false,
                 block_domain: None,
+                preview_domain: None,
                 platform_host: None,
                 platform_page: Default::default(),
                 github: None,
@@ -522,6 +531,7 @@ impl App {
             jump: None,
             guest_routes: Default::default(),
             blocks: Default::default(),
+            previews: Default::default(),
             analytics: Default::default(),
             docs: Default::default(),
             platform,
@@ -633,6 +643,7 @@ fn routes() -> Routes {
         .route(wire::hosted::ENROLL, post(hosted::enroll))
         .route(wire::hosted::HOSTED_TRUST, get(hosted::trust))
         .route(wire::hosted::HOSTED_TURNS, post(hosted::turn))
+        .route(wire::hosted::HOSTED_PREVIEWS, get(hosted::previews))
         .route("/api/hosted/turns/{turn}/end", post(hosted::turn_end))
         .route(wire::work::WORK, get(hosted_work::work))
         .route(wire::work::WORK_REPORT, post(hosted_work::report))
@@ -686,6 +697,9 @@ pub fn router(app: Arc<App>) -> Router {
         // Outermost: the platform page's host reaches only the platform's
         // routes and its page (M151).
         .layer(axum::middleware::from_fn_with_state(app.clone(), platform_host::split))
+        // Outermost of all: a public preview's host reaches nothing of
+        // control's (M187).
+        .layer(axum::middleware::from_fn_with_state(app.clone(), previews::split))
         .with_state(app)
 }
 
@@ -988,6 +1002,16 @@ async fn run() -> anyhow::Result<()> {
         Some(p) => info!(host = %p.host, origin = %p.origin, "the platform page is served at its host"),
         None => info!("no ARUGULA_PLATFORM_HOST: the platform page isn't served"),
     }
+    let preview_domain = previews::domain(
+        a.hosted.preview_domain.as_deref().unwrap_or(""),
+        &sites,
+        block_domain.as_deref(),
+        platform_host.as_ref().map(|p| p.host.as_str()),
+    )?;
+    match &preview_domain {
+        Some(d) => info!(domain = %d, "public previews served at <id>.{d}"),
+        None => info!("no ARUGULA_PREVIEW_DOMAIN: public previews are off"),
+    }
     let billing = stripe.is_some();
     let platform_key = set(a.platform_key.clone())
         .map(|k| arugula_control_common::principal::PrincipalKey::from_hex(&k))
@@ -1048,6 +1072,7 @@ async fn run() -> anyhow::Result<()> {
             sites,
             also_redirect: a.also_redirect,
             block_domain,
+            preview_domain,
             platform_host,
             platform_page: arugula_platform::page::Page::new(a.platform_static_dir),
             public_url,
@@ -1078,6 +1103,7 @@ async fn run() -> anyhow::Result<()> {
         jump,
         guest_routes: Default::default(),
         blocks: Default::default(),
+        previews: Default::default(),
         analytics,
         // The database's directory, whose disk shared Docs fill. Without
         // one, the guard has no disk to read and lets every part in.

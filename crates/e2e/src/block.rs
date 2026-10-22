@@ -106,6 +106,8 @@ pub enum Refused {
     TooLong,
     /// This daemon has no such block (or it isn't one a channel can show).
     NoBlock,
+    /// A public preview's port isn't public under that id now (M187).
+    NotPublic,
 }
 
 impl Refused {
@@ -119,6 +121,7 @@ impl Refused {
             Refused::Expired => "expired",
             Refused::TooLong => "too-long",
             Refused::NoBlock => "no-block",
+            Refused::NotPublic => "not-public",
         }
     }
 
@@ -133,6 +136,7 @@ impl Refused {
             Refused::Expired => "the grant expired",
             Refused::TooLong => "the grant is good for too long",
             Refused::NoBlock => "this machine has no such block",
+            Refused::NotPublic => "that port isn't public",
         }
     }
 }

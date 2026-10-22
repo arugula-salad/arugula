@@ -139,29 +139,39 @@ pub(crate) async fn serve(
             Ok(Some(_)) => break Err(anyhow::anyhow!("a block channel carries frames only")),
             Err(e) => break Err(e),
         };
-        streams.retain(|_, s| !matches!(s, Stream::Running(h, _) if h.is_finished()));
-        if let Err(e) = frame(&sites, &site, &up, &out, &mut streams, &f) {
+        drop_finished(&mut streams);
+        if let Err(e) = frame(&sites, &site, &up, &out, &mut streams, &f, Via::Channel) {
             break Err(e);
         }
     };
+    abort(streams);
+    info!(block = site.id, "block channel closed");
+    r
+}
+
+/// Forget streams that have finished.
+pub(crate) fn drop_finished(streams: &mut HashMap<u32, Stream>) {
+    streams.retain(|_, s| !matches!(s, Stream::Running(h, _) if h.is_finished()));
+}
+
+/// Stop every stream still running: the channel closed.
+pub(crate) fn abort(streams: HashMap<u32, Stream>) {
     for s in streams.into_values() {
         if let Stream::Running(h, _) = s {
             h.abort();
         }
     }
-    info!(block = site.id, "block channel closed");
-    r
 }
 
 /// A stream the client opened.
-enum Stream {
+pub(crate) enum Stream {
     /// A request whose body is still coming.
     Http(ReqHead, Vec<u8>),
     /// A request on its way, or a WebSocket (with what to send it).
     Running(tokio::task::JoinHandle<()>, Option<mpsc::UnboundedSender<WsCmd>>),
 }
 
-enum WsCmd {
+pub(crate) enum WsCmd {
     Msg(tungstenite::Message),
     Close(WsClose),
 }
@@ -170,13 +180,17 @@ enum WsCmd {
 /// comes whole).
 const MAX_BODY: usize = 64 << 20;
 
-fn frame(
+/// One frame from the client, for `site`'s port, its requests come `via`
+/// a block's channel or a public preview's (M187, `public_preview.rs`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn frame(
     sites: &Arc<Sites>,
     site: &Arc<Site>,
     up: &Arc<Upstream>,
     out: &Arc<Out>,
     streams: &mut HashMap<u32, Stream>,
     f: &[u8],
+    via: Via,
 ) -> anyhow::Result<()> {
     let (kind, sid, payload) = wire::parse(f)?;
     let failed = move |out: Arc<Out>, e: anyhow::Error| async move {
@@ -197,7 +211,7 @@ fn frame(
             if let Some(Stream::Http(head, body)) = streams.remove(&sid) {
                 let (sites, site, up, out) = (sites.clone(), site.clone(), up.clone(), out.clone());
                 let h = tokio::spawn(async move {
-                    if let Err(e) = request(&sites, &site, &up, &out, sid, head, body).await {
+                    if let Err(e) = request(&sites, &site, &up, &out, sid, head, body, via).await {
                         failed(out, e).await;
                     }
                 });
@@ -244,6 +258,7 @@ fn frame(
 
 /// One HTTP request, through the block listener's proxy; the answer streams
 /// back as `R`, `D`s and `E`.
+#[allow(clippy::too_many_arguments)]
 async fn request(
     sites: &Sites,
     site: &Site,
@@ -252,6 +267,7 @@ async fn request(
     sid: u32,
     head: ReqHead,
     body: Vec<u8>,
+    via: Via,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(head.path.starts_with('/'), "a request's path starts with /");
     let mut req = Request::builder().method(head.method.as_str()).uri(head.path.as_str());
@@ -262,7 +278,7 @@ async fn request(
         }
     }
     let req = req.body(Full::new(Bytes::from(body)).map_err(|e| match e {}).boxed())?;
-    let res = sites::forward(sites, site, up, req, Via::Channel, None).await;
+    let res = sites::forward(sites, site, up, req, via, None).await;
     let rh = ResHead {
         status: res.status().as_u16(),
         headers: res
