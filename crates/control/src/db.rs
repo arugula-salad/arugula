@@ -567,7 +567,14 @@ impl Db {
     pub fn open(path: &Path) -> anyhow::Result<Self> {
         // WAL, foreign keys, and a wait for the lock: in process the
         // platform has a second connection to this file (#1153).
-        let conn = arugula_control_common::sqlite::open(path)?;
+        let mut conn = arugula_control_common::sqlite::open(path)?;
+        // Every transaction takes the write lock as it begins (`BEGIN
+        // IMMEDIATE`), waiting out the platform's for up to the busy
+        // timeout. A deferred one that reads and then writes (a sign-in's
+        // `account_for`) would get SQLITE_BUSY at once, with no wait, when
+        // the platform committed after its read: "database is locked".
+        // This connection is behind a mutex, so it never waits on itself.
+        conn.set_transaction_behavior(rusqlite::TransactionBehavior::Immediate);
         let answers_before: bool = conn.query_row(
             "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'share_answers')",
             [],
@@ -2450,6 +2457,33 @@ mod tests {
     use arugula_e2e::{Cert, Kind};
 
     use super::*;
+
+    /// The platform's connection to the same file commits while a sign-in
+    /// is between reading and writing (`account_for`): the hub waits for
+    /// its lock and goes on, rather than "database is locked".
+    #[test]
+    fn a_sign_in_waits_out_the_platforms_write() {
+        let path = std::env::temp_dir().join(format!("arugula-locked-{}.db", hex::encode(arugula_e2e::random::<8>())));
+        let db = Db::open(&path).unwrap();
+        let platform = arugula_control_common::sqlite::open(&path).unwrap();
+        platform.execute_batch("CREATE TABLE IF NOT EXISTS p (n INTEGER)").unwrap();
+        let (held, holding) = std::sync::mpsc::channel();
+        let writer = std::thread::spawn(move || {
+            platform.execute_batch("BEGIN IMMEDIATE; INSERT INTO p VALUES (1);").unwrap();
+            held.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            platform.execute_batch("COMMIT").unwrap();
+        });
+        holding.recv().unwrap();
+        for i in 0..5 {
+            db.account_for("github", &format!("gh-{i}"), "jake", &format!("acct-{i}"), 1).unwrap();
+        }
+        writer.join().unwrap();
+        drop(db);
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+    }
 
     /// Sessions from before they said how they signed in: the desktop app's
     /// windows, by the device they said they are or their User-Agent, are
