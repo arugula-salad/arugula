@@ -41,6 +41,14 @@
 //! **Gating:** control's `chat` Labs flag ([`chat_on`]): the account's own
 //! if it set one, else on when any of its teams turned it on.
 //!
+//! **Agents (M197, platform step 6).** A machine's agents read and post in
+//! team channels, DMs and object threads through grants its owner gave
+//! ([`crate::grants`]), never more than the owner sees ([`agent_room`]).
+//! What one posts is the owner's, with the machine beside it
+//! ([`post_as`]), shown as "<owner>'s agent on <machine>"; a room any live
+//! agent grant reaches says whose agents, to everyone in it
+//! ([`room_agents`]). Nothing here wakes an agent.
+//!
 //! [`Cache`]: crate::cache::Cache
 
 use std::{
@@ -57,8 +65,8 @@ use arugula_control_common::{ApiError, err, refusal};
 use arugula_control_wire::chat::{
     self as wire, ChatEdit, ChatFound, ChatHit, ChatKind, ChatLive, ChatMessage, ChatMessages, ChatMessagesQuery,
     ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget, ChatPane, ChatPerson, ChatPost, ChatPosted,
-    ChatPushWhy, ChatPushed, ChatRead, ChatReaderList, ChatReaders, ChatReadersStored, ChatRoom, ChatRoomChange,
-    ChatRoomDetail, ChatRooms, ChatSearchQuery,
+    ChatPushWhy, ChatPushed, ChatRead, ChatReaderList, ChatReaders, ChatReadersStored, ChatRoom, ChatRoomAgent,
+    ChatRoomChange, ChatRoomDetail, ChatRooms, ChatSearchQuery,
 };
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -78,7 +86,9 @@ use crate::{
         Db, Taken,
         chat::{Message, NewChatEvent, NewMessage, OldMessage, Page, Room, Search, UnreadAsk, Word},
         objects::Holder,
+        projects::{ISSUES_WRITE, THREADS_POST, THREADS_READ},
     },
+    grants::{AGENT_UNGRANTED, AgentPrincipal, AgentScope, agent_may},
     hub::{Account, Daemon, Flags, PushOptions, Team},
 };
 
@@ -543,6 +553,8 @@ fn listed_as(
 struct Shower {
     names: HashMap<String, String>,
     machines: HashMap<String, (String, bool)>,
+    /// Agents' machines' names (M197): "" for one that's gone.
+    agents: HashMap<String, String>,
 }
 
 impl Shower {
@@ -555,11 +567,24 @@ impl Shower {
             ms.iter().filter(|m| m.ref_pane.is_some()).filter_map(|m| m.ref_machine.clone()).collect();
         machines.sort();
         machines.dedup();
+        // The agents' machines, for their names only.
+        let mut named = machines.clone();
+        named.extend(ms.iter().filter_map(|m| m.agent.clone()));
+        named.sort();
+        named.dedup();
         let (accounts, daemons, reach) = tokio::try_join!(
             app.cache.accounts(hub, &authors),
-            app.cache.daemons(hub, &machines),
+            app.cache.daemons(hub, &named),
             app.cache.may_reach(hub, reader, &machines),
         )?;
+        let agents = ms
+            .iter()
+            .filter_map(|m| m.agent.clone())
+            .map(|a| {
+                let name = daemons.get(&a).map(|d| d.name.clone()).unwrap_or_default();
+                (a, name)
+            })
+            .collect();
         let names = authors
             .into_iter()
             .map(|a| (a.clone(), accounts.get(&a).map(|x| x.name.clone()).unwrap_or_default()))
@@ -572,7 +597,7 @@ impl Shower {
                 (m, (name, opens))
             })
             .collect();
-        Ok(Self { names, machines })
+        Ok(Self { names, machines, agents })
     }
 
     fn show(&self, m: &Message) -> ChatMessage {
@@ -595,6 +620,10 @@ impl Shower {
             edited: m.edited,
             deleted: m.deleted,
             imported: m.imported.clone(),
+            agent: m.agent.as_ref().map(|a| wire::ChatAgent {
+                machine: a.clone(),
+                machine_name: self.agents.get(a).cloned().unwrap_or_default(),
+            }),
         }
     }
 }
@@ -1266,7 +1295,125 @@ pub async fn room(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<St
         .into_iter()
         .map(|a| ChatPerson { name: names.get(&a).map(|x| x.name.clone()).unwrap_or_default(), account: a })
         .collect();
-    Ok(Json(ChatRoomDetail { room: listed(&app, &facts, &s.account, &room, from)?, people }))
+    let agents = room_agents(&app, &facts, &room).await?;
+    Ok(Json(ChatRoomDetail { room: listed(&app, &facts, &s.account, &room, from)?, people, agents }))
+}
+
+// ---------------------------------------------------------------- agents
+
+/// Where an agent's grant has to reach for `room` (M197): a channel's
+/// team's default project, an object thread's project (M196: an issue's, a
+/// mirrored PR's), or `owner`'s own account for a DM. `None`: agents don't
+/// come here (pane and session threads, archives).
+fn agent_scope(app: &Platform, room: &Room, owner: &str) -> anyhow::Result<Option<AgentScope>> {
+    if room.kind == "object" {
+        return Ok(objects::project_of(room).map(|p| AgentScope::Project(p.to_owned())));
+    }
+    Ok(match (room.kind.as_str(), room.scope.strip_prefix("team:")) {
+        ("channel", Some(team)) => app.db.team_default_project(team)?.map(AgentScope::Project),
+        ("dm", Some(_)) => Some(AgentScope::Account(owner.to_owned())),
+        _ => None,
+    })
+}
+
+/// The room `id` for an agent on `machine` using `power` there
+/// (`threads.read` or `threads.post`): it has to be a room its owner sees
+/// (404 otherwise, as for the owner), of a kind agents come to, with a live
+/// grant over its scope ([`agent_may`], whose refusal says how to grant
+/// one). Chat has to be on for the owner ([`gate`]). The room, the owner's
+/// floor in it, and who the agent is. The MCP thread routes (M198) start
+/// here, and post with [`post_as`].
+pub async fn agent_room(
+    app: &Platform,
+    machine: &Machine,
+    power: &str,
+    id: &str,
+) -> Result<(Room, u64, AgentPrincipal), ApiError> {
+    gate(app, &machine.account).await?;
+    let (room, from, _) = room_for(app, &machine.account, id).await?;
+    let Some(scope) = agent_scope(app, &room, &machine.account)? else {
+        return Err(refusal(
+            StatusCode::FORBIDDEN,
+            AGENT_UNGRANTED,
+            "agents read and post in team channels, DMs and object threads, not here",
+        ));
+    };
+    let agent = agent_may(app, machine, power, &scope).await?;
+    Ok((room, from, agent))
+}
+
+/// [`agent_room`] for the thread on an object (M196: a native issue, a
+/// mirrored PR or issue), by the object's id: made now if nobody has
+/// opened it yet, as when its owner opens it. The grant over the object's
+/// project is asked first, so an agent without one makes nothing; then the
+/// owner has to be able to open it ([`objects::check_open`]: a member of its
+/// project, and refused on a private repo's item as everyone is until
+/// M165). Chat has to be on for the owner ([`gate`]), before anything is
+/// made. How an agent comments on an issue (M198, M200).
+pub async fn agent_object_room(
+    app: &Platform,
+    machine: &Machine,
+    power: &str,
+    target: &str,
+) -> Result<(Room, u64, AgentPrincipal), ApiError> {
+    gate(app, &machine.account).await?;
+    let obj = objects::resolve(app, target)?;
+    let scope = AgentScope::Project(obj.project.clone());
+    // Outside its owner's projects it isn't there, as for the owner.
+    if crate::grants::owner_reads(app, &machine.account, &scope, false).await?.is_none() {
+        return Err(err(StatusCode::NOT_FOUND, "no such object"));
+    }
+    agent_may(app, machine, power, &scope).await?;
+    let room = open_object(app, &machine.account, target).await?.0;
+    agent_room(app, machine, power, &room.id).await
+}
+
+/// The agents a live grant lets read or post in `room` (M197), as everyone
+/// in it is told: thread grants over its scope (its project; for a DM, each
+/// of its people's accounts), and on a native issue's thread `issues.write`
+/// too (an agent that may edit or close the issue), whose owner sees the
+/// room now and whose machine is still theirs. By owner, then machine.
+async fn room_agents(app: &Platform, facts: &Facts, room: &Room) -> anyhow::Result<Vec<ChatRoomAgent>> {
+    let mut scopes: Vec<(&str, String)> = vec![];
+    if room.kind == "dm" {
+        scopes.extend(facts.members(app, &room.id)?.into_iter().map(|a| ("account", a)));
+    } else if let Some(AgentScope::Project(p)) = agent_scope(app, room, "")? {
+        scopes.push(("project", p));
+    }
+    let scopes: Vec<(&str, &str)> = scopes.iter().map(|(k, id)| (*k, id.as_str())).collect();
+    let on_issue = room.kind == "object" && room.target.as_deref().is_some_and(|t| t.starts_with("iss_"));
+    let mut by: std::collections::BTreeMap<(String, String), Vec<String>> = Default::default();
+    for g in app.db.agent_grants_over(&scopes)? {
+        if g.power == THREADS_READ || g.power == THREADS_POST || (on_issue && g.power == ISSUES_WRITE) {
+            by.entry((g.granted_by, g.subject_id)).or_default().push(g.power);
+        }
+    }
+    if by.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut machines: Vec<String> = by.keys().map(|(_, m)| m.clone()).collect();
+    machines.sort();
+    machines.dedup();
+    let mut owners: Vec<String> = by.keys().map(|(o, _)| o.clone()).collect();
+    owners.dedup();
+    let (daemons, names) =
+        tokio::try_join!(app.cache.daemons(&*app.hub, &machines), app.cache.accounts(&*app.hub, &owners))?;
+    let mut out = vec![];
+    for ((owner, machine), mut powers) in by {
+        let Some(d) = daemons.get(&machine).filter(|d| d.account == owner) else { continue };
+        if sight(app, facts, &owner, room).await?.is_none() {
+            continue;
+        }
+        powers.sort();
+        out.push(ChatRoomAgent {
+            owner_name: names.get(&owner).map(|a| a.name.clone()).unwrap_or_default(),
+            owner,
+            machine,
+            machine_name: d.name.clone(),
+            powers,
+        });
+    }
+    Ok(out)
 }
 
 /// `PATCH /api/chat/rooms/{id}`: a channel renamed or archived, by its
@@ -1351,8 +1498,23 @@ pub async fn post(
     Path(id): Path<String>,
     Json(b): Json<ChatPost>,
 ) -> J<ChatPosted> {
+    Ok(Json(post_as(&app, &s.account, None, &id, b).await?))
+}
+
+/// Post in room `id` as `author`, or as an agent on one of the author's
+/// machines (M197: the caller has asked [`agent_room`] for
+/// `threads.post`), which the message keeps beside its author.
+pub async fn post_as(
+    app: &Arc<Platform>,
+    author: &str,
+    agent: Option<&AgentPrincipal>,
+    id: &str,
+    b: ChatPost,
+) -> Result<ChatPosted, ApiError> {
+    let app = app.clone();
+    let s = Person { account: author.to_owned() };
     gate(&app, &s.account).await?;
-    let (room, _, facts) = room_for(&app, &s.account, &id).await?;
+    let (room, _, facts) = room_for(&app, &s.account, id).await?;
     if watching(&app, &facts, &s.account, &room)? {
         return Err(refusal(
             StatusCode::FORBIDDEN,
@@ -1399,6 +1561,7 @@ pub async fn post(
             ref_machine: b.pane.as_ref().map(|p| p.machine.as_str()),
             ref_pane: b.pane.as_ref().map(|p| p.pane.as_str()),
             mentions: &named,
+            agent: agent.map(|a| a.machine.as_str()),
         },
     )?;
     app.chat.publish(&app.db, ChatLive::Message { room: room.id.clone(), seq }, None);
@@ -1406,14 +1569,14 @@ pub async fn post(
         &app,
         &facts,
         &room,
-        &s.account,
+        (&s.account, agent),
         seq,
         text.is_empty().then_some(quote).flatten().unwrap_or(text),
         &named,
         &people,
     )
     .await?;
-    Ok(Json(ChatPosted { seq, mentions: named, unreached, pushed }))
+    Ok(ChatPosted { seq, mentions: named, unreached, pushed })
 }
 
 /// How chat's pushes go: to every subscription the account has, with the
@@ -1430,7 +1593,7 @@ async fn push(
     app: &Arc<Platform>,
     facts: &Facts,
     room: &Room,
-    author: &str,
+    (author, agent): (&str, Option<&AgentPrincipal>),
     seq: i64,
     text: &str,
     named: &[String],
@@ -1447,7 +1610,10 @@ async fn push(
     if to.is_empty() {
         return Ok(vec![]);
     }
-    let me = name_of(app, author).await?;
+    let me = match agent {
+        Some(a) => format!("{}'s agent on {}", name_of(app, author).await?, a.machine_name),
+        None => name_of(app, author).await?,
+    };
     let place = match room.kind.as_str() {
         "channel" => format!("#{}", room.name),
         _ => match room.machine.as_deref().and_then(|m| facts.daemons.get(m)) {
@@ -1513,6 +1679,9 @@ pub async fn edit(
     let m = message_in(&app, &room, seq)?;
     if m.author != s.account || m.deleted.is_some() {
         return Err(err(StatusCode::FORBIDDEN, "only its author edits a message"));
+    }
+    if m.agent.is_some() {
+        return Err(err(StatusCode::FORBIDDEN, "an agent's message isn't edited by hand: delete it instead"));
     }
     if watching(&app, &facts, &s.account, &room)? {
         return Err(refusal(
@@ -1829,6 +1998,7 @@ async fn import(
                 ref_machine: m.pane.as_ref().filter(|p| valid_target(p)).map(|_| machine),
                 ref_pane: m.pane.as_deref().filter(|p| valid_target(p)),
                 mentions,
+                agent: None,
             },
         })
         .collect();

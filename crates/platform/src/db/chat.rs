@@ -55,6 +55,8 @@ pub struct Message {
     pub edited: Option<u64>,
     pub deleted: Option<u64>,
     pub imported: Option<String>,
+    /// The machine whose agent wrote it (M197); `author` is its owner.
+    pub agent: Option<String>,
 }
 
 /// How many of chat's live events are kept for pages that resume
@@ -87,6 +89,8 @@ pub struct NewMessage<'a> {
     pub ref_machine: Option<&'a str>,
     pub ref_pane: Option<&'a str>,
     pub mentions: &'a [String],
+    /// Written by an agent on this machine (M197), for `author`.
+    pub agent: Option<&'a str>,
 }
 
 /// A message brought in from a machine (M124): its number there, and the
@@ -125,7 +129,8 @@ pub struct Search<'a> {
 }
 
 const ROOM_COLS: &str = "id, scope, kind, name, machine, target, created_by, created, archived, last_seq";
-const MSG_COLS: &str = "room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, edited, deleted, imported";
+const MSG_COLS: &str =
+    "room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, edited, deleted, imported, agent";
 
 fn room_row(r: &Row) -> Result<Room> {
     Ok(Room {
@@ -157,6 +162,7 @@ fn msg_row(r: &Row) -> Result<Message> {
         edited: r.get(9)?,
         deleted: r.get(10)?,
         imported: r.get(11)?,
+        agent: r.get(12)?,
     })
 }
 
@@ -364,8 +370,8 @@ impl Db {
         Ok(())
     }
 
-    /// Append a message: control numbers it, and its author has read it.
-    /// Its number.
+    /// Append a message: control numbers it, and its author has read it
+    /// (unless an agent wrote it: its owner hasn't, M197). Its number.
     pub fn add_chat_message(&self, room: &str, m: &NewMessage) -> Result<i64> {
         let mut c = self.c();
         let tx = c.transaction()?;
@@ -376,8 +382,8 @@ impl Db {
             |r| r.get(0),
         )?;
         tx.execute(
-            "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, agent)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 room,
                 seq,
@@ -387,9 +393,14 @@ impl Db {
                 m.quote,
                 m.ref_machine,
                 m.ref_pane,
-                serde_json::to_string(m.mentions)?
+                serde_json::to_string(m.mentions)?,
+                m.agent
             ],
         )?;
+        if m.agent.is_some() {
+            tx.commit()?;
+            return Ok(seq);
+        }
         tx.execute(
             "INSERT INTO chat_reads (room, account, seq) VALUES (?1, ?2, ?3)
              ON CONFLICT (room, account) DO UPDATE
@@ -692,7 +703,7 @@ impl Db {
 
     /// Others' messages after `read` (from `from` ms on), and how many of
     /// them mention `account`. Messages brought in from a machine (M124)
-    /// count as read.
+    /// count as read; the account's own agents' (M197) don't.
     pub fn chat_unread(&self, room: &str, account: &str, read: i64, from: u64) -> Result<(u64, u64)> {
         let c = self.c();
         let mentioned = match c.dialect() {
@@ -702,7 +713,7 @@ impl Db {
         c.query_row(
             &format!(
                 "SELECT count(*), CAST(coalesce(sum(CASE WHEN {mentioned} THEN 1 ELSE 0 END), 0) AS BIGINT)
-                 FROM chat_messages WHERE room = ?1 AND seq > ?2 AND author != ?3 AND deleted IS NULL AND at >= ?4
+                 FROM chat_messages WHERE room = ?1 AND seq > ?2 AND (author != ?3 OR agent IS NOT NULL) AND deleted IS NULL AND at >= ?4
                  AND imported_id IS NULL"
             ),
             params![room, read, account, from],
@@ -744,7 +755,7 @@ impl Db {
                 "SELECT w.room, count(m.seq),
                      CAST(coalesce(sum(CASE WHEN m.seq IS NOT NULL AND {mentioned} THEN 1 ELSE 0 END), 0) AS BIGINT)
                  FROM ({want}) w
-                 LEFT JOIN chat_messages m ON m.room = w.room AND m.seq > w.since AND m.author != ?1
+                 LEFT JOIN chat_messages m ON m.room = w.room AND m.seq > w.since AND (m.author != ?1 OR m.agent IS NOT NULL)
                      AND m.deleted IS NULL AND m.at >= w.floor AND m.imported_id IS NULL
                  GROUP BY w.room"
             ),
@@ -897,7 +908,7 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     drop_rooms_where(tx, "kind = ?1 AND scope NOT IN (SELECT 'project:' || id FROM projects)", "object")?;
     tx.execute(
         "UPDATE chat_messages SET author = '', text = '', quote = NULL, ref_machine = NULL, ref_pane = NULL,
-         mentions = '[]', imported = NULL, deleted = coalesce(deleted, ?2) WHERE author = ?1",
+         mentions = '[]', imported = NULL, agent = NULL, deleted = coalesce(deleted, ?2) WHERE author = ?1",
         params![account, arugula_e2e::now_ms()],
     )?;
     // Out of others' mentions and reader lists (JSON lists in text).
@@ -967,7 +978,7 @@ mod tests {
     fn post(db: &Db, room: &str, author: &str, text: &str, quote: Option<&str>, mentions: &[String]) -> i64 {
         db.add_chat_message(
             room,
-            &NewMessage { author, at: 1, text, quote, ref_machine: None, ref_pane: None, mentions },
+            &NewMessage { author, at: 1, text, quote, ref_machine: None, ref_pane: None, mentions, agent: None },
         )
         .unwrap()
     }
@@ -1024,6 +1035,7 @@ mod tests {
                     ref_machine: None,
                     ref_pane: None,
                     mentions: &[],
+                    agent: None,
                 },
             })
             .collect();

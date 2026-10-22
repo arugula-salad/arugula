@@ -5,10 +5,10 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { Markup } from "../../shared/ui/markup";
-import { MsgAvatar } from "../../shared/chat/avatar";
 import type { ChatStore } from "../../shared/chat-store";
 import type { ChatHit, ChatMessage, ChatRoom } from "../../shared/proto";
-import { roomLabel, roomSigil, machineName } from "../../shared/chat/room";
+import { AuthorAvatar, roomLabel, roomSigil, machineName } from "../../shared/chat/room";
+import { authorLabel } from "../../shared/chat/agents";
 import { usePlatformApi, type PlatformApi } from "../../shared/platform-api";
 import type { ChatRoute } from "../../shared/chat/route";
 
@@ -54,9 +54,9 @@ function RoomHits({ store, hits }: { store: ChatStore; hits: { room: string; m: 
                 <time>{when(m.at)}</time>
               </span>
               <span class="chat-hit-body">
-                <MsgAvatar who={m.author || "gone"} name={m.name || "someone"} />
-                <span class="chat-hit-text">
-                  <b>{m.name || "someone"}</b>
+                <AuthorAvatar m={m} />
+                <span class={m.agent ? "chat-hit-text by-agent" : "chat-hit-text"}>
+                  <b>{authorLabel(m)}</b>
                   {m.text ? <Markup text={m.text} /> : <p class="thread-text">{m.quote}</p>}
                 </span>
               </span>

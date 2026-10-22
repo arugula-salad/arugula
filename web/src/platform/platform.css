@@ -292,3 +292,14 @@
   overflow-x: auto;
   scrollbar-width: none;
 }
+
+/* Agents in conversations (M197): a machine and its switches. */
+.agent-grants h3 {
+  margin: 14px 0 4px;
+  font-size: 13px;
+}
+
+.agent-grants .control-confirm {
+  display: block;
+  padding: 4px 0;
+}

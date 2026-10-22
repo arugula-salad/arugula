@@ -1,0 +1,42 @@
+// Agents in chat (M197): how a message an agent wrote is labelled, and the
+// line a room shows when an agent grant reaches it. Plain functions, for
+// ./room and the search results, and their tests
+// (scripts/agents.test.mjs).
+
+import type { ChatMessage, ChatRoomAgent } from "../proto";
+
+/** Who wrote a message, as it's shown: its author's name, or "<owner>'s
+ * agent on <machine>" for one an agent wrote (M197), everywhere it shows. */
+export function authorLabel(m: ChatMessage): string {
+  const name = m.author ? m.name || "someone" : "a deleted account";
+  return m.agent ? `${name}'s agent on ${m.agent.machine_name || "a machine that left"}` : name;
+}
+
+/** "a, b and c". */
+function listed(names: string[]): string {
+  return names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+/** What a grant's powers let an agent do in a room. */
+const DOES: [string, string][] = [
+  ["threads.read", "read"],
+  ["threads.post", "post"],
+  ["issues.write", "edit this issue"],
+];
+
+/** What a room says of the agents a grant lets in (M197): one line per
+ * owner and what theirs may do, "Jake's agents on geek can read and post
+ * here". */
+export function agentLines(agents: ChatRoomAgent[]): string[] {
+  const by = new Map<string, { owner: string; machines: string[]; what: string }>();
+  for (const a of agents) {
+    const what = listed(DOES.filter(([p]) => a.powers.includes(p)).map(([, w]) => w));
+    if (!what) continue;
+    const key = `${a.owner}\n${what}`;
+    const had = by.get(key) ?? { owner: a.owner_name || "Someone", machines: [], what };
+    had.machines.push(a.machine_name || a.machine);
+    by.set(key, had);
+  }
+  return [...by.values()].map((g) => `${g.owner}'s agents on ${listed(g.machines)} can ${g.what} here`);
+}
+

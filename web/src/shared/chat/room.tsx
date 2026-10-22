@@ -16,6 +16,7 @@ import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
+import { agentLines, authorLabel } from "./agents";
 import { Markup, mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
 import { useSubscribe } from "../ui/hooks";
@@ -80,6 +81,30 @@ function titled(room: string, now: string): string {
 export function roomSigil(r: ChatRoom): string {
   if (r.kind === "object") return "◇";
   return r.kind === "channel" ? "#" : r.kind === "dm" ? "@" : r.kind === "pane" ? "↳" : r.kind === "session" ? "▤" : "⌂";
+}
+
+// ---- agents (M197)
+
+/** A message's picture: its author's, or its agent's machine's (M197). */
+export function AuthorAvatar({ m }: { m: ChatMessage }) {
+  return m.agent ? (
+    <MsgAvatar who={`agent:${m.agent.machine}`} name={m.agent.machine_name || "agent"} />
+  ) : (
+    <MsgAvatar who={m.author || "gone"} name={m.author ? m.name || "someone" : "a deleted account"} />
+  );
+}
+
+/** The line every room an agent grant reaches shows, to everyone in it. */
+function RoomAgents({ room }: { room: string }) {
+  const lines = agentLines(chat.agents(room));
+  if (!lines.length) return null;
+  return (
+    <div class="room-agents" data-room-agents role="note">
+      {lines.map((l) => (
+        <p key={l}>{l}.</p>
+      ))}
+    </div>
+  );
 }
 
 // ---- the room
@@ -181,7 +206,8 @@ export function RoomBody({
 
   useEffect(() => {
     chat.load(room.id).catch((e: Error) => setError(e.message));
-    chat.detailOf(room.id).catch(() => {});
+    // Fresh each time it opens: who reads it, and whose agents (M197).
+    chat.detailOf(room.id, true).catch(() => {});
     chat.setOpen(room.id);
     return () => chat.setOpen(null);
   }, [room.id]);
@@ -228,6 +254,7 @@ export function RoomBody({
 
   return (
     <>
+      <RoomAgents room={room.id} />
       <div class="thread-list" ref={list} data-room={room.id}>
         {loaded?.older && (
           <button class="chat-older" onClick={more} data-room-older>
@@ -291,12 +318,14 @@ function RoomMessage({
   reply: (text: string) => void;
   setError: (e: string | null) => void;
 }) {
-  const head = !prev || prev.author !== m.author || m.at - prev.at > 5 * 60_000;
+  const head = !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || m.at - prev.at > 5 * 60_000;
   const mine = chat.mine(m);
+  // Mine or my agent's: I may delete it, not rewrite what an agent said.
+  const owned = !!m.author && m.author === chat.me;
   const forMe = m.mentions.includes(chat.me);
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
-  const name = m.author ? m.name || "someone" : "a deleted account";
+  const name = authorLabel(m);
   const link = usePlatformApi().nav.roomLink(room.id, m.seq);
   if (m.deleted !== null) {
     return (
@@ -309,10 +338,15 @@ function RoomMessage({
     );
   }
   return (
-    <div class={`thread-msg${head ? " first" : ""}${mine ? " mine" : ""}${forMe ? " for-me" : ""}`} data-msg={m.seq} data-author={m.author}>
+    <div
+      class={`thread-msg${head ? " first" : ""}${mine ? " mine" : ""}${forMe ? " for-me" : ""}${m.agent ? " by-agent" : ""}`}
+      data-msg={m.seq}
+      data-author={m.author}
+      data-agent={m.agent?.machine}
+    >
       <div class="msg-gutter">
         {head ? (
-          <MsgAvatar who={m.author || "gone"} name={name} />
+          <AuthorAvatar m={m} />
         ) : (
           <time class="msg-hover-time" title={new Date(m.at).toLocaleString()}>
             {when(m.at)}
@@ -323,6 +357,11 @@ function RoomMessage({
         {head && (
           <div class="thread-head">
             <span class="thread-name">{name}</span>
+            {m.agent && (
+              <span class="msg-badge agent-badge" title={`Written by an agent on ${m.agent.machine_name || "a machine"}, through its owner's grant`}>
+                agent
+              </span>
+            )}
             {m.imported && (
               <span class="msg-badge" title={`Brought in from its machine's own thread, where it was ${m.imported}'s`}>
                 imported
@@ -383,7 +422,7 @@ function RoomMessage({
             ✎
           </button>
         )}
-        {mine && (
+        {owned && (
           <button
             title="Delete"
             aria-label="Delete message"
