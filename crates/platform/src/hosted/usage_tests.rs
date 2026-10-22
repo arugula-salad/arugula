@@ -163,14 +163,23 @@ fn cost_per_active_hour() {
             class: Some(SMALL),
             started_at: 0,
             ended_at: Some(3_600_000),
+            purpose: "workspace".into(),
         },
-        Interval { workspace: "hw_2".into(), project: "prj_b".into(), class: Some(big), started_at: 0, ended_at: None },
+        Interval {
+            workspace: "hw_2".into(),
+            project: "prj_b".into(),
+            class: Some(big),
+            started_at: 0,
+            ended_at: None,
+            purpose: "workspace".into(),
+        },
         Interval {
             workspace: "hw_3".into(),
             project: "prj_b".into(),
             class: None,
             started_at: 0,
             ended_at: Some(3_600_000),
+            purpose: "deploy".into(),
         },
     ];
     let r = report(&intervals, vec![], 0, 3_600_000);
@@ -178,6 +187,9 @@ fn cost_per_active_hour() {
     assert!(close(r.all.cost(), 0.1332 + 0.5328 + 0.1656), "{}", r.all.cost());
     assert!(close(r.all.per_active_hour().unwrap(), (0.1332 + 0.5328 + 0.1656) / 3.0));
     assert_eq!(r.projects["prj_b"].workspaces.len(), 2);
+    // M219: a deploy's box is counted, and counted apart too.
+    assert_eq!(r.deploys.workspaces.iter().collect::<Vec<_>>(), ["hw_3"]);
+    assert!(close(r.deploys.cost(), 0.1656), "{}", r.deploys.cost());
     assert_eq!(r.projects["prj_a"].total_ms(), 3_600_000);
     assert_eq!(Totals::default().per_active_hour(), None);
     let text = r.render("platform.db", 7);

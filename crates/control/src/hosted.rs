@@ -149,6 +149,10 @@ fn owners_for(app: &App, account: &str) -> anyhow::Result<Vec<String>> {
 /// beyond what their person may.
 pub(crate) fn may_reach(app: &App, account: &str, id: &str) -> anyhow::Result<Option<bool>> {
     let Some(row) = app.db.hosted(id)? else { return Ok(None) };
+    // A deploy's box (M219): nobody.
+    if row.purpose.is_some() {
+        return Ok(Some(false));
+    }
     let Some(owner) = Owner::parse(&row.cert.owner) else { return Ok(Some(false)) };
     Ok(Some(role(app, &owner, account)?.is_some()))
 }
@@ -159,6 +163,10 @@ pub(crate) fn may_reach(app: &App, account: &str, id: &str) -> anyhow::Result<Op
 pub(crate) fn directory(app: &App, account: &str) -> anyhow::Result<Vec<Value>> {
     let mut out = Vec::new();
     for h in app.db.hosted_of(&owners_for(app, account)?)? {
+        // A deploy's box (M219) isn't anyone's to see.
+        if h.purpose.is_some() {
+            continue;
+        }
         let Some(d) = app.db.delegation(&h.cert.delegation)? else { continue };
         let team = match Owner::parse(&h.cert.owner) {
             Some(Owner::Team(t)) => Some(t),
@@ -240,7 +248,11 @@ pub(crate) fn ask(db: &Db, key: &str, a: &EnrollAsk) -> anyhow::Result<EnrollGiv
         expires,
     )? {
         Recorded::New => {
-            info!(project = a.project, workspace = a.workspace, via, "a hosted enrollment recorded");
+            if let Some(p) = &a.purpose {
+                anyhow::ensure!(p == arugula_control_wire::hosted::DEPLOY, "a box's purpose is deploy, or none");
+                db.set_enrollment_purpose(&hash(&credential), p)?;
+            }
+            info!(project = a.project, workspace = a.workspace, via, purpose = ?a.purpose, "a hosted enrollment recorded");
             Ok(EnrollGiven::Ready { ticket, expires })
         }
         // Asked again for the same box (a lost answer): the same one.
@@ -287,6 +299,7 @@ fn enrollment(app: &App, h: &HostedRow) -> anyhow::Result<Enrollment> {
         trust: None,
         account_certs: vec![],
         account_revocations: vec![],
+        purpose: h.purpose.clone(),
     };
     match Owner::parse(&h.cert.owner).and_then(|o| people(&app.db, &o).transpose()).transpose()? {
         Some(People::Team { pin, roster, certs }) => {
@@ -328,6 +341,7 @@ pub async fn enroll(
         return Err(err(StatusCode::UNAUTHORIZED, "the proof isn't this key's (or this machine's clock is off)"));
     }
     let now = now_ms();
+    let purpose = app.db.enrollment_purpose(&credential)?;
     let (project, owner, workspace, name, delegation) = match app.db.take_enrollment(&credential, now)? {
         Taken::Fresh { project, owner, workspace, name, delegation } => (project, owner, workspace, name, delegation),
         // Fail closed: the box that finds its enrollment taken is deleted
@@ -371,8 +385,11 @@ pub async fn enroll(
         app.relay.drop_daemon(&old);
     }
     app.db.enrolled_as(&credential, &cert.device)?;
-    info!(project, workspace, device = cert.device, "a hosted machine enrolled");
-    let row = HostedRow { cert, urls: vec![], last_seen: None };
+    if let Some(p) = &purpose {
+        app.db.set_hosted_purpose(&cert.device, p)?;
+    }
+    info!(project, workspace, device = cert.device, ?purpose, "a hosted machine enrolled");
+    let row = HostedRow { cert, urls: vec![], last_seen: None, purpose };
     crate::reply(&enrollment(&app, &row)?)
 }
 
@@ -554,6 +571,9 @@ struct Args {
     /// Enroll by this sandbox id rather than a ticket.
     #[arg(long)]
     sandbox: Option<String>,
+    /// `deploy`: a box for one deploy's run (M219), which nobody reaches.
+    #[arg(long)]
+    purpose: Option<String>,
 }
 
 /// `arugula-control hosted-enrollment`: what `HubPort::hosted_enrollment`
@@ -565,8 +585,14 @@ pub fn run(args: impl Iterator<Item = String>) -> anyhow::Result<()> {
     let a = Args::parse_from(std::iter::once("arugula-control hosted-enrollment".to_owned()).chain(args));
     let db = Db::open(&a.db)?;
     let key = load_key(&db)?;
-    let ask =
-        EnrollAsk { project: a.project, owner: a.owner, workspace: a.workspace, name: a.name, sandbox: a.sandbox };
+    let ask = EnrollAsk {
+        project: a.project,
+        owner: a.owner,
+        workspace: a.workspace,
+        name: a.name,
+        sandbox: a.sandbox,
+        purpose: a.purpose,
+    };
     println!("{}", serde_json::to_string(&self::ask(&db, &key.public(), &ask)?)?);
     Ok(())
 }

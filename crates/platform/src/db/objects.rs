@@ -88,7 +88,7 @@ impl Db {
         let c = self.c();
         c.query_map(
             &format!(
-                "SELECT id, project_id, name FROM hosted_workspaces WHERE deleted_at IS NULL AND {}",
+                "SELECT id, project_id, name FROM hosted_workspaces WHERE deleted_at IS NULL AND purpose = 'workspace' AND {}",
                 in_json(&c, "id", 1)
             ),
             params![json_list(ids)?],

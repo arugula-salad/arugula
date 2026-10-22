@@ -85,7 +85,15 @@ pub struct EnrollAsk {
     /// hub makes a ticket for the box's env (`ARUGULA_HOSTED_TICKET`).
     #[serde(default)]
     pub sandbox: Option<String>,
+    /// What the box is for: [`DEPLOY`] for one deploy's run (M219), which
+    /// nobody is routed to; `None` for a people's workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
 }
+
+/// A box made for one deploy's run (M219): it takes that run only, lets
+/// nobody in, and is deleted after.
+pub const DEPLOY: &str = "deploy";
 
 /// What the hub answers an [`EnrollAsk`].
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,6 +173,10 @@ pub struct Enrollment {
     pub account_certs: Vec<Cert>,
     #[serde(default)]
     pub account_revocations: Vec<Revocation>,
+    /// What the box is for (M219): [`DEPLOY`], or `None` for a people's
+    /// workspace. A box that hears `deploy` stays one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
 }
 
 /// What a person's page signs and sends: a new delegation
@@ -356,6 +368,7 @@ impl std::fmt::Debug for EnrollAsk {
             .field("workspace", &self.workspace)
             .field("name", &self.name)
             .field("sandbox", &self.sandbox.as_ref().map(|_| "…"))
+            .field("purpose", &self.purpose)
             .finish()
     }
 }

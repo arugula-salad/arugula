@@ -22,6 +22,7 @@ import { mint } from "../src/shell/blocks/through-control.ts";
 import { generateKeys, signText, type DeviceKeys } from "../src/shell/e2e/keys.ts";
 import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "../src/shell/e2e/hosted.ts";
 import { signGrant, signGrantRevoke, type ProjectGrant } from "../src/shell/e2e/run-grant.ts";
+import { approvalBody, signApproval, DEFAULT_LIFE_MS } from "../src/shell/e2e/deploy.ts";
 import { askBody, askOk, inviteKey, newInviteKey, signAskInvite, signRoster, teamJoinBody, word, type AccountCerts, type AskInvite, type Roster, type TeamPin, type TeamRole } from "../src/shell/e2e/team.ts";
 
 const subtle = globalThis.crypto.subtle;
@@ -82,6 +83,30 @@ interface Saved {
   name: string;
   approved: boolean;
   keys: { id: string; noisePub: string; signPub: string; noise: JsonWebKey; sign: JsonWebKey };
+  /** A software passkey (M219's testnet): its credential id, the RP id it
+   * was made for, and its Ed25519 key. */
+  passkey?: { id: string; rpId: string; key: JsonWebKey; pub: string };
+}
+
+/** base64url, no padding, as WebAuthn writes it. */
+const b64url = (b: Uint8Array) => Buffer.from(b).toString("base64url");
+const sha256 = async (b: Uint8Array | string) =>
+  new Uint8Array(await subtle.digest("SHA-256", typeof b === "string" ? new TextEncoder().encode(b) : b));
+
+/** CBOR, the little a `none` attestation needs: unsigned and negative
+ * integers, byte and text strings, and maps (as pairs, in order). */
+type Cbor = number | string | Uint8Array | [Cbor, Cbor][];
+function cbor(v: Cbor): Uint8Array {
+  const head = (major: number, n: number): number[] =>
+    n < 24 ? [(major << 5) | n] : n < 256 ? [(major << 5) | 24, n] : [(major << 5) | 25, n >> 8, n & 255];
+  if (typeof v === "number") return new Uint8Array(v >= 0 ? head(0, v) : head(1, -1 - v));
+  if (typeof v === "string") {
+    const b = new TextEncoder().encode(v);
+    return new Uint8Array([...head(3, b.length), ...b]);
+  }
+  if (v instanceof Uint8Array) return new Uint8Array([...head(2, v.length), ...v]);
+  const parts = v.flatMap(([k, x]) => [...cbor(k), ...cbor(x)]);
+  return new Uint8Array([...head(5, v.length), ...parts]);
 }
 
 export class Device {
@@ -97,6 +122,8 @@ export class Device {
    * certificate it accepts has to chain back to. */
   root = "";
   name = "";
+  /** A software passkey, once `addPasskey` made one. */
+  passkey?: { id: string; rpId: string; key: CryptoKey; pub: string };
   /** Whether the account trusts this device yet (the first one is trusted
    * on enrollment; later ones wait for an approval). */
   approved = false;
@@ -317,6 +344,84 @@ export class Device {
     const p = projects.find((x) => (team ? x.team?.id === team : !x.team));
     if (!p) throw new Error(`no project for ${team ? `team ${team}` : "this account"}`);
     return { id: p.id, owner: team ? `team:${team}` : `account:${this.account}` };
+  }
+
+  /** Register a software passkey on the account (M219's testnet: an
+   * authenticator that verifies the user, Ed25519, `none` attestation),
+   * through control's own WebAuthn routes, as a browser would. */
+  async addPasskey(): Promise<{ id: string }> {
+    const opts = await this.api<{ challenge: string; rp: { id: string } }>("/auth/passkey/register", {});
+    const pair = (await subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
+    const pub = new Uint8Array(await subtle.exportKey("raw", pair.publicKey));
+    const cred = crypto.getRandomValues(new Uint8Array(16));
+    const cose = cbor([[1, 1], [3, -8], [-1, 6], [-2, pub]]);
+    const flags = 0x01 | 0x04 | 0x40;
+    const authData = new Uint8Array([
+      ...(await sha256(opts.rp.id)), flags, 0, 0, 0, 0, ...new Uint8Array(16), 0, cred.length, ...cred, ...cose,
+    ]);
+    const clientData = JSON.stringify({ type: "webauthn.create", challenge: opts.challenge, origin: this.control });
+    const att = cbor([["fmt", "none"], ["attStmt", []], ["authData", authData]]);
+    const id = b64url(cred);
+    // This browser device signs for the new passkey, as the page does.
+    const body = `arugula add passkey device v1\naccount ${this.account}\ncredential ${id}\nchallenge ${opts.challenge}\n`;
+    await this.api("/auth/passkey/register/finish", {
+      id,
+      clientDataJSON: b64url(new TextEncoder().encode(clientData)),
+      attestationObject: b64url(att),
+      device: { id: this.keys.id, sig: await signText(this.keys, body) },
+    });
+    this.passkey = { id, rpId: opts.rp.id, key: pair.privateKey, pub: Buffer.from(pub).toString("hex") };
+    return { id };
+  }
+
+  /** The passkey's assertion over `challenge` (base64url), user verified. */
+  async assert(challenge: string): Promise<{ id: string; clientDataJSON: string; authenticatorData: string; signature: string }> {
+    if (!this.passkey) throw new Error("this device has no passkey: passkey-add first");
+    const data = new Uint8Array([...(await sha256(this.passkey.rpId)), 0x05, 0, 0, 0, 0]);
+    const clientData = new TextEncoder().encode(JSON.stringify({ type: "webauthn.get", challenge, origin: this.control }));
+    const msg = new Uint8Array([...data, ...(await sha256(clientData))]);
+    const sig = new Uint8Array(await subtle.sign("Ed25519", this.passkey.key, msg));
+    return { id: this.passkey.id, clientDataJSON: b64url(clientData), authenticatorData: b64url(data), signature: b64url(sig) };
+  }
+
+  /** As an owner, make an environment (M217) in the account's project, or
+   * TEAM's, with `driver` and the names of its secrets. */
+  async environment(name: string, driver: string, secrets: string[], team?: string): Promise<{ environment: string; project: string }> {
+    const p = await this.project(team);
+    const e = await this.api<{ id: string }>(`/api/projects/${p.id}/environments`, { name, driver, secret_names: secrets });
+    return { environment: e.id, project: p.id };
+  }
+
+  /** As an owner, set one of an environment's secrets (M219). */
+  async environmentSecret(env: string, name: string, value: string): Promise<{ set: boolean }> {
+    return this.api<{ set: boolean }>(`/api/environments/${env}/secrets/${name}`, { value });
+  }
+
+  /** Plan a deploy of commit REF from WHERE to an environment, and ask
+   * for its approval: its id and operation hash. */
+  async planDeploy(env: string, ref: string, where: string, team?: string): Promise<{ deploy: string; op: string; state: string }> {
+    const p = await this.project(team);
+    // The platform makes the plan: its driver's (M219).
+    const d = await this.api<{ id: string }>(`/api/projects/${p.id}/deploys`, { environment: env, source: { kind: "commit", ref, where } });
+    const r = await this.api<{ id: string; state: string; operation: { hash: string } }>(`/api/deploys/${d.id}/request`, {});
+    return { deploy: r.id, op: r.operation.hash, state: r.state };
+  }
+
+  /** As an owner, approve a deploy once: this device signs its operation,
+   * and the passkey confirms the approval's bytes, as a phone does. */
+  async approveDeploy(id: string, lifeMs = DEFAULT_LIFE_MS): Promise<{ deploy: string; state: string }> {
+    const d = await this.api<{ operation: { hash: string } }>(`/api/deploys/${id}`);
+    const unsigned = { deploy: id, op: d.operation.hash, account: this.account, decision: "once" as const, expires: Date.now() + lifeMs, by: this.keys.id };
+    const a = await signApproval(unsigned, this.keys.sign.privateKey);
+    const challenge = b64url(await sha256(approvalBody(unsigned)));
+    const passkey = await this.assert(challenge);
+    const r = await this.api<{ id: string; state: string }>(`/api/deploys/${id}/approve`, { op: a.op, expires: a.expires, by: a.by, sig: a.sig, passkey });
+    return { deploy: r.id, state: r.state };
+  }
+
+  /** A deploy as its members read it. */
+  async deploy(id: string): Promise<{ state: string; run: string | null; events: { kind: string }[] }> {
+    return this.api(`/api/deploys/${id}`);
   }
 
   /** As an owner, let control enroll hosted machines into the project. */
@@ -703,6 +808,7 @@ export class Device {
         noise: await jwk(this.keys.noise.privateKey),
         sign: await jwk(this.keys.sign.privateKey),
       },
+      passkey: this.passkey && { id: this.passkey.id, rpId: this.passkey.rpId, pub: this.passkey.pub, key: await jwk(this.passkey.key) },
     };
     writeFileSync(file, JSON.stringify(s, null, 2), { mode: 0o600 });
   }
@@ -722,6 +828,10 @@ export class Device {
     };
     const d = new Device({ control: s.control, via: s.via }, keys);
     Object.assign(d, { cookie: s.cookie, account: s.account, login: s.login, root: s.root, name: s.name, approved: s.approved });
+    if (s.passkey) {
+      const key = await subtle.importKey("jwk", s.passkey.key, { name: "Ed25519" }, true, ["sign"]);
+      d.passkey = { id: s.passkey.id, rpId: s.passkey.rpId, pub: s.passkey.pub, key };
+    }
     return d;
   }
 }

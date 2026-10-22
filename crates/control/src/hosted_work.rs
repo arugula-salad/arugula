@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use arugula_control_wire::{
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{Report, Reported, Work},
+    work::{Report, Reported, SecretsAsk, SecretsGiven, Work},
 };
 use arugula_platform::{PlatformPort as _, work::HostedMachine};
 use axum::{
@@ -70,6 +70,17 @@ pub async fn uploaded(
     Json(u): Json<Upload>,
 ) -> Result<Json<Uploaded>, ApiError> {
     Ok(Json(app.platform.hosted_uploaded(&machine(&h.0), &u).await?))
+}
+
+/// `POST /api/hosted/work/secrets` (M219): a deploy run's secrets, once,
+/// while it runs. Only this hosted machine's signature opens it, and the
+/// platform gives them only for this machine's own run.
+pub async fn secrets(
+    State(app): State<Arc<App>>,
+    h: HostedAuth,
+    Json(a): Json<SecretsAsk>,
+) -> Result<Json<SecretsGiven>, ApiError> {
+    Ok(Json(app.platform.hosted_secrets(&machine(&h.0), &a).await?))
 }
 
 #[cfg(test)]
@@ -133,6 +144,7 @@ mod tests {
             workspace: "hw_7".into(),
             name: "box".into(),
             sandbox: None,
+            purpose: None,
         };
         let EnrollGiven::Ready { ticket: Some(t), .. } = c.app.hub_port.hosted_enrollment(&ask).await.unwrap() else {
             panic!("no ticket")

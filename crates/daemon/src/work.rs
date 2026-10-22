@@ -70,7 +70,7 @@ use std::{
 
 use arugula_control_wire::{
     run_logs::ARTIFACTS_ENV,
-    work::{Report, Reported, TAKES_RUN, WORK_REPORT, Work, WorkItem, WorkQuery},
+    work::{Report, Reported, TAKES_DEPLOY, TAKES_RUN, WORK_REPORT, Work, WorkItem, WorkQuery},
 };
 use arugula_e2e::{
     now_ms,
@@ -83,6 +83,9 @@ use sha2::{Digest as _, Sha256};
 use tracing::{info, warn};
 
 use crate::{mux::Api, server::App};
+
+#[path = "work_deploy.rs"]
+mod deploy;
 
 /// The ledger's directory, in the state directory.
 pub const DIR: &str = "work";
@@ -135,6 +138,10 @@ pub struct Kept {
     pub report: Report,
     #[serde(default)]
     pub answered: bool,
+    /// Why control refused it, when it did (M219: a deploy's start waits
+    /// for control to take it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused: Option<String>,
 }
 
 /// A run this machine took, in `<state>/work/ID.json`.
@@ -160,6 +167,10 @@ pub struct Ledger {
     /// An agent run's turn on a hosted box (M185), ended with the run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn: Option<String>,
+    /// The deploy a deploy's run applies (M219): never followed after a
+    /// restart, as its driver went with the daemon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deploy: Option<String>,
     #[serde(default)]
     pub events: Vec<Kept>,
     /// What's been sent of its log and artifacts (M213).
@@ -174,7 +185,7 @@ impl Ledger {
     }
 
     /// Sign the run's next state change and keep it, to be sent.
-    fn push(&mut self, keys: &arugula_e2e::DeviceKeys, me: &str, to: State, detail: serde_json::Value) {
+    pub(crate) fn push(&mut self, keys: &arugula_e2e::DeviceKeys, me: &str, to: State, detail: serde_json::Value) {
         let from = self.last();
         let seq = self.seq + self.events.len() as u64 + 1;
         let detail = detail.to_string();
@@ -182,7 +193,7 @@ impl Ledger {
         let ev = Event { run: &self.run, seq, from: State::parse(&from), to, at, detail: &detail, daemon: me };
         let sig = ev.sign(keys);
         let report = Report { run: self.run.clone(), seq, from, to: to.as_str().into(), at, detail, sig };
-        self.events.push(Kept { report, answered: false });
+        self.events.push(Kept { report, answered: false, refused: None });
         if to.terminal() || to == State::Running {
             self.state = to.as_str().into();
         }
@@ -569,8 +580,19 @@ pub fn check(
     if hex::encode(Sha256::digest(item.op.as_bytes())) != item.op_hash {
         return Err(Refused("op_hash", "the operation's bytes don't hash to the run's operation hash".into()));
     }
-    grant(app, item)?;
+    // A deploy's box (M219) takes its one deploy's run, nothing else.
+    if deploy::deploy_box(app) && item.deploy.is_none() {
+        return Err(Refused("deploy_box", "this box was made for one deploy, and takes nothing else".into()));
+    }
+    // A deploy's run (M219) goes by its owner's approval of the deploy,
+    // checked here against what this machine pinned; any other run by the
+    // project's standing grant.
+    match &item.deploy {
+        Some(d) => deploy::check(app, item, d)?,
+        None => grant(app, item)?,
+    }
     let op = parse_op(&item.op, me)?;
+    deploy::matches(&op, item.deploy.as_ref())?;
     let src = op.directory.as_deref().map(|d| source_dir(d, &arugula_mux::sys::home())).transpose()?;
     Ok((op, src))
 }
@@ -729,13 +751,22 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         taken_at: now_ms(),
         grant: item.grant.clone(),
         turn: None,
+        deploy: item.deploy.as_ref().map(|d| d.deploy.clone()),
         events: vec![],
         logs: Default::default(),
     };
     let checked = check(app, &item, &me, &project, &workspace).and_then(|(op, src)| {
         let as_ = run_as()?;
+        // A deploy's box (M219) runs its deploy only as the run user, after
+        // this daemon's user gave up root; checked, or nothing runs.
+        if deploy::deploy_box(app) {
+            deploy::deploy_box_user(as_.as_ref(), deploy::tests_unsafe())?;
+        }
         if let Some(as_) = &as_ {
             firewall(&dir, as_)?;
+            if deploy::deploy_box(app) {
+                deploy::harden_sudo(as_)?;
+            }
         }
         // On a hosted box an agent holds M185's placeholder key, which the
         // provider's proxy fills in; elsewhere, the daemon's own login.
@@ -782,6 +813,12 @@ async fn take(app: &Arc<App>, item: WorkItem) {
         kill_all(as_).await;
     }
     RUNNING.fetch_add(1, Ordering::SeqCst);
+    // A deploy's apply: its driver, outside any pane, with the
+    // environment's secrets (M219).
+    if op.deploy.is_some() {
+        tokio::spawn(deploy::apply(app.clone(), l, item, as_));
+        return;
+    }
     let fail = |mut l: Ledger, why: String| {
         RUNNING.fetch_sub(1, Ordering::SeqCst);
         l.push(&keys, &me, State::Failed, serde_json::json!({ "reason": format!("start: {why}"), "op": l.op_hash }));
@@ -959,7 +996,7 @@ async fn resume(app: &Arc<App>) {
             }
             None => false,
         };
-        if live && !followed && l.last() == State::Running.as_str() {
+        if live && !followed && l.last() == State::Running.as_str() && l.deploy.is_none() {
             info!(run = l.run, "hosted: following a run that was running before the restart");
             followed = true;
             RUNNING.fetch_add(1, Ordering::SeqCst);
@@ -996,10 +1033,12 @@ async fn send(app: &App, run: &str) {
         let Some(i) = l.events.iter().position(|k| !k.answered) else { return };
         let r = &l.events[i].report;
         let got: anyhow::Result<Reported> = app.control.post_signed(WORK_REPORT, r).await;
+        let mut refused = None;
         let canceled = match got {
             Ok(Reported::Taken | Reported::Already) => false,
             Ok(Reported::Refused { why, now, .. }) => {
                 warn!(run, to = r.to, %why, "hosted: control refused a run's report");
+                refused = Some(why);
                 // It moved on without this machine (canceled before it
                 // started): stop what it started.
                 r.to == State::Running.as_str() && now.as_deref().and_then(State::parse).is_some_and(State::terminal)
@@ -1012,6 +1051,7 @@ async fn send(app: &App, run: &str) {
         let now = match update(&dir, run, |now| {
             if let Some(k) = now.events.get_mut(i) {
                 k.answered = true;
+                k.refused = refused.clone();
             }
         }) {
             Ok(Some(now)) => now,
@@ -1061,7 +1101,9 @@ pub fn start(app: Arc<App>) {
         loop {
             send_all(&app, &mut open).await;
             if me(&app).is_some() {
-                match app.control.get_signed::<Work>(&WorkQuery::path(&[TAKES_RUN])).await {
+                // Only a deploy's own box (M219) takes deploys.
+                let takes: &[&str] = if deploy::deploy_box(&app) { &[TAKES_RUN, TAKES_DEPLOY] } else { &[TAKES_RUN] };
+                match app.control.get_signed::<Work>(&WorkQuery::path(takes)).await {
                     Ok(w) => {
                         // The project's revokes come with every pull: kept,
                         // then checked against the runs going.
@@ -1257,6 +1299,7 @@ mod tests {
             taken_at: 1,
             grant: None,
             turn: None,
+            deploy: None,
             events: vec![],
             logs: Default::default(),
         }

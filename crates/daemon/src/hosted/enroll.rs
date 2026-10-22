@@ -155,6 +155,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         trust,
         account_certs,
         account_revocations,
+        purpose,
     } = got;
     ensure!(cert.device == keys.id(), "control sent a certificate for another key");
     cert.check_form()?;
@@ -258,7 +259,15 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         shared_teams: Default::default(),
         login: String::new(),
         moved_at: 0,
-        hosted: Some(HostedPin { cert, delegation, revocations }),
+        // A deploy's box (M219) stays one: a refresh that leaves it out
+        // doesn't open the box to anyone.
+        hosted: Some(HostedPin {
+            cert,
+            delegation,
+            revocations,
+            deploy: purpose.as_deref() == Some(hosted::DEPLOY)
+                || prev.and_then(|p| p.hosted.as_ref()).is_some_and(|h| h.deploy),
+        }),
     })
 }
 
@@ -339,6 +348,7 @@ mod tests {
             trust: Some(Trust { account: "acct1".into(), root: root.id() }),
             account_certs: vec![root_cert],
             account_revocations: vec![],
+            purpose: None,
         };
         (got, root)
     }
@@ -430,6 +440,7 @@ mod tests {
             trust: None,
             account_certs: vec![],
             account_revocations: vec![],
+            purpose: None,
         };
         Team { got, o, e, phone }
     }

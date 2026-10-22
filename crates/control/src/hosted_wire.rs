@@ -45,6 +45,7 @@ pub(crate) fn ask(owner: &str, workspace: &str, sandbox: Option<&str>) -> Enroll
         workspace: workspace.into(),
         name: "hosted box".into(),
         sandbox: sandbox.map(Into::into),
+        purpose: None,
     }
 }
 
@@ -474,4 +475,49 @@ async fn a_machine_reaches_a_hosted_one_only_with_cloud_drive() {
     assert_eq!(c.reach_as_machine(&laptop, &boxk.id()).await, 403, "its grant revoked");
     // People are routed as before.
     assert_eq!(c.reach(&cy_s, &boxk.id()).await, 101);
+}
+
+/// M219: a deploy's box. The platform asks for its enrollment with
+/// `purpose: deploy`; the box hears it in its enrollment, and its machine
+/// is listed to nobody and routed to nobody, the project's owner included.
+#[tokio::test]
+async fn a_deploy_box_is_nobodys_to_reach() {
+    let (c, fran, _cy, _ox) = acme().await;
+    let fran_s = session(&c.app, "f1");
+    let owner = format!("team:{TEAM}");
+    let d = delegation(&c, &owner, &fran);
+    let (st, _) = c.as_person(&fran_s, "POST", "/api/hosted/delegations", Some(json!({ "delegation": d }))).await;
+    assert_eq!(st, 200);
+    let mut a = ask(&owner, "hw_9", None);
+    a.purpose = Some("deploy".into());
+    let EnrollGiven::Ready { ticket: Some(ticket), .. } = c.app.hub_port.hosted_enrollment(&a).await.unwrap() else {
+        panic!("no ticket")
+    };
+    let boxk = DeviceKeys::generate();
+    let (st, e) = c.post("/api/hosted/enroll", &enroll_body(&boxk, Some(&ticket), None)).await;
+    assert_eq!(st, 200, "{e}");
+    let e: Enrollment = serde_json::from_value(e).unwrap();
+    assert_eq!(e.purpose.as_deref(), Some("deploy"), "the box hears what it's for");
+    let mut req = format!("{}/api/relay/dial", c.base.replace("http://", "ws://")).into_client_request().unwrap();
+    req.headers_mut().insert("x-arugula-auth", v2(&boxk, "GET", "/api/relay/dial", b"").parse().unwrap());
+    let (_socket, _) = tokio_tungstenite::connect_async(req).await.expect("it dials the relay");
+    for _ in 0..50 {
+        if c.app.relay.online(&boxk.id()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let (_, dir) = c.as_person(&fran_s, "GET", "/api/directory", None).await;
+    assert!(!dir.to_string().contains(&boxk.id()), "not listed, to its owner either: {dir}");
+    assert_eq!(c.reach(&fran_s, &boxk.id()).await, 404, "nobody is routed to it");
+    // An ordinary box beside it is reached as before.
+    let EnrollGiven::Ready { ticket: Some(t2), .. } =
+        c.app.hub_port.hosted_enrollment(&ask(&owner, "hw_10", None)).await.unwrap()
+    else {
+        panic!("no ticket")
+    };
+    let other = DeviceKeys::generate();
+    let (st, e) = c.post("/api/hosted/enroll", &enroll_body(&other, Some(&t2), None)).await;
+    assert_eq!(st, 200, "{e}");
+    assert_eq!(serde_json::from_value::<Enrollment>(e).unwrap().purpose, None);
 }

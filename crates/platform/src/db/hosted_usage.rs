@@ -71,9 +71,11 @@ pub(crate) fn meter(c: &impl Sql, workspace: &str, project: &str, o: &Observed) 
 /// read-only connection too (`arugula-platform usage`).
 pub fn intervals(c: &impl Sql, from: u64, to: u64) -> Result<Vec<Interval>> {
     c.query_map(
-        "SELECT workspace_id, project_id, cpus, memory_mb, started_at, ended_at FROM hosted_usage
-         WHERE started_at < ?2 AND (ended_at IS NULL OR ended_at > ?1)
-         ORDER BY started_at, workspace_id",
+        "SELECT u.workspace_id, u.project_id, u.cpus, u.memory_mb, u.started_at, u.ended_at,
+             COALESCE(w.purpose, 'workspace')
+         FROM hosted_usage u LEFT JOIN hosted_workspaces w ON w.id = u.workspace_id
+         WHERE u.started_at < ?2 AND (u.ended_at IS NULL OR u.ended_at > ?1)
+         ORDER BY u.started_at, u.workspace_id",
         params![from, to],
         |r| {
             Ok(Interval {
@@ -82,6 +84,7 @@ pub fn intervals(c: &impl Sql, from: u64, to: u64) -> Result<Vec<Interval>> {
                 class: class(r.get(2)?, r.get(3)?),
                 started_at: r.get(4)?,
                 ended_at: r.get(5)?,
+                purpose: r.get(6)?,
             })
         },
     )

@@ -115,6 +115,7 @@ impl Operation {
             instruction: self.instruction.clone(),
             agent: self.agent.clone(),
             directory: self.directory.clone(),
+            deploy: None,
         }
         .encode(daemon)
     }
@@ -394,7 +395,8 @@ impl Started {
 pub fn start_in(c: &impl Sql, s: &Start, now: u64) -> Result<Started> {
     let machine = c
         .query_row(
-            "SELECT machine FROM hosted_workspaces WHERE id = ?1 AND project_id = ?2 AND deleted_at IS NULL",
+            "SELECT machine FROM hosted_workspaces
+             WHERE id = ?1 AND project_id = ?2 AND deleted_at IS NULL AND purpose = 'workspace'",
             params![s.workspace, s.project],
             |r| r.get::<Option<String>>(0),
         )

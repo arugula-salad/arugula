@@ -48,13 +48,15 @@
 //! event, so the log can be checked again. An account with no passkey
 //! can't approve.
 //!
-//! **Left for M219, the driver that applies one** (`TODO(M219)`): enforce
-//! the approval's `expires` at `started`; check the approving device and
-//! the owner's role again at apply time; and have the applier check the
-//! approval against the account's pinned root and the team's signed
-//! roster, rather than take the platform's word; and have the hub publish
-//! passkeys' public keys, so a stored passkey proof (in the approval and
-//! its event) can be checked by anyone, not only by the hub.
+//! **Applied by M219** (`deploys::apply`): an approval enqueues the
+//! deploy's job, which checks the approval's `expires`, the approving
+//! device and the owner's role again, then makes the run that applies it
+//! on the project's hosted workspace. That machine checks the approval
+//! itself against what it pinned (`arugula_e2e::deploy::check_apply`), and
+//! the log takes the deploy's `started` only from that run, before its
+//! `expires`. Left (`TODO(passkeys)`): the hub publishes passkeys' public
+//! keys, so a stored passkey proof (in the approval and its event) can be
+//! checked by anyone, the machine included, not only by the hub.
 //!
 //! **Asking** records the deploy's `requested` event and pushes each of the
 //! project's owners a card (`deploy` in the push: a tap opens the deploy on
@@ -67,6 +69,7 @@
 //! [`HubPort::verify_passkey`]: crate::hub::HubPort::verify_passkey
 
 pub mod agent;
+pub mod apply;
 
 use std::sync::Arc;
 
@@ -106,6 +109,7 @@ pub const DEPLOY: &str = "/api/deploys/{id}";
 pub const DEPLOY_REQUEST: &str = "/api/deploys/{id}/request";
 pub const DEPLOY_APPROVE: &str = "/api/deploys/{id}/approve";
 pub const DEPLOY_DENY: &str = "/api/deploys/{id}/deny";
+pub const ENVIRONMENT_SECRET: &str = "/api/environments/{id}/secrets/{name}";
 
 /// Why an approval was refused, for clients to act on.
 pub const AGENT: &str = "agent";
@@ -232,7 +236,11 @@ fn refused(r: Refusal) -> ApiError {
         Refusal::Agent => refusal(StatusCode::FORBIDDEN, AGENT, &r.to_string()),
         Refusal::Actor | Refusal::Unverified => err(StatusCode::FORBIDDEN, &r.to_string()),
         Refusal::Mismatch(_) => refusal(StatusCode::CONFLICT, OTHER_OPERATION, &r.to_string()),
-        Refusal::State(_) | Refusal::Busy { .. } | Refusal::NotItsRun => err(StatusCode::CONFLICT, &r.to_string()),
+        Refusal::State(_)
+        | Refusal::Busy { .. }
+        | Refusal::NotItsRun
+        | Refusal::ApprovalExpired
+        | Refusal::ApprovalConsumed => err(StatusCode::CONFLICT, &r.to_string()),
     }
 }
 
@@ -403,6 +411,52 @@ pub async fn create_environment(
 }
 
 #[derive(Deserialize)]
+pub struct SecretValue {
+    value: String,
+}
+
+/// The most a secret's value holds, in bytes.
+const MAX_SECRET: usize = 16 * 1024;
+
+/// `POST /api/environments/{id}/secrets/{name} {value}`: set one of its
+/// secrets (M219), as an owner, in a browser (a CLI's login or an agent's
+/// machine can't overwrite what a deploy is given). Sealed with the project's key
+/// (M209), never read back: only a deploy's run gets it, on its machine,
+/// once, while it runs.
+pub async fn set_secret(
+    State(app): State<Arc<Platform>>,
+    s: BrowserPerson,
+    Path((id, name)): Path<(String, String)>,
+    Json(b): Json<SecretValue>,
+) -> J {
+    app.limits.check_account(DEPLOY_WRITES, &s.account)?;
+    let env = app.db.environment(&id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such environment"))?;
+    let (p, role) = match project_as(&app, &s.account, &env.project, true).await {
+        Err(e) if e.0 == StatusCode::NOT_FOUND => return Err(err(StatusCode::NOT_FOUND, "no such environment")),
+        r => r?,
+    };
+    if role != TeamRole::Owner {
+        return Err(refusal(
+            StatusCode::FORBIDDEN,
+            NOT_AN_OWNER,
+            "only the project's owners set its environments' secrets",
+        ));
+    }
+    if !env.secret_names.contains(&name) {
+        return Err(err(StatusCode::BAD_REQUEST, "the environment doesn't list a secret by that name"));
+    }
+    if b.value.is_empty() || b.value.len() > MAX_SECRET || b.value.contains('\0') {
+        return Err(err(StatusCode::BAD_REQUEST, "a secret's value is 1 to 16384 bytes, with no NUL"));
+    }
+    let master = app
+        .secret_key
+        .as_deref()
+        .ok_or_else(|| err(StatusCode::SERVICE_UNAVAILABLE, "this platform keeps no secrets"))?;
+    crate::keys::seal(&app.db, master, &p.id, &crate::keys::environment_name(&env.id, &name), &b.value)?;
+    Ok(Json(json!({ "environment": env.id, "name": name, "set": true })))
+}
+
+#[derive(Deserialize)]
 pub struct PlanSource {
     kind: String,
     #[serde(rename = "ref")]
@@ -415,9 +469,15 @@ pub struct PlanSource {
 pub struct Plan {
     environment: String,
     source: PlanSource,
-    /// The plan's SHA-256, hex.
-    plan: String,
+    /// The plan's SHA-256, hex: the environment's driver's plan for this
+    /// source (M219, `crate::drivers::Driver::plan`), which it's made
+    /// from when it's left out, and checked against when it isn't.
+    #[serde(default)]
+    plan: Option<String>,
 }
+
+/// Why a plan was refused: it isn't the environment's driver's.
+pub const OTHER_PLAN: &str = "other_plan";
 
 /// Plan a deploy in `project` as `by` (a person, or an agent whose owner
 /// may write there): the environment must be the project's.
@@ -429,8 +489,27 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
     let kind = SourceKind::parse(&b.source.kind)
         .ok_or_else(|| err(StatusCode::BAD_REQUEST, "a deploy's source is a commit or an artifact"))?;
     let source = Source { kind, reference: b.source.reference, place: b.source.place };
+    // The driver's plan (M219): it names the driver, so the approval over
+    // its digest binds the driver too, and a box checks it again.
+    let driver = crate::drivers::driver(&env.driver)
+        .ok_or_else(|| err(StatusCode::CONFLICT, &format!("there's no driver {} here", env.driver)))?;
+    // An environment made before its driver named its secrets may hold
+    // one it doesn't take: no deploy until it's fixed.
+    if let Some(bad) = env.secret_names.iter().find(|n| !arugula_e2e::deploy::driver_takes(&env.driver, n)) {
+        return Err(err(
+            StatusCode::CONFLICT,
+            &format!("the environment's secret {bad} isn't one the {} driver takes: take it out first", env.driver),
+        ));
+    }
+    let plan = driver.plan(&env, &source).digest;
     // One spelling of a digest, so the same plan reads the same everywhere.
-    let plan = b.plan.to_ascii_lowercase();
+    if b.plan.is_some_and(|given| given.to_ascii_lowercase() != plan) {
+        return Err(refusal(
+            StatusCode::BAD_REQUEST,
+            OTHER_PLAN,
+            "that plan isn't the environment's driver's plan for this source: leave it out, and the platform makes it",
+        ));
+    }
     let new = NewDeploy { environment: &env.id, source: &source, plan_digest: &plan };
     let d = app
         .db
@@ -442,7 +521,7 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
 }
 
 /// `POST /api/projects/{project}/deploys {environment, source: {kind, ref,
-/// where}, plan}`: plan a deploy, as an owner or an editor.
+/// where}, plan?}`: plan a deploy, as an owner or an editor.
 pub async fn plan_route(
     State(app): State<Arc<Platform>>,
     s: Person,
@@ -480,7 +559,7 @@ pub async fn request_route(State(app): State<Arc<Platform>>, s: Person, Path(id)
 }
 
 /// The project's owners, now.
-async fn owners(app: &Platform, p: &IssueProject) -> anyhow::Result<Vec<String>> {
+pub(crate) async fn owners(app: &Platform, p: &IssueProject) -> anyhow::Result<Vec<String>> {
     Ok(match (&p.account, &p.team) {
         (Some(a), _) => vec![a.clone()],
         (None, Some(t)) => app
@@ -589,9 +668,7 @@ pub const PASSKEY: &str = "passkey";
 /// The WebAuthn challenge an approval's passkey signs: SHA-256 of the
 /// approval's bytes, base64url without padding.
 pub fn challenge_of(a: &Approval) -> String {
-    use base64::Engine as _;
-    use sha2::Digest as _;
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(a.body().as_bytes()))
+    a.passkey_challenge()
 }
 
 /// The device of `account` that may sign an approval (a deploy's here; a
@@ -678,11 +755,7 @@ pub async fn owner_made_by_a_browser(app: &Platform, team: &str, account: &str) 
 /// count. Every certificate kept for an id on the way is checked; a link
 /// with none, or a chain longer than 64, is refused.
 fn browsers_all_the_way(account: &str, root: &str, certs: &[arugula_e2e::Cert], device: &str) -> bool {
-    let trust = Trust { account: account.to_owned(), root: root.to_owned() };
-    trust.chained(certs, device, |c| {
-        arugula_e2e::cert::browser_link(c, device, arugula_e2e::Cert::is_browser)
-            && (c.device != root || c.is_browser())
-    })
+    arugula_e2e::deploy::approver_chained(account, root, certs, device)
 }
 
 /// Check an approval as `account`'s: good for now and not too long, signed
@@ -726,7 +799,7 @@ pub async fn verify(
     let Some(pk) = passkey else {
         return Err(no_passkey("a deploy is approved or denied with a passkey: confirm it with one"));
     };
-    // TODO(M219): the hub publishes passkeys' public keys, so the proof
+    // TODO(passkeys): the hub publishes passkeys' public keys, so the proof
     // kept below can be checked again without asking the hub.
     let verdict = app.hub.verify_passkey(&a.account, &challenge_of(a), pk).await?;
     if !verdict.ok {

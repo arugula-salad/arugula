@@ -16,7 +16,10 @@
 //!   v1` (`arugula_e2e::run::Event`). The platform keeps the signature with
 //!   the event, so anyone can check later which machine said what.
 
-use arugula_e2e::project_grant::{GrantRevoke, ProjectGrant};
+use arugula_e2e::{
+    deploy::{Approval, Operation},
+    project_grant::{GrantRevoke, ProjectGrant},
+};
 use serde::{Deserialize, Serialize};
 
 /// `GET`, signed as the hosted machine: its work, answered [`Work`].
@@ -27,6 +30,14 @@ pub const WORK_REPORT: &str = "/api/hosted/work/report";
 /// What a machine takes: runs (S37's `kind run`, one command in a new
 /// pane).
 pub const TAKES_RUN: &str = "run";
+/// What a machine takes: deploys' applies (M219, `kind deploy`). A machine
+/// that doesn't say so is never sent one.
+pub const TAKES_DEPLOY: &str = "deploy";
+
+/// `POST` [`SecretsAsk`], signed as the hosted machine (M219): the
+/// environment's secrets for one of its deploy runs, while it runs, once.
+/// Answered [`SecretsGiven`].
+pub const WORK_SECRETS: &str = "/api/hosted/work/secrets";
 
 /// [`WORK`]'s query: what the machine takes, comma-separated. A machine
 /// that says nothing takes nothing, so an older one never gets work.
@@ -75,6 +86,73 @@ pub struct WorkItem {
     pub grant: Option<ProjectGrant>,
     #[serde(default)]
     pub revokes: Vec<GrantRevoke>,
+    /// A deploy's run (M219): the deploy it applies, with its owner's
+    /// approval, which the machine checks itself before it starts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deploy: Option<DeployWork>,
+}
+
+/// What a deploy's run applies (M219), for its machine to check: the
+/// deploy's operation (`arugula deploy op v1`) and the approval an owner's
+/// device signed over it, with the passkey assertion the hub checked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeployWork {
+    /// `dep_` and 32 hex characters.
+    pub deploy: String,
+    pub operation: Operation,
+    pub approval: Approval,
+    #[serde(default)]
+    pub passkey: Option<PasskeyAssertion>,
+    /// The environment's driver.
+    pub driver: String,
+    /// The names of the secrets its driver gets: their values come only
+    /// from [`WORK_SECRETS`], while the run runs.
+    #[serde(default)]
+    pub secrets: Vec<String>,
+}
+
+/// A passkey's assertion as the hub checked it (M218): each base64url.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PasskeyAssertion {
+    pub id: String,
+    pub client_data_json: String,
+    pub authenticator_data: String,
+    pub signature: String,
+}
+
+/// [`WORK_SECRETS`]'s body: which run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SecretsAsk {
+    pub run: String,
+}
+
+/// [`WORK_SECRETS`]'s answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SecretsGiven {
+    /// The environment's secrets and the driver's short-lived tokens, by
+    /// name. Given once per run.
+    Given { secrets: Vec<Secret> },
+    /// Not given, and asking again won't change that.
+    Refused { why: String },
+}
+
+/// One secret, by its name as an environment variable. Its value is never
+/// printed (`Debug` leaves it out).
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Secret {
+    pub name: String,
+    pub value: String,
+    /// A short-lived token's revoke URL (`DELETE`, the token as its bearer):
+    /// the box revokes it when its driver ends (M219).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revoke: Option<String>,
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Secret").field("name", &self.name).finish_non_exhaustive()
+    }
 }
 
 /// One state change, signed by the machine that made it.
@@ -127,5 +205,11 @@ mod tests {
         assert_eq!(serde_json::to_string(&Reported::Already).unwrap(), r#"{"kind":"already"}"#);
         let w: Work = serde_json::from_str(r#"{"items":[{"run":"run_1","project":"prj_1","workspace":"hw_1","op":"x","op_hash":"h","state":"pending","last_seq":1,"extra":1}]}"#).unwrap();
         assert_eq!(w.items[0].grant, None);
+        assert_eq!(w.items[0].deploy, None);
+        assert!(!serde_json::to_string(&w).unwrap().contains("deploy"), "an older machine's answer, as it was");
+        let s = Secret { name: "FLY_API_TOKEN".into(), value: "s3cr3t".into(), revoke: None };
+        assert!(!format!("{s:?}").contains("s3cr3t"), "a secret's value is never printed");
+        let g: SecretsGiven = serde_json::from_str(r#"{"kind":"refused","why":"no"}"#).unwrap();
+        assert_eq!(g, SecretsGiven::Refused { why: "no".into() });
     }
 }

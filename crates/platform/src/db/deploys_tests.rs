@@ -35,6 +35,10 @@ fn plan(db: &Db, env: &str, sha: &str, by: &Actor, at: u64) -> Deploy {
 }
 
 fn record(db: &Db, d: &str, kind: EventKind, by: &Actor, at: u64) -> std::result::Result<Recorded, Refusal> {
+    // A run starts only the deploy it was made for (M219): as if it was.
+    if let (EventKind::Started, Actor::Run(r)) = (kind, by) {
+        db.link_deploy_run_for_tests(d, r);
+    }
     db.record_deploy(d, kind, by, at, json!({})).unwrap()
 }
 
@@ -104,8 +108,15 @@ fn environments_are_named_in_their_project() {
     assert!(db.create_environment("prj_a", "staging", "planter", &[], 2).is_err(), "planter waits for step 8");
     assert!(db.create_environment("prj_a", "staging", "chant-fly", &strings(&["fly token"]), 2).is_err());
 
-    let env = db.set_environment_secrets(&env.id, &strings(&["ZED", "FLY_API_TOKEN", "ZED"]), 3).unwrap().unwrap();
-    assert_eq!(env.secret_names, strings(&["FLY_API_TOKEN", "ZED"]));
+    let env = db
+        .set_environment_secrets(&env.id, &strings(&["GITHUB_TOKEN", "FLY_API_TOKEN", "GITHUB_TOKEN"]), 3)
+        .unwrap()
+        .unwrap();
+    assert_eq!(env.secret_names, strings(&["FLY_API_TOKEN", "GITHUB_TOKEN"]));
+    // Only what its driver takes (M219, M220's review).
+    assert!(db.set_environment_secrets(&env.id, &strings(&["NODE_OPTIONS"]), 3).is_err(), "reserved");
+    assert!(db.set_environment_secrets(&env.id, &strings(&["APPS_PLATFORM_TOKEN"]), 3).is_err(), "another driver's");
+    assert!(db.create_environment("prj_a", "staging", "chant-fly", &strings(&["ZED"]), 2).is_err(), "not chant-fly's");
     assert_eq!((env.created_at, env.updated_at), (1, 3));
     assert_eq!(db.environment(&env.id).unwrap().unwrap(), env);
     assert_eq!(db.environments("prj_a").unwrap(), vec![env]);
@@ -538,4 +549,23 @@ fn details_are_capped() {
     assert!(format!("{e:#}").contains("at most"), "{e:#}");
     assert_eq!(db.deploy(&d.id).unwrap().unwrap().state, State::Planned);
     record(&db, &d.id, EventKind::Requested, &jake(), 2).unwrap();
+}
+
+/// M219: only the run made for a deploy starts it (its link in
+/// `deploy_runs`), and only by its approval's `expires`, by the run's own
+/// time.
+#[test]
+fn only_its_own_run_starts_a_deploy_before_its_approval_expires() {
+    let db = Db::test();
+    let env = production(&db, "prj_a");
+    let a = approved(&db, &env.id, "aaa", 1);
+    let start =
+        |run: &str, at: u64| db.record_deploy(&a.id, EventKind::Started, &Actor::run(run), at, json!({})).unwrap();
+    assert_eq!(start("run_x", 2), Err(Refusal::NotItsRun), "no run was made for it");
+    db.link_deploy_run_for_tests(&a.id, "run_a");
+    assert_eq!(start("run_x", 2), Err(Refusal::NotItsRun), "another run");
+    assert_eq!(start("run_a", 100), Err(Refusal::ApprovalExpired), "its approval said by 99");
+    assert_eq!(db.deploy(&a.id).unwrap().unwrap().state, State::Approved);
+    let r = start("run_a", 99).unwrap();
+    assert_eq!((r.deploy.state, r.deploy.run.as_deref()), (State::Running, Some("run_a")));
 }

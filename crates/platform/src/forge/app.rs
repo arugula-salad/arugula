@@ -103,12 +103,16 @@ pub enum Writes {
 enum Scope {
     Read(Purpose),
     Send(Writes),
+    /// A deploy's run (M219): its source's contents, read-only, for that
+    /// run alone.
+    Deploy,
 }
 
 impl Scope {
     fn permissions(self) -> Value {
         match self {
             Scope::Read(_) => read_only(),
+            Scope::Deploy => json!({ "metadata": "read", "contents": "read" }),
             Scope::Send(Writes::Issues) => json!({ "metadata": "read", "issues": "write" }),
             Scope::Send(Writes::PullRequests) => json!({ "metadata": "read", "pull_requests": "write" }),
             Scope::Send(Writes::Both) => json!({ "metadata": "read", "issues": "write", "pull_requests": "write" }),
@@ -119,6 +123,7 @@ impl Scope {
         match self {
             Scope::Read(Purpose::Ingest) => "ingest",
             Scope::Read(Purpose::Read) => "read",
+            Scope::Deploy => "deploy",
             Scope::Send(Writes::Issues) => "send:issues",
             Scope::Send(Writes::PullRequests) => "send:pull_requests",
             Scope::Send(Writes::Both) => "send:issues+pull_requests",
@@ -231,7 +236,7 @@ impl WriteToken {
     pub async fn use_once<T>(mut self, call: impl AsyncFnOnce(&str) -> T) -> T {
         let secret = self.secret.take().unwrap_or_default();
         let out = call(&secret).await;
-        revoke(&self.http, &self.api, &secret).await;
+        let _ = revoke(&self.http, &self.api, &secret).await;
         out
     }
 }
@@ -242,14 +247,17 @@ impl Drop for WriteToken {
             && let Ok(rt) = tokio::runtime::Handle::try_current()
         {
             let (http, api) = (self.http.clone(), self.api.clone());
-            rt.spawn(async move { revoke(&http, &api, &secret).await });
+            rt.spawn(async move {
+                let _ = revoke(&http, &api, &secret).await;
+            });
         }
     }
 }
 
 /// Revoke an installation token (`DELETE /installation/token`, as the
 /// token itself): best effort, as it expires within the hour anyway.
-async fn revoke(http: &reqwest::Client, api: &str, token: &str) {
+/// Whether GitHub took it.
+async fn revoke(http: &reqwest::Client, api: &str, token: &str) -> bool {
     let r = http
         .delete(format!("{api}/installation/token"))
         .bearer_auth(token)
@@ -259,9 +267,15 @@ async fn revoke(http: &reqwest::Client, api: &str, token: &str) {
         .send()
         .await;
     match r {
-        Ok(r) if r.status().is_success() => {}
-        Ok(r) => warn!(status = %r.status(), "revoking an installation token"),
-        Err(e) => warn!(error = %e, "revoking an installation token"),
+        Ok(r) if r.status().is_success() || r.status() == reqwest::StatusCode::UNAUTHORIZED => true,
+        Ok(r) => {
+            warn!(status = %r.status(), "revoking an installation token");
+            false
+        }
+        Err(e) => {
+            warn!(error = %e, "revoking an installation token");
+            false
+        }
     }
 }
 
@@ -503,6 +517,27 @@ impl GithubApp {
         Ok((t, true))
     }
 
+    /// A token for one deploy's run (M219): its source repository's contents,
+    /// read-only, minted now (and logged), never from or into the cache.
+    /// Its holder revokes it when the run ends ([`GithubApp::revoke_token`]);
+    /// it lasts an hour at most anyway. `(token, expires_at)`.
+    pub async fn deploy_token(&self, c: &Caller<'_>, install: u64, repo: Repo<'_>) -> anyhow::Result<(String, String)> {
+        let (secret, expires_at, _) = self.mint(c, install, repo, Scope::Deploy).await?;
+        Ok((secret, expires_at))
+    }
+
+    /// Revoke an installation token at GitHub, as the token itself: best
+    /// effort.
+    pub async fn revoke_token(&self, http: &reqwest::Client, token: &str) -> bool {
+        revoke(http, &self.api, token).await
+    }
+
+    /// Where an installation token revokes itself (`DELETE`, the token as
+    /// its bearer): a box revokes a run's token this way (M219).
+    pub fn revoke_url(&self) -> String {
+        format!("{}/installation/token", self.api.trim_end_matches('/'))
+    }
+
     /// A token that writes what `send` says to one repository, minted now
     /// for this send (and logged), never from or into the cache.
     pub async fn write_token(
@@ -560,7 +595,7 @@ impl GithubApp {
             at: arugula_e2e::now_ms(),
         });
         let Some(repo_id) = covers.filter(|_| logged.is_ok()) else {
-            revoke(c.http, &self.api, &t).await;
+            let _ = revoke(c.http, &self.api, &t).await;
             logged?;
             bail!("GitHub's installation token doesn't cover just the repository asked for");
         };

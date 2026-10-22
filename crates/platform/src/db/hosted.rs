@@ -48,7 +48,13 @@ pub struct HostedWorkspace {
     pub created_by: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
+    /// `workspace` (people's), or `deploy`: a box made for one deploy's run
+    /// and deleted after it (M219), which people never list or open.
+    pub purpose: String,
 }
+
+/// A deploy box's purpose (M219).
+pub const DEPLOY: &str = "deploy";
 
 /// How a workspace's box's setup goes (M183): `setting_up` (on `step`),
 /// `ready`, or `failed` (at `step`, for `reason`, a fixed code). Never the
@@ -66,7 +72,7 @@ pub struct Setup {
 
 const COLUMNS: &str = "id, project_id, name, spec, provider, template, state, asked, machine, error, \
      spec_hash, built_hash, created_by, created_at, updated_at, \
-     setup_status, setup_step, setup_reason, setup_pane, setup_at";
+     setup_status, setup_step, setup_reason, setup_pane, setup_at, purpose";
 
 fn row(r: &Row) -> Result<HostedWorkspace> {
     let spec: String = r.get(3)?;
@@ -96,6 +102,7 @@ fn row(r: &Row) -> Result<HostedWorkspace> {
             }),
             None => None,
         },
+        purpose: r.get(20)?,
     })
 }
 
@@ -169,7 +176,7 @@ impl Db {
         let mut c = self.c();
         let tx = c.immediate()?;
         let live: u64 = tx.query_row(
-            "SELECT count(*) FROM hosted_workspaces WHERE project_id = ?1 AND deleted_at IS NULL",
+            "SELECT count(*) FROM hosted_workspaces WHERE project_id = ?1 AND deleted_at IS NULL AND purpose = 'workspace'",
             params![project],
             |r| r.get(0),
         )?;
@@ -190,24 +197,83 @@ impl Db {
         Ok(Added::Made(Box::new(w)))
     }
 
-    /// A project's live workspaces, by name.
+    /// Keep a new deploy box (M219), `creating`: a hosted workspace of
+    /// purpose `deploy` for one deploy's run, named after it, with nothing to
+    /// set up. Not counted in the project's limit, and never listed to
+    /// people. `false` when there's one by that id or name already.
+    pub fn add_deploy_box(&self, id: &str, project: &str, name: &str, created_by: &str, now: u64) -> Result<bool> {
+        let spec = Spec::default();
+        let made = self.c().execute(
+            "INSERT INTO hosted_workspaces
+                 (id, project_id, name, spec, spec_hash, state, created_by, created_at, updated_at, purpose)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'creating', ?6, ?7, ?7, 'deploy')",
+            params![id, project, name, serde_json::to_string(&spec)?, spec.hash(), created_by, now],
+        );
+        match made.map_err(taken) {
+            Err(e) if e.is::<Taken>() => Ok(false),
+            r => r.map(|n| n == 1),
+        }
+    }
+
+    /// A hosted box of any purpose, by id, live or deleted (M219: the
+    /// deploy job follows its box to its end; a run's dispatch reaches its
+    /// deploy box).
+    pub fn hosted_any(&self, project: &str, id: &str) -> Result<Option<HostedWorkspace>> {
+        self.c()
+            .query_row(
+                &format!("SELECT {COLUMNS} FROM hosted_workspaces WHERE project_id = ?1 AND id = ?2"),
+                params![project, id],
+                row,
+            )
+            .optional()
+    }
+
+    /// A deploy's box (M219), by id alone, live or deleted: the deploy's
+    /// job deletes it even when its deploy or project is gone.
+    pub fn deploy_box(&self, id: &str) -> Result<Option<HostedWorkspace>> {
+        self.c()
+            .query_row(
+                &format!("SELECT {COLUMNS} FROM hosted_workspaces WHERE id = ?1 AND purpose = 'deploy'"),
+                params![id],
+                row,
+            )
+            .optional()
+    }
+
+    /// Deploys' boxes made before `before` that are still there and not
+    /// being deleted (M219's reaper).
+    pub fn old_deploy_boxes(&self, before: u64) -> Result<Vec<String>> {
+        self.c().query_map(
+            "SELECT id FROM hosted_workspaces
+             WHERE purpose = 'deploy' AND deleted_at IS NULL AND created_at < ?1
+               AND COALESCE(asked, '') <> 'delete' AND state <> 'deleted'
+             ORDER BY created_at, id",
+            params![before],
+            |r| r.get(0),
+        )
+    }
+
+    /// A project's live workspaces, by name: people's, never a deploy box
+    /// (M219).
     pub fn hosted_workspaces(&self, project: &str) -> Result<Vec<HostedWorkspace>> {
         self.c().query_map(
             &format!(
-                "SELECT {COLUMNS} FROM hosted_workspaces WHERE project_id = ?1 AND deleted_at IS NULL ORDER BY name, id"
+                "SELECT {COLUMNS} FROM hosted_workspaces
+                 WHERE project_id = ?1 AND deleted_at IS NULL AND purpose = 'workspace' ORDER BY name, id"
             ),
             params![project],
             row,
         )
     }
 
-    /// A project's live workspace, by its id or its name.
+    /// A project's live workspace, by its id or its name: people's, never
+    /// a deploy box (M219), which nobody opens.
     pub fn hosted_workspace(&self, project: &str, id_or_name: &str) -> Result<Option<HostedWorkspace>> {
         self.c()
             .query_row(
                 &format!(
                     "SELECT {COLUMNS} FROM hosted_workspaces
-                     WHERE project_id = ?1 AND (id = ?2 OR name = ?2) AND deleted_at IS NULL
+                     WHERE project_id = ?1 AND (id = ?2 OR name = ?2) AND deleted_at IS NULL AND purpose = 'workspace'
                      ORDER BY CASE WHEN id = ?2 THEN 0 ELSE 1 END LIMIT 1"
                 ),
                 params![project, id_or_name],
@@ -264,11 +330,11 @@ impl Db {
                         w: row(r)?,
                         spec_hash: r.get(10)?,
                         built_hash: r.get(11)?,
-                        sandbox: r.get(20)?,
-                        stage: r.get(21)?,
-                        stage_at: r.get(22)?,
-                        enroll_until: r.get(23)?,
-                        deleted_at: r.get(24)?,
+                        sandbox: r.get(21)?,
+                        stage: r.get(22)?,
+                        stage_at: r.get(23)?,
+                        enroll_until: r.get(24)?,
+                        deleted_at: r.get(25)?,
                         lease: String::new(),
                         seen: Default::default(),
                         usage: None,

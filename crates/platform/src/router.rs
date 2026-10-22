@@ -138,6 +138,7 @@ fn routes() -> Routes {
         .route(deploys::DEPLOY_REQUEST, post(deploys::request_route))
         .route(deploys::DEPLOY_APPROVE, post(deploys::approve))
         .route(deploys::DEPLOY_DENY, post(deploys::deny))
+        .route(deploys::ENVIRONMENT_SECRET, post(deploys::set_secret))
         // A machine's agents plan and ask; never approve.
         .route(deploys::agent::AGENT_PROJECT_DEPLOYS, post(deploys::agent::plan))
         .route(deploys::agent::AGENT_DEPLOY, get(deploys::agent::get))

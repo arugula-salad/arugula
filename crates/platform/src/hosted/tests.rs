@@ -388,6 +388,7 @@ async fn enrolling_fails_closed() {
             workspace: "hw_other".into(),
             name: "other".into(),
             sandbox: Some(next),
+            purpose: None,
         })
         .await
         .unwrap();
@@ -423,6 +424,7 @@ async fn recording_an_enrollment_again_is_the_same_one() {
         workspace: id.clone(),
         name: "dev".into(),
         sandbox: Some("sbx0".into()),
+        purpose: None,
     };
     // As though the worker's first ask reached the hub and its answer didn't.
     app.hub.hosted_enrollment(&ask).await.unwrap();

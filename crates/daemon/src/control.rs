@@ -184,6 +184,11 @@ pub struct HostedPin {
     pub delegation: arugula_e2e::hosted::Delegation,
     #[serde(default)]
     pub revocations: Vec<arugula_e2e::hosted::DelegationRevoke>,
+    /// A box made for one deploy's run (M219, control's enrollment says
+    /// `purpose: deploy`): nobody gets in, it takes that run only, and it
+    /// never stops being one.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deploy: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -281,6 +286,22 @@ pub struct Enrolled {
 
 impl Enrolled {
     fn build(saved: Saved, keys: Arc<DeviceKeys>, acl: &Acl, open_agents: bool) -> Self {
+        // A deploy's box (M219): nobody gets in, not even the project's
+        // owners: it only takes its one deploy run, and goes after.
+        if saved.hosted.as_ref().is_some_and(|h| h.deploy) {
+            return Self {
+                saved,
+                keys,
+                trusted: Default::default(),
+                others: vec![],
+                agent_callers: Default::default(),
+                drivers: vec![],
+                open_agents: false,
+                team_roles: HashMap::new(),
+                shared_roles: HashMap::new(),
+                push: Vec::new(),
+            };
+        }
         let trusted = saved.trust.evaluate(&saved.certs, &saved.revocations);
         let mut others = Vec::new();
         let mut team_roles = HashMap::new();
@@ -983,6 +1004,30 @@ impl Control {
             return Err(Answered(status, said(status, &got)).into());
         }
         Ok(serde_json::from_slice(&got)?)
+    }
+
+    /// [`Control::post_signed`]'s answer as bytes, unparsed (M219: a deploy
+    /// run's secrets, which the caller reads by hand and overwrites).
+    /// Read at most `max` bytes of the answer, as it streams: a bigger one
+    /// is an error, and what was read of it is overwritten.
+    pub async fn post_signed_bytes(&self, path: &str, body: &impl Serialize, max: usize) -> anyhow::Result<Vec<u8>> {
+        let e = self.enrolled().ok_or_else(|| anyhow::anyhow!("this machine isn't in control"))?;
+        let mut res = self.post_json(&e, path, body).send().await?;
+        let status = res.status().as_u16();
+        let mut got: Vec<u8> = Vec::new();
+        while let Some(chunk) = res.chunk().await? {
+            if got.len() + chunk.len() > max {
+                got.iter_mut().for_each(|b| *b = 0);
+                anyhow::bail!("control's answer is over {max} bytes");
+            }
+            got.extend_from_slice(&chunk);
+        }
+        if !(200..300).contains(&status) {
+            let why = said(status, &got);
+            got.iter_mut().for_each(|b| *b = 0);
+            return Err(Answered(status, why).into());
+        }
+        Ok(got)
     }
 
     /// GET from control, signed as this machine, if it's in control (a
@@ -4129,6 +4174,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
+                deploy: false,
             }),
             ..team_saved.clone()
         };
@@ -4143,6 +4189,13 @@ pub(crate) mod tests {
         assert_eq!(who(&hosted_saved, &editor), (true, None));
         assert_eq!(who(&hosted_saved, &viewer), (false, Some(Role::Viewer)));
         assert_eq!(who(&hosted_saved, &owner), (true, None));
+        // A deploy's box (M219): nobody at all, its owners included.
+        let mut deploy_saved = hosted_saved.clone();
+        if let Some(h) = deploy_saved.hosted.as_mut() {
+            h.deploy = true;
+        }
+        let e = Enrolled::build(deploy_saved, Arc::new(DeviceKeys::generate()), &acl, true);
+        assert!(e.others.is_empty() && e.drivers.is_empty() && e.trusted.devices.is_empty() && e.team_roles.is_empty());
         assert_eq!(who(&team_saved, &editor), (false, Some(Role::Editor)));
 
         // M186: members' previews. A block's grant counts from the
@@ -4233,6 +4286,7 @@ pub(crate) mod tests {
                 cert: arugula_e2e::hosted::HostedCert::new(&d, "hw_1", "box", &"0".repeat(64), &"0".repeat(64), 2),
                 delegation: d,
                 revocations: vec![],
+                deploy: false,
             }),
             ..team_saved.clone()
         };

@@ -329,6 +329,9 @@ fn enroll_ask(app: &Platform, job: &HostedJob, sandbox: Option<String>) -> Resul
         workspace: job.w.id.clone(),
         name: job.w.name.clone(),
         sandbox,
+        // A deploy's box (M219): the hub routes nobody to it, and the box
+        // takes its one deploy run only.
+        purpose: (job.w.purpose == crate::db::hosted::DEPLOY).then(|| arugula_control_wire::hosted::DEPLOY.to_owned()),
     }))
 }
 

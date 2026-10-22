@@ -77,6 +77,10 @@ pub struct HostedRow {
     pub cert: HostedCert,
     pub urls: Vec<String>,
     pub last_seen: Option<u64>,
+    /// `deploy` for a box the platform made for one deploy's run (M219):
+    /// nobody is routed to it, and it isn't listed. `None`: a people's
+    /// workspace.
+    pub purpose: Option<String>,
 }
 
 /// What recording an enrollment did.
@@ -110,12 +114,18 @@ fn delegation_of(body: String, by_account: String, revoke: Option<String>) -> ru
     })
 }
 
-fn hosted_of(cert: String, urls: String, last_seen: Option<u64>) -> rusqlite::Result<HostedRow> {
+fn hosted_of(
+    cert: String,
+    urls: String,
+    last_seen: Option<u64>,
+    purpose: Option<String>,
+) -> rusqlite::Result<HostedRow> {
     let json = |e: serde_json::Error| rusqlite::Error::ToSqlConversionFailure(Box::new(e));
     Ok(HostedRow {
         cert: serde_json::from_str(&cert).map_err(json)?,
         urls: serde_json::from_str(&urls).unwrap_or_default(),
         last_seen,
+        purpose,
     })
 }
 
@@ -206,6 +216,28 @@ impl Db {
         };
         tx.commit()?;
         Ok(out)
+    }
+
+    /// What an enrollment's box is for (M219): `deploy`, set as it's
+    /// recorded.
+    pub fn set_enrollment_purpose(&self, hash: &str, purpose: &str) -> anyhow::Result<()> {
+        self.c().execute("UPDATE hosted_enrollments SET purpose = ?2 WHERE hash = ?1", params![hash, purpose])?;
+        Ok(())
+    }
+
+    /// What an enrollment's box is for, if it says.
+    pub fn enrollment_purpose(&self, hash: &str) -> anyhow::Result<Option<String>> {
+        Ok(self
+            .c()
+            .query_row("SELECT purpose FROM hosted_enrollments WHERE hash = ?1", params![hash], |r| r.get(0))
+            .optional()?
+            .flatten())
+    }
+
+    /// What a hosted machine is for, from its enrollment (M219).
+    pub fn set_hosted_purpose(&self, id: &str, purpose: &str) -> anyhow::Result<()> {
+        self.c().execute("UPDATE hosted_machines SET purpose = ?2 WHERE id = ?1", params![id, purpose])?;
+        Ok(())
     }
 
     /// The machine that used an enrollment.
@@ -321,9 +353,9 @@ impl Db {
         Ok(self
             .c()
             .query_row(
-                "SELECT cert, urls, last_seen FROM hosted_machines WHERE id = ?1 AND removed IS NULL",
+                "SELECT cert, urls, last_seen, purpose FROM hosted_machines WHERE id = ?1 AND removed IS NULL",
                 params![id],
-                |r| hosted_of(r.get(0)?, r.get(1)?, r.get(2)?),
+                |r| hosted_of(r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?),
             )
             .optional()?)
     }
@@ -341,11 +373,11 @@ impl Db {
     pub fn hosted_of(&self, owners: &[String]) -> anyhow::Result<Vec<HostedRow>> {
         let c = self.c();
         let mut q = c.prepare(
-            "SELECT cert, urls, last_seen FROM hosted_machines WHERE owner = ?1 AND removed IS NULL ORDER BY created",
+            "SELECT cert, urls, last_seen, purpose FROM hosted_machines WHERE owner = ?1 AND removed IS NULL ORDER BY created",
         )?;
         let mut out = Vec::new();
         for o in owners {
-            for row in q.query_map(params![o], |r| hosted_of(r.get(0)?, r.get(1)?, r.get(2)?))? {
+            for row in q.query_map(params![o], |r| hosted_of(r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))? {
                 out.push(row?);
             }
         }
