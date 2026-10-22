@@ -85,7 +85,7 @@ RUN id -u user >/dev/null 2>&1 || { userdel -r ubuntu 2>/dev/null; useradd -m -u
 #   and the grant revokes it heard are;
 # - kept off the daemon's and the provider's ports on loopback by arugulad's
 #   iptables rules (owner match), made before its first run.
-RUN useradd -m -u 1001 -s /bin/bash runner && usermod -aG user runner && chmod 0750 /home/user \
+RUN { id -u runner >/dev/null 2>&1 || useradd -m -s /bin/bash runner; } && usermod -aG user runner && chmod 0750 /home/user \
  && echo 'Defaults>runner env_reset, use_pty' > /etc/sudoers.d/runner && chmod 0440 /etc/sudoers.d/runner
 
 COPY arugulad /usr/local/bin/arugulad
