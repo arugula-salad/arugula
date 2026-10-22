@@ -2,7 +2,7 @@
 //!
 //! | Call | Route |
 //! |---|---|
-//! | create | `POST /v2/sandboxes` (`autoPause`, memory kept, auto-resume off) |
+//! | create | `POST /v2/sandboxes` (`secure`, `autoPause`, memory kept, auto-resume off) |
 //! | resume | `POST /v2/sandboxes/{id}/connect` (201 woke, 200 was running) |
 //! | pause | `POST /sandboxes/{id}/pause` (409: paused already) |
 //! | delete | `DELETE /sandboxes/{id}` (404: gone already) |
@@ -20,6 +20,15 @@
 //! create's or connect's `envdAccessToken` and `trafficAccessToken` are
 //! credentials for the box's envd and ports, which the platform doesn't
 //! use, so they're never kept.
+//!
+//! Every box is made `secure`: its envd (the daemon E2B puts in a box, on
+//! port 49983) then takes process starts and file reads and writes only
+//! with that access token, which nobody holds. Without it, any process in
+//! the box, or anyone who knew its id, could run commands in it as root.
+//! E2B's cloud makes every box secure whatever the request says, and loam
+//! refuses `secure: false`; another E2B-compatible API may not, so a
+//! create whose answer has no access token is taken as an open envd: the
+//! box is deleted and the create refused.
 
 use std::{collections::BTreeMap, time::Duration};
 
@@ -151,6 +160,14 @@ struct NewBox {
     sandbox_id: String,
     #[serde(rename = "templateID")]
     template_id: String,
+    /// Whether it has an envd access token (see the top): the token itself
+    /// is dropped as it's read.
+    #[serde(rename = "envdAccessToken", default, deserialize_with = "present")]
+    secured: bool,
+}
+
+fn present<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<bool, D::Error> {
+    Ok(Option::<String>::deserialize(d)?.is_some_and(|t| !t.is_empty()))
 }
 
 #[derive(Deserialize)]
@@ -263,6 +280,8 @@ impl Substrate for E2b {
                 "autoPause": true,
                 "autoPauseMemory": true,
                 "autoResume": {"enabled": false},
+                // Never drop this: without it envd takes anyone (see the top).
+                "secure": true,
                 "metadata": b.metadata,
                 "envVars": b.env,
             });
@@ -274,7 +293,13 @@ impl Substrate for E2b {
                     e => e,
                 });
             }
+            let status = r.status().as_u16();
             let made: NewBox = read(r).await?;
+            if !made.secured {
+                // An open envd (see the top): this box is never used.
+                let _ = self.delete(&made.sandbox_id).await;
+                return Err(Error::Refused { status, code: Some("envd_not_secured".into()) });
+            }
             Ok(Created { id: made.sandbox_id, template: made.template_id })
         })
     }
