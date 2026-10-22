@@ -337,6 +337,21 @@ impl Db {
         Ok(())
     }
 
+    /// The boxes [`crate::hosted::hold`] may hold: each workspace that's
+    /// `ready` with a machine and a box, and nothing but a pause asked of
+    /// it. Read by the leader alone, outside any lease: the sandbox id never
+    /// leaves the platform.
+    pub fn hosted_running(&self) -> Result<Vec<crate::hosted::hold::Running>> {
+        self.c().query_map(
+            "SELECT id, machine, sandbox_id FROM hosted_workspaces
+             WHERE deleted_at IS NULL AND state = 'ready' AND machine IS NOT NULL AND sandbox_id IS NOT NULL
+                 AND COALESCE(asked, 'pause') = 'pause'
+             ORDER BY id",
+            params![],
+            |r| Ok(crate::hosted::hold::Running { workspace: r.get(0)?, machine: r.get(1)?, sandbox: r.get(2)? }),
+        )
+    }
+
     /// Keep a secret's name for a workspace, its value sealed here
     /// (`Some`, with `hosted::Config::cipher`) or in the provider's broker.
     pub fn set_hosted_secret(&self, workspace: &str, name: &str, sealed: Option<&[u8]>, now: u64) -> Result<()> {

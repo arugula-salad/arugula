@@ -86,6 +86,19 @@ enrollment with the hub by sandbox id (or puts a ticket in its env, with
 that doesn't enroll in time. A create whose answer was lost is found by the
 box's metadata, never sent twice (`crates/platform/src/hosted/`).
 
+A box pauses only between turns (M181, aru-094). It pauses itself, memory
+and disk kept, 10 minutes (`ARUGULA_HOSTED_IDLE_TIMEOUT`, in seconds) after
+it was made, woken or last held. While its daemon says it's busy (an agent
+turn or a foreground command), the platform's leader holds it: every few
+minutes it sets the box's timeout to the idle timeout from now. Idle or
+silent, nothing holds it. The platform never pauses a box whose daemon says
+busy. E2B lets a box run 24 hours without a pause on Pro
+(`ARUGULA_HOSTED_RUNTIME_CAP`; Hobby's is 3600 seconds). In the last
+twelfth before that, the worker pauses and resumes the box at its next idle
+moment, which restarts E2B's clock. A single turn that runs to the cap
+pauses there: the worker wakes it at once and says so on the workspace and
+in the platform's log.
+
 ```
 arugula cloud create dev --repo https://github.com/acme/app --setup setup.sh
 arugula cloud ls                          # every project's; --project <id or name>

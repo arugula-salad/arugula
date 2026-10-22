@@ -28,10 +28,11 @@ use crate::{
 /// A provider in memory. `lose_next`: the next create makes its box but
 /// answers nothing; `refuse_next`: it makes nothing and says no. A resume
 /// is counted (`resumes`), takes `resume_ms`, and fails with `resume_error`
-/// while it's set (M182).
+/// while it's set (M182). `calls`: each resume, pause and hold, in order
+/// (M181).
 #[derive(Default)]
-pub(super) struct Fake {
-    pub(super) boxes: Mutex<BTreeMap<String, Sandbox>>,
+pub(crate) struct Fake {
+    pub(crate) boxes: Mutex<BTreeMap<String, Sandbox>>,
     creates: Mutex<Vec<Create>>,
     deleted: Mutex<Vec<String>>,
     n: AtomicU32,
@@ -40,10 +41,17 @@ pub(super) struct Fake {
     pub(super) resumes: AtomicU32,
     pub(super) resume_ms: AtomicU32,
     pub(super) resume_error: Mutex<Option<compute::Error>>,
+    pub(crate) calls: Mutex<Vec<String>>,
 }
 
 impl Fake {
-    pub(super) fn boxes(&self) -> Vec<Sandbox> {
+    /// Each resume, pause and hold since the last asked, as `pause sbx0`
+    /// or `hold sbx0 600s`.
+    pub(crate) fn calls(&self) -> Vec<String> {
+        std::mem::take(&mut *self.calls.lock().unwrap())
+    }
+
+    pub(crate) fn boxes(&self) -> Vec<Sandbox> {
         self.boxes.lock().unwrap().values().cloned().collect()
     }
 
@@ -93,6 +101,7 @@ impl Substrate for Fake {
     fn resume<'a>(&'a self, id: &'a str, _: Duration) -> BoxFuture<'a, compute::Result<Resumed>> {
         Box::pin(async move {
             self.resumes.fetch_add(1, SeqCst);
+            self.calls.lock().unwrap().push(format!("resume {id}"));
             let ms = self.resume_ms.load(SeqCst);
             if ms > 0 {
                 tokio::time::sleep(Duration::from_millis(ms.into())).await;
@@ -113,6 +122,7 @@ impl Substrate for Fake {
     }
 
     fn pause<'a>(&'a self, id: &'a str) -> BoxFuture<'a, compute::Result<Paused>> {
+        self.calls.lock().unwrap().push(format!("pause {id}"));
         let mut boxes = self.boxes.lock().unwrap();
         ready(match boxes.get_mut(id) {
             None => Err(compute::Error::NotFound),
@@ -139,15 +149,21 @@ impl Substrate for Fake {
         ready(Ok(boxes.values().filter(|b| m.iter().all(|(k, v)| b.metadata.get(k) == Some(v))).cloned().collect()))
     }
 
-    fn hold<'a>(&'a self, _: &'a str, _: Duration) -> BoxFuture<'a, compute::Result<()>> {
-        ready(Ok(()))
+    /// As E2B's: a paused box (or none) is `NotFound`, never woken.
+    fn hold<'a>(&'a self, id: &'a str, timeout: Duration) -> BoxFuture<'a, compute::Result<()>> {
+        self.calls.lock().unwrap().push(format!("hold {id} {}s", timeout.as_secs()));
+        let boxes = self.boxes.lock().unwrap();
+        ready(match boxes.get(id) {
+            Some(b) if b.state == State::Running => Ok(()),
+            _ => Err(compute::Error::NotFound),
+        })
     }
 }
 
 /// alice owns team t1, bob edits it, vic views it; olga is elsewhere.
 /// The platform has the fake provider, template `tpl`, and lets anyone
 /// make workspaces but carol.
-pub(super) async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, String, String) {
+pub(crate) async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, String, String) {
     let hub = Arc::new(TestHub::default());
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("vic", TeamRole::Viewer)]);
     hub.team("t2", &[("olga", TeamRole::Owner), ("carol", TeamRole::Owner)]);
@@ -160,6 +176,7 @@ pub(super) async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Pla
         enroll,
         accounts: vec!["alice".into(), "bob".into(), "vic".into(), "olga".into()],
         cipher: None,
+        ..Default::default()
     };
     let app = Arc::new(p);
     let project = app.db.team_project("t1", "t1", 0).unwrap();
@@ -171,7 +188,7 @@ pub(super) async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Pla
 }
 
 /// Every step due at `now`.
-pub(super) async fn drive(app: &Platform, now: u64) {
+pub(crate) async fn drive(app: &Platform, now: u64) {
     for _ in 0..50 {
         if !worker::tick_at(app, now).await.unwrap() {
             return;
@@ -180,7 +197,7 @@ pub(super) async fn drive(app: &Platform, now: u64) {
     panic!("the worker never settled");
 }
 
-pub(super) async fn make(base: &str, who: &str, project: &str, name: &str) -> (u16, Value) {
+pub(crate) async fn make(base: &str, who: &str, project: &str, name: &str) -> (u16, Value) {
     let spec = json!({ "repos": ["https://github.com/acme/app"], "packages": ["ripgrep"], "setup": "make" });
     call(base, who, "POST", &format!("/api/projects/{project}/workspaces"), Some(json!({ "name": name, "spec": spec })))
         .await

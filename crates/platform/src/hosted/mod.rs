@@ -31,14 +31,16 @@
 //! - **Waking on connect** (M182): when someone opens a workspace's machine
 //!   and its daemon isn't connected, the hub asks the platform to wake its
 //!   box, and the worker resumes it ([`wake`]).
-//! - **Not here yet.** Holding a busy box (M181) plugs into the worker and
-//!   [`ask`]; setup in a visible pane and "rebuild needed" on the page are
-//!   M183's, from [`HostedWorkspace::rebuild_needed`].
+//! - **Pausing only between turns** (M181, "Hosted machines pause only
+//!   between turns", aru-094): the leader [`hold`]s a box while its daemon
+//!   says it's busy, and lets it pause itself when it's idle or silent.
+//! - **Not here yet.** Setup in a visible pane and "rebuild needed" on the
+//!   page are M183's, from [`HostedWorkspace::rebuild_needed`].
 //!
 //! The provider's key never reaches a client or a box, and neither does an
 //! inference key ([`crate::compute`]).
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
@@ -46,6 +48,7 @@ use sha2::{Digest as _, Sha256};
 use crate::{Platform, cloud::secrets::SecretCipher};
 
 pub mod enroll;
+pub mod hold;
 pub mod routes;
 #[cfg(test)]
 mod tests;
@@ -75,6 +78,14 @@ pub struct Args {
     /// Empty: nobody.
     #[arg(long, env = "ARUGULA_HOSTED_ACCOUNTS", value_delimiter = ',')]
     pub hosted_accounts: Vec<String>,
+    /// Seconds a box runs after its daemon last said it was busy before it
+    /// pauses itself ([`worker::IDLE_TIMEOUT`] unless set).
+    #[arg(long, env = "ARUGULA_HOSTED_IDLE_TIMEOUT")]
+    pub hosted_idle_timeout: Option<u64>,
+    /// Seconds a box may run without a pause on the provider's plan
+    /// ([`hold::E2B_PRO_RUNTIME`] unless set; E2B's Hobby plan is 3600).
+    #[arg(long, env = "ARUGULA_HOSTED_RUNTIME_CAP")]
+    pub hosted_runtime_cap: Option<u64>,
 }
 
 impl Args {
@@ -87,6 +98,8 @@ impl Args {
             enroll: if self.hosted_enroll == "ticket" { EnrollBy::Ticket } else { EnrollBy::Sandbox },
             accounts: self.hosted_accounts.into_iter().map(|a| a.trim().to_owned()).filter(|a| !a.is_empty()).collect(),
             cipher: secret_key.filter(|k| !k.is_empty()).map(SecretCipher::new).transpose()?.map(std::sync::Arc::new),
+            idle_timeout: self.hosted_idle_timeout.filter(|s| *s > 0).map(Duration::from_secs),
+            runtime_cap: self.hosted_runtime_cap.filter(|s| *s > 0).map(Duration::from_secs),
         })
     }
 }
@@ -109,6 +122,11 @@ pub struct Config {
     pub accounts: Vec<String>,
     /// Seals [`crate::db::hosted`]'s secrets, when there's a key.
     pub cipher: Option<std::sync::Arc<SecretCipher>>,
+    /// [`Args::hosted_idle_timeout`] and [`Args::hosted_runtime_cap`], when
+    /// set: [`Config::idle_timeout`] and [`Config::runtime_cap`] say what
+    /// holds.
+    pub idle_timeout: Option<Duration>,
+    pub runtime_cap: Option<Duration>,
 }
 
 impl std::fmt::Debug for Config {
@@ -117,6 +135,8 @@ impl std::fmt::Debug for Config {
             .field("template", &self.template)
             .field("enroll", &self.enroll)
             .field("accounts", &self.accounts)
+            .field("idle_timeout", &self.idle_timeout)
+            .field("runtime_cap", &self.runtime_cap)
             .finish_non_exhaustive()
     }
 }
@@ -125,6 +145,16 @@ impl Config {
     /// Whether this account may make hosted workspaces.
     pub fn allows(&self, account: &str) -> bool {
         self.accounts.iter().any(|a| a == account || a == "*")
+    }
+
+    /// How long a box runs without being held before it pauses itself.
+    pub fn idle_timeout(&self) -> Duration {
+        self.idle_timeout.unwrap_or(worker::IDLE_TIMEOUT)
+    }
+
+    /// How long the provider lets a box run without a pause.
+    pub fn runtime_cap(&self) -> Duration {
+        self.runtime_cap.unwrap_or(hold::E2B_PRO_RUNTIME)
     }
 }
 
@@ -226,8 +256,9 @@ pub enum Ask {
     /// Resume a paused box, or one that may have paused itself (M182's
     /// wake on connect).
     Wake,
-    /// Pause a running box. Only between turns: M181 asks, never while its
-    /// daemon reports busy.
+    /// Pause a running box. Only between turns: while its daemon says
+    /// busy, the ask is done without a pause, and the box pauses itself
+    /// after the turn ([`hold`]).
     Pause,
     /// Delete the box and make it again from the spec.
     Rebuild,
@@ -259,5 +290,6 @@ pub fn start(app: &std::sync::Arc<Platform>) {
     if app.compute.is_some() {
         worker::start(app.clone());
         usage::start(app.clone());
+        hold::start(app.clone());
     }
 }
