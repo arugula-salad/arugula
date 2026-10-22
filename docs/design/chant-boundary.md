@@ -21,6 +21,8 @@ It helps to think of Arugula as one of several platforms built on chant. terragu
 
 chant is the record of what was decided, planned, approved and released, kept in git, and it does the planning and applying through its lexicons. A platform is everything around that a person sees: who they are, where things run, what triggers work, where they approve, and where they're told about it. The platform links its objects to chant's records instead of copying them.
 
+![Arugula and terragucci share a versioned chant contract; chant owns plans, approval rules, environments, lexicons, and git records.](https://share.files.inevitable.fyi/2026-10-22/arugula-chant-ownership-boundary.png)
+
 | Concern | chant provides | Arugula | terragucci |
 |---|---|---|---|
 | Who people are | Checks signatures against `.chant/trust.json` | Accounts, passkeys, devices; device signatures become a chant signer kind | Uses the forge's identity |
@@ -51,6 +53,8 @@ Any platform drives chant through the same calls. #1359 already depends on most 
 | Stale check | Not asked | A read call: anything applied since this digest? |
 | Roll back | `chant components release <env> …` | None |
 
+![Proposed approval flow: plan, review, human signature, chant verification, apply once, and record the result. Stale plans return for replanning and a new signature.](https://share.files.inevitable.fyi/2026-10-22/arugula-chant-plan-sign-apply.png)
+
 ## Small things to fix in step 7
 
 - The phone signs a description of the deploy and chant plans afterwards, so the owner doesn't see the plan that gets applied. Planning first and signing the digest fixes it. (#1359 `drivers.rs:129-169`, `work_deploy_chant_fly.mjs:122-127`)
@@ -73,6 +77,8 @@ It doesn't lock anyone in, since chant still deploys from a laptop or CI without
 ## What the chant-fly driver runs for Arugula's own release
 
 aru-104 settles who drives: Arugula's own release ships through the chant-fly driver, approved from the owner's phone, and that's step 7's gate. That fits the line above. What's still open is which chant operation the driver runs. There are two plans for it, written a day apart.
+
+![Two release paths behind one driver: a release Op deploys directly to production; the recommended control path builds from a green commit and promotes through staging and a signed chant production gate.](https://share.files.inevitable.fyi/2026-10-22/arugula-chant-release-paths.png)
 
 ```mermaid
 flowchart LR
