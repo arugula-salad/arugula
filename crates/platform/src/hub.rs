@@ -35,7 +35,10 @@
 use std::collections::BTreeMap;
 
 use arugula_control_common::Principal;
-use arugula_control_wire::forge::{DaemonOp, OpAnswer, Poke};
+use arugula_control_wire::{
+    forge::{DaemonOp, OpAnswer, Poke},
+    hosted::{EnrollAsk, EnrollGiven, Enrolled},
+};
 use arugula_e2e::team::TeamRole;
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
@@ -201,6 +204,34 @@ pub trait HubPort: Send + Sync {
     fn daemon_op<'a>(&'a self, daemon: &'a str, op: &'a DaemonOp) -> BoxFuture<'a, HubResult<OpAnswer>> {
         let _ = (daemon, op);
         Box::pin(async { anyhow::bail!("this hub can't ask machines to do ops") })
+    }
+
+    /// Record a one-time enrollment for a hosted box the platform is
+    /// making (M178), under the project's live delegation: by a ticket the
+    /// hub makes (for the box's env) or by the box's sandbox id. The box
+    /// enrolls with it once, at the hub's `/api/hosted/enroll`. A hub from
+    /// before M178 can't.
+    fn hosted_enrollment<'a>(&'a self, ask: &'a EnrollAsk) -> BoxFuture<'a, HubResult<EnrollGiven>> {
+        let _ = ask;
+        Box::pin(async { anyhow::bail!("this hub doesn't enroll hosted machines") })
+    }
+
+    /// Of these hosted workspaces (M178), the ones whose box has enrolled,
+    /// and as which machine; and the ones whose enrollment someone tried
+    /// again (`taken`: fail closed, the platform deletes the box). A hub
+    /// from before M178 can't say.
+    fn hosted_enrolled<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<Vec<Enrolled>>> {
+        let _ = workspaces;
+        Box::pin(async { anyhow::bail!("this hub doesn't enroll hosted machines") })
+    }
+
+    /// These hosted workspaces' boxes are gone (deleted, or made again,
+    /// M178): the machines they enrolled as leave their projects and are
+    /// hung up on, and an enrollment not yet used is dropped. A hub from
+    /// before M178 has none to drop.
+    fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
+        let _ = workspaces;
+        Box::pin(async { Ok(()) })
     }
 }
 

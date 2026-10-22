@@ -31,7 +31,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 
-use crate::{ApiError, App, err};
+use crate::{ApiError, App, db::hosted::HostedRow, err};
 
 pub const SESSION_COOKIE: &str = "ilg_session";
 const STATE_COOKIE: &str = "ilg_oauth";
@@ -196,6 +196,49 @@ impl Replays {
 #[derive(Clone)]
 pub(crate) struct Signed(pub(crate) Result<Cert, (StatusCode, String)>);
 
+/// A hosted machine's signature, checked (M178).
+#[derive(Clone)]
+pub(crate) struct HostedSigned(Result<HostedRow, (StatusCode, String)>);
+
+/// A request signed by a live hosted machine (M178): only its own routes
+/// and the relay take one. Every route a daemon's signature opens refuses
+/// it (`DaemonAuth` and `Session` see a refusal), so it can't act as
+/// anyone's machine.
+pub struct HostedAuth(pub HostedRow);
+
+impl FromRequestParts<Arc<App>> for HostedAuth {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _app: &Arc<App>) -> Result<Self, ApiError> {
+        match parts.extensions.get::<HostedSigned>() {
+            Some(HostedSigned(Ok(h))) => Ok(HostedAuth(h.clone())),
+            Some(HostedSigned(Err((status, msg)))) => Err(err(*status, msg)),
+            None => Err(err(StatusCode::UNAUTHORIZED, "not a hosted machine")),
+        }
+    }
+}
+
+/// Whoever dials the relay: an enrolled daemon, or a hosted machine
+/// (M178). `account` is who its sockets are metered against: the
+/// daemon's account, or the hosted machine's project.
+pub struct Dialer {
+    pub id: String,
+    pub account: String,
+    pub hosted: bool,
+}
+
+impl FromRequestParts<Arc<App>> for Dialer {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, app: &Arc<App>) -> Result<Self, ApiError> {
+        if let Some(HostedSigned(Ok(h))) = parts.extensions.get::<HostedSigned>() {
+            return Ok(Dialer { id: h.cert.device.clone(), account: h.cert.project.clone(), hosted: true });
+        }
+        let d = <DaemonAuth as FromRequestParts<Arc<App>>>::from_request_parts(parts, app).await?;
+        Ok(Dialer { id: d.cert.device, account: d.cert.account, hosted: false })
+    }
+}
+
 /// Checks `x-arugula-auth` on any request that has one, with its body.
 pub async fn verify_daemon(
     State(app): State<Arc<App>>,
@@ -209,7 +252,19 @@ pub async fn verify_daemon(
     let Ok(bytes) = axum::body::to_bytes(body, MAX_SIGNED_BODY).await else {
         return err(StatusCode::PAYLOAD_TOO_LARGE, "a signed request's body is at most 1 MB").into_response();
     };
-    let checked = check_daemon(&app, &parts, &bytes).map_err(|e| (e.0, e.1));
+    let checked = match check_hosted(&app, &parts, &bytes) {
+        // A hosted machine (M178) signs its own routes and the relay, and
+        // nothing a daemon's signature opens.
+        Ok(Some(h)) => {
+            parts.extensions.insert(HostedSigned(Ok(h)));
+            Err((StatusCode::FORBIDDEN, "a hosted machine signs only its own routes".to_owned()))
+        }
+        Err(e) => {
+            parts.extensions.insert(HostedSigned(Err((e.0, e.1.clone()))));
+            Err((e.0, e.1))
+        }
+        Ok(None) => check_daemon(&app, &parts, &bytes).map_err(|e| (e.0, e.1)),
+    };
     if let Ok(cert) = &checked {
         note_old_host(&app, &parts.headers, cert);
     }
@@ -244,9 +299,10 @@ fn note_old_host(app: &App, headers: &HeaderMap, cert: &Cert) {
     );
 }
 
-fn check_daemon(app: &App, parts: &Parts, body: &[u8]) -> Result<Cert, ApiError> {
+/// The signature's device id, time and signature, and the message it
+/// signs.
+fn signed_parts<'a>(parts: &Parts, h: &'a str, body: &[u8]) -> Result<(&'a str, u64, &'a str, String), ApiError> {
     let bad = || err(StatusCode::UNAUTHORIZED, "bad daemon signature");
-    let h = auth_header(&parts.headers).and_then(|v| v.to_str().ok()).ok_or_else(bad)?;
     let f: Vec<&str> = h.split_whitespace().collect();
     let (id, ms, sig, msg) = match f.as_slice() {
         ["v2", id, ms, nonce, sig] => {
@@ -269,6 +325,36 @@ fn check_daemon(app: &App, parts: &Parts, body: &[u8]) -> Result<Cert, ApiError>
     if now_ms().abs_diff(ms) > SKEW_MS {
         return Err(err(StatusCode::UNAUTHORIZED, "clock skew: check this machine's time"));
     }
+    Ok((id, ms, sig, msg))
+}
+
+/// A hosted machine's signature (M178): `None` when the signer isn't one,
+/// so it's checked as a daemon's or the CLI's.
+fn check_hosted(app: &App, parts: &Parts, body: &[u8]) -> Result<Option<HostedRow>, ApiError> {
+    let bad = || err(StatusCode::UNAUTHORIZED, "bad daemon signature");
+    let h = auth_header(&parts.headers).and_then(|v| v.to_str().ok()).ok_or_else(bad)?;
+    let Some(id) = h.split_whitespace().nth(1) else { return Ok(None) };
+    let row = match app.db.hosted(id)? {
+        Some(row) => row,
+        None if app.db.hosted_removed(id)? => {
+            return Err(err(StatusCode::GONE, "this hosted machine was removed from its project"));
+        }
+        None => return Ok(None),
+    };
+    let (_, ms, sig, msg) = signed_parts(parts, h, body)?;
+    if !arugula_e2e::cert::verify_hex(&row.cert.sign, msg.as_bytes(), sig) {
+        return Err(bad());
+    }
+    if !app.daemon_sigs.first(&format!("{id} {sig}"), ms + SKEW_MS + 60_000) {
+        return Err(err(StatusCode::UNAUTHORIZED, "that signature was used already"));
+    }
+    Ok(Some(row))
+}
+
+fn check_daemon(app: &App, parts: &Parts, body: &[u8]) -> Result<Cert, ApiError> {
+    let bad = || err(StatusCode::UNAUTHORIZED, "bad daemon signature");
+    let h = auth_header(&parts.headers).and_then(|v| v.to_str().ok()).ok_or_else(bad)?;
+    let (id, ms, sig, msg) = signed_parts(parts, h, body)?;
     let cert = match app.db.daemon_cert(id)? {
         Some(c) => c,
         None => match cli_cert(app, id)? {

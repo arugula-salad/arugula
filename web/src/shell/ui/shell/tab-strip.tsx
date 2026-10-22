@@ -19,6 +19,7 @@ import { TabPeople } from "../people";
 import { ariaKeys, keyHint } from "../keys";
 import { newTabRefusal } from "./live";
 import { RenameInput, type Renaming } from "./rename-input";
+import { HOSTED_LABEL } from "../../../shared/hosted";
 
 /** The tab bar of a session. */
 export function TabStrip({
@@ -122,7 +123,9 @@ function newTabWhere(): string {
   const name = directory.current;
   if (!name) return "here";
   const h = getFleet()?.host(name);
-  const whose = h?.owner ? `, ${h.owner}'s machine` : h?.teamName ? `, team ${h.teamName}'s machine` : "";
+  const whose = h?.hosted
+    ? `, ${HOSTED_LABEL.toLowerCase()}`
+    : h?.owner ? `, ${h.owner}'s machine` : h?.teamName ? `, team ${h.teamName}'s machine` : "";
   return `on ${name}${whose}`;
 }
 

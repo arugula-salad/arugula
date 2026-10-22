@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 pub mod chat;
 pub mod forge;
 pub mod forge_ops;
+pub mod hosted;
 pub mod issues;
 pub mod join;
 pub mod maintenance;
@@ -129,6 +130,11 @@ pub struct ControlInfo {
     /// serve it.
     #[serde(default)]
     pub platform: Option<String>,
+    /// Control's hosted key (M178, Ed25519 hex): what a project delegation
+    /// names, and what signs the hosted machines enrolled under it. `None`:
+    /// control enrolls none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hosted_key: Option<String>,
 }
 
 /// Just the signature version from `/control.json`, for a daemon deciding

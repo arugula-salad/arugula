@@ -977,6 +977,8 @@ pub async fn directory(State(app): State<Arc<App>>, s: crate::auth::Reacher) -> 
             "account": owner, "owner_name": owner_name, "team": team, "chain": crate::teams::chain_of(&app, &owner)?,
         }));
     }
+    // Hosted machines of my projects (M178), with what to check them by.
+    daemons.extend(crate::hosted::directory(&app, &s.account)?);
     // Sessions someone offers to share with me, for me to answer first
     // (a person's to answer: a daemon is told none).
     let mut offers = Vec::new();

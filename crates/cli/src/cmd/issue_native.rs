@@ -1198,6 +1198,7 @@ mod tests {
                 },
                 Project { id: "prj_3".into(), name: "acme".into(), team: None },
             ],
+            hosted: false,
         }
     }
 

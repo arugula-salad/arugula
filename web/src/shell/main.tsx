@@ -297,6 +297,7 @@ const fleetHosts = (): HostRef[] =>
       team: d?.team ?? null,
       ownerId: d?.account,
       teamName: d?.team ? session?.teams.find((t) => t.team === d.team)?.roster.name : undefined,
+      hosted: !!d?.hosted,
     };
   });
 // The Cloud workspaces' tabs, in the swarm and the attention drawer: on

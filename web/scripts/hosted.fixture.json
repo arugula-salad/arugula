@@ -1,0 +1,64 @@
+{
+  "cert": {
+    "created": 3000,
+    "delegation": "017b544b71e654f70c0a0fda7f9993b0",
+    "device": "d30b9802b6365451",
+    "name": "box",
+    "noise": "0505050505050505050505050505050505050505050505050505050505050505",
+    "owner": "account:acct1",
+    "project": "prj_1",
+    "sig": "15992a3acdc32f3e5a7589c99920ae3194d5a0d41f4cf11acf30340aed191c6f3566dc207c4c2f0dd4407a1f70bea3c7409a96243f93726d2a88d34bb439fd09",
+    "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+    "workspace": "hw_1"
+  },
+  "delegation": {
+    "at": 2000,
+    "by": "4439457f6ef4c3ff",
+    "key": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+    "owner": "account:acct1",
+    "project": "prj_1",
+    "sig": "9edb8102888849443cae68b38f061cfcfdd9cea9a679b5fc224c08ad172f26be72e74c5a7e62984ae659f6e86fcc71864447310f29ea0f528beaaba0d17c2b03"
+  },
+  "id": "017b544b71e654f70c0a0fda7f9993b0",
+  "revoke": {
+    "at": 4000,
+    "by": "4439457f6ef4c3ff",
+    "delegation": "017b544b71e654f70c0a0fda7f9993b0",
+    "project": "prj_1",
+    "sig": "37b63c3b4be2c9adbcb7f7d233b15813468948a2f30f8859243c0e3bbf1cd7a14da7831b3f7a5844bf3c0c0939b5621bbfa51ef3109927549a84b6fb04f73b02"
+  },
+  "root": {
+    "account": "acct1",
+    "approver": "4439457f6ef4c3ff",
+    "created": 1000,
+    "device": "4439457f6ef4c3ff",
+    "kind": "browser",
+    "name": "laptop",
+    "noise": "0303030303030303030303030303030303030303030303030303030303030303",
+    "sig": "dd68dab693f0b7bbb1e42984604ee47d3c60d588951bb8527a07587aba496cb56fbd68b910db63d8fd8c479c1a353f8bd4d26081be14198e17268c2bad5b060d",
+    "sign": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+    "v": 1
+  },
+  "team": {
+    "cert": {
+      "created": 3000,
+      "delegation": "1595f75a1920104570d23254cf2c94db",
+      "device": "d30b9802b6365451",
+      "name": "box",
+      "noise": "0505050505050505050505050505050505050505050505050505050505050505",
+      "owner": "team:t1",
+      "project": "prj_1",
+      "sig": "34ba490b30d724a124445e8bb76547bf1626005bebee6064166f1a79d2849c0c0b72ba455d4de49df341a6562707ad90448a56dc99e9542224e4a6d8af28df00",
+      "sign": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+      "workspace": "hw_2"
+    },
+    "delegation": {
+      "at": 2000,
+      "by": "4439457f6ef4c3ff",
+      "key": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "owner": "team:t1",
+      "project": "prj_1",
+      "sig": "46f8f4ad1721527d5498099e267812452b9b995a2b4abe790021aca273383ce29829682723c53ff6e23a36d6b5efcf9d3c68b0ee7151aada88b2e558ef7edc01"
+    }
+  }
+}

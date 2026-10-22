@@ -38,7 +38,10 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use tracing::Instrument as _;
 
-use arugula_control_wire::forge::{DaemonOp, OpAnswer, Poke, Standing};
+use arugula_control_wire::{
+    forge::{DaemonOp, OpAnswer, Poke, Standing},
+    hosted::{EnrollAsk, EnrollGiven, Enrolled},
+};
 
 use crate::{
     Deleted, PlatformPort,
@@ -225,6 +228,11 @@ struct SendAuthArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+struct WorkspacesArgs {
+    workspaces: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize)]
 struct OpArgs {
     daemon: String,
     op: DaemonOp,
@@ -352,6 +360,18 @@ impl HubPort for HttpHub {
     fn daemon_op<'a>(&'a self, daemon: &'a str, op: &'a DaemonOp) -> BoxFuture<'a, HubResult<OpAnswer>> {
         Box::pin(self.0.call("daemon_op", OpArgs { daemon: daemon.to_owned(), op: op.clone() }))
     }
+
+    fn hosted_enrollment<'a>(&'a self, ask: &'a EnrollAsk) -> BoxFuture<'a, HubResult<EnrollGiven>> {
+        Box::pin(self.0.call("hosted_enrollment", ask.clone()))
+    }
+
+    fn hosted_enrolled<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<Vec<Enrolled>>> {
+        Box::pin(self.0.call("hosted_enrolled", WorkspacesArgs { workspaces: workspaces.to_vec() }))
+    }
+
+    fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
+        Box::pin(self.0.call("hosted_gone", WorkspacesArgs { workspaces: workspaces.to_vec() }))
+    }
 }
 
 /// What one side's internal API answers with: the port it serves, and
@@ -441,6 +461,9 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
                 let a: OpArgs = args(&body)?;
                 answer(hub.daemon_op(&a.daemon, &a.op).await?)?
             }
+            "hosted_enrollment" => answer(hub.hosted_enrollment(&args::<EnrollAsk>(&body)?).await?)?,
+            "hosted_enrolled" => answer(hub.hosted_enrolled(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
+            "hosted_gone" => answer(hub.hosted_gone(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
             _ => return Ok(None),
         }))
     }

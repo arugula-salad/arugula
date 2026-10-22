@@ -296,6 +296,27 @@ impl HubPort for InProcess {
     ) -> BoxFuture<'a, HubResult<arugula_control_wire::forge::OpAnswer>> {
         Box::pin(async move { Ok(self.app()?.relay.ask(daemon, op).await) })
     }
+
+    fn hosted_enrollment<'a>(
+        &'a self,
+        ask: &'a arugula_control_wire::hosted::EnrollAsk,
+    ) -> BoxFuture<'a, HubResult<arugula_control_wire::hosted::EnrollGiven>> {
+        Box::pin(async move {
+            let app = self.app()?;
+            crate::hosted::ask(&app.db, &app.hosted_key.public(), ask)
+        })
+    }
+
+    fn hosted_enrolled<'a>(
+        &'a self,
+        workspaces: &'a [String],
+    ) -> BoxFuture<'a, HubResult<Vec<arugula_control_wire::hosted::Enrolled>>> {
+        Box::pin(async move { crate::hosted::enrolled(&*self.app()?, workspaces) })
+    }
+
+    fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {
+        Box::pin(async move { crate::hosted::gone(&*self.app()?, workspaces) })
+    }
 }
 
 /// The platform, when it's in this process: what the three calls above

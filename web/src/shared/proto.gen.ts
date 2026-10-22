@@ -2190,7 +2190,13 @@ id: string, name: string,
  */
 team: ProjectTeam | null, };
 
-export type PlatformProjects = { me: PlatformMe, projects: Array<PlatformProject>, };
+export type PlatformProjects = { me: PlatformMe, projects: Array<PlatformProject>, 
+/**
+ * Hosted workspaces are open to this person (M179's allowlist): only
+ * then does the shell offer to delegate a project to control (M178).
+ * A platform from before leaves it out.
+ */
+hosted: boolean, };
 
 /**
  * One answer a decision point's question takes (#621), from `points

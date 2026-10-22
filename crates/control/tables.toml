@@ -224,6 +224,34 @@ with_account = "deleted"
 seen_by = ["litestream", "sprites"]
 
 [[table]]
+name = "project_delegations"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A project delegation (M178): an owner's device's signed word that control may enroll hosted machines into the project, the account that sent it, and the signed revocation that ended it."
+with_account = "deleted"
+note = "Its own project's and its disbanded teams' go, and every one it signed."
+seen_by = ["litestream"]
+
+[[table]]
+name = "hosted_enrollments"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A one-time hosted enrollment (M178): a hash of its ticket or the box's sandbox id, the project, workspace and delegation, when it runs out and when it was used."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "hosted_machines"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), its addresses, when it was last seen and removed."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "push_subs"
 plane = "machine"
 process = "hub"
@@ -237,7 +265,7 @@ name = "settings"
 plane = "machine"
 process = "hub"
 holds = "plaintext"
-what = "Control's own VAPID key pair, which signs the pushes it sends."
+what = "Control's own VAPID key pair, which signs the pushes it sends, and its hosted key (M178), which signs the hosted machines enrolled under a project's delegation."
 with_account = "none"
 seen_by = ["litestream"]
 

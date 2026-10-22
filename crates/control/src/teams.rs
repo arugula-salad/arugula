@@ -131,7 +131,7 @@ pub(crate) fn parse(body: &str) -> anyhow::Result<Roster> {
     Ok(serde_json::from_str(body)?)
 }
 
-fn pin(t: &Team) -> TeamPin {
+pub(crate) fn pin(t: &Team) -> TeamPin {
     TeamPin { team: t.id.clone(), founder: t.founder.clone(), founder_root: t.founder_root.clone() }
 }
 
@@ -148,6 +148,7 @@ pub(crate) fn role_in(r: &Roster, account: &str) -> Option<TeamRole> {
 /// changed, a team locked).
 fn nudge_team(app: &App, team: &str) {
     let mut ds = app.db.team_daemons(team).unwrap_or_default();
+    ds.extend(crate::hosted::of_team(app, team));
     // Members' own machines may have shared sessions with the team (M30):
     // the members of this version and the one before (someone just left).
     if let Ok(Some(latest)) = app.db.latest_roster(team)
@@ -942,6 +943,10 @@ pub async fn daemon_access(State(app): State<Arc<App>>, d: DaemonAuth, Json(b): 
 
 /// May `account` reach daemon `id` through the relay?
 pub fn may_reach(app: &App, account: &str, id: &str) -> anyhow::Result<bool> {
+    // A hosted machine (M178): its project's people, and nobody else.
+    if let Some(yes) = crate::hosted::may_reach(app, account, id)? {
+        return Ok(yes);
+    }
     let Some((owner, _)) = app.db.daemon_row(id)? else { return Ok(false) };
     if owner == account {
         return Ok(true);
