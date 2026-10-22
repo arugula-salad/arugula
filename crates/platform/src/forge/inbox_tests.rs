@@ -321,7 +321,8 @@ async fn the_shadow_comparison() {
     let report = json!({ "blocks": [
         // Agrees, its draft and all.
         { "repo": "acme/app", "number": 1, "reasons": ["review_requested"], "drafts": ["dft_b"] },
-        // The block found a mention the platform has no text for.
+        // The block found a mention the platform has no text for (acme/site
+        // doesn't mirror content): explained, not compared.
         { "repo": "Acme/Site", "number": 2, "reasons": ["mentioned"] },
         // The block doesn't show the draft: disagrees.
         { "repo": "acme/app", "number": 1, "reasons": ["review_requested"] },
@@ -339,7 +340,7 @@ async fn the_shadow_comparison() {
         .unwrap();
     assert_eq!(r.status(), 200);
     let v: Value = r.json().await.unwrap();
-    assert_eq!(v, json!({ "compared": 3, "agree": 1, "disagree": 2 }));
+    assert_eq!(v, json!({ "compared": 2, "agree": 1, "disagree": 1, "explained": 1 }));
     // A person's session isn't a machine.
     let (s, _) = call(&base, "bob", "POST", "/api/inbox/shadow", Some(report)).await;
     assert_eq!(s, 401);
@@ -380,11 +381,14 @@ async fn your_own_issue_given_to_you() {
         }
     };
     // #415: nothing on either side.
-    assert_eq!(report(json!([])).await, json!({ "compared": 1, "agree": 1, "disagree": 0 }));
+    assert_eq!(report(json!([])).await, json!({ "compared": 1, "agree": 1, "disagree": 0, "explained": 0 }));
     // #213: bob's comment mentions her. Without the text the platform
-    // can't see it (logged as "content not mirrored"); with it, it does.
-    assert_eq!(report(json!(["mentioned"])).await, json!({ "compared": 1, "agree": 0, "disagree": 1 }));
+    // can't see it: explained, and left out of the score.
+    assert_eq!(report(json!(["mentioned"])).await, json!({ "compared": 0, "agree": 0, "disagree": 0, "explained": 1 }));
+    // The repo mirrors content, but the platform didn't find the mention:
+    // that's a disagreement.
     exec(&app, "UPDATE linked_repos SET mirror_content = TRUE WHERE repo_id = 88", params![]);
+    assert_eq!(report(json!(["mentioned"])).await, json!({ "compared": 1, "agree": 0, "disagree": 1, "explained": 0 }));
     exec(
         &app,
         "INSERT INTO forge_content (repo_id, number, kind, github_id, author_login, body, updated_at)
@@ -393,5 +397,5 @@ async fn your_own_issue_given_to_you() {
     );
     assert_eq!(reasons(&wants(&app, 88, 2, "alice", Some("alice-gh"))), [("mentioned", "mentioned by bob-gh")]);
     inbox::recompute(&app, 88, &[2], false).await.unwrap();
-    assert_eq!(report(json!(["mentioned"])).await, json!({ "compared": 1, "agree": 1, "disagree": 0 }));
+    assert_eq!(report(json!(["mentioned"])).await, json!({ "compared": 1, "agree": 1, "disagree": 0, "explained": 0 }));
 }

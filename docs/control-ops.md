@@ -769,18 +769,24 @@ fly logs -a arugula-platform | grep 'inbox shadow'
 ```
 
 - `inbox shadow`: one line per report, with `day` (UTC), `daemon`,
-  `compared`, `agree` and `disagree`. A day's numbers are the sum of its
-  lines on every machine; the match rate is `agree / compared`. The gate
-  is 99%.
+  `compared`, `agree`, `disagree` and `explained`. A day's numbers are the
+  sum of its lines on every machine; the match rate is `agree / compared`.
+  The gate is 99%. Explained items aren't in `compared`, so they don't
+  count either way.
 - `inbox shadow: disagree`: one line per disagreement, with the `item` id
   and both sides' reasons (`block`, `platform`). Expect some, and explain
   them: a team's review request (the platform doesn't know a person's
-  teams), mentions where content isn't mirrored (`why="content not
-  mirrored"` on the line), a block's poll or the platform's recompute
-  catching up, `mergeable` (the platform has only GitHub's
+  teams), a block's poll or the platform's recompute catching up,
+  `mergeable` (the platform has only GitHub's
   `mergeable_state`), and an issue someone else opened that you gave
   yourself (the mirror doesn't keep who assigned it, so the platform
   takes it as given to you; one you opened, it takes as your own doing).
+- `inbox shadow: explained`: one line per item left out of the score,
+  with the `item`, both sides' reasons and `why`. Today that's only
+  `content not mirrored`: the block found a mention on a repo whose
+  project doesn't mirror content, which the platform can't see, and
+  everything else agrees. A mention on a repo that does mirror content is
+  still a disagreement.
 
 Fly keeps logs only a few days, so ship them where they last (or collect
 the lines daily) for the two weeks.

@@ -577,7 +577,8 @@ pub fn agree(block: &[String], platform: &[String]) -> bool {
 }
 
 /// A disagreement the platform can't help, by design: the block's mention
-/// on a repo that doesn't mirror content, with the rest the same.
+/// on a repo that doesn't mirror content, with the rest the same. It's
+/// left out of the score (Jake's call, #1217).
 fn explain(block: &[String], platform: &[String], mirrors: bool) -> Option<&'static str> {
     let rest: Vec<String> = block.iter().filter(|r| *r != "mentioned").cloned().collect();
     (!mirrors && rest.len() < block.len() && agree(&rest, platform)).then_some("content not mirrored")
@@ -604,7 +605,8 @@ fn day(ms: u64) -> String {
 /// on the same items, and logged: a line per report with its day's
 /// counts, and one per disagreement with the item and both reasons, never
 /// a title (docs/control-ops.md). Blocks on repos the owner may not read
-/// here, or items the mirror doesn't have, aren't compared.
+/// here, or items the mirror doesn't have, aren't compared; nor is an
+/// explained difference ([`explain`]), which is counted on its own.
 pub async fn shadow(
     State(app): State<Arc<Platform>>,
     m: Machine,
@@ -644,14 +646,22 @@ pub async fn shadow(
             block.push("draft".into());
         }
         let platform = app.db.inbox_reasons(&m.account, &item)?;
-        out.compared += 1;
         if agree(&block, &platform) {
+            out.compared += 1;
             out.agree += 1;
+            continue;
+        }
+        block.sort();
+        let why = explain(&block, &platform, mirrors);
+        let (block, platform) = (block.join(","), platform.join(","));
+        // Explained: not compared, so it doesn't count either way.
+        if let Some(why) = why {
+            out.explained += 1;
+            info!(item = %item, block, platform, why, "inbox shadow: explained");
         } else {
+            out.compared += 1;
             out.disagree += 1;
-            block.sort();
-            let why = explain(&block, &platform, mirrors).unwrap_or_default();
-            info!(item = %item, block = block.join(","), platform = platform.join(","), why, "inbox shadow: disagree");
+            info!(item = %item, block, platform, "inbox shadow: disagree");
         }
     }
     info!(
@@ -660,6 +670,7 @@ pub async fn shadow(
         compared = out.compared,
         agree = out.agree,
         disagree = out.disagree,
+        explained = out.explained,
         "inbox shadow"
     );
     Ok(Json(out))
