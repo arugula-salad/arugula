@@ -23,9 +23,9 @@ use crate::{
 };
 
 const TEAM: &str = "00aa11bb22cc33dd";
-const PROJECT: &str = "prj_0123456789abcdef0123456789abcdef";
+pub(crate) const PROJECT: &str = "prj_0123456789abcdef0123456789abcdef";
 
-fn delegation(c: &Control, owner: &str, by: &DeviceKeys) -> Delegation {
+pub(crate) fn delegation(c: &Control, owner: &str, by: &DeviceKeys) -> Delegation {
     let mut d = Delegation {
         project: PROJECT.into(),
         owner: owner.into(),
@@ -38,7 +38,7 @@ fn delegation(c: &Control, owner: &str, by: &DeviceKeys) -> Delegation {
     d
 }
 
-fn ask(owner: &str, workspace: &str, sandbox: Option<&str>) -> EnrollAsk {
+pub(crate) fn ask(owner: &str, workspace: &str, sandbox: Option<&str>) -> EnrollAsk {
     EnrollAsk {
         project: PROJECT.into(),
         owner: owner.into(),
@@ -49,7 +49,7 @@ fn ask(owner: &str, workspace: &str, sandbox: Option<&str>) -> EnrollAsk {
 }
 
 /// What the box sends, with the ticket or the sandbox id.
-fn enroll_body(keys: &DeviceKeys, ticket: Option<&str>, sandbox: Option<&str>) -> Value {
+pub(crate) fn enroll_body(keys: &DeviceKeys, ticket: Option<&str>, sandbox: Option<&str>) -> Value {
     let (noise, sign) = (hex::encode(keys.noise_public), hex::encode(keys.sign_public()));
     let at = now_ms();
     let credential = hash(ticket.or(sandbox).unwrap());
@@ -58,7 +58,7 @@ fn enroll_body(keys: &DeviceKeys, ticket: Option<&str>, sandbox: Option<&str>) -
 }
 
 impl Control {
-    async fn post(&self, path: &str, body: &Value) -> (u16, Value) {
+    pub(crate) async fn post(&self, path: &str, body: &Value) -> (u16, Value) {
         let r = self.http.post(format!("{}{path}", self.base)).json(body).send().await.unwrap();
         (r.status().as_u16(), r.json().await.unwrap_or_default())
     }
@@ -75,7 +75,7 @@ impl Control {
     }
 
     /// A person's relay socket to `id`: its upgrade's status.
-    async fn reach(&self, cookie: &str, id: &str) -> u16 {
+    pub(crate) async fn reach(&self, cookie: &str, id: &str) -> u16 {
         let mut req =
             format!("{}/api/relay/c/{id}", self.base.replace("http://", "ws://")).into_client_request().unwrap();
         req.headers_mut().insert("cookie", cookie.parse().unwrap());
@@ -342,4 +342,48 @@ async fn deleting_the_owner_takes_its_hosted_machines_and_delegations() {
     assert!(c.app.db.hosted(&k.id()).unwrap().is_none());
     assert!(c.app.db.delegations_of(&["account:m1".into()]).unwrap().is_empty());
     assert!(c.app.db.mentions("m1").iter().all(|m| !m.starts_with("hosted") && !m.starts_with("project_delegations")));
+}
+
+/// M185: a box asks before an agent turn, signed as its hosted machine,
+/// and the hub hands it to the platform for the workspace and machine its
+/// certificate names (the platform's answer is its own tests'); nobody
+/// else's signature gets there.
+#[tokio::test]
+async fn a_box_asks_the_platform_about_its_turns() {
+    let (c, fran, cy, _ox) = acme().await;
+    let fran_s = session(&c.app, "f1");
+    let owner = format!("team:{TEAM}");
+    let d = delegation(&c, &owner, &fran);
+    let (st, _) = c.as_person(&fran_s, "POST", "/api/hosted/delegations", Some(json!({ "delegation": d }))).await;
+    assert_eq!(st, 200);
+    let EnrollGiven::Ready { ticket: Some(ticket), .. } =
+        c.app.hub_port.hosted_enrollment(&ask(&owner, "hw_1", None)).await.unwrap()
+    else {
+        panic!("no ticket")
+    };
+    let boxk = DeviceKeys::generate();
+    assert_eq!(c.post("/api/hosted/enroll", &enroll_body(&boxk, Some(&ticket), None)).await.0, 200);
+
+    let signed_post = |keys: &DeviceKeys, path: &str, body: &[u8]| {
+        c.http
+            .post(format!("{}{path}", c.base))
+            .header("x-arugula-auth", v2(keys, "POST", path, body))
+            .header("content-type", "application/json")
+            .body(body.to_vec())
+            .send()
+    };
+    let body = br#"{"agent":"claude"}"#;
+    let r = signed_post(&boxk, "/api/hosted/turns", body).await.unwrap();
+    // This control's platform has no such workspace: it says so, through
+    // the hub.
+    assert_eq!(r.status(), 404);
+    let v: Value = r.json().await.unwrap();
+    assert_eq!(v["error"], "this machine isn't a live hosted workspace");
+    let r = signed_post(&boxk, "/api/hosted/turns/ht_1/end", b"").await.unwrap();
+    assert_eq!((r.status().as_u16(), r.json::<Value>().await.unwrap()["ended"].clone()), (200, json!(false)));
+
+    // A person's device, and no signature at all, aren't a hosted machine.
+    assert_eq!(signed_post(&cy, "/api/hosted/turns", body).await.unwrap().status(), 401);
+    let (st, _) = c.as_person(&fran_s, "POST", "/api/hosted/turns", Some(json!({ "agent": "claude" }))).await;
+    assert_eq!(st, 401);
 }

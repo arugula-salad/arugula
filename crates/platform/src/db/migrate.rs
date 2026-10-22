@@ -200,8 +200,14 @@ const SQLITE: &[Migration] = &[
     },
     Migration {
         version: 18,
+        name: "hosted_inference",
+        sql: include_str!("../../migrations/sqlite/0018_hosted_inference.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 19,
         name: "run_grants",
-        sql: include_str!("../../migrations/sqlite/0018_run_grants.sql"),
+        sql: include_str!("../../migrations/sqlite/0019_run_grants.sql"),
         additive: true,
     },
 ];
@@ -314,8 +320,14 @@ const POSTGRES: &[Migration] = &[
     },
     Migration {
         version: 18,
+        name: "hosted_inference",
+        sql: include_str!("../../migrations/postgres/0018_hosted_inference.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 19,
         name: "run_grants",
-        sql: include_str!("../../migrations/postgres/0018_run_grants.sql"),
+        sql: include_str!("../../migrations/postgres/0019_run_grants.sql"),
         additive: true,
     },
 ];

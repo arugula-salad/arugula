@@ -79,7 +79,8 @@ struct Args {
     compute: arugula_platform::compute::Args,
 
     /// Hosted workspaces (M179): ARUGULA_HOSTED_TEMPLATE,
-    /// ARUGULA_HOSTED_ENROLL and ARUGULA_HOSTED_ACCOUNTS.
+    /// ARUGULA_HOSTED_ENROLL and ARUGULA_HOSTED_ACCOUNTS; and their
+    /// inference (M185): ARUGULA_HOSTED_PLATFORM_KEYS and the turn caps.
     #[command(flatten)]
     hosted: arugula_platform::hosted::Args,
 
@@ -168,7 +169,7 @@ async fn run() -> anyhow::Result<()> {
     }
     let mut p = Platform::new(cfg, db, hub, http, analytics);
     p.stripe = a.billing.stripe()?;
-    p.hosted = a.hosted.config(a.cloud.cloud_secret_key.as_deref())?;
+    p.hosted = a.hosted.config(&a.cloud)?;
     p.cloud = a.cloud.cloud()?;
     p.compute = a.compute.substrate()?;
     p.github = a.github_app.app(&a.github_api)?;

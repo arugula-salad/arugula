@@ -9,7 +9,7 @@
 import { cat, Initiator, type Cipher } from "./noise.ts";
 import type { DeviceKeys } from "./keys.ts";
 import { unhex } from "./cert.ts";
-import { fullReason, RelayMux, type SocketLike } from "./relaymux.ts";
+import { fullReason, RelayMux, type SocketLike, type WakeSaid } from "./relaymux.ts";
 
 const CHUNK = 16 * 1024;
 const MAX_MSG = 64 << 20;
@@ -101,10 +101,14 @@ export interface Route {
   /** Only if a `mux` route before it couldn't reach control at all (an
    * older control without the shared socket). */
   ifNoMux?: boolean;
+  /** M182, on a `mux` route: a hosted machine that's asleep is woken, and
+   * `onWake` hears what control says of its box. */
+  wake?: boolean;
+  onWake?: (w: WakeSaid) => void;
 }
 
 function openRoute(r: Route, id: string): Promise<SocketLike> {
-  if (r.mux) return RelayMux.for(r.mux).open(id, r.timeoutMs);
+  if (r.mux) return RelayMux.for(r.mux).open(id, r.timeoutMs, r.wake, r.onWake);
   return openSocket(r.url, r.timeoutMs) as Promise<unknown> as Promise<SocketLike>;
 }
 

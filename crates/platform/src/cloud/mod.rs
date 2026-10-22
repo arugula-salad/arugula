@@ -51,7 +51,9 @@ pub struct Args {
     /// Separate 32-byte hex encryption key for user cloud secrets. Back up with deployment secrets.
     #[arg(long, env = "ARUGULA_CLOUD_SECRET_KEY", hide_env_values = true)]
     pub cloud_secret_key: Option<String>,
-    /// Limited beta allowlist; empty disables access for all accounts.
+    /// Limited beta allowlist; empty disables access for all accounts. Hosted
+    /// workspaces these accounts make run on the platform's inference key
+    /// (M185, `hosted::inference`).
     #[arg(long, env = "ARUGULA_CLOUD_ACCOUNTS", value_delimiter = ',')]
     pub cloud_accounts: Vec<String>,
     /// Platform-funded model, required when cloud execution is configured
@@ -66,7 +68,8 @@ pub struct Args {
     #[arg(long, env = "ARUGULA_CLOUD_MODELS", value_delimiter = ',')]
     pub cloud_models: Vec<String>,
     /// Retired with Cloud runs (S40, decision 10): still parsed, so an old
-    /// deploy starts, and do nothing but say so.
+    /// deploy starts, and do nothing but say so. Hosted agents' caps on the
+    /// platform's key are `hosted::Args`' (M185).
     #[arg(long, env = "ARUGULA_CLOUD_DAILY_RUNS", hide = true)]
     pub cloud_daily_runs: Option<String>,
     #[arg(long, env = "ARUGULA_CLOUD_CONCURRENT_RUNS", hide = true)]
@@ -84,7 +87,9 @@ impl Args {
             ("ARUGULA_CLOUD_RUN_MINUTES", self.cloud_run_minutes.is_some()),
         ] {
             if set {
-                tracing::warn!("{name} does nothing: Cloud runs were retired, and Cloud workspaces have no caps");
+                tracing::warn!(
+                    "{name} does nothing: Cloud runs were retired. Hosted agents' caps are ARUGULA_HOSTED_CONCURRENT_TURNS, ARUGULA_HOSTED_DAILY_TURNS and ARUGULA_HOSTED_TURN_MINUTES"
+                );
             }
         }
         Ok(match self.cloud_provider_key.filter(|k| !k.is_empty()) {

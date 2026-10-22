@@ -665,6 +665,23 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   color: var(--on-color);
 }
 
+/* M182: a hosted machine's box waking, asleep, or why it didn't wake:
+   its buttons take clicks. */
+#status.wake {
+  max-width: min(420px, calc(100vw - 16px));
+  pointer-events: auto;
+}
+
+#status.wake button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* ---- phone */
 
 .phone-bar {
@@ -9074,11 +9091,14 @@ html[data-desktop="macos"]:not([data-native-tabs]) .ws-rail {
 }
 
 .ws-conn.reconnecting,
-.ws-conn.offline {
+.ws-conn.offline,
+.ws-conn.waking {
   color: var(--fg);
 }
 
+.ws-conn.waking .ws-dot,
 .ws-conn.reconnecting .ws-dot,
+.ws-dot.waking,
 .ws-dot.reconnecting,
 .ws-dot.needs_input {
   background: var(--warn);

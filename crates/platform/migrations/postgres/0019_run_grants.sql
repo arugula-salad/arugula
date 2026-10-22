@@ -1,4 +1,4 @@
--- 0018: the standing project grant (M211, platform step 7). An owner's
+-- 0019: the standing project grant (M211, platform step 7). An owner's
 -- device signs, once per project, that the platform may start and
 -- instruct runs on the project's hosted workspaces ("One standing grant
 -- per project starts runs", aru-099; `arugula_e2e::project_grant`). The

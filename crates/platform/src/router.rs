@@ -21,8 +21,8 @@ use crate::{Platform, billing, chat, cloud, forge, grants, hosted, projects, run
 /// page's own (M150); the GitHub App's webhook (M161); linked repos
 /// (M163); their items, each read checked against the viewer (M165);
 /// drafts on them (M170); the inbox (M171); native issues' (M195), for
-/// agents too (M200); hosted workspaces (M179); and the standing project
-/// grant for runs (M211).
+/// agents too (M200); hosted workspaces (M179) and their inference keys
+/// (M185); and the standing project grant for runs (M211).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -126,6 +126,11 @@ fn routes() -> Routes {
         .route("/api/projects/{project}/workspaces", get(hosted::routes::list).post(hosted::routes::create))
         .route("/api/projects/{project}/workspaces/{id}", get(hosted::routes::open).delete(hosted::routes::delete))
         .route("/api/projects/{project}/workspaces/{id}/rebuild", post(hosted::routes::rebuild))
+        .route("/api/projects/{project}/inference-keys", get(hosted::inference::list_keys))
+        .route(
+            "/api/projects/{project}/inference-keys/{provider}",
+            axum::routing::put(hosted::inference::set_key).delete(hosted::inference::clear_key),
+        )
         // The standing project grant (M211).
         .route("/api/projects/{project}/runs/grant", get(run_grant::show).post(run_grant::sign))
         .route("/api/projects/{project}/runs/grant/revoke", post(run_grant::revoke))

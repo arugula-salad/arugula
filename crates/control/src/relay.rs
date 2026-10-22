@@ -69,6 +69,10 @@ pub struct Relay {
     asked: Mutex<HashMap<String, (String, tokio::sync::oneshot::Sender<OpAnswer>)>>,
     /// Whether each hosted machine is working (M180).
     pub activity: crate::activity::Activities,
+    /// A daemon dialed in (M182: an open waits for a hosted one to).
+    came: tokio::sync::Notify,
+    /// Hosted machines' boxes being woken (M182), one wake each.
+    pub wakes: crate::wake::Wakes,
 }
 
 /// How long a machine has to answer an op: a send runs `gh` and waits for
@@ -201,6 +205,11 @@ struct Live {
     text: tokio::sync::mpsc::UnboundedSender<String>,
     /// The typed ops it said it knows (M168).
     ops: Vec<String>,
+    /// When it last sent anything (ms), a pong included; asking it to
+    /// ping (a hosted machine's open, M182), and hearing it did.
+    seen: Arc<AtomicU64>,
+    probe: Arc<tokio::sync::Notify>,
+    heard: Arc<tokio::sync::Notify>,
 }
 
 impl Relay {
@@ -433,6 +442,69 @@ impl Relay {
         }
     }
 
+    /// The daemon's mux and which of its connections it is, if it's
+    /// connected.
+    pub fn mux_of(&self, id: &str) -> Option<(Mux, u64)> {
+        self.live.lock().unwrap().get(id).map(|l| (l.mux.clone(), l.generation))
+    }
+
+    /// Whether daemon `id` answers (M182): at once if it was heard from in
+    /// the last `fresh`, else whether it answers a ping within `within`.
+    /// A paused box's daemon is frozen without a word, and its socket looks
+    /// open until it's been quiet a while. `None` when it isn't connected.
+    pub async fn answers(&self, id: &str, fresh: Duration, within: Duration) -> Option<bool> {
+        let (seen, probe, heard) = {
+            let live = self.live.lock().unwrap();
+            let l = live.get(id)?;
+            (l.seen.clone(), l.probe.clone(), l.heard.clone())
+        };
+        let asked = now_ms();
+        if asked.saturating_sub(seen.load(Ordering::Relaxed)) <= fresh.as_millis() as u64 {
+            return Some(true);
+        }
+        probe.notify_one();
+        let answered = async {
+            loop {
+                let n = heard.notified();
+                tokio::pin!(n);
+                n.as_mut().enable();
+                if seen.load(Ordering::Relaxed) >= asked {
+                    return;
+                }
+                n.await;
+            }
+        };
+        Some(tokio::time::timeout(within, answered).await.is_ok())
+    }
+
+    /// Hang up on connection `generation` of daemon `id`, if it's still
+    /// the one (M182: a paused box's, which will dial in afresh).
+    pub fn drop_stale(&self, id: &str, generation: u64) {
+        let mut live = self.live.lock().unwrap();
+        if live.get(id).is_some_and(|l| l.generation == generation)
+            && let Some(l) = live.remove(id)
+        {
+            l.stop.notify_one();
+            l.mux.close();
+        }
+    }
+
+    /// Daemon `id`'s mux once it's connected, other than as connection
+    /// `stale`.
+    pub async fn came(&self, id: &str, stale: Option<u64>) -> Mux {
+        loop {
+            let n = self.came.notified();
+            tokio::pin!(n);
+            n.as_mut().enable();
+            if let Some((mux, g)) = self.mux_of(id)
+                && Some(g) != stale
+            {
+                return mux;
+            }
+            n.await;
+        }
+    }
+
     /// A daemon left or was revoked: hang up on it.
     pub fn drop_daemon(&self, id: &str) {
         if let Some(l) = self.live.lock().unwrap().remove(id) {
@@ -479,14 +551,24 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
     let nudge = Arc::new(tokio::sync::Notify::new());
     let (text, mut texts) = tokio::sync::mpsc::unbounded_channel::<String>();
     let generation = app.relay.next.fetch_add(1, Ordering::Relaxed);
-    if let Some(old) = app.relay.live.lock().unwrap().insert(
-        id.clone(),
-        Live { generation, mux: mux.clone(), stop: stop.clone(), nudge: nudge.clone(), text, ops: vec![] },
-    ) {
+    let (last, probe, heard_from) = (Arc::new(AtomicU64::new(now_ms())), Arc::default(), Arc::default());
+    let live = Live {
+        generation,
+        mux: mux.clone(),
+        stop: stop.clone(),
+        nudge: nudge.clone(),
+        text,
+        ops: vec![],
+        seen: last.clone(),
+        probe: Arc::clone(&probe),
+        heard: Arc::clone(&heard_from),
+    };
+    if let Some(old) = app.relay.live.lock().unwrap().insert(id.clone(), live) {
         // A daemon that reconnected: the old socket is dead or about to be.
         old.stop.notify_one();
         old.mux.close();
     }
+    app.relay.came.notify_waiters();
     if app.relay.renudge.lock().unwrap().remove(&id) {
         nudge.notify_one();
     }
@@ -501,26 +583,33 @@ async fn daemon_socket(app: Arc<App>, id: String, hosted: bool, ws: WebSocket, t
                 Some(f) => if tx.send(Message::Binary(f.into())).await.is_err() { break },
                 None => break,
             },
-            m = rx.next() => match m {
-                Some(Ok(Message::Binary(b))) => {
-                    heard = Instant::now();
-                    if let Err(e) = mux.handle(&b) {
-                        warn!(daemon = %id, error = %e, "daemon broke the mux protocol");
-                        break;
-                    }
+            m = rx.next() => {
+                if matches!(m, Some(Ok(_))) {
+                    last.store(now_ms(), Ordering::Relaxed);
+                    heard_from.notify_waiters();
                 }
-                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
-                Some(Ok(Message::Text(t))) => {
-                    heard = Instant::now();
-                    if !crate::guest_jump::from_daemon(&app, &id, generation, t.as_str())
-                        && !app.relay.op_text(&id, t.as_str())
-                        && !app.relay.activity.heard(&id, generation, t.as_str())
-                    {
-                        crate::forge::from_daemon(&app, &id, generation, t.as_str());
+                match m {
+                    Some(Ok(Message::Binary(b))) => {
+                        heard = Instant::now();
+                        if let Err(e) = mux.handle(&b) {
+                            warn!(daemon = %id, error = %e, "daemon broke the mux protocol");
+                            break;
+                        }
                     }
+                    Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                    Some(Ok(Message::Text(t))) => {
+                        heard = Instant::now();
+                        if !crate::guest_jump::from_daemon(&app, &id, generation, t.as_str())
+                            && !app.relay.op_text(&id, t.as_str())
+                            && !app.relay.activity.heard(&id, generation, t.as_str())
+                        {
+                            crate::forge::from_daemon(&app, &id, generation, t.as_str());
+                        }
+                    }
+                    Some(Ok(_)) => heard = Instant::now(),
                 }
-                Some(Ok(_)) => heard = Instant::now(),
             },
+            _ = probe.notified() => if tx.send(Message::Ping(Default::default())).await.is_err() { break },
             Some(t) = texts.recv() => if tx.send(Message::Text(t.into())).await.is_err() { break },
             _ = ping.tick() => {
                 if heard.elapsed() > DEAD_AFTER || tx.send(Message::Ping(Default::default())).await.is_err() {
@@ -590,8 +679,24 @@ pub async fn client(
         Ok(false) => return err(StatusCode::NOT_FOUND, "no such daemon").into_response(),
         Err(e) => return crate::ApiError::from(e).into_response(),
     }
-    splice_to(app, id, Some(s.account), &headers, up).await
+    // A hosted machine (M182): asked if it's up, and its box woken first if
+    // it's asleep and this open asks (`x-arugula-wake: 1`). The upgrade
+    // waits for it.
+    let wake = headers.get(crate::wake::HEADER).is_some_and(|v| v == "1");
+    let (code, why) = match crate::wake::reach(&app, &id, wake, || {}).await {
+        Ok(None | Some(crate::wake::Reach::Up(_))) => return splice_to(app, id, Some(s.account), &headers, up).await,
+        Ok(Some(crate::wake::Reach::Asleep)) => ("asleep", ASLEEP.to_owned()),
+        Ok(Some(crate::wake::Reach::Failed { code, why })) => (code.as_str(), why),
+        Err(e) => return crate::ApiError::from(e).into_response(),
+    };
+    let mut r = err(StatusCode::SERVICE_UNAVAILABLE, &why).into_response();
+    r.headers_mut().insert(crate::wake::HEADER, HeaderValue::from_static(code));
+    r
 }
+
+/// What an open of a sleeping hosted machine that didn't ask to wake it
+/// hears (M182).
+const ASLEEP: &str = "that machine is asleep: open it to wake it";
 
 /// A read-only link's viewer (M19): no account. Only to a daemon that has
 /// live links, and rate-limited; the daemon checks the link's key.
@@ -816,7 +921,9 @@ async fn sandbox_splice(app: &App, sandbox: &str, ws: WebSocket, ticket: &Ticket
 // - `OPEN` (page to control): payload is the daemon's id;
 // - `OPENED` (control to page): the daemon's stream is up;
 // - `DATA` (both ways): one Noise message;
-// - `CLOSE` (both ways): the channel is over; from control, payload is why.
+// - `CLOSE` (both ways): the channel is over; from control, payload is why;
+// - `OPEN_WAKE` (page to control): `OPEN`, waking a sleeping hosted machine
+//   (M182); `WAKE` (control to page): what's become of its box, as JSON.
 //
 // Control routes and counts, as for `/api/relay/c/<id>`, and can't read
 // what crosses.
@@ -830,6 +937,13 @@ const M_OPEN: u8 = 1;
 const M_DATA: u8 = 2;
 const M_CLOSE: u8 = 3;
 const M_OPENED: u8 = 4;
+/// Page to control: as `OPEN`, and a hosted machine that's asleep is woken
+/// (M182).
+const M_OPEN_WAKE: u8 = 5;
+/// Control to page: what's become of a hosted machine's box, as JSON
+/// (`crate::wake::said`): `waking` as its wake starts, then `failed` (with
+/// why) or `asleep` before the `CLOSE`.
+const M_WAKE: u8 = 6;
 /// Channels one page may hold at once.
 const MAX_CHANNELS: usize = 64;
 
@@ -875,18 +989,19 @@ async fn many_socket(app: Arc<App>, account: String, ws: WebSocket, ticket: Arc<
                 let chan = u32::from_be_bytes(b[1..5].try_into().unwrap());
                 let payload = &b[5..];
                 match b[0] {
-                    M_OPEN if !chans.contains_key(&chan) => {
+                    M_OPEN | M_OPEN_WAKE if !chans.contains_key(&chan) => {
                         if chans.len() >= MAX_CHANNELS {
                             let _ = out_tx.send(mframe(M_CLOSE, chan, b"too many channels on one socket")).await;
                             continue;
                         }
                         let id = String::from_utf8_lossy(payload).into_owned();
+                        let wake = b[0] == M_OPEN_WAKE;
                         let (tx, rx) = tokio::sync::mpsc::channel(64);
                         chans.insert(chan, tx);
                         let (app, account, out, done) = (app.clone(), account.clone(), out_tx.clone(), done_tx.clone());
                         let ticket = ticket.clone();
                         tokio::spawn(async move {
-                            let opened = channel(app, account, id, chan, rx, out.clone(), &ticket).await;
+                            let opened = channel(app, account, id, chan, wake, rx, out.clone(), &ticket).await;
                             // After everything it sent, in the same queue: a
                             // daemon's last words (why it hung up) arrive.
                             if opened {
@@ -927,12 +1042,15 @@ async fn many_socket(app: Arc<App>, account: String, ws: WebSocket, ticket: Arc<
 }
 
 /// One daemon's channel inside a page's socket: its relay stream, framed as
-/// `/api/relay/c/<id>` frames it.
+/// `/api/relay/c/<id>` frames it. `wake`: a hosted machine that's asleep is
+/// woken (M182).
+#[allow(clippy::too_many_arguments)]
 async fn channel(
     app: Arc<App>,
     account: String,
     id: String,
     chan: u32,
+    wake: bool,
     mut from_page: tokio::sync::mpsc::Receiver<Vec<u8>>,
     out: tokio::sync::mpsc::Sender<Vec<u8>>,
     ticket: &Ticket,
@@ -950,8 +1068,33 @@ async fn channel(
         let _ = out.send(refuse("a hosted sandbox: use /api/relay/c")).await;
         return false;
     }
+    // A hosted machine (M182): asked if it's up, and its box woken first if
+    // it's asleep and the page asks. The page hears each step.
+    let said = |r: Option<&crate::wake::Reach>| mframe(M_WAKE, chan, crate::wake::said(r).to_string().as_bytes());
+    let mux = match crate::wake::reach(&app, &id, wake, || {
+        let _ = out.try_send(said(None));
+    })
+    .await
+    {
+        Ok(None) => app.relay.mux(&id),
+        Ok(Some(crate::wake::Reach::Up(mux))) => Some(mux),
+        Ok(Some(r)) => {
+            let why = match &r {
+                crate::wake::Reach::Failed { why, .. } => why.clone(),
+                _ => ASLEEP.to_owned(),
+            };
+            let _ = out.send(said(Some(&r))).await;
+            let _ = out.send(refuse(&why)).await;
+            return false;
+        }
+        Err(e) => {
+            warn!(machine = %id, error = %e, "reaching a hosted machine");
+            let _ = out.send(refuse("that machine couldn't be reached")).await;
+            return false;
+        }
+    };
     let slow = crate::plans::relay_standing(&app, &account).await.is_ok_and(|(_, _, slow)| slow);
-    let Some(stream) = app.relay.mux(&id).and_then(|m| m.open().ok()) else {
+    let Some(stream) = mux.and_then(|m| m.open().ok()) else {
         let _ = out.send(refuse("that daemon isn't connected to the relay")).await;
         return false;
     };

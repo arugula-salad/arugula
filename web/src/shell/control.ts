@@ -1874,7 +1874,8 @@ export class ControlSession {
     // M50: blocks on control's block origins, where control serves them.
     // A hosted sandbox's daemon doesn't dial control's relay, so not there.
     const blockDomain = d.sandbox ? undefined : this.info.block_domain;
-    return { daemon: { id: d.id, noise: d.cert.noise }, direct: d.urls, relay: `${ws}/api/relay/c/${d.id}`, mux, keys: this.keys, blockDomain };
+    const hosted = d.hosted ? { project: d.hosted.project, workspace: d.hosted.workspace } : undefined;
+    return { daemon: { id: d.id, noise: d.cert.noise }, direct: d.urls, relay: `${ws}/api/relay/c/${d.id}`, mux, keys: this.keys, blockDomain, hosted };
   }
 
   /** A read-only link to a session on daemon `id` (M19): a one-off key, its

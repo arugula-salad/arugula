@@ -356,7 +356,9 @@ impl Enrolled {
         let ws = format!("{}://{}{path}", if c.tls { "wss" } else { "ws" }, c.authority);
         let auth = request_auth(&self.keys, "GET", &path, b"");
         let origin = self.url.trim_end_matches('/').to_owned();
-        let headers = [("x-arugula-auth", auth.as_str()), ("origin", origin.as_str())];
+        // A hosted machine that's asleep is woken (M182): the CLI opens a
+        // machine only when someone asks it to.
+        let headers = [("x-arugula-auth", auth.as_str()), ("origin", origin.as_str()), ("x-arugula-wake", "1")];
         match Link::connect(&c, &ws, &headers, &cert, &self.keys, None, "relayed through control".into()) {
             Ok(l) => Ok(l),
             Err(e) => {

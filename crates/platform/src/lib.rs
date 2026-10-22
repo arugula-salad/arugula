@@ -73,7 +73,7 @@ pub mod timing;
 pub mod window;
 
 pub use hub::HubPort;
-pub use port::{Deleted, PlatformPort};
+pub use port::{Deleted, PlatformPort, TurnAnswer};
 pub use router::{paths, router};
 
 /// What the platform is told when it starts.
@@ -129,6 +129,9 @@ pub struct Platform {
     /// Hosted workspaces' template, how their boxes enroll, and who may make
     /// them (M179).
     pub hosted: hosted::Config,
+    /// Wakes asked of hosted workspaces' boxes (M182): one at a time per
+    /// workspace, and the worker started on them at once.
+    pub wakes: hosted::wake::Wakes,
     /// The GitHub App (M40, here since M161), when this control has its id
     /// and key: its webhook, `may()` and installation tokens.
     pub github: Option<forge::GithubApp>,
@@ -215,6 +218,7 @@ impl Platform {
             cloud: None,
             compute: None,
             hosted: Default::default(),
+            wakes: Default::default(),
             github: None,
             chat,
             cache: Default::default(),

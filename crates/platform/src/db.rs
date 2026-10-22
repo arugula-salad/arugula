@@ -35,6 +35,7 @@ pub mod forge;
 pub mod hosted;
 pub mod hosted_usage;
 pub mod inbox;
+pub mod inference;
 pub mod issues;
 pub mod jobs;
 mod legacy;

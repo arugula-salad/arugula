@@ -1,4 +1,4 @@
-//! The standing project grants' rows (M211), made by migration `0018`:
+//! The standing project grants' rows (M211), made by migration `0019`:
 //! what an owner's device signed, kept as the bytes it signed and read back
 //! from them ([`ProjectGrant::parse`]), so nothing the platform holds beside
 //! them can change what a grant says. [`crate::run_grant`] has the rules.

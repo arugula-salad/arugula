@@ -46,6 +46,7 @@ import { decompress } from "fzstd";
 import { SCROLLBACK, TerminalView } from "./terminal-view";
 import { makeBlockView, type BlockView } from "./blocks";
 import { E2ESocket, type DaemonClock, type DaemonRef } from "./e2e/channel.ts";
+import type { WakeSaid } from "./e2e/relaymux.ts";
 import type { DeviceKeys } from "./e2e/keys.ts";
 import { pick, upload } from "./upload";
 import { desktopApp } from "../shared/desktop";
@@ -114,6 +115,9 @@ export interface E2ETarget {
   /** M50: control's block domain, when control serves blocks' origins:
    * this daemon's port and editor blocks are framed there. */
   blockDomain?: string;
+  /** M182: a hosted machine's project and workspace, to rebuild it by
+   * when its box doesn't wake. */
+  hosted?: { project: string; workspace: string };
 }
 
 /** The connection a Client talks over. */
@@ -169,11 +173,12 @@ class E2ELink implements Link {
   full: string | undefined;
   private closed = false;
   /** Connects in the background; the Client sees it as a socket that opens
-   * (or closes, and is retried). */
-  constructor(target: E2ETarget, onPath: (how: "direct" | "relayed") => void) {
+   * (or closes, and is retried). `wake` (M182): a hosted machine that's
+   * asleep is woken, and `onWake` hears what control says of its box. */
+  constructor(target: E2ETarget, onPath: (how: "direct" | "relayed") => void, wake = false, onWake?: (w: WakeSaid) => void) {
     const urls = [
       ...target.direct.map((u) => ({ url: `${u.replace(/^http/, "ws").replace(/\/$/, "")}/e2e`, timeoutMs: 1500 })),
-      { url: target.relay, timeoutMs: 10_000, mux: target.mux },
+      { url: target.relay, timeoutMs: 10_000, mux: target.mux, wake, onWake },
       // A control without the shared socket: one of its own.
       ...(target.mux ? [{ url: target.relay, timeoutMs: 10_000, ifNoMux: true }] : []),
     ];
@@ -261,6 +266,17 @@ export class Client {
 
   /** M30: the daemon said this person's access was removed. */
   revoked = false;
+  /** M182: what control last said of a hosted machine's box: `waking`
+   * while it wakes it, `asleep` or `failed` (with why) while it's down.
+   * Null once the machine answers, and for any other machine. */
+  box: WakeSaid | null = null;
+  /** M182: the next connect wakes a hosted machine that's asleep: this
+   * connection's first, and one someone asked for (the page shown again,
+   * Wake pressed). A reconnect on its own doesn't: a box left open on a
+   * screen still pauses between turns. Never a summary connection's. */
+  private wakeNext = true;
+  /** M182: when the try that asked to wake began (performance.now()). */
+  private wakeAt = 0;
   /** M25: tries that ended before the daemon said hello. */
   failures = 0;
   /** M25: when the daemon last sent anything (ms), so a link that died
@@ -951,10 +967,22 @@ export class Client {
     if (this.closed || this.asleep || this.link) return;
     let link: Link;
     if (this.e2e) {
-      link = new E2ELink(this.e2e, (how) => {
-        this.path = how;
-        this.emit();
-      });
+      const wake = this.wakeNext && !this.summary;
+      this.wakeNext = false;
+      if (wake) this.wakeAt = performance.now();
+      link = new E2ELink(
+        this.e2e,
+        (how) => {
+          this.path = how;
+          this.emit();
+        },
+        wake,
+        (w) => {
+          if (this.link !== link) return;
+          this.box = w;
+          this.emit();
+        },
+      );
     } else {
       const here = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`;
       // The app's window says so: its webview's User-Agent is a
@@ -1044,6 +1072,9 @@ export class Client {
    * the fleet queued (#369), which otherwise never backed off. */
   wake(fresh = true) {
     this.asleep = false;
+    // M182: someone's here (or pressed Wake): a hosted machine's box is
+    // woken by the next try, even one already under way's successor.
+    if (fresh) this.wakeNext = true;
     if (!this.link && !this.closed) {
       if (fresh) this.retry = 0;
       this.connect();
@@ -1134,6 +1165,18 @@ export class Client {
         }
         this.daemonVersion = msg.version;
         this.revoked = false;
+        // M182: back from a wake: how long it took, shown a moment.
+        if (this.box?.state === "waking") {
+          const ms = Math.round(performance.now() - this.wakeAt);
+          console.info(`arugula: ${this.e2e?.daemon.id ?? this.base} woke and answered ${ms}ms after it was opened`);
+          const awake: WakeSaid = { state: "awake", ms };
+          this.box = awake;
+          setTimeout(() => {
+            if (this.box !== awake) return;
+            this.box = null;
+            this.emit();
+          }, 4000);
+        } else this.box = null;
         this.clientId = msg.client;
         this.connected = true;
         this.focused = undefined;

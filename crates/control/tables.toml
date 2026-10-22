@@ -54,7 +54,7 @@ sees = "Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets t
 
 [parties.e2b]
 name = "E2B"
-sees = "E2B runs hosted workspaces' boxes, so it processes their contents: it holds each box's disk and memory (the repos, files, terminals and agent conversations in it) while the box lives, paused too, the env and metadata each is made with (the workspace, project, release and template ids), and the secrets in its broker. It records each box's runs (when, how long, its size), which it bills by and the platform reads back to check its own usage."
+sees = "E2B runs hosted workspaces' boxes, so it processes their contents: it holds each box's disk and memory (the repos, files, terminals and agent conversations in it) while the box lives, paused too, the env and metadata each is made with (the workspace, project, release and template ids), its egress rules (which hold projects' own inference keys, and name the platform's), and the platform's inference keys in its secrets broker. It records each box's runs (when, how long, its size), which it bills by and the platform reads back to check its own usage."
 
 [parties.posthog]
 name = "PostHog"
@@ -923,7 +923,7 @@ name = "hosted_workspaces"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A hosted workspace (M179): its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the last error, the worker's lease, who made it and when."
+what = "A hosted workspace (M179): its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the digest of its egress rules (M185), the last error, the worker's lease, who made it and when."
 why_asleep = "The platform makes, wakes, pauses and deletes hosted workspaces' boxes itself, and the page lists them, with every machine asleep."
 with_account = "partly"
 note = "It stops naming the account as its maker. Workspaces in its personal project and its disbanded teams' projects are deleted, boxes and all, by the worker; their rows stay, marked deleted."
@@ -1004,6 +1004,28 @@ what = "An environment's deploy log (M217): append-only, a hash chain per enviro
 why_asleep = "Approving a deploy checks its environment's log (the stale rule), with every machine asleep."
 with_account = "partly"
 note = "Those of projects that go with it go. The rest are kept as written, the account's id in them included: an event is never rewritten, and rewriting one would break its chain. The id names no one once the account is gone, so they show as a deleted account."
+seen_by = ["litestream"]
+
+[[table]]
+name = "project_inference_keys"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A project's own inference key (M185), one per provider (Anthropic, OpenAI), sealed with a key control holds apart from the database, who set it and when. Control opens it only to write it into the project's boxes' egress rules, where E2B's proxy sets it on their requests to the provider; it's never answered back."
+why_asleep = "A hosted workspace's agents run on the project's key with every other machine asleep, and the page shows whether it's set."
+with_account = "partly"
+note = "It stops naming the account as who set a key. Keys of its personal project and its disbanded teams' projects are dropped by the platform's sweep."
+seen_by = ["litestream", "e2b"]
+
+[[table]]
+name = "hosted_turns"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "An agent turn on a hosted workspace's box (M185): the workspace, the provider, whose key paid (the project's or the platform's), the account whose caps a platform turn counts against, and when it started and ended. Kept 30 days."
+why_asleep = "Caps on the platform's key are checked when a hosted box starts a turn, with every other machine asleep."
+with_account = "partly"
+note = "It stops naming the account; the turns stay until they're 30 days old."
 seen_by = ["litestream"]
 
 [[table]]

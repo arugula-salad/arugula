@@ -196,9 +196,12 @@ impl Db {
                  WHERE id = ?1 AND deleted_at IS NULL AND COALESCE(asked, '') <> 'delete'
                      AND state NOT IN ('deleting', 'deleted')"
             ),
+            // `ready` too: a box pauses itself at its timeout before the
+            // worker sees it (M182 wakes on connect). A new wake's answer
+            // is its own: what an earlier one said goes.
             Ask::Wake => format!(
-                "UPDATE hosted_workspaces SET asked = 'wake', updated_at = ?2, {DUE_NOW}
-                 WHERE id = ?1 AND deleted_at IS NULL AND asked IS NULL AND state = 'paused'"
+                "UPDATE hosted_workspaces SET asked = 'wake', error = NULL, updated_at = ?2, {DUE_NOW}
+                 WHERE id = ?1 AND deleted_at IS NULL AND asked IS NULL AND state IN ('paused', 'ready')"
             ),
             Ask::Pause => format!(
                 "UPDATE hosted_workspaces SET asked = 'pause', updated_at = ?2, {DUE_NOW}
@@ -256,7 +259,9 @@ impl Db {
     }
 
     /// Write back what the worker did under its lease, and free the row
-    /// until `next` (now, if something new was asked meanwhile). `done` is
+    /// until `next` (now, if something new was asked meanwhile: not the ask
+    /// it claimed, which a step that failed for now tries again at `next`,
+    /// not at once). `done` is
     /// the ask it carried out, cleared unless it was asked again as
     /// something else; a delete asked meanwhile keeps the state `deleting`.
     /// A workspace deleted for good loses its secrets, its ports and its
@@ -270,7 +275,8 @@ impl Db {
         let changed = tx.execute(
             "UPDATE hosted_workspaces SET
                  state = CASE WHEN asked = 'delete' AND ?3 <> 'deleted' THEN 'deleting' ELSE ?3 END,
-                 lease_until = CASE WHEN COALESCE(asked, '') NOT IN ('', COALESCE(?4, '')) THEN CAST(?5 AS BIGINT)
+                 lease_until = CASE WHEN COALESCE(asked, '') NOT IN ('', COALESCE(?4, ''), COALESCE(?16, ''))
+                     THEN CAST(?5 AS BIGINT)
                      ELSE CAST(?6 AS BIGINT) END,
                  asked = CASE WHEN asked = ?4 THEN NULL ELSE asked END,
                  lease = NULL, error = ?7, template = ?8, machine = ?9, sandbox_id = ?10, built_hash = ?11,
@@ -292,6 +298,7 @@ impl Db {
                 job.stage_at,
                 job.enroll_until,
                 job.deleted_at,
+                w.asked,
             ],
         )?;
         if changed != 1 {
@@ -332,6 +339,21 @@ impl Db {
             bail!("hosted workspace lease lost");
         }
         Ok(())
+    }
+
+    /// The boxes [`crate::hosted::hold`] may hold: each workspace that's
+    /// `ready` with a machine and a box, and nothing but a pause asked of
+    /// it. Read by the leader alone, outside any lease: the sandbox id never
+    /// leaves the platform.
+    pub fn hosted_running(&self) -> Result<Vec<crate::hosted::hold::Running>> {
+        self.c().query_map(
+            "SELECT id, machine, sandbox_id FROM hosted_workspaces
+             WHERE deleted_at IS NULL AND state = 'ready' AND machine IS NOT NULL AND sandbox_id IS NOT NULL
+                 AND COALESCE(asked, 'pause') = 'pause'
+             ORDER BY id",
+            params![],
+            |r| Ok(crate::hosted::hold::Running { workspace: r.get(0)?, machine: r.get(1)?, sandbox: r.get(2)? }),
+        )
     }
 
     /// Keep a secret's name for a workspace, its value sealed here
@@ -494,6 +516,31 @@ mod tests {
         assert_eq!(job.stage, "made");
     }
 
+    /// A step that fails for now leaves the ask it claimed asked, and is
+    /// tried again when it said, not at once; one asked meanwhile is due
+    /// at once.
+    #[test]
+    fn a_failed_step_waits_to_try_its_ask_again() {
+        let db = Db::test();
+        made(db.add_hosted_workspace("hw_1", "prj_a", "dev", &spec(), "alice", 5, 0).unwrap());
+        let mut job = db.claim_hosted(0).unwrap().unwrap();
+        job.w.state = "paused".into();
+        db.checkpoint_hosted(&job, None, 1_000, 0).unwrap();
+        assert!(db.ask_hosted("hw_1", Ask::Wake, 10).unwrap());
+        let job = db.claim_hosted(10).unwrap().expect("due now: a wake's asked");
+        assert_eq!(job.w.asked.as_deref(), Some("wake"));
+        // The provider didn't answer: tried again in 5 s, still asked.
+        db.checkpoint_hosted(&job, None, 5_010, 20).unwrap();
+        assert!(db.claim_hosted(20).unwrap().is_none(), "not at once");
+        assert!(db.claim_hosted(5_009).unwrap().is_none());
+        let job = db.claim_hosted(5_010).unwrap().expect("when it said");
+        assert_eq!(job.w.asked.as_deref(), Some("wake"));
+        // Something else asked mid-step: due at once.
+        assert!(db.ask_hosted("hw_1", Ask::Delete, 5_020).unwrap());
+        db.checkpoint_hosted(&job, None, 10_000, 5_030).unwrap();
+        assert!(db.claim_hosted(5_030).unwrap().is_some(), "a delete asked meanwhile");
+    }
+
     /// Waking and pausing are asked only of a box in the right state with
     /// nothing else asked; a done ask is cleared, and the spec changing
     /// shows as "rebuild needed".
@@ -501,7 +548,7 @@ mod tests {
     fn asks_follow_the_state() {
         let db = Db::test();
         made(db.add_hosted_workspace("hw_1", "prj_a", "dev", &spec(), "alice", 5, 0).unwrap());
-        assert!(!db.ask_hosted("hw_1", Ask::Wake, 1).unwrap(), "not paused");
+        assert!(!db.ask_hosted("hw_1", Ask::Wake, 1).unwrap(), "not made yet");
         assert!(!db.ask_hosted("hw_1", Ask::Pause, 1).unwrap(), "not running");
         let mut job = db.claim_hosted(1).unwrap().unwrap();
         job.w.state = "paused".into();

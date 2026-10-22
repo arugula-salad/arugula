@@ -26,28 +26,43 @@ use crate::{
 };
 
 /// A provider in memory. `lose_next`: the next create makes its box but
-/// answers nothing; `refuse_next`: it makes nothing and says no.
+/// answers nothing; `refuse_next`: it makes nothing and says no. A resume
+/// is counted (`resumes`), takes `resume_ms`, and fails with `resume_error`
+/// while it's set (M182). `calls`: each resume, pause and hold, in order
+/// (M181).
 #[derive(Default)]
-struct Fake {
-    boxes: Mutex<BTreeMap<String, Sandbox>>,
+pub(crate) struct Fake {
+    pub(crate) boxes: Mutex<BTreeMap<String, Sandbox>>,
     creates: Mutex<Vec<Create>>,
     deleted: Mutex<Vec<String>>,
     n: AtomicU32,
     lose_next: AtomicBool,
     refuse_next: AtomicBool,
+    pub(super) resumes: AtomicU32,
+    pub(super) resume_ms: AtomicU32,
+    pub(super) resume_error: Mutex<Option<compute::Error>>,
+    pub(crate) calls: Mutex<Vec<String>>,
+    /// Each box's egress rules as last set (M185).
+    pub(super) rules: Mutex<BTreeMap<String, compute::Rules>>,
 }
 
 impl Fake {
-    fn boxes(&self) -> Vec<Sandbox> {
+    /// Each resume, pause and hold since the last asked, as `pause sbx0`
+    /// or `hold sbx0 600s`.
+    pub(crate) fn calls(&self) -> Vec<String> {
+        std::mem::take(&mut *self.calls.lock().unwrap())
+    }
+
+    pub(crate) fn boxes(&self) -> Vec<Sandbox> {
         self.boxes.lock().unwrap().values().cloned().collect()
     }
 
-    fn creates(&self) -> Vec<Create> {
+    pub(super) fn creates(&self) -> Vec<Create> {
         self.creates.lock().unwrap().clone()
     }
 
     /// Its timeout passed: the box paused itself.
-    fn pause_all(&self) {
+    pub(super) fn pause_all(&self) {
         for b in self.boxes.lock().unwrap().values_mut() {
             b.state = State::Paused;
         }
@@ -86,18 +101,30 @@ impl Substrate for Fake {
     }
 
     fn resume<'a>(&'a self, id: &'a str, _: Duration) -> BoxFuture<'a, compute::Result<Resumed>> {
-        let mut boxes = self.boxes.lock().unwrap();
-        ready(match boxes.get_mut(id) {
-            None => Err(compute::Error::NotFound),
-            Some(b) if b.state == State::Paused => {
-                b.state = State::Running;
-                Ok(Resumed::Woke)
+        Box::pin(async move {
+            self.resumes.fetch_add(1, SeqCst);
+            self.calls.lock().unwrap().push(format!("resume {id}"));
+            let ms = self.resume_ms.load(SeqCst);
+            if ms > 0 {
+                tokio::time::sleep(Duration::from_millis(ms.into())).await;
             }
-            Some(_) => Ok(Resumed::Running),
+            if let Some(e) = self.resume_error.lock().unwrap().clone() {
+                return Err(e);
+            }
+            let mut boxes = self.boxes.lock().unwrap();
+            match boxes.get_mut(id) {
+                None => Err(compute::Error::NotFound),
+                Some(b) if b.state == State::Paused => {
+                    b.state = State::Running;
+                    Ok(Resumed::Woke)
+                }
+                Some(_) => Ok(Resumed::Running),
+            }
         })
     }
 
     fn pause<'a>(&'a self, id: &'a str) -> BoxFuture<'a, compute::Result<Paused>> {
+        self.calls.lock().unwrap().push(format!("pause {id}"));
         let mut boxes = self.boxes.lock().unwrap();
         ready(match boxes.get_mut(id) {
             None => Err(compute::Error::NotFound),
@@ -124,7 +151,21 @@ impl Substrate for Fake {
         ready(Ok(boxes.values().filter(|b| m.iter().all(|(k, v)| b.metadata.get(k) == Some(v))).cloned().collect()))
     }
 
-    fn hold<'a>(&'a self, _: &'a str, _: Duration) -> BoxFuture<'a, compute::Result<()>> {
+    /// As E2B's: a paused box (or none) is `NotFound`, never woken.
+    fn hold<'a>(&'a self, id: &'a str, timeout: Duration) -> BoxFuture<'a, compute::Result<()>> {
+        self.calls.lock().unwrap().push(format!("hold {id} {}s", timeout.as_secs()));
+        let boxes = self.boxes.lock().unwrap();
+        ready(match boxes.get(id) {
+            Some(b) if b.state == State::Running => Ok(()),
+            _ => Err(compute::Error::NotFound),
+        })
+    }
+
+    fn set_rules<'a>(&'a self, id: &'a str, rules: &'a compute::Rules) -> BoxFuture<'a, compute::Result<()>> {
+        if !self.boxes.lock().unwrap().get(id).is_some_and(|b| b.state == State::Running) {
+            return ready(Err(compute::Error::NotFound));
+        }
+        self.rules.lock().unwrap().insert(id.into(), rules.clone());
         ready(Ok(()))
     }
 }
@@ -132,7 +173,7 @@ impl Substrate for Fake {
 /// alice owns team t1, bob edits it, vic views it; olga is elsewhere.
 /// The platform has the fake provider, template `tpl`, and lets anyone
 /// make workspaces but carol.
-async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, String, String) {
+pub(crate) async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, String, String) {
     let hub = Arc::new(TestHub::default());
     hub.team("t1", &[("alice", TeamRole::Owner), ("bob", TeamRole::Editor), ("vic", TeamRole::Viewer)]);
     hub.team("t2", &[("olga", TeamRole::Owner), ("carol", TeamRole::Owner)]);
@@ -145,6 +186,7 @@ async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, Str
         enroll,
         accounts: vec!["alice".into(), "bob".into(), "vic".into(), "olga".into()],
         cipher: None,
+        ..Default::default()
     };
     let app = Arc::new(p);
     let project = app.db.team_project("t1", "t1", 0).unwrap();
@@ -156,7 +198,7 @@ async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Platform>, Str
 }
 
 /// Every step due at `now`.
-async fn drive(app: &Platform, now: u64) {
+pub(crate) async fn drive(app: &Platform, now: u64) {
     for _ in 0..50 {
         if !worker::tick_at(app, now).await.unwrap() {
             return;
@@ -165,13 +207,13 @@ async fn drive(app: &Platform, now: u64) {
     panic!("the worker never settled");
 }
 
-async fn make(base: &str, who: &str, project: &str, name: &str) -> (u16, Value) {
+pub(crate) async fn make(base: &str, who: &str, project: &str, name: &str) -> (u16, Value) {
     let spec = json!({ "repos": ["https://github.com/acme/app"], "packages": ["ripgrep"], "setup": "make" });
     call(base, who, "POST", &format!("/api/projects/{project}/workspaces"), Some(json!({ "name": name, "spec": spec })))
         .await
 }
 
-async fn show(base: &str, project: &str, id: &str) -> Value {
+pub(crate) async fn show(base: &str, project: &str, id: &str) -> Value {
     let (status, w) = call(base, "alice", "GET", &format!("/api/projects/{project}/workspaces/{id}"), None).await;
     assert_eq!(status, 200, "{w}");
     w
@@ -468,7 +510,7 @@ async fn wake_rebuild_and_delete() {
 }
 
 /// A provider whose boxes all carry `arugula_test=1`, for the live run.
-struct Tagged(compute::E2b);
+pub(crate) struct Tagged(pub(crate) compute::E2b);
 
 impl Substrate for Tagged {
     fn create<'a>(&'a self, b: &'a Create) -> BoxFuture<'a, compute::Result<Created>> {

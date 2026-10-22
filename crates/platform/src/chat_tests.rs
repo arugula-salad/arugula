@@ -74,6 +74,10 @@ struct State {
     enrolled: BTreeMap<String, String>,
     taken: BTreeSet<String>,
     gone: Vec<String>,
+    /// Whether each hosted machine says it's working (M180), and whether
+    /// the hub can't say.
+    activity: BTreeMap<String, bool>,
+    activity_down: bool,
 }
 
 fn done<'a, T: Send + 'a>(t: T) -> BoxFuture<'a, HubResult<T>> {
@@ -142,6 +146,22 @@ impl TestHub {
             Some(id) => s.delegation_ids.insert(project.into(), id.into()),
             None => s.delegation_ids.remove(project),
         };
+    }
+
+    /// What `machine` says on its relay socket (M180): busy, idle, or
+    /// nothing (`None`: it's off the relay).
+    pub(crate) fn say_busy(&self, machine: &str, busy: Option<bool>) {
+        let mut s = self.state.lock().unwrap();
+        s.activity_down = false;
+        match busy {
+            Some(b) => s.activity.insert(machine.into(), b),
+            None => s.activity.remove(machine),
+        };
+    }
+
+    /// The hub can't say which machines are working until one says again.
+    pub(crate) fn activity_down(&self) {
+        self.state.lock().unwrap().activity_down = true;
     }
 
     /// The box of `workspace` enrolled, as `machine`.
@@ -440,6 +460,28 @@ impl HubPort for TestHub {
                     let taken = s.taken.contains(w);
                     let machine = if taken { Some(String::new()) } else { s.enrolled.get(w).cloned() };
                     machine.map(|machine| crate::hosted::enroll::Enrolled { workspace: w.clone(), machine, taken })
+                })
+                .collect(),
+        )
+    }
+
+    fn activity<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<crate::hub::MachineActivity>>> {
+        self.called("activity");
+        let s = self.state.lock().unwrap();
+        if s.activity_down {
+            return Box::pin(async { anyhow::bail!("the hub is down") });
+        }
+        let a = &s.activity;
+        done(
+            machines
+                .iter()
+                .filter_map(|m| {
+                    a.get(m).map(|&busy| crate::hub::MachineActivity {
+                        machine: m.clone(),
+                        busy,
+                        since_ms: 0,
+                        heard_ms: 0,
+                    })
                 })
                 .collect(),
         )

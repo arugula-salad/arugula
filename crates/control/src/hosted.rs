@@ -30,6 +30,7 @@ use arugula_e2e::{
     now_ms,
     team::{AccountCerts, Roster, TeamPin, TeamRole},
 };
+use arugula_platform::PlatformPort as _;
 use axum::{
     Json,
     extract::{ConnectInfo, Path, State},
@@ -375,6 +376,31 @@ pub async fn enroll(
 /// `GET /api/hosted/trust`: the machine's project as it is now.
 pub async fn trust(State(app): State<Arc<App>>, h: HostedAuth) -> R {
     crate::reply(&enrollment(&app, &h.0)?)
+}
+
+/// `POST /api/hosted/turns` (M185): the machine's box starts an agent
+/// turn. Whose inference key pays is the platform's to say
+/// (`PlatformPort::hosted_turn`), for the workspace and machine its
+/// certificate names.
+pub async fn turn(State(app): State<Arc<App>>, h: HostedAuth, Json(b): Json<Value>) -> R {
+    let agent = b["agent"].as_str().unwrap_or_default();
+    match app.platform.hosted_turn(&h.0.cert.workspace, &h.0.cert.device, agent).await? {
+        arugula_platform::TurnAnswer::Given { turn, pays } => Ok(Json(json!({ "turn": turn, "pays": pays }))),
+        arugula_platform::TurnAnswer::Refused { status, reason, error } => {
+            let status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            Err(match reason.as_deref() {
+                Some("no_key") => crate::refusal(status, "no_key", &error),
+                Some("cap") => crate::refusal(status, "cap", &error),
+                _ => err(status, &error),
+            })
+        }
+    }
+}
+
+/// `POST /api/hosted/turns/{turn}/end` (M185): the turn ended.
+pub async fn turn_end(State(app): State<Arc<App>>, h: HostedAuth, Path(turn): Path<String>) -> R {
+    let ended = app.platform.hosted_turn_end(&h.0.cert.workspace, &h.0.cert.device, &turn).await?;
+    Ok(Json(json!({ "ended": ended })))
 }
 
 // ---------------------------------------------------------------- people's side
