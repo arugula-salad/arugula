@@ -98,6 +98,9 @@ twelfth before that, the worker pauses and resumes the box at its next idle
 moment, which restarts E2B's clock. A single turn that runs to the cap
 pauses there: the worker wakes it at once and says so on the workspace and
 in the platform's log.
+`scripts/hosted-pause-gate` checks this by hand on a real control (M192's
+gate): a half-hour turn nobody watches, then the pause; and a box left
+overnight, paused in the morning with its panes still there.
 
 ```
 arugula cloud create dev --repo https://github.com/acme/app --setup setup.sh

@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# M181's done-when, run on a real control by hand (M192's gate): hosted
+# workspaces pause only between turns (aru-094). Needs a CLI logged in to
+# that control (`arugula login`) as an owner or editor of the project.
+#
+#   scripts/hosted-pause-gate turn WORKSPACE [MINUTES] [COMMAND]
+#       A turn nobody watches runs MINUTES (30) to its end, then the box
+#       pauses within the idle timeout. The turn is COMMAND in a new pane
+#       (default: a shell loop of MINUTES; an agent in a terminal, such as
+#       `claude -p '...'`, counts the same). The workspace must say `ready`
+#       for the whole turn, and `paused` within IDLE (600 s) plus the
+#       worker's minute after it.
+#
+#   scripts/hosted-pause-gate overnight-start WORKSPACE
+#   scripts/hosted-pause-gate overnight-check WORKSPACE
+#       In the evening: a shell pane with a marker and an agent block,
+#       left idle. In the morning: the workspace says `paused` (before
+#       anything opens it), then opening it wakes it, and the same panes
+#       are there with the marker still on screen.
+#
+# PROJECT names the project (id or name; else every project's is looked
+# in). ARUGULA names the CLI (default `arugula`). Each line it prints has
+# the UTC time; it exits non-zero on the first check that fails.
+set -euo pipefail
+
+cmd="${1:-}"
+ws="${2:-}"
+[ -n "$cmd" ] && [ -n "$ws" ] || { sed -n '2,24p' "$0" >&2; exit 2; }
+A=${ARUGULA:-arugula}
+IDLE=${IDLE:-600}
+STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/arugula-gate
+proj=(); [ -n "${PROJECT:-}" ] && proj=(--project "$PROJECT")
+say() { echo "$(date -u +%T) $*"; }
+fail() { say "FAIL: $*"; exit 1; }
+field() { python3 -c '
+import json, sys
+try: print(json.load(sys.stdin).get(sys.argv[1]) or "")
+except ValueError: print("")' "$1"; }
+state() { "$A" --json cloud ls "${proj[@]}" | python3 -c '
+import json, sys
+w = [w for w in json.load(sys.stdin)["workspaces"] if sys.argv[1] in (w["id"], w["name"])]
+print(w[0]["state"] if w else "gone")' "$ws"; }
+host() { "$A" --json cloud open "${proj[@]}" --wait "$ws" | field name; }
+
+case "$cmd" in
+turn)
+  minutes=${3:-30}
+  line=${4:-"for i in \$(seq $((minutes * 60))); do sleep 1; done; echo M192-TURN-DONE"}
+  [ "$(state)" = ready ] || say "the workspace is $(state): opening it"
+  h=$(host)
+  pane=$("$A" --host "$h" --json run -- "$line" | field pane)
+  [ -n "$pane" ] || fail "no pane started on $h"
+  start=$(date +%s)
+  say "turn started on $h in pane $pane: $line"
+  while ! "$A" --host "$h" capture "$pane" 2>/dev/null | grep -q M192-TURN-DONE; do
+    s=$(state); [ "$s" = ready ] || fail "the workspace is $s $(( $(date +%s) - start )) s into the turn"
+    [ $(( $(date +%s) - start )) -lt $(( minutes * 60 + 600 )) ] || fail "the turn never ended"
+    sleep 30
+  done
+  ended=$(date +%s)
+  say "the turn ended after $(( ended - start )) s, the box running all along"
+  # Nothing watches it now: it pauses within the idle timeout, and the
+  # worker reads its state within a minute of that.
+  while [ "$(state)" != paused ]; do
+    [ $(( $(date +%s) - ended )) -lt $(( IDLE + 90 )) ] || fail "not paused $(( IDLE + 90 )) s after the turn"
+    sleep 15
+  done
+  say "PASS: paused $(( $(date +%s) - ended )) s after the turn ended (idle timeout $IDLE s, read every 60 s)"
+  ;;
+overnight-start)
+  mkdir -p "$STATE_DIR"
+  h=$(host)
+  marker="M192-OVERNIGHT-$(date -u +%Y%m%dT%H%M%S)"
+  pane=$("$A" --host "$h" --json run --cwd . | field pane)
+  "$A" --host "$h" send "$pane" "echo $marker"$'\n' > /dev/null
+  sleep 2
+  "$A" --host "$h" capture "$pane" | grep -q "$marker" || fail "the marker isn't on pane $pane"
+  agent=$("$A" --host "$h" --json agent -- "Say hello, then stop." 2>/dev/null | field block || true)
+  "$A" --host "$h" --json ls > "$STATE_DIR/$ws.panes.json"
+  printf 'host=%s\npane=%s\nmarker=%s\nagent=%s\n' "$h" "$pane" "$marker" "$agent" > "$STATE_DIR/$ws.env"
+  say "left idle on $h: pane $pane with $marker, agent block ${agent:-none}; check in the morning"
+  ;;
+overnight-check)
+  # shellcheck disable=SC1090
+  . "$STATE_DIR/$ws.env"
+  s=$(state)
+  [ "$s" = paused ] || fail "the workspace is $s in the morning, not paused"
+  say "paused overnight; opening it"
+  t=$(date +%s)
+  h=$(host)
+  say "awake in $(( $(date +%s) - t )) s"
+  "$A" --host "$h" --json ls > "$STATE_DIR/$ws.panes.after.json"
+  python3 - "$STATE_DIR/$ws.panes.json" "$STATE_DIR/$ws.panes.after.json" <<'PY' || fail "the panes changed overnight"
+import json, sys
+ids = lambda f: sorted(p["id"] for p in json.load(open(f)))
+a, b = ids(sys.argv[1]), ids(sys.argv[2])
+print("panes before", a, "after", b)
+sys.exit(0 if a == b else 1)
+PY
+  "$A" --host "$h" capture "$pane" | grep -q "$marker" || fail "pane $pane lost $marker"
+  say "PASS: the same panes, $marker still on pane $pane${agent:+, agent block $agent}"
+  ;;
+*)
+  sed -n '2,24p' "$0" >&2
+  exit 2
+  ;;
+esac

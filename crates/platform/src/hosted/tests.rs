@@ -203,7 +203,7 @@ pub(crate) async fn make(base: &str, who: &str, project: &str, name: &str) -> (u
         .await
 }
 
-async fn show(base: &str, project: &str, id: &str) -> Value {
+pub(crate) async fn show(base: &str, project: &str, id: &str) -> Value {
     let (status, w) = call(base, "alice", "GET", &format!("/api/projects/{project}/workspaces/{id}"), None).await;
     assert_eq!(status, 200, "{w}");
     w
@@ -500,7 +500,7 @@ async fn wake_rebuild_and_delete() {
 }
 
 /// A provider whose boxes all carry `arugula_test=1`, for the live run.
-struct Tagged(compute::E2b);
+pub(crate) struct Tagged(pub(crate) compute::E2b);
 
 impl Substrate for Tagged {
     fn create<'a>(&'a self, b: &'a Create) -> BoxFuture<'a, compute::Result<Created>> {

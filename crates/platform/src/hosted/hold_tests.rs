@@ -241,3 +241,250 @@ async fn a_turn_past_the_cap_is_woken_and_said() {
     drive(&app, t).await;
     assert!(fake.calls().is_empty());
 }
+
+/// A workspace on a real provider (E2B's cloud or loam's E2B-compatible
+/// API, `ARUGULA_TEST_E2B_URL` and `ARUGULA_TEST_E2B_KEY`), in ticket
+/// mode, with the test hub standing in for the hub and the daemon's busy
+/// and idle (as `live-machine`). Its box carries `arugula_test=1`.
+struct Live {
+    hub: Arc<TestHub>,
+    live: Arc<crate::hosted::tests::Tagged>,
+    app: Arc<Platform>,
+    base: String,
+    project: String,
+    id: String,
+}
+
+fn env_secs(name: &str, default: u64) -> Duration {
+    Duration::from_secs(std::env::var(name).ok().and_then(|s| s.parse().ok()).unwrap_or(default))
+}
+
+impl Live {
+    async fn new(name: &str, idle: Duration, cap: Option<Duration>) -> Live {
+        let (Ok(url), Ok(key)) = (std::env::var("ARUGULA_TEST_E2B_URL"), std::env::var("ARUGULA_TEST_E2B_KEY")) else {
+            panic!("set ARUGULA_TEST_E2B_URL and ARUGULA_TEST_E2B_KEY");
+        };
+        let template = std::env::var("ARUGULA_TEST_E2B_TEMPLATE").unwrap_or_else(|_| "base".into());
+        let (hub, _fake, app, _base, _project) = serve(EnrollBy::Ticket).await;
+        let live = Arc::new(crate::hosted::tests::Tagged(compute::E2b::new(&url, key).unwrap()));
+        let app = {
+            let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
+            let mut p =
+                Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
+            p.compute = Some(live.clone());
+            p.hosted = crate::hosted::Config {
+                template: Some(template),
+                idle_timeout: Some(idle),
+                runtime_cap: cap,
+                ..app.hosted.clone()
+            };
+            Arc::new(p)
+        };
+        let project = app.db.team_project("t1", "t1", 0).unwrap();
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", l.local_addr().unwrap());
+        let router = crate::cloud::tests::router(app.clone());
+        tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
+        hub.delegate(&project);
+        let (status, w) = make(&base, "alice", &project, name).await;
+        assert_eq!(status, 201, "{w}");
+        let id = w["id"].as_str().unwrap().to_owned();
+        println!("idle timeout {idle:?}, runtime cap {cap:?}, against {url}");
+        Live { hub, live, app, base, project, id }
+    }
+
+    fn mine(&self) -> std::collections::BTreeMap<String, String> {
+        [("arugula_workspace".to_owned(), self.id.clone())].into()
+    }
+
+    async fn state(&self) -> serde_json::Value {
+        crate::hosted::tests::show(&self.base, &self.project, &self.id).await["state"].clone()
+    }
+
+    /// Make its box and enroll it: the box's id.
+    async fn ready(&self) -> String {
+        let started = std::time::Instant::now();
+        while self.state().await != "enrolling" {
+            crate::hosted::worker::tick_at(&self.app, now_ms()).await.unwrap();
+            assert!(started.elapsed() < Duration::from_secs(120), "never made");
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        let sandbox = self.live.list(&self.mine()).await.unwrap().pop().expect("its box").id;
+        self.hub.enroll(&self.id, "live-machine");
+        while self.state().await != "ready" {
+            crate::hosted::worker::tick_at(&self.app, now_ms()).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        sandbox
+    }
+
+    async fn status(&self, sandbox: &str) -> compute::Sandbox {
+        self.live.status(sandbox).await.unwrap().expect("its box")
+    }
+
+    /// Run `body`, then delete every box the workspace has, whatever
+    /// happened, and check none is left.
+    async fn run(&self, body: impl std::future::Future<Output = ()>) {
+        use futures_util::FutureExt as _;
+        let outcome = std::panic::AssertUnwindSafe(body).catch_unwind().await;
+        for b in self.live.list(&self.mine()).await.unwrap_or_default() {
+            let _ = self.live.delete(&b.id).await;
+        }
+        assert!(self.live.list(&self.mine()).await.unwrap().is_empty(), "a box was left behind");
+        if let Err(p) = outcome {
+            std::panic::resume_unwind(p);
+        }
+    }
+}
+
+fn ms(t: &str) -> u64 {
+    arugula_forge_github::util::time(t).unwrap() as u64
+}
+
+/// Holding against a real provider: a box with a short idle timeout is
+/// held through a busy stretch longer than it, never pausing, then pauses
+/// itself within the idle timeout of going idle. Nothing is left. Ignored
+/// unless asked for:
+///
+/// ```sh
+/// ARUGULA_TEST_E2B_URL=https://api.e2b.dev ARUGULA_TEST_E2B_KEY=... \
+///   cargo test -p arugula-platform --lib hosted::hold::tests::live_hold -- --ignored --nocapture
+/// ```
+///
+/// `ARUGULA_TEST_IDLE_SECS` (60) is the idle timeout and
+/// `ARUGULA_TEST_BUSY_SECS` (150) the busy stretch. M192's half-hour
+/// unwatched turn at the real idle timeout is `ARUGULA_TEST_IDLE_SECS=600
+/// ARUGULA_TEST_BUSY_SECS=1800` (about 45 minutes; under an hour, so E2B's
+/// Hobby cap doesn't end it first).
+#[tokio::test]
+#[ignore = "makes a real box: set ARUGULA_TEST_E2B_URL and ARUGULA_TEST_E2B_KEY"]
+async fn live_hold() {
+    use std::time::Instant;
+    let idle = env_secs("ARUGULA_TEST_IDLE_SECS", 60);
+    let busy_for = env_secs("ARUGULA_TEST_BUSY_SECS", 150);
+    let l = Live::new("live-hold", idle, None).await;
+    l.run(async {
+        let sandbox = l.ready().await;
+        // Busy for longer than the idle timeout: held, never paused.
+        l.hub.say_busy("live-machine", Some(true));
+        let mut holds = Holds::default();
+        let (mut held, t0) = (0, Instant::now());
+        while t0.elapsed() < busy_for {
+            held += tick_at(&l.app, &mut holds, now_ms()).await.unwrap();
+            crate::hosted::worker::tick_at(&l.app, now_ms()).await.unwrap();
+            assert_eq!(l.status(&sandbox).await.state, State::Running, "paused mid-turn after {:?}", t0.elapsed());
+            tokio::time::sleep(TICK).await;
+        }
+        let s = l.status(&sandbox).await;
+        println!("busy {:?}: held {held} times, still running, pauses at {}", t0.elapsed(), s.end_at);
+        assert!(held as u64 >= busy_for.as_millis() as u64 / every(idle));
+
+        // Idle: no more holds, and it pauses itself within the idle timeout.
+        l.hub.say_busy("live-machine", Some(false));
+        let (idle_at, t1) = (now_ms(), Instant::now());
+        loop {
+            assert_eq!(tick_at(&l.app, &mut holds, now_ms()).await.unwrap(), 0, "held while idle");
+            crate::hosted::worker::tick_at(&l.app, now_ms()).await.unwrap();
+            let s = l.status(&sandbox).await;
+            if s.state == State::Paused {
+                let paused_at = ms(&s.end_at);
+                println!(
+                    "paused {} ms after going idle (seen after {:?})",
+                    paused_at.saturating_sub(idle_at),
+                    t1.elapsed()
+                );
+                assert!(paused_at <= idle_at + idle.as_millis() as u64 + 2_000, "paused after its idle timeout");
+                break;
+            }
+            assert!(t1.elapsed() < idle + Duration::from_secs(60), "never paused");
+            tokio::time::sleep(TICK).await;
+        }
+        // The workspace shows it once its state is read again.
+        let t2 = Instant::now();
+        while l.state().await != "paused" {
+            crate::hosted::worker::tick_at(&l.app, now_ms()).await.unwrap();
+            assert!(t2.elapsed() < Duration::from_secs(90), "the workspace never showed paused");
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    })
+    .await;
+}
+
+/// The runtime cap against a real provider. By default the platform's cap
+/// is set to 10 minutes (`ARUGULA_TEST_CAP_SECS`), under E2B's own: the
+/// box is busy into the last stretch before it and isn't paused, then at
+/// its first idle moment the worker pauses and resumes it, and the
+/// provider's clock (its `startedAt`) restarts. About 10 minutes.
+///
+/// With `ARUGULA_TEST_PAST_CAP=1` and the provider's real cap
+/// (`ARUGULA_TEST_CAP_SECS=3600` on E2B's Hobby plan, 86400 on Pro), the
+/// box stays busy past the cap instead: the provider pauses it there, and
+/// the worker wakes it at once and says so on the workspace. About as long
+/// as the cap.
+///
+/// ```sh
+/// ARUGULA_TEST_E2B_URL=https://api.e2b.dev ARUGULA_TEST_E2B_KEY=... \
+///   cargo test -p arugula-platform --lib hosted::hold::tests::live_cap -- --ignored --nocapture
+/// ```
+#[tokio::test]
+#[ignore = "makes a real box: set ARUGULA_TEST_E2B_URL and ARUGULA_TEST_E2B_KEY"]
+async fn live_cap() {
+    let cap = env_secs("ARUGULA_TEST_CAP_SECS", 600);
+    let past = std::env::var("ARUGULA_TEST_PAST_CAP").is_ok_and(|v| v == "1");
+    let idle = env_secs("ARUGULA_TEST_IDLE_SECS", 300);
+    let l = Live::new("live-cap", idle, Some(cap)).await;
+    l.run(async {
+        let sandbox = l.ready().await;
+        let started = ms(&l.status(&sandbox).await.started_at);
+        let cap_ms = cap.as_millis() as u64;
+        let window = cycle_window(cap);
+        l.hub.say_busy("live-machine", Some(true));
+        let mut holds = Holds::default();
+        // Busy until well into the window (or, past the cap, until a minute
+        // after it): never paused by the platform.
+        let until = if past { started + cap_ms + 60_000 } else { started + cap_ms - window / 3 };
+        let mut paused_seen = false;
+        while now_ms() < until {
+            tick_at(&l.app, &mut holds, now_ms()).await.unwrap();
+            crate::hosted::worker::tick_at(&l.app, now_ms()).await.unwrap();
+            let s = l.status(&sandbox).await;
+            if s.state == State::Paused {
+                assert!(past, "paused mid-turn before the cap, at {} ms", now_ms() - started);
+                if !paused_seen {
+                    println!("the provider paused it {} ms after its start", ms(&s.end_at) - started);
+                }
+                paused_seen = true;
+            }
+            tokio::time::sleep(TICK).await;
+        }
+        let s = l.status(&sandbox).await;
+        if past {
+            assert_eq!(s.state, State::Running, "woken after the cap");
+            assert!(ms(&s.started_at) > started + cap_ms - 60_000, "its clock restarted at the cap: {}", s.started_at);
+            let w = crate::hosted::tests::show(&l.base, &l.project, &l.id).await;
+            println!("the workspace says: {}", w["error"]);
+            assert!(w["error"].as_str().unwrap_or_default().contains("limit"), "{w}");
+            return;
+        }
+        assert_eq!(ms(&s.started_at), started, "busy: never paused and resumed");
+        // Idle: paused and resumed within a look or two.
+        l.hub.say_busy("live-machine", Some(false));
+        let t1 = std::time::Instant::now();
+        loop {
+            crate::hosted::worker::tick_at(&l.app, now_ms()).await.unwrap();
+            let s = l.status(&sandbox).await;
+            if s.state == State::Running && ms(&s.started_at) > started {
+                println!(
+                    "paused and resumed {:?} after going idle, {} ms after its start",
+                    t1.elapsed(),
+                    ms(&s.started_at) - started
+                );
+                break;
+            }
+            assert!(t1.elapsed() < Duration::from_secs(60), "never paused and resumed: {s:?}");
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        assert_eq!(l.state().await, "ready");
+    })
+    .await;
+}
