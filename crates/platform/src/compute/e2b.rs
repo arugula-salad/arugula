@@ -2,7 +2,7 @@
 //!
 //! | Call | Route |
 //! |---|---|
-//! | create | `POST /v2/sandboxes` (`secure`, `autoPause`, memory kept, auto-resume off) |
+//! | create | `POST /v2/sandboxes` (`secure`, no public traffic, `autoPause`, memory kept, auto-resume off) |
 //! | resume | `POST /v2/sandboxes/{id}/connect` (201 woke, 200 was running) |
 //! | pause | `POST /sandboxes/{id}/pause` (409: paused already) |
 //! | delete | `DELETE /sandboxes/{id}` (404: gone already) |
@@ -33,6 +33,12 @@
 //! refuses `secure: false`; another E2B-compatible API may not, so a
 //! create whose answer has no access token is taken as an open envd: the
 //! box is deleted and the create refused.
+//!
+//! Every box is also made with `network.allowPublicTraffic: false`: E2B
+//! otherwise serves every port a process in the box listens on at
+//! `<port>-<id>.e2b.app` to anyone, past members' previews. With it those
+//! URLs want the create's traffic token, which nobody holds; previews go
+//! through the relay instead. A rules update says it again.
 
 use std::{collections::BTreeMap, time::Duration};
 
@@ -296,8 +302,11 @@ impl Substrate for E2b {
                 "metadata": b.metadata,
                 "envVars": b.env,
             });
+            // Never drop this either: without it E2B serves the box's ports
+            // to anyone (see the top).
+            body["network"] = json!({"allowPublicTraffic": false});
             if !b.rules.is_empty() {
-                body["network"] = json!({"rules": network_rules(&b.rules)});
+                body["network"]["rules"] = network_rules(&b.rules);
             }
             let r = self.send(Method::POST, self.url(&["v2", "sandboxes"])?, Some(&body)).await?;
             if !r.status().is_success() {
@@ -452,7 +461,7 @@ impl Substrate for E2b {
 
     fn set_rules<'a>(&'a self, id: &'a str, rules: &'a Rules) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
-            let body = json!({"rules": network_rules(rules)});
+            let body = json!({"allowPublicTraffic": false, "rules": network_rules(rules)});
             let r = self.idempotent(Method::PUT, self.url(&["sandboxes", id, "network"])?, Some(&body)).await?;
             done(r).await
         })
