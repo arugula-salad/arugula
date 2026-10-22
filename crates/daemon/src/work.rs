@@ -244,6 +244,18 @@ pub fn write(dir: &Path, l: &Ledger) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Change run `run`'s entry as it is on disk, under the ledger's lock, so
+/// two writers (a run's end, a report's answer) never undo each other:
+/// what it is now.
+pub fn update(dir: &Path, run: &str, f: impl FnOnce(&mut Ledger)) -> anyhow::Result<Ledger> {
+    let path = ledger_path(dir, run).ok_or_else(|| anyhow::anyhow!("not a run's id: {run:?}"))?;
+    let _held = LEDGER.lock().unwrap_or_else(|e| e.into_inner());
+    let mut l = read(dir, run)?.ok_or_else(|| anyhow::anyhow!("no ledger entry for {run}"))?;
+    f(&mut l);
+    crate::store::write_atomic(&path, &serde_json::to_vec_pretty(&l)?)?;
+    Ok(l)
+}
+
 /// Every run in the ledger that reads. One that doesn't is said, and is
 /// still taken ([`taken`]): it's never started again.
 fn all(dir: &Path) -> Vec<Ledger> {
@@ -452,8 +464,15 @@ pub fn pane_command(
         quote(&printable(&shown))
     );
     let Some(as_) = as_ else {
-        // Tests only: as this daemon's own user, where it is.
-        return Ok(format!("{banner}; exec {cmd}"));
+        // Tests only: as this daemon's own user, where it is, with the
+        // agent's environment besides its own.
+        let env: String = env_extra
+            .iter()
+            .filter(|(k, _)| k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+            .map(|(k, v)| format!(" {k}={}", quote(v)))
+            .collect();
+        let env = if env.is_empty() { String::new() } else { format!("env{env} ") };
+        return Ok(format!("{banner}; exec {env}{cmd}"));
     };
     let work = as_.work(run);
     let mut inner = format!(
@@ -858,7 +877,7 @@ async fn ended(
 
 /// Follow a running run to its end, kill what it left, and keep how it
 /// ended.
-async fn watch(app: Arc<App>, mut l: Ledger, events: Option<tokio::sync::broadcast::Receiver<arugula_proto::Event>>) {
+async fn watch(app: Arc<App>, l: Ledger, events: Option<tokio::sync::broadcast::Receiver<arugula_proto::Event>>) {
     let Some(pane) = l.pane else { return };
     let mut end = ended(&app, pane, l.epoch, events).await;
     if let Ok(Some(as_)) = run_as() {
@@ -874,18 +893,16 @@ async fn watch(app: Arc<App>, mut l: Ledger, events: Option<tokio::sync::broadca
         end = Err(why);
     }
     let Some((keys, me, ..)) = me(&app) else { return };
-    // What was written meanwhile (control's answers) stands.
-    if let Ok(Some(now)) = read(&dir, &l.run) {
-        l = now;
-    }
-    match end {
-        Ok(0) => l.push(&keys, &me, State::Succeeded, serde_json::json!({ "exit": 0 })),
-        Ok(code) => l.push(&keys, &me, State::Failed, serde_json::json!({ "exit": code })),
-        Err(why) => l.push(&keys, &me, State::Failed, serde_json::json!({ "reason": why })),
-    }
-    info!(run = l.run, state = l.state, "hosted: a run ended");
-    if let Err(e) = write(&dir, &l) {
-        warn!(run = l.run, error = %format!("{e:#}"), "hosted: can't write the ledger");
+    // Onto the entry as it is now: what was written meanwhile (control's
+    // answers) stands.
+    let ended = update(&dir, &l.run, |now| match end {
+        Ok(0) => now.push(&keys, &me, State::Succeeded, serde_json::json!({ "exit": 0 })),
+        Ok(code) => now.push(&keys, &me, State::Failed, serde_json::json!({ "exit": code })),
+        Err(why) => now.push(&keys, &me, State::Failed, serde_json::json!({ "reason": why })),
+    });
+    match ended {
+        Ok(now) => info!(run = now.run, state = now.state, "hosted: a run ended"),
+        Err(e) => warn!(run = l.run, error = %format!("{e:#}"), "hosted: can't write the ledger"),
     }
     send(&app, &l.run).await;
 }
@@ -942,6 +959,10 @@ async fn resume(app: &Arc<App>) {
 /// Send run `run`'s reports control hasn't answered, in order, until one
 /// doesn't get through.
 async fn send(app: &App, run: &str) {
+    // One sender at a time: a run's end (`watch`) and the pull loop both
+    // send, and each would otherwise send the same unanswered report.
+    static SENDING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _one = SENDING.lock().await;
     let dir = app.control.state_dir().to_owned();
     loop {
         let Ok(Some(l)) = read(&dir, run) else { return };
@@ -961,21 +982,16 @@ async fn send(app: &App, run: &str) {
                 return;
             }
         };
-        let now = {
-            let _held = LEDGER.lock().unwrap_or_else(|e| e.into_inner());
-            let Ok(Some(mut now)) = read(&dir, run) else { return };
+        let now = match update(&dir, run, |now| {
             if let Some(k) = now.events.get_mut(i) {
                 k.answered = true;
             }
-            let path = ledger_path(&dir, run).expect("a run's id");
-            if let Err(e) = serde_json::to_vec_pretty(&now)
-                .map_err(anyhow::Error::from)
-                .and_then(|b| Ok(crate::store::write_atomic(&path, &b)?))
-            {
+        }) {
+            Ok(now) => now,
+            Err(e) => {
                 warn!(run, error = %format!("{e:#}"), "hosted: can't write the ledger");
                 return;
             }
-            now
         };
         if canceled && now.state == State::Running.as_str() {
             stop(app, &now, CANCELED).await;
