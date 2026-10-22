@@ -344,3 +344,54 @@ async fn the_shadow_comparison() {
     let (s, _) = call(&base, "bob", "POST", "/api/inbox/shadow", Some(report)).await;
     assert_eq!(s, 401);
 }
+
+/// Production's first shadow report (2026-10-22): two issues Jake opened
+/// and gave himself (and others), on a project that doesn't mirror
+/// content. The block said nothing for one and `mentioned` for the other;
+/// the platform said `assigned` for both, since the mirror doesn't keep
+/// who assigned an issue. One you opened, you took: not `assigned`. The
+/// mention needs the text.
+#[tokio::test]
+async fn your_own_issue_given_to_you() {
+    let (_hub, _gh, app, base) = setup().await;
+    exec(
+        &app,
+        "UPDATE forge_items SET author_login = 'alice-gh', assignees = '[\"alice-gh\", \"bob-gh\"]' WHERE id = 'fi_a2'",
+        params![],
+    );
+    assert!(wants(&app, 88, 2, "alice", Some("alice-gh")).is_empty(), "she took it herself");
+    assert!(wants(&app, 88, 2, "alice", Some("Alice-GH")).is_empty(), "logins ignore case");
+    // bob didn't open it: someone gave it to him.
+    assert_eq!(reasons(&wants(&app, 88, 2, "bob", Some("bob-gh"))), [("assigned", "assigned to you")]);
+    inbox::recompute(&app, 88, &[2], false).await.unwrap();
+    assert_eq!(rows(&app), ["bob fi_a2 assigned"]);
+    let report = |reasons: Value| {
+        let base = base.clone();
+        async move {
+            let body = json!({ "blocks": [{ "repo": "acme/site", "number": 2, "reasons": reasons }] });
+            let r = reqwest::Client::new()
+                .post(format!("{base}/api/inbox/shadow"))
+                .header("x-test-daemon", "alice m1")
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+            r.json::<Value>().await.unwrap()
+        }
+    };
+    // #415: nothing on either side.
+    assert_eq!(report(json!([])).await, json!({ "compared": 1, "agree": 1, "disagree": 0 }));
+    // #213: bob's comment mentions her. Without the text the platform
+    // can't see it (logged as "content not mirrored"); with it, it does.
+    assert_eq!(report(json!(["mentioned"])).await, json!({ "compared": 1, "agree": 0, "disagree": 1 }));
+    exec(&app, "UPDATE linked_repos SET mirror_content = TRUE WHERE repo_id = 88", params![]);
+    exec(
+        &app,
+        "INSERT INTO forge_content (repo_id, number, kind, github_id, author_login, body, updated_at)
+         VALUES (88, 2, 'comment', 502, 'bob-gh', '@alice-gh: lane C is merged', 50)",
+        params![],
+    );
+    assert_eq!(reasons(&wants(&app, 88, 2, "alice", Some("alice-gh"))), [("mentioned", "mentioned by bob-gh")]);
+    inbox::recompute(&app, 88, &[2], false).await.unwrap();
+    assert_eq!(report(json!(["mentioned"])).await, json!({ "compared": 1, "agree": 1, "disagree": 0 }));
+}

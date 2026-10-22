@@ -17,6 +17,10 @@
 //!   to you by login counts.
 //! - **Mentions** need the text: only where the project mirrors content
 //!   (M166). Elsewhere there are none.
+//! - **Who assigned an issue.** The block's `assigned` is given to you by
+//!   someone else; the mirror keeps the assignees, not who added them. An
+//!   issue you opened counts as one you took yourself, and any other one
+//!   given to you as someone else's doing.
 //! - **Whether a PR can merge:** only GitHub's `mergeable_state` (`dirty`
 //!   is a conflict, `blocked` held by protection), not its `mergeable`.
 //!
@@ -300,7 +304,13 @@ pub fn wants(s: &Sources, v: &Viewer) -> Vec<Want> {
         let me = Me { login: u.login.clone(), teams: vec![] };
         let found = if s.item.kind == "issue" {
             let issue = model::Issue { item: model_item(s), events: comments(s), linked: vec![] };
-            model::issue_attention(&issue, &me, 0)
+            let mut found = model::issue_attention(&issue, &me, 0);
+            // The block's "assigned" is someone else's doing. The mirror
+            // doesn't keep who gave it to whom: one you opened, you took.
+            if issue.item.author.eq_ignore_ascii_case(&me.login) {
+                found.retain(|w| !matches!(w, model::Want::Assigned { .. }));
+            }
+            found
         } else {
             model::attention(&model_pr(s), &me, 0)
         };
@@ -566,6 +576,13 @@ pub fn agree(block: &[String], platform: &[String]) -> bool {
     a == b
 }
 
+/// A disagreement the platform can't help, by design: the block's mention
+/// on a repo that doesn't mirror content, with the rest the same.
+fn explain(block: &[String], platform: &[String], mirrors: bool) -> Option<&'static str> {
+    let rest: Vec<String> = block.iter().filter(|r| *r != "mentioned").cloned().collect();
+    (!mirrors && rest.len() < block.len() && agree(&rest, platform)).then_some("content not mirrored")
+}
+
 /// `YYYY-MM-DD`, UTC.
 fn day(ms: u64) -> String {
     let days = (ms / 86_400_000) as i64;
@@ -595,7 +612,8 @@ pub async fn shadow(
 ) -> Result<Json<wire::ShadowCompared>, ApiError> {
     app.limits.check_account(SHADOW_REPORTS, &m.account)?;
     let v = Viewer::of(&app, &m.account).await?;
-    let mut readable: HashMap<String, Option<u64>> = HashMap::new();
+    // Each repo's id, if the owner may read it here, and whether it mirrors content.
+    let mut readable: HashMap<String, Option<(u64, bool)>> = HashMap::new();
     let mut out = wire::ShadowCompared::default();
     for blk in b.blocks.iter().take(SHADOW_BLOCKS) {
         let name = blk.repo.to_ascii_lowercase();
@@ -607,13 +625,13 @@ pub async fn shadow(
                         .await?
                         .readable
                         .has(l.repo_id)
-                        .then_some(l.repo_id),
+                        .then_some((l.repo_id, l.mirror_content)),
                     None => None,
                 };
                 *readable.entry(name).or_insert(r)
             }
         };
-        let Some(repo_id) = repo_id else { continue };
+        let Some((repo_id, mirrors)) = repo_id else { continue };
         let Some(item) = app.db.forge_item_id(repo_id, blk.number)? else { continue };
         let mut block: Vec<String> = blk
             .reasons
@@ -632,7 +650,8 @@ pub async fn shadow(
         } else {
             out.disagree += 1;
             block.sort();
-            info!(item = %item, block = block.join(","), platform = platform.join(","), "inbox shadow: disagree");
+            let why = explain(&block, &platform, mirrors).unwrap_or_default();
+            info!(item = %item, block = block.join(","), platform = platform.join(","), why, "inbox shadow: disagree");
         }
     }
     info!(
@@ -660,5 +679,16 @@ mod tests {
         assert!(agree(&s(&[]), &s(&[])));
         assert!(!agree(&s(&["checks_failed"]), &s(&[])));
         assert!(!agree(&s(&["checks_failed"]), &s(&["checks_failed", "mentioned"])));
+    }
+
+    /// Only a mention where content isn't mirrored is explained.
+    #[test]
+    fn explained() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(explain(&s(&["mentioned"]), &s(&[]), false), Some("content not mirrored"));
+        assert_eq!(explain(&s(&["done", "mentioned"]), &s(&["done"]), false), Some("content not mirrored"));
+        assert_eq!(explain(&s(&["mentioned"]), &s(&[]), true), None, "mirrored: it should have found it");
+        assert_eq!(explain(&s(&["mentioned"]), &s(&["assigned"]), false), None);
+        assert_eq!(explain(&s(&[]), &s(&["assigned"]), false), None);
     }
 }
