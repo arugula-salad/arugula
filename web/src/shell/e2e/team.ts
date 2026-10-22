@@ -249,11 +249,14 @@ const sameMember = (a: Member, b: Member) => a.account === b.account && a.root =
 const RANK: Record<TeamRole, number> = { owner: 2, editor: 1, viewer: 0 };
 
 /** Whether `r` adds or promotes anyone but `signer` to owner or editor
- * since `prev` (`Roster::raises`). */
+ * since `prev`, or moves `signer`'s own entry to another root
+ * (`Roster::raises`). */
 export function raises(r: Roster, prev: Roster | null, signer: string): boolean {
   return r.members.some((m) => {
-    if (m.role === "viewer" || m.account === signer) return false;
     const was = prev?.members.find((p) => p.account === m.account);
+    // The signer's own entry: a raise if it now names another root.
+    if (m.account === signer) return !!was && was.root !== m.root;
+    if (m.role === "viewer") return false;
     return !(was && was.root === m.root && RANK[was.role] >= RANK[m.role]);
   });
 }

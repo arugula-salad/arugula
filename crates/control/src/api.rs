@@ -91,6 +91,10 @@ fn refused(what: &str, account: &str, c: &Cert, why: &str) {
     warn!(what, account, device = ?clip(&c.device), kind = c.kind.as_str(), approver = ?clip(&c.approver), why, "refused");
 }
 
+/// How far a revocation's time may be from control's clock: one backdated
+/// would take back what the revoked device approved since.
+const REVOKE_SKEW_MS: u64 = 10 * 60 * 1000;
+
 /// A removed key, approved again (#330's words).
 const REVOKED: &str = "that key was removed from this account, so it can't be approved again: it needs a new key";
 
@@ -321,10 +325,20 @@ pub async fn add_recovery(State(app): State<Arc<App>>, s: PageSession, Json(b): 
         approval_ok(&app, &s.account, c, "recovery")?;
     }
     let (trust, certs, revs) = trusted(&app, &s.account)?;
-    let now = trust.map(|t| t.evaluate(&certs, &revs)).unwrap_or_default();
+    // New codes are new keys: one the account has (or had) isn't.
+    for c in &b.certs {
+        if app.db.device(&s.account, &c.device)?.is_some() || revs.iter().any(|r| r.device == c.device) {
+            return Err(err(StatusCode::CONFLICT, "that recovery code is one this account has already: make new ones"));
+        }
+    }
+    let now = trust.as_ref().map(|t| t.evaluate(&certs, &revs)).unwrap_or_default();
     for r in &b.revocations {
+        // The old codes go only by a browser or a phone all the way back,
+        // and now: one backdated would take out the browsers they let in.
         let ok = now.get(&r.device).is_some_and(|c| c.kind == Kind::Recovery)
-            && now.get(&r.by).is_some_and(|c| c.kind.connects() && r.account == s.account && r.signed_by(c));
+            && now.get(&r.by).is_some_and(|c| c.kind.connects() && r.account == s.account && r.signed_by(c))
+            && trust.as_ref().is_some_and(|t| browser_all_the_way(t, &certs, &r.by))
+            && r.at.abs_diff(now_ms()) <= REVOKE_SKEW_MS;
         if !ok {
             return Err(err(StatusCode::FORBIDDEN, "that revocation doesn't check out"));
         }
@@ -481,7 +495,12 @@ pub async fn revoke(State(app): State<Arc<App>>, s: Session, Json(b): Json<Revok
     }
     // A browser or a phone is removed only from a browser or a phone all
     // the way back to the root (daemons and pages refuse the rest too).
-    let of_browser = certs.iter().any(|c| c.device == r.device && c.kind == Kind::Browser);
+    if r.at.abs_diff(now_ms()) > REVOKE_SKEW_MS {
+        return Err(err(StatusCode::BAD_REQUEST, "that revocation's time is too far from control's clock"));
+    }
+    // A recovery code counts as a browser here: one revoked backdated
+    // would take out the browser it let in.
+    let of_browser = certs.iter().any(|c| c.device == r.device && matches!(c.kind, Kind::Browser | Kind::Recovery));
     if of_browser && !browser_all_the_way(&trust, &certs, &r.by) {
         return Err(refusal(
             StatusCode::FORBIDDEN,

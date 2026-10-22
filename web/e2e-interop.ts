@@ -135,6 +135,8 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
     await both(`${by} adds a viewer`, v1, await signRoster(withBob("viewer"), k), true);
   }
   await both("a browser makes an owner", v1, await signRoster(withBob("owner"), alice), true);
+  const moved = { ...v1, version: 2, members: [{ account: "alice", root: bob.id, role: "owner" as const, name: "alice" }] };
+  await both("a CLI can't move its owner's own entry to another root", v1, await signRoster(moved, aliceCli), false);
   const fromCli = await signInvite({ team: pin.team, role: "editor", expires: Date.now() + 86_400_000, key }, aliceCli);
   await both("a CLI's presigned editor invite doesn't admit", v1, await redeemInvite(v1, fromCli, seed, { account: "bob", root: bob.id, name: "bob" }), false);
 
@@ -156,6 +158,25 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
     const ours = !(await evaluate(trust, certs, [r])).has(r.device);
     const theirs = !(JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust, certs, revocations: [r] }) }).toString()) as string[]).includes(r.device);
     check(what, ours === gone && theirs === gone, `ts ${ours}, rust ${theirs}`);
+  }
+  // A recovery code that let a browser in, revoked backdated (`at: 1`) by
+  // a CLI: doesn't count, and that browser stays.
+  const code = await generateKeys();
+  const codeCert: Cert = { v: 1, account: "alice", device: code.id, kind: "recovery", name: "recovery 1", noise: code.noisePub, sign: code.signPub, created: 4, approver: alice.id, sig: "" };
+  codeCert.sig = await signText(alice, certBody(codeCert));
+  const recovered = await generateKeys();
+  const recoveredCert: Cert = { v: 1, account: "alice", device: recovered.id, kind: "browser", name: "new laptop", noise: recovered.noisePub, sign: recovered.signPub, created: 5, approver: code.id, sig: "" };
+  recoveredCert.sig = await signText(code, certBody(recoveredCert));
+  const withCode = [...certs, codeCert, recoveredCert];
+  for (const [what, by, stays] of [
+    ["a CLI revoking a recovery code backdated doesn't take out its browser", aliceCli, true],
+    ["a browser's backdated revoke of it does", alice, false],
+  ] as const) {
+    const r: Revocation = { v: 1, account: "alice", device: code.id, at: 1, by: by.id, sig: "" };
+    r.sig = await signText(by, revocationBody(r));
+    const ours = (await evaluate(trust, withCode, [r])).has(recovered.id);
+    const theirs = (JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust, certs: withCode, revocations: [r] }) }).toString()) as string[]).includes(recovered.id);
+    check(what, ours === stays && theirs === stays, `ts ${ours}, rust ${theirs}`);
   }
 }
 

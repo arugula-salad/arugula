@@ -693,7 +693,8 @@ fn login(app: &Arc<App>, headers: &HeaderMap, a: Assertion) -> Result<(header::H
     if a.prf {
         app.db.passkey_prf(&a.id, true)?;
     }
-    Ok((auth::start_session(app, &pk.account, auth::Via::Passkey)?, pk))
+    let via = auth::kept_via(app, headers, auth::Via::Passkey);
+    Ok((auth::start_session(app, &pk.account, via)?, pk))
 }
 
 /// A registered passkey's assertion (its client data `raw`, checked by the
@@ -1246,6 +1247,28 @@ mod tests {
         );
         assert_eq!(attempt_with(&app, &h, 25, &|c, ch| Some(sig(&root, c, ch))).await.unwrap(), "acct-d");
         assert_eq!(app.db.passkeys("acct-d").unwrap()[0].added_device.as_deref(), Some(root.id().as_str()));
+    }
+
+    /// The desktop app's window signing in with a passkey stays the app's
+    /// session; a browser's becomes a passkey sign-in.
+    #[tokio::test]
+    async fn a_passkey_sign_in_in_the_apps_window_stays_the_apps() {
+        let app = App::for_tests(ORIGIN).start();
+        let mine = Authn::new(40);
+        let h = signed_in(&app, "acct-x", auth::Via::App, 0);
+        app.db.add_passkey(&mine.id(), "acct-x", EDDSA, &mine.key.verifying_key().to_bytes(), 1).unwrap();
+        let via_of = |h: &HeaderMap| {
+            let challenge = app.passkeys.issue(Purpose::Login);
+            let (cookie, _) = login(&app, h, mine.get(&challenge, UP | UV, json!({}))).unwrap();
+            let t = cookie.to_str().unwrap().split(';').next().unwrap().split_once('=').unwrap().1.to_owned();
+            app.db.session_info(&auth::hash(&t), now_ms()).unwrap().unwrap().via
+        };
+        assert_eq!(via_of(&h).as_deref(), Some("app"));
+        let browser = signed_in(&app, "acct-y", auth::Via::Github, 0);
+        assert_eq!(via_of(&browser).as_deref(), Some("passkey"));
+        let mut none = HeaderMap::new();
+        none.insert(header::ORIGIN, ORIGIN.parse().unwrap());
+        assert_eq!(via_of(&none).as_deref(), Some("passkey"));
     }
 
     /// The desktop app's window makes no passkeys.

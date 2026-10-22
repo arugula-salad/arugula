@@ -398,18 +398,23 @@ impl Roster {
 
     /// Whether this version adds or promotes anyone but `signer` to owner
     /// or editor since `prev` (from nothing, for a first version): a member
-    /// whose account and root weren't there with at least that role. Only
-    /// a browser all the way back to its root signs that.
+    /// whose account and root weren't there with at least that role; or
+    /// moves `signer`'s own entry to another root. Only a browser all the
+    /// way back to its root signs that.
     pub fn raises(&self, prev: Option<&Roster>, signer: &str) -> bool {
         let rank = |r: TeamRole| match r {
             TeamRole::Owner => 2,
             TeamRole::Editor => 1,
             TeamRole::Viewer => 0,
         };
-        self.members.iter().filter(|m| m.role != TeamRole::Viewer && m.account != signer).any(|m| {
-            !prev
-                .and_then(|p| p.member(&m.account))
-                .is_some_and(|was| was.root == m.root && rank(was.role) >= rank(m.role))
+        self.members.iter().any(|m| {
+            let was = prev.and_then(|p| p.member(&m.account));
+            if m.account == signer {
+                // The signer's own entry: a raise if it now names another
+                // root (another identity for that account).
+                return was.is_some_and(|w| w.root != m.root);
+            }
+            m.role != TeamRole::Viewer && !was.is_some_and(|w| w.root == m.root && rank(w.role) >= rank(m.role))
         })
     }
 
@@ -632,6 +637,14 @@ mod tests {
         v1e.members[1].role = TeamRole::Editor;
         v1e.sign_with(&alice.keys);
         assert!(!signed(vec![alice_m.clone(), swapped], &cli_k).follows(Some(&v1e), &pin, &all));
+        // The CLI's owner moving her own entry to another root: a raise.
+        let elsewhere = Member { root: mallory.cert.device.clone(), ..alice_m.clone() };
+        assert!(!signed(vec![elsewhere.clone(), member(&bob, TeamRole::Viewer)], &cli_k).follows(
+            Some(&v1),
+            &pin,
+            &all
+        ));
+        assert!(signed(vec![elsewhere, member(&bob, TeamRole::Viewer)], &alice.keys).raises(Some(&v1), "alice"));
         // A viewer, and a removal: the CLI may.
         assert!(
             signed(vec![alice_m.clone(), member(&bob, TeamRole::Viewer), member(&mallory, TeamRole::Viewer)], &cli_k)

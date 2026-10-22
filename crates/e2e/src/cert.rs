@@ -318,8 +318,11 @@ impl Trust {
                 // A browser or a phone is removed only by a device that's
                 // a browser all the way back to the root: never by a CLI
                 // or the app, whose keys a program on their computer holds.
-                let of_browser =
-                    by_id.get(r.device.as_str()).is_some_and(|cs| cs.iter().any(|c| c.kind == Kind::Browser));
+                // (A recovery code too: revoking one backdated, before the
+                // browser it let in was made, would take that browser out.)
+                let of_browser = by_id
+                    .get(r.device.as_str())
+                    .is_some_and(|cs| cs.iter().any(|c| matches!(c.kind, Kind::Browser | Kind::Recovery)));
                 if signer.is_some_and(|s| s.kind.approves() && verify(&s.verifying_key(), r.body().as_bytes(), &r.sig))
                     && (!of_browser
                         || self
@@ -866,6 +869,20 @@ mod tests {
         assert!(t.browser_chained(&all, &new.device) && !t.browser_chained(&all, &code.device));
         let r = Revocation::new("acct", &phone.device, &nk);
         assert!(t.evaluate(&all, &[r]).get(&phone.device).is_none(), "the recovered browser removes the lost phone");
+        // The code that let it in, revoked backdated (before the browser was
+        // made) by a CLI or the app: doesn't count, and the browser stays.
+        // A browser of the account's may (it could remove the browser too).
+        let backdated = |by: &DeviceKeys| {
+            let mut r = Revocation::new("acct", &code.device, by);
+            r.at = 1;
+            r.sig = hex::encode(by.signature(r.body().as_bytes()));
+            r
+        };
+        for by in [&ck, &ak] {
+            let now = t.evaluate(&all, &[backdated(by)]);
+            assert!(now.get(&new.device).is_some() && now.get(&code.device).is_some(), "a CLI or the app can't");
+        }
+        assert!(t.evaluate(&all, &[backdated(&rk)]).get(&new.device).is_none());
     }
 
     /// The app's devices from before it had a kind are `browser` ones it

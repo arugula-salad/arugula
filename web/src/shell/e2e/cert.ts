@@ -146,7 +146,8 @@ export async function evaluate(
       const s = await valid(revoked, r.by, r.at, 0);
       // A browser or a phone is removed only by a browser all the way back
       // to the root (`Trust::evaluate`).
-      const ofBrowser = (byId.get(r.device) ?? []).some((c) => c.kind === "browser");
+      // A recovery code too: one revoked backdated takes out the browser it let in.
+      const ofBrowser = (byId.get(r.device) ?? []).some((c) => c.kind === "browser" || c.kind === "recovery");
       if (s && approves(s.kind) && (await verify(s.sign, revocationBody(r), r.sig)) && (!ofBrowser || chainedIn(trust.root, byId, r.by, browserLink(r.by))))
         next.set(r.device, Math.min(next.get(r.device) ?? Infinity, r.at));
     }

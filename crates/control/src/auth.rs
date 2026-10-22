@@ -530,7 +530,7 @@ pub async fn github_callback(
     }
     match github_finish(&app, &headers, q).await {
         Ok((account, next)) => {
-            let cookie = match start_session(&app, &account, Via::Github) {
+            let cookie = match start_session(&app, &account, kept_via(&app, &headers, Via::Github)) {
                 Ok(c) => c,
                 Err(e) => return e.into_response(),
             };
@@ -635,6 +635,15 @@ impl Via {
             Via::App => "app",
         }
     }
+}
+
+/// How a new sign-in from this request counts: `via`, unless the request
+/// comes from the desktop app's window (its session says `app`), which
+/// stays the app's, so the window can't make itself a browser's session by
+/// signing in again (with a passkey or GitHub).
+pub fn kept_via(app: &App, headers: &HeaderMap, via: Via) -> Via {
+    let now = cookie(headers, SESSION_COOKIE).and_then(|t| app.db.session_info(&hash(t), now_ms()).ok().flatten());
+    if now.is_some_and(|i| i.via.as_deref() == Some(Via::App.as_str())) { Via::App } else { via }
 }
 
 /// A new session for `account`, signed in `via`: the Set-Cookie for it.

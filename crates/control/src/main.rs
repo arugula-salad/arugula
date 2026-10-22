@@ -35,6 +35,7 @@ mod compat;
 mod db;
 #[cfg(test)]
 mod device_kinds_wire;
+mod device_review;
 mod doc_links;
 #[cfg(test)]
 mod doc_links_wire;
@@ -832,7 +833,8 @@ pub fn origin_of(url: &str) -> anyhow::Result<String> {
 
 fn main() -> anyhow::Result<()> {
     // `arugula-control census`: an operator's read-only look at the
-    // database (census.rs), with no server. `maintenance`: the switch
+    // database (census.rs), with no server; `device-review` another
+    // (device_review.rs). `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
     // `notice`: a notice for every account (notice.rs). `hosted-enrollment`:
     // what the platform asks as it makes a hosted box (hosted.rs). `platform`: a
@@ -840,6 +842,9 @@ fn main() -> anyhow::Result<()> {
     let mut argv = std::env::args().skip(1).peekable();
     if argv.peek().is_some_and(|a| a == "census") {
         return census::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "device-review") {
+        return device_review::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "maintenance") {
         return maintenance::run(argv.skip(1));

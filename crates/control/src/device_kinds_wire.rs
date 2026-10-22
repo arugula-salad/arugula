@@ -283,3 +283,48 @@ async fn the_apps_window_joins_as_an_app() {
     let (st, v) = c.as_person(&cookie, "POST", "/api/devices", Some(json!({ "cert": first }))).await;
     assert_eq!((st, v["reason"].as_str()), (409, Some("first_in_browser")), "{v}");
 }
+
+/// A recovery code goes only from a browser or a phone all the way back,
+/// and now: not from the app, not backdated (which would take out the
+/// browser it let in), and new codes are new keys.
+#[tokio::test]
+async fn a_recovery_code_goes_only_from_a_browser_and_now() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let app = device(&c, &root, "a1", Kind::App, "Arugula app on box");
+    let code = device(&c, &root, "a1", Kind::Recovery, "recovery 1");
+    let cookie = session(&c.app, "a1");
+    let revoke = |by: &DeviceKeys, at: Option<u64>| {
+        let mut r = arugula_e2e::Revocation::new("a1", &code.id(), by);
+        if let Some(at) = at {
+            r.at = at;
+            r.sig = hex::encode(by.signature(r.body().as_bytes()));
+        }
+        r
+    };
+    let (st, v) =
+        c.as_person(&cookie, "POST", "/api/revocations", Some(json!({ "revocation": revoke(&app, None) }))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "the app: {v}");
+    let (st, v) =
+        c.as_person(&cookie, "POST", "/api/revocations", Some(json!({ "revocation": revoke(&root, Some(1)) }))).await;
+    assert_eq!(st, 400, "backdated: {v}");
+
+    // New codes: the old one revoked by the app, or backdated, refused;
+    // the old one posted again as new, refused; by the browser, now: kept.
+    let (_, new) = signed(&root, "a1", Kind::Recovery, "recovery 2");
+    let (_, old_again) = {
+        let mut cert = c.app.db.device("a1", &code.id()).unwrap().unwrap().0;
+        cert.sign_with(&root);
+        (code.id(), cert)
+    };
+    for (certs, r, want) in [
+        (vec![new.clone()], revoke(&app, None), 403),
+        (vec![new.clone()], revoke(&root, Some(1)), 403),
+        (vec![old_again], revoke(&root, None), 409),
+        (vec![new.clone()], revoke(&root, None), 200),
+    ] {
+        let (st, v) =
+            c.as_person(&cookie, "POST", "/api/recovery", Some(json!({ "certs": certs, "revocations": [r] }))).await;
+        assert_eq!(st, want, "{v}");
+    }
+}

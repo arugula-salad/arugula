@@ -487,6 +487,20 @@ other leftovers from 2026-10-03): for another read-only query, fetch a
 copy with `fly ssh sftp get /data/control.db` or restore one from
 Litestream (below), and query it locally.
 
+### Devices to review
+
+`arugula-control device-review` lists, read-only, what to look at now that
+only browsers make browsers (the desktop app has its own `app` kind):
+accounts whose first device is a CLI's or the app's (they make no new
+browsers or recovery codes), and `browser` devices whose sign-ins came
+from a webview by their User-Agent (WebKitGTK, WebView2, Tauri, or
+Apple's WebKit with no Safari): perhaps the app under a name it didn't
+give. It prints account ids, device ids and names only:
+
+```
+fly ssh console -a illogical-control -C "/arugula-control device-review --db /data/control.db"
+```
+
 ### Deploys
 
 Each release tag deploys control (M133, #1129). It's automatic, with no
