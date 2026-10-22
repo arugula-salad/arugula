@@ -119,6 +119,20 @@ fn generate() -> String {
     // Sending one as the person (M168).
     c.visit::<arugula_control_wire::projects::SendDraft>();
     c.visit::<arugula_control_wire::projects::DraftSent>();
+    // Native issues (M195).
+    {
+        use arugula_control_wire::issues::*;
+        c.visit::<IssueList>();
+        c.visit::<IssueQuery>();
+        c.visit::<NewIssue>();
+        c.visit::<IssuePatch>();
+        c.visit::<IssuePatched>();
+        c.visit::<IssueEvents>();
+        c.visit::<IssueHome>();
+        c.visit::<IssueHomeChange>();
+        c.visit::<IssueExportQuery>();
+        c.visit::<IssueExport>();
+    }
     // Cloud workspaces (M137): what control's `/api/cloud/` answers with.
     {
         use arugula_cloud_wire::*;

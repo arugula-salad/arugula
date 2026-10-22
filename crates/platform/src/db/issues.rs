@@ -583,6 +583,58 @@ impl Db {
     }
 }
 
+/// A project as issues need it (M195): whose it is, its name, and its
+/// issue home as chosen (`None`: the default).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IssueProject {
+    pub id: String,
+    pub name: String,
+    pub account: Option<String>,
+    pub team: Option<String>,
+    pub home: Option<String>,
+}
+
+impl Db {
+    pub fn issue_project(&self, id: &str) -> Result<Option<IssueProject>> {
+        self.c()
+            .query_row(
+                "SELECT id, name, account_id, team_id, issue_home FROM projects WHERE id = ?1",
+                params![id],
+                |r| {
+                    Ok(IssueProject {
+                        id: r.get(0)?,
+                        name: r.get(1)?,
+                        account: r.get(2)?,
+                        team: r.get(3)?,
+                        home: r.get(4)?,
+                    })
+                },
+            )
+            .optional()
+    }
+
+    /// Choose a project's issue home (`native` or `github`), or `None`
+    /// for the default again.
+    pub fn set_issue_home(&self, project: &str, home: Option<&str>) -> Result<()> {
+        self.c().execute("UPDATE projects SET issue_home = ?2 WHERE id = ?1", params![project, home])?;
+        Ok(())
+    }
+
+    /// The repos linked to a project now (`owner/name`), by name.
+    pub fn linked_repo_names(&self, project: &str) -> Result<Vec<String>> {
+        self.c().query_map(
+            "SELECT full_name FROM linked_repos WHERE project_id = ?1 AND unlinked_at IS NULL ORDER BY full_name",
+            params![project],
+            |r| r.get(0),
+        )
+    }
+
+    /// How many native issues a project has.
+    pub fn issue_count(&self, project: &str) -> Result<u64> {
+        self.c().query_row("SELECT count(*) FROM issues WHERE project_id = ?1", params![project], |r| r.get(0))
+    }
+}
+
 /// What deleting an account takes from issues, inside the platform's
 /// `account_deleted` transaction, after [`super::projects::erase_account`]:
 /// - the issues of the projects that went with it, and their timelines;
