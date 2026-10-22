@@ -11,7 +11,7 @@ question: "Whose inference key do agents on hosted machines use, and how is spen
 options:
   - id: "a"
     label: "Strangers bring their own key; Jake, teams and the allowlist use the platform's key under caps; keys never enter the box"
-    how: "A stranger's Anthropic or OpenAI key is a project secret, shown as set or unset and never read back. Allowlisted accounts run on the platform's key under the ARUGULA_CLOUD_* caps (concurrent runs, daily runs, run minutes) per account. The provider's secrets broker injects the key at its egress proxy, so it's never in the box's environment or disk."
+    how: "A stranger's Anthropic or OpenAI key is a project secret, shown as set or unset and never read back, sealed by the platform and written into each box's egress rules. Allowlisted accounts run on the platform's dedicated keys, which have hard monthly spend limits at the provider, with per-account turn caps for fairness. The provider's egress proxy sets the key, so it's never in the box's environment or disk."
     tradeoff: "Strangers need a key of their own before an agent runs."
   - id: "b"
     label: "The platform's key for everyone"
@@ -41,8 +41,8 @@ decided_by: "jhgaylor"
 decided_on: "2026-10-21"
 reviews: []
 constrains:
-  - "path:crates/platform/src/cloud/account.rs"
-  - "path:crates/platform/src/cloud/secrets.rs"
+  - "path:crates/platform/src/hosted/inference.rs"
+  - "path:crates/daemon/src/agent/hosted.rs"
 ---
 
 # Hosted inference: strangers bring their own key
@@ -51,14 +51,29 @@ Agents on hosted machines need an inference key (Jake, 2026-10-21, #1235).
 
 - **Strangers bring their own key.** Each one is a project secret (Anthropic
   or OpenAI), shown as set or unset and never read back.
-- **Jake, teams and the allowlist** run on the platform's key, under the
-  `ARUGULA_CLOUD_*` caps (concurrent runs, daily runs, run minutes) per
-  account.
-- **Keys never enter the box.** The provider's secrets broker injects the key
-  at its egress proxy; it's never in the box's environment or on its disk.
+- **Jake, teams and the allowlist** run on the platform's key, for
+  workspaces an allowlisted account made (the maker pays). **The spend bound
+  is the provider's** (Jake, 2026-10-21): the platform's keys are their own
+  Anthropic workspace key and OpenAI project key, each with a hard monthly
+  spend limit set at the provider. Caps per account on agent turns (at once,
+  per day, minutes per day; 2, 100 and 120 by default) are fairness between
+  accounts on top.
+- **Keys never enter the box.** E2B's egress proxy sets the key on the box's
+  requests to the provider; it's never in the box's environment or on its
+  disk. The platform's keys are E2B secrets the operator keeps (Infisical
+  keeps the record); a project's own key is kept sealed by the platform and
+  written into each of its boxes' egress rules at create, rebuild, wake and
+  rotation (Jake, 2026-10-21), so no account-wide cap on E2B secrets
+  applies.
 - **A workspace without a key,** whose owner isn't on the allowlist, says so
   when an agent starts, with a link to add one.
 
 Release notes and the privacy page say whose key pays.
-Where: `crates/platform/src/cloud/account.rs` (the allowlist and caps), project secrets (M185).
+Where: `crates/platform/src/hosted/inference.rs` (whose key pays, project
+keys, caps, the box's egress rules), `crates/platform/src/compute/` (egress
+rules, E2B's `${e2b.secrets.<name>}` for the platform's keys),
+`crates/daemon/src/agent/hosted.rs` (the box's placeholder key and the ask
+before each turn), docs/control-ops.md (making the platform's keys and
+their limits) (M185). loam's E2B API has no secrets broker yet
+(arugula-salad/loam#8).
 From: #1235 (platform roadmap, step 5), M175 (#1236), M185 (#1246).

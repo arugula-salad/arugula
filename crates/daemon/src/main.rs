@@ -966,6 +966,8 @@ async fn run(mut args: RunArgs, mut kept: std::collections::HashMap<String, pane
     docs::link::init(control.clone());
     // So do Cloud workspace blocks read theirs (#1117).
     cloud_workspace::init(control.clone());
+    // M185: a hosted box's agent turns ask the platform whose key pays.
+    agent::hosted::init(control.clone());
     // M40: forge blocks' live updates (control's GitHub App, hooks here).
     forges::start(state_dir.clone(), Some(&control), direct_urls.clone());
     // Claude Code's IDE (M28): its relay keeps the connections.

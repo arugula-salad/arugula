@@ -254,6 +254,18 @@ struct WakeArgs {
     workspace: String,
 }
 
+/// A hosted box's turn (M185): its workspace and machine, as the hub's
+/// hosted certificate names them, and the agent or the turn.
+#[derive(Serialize, Deserialize)]
+struct TurnArgs {
+    workspace: String,
+    machine: String,
+    #[serde(default)]
+    agent: String,
+    #[serde(default)]
+    turn: String,
+}
+
 fn ids(v: &[String]) -> IdsArgs {
     IdsArgs { ids: v.to_vec() }
 }
@@ -565,6 +577,36 @@ impl PlatformPort for HttpPlatform {
         let a = WakeArgs { project: project.to_owned(), workspace: workspace.to_owned() };
         Box::pin(self.0.call("hosted_wake", a))
     }
+
+    fn hosted_turn<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        agent: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<crate::port::TurnAnswer>> {
+        let a = TurnArgs {
+            workspace: workspace.to_owned(),
+            machine: machine.to_owned(),
+            agent: agent.to_owned(),
+            turn: String::new(),
+        };
+        Box::pin(self.0.call("hosted_turn", a))
+    }
+
+    fn hosted_turn_end<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        turn: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        let a = TurnArgs {
+            workspace: workspace.to_owned(),
+            machine: machine.to_owned(),
+            agent: String::new(),
+            turn: turn.to_owned(),
+        };
+        Box::pin(self.0.call("hosted_turn_end", a))
+    }
 }
 
 /// The platform's internal API: every `PlatformPort` method of `port`,
@@ -614,6 +656,14 @@ async fn platform_call(
             "hosted_wake" => {
                 let a: WakeArgs = args(&body)?;
                 answer(p.hosted_wake(&a.project, &a.workspace).await?)?
+            }
+            "hosted_turn" => {
+                let a: TurnArgs = args(&body)?;
+                answer(p.hosted_turn(&a.workspace, &a.machine, &a.agent).await?)?
+            }
+            "hosted_turn_end" => {
+                let a: TurnArgs = args(&body)?;
+                answer(p.hosted_turn_end(&a.workspace, &a.machine, &a.turn).await?)?
             }
             _ => return Ok(None),
         }))
@@ -803,6 +853,25 @@ mod tests {
                     Ok(WakeAnswer::Failed { code: arugula_control_wire::hosted::WakeCode::Refused, why })
                 })
             }
+            fn hosted_turn<'a>(
+                &'a self,
+                w: &'a str,
+                m: &'a str,
+                agent: &'a str,
+            ) -> BoxFuture<'a, anyhow::Result<crate::TurnAnswer>> {
+                let error = format!("{w} {m} {agent}");
+                Box::pin(
+                    async move { Ok(crate::TurnAnswer::Refused { status: 403, reason: Some("no_key".into()), error }) },
+                )
+            }
+            fn hosted_turn_end<'a>(
+                &'a self,
+                _: &'a str,
+                _: &'a str,
+                t: &'a str,
+            ) -> BoxFuture<'a, anyhow::Result<bool>> {
+                Box::pin(async move { Ok(t == "ht_1") })
+            }
         }
         let base = serve(serve_platform(Arc::new(Plans), key())).await;
         let p = HttpPlatform::new(&base, key()).unwrap();
@@ -810,6 +879,12 @@ mod tests {
         assert!(p.chat_on("on").await.unwrap());
         assert!(!p.chat_on("off").await.unwrap());
         assert_eq!(p.delete_blockers("a", true).await.unwrap(), vec!["wait".to_owned()]);
+        // M185: a hosted box's turn, and its end.
+        assert_eq!(
+            p.hosted_turn("hw_1", "m1", "claude").await.unwrap(),
+            crate::TurnAnswer::Refused { status: 403, reason: Some("no_key".into()), error: "hw_1 m1 claude".into() }
+        );
+        assert!(p.hosted_turn_end("hw_1", "m1", "ht_1").await.unwrap());
         p.roster_changed("t").await.unwrap();
         let e = p.account_deleted(&Deleted { account: "a".into(), machines: vec![], disbanded: vec![] }).await;
         assert!(format!("{:#}", e.unwrap_err()).contains("not now"), "an error crosses as an error");

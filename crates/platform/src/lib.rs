@@ -70,7 +70,7 @@ pub mod timing;
 pub mod window;
 
 pub use hub::HubPort;
-pub use port::{Deleted, PlatformPort};
+pub use port::{Deleted, PlatformPort, TurnAnswer};
 pub use router::{paths, router};
 
 /// What the platform is told when it starts.

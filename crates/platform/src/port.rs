@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use arugula_control_wire::forge::Standing;
 
+pub use crate::hosted::inference::TurnAnswer;
 use crate::{
     Platform, billing, db,
     forge::{
@@ -96,6 +97,31 @@ pub trait PlatformPort: Send + Sync {
         let _ = (project, workspace);
         Box::pin(async { anyhow::bail!("this platform doesn't wake hosted workspaces") })
     }
+
+    /// A hosted box asks to start an agent turn of `agent` (M185), signed
+    /// as its hosted machine, whose certificate names its workspace: whose
+    /// inference key pays, or why it can't run. A platform from before
+    /// M185 doesn't have it.
+    fn hosted_turn<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        agent: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<TurnAnswer>> {
+        let _ = (workspace, machine, agent);
+        Box::pin(async { anyhow::bail!("this platform doesn't run hosted agents") })
+    }
+
+    /// The turn ended: whether it was that box's, open.
+    fn hosted_turn_end<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        turn: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        let _ = (workspace, machine, turn);
+        Box::pin(async { anyhow::bail!("this platform doesn't run hosted agents") })
+    }
 }
 
 /// An account the hub deleted.
@@ -115,7 +141,8 @@ pub struct Deleted {
 /// native issues (M194), their part of `account_deleted`; the GitHub App
 /// (M161) `forge_standing` and `github_token`; sends (M168) `send_draft`;
 /// runs (M210) and deploys (M217), their part of `account_deleted`; hosted
-/// workspaces (M182) `hosted_wake`.
+/// workspaces (M182) `hosted_wake`; hosted inference (M185) `hosted_turn`
+/// and `hosted_turn_end`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         Box::pin(async move {
@@ -131,6 +158,7 @@ impl PlatformPort for Platform {
             db::billing::erase_account(&tx, deleted)?;
             // Before the projects go: their hosted workspaces are deleted.
             db::hosted::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
+            db::inference::erase_account(&tx, deleted)?;
             db::projects::erase_account(&tx, deleted)?;
             db::forge::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
             db::issues::erase_account(&tx, deleted)?;
@@ -206,5 +234,23 @@ impl PlatformPort for Platform {
         workspace: &'a str,
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::hosted::WakeAnswer>> {
         Box::pin(crate::hosted::wake::wake(self, project, workspace))
+    }
+
+    fn hosted_turn<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        agent: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<TurnAnswer>> {
+        Box::pin(crate::hosted::inference::turn(self, workspace, machine, agent))
+    }
+
+    fn hosted_turn_end<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        turn: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        Box::pin(crate::hosted::inference::turn_end(self, workspace, machine, turn))
     }
 }

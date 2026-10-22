@@ -12,7 +12,7 @@ use axum::{
     extract::{Path, Query, State as AxState},
     http::{HeaderMap, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
-    routing::{any, get, post},
+    routing::{any, get, post, put},
 };
 use serde_json::{Value, json};
 
@@ -32,6 +32,8 @@ struct Fake {
     page: usize,
     /// Each box's lifecycle events, oldest first (M188's runs).
     events: BTreeMap<String, Vec<Value>>,
+    /// Each box's egress rules, as last set (M185).
+    rules: BTreeMap<String, Value>,
 }
 
 type S = Arc<Mutex<Fake>>;
@@ -76,6 +78,7 @@ async fn create(AxState(s): AxState<S>, m: Method, uri: Uri, h: HeaderMap, Json(
     f.made += 1;
     let id = format!("sbx{}", f.made);
     f.boxes.insert(id.clone(), ("running".into(), body["metadata"].clone()));
+    f.rules.insert(id.clone(), body["network"]["rules"].clone());
     let made = json!({
         "sandboxID": id, "templateID": "rki5dems9wqfm4r03t7g", "alias": "base", "clientID": "x",
         "envdVersion": "0.6.10", "envdAccessToken": "envd-secret", "trafficAccessToken": "traffic-secret",
@@ -207,11 +210,33 @@ fn event(id: u32, kind: &str, run: Option<(&str, u64)>) -> Value {
     })
 }
 
+async fn network(
+    AxState(s): AxState<S>,
+    m: Method,
+    uri: Uri,
+    Path(id): Path<String>,
+    Json(b): Json<Value>,
+) -> Response {
+    if let Some(r) = record(&s, &m, &uri, b.clone()) {
+        return r;
+    }
+    let mut f = s.lock().unwrap();
+    match f.boxes.get(&id) {
+        // As E2B: a paused box's network can't be changed.
+        Some((st, _)) if st == "running" => {
+            f.rules.insert(id, b["rules"].clone());
+            StatusCode::NO_CONTENT.into_response()
+        }
+        _ => error(404, None),
+    }
+}
+
 async fn fake() -> (E2b, S, String) {
     let s: S = Arc::new(Mutex::new(Fake { page: 100, ..Default::default() }));
     let app = Router::new()
         .route("/v2/sandboxes", post(create).get(list))
         .route("/sandboxes/{id}", any(one))
+        .route("/sandboxes/{id}/network", put(network))
         .route("/sandboxes/{id}/{what}", post(action))
         .route("/v2/sandboxes/{id}/{what}", post(action))
         .route("/events/sandboxes/{id}", get(events))
@@ -229,6 +254,7 @@ fn workspace(id: &str) -> Create {
         env: [("ARUGULA_HOSTED_TICKET".into(), "t1".into())].into(),
         metadata: [("arugula_workspace".into(), id.into()), ("arugula_project".into(), "prj_1".into())].into(),
         timeout: Duration::from_secs(300),
+        rules: Rules::new(),
     }
 }
 
@@ -251,6 +277,7 @@ async fn create_pauses_on_timeout_and_never_auto_resumes() {
     assert_eq!(body["templateID"], "base");
     assert_eq!(body["envVars"], json!({"ARUGULA_HOSTED_TICKET": "t1"}));
     assert_eq!(body["metadata"], json!({"arugula_workspace": "hw_1", "arugula_project": "prj_1"}));
+    assert!(body.get("network").is_none(), "no rules, no network config");
     assert!(!body.to_string().contains(KEY), "the key goes in a header, never a body");
     let shown = format!("{made:?}{e2b:?}");
     assert!(!shown.contains("secret") && !shown.contains(KEY));
@@ -403,6 +430,44 @@ async fn errors_keep_only_status_and_code() {
 
     fail((StatusCode::OK, "not json").into_response());
     assert_eq!(e2b.status(&id).await, Err(Error::Invalid));
+}
+
+/// M185: a box made with rules carries them as E2B's network rules, a
+/// key or a broker reference alike, and a running box's rules are
+/// replaced (a paused one's can't be). A create's `Debug` never shows a
+/// rule's value.
+#[tokio::test]
+async fn rules() {
+    let (e2b, s, _) = fake().await;
+    let mut b = workspace("hw_1");
+    let rules: Rules = [(
+        "api.anthropic.com".to_owned(),
+        [("x-api-key".to_owned(), "sk-ant-fake-value".to_owned())].into(), // gitleaks:allow: a test value
+    )]
+    .into();
+    b.rules = rules.clone();
+    assert!(!format!("{b:?}").contains("sk-ant"), "{b:?}");
+    let id = e2b.create(&b).await.unwrap().id;
+    let want = json!({"api.anthropic.com": [{"transform": {"headers": {"x-api-key": "sk-ant-fake-value"}}}]}); // gitleaks:allow
+    assert_eq!(calls(&s)[0].2["network"], json!({"rules": want}));
+
+    let both: Rules = [
+        ("api.anthropic.com".to_owned(), [("x-api-key".to_owned(), fill("arugula-platform-anthropic"))].into()),
+        ("api.openai.com".to_owned(), [("authorization".to_owned(), format!("Bearer {}", fill("o")))].into()),
+    ]
+    .into();
+    e2b.set_rules(&id, &both).await.unwrap();
+    let (method, path, body) = calls(&s).pop().unwrap();
+    assert_eq!((method.as_str(), path), ("PUT", format!("/sandboxes/{id}/network")));
+    assert_eq!(body["rules"]["api.openai.com"][0]["transform"]["headers"]["authorization"], "Bearer ${e2b.secrets.o}");
+    assert_eq!(
+        body["rules"]["api.anthropic.com"][0]["transform"]["headers"]["x-api-key"],
+        "${e2b.secrets.arugula-platform-anthropic}"
+    );
+    e2b.set_rules(&id, &Rules::new()).await.unwrap();
+    assert_eq!(s.lock().unwrap().rules[&id], json!({}), "no rules clears them");
+    e2b.pause(&id).await.unwrap();
+    assert_eq!(e2b.set_rules(&id, &both).await, Err(Error::NotFound), "a paused box's rules can't change");
 }
 
 #[tokio::test]

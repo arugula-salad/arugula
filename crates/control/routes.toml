@@ -706,6 +706,22 @@ process = "hub"
 auth = "hosted"
 clients = ["daemon"]
 
+
+[[route]]
+method = "POST"
+path = "/api/hosted/turns"  # wire::hosted::HOSTED_TURNS
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A hosted box asks to start an agent turn (M185): the platform says whose inference key pays (the project's, or its own under caps for the allowlist), or why not (no_key with how to add one, cap with which), and brings the box's egress rules up to date. Through PlatformPort::hosted_turn, for the workspace and machine its certificate names."
+
+[[route]]
+method = "POST"
+path = "/api/hosted/turns/{turn}/end"
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A hosted box says an agent turn ended (M185): only its own box's (PlatformPort::hosted_turn_end)."
 [[route]]
 method = "DELETE"
 path = "/api/hosted/machines/{id}"
@@ -1311,6 +1327,30 @@ process = "platform"
 auth = "cloud_driver"
 clients = ["cli", "daemon"]
 note = "Rebuilds a hosted workspace from its spec (M179): a project's owner or editor on ARUGULA_HOSTED_ACCOUNTS."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/inference-keys"
+process = "platform"
+auth = "cloud_driver"
+clients = ["cli", "daemon"]
+note = "Which of a project's own inference keys are set (M185), for its members. Never a key."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/inference-keys/{provider}"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "Sets a project's own Anthropic or OpenAI key (M185): a project's owner. Sealed here and written into the project's running boxes' egress rules (E2B's proxy holds it, never the box); never read back."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/inference-keys/{provider}"
+process = "platform"
+auth = "session"
+clients = ["cli"]
+note = "Clears a project's own inference key (M185): a project's owner. It leaves every running box's egress rules at once, and a paused box's when it wakes."
 
 [[route]]
 method = "GET"

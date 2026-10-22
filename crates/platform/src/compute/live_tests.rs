@@ -112,6 +112,7 @@ async fn suite(
         env: [("ARUGULA_TEST_ENV".into(), "1".into())].into(),
         metadata: metadata.clone(),
         timeout: Duration::from_secs(120),
+        rules: Rules::new(),
     };
 
     // A second box with a short timeout, to see it pause (not die) when
@@ -219,7 +220,13 @@ async fn live_runs() {
     let run_id = format!("m188-{:x}", arugula_e2e::now_ms());
     let tag: BTreeMap<String, String> = [("arugula_test".into(), "1".into()), ("arugula_run".into(), run_id)].into();
     let made = e2b
-        .create(&Create { template, env: BTreeMap::new(), metadata: tag.clone(), timeout: Duration::from_secs(60) })
+        .create(&Create {
+            template,
+            env: BTreeMap::new(),
+            metadata: tag.clone(),
+            timeout: Duration::from_secs(60),
+            rules: Rules::new(),
+        })
         .await
         .unwrap();
     let body = AssertUnwindSafe(async {
@@ -280,7 +287,13 @@ async fn resume_latency() {
     let tag: BTreeMap<String, String> =
         [("arugula_test".into(), "1".into()), ("arugula_run".into(), format!("m182-{nanos:x}"))].into();
     let made = e2b
-        .create(&Create { template, env: BTreeMap::new(), metadata: tag.clone(), timeout: Duration::from_secs(120) })
+        .create(&Create {
+            template,
+            env: BTreeMap::new(),
+            metadata: tag.clone(),
+            timeout: Duration::from_secs(120),
+            rules: Rules::new(),
+        })
         .await
         .unwrap();
     let body = AssertUnwindSafe(async {

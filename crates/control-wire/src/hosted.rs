@@ -26,6 +26,12 @@ pub const ENROLL: &str = "/api/hosted/enroll";
 /// A hosted machine's project, as it is now (`GET`, signed as the machine),
 /// answered [`Enrollment`].
 pub const HOSTED_TRUST: &str = "/api/hosted/trust";
+/// An agent turn on a hosted box (M185): `POST` `{"agent": "claude" |
+/// "codex"}`, signed as the machine, answered `{"turn", "pays"}` (whose
+/// inference key: `project` or `platform`), or refused with a `reason`
+/// (`no_key`, `cap`) and a sentence for the person. Its end is
+/// `POST {HOSTED_TURNS}/{turn}/end`.
+pub const HOSTED_TURNS: &str = "/api/hosted/turns";
 
 /// How long a ticket the hub makes lasts: a box made from a template is
 /// up in seconds, and one that isn't enrolled by then is made again.
