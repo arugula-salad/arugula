@@ -52,6 +52,8 @@ pub mod deploys;
 #[cfg(test)]
 mod deploys_tests;
 pub mod drivers;
+#[cfg(test)]
+mod failure_tests;
 pub mod forge;
 pub mod grants;
 pub mod hosted;
@@ -78,6 +80,7 @@ pub mod run_log;
 pub mod run_logs;
 #[cfg(test)]
 mod runs_page_tests;
+pub mod stuck;
 pub mod timing;
 pub mod triggers;
 pub mod window;

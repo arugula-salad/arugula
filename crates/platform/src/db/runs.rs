@@ -588,78 +588,16 @@ impl Db {
     /// Move a run, as S37 allows: its new state and the event saying so,
     /// in one transaction. `Err(Refused)` writes nothing.
     pub fn move_run(&self, id: &str, m: &Move) -> Result<Result<(Run, Event), Refused>> {
-        let (from, to) = (m.from(), m.to());
         let mut c = self.c();
         let tx = c.immediate()?;
-        let Some(run) = tx
-            .query_row(&format!("SELECT {COLS} FROM runs WHERE id = ?1{}", tx.for_update()), params![id], run_row)
-            .optional()?
-        else {
-            return Ok(Err(Refused::NoRun));
-        };
-        if run.state != from {
-            return Ok(Err(Refused::Moved { now: run.state }));
+        let moved = move_run_in(&tx, id, m)?;
+        if moved.is_ok() {
+            tx.commit()?;
+            // Whoever waits on it here hears now (M216); the platform's
+            // other machines' waiters look again on their own.
+            let _ = MOVED.send(id.to_owned());
         }
-        if !from.may_become(to) {
-            return Ok(Err(Refused::Disallowed { from, to }));
-        }
-        let seq = run.last_seq + 1;
-        let checked = match m {
-            Move::Control { detail, .. } => {
-                if !matches!(to, State::Denied | State::Canceled | State::Expired | State::Failed) {
-                    return Ok(Err(Refused::Reporter));
-                }
-                control_detail(detail, to).map(|()| (detail.to_string(), None, None, None))
-            }
-            Move::Approved { approval, .. } => {
-                if approval.op != run.op_hash || approval.daemon != run.daemon {
-                    return Ok(Err(Refused::Approval));
-                }
-                let detail = serde_json::json!({ "approval": approval.id, "op": approval.op, "by": approval.by });
-                Ok((detail.to_string(), None, None, None))
-            }
-            Move::Daemon(r) => {
-                if !matches!(to, State::Running | State::Succeeded | State::Failed | State::Expired) {
-                    return Ok(Err(Refused::Reporter));
-                }
-                if r.run != run.id || r.daemon != run.daemon {
-                    return Ok(Err(Refused::OtherDaemon));
-                }
-                if r.seq != seq {
-                    return Ok(Err(Refused::Seq { next: seq }));
-                }
-                daemon_exit(r).map(|exit| (r.detail.clone(), exit, Some(r.daemon.clone()), Some(r.sig.clone())))
-            }
-        };
-        let (detail, exit, daemon, sig) = match checked {
-            Ok(c) => c,
-            Err(r) => return Ok(Err(r)),
-        };
-        if (from, to) == (State::Pending, State::Running) && run.grant.is_none() {
-            return Ok(Err(Refused::NoGrant));
-        }
-        let at = match m {
-            Move::Control { at, .. } | Move::Approved { at, .. } => *at,
-            Move::Daemon(r) => r.at,
-        };
-        let event = Event { run: run.id.clone(), seq, from: Some(from), to, at, detail, daemon, sig };
-        let run = tx.query_row(
-            &format!(
-                "UPDATE runs SET state = ?2, last_seq = ?3,
-                     started_at = CASE WHEN ?2 = 'running' THEN ?4 ELSE started_at END,
-                     ended_at = CASE WHEN ?5 THEN ?4 ELSE ended_at END,
-                     exit_code = ?6
-                 WHERE id = ?1 RETURNING {COLS}"
-            ),
-            params![run.id, to.as_str(), seq, at, to.terminal(), exit],
-            run_row,
-        )?;
-        add_event(&tx, &event)?;
-        tx.commit()?;
-        // Whoever waits on it here hears now (M216); the platform's other
-        // machines' waiters look again on their own.
-        let _ = MOVED.send(run.id.clone());
-        Ok(Ok((run, event)))
+        Ok(moved)
     }
 
     /// Link the chant ledger entry a release run wrote, once: false when
@@ -728,3 +666,74 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
 #[cfg(test)]
 #[path = "runs_tests.rs"]
 mod tests;
+
+/// [`Db::move_run`] in a transaction the caller holds and commits (M223:
+/// a job's end fails its run in the same one). Its waiters aren't told.
+pub(super) fn move_run_in(tx: &impl Sql, id: &str, m: &Move) -> Result<Result<(Run, Event), Refused>> {
+    let (from, to) = (m.from(), m.to());
+    let Some(run) = tx
+        .query_row(&format!("SELECT {COLS} FROM runs WHERE id = ?1{}", tx.for_update()), params![id], run_row)
+        .optional()?
+    else {
+        return Ok(Err(Refused::NoRun));
+    };
+    if run.state != from {
+        return Ok(Err(Refused::Moved { now: run.state }));
+    }
+    if !from.may_become(to) {
+        return Ok(Err(Refused::Disallowed { from, to }));
+    }
+    let seq = run.last_seq + 1;
+    let checked = match m {
+        Move::Control { detail, .. } => {
+            if !matches!(to, State::Denied | State::Canceled | State::Expired | State::Failed) {
+                return Ok(Err(Refused::Reporter));
+            }
+            control_detail(detail, to).map(|()| (detail.to_string(), None, None, None))
+        }
+        Move::Approved { approval, .. } => {
+            if approval.op != run.op_hash || approval.daemon != run.daemon {
+                return Ok(Err(Refused::Approval));
+            }
+            let detail = serde_json::json!({ "approval": approval.id, "op": approval.op, "by": approval.by });
+            Ok((detail.to_string(), None, None, None))
+        }
+        Move::Daemon(r) => {
+            if !matches!(to, State::Running | State::Succeeded | State::Failed | State::Expired) {
+                return Ok(Err(Refused::Reporter));
+            }
+            if r.run != run.id || r.daemon != run.daemon {
+                return Ok(Err(Refused::OtherDaemon));
+            }
+            if r.seq != seq {
+                return Ok(Err(Refused::Seq { next: seq }));
+            }
+            daemon_exit(r).map(|exit| (r.detail.clone(), exit, Some(r.daemon.clone()), Some(r.sig.clone())))
+        }
+    };
+    let (detail, exit, daemon, sig) = match checked {
+        Ok(c) => c,
+        Err(r) => return Ok(Err(r)),
+    };
+    if (from, to) == (State::Pending, State::Running) && run.grant.is_none() {
+        return Ok(Err(Refused::NoGrant));
+    }
+    let at = match m {
+        Move::Control { at, .. } | Move::Approved { at, .. } => *at,
+        Move::Daemon(r) => r.at,
+    };
+    let event = Event { run: run.id.clone(), seq, from: Some(from), to, at, detail, daemon, sig };
+    let run = tx.query_row(
+        &format!(
+            "UPDATE runs SET state = ?2, last_seq = ?3,
+                 started_at = CASE WHEN ?2 = 'running' THEN ?4 ELSE started_at END,
+                 ended_at = CASE WHEN ?5 THEN ?4 ELSE ended_at END,
+                 exit_code = ?6
+             WHERE id = ?1 RETURNING {COLS}"
+        ),
+        params![run.id, to.as_str(), seq, at, to.terminal(), exit],
+        run_row,
+    )?;
+    add_event(tx, &event)?;
+    Ok(Ok((run, event)))
+}

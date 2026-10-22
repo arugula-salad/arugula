@@ -17,6 +17,10 @@
 //!   the lease runs out, which carries on from the last checkpoint. A job
 //!   claimed its kind's most attempts in a row without handing itself back
 //!   (crashing or hanging each time) ends `failed` at the next claim.
+//! - A run's or a deploy's job that ends other than `done` (gave up,
+//!   failed, canceled) ends what it followed in the same transaction
+//!   (`end_work_in`, M223): nothing is left pending or running with no
+//!   job.
 //! - A cancel ([`Db::cancel_job`]) makes the job due at once, and a hand-back
 //!   or a failure keeps it due, so its handler sees it at the next claim; a
 //!   heartbeat tells a step that's running.
@@ -197,9 +201,10 @@ fn changed_one(changed: usize) -> Result<()> {
 /// lease, `?3` now. The lease must not have run out.
 const HELD: &str = "id=?1 AND lease=?2 AND state='pending' AND lease_until>?3";
 
-const COLUMNS: &str = "id,kind,payload,checkpoint,state,cancel,attempts,error,next_at,lease_until,created,updated";
+pub(crate) const COLUMNS: &str =
+    "id,kind,payload,checkpoint,state,cancel,attempts,error,next_at,lease_until,created,updated";
 
-fn job_row(r: &Row) -> Result<JobRow> {
+pub(crate) fn job_row(r: &Row) -> Result<JobRow> {
     Ok(JobRow {
         id: r.get(0)?,
         kind: r.get(1)?,
@@ -347,6 +352,7 @@ impl Db {
                      WHERE id=?1",
                     params![id, now, format!("gave up after {attempts} attempts")],
                 )?;
+                end_work_in(&tx, &id, kind, &format!("its job gave up after {attempts} attempts"), now)?;
                 continue;
             }
             let lease = hex::encode(arugula_e2e::random::<16>());
@@ -447,14 +453,22 @@ impl Db {
         let write = checkpoint.is_some();
         let checkpoint = checkpoint.flatten();
         changed_one(if end {
-            self.c().execute(
+            let mut c = self.c();
+            let tx = c.immediate()?;
+            let changed = tx.execute(
                 &format!(
                     "UPDATE platform_jobs SET checkpoint=CASE WHEN ?6 THEN ?4 ELSE checkpoint END,updated=?3,error=?5,
                          state='failed',lease=NULL,lease_until=0
                      WHERE {HELD}"
                 ),
                 params![job.id, job.lease, now, checkpoint, error, write],
-            )?
+            )?;
+            if changed == 1 {
+                let why = format!("its job gave up after {} attempts: {error}", job.attempts);
+                end_work_in(&tx, &job.id, job.kind, &why, now)?;
+                tx.commit()?;
+            }
+            changed
         } else {
             self.c().execute(
                 &format!(
@@ -469,14 +483,27 @@ impl Db {
     }
 
     /// End `job` under its lease. It's never claimed again.
+    /// A job that ends other than `done` ends its run or deploy with it
+    /// (`end_work_in`).
     pub fn finish_job(&self, job: &LeasedJob, end: JobEnd, error: Option<&str>, now: u64) -> Result<()> {
-        changed_one(self.c().execute(
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        changed_one(tx.execute(
             &format!(
                 "UPDATE platform_jobs SET checkpoint=?4,updated=?3,state=?5,error=COALESCE(?6,error),lease=NULL,lease_until=0
                  WHERE {HELD}"
             ),
             params![job.id, job.lease, now, encode(job)?, end.as_str(), error],
-        )?)
+        )?)?;
+        match end {
+            JobEnd::Done => {}
+            JobEnd::Failed => {
+                end_work_in(&tx, &job.id, job.kind, &format!("its job failed: {}", error.unwrap_or("")), now)?
+            }
+            JobEnd::Cancelled => end_work_in(&tx, &job.id, job.kind, "its job was canceled", now)?,
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// Clear `job`'s `cancel` under its lease: for a kind that reads it as
@@ -509,3 +536,75 @@ impl Db {
 #[cfg(test)]
 #[path = "jobs_tests.rs"]
 pub(crate) mod tests;
+
+/// A run's or a deploy's job ended other than `done` (it gave up, failed or
+/// was canceled), in the caller's transaction: what it followed ends with
+/// it, saying `why`, so nothing is left pending or running with no job
+/// (M223). A run that hasn't ended fails, by control. A deploy's run ends
+/// its deploy: failed (by its run) if the run had started it, canceled if
+/// not. A deploy's own job fails its run that way too, and its box is
+/// deleted. The owners are paged once by the run's job or the deploy's,
+/// whichever looks next (`deploys::apply::page_unpaged`).
+fn end_work_in(tx: &impl Sql, id: &str, kind: JobKind, why: &str, now: u64) -> Result<()> {
+    use super::deploys::{Actor, EventKind, record_in};
+    use super::runs::{Move, State as RunState, move_run_in};
+    let why: String = why.chars().take(1_000).collect();
+    let fail_run = |run: &str| -> Result<()> {
+        let state: Option<String> =
+            tx.query_row("SELECT state FROM runs WHERE id = ?1", params![run], |r| r.get(0)).optional()?;
+        let Some(from) = state.as_deref().and_then(RunState::parse) else { return Ok(()) };
+        if from.terminal() {
+            return Ok(());
+        }
+        let detail = serde_json::json!({ "reason": why }).to_string();
+        let _ = move_run_in(tx, run, &Move::Control { from, to: RunState::Failed, at: now, detail: &detail })?;
+        Ok(())
+    };
+    // The deploy `deploy` ends because `run` (its run, if any) did.
+    let end_deploy = |deploy: &str, run: Option<&str>| -> Result<()> {
+        let found: Option<(String, Option<String>)> = tx
+            .query_row("SELECT state, run_id FROM deploys WHERE id = ?1", params![deploy], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .optional()?;
+        let Some((state, started_by)) = found else { return Ok(()) };
+        let _ = match (state.as_str(), run) {
+            ("running", Some(r)) if started_by.as_deref() == Some(r) => record_in(
+                tx,
+                deploy,
+                EventKind::Failed,
+                &Actor::run(r),
+                now,
+                serde_json::json!({ "run": r, "reason": why }),
+            )?,
+            ("approved", _) => {
+                record_in(tx, deploy, EventKind::Canceled, &Actor::Platform, now, serde_json::json!({ "reason": why }))?
+            }
+            _ => return Ok(()),
+        };
+        Ok(())
+    };
+    match kind {
+        JobKind::Run => {
+            fail_run(id)?;
+            let deploy: Option<String> = tx
+                .query_row("SELECT deploy_id FROM deploy_runs WHERE run_id = ?1", params![id], |r| r.get(0))
+                .optional()?;
+            if let Some(d) = deploy {
+                end_deploy(&d, Some(id))?;
+            }
+        }
+        JobKind::Deploy => {
+            let run: Option<String> = tx
+                .query_row("SELECT run_id FROM deploy_runs WHERE deploy_id = ?1", params![id], |r| r.get(0))
+                .optional()?;
+            if let Some(r) = &run {
+                fail_run(r)?;
+            }
+            end_deploy(id, run.as_deref())?;
+            super::hosted::ask_delete_deploy_box_in(tx, id, now)?;
+        }
+        JobKind::Workspace | JobKind::Schedule => {}
+    }
+    Ok(())
+}

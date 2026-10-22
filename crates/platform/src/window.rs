@@ -386,8 +386,18 @@ fn running_env(var: &str) -> Option<(u32, String)> {
 
 /// The first words that make either binary run one of these instead of
 /// serving (and `platform`, control's prefix for them).
-pub const COMMANDS: [&str; 9] =
-    ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "previews", "run-logs", "platform"];
+pub const COMMANDS: [&str; 10] = [
+    "copy",
+    "checksums",
+    "secrets-check",
+    "migrations",
+    "usage",
+    "rotate-key",
+    "previews",
+    "run-logs",
+    "stuck",
+    "platform",
+];
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -486,6 +496,34 @@ enum What {
         #[arg(long)]
         db: Place,
     },
+    /// Runs and deploys that may be stuck (M223): jobs a machine died
+    /// holding, jobs that keep failing, runs and deploys no job follows,
+    /// and deploy boxes not deleted. With one of its flags, unsticks one
+    /// the way the platform would: docs/control-ops.md's "Runs and
+    /// deploys" says when.
+    Stuck {
+        /// A file, or a `postgres://` URL.
+        #[arg(long)]
+        db: Place,
+        /// Ask this job to stop (its id: the run's or the deploy's).
+        #[arg(long, conflicts_with_all = ["fail_run", "cancel_deploy", "delete_box"])]
+        cancel_job: Option<String>,
+        /// Fail this run, by control, with --reason; a deploy's run ends
+        /// its deploy and its box goes.
+        #[arg(long, requires = "reason", conflicts_with_all = ["cancel_deploy", "delete_box"])]
+        fail_run: Option<String>,
+        /// Cancel this deploy (not yet running), with --reason; its box
+        /// goes.
+        #[arg(long, requires = "reason", conflicts_with = "delete_box")]
+        cancel_deploy: Option<String>,
+        /// Delete this deploy box (`hw_…`), at the provider too.
+        #[arg(long)]
+        delete_box: Option<String>,
+        /// Why, for --fail-run and --cancel-deploy: kept in the run's or
+        /// the deploy's log as the operator's.
+        #[arg(long)]
+        reason: Option<String>,
+    },
 }
 
 /// `var` as the running server has it, else as this shell does, and
@@ -561,6 +599,28 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
         What::RunLogs { db } => {
             let u = portable::run_log_usage(&db)?;
             print!("{}", crate::run_logs::render_usage(&u, &db.to_string()));
+        }
+        What::Stuck { db, cancel_job, fail_run, cancel_deploy, delete_box, reason } => {
+            let d = portable::open_current(&db)?;
+            let now = arugula_e2e::now_ms();
+            let reason = reason.unwrap_or_default();
+            if let Some(id) = &cancel_job {
+                if !d.operator_cancel_job(id, now)? {
+                    bail!("no job {id} that hasn't ended");
+                }
+                println!("asked job {id} to stop");
+            } else if let Some(id) = &fail_run {
+                d.operator_fail_run(id, &reason, now)?;
+                println!("failed run {id}");
+            } else if let Some(id) = &cancel_deploy {
+                d.operator_cancel_deploy(id, &reason, now)?;
+                println!("canceled deploy {id}");
+            } else if let Some(id) = &delete_box {
+                d.operator_delete_box(id, now)?;
+                println!("deleting deploy box {id}");
+            }
+            println!("in {db}, at {now}:\n");
+            print!("{}", d.stuck(now)?.render());
         }
         What::SecretsCheck { db } => {
             const VAR: &str = "ARUGULA_CLOUD_SECRET_KEY";

@@ -326,6 +326,9 @@ async fn step(app: &Arc<Platform>, db: &Db, job: &mut LeasedJob, now: u64) -> Re
         }
         let d = db.deploy(&d.id)?.context("a deploy that was there")?;
         let run = db.run(&dr.run)?.context("a deploy's run is gone")?;
+        if run.state.terminal() {
+            page_unpaged(app, &run.id).await?;
+        }
         return Ok(match d.state {
             State::Running => Step::Again(now + RUNNING_MS),
             State::Approved => Step::Again(now + FOLLOW_MS),
@@ -373,9 +376,22 @@ async fn step(app: &Arc<Platform>, db: &Db, job: &mut LeasedJob, now: u64) -> Re
     let w = match db.hosted_any(&project, &b)? {
         Some(w) => w,
         None => {
+            #[cfg(test)]
+            tests::stall_point(&d.id);
             if !db.add_deploy_box(&b, &project, &d.id, &a.account, now)? {
-                cancel(app, &d, EventKind::Canceled, "its box couldn't be made (its name is taken)", now).await?;
-                return Ok(Step::Done);
+                // Taken: another machine made the deploy's box while this
+                // one stalled here (its lease ran out meanwhile). That box
+                // is the deploy's: carry on with it, never cancel.
+                let Some(w) = db.deploy_box_named(&project, &d.id)? else {
+                    cancel(app, &d, EventKind::Canceled, "its box couldn't be made (its name is taken)", now).await?;
+                    return Ok(Step::Done);
+                };
+                info!(deploy = d.id, workspace = w.id, "a deploy's box was made by another machine meanwhile");
+                if cp.r#box.as_deref() != Some(w.id.as_str()) {
+                    cp.r#box = Some(w.id.clone());
+                    save(db, job, &cp, now)?;
+                }
+                return Ok(Step::Again(now + BOX_MS));
             }
             info!(deploy = d.id, workspace = b, "a deploy's box is being made");
             return Ok(Step::Again(now + BOX_MS));
@@ -594,6 +610,25 @@ pub async fn reported(app: &Platform, run: &Run) -> Result<Option<Reported>> {
     Ok(None)
 }
 
+/// A deploy's run ended and its deploy failed by it, but its owners
+/// weren't paged: its run's job gave up, failing both in one transaction
+/// (M223, `db::jobs`). Page them now, once. The run's job or the deploy's,
+/// whichever looks next, calls it.
+pub async fn page_unpaged(app: &Platform, run: &str) -> Result<()> {
+    let Some(dr) = app.db.deploy_run_of(run)? else { return Ok(()) };
+    if dr.paged_at.is_some() {
+        return Ok(());
+    }
+    let Some(d) = app.db.deploy(&dr.deploy)? else { return Ok(()) };
+    if d.state != State::Failed || d.run.as_deref() != Some(run) {
+        return Ok(());
+    }
+    let last = app.db.deploy_history(&d.id)?.pop().and_then(|e| e.detail_json().ok());
+    let why = last.and_then(|v| v["reason"].as_str().map(str::to_owned)).unwrap_or_else(|| "it failed".into());
+    page(app, &d.id, run, &why).await;
+    Ok(())
+}
+
 /// Tell the deploy's project's owners its apply failed (or never ran),
 /// with its run's log: once, by the hub's push. In the background: a
 /// failure is only logged.
@@ -706,4 +741,4 @@ pub async fn secrets(app: &Platform, m: &HostedMachine, ask: &SecretsAsk) -> Res
 
 #[cfg(test)]
 #[path = "apply_tests.rs"]
-mod tests;
+pub(crate) mod tests;

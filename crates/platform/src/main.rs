@@ -128,14 +128,15 @@ fn main() -> anyhow::Result<()> {
     // operator's takedown (M187). `run-logs`: runs' logs and artifacts in
     // the run-log bucket, by project (M213), read-only. `managoat-retire`:
     // deleting what beta Cloud workspaces left on Managoat (M189,
-    // `cloud::retire`).
+    // `cloud::retire`). `stuck`: runs and deploys that are stuck, and
+    // unsticking one (M223).
     let mut argv = std::env::args().skip(1).peekable();
     if argv.peek().is_some_and(|a| a == "managoat-retire") {
         argv.next();
         return arugula_platform::cloud::retire::run("arugula-platform managoat-retire", argv);
     }
     if argv.peek().is_some_and(|a| {
-        ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "previews", "run-logs"]
+        ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "previews", "run-logs", "stuck"]
             .contains(&a.as_str())
     }) {
         return arugula_platform::window::run("arugula-platform", argv);

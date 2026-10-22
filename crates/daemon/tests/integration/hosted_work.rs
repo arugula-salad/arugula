@@ -12,7 +12,8 @@
 //! - M213: a run's log goes to the bucket in chunks through the URLs
 //!   control signs, all of it, and its artifact with its digest, before
 //!   its end is reported; with no bucket, the run runs and its log stays
-//!   in its pane.
+//!   in its pane;
+//! - a run the box's crash interrupts fails, and never runs again (M223).
 
 use std::{
     collections::BTreeMap,
@@ -552,6 +553,85 @@ fn a_hosted_machine_runs_each_run_once() {
     wait(&marks, &f, "the deploy refused", || f.reports_of(&dep).len() == 1);
     assert!(f.reports_of(&dep)[0].detail.contains("not_deploy_box"), "{}", f.reports_of(&dep)[0].detail);
     assert!(f.secrets_asked.lock().unwrap().is_empty(), "no secrets");
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// The box goes down mid-run (M223): the daemon is killed, and so is
+/// everything it ran (a box's crash or reboot). After the restart its
+/// ledger fails the run, "interrupted by a restart; not run again", and
+/// never starts it again, though control still sends it as pending (it
+/// never took the start, being down). A daemon that dies alone, its run's
+/// pane surviving, follows the run to its end after the restart and
+/// reports it, without starting it again.
+#[test]
+fn a_run_a_crash_interrupts_fails_and_never_runs_again() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::new();
+    let url = serve(&rt, f.clone());
+    let marks: PathBuf = std::env::temp_dir().join(format!("arugula-hosted-crash-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&marks);
+    std::fs::create_dir_all(&marks).unwrap();
+    let mut d = arugulad!("hostedcrash")
+        .no_wisp()
+        .no_tailscale()
+        .args(["--hosted"])
+        .env("ARUGULA_HOSTED_TICKET", "ticket-1")
+        .env("ARUGULA_CONTROL_URL", &url)
+        .env("ARUGULA_WORK_PULL_MS", "150")
+        .env("ARUGULA_HOSTED_RUN_USER", "")
+        .env("RUST_LOG", "info")
+        .args(["--log-file", &marks.join("arugulad.log").to_string_lossy()])
+        .wait_secs(30)
+        .start();
+    wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
+    // Control takes no reports: it sends the runs as pending on every pull.
+    f.down.store(true, SeqCst);
+
+    // The box goes down while the run runs.
+    let one = marks.join("one");
+    let a = run_id('a');
+    let script = format!("echo started >> {0}; sleep 30; echo finished >> {0}", one.display());
+    f.items.lock().unwrap().push(f.item(&a, &script, f.grant(&f.root)));
+    wait(&marks, &f, "run a started", || lines(&one) == 1);
+    // Its pane is in the saved layout (a quarter second after a change).
+    std::thread::sleep(Duration::from_secs(1));
+    d.kill();
+    for (_, shim) in arugula_testkit::strays::kill_programs(&d.state) {
+        let _ = std::process::Command::new("kill").args(["-KILL", &shim.to_string()]).status();
+    }
+    f.down.store(false, SeqCst);
+    d.start();
+    wait(&marks, &f, "run a reported", || f.reports_of(&a).len() == 2);
+    let p = f.pulls();
+    wait(&marks, &f, "more pulls", || f.pulls() > p + 5);
+    let reports = f.reports_of(&a);
+    assert_eq!(states(&reports), [(2, "pending".into(), "running".into()), (3, "running".into(), "failed".into())]);
+    let why: serde_json::Value = serde_json::from_str(&reports[1].detail).unwrap();
+    assert_eq!(why["reason"], json!("interrupted by a restart; not run again"));
+    assert_eq!(std::fs::read_to_string(&one).unwrap(), "started\n", "started once, never again");
+
+    // The daemon alone dies, the run's program going on in its pane: after
+    // the restart the daemon finds the pane (tagged with the run) and
+    // follows the run to its end, which it reports. Not started again.
+    f.down.store(true, SeqCst);
+    let two = marks.join("two");
+    let b = run_id('b');
+    let script = format!("echo started >> {0}; sleep 4; echo finished >> {0}", two.display());
+    f.items.lock().unwrap().push(f.item(&b, &script, f.grant(&f.root)));
+    wait(&marks, &f, "run b started", || lines(&two) == 1);
+    // Its pane is in the saved layout (a quarter second after a change).
+    std::thread::sleep(Duration::from_secs(1));
+    d.kill();
+    f.down.store(false, SeqCst);
+    d.start();
+    wait(&marks, &f, "run b reported", || f.reports_of(&b).len() == 2);
+    let p = f.pulls();
+    wait(&marks, &f, "more pulls", || f.pulls() > p + 5);
+    let reports = f.reports_of(&b);
+    assert_eq!(states(&reports), ran(1), "followed to its end: {reports:?}");
+    assert_eq!(reports[1].detail, r#"{"exit":0}"#);
+    assert_eq!(std::fs::read_to_string(&two).unwrap(), "started\nfinished\n", "it ran once, to its end");
+    assert_eq!(std::fs::read_to_string(&one).unwrap(), "started\n");
     let _ = std::fs::remove_dir_all(&marks);
 }
 

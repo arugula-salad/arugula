@@ -159,6 +159,19 @@ fn skip_locked(c: &impl Sql) -> &'static str {
 /// is woken by `lease_until` alone).
 const DUE_NOW: &str = "lease_until = CASE WHEN lease IS NULL THEN 0 ELSE lease_until END";
 
+/// Ask the hosted worker to delete deploy `deploy`'s box, in the caller's
+/// transaction (M223: its job ended without deleting it).
+pub(super) fn ask_delete_deploy_box_in(tx: &impl Sql, deploy: &str, now: u64) -> Result<()> {
+    tx.execute(
+        &format!(
+            "UPDATE hosted_workspaces SET asked = 'delete', state = 'deleting', updated_at = ?2, {DUE_NOW}
+             WHERE name = ?1 AND purpose = 'deploy' AND deleted_at IS NULL"
+        ),
+        params![deploy, now],
+    )?;
+    Ok(())
+}
+
 impl Db {
     /// Keep a new workspace, `creating`, unless the project has one by that
     /// name or `max` live ones already.
@@ -213,6 +226,22 @@ impl Db {
             Err(e) if e.is::<Taken>() => Ok(false),
             r => r.map(|n| n == 1),
         }
+    }
+
+    /// Deploy `deploy`'s box in `project`, not deleted: the one named
+    /// after it (M219, M223: what a machine that stalled finds another
+    /// made).
+    pub fn deploy_box_named(&self, project: &str, deploy: &str) -> Result<Option<HostedWorkspace>> {
+        self.c()
+            .query_row(
+                &format!(
+                    "SELECT {COLUMNS} FROM hosted_workspaces
+                     WHERE project_id = ?1 AND name = ?2 AND purpose = 'deploy' AND deleted_at IS NULL"
+                ),
+                params![project, deploy],
+                row,
+            )
+            .optional()
     }
 
     /// A hosted box of any purpose, by id, live or deleted (M219: the

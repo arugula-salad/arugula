@@ -2464,6 +2464,137 @@ then delete.
 4. Then the PR that removes the Managoat code, `ARUGULA_MANAGOAT_API_KEY`
    and the `cloud_*` tables.
 
+### Runs and deploys (M223)
+
+A project's runs and deploys (platform step 7) are background jobs in
+`platform_jobs`, which the platform's machines take turns at
+(`crates/platform/src/jobs.rs`):
+
+- **A run's job** follows it until it ends: it marks it ready for its
+  hosted workspace's machine, wakes the box, and fails a run no machine
+  took in 15 minutes. The machine runs it at most once: its ledger
+  (`<state>/work/<run>.json` on the box) is written before anything starts.
+- **A deploy's job** starts at the owner's approval (queued in the same
+  transaction). It makes the deploy's own box, then the run that applies
+  it there, follows that run to its end, and deletes the box.
+- **A lease.** A machine holds a job for 2 minutes at a time, and renews
+  it while a step runs. If the machine dies, another takes the job over
+  when the lease runs out, from what the last step wrote. A job whose step
+  crashes, hangs or fails 8 times in a row ends `failed`. Whatever it
+  followed ends with it, in the same transaction: its run fails, saying
+  so, and a deploy's run fails its deploy (its owners are paged once) or
+  cancels it if it hadn't started. A run is never left pending or running
+  with no job.
+
+The tests in `crates/platform/src/failure_tests.rs` and
+`crates/daemon/tests/integration/hosted_work.rs` make each failure below
+happen, in CI.
+
+**Seeing it.**
+
+- **Logs.** `fly logs -a arugula-platform`. A dead machine's job:
+  `job lease lost`. A step that failed: `job step failed` (with the job,
+  its kind, attempts and error). A deploy: `a deploy's apply failed`,
+  `paged the owners`, `a deploy's box is being deleted`.
+- **The stuck command.** On the platform's machine, read-only:
+
+  ```
+  fly ssh console -a arugula-platform -C "/arugula-platform stuck --db env:ARUGULA_PLATFORM_DATABASE_URL"
+  ```
+
+  (`arugula-control platform stuck --db …` on the hub's, while the
+  platform runs in its process.) It lists jobs whose machine died holding
+  them, jobs claimed again and again, jobs that failed this week, runs and
+  deploys not ended that no job follows, and every deploy box that isn't
+  deleted, marking the ones no job follows `LEFT OVER`.
+- **A run or a deploy** on the platform page: its log and its events
+  (`/p/<project>/past/<run>`, a deploy's page). A run's log in the bucket:
+  `arugula-platform run-logs` ("The run-log bucket" above).
+
+**Unsticking it.** The same command, with one flag. Each does what the
+platform would do itself, and only appends to a run's or a deploy's log:
+
+| Flag | What it does |
+|---|---|
+| `--cancel-job ID` | Asks the job (a run's or a deploy's id) to stop at its next claim. A deploy's deletes its box. A run's ends, and fails its run with it. |
+| `--fail-run RUN --reason TEXT` | Fails the run, by control, with `operator: TEXT`. A deploy's run then ends its deploy (failed if it started, and its owners are paged), and its box is deleted. |
+| `--cancel-deploy DEP --reason TEXT` | Cancels a deploy that isn't running yet, as the platform, and deletes its box. A running one ends with its run: fail the run. |
+| `--delete-box HW` | Deletes a deploy box (`hw_…`), at E2B too, through the hosted worker. It refuses a people's workspace. |
+
+**When it happens.**
+
+- **A machine died holding a lease** (a deploy, OOM or a crash). The
+  job is listed among those whose machine died holding them, and the
+  next claim takes it over within 2 minutes. Nothing runs twice: the
+  next machine finds what the last one made (the box named in the job's
+  checkpoint, the run made for the deploy) instead of making it again.
+  Do nothing, unless the same job shows up as claimed again and again:
+  then each step is crashing. Read its error in the logs, and fix that.
+  After 8 claims it ends `failed`, and its run (and deploy) with it.
+  A machine that only stalled (a pause longer than the lease) and then
+  carries on finds what the other machine made, and never cancels the
+  deploy.
+- **The platform crashed between an approval and its run.** The
+  approval and its job are written together, so the next platform applies
+  the deploy, once: one box and one run. If a deploy stays `approved` with
+  no job (listed), cancel it with `--cancel-deploy` and re-run it.
+- **A box's daemon crashed mid-run.** If the run's program is still
+  there (the daemon crashed alone, and the pane's shim kept it), the
+  restarted daemon finds the run's pane by the run's id, follows it to its
+  end and reports it. If the program went with it (the box crashed or
+  rebooted), the ledger fails the run, `interrupted by a restart; not run
+  again`, and never starts it again. Nothing to clean up. Start the run
+  again by hand if it should run (the platform page, or `arugula runs
+  start`).
+- **A box went away mid-run** (E2B lost it, or it never reports again). A
+  run's job fails it when its box is deleted. A deploy's job fails its run
+  after 2 hours, the box's longest life; that fails the deploy and pages
+  you. To end it sooner: `--fail-run RUN --reason "its box went away"`.
+- **A driver failed mid-apply.** The deploy is `failed`, and every owner
+  gets one push: "A deploy to `<environment>` failed", with its run's
+  log. The box is deleted by itself. Then:
+  1. Read the run's log to see how far it got.
+  2. Look at the environment itself: the driver may have applied part of
+     it. For chant→Fly, `fly releases -a <app>` and chant's ledger.
+  3. Fix the cause, then re-run the deploy: plan it again on the platform
+     page (or have an agent plan it), and approve it on your phone. A
+     failed deploy stays failed. Its approval is never used again.
+- **A leftover deploy box** (listed `LEFT OVER`, or the E2B bill shows
+  boxes nobody explains). Delete it with `--delete-box HW`. A box at E2B
+  with no row here (the platform lost a create's answer) carries the
+  metadata `arugula_workspace=hw_…` and `arugula_project=prj_…`
+  (`hosted::metadata`): list a project's boxes and delete one with
+  E2B's API, with the key from Infisical:
+
+  ```
+  curl -s -H "X-API-Key: $E2B_KEY" "https://api.e2b.dev/v2/sandboxes?metadata=arugula_project%3Dprj_…&state=running,paused"
+  curl -s -X DELETE -H "X-API-Key: $E2B_KEY" https://api.e2b.dev/sandboxes/<sandbox id>
+  ```
+
+  Delete only a box whose `arugula_workspace` is a deploy's (`stuck`
+  lists it) or has no row at all. A people's workspace is theirs.
+- **A run or a deploy no job follows.** A job's end ends what it
+  followed, so this shouldn't happen. If one is listed (both its run's job
+  and its deploy's ended), fail the run, or cancel the deploy, with a
+  reason.
+
+**Never:**
+
+- Update or delete `run_events` or `deploy_events` rows. They're
+  append-only (triggers refuse), anyone can check a deploy's log, and a
+  rewritten one fails `verify_deploy_log`. End things with the flags
+  above, which append.
+- Approve a deploy for anyone, or write an approval row. Only a project
+  owner's device approves, with their passkey. If Jake can't approve, the
+  deploy waits, or expires.
+- Record a deploy's `started`, `succeeded` or `failed` by hand. Only its
+  run ends it.
+- Start a run again by setting its state back. Start a new run.
+- Delete a deploy box's row to get rid of it. The box at E2B would keep
+  running, and billing. Use `--delete-box`.
+- Run `stuck` from a build other than the one the platform runs. It
+  refuses a database at other migrations.
+
 ### Public previews
 
 A hosted workspace's port that one of its project's owners or editors

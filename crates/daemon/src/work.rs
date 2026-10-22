@@ -971,8 +971,9 @@ async fn watch(app: Arc<App>, l: Ledger, events: Option<tokio::sync::broadcast::
     send(&app, &l.run).await;
 }
 
-/// After a restart: carry on following a run whose pane is still there;
-/// fail the others, which are never run again; close every pane in the
+/// After a restart: carry on following a run whose pane is still there
+/// (the pane the ledger names, tagged with the run's id: a restart gives
+/// it a new epoch); fail the others, which are never run again; close every pane in the
 /// `runs` session the ledger doesn't account for (one a run started just
 /// before its entry said so), and kill what they left.
 async fn resume(app: &Arc<App>) {
@@ -981,9 +982,11 @@ async fn resume(app: &Arc<App>) {
     let ledger = all(&dir);
     let mut followed = false;
     for mut l in ledger.iter().filter(|l| l.state == State::Running.as_str()).cloned() {
+        // Its pane, if it survived: the pane the entry names, still the
+        // run's (tagged with its id when it started). Panes come back from
+        // their shims as the daemon starts, each with a new epoch.
         let live = match l.pane {
             Some(p) => {
-                // Panes come back from their shims as the daemon starts.
                 let mut h = None;
                 for _ in 0..20 {
                     h = app.mux.api(|r| Api::Pane(p, r)).await.flatten();
@@ -992,13 +995,30 @@ async fn resume(app: &Arc<App>) {
                     }
                     tokio::time::sleep(Duration::from_millis(250)).await;
                 }
-                h.is_some_and(|h| l.epoch.is_none_or(|e| e == h.epoch))
+                let panes = match h {
+                    Some(_) => app.mux.api(Api::Panes).await.unwrap_or_default(),
+                    None => vec![],
+                };
+                let its = panes.iter().any(|s| s.info.id == p && s.session_name == SESSION && runs_pane(s, &l.run));
+                // Its program kept by its shim: running, or ended while the
+                // daemon was down. A pane only restored from the layout
+                // (its program died with the box) waits for Enter: it isn't.
+                h.filter(|h| its && (h.running() || h.status().exited.is_some())).map(|h| h.epoch)
             }
-            None => false,
+            None => None,
         };
-        if live && !followed && l.last() == State::Running.as_str() && l.deploy.is_none() {
+        if let Some(epoch) = live
+            && !followed
+            && l.last() == State::Running.as_str()
+            && l.deploy.is_none()
+        {
             info!(run = l.run, "hosted: following a run that was running before the restart");
             followed = true;
+            // Its pane's output is a new epoch now: the one to follow.
+            l.epoch = Some(epoch);
+            if let Err(e) = write(&dir, &l) {
+                warn!(run = l.run, error = %format!("{e:#}"), "hosted: can't write the ledger");
+            }
             RUNNING.fetch_add(1, Ordering::SeqCst);
             tokio::spawn(watch(app.clone(), l, None));
             continue;
@@ -1018,6 +1038,14 @@ async fn resume(app: &Arc<App>) {
     if !followed && let Ok(Some(as_)) = run_as() {
         kill_all(&as_).await;
     }
+}
+
+/// Whether `pane` is run `run`'s: its tab names the run, or it says the
+/// run started it, as [`take`] tagged it.
+fn runs_pane(pane: &arugula_proto::api::PaneSummary, run: &str) -> bool {
+    let tab = pane.tab_name.as_deref().is_some_and(|t| t.starts_with(&format!("{run} ")));
+    let by = pane.info.started_by.as_ref().is_some_and(|s| s.by.starts_with(&format!("run {run} ")));
+    tab || by
 }
 
 /// Send run `run`'s reports control hasn't answered, in order, until one

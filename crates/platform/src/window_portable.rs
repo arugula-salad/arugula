@@ -359,6 +359,22 @@ fn open_as_is(at: &Place, url: &str) -> anyhow::Result<Db> {
     Ok(db)
 }
 
+/// The database at `at`, to read and write as the platform does (an
+/// operator's tool: `previews --off`, `stuck`): refused when it isn't at
+/// this build's migrations, which it never runs.
+pub fn open_current(at: &Place) -> anyhow::Result<Db> {
+    Ok(match at {
+        Place::File(path) => {
+            let m = migrations_on(&super::read_only(path)?, Dialect::Sqlite, at)?;
+            if !m.pending.is_empty() {
+                bail!("{at} is behind this build (it would run {:?}): run the build the platform runs", m.pending);
+            }
+            Db::open(path)?
+        }
+        Place::Postgres(url) => open_as_is(at, url)?,
+    })
+}
+
 /// Hosted workspaces' usage at `at` in `[from, to)` (M188), read-only.
 /// Refused, as [`open_as_is`] refuses, on a database this build would
 /// migrate.
@@ -384,16 +400,7 @@ pub fn usage(at: &Place, from: u64, to: u64) -> anyhow::Result<crate::hosted::us
 /// (by its id, or its URL or host). Then the ones public now. Refused, as
 /// [`open_as_is`] refuses, on a database this build would migrate.
 pub fn previews(at: &Place, off: Option<&str>) -> anyhow::Result<(bool, Vec<crate::PublicPreview>)> {
-    let db = match at {
-        Place::File(path) => {
-            let m = migrations_on(&super::read_only(path)?, Dialect::Sqlite, at)?;
-            if !m.pending.is_empty() {
-                bail!("{at} is behind this build (it would run {:?}): run the build the platform runs", m.pending);
-            }
-            Db::open(path)?
-        }
-        Place::Postgres(url) => open_as_is(at, url)?,
-    };
+    let db = open_current(at)?;
     let taken = match off {
         Some(o) => {
             // `https://<id>.arugula.site/…`, `<id>.arugula.site` or the id.
