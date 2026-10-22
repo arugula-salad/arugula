@@ -1,0 +1,6 @@
+#!/bin/sh
+# The template's ready check (M177): E2B runs it in a loop after starting
+# `arugulad --hosted`, and snapshots the box once it exits 0, which is once
+# the daemon answers on its socket. It reads nothing and makes nothing: no
+# key or identity exists before the snapshot (M180 makes them after it).
+exec arugula ls --socket "${XDG_STATE_HOME:-$HOME/.local/state}/arugula/sock" >/dev/null 2>&1

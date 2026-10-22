@@ -24,6 +24,7 @@ mod e2b;
 mod e2b_tests;
 #[cfg(test)]
 mod live_tests;
+pub mod template;
 
 pub use e2b::E2b;
 
