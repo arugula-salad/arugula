@@ -1,4 +1,4 @@
--- 0021: environments and deploys (M217, platform step 7). A project's
+-- 0017: environments and deploys (M217, platform step 7). A project's
 -- environments, the deploys planned to them, and each environment's
 -- append-only event log, hash-chained so anyone can verify it
 -- (`db::deploys`). Times are milliseconds since the epoch. JSON lists are

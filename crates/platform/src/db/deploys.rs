@@ -3,7 +3,7 @@
 //! environment's event log. Who may plan or ask is decided by the routes;
 //! the signed approval is M218's. This is storage, and the rules that
 //! hold whoever calls it. The tables, with notes on their columns, are
-//! made by `0021_deploys`.
+//! made by `0017_deploys`.
 //!
 //! - **The log is the record.** Every change to a deploy is an event in its
 //!   environment's log, written in the same transaction as the deploy's

@@ -75,6 +75,8 @@ impl Substrate for Fake {
                 started_at: String::new(),
                 end_at: String::new(),
                 pauses_on_timeout: Some(true),
+                cpus: Some(2),
+                memory_mb: Some(2048),
             },
         );
         if self.lose_next.swap(false, SeqCst) {
@@ -449,6 +451,20 @@ async fn wake_rebuild_and_delete() {
     let (_, listed) = call(&base, "alice", "GET", &format!("/api/projects/{project}/workspaces"), None).await;
     assert_eq!(listed["workspaces"], json!([]));
     assert_eq!(call(&base, "alice", "GET", &path, None).await.0, 404);
+
+    // Its usage (M188): running until the worker saw it paused, again from
+    // its wake to its rebuild, and the new box until the delete.
+    let ran: Vec<(u64, Option<u64>)> =
+        app.db.hosted_usage(0, u64::MAX / 2).unwrap().iter().map(|i| (i.started_at, i.ended_at)).collect();
+    assert_eq!(
+        ran,
+        [(now, Some(now + 70_000)), (now + 70_000, Some(now + 80_000)), (now + 80_000, Some(now + 90_000))]
+    );
+    assert_eq!(app.db.hosted_usage(0, u64::MAX / 2).unwrap()[0].class.map(|c| c.cpus), None, "never read");
+    // This provider keeps no record of runs: each box is asked once.
+    let later = now + 90_000 + super::usage::SETTLE_MS;
+    assert_eq!(super::usage::reconcile(&app, later).await.unwrap(), 2);
+    assert_eq!(super::usage::reconcile(&app, later + 1).await.unwrap(), 0);
 }
 
 /// A provider whose boxes all carry `arugula_test=1`, for the live run.

@@ -3,7 +3,8 @@
 //! loam's E2B-compatible API alike (only the URL and key differ).
 //!
 //! The substrate does a box's lifecycle and nothing else: create, resume,
-//! pause, delete, status, list and hold. No exec, files or ports: the
+//! pause, delete, status, list and hold, and (when the provider keeps them)
+//! the runs it billed. No exec, files or ports: the
 //! daemon in the box (`arugulad --hosted`, M180) dials out and brings
 //! those. A box always pauses when its timeout passes, never dies, and only
 //! [`Substrate::resume`] wakes it: no read here does, and traffic doesn't
@@ -23,6 +24,7 @@ mod e2b;
 mod e2b_tests;
 #[cfg(test)]
 mod live_tests;
+pub mod template;
 
 pub use e2b::E2b;
 
@@ -91,6 +93,21 @@ pub struct Sandbox {
     /// Whether it pauses at its timeout (`lifecycle.onTimeout`), when the
     /// provider says: [`Substrate::status`] does, a listing doesn't.
     pub pauses_on_timeout: Option<bool>,
+    /// Its size, when the provider says (E2B and loam do): vCPUs and
+    /// memory in MiB, what it's billed by ([`crate::hosted::usage`]).
+    pub cpus: Option<u32>,
+    pub memory_mb: Option<u32>,
+}
+
+/// One run of a box as the provider billed it, from its start or a resume
+/// to a pause or its delete (M188).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Run {
+    /// When it started, ms since the epoch, and how long it ran, in ms.
+    pub started_at: u64,
+    pub ms: u64,
+    pub cpus: u32,
+    pub memory_mb: u32,
 }
 
 /// What [`Substrate::resume`] found.
@@ -175,4 +192,12 @@ pub trait Substrate: Send + Sync {
     /// (and not after: this sets the time, as E2B's timeout does). A paused
     /// box is [`Error::NotFound`] on E2B and loam alike: hold never wakes.
     fn hold<'a>(&'a self, id: &'a str, timeout: Duration) -> BoxFuture<'a, Result<()>>;
+
+    /// A box's finished runs as the provider keeps them, to reconcile
+    /// what the platform metered with (M188): `None` when it keeps no such
+    /// record (loam), or none for this box. Never wakes it. Optional: a
+    /// provider without one leaves this as it is.
+    fn runs<'a>(&'a self, _id: &'a str) -> BoxFuture<'a, Result<Option<Vec<Run>>>> {
+        Box::pin(async { Ok(None) })
+    }
 }

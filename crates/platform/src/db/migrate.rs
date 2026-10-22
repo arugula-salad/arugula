@@ -180,9 +180,27 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 21,
+        version: 14,
+        name: "hosted_usage",
+        sql: include_str!("../../migrations/sqlite/0014_hosted_usage.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 15,
+        name: "platform_jobs",
+        sql: include_str!("../../migrations/sqlite/0015_platform_jobs.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 16,
+        name: "runs",
+        sql: include_str!("../../migrations/sqlite/0016_runs.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 17,
         name: "deploys",
-        sql: include_str!("../../migrations/sqlite/0021_deploys.sql"),
+        sql: include_str!("../../migrations/sqlite/0017_deploys.sql"),
         additive: true,
     },
 ];
@@ -270,9 +288,27 @@ const POSTGRES: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 21,
+        version: 14,
+        name: "hosted_usage",
+        sql: include_str!("../../migrations/postgres/0014_hosted_usage.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 15,
+        name: "platform_jobs",
+        sql: include_str!("../../migrations/postgres/0015_platform_jobs.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 16,
+        name: "runs",
+        sql: include_str!("../../migrations/postgres/0016_runs.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 17,
         name: "deploys",
-        sql: include_str!("../../migrations/postgres/0021_deploys.sql"),
+        sql: include_str!("../../migrations/postgres/0017_deploys.sql"),
         additive: true,
     },
 ];

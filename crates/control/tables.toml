@@ -54,7 +54,7 @@ sees = "Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets t
 
 [parties.e2b]
 name = "E2B"
-sees = "E2B runs hosted workspaces' boxes: it holds their disks and memory, the env and metadata each is made with (the workspace, project, release and template ids), and the secrets in its broker."
+sees = "E2B runs hosted workspaces' boxes, so it processes their contents: it holds each box's disk and memory (the repos, files, terminals and agent conversations in it) while the box lives, paused too, the env and metadata each is made with (the workspace, project, release and template ids), and the secrets in its broker. It records each box's runs (when, how long, its size), which it bills by and the platform reads back to check its own usage."
 
 [parties.posthog]
 name = "PostHog"
@@ -862,39 +862,48 @@ with_account = "partly"
 note = "Those of issues that go, go. The rest stay, naming no actor, and it's taken out of assignment events."
 seen_by = ["litestream"]
 
-# ---- deploys (platform step 7, native Arugula #1): environments, deploys, their logs
-
 [[table]]
-name = "environments"
+name = "platform_jobs"
 plane = "platform"
 process = "platform"
-holds = "metadata"
-what = "A project's environment (M217): its name in the project, the driver that applies its deploys (chant-fly, apps-platform), the names of the secrets a driver run gets (never their values: those are sealed per project, M209), and its times."
-why_asleep = "Deploys are planned, approved and applied through control with every machine asleep."
+holds = "plaintext"
+what = "The platform's leased background work (M208): one job per workspace, run, deploy or schedule, with its kind, what it was asked, how far it got, its state, its failures in a row and the last one's error, when it's next due, and which machine's lease holds it until when."
+why_asleep = "Runs, deploys and schedules move on with every machine asleep, and a platform machine that dies mid-step leaves its job to another."
 with_account = "partly"
-note = "Those of projects that go with it go."
+note = "A job goes with what it's for (a project's run or deploy) when that goes. No kind uses it yet (M210 is the first)."
 seen_by = ["litestream"]
 
 [[table]]
-name = "deploys"
+name = "runs"
 plane = "platform"
 process = "platform"
-holds = "metadata"
-what = "A deploy to an environment (M217): what it deploys (a commit's sha or an artifact's digest, and where), the plan's digest, its state (S37's, with planned and stale), where its plan is in the environment's log, the run that applied it, who planned it (an account, and the machine when its agent did), and its times."
-why_asleep = "A deploy waits for an owner's approval and is applied by a driver run on the platform, with every machine asleep."
+holds = "plaintext"
+what = "A project's run (M210): the workspace it runs on, what started it (a schedule, a forge event, or someone by hand: an account, and the machine when its agent did), the S37 operation it runs, its hash and the daemon it names (the only one whose reports move the run), its state (one of S37's eight), the standing grant it may run under, its times, exit code, and the chant ledger entry a release run wrote. The operation is in plain text: its command, directory and instruction (S37 decision 6)."
+why_asleep = "Scheduled and event runs start, and their state is shown and checked, with every person's machine asleep."
 with_account = "partly"
-note = "Those of projects that go with it go. The rest stay, naming no planner."
+note = "The runs of projects that go with it go. The rest stay, naming no one who started them."
 seen_by = ["litestream"]
 
 [[table]]
-name = "deploy_events"
+name = "run_events"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A run's history, append-only (never changed, and never deleted while its run is there): each change of state, numbered in the run, when, a small detail (the daemon's exit code, control's reason for failing it, the approval an approved run was approved by), and, when the run's daemon reported it, that daemon's id and its signature over the change."
+why_asleep = "A run's history shows, and is checked, with every machine asleep."
+with_account = "partly"
+note = "Those of runs that go, go. The rest stay as written: they name daemons, not people, and a signature names its signer."
+seen_by = ["litestream"]
+
+[[table]]
+name = "run_artifacts"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "An environment's deploy log (M217): append-only, a hash chain per environment that anyone can verify. Each event says which deploy, what happened (planned, requested, approved, denied, canceled, expired, started, succeeded, failed, staled), who (an account, an agent's owner and machine, a run, or the platform), when, a small detail (the source and plan's digest, the run, the approval), and its hash and the one before."
-why_asleep = "Approving a deploy checks its environment's log (the stale rule), with every machine asleep."
+what = "What a run left behind: each file's name, size, digest and key in the run bucket. The files themselves are in the bucket (M213), not here."
+why_asleep = "A run's artifacts are listed and fetched with every machine asleep."
 with_account = "partly"
-note = "Those of projects that go with it go. The rest are kept as written, the account's id in them included: an event is never rewritten, and rewriting one would break its chain. The id names no one once the account is gone, so they show as a deleted account."
+note = "Those of runs that go, go; their files expire from the bucket."
 seen_by = ["litestream"]
 
 [[table]]
@@ -940,4 +949,59 @@ what = "A port a dev server listens on in a hosted workspace (M186), its label, 
 why_asleep = "Previews are served and expire with every machine asleep."
 with_account = "partly"
 note = "It stops naming the account as who made a port public. They go with their workspace."
+seen_by = ["litestream"]
+
+[[table]]
+name = "hosted_usage"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "When a hosted workspace's box ran (M188): its workspace, project and box, its size (vCPUs and memory), and each running interval's start and end."
+why_asleep = "The platform meters boxes from their lifecycle, which runs with every machine asleep, and the operator reads what they cost."
+with_account = "none"
+note = "It names no account: a workspace's project and box ids only. It stays when the workspace goes: it's what E2B billed."
+seen_by = ["litestream", "e2b"]
+
+[[table]]
+name = "hosted_usage_provider"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "What E2B says a hosted workspace's box ran (M188), from its lifecycle events: how many runs, their milliseconds, vCPU-milliseconds and MiB-milliseconds, and when it was read."
+why_asleep = "The platform checks its usage against E2B's record with every machine asleep."
+with_account = "none"
+note = "It names no account: a workspace's project and box ids only."
+seen_by = ["litestream", "e2b"]
+
+[[table]]
+name = "environments"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A project's environment (M217): its name in the project, the driver that applies its deploys (chant-fly, apps-platform), the names of the secrets a driver run gets (never their values: those are sealed per project, M209), and its times."
+why_asleep = "Deploys are planned, approved and applied through control with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go."
+seen_by = ["litestream"]
+
+[[table]]
+name = "deploys"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A deploy to an environment (M217): what it deploys (a commit's sha or an artifact's digest, and where), the plan's digest, its state (S37's, with planned and stale), where its plan is in the environment's log, the run that applied it, who planned it (an account, and the machine when its agent did), and its times."
+why_asleep = "A deploy waits for an owner's approval and is applied by a driver run on the platform, with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest stay, naming no planner."
+seen_by = ["litestream"]
+
+[[table]]
+name = "deploy_events"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "An environment's deploy log (M217): append-only, a hash chain per environment that anyone can verify. Each event says which deploy, what happened (planned, requested, approved, denied, canceled, expired, started, succeeded, failed, staled), who (an account, an agent's owner and machine, a run, or the platform), when, a small detail (the source and plan's digest, the run, the approval), and its hash and the one before."
+why_asleep = "Approving a deploy checks its environment's log (the stale rule), with every machine asleep."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest are kept as written, the account's id in them included: an event is never rewritten, and rewriting one would break its chain. The id names no one once the account is gone, so they show as a deleted account."
 seen_by = ["litestream"]

@@ -12,6 +12,9 @@
 //! A step that fails for now (the provider or the hub didn't answer) is
 //! tried again in a few seconds, and what it was doing stays asked. A
 //! failed workspace waits for a person to rebuild or delete it.
+//!
+//! Each step that goes through says whether the box runs, and its
+//! checkpoint meters it ([`super::usage`]).
 
 use std::{
     sync::{Arc, atomic::Ordering::SeqCst},
@@ -84,7 +87,10 @@ pub(crate) async fn tick_at(app: &Platform, now: u64) -> Result<bool> {
     let Some(sub) = app.compute.clone() else { return Ok(false) };
     let Some(mut job) = app.db.claim_hosted(now)? else { return Ok(false) };
     let (done, next) = match step(app, &*sub, &mut job, now).await {
-        Ok(d) => d,
+        Ok(d) => {
+            job.usage = Some(super::usage::observed(&job, now));
+            d
+        }
         Err(error) => {
             tracing::warn!(workspace = %job.w.id, %error, "a hosted workspace's step will be tried again");
             (None, now + RETRY_MS)
@@ -208,6 +214,13 @@ async fn create(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u
                     job.stage_at = Some(now);
                     Ok((None, now))
                 }
+                // This release's template isn't built yet (M177's release
+                // job runs beside the deploy): nothing was made.
+                Err(compute::Error::NotFound) if template == compute::template::current() => Ok(fail(
+                    job,
+                    &compute::template::CreateError::NotBuilt { template: template.clone() }.to_string(),
+                    now,
+                )),
                 // Refused: nothing was made.
                 Err(compute::Error::Refused { .. } | compute::Error::NotFound) => {
                     tracing::warn!(workspace = %job.w.id, error = %made.unwrap_err(), "a hosted workspace's box wasn't made");
@@ -231,6 +244,7 @@ async fn create(app: &Platform, sub: &dyn Substrate, job: &mut HostedJob, now: u
             for extra in rest {
                 sub.delete(&extra.id).await?;
             }
+            job.seen = seen(first);
             job.sandbox = Some(first.id.clone());
             job.stage = "made".into();
             job.stage_at = Some(now);
@@ -370,6 +384,7 @@ async fn refresh(sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<S
     let Some(sandbox) = job.sandbox.clone() else { return Ok(fail(job, GONE, now)) };
     match sub.status(&sandbox).await {
         Ok(Some(s)) => {
+            job.seen = seen(&s);
             let (state, next) = match s.state {
                 State::Running => ("ready", READY_MS),
                 State::Paused => ("paused", PAUSED_MS),
@@ -379,5 +394,17 @@ async fn refresh(sub: &dyn Substrate, job: &mut HostedJob, now: u64) -> Result<S
         }
         Ok(None) | Err(compute::Error::NotFound) => Ok(fail(job, GONE, now)),
         Err(e) => Err(e.into()),
+    }
+}
+
+/// What a box as the provider reports it says for its usage (M188): when
+/// it started, when it paused itself (its `end_at`, once paused), and its
+/// size.
+fn seen(s: &compute::Sandbox) -> super::usage::Seen {
+    let ms = |t: &str| arugula_forge_github::util::time(t).and_then(|t| u64::try_from(t).ok());
+    super::usage::Seen {
+        started_at: (s.state == State::Running).then(|| ms(&s.started_at)).flatten(),
+        paused_at: (s.state == State::Paused).then(|| ms(&s.end_at)).flatten(),
+        class: s.cpus.zip(s.memory_mb).map(|(cpus, memory_mb)| super::usage::Class { cpus, memory_mb }),
     }
 }

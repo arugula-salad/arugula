@@ -81,6 +81,19 @@ pub fn tables() -> Vec<String> {
         .collect()
 }
 
+/// The order `--replace` empties `tables` in: the reverse of the order
+/// they're made in, but the tables in [`GUARDS`] first.
+pub(crate) fn emptying<'a>(tables: impl DoubleEndedIterator<Item = &'a str>) -> Vec<&'a str> {
+    let mut out: Vec<&str> = tables.rev().collect();
+    out.sort_by_key(|t| !GUARDS.contains(t));
+    out
+}
+
+/// Tables whose rows guard another's: `run_events` refuses a delete while
+/// its run is there (M210), and `deploy_events` while its environment is
+/// (M217), so `runs` and `environments` are emptied first.
+const GUARDS: [&str; 2] = ["runs", "environments"];
+
 /// One table on both sides of a copy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Table {
@@ -208,7 +221,7 @@ pub fn copy(from: &Path, to: &Path, replace: bool) -> anyhow::Result<Report> {
                 held.join(", ")
             );
         }
-        for t in emptying_order(names.iter().map(String::as_str)) {
+        for t in emptying(names.iter().map(String::as_str)) {
             tx.execute(&format!("DELETE FROM main.\"{t}\""), [])?;
         }
         for t in &names {
@@ -384,7 +397,7 @@ fn running_env(var: &str) -> Option<(u32, String)> {
 
 /// The first words that make either binary run one of these instead of
 /// serving (and `platform`, control's prefix for them).
-pub const COMMANDS: [&str; 5] = ["copy", "checksums", "secrets-check", "migrations", "platform"];
+pub const COMMANDS: [&str; 6] = ["copy", "checksums", "secrets-check", "migrations", "usage", "platform"];
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -442,6 +455,17 @@ enum What {
         #[arg(long)]
         db: Place,
     },
+    /// How long hosted workspaces' boxes ran, by size and by project, what
+    /// that cost at E2B's prices and per active hour, and E2B's own record
+    /// beside it (M188), read-only.
+    Usage {
+        /// A file, or a `postgres://` URL.
+        #[arg(long)]
+        db: Place,
+        /// The window: this many days back from now.
+        #[arg(long, default_value_t = 7)]
+        days: u64,
+    },
 }
 
 /// `<prog> copy|checksums|secrets-check …`: `prog` is how the operator
@@ -476,6 +500,11 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
                 bail!("this build would migrate {db}: it's at {}", m.applied.last().map_or(0, |a| a.0));
             }
         }
+        What::Usage { db, days } => {
+            let to = arugula_e2e::now_ms();
+            let r = portable::usage(&db, to.saturating_sub(days * 86_400_000), to)?;
+            print!("{}", r.render(&db.to_string(), days));
+        }
         What::SecretsCheck { db } => {
             const VAR: &str = "ARUGULA_CLOUD_SECRET_KEY";
             let (key, whose) = match running_env(VAR) {
@@ -505,15 +534,6 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
 /// The cloud secret key [`sample`]'s secret is sealed with (tests).
 #[cfg(any(test, feature = "contract"))]
 pub const SAMPLE_KEY: &str = "0101010101010101010101010101010101010101010101010101010101010101";
-
-/// The order `--replace` empties tables in: children before parents (the
-/// reverse of [`tables`]), but `environments` first, because a trigger
-/// keeps `deploy_events` while their environment exists (M217).
-pub(crate) fn emptying_order<'a>(names: impl DoubleEndedIterator<Item = &'a str>) -> Vec<&'a str> {
-    let mut out: Vec<&str> = names.rev().collect();
-    out.sort_by_key(|t| *t != "environments");
-    out
-}
 
 /// A few rows in several of the platform's tables, the way the platform
 /// writes them (tests, here and in control): rooms, members and messages
@@ -546,6 +566,13 @@ pub fn sample(db: &crate::db::Db) {
          INSERT INTO issues (search_id, id, project_id, number, title, body, author, labels, created_at, updated_at)
              VALUES (3, 'iss_1', 'prj_t', 1, 'Rehearsal notes', 'the canary held', 'acct-a', '[\"ops\"]', 24, 24);
          INSERT INTO issue_events (id, issue_id, kind, actor, at) VALUES (5, 'iss_1', 'opened', 'acct-a', 24);
+         INSERT INTO runs (id, project_id, trigger_kind, op, op_hash, daemon, state, started_by, last_seq, created_at,
+                 started_at)
+             VALUES ('run_1', 'prj_t', 'manual', 'arugula op v1\ndaemon d1\n', 'ab', 'd1', 'running', 'acct-a', 2, 25, 26);
+         INSERT INTO run_events (run_id, seq, from_state, to_state, at, daemon, sig)
+             VALUES ('run_1', 1, NULL, 'pending', 25, NULL, NULL), ('run_1', 2, 'pending', 'running', 26, 'd1', 'cd');
+         INSERT INTO run_artifacts (run_id, name, size, digest, bucket_key, created_at)
+             VALUES ('run_1', 'out.txt', 3, 'sha256:ef', 'prj_t/run_1/out.txt', 27);
          INSERT INTO environments (id, project_id, name, driver, created_at, updated_at)
              VALUES ('env_1', 'prj_t', 'production', 'chant-fly', 25, 25);
          INSERT INTO deploys (id, environment_id, source_kind, source_ref, source_where, plan_digest, state,
