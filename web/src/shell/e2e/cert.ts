@@ -57,6 +57,10 @@ export function certifies(by: Kind, kind: Kind): boolean {
   }
 }
 
+/** The desktop app's device (`Cert::from_app`): an `app` one, or a
+ * `browser` one the app named before it had a kind. */
+export const fromApp = (c: Cert) => c.kind === "app" || (c.kind === "browser" && /^(arugula|illogical) app/i.test(c.name));
+
 /** May be an account's first device (`Kind::roots`): not the app. */
 export const roots = (k: Kind) => k === "browser" || k === "cli";
 

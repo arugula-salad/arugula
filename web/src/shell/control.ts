@@ -9,7 +9,7 @@
 // directory and the keys, but it can't slip in a daemon of its own (and a
 // daemon can't be reached by a device it hasn't approved).
 
-import { certBody, certifies, DEVICE_SECRET, deviceId, deviceMac, deviceMacOk, devicePinBody, devicePinOk, evaluate, hex, JOIN_SECRET, joinCode, joinMac, newSecret, normalizeCode, normalizeSecret, splitJoinCode, type Cert, type Kind, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
+import { certBody, certifies, DEVICE_SECRET, fromApp, deviceId, deviceMac, deviceMacOk, devicePinBody, devicePinOk, evaluate, hex, JOIN_SECRET, joinCode, joinMac, newSecret, normalizeCode, normalizeSecret, splitJoinCode, type Cert, type Kind, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
 import {
   adoptKeys,
   adoptPrfKeys,
@@ -908,7 +908,7 @@ export function appWindow(): boolean {
 
 /** The desktop app's device from before it had a kind of its own: a
  * `browser` one it named (`Cert::from_app`). */
-export const fromApp = (c: Cert) => c.kind === "app" || (c.kind === "browser" && /^(arugula|illogical) app/i.test(c.name));
+export { fromApp };
 
 /** What the browser that allowed the desktop app's sign-in hands the app
  * (#758): a certificate for the app's keys, signed by that browser, and

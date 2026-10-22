@@ -332,18 +332,18 @@ pub async fn set_roster(
             .find(|m| certs.get(&m.account).is_some_and(|(c, _)| c.iter().any(|c| c.device == b.roster.by)));
         let strong = signer.is_some_and(|m| {
             let c = certs.get(&m.account).map(|(c, _)| c.as_slice()).unwrap_or_default();
-            !b.roster.raises(Some(&prev), &m.account)
-                || crate::api::browser_all_the_way(
-                    &Trust { account: m.account.clone(), root: m.root.clone() },
-                    c,
-                    &b.roster.by,
-                )
+            raise_ok_here(
+                &Trust { account: m.account.clone(), root: m.root.clone() },
+                c,
+                &b.roster.by,
+                b.roster.raised(Some(&prev), &m.account),
+            )
         });
         if !strong {
             return Err(refusal(
                 StatusCode::FORBIDDEN,
                 arugula_e2e::Refusal::NeedsBrowser.code(),
-                "only a browser or a phone makes someone an owner or an editor: the desktop app and the CLI add viewers",
+                "only a browser or a phone makes someone an owner (and the desktop app an editor): the CLI adds viewers",
             ));
         }
     }
@@ -466,13 +466,24 @@ fn is_key(k: &str) -> bool {
     k.len() == 64 && k.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
 }
 
+/// Whether `device` of the account `trust` names may sign a paper raising
+/// someone to `raised` (`team::raise_ok`), here: an owner's raise from a
+/// browser or a phone all the way back (`Cert::is_browser` on every link),
+/// an editor's from that or the desktop app's device (Jake, 2026-10-22),
+/// never from a CLI.
+fn raise_ok_here(trust: &Trust, certs: &[arugula_e2e::Cert], device: &str, raised: Option<TeamRole>) -> bool {
+    let Some(d) = certs.iter().find(|c| c.device == device) else { return raised.is_none() };
+    arugula_e2e::team::raise_ok(raised, d, || crate::api::browser_all_the_way(trust, certs, device))
+}
+
 /// Whether one of `account`'s own devices (from `root`) signed `ask`: for
-/// an owner or an editor, a browser or a phone all the way back.
+/// an owner, a browser or a phone all the way back; for an editor, that or
+/// the desktop app.
 fn ask_signed_by(app: &App, account: &str, root: &str, ask: &AskInvite) -> anyhow::Result<bool> {
     let (c, rv) = certs_of(app, account)?;
     let trust = Trust { account: account.to_owned(), root: root.to_owned() };
     Ok(trust.evaluate(&c, &rv).get(&ask.by).is_some_and(|d| ask.signed_by(d))
-        && (!ask.raises() || crate::api::browser_all_the_way(&trust, &c, &ask.by)))
+        && raise_ok_here(&trust, &c, &ask.by, ask.raised()))
 }
 
 pub async fn invite(State(app): State<Arc<App>>, s: Session, Path(team): Path<String>, Json(b): Json<NewInvite>) -> R {
@@ -496,7 +507,7 @@ pub async fn invite(State(app): State<Arc<App>>, s: Session, Path(team): Path<St
         let trust = Trust { account: s.account.clone(), root: me.root.clone() };
         let signed = trust.evaluate(&c, &rv).get(&inv.by).is_some_and(|d| {
             d.kind.approves() && arugula_e2e::cert::verify_hex(&d.sign, inv.body().as_bytes(), &inv.sig)
-        }) && (inv.role == TeamRole::Viewer || crate::api::browser_all_the_way(&trust, &c, &inv.by));
+        }) && raise_ok_here(&trust, &c, &inv.by, (inv.role != TeamRole::Viewer).then_some(inv.role));
         if inv.team != team
             || inv.role == TeamRole::Owner
             || inv.expires <= now

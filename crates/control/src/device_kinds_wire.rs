@@ -254,6 +254,36 @@ async fn only_a_browser_makes_a_teams_owner_or_editor() {
     }
     let (st, v) = c.as_person(&cookie, "POST", &invites, Some(ask(TeamRole::Owner, &root))).await;
     assert_eq!(st, 200, "an owner's from the browser: {v}");
+
+    // The app makes editors (Jake, 2026-10-22); a CLI doesn't.
+    let cli = device(&c, &root, "a1", Kind::Cli, "Arugula CLI");
+    for (by, want) in [(&app, 200), (&old_app, 200), (&cli, 400)] {
+        let (st, v) = c.as_person(&cookie, "POST", &invites, Some(ask(TeamRole::Editor, by))).await;
+        assert_eq!(st, want, "an editor's invite: {v}");
+    }
+    let to = |version, role, by: &DeviceKeys| json!({ "roster": roster(team, version, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, role)], by) });
+    assert_eq!(c.as_person(&cookie, "POST", &path, Some(to(3, TeamRole::Viewer, &root))).await.0, 200);
+    let (st, v) = c.as_person(&cookie, "POST", &path, Some(to(4, TeamRole::Editor, &cli))).await;
+    assert_eq!(st, 403, "a CLI making an editor: {v}");
+    let (st, v) = c.as_person(&cookie, "POST", &path, Some(to(4, TeamRole::Editor, &app))).await;
+    assert_eq!(st, 200, "the app making an editor: {v}");
+    let (st, _) = c.as_person(&cookie, "POST", &path, Some(to(5, TeamRole::Owner, &app))).await;
+    assert_eq!(st, 403, "but not an owner");
+}
+
+/// The desktop app founds a team (just its owner in it).
+#[tokio::test]
+async fn the_app_founds_a_team() {
+    use arugula_e2e::team::TeamRole;
+
+    use crate::routing_wire::{member, roster};
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let app = device(&c, &root, "a1", Kind::App, "Arugula app on box");
+    let cookie = session_via(&c, "a1", Via::App);
+    let r = roster("00112233aabbccdd", 1, vec![member("a1", &root, TeamRole::Owner)], &app);
+    let (st, v) = c.as_person(&cookie, "POST", "/api/teams", Some(json!({ "roster": r }))).await;
+    assert!(st < 300, "{st} {v}");
 }
 
 /// The desktop app's window, signed in by a browser's hand-over, joins as

@@ -126,11 +126,14 @@ device nobody trusted. Now:
   the chain.
 - **What only a browser all the way back does** (`Trust::browser_chained`:
   the device and every device that certified it, the root included, are
-  `browser`): make a team's owner or editor (a roster that adds or
-  promotes anyone but its signer, a presigned or Ask me first invite for
-  an editor or an owner) and remove a browser or a phone. Daemons and
-  pages ignore such a paper from anything else. A CLI or the app still
-  adds viewers, removes machines, CLIs and apps, and moves machines.
+  `browser`): make a team's owner (a roster that adds or promotes anyone
+  but its signer to owner, or moves its signer's own entry to another
+  root, and an owner's Ask me first invite) and remove a browser, a phone
+  or a recovery code. A team's editor (a roster, a presigned or Ask me
+  first invite) comes from that or the desktop app's device, never a CLI
+  (`team::raise_ok`; Jake, 2026-10-22). Daemons and pages ignore such a
+  paper from anything else. A CLI or the app still adds viewers, removes
+  machines, CLIs and apps, and moves machines.
 - The app's devices from before it had a kind are `browser` certificates
   it named ("Arugula app on …"). Control holds them to `Cert::is_browser`
   on every link, the root included: they, and browsers they certified,
