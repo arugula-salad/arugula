@@ -151,7 +151,13 @@ impl Enrolled {
                 method,
                 path,
                 &u.authority,
-                &[("Content-Type", "application/json"), ("x-arugula-auth", &auth)],
+                // It reads the desktop app's `app` certificates (control
+                // leaves them out for CLIs from before them).
+                &[
+                    ("Content-Type", "application/json"),
+                    ("x-arugula-auth", &auth),
+                    (wire::FEATURES_HEADER, wire::APP_DEVICES),
+                ],
                 bytes.as_bytes(),
             )
             .with_context(|| format!("asking control at {}", self.url))?;
@@ -457,7 +463,14 @@ pub fn login(url: &str, name: &str, account: Option<&str>) -> anyhow::Result<()>
         bail!("control's URL must be https:// (or http on loopback or a private network, for testing)");
     }
     let get = |path: &str| -> anyhow::Result<crate::http::Response> {
-        send_on(u.connect(Some(Duration::from_secs(10)))?, "GET", path, &u.authority, &[], b"")
+        send_on(
+            u.connect(Some(Duration::from_secs(10)))?,
+            "GET",
+            path,
+            &u.authority,
+            &[(wire::FEATURES_HEADER, wire::APP_DEVICES)],
+            b"",
+        )
     };
     let about =
         get(wire::CONTROL_JSON).and_then(|r| r.json()).with_context(|| format!("can't reach control at {url}"))?;

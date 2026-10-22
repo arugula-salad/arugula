@@ -100,11 +100,11 @@ export type Owners =
 
 const ownerOf = (o: Owners) => ("team" in o ? `team:${o.team.team}` : `account:${o.account.account}`);
 
-/** `sig` is over `body` by `device`, a browser or CLI of one of the
+/** `sig` is over `body` by `device`, a browser, CLI or app of one of the
  * project's owners, trusted now. */
 async function maySign(o: Owners, owner: string, device: string, body: string, sig: string): Promise<boolean> {
   if (owner !== ownerOf(o) || !parseOwner(owner)) return false;
-  const ok = async (c: Cert | undefined) => !!c && (c.kind === "browser" || c.kind === "cli") && (await verify(c.sign, body, sig));
+  const ok = async (c: Cert | undefined) => !!c && (c.kind === "browser" || c.kind === "cli" || c.kind === "app") && (await verify(c.sign, body, sig));
   if ("team" in o) {
     for (const m of o.team.members.filter((m) => m.role === "owner")) {
       const [c, rv] = o.certs[m.account] ?? [[], []];

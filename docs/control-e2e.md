@@ -104,7 +104,7 @@ device nobody trusted. Now:
 **A device certificate** is what control stores and hands out:
 
 ```
-{ v: 1, account, device: <id>, name, kind: browser|cli|daemon|recovery,
+{ v: 1, account, device: <id>, name, kind: browser|cli|daemon|recovery|app,
   noise: <x25519 pub>, sign: <ed25519 pub>, created, team? }
   + approver: <device id>, sig: Ed25519(approver.sign, canonical JSON)
 ```
@@ -116,6 +116,19 @@ device nobody trusted. Now:
   approved with the code it shows rather than a fingerprint to compare
   (the first 8 bytes of SHA-256 of `noise‖sign`, which a page from before
   codes still shows).
+- **Who signs what** (`Kind::certifies`, the page's `certifies`): a
+  browser signs any kind. A recovery code signs people's devices, not
+  machines. A CLI signs CLIs and machines, and the desktop app (`app`)
+  signs apps, CLIs and machines: their keys sit where a program on their
+  computer can read them, so neither makes a browser, nor a recovery code
+  (which would make one). The app is never an account's first device.
+  Daemons and pages drop a certificate that breaks this, wherever it is in
+  the chain.
+- The app's devices from before it had a kind are `browser` certificates
+  it named ("Arugula app on …"). Control refuses new browsers and
+  recovery codes signed by one (unless it's the account's first device),
+  and `Cert::is_browser` doesn't count one as a browser (what the deploy
+  approval, M218, asks of every link). What they approved before stands.
 - A daemon's own certificate is signed by the device that approved its
   `join` code. When the approver puts it in a team, that device also
   signs the choice (`illogical team join v1`: the daemon, the team, its
@@ -442,11 +455,11 @@ The desktop app's window signs in through the person's browser
   (PKCE). A link someone else started can't sign their app in as you: their
   app isn't listening on your computer. The page still warns when the app
   asked from another network than the browser's.
-- **Allow makes the app a device.** The app's own sign-in page (served by
-  the app, not control) makes the window's device keys and sends their
-  public half with the ask. Control shows them to the browser, and a
-  browser that's one of the account's devices signs a certificate for them
-  when the person presses Allow. The certificate and the root that browser
+- **Allow makes the app a device, an `app` one.** The app's own sign-in
+  page (served by the app, not control) makes the window's device keys and
+  sends their public half with the ask. Control shows them to the browser,
+  and a browser that's one of the account's devices signs an `app`
+  certificate for them when the person presses Allow. The certificate and the root that browser
   pinned go with the grant to the loopback port, never through control.
   The app hands the keys (PKCS#8, in the redeem link's fragment) and the
   certificate to control's page in its window, which takes the keys as its
@@ -467,6 +480,16 @@ The desktop app's window signs in through the person's browser
   private keys leave WebCrypto once, from the app's sign-in page to the
   window's, through the app (in memory) and a URL fragment the page clears
   at once; they're stored as any browser's are from then on.
+- **Why `app`, not `browser`:** the grant and the certificate go to
+  whatever listens on `127.0.0.1:<port>`, which on that computer could be
+  another program, an agent's included. So the window's device reaches the
+  account's machines and approves machines, CLIs and other apps, but never
+  a browser, a phone, recovery codes or a deploy. The prompt says so. A
+  session the hand-over made (`sessions.via = app`) enrolls an `app`
+  device only. Daemons and CLIs from before `app` can't read one, so
+  control leaves `app` certificates out of what it answers a client that
+  doesn't send `x-arugula-features: app-devices` (`compat.rs`): such a
+  daemon doesn't let the app's window in until it's updated.
 - **Older apps and controls:** an app from before #758 sends no keys and
   no `features: ["no-code"]`, so control gives it a code and the page shows
   it, as before. A newer app on an older control gets a code back and shows
@@ -1119,6 +1142,35 @@ only an approval does.
 - Control's session cookie is for control's API only (directory, approvals,
   invites). Daemons never accept it.
 
+### Page-only actions need a browser and a passkey
+
+A CLI's login signs its requests with a key file on its machine, where
+an agent can read it. So it's a session only where routes.toml's
+`clients` lists `cli` (`clients::gate`, 401 `page_only` elsewhere). What
+only the page does takes the session cookie alone (`auth::PageSession`):
+
+- allowing the desktop app's sign-in (a CLI could otherwise allow a
+  sign-in it started itself and redeem it for a cookie);
+- enrolling and approving devices, and machines' joins;
+- recovery codes;
+- adding a passkey.
+
+**Adding a passkey** (`passkey.rs`) takes more than a session, since
+attestation is `none` and a passkey made in software can claim to verify
+anyone:
+
+- an account with a passkey confirms the new one with one of its own, with
+  user verification, over a challenge that hashes the account and the new
+  passkey's id (`arugula add passkey v1`);
+- an account with none (GitHub only) needs a GitHub sign-in from the last
+  ten minutes; the page sends the person through GitHub again first;
+- every device of the account gets a push ("A passkey was added to your
+  account"), and the passkey keeps the device and the sign-in that added
+  it.
+
+Every WebAuthn ceremony is refused from inside another site's frame
+(`crossOrigin`, `topOrigin`).
+
 ## Chat
 
 Since M122 (S41, #978), chat is control's, in plain text: this is the
@@ -1202,9 +1254,9 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 |---|---|---|---|---|
 | `accounts` | metadata | An account: its id, its root device, its display name, and its answer about page telemetry. | yes | PostHog |
 | `identities` | metadata | A sign-in identity: the provider, its id for the person, and their login. | yes | GitHub |
-| `sessions` | metadata | A sign-in session: a hash of its token, the browser's User-Agent, its device, when it ends. | yes |  |
+| `sessions` | metadata | A sign-in session: a hash of its token, the browser's User-Agent, its device, how it signed in (GitHub, a passkey, or the desktop app's hand-over), when it ends. | yes |  |
 | `app_sessions` | metadata | A session on the platform page's host (app.arugula.io, M152): a hash of its token, its account, the hub session it was made from (it ends when that one does), when it ends. | yes |  |
-| `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it, whether it gives PRF. | yes |  |
+| `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF. | yes |  |
 | `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
 | `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |
 | `revocations` | metadata | A signed revocation of a device's or machine's key. | yes |  |

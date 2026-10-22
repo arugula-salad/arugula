@@ -401,8 +401,12 @@ pub async fn turn_end(State(app): State<Arc<App>>, h: HostedAuth, Path(turn): Pa
 /// The session's own device that signed `by`, or a refusal.
 fn own_device(app: &App, s: &Session, by: &str) -> Result<(), ApiError> {
     match app.db.device(&s.account, by)? {
-        Some((c, true)) if matches!(c.kind, arugula_e2e::Kind::Browser | arugula_e2e::Kind::Cli) => Ok(()),
-        _ => Err(err(StatusCode::FORBIDDEN, "sign it with one of your own devices (a browser or the CLI)")),
+        Some((c, true))
+            if matches!(c.kind, arugula_e2e::Kind::Browser | arugula_e2e::Kind::Cli | arugula_e2e::Kind::App) =>
+        {
+            Ok(())
+        }
+        _ => Err(err(StatusCode::FORBIDDEN, "sign it with one of your own devices (a browser, the app or the CLI)")),
     }
 }
 

@@ -661,6 +661,15 @@ pub(crate) fn write_saved(dir: &Path, s: &Saved) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// An HTTP client for control. It says it reads `app` certificates (the
+/// desktop app's devices), which control leaves out of lists for daemons
+/// from before them.
+pub(crate) fn control_http() -> reqwest::ClientBuilder {
+    let mut h = reqwest::header::HeaderMap::new();
+    h.insert(wire::FEATURES_HEADER, reqwest::header::HeaderValue::from_static(wire::APP_DEVICES));
+    crate::roots::http().default_headers(h)
+}
+
 /// A request signature for control: see control's `auth.rs`. It covers the
 /// method, path and query, the time, a fresh nonce and the body's hash.
 pub fn auth_header(keys: &DeviceKeys, method: &str, path_and_query: &str, body: &[u8]) -> String {
@@ -693,7 +702,7 @@ impl Control {
             nudge: tokio::sync::Notify::new(),
             started: Default::default(),
             refreshed: watch::channel(0).0,
-            http: crate::roots::http().timeout(Duration::from_secs(20)).build().expect("http client"),
+            http: control_http().timeout(Duration::from_secs(20)).build().expect("http client"),
             published: Default::default(),
             no_relay,
             control_urls: Default::default(),
@@ -2190,7 +2199,7 @@ fn retire(state_dir: &Path, r: &mut Removed) -> anyhow::Result<()> {
 /// ("this machine's account was deleted", or that it left or was
 /// revoked). `None` when control still knows it, or can't be asked.
 async fn forgotten(s: &Saved, keys: &DeviceKeys) -> Option<Forgot> {
-    let http = crate::roots::http().timeout(Duration::from_secs(10)).build().ok()?;
+    let http = control_http().timeout(Duration::from_secs(10)).build().ok()?;
     let path = wire::TRUST;
     let res =
         http.get(format!("{}{path}", s.url)).header(AUTH, auth_header(keys, "GET", path, b"")).send().await.ok()?;
@@ -2521,7 +2530,7 @@ pub async fn join_start(
     }
     // One join at a time on this machine (#329).
     let lock = JoinLock::take(state_dir, by)?;
-    let http = crate::roots::http().timeout(Duration::from_secs(20)).build()?;
+    let http = control_http().timeout(Duration::from_secs(20)).build()?;
     // A secret in the link (#760), when this daemon takes them and control
     // passes the MAC on. A hosted sandbox's join is approved by the device
     // that asked for it, which has no link: none there.

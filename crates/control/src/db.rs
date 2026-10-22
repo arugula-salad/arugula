@@ -362,6 +362,19 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             "ALTER TABLE accounts ADD COLUMN telemetry INTEGER; ALTER TABLE accounts ADD COLUMN telemetry_at INTEGER;",
         )?;
     }
+    // How a session signed in (`auth::Via`): adding a passkey to an account
+    // with none asks for a GitHub sign-in a few minutes old. NULL: from
+    // before, which counts as none.
+    if !has("sessions", "via")? {
+        conn.execute_batch("ALTER TABLE sessions ADD COLUMN via TEXT")?;
+    }
+    // Which device (as its session said) and which session added each
+    // passkey.
+    if !has("passkeys", "added_device")? {
+        conn.execute_batch(
+            "ALTER TABLE passkeys ADD COLUMN added_device TEXT; ALTER TABLE passkeys ADD COLUMN added_session TEXT;",
+        )?;
+    }
     // #1095: agents are out of chat, and the conversation an offer named
     // (#857) with them.
     conn.execute_batch("DROP TABLE IF EXISTS daemon_offer_reasons")?;
@@ -464,6 +477,18 @@ pub struct PasskeyRow {
     pub used: Option<u64>,
     /// Whether it gives PRF output (#764), when known.
     pub prf: Option<bool>,
+    /// The device whose sign-in added it, as that sign-in said, when known.
+    pub added_device: Option<String>,
+}
+
+/// A live session, as [`Db::session_info`] has it.
+#[derive(Debug, Clone)]
+pub struct SessionInfo {
+    pub account: String,
+    pub created: u64,
+    /// `github`, `passkey` or `app` (`auth::Via`); none from before.
+    pub via: Option<String>,
+    pub device: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -575,6 +600,12 @@ impl Db {
 
     fn c(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().unwrap()
+    }
+
+    /// The connection, for a test to look at or age what's kept.
+    #[cfg(test)]
+    pub(crate) fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.c()
     }
 
     // ---- accounts and sign-in
@@ -791,6 +822,26 @@ impl Db {
         Ok(())
     }
 
+    /// How the session signed in (`auth::Via`).
+    pub fn set_session_via(&self, token_hash: &str, via: &str) -> anyhow::Result<()> {
+        self.c().execute("UPDATE sessions SET via = ?2 WHERE token_hash = ?1", params![token_hash, via])?;
+        Ok(())
+    }
+
+    /// A live session's account, when it was made, how it signed in and the
+    /// device it said it is.
+    pub fn session_info(&self, token_hash: &str, now: u64) -> anyhow::Result<Option<SessionInfo>> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT s.account, s.created, s.via, s.device FROM sessions s JOIN accounts a ON a.id = s.account
+                 WHERE s.token_hash = ?1 AND s.expires > ?2",
+                params![token_hash, now],
+                |r| Ok(SessionInfo { account: r.get(0)?, created: r.get(1)?, via: r.get(2)?, device: r.get(3)? }),
+            )
+            .optional()?)
+    }
+
     /// What signed in, as its browser or app said (#173).
     pub fn set_session_agent(&self, token_hash: &str, agent: &str) -> anyhow::Result<()> {
         self.c().execute("UPDATE sessions SET agent = ?2 WHERE token_hash = ?1", params![token_hash, agent])?;
@@ -902,6 +953,24 @@ impl Db {
         Ok(())
     }
 
+    /// Who added a passkey: the device its sign-in said it is, and that
+    /// sign-in (the start of its token's hash, as Sign-in lists it).
+    pub fn note_passkey_added(&self, id: &str, device: Option<&str>, session: &str) -> anyhow::Result<()> {
+        self.c().execute(
+            "UPDATE passkeys SET added_device = ?2, added_session = ?3 WHERE id = ?1",
+            params![id, device, session],
+        )?;
+        Ok(())
+    }
+
+    /// The ids of an account's passkeys.
+    pub fn passkey_ids(&self, account: &str) -> anyhow::Result<Vec<String>> {
+        let c = self.c();
+        let mut q = c.prepare("SELECT id FROM passkeys WHERE account = ?1 ORDER BY created")?;
+        let rows = q.query_map(params![account], |r| r.get(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     /// Whether a passkey gives PRF output (#764), as the browser that used
     /// it saw: `enabled` when it was made, results when it signs in.
     pub fn passkey_prf(&self, id: &str, prf: bool) -> anyhow::Result<()> {
@@ -922,7 +991,8 @@ impl Db {
     pub fn passkeys(&self, account: &str) -> anyhow::Result<Vec<PasskeyRow>> {
         let c = self.c();
         let mut q = c.prepare(
-            "SELECT id, created, agent, provider, used, prf FROM passkeys WHERE account = ?1 ORDER BY created",
+            "SELECT id, created, agent, provider, used, prf, added_device FROM passkeys WHERE account = ?1
+             ORDER BY created",
         )?;
         let rows = q.query_map(params![account], |r| {
             Ok(PasskeyRow {
@@ -932,6 +1002,7 @@ impl Db {
                 provider: r.get(3)?,
                 used: r.get(4)?,
                 prf: r.get(5)?,
+                added_device: r.get(6)?,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)

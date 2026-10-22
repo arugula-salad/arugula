@@ -17,6 +17,24 @@
 //! passkey gave it (`prf`), kept per passkey. Its output never comes here:
 //! the page derives its device keys from it. Control says what keeps the
 //! passkey, for the page to name that device.
+//!
+//! **Adding one to an account takes more than its session** (attestation
+//! is `none`, so a passkey made in software could claim to verify anyone):
+//! - an account with a passkey confirms with one of them: a `webauthn.get`
+//!   with user verification over a challenge that names the account and
+//!   the new passkey's id (`arugula add passkey v1`), asked for once the new
+//!   one is made (`/auth/passkey/register/step-up`);
+//! - an account with none (GitHub only) needs a GitHub sign-in from the last
+//!   ten minutes ([`REAUTH_MS`]); the page sends the person through GitHub
+//!   again when it's older (`reason: "reauth"`).
+//!
+//! Every device of the account hears of it (a push), and the passkey keeps
+//! which device's sign-in added it, and which sign-in. Only the page does
+//! any of this, by its cookie: a CLI's signature is refused before it gets
+//! here (routes.toml, `clients::gate`).
+//!
+//! Every ceremony refuses one from inside another site's frame
+//! (`crossOrigin`, `topOrigin`).
 
 use std::{
     collections::HashMap,
@@ -37,7 +55,11 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
-use crate::{ApiError, App, Site, auth, db::Passkey, err};
+use crate::{
+    ApiError, App, Site, auth,
+    db::{Passkey, SessionInfo},
+    err, refusal,
+};
 
 const CHALLENGE_TTL_MS: u64 = 5 * 60 * 1000;
 const ES256: i64 = -7;
@@ -49,6 +71,12 @@ const UP: u8 = 0x01;
 const UV: u8 = 0x04;
 const AT: u8 = 0x40;
 
+/// How old a GitHub sign-in may be to add a passkey to an account that
+/// has none.
+pub const REAUTH_MS: u64 = 10 * 60 * 1000;
+/// The reason code when it's older.
+pub const REAUTH: &str = "reauth";
+
 #[derive(Clone)]
 enum Purpose {
     /// Register: for this account, or a new one by this name (#102).
@@ -57,6 +85,11 @@ enum Purpose {
         name: String,
     },
     Login,
+    /// One of `account`'s passkeys agreeing to add `credential` to it.
+    AddPasskey {
+        account: String,
+        credential: String,
+    },
 }
 
 #[derive(Default)]
@@ -66,7 +99,11 @@ pub struct Challenges {
 
 impl Challenges {
     fn issue(&self, p: Purpose) -> String {
-        let c = B64.encode(arugula_e2e::random::<32>());
+        self.issue_as(B64.encode(arugula_e2e::random::<32>()), p)
+    }
+
+    /// Issue `c` (a hash over what it's for) as a challenge.
+    fn issue_as(&self, c: String, p: Purpose) -> String {
         let now = now_ms();
         let mut open = self.open.lock().unwrap();
         open.retain(|_, (_, at)| now - *at < CHALLENGE_TTL_MS);
@@ -91,17 +128,35 @@ fn bad(why: &str) -> ApiError {
     err(StatusCode::BAD_REQUEST, why)
 }
 
-/// Optional session: registering adds to it, or starts a new account.
-async fn session_of(app: &Arc<App>, headers: &HeaderMap) -> Option<String> {
-    let token = headers
-        .get_all(header::COOKIE)
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .flat_map(|v| v.split(';'))
-        .filter_map(|kv| kv.trim().split_once('='))
-        .find(|(k, _)| *k == auth::SESSION_COOKIE)
-        .map(|(_, v)| v.to_owned())?;
-    app.db.session(&auth::hash(&token), now_ms()).ok().flatten()
+/// Optional session, by its cookie only: registering adds to it, or starts
+/// a new account. Its token's hash, and its row.
+fn session_of(app: &App, headers: &HeaderMap) -> Option<(String, SessionInfo)> {
+    let hash = auth::hash(auth::cookie(headers, auth::SESSION_COOKIE)?);
+    let info = app.db.session_info(&hash, now_ms()).ok().flatten()?;
+    Some((hash, info))
+}
+
+/// A GitHub sign-in from the last [`REAUTH_MS`]: what adding a first
+/// passkey to an account takes.
+fn fresh_github(info: &SessionInfo) -> bool {
+    info.via.as_deref() == Some(auth::Via::Github.as_str()) && now_ms().saturating_sub(info.created) <= REAUTH_MS
+}
+
+fn reauth() -> ApiError {
+    refusal(
+        StatusCode::FORBIDDEN,
+        REAUTH,
+        "to add a passkey to an account with none, sign in with GitHub again first: it takes a sign-in from the last ten minutes",
+    )
+}
+
+/// The challenge an account's passkey signs to add `credential` to it: the
+/// hash of what it's for, so the assertion says so.
+fn add_passkey_challenge(account: &str, credential: &str) -> String {
+    let nonce = hex::encode(arugula_e2e::random::<16>());
+    B64.encode(Sha256::digest(
+        format!("arugula add passkey v1\naccount {account}\ncredential {credential}\nnonce {nonce}\n").as_bytes(),
+    ))
 }
 
 fn same_origin(app: &App, headers: &HeaderMap) -> Result<(), ApiError> {
@@ -125,7 +180,20 @@ pub async fn register_start(
     body: Option<Json<Start>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     same_origin(&app, &headers)?;
-    let account = session_of(&app, &headers).await;
+    let session = session_of(&app, &headers);
+    let account = session.as_ref().map(|(_, i)| i.account.clone());
+    // Signed in: one more for the account, confirmed with a passkey it has,
+    // or (with none) a fresh GitHub sign-in.
+    let have = match &account {
+        Some(a) => app.db.passkey_ids(a)?,
+        None => vec![],
+    };
+    if let Some((_, info)) = &session
+        && have.is_empty()
+        && !fresh_github(info)
+    {
+        return Err(reauth());
+    }
     let name = match &account {
         Some(a) => app.db.account(a)?.map(|x| x.name).unwrap_or_default(),
         None => {
@@ -151,6 +219,44 @@ pub async fn register_start(
         "authenticatorSelection": { "residentKey": "required", "userVerification": "required" },
         "attestation": "none",
         "timeout": CHALLENGE_TTL_MS,
+        // Once it's made, one of these confirms it (`register_step_up`).
+        "step_up": if have.is_empty() { None } else { Some("passkey") },
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct StepUp {
+    /// The new passkey's id (base64url, as `rawId`), made but not added.
+    id: String,
+}
+
+/// `POST /auth/passkey/register/step-up {id}`: for an account with
+/// passkeys, the `webauthn.get` options one of them signs to add the new
+/// one, `id`: a challenge naming the account and `id`, and the account's
+/// passkeys to choose from.
+pub async fn register_step_up(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Json(b): Json<StepUp>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    same_origin(&app, &headers)?;
+    let (_, info) = session_of(&app, &headers).ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in first"))?;
+    let have = app.db.passkey_ids(&info.account)?;
+    if have.is_empty() {
+        return Err(err(StatusCode::CONFLICT, "this account has no passkey to confirm with"));
+    }
+    if b.id.is_empty() || b.id.len() > 1024 || B64.decode(&b.id).is_err() || have.contains(&b.id) {
+        return Err(bad("not a new passkey's id"));
+    }
+    let challenge = add_passkey_challenge(&info.account, &b.id);
+    app.passkeys
+        .issue_as(challenge.clone(), Purpose::AddPasskey { account: info.account.clone(), credential: b.id.clone() });
+    Ok(Json(json!({
+        "challenge": challenge,
+        "rpId": rp_id(app.cfg.site(&headers)),
+        "userVerification": "required",
+        "timeout": CHALLENGE_TTL_MS,
+        "allowCredentials": have.iter().map(|id| json!({ "type": "public-key", "id": id })).collect::<Vec<_>>(),
     })))
 }
 
@@ -165,19 +271,66 @@ pub struct Registration {
     /// Whether the browser says the passkey gives PRF output (#764).
     #[serde(default)]
     prf: Option<bool>,
+    /// For an account with passkeys: one of them agreeing to this one
+    /// (`register_step_up`'s challenge).
+    #[serde(default)]
+    step_up: Option<Assertion>,
 }
 
+/// A ceremony's client data, as the browser wrote it. Only one run in
+/// control's own page parses: one from inside another site's frame
+/// (`crossOrigin`, or a `topOrigin` that isn't `origin`) doesn't, whoever
+/// reads it.
 #[derive(Deserialize)]
+#[serde(try_from = "Framed")]
 struct ClientData {
-    #[serde(rename = "type")]
     kind: String,
     challenge: String,
     origin: String,
 }
 
+/// [`ClientData`] with what says where it ran.
+#[derive(Deserialize)]
+struct Framed {
+    #[serde(rename = "type")]
+    kind: String,
+    challenge: String,
+    origin: String,
+    /// The ceremony ran in a frame of another origin's page.
+    #[serde(rename = "crossOrigin", default)]
+    cross_origin: Option<bool>,
+    /// The top page's origin, when it isn't the frame's.
+    #[serde(rename = "topOrigin", default)]
+    top_origin: Option<String>,
+}
+
+impl Framed {
+    /// Not from inside another site's frame: `crossOrigin` isn't true, and
+    /// a `topOrigin` is `origin` itself. Why not, or `Ok`.
+    fn ok(&self) -> Result<(), &'static str> {
+        if self.cross_origin == Some(true) {
+            return Err("a passkey asked for from inside another site's frame");
+        }
+        if self.top_origin.as_deref().is_some_and(|t| t != self.origin) {
+            return Err("a passkey asked for under another site's page");
+        }
+        Ok(())
+    }
+}
+
+impl TryFrom<Framed> for ClientData {
+    type Error = &'static str;
+
+    fn try_from(f: Framed) -> Result<Self, Self::Error> {
+        f.ok()?;
+        Ok(ClientData { kind: f.kind, challenge: f.challenge, origin: f.origin })
+    }
+}
+
 fn client_data(site: &Site, b64: &str, kind: &str) -> Result<(ClientData, Vec<u8>), ApiError> {
     let raw = B64.decode(b64).map_err(|_| bad("bad clientDataJSON"))?;
-    let cd: ClientData = serde_json::from_slice(&raw).map_err(|_| bad("bad clientDataJSON"))?;
+    let f: Framed = serde_json::from_slice(&raw).map_err(|_| bad("bad clientDataJSON"))?;
+    let cd = ClientData::try_from(f).map_err(|why| err(StatusCode::FORBIDDEN, why))?;
     if cd.kind != kind {
         return Err(bad("wrong WebAuthn ceremony"));
     }
@@ -282,6 +435,18 @@ async fn register(
     let Some(Purpose::Register { account, name }) = app.passkeys.take(&cd.challenge) else {
         return Err(bad("that request expired; try again"));
     };
+    // One more for a signed-in account: its own session still, and
+    // confirmed (a passkey it has, or a fresh GitHub sign-in).
+    let added_by = match &account {
+        Some(a) => {
+            let (hash, info) = session_of(app, headers)
+                .filter(|(_, i)| i.account == *a)
+                .ok_or_else(|| err(StatusCode::UNAUTHORIZED, "sign in again"))?;
+            confirm_adding(app, site, a, &r.id, &info, r.step_up.as_ref())?;
+            Some((hash, info))
+        }
+        None => None,
+    };
     let att: Cbor = ciborium::from_reader(B64.decode(&r.attestation).map_err(|_| bad("bad attestation"))?.as_slice())
         .map_err(|_| bad("bad attestation"))?;
     let m = att.as_map().ok_or_else(|| bad("bad attestation"))?;
@@ -309,7 +474,7 @@ async fn register(
             let a = app.db.account_for("passkey", &r.id, "", &auth::new_account_id(), now)?;
             app.db.set_name(&a, &name)?;
             app.analytics.signed_in(&a, "passkey", true);
-            (a.clone(), Some(auth::start_session(app, &a)?))
+            (a.clone(), Some(auth::start_session(app, &a, auth::Via::Passkey)?))
         }
     };
     app.db.add_passkey(&r.id, &account, alg, &public, now)?;
@@ -319,12 +484,65 @@ async fn register(
     if let Some(prf) = r.prf {
         app.db.passkey_prf(&r.id, prf)?;
     }
+    if let Some((hash, info)) = &added_by {
+        app.db.note_passkey_added(&r.id, info.device.as_deref(), &hash[..crate::account::SESSION_ID_LEN])?;
+        tell_devices(app, &account, info.device.as_deref(), provider);
+    }
     app.analytics.capture(
         &account,
         "passkey added",
         json!({ "provider": provider, "prf": r.prf, "new_account": cookie.is_some() }),
     );
     Ok((account, provider, cookie))
+}
+
+/// Adding `credential` to `account`, which `info` is signed in to: with
+/// passkeys, `step_up` is one of them agreeing (UV, over the challenge
+/// [`register_step_up`] made for this account and this credential);
+/// without, the session is a GitHub sign-in from the last ten minutes.
+fn confirm_adding(
+    app: &App,
+    site: &Site,
+    account: &str,
+    credential: &str,
+    info: &SessionInfo,
+    step_up: Option<&Assertion>,
+) -> Result<(), ApiError> {
+    if app.db.passkey_ids(account)?.is_empty() {
+        return if fresh_github(info) { Ok(()) } else { Err(reauth()) };
+    }
+    let no = || refusal(StatusCode::FORBIDDEN, "step_up", "confirm with one of your passkeys to add another");
+    let a = step_up.ok_or_else(no)?;
+    let (cd, raw) = client_data(site, &a.client_data, "webauthn.get")?;
+    match app.passkeys.take(&cd.challenge) {
+        Some(Purpose::AddPasskey { account: for_account, credential: for_credential })
+            if for_account == account && for_credential == credential => {}
+        _ => return Err(no()),
+    }
+    if a.id == credential {
+        return Err(no());
+    }
+    let (pk, count) = asserted(app, site, a, &raw)?;
+    if pk.account != account {
+        return Err(no());
+    }
+    app.db.passkey_used(&a.id, count, now_ms())?;
+    Ok(())
+}
+
+/// Every device of the account hears that a passkey was added, and where.
+fn tell_devices(app: &Arc<App>, account: &str, device: Option<&str>, provider: Option<&str>) {
+    let from = device
+        .and_then(|d| app.db.device(account, d).ok().flatten())
+        .map_or_else(|| "a browser signed in to it".to_owned(), |(c, _)| format!("\"{}\"", c.name));
+    let what = provider.map_or_else(|| "A passkey".to_owned(), |p| format!("A passkey ({p})"));
+    crate::push::notify(
+        app,
+        vec![account.to_owned()],
+        "control-passkey",
+        "A passkey was added to your account".into(),
+        format!("{what} was added from {from}. Not you? Remove it under Sign-in, and the device that added it."),
+    );
 }
 
 pub async fn login_start(
@@ -340,7 +558,7 @@ pub async fn login_start(
     ))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Assertion {
     id: String,
     #[serde(rename = "clientDataJSON")]
@@ -374,35 +592,25 @@ fn login(app: &Arc<App>, headers: &HeaderMap, a: Assertion) -> Result<(header::H
     if !matches!(app.passkeys.take(&cd.challenge), Some(Purpose::Login)) {
         return Err(bad("that request expired; try again"));
     }
+    let (pk, count) = asserted(app, site, &a, &raw)?;
+    app.db.passkey_used(&a.id, count, now_ms())?;
+    if a.prf {
+        app.db.passkey_prf(&a.id, true)?;
+    }
+    Ok((auth::start_session(app, &pk.account, auth::Via::Passkey)?, pk))
+}
+
+/// A registered passkey's assertion (its client data `raw`, checked by the
+/// caller): the signature checks out with its key, the authenticator
+/// verified the person, and its counter didn't go backwards. The passkey,
+/// and the counter to keep.
+fn asserted(app: &App, site: &Site, a: &Assertion, raw: &[u8]) -> Result<(Passkey, u32), ApiError> {
     let pk =
         app.db.passkey(&a.id)?.ok_or_else(|| err(StatusCode::UNAUTHORIZED, "this passkey isn't registered here"))?;
     let data = B64.decode(&a.authenticator_data).map_err(|_| bad("bad authenticator data"))?;
     let (_, count, _) = auth_data(site, &data)?;
     let sig = B64.decode(&a.signature).map_err(|_| bad("bad signature"))?;
-    let mut msg = data.clone();
-    msg.extend_from_slice(&Sha256::digest(&raw));
-    let ok = match pk.alg {
-        ES256 => {
-            use p256::ecdsa::signature::Verifier;
-            let key = p256::ecdsa::VerifyingKey::from_sec1_bytes(&pk.public).map_err(|_| bad("stored key"))?;
-            let s = p256::ecdsa::Signature::from_der(&sig).map_err(|_| bad("bad signature"))?;
-            key.verify(&msg, &s).is_ok()
-        }
-        EDDSA => {
-            let key: [u8; 32] = pk.public.as_slice().try_into().map_err(|_| bad("stored key"))?;
-            let sig: [u8; 64] = sig.as_slice().try_into().map_err(|_| bad("bad signature"))?;
-            ed25519_dalek::VerifyingKey::from_bytes(&key)
-                .map(|k| k.verify_strict(&msg, &ed25519_dalek::Signature::from_bytes(&sig)).is_ok())
-                .unwrap_or(false)
-        }
-        RS256 => {
-            aws_lc_rs::signature::UnparsedPublicKey::new(&aws_lc_rs::signature::RSA_PKCS1_2048_8192_SHA256, &pk.public)
-                .verify(&msg, &sig)
-                .is_ok()
-        }
-        _ => false,
-    };
-    if !ok {
+    if !signed(&pk, &data, raw, &sig)? {
         return Err(err(StatusCode::UNAUTHORIZED, "the passkey's signature doesn't check out"));
     }
     // A counter that goes backwards means a cloned authenticator. Synced
@@ -410,11 +618,34 @@ fn login(app: &Arc<App>, headers: &HeaderMap, a: Assertion) -> Result<(header::H
     if count != 0 && pk.sign_count != 0 && count <= pk.sign_count {
         return Err(err(StatusCode::UNAUTHORIZED, "this passkey's counter went backwards; it may have been copied"));
     }
-    app.db.passkey_used(&a.id, count, now_ms())?;
-    if a.prf {
-        app.db.passkey_prf(&a.id, true)?;
-    }
-    Ok((auth::start_session(app, &pk.account)?, pk))
+    Ok((pk, count))
+}
+
+/// Whether `sig` is the passkey's over `data ‖ SHA-256(client data)`.
+fn signed(pk: &Passkey, data: &[u8], raw: &[u8], sig: &[u8]) -> Result<bool, ApiError> {
+    let mut msg = data.to_vec();
+    msg.extend_from_slice(&Sha256::digest(raw));
+    Ok(match pk.alg {
+        ES256 => {
+            use p256::ecdsa::signature::Verifier;
+            let key = p256::ecdsa::VerifyingKey::from_sec1_bytes(&pk.public).map_err(|_| bad("stored key"))?;
+            let s = p256::ecdsa::Signature::from_der(sig).map_err(|_| bad("bad signature"))?;
+            key.verify(&msg, &s).is_ok()
+        }
+        EDDSA => {
+            let key: [u8; 32] = pk.public.as_slice().try_into().map_err(|_| bad("stored key"))?;
+            let sig: [u8; 64] = sig.try_into().map_err(|_| bad("bad signature"))?;
+            ed25519_dalek::VerifyingKey::from_bytes(&key)
+                .map(|k| k.verify_strict(&msg, &ed25519_dalek::Signature::from_bytes(&sig)).is_ok())
+                .unwrap_or(false)
+        }
+        RS256 => {
+            aws_lc_rs::signature::UnparsedPublicKey::new(&aws_lc_rs::signature::RSA_PKCS1_2048_8192_SHA256, &pk.public)
+                .verify(&msg, sig)
+                .is_ok()
+        }
+        _ => false,
+    })
 }
 
 #[cfg(test)]
@@ -504,6 +735,7 @@ mod tests {
             client_data: client("webauthn.create", &challenge),
             attestation: B64.encode(&att_bytes),
             prf: None,
+            step_up: None,
         };
         let (account, provider, cookie) = register(&app, &h, r).await.unwrap();
         assert_eq!(provider, Some("Windows Hello"));
@@ -602,6 +834,7 @@ mod tests {
             client_data: client("webauthn.create", &challenge, "http://old.test"),
             attestation: B64.encode(&att_bytes),
             prf: Some(false),
+            step_up: None,
         };
         register(&app, &old, r).await.unwrap();
 
@@ -629,6 +862,245 @@ mod tests {
         // old site's: refused either way.
         assert!(sign_in(&new, "http://control.test", "old.test").is_err());
         assert!(sign_in(&new, "http://old.test", "old.test").is_err());
+    }
+
+    /// A software authenticator with an Ed25519 passkey, for the
+    /// ceremonies below, on `control.test`.
+    struct Authn {
+        key: ed25519_dalek::SigningKey,
+        id: Vec<u8>,
+    }
+
+    const ORIGIN: &str = "http://control.test";
+
+    impl Authn {
+        fn new(seed: u8) -> Self {
+            Authn { key: ed25519_dalek::SigningKey::from_bytes(&[seed; 32]), id: vec![seed; 16] }
+        }
+
+        fn id(&self) -> String {
+            B64.encode(&self.id)
+        }
+
+        fn client(kind: &str, challenge: &str, extra: serde_json::Value) -> String {
+            let mut cd = json!({ "type": kind, "challenge": challenge, "origin": ORIGIN });
+            cd.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            B64.encode(serde_json::to_vec(&cd).unwrap())
+        }
+
+        fn create(&self, challenge: &str, step_up: Option<Assertion>) -> Registration {
+            let mut data = Sha256::digest(b"control.test").to_vec();
+            data.push(UP | UV | AT);
+            data.extend_from_slice(&0u32.to_be_bytes());
+            data.extend_from_slice(&[0; 16]);
+            data.extend_from_slice(&(self.id.len() as u16).to_be_bytes());
+            data.extend_from_slice(&self.id);
+            let cose = Cbor::Map(vec![
+                (Cbor::from(1), Cbor::from(1)),
+                (Cbor::from(3), Cbor::from(EDDSA)),
+                (Cbor::from(-1), Cbor::from(6)),
+                (Cbor::from(-2), Cbor::Bytes(self.key.verifying_key().to_bytes().to_vec())),
+            ]);
+            ciborium::into_writer(&cose, &mut data).unwrap();
+            let att = Cbor::Map(vec![
+                (Cbor::from("fmt"), Cbor::from("none")),
+                (Cbor::from("attStmt"), Cbor::Map(vec![])),
+                (Cbor::from("authData"), Cbor::Bytes(data)),
+            ]);
+            let mut att_bytes = vec![];
+            ciborium::into_writer(&att, &mut att_bytes).unwrap();
+            Registration {
+                id: self.id(),
+                client_data: Self::client("webauthn.create", challenge, json!({})),
+                attestation: B64.encode(&att_bytes),
+                prf: None,
+                step_up,
+            }
+        }
+
+        fn get(&self, challenge: &str, flags: u8, extra: serde_json::Value) -> Assertion {
+            use ed25519_dalek::Signer as _;
+            let cd = Self::client("webauthn.get", challenge, extra);
+            let mut data = Sha256::digest(b"control.test").to_vec();
+            data.push(flags);
+            data.extend_from_slice(&0u32.to_be_bytes());
+            let mut msg = data.clone();
+            msg.extend_from_slice(&Sha256::digest(B64.decode(&cd).unwrap()));
+            Assertion {
+                id: self.id(),
+                client_data: cd,
+                authenticator_data: B64.encode(&data),
+                signature: B64.encode(self.key.sign(&msg).to_bytes()),
+                prf: false,
+            }
+        }
+    }
+
+    /// `account`, signed in `via`, `age_ms` ago: the page's headers.
+    fn signed_in(app: &App, account: &str, via: auth::Via, age_ms: u64) -> HeaderMap {
+        app.db.account_for("github", &format!("gh-{account}"), account, account, 1).unwrap();
+        let t = auth::token();
+        let at = now_ms() - age_ms;
+        app.db.add_session(&auth::hash(&t), account, at, at + 3_600_000).unwrap();
+        app.db.set_session_via(&auth::hash(&t), via.as_str()).unwrap();
+        let mut h = HeaderMap::new();
+        h.insert(header::ORIGIN, ORIGIN.parse().unwrap());
+        h.insert(header::COOKIE, format!("{}={t}", auth::SESSION_COOKIE).parse().unwrap());
+        h
+    }
+
+    async fn start(app: &Arc<App>, h: &HeaderMap) -> Result<serde_json::Value, ApiError> {
+        register_start(State(app.clone()), ConnectInfo("127.0.0.1:1".parse().unwrap()), h.clone(), None)
+            .await
+            .map(|j| j.0)
+    }
+
+    async fn step_up(app: &Arc<App>, h: &HeaderMap, id: &str) -> Result<serde_json::Value, ApiError> {
+        register_step_up(State(app.clone()), h.clone(), Json(StepUp { id: id.into() })).await.map(|j| j.0)
+    }
+
+    fn reason(e: ApiError) -> Option<&'static str> {
+        e.2
+    }
+
+    /// An account with no passkey adds one with a GitHub sign-in from the
+    /// last ten minutes, not an older one, nor another kind of sign-in.
+    #[tokio::test]
+    async fn a_first_passkey_takes_a_fresh_github_sign_in() {
+        let app = App::for_tests(ORIGIN).start();
+        for (via, age) in [(auth::Via::Github, REAUTH_MS + 60_000), (auth::Via::App, 0), (auth::Via::Passkey, 0)] {
+            let h = signed_in(&app, "acct-old", via, age);
+            assert_eq!(start(&app, &h).await.map_err(reason).err(), Some(Some(REAUTH)), "{via:?}, {age} ms old");
+        }
+        let h = signed_in(&app, "acct-fresh", auth::Via::Github, 60_000);
+        let opts = start(&app, &h).await.unwrap();
+        assert!(opts["step_up"].is_null(), "none to confirm with");
+        let a = Authn::new(1);
+        let (account, _, cookie) =
+            register(&app, &h, a.create(opts["challenge"].as_str().unwrap(), None)).await.unwrap();
+        assert_eq!((account.as_str(), cookie.is_none()), ("acct-fresh", true));
+        // Kept with which sign-in added it.
+        let session = &auth::hash(auth::cookie(&h, auth::SESSION_COOKIE).unwrap())[..crate::account::SESSION_ID_LEN];
+        let added: (Option<String>, Option<String>) = app
+            .db
+            .conn()
+            .query_row("SELECT added_device, added_session FROM passkeys WHERE id = ?1", [a.id()], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(added, (None, Some(session.to_owned())));
+        // Its GitHub sign-in went stale before it finished: refused there too.
+        let h = signed_in(&app, "acct-slow", auth::Via::Github, 0);
+        let opts = start(&app, &h).await.unwrap();
+        app.db.conn().execute("UPDATE sessions SET created = 1 WHERE account = 'acct-slow'", []).unwrap();
+        let r = register(&app, &h, Authn::new(2).create(opts["challenge"].as_str().unwrap(), None)).await;
+        assert_eq!(r.map_err(reason).err(), Some(Some(REAUTH)));
+    }
+
+    /// An account with a passkey adds another only when one of its own
+    /// agrees, with user verification, over the challenge made for this
+    /// account and this new passkey.
+    #[tokio::test]
+    async fn another_passkey_takes_one_the_account_has() {
+        let app = App::for_tests(ORIGIN).start();
+        let mine = Authn::new(7);
+        app.db.account_for("github", "gh-acct-a", "a", "acct-a", 1).unwrap();
+        app.db.add_passkey(&mine.id(), "acct-a", EDDSA, &mine.key.verifying_key().to_bytes(), 1).unwrap();
+        let theirs = Authn::new(8);
+        app.db.account_for("github", "gh-acct-b", "b", "acct-b", 1).unwrap();
+        app.db.add_passkey(&theirs.id(), "acct-b", EDDSA, &theirs.key.verifying_key().to_bytes(), 1).unwrap();
+        // A fresh GitHub sign-in isn't enough here.
+        let h = signed_in(&app, "acct-a", auth::Via::Github, 0);
+        let new = Authn::new(9);
+        async fn attempt(
+            app: &Arc<App>,
+            h: &HeaderMap,
+            new: &Authn,
+            step: Option<Assertion>,
+        ) -> Result<String, ApiError> {
+            let opts = start(app, h).await.unwrap();
+            assert_eq!(opts["step_up"], "passkey");
+            register(app, h, new.create(opts["challenge"].as_str().unwrap(), step)).await.map(|r| r.0)
+        }
+        let attempt = |step| attempt(&app, &h, &new, step);
+        assert_eq!(attempt(None).await.map_err(reason).err(), Some(Some("step_up")));
+        async fn ch(app: &Arc<App>, h: &HeaderMap, id: &str) -> String {
+            step_up(app, h, id).await.unwrap()["challenge"].as_str().unwrap().to_owned()
+        }
+        let (app_, h_) = (&app, &h);
+        let ch = move |id: String| async move { ch(app_, h_, &id).await };
+        // Over a challenge made for another new passkey.
+        let other = ch(Authn::new(10).id()).await;
+        assert!(attempt(Some(mine.get(&other, UP | UV, json!({})))).await.is_err(), "another new passkey's");
+        // Another account's passkey.
+        let c = ch(new.id()).await;
+        assert!(attempt(Some(theirs.get(&c, UP | UV, json!({})))).await.is_err(), "another account's passkey");
+        // Without user verification.
+        let c = ch(new.id()).await;
+        assert!(attempt(Some(mine.get(&c, UP, json!({})))).await.is_err(), "no user verification");
+        // From inside another site's frame.
+        let c = ch(new.id()).await;
+        let framed = mine.get(&c, UP | UV, json!({ "crossOrigin": true, "topOrigin": "https://evil.test" }));
+        assert!(attempt(Some(framed)).await.is_err(), "framed");
+        // A made-up challenge.
+        assert!(attempt(Some(mine.get("bm90IG91cnM", UP | UV, json!({})))).await.is_err(), "not one control made");
+        // The new passkey can't vouch for itself, nor ask for a challenge.
+        assert!(step_up(&app, &h, &mine.id()).await.is_err(), "not a new passkey");
+        // Its own: added, once.
+        let c = ch(new.id()).await;
+        let step = mine.get(&c, UP | UV, json!({}));
+        assert_eq!(attempt(Some(step.clone())).await.unwrap(), "acct-a");
+        assert_eq!(app.db.passkey_count("acct-a").unwrap(), 2);
+        assert!(app.db.passkeys("acct-b").unwrap().len() == 1, "nothing changed for the other account");
+        // Its challenge works once.
+        let again = Authn::new(11);
+        let opts = start(&app, &h).await.unwrap();
+        let r = register(&app, &h, again.create(opts["challenge"].as_str().unwrap(), Some(step))).await;
+        assert!(r.is_err(), "a step-up is good once");
+    }
+
+    /// Every device of the account hears that a passkey was added, naming
+    /// the device whose sign-in added it.
+    #[tokio::test]
+    async fn adding_a_passkey_tells_every_device() {
+        use arugula_e2e::{Cert, DeviceKeys, Kind};
+        let mut app = App::for_tests(ORIGIN);
+        let h = signed_in(&app, "acct-p", auth::Via::Github, 0);
+        let keys = DeviceKeys::generate();
+        let mut root = Cert::new(&keys, "acct-p", Kind::Browser, "Firefox on Linux");
+        root.sign_with(&keys);
+        app.db.put_device(&root, true, now_ms()).unwrap();
+        app.db
+            .set_session_device(&auth::hash(auth::cookie(&h, auth::SESSION_COOKIE).unwrap()), "acct-p", &keys.id())
+            .unwrap();
+        let (mut phone, host) = crate::push_notices::Phone::subscribe(&app, "acct-p", &keys, 5).await;
+        app.cfg.push_hosts = vec![host];
+        let app = app.start();
+        let opts = start(&app, &h).await.unwrap();
+        register(&app, &h, Authn::new(3).create(opts["challenge"].as_str().unwrap(), None)).await.unwrap();
+        let n = phone.next().await.expect("a push");
+        assert_eq!(n["title"], "A passkey was added to your account");
+        assert!(n["body"].as_str().unwrap().contains("\"Firefox on Linux\""), "{n}");
+        assert_eq!(app.db.passkeys("acct-p").unwrap()[0].added_device.as_deref(), Some(keys.id().as_str()));
+    }
+
+    /// Every ceremony refuses one run in a frame of another site's page,
+    /// and so does anything else that reads its client data.
+    #[test]
+    fn framed_ceremonies_are_refused() {
+        let site = crate::Site::new(ORIGIN).unwrap();
+        let cd = |extra: serde_json::Value| Authn::client("webauthn.get", "x", extra);
+        let parses =
+            |extra: serde_json::Value| serde_json::from_slice::<ClientData>(&B64.decode(cd(extra)).unwrap()).is_ok();
+        for ok in [json!({}), json!({ "crossOrigin": false }), json!({ "topOrigin": ORIGIN })] {
+            assert!(client_data(&site, &cd(ok.clone()), "webauthn.get").is_ok(), "{ok}");
+            assert!(parses(ok));
+        }
+        for framed in [json!({ "crossOrigin": true }), json!({ "topOrigin": "https://evil.test" })] {
+            let e = client_data(&site, &cd(framed.clone()), "webauthn.get").err().unwrap();
+            assert_eq!(e.0, StatusCode::FORBIDDEN, "{framed}");
+            assert!(!parses(framed));
+        }
     }
 
     #[test]

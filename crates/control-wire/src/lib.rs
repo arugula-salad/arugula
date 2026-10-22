@@ -69,6 +69,12 @@ pub const SANDBOX_DONE: &str = "/api/daemon/sandbox-done";
 /// The daemon's WebSocket to the relay (`GET`), [`DialQuery`].
 pub const RELAY_DIAL: &str = "/api/relay/dial";
 
+/// The header a daemon or the CLI names what it reads in, comma-separated.
+pub const FEATURES_HEADER: &str = "x-arugula-features";
+/// It reads `app` certificates (the desktop app's devices): control leaves
+/// them out of lists for a client that doesn't say so.
+pub const APP_DEVICES: &str = "app-devices";
+
 /// `GET /control.json`. Read leniently: a daemon needs only `daemon_auth`
 /// and `guest_ssh` of it, and an older control is without some of the rest.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -14,7 +14,7 @@ import { openPlatform, platformOrigin, workspacePath } from "../platform-links";
 import { TelemetryAsk } from "../../shared/ui/account-telemetry";
 import type { MenuItem } from "../../shared/ui/menu";
 import { Modal } from "../../shared/ui/modal";
-import { DEVICE_HASH, inviteInHash, JOIN_HASH, type ControlSession } from "../control";
+import { ADD_PASSKEY_HASH, DEVICE_HASH, inviteInHash, JOIN_HASH, type ControlSession } from "../control";
 import { directory } from "../hosts";
 import { SharedDocs } from "../ui/shared-docs";
 import { AccountPanel } from "./account";
@@ -22,7 +22,7 @@ import { DeviceLinkPrompt, DevicePrompt, JoinPrompt } from "./approve";
 import { openPanel, useControl, usedLink, type Panel } from "./common";
 import { AddDevice, Devices } from "./devices";
 import { AddMachine } from "./machines";
-import { AdmitPrompt, AppLoginDone, AppLoginPrompt, InvitePrompt, Joined, Notice, PresignedPrompt, ShareOfferPrompt } from "./prompts";
+import { AddPasskeyAgain, AdmitPrompt, AppLoginDone, AppLoginPrompt, ConfirmPasskey, InvitePrompt, Joined, Notice, PresignedPrompt, ShareOfferPrompt } from "./prompts";
 import { RecoveryCodes } from "./recovery";
 import { Teams } from "./teams";
 
@@ -60,6 +60,8 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   }, []);
   if (s.phase !== "ready") return null;
   if (s.recoveryCodes) return <RecoveryCodes s={s} />;
+  if (s.passkeyToConfirm) return <ConfirmPasskey s={s} />;
+  if (hash === ADD_PASSKEY_HASH) return <AddPasskeyAgain s={s} />;
   const join = JOIN_HASH.exec(hash);
   if (join) return <JoinPrompt s={s} code={join[1]} device={join[2]} />;
   // #761: a waiting device's code, scanned with the camera or opened.

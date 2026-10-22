@@ -44,6 +44,7 @@ export const FRAGMENTS: Fragment[] = [
   { route: "#developer", why: "The developer settings dialog.", where: ["shell/ui/developer.tsx"] },
   { route: "#lend=", why: "Lending this device to an agent on or off (S33).", where: ["shell/hand.ts"] },
   { route: "#app-done", why: "The desktop app's sign-in finished (M48).", where: ["shell/trust/overlay.tsx"] },
+  { route: "#add-passkey", why: "Back from signing in with GitHub again to add a passkey to an account with none: the page offers it.", where: ["shell/trust/overlay.tsx", "shell/control.ts"] },
 ];
 
 /** The listeners that aren't a route of their own: they redraw on any

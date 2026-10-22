@@ -100,10 +100,11 @@ fn plain(s: &str, max: usize) -> bool {
     !s.is_empty() && s.chars().count() <= max && !s.chars().any(char::is_control)
 }
 
-/// Only people's own devices sign for a project: not a machine, and not a
-/// recovery code, which signs one certificate and nothing else.
+/// Only people's own devices sign for a project: a browser, a CLI or the
+/// desktop app; not a machine, and not a recovery code, which signs one
+/// certificate and nothing else.
 fn signs_for_projects(kind: Kind) -> bool {
-    matches!(kind, Kind::Browser | Kind::Cli)
+    matches!(kind, Kind::Browser | Kind::Cli | Kind::App)
 }
 
 /// An owner's device saying control may enroll hosted machines into

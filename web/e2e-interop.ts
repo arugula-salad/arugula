@@ -50,14 +50,35 @@ check("same join code", (await joinCode(fx.daemon)) === fx.joinCode, fx.joinCode
 // 2. Certificates signed here, evaluated by Rust.
 const root = await generateKeys();
 const phone = await generateKeys();
-const mk = async (k: typeof root, by: typeof root, name: string, created: number): Promise<Cert> => {
-  const c: Cert = { v: 1, account: "acct2", device: k.id, kind: "browser", name, noise: k.noisePub, sign: k.signPub, created, approver: by.id, sig: "" };
+const mk = async (k: typeof root, by: typeof root, name: string, created: number, kind: Cert["kind"] = "browser"): Promise<Cert> => {
+  const c: Cert = { v: 1, account: "acct2", device: k.id, kind, name, noise: k.noisePub, sign: k.signPub, created, approver: by.id, sig: "" };
   c.sig = await signText(by, certBody(c));
   return c;
 };
 const certs = [await mk(root, root, "laptop ✓", 1), await mk(phone, root, "phone", 2)];
 const rust = JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust: { account: "acct2", root: root.id }, certs }) }).toString());
 check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([root.id, phone.id].sort()));
+
+// 2b. A CLI and the desktop app approve machines, CLIs and apps, never a
+// browser: Rust and this code agree.
+{
+  const [cli, app, viaCli, viaApp, appsCli, appsApp] = await Promise.all([1, 2, 3, 4, 5, 6].map(() => generateKeys()));
+  const chain = [
+    await mk(root, root, "laptop ✓", 1),
+    await mk(cli, root, "terminal", 2, "cli"),
+    await mk(app, root, "Arugula app on box", 3, "app"),
+    await mk(viaCli, cli, "a browser the CLI made", 4),
+    await mk(viaApp, app, "a browser the app made", 5),
+    await mk(appsCli, app, "a CLI the app made", 6, "cli"),
+    await mk(appsApp, app, "an app the app made", 7, "app"),
+  ];
+  const trust = { account: "acct2", root: root.id };
+  const want = [root.id, cli.id, app.id, appsCli.id, appsApp.id].sort();
+  const ours = [...(await evaluate(trust, chain)).keys()].sort();
+  check("a CLI or the app never makes a browser (here)", JSON.stringify(ours) === JSON.stringify(want), ours.join(","));
+  const theirs = JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust, certs: chain }) }).toString());
+  check("a CLI or the app never makes a browser (Rust)", JSON.stringify(theirs) === JSON.stringify(want), theirs.join(","));
+}
 
 // 3. A team roster and a presigned invite signed here: Rust and this code
 // agree on each version, and on a tampered one.

@@ -50,7 +50,7 @@ use crate::{ApiError, App, auth::Session, err};
 type R = Result<Json<Value>, ApiError>;
 
 /// How a session is shown and named: the start of its token's hash.
-const SESSION_ID_LEN: usize = 16;
+pub(crate) const SESSION_ID_LEN: usize = 16;
 
 fn session_cookie(headers: &HeaderMap) -> Option<&str> {
     headers

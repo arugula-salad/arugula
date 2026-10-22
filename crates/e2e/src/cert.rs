@@ -14,7 +14,7 @@
 //! illogical device v1
 //! account <id>
 //! device <id>
-//! kind browser|cli|daemon|recovery
+//! kind browser|cli|daemon|recovery|app
 //! name <text: no control characters, at most 64 chars>
 //! noise <hex>
 //! sign <hex>
@@ -38,6 +38,14 @@ pub enum Kind {
     Daemon,
     /// A recovery code: approves a new device when every other is lost.
     Recovery,
+    /// The desktop app's window. Its keys reach it through whatever
+    /// listens on the computer's loopback port, so, like a CLI's, they may
+    /// be a program's on that computer, not the person's. It connects and
+    /// approves machines, CLIs and other apps, but never a browser (see
+    /// [`Kind::certifies`]). Older readers don't know this word: control
+    /// leaves `app` certificates out of what it answers a client that
+    /// doesn't say it knows them (`app-devices`, see control's `compat.rs`).
+    App,
 }
 
 impl Kind {
@@ -47,17 +55,40 @@ impl Kind {
             Kind::Cli => "cli",
             Kind::Daemon => "daemon",
             Kind::Recovery => "recovery",
+            Kind::App => "app",
         }
     }
 
-    /// May sign other devices' certificates.
+    /// May sign other devices' certificates (of the kinds
+    /// [`Kind::certifies`] says), revocations and team papers.
     pub fn approves(self) -> bool {
-        matches!(self, Kind::Browser | Kind::Cli | Kind::Recovery)
+        matches!(self, Kind::Browser | Kind::Cli | Kind::Recovery | Kind::App)
+    }
+
+    /// May sign a certificate of `kind`. A browser signs any. A recovery
+    /// code signs any but a machine's. A CLI and the desktop app hold keys
+    /// a program on their computer can read, so neither makes a browser,
+    /// nor a recovery code (which would make one): a CLI signs CLIs and
+    /// machines, and the app signs apps too. A machine signs none.
+    pub fn certifies(self, kind: Kind) -> bool {
+        match self {
+            Kind::Browser => true,
+            Kind::Recovery => kind != Kind::Daemon,
+            Kind::Cli => matches!(kind, Kind::Cli | Kind::Daemon),
+            Kind::App => matches!(kind, Kind::App | Kind::Cli | Kind::Daemon),
+            Kind::Daemon => false,
+        }
+    }
+
+    /// May be an account's first device (self-signed): a browser, or a CLI.
+    /// Not the app, which couldn't approve the browsers to come.
+    pub fn roots(self) -> bool {
+        matches!(self, Kind::Browser | Kind::Cli)
     }
 
     /// May open channels to daemons.
     pub fn connects(self) -> bool {
-        matches!(self, Kind::Browser | Kind::Cli)
+        matches!(self, Kind::Browser | Kind::Cli | Kind::App)
     }
 }
 
@@ -166,6 +197,23 @@ impl Cert {
     /// The signature checks out against `approver`'s key.
     pub fn signed_by(&self, approver: &Cert) -> bool {
         approver.device == self.approver && verify(&approver.verifying_key(), self.body().as_bytes(), &self.sig)
+    }
+
+    /// The desktop app's window: an `app` certificate, or a `browser` one
+    /// from before the app had a kind of its own, which the app named
+    /// ("Arugula app on jake-air", "illogical app" before the rename). No
+    /// browser names itself so. Control treats both alike: they don't
+    /// approve browsers, and they don't approve deploys.
+    pub fn from_app(&self) -> bool {
+        let name = self.name.to_ascii_lowercase();
+        self.kind == Kind::App
+            || (self.kind == Kind::Browser && (name.starts_with("arugula app") || name.starts_with("illogical app")))
+    }
+
+    /// A browser's or a phone's own device: `browser`, and not the desktop
+    /// app's from before it had a kind ([`Cert::from_app`]).
+    pub fn is_browser(&self) -> bool {
+        self.kind == Kind::Browser && !self.from_app()
     }
 }
 
@@ -305,6 +353,7 @@ impl Trust {
             Some(a) if !cert.signed_by(a) => Refusal::BadSignature,
             Some(a) if !a.kind.approves() => Refusal::CantApprove,
             Some(a) if a.kind == Kind::Recovery && cert.kind == Kind::Daemon => Refusal::RecoveryForMachine,
+            Some(a) if !a.kind.certifies(cert.kind) => Refusal::NeedsBrowser,
             Some(_) => Refusal::NoChain,
         })
     }
@@ -324,7 +373,7 @@ impl Trust {
         }
         for c in by_id.get(id)? {
             if id == self.root {
-                if c.approver == c.device && c.kind.approves() && c.kind != Kind::Recovery && c.signed_by(c) {
+                if c.approver == c.device && c.kind.roots() && c.signed_by(c) {
                     return Some(c);
                 }
                 continue;
@@ -333,9 +382,9 @@ impl Trust {
                 continue;
             }
             let Some(approver) = self.valid_cert(by_id, revoked, &c.approver, c.created, depth + 1) else { continue };
-            // Recovery codes approve people's devices, not daemons.
-            let allowed = approver.kind.approves() && !(approver.kind == Kind::Recovery && c.kind == Kind::Daemon);
-            if allowed && c.signed_by(approver) {
+            // Recovery codes approve people's devices, not daemons; a CLI
+            // or the app never a browser.
+            if approver.kind.certifies(c.kind) && c.signed_by(approver) {
                 return Some(c);
             }
         }
@@ -356,6 +405,9 @@ pub enum Refusal {
     CantApprove,
     /// A recovery code approving a machine.
     RecoveryForMachine,
+    /// A CLI or the desktop app approving a browser, a phone or a recovery
+    /// code: only a browser does.
+    NeedsBrowser,
     /// Anything else: its form, its kind, or when it was made.
     NoChain,
 }
@@ -369,6 +421,7 @@ impl Refusal {
             Refusal::BadSignature => "bad_signature",
             Refusal::CantApprove => "cant_approve",
             Refusal::RecoveryForMachine => "recovery_for_machine",
+            Refusal::NeedsBrowser => "needs_browser",
             Refusal::NoChain => "no_chain",
         }
     }
@@ -383,6 +436,9 @@ impl Refusal {
             Refusal::BadSignature => "the signature doesn't verify with the approving device's key",
             Refusal::CantApprove => "the approving device can't approve others",
             Refusal::RecoveryForMachine => "a recovery code approves browsers and phones, not machines",
+            Refusal::NeedsBrowser => {
+                "a CLI or the desktop app approves machines, CLIs and apps, not a browser, a phone or a recovery code"
+            }
             Refusal::NoChain => "it doesn't chain to the account's first device (form, kind or time)",
         }
     }
@@ -674,6 +730,54 @@ mod tests {
         other.account = "elsewhere".into();
         other.sign_with(&rk);
         assert_eq!(t.refusal(&have, &[], &other), Some(Refusal::NoChain));
+    }
+
+    /// A CLI's or the desktop app's key may be a program's on its computer:
+    /// neither makes a browser, nor a recovery code (which would make one).
+    /// The app is never an account's first device.
+    #[test]
+    fn a_cli_or_the_app_never_makes_a_browser() {
+        let (rk, rc) = root("acct");
+        let (ck, cc) = approved(&rk, "acct", Kind::Cli, "terminal");
+        let (ak, ac) = approved(&rk, "acct", Kind::App, "Arugula app on box");
+        let t = trust(&rc);
+        let made = |by: &DeviceKeys, kind: Kind| approved(by, "acct", kind, &format!("by {}", by.id())).1;
+        for (by, ok) in [
+            (&ck, &[Kind::Cli, Kind::Daemon][..]),
+            (&ak, &[Kind::App, Kind::Cli, Kind::Daemon][..]),
+            (&rk, &[Kind::Browser, Kind::Cli, Kind::App, Kind::Daemon, Kind::Recovery][..]),
+        ] {
+            for kind in [Kind::Browser, Kind::Cli, Kind::App, Kind::Daemon, Kind::Recovery] {
+                let c = made(by, kind);
+                let got = t.evaluate(&[rc.clone(), cc.clone(), ac.clone(), c.clone()], &[]).get(&c.device).is_some();
+                assert_eq!(got, ok.contains(&kind), "{} signing a {} certificate", by.id(), kind.as_str());
+                let want = if ok.contains(&kind) { None } else { Some(Refusal::NeedsBrowser) };
+                assert_eq!(t.refusal(&[rc.clone(), cc.clone(), ac.clone()], &[], &c), want);
+            }
+        }
+        // An app that signed itself in as the root is no root.
+        let k = DeviceKeys::generate();
+        let mut app_root = Cert::new(&k, "acct", Kind::App, "Arugula app");
+        app_root.sign_with(&k);
+        assert!(trust(&app_root).evaluate(&[app_root.clone()], &[]).devices.is_empty());
+        assert!(!Kind::App.roots() && Kind::Browser.roots());
+        assert!(Kind::App.connects() && Kind::App.approves());
+    }
+
+    /// The app's devices from before it had a kind are `browser` ones it
+    /// named; control treats them as the app's.
+    #[test]
+    fn the_apps_devices_by_kind_or_by_their_old_name() {
+        let c = |kind: Kind, name: &str| Cert::new(&DeviceKeys::generate(), "acct", kind, name);
+        assert!(c(Kind::App, "anything").from_app());
+        assert!(c(Kind::Browser, "Arugula app on jake-air").from_app());
+        assert!(c(Kind::Browser, "Arugula app (AppImage) on geek").from_app());
+        assert!(c(Kind::Browser, "illogical app on geek").from_app());
+        assert!(!c(Kind::Browser, "Safari on iPhone").from_app());
+        assert!(!c(Kind::Cli, "Arugula app").from_app(), "only a browser's name counts");
+        assert!(c(Kind::Browser, "Chrome on Mac").is_browser());
+        assert!(!c(Kind::Browser, "Arugula app").is_browser());
+        assert!(!c(Kind::App, "Chrome on Mac").is_browser());
     }
 
     #[test]

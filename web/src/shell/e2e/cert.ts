@@ -11,7 +11,9 @@ import { cat, sha256 } from "./noise.ts";
 
 const subtle = globalThis.crypto.subtle;
 
-export type Kind = "browser" | "cli" | "daemon" | "recovery";
+/** `app`: the desktop app's window (`Kind::App`): it connects, and
+ * approves machines, CLIs and apps, never a browser. */
+export type Kind = "browser" | "cli" | "daemon" | "recovery" | "app";
 
 export interface Cert {
   v: number;
@@ -35,7 +37,28 @@ export interface Revocation {
   sig: string;
 }
 
-export const approves = (k: Kind) => k === "browser" || k === "cli" || k === "recovery";
+export const approves = (k: Kind) => k === "browser" || k === "cli" || k === "recovery" || k === "app";
+
+/** Whether a `by` device may sign a certificate of `kind` (`Kind::certifies`):
+ * a CLI's or the app's key may be a program's on its computer, so neither
+ * makes a browser, nor a recovery code (which would make one). */
+export function certifies(by: Kind, kind: Kind): boolean {
+  switch (by) {
+    case "browser":
+      return true;
+    case "recovery":
+      return kind !== "daemon";
+    case "cli":
+      return kind === "cli" || kind === "daemon";
+    case "app":
+      return kind === "app" || kind === "cli" || kind === "daemon";
+    default:
+      return false;
+  }
+}
+
+/** May be an account's first device (`Kind::roots`): not the app. */
+export const roots = (k: Kind) => k === "browser" || k === "cli";
 
 export function hex(b: Uint8Array): string {
   return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
@@ -105,12 +128,12 @@ export async function evaluate(
     if (depth > 64 || (r !== undefined && r <= at)) return undefined;
     for (const c of byId.get(id) ?? []) {
       if (id === trust.root) {
-        if (c.approver === c.device && approves(c.kind) && c.kind !== "recovery" && (await signedBy(c, c))) return c;
+        if (c.approver === c.device && roots(c.kind) && (await signedBy(c, c))) return c;
         continue;
       }
       if (c.approver === c.device) continue;
       const a = await valid(revoked, c.approver, c.created, depth + 1);
-      if (!a || !approves(a.kind) || (a.kind === "recovery" && c.kind === "daemon")) continue;
+      if (!a || !certifies(a.kind, c.kind)) continue;
       if (await signedBy(c, a)) return c;
     }
     return undefined;

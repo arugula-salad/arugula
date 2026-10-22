@@ -26,7 +26,7 @@ use tracing::warn;
 
 use crate::{
     ApiError, App,
-    auth::{DaemonAuth, Session, hash, token},
+    auth::{DaemonAuth, PageSession, Session, hash, token},
     err, refusal,
 };
 
@@ -109,6 +109,9 @@ fn refused_say(r: Refusal) -> &'static str {
         Refusal::RecoveryForMachine => {
             "a recovery code approves browsers and phones, not machines: approve the machine from one of your devices"
         }
+        Refusal::NeedsBrowser => {
+            "only a browser or a phone approves a browser, a phone or recovery codes: the desktop app and the CLI approve machines, CLIs and apps"
+        }
         Refusal::NoChain => {
             "the approval doesn't chain to this account's first device (its form, kind or time): reload and try again"
         }
@@ -130,13 +133,22 @@ fn approval_ok(app: &App, account: &str, cert: &Cert, what: &str) -> Result<(), 
         refused(what, account, cert, "this device was removed from the account (revoked): it needs a new key");
         return Err(refusal(StatusCode::FORBIDDEN, Refusal::Revoked.code(), REVOKED));
     }
-    match trust.refusal(&certs, &revs, cert) {
-        None => Ok(()),
-        Some(r) => {
-            refused(what, account, cert, r.check());
-            Err(refusal(StatusCode::FORBIDDEN, r.code(), refused_say(r)))
-        }
+    if let Some(r) = trust.refusal(&certs, &revs, cert) {
+        refused(what, account, cert, r.check());
+        return Err(refusal(StatusCode::FORBIDDEN, r.code(), refused_say(r)));
     }
+    // The desktop app's devices from before it had a kind of its own are
+    // `browser` ones it named (`Cert::from_app`): they don't make browsers
+    // or recovery codes either, here, from now on. What they approved
+    // before stands. An account whose first device was one keeps it.
+    let by = trust.evaluate(&certs, &revs).get(&cert.approver).cloned();
+    if matches!(cert.kind, Kind::Browser | Kind::Recovery) && by.is_some_and(|a| a.from_app() && a.device != trust.root)
+    {
+        let r = Refusal::NeedsBrowser;
+        refused(what, account, cert, r.check());
+        return Err(refusal(StatusCode::FORBIDDEN, r.code(), refused_say(r)));
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -158,21 +170,17 @@ pub struct Enroll {
     mac: Option<String>,
 }
 
-/// A browser or CLI asks to join the account. The first device is
-/// self-signed and trusted on first use; later ones wait for an approval,
-/// unless they come already signed by a device the account trusts.
-pub async fn enroll(
-    State(app): State<Arc<App>>,
-    s: Session,
-    headers: axum::http::HeaderMap,
-    Json(b): Json<Enroll>,
-) -> R {
+/// A browser (or the desktop app's window) asks to join the account, from
+/// control's page: by its cookie, never a CLI's signature. The first device
+/// is self-signed and trusted on first use; later ones wait for an
+/// approval, unless they come already signed by a device the account
+/// trusts. The app's window, signed in by a browser's hand-over, asks as an
+/// `app` device only.
+pub async fn enroll(State(app): State<Arc<App>>, s: PageSession, Json(b): Json<Enroll>) -> R {
     let c = b.cert;
     // The sign-in that asked is this device's (Sign-in and Devices say so).
-    if let Some(token) = crate::auth::cookie(&headers, crate::auth::SESSION_COOKIE)
-        && c.account == s.account
-    {
-        app.db.set_session_device(&crate::auth::hash(token), &s.account, &c.device)?;
+    if c.account == s.account {
+        app.db.set_session_device(&s.token_hash, &s.account, &c.device)?;
     }
     let join = b.join.as_deref().and_then(|j| normalize_code(j).ok());
     if let Err(e) = c.check_request() {
@@ -180,8 +188,13 @@ pub async fn enroll(
         return Err(err(StatusCode::BAD_REQUEST, &e.to_string()));
     }
     if c.account != s.account || !c.kind.connects() {
-        refused("enroll", &s.account, &c, "not a browser or CLI certificate for this account");
-        return Err(err(StatusCode::BAD_REQUEST, "a browser or CLI certificate for your account"));
+        refused("enroll", &s.account, &c, "not a browser, app or CLI certificate for this account");
+        return Err(err(StatusCode::BAD_REQUEST, "a browser, app or CLI certificate for your account"));
+    }
+    let via = app.db.session_info(&s.token_hash, now_ms())?.and_then(|i| i.via);
+    if via.as_deref() == Some(crate::auth::Via::App.as_str()) && c.kind != Kind::App {
+        refused("enroll", &s.account, &c, "the desktop app's sign-in asked as another kind");
+        return Err(err(StatusCode::BAD_REQUEST, "the desktop app's window joins as an app device"));
     }
     let account = app.db.account(&s.account)?.ok_or_else(|| err(StatusCode::UNAUTHORIZED, "no such account"))?;
     if let Some((have, true)) = app.db.device(&s.account, &c.device)? {
@@ -192,6 +205,14 @@ pub async fn enroll(
     }
     match account.root {
         None => {
+            if !c.kind.roots() {
+                refused("enroll", &s.account, &c, "the desktop app can't be the first device");
+                return Err(refusal(
+                    StatusCode::CONFLICT,
+                    "first_in_browser",
+                    "your account's first device is a browser: sign in to Arugula in your browser first, then here",
+                ));
+            }
             if let Err(e) = c.check_form() {
                 refused("enroll", &s.account, &c, &e.to_string());
                 return Err(err(StatusCode::BAD_REQUEST, &e.to_string()));
@@ -271,7 +292,7 @@ pub struct RecoveryCerts {
 /// Recovery codes: certificates a device signed for keys only the person
 /// holds (on paper). Control never sees the keys. The first device makes
 /// them; any device can make new ones, which retire the old.
-pub async fn add_recovery(State(app): State<Arc<App>>, s: Session, Json(b): Json<RecoveryCerts>) -> R {
+pub async fn add_recovery(State(app): State<Arc<App>>, s: PageSession, Json(b): Json<RecoveryCerts>) -> R {
     if b.certs.is_empty() || b.certs.len() > 4 {
         return Err(err(StatusCode::BAD_REQUEST, "one to 4 recovery codes"));
     }
@@ -372,7 +393,7 @@ pub struct Pin {
 /// Another browser with that passkey derives the same keys and checks this
 /// before it takes the root, so control can't hand it an account of its
 /// own. Kept only if it's that device's signature over this account's root.
-pub async fn pin(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>, Json(b): Json<Pin>) -> R {
+pub async fn pin(State(app): State<Arc<App>>, s: PageSession, Path(id): Path<String>, Json(b): Json<Pin>) -> R {
     let (trust, certs, revs) = trusted(&app, &s.account)?;
     let trust = trust.ok_or_else(|| err(StatusCode::CONFLICT, "this account has no devices yet"))?;
     let now = trust.evaluate(&certs, &revs);
@@ -385,7 +406,7 @@ pub async fn pin(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>
     Ok(Json(json!({})))
 }
 
-pub async fn approve(State(app): State<Arc<App>>, s: Session, Path(id): Path<String>, Json(b): Json<Enroll>) -> R {
+pub async fn approve(State(app): State<Arc<App>>, s: PageSession, Path(id): Path<String>, Json(b): Json<Enroll>) -> R {
     let (pending, approved) =
         app.db.device(&s.account, &id)?.ok_or_else(|| err(StatusCode::NOT_FOUND, "no such device"))?;
     if approved {
@@ -704,7 +725,7 @@ fn mac_ok(mac: &Option<String>) -> Result<(), ApiError> {
 
 pub async fn join_approve(
     State(app): State<Arc<App>>,
-    s: Session,
+    s: PageSession,
     Path(code): Path<String>,
     Json(b): Json<JoinApprove>,
 ) -> R {

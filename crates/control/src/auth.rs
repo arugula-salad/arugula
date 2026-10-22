@@ -6,7 +6,10 @@
 //! - **The CLI** (M49) is a `cli` device: it joins with a code, as a
 //!   daemon does, and then signs each request as a daemon does (below).
 //!   A signed request from an approved CLI device is a session for its
-//!   account, with no cookie to ride on, so it needs no origin.
+//!   account, with no cookie to ride on, so it needs no origin; but only
+//!   on routes whose routes.toml row lists `cli` (`clients::gate`). Its key
+//!   is a file an agent on its machine can read, so what only the page does
+//!   takes the cookie alone ([`PageSession`]).
 //! - **Daemons** sign each request with their enrolled Ed25519 key:
 //!   `x-arugula-auth: v2 <device id> <ms> <nonce> <sig>` over
 //!   `illogical daemon auth v2\n<METHOD>\n<path and query>\n<ms>\n<nonce>\n<sha256 of the body, hex>\n`,
@@ -31,7 +34,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 
-use crate::{ApiError, App, db::hosted::HostedRow, err};
+use crate::{ApiError, App, db::hosted::HostedRow, err, refusal};
 
 pub const SESSION_COOKIE: &str = "ilg_session";
 const STATE_COOKIE: &str = "ilg_oauth";
@@ -124,6 +127,29 @@ impl FromRequestParts<Arc<App>> for Session {
             a.set(&account);
         }
         Ok(Session { account })
+    }
+}
+
+/// A signed-in person on control's page, by their session cookie alone:
+/// what only the page does takes this, not [`Session`]. No signature
+/// stands in for it, a CLI's included: allowing the desktop app's sign-in,
+/// adding a passkey, enrolling and approving devices, recovery codes.
+pub struct PageSession {
+    pub account: String,
+    /// The hash of the cookie's token: this sign-in's row in `sessions`.
+    pub token_hash: String,
+}
+
+impl FromRequestParts<Arc<App>> for PageSession {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, app: &Arc<App>) -> Result<Self, ApiError> {
+        if parts.extensions.get::<Signed>().is_some() || parts.extensions.get::<HostedSigned>().is_some() {
+            return Err(refusal(StatusCode::UNAUTHORIZED, crate::clients::PAGE_ONLY, crate::clients::PAGE_ONLY_SAY));
+        }
+        let s = Session::from_request_parts(parts, app).await?;
+        let token_hash = cookie(&parts.headers, SESSION_COOKIE).map(hash).unwrap_or_default();
+        Ok(PageSession { account: s.account, token_hash })
     }
 }
 
@@ -499,7 +525,7 @@ pub async fn github_callback(
     }
     match github_finish(&app, &headers, q).await {
         Ok((account, next)) => {
-            let cookie = match start_session(&app, &account) {
+            let cookie = match start_session(&app, &account, Via::Github) {
                 Ok(c) => c,
                 Err(e) => return e.into_response(),
             };
@@ -578,11 +604,33 @@ pub(crate) async fn exchange(app: &App, gh: &crate::Github, code: &str, redirect
     tok.access_token.ok_or_else(|| tok.error_description.unwrap_or_else(|| "no token".into()))
 }
 
-/// A new session for `account`: the Set-Cookie for it.
-pub fn start_session(app: &App, account: &str) -> Result<HeaderValue, ApiError> {
+/// How a session was signed in, kept on its row: adding a passkey to an
+/// account with none asks for a GitHub sign-in a few minutes old.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Via {
+    Github,
+    Passkey,
+    /// The desktop app's window, from a browser's hand-over
+    /// (`app_login`).
+    App,
+}
+
+impl Via {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Via::Github => "github",
+            Via::Passkey => "passkey",
+            Via::App => "app",
+        }
+    }
+}
+
+/// A new session for `account`, signed in `via`: the Set-Cookie for it.
+pub fn start_session(app: &App, account: &str, via: Via) -> Result<HeaderValue, ApiError> {
     let t = token();
     let now = now_ms();
     app.db.add_session(&hash(&t), account, now, now + SESSION_DAYS * 86_400_000)?;
+    app.db.set_session_via(&hash(&t), via.as_str())?;
     Ok(set_cookie(app, SESSION_COOKIE, &t, SESSION_DAYS * 86_400))
 }
 

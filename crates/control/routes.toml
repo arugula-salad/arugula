@@ -16,7 +16,8 @@
 # - `auth`: what control checks before it acts:
 #   - `public`: nothing (some are rate-limited; `note` says what stands in);
 #   - `session`: a signed-in person, by their cookie, or a CLI device by its
-#     signature (`auth::Session`);
+#     signature (`auth::Session`) where `clients` lists `cli`; what only the
+#     page does takes the cookie alone (`auth::PageSession`);
 #   - `daemon`: an enrolled daemon's signature (`auth::DaemonAuth`);
 #   - `daemon_optional`: a daemon's signature when there is one, and nothing
 #     otherwise;
@@ -40,7 +41,9 @@
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
 #   link or a redirect, with no page of control's), `github` and `stripe`
-#   (their webhooks), `operator` (by hand).
+#   (their webhooks), `operator` (by hand). Enforced for the CLI: a CLI
+#   device's signature is refused (401, `page_only`) on every route that
+#   doesn't list `cli` (`clients::gate`).
 # - `note`: anything the rest doesn't say.
 #
 # Not routes, so not here: what a block's origin or the docs origin is
@@ -146,7 +149,15 @@ path = "/auth/passkey/register"
 process = "hub"
 auth = "sign_in"
 clients = ["page"]
-note = "A new account's first passkey, or one more for the session's account."
+note = "A new account's first passkey, or one more for the session's account: that one needs one of its passkeys to agree (`register/step-up`) or, with none, a GitHub sign-in from the last ten minutes."
+
+[[route]]
+method = "POST"
+path = "/auth/passkey/register/step-up"
+process = "hub"
+auth = "session"
+clients = ["page"]
+note = "The challenge one of the account's passkeys signs to add a new one: it names the account and the new passkey's id."
 
 [[route]]
 method = "POST"
@@ -439,7 +450,7 @@ method = "GET"
 path = "/api/teams"
 process = "hub"
 auth = "session"
-clients = ["page"]
+clients = ["page", "cli"]
 
 [[route]]
 method = "POST"
@@ -815,7 +826,7 @@ method = "POST"
 path = "/api/chat/targets"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "cli"]
 
 [[route]]
 method = "POST"
@@ -850,14 +861,14 @@ method = "GET"
 path = "/api/chat/rooms/{id}/messages"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "cli"]
 
 [[route]]
 method = "POST"
 path = "/api/chat/rooms/{id}/messages"
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "cli"]
 
 [[route]]
 method = "PATCH"
@@ -1254,7 +1265,7 @@ method = "GET"
 path = "/api/projects"  # wire::projects::PROJECTS
 process = "platform"
 auth = "session"
-clients = ["page"]
+clients = ["page", "cli"]
 
 [[route]]
 method = "GET"
