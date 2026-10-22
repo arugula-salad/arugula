@@ -353,7 +353,7 @@ fn render(m: &Manifest) -> String {
         s,
         "- **The platform plane** ({} tables) is what has to exist while every machine is asleep: \
          billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and \
-         issues, and projects' native issues. Control reads most of it, \
+         issues, and projects' native issues and deploys. Control reads most of it, \
          and says so here.\n",
         count(Plane::Platform)
     );

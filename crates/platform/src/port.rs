@@ -97,9 +97,10 @@ pub struct Deleted {
 /// In process. Billing (M139) answers `active_plans`, `roster_changed`
 /// and its part of `account_deleted`; Cloud (M137) `delete_blockers` and
 /// its part of `account_deleted`; chat (M138) `chat_on` and its part of
-/// `account_deleted`; projects and grants, the forge mirror (M162) and
-/// native issues (M194), their part of `account_deleted`; the GitHub App
-/// (M161) `forge_standing` and `github_token`; sends (M168) `send_draft`.
+/// `account_deleted`; projects and grants, the forge mirror (M162),
+/// native issues (M194) and deploys (M217), their part of
+/// `account_deleted`; the GitHub App (M161) `forge_standing` and
+/// `github_token`; sends (M168) `send_draft`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         Box::pin(async move {
@@ -116,6 +117,7 @@ impl PlatformPort for Platform {
             db::projects::erase_account(&tx, deleted)?;
             db::forge::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
             db::issues::erase_account(&tx, deleted)?;
+            db::deploys::erase_account(&tx, deleted)?;
             let rooms = crate::chat::erase_account(&tx, deleted)?;
             tx.commit()?;
             drop(c);
