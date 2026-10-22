@@ -44,6 +44,7 @@ decided_on: "2026-10-21"
 reviews: []
 constrains:
   - "path:crates/platform/src/compute"
+  - "path:crates/platform/src/hosted"
   - "path:crates/daemon/src/agent"
 ---
 
@@ -55,16 +56,22 @@ A hosted machine pauses only between turns (Jake, 2026-10-20 and 2026-10-21,
 - **Busy and idle come from the daemon.** It's busy from the start of an
   agent turn or a foreground command to its end, and reports it over its
   control link (M180).
-- **The platform holds a busy box** by extending the sandbox's timeout. When
-  the daemon reports idle, the timeout runs out and the provider pauses the
-  box, keeping memory and disk.
+- **The platform holds a busy box** by extending the sandbox's timeout:
+  the leader sets it to the idle timeout from now when the box turns busy,
+  then every third of the idle timeout, so a failed hold doesn't let it
+  lapse. When the daemon reports idle, the timeout runs out and the
+  provider pauses the box, keeping memory and disk.
 - **Nothing holds a box forever.** A daemon that goes silent is treated as
   idle, so the box pauses after the normal idle timeout.
-- **E2B's cap on continuous runtime** (24 hours on Pro): before a busy box
-  reaches it, the platform pauses and resumes it at the next idle moment.
-  A single turn longer than the cap is reported in its transcript, and to
-  Jake.
+- **E2B's cap on continuous runtime** (24 hours on Pro, 1 on Hobby; a
+  timeout past it is cut to it): in the last twelfth before it, the
+  platform pauses and resumes a box at its next idle moment, which restarts
+  the clock. A single turn that runs to the cap pauses there; the platform
+  wakes it at once, says so on the workspace, and logs it for Jake (M181).
+- **A race is left at the timeout.** A turn that starts in the last seconds
+  before it can find its box pausing; the next hold finds the box just
+  paused under a busy daemon and wakes it.
 
 Never pause a box whose daemon reports busy.
-Where: `crates/platform/src/compute/` (the hold, M181), the daemon's busy/idle report (M180).
+Where: `crates/platform/src/hosted/hold.rs` and `worker.rs` (the hold and the cap, M181), `crates/platform/src/compute/` (`hold`), the daemon's busy/idle report (M180).
 From: #1235 (platform roadmap, step 5), M175 (#1236), M180 (#1241), M181 (#1242).
