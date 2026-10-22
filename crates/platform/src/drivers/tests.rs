@@ -146,6 +146,7 @@ fn released() -> Value {
         "version": "0.59.1",
         "commit": "e".repeat(40),
         "main": "d".repeat(40),
+        "script": "5".repeat(40),
         "release": "https://github.com/arugula-salad/arugula/releases/tag/v0.59.1",
         "published": true,
         "workflow": { "run": "https://github.com/arugula-salad/arugula/actions/runs/42", "conclusion": "failure",
@@ -183,8 +184,14 @@ fn arugula_release_plans_a_bump_mints_for_arugula_only_and_never_rolls_back() {
     ] {
         assert!(d.refuses(&bad).is_some(), "{bad:?}");
     }
-    assert_eq!(d.mints(&e), [Mint::GithubWrite { name: "RELEASE_TOKEN", repo: "arugula-salad/arugula" }]);
-    assert_eq!(d.secret_names(), ["RELEASE_TOKEN"]);
+    assert_eq!(
+        d.mints(&e),
+        [
+            Mint::GithubWrite { name: "RELEASE_TOKEN", repo: "arugula-salad/arugula" },
+            Mint::GithubFollow { name: "RELEASE_READ_TOKEN", repo: "arugula-salad/arugula" }
+        ]
+    );
+    assert_eq!(d.secret_names(), ["RELEASE_TOKEN", "RELEASE_READ_TOKEN"]);
     assert!(!d.rolls_back());
     let r = RollBack { deploy: format!("dep_{}", "b".repeat(32)), to: Settings::new() };
     assert!(d.plan_roll_back(&e, &source, &r).is_none());
@@ -220,6 +227,7 @@ fn arugula_release_plans_a_bump_mints_for_arugula_only_and_never_rolls_back() {
     assert_eq!(kept["release"], "https://github.com/arugula-salad/arugula/releases/tag/v0.59.1");
     assert_eq!(kept["workflow_run"], "https://github.com/arugula-salad/arugula/actions/runs/42");
     assert_eq!(kept["published"], true);
+    assert_eq!(kept["script"], "5".repeat(40), "the scripts/release it ran, by blob id");
     let mut bad = released();
     bad["workflow"]["run"] = "https://evil.example/runs/1".into();
     assert!(!d.kept(&e, &dep, &bad).contains_key("workflow_run"));
@@ -357,4 +365,28 @@ fn chant_fly_rolls_back_to_what_a_deploy_kept() {
     assert!(back.text.contains(&format!("flyctl deploy --app acme-web --image {}", image('2'))), "{}", back.text);
     assert!(back.text.contains(&format!("roll back to {}\n", r.deploy)), "{}", back.text);
     assert!(driver("apps-platform").unwrap().plan_roll_back(&env("apps-platform"), &source(), &r).is_none());
+}
+
+/// What GitHub says of a commit before Arugula's release mints anything
+/// (M221), as it answered for real ones (2026-10-22): a `ci/green` ref
+/// (200, or 404 for none; a short sha is 404 too, the ref is exact), a
+/// `ci/revoked` one, and `compare/{sha}...main` (`ahead` with `behind_by`
+/// 0 for a commit on main; `diverged` for a branch's).
+#[test]
+fn arugula_release_checks_the_commit_with_github() {
+    let sha = "fe284314420e9e803d7c2ca93f62b7d9f72bdc69";
+    let on_main = json!({ "ahead_by": 337, "behind_by": 0, "status": "ahead" });
+    assert_eq!(arugula_release::source_verdict(sha, 200, 404, &on_main), Ok(()));
+    let head = json!({ "ahead_by": 0, "behind_by": 0, "status": "identical" });
+    assert_eq!(arugula_release::source_verdict(sha, 200, 404, &head), Ok(()));
+    for (green, revoked, compare, why) in [
+        (404, 404, on_main.clone(), "no ci/green"),
+        (200, 200, on_main.clone(), "ci/revoked"),
+        (200, 404, json!({ "ahead_by": 3, "behind_by": 1, "status": "diverged" }), "isn't on"),
+        (200, 404, json!({ "ahead_by": 0, "behind_by": 337, "status": "behind" }), "isn't on"),
+        (200, 404, json!({}), "isn't on"),
+    ] {
+        let e = arugula_release::source_verdict(sha, green, revoked, &compare).unwrap_err();
+        assert!(e.contains(why), "{why}: {e}");
+    }
 }

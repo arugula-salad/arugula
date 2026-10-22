@@ -1121,16 +1121,21 @@ fn a_deploy_box_applies_an_apps_platform_deploy() {
 /// minted token comes on the driver's standard input, `arugulad
 /// _arugula-release` runs the commit's real `scripts/release bump` against
 /// a bare repository standing in for GitHub, which tags v0.1.1 and pushes
-/// it with main; the token is revoked; the release workflow is followed
-/// (a fake API shaped as GitHub's); the run succeeds and reports the tag
-/// on its result pipe. The token is never on disk or in the pane.
+/// it with main; the write token is revoked; the release workflow is
+/// followed with the read token (a fake API shaped as GitHub's), which is
+/// revoked after; the run succeeds and reports the tag on its result pipe.
+/// Neither token is ever on disk or in the pane.
 #[test]
 fn a_deploy_box_releases_arugula() {
     const TOKEN: &str = "ghs_m221releaseTOKENneverOnDisk0000000"; // gitleaks:allow
+    const READ: &str = "ghs_m221readTOKENneverOnDisk000000000"; // gitleaks:allow
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
     let f = Fake::new();
     *f.purpose.lock().unwrap() = Some("deploy".into());
-    *f.given.lock().unwrap() = Some(vec![Secret { name: "RELEASE_TOKEN".into(), value: TOKEN.into(), revoke: None }]);
+    *f.given.lock().unwrap() = Some(vec![
+        Secret { name: "RELEASE_TOKEN".into(), value: TOKEN.into(), revoke: None },
+        Secret { name: "RELEASE_READ_TOKEN".into(), value: READ.into(), revoke: None },
+    ]);
     let url = serve(&rt, f.clone());
     let marks: PathBuf = std::env::temp_dir().join(format!("arugula-release-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&marks);
@@ -1206,7 +1211,7 @@ fn a_deploy_box_releases_arugula() {
         &dep,
         &two,
         &f.root,
-        ("arugula-release", "arugula-salad/arugula", &["RELEASE_TOKEN"]),
+        ("arugula-release", "arugula-salad/arugula", &["RELEASE_TOKEN", "RELEASE_READ_TOKEN"]),
         settings,
     );
     f.items.lock().unwrap().push(item);
@@ -1228,14 +1233,20 @@ fn a_deploy_box_releases_arugula() {
     let end: serde_json::Value = serde_json::from_str(&reports[1].detail).unwrap();
     assert_eq!(end["result"]["tag"], "v0.1.1", "{end}");
     assert_eq!(end["result"]["published"], true, "{end}");
-    assert_eq!(*revoked.lock().unwrap(), [TOKEN.to_ascii_lowercase()], "the token revoked from the box");
+    assert_eq!(
+        *revoked.lock().unwrap(),
+        [TOKEN.to_ascii_lowercase(), READ.to_ascii_lowercase()],
+        "both tokens revoked from the box, the write one first"
+    );
     let bare = marks.join("remotes/arugula-salad/arugula.git");
     assert_eq!(git(&bare, &["rev-parse", "v0.1.1^{commit}^"]), two, "v0.1.1 is a bump on the commit");
     assert!(git(&bare, &["cat-file", "-p", "v0.1.1"]).contains(&format!("Arugula-Deploy: {dep}")));
     std::thread::sleep(Duration::from_millis(300));
-    assert!(!text.contains(TOKEN), "the token is in the pane: {text}");
-    let found: Vec<PathBuf> =
-        [d.state.as_path(), marks.as_path()].iter().flat_map(|dir| holding(dir, TOKEN.as_bytes())).collect();
-    assert!(found.is_empty(), "the token is on disk: {found:?}");
+    for token in [TOKEN, READ] {
+        assert!(!text.contains(token), "a token is in the pane: {text}");
+        let found: Vec<PathBuf> =
+            [d.state.as_path(), marks.as_path()].iter().flat_map(|dir| holding(dir, token.as_bytes())).collect();
+        assert!(found.is_empty(), "a token is on disk: {found:?}");
+    }
     let _ = std::fs::remove_dir_all(&marks);
 }

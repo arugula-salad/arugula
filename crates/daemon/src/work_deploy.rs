@@ -647,6 +647,11 @@ fn driver_command(
     ]
     .into_iter()
     .map(|(k, v)| (k.to_owned(), v))
+    .chain(
+        // A box that runs the fake driver (tests, testnet) says so: only
+        // there do drivers take the flags that point them at fakes (M221).
+        fake_on().then(|| ("ARUGULA_HOSTED_FAKE_DRIVER".to_owned(), "1".to_owned())),
+    )
     .collect();
     let script = driver_script(&work, argv);
     let mut c = match as_ {

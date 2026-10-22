@@ -799,8 +799,9 @@ async fn chant_fly_links_chants_ledger_and_rolls_back_to_what_it_kept() {
 }
 
 /// Arugula's own release on the platform (M221): its box is handed the
-/// bump and the lane and one token's name to be minted; nothing is minted
-/// for a project the platform no longer names; and what the box reports
+/// bump and the lane and its two tokens' names to be minted; nothing is
+/// minted before GitHub says the commit is on main and green; and what the
+/// box reports
 /// (the tag, published) succeeds the deploy, its log keeping the tag and
 /// the release's page.
 #[tokio::test]
@@ -835,14 +836,14 @@ async fn arugula_release_is_handed_its_settings_and_mints_only_for_arugulas_proj
     let w = pull(&app, &m, &[TAKES_RUN, TAKES_DEPLOY]).await;
     let dw = w.items[0].deploy.clone().unwrap();
     assert_eq!((dw.settings["bump"].as_str(), dw.settings["lane"].as_str()), ("patch", "daemon"));
-    assert_eq!(dw.secrets, ["RELEASE_TOKEN"], "the minted token's name only");
+    assert_eq!(dw.secrets, ["RELEASE_TOKEN", "RELEASE_READ_TOKEN"], "the minted tokens' names only");
     assert!(arugula_e2e::drivers::planned(&dw.driver, &dw.operation, &dw.settings, None));
     let run = app.db.run(&app.db.deploy_run(&id).unwrap().unwrap().run).unwrap().unwrap();
     work::report(&app, &m.m, &m.report(&run, RunState::Approved, RunState::Running, now_ms(), "{}")).await.unwrap();
-    // The platform stops naming the project: nothing is minted.
-    crate::drivers::arugula_release::TEST_PROJECTS.lock().unwrap().retain(|p| p != &t);
+    // GitHub can't be asked whether the commit is on main and green (this
+    // platform has no App): nothing is minted.
     match ask(&app, &m, &run.id).await {
-        SecretsGiven::Refused { why } => assert!(why.contains("only Arugula's own project"), "{why}"),
+        SecretsGiven::Refused { why } => assert!(why.contains("no GitHub App to check the commit"), "{why}"),
         other => panic!("{other:?}"),
     }
     let end = json!({ "exit": 0, "result": {

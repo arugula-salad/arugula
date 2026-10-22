@@ -15,10 +15,14 @@
 //!   commit's own `scripts/release bump`, which tags and pushes `main` and
 //!   the tag atomically, revokes the token, and follows the tag's release
 //!   workflow to its end.
-//! - **Its token** is minted for the run: an installation token of the
-//!   platform's GitHub App, `contents: write` on [`REPO`] alone
-//!   ([`Mint::GithubWrite`], [`TOKEN`]). Nothing else: the release
-//!   workflow's own secrets stay in GitHub Actions.
+//! - **Its tokens** are minted for the run, once the platform has checked
+//!   with GitHub that the commit is on `main` and green ([`source_checked`]):
+//!   an installation token of the platform's GitHub App, `contents: write`
+//!   on [`REPO`] alone ([`Mint::GithubWrite`], [`TOKEN`]), and one that
+//!   only reads its Actions runs and contents ([`Mint::GithubFollow`],
+//!   [`READ_TOKEN`]), to follow the workflow within GitHub's limits.
+//!   Nothing else: the release workflow's own secrets stay in GitHub
+//!   Actions.
 //! - **Verify:** the run exited 0, and it reported the tag it pushed (of
 //!   the environment's lane) and that the release workflow published it.
 //!   The log keeps the tag, the commits, the release's page and the
@@ -26,15 +30,17 @@
 //! - **No roll back:** a bad release is fixed by a new patch release.
 
 use arugula_e2e::drivers::{
-    arugula_release::{self as ar, Lane, REPO, TOKEN},
+    arugula_release::{self as ar, BRANCH, Lane, READ_TOKEN, REPO, TOKEN},
     word,
 };
 use serde_json::{Map, Value};
 
 use super::{Driver, Mint, Verdict, exited_0};
-use crate::db::{
-    deploys::{Deploy, Environment, Source},
-    runs::Run,
+use crate::{
+    Platform,
+    db::deploys::{Deploy, Environment, Source, SourceKind},
+    db::runs::Run,
+    forge::{Caller, Purpose, Repo},
 };
 
 /// Its name, as environments name it.
@@ -95,7 +101,7 @@ impl Driver for ArugulaRelease {
     }
 
     fn mints(&self, _: &Environment) -> Vec<Mint> {
-        vec![Mint::GithubWrite { name: TOKEN, repo: REPO }]
+        vec![Mint::GithubWrite { name: TOKEN, repo: REPO }, Mint::GithubFollow { name: READ_TOKEN, repo: REPO }]
     }
 
     fn verify(&self, env: &Environment, _: &Deploy, run: &Run, reported: &Value) -> Verdict {
@@ -119,7 +125,7 @@ impl Driver for ArugulaRelease {
         let Some(t) = tag(env, reported) else { return m };
         m.insert("tag".into(), t.into());
         m.insert("release".into(), ar::release_url(t).into());
-        for k in ["commit", "main"] {
+        for k in ["commit", "main", "script"] {
             if let Some(c) = at(reported, k).filter(|c| commit_ok(c)) {
                 m.insert(k.into(), c.into());
             }
@@ -134,4 +140,66 @@ impl Driver for ArugulaRelease {
         m.insert("published".into(), (reported["published"] == Value::Bool(true)).into());
         m
     }
+}
+
+/// What GitHub said of a commit, read: green (`ci/green/<sha>`'s ref
+/// answered 200), revoked (`ci/revoked/<sha>`'s did), and the compare of
+/// it with `main` (`GET /repos/{repo}/compare/{sha}...main`: `identical`
+/// or `ahead` when it's on `main`). `Err` why it can't be released.
+pub fn source_verdict(sha: &str, green: u16, revoked: u16, compare: &Value) -> Result<(), String> {
+    if revoked == 200 {
+        return Err(format!("{sha} passed CI and then failed a re-run (ci/revoked): it isn't released"));
+    }
+    if green != 200 {
+        return Err(format!("{sha} has no ci/green tag on GitHub: it isn't released"));
+    }
+    let on_main =
+        matches!(compare["status"].as_str(), Some("identical" | "ahead")) && compare["behind_by"].as_u64() == Some(0);
+    if !on_main {
+        return Err(format!("{sha} isn't on {REPO}'s {BRANCH}: it isn't released"));
+    }
+    Ok(())
+}
+
+/// Before anything is minted for `d`'s run: GitHub, asked with the App's
+/// read token, says the commit is on `main` and green (the box checks
+/// again). `Err` why not.
+pub async fn source_checked(app: &Platform, d: &Deploy) -> Result<(), String> {
+    let sha = d.source.reference.as_str();
+    if d.source.kind != SourceKind::Commit || d.source.place != REPO {
+        return Err(format!("the {NAME} driver releases a commit of {REPO} only"));
+    }
+    let gh = app.github.as_ref().ok_or("this platform has no GitHub App to check the commit with")?;
+    let install = match gh.installation(&app.http, REPO).await {
+        Ok(Some(i)) => i,
+        Ok(None) => return Err(format!("the platform's GitHub App isn't installed on {REPO}")),
+        Err(e) => return Err(format!("couldn't ask GitHub about {REPO}: {e:#}")),
+    };
+    let caller = Caller::of(app, "platform");
+    let token = gh
+        .read_token(&caller, install.id, Repo::Name(REPO), Purpose::Read)
+        .await
+        .map_err(|e| format!("couldn't read {REPO}: {e:#}"))?;
+    let api = gh.api.trim_end_matches('/');
+    let get = async |path: String| -> Result<(u16, Value), String> {
+        let r = app
+            .http
+            .get(format!("{api}{path}"))
+            .bearer_auth(token.secret())
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("User-Agent", "arugula-platform")
+            .send()
+            .await
+            .map_err(|e| format!("couldn't ask GitHub about {sha}: {e}"))?;
+        let status = r.status().as_u16();
+        Ok((status, r.json::<Value>().await.unwrap_or_default()))
+    };
+    let (green, _) = get(format!("/repos/{REPO}/git/ref/tags/ci/green/{sha}")).await?;
+    let (revoked, _) = get(format!("/repos/{REPO}/git/ref/tags/ci/revoked/{sha}")).await?;
+    let (status, compare) = get(format!("/repos/{REPO}/compare/{sha}...{BRANCH}")).await?;
+    if status != 200 {
+        return Err(format!("GitHub couldn't compare {sha} with {BRANCH} ({status}): it isn't released"));
+    }
+    source_verdict(sha, green, revoked, &compare)
 }

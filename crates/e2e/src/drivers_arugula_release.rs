@@ -12,9 +12,11 @@
 //! Actions. The box follows that workflow to its end, for at most
 //! [`FOLLOW_MINUTES`].
 //!
-//! Its one credential is an installation token of the platform's GitHub
-//! App, minted for the run: `contents: write` on [`REPO`] alone ([`TOKEN`]).
-//! The environment holds no secret of its own.
+//! Its credentials are installation tokens of the platform's GitHub App,
+//! minted for the run: `contents: write` on [`REPO`] alone ([`TOKEN`]),
+//! revoked right after the push, and one that only reads its Actions runs
+//! and contents ([`READ_TOKEN`]), to follow the workflow. The environment
+//! holds no secret of its own.
 //!
 //! **No roll back.** A release is never taken back: a bad one is fixed by a
 //! new patch release. The plan says so.
@@ -33,6 +35,11 @@ pub const BRANCH: &str = "main";
 /// The name the run gets its minted token under.
 pub const TOKEN: &str = "RELEASE_TOKEN";
 
+/// The name the run gets its second, read-only token under: the
+/// repository's Actions runs and contents, to follow the release's
+/// workflow (GitHub's API without one allows 60 asks an hour an address).
+pub const READ_TOKEN: &str = "RELEASE_READ_TOKEN";
+
 /// Its settings: `bump` (`patch`, `minor` or `major`; default `patch`) and
 /// `lane` (`daemon` for a `v*` tag, `app` for an `app-v*` one; default
 /// `daemon`), as `just release [patch|minor|major] [--app]` takes them.
@@ -41,8 +48,9 @@ pub const LANE: &str = "lane";
 const SETTINGS: &[&str] = &[BUMP, LANE];
 
 /// The longest the box waits for the tag's release workflow to end. A
-/// release takes 12 to 20 minutes; a deploy's box lives two hours.
-pub const FOLLOW_MINUTES: u64 = 60;
+/// release takes 12 to 20 minutes; its read token lasts an hour from when
+/// the run starts.
+pub const FOLLOW_MINUTES: u64 = 45;
 
 /// The release workflow's job that publishes the release: the release is
 /// out once it succeeded, whatever later jobs (deploying control, the
@@ -169,7 +177,8 @@ pub fn plan_lines(source_kind: &str, source_ref: &str, source_where: &str, setti
     );
     t.push_str(&format!(
         "does: run scripts/release bump {bump}{flag} {source_ref}, as that commit has it (what just release runs): \
-         a {bump} bump of {what}, from the higher of the commit's version and {BRANCH}'s\n"
+         a {bump} bump of {what}, from the higher of the commit's version and {BRANCH}'s; the run's log and the \
+         deploy's name the script's blob id\n"
     ));
     t.push_str(&format!(
         "does: stop if {BRANCH} has no {notes} for the new version, the tag is there already, or the commit is in a \
@@ -186,7 +195,12 @@ pub fn plan_lines(source_kind: &str, source_ref: &str, source_where: &str, setti
     ));
     t.push_str(&format!(
         "with: an installation token of the platform's GitHub App that writes {REPO}'s contents and nothing else, \
-         minted for this run, and revoked right after the push\n"
+         minted for this run, and revoked right after the push; and one that only reads its Actions runs and \
+         contents, to follow the workflow, revoked when that ends\n"
+    ));
+    t.push_str(&format!(
+        "check: before either token is minted, the platform checks with GitHub that commit {source_ref} is on \
+         {BRANCH} and passed CI\n"
     ));
     t.push_str(
         "no roll back: a release is never taken back; a bad release is fixed by a new patch release, deployed the \

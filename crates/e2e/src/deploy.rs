@@ -199,9 +199,10 @@ pub fn driver_secrets(driver: &str) -> Option<&'static [&'static str]> {
         // The list's write token (minted unless the environment holds its
         // own) and the app's read token (always minted, M222).
         "apps-platform" => &["APPS_PLATFORM_TOKEN", "SOURCE_TOKEN"],
-        // Arugula's own release (M221): the App's token for the repository,
-        // always minted; the environment holds nothing of its own.
-        "arugula-release" => &["RELEASE_TOKEN"],
+        // Arugula's own release (M221): the App's tokens for the repository
+        // (one writes, one follows the workflow), always minted; the
+        // environment holds nothing of its own.
+        "arugula-release" => &["RELEASE_TOKEN", "RELEASE_READ_TOKEN"],
         _ => return None,
     })
 }

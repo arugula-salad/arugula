@@ -501,7 +501,7 @@ POST /api/environments/{id}/secrets/{name} {"value": "..."}
 Each driver takes only the secret names it declares (the fake driver
 `APP_TOKEN`; chant→Fly `FLY_API_TOKEN` and, instead of a minted one,
 `GITHUB_TOKEN`; apps-platform `APPS_PLATFORM_TOKEN`; arugula-release none,
-its token is minted, see
+its tokens are minted, see
 [control-ops.md](control-ops.md#releasing-arugula-as-a-deploy-m221)). Names that change how a shell or a tool behaves
 (`PATH`, `IFS`, `BASH_ENV`, `LD_*`, `NODE_*`, `GIT_*`, `NPM_CONFIG_*`,
 `SSL_*`, `*_PROXY`, `DEPLOY_*` and the like) are refused everywhere, and a

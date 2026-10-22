@@ -27,8 +27,9 @@
 //!    `main` in one atomic push.
 //! 4. **Revokes the token** at GitHub right after: nothing after needs it.
 //! 5. **Follows the tag's release workflow** to its end, for at most
-//!    [`FOLLOW_MINUTES`], through GitHub's public API (Arugula is public;
-//!    once a minute, within its 60 asks an hour), and reads the release. The run exits 0 only once its publish job
+//!    [`FOLLOW_MINUTES`], with its second token ([`READ_TOKEN`], the App's:
+//!    Actions runs and contents, read-only), and reads the release; then
+//!    revokes that token too. The run exits 0 only once its publish job
 //!    succeeded and the release is out; it reports the tag, the commits,
 //!    the release's page and the workflow's run on fd 3.
 //!
@@ -42,7 +43,7 @@ use std::{
 
 use arugula_e2e::drivers::{
     Settings,
-    arugula_release::{self as ar, BRANCH, BUMP, FOLLOW_MINUTES, LANE, Lane, PUBLISH_JOB, REPO},
+    arugula_release::{self as ar, BRANCH, BUMP, FOLLOW_MINUTES, LANE, Lane, PUBLISH_JOB, READ_TOKEN, REPO},
 };
 use sha2::{Digest as _, Sha256};
 
@@ -89,7 +90,7 @@ impl Config {
             path: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into(),
             git_timeout: Duration::from_secs(600),
             script_timeout: Duration::from_secs(1200),
-            poll: Duration::from_secs(60),
+            poll: Duration::from_secs(30),
             follow: Duration::from_secs(FOLLOW_MINUTES * 60),
         }
     }
@@ -137,6 +138,9 @@ pub fn parse(
         plan: String::new(),
         settings: Settings::new(),
     };
+    // A box that runs the fake driver (tests and testnet) says so in the
+    // driver's environment; a secret can't (`ARUGULA_*` names are refused).
+    let test_box = var("ARUGULA_HOSTED_FAKE_DRIVER").as_deref() == Some("1");
     let mut it = args.iter();
     while let Some(flag) = it.next() {
         let Some(v) = it.next() else { return Err(format!("{flag} has no value")) };
@@ -150,6 +154,10 @@ pub fn parse(
             "--plan" => d.plan = v.clone(),
             "--bump" => _ = d.settings.insert(BUMP.into(), v.clone()),
             "--lane" => _ = d.settings.insert(LANE.into(), v.clone()),
+            // Where it clones, pushes and asks: tests' and testnet's only.
+            "--git-base" | "--api-base" if !test_box => {
+                return Err(format!("{flag} is for a box that runs the fake driver only"));
+            }
             "--git-base" => cfg.git_base = v.clone(),
             "--api-base" => cfg.api_base = v.clone(),
             "--poll-ms" => cfg.poll = ms()?,
@@ -201,6 +209,8 @@ pub struct Released {
     pub commit: String,
     /// `main` after the push (the bump merged into it).
     pub main: String,
+    /// The `scripts/release` it ran: its blob id at the commit.
+    pub script: String,
 }
 
 /// What following the release workflow found.
@@ -311,8 +321,15 @@ pub async fn release(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<Re
     let ci = git.run(&repo, &["ls-remote", &url, &tags[0], &tags[1]]).await.map_err(refused)?;
     green(&ci, sha).map_err(refused)?;
     say(&format!("{sha} is on {BRANCH} and passed CI (ci/green)"));
-    // The commit's own script, outside the checkout.
-    let script = git.run(&repo, &["show", &format!("{sha}:scripts/release")]).await.map_err(refused)?;
+    // The commit's own script, outside the checkout, by its blob id.
+    let spec = format!("{sha}:scripts/release");
+    let script_id = git.run(&repo, &["rev-parse", "--verify", &spec]).await.map_err(refused)?.trim().to_owned();
+    let script = git.run(&repo, &["show", &script_id]).await.map_err(refused)?;
+    say(&format!("scripts/release at {sha} is blob {script_id}"));
+    // The lane's tags before it runs: a run stopped part way is checked
+    // against them.
+    let lane_tags = format!("refs/tags/{}*", lane.prefix());
+    let before = git.run(&repo, &["ls-remote", &url, &lane_tags]).await.map_err(refused)?;
     let script_at = cfg.work.join("release");
     std::fs::write(&script_at, script).map_err(|e| refused(format!("writing its script: {e}")))?;
     let bump = d.settings.get(BUMP).map_or("patch", String::as_str);
@@ -323,8 +340,8 @@ pub async fn release(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<Re
     }
     args.push(sha.into());
     say(&format!("scripts/release {}", args[3..].join(" ")));
-    let run = tokio::process::Command::new("bash")
-        .env_clear()
+    let mut cmd = tokio::process::Command::new("bash");
+    cmd.env_clear()
         .envs(git.env().iter().map(|(k, v)| (k, v)))
         .env("GITHUB_SERVER_URL", cfg.git_base.trim_end_matches('/'))
         .env("GITHUB_REPOSITORY", REPO)
@@ -333,16 +350,29 @@ pub async fn release(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<Re
         .current_dir(&repo)
         .args(&args)
         .stdin(Stdio::null())
-        .kill_on_drop(true)
-        .output();
-    let out = match tokio::time::timeout(cfg.script_timeout, run).await {
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    // Its own process group: a stop takes git and everything it started.
+    #[cfg(unix)]
+    cmd.process_group(0);
+    let child = cmd.spawn().map_err(|e| refused(format!("scripts/release didn't start: {e}")))?;
+    let pid = child.id();
+    let out = match tokio::time::timeout(cfg.script_timeout, child.wait_with_output()).await {
         Ok(Ok(o)) => o,
-        Ok(Err(e)) => return Err(refused(format!("scripts/release didn't start: {e}"))),
+        Ok(Err(e)) => return Err(refused(format!("scripts/release: {e}"))),
         Err(_) => {
-            return Err(refused(format!(
-                "scripts/release took over {}s and was stopped: see whether {REPO} has a new tag",
-                cfg.script_timeout.as_secs()
-            )));
+            stop_group(pid);
+            let why = format!("scripts/release took over {}s and was stopped", cfg.script_timeout.as_secs());
+            // Stopped mid-push, perhaps: a tag of this lane that's new says so.
+            let after = git.run(&repo, &["ls-remote", &url, &lane_tags]).await;
+            return Err(match after.as_ref().map(|a| new_tags(&before, a)) {
+                Ok(new) if new.is_empty() => refused(format!("{why}: it pushed no tag")),
+                Ok(new) => Failed { pushed: true, why: format!("{why}, after it pushed {}", new.join(", ")) },
+                Err(e) => {
+                    Failed { pushed: true, why: format!("{why}, and whether it pushed a tag can't be told: {e}") }
+                }
+            });
         }
     };
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
@@ -376,39 +406,74 @@ pub async fn release(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<Re
     let commit = rev(tag.clone()).await.map_err(pushed)?;
     let main = rev(main_short).await.map_err(pushed)?;
     say(&format!("pushed {tag} ({commit}) and {BRANCH} ({main})"));
-    Ok(Released { tag, version, commit, main })
+    Ok(Released { tag, version, commit, main, script: script_id })
 }
 
-/// GitHub's API, as anyone: Arugula is public, and the token is gone by
-/// now. Unauthenticated, an address gets 60 asks an hour (an unchanged
-/// answer by `ETag` counts too), so it asks once a minute.
+/// Kill process group `pid` (a stopped `scripts/release` and what it
+/// started).
+fn stop_group(pid: Option<u32>) {
+    #[cfg(unix)]
+    if let Some(pid) = pid.and_then(|p| i32::try_from(p).ok()) {
+        let _ = nix::sys::signal::killpg(nix::unistd::Pid::from_raw(pid), nix::sys::signal::Signal::SIGKILL);
+    }
+    #[cfg(not(unix))]
+    let _ = pid;
+}
+
+/// The tags in `after` (`ls-remote`'s answer) that `before` didn't have.
+pub fn new_tags(before: &str, after: &str) -> Vec<String> {
+    let refs = |s: &str| -> Vec<String> {
+        s.lines()
+            .filter_map(|l| l.split_whitespace().nth(1))
+            .filter(|r| !r.ends_with("^{}"))
+            .map(|r| r.trim_start_matches("refs/tags/").to_owned())
+            .collect()
+    };
+    let had = refs(before);
+    refs(after).into_iter().filter(|t| !had.contains(t)).collect()
+}
+
+/// GitHub's API, with the run's read token ([`READ_TOKEN`]: Actions runs
+/// and contents, read-only), which has the App's rate limit. Without it, or
+/// once it's expired (it lasts an hour), as anyone: Arugula is public, but
+/// an address gets 60 asks an hour that way.
 struct Api {
     http: reqwest::Client,
     base: String,
+    token: Option<String>,
 }
 
 impl Api {
-    fn new(base: &str) -> Result<Self, String> {
+    fn new(base: &str, token: Option<&str>) -> Result<Self, String> {
         let http = crate::roots::http()
             .timeout(Duration::from_secs(20))
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| format!("an HTTP client: {e}"))?;
-        Ok(Api { http, base: base.trim_end_matches('/').to_owned() })
+        Ok(Api { http, base: base.trim_end_matches('/').to_owned(), token: token.map(str::to_owned) })
     }
 
     /// `GET path`: its JSON, or what went wrong (its status, `0` when it
     /// wasn't reached).
-    async fn get(&self, path: &str) -> Result<serde_json::Value, u16> {
-        let r = self
-            .http
-            .get(format!("{}{path}", self.base))
-            .header("Accept", "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .header("User-Agent", "arugula-release")
-            .send()
-            .await
-            .map_err(|_| 0u16)?;
+    async fn get(&mut self, path: &str) -> Result<serde_json::Value, u16> {
+        let ask = |token: Option<&str>| {
+            let mut req = self
+                .http
+                .get(format!("{}{path}", self.base))
+                .header("Accept", "application/vnd.github+json")
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .header("User-Agent", "arugula-release");
+            if let Some(t) = token {
+                req = req.bearer_auth(t);
+            }
+            req.send()
+        };
+        let mut r = ask(self.token.as_deref()).await.map_err(|_| 0u16)?;
+        if r.status().as_u16() == 401 && self.token.is_some() {
+            say("the read token is no longer good (it lasts an hour): asking as anyone");
+            self.token = None;
+            r = ask(None).await.map_err(|_| 0u16)?;
+        }
         let status = r.status().as_u16();
         if status != 200 {
             return Err(status);
@@ -427,9 +492,9 @@ impl Api {
 
 /// Follow the release workflow `lane`'s tag on `r.commit` runs, to its end
 /// or [`Config::follow`], then read the release.
-pub async fn follow(cfg: &Config, lane: Lane, r: &Released) -> Followed {
+pub async fn follow(cfg: &Config, lane: Lane, r: &Released, token: Option<&str>) -> Followed {
     let mut f = Followed::default();
-    let api = match Api::new(&cfg.api_base) {
+    let mut api = match Api::new(&cfg.api_base, token) {
         Ok(a) => a,
         Err(why) => {
             say(&why);
@@ -537,6 +602,7 @@ pub fn result(r: Option<&Released>, f: Option<&Followed>) -> serde_json::Value {
         v["commit"] = r.commit.clone().into();
         v["main"] = r.main.clone().into();
         v["release"] = ar::release_url(&r.tag).into();
+        v["script"] = r.script.clone().into();
     }
     if let Some(f) = f {
         v["published"] = f.published.into();
@@ -547,18 +613,28 @@ pub fn result(r: Option<&Released>, f: Option<&Followed>) -> serde_json::Value {
     v
 }
 
-/// The whole apply: release, revoke the token (nothing after needs it),
-/// then follow the workflow.
-pub async fn apply(cfg: &Config, d: &Deploy, token: Option<&str>) -> (Result<Released, Failed>, Option<Followed>) {
-    let released = release(cfg, d, token).await;
-    revoke_at("arugula-release", &cfg.api_base, "release", token).await;
-    match released {
+/// The whole apply: release, revoke the write token (nothing after needs
+/// it), follow the workflow, then revoke the read token.
+pub async fn apply(cfg: &Config, d: &Deploy, t: &Tokens) -> (Result<Released, Failed>, Option<Followed>) {
+    let released = release(cfg, d, t.write.as_deref()).await;
+    revoke_at("arugula-release", &cfg.api_base, "release", t.write.as_deref()).await;
+    let out = match released {
         Ok(r) => {
-            let f = follow(cfg, d.lane(), &r).await;
+            let f = follow(cfg, d.lane(), &r, t.read.as_deref()).await;
             (Ok(r), Some(f))
         }
         Err(e) => (Err(e), None),
-    }
+    };
+    revoke_at("arugula-release", &cfg.api_base, "read", t.read.as_deref()).await;
+    out
+}
+
+/// The run's tokens, from its environment: [`TOKEN`], which writes, and
+/// [`READ_TOKEN`], which follows the workflow.
+#[derive(Default)]
+pub struct Tokens {
+    pub write: Option<String>,
+    pub read: Option<String>,
 }
 
 /// Write the result on fd 3, when this process has one (a deploy's box
@@ -578,6 +654,23 @@ fn report(v: &serde_json::Value) {
 #[cfg(not(unix))]
 fn report(_: &serde_json::Value) {}
 
+/// Close fd 3 on exec, when it's open: only this process writes the
+/// result.
+#[cfg(unix)]
+fn keep_result_fd() {
+    // SAFETY: F_GETFD and F_SETFD only read and set fd 3's close-on-exec
+    // flag.
+    unsafe {
+        let flags = nix::libc::fcntl(3, nix::libc::F_GETFD);
+        if flags >= 0 {
+            nix::libc::fcntl(3, nix::libc::F_SETFD, flags | nix::libc::FD_CLOEXEC);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn keep_result_fd() {}
+
 /// `arugulad _arugula-release --deploy ID --environment NAME --kind KIND
 /// --ref SHA --where OWNER/NAME --plan DIGEST --bump PART --lane LANE
 /// [--git-base URL] [--api-base URL] [--poll-ms N] [--follow-ms N]`, from
@@ -586,6 +679,9 @@ fn report(_: &serde_json::Value) {}
 /// when nothing was pushed; 3 when the tag was pushed and the release
 /// isn't out (yet).
 pub fn cli(args: &[String]) -> ! {
+    // Its result pipe is its own: scripts/release, git and what they start
+    // don't get it.
+    keep_result_fd();
     let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
     let work = var("HOME").map_or_else(|| PathBuf::from("."), PathBuf::from).join("arugula-release");
     let mut cfg = Config::new(work.clone());
@@ -599,10 +695,10 @@ pub fn cli(args: &[String]) -> ! {
             std::process::exit(2)
         }
     };
-    let token = var(TOKEN);
+    let tokens = Tokens { write: var(TOKEN), read: var(READ_TOKEN) };
     let code = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
         Ok(rt) => {
-            let (released, followed) = rt.block_on(apply(&cfg, &d, token.as_deref()));
+            let (released, followed) = rt.block_on(apply(&cfg, &d, &tokens));
             report(&result(released.as_ref().ok(), followed.as_ref()));
             match (released, followed) {
                 (Ok(_), Some(f)) if f.published => 0,
@@ -621,7 +717,7 @@ pub fn cli(args: &[String]) -> ! {
             2
         }
     };
-    drop(token);
+    drop(tokens);
     let _ = std::fs::remove_dir_all(&work);
     std::process::exit(code)
 }

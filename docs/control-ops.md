@@ -574,35 +574,40 @@ the deploy's commit has it.
 commit of `arugula-salad/arugula`, by its full id. Its box:
 
 1. clones `main` and checks the commit is on it, with a `ci/green/<sha>`
-   tag and no `ci/revoked/<sha>` one;
+   tag and no `ci/revoked/<sha>` one (the platform asked GitHub the same
+   before it minted the run's tokens);
 2. runs `scripts/release bump <bump> [--app] <sha>`, which stops if main
    has no `docs/releases/X.Y.Z.md`, the tag exists, or the commit is in a
    release already. Otherwise it commits the bump, tags it, and pushes the
    tag and main in one atomic push. Each of the three carries
    `Arugula-Deploy: dep_…`, and a deploy whose id is on main already is
    refused;
-3. revokes its token, then follows the tag's release workflow for up to
-   an hour through GitHub's public API. The run succeeds once the
+3. revokes its write token, then follows the tag's release workflow for
+   up to 45 minutes with its read token, and revokes that. The run
+   succeeds once the
    workflow's `publish` job succeeded and the release is out. It reports
-   the tag, the commits, the release's page, the workflow's run and the
-   jobs that failed (today `template` and `extension` fail on every
+   the tag, the commits, `scripts/release`'s blob id, the release's page,
+   the workflow's run and the jobs that failed (today `template` and `extension` fail on every
    release; they don't fail the deploy).
 
 **There's no roll back.** A bad release is fixed by a new patch release,
 deployed the same way.
 
-**Its one credential** is an installation token of the platform's GitHub
-App (illogical-by-arugula), minted for the run: `contents: write` on
-`arugula-salad/arugula` alone. No PAT, nothing long-lived. The release
+**Its credentials** are two installation tokens of the platform's GitHub
+App (illogical-by-arugula), minted for the run, for
+`arugula-salad/arugula` alone: `RELEASE_TOKEN` (`contents: write`,
+revoked right after the push) and `RELEASE_READ_TOKEN` (Actions and
+contents, read-only, to follow the workflow within the App's rate limit).
+No PAT, nothing long-lived. The release
 workflow's own secrets (the updater key, Apple's, the marketplaces') stay
 in GitHub Actions: CI builds, signs and publishes after the tag, as
 before.
 
 **Set up once:**
 
-- The App gets **Contents: write** on its installation in arugula-salad,
-  and a **bypass** on main's ruleset (the push to main is the bump merged
-  in, not a PR). Nothing else.
+- The App gets **Contents: write** on its installation in arugula-salad
+  (it already reads Actions), and a **bypass** on main's ruleset (the push
+  to main is the bump merged in, not a PR). Nothing else.
 - The platform's `ARUGULA_PLATFORM_RELEASE_PROJECT` names Arugula's
   project id (`prj_…`; comma separated for more). No other project can
   make an `arugula-release` environment, plan with it, or have its token
@@ -634,8 +639,9 @@ higher of the commit's and main's, as `just release` picks it. The run's
 log and the deploy's log show the tag.
 
 If the box's run fails after the push (the workflow didn't publish within
-the hour), the tag and main are pushed anyway: follow the workflow by hand
-and fix forward.
+45 minutes), the tag and main are pushed anyway: follow the workflow by
+hand and fix forward. A `scripts/release` that runs over 20 minutes is
+stopped, and the run says whether it had pushed a tag.
 
 ### The platform
 
