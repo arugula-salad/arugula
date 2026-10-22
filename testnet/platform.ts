@@ -39,8 +39,18 @@
 //                 answer labelled as their agent on BOX; once the read grant
 //                 is revoked, the next read_thread is refused:
 //                 {room, machine, posted}
+//   issues-write  native issues before a platform restart (M206): chat on, a
+//                 team, two issues in its project (one closed), comments in
+//                 the first's thread, read to the first; what was seen:
+//                 {project, room, mark, ids, seen}
+//   issues-read FILE
+//                 after the restart, with issues-write's answer in FILE: the
+//                 same issues, timelines, thread and read mark; the next
+//                 issue and comment numbered on with no gap; search finds
+//                 both: {project, issues, back_ms}
 
 import { execFileSync, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createHmac, randomBytes } from "node:crypto";
 import { Device } from "../web/fixtures/device.ts";
 
@@ -425,6 +435,71 @@ async function agents(d: Device, box: string, cfg: string, broken: boolean) {
   }
 }
 
+/** Native issues and the thread on one (M206), written before a platform
+ * restart: chat on, a team, two issues in its project (one closed), the
+ * first's thread with two comments, read to the first. What `issues-read`
+ * checks afterwards. */
+async function issuesWrite(d: Device) {
+  await must(d, "POST", "/api/flags", { name: "chat", on: true });
+  const team = await d.createTeam("issues claim");
+  const projects = await must(d, "GET", "/api/projects");
+  const project = projects.projects.find((p: any) => p.team?.id === team)?.id;
+  if (!project) throw new Error(`no default project for team ${team}: ${JSON.stringify(projects)}`);
+  const mark = `m206x${process.pid}x${Date.now()}`;
+  const one = await must(d, "POST", `/api/projects/${project}/issues`, { title: `The canary fails ${mark}`, body: "on deploy" });
+  const two = await must(d, "POST", `/api/projects/${project}/issues`, { title: "Flaky login test" });
+  await must(d, "PATCH", `/api/issues/${two.id}`, { state: "closed" });
+  const room = (await must(d, "POST", "/api/chat/targets", { kind: "object", target: one.id })).id;
+  for (const text of [`first look ${mark}`, "second look"]) await must(d, "POST", `/api/chat/rooms/${room}/messages`, { text });
+  await must(d, "POST", `/api/chat/rooms/${room}/read`, { seq: 1 });
+  const seen = await issuesSeen(d, project, room, [one.id, two.id]);
+  return { project, room, mark, ids: [one.id, two.id], seen };
+}
+
+/** What a reader sees of the project's issues, their timelines, the thread
+ * and its unread count. */
+async function issuesSeen(d: Device, project: string, room: string, ids: string[]) {
+  const timelines = [];
+  for (const id of ids) timelines.push(await must(d, "GET", `/api/issues/${id}/events`));
+  const rooms = await must(d, "GET", "/api/chat");
+  const mine = rooms.rooms.find((r: any) => r.id === room);
+  return {
+    issues: await must(d, "GET", `/api/projects/${project}/issues?state=all`),
+    timelines,
+    thread: await must(d, "GET", `/api/chat/rooms/${room}/messages`),
+    unread: mine ? [mine.unread, mine.mentions] : null,
+  };
+}
+
+/** After the restart (`issues-write`'s answer in FILE): the same issues,
+ * timelines, thread and read mark; the next issue and comment numbered on
+ * with no gap; search finds the first issue and its comment. */
+async function issuesRead(d: Device, file: string) {
+  const was = JSON.parse(readFileSync(file, "utf8"));
+  // Until the platform answers again, control's gateway says 502 or 503.
+  const started = Date.now();
+  for (;;) {
+    const r = await call(d, "GET", `/api/projects/${was.project}/issues?state=all`);
+    if (r.status !== 502 && r.status !== 503) break;
+    if (Date.now() - started > 30_000) throw new Error(`the platform didn't come back: ${r.status}`);
+    await sleep(500);
+  }
+  const back_ms = Date.now() - started;
+  const seen = await issuesSeen(d, was.project, was.room, was.ids);
+  if (JSON.stringify(seen) !== JSON.stringify(was.seen)) {
+    throw new Error(`what reads back isn't what was written:\n${JSON.stringify(seen)}\n${JSON.stringify(was.seen)}`);
+  }
+  const three = await must(d, "POST", `/api/projects/${was.project}/issues`, { title: "After the restart" });
+  if (three.number !== 3) throw new Error(`the next issue is #${three.number}, not #3`);
+  const sent = await must(d, "POST", `/api/chat/rooms/${was.room}/messages`, { text: "third look" });
+  if (sent.seq !== 3) throw new Error(`the next comment is ${sent.seq}, not 3`);
+  const found = await must(d, "GET", `/api/projects/${was.project}/issues?q=${was.mark}`);
+  if (found.issues?.[0]?.id !== was.ids[0]) throw new Error(`search didn't find the issue: ${JSON.stringify(found)}`);
+  const hits = await must(d, "GET", `/api/chat/search?q=${was.mark}`);
+  if (!hits.found?.some((h: any) => h.room === was.room)) throw new Error(`search didn't find the comment: ${JSON.stringify(hits)}`);
+  return { project: was.project, issues: 3, back_ms };
+}
+
 async function main() {
   const d = await Device.load(state);
   switch (cmd) {
@@ -440,8 +515,12 @@ async function main() {
       return handover(d, Number(rest[0]), rest[1], rest.includes("--break"));
     case "agents":
       return agents(d, rest[0], rest[1], rest.includes("--break"));
+    case "issues-write":
+      return issuesWrite(d);
+    case "issues-read":
+      return issuesRead(d, rest[0]);
     default:
-      throw new Error(`unknown command ${cmd ?? "(none)"}: chat, hold, measure, fanout, handover, agents`);
+      throw new Error(`unknown command ${cmd ?? "(none)"}: chat, hold, measure, fanout, handover, agents, issues-write, issues-read`);
   }
 }
 

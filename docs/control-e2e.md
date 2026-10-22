@@ -980,8 +980,9 @@ only an approval does.
 ## Chat
 
 Since M122 (S41, #978), chat is control's, in plain text: this is the
-exception to "control can't read". A team's channels and DMs, and the
-threads about a pane or a session, live in control's database with their
+exception to "control can't read". A team's channels and DMs, the threads
+about a pane or a session, and since step 6 (#1263) a project's native
+issues and the threads on objects, live in control's database with their
 read marks and a full-text index, so people talk while every machine
 sleeps, and control pushes and searches them itself.
 
@@ -993,6 +994,26 @@ sleeps, and control pushes and searches them itself.
   (`POST /api/daemon/chat/readers`), and never anyone control wouldn't route
   to the machine anyway. A pane chip opens only for someone who may reach
   the machine; the quote is shown either way.
+- **Native issues (M194):** a project's own issues, numbered per project:
+  title, body, labels, assignees, state and timeline, in plain text, and
+  searched by control. An issue's comments are its thread's messages. The
+  project's members read them (a personal project's owner, a team's
+  roster); owners and editors open, edit and close them, and viewers read
+  and comment. Anyone who reads a project exports its issues as JSON or
+  Markdown.
+- **Threads on objects (M196):** a room on one object, in the object's
+  project: a native issue, or a linked repo's mirrored PR or issue. Those
+  who read the object read its thread (for a private repo's item, only
+  those GitHub says may read the repo).
+- **Text agents write (M197):** an agent reads or writes only under a grant
+  on its machine (`threads.read`, `threads.post`, `issues.write`), off
+  until the machine's owner gives it over a project or their own DMs, and
+  only over what the owner reads. Control checks it on every call, so a
+  revoked grant refuses the next one. What an agent writes is stored with
+  the owner as its author and the machine named, and is always shown as
+  "<owner>'s agent on <machine>". Every room a grant reaches says whose
+  agents can read it. Nothing wakes an agent: it reads its mentions over
+  MCP, and its machine keeps no copy of the thread.
 - **Live:** `GET /api/chat/live`, Server-Sent Events over HTTP with the
   session cookie, not the relay: chat isn't relay traffic, and works with no
   machine up.
@@ -1015,7 +1036,11 @@ sleeps, and control pushes and searches them itself.
   it at once.
 - **Kept until deleted** (S41 decision 6): an author or an owner deletes a
   message; deleting an account deletes its DMs and its machines' threads
-  and blanks its messages elsewhere; a disbanded team's rooms go with it.
+  and blanks its messages elsewhere (issue comments and its agents' posts
+  included); a disbanded team's rooms go with it. Nobody deletes a single
+  issue: a project's issues and their threads go when the project does
+  (with its account, or its disbanded team). The issues an account opened
+  in a project that stays keep their text, naming no author.
   Litestream's copies age out with the rest of control's backups.
 
 ## What control stores
@@ -1025,9 +1050,9 @@ sleeps, and control pushes and searches them itself.
 Control's database has 77 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (33 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (44 tables) is what has to exist while every machine is asleep: billing and usage, chat, Shared Docs, Cloud workspaces, and linked repos' PRs and issues. Control reads most of it, and says so here.
+- **The platform plane** (44 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues. Control reads most of it, and says so here.
 
-Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
+Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
 ### The machine plane
 
@@ -1074,10 +1099,10 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `billing` | metadata | Who pays: Stripe's customer and subscription ids, the seat item, the status. | A plan holds with every machine off, and Stripe's webhooks come whenever. | yes: a team's go when the team does. An account with a paid plan cancels it before it can be deleted. | PostHog, Stripe |
 | `reported` | metadata | How many hosted sandbox minutes have gone to Stripe. | Minutes are reported hourly, whether or not anyone's machine is up. | yes | Stripe |
 | `usage` | metadata | Bytes relayed per account per day, for the free plan's monthly allowance. | The month's allowance counts across every machine's sleeps. | yes |  |
-| `chat_rooms` | **plaintext** | A chat room: a team's channel and its name, a DM, the thread on a pane or a session, or the thread on an object (an issue, a mirrored PR or issue) in its project. | People talk with every machine asleep. | partly: its DMs, the threads on its machines and its archives go, and the rooms of teams and projects that go with it; it's taken off the rest. |  |
+| `chat_rooms` | **plaintext** | A chat room: a team's channel and its name, a DM, the thread on a pane or a session, or the thread on an object in its project (M196): a native issue (its comments), or a mirrored PR or issue, named by the object's id. | People talk with every machine asleep. | partly: its DMs, the threads on its machines and its archives go, and the rooms of teams and projects that go with it; it's taken off the rest. |  |
 | `chat_members` | metadata | A DM's two people, and an archive's readers. | People talk with every machine asleep. | yes |  |
-| `chat_messages` | **plaintext** | A chat message, in plain text, with the lines its author quoted from a pane, who it mentions, and the machine whose agent wrote it for its author (M197). | People talk with every machine asleep. | partly: those in its rooms that go, go; the rest stay blank, with no author, and it's taken out of mentions. |  |
-| `chat_fts` | **plaintext** | The full-text index of chat messages and their quotes (SQLite FTS5). | Control searches chat itself, with every machine asleep. | partly: as chat_messages: it's rebuilt from them, and merged when an account goes so blanked words leave it. |  |
+| `chat_messages` | **plaintext** | A chat message, in plain text (a native issue's comments are its thread's messages), with the lines its author quoted from a pane and who it mentions. One an agent wrote under its machine's threads.post grant (M197) keeps the machine's owner as its author and names the machine, shown as "<owner>'s agent on <machine>"; revoking the grant leaves it labelled. | People talk with every machine asleep. | partly: those in its rooms that go, go; the rest stay blank, with no author and no agent's label, and it's taken out of mentions. |  |
+| `chat_fts` | **plaintext** | The full-text index of chat messages and their quotes (SQLite FTS5; on Postgres it's a generated column of chat_messages). | Control searches chat itself, with every machine asleep. | partly: as chat_messages: it's rebuilt from them, and merged when an account goes so blanked words leave it. |  |
 | `chat_reads` | metadata | A person's read mark in a room, and whether they muted it. | Unread counts and pushes, with every machine asleep. | yes |  |
 | `chat_events` | metadata | Chat's live events, numbered (M144): a room and a message number that changed, a read mark that moved (and whose), or that who sees what may have changed. Never a message's text. Every machine of the platform sends its open pages the ones after the last it sent, and a page that dropped resumes from them. The newest 10,000 are kept. | Open pages hear of messages, edits and read marks through control alone, with every machine asleep. | partly: its read marks' events lose its name (they stay as nameless markers, so the numbers hold); events about rooms name no one and go with the oldest. |  |
 | `chat_readers` | metadata | Who may read the thread on a pane or a session, as its machine last said. | A pane's thread stays readable while its machine sleeps. | partly: its machines' rows go, and it's taken off the rest. |  |
@@ -1094,9 +1119,9 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `cloud_workspaces` | **plaintext** | A Cloud workspace: its name, its spec (repositories, packages, setup script, environment variables, networking, secret names), its status and errors. | Cloud workspaces work with every machine off. | yes: its Managoat resources go first: deleting is refused until they have. | Managoat |
 | `cloud_workspace_specs` | **plaintext** | The spec a Cloud workspace's environment revision was saved as (the newest few). | Cloud workspaces work with every machine off. | yes | Managoat |
 | `cloud_tabs` | **plaintext** | A tab in a Cloud workspace: the agent, runtime, model and prompt it opened with, its status. | Cloud workspaces work with every machine off. | yes | Managoat |
-| `projects` | metadata | A project: its id, the team or account it belongs to, its name, whether it's the default one, the last number it gave a native issue, and its issue home (native or GitHub) if someone chose one. | Cloud workspaces, team channels and cloud secrets belong to one, and they exist with every machine asleep. | partly: its personal project goes, and the default projects of teams that go with it; other teams' stay. |  |
+| `projects` | metadata | A project: its id, the team or account it belongs to, its name, whether it's the default one, the last number it gave a native issue, and its issue home (native or GitHub) if someone chose one. | Cloud workspaces, team channels, native issues and cloud secrets belong to one, and they exist with every machine asleep. | partly: its personal project goes, and the default projects of teams that go with it; other teams' stay. |  |
 | `team_members` | metadata | Who is in each team as its latest signed roster says: account, role, name. A copy for platform queries, following the hub's change feed; the signed roster stays the authority over machines. | What's shared with a team on the platform (its channels, later its projects) needs its members while every machine is asleep. | yes |  |
-| `grants` | metadata | A grant: a subject (a machine), a power (cloud.drive; threads.read, threads.post or issues.write for its agents, M197) over a scope (an account or a project), who gave it, when, and when it was revoked. | Control checks it on the Cloud workspace routes and wherever an agent reads or writes threads and issues, which work with every other machine asleep. | yes: grants to its machines, over it, or that it gave. |  |
+| `grants` | metadata | A grant: a subject (a machine), a power over a scope (an account or a project), who gave it, when, and when it was revoked. The powers: cloud.drive (its agents drive its owner's Cloud workspaces; given on join), and for its agents in conversations (M197) threads.read, threads.post and issues.write, off until its owner gives one over a scope the owner reads. | Control checks it on the Cloud workspace routes and wherever an agent reads or writes threads and issues, which work with every other machine asleep. | yes: grants to its machines, over it, or that it gave. |  |
 | `hub_feed` | metadata | How far the platform has applied the hub's change feed to projects, team members and grants: the last change's number. | A machine's joining or leaving reaches its grant through the feed, whether or not any machine is up. | nothing of one |  |
 | `github_webhook_deliveries` | metadata | Each delivery the GitHub App's webhook took: GitHub's delivery id, the event's name and when it came. Kept 7 days, so a redelivery is recognised after a restart. | GitHub's webhooks arrive whether or not any machine is up. | nothing of one | GitHub |
 | `github_installations` | metadata | Where the GitHub App is installed: the installation id, the GitHub user or organization (id, login, type), the permissions it was granted, and when it was suspended or deleted. | Linked repos are read through the installation with every machine asleep. | nothing of one | GitHub |
@@ -1106,14 +1131,14 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `forge_events` | metadata | What happened to a linked repo's PR or issue, as metadata: reviews and their state, review requests, state changes, with who and when. No text. | Inboxes are computed from them with every machine asleep. | nothing of one | GitHub |
 | `forge_content` | **plaintext** | A linked repo's PR and issue bodies, comments, reviews' text and review comments (with their file, line and the comment they answer), with author and times. Only for a repo whose project turned on content mirroring (M166); turning it off deletes them at once, and an unlink or an uninstall purges them within a day. | A project that opted in searches PR text with every machine asleep. | nothing of one | GitHub |
 | `drafts` | **plaintext** | A comment, review or new issue for a linked repo, waiting for a person to send it: the project, the person it's for (and the agent and machine that wrote it, if one did), the target, the text, its state, and where it landed once sent. | A person sends a draft from a phone with every machine asleep. | yes: its drafts, and those in projects that go with it. | GitHub |
-| `inbox_items` | metadata | A member's inbox: an item (a linked repo's PR or issue, or a native issue), why it's there (a review requested, failed checks, changes requested, a mention, an assignment, merged or approved and green, a draft waiting, a mention in its thread), and when it came, was seen and was done. A linked repo's item only for members GitHub lets read it. | The inbox is computed and pushed by the platform with every machine asleep, and mentions and assignments reach it as they happen. | yes |  |
+| `inbox_items` | metadata | A member's inbox: an item (a linked repo's PR or issue, or a native issue), why it's there (a review requested, failed checks, changes requested, a mention, an assignment, merged or approved and green, a draft waiting, a mention in its thread; on a native issue an assignment or a mention, M202), and when it came, was seen and was done. A linked repo's item only for members GitHub lets read it. No text: a mention's words stay in its message. | The inbox is computed and pushed by the platform with every machine asleep, and mentions and assignments reach it as they happen. | yes |  |
 | `github_token_mints` | metadata | The audit log of every GitHub token the platform minted: installation or user token, the installation and repo, the permissions, who it was for, what for, and when. Never the token. | Tokens are minted for reads, ingest and sends with every machine asleep. | kept: its mints stay in the audit log, naming it, so a token can be traced after the account goes, for as long as the log keeps a mint: a year, pruned hourly. | GitHub |
 | `forge_refetch` | metadata | What the forge mirror's poller reads again from GitHub at its repo's next turn (M164): a linked repo's id and an item's kind and number, or a head commit's SHA, that two answers gave in the same second and disagreed on, and when. | Webhooks arrive and the poller runs with every machine asleep, and a row two answers disagreed on is put right within a turn. | nothing of one | GitHub |
 | `forge_access` | metadata | What GitHub said about a person's access to a repository (M165): their numeric GitHub id, the repository's name and owner, why not if not, and when it was asked by the database's clock. Kept 10 minutes, so every machine of the platform gives the same answer, to a read of a private repo's items, a daemon's live updates and a hosted box's token. | Private repos' items are read from the platform with every machine asleep, each read checked against the reader's own GitHub access. | kept: an answer names a GitHub id, not an account: it stops being used after 10 minutes, and goes at the next hourly prune. | GitHub |
 | `forge_access_drops` | metadata | When a GitHub event last changed who may read a repo (M165): a repository's name, an owner's login or a person's GitHub id, and when, by the database's clock. Every `forge_access` answer asked before it is dropped. | GitHub's webhooks arrive whether or not any machine is up, and a removed collaborator is cut off at once on every machine. | nothing of one | GitHub |
-| `issues` | **plaintext** | A project's native issue, in plain text: its number in the project, title, body, state and close reason, who opened it (an account, and the machine when its agent did), labels, assignees (accounts), where it was exported to on GitHub, and its times. Its comments are its thread's chat messages. | A project's issues are read, written and searched with every machine asleep. | partly: the issues of projects that go with it go. The rest stay, with their text, naming no author, and it's taken off assignees. |  |
-| `issues_fts` | **plaintext** | The full-text index of native issues' titles and bodies (SQLite FTS5). | Control searches a project's issues itself, with every machine asleep. | partly: as issues: it's rebuilt from them. |  |
-| `issue_events` | **plaintext** | A native issue's timeline: opened, edited, closed, reopened, labelled, assigned, exported, with who (an account, and the machine when its agent did it) and when, and a small detail: an edit's old title, a close's reason, the label or assignee, where it was exported to. | An issue's timeline shows with every machine asleep. | partly: those of issues that go, go. The rest stay, naming no actor, and it's taken out of assignment events. |  |
+| `issues` | **plaintext** | A project's native issue, in plain text: its number in the project, title, body, state and close reason, who opened it, labels, assignees (accounts), where it was exported to on GitHub, and its times. One an agent opened under its machine's issues.write grant (M197) keeps the machine's owner as its author and names the machine. Its comments are its thread's chat messages. | A project's issues are read, written, searched and put in inboxes by control with every machine asleep, so control reads their text (aru-088). | partly: the issues of projects that go with it go. The rest stay, with their text, naming no author, and it's taken off assignees. |  |
+| `issues_fts` | **plaintext** | The full-text index of native issues' titles and bodies (SQLite FTS5; on Postgres it's a generated column of issues). | Control searches a project's issues itself, with every machine asleep. | partly: as issues: it's rebuilt from them. |  |
+| `issue_events` | **plaintext** | A native issue's timeline: opened, edited, closed, reopened, labelled, assigned, exported, with who (an account, and the machine when its agent did it) and when, and a small detail: an edit's old title (the text that makes it plaintext), a close's reason, the label or assignee, where it was exported to. | An issue's timeline shows with every machine asleep. | partly: those of issues that go, go. The rest stay, naming no actor, and it's taken out of assignment events. |  |
 | `platform_migrations` | metadata | Which of the platform's numbered migrations (M142) its database has: each one's number, name, checksum, whether it's additive (older builds may start past it) and when it ran, or that it was found already in place on a database made before migrations. | The platform checks its tables are the shape its code expects before it serves anything, whether or not any machine is up. | nothing of one |  |
 
 ### Who else sees it
