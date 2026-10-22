@@ -315,7 +315,15 @@ impl Trust {
                     continue;
                 }
                 let signer = self.valid_cert(&by_id, &revoked, &r.by, r.at, 0);
+                // A browser or a phone is removed only by a device that's
+                // a browser all the way back to the root: never by a CLI
+                // or the app, whose keys a program on their computer holds.
+                let of_browser =
+                    by_id.get(r.device.as_str()).is_some_and(|cs| cs.iter().any(|c| c.kind == Kind::Browser));
                 if signer.is_some_and(|s| s.kind.approves() && verify(&s.verifying_key(), r.body().as_bytes(), &r.sig))
+                    && (!of_browser
+                        || self
+                            .chained_in(&by_id, &r.by, &|c: &Cert| browser_link(c, &r.by, |c| c.kind == Kind::Browser)))
                 {
                     let at = next.entry(r.device.clone()).or_insert(r.at);
                     *at = (*at).min(r.at);
@@ -331,6 +339,62 @@ impl Trust {
             }
         }
         out
+    }
+
+    /// Whether `device`, and every device that certified it back to the
+    /// root (the root included), passes `link`. Every certificate kept
+    /// for an id on the way is looked at, not only the one that made it
+    /// trusted, so one more from control can only refuse; a link with
+    /// none, a self-signed one that isn't the root, or a chain longer than
+    /// 64 refuses. Signatures aren't checked here: ask [`Trust::evaluate`]
+    /// whether `device` is trusted at all.
+    pub fn chained(&self, certs: &[Cert], device: &str, link: impl Fn(&Cert) -> bool) -> bool {
+        let mut by_id: HashMap<&str, Vec<&Cert>> = HashMap::new();
+        for c in certs {
+            if c.account == self.account && c.check_form().is_ok() {
+                by_id.entry(c.device.as_str()).or_default().push(c);
+            }
+        }
+        self.chained_in(&by_id, device, &link)
+    }
+
+    /// [`Trust::chained`] with a browser on every link: what may add or
+    /// promote a team's owner or editor, or remove a browser or a phone.
+    /// `device` is a browser; the links back may be recovery codes too
+    /// (the person's own, on paper, and made only by browsers), so a
+    /// browser a recovery code let in after every other was lost counts.
+    /// The desktop app's devices from before it had a kind of its own pass
+    /// here (they're `browser` certificates); control refuses new papers
+    /// from them with [`Cert::is_browser`] on every link.
+    pub fn browser_chained(&self, certs: &[Cert], device: &str) -> bool {
+        self.chained(certs, device, |c| browser_link(c, device, |c| c.kind == Kind::Browser))
+    }
+
+    fn chained_in(&self, by_id: &HashMap<&str, Vec<&Cert>>, device: &str, link: &dyn Fn(&Cert) -> bool) -> bool {
+        let mut next = vec![device.to_owned()];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(id) = next.pop() {
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            if seen.len() > 64 {
+                return false;
+            }
+            let Some(these) = by_id.get(id.as_str()) else { return false };
+            for c in these {
+                if !link(c) {
+                    return false;
+                }
+                if c.approver == c.device {
+                    if c.device != self.root {
+                        return false;
+                    }
+                } else {
+                    next.push(c.approver.clone());
+                }
+            }
+        }
+        true
     }
 
     /// Why `cert` wouldn't count with the account's `certs` (#327), or
@@ -390,6 +454,12 @@ impl Trust {
         }
         None
     }
+}
+
+/// A link of a browser chain to `device`: `device` itself as `browser`
+/// says, a link before it as that or a recovery code.
+pub fn browser_link(c: &Cert, device: &str, browser: impl Fn(&Cert) -> bool) -> bool {
+    browser(c) || (c.kind == Kind::Recovery && c.device != device)
 }
 
 /// Which check an approval failed (#327).
@@ -762,6 +832,40 @@ mod tests {
         assert!(trust(&app_root).evaluate(&[app_root.clone()], &[]).devices.is_empty());
         assert!(!Kind::App.roots() && Kind::Browser.roots());
         assert!(Kind::App.connects() && Kind::App.approves());
+    }
+
+    /// A browser or a phone is removed only by a browser all the way back
+    /// to the root; a CLI or the app still removes machines, CLIs and apps.
+    #[test]
+    fn only_a_browser_removes_a_browser() {
+        let (rk, rc) = root("acct");
+        let (_, phone) = approved(&rk, "acct", Kind::Browser, "phone");
+        let (ck, cli) = approved(&rk, "acct", Kind::Cli, "terminal");
+        let (ak, app) = approved(&rk, "acct", Kind::App, "Arugula app");
+        let (_, machine) = approved(&rk, "acct", Kind::Daemon, "box");
+        let (_, other_cli) = approved(&rk, "acct", Kind::Cli, "terminal 2");
+        let t = trust(&rc);
+        let all = [rc.clone(), phone.clone(), cli.clone(), app.clone(), machine.clone(), other_cli.clone()];
+        let gone = |r: Revocation, id: &str| t.evaluate(&all, &[r]).get(id).is_none();
+        for by in [&ck, &ak] {
+            assert!(
+                !gone(Revocation::new("acct", &phone.device, by), &phone.device),
+                "a CLI or the app removing a phone"
+            );
+            assert!(!gone(Revocation::new("acct", &rc.device, by), &rc.device), "or the root");
+            assert!(gone(Revocation::new("acct", &machine.device, by), &machine.device), "a machine, it may");
+            assert!(gone(Revocation::new("acct", &other_cli.device, by), &other_cli.device), "a CLI, it may");
+        }
+        assert!(gone(Revocation::new("acct", &phone.device, &rk), &phone.device), "the root browser may");
+        assert!(t.browser_chained(&all, &phone.device) && !t.browser_chained(&all, &cli.device));
+        // A browser a recovery code let in counts as one all the way back;
+        // the code itself doesn't stand for a browser.
+        let (code_k, code) = approved(&rk, "acct", Kind::Recovery, "recovery 1");
+        let (nk, new) = approved(&code_k, "acct", Kind::Browser, "new laptop");
+        let all = [all.to_vec(), vec![code.clone(), new.clone()]].concat();
+        assert!(t.browser_chained(&all, &new.device) && !t.browser_chained(&all, &code.device));
+        let r = Revocation::new("acct", &phone.device, &nk);
+        assert!(t.evaluate(&all, &[r]).get(&phone.device).is_none(), "the recovered browser removes the lost phone");
     }
 
     /// The app's devices from before it had a kind are `browser` ones it

@@ -5,7 +5,7 @@
 
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { evaluate, certBody, joinCode, joinMac, splitJoinCode, type Cert } from "./src/shell/e2e/cert.ts";
+import { evaluate, certBody, joinCode, joinMac, revocationBody, splitJoinCode, type Cert, type Revocation } from "./src/shell/e2e/cert.ts";
 import { generateKeys, signText } from "./src/shell/e2e/keys.ts";
 import { daemonNow, E2ESocket, readWelcome } from "./src/shell/e2e/channel.ts";
 import { blockRoutesLabel } from "./src/shell/blocks/block-route.ts";
@@ -117,6 +117,46 @@ check("Rust trusts what we signed", JSON.stringify(rust) === JSON.stringify([roo
   await both("nor a spent key with a space in it", v1, await signRedeem(odd(v2, (x) => (x.spent[0].key += " x")), seed), false);
   await both("nor a member name with a space in it", v1, await signRedeem(odd(v2, (x) => (x.members[1].name = "bob b")), seed), false);
   await both("nor the same invite again", v2, await redeemInvite(v2, inv, seed, { account: "carol", root: bob.id, name: "carol" }), false);
+
+  // A CLI's or the app's key may be a program's: it adds viewers, but never
+  // an owner or an editor, by a roster or a presigned invite.
+  const aliceCli = await generateKeys();
+  const aliceApp = await generateKeys();
+  const under = async (k: typeof alice, kind: Cert["kind"]): Promise<Cert> => {
+    const c: Cert = { v: 1, account: "alice", device: k.id, kind, name: kind, noise: k.noisePub, sign: k.signPub, created: 2, approver: alice.id, sig: "" };
+    c.sig = await signText(alice, certBody(c));
+    return c;
+  };
+  tc.alice[0].push(await under(aliceCli, "cli"), await under(aliceApp, "app"));
+  const withBob = (role: "owner" | "editor" | "viewer") => ({ ...v1, version: 2, members: [...v1.members, { account: "bob", root: bob.id, role, name: "bob" }] });
+  for (const [k, by] of [[aliceCli, "a CLI"], [aliceApp, "the app"]] as const) {
+    await both(`${by} can't make an owner`, v1, await signRoster(withBob("owner"), k), false);
+    await both(`${by} can't make an editor`, v1, await signRoster(withBob("editor"), k), false);
+    await both(`${by} adds a viewer`, v1, await signRoster(withBob("viewer"), k), true);
+  }
+  await both("a browser makes an owner", v1, await signRoster(withBob("owner"), alice), true);
+  const fromCli = await signInvite({ team: pin.team, role: "editor", expires: Date.now() + 86_400_000, key }, aliceCli);
+  await both("a CLI's presigned editor invite doesn't admit", v1, await redeemInvite(v1, fromCli, seed, { account: "bob", root: bob.id, name: "bob" }), false);
+
+  // Nor does a CLI remove a browser; it removes a machine.
+  const machine = await generateKeys();
+  const box: Cert = { v: 1, account: "alice", device: machine.id, kind: "daemon", name: "box", noise: machine.noisePub, sign: machine.signPub, created: 3, approver: alice.id, sig: "" };
+  box.sig = await signText(alice, certBody(box));
+  const certs = [...tc.alice[0], box];
+  const revoke = async (device: string, by: typeof alice): Promise<Revocation> => {
+    const r: Revocation = { v: 1, account: "alice", device, at: 10, by: by.id, sig: "" };
+    r.sig = await signText(by, revocationBody(r));
+    return r;
+  };
+  const trust = { account: "alice", root: alice.id };
+  for (const [what, r, gone] of [
+    ["a CLI removing the browser root doesn't count", await revoke(alice.id, aliceCli), false],
+    ["a CLI removing a machine does", await revoke(machine.id, aliceCli), true],
+  ] as const) {
+    const ours = !(await evaluate(trust, certs, [r])).has(r.device);
+    const theirs = !(JSON.parse(execFileSync(bin, ["check"], { input: JSON.stringify({ trust, certs, revocations: [r] }) }).toString()) as string[]).includes(r.device);
+    check(what, ours === gone && theirs === gone, `ts ${ours}, rust ${theirs}`);
+  }
 }
 
 // 3b. Block grants (M50): what control's page mints, Rust's Grant::check

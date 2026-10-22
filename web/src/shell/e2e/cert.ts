@@ -144,7 +144,11 @@ export async function evaluate(
     for (const r of revocations) {
       if (r.v !== 1 || r.account !== trust.account) continue;
       const s = await valid(revoked, r.by, r.at, 0);
-      if (s && approves(s.kind) && (await verify(s.sign, revocationBody(r), r.sig))) next.set(r.device, Math.min(next.get(r.device) ?? Infinity, r.at));
+      // A browser or a phone is removed only by a browser all the way back
+      // to the root (`Trust::evaluate`).
+      const ofBrowser = (byId.get(r.device) ?? []).some((c) => c.kind === "browser");
+      if (s && approves(s.kind) && (await verify(s.sign, revocationBody(r), r.sig)) && (!ofBrowser || chainedIn(trust.root, byId, r.by, browserLink(r.by))))
+        next.set(r.device, Math.min(next.get(r.device) ?? Infinity, r.at));
     }
     revoked = next;
   }
@@ -154,6 +158,42 @@ export async function evaluate(
     if (c) out.set(id, c);
   }
   return out;
+}
+
+/** A link of a browser chain to `device` (`browser_link`): `device` a
+ * browser, a link before it a browser or a recovery code. */
+const browserLink = (device: string) => (c: Cert) => c.kind === "browser" || (c.kind === "recovery" && c.device !== device);
+
+/** Whether `device` and every device that certified it back to the root
+ * (the root included) passes `link` (`Trust::chained`): every certificate
+ * kept for an id on the way counts, a self-signed one must be the root,
+ * and a chain longer than 64 refuses. Signatures aren't checked here. */
+function chainedIn(root: string, byId: Map<string, Cert[]>, device: string, link: (c: Cert) => boolean): boolean {
+  const next = [device];
+  const seen = new Set<string>();
+  while (next.length) {
+    const id = next.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (seen.size > 64) return false;
+    const these = byId.get(id);
+    if (!these) return false;
+    for (const c of these) {
+      if (!link(c)) return false;
+      if (c.approver === c.device) {
+        if (c.device !== root) return false;
+      } else next.push(c.approver);
+    }
+  }
+  return true;
+}
+
+/** `kind: browser` on every link back to the root (`Trust::browser_chained`):
+ * what may make a team's owner or editor, or remove a browser or a phone. */
+export async function browserChained(trust: { account: string; root: string }, certs: Cert[], device: string): Promise<boolean> {
+  const byId = new Map<string, Cert[]>();
+  for (const c of certs) if (c.account === trust.account && (await checkForm(c))) byId.set(c.device, [...(byId.get(c.device) ?? []), c]);
+  return chainedIn(trust.root, byId, device, browserLink(device));
 }
 
 /** The code a joining daemon prints, recomputed from its certificate. */

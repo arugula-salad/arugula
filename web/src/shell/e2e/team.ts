@@ -2,7 +2,7 @@
 // browsers sign each new version; the same rules as daemons decide which
 // follow.
 
-import { approves, evaluate, hex, unhex, type Cert, type Revocation } from "./cert.ts";
+import { approves, browserChained, evaluate, hex, unhex, type Cert, type Revocation } from "./cert.ts";
 import { signText, type DeviceKeys } from "./keys.ts";
 import { newKeyPair } from "./noise.ts";
 
@@ -146,7 +146,9 @@ export async function askOk(
   for (const o of r.members.filter((m) => m.role === "owner")) {
     const [c, rv] = certs[o.account] ?? [[], []];
     const d = (await evaluate({ account: o.account, root: o.root }, c, rv)).get(i.by);
-    if (d && approves(d.kind) && (await verify(d.sign, askInviteBody(i), i.sig))) return o.account;
+    // One for an owner or an editor, only from a browser all the way back.
+    const strong = i.role !== "viewer" ? await browserChained({ account: o.account, root: o.root }, c, i.by) : true;
+    if (d && approves(d.kind) && strong && (await verify(d.sign, askInviteBody(i), i.sig))) return o.account;
   }
   return null;
 }
@@ -244,21 +246,35 @@ function wellFormed(r: Roster): boolean {
 
 const sameMember = (a: Member, b: Member) => a.account === b.account && a.root === b.root && a.role === b.role && a.name === b.name;
 
+const RANK: Record<TeamRole, number> = { owner: 2, editor: 1, viewer: 0 };
+
+/** Whether `r` adds or promotes anyone but `signer` to owner or editor
+ * since `prev` (`Roster::raises`). */
+export function raises(r: Roster, prev: Roster | null, signer: string): boolean {
+  return r.members.some((m) => {
+    if (m.role === "viewer" || m.account === signer) return false;
+    const was = prev?.members.find((p) => p.account === m.account);
+    return !(was && was.root === m.root && RANK[was.role] >= RANK[m.role]);
+  });
+}
+
 /** Whether `r` may follow `prev` (or start the team, as `pin` says). */
 export async function follows(r: Roster, prev: Roster | null, pin: TeamPin, certs: AccountCerts): Promise<boolean> {
   const spent = r.spent ?? [];
   if (!wellFormed(r) || r.team !== pin.team) return false;
   if (prev && r.version <= prev.version) return false;
-  const signedBy = async (account: string, root: string, device: string, body: string, sig: string) => {
+  // With `strong`, the signer is a browser all the way back to its root:
+  // what makes an owner or an editor (`Roster::follows`).
+  const signedBy = async (account: string, root: string, device: string, body: string, sig: string, strong: boolean) => {
     const [c, rv] = certs[account] ?? [[], []];
     const d = (await evaluate({ account, root }, c, rv)).get(device);
-    return !!d && d.kind !== "daemon" && (await verify(d.sign, body, sig));
+    return !!d && d.kind !== "daemon" && (await verify(d.sign, body, sig)) && (!strong || (await browserChained({ account, root }, c, device)));
   };
   const body = rosterBody(r);
   const signers: Pick<Member, "account" | "root">[] = prev
     ? prev.members.filter((m) => m.role === "owner")
     : [{ account: pin.founder, root: pin.founder_root }];
-  for (const m of signers) if (await signedBy(m.account, m.root, r.by, body, r.sig)) return !r.redeem;
+  for (const m of signers) if (await signedBy(m.account, m.root, r.by, body, r.sig, raises(r, prev, m.account))) return !r.redeem;
   // A presigned invite (`Roster::follows`): the version before, plus the
   // invitee at the end, the invite spent, signed by the one-time key.
   if (!prev || !r.redeem) return false;
@@ -287,6 +303,6 @@ export async function follows(r: Roster, prev: Roster | null, pin: TeamPin, cert
   )
     return false;
   let byOwner = false;
-  for (const o of prev.members.filter((x) => x.role === "owner")) byOwner ||= await signedBy(o.account, o.root, inv.by, inviteBody(inv), inv.sig);
+  for (const o of prev.members.filter((x) => x.role === "owner")) byOwner ||= await signedBy(o.account, o.root, inv.by, inviteBody(inv), inv.sig, inv.role !== "viewer");
   return byOwner && (await verify(inv.key, redeemBody(inv, r.version, m), r.redeem.proof)) && (await verify(inv.key, body, r.sig));
 }

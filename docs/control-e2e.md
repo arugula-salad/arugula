@@ -124,11 +124,19 @@ device nobody trusted. Now:
   (which would make one). The app is never an account's first device.
   Daemons and pages drop a certificate that breaks this, wherever it is in
   the chain.
+- **What only a browser all the way back does** (`Trust::browser_chained`:
+  the device and every device that certified it, the root included, are
+  `browser`): make a team's owner or editor (a roster that adds or
+  promotes anyone but its signer, a presigned or Ask me first invite for
+  an editor or an owner) and remove a browser or a phone. Daemons and
+  pages ignore such a paper from anything else. A CLI or the app still
+  adds viewers, removes machines, CLIs and apps, and moves machines.
 - The app's devices from before it had a kind are `browser` certificates
-  it named ("Arugula app on …"). Control refuses new browsers and
-  recovery codes signed by one (unless it's the account's first device),
-  and `Cert::is_browser` doesn't count one as a browser (what the deploy
-  approval, M218, asks of every link). What they approved before stands.
+  it named ("Arugula app on …"). Control holds them to `Cert::is_browser`
+  on every link, the root included: they, and browsers they certified,
+  make no new browsers, recovery codes, owners or editors, and remove no
+  browsers. What they did before stands. The deploy approval (M218) asks
+  the same of every link.
 - A daemon's own certificate is signed by the device that approved its
   `join` code. When the approver puts it in a team, that device also
   signs the choice (`illogical team join v1`: the daemon, the team, its
@@ -1157,16 +1165,28 @@ only the page does takes the session cookie alone (`auth::PageSession`):
 
 **Adding a passkey** (`passkey.rs`) takes more than a session, since
 attestation is `none` and a passkey made in software can claim to verify
-anyone:
+anyone. Never from the desktop app's window (`sessions.via = app`), and:
 
-- an account with a passkey confirms the new one with one of its own, with
-  user verification, over a challenge that hashes the account and the new
-  passkey's id (`arugula add passkey v1`);
-- an account with none (GitHub only) needs a GitHub sign-in from the last
-  ten minutes; the page sends the person through GitHub again first;
+- an account with a browser or a phone: one of them (a browser all the
+  way back) signs the account, the new passkey's id and the
+  registration's challenge (`arugula add passkey device v1`);
+- an account with a passkey also confirms the new one with one of its own,
+  with user verification, over a challenge that hashes the account and the
+  new passkey's id (`arugula add passkey v1`);
+- an account with neither (GitHub only, no browser) needs a GitHub sign-in
+  from the last ten minutes; the page sends the person through GitHub
+  again first, with `prompt=select_account` so GitHub asks rather than
+  redirecting by itself. A code that comes back to a browser that didn't
+  start that sign-in is still exchanged, and its token revoked, so it
+  signs nobody in anywhere;
 - every device of the account gets a push ("A passkey was added to your
-  account"), and the passkey keeps the device and the sign-in that added
-  it.
+  account") naming the device that signed for it, or else how the session
+  signed in and its User-Agent (what a session says its device is is a
+  claim), and the passkey keeps both.
+
+Sessions made before `via` that look like the app's window (they said
+they're one of its devices, or their User-Agent names it) are marked
+`app` when the column comes.
 
 Every WebAuthn ceremony is refused from inside another site's frame
 (`crossOrigin`, `topOrigin`).

@@ -37,7 +37,7 @@ use crate::{
     ApiError, App,
     auth::{DaemonAuth, Session, hash},
     db::{Team, TeamRequest},
-    err,
+    err, refusal,
 };
 
 type R = Result<Json<Value>, ApiError>;
@@ -317,8 +317,35 @@ pub async fn set_roster(
         return Err(err(StatusCode::CONFLICT, "the team changed while you were at it; try again"));
     }
     let accounts: Vec<&str> = prev.members.iter().chain(&b.roster.members).map(|m| m.account.as_str()).collect();
-    if !b.roster.follows(Some(&prev), &pin(&t), &certs_for(&app, accounts.into_iter())?) {
+    let certs = certs_for(&app, accounts.into_iter())?;
+    if !b.roster.follows(Some(&prev), &pin(&t), &certs) {
         return Err(err(StatusCode::FORBIDDEN, "a new roster is the next version, signed by an owner's device"));
+    }
+    // One that makes an owner or an editor, from a browser or a phone all
+    // the way back (`follows` asks that of the kinds; here the desktop
+    // app's devices from before it had a kind are refused too).
+    if b.roster.redeem.is_none() {
+        let signer = prev
+            .members
+            .iter()
+            .filter(|m| m.role == TeamRole::Owner)
+            .find(|m| certs.get(&m.account).is_some_and(|(c, _)| c.iter().any(|c| c.device == b.roster.by)));
+        let strong = signer.is_some_and(|m| {
+            let c = certs.get(&m.account).map(|(c, _)| c.as_slice()).unwrap_or_default();
+            !b.roster.raises(Some(&prev), &m.account)
+                || crate::api::browser_all_the_way(
+                    &Trust { account: m.account.clone(), root: m.root.clone() },
+                    c,
+                    &b.roster.by,
+                )
+        });
+        if !strong {
+            return Err(refusal(
+                StatusCode::FORBIDDEN,
+                arugula_e2e::Refusal::NeedsBrowser.code(),
+                "only a browser or a phone makes someone an owner or an editor: the desktop app and the CLI add viewers",
+            ));
+        }
     }
     // Nobody is added who didn't ask: each new member asked to join (and
     // is added with the first device they asked with), or is redeeming an
@@ -439,13 +466,13 @@ fn is_key(k: &str) -> bool {
     k.len() == 64 && k.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-/// Whether one of `account`'s own devices (from `root`) signed `ask`.
+/// Whether one of `account`'s own devices (from `root`) signed `ask`: for
+/// an owner or an editor, a browser or a phone all the way back.
 fn ask_signed_by(app: &App, account: &str, root: &str, ask: &AskInvite) -> anyhow::Result<bool> {
     let (c, rv) = certs_of(app, account)?;
-    Ok(Trust { account: account.to_owned(), root: root.to_owned() }
-        .evaluate(&c, &rv)
-        .get(&ask.by)
-        .is_some_and(|d| ask.signed_by(d)))
+    let trust = Trust { account: account.to_owned(), root: root.to_owned() };
+    Ok(trust.evaluate(&c, &rv).get(&ask.by).is_some_and(|d| ask.signed_by(d))
+        && (!ask.raises() || crate::api::browser_all_the_way(&trust, &c, &ask.by)))
 }
 
 pub async fn invite(State(app): State<Arc<App>>, s: Session, Path(team): Path<String>, Json(b): Json<NewInvite>) -> R {
@@ -466,10 +493,10 @@ pub async fn invite(State(app): State<Arc<App>>, s: Session, Path(team): Path<St
         }
         let me = r.member(&s.account).ok_or_else(|| err(StatusCode::FORBIDDEN, "owners invite"))?;
         let (c, rv) = certs_of(&app, &s.account)?;
-        let signed =
-            Trust { account: s.account.clone(), root: me.root.clone() }.evaluate(&c, &rv).get(&inv.by).is_some_and(
-                |d| d.kind.approves() && arugula_e2e::cert::verify_hex(&d.sign, inv.body().as_bytes(), &inv.sig),
-            );
+        let trust = Trust { account: s.account.clone(), root: me.root.clone() };
+        let signed = trust.evaluate(&c, &rv).get(&inv.by).is_some_and(|d| {
+            d.kind.approves() && arugula_e2e::cert::verify_hex(&d.sign, inv.body().as_bytes(), &inv.sig)
+        }) && (inv.role == TeamRole::Viewer || crate::api::browser_all_the_way(&trust, &c, &inv.by));
         if inv.team != team
             || inv.role == TeamRole::Owner
             || inv.expires <= now
@@ -479,7 +506,7 @@ pub async fn invite(State(app): State<Arc<App>>, s: Session, Path(team): Path<St
         {
             return Err(err(
                 StatusCode::BAD_REQUEST,
-                "a presigned invite is for this team, not as an owner, at most a day, and signed by your device",
+                "a presigned invite is for this team, not as an owner, at most a day, and signed by your device (a browser or a phone, for an editor)",
             ));
         }
         app.db.add_presigned(&inv.key, &team, &serde_json::to_string(&inv)?, inv.expires, &s.account).map_err(|e| {

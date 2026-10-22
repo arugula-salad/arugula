@@ -2,8 +2,8 @@
 //!
 //! - `fixtures`: certificates, a revocation and what Rust makes of them, as
 //!   JSON, for the TS code to evaluate the same way;
-//! - `check`: read a certificate chain the TS code signed from stdin, and
-//!   say which devices Rust trusts;
+//! - `check`: read a certificate chain the TS code signed from stdin (and
+//!   revocations, if any), and say which devices Rust trusts;
 //! - `roster`: read `{pin, prev, roster, certs}` from stdin and say whether
 //!   the roster follows (a team's next version, a presigned invite's too);
 //! - `grant`: read `{grant, daemon, key, now, signer: {id, sign}}` from
@@ -68,7 +68,8 @@ async fn main() -> anyhow::Result<()> {
             let v: serde_json::Value = serde_json::from_str(&s)?;
             let trust: Trust = serde_json::from_value(v["trust"].clone())?;
             let certs: Vec<Cert> = serde_json::from_value(v["certs"].clone())?;
-            let mut ids: Vec<String> = trust.evaluate(&certs, &[]).devices.into_keys().collect();
+            let revocations: Vec<Revocation> = serde_json::from_value(v["revocations"].clone()).unwrap_or_default();
+            let mut ids: Vec<String> = trust.evaluate(&certs, &revocations).devices.into_keys().collect();
             ids.sort();
             println!("{}", serde_json::to_string(&ids)?);
         }

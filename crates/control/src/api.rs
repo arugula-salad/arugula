@@ -137,18 +137,36 @@ fn approval_ok(app: &App, account: &str, cert: &Cert, what: &str) -> Result<(), 
         refused(what, account, cert, r.check());
         return Err(refusal(StatusCode::FORBIDDEN, r.code(), refused_say(r)));
     }
-    // The desktop app's devices from before it had a kind of its own are
-    // `browser` ones it named (`Cert::from_app`): they don't make browsers
-    // or recovery codes either, here, from now on. What they approved
-    // before stands. An account whose first device was one keeps it.
-    let by = trust.evaluate(&certs, &revs).get(&cert.approver).cloned();
-    if matches!(cert.kind, Kind::Browser | Kind::Recovery) && by.is_some_and(|a| a.from_app() && a.device != trust.root)
-    {
-        let r = Refusal::NeedsBrowser;
-        refused(what, account, cert, r.check());
-        return Err(refusal(StatusCode::FORBIDDEN, r.code(), refused_say(r)));
+    // A browser or a recovery code (which makes browsers) comes only from
+    // a browser or a phone whose every link back to the root, the root
+    // included, is one too (`Cert::is_browser`): not the desktop app's
+    // devices from before it had a kind of its own (`browser` ones it
+    // named), nor anything they certified, from now on. What they approved
+    // before stands. A recovery code approves a browser when the browser
+    // that made the code is one all the way back.
+    if matches!(cert.kind, Kind::Browser | Kind::Recovery) {
+        let by = trust.evaluate(&certs, &revs).get(&cert.approver).cloned();
+        let from = match &by {
+            Some(a) if a.kind == Kind::Recovery && cert.kind == Kind::Browser => Some(a.approver.clone()),
+            Some(a) => Some(a.device.clone()),
+            None => None,
+        };
+        if !from.is_some_and(|d| browser_all_the_way(&trust, &certs, &d)) {
+            let r = Refusal::NeedsBrowser;
+            refused(what, account, cert, r.check());
+            return Err(refusal(StatusCode::FORBIDDEN, r.code(), refused_say(r)));
+        }
     }
     Ok(())
+}
+
+/// Whether `device`, and every device back to the account's root (the root
+/// included), is a browser's or a phone's own (`Cert::is_browser`): not a
+/// CLI, not the desktop app, not the app's devices from before it had a
+/// kind. What may make a browser, a recovery code, a team's owner or
+/// editor, or remove a browser, here.
+pub(crate) fn browser_all_the_way(trust: &Trust, certs: &[Cert], device: &str) -> bool {
+    trust.chained(certs, device, |c| arugula_e2e::cert::browser_link(c, device, Cert::is_browser))
 }
 
 #[derive(Deserialize)]
@@ -460,6 +478,16 @@ pub async fn revoke(State(app): State<Arc<App>>, s: Session, Json(b): Json<Revok
     let signer = now.get(&r.by).filter(|c| c.kind.approves() && r.account == s.account && r.signed_by(c));
     if signer.is_none() {
         return Err(err(StatusCode::FORBIDDEN, "that revocation doesn't check out"));
+    }
+    // A browser or a phone is removed only from a browser or a phone all
+    // the way back to the root (daemons and pages refuse the rest too).
+    let of_browser = certs.iter().any(|c| c.device == r.device && c.kind == Kind::Browser);
+    if of_browser && !browser_all_the_way(&trust, &certs, &r.by) {
+        return Err(refusal(
+            StatusCode::FORBIDDEN,
+            Refusal::NeedsBrowser.code(),
+            "only a browser or a phone removes a browser or a phone: the desktop app and the CLI remove machines, CLIs and apps",
+        ));
     }
     // Only its own: a revoked machine is refused everywhere (#330), so
     // another account's isn't for this one to remove.

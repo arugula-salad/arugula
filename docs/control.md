@@ -342,7 +342,10 @@ the desktop app's sign-in, add a passkey, enroll or approve a device,
 approve a machine's join, make recovery codes, or approve a deploy: those
 need control's page in a browser, by its cookie, and adding a passkey or
 approving a deploy needs a passkey too. A CLI device approves only CLIs
-and machines (no command does today), never a browser. The desktop app's
+and machines (no command does today), never a browser. Its key (and the
+app's) also can't make a team's owner or editor or remove a browser or a
+phone: daemons and pages refuse those papers unless a browser all the way
+back to the account's root signed them. The desktop app's
 window is an `app` device: it reaches your machines and approves machines,
 CLIs and apps, but not browsers, phones, recovery codes or deploys.
 [control-e2e.md](control-e2e.md#page-only-actions-need-a-browser-and-a-passkey)

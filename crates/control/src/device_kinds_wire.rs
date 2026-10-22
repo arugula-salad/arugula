@@ -144,19 +144,116 @@ async fn only_a_browser_approves_a_browser() {
 }
 
 /// An account whose first device was the app, from before it had a kind,
-/// still approves browsers with it: there's nothing else to.
+/// doesn't make browsers or recovery codes with it any more, nor with a
+/// browser it made: every link back to the root is a browser's own. It
+/// still makes apps.
 #[tokio::test]
-async fn an_old_app_that_is_the_root_still_approves() {
+async fn an_old_app_root_and_what_it_made_dont_approve_browsers() {
     let c = control(|_| {}).await;
     c.app.db.account_for("github", "gh-a1", "jake", "a1", now_ms()).unwrap();
     let rk = DeviceKeys::generate();
     let mut root = Cert::new(&rk, "a1", Kind::Browser, "Arugula app on jake-air");
     root.sign_with(&rk);
     c.app.db.put_device(&root, true, now_ms()).unwrap();
+    // A browser it approved before: stands, but approves no browser now.
+    let made = device(&c, &rk, "a1", Kind::Browser, "Firefox on Linux");
     let cookie = session(&c.app, "a1");
-    let (_, b) = signed(&rk, "a1", Kind::Browser, "Firefox on Linux");
-    let (st, v) = c.as_person(&cookie, "POST", "/api/devices", Some(json!({ "cert": b }))).await;
+    for by in [&rk, &made] {
+        let (_, b) = signed(by, "a1", Kind::Browser, "Chrome on Mac");
+        let (st, v) = c.as_person(&cookie, "POST", "/api/devices", Some(json!({ "cert": b }))).await;
+        assert_eq!((st, &v["approved"]), (200, &json!(false)), "it waits: {v}");
+        let (st, v) = c
+            .as_person(&cookie, "POST", &format!("/api/devices/{}/approve", b.device), Some(json!({ "cert": b })))
+            .await;
+        assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "{v}");
+        let (_, code) = signed(by, "a1", Kind::Recovery, "recovery 1");
+        let (st, _) = c.as_person(&cookie, "POST", "/api/recovery", Some(json!({ "certs": [code] }))).await;
+        assert_eq!(st, 403);
+    }
+    let (_, app) = signed(&rk, "a1", Kind::App, "Arugula app on mini");
+    let (st, v) = c.as_person(&cookie, "POST", "/api/devices", Some(json!({ "cert": app }))).await;
     assert_eq!((st, &v["approved"]), (200, &json!(true)), "{v}");
+}
+
+/// A browser or a phone is removed only from a browser or a phone all the
+/// way back; the app removes machines.
+#[tokio::test]
+async fn only_a_browser_removes_a_browser() {
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let app = device(&c, &root, "a1", Kind::App, "Arugula app on box");
+    let old_app = device(&c, &root, "a1", Kind::Browser, "Arugula app on geek");
+    let phone = device(&c, &root, "a1", Kind::Browser, "Safari on iPhone");
+    let machine = crate::routing_wire::daemon(&c.app, "a1", "box");
+    let cookie = session(&c.app, "a1");
+    let revoke = |device: &DeviceKeys, by: &DeviceKeys| json!({ "revocation": arugula_e2e::Revocation::new("a1", &device.id(), by) });
+    for by in [&app, &old_app] {
+        let (st, v) = c.as_person(&cookie, "POST", "/api/revocations", Some(revoke(&phone, by))).await;
+        assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "{v}");
+    }
+    let (st, v) = c.as_person(&cookie, "POST", "/api/revocations", Some(revoke(&machine, &app))).await;
+    assert_eq!(st, 200, "{v}");
+    let (st, v) = c.as_person(&cookie, "POST", "/api/revocations", Some(revoke(&phone, &root))).await;
+    assert_eq!(st, 200, "{v}");
+}
+
+/// A team's owner or editor is made only from a browser or a phone all the
+/// way back: a roster or an invite that raises anyone, from the desktop
+/// app (or one of its devices from before it had a kind), is refused. Its
+/// viewer invites go through.
+#[tokio::test]
+async fn only_a_browser_makes_a_teams_owner_or_editor() {
+    use arugula_e2e::team::{AskInvite, TeamRole};
+
+    use crate::routing_wire::{member, roster};
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let bob = person(&c.app, "bob", "b1");
+    let app = device(&c, &root, "a1", Kind::App, "Arugula app on box");
+    let old_app = device(&c, &root, "a1", Kind::Browser, "Arugula app on geek");
+    let team = "0123456789abcdef";
+    let v1 = roster(team, 1, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Viewer)], &root);
+    let t = crate::db::Team {
+        id: team.into(),
+        name: "Acme".into(),
+        founder: "a1".into(),
+        founder_root: root.id(),
+        locked: false,
+    };
+    c.app.db.add_team(&t, 1, &serde_json::to_string(&v1).unwrap(), now_ms()).unwrap();
+    let cookie = session(&c.app, "a1");
+    let path = format!("/api/teams/{team}/roster");
+    let promote = |by: &DeviceKeys| json!({ "roster": roster(team, 2, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)], by) });
+    let (st, _) = c.as_person(&cookie, "POST", &path, Some(promote(&app))).await;
+    assert_eq!(st, 403, "the app");
+    let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(&old_app))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "an old app device: {v}");
+    let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(&root))).await;
+    assert_eq!(st, 200, "the browser: {v}");
+
+    let ask = |role: TeamRole, by: &DeviceKeys| {
+        let k = DeviceKeys::generate();
+        let mut a = AskInvite {
+            team: team.into(),
+            role,
+            made: now_ms(),
+            expires: now_ms() + 60_000,
+            key: hex::encode(k.sign_public()),
+            by: String::new(),
+            sig: String::new(),
+        };
+        a.sign_with(by);
+        json!({ "role": role, "ask": a })
+    };
+    let invites = format!("/api/teams/{team}/invites");
+    for by in [&app, &old_app] {
+        let (st, v) = c.as_person(&cookie, "POST", &invites, Some(ask(TeamRole::Owner, by))).await;
+        assert_eq!(st, 400, "an owner's invite from the app: {v}");
+        let (st, v) = c.as_person(&cookie, "POST", &invites, Some(ask(TeamRole::Viewer, by))).await;
+        assert_eq!(st, 200, "a viewer's: {v}");
+    }
+    let (st, v) = c.as_person(&cookie, "POST", &invites, Some(ask(TeamRole::Owner, &root))).await;
+    assert_eq!(st, 200, "an owner's from the browser: {v}");
 }
 
 /// The desktop app's window, signed in by a browser's hand-over, joins as
