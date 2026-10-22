@@ -1353,6 +1353,56 @@ pub struct StandingRule {
     pub text: String,
 }
 
+/// `GET /api/hosted/setup` (M183): a hosted machine's setup as its daemon
+/// ran it on the box's first boot, and where each repo it cloned stands.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct HostedSetup {
+    /// `setting_up`, `ready` or `failed`; none when this isn't a hosted
+    /// machine, or its setup hasn't started.
+    pub status: Option<String>,
+    /// The step it's on, or the one that failed.
+    #[serde(default)]
+    pub step: String,
+    /// The pane it runs in.
+    pub pane: Option<PaneId>,
+    /// A failed setup's last lines.
+    #[serde(default)]
+    pub tail: String,
+    /// The hash of the spec it ran.
+    #[serde(default)]
+    pub spec_hash: String,
+    #[serde(default)]
+    pub repos: Vec<HostedRepo>,
+}
+
+/// A repo a hosted machine's setup cloned, and what isn't pushed from it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct HostedRepo {
+    /// Where it is on the box.
+    pub dir: String,
+    pub url: String,
+    /// Its branch (empty: detached).
+    #[serde(default)]
+    pub branch: String,
+    /// Files changed or not tracked (ignored ones aside).
+    #[serde(default)]
+    pub changed: u32,
+    /// Commits on no remote branch.
+    #[serde(default)]
+    pub unpushed: u32,
+    /// Why it couldn't be read (not cloned, not a repo).
+    pub error: Option<String>,
+}
+
+impl HostedRepo {
+    /// It holds work a rebuild would lose.
+    pub fn dirty(&self) -> bool {
+        self.changed > 0 || self.unpushed > 0
+    }
+}
+
 /// `GET /api/hosts/self/shell-env` (#74): the shell environment blocks that
 /// run your tools get: its `PATH` and the names of the rest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

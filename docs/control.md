@@ -102,11 +102,36 @@ in the platform's log.
 gate): a half-hour turn nobody watches, then the pause; and a box left
 overnight, paused in the morning with its panes still there.
 
+On its first boot the box sets itself up from the spec (M183, #1244), in a
+pane in a session called `setup` that anyone on the project can watch like
+any pane: it clones the repos into `$HOME`, installs the packages with
+apt, then runs the setup script with `bash -e` in the first repo. Its
+daemon reads the spec from the hub's `GET /api/hosted/spec` (signed as the
+hosted machine; the hub asks the platform) and says how it goes at `POST
+/api/hosted/setup`: setting up (with the step), ready, or failed (with the
+step and a fixed reason code). Control never gets the pane's text: `cloud
+ls` and `open` say "failed at <step>: open the setup pane", and `--wait`
+reads a failed setup's last lines from the box over the relay, end to end. A GitHub repo linked to the project is
+cloned with a read-only installation token for that repo alone, minted for
+the clone; any other with the workspace's `GIT_TOKEN` secret (and
+`GIT_USERNAME`, else `x-access-token`). The daemon hands them to git in its
+environment for the clone alone, from a file in memory the setup removes as
+it reads it: nothing lands in a repo's config or on the disk. The spec's
+`env` names take their values from the workspace's secrets, for the setup
+script. Changing the spec shows "rebuild needed" until the box is rebuilt.
+Before a rebuild the CLI asks the box, through the relay, for repos with
+changes or commits on no remote branch (`GET /api/hosted/setup` on the
+daemon), and stops unless `--download FILE` saves them first (a tarball of
+those repos' files that aren't ignored and their `.git`, `GET
+/api/hosted/setup/archive`) or `--force`.
+
 ```
 arugula cloud create dev --repo https://github.com/acme/app --setup setup.sh
 arugula cloud ls                          # every project's; --project <id or name>
-arugula cloud open dev --wait             # wakes a paused box, says its machine
-arugula cloud rebuild dev                 # a new box from the spec
+arugula cloud open dev --wait             # wakes a paused box, says its machine and its setup
+arugula cloud edit dev --setup setup.sh   # rebuild needed
+echo "$TOKEN" | arugula cloud secret set dev GIT_TOKEN
+arugula cloud rebuild dev --download dev.tgz   # a new box from the spec
 arugula cloud delete dev
 ```
 
@@ -189,6 +214,44 @@ arugula cloud key set anthropic --project acme   # reads the key from stdin
 arugula cloud key ls --project acme
 arugula cloud key clear anthropic --project acme
 ```
+
+**Agents on hosted workspaces (M184, #1245).** A hosted workspace's agent
+blocks are its machine's, as on a laptop: + Agent on the platform page's
+workspace (`/p/:project/workspaces/hw_…`) opens Start an agent on control's
+page with its machine picked (`#machine=<id>&agent`), and everyone in the
+project sees the same blocks. An agent on one of a person's own machines
+drives it over MCP: `list kind cloud_workspaces` lists hosted workspaces
+first (`kind: hosted`), `cloud` and `read_cloud` take their `hw_…` ids
+(a tab is an agent block, by pane number; `diff`, `git_status`, `files`
+and `file` read on its machine), and `run`, `start_agent`, `prompt_agent`,
+`agent_respond`, `send_input`, `read_output`, `read_file`, `wait`, `show`,
+`close` and `list` take `cloud_workspace` to work on its machine. The
+person's machine reaches it through control's relay, only with a live
+`cloud.drive` grant, and the hosted machine lets in the project's owners'
+and editors' machines as their person (a viewer's reach its agents only):
+`crates/daemon/src/mcp/hosted.rs`. When an agent block there closes, the
+machine archives its transcript to the platform, read only under the
+project (`GET /api/projects/{project}/transcripts`).
+
+**Public previews (M187, #1248).** A dev server in a hosted workspace shows
+to the project's people in a browser block (M186). One of its owners or
+editors can also make a port public: it gets an address of its own,
+`https://<id>.arugula.site` (`ARUGULA_PREVIEW_DOMAIN`), that anyone opens
+signed out, for 7 days unless renewed, and the workspace shows who made it
+public. Control serves it through the relay and sees its traffic, which is
+fine because it's public; members' previews stay end to end. A paused box
+isn't woken for a stranger: the page says it's asleep. Turning a preview
+off takes it down within a minute (docs/control-e2e.md, "Public
+previews").
+
+```
+arugula cloud preview public dev 5173     # prints its public address
+arugula cloud preview ls dev
+arugula cloud preview renew dev 5173      # 7 more days
+arugula cloud preview off dev 5173
+```
+
+No page lists a workspace's ports yet: the CLI is the way in.
 
 **Bodies and comments (M166, #1212).** The platform keeps a linked repo's
 PRs and issues as metadata. Opening one (`GET

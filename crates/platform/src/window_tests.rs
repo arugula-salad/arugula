@@ -405,3 +405,28 @@ fn a_url_comes_from_a_file_or_the_environment() {
     assert!("env:ARUGULA_WINDOW_TEST_NO_SUCH_VARIABLE".parse::<Place>().unwrap_err().contains("neither"));
     assert_eq!("/data/platform.db".parse::<Place>().unwrap(), Place::File("/data/platform.db".into()));
 }
+
+/// `previews` (M187): the operator lists what's public, and takes one
+/// down at once by its URL, host or id.
+#[test]
+fn previews_lists_and_takes_down() {
+    let d = Dir::new();
+    let file = d.at("platform.db");
+    let id = "0123456789abcdef0123456789abcdef";
+    {
+        let db = crate::db::Db::open(&file).unwrap();
+        db.add_hosted_workspace("hw_1", "prj_a", "dev", &Default::default(), "alice", 5, 0).unwrap();
+        let now = arugula_e2e::now_ms();
+        db.make_port_public("hw_1", 5173, "alice", id, now + 60_000, now).unwrap();
+        db.make_port_public("hw_1", 3000, "bob", "ffffffffffffffffffffffffffffffff", now + 60_000, now).unwrap();
+    }
+    let at = Place::File(file);
+    let (taken, list) = portable::previews(&at, None).unwrap();
+    assert!(!taken);
+    assert_eq!(list.len(), 2);
+    let (taken, list) = portable::previews(&at, Some(&format!("https://{id}.arugula.site/some/page"))).unwrap();
+    assert!(taken);
+    assert_eq!(list.iter().map(|p| p.port).collect::<Vec<_>>(), [3000]);
+    let (taken, _) = portable::previews(&at, Some(id)).unwrap();
+    assert!(!taken, "already down");
+}

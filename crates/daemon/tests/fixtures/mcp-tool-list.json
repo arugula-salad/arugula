@@ -27,6 +27,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "command": {
             "default": null,
             "description": "The command line, typed into a new shell (so it's in history, and the\nshell stays for you to take over). None: just a shell.",
@@ -287,6 +291,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "enter": {
             "default": null,
             "description": "Press Enter after the text (default true).",
@@ -436,6 +444,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "last_command": {
             "default": false,
             "description": "The output of the pane's last (or current) command.",
@@ -547,7 +559,7 @@
           },
           "cloud_workspace": {
             "default": null,
-            "description": "A Cloud workspace's id (cw_…), with tab.",
+            "description": "A Cloud workspace's id (cw_…), with tab. Or a hosted one's\n(hw_…): with tab (one of its agent blocks), or with pane to wait on\nits machine.",
             "type": [
               "string",
               "null"
@@ -628,7 +640,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "cloud_tabs: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "cloud_tabs: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "cwd": {
@@ -1069,6 +1081,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "pane": {
             "$ref": "#/$defs/PaneArg"
           }
@@ -1253,7 +1269,7 @@
             "description": "port, file, pr, issue, conversation, cloud_workspace: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
-            "description": "cloud_workspace: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "cloud_workspace: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "dir": {
@@ -1448,6 +1464,10 @@
             "description": "A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.",
             "type": "boolean"
           },
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "command": {
             "default": null,
             "description": "For acp: the agent server's command line.",
@@ -1564,6 +1584,10 @@
             "description": "It's waiting on an approval or a question and this answers it.\nWithout it, an agent waiting on someone isn't typed at: its\nquestion comes back instead.",
             "type": "boolean"
           },
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "pane": {
             "$ref": "#/$defs/PaneArg",
             "description": "An agent block, or a terminal running an agent (Claude Code, Codex)."
@@ -1654,6 +1678,10 @@
               "object",
               "null"
             ]
+          },
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
           },
           "id": {
             "default": null,
@@ -2516,6 +2544,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "max_chars": {
             "default": null,
             "description": "At most this many characters (default 16000, at most 40000).",
@@ -2689,12 +2721,12 @@
         "readOnlyHint": true,
         "title": "Read a Cloud workspace"
       },
-      "description": "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine.\n- events {cloud_workspace, tab, max_chars?, offset?}: A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.\n- requests {cloud_workspace, tab}: What a tab's agent waits on someone for: each permission request with its options, and each question with its fields. cloud {kind: answer} answers one.\n- files {cloud_workspace, path?}: A directory on a Cloud workspace's machine: its entries, with type and size.\n- file {cloud_workspace, path, max_chars?}: A text file on a Cloud workspace's machine, with secrets redacted.\n- diff {cloud_workspace, max_chars?, path?, ref?, staged?}: git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).\n- git_status {cloud_workspace, path?}: git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).\n- setup_log {cloud_workspace}: What a Cloud workspace's last setup printed, step by step (packages, repositories, setup script): why one failed. Reads while the machine is failed or parked.",
+      "description": "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine. A hosted Cloud workspace (hw_…) is a machine of a project: its tabs are its agent blocks, by pane number, and reading one wakes it.\n- events {cloud_workspace, tab, max_chars?, offset?}: A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.\n- requests {cloud_workspace, tab}: What a tab's agent waits on someone for: each permission request with its options, and each question with its fields. cloud {kind: answer} answers one.\n- files {cloud_workspace, path?}: A directory on a Cloud workspace's machine: its entries, with type and size.\n- file {cloud_workspace, path, max_chars?}: A text file on a Cloud workspace's machine, with secrets redacted.\n- diff {cloud_workspace, max_chars?, path?, ref?, staged?}: git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).\n- git_status {cloud_workspace, path?}: git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).\n- setup_log {cloud_workspace}: What a Cloud workspace's last setup printed, step by step (packages, repositories, setup script): why one failed. Reads while the machine is failed or parked.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "events, requests, files, file, diff, git_status: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). setup_log: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces).",
             "type": "string"
           },
           "kind": {
@@ -2772,7 +2804,7 @@
         "readOnlyHint": false,
         "title": "Drive a Cloud workspace"
       },
-      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild or retry. The user sees it all on control's page. Changing a Cloud workspace's settings or deleting one is theirs, on that page.\n- create {name, apt?, env_vars?, npm?, repositories?, secrets?, setup_script?}: A new Cloud workspace: a machine with these repositories checked out, packages installed and setup script run. It sets up for a few minutes (list kind cloud_workspaces says its step; read_cloud kind setup_log what it printed); a tab opened meanwhile starts once it's ready. Returns its id.\n- open_tab {cloud_workspace, agent?, cwd?, model?, prompt?}: A new tab in a Cloud workspace: an agent's conversation on its machine, with a first prompt if given. Returns the tab's id; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (done, with the reply), when it asks for someone (needs_input, with its requests: answer one), or still running after timeout, with the offset to wait after. A parked machine wakes for it; a tab whose conversation failed starts a new one with it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, request, tab, action?, content?, option?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its fields, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its conversation and agent end; its transcript is kept. The other tabs and the machine carry on.\n- rebuild {cloud_workspace, interrupt?}: Replace a Cloud workspace's machine with one set up from its settings as saved: its disk is wiped; its tabs keep their conversations. Refused while a tab's turn runs, unless interrupt.\n- retry {cloud_workspace}: Set up a Cloud workspace whose setup failed again (read_cloud kind setup_log says why it failed).",
+      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild or retry. The user sees it all on control's page. Changing a Cloud workspace's settings or deleting one is theirs, on that page. A hosted Cloud workspace (hw_…, made with project) is a machine of the project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace.\n- create {name, apt?, env_vars?, npm?, project?, repositories?, secrets?, setup_script?}: A new Cloud workspace: a machine with these repositories checked out, packages installed and setup script run. It sets up for a few minutes (list kind cloud_workspaces says its step; read_cloud kind setup_log what it printed); a tab opened meanwhile starts once it's ready. Returns its id.\n- open_tab {cloud_workspace, agent?, cwd?, model?, prompt?}: A new tab in a Cloud workspace: an agent's conversation on its machine, with a first prompt if given. Returns the tab's id; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (done, with the reply), when it asks for someone (needs_input, with its requests: answer one), or still running after timeout, with the offset to wait after. A parked machine wakes for it; a tab whose conversation failed starts a new one with it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, request, tab, action?, content?, option?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its fields, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its conversation and agent end; its transcript is kept. The other tabs and the machine carry on.\n- rebuild {cloud_workspace, interrupt?}: Replace a Cloud workspace's machine with one set up from its settings as saved: its disk is wiped; its tabs keep their conversations. Refused while a tab's turn runs, unless interrupt.\n- retry {cloud_workspace}: Set up a Cloud workspace whose setup failed again (read_cloud kind setup_log says why it failed).",
       "inputSchema": {
         "$defs": {
           "CloudRepository": {
@@ -2839,7 +2871,7 @@
             "type": "array"
           },
           "cloud_workspace": {
-            "description": "open_tab, prompt, interrupt, answer, close_tab, rebuild, retry: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "open_tab, prompt, interrupt, answer, close_tab, rebuild: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). retry: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces).",
             "type": "string"
           },
           "content": {
@@ -2909,6 +2941,14 @@
           "option": {
             "default": null,
             "description": "answer: A permission request: the option to pick, by its optionId.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "create: A project (its prj_… id, or personal): a hosted Cloud workspace in\nit, a machine of the project's (only url is read of each repository,\nand secrets are env names its box takes). Without it: the account's\nown Cloud workspace, as before.",
             "type": [
               "string",
               "null"
@@ -3417,6 +3457,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "command": {
             "default": null,
             "description": "The command line, typed into a new shell (so it's in history, and the\nshell stays for you to take over). None: just a shell.",
@@ -3703,6 +3747,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "enter": {
             "default": null,
             "description": "Press Enter after the text (default true).",
@@ -3852,6 +3900,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "last_command": {
             "default": false,
             "description": "The output of the pane's last (or current) command.",
@@ -3963,7 +4015,7 @@
           },
           "cloud_workspace": {
             "default": null,
-            "description": "A Cloud workspace's id (cw_…), with tab.",
+            "description": "A Cloud workspace's id (cw_…), with tab. Or a hosted one's\n(hw_…): with tab (one of its agent blocks), or with pane to wait on\nits machine.",
             "type": [
               "string",
               "null"
@@ -4128,7 +4180,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "cloud_tabs: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "cloud_tabs: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "cwd": {
@@ -4575,6 +4627,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "pane": {
             "$ref": "#/$defs/PaneArg"
           }
@@ -4775,7 +4831,7 @@
             "description": "port, file, pr, issue, conversation, cloud_workspace, app, workspace: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
-            "description": "cloud_workspace: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "cloud_workspace: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "dir": {
@@ -5106,6 +5162,10 @@
             "description": "A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.",
             "type": "boolean"
           },
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "command": {
             "default": null,
             "description": "For acp: the agent server's command line.",
@@ -5235,6 +5295,10 @@
             "description": "It's waiting on an approval or a question and this answers it.\nWithout it, an agent waiting on someone isn't typed at: its\nquestion comes back instead.",
             "type": "boolean"
           },
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "pane": {
             "$ref": "#/$defs/PaneArg",
             "description": "An agent block, or a terminal running an agent (Claude Code, Codex)."
@@ -5325,6 +5389,10 @@
               "object",
               "null"
             ]
+          },
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
           },
           "id": {
             "default": null,
@@ -6187,6 +6255,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "max_chars": {
             "default": null,
             "description": "At most this many characters (default 16000, at most 40000).",
@@ -6360,12 +6432,12 @@
         "readOnlyHint": true,
         "title": "Read a Cloud workspace"
       },
-      "description": "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine.\n- events {cloud_workspace, tab, max_chars?, offset?}: A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.\n- requests {cloud_workspace, tab}: What a tab's agent waits on someone for: each permission request with its options, and each question with its fields. cloud {kind: answer} answers one.\n- files {cloud_workspace, path?}: A directory on a Cloud workspace's machine: its entries, with type and size.\n- file {cloud_workspace, path, max_chars?}: A text file on a Cloud workspace's machine, with secrets redacted.\n- diff {cloud_workspace, max_chars?, path?, ref?, staged?}: git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).\n- git_status {cloud_workspace, path?}: git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).\n- setup_log {cloud_workspace}: What a Cloud workspace's last setup printed, step by step (packages, repositories, setup script): why one failed. Reads while the machine is failed or parked.",
+      "description": "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine. A hosted Cloud workspace (hw_…) is a machine of a project: its tabs are its agent blocks, by pane number, and reading one wakes it.\n- events {cloud_workspace, tab, max_chars?, offset?}: A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.\n- requests {cloud_workspace, tab}: What a tab's agent waits on someone for: each permission request with its options, and each question with its fields. cloud {kind: answer} answers one.\n- files {cloud_workspace, path?}: A directory on a Cloud workspace's machine: its entries, with type and size.\n- file {cloud_workspace, path, max_chars?}: A text file on a Cloud workspace's machine, with secrets redacted.\n- diff {cloud_workspace, max_chars?, path?, ref?, staged?}: git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).\n- git_status {cloud_workspace, path?}: git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).\n- setup_log {cloud_workspace}: What a Cloud workspace's last setup printed, step by step (packages, repositories, setup script): why one failed. Reads while the machine is failed or parked.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "events, requests, files, file, diff, git_status: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). setup_log: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces).",
             "type": "string"
           },
           "kind": {
@@ -6443,7 +6515,7 @@
         "readOnlyHint": false,
         "title": "Drive a Cloud workspace"
       },
-      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild or retry. The user sees it all on control's page. Changing a Cloud workspace's settings or deleting one is theirs, on that page.\n- create {name, apt?, env_vars?, npm?, repositories?, secrets?, setup_script?}: A new Cloud workspace: a machine with these repositories checked out, packages installed and setup script run. It sets up for a few minutes (list kind cloud_workspaces says its step; read_cloud kind setup_log what it printed); a tab opened meanwhile starts once it's ready. Returns its id.\n- open_tab {cloud_workspace, agent?, cwd?, model?, prompt?}: A new tab in a Cloud workspace: an agent's conversation on its machine, with a first prompt if given. Returns the tab's id; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (done, with the reply), when it asks for someone (needs_input, with its requests: answer one), or still running after timeout, with the offset to wait after. A parked machine wakes for it; a tab whose conversation failed starts a new one with it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, request, tab, action?, content?, option?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its fields, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its conversation and agent end; its transcript is kept. The other tabs and the machine carry on.\n- rebuild {cloud_workspace, interrupt?}: Replace a Cloud workspace's machine with one set up from its settings as saved: its disk is wiped; its tabs keep their conversations. Refused while a tab's turn runs, unless interrupt.\n- retry {cloud_workspace}: Set up a Cloud workspace whose setup failed again (read_cloud kind setup_log says why it failed).",
+      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild or retry. The user sees it all on control's page. Changing a Cloud workspace's settings or deleting one is theirs, on that page. A hosted Cloud workspace (hw_…, made with project) is a machine of the project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace.\n- create {name, apt?, env_vars?, npm?, project?, repositories?, secrets?, setup_script?}: A new Cloud workspace: a machine with these repositories checked out, packages installed and setup script run. It sets up for a few minutes (list kind cloud_workspaces says its step; read_cloud kind setup_log what it printed); a tab opened meanwhile starts once it's ready. Returns its id.\n- open_tab {cloud_workspace, agent?, cwd?, model?, prompt?}: A new tab in a Cloud workspace: an agent's conversation on its machine, with a first prompt if given. Returns the tab's id; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (done, with the reply), when it asks for someone (needs_input, with its requests: answer one), or still running after timeout, with the offset to wait after. A parked machine wakes for it; a tab whose conversation failed starts a new one with it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, request, tab, action?, content?, option?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its fields, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its conversation and agent end; its transcript is kept. The other tabs and the machine carry on.\n- rebuild {cloud_workspace, interrupt?}: Replace a Cloud workspace's machine with one set up from its settings as saved: its disk is wiped; its tabs keep their conversations. Refused while a tab's turn runs, unless interrupt.\n- retry {cloud_workspace}: Set up a Cloud workspace whose setup failed again (read_cloud kind setup_log says why it failed).",
       "inputSchema": {
         "$defs": {
           "CloudRepository": {
@@ -6510,7 +6582,7 @@
             "type": "array"
           },
           "cloud_workspace": {
-            "description": "open_tab, prompt, interrupt, answer, close_tab, rebuild, retry: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "open_tab, prompt, interrupt, answer, close_tab, rebuild: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). retry: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces).",
             "type": "string"
           },
           "content": {
@@ -6580,6 +6652,14 @@
           "option": {
             "default": null,
             "description": "answer: A permission request: the option to pick, by its optionId.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "create: A project (its prj_… id, or personal): a hosted Cloud workspace in\nit, a machine of the project's (only url is read of each repository,\nand secrets are env names its box takes). Without it: the account's\nown Cloud workspace, as before.",
             "type": [
               "string",
               "null"
@@ -7088,6 +7168,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "command": {
             "default": null,
             "description": "The command line, typed into a new shell (so it's in history, and the\nshell stays for you to take over). None: just a shell.",
@@ -7348,6 +7432,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "enter": {
             "default": null,
             "description": "Press Enter after the text (default true).",
@@ -7497,6 +7585,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "last_command": {
             "default": false,
             "description": "The output of the pane's last (or current) command.",
@@ -7608,7 +7700,7 @@
           },
           "cloud_workspace": {
             "default": null,
-            "description": "A Cloud workspace's id (cw_…), with tab.",
+            "description": "A Cloud workspace's id (cw_…), with tab. Or a hosted one's\n(hw_…): with tab (one of its agent blocks), or with pane to wait on\nits machine.",
             "type": [
               "string",
               "null"
@@ -7689,7 +7781,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "cloud_tabs: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "cloud_tabs: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "cwd": {
@@ -8130,6 +8222,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "pane": {
             "$ref": "#/$defs/PaneArg"
           }
@@ -8314,7 +8410,7 @@
             "description": "port, file, pr, issue, conversation, cloud_workspace: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
-            "description": "cloud_workspace: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "cloud_workspace: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "dir": {
@@ -8509,6 +8605,10 @@
             "description": "A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.",
             "type": "boolean"
           },
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "command": {
             "default": null,
             "description": "For acp: the agent server's command line.",
@@ -8625,6 +8725,10 @@
             "description": "It's waiting on an approval or a question and this answers it.\nWithout it, an agent waiting on someone isn't typed at: its\nquestion comes back instead.",
             "type": "boolean"
           },
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "pane": {
             "$ref": "#/$defs/PaneArg",
             "description": "An agent block, or a terminal running an agent (Claude Code, Codex)."
@@ -8715,6 +8819,10 @@
               "object",
               "null"
             ]
+          },
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
           },
           "id": {
             "default": null,
@@ -9577,6 +9685,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "max_chars": {
             "default": null,
             "description": "At most this many characters (default 16000, at most 40000).",
@@ -9750,12 +9862,12 @@
         "readOnlyHint": true,
         "title": "Read a Cloud workspace"
       },
-      "description": "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine.\n- events {cloud_workspace, tab, max_chars?, offset?}: A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.\n- requests {cloud_workspace, tab}: What a tab's agent waits on someone for: each permission request with its options, and each question with its fields. cloud {kind: answer} answers one.\n- files {cloud_workspace, path?}: A directory on a Cloud workspace's machine: its entries, with type and size.\n- file {cloud_workspace, path, max_chars?}: A text file on a Cloud workspace's machine, with secrets redacted.\n- diff {cloud_workspace, max_chars?, path?, ref?, staged?}: git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).\n- git_status {cloud_workspace, path?}: git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).\n- setup_log {cloud_workspace}: What a Cloud workspace's last setup printed, step by step (packages, repositories, setup script): why one failed. Reads while the machine is failed or parked.",
+      "description": "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine. A hosted Cloud workspace (hw_…) is a machine of a project: its tabs are its agent blocks, by pane number, and reading one wakes it.\n- events {cloud_workspace, tab, max_chars?, offset?}: A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.\n- requests {cloud_workspace, tab}: What a tab's agent waits on someone for: each permission request with its options, and each question with its fields. cloud {kind: answer} answers one.\n- files {cloud_workspace, path?}: A directory on a Cloud workspace's machine: its entries, with type and size.\n- file {cloud_workspace, path, max_chars?}: A text file on a Cloud workspace's machine, with secrets redacted.\n- diff {cloud_workspace, max_chars?, path?, ref?, staged?}: git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).\n- git_status {cloud_workspace, path?}: git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).\n- setup_log {cloud_workspace}: What a Cloud workspace's last setup printed, step by step (packages, repositories, setup script): why one failed. Reads while the machine is failed or parked.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "events, requests, files, file, diff, git_status: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). setup_log: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces).",
             "type": "string"
           },
           "kind": {
@@ -9833,7 +9945,7 @@
         "readOnlyHint": false,
         "title": "Drive a Cloud workspace"
       },
-      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild or retry. The user sees it all on control's page. Changing a Cloud workspace's settings or deleting one is theirs, on that page.\n- create {name, apt?, env_vars?, npm?, repositories?, secrets?, setup_script?}: A new Cloud workspace: a machine with these repositories checked out, packages installed and setup script run. It sets up for a few minutes (list kind cloud_workspaces says its step; read_cloud kind setup_log what it printed); a tab opened meanwhile starts once it's ready. Returns its id.\n- open_tab {cloud_workspace, agent?, cwd?, model?, prompt?}: A new tab in a Cloud workspace: an agent's conversation on its machine, with a first prompt if given. Returns the tab's id; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (done, with the reply), when it asks for someone (needs_input, with its requests: answer one), or still running after timeout, with the offset to wait after. A parked machine wakes for it; a tab whose conversation failed starts a new one with it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, request, tab, action?, content?, option?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its fields, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its conversation and agent end; its transcript is kept. The other tabs and the machine carry on.\n- rebuild {cloud_workspace, interrupt?}: Replace a Cloud workspace's machine with one set up from its settings as saved: its disk is wiped; its tabs keep their conversations. Refused while a tab's turn runs, unless interrupt.\n- retry {cloud_workspace}: Set up a Cloud workspace whose setup failed again (read_cloud kind setup_log says why it failed).",
+      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild or retry. The user sees it all on control's page. Changing a Cloud workspace's settings or deleting one is theirs, on that page. A hosted Cloud workspace (hw_…, made with project) is a machine of the project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace.\n- create {name, apt?, env_vars?, npm?, project?, repositories?, secrets?, setup_script?}: A new Cloud workspace: a machine with these repositories checked out, packages installed and setup script run. It sets up for a few minutes (list kind cloud_workspaces says its step; read_cloud kind setup_log what it printed); a tab opened meanwhile starts once it's ready. Returns its id.\n- open_tab {cloud_workspace, agent?, cwd?, model?, prompt?}: A new tab in a Cloud workspace: an agent's conversation on its machine, with a first prompt if given. Returns the tab's id; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (done, with the reply), when it asks for someone (needs_input, with its requests: answer one), or still running after timeout, with the offset to wait after. A parked machine wakes for it; a tab whose conversation failed starts a new one with it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, request, tab, action?, content?, option?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its fields, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its conversation and agent end; its transcript is kept. The other tabs and the machine carry on.\n- rebuild {cloud_workspace, interrupt?}: Replace a Cloud workspace's machine with one set up from its settings as saved: its disk is wiped; its tabs keep their conversations. Refused while a tab's turn runs, unless interrupt.\n- retry {cloud_workspace}: Set up a Cloud workspace whose setup failed again (read_cloud kind setup_log says why it failed).",
       "inputSchema": {
         "$defs": {
           "CloudRepository": {
@@ -9900,7 +10012,7 @@
             "type": "array"
           },
           "cloud_workspace": {
-            "description": "open_tab, prompt, interrupt, answer, close_tab, rebuild, retry: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "open_tab, prompt, interrupt, answer, close_tab, rebuild: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). retry: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces).",
             "type": "string"
           },
           "content": {
@@ -9970,6 +10082,14 @@
           "option": {
             "default": null,
             "description": "answer: A permission request: the option to pick, by its optionId.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "create: A project (its prj_… id, or personal): a hosted Cloud workspace in\nit, a machine of the project's (only url is read of each repository,\nand secrets are env names its box takes). Without it: the account's\nown Cloud workspace, as before.",
             "type": [
               "string",
               "null"
@@ -10478,6 +10598,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "command": {
             "default": null,
             "description": "The command line, typed into a new shell (so it's in history, and the\nshell stays for you to take over). None: just a shell.",
@@ -10764,6 +10888,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "enter": {
             "default": null,
             "description": "Press Enter after the text (default true).",
@@ -10913,6 +11041,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "last_command": {
             "default": false,
             "description": "The output of the pane's last (or current) command.",
@@ -11024,7 +11156,7 @@
           },
           "cloud_workspace": {
             "default": null,
-            "description": "A Cloud workspace's id (cw_…), with tab.",
+            "description": "A Cloud workspace's id (cw_…), with tab. Or a hosted one's\n(hw_…): with tab (one of its agent blocks), or with pane to wait on\nits machine.",
             "type": [
               "string",
               "null"
@@ -11189,7 +11321,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "cloud_tabs: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "cloud_tabs: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "cwd": {
@@ -11636,6 +11768,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "pane": {
             "$ref": "#/$defs/PaneArg"
           }
@@ -11836,7 +11972,7 @@
             "description": "port, file, pr, issue, conversation, cloud_workspace, app, workspace: Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in). changes: The pane whose repository it is (its directory, on its machine). Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in)."
           },
           "cloud_workspace": {
-            "description": "cloud_workspace: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "cloud_workspace: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "dir": {
@@ -12167,6 +12303,10 @@
             "description": "A chat block instead: a plain conversation with Claude, with no tools, files, shell or MCP servers, for the user to read and go on with. Only prompt, model, title, beside and session apply.",
             "type": "boolean"
           },
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "command": {
             "default": null,
             "description": "For acp: the agent server's command line.",
@@ -12296,6 +12436,10 @@
             "description": "It's waiting on an approval or a question and this answers it.\nWithout it, an agent waiting on someone isn't typed at: its\nquestion comes back instead.",
             "type": "boolean"
           },
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "pane": {
             "$ref": "#/$defs/PaneArg",
             "description": "An agent block, or a terminal running an agent (Claude Code, Codex)."
@@ -12386,6 +12530,10 @@
               "object",
               "null"
             ]
+          },
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
           },
           "id": {
             "default": null,
@@ -13248,6 +13396,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "max_chars": {
             "default": null,
             "description": "At most this many characters (default 16000, at most 40000).",
@@ -13421,12 +13573,12 @@
         "readOnlyHint": true,
         "title": "Read a Cloud workspace"
       },
-      "description": "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine.\n- events {cloud_workspace, tab, max_chars?, offset?}: A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.\n- requests {cloud_workspace, tab}: What a tab's agent waits on someone for: each permission request with its options, and each question with its fields. cloud {kind: answer} answers one.\n- files {cloud_workspace, path?}: A directory on a Cloud workspace's machine: its entries, with type and size.\n- file {cloud_workspace, path, max_chars?}: A text file on a Cloud workspace's machine, with secrets redacted.\n- diff {cloud_workspace, max_chars?, path?, ref?, staged?}: git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).\n- git_status {cloud_workspace, path?}: git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).\n- setup_log {cloud_workspace}: What a Cloud workspace's last setup printed, step by step (packages, repositories, setup script): why one failed. Reads while the machine is failed or parked.",
+      "description": "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine. A hosted Cloud workspace (hw_…) is a machine of a project: its tabs are its agent blocks, by pane number, and reading one wakes it.\n- events {cloud_workspace, tab, max_chars?, offset?}: A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.\n- requests {cloud_workspace, tab}: What a tab's agent waits on someone for: each permission request with its options, and each question with its fields. cloud {kind: answer} answers one.\n- files {cloud_workspace, path?}: A directory on a Cloud workspace's machine: its entries, with type and size.\n- file {cloud_workspace, path, max_chars?}: A text file on a Cloud workspace's machine, with secrets redacted.\n- diff {cloud_workspace, max_chars?, path?, ref?, staged?}: git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).\n- git_status {cloud_workspace, path?}: git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).\n- setup_log {cloud_workspace}: What a Cloud workspace's last setup printed, step by step (packages, repositories, setup script): why one failed. Reads while the machine is failed or parked.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "events, requests, files, file, diff, git_status: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). setup_log: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces).",
             "type": "string"
           },
           "kind": {
@@ -13504,7 +13656,7 @@
         "readOnlyHint": false,
         "title": "Drive a Cloud workspace"
       },
-      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild or retry. The user sees it all on control's page. Changing a Cloud workspace's settings or deleting one is theirs, on that page.\n- create {name, apt?, env_vars?, npm?, repositories?, secrets?, setup_script?}: A new Cloud workspace: a machine with these repositories checked out, packages installed and setup script run. It sets up for a few minutes (list kind cloud_workspaces says its step; read_cloud kind setup_log what it printed); a tab opened meanwhile starts once it's ready. Returns its id.\n- open_tab {cloud_workspace, agent?, cwd?, model?, prompt?}: A new tab in a Cloud workspace: an agent's conversation on its machine, with a first prompt if given. Returns the tab's id; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (done, with the reply), when it asks for someone (needs_input, with its requests: answer one), or still running after timeout, with the offset to wait after. A parked machine wakes for it; a tab whose conversation failed starts a new one with it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, request, tab, action?, content?, option?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its fields, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its conversation and agent end; its transcript is kept. The other tabs and the machine carry on.\n- rebuild {cloud_workspace, interrupt?}: Replace a Cloud workspace's machine with one set up from its settings as saved: its disk is wiped; its tabs keep their conversations. Refused while a tab's turn runs, unless interrupt.\n- retry {cloud_workspace}: Set up a Cloud workspace whose setup failed again (read_cloud kind setup_log says why it failed).",
+      "description": "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild or retry. The user sees it all on control's page. Changing a Cloud workspace's settings or deleting one is theirs, on that page. A hosted Cloud workspace (hw_…, made with project) is a machine of the project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace.\n- create {name, apt?, env_vars?, npm?, project?, repositories?, secrets?, setup_script?}: A new Cloud workspace: a machine with these repositories checked out, packages installed and setup script run. It sets up for a few minutes (list kind cloud_workspaces says its step; read_cloud kind setup_log what it printed); a tab opened meanwhile starts once it's ready. Returns its id.\n- open_tab {cloud_workspace, agent?, cwd?, model?, prompt?}: A new tab in a Cloud workspace: an agent's conversation on its machine, with a first prompt if given. Returns the tab's id; wait with the tab until idle or needs_input.\n- prompt {cloud_workspace, tab, text, timeout?}: Give a tab's agent a prompt and wait for its turn: returns when it ends (done, with the reply), when it asks for someone (needs_input, with its requests: answer one), or still running after timeout, with the offset to wait after. A parked machine wakes for it; a tab whose conversation failed starts a new one with it.\n- interrupt {cloud_workspace, tab}: Stop the turn a tab's agent is in. The tab stays open.\n- answer {cloud_workspace, request, tab, action?, content?, option?}: Answer what a tab's agent asks (read_cloud kind requests): a permission request with option, a question with action (and content, its fields, to accept).\n- close_tab {cloud_workspace, tab}: Close a tab: its conversation and agent end; its transcript is kept. The other tabs and the machine carry on.\n- rebuild {cloud_workspace, interrupt?}: Replace a Cloud workspace's machine with one set up from its settings as saved: its disk is wiped; its tabs keep their conversations. Refused while a tab's turn runs, unless interrupt.\n- retry {cloud_workspace}: Set up a Cloud workspace whose setup failed again (read_cloud kind setup_log says why it failed).",
       "inputSchema": {
         "$defs": {
           "CloudRepository": {
@@ -13571,7 +13723,7 @@
             "type": "array"
           },
           "cloud_workspace": {
-            "description": "open_tab, prompt, interrupt, answer, close_tab, rebuild, retry: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "open_tab, prompt, interrupt, answer, close_tab, rebuild: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). retry: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces).",
             "type": "string"
           },
           "content": {
@@ -13641,6 +13793,14 @@
           "option": {
             "default": null,
             "description": "answer: A permission request: the option to pick, by its optionId.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "default": null,
+            "description": "create: A project (its prj_… id, or personal): a hosted Cloud workspace in\nit, a machine of the project's (only url is read of each repository,\nand secrets are env names its box takes). Without it: the account's\nown Cloud workspace, as before.",
             "type": [
               "string",
               "null"
@@ -14149,6 +14309,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "last_command": {
             "default": false,
             "description": "The output of the pane's last (or current) command.",
@@ -14260,7 +14424,7 @@
           },
           "cloud_workspace": {
             "default": null,
-            "description": "A Cloud workspace's id (cw_…), with tab.",
+            "description": "A Cloud workspace's id (cw_…), with tab. Or a hosted one's\n(hw_…): with tab (one of its agent blocks), or with pane to wait on\nits machine.",
             "type": [
               "string",
               "null"
@@ -14341,7 +14505,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "cloud_tabs: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "cloud_tabs: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "cwd": {
@@ -15373,6 +15537,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "max_chars": {
             "default": null,
             "description": "At most this many characters (default 16000, at most 40000).",
@@ -15465,12 +15633,12 @@
         "readOnlyHint": true,
         "title": "Read a Cloud workspace"
       },
-      "description": "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine.\n- events {cloud_workspace, tab, max_chars?, offset?}: A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.\n- requests {cloud_workspace, tab}: What a tab's agent waits on someone for: each permission request with its options, and each question with its fields. cloud {kind: answer} answers one.\n- files {cloud_workspace, path?}: A directory on a Cloud workspace's machine: its entries, with type and size.\n- file {cloud_workspace, path, max_chars?}: A text file on a Cloud workspace's machine, with secrets redacted.\n- diff {cloud_workspace, max_chars?, path?, ref?, staged?}: git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).\n- git_status {cloud_workspace, path?}: git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).\n- setup_log {cloud_workspace}: What a Cloud workspace's last setup printed, step by step (packages, repositories, setup script): why one failed. Reads while the machine is failed or parked.",
+      "description": "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine. A hosted Cloud workspace (hw_…) is a machine of a project: its tabs are its agent blocks, by pane number, and reading one wakes it.\n- events {cloud_workspace, tab, max_chars?, offset?}: A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.\n- requests {cloud_workspace, tab}: What a tab's agent waits on someone for: each permission request with its options, and each question with its fields. cloud {kind: answer} answers one.\n- files {cloud_workspace, path?}: A directory on a Cloud workspace's machine: its entries, with type and size.\n- file {cloud_workspace, path, max_chars?}: A text file on a Cloud workspace's machine, with secrets redacted.\n- diff {cloud_workspace, max_chars?, path?, ref?, staged?}: git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).\n- git_status {cloud_workspace, path?}: git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).\n- setup_log {cloud_workspace}: What a Cloud workspace's last setup printed, step by step (packages, repositories, setup script): why one failed. Reads while the machine is failed or parked.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "events, requests, files, file, diff, git_status: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). setup_log: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces).",
             "type": "string"
           },
           "kind": {
@@ -15725,6 +15893,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "last_command": {
             "default": false,
             "description": "The output of the pane's last (or current) command.",
@@ -15836,7 +16008,7 @@
           },
           "cloud_workspace": {
             "default": null,
-            "description": "A Cloud workspace's id (cw_…), with tab.",
+            "description": "A Cloud workspace's id (cw_…), with tab. Or a hosted one's\n(hw_…): with tab (one of its agent blocks), or with pane to wait on\nits machine.",
             "type": [
               "string",
               "null"
@@ -15917,7 +16089,7 @@
             "type": "boolean"
           },
           "cloud_workspace": {
-            "description": "cloud_tabs: The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "cloud_tabs: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces). With the other kinds: A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
             "type": "string"
           },
           "cwd": {
@@ -16955,6 +17127,10 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "cloud_workspace": {
+            "description": "A hosted Cloud workspace (its hw_… id or its name, from list kind cloud_workspaces): do this on its machine instead of here, through Arugula control. Its panes and blocks are that machine's: pass cloud_workspace again to reach them.",
+            "type": "string"
+          },
           "max_chars": {
             "default": null,
             "description": "At most this many characters (default 16000, at most 40000).",
@@ -17047,12 +17223,12 @@
         "readOnlyHint": true,
         "title": "Read a Cloud workspace"
       },
-      "description": "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine.\n- events {cloud_workspace, tab, max_chars?, offset?}: A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.\n- requests {cloud_workspace, tab}: What a tab's agent waits on someone for: each permission request with its options, and each question with its fields. cloud {kind: answer} answers one.\n- files {cloud_workspace, path?}: A directory on a Cloud workspace's machine: its entries, with type and size.\n- file {cloud_workspace, path, max_chars?}: A text file on a Cloud workspace's machine, with secrets redacted.\n- diff {cloud_workspace, max_chars?, path?, ref?, staged?}: git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).\n- git_status {cloud_workspace, path?}: git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).\n- setup_log {cloud_workspace}: What a Cloud workspace's last setup printed, step by step (packages, repositories, setup script): why one failed. Reads while the machine is failed or parked.",
+      "description": "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine. A hosted Cloud workspace (hw_…) is a machine of a project: its tabs are its agent blocks, by pane number, and reading one wakes it.\n- events {cloud_workspace, tab, max_chars?, offset?}: A tab's transcript as text: prompts, the agent's messages, its tool calls and their results, and what it asked. Paged: pass next_offset back as offset.\n- requests {cloud_workspace, tab}: What a tab's agent waits on someone for: each permission request with its options, and each question with its fields. cloud {kind: answer} answers one.\n- files {cloud_workspace, path?}: A directory on a Cloud workspace's machine: its entries, with type and size.\n- file {cloud_workspace, path, max_chars?}: A text file on a Cloud workspace's machine, with secrets redacted.\n- diff {cloud_workspace, max_chars?, path?, ref?, staged?}: git diff of the repository holding path on a Cloud workspace's machine (staged, or against ref), with secrets redacted. Without path: its first repository (the summary names the others).\n- git_status {cloud_workspace, path?}: git status of the repository holding path on a Cloud workspace's machine: its branch and changed and untracked files. Without path: its first repository (the summary names the others).\n- setup_log {cloud_workspace}: What a Cloud workspace's last setup printed, step by step (packages, repositories, setup script): why one failed. Reads while the machine is failed or parked.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
           "cloud_workspace": {
-            "description": "The Cloud workspace's id (cw_…, from list kind cloud_workspaces).",
+            "description": "events, requests, files, file, diff, git_status: The Cloud workspace's id (cw_…, from list kind cloud_workspaces). setup_log: The Cloud workspace's id (cw_…, or a hosted Cloud workspace's hw_…,\nfrom list kind cloud_workspaces).",
             "type": "string"
           },
           "kind": {

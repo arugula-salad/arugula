@@ -594,6 +594,18 @@ that project only.
   route a daemon's signature opens refuses it. It isn't in `daemons`, so
   nothing that reads a daemon's account (moves, shares, grants, Labs
   flags) sees it.
+- **Their machines, and agents** (M184). A project person's own machine
+  reaches a hosted machine too, for its agents to drive it over MCP
+  (`run`, `start_agent`, `read_output`, `show` there): control routes it
+  only while it holds a live `cloud.drive` grant ("Grants, not
+  impersonation"), and the hosted machine lets it in as it lets in that
+  person's browsers. An owner's or editor's machine has full use; a
+  viewer's reaches only its agents (`/api/a2a/`). When an agent block on a
+  hosted machine closes, the machine sends its transcript
+  (`POST /api/hosted/transcripts`, signed as itself), and the platform
+  keeps it read only under the project (`hosted_transcripts`), in the
+  clear, for the project's people to read after the box is gone. Control
+  can read those, as it can read the box.
 - **Revoking.** Any owner's device signs `arugula project delegation
   revoke v1`. Nothing more enrolls under it, even an enrollment recorded
   before. The machines enrolled before stay, as a revoked device's earlier
@@ -1180,10 +1192,69 @@ on a block origin, through the hosted machine's relay socket.
 - **Never the provider's preview URLs.** E2B's are public by default and
   need a header browsers can't send. A test (`no_provider_preview_urls`
   in `crates/control/src/blocks.rs`) keeps their hosts out of the tree.
-- **Public previews (M187)** are a separate path: a port a member marks
-  public (`hosted_ports.public_by`, `public_until`) is served through the
-  relay on a registrable domain of its own, never under the block domain,
-  since every block origin shares a site with every other.
+- **Public previews (M187)** are a separate path (below): a port a member
+  makes public is served through the relay on a registrable domain of its
+  own, never under the block domain, since every block origin shares a
+  site with every other.
+
+### Public previews
+
+M187 (#1248, aru-097): a port of a hosted workspace that one of its
+project's owners or editors makes public is open to anyone, signed out,
+at `https://<id>.<preview domain>` (`ARUGULA_PREVIEW_DOMAIN`,
+`arugula.site` for the hosted one).
+
+- **Not end to end.** A stranger has no device key to sign a block grant
+  with, so control opens the channel itself. Control terminates HTTPS for
+  the preview domain and brings each request to the hosted machine over
+  its relay socket, on a block channel whose message 1 carries a public
+  grant (`arugula_e2e::preview`) instead of a block grant. **Control sees
+  a public preview's traffic in plain text.** That's acceptable because the
+  page is public: anyone can load it. Members' previews (above) stay end
+  to end on block origins, and nothing about them changes.
+- **The grant** is signed with control's hosted key, the key the project's
+  delegation names and the machine already trusts for its own
+  certificate, under a first line of its own (`arugula public preview
+  grant v1`). It names the machine, one port, the preview's id, the
+  one-off key doing the handshake and an expiry (at most ten minutes from
+  the machine's now, as block grants). It names no block.
+- **The machine decides too.** It serves a public grant only when it's a
+  hosted machine, the grant checks out, the port isn't one of the daemon's
+  own, and control, asked at most every 20 seconds (`GET
+  /api/hosted/previews`, signed as the machine; the platform answers),
+  says that port is public under that id now. If control can't be asked,
+  nothing is served. An open channel (a WebSocket) is checked again every
+  20 seconds and closed once the port isn't public. So control can't open
+  any other port of the machine, and a preview turned off stops within a
+  minute even while control's own cache (15 seconds) lags.
+- **The id** is 32 random hex characters, made fresh each time a port is
+  made public and kept while it's renewed: never the workspace's id, and a
+  link that was turned off stays dead. It's in `hosted_ports.public_id`
+  (platform migration 0024), with who made it public or last renewed it
+  (`public_by`) and until when (`public_until`, 7 days later). Nothing has
+  to run when it passes.
+- **What crosses.** The request's headers, less hop-by-hop ones and what
+  says who or where the visitor is (`Fly-*`, `X-Forwarded-*`,
+  `Forwarded`, `Via`, `CF-*`). Its cookies are the preview's own: nothing
+  of control's is ever sent to this domain, which shares no site with
+  `arugula.io` or `arugula.run`. An answer's `Set-Cookie` loses any
+  `Domain`, so one preview can't set a cookie for another under the
+  shared domain. The machine passes requests from the preview's own pages
+  as local (`Origin` and `Referer` rewritten, as for blocks), but leaves a
+  request from another site with its own `Origin`, so the dev server's own
+  checks still see it; and it adds no frame rules of ours.
+- **Asleep.** A paused box isn't woken for a stranger: control answers
+  503 with a short page that says it's asleep. A member opening the
+  workspace wakes it (M182).
+- **On control's side** (`crates/control/src/previews.rs`): the preview
+  host reaches nothing of control's (no page, cookie, session or API). It
+  takes 20,000 requests an hour per client address and 64 at once per
+  preview, and its traffic is metered against the project, as block
+  sockets are.
+- **Who.** A project's members list its workspaces' ports; its owners and
+  editors make one public, renew it and turn it off (`arugula cloud
+  preview`). The operator lists every public preview and takes any down
+  at once (docs/control-ops.md, "Public previews").
 
 ### Machines with no block flags
 
@@ -1315,10 +1386,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 100 tables in two planes ("Two planes, two trust rules"):
+Control's database has 101 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (36 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (64 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (65 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1418,11 +1489,12 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `run_events` | **plaintext** | A run's history, append-only (never changed, and never deleted while its run is there): each change of state, numbered in the run, when, a small detail (the daemon's exit code, control's reason for failing it, the approval an approved run was approved by), and, when the run's daemon reported it, that daemon's id and its signature over the change. | A run's history shows, and is checked, with every machine asleep. | partly: those of runs that go, go. The rest stay as written: they name daemons, not people, and a signature names its signer. |  |
 | `run_artifacts` | metadata | What a run left behind: each file's name, size, digest and key in the run bucket. The files themselves are in the bucket (M213), not here. | A run's artifacts are listed and fetched with every machine asleep. | partly: those of runs that go, go; their files expire from the bucket. |  |
 | `platform_migrations` | metadata | Which of the platform's numbered migrations (M142) its database has: each one's number, name, checksum, whether it's additive (older builds may start past it) and when it ran, or that it was found already in place on a database made before migrations. | The platform checks its tables are the shape its code expects before it serves anything, whether or not any machine is up. | nothing of one |  |
-| `hosted_workspaces` | metadata | A hosted workspace (M179): its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the digest of its egress rules (M185), the last error, the worker's lease, who made it and when. | The platform makes, wakes, pauses and deletes hosted workspaces' boxes itself, and the page lists them, with every machine asleep. | partly: it stops naming the account as its maker. Workspaces in its personal project and its disbanded teams' projects are deleted, boxes and all, by the worker; their rows stay, marked deleted. | E2B |
+| `hosted_workspaces` | metadata | A hosted workspace (M179): its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the digest of its egress rules (M185), the last error, the worker's lease, who made it and when; and how its box's setup goes (M183): its status, its step, the pane it runs in, and a failed setup's reason as a fixed code, never the pane's text. | The platform makes, wakes, pauses and deletes hosted workspaces' boxes itself, and the page lists them, with every machine asleep. | partly: it stops naming the account as its maker. Workspaces in its personal project and its disbanded teams' projects are deleted, boxes and all, by the worker; their rows stay, marked deleted. | E2B |
 | `hosted_workspace_secrets` | **plaintext** | A secret a hosted workspace takes, by name, and where its value is: sealed here with its project's key (project_keys), or in the provider's secrets broker. | A hosted workspace's box is made and rebuilt with every machine off. | partly: they go with their workspace, when the worker deletes it. | E2B |
 | `project_keys` | **plaintext** | A project's data key (M209), which seals that project's secrets, wrapped by the master key control holds apart from the database; which master key wrapped it (a hash of it), when it was made and when it was last re-wrapped. Rotating the master key re-wraps these and nothing else. | A project's secrets are opened for its workspaces and deploys with every machine off. | partly: a personal project's keys go with it, and so do a disbanded team's; other teams' stay. |  |
 | `project_secrets` | **plaintext** | A project's secret that has no table of its own, such as a deploy environment's (M217), by name, sealed with the project's key. | Deploys run with every machine off. | partly: a personal project's secrets go with it, and so do a disbanded team's; other teams' stay. |  |
-| `hosted_ports` | metadata | A port a dev server listens on in a hosted workspace (M186), its label, and who made it public and until when (M187). | Previews are served and expire with every machine asleep. | partly: it stops naming the account as who made a port public. They go with their workspace. |  |
+| `hosted_ports` | metadata | A port of a hosted workspace (M186), its label, and while it's public (M187) its preview id (32 random hex characters, the label of its host under the preview domain), who made it public or last renewed it, and until when. | Previews are served and expire with every machine asleep. | partly: it stops naming the account as who made a port public. They go with their workspace. |  |
+| `hosted_transcripts` | **plaintext** | A closed agent block's transcript from a hosted workspace's box (M184): its project, workspace, machine and block, the agent, its title and working directory, when it ran, and its text (prompts, the agent's messages and tool calls, cut to 768 KiB), kept read only. | A project's people read what its hosted workspaces' agents did after the box is paused, rebuilt or deleted. | partly: those of its personal project and its disbanded teams' projects go. A team's stay with its project: its other people read them. |  |
 | `hosted_usage` | metadata | When a hosted workspace's box ran (M188): its workspace, project and box, its size (vCPUs and memory), and each running interval's start and end. | The platform meters boxes from their lifecycle, which runs with every machine asleep, and the operator reads what they cost. | nothing of one: it names no account: a workspace's project and box ids only. It stays when the workspace goes: it's what E2B billed. | E2B |
 | `hosted_usage_provider` | metadata | What E2B says a hosted workspace's box ran (M188), from its lifecycle events: how many runs, their milliseconds, vCPU-milliseconds and MiB-milliseconds, and when it was read. | The platform checks its usage against E2B's record with every machine asleep. | nothing of one: it names no account: a workspace's project and box ids only. | E2B |
 | `environments` | metadata | A project's environment (M217): its name in the project, the driver that applies its deploys (chant-fly, apps-platform), the names of the secrets a driver run gets (never their values: those are sealed per project, M209), and its times. | Deploys are planned, approved and applied through control with every machine asleep. | partly: those of projects that go with it go. |  |

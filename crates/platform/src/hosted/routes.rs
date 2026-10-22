@@ -4,11 +4,15 @@
 //!
 //! | Route | Who |
 //! |---|---|
+//! | `GET /api/workspaces` (every project's the caller is in) | members |
 //! | `GET /api/projects/{project}/workspaces` | members |
 //! | `POST /api/projects/{project}/workspaces` | owners and editors, on `ARUGULA_HOSTED_ACCOUNTS` |
 //! | `GET /api/projects/{project}/workspaces/{id}` (open: wakes a paused box) | members |
 //! | `POST /api/projects/{project}/workspaces/{id}/rebuild` | owners and editors, on `ARUGULA_HOSTED_ACCOUNTS` |
 //! | `DELETE /api/projects/{project}/workspaces/{id}` | owners and editors |
+//! | `PUT /api/projects/{project}/workspaces/{id}/spec` ("rebuild needed" until it's rebuilt) | owners and editors |
+//! | `GET /api/projects/{project}/workspaces/{id}/secrets` (names only) | members |
+//! | `PUT`, `DELETE /api/projects/{project}/workspaces/{id}/secrets/{name}` | owners and editors |
 //!
 //! `{project}` is an id, or `personal`; `{id}` is a workspace's id or its
 //! name in the project. A project someone isn't a member of, and a
@@ -46,6 +50,21 @@ pub struct NewWorkspace {
     pub name: String,
     #[serde(default)]
     pub spec: Spec,
+}
+
+/// `GET /api/workspaces`: the hosted workspaces of every project the
+/// caller is in (M184, for MCP's `list kind cloud_workspaces`).
+#[derive(Debug, Serialize)]
+pub struct AllWorkspaces {
+    pub workspaces: Vec<Listed>,
+}
+
+/// A hosted workspace, with its project's name.
+#[derive(Debug, Serialize)]
+pub struct Listed {
+    #[serde(flatten)]
+    pub workspace: HostedWorkspace,
+    pub project_name: String,
 }
 
 /// That hosted workspaces are set up here.
@@ -162,4 +181,130 @@ pub async fn delete(
     info!(%account, %project, workspace = %w.id, "asked to delete a hosted workspace");
     app.analytics.capture(&account, "hosted workspace deleted", json!({}));
     Ok(Json(found(app.db.hosted_workspace(&project, &w.id)?)?))
+}
+
+/// `PUT /api/projects/{project}/workspaces/{id}/spec`: what its box is
+/// made from next. The box isn't touched: "rebuild needed" shows until it's
+/// rebuilt (M183).
+pub async fn set_spec(
+    State(app): State<Arc<Platform>>,
+    CloudDriver(Person { account }): CloudDriver,
+    Path((project, id)): Path<(String, String)>,
+    Json(spec): Json<Spec>,
+) -> Result<Json<HostedWorkspace>, ApiError> {
+    enabled(&app)?;
+    let project = changer(&app, &account, &project, false).await?;
+    let w = found(app.db.hosted_workspace(&project, &id)?)?;
+    spec.check().map_err(|e| err(StatusCode::UNPROCESSABLE_ENTITY, &e))?;
+    let w = found(app.db.set_hosted_spec(&project, &w.id, &spec, now_ms())?)?;
+    info!(%account, %project, workspace = %w.id, rebuild_needed = w.rebuild_needed, "changed a hosted workspace's spec");
+    Ok(Json(w))
+}
+
+/// `GET /api/projects/{project}/workspaces/{id}/secrets`.
+#[derive(Debug, Serialize)]
+pub struct Secrets {
+    /// Each secret's name and where its value is: `sealed` (here) or
+    /// `broker` (the provider's). Never a value.
+    pub secrets: Vec<SecretName>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SecretName {
+    pub name: String,
+    pub store: String,
+}
+
+/// `PUT /api/projects/{project}/workspaces/{id}/secrets/{name}`.
+#[derive(Deserialize)]
+pub struct SecretValue {
+    pub value: String,
+}
+
+/// The most a secret's value may be.
+const MAX_SECRET: usize = 16 * 1024;
+
+pub async fn secrets(
+    State(app): State<Arc<Platform>>,
+    CloudDriver(Person { account }): CloudDriver,
+    Path((project, id)): Path<(String, String)>,
+) -> Result<Json<Secrets>, ApiError> {
+    enabled(&app)?;
+    let (project, _) = membership(&app, &account, &project, false).await?;
+    let w = found(app.db.hosted_workspace(&project, &id)?)?;
+    let secrets =
+        app.db.hosted_secret_names(&w.id)?.into_iter().map(|(name, store)| SecretName { name, store }).collect();
+    Ok(Json(Secrets { secrets }))
+}
+
+/// Set a secret, sealed with the workspace's project's key (M209), bound to
+/// the workspace and its name. Its box reads it on its next setup: a spec's env
+/// name, or `GIT_TOKEN` and `GIT_USERNAME` to clone with.
+pub async fn put_secret(
+    State(app): State<Arc<Platform>>,
+    CloudDriver(Person { account }): CloudDriver,
+    Path((project, id, name)): Path<(String, String, String)>,
+    Json(b): Json<SecretValue>,
+) -> Result<StatusCode, ApiError> {
+    enabled(&app)?;
+    let project = changer(&app, &account, &project, false).await?;
+    let w = found(app.db.hosted_workspace(&project, &id)?)?;
+    if !crate::cloud::secrets::valid_name(&name) {
+        return Err(err(StatusCode::BAD_REQUEST, "a secret's name: capital letters, digits and '_'"));
+    }
+    if b.value.is_empty() || b.value.len() > MAX_SECRET {
+        return Err(err(StatusCode::BAD_REQUEST, "a secret's value: 1 byte to 16 KiB"));
+    }
+    let Some(cipher) = &app.hosted.cipher else {
+        return Err(err(StatusCode::SERVICE_UNAVAILABLE, "this control can't keep secrets"));
+    };
+    let sealed =
+        crate::keys::seal_value(&app.db.c(), cipher, &project, &crate::keys::hosted_name(&w.id, &name), &b.value)?;
+    app.db.set_hosted_secret(&w.id, &name, Some(&sealed), now_ms())?;
+    info!(%account, %project, workspace = %w.id, name, "set a hosted workspace's secret");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn delete_secret(
+    State(app): State<Arc<Platform>>,
+    CloudDriver(Person { account }): CloudDriver,
+    Path((project, id, name)): Path<(String, String, String)>,
+) -> Result<StatusCode, ApiError> {
+    enabled(&app)?;
+    let project = changer(&app, &account, &project, false).await?;
+    let w = found(app.db.hosted_workspace(&project, &id)?)?;
+    if !app.db.remove_hosted_secret(&w.id, &name)? {
+        return Err(err(StatusCode::NOT_FOUND, "no such secret"));
+    }
+    info!(%account, %project, workspace = %w.id, name, "removed a hosted workspace's secret");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Every hosted workspace in the caller's projects: its personal one's,
+/// then each team's, by name. None where hosted workspaces aren't set up
+/// (rather than a refusal: MCP lists Managoat's beside these).
+pub async fn all(
+    State(app): State<Arc<Platform>>,
+    CloudDriver(Person { account }): CloudDriver,
+) -> Result<Json<AllWorkspaces>, ApiError> {
+    let mut workspaces = Vec::new();
+    if app.compute.is_none() {
+        return Ok(Json(AllWorkspaces { workspaces }));
+    }
+    let mut projects = Vec::new();
+    if let Some(id) = crate::projects::personal_project(&app, &account).await? {
+        projects.push((id, "Personal".to_owned()));
+    }
+    let ids = app.cache.teams_of(&*app.hub, &account).await?;
+    let mut teams: Vec<_> = app.cache.teams(&*app.hub, &ids).await?.into_values().collect();
+    teams.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
+    for t in teams.into_iter().filter(|t| t.role(&account).is_some()) {
+        projects.push((app.db.team_project(&t.id, &t.name, now_ms())?, t.name.clone()));
+    }
+    for (project, name) in projects {
+        for w in app.db.hosted_workspaces(&project)? {
+            workspaces.push(Listed { workspace: w, project_name: name.clone() });
+        }
+    }
+    Ok(Json(AllWorkspaces { workspaces }))
 }

@@ -9,6 +9,7 @@
 //! checkpoint, so a delete asked mid-create is done next.
 
 use anyhow::{Result, bail};
+use arugula_control_wire::hosted::{SetupReport, SetupStatus};
 
 use super::{
     Db, Taken,
@@ -39,15 +40,33 @@ pub struct HostedWorkspace {
     /// The hosted machine its box enrolled as.
     pub machine: Option<String>,
     pub error: Option<String>,
-    /// The spec changed since its box was built (M183 shows it).
+    /// The spec changed since its box was built.
     pub rebuild_needed: bool,
+    /// How its box's setup goes, as its daemon said; `None` before it says
+    /// anything (M183).
+    pub setup: Option<Setup>,
     pub created_by: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
 }
 
+/// How a workspace's box's setup goes (M183): `setting_up` (on `step`),
+/// `ready`, or `failed` (at `step`, for `reason`, a fixed code). Never the
+/// pane's text: a client reads that from the box, end to end.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Setup {
+    pub status: String,
+    pub step: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub reason: String,
+    /// The pane it runs in, on the workspace's machine.
+    pub pane: Option<u64>,
+    pub at: u64,
+}
+
 const COLUMNS: &str = "id, project_id, name, spec, provider, template, state, asked, machine, error, \
-     spec_hash, built_hash, created_by, created_at, updated_at";
+     spec_hash, built_hash, created_by, created_at, updated_at, \
+     setup_status, setup_step, setup_reason, setup_pane, setup_at";
 
 fn row(r: &Row) -> Result<HostedWorkspace> {
     let spec: String = r.get(3)?;
@@ -67,6 +86,16 @@ fn row(r: &Row) -> Result<HostedWorkspace> {
         created_by: r.get(12)?,
         created_at: r.get(13)?,
         updated_at: r.get(14)?,
+        setup: match r.get::<Option<String>>(15)? {
+            Some(status) => Some(Setup {
+                status,
+                step: r.get::<Option<String>>(16)?.unwrap_or_default(),
+                reason: r.get::<Option<String>>(17)?.unwrap_or_default(),
+                pane: r.get(18)?,
+                at: r.get::<Option<u64>>(19)?.unwrap_or_default(),
+            }),
+            None => None,
+        },
     })
 }
 
@@ -89,6 +118,9 @@ pub struct HostedJob {
     /// Whether the box runs, for its checkpoint to meter (M188): set by the
     /// worker after a step that went through, never kept on the row.
     pub usage: Option<crate::hosted::usage::Observed>,
+    /// The step made way for a new box (a rebuild): its checkpoint clears
+    /// what the old box's setup said.
+    pub new_box: bool,
 }
 
 /// A port in a hosted workspace: its number, its label, who made it public
@@ -232,14 +264,15 @@ impl Db {
                         w: row(r)?,
                         spec_hash: r.get(10)?,
                         built_hash: r.get(11)?,
-                        sandbox: r.get(15)?,
-                        stage: r.get(16)?,
-                        stage_at: r.get(17)?,
-                        enroll_until: r.get(18)?,
-                        deleted_at: r.get(19)?,
+                        sandbox: r.get(20)?,
+                        stage: r.get(21)?,
+                        stage_at: r.get(22)?,
+                        enroll_until: r.get(23)?,
+                        deleted_at: r.get(24)?,
                         lease: String::new(),
                         seen: Default::default(),
                         usage: None,
+                        new_box: false,
                     })
                 },
             )
@@ -261,7 +294,9 @@ impl Db {
     /// Write back what the worker did under its lease, and free the row
     /// until `next` (now, if something new was asked meanwhile: not the ask
     /// it claimed, which a step that failed for now tries again at `next`,
-    /// not at once). `done` is
+    /// not at once). What the box was built from is the create's journal's
+    /// ([`Db::save_hosted`]) and the box's own ([`Db::hosted_built_from`]),
+    /// never a checkpoint's: a box may say it mid-step. `done` is
     /// the ask it carried out, cleared unless it was asked again as
     /// something else; a delete asked meanwhile keeps the state `deleting`.
     /// A workspace deleted for good loses its secrets, its ports and its
@@ -275,12 +310,12 @@ impl Db {
         let changed = tx.execute(
             "UPDATE hosted_workspaces SET
                  state = CASE WHEN asked = 'delete' AND ?3 <> 'deleted' THEN 'deleting' ELSE ?3 END,
-                 lease_until = CASE WHEN COALESCE(asked, '') NOT IN ('', COALESCE(?4, ''), COALESCE(?16, ''))
+                 lease_until = CASE WHEN COALESCE(asked, '') NOT IN ('', COALESCE(?4, ''), COALESCE(?15, ''))
                      THEN CAST(?5 AS BIGINT)
                      ELSE CAST(?6 AS BIGINT) END,
                  asked = CASE WHEN asked = ?4 THEN NULL ELSE asked END,
-                 lease = NULL, error = ?7, template = ?8, machine = ?9, sandbox_id = ?10, built_hash = ?11,
-                 stage = ?12, stage_at = ?13, enroll_until = ?14, deleted_at = ?15, updated_at = ?5
+                 lease = NULL, error = ?7, template = ?8, machine = ?9, sandbox_id = ?10,
+                 stage = ?11, stage_at = ?12, enroll_until = ?13, deleted_at = ?14, updated_at = ?5
              WHERE id = ?1 AND lease = ?2",
             params![
                 w.id,
@@ -293,7 +328,6 @@ impl Db {
                 w.template,
                 w.machine,
                 job.sandbox,
-                job.built_hash,
                 job.stage,
                 job.stage_at,
                 job.enroll_until,
@@ -306,6 +340,14 @@ impl Db {
         }
         if let Some(o) = &job.usage {
             super::hosted_usage::meter(&tx, &w.id, &w.project, o)?;
+        }
+        if job.new_box {
+            tx.execute(
+                "UPDATE hosted_workspaces SET built_hash = NULL, setup_status = NULL, setup_step = NULL,
+                     setup_reason = NULL, setup_pane = NULL, setup_at = NULL
+                 WHERE id = ?1",
+                params![w.id],
+            )?;
         }
         if job.deleted_at.is_some() {
             tx.execute("DELETE FROM hosted_workspace_secrets WHERE workspace_id = ?1", params![w.id])?;
@@ -354,6 +396,44 @@ impl Db {
             params![],
             |r| Ok(crate::hosted::hold::Running { workspace: r.get(0)?, machine: r.get(1)?, sandbox: r.get(2)? }),
         )
+    }
+
+    /// Change a workspace's spec: "rebuild needed" shows until its box is
+    /// made again from it. `None` when there's no such live workspace.
+    pub fn set_hosted_spec(&self, project: &str, id: &str, spec: &Spec, now: u64) -> Result<Option<HostedWorkspace>> {
+        let changed = self.c().execute(
+            "UPDATE hosted_workspaces SET spec = ?3, spec_hash = ?4, updated_at = ?5
+             WHERE project_id = ?1 AND id = ?2 AND deleted_at IS NULL",
+            params![project, id, serde_json::to_string(spec)?, spec.hash(), now],
+        )?;
+        if changed != 1 {
+            return Ok(None);
+        }
+        self.hosted_workspace(project, id)
+    }
+
+    /// The box read its plan from the spec whose hash is `hash` (M183): it's
+    /// built from that one now.
+    pub fn hosted_built_from(&self, id: &str, hash: &str) -> Result<()> {
+        self.c().execute(
+            "UPDATE hosted_workspaces SET built_hash = ?2 WHERE id = ?1 AND deleted_at IS NULL",
+            params![id, hash],
+        )?;
+        Ok(())
+    }
+
+    /// What a workspace's box says of its setup (M183), from `machine`: kept
+    /// while that's the machine the box enrolled as, or before the worker has
+    /// seen it enroll (a box may start its setup first). Whether it was kept.
+    pub fn report_hosted_setup(&self, id: &str, machine: &str, r: &SetupReport, now: u64) -> Result<bool> {
+        let reason = (r.status == SetupStatus::Failed).then_some(r.reason.as_str());
+        Ok(self.c().execute(
+            "UPDATE hosted_workspaces SET setup_status = ?3, setup_step = ?4, setup_reason = ?5, setup_pane = ?6,
+                 setup_at = ?7
+             WHERE id = ?1 AND deleted_at IS NULL AND state IN ('enrolling', 'ready', 'paused')
+                 AND (machine IS NULL OR machine = ?2)",
+            params![id, machine, r.status.as_str(), r.step, reason, r.pane, now],
+        )? == 1)
     }
 
     /// Keep a secret's name for a workspace, its value sealed here
@@ -563,8 +643,9 @@ mod tests {
         assert!(!db.ask_hosted("hw_1", Ask::Pause, 1).unwrap(), "not running");
         let mut job = db.claim_hosted(1).unwrap().unwrap();
         job.w.state = "paused".into();
-        job.built_hash = Some(job.spec_hash.clone());
         db.checkpoint_hosted(&job, None, 1_000, 1).unwrap();
+        // The box read its plan: built from this spec.
+        db.hosted_built_from("hw_1", &job.spec_hash).unwrap();
         assert!(db.ask_hosted("hw_1", Ask::Wake, 2).unwrap());
         assert!(!db.ask_hosted("hw_1", Ask::Wake, 2).unwrap(), "asked already");
         let mut job = db.claim_hosted(2).unwrap().expect("due now");

@@ -339,6 +339,8 @@ macro_rules! every_op {
         $m!($crate::op::ops::StudioAppsList);
         $m!($crate::op::ops::StudioFollow);
         $m!($crate::op::ops::StudioUnfollow);
+        // A hosted workspace's setup (M183).
+        $m!($crate::op::ops::HostedSetupGet);
     };
 }
 
@@ -1653,6 +1655,21 @@ pub mod ops {
         type Path = String;
         type Req = Empty;
         type Res = Empty;
+    }
+
+    /// `GET /api/hosted/setup` (M183): a hosted machine's setup, and where
+    /// each of its repos stands (what a rebuild would lose). `arugula cloud
+    /// rebuild` asks it first.
+    pub struct HostedSetupGet;
+
+    impl Op for HostedSetupGet {
+        const NAME: &'static str = "hosted_setup.get";
+        const METHOD: Method = Method::Get;
+        const PATH: &'static str = "/api/hosted/setup";
+        const ACCESS: Access = Access::Owner;
+        type Path = ();
+        type Req = Empty;
+        type Res = crate::api::HostedSetup;
     }
 }
 

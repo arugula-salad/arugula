@@ -25,6 +25,9 @@
 //!   (fail closed). Where the box isn't a snapshot (loam, tests:
 //!   `ARUGULA_HOSTED_ENROLL=ticket`), the hub makes a one-time ticket that
 //!   goes in the box's env instead.
+//! - **Agents** (M184): an agent block on the box is the daemon's, as on
+//!   any machine; when one closes, its transcript is archived here, read
+//!   only under the project ([`transcripts`]).
 //! - **Usage** (M188): how long each box ran, by its size, is metered from
 //!   the worker's checkpoints and checked against E2B's own record
 //!   ([`usage`]).
@@ -38,8 +41,13 @@
 //!   model through the provider's egress proxy, which fills in the key:
 //!   the project's own, or the platform's, under caps, for workspaces made
 //!   by an account on the beta allowlist. No key is ever in the box.
-//! - **Not here yet.** Setup in a visible pane and "rebuild needed" on the
-//!   page are M183's, from [`HostedWorkspace::rebuild_needed`].
+//! - **Setup** (M183): on its first boot the box reads its spec, with what
+//!   to clone each repo with, and runs it in a pane; its daemon says how it
+//!   goes, kept on the workspace ([`setup`]). A spec changed since the box
+//!   was built shows as [`HostedWorkspace::rebuild_needed`].
+//! - **Public previews** ([`previews`], M187): a port an owner or editor
+//!   makes public is served to anyone at `<id>.<preview domain>`, through
+//!   the hub, for 7 days unless renewed.
 //!
 //! The provider's key never reaches a client or a box, and neither does an
 //! inference key ([`crate::compute`]).
@@ -56,9 +64,16 @@ pub mod hold;
 pub mod inference;
 #[cfg(test)]
 mod inference_tests;
+pub mod previews;
+#[cfg(test)]
+mod previews_tests;
 pub mod routes;
+pub mod setup;
+#[cfg(test)]
+mod setup_tests;
 #[cfg(test)]
 mod tests;
+pub mod transcripts;
 pub mod usage;
 pub mod wake;
 #[cfg(test)]
@@ -110,6 +125,13 @@ pub struct Args {
     pub hosted_daily_turns: u64,
     #[arg(long, env = "ARUGULA_HOSTED_TURN_MINUTES", default_value_t = inference::CAPS.minutes)]
     pub hosted_turn_minutes: u64,
+    /// Public previews (M187): a port a member makes public is served at
+    /// `<id>.<this>` (`arugula.site` for the hosted one), a registrable
+    /// domain of its own with a wildcard DNS name and certificate pointed
+    /// at the hub. The hub and the platform both read it. Off when unset
+    /// (docs/control-ops.md, "Public previews").
+    #[arg(long, env = "ARUGULA_PREVIEW_DOMAIN")]
+    pub preview_domain: Option<String>,
 }
 
 impl Args {
@@ -136,6 +158,7 @@ impl Args {
             cipher: cloud.master_key()?.map(std::sync::Arc::new),
             idle_timeout: self.hosted_idle_timeout.filter(|s| *s > 0).map(Duration::from_secs),
             runtime_cap: self.hosted_runtime_cap.filter(|s| *s > 0).map(Duration::from_secs),
+            preview_domain: previews::domain(self.preview_domain.as_deref().unwrap_or(""))?,
         })
     }
 }
@@ -165,6 +188,8 @@ pub struct Config {
     pub runtime_cap: Option<Duration>,
     /// Whose key agents run on, and the caps on the platform's (M185).
     pub inference: inference::Settings,
+    /// Public previews' domain (M187), when they're on.
+    pub preview_domain: Option<String>,
 }
 
 impl std::fmt::Debug for Config {
@@ -176,6 +201,7 @@ impl std::fmt::Debug for Config {
             .field("idle_timeout", &self.idle_timeout)
             .field("runtime_cap", &self.runtime_cap)
             .field("inference", &self.inference)
+            .field("preview_domain", &self.preview_domain)
             .finish_non_exhaustive()
     }
 }
@@ -220,7 +246,8 @@ pub fn new_id() -> String {
     format!("hw_{}", hex::encode(arugula_e2e::random::<16>()))
 }
 
-/// What a hosted workspace is built from (M183 runs it in a visible pane).
+/// What a hosted workspace is built from ([`setup`] runs it in a visible
+/// pane).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Spec {
     /// HTTPS clone URLs, with no credentials in them.

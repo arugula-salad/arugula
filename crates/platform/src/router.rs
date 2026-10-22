@@ -26,7 +26,8 @@ use crate::{
 /// drafts on them (M170); the inbox (M171); native issues' (M195), for
 /// agents too (M200); hosted workspaces (M179) and their inference keys
 /// (M185); the standing project grant for runs (M211); what starts runs
-/// (M214); and reading runs, and a machine's agents' runs (M216).
+/// (M214); reading runs, and a machine's agents' runs (M216); and hosted
+/// agents' archived transcripts (M184).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -130,6 +131,11 @@ fn routes() -> Routes {
         .route("/api/projects/{project}/workspaces", get(hosted::routes::list).post(hosted::routes::create))
         .route("/api/projects/{project}/workspaces/{id}", get(hosted::routes::open).delete(hosted::routes::delete))
         .route("/api/projects/{project}/workspaces/{id}/rebuild", post(hosted::routes::rebuild))
+        .route("/api/projects/{project}/workspaces/{id}/ports", get(hosted::previews::list))
+        .route(
+            "/api/projects/{project}/workspaces/{id}/ports/{port}/public",
+            axum::routing::put(hosted::previews::make_public).delete(hosted::previews::make_private),
+        )
         .route("/api/projects/{project}/inference-keys", get(hosted::inference::list_keys))
         .route(
             "/api/projects/{project}/inference-keys/{provider}",
@@ -160,6 +166,15 @@ fn routes() -> Routes {
         .route(wire_runs::AGENT_PROJECT_RUNS, get(run_agents::list).post(run_agents::start))
         .route(wire_runs::AGENT_RUN, get(run_agents::show))
         .route(wire_runs::AGENT_RUN_LOG, get(run_agents::log))
+        .route("/api/projects/{project}/workspaces/{id}/spec", axum::routing::put(hosted::routes::set_spec))
+        .route("/api/projects/{project}/workspaces/{id}/secrets", get(hosted::routes::secrets))
+        .route(
+            "/api/projects/{project}/workspaces/{id}/secrets/{name}",
+            axum::routing::put(hosted::routes::put_secret).delete(hosted::routes::delete_secret),
+        )
+        .route("/api/workspaces", get(hosted::routes::all))
+        .route("/api/projects/{project}/transcripts", get(hosted::transcripts::list))
+        .route("/api/projects/{project}/transcripts/{id}", get(hosted::transcripts::read))
 }
 
 /// The platform's router, for any state the hub's router has (the

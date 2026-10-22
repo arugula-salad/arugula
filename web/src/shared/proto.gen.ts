@@ -2783,6 +2783,7 @@ export const OPS = {
   "host.remove": { method: "DELETE", path: "/api/hosts/{name}" },
   "host_token.mint": { method: "POST", path: "/api/hosts/{name}/token" },
   "host_token.revoke": { method: "DELETE", path: "/api/hosts/{name}/token" },
+  "hosted_setup.get": { method: "GET", path: "/api/hosted/setup" },
   "hosts.list": { method: "GET", path: "/api/hosts" },
   "ide.get": { method: "GET", path: "/api/ide" },
   "ide.mention": { method: "POST", path: "/api/ide/mention" },

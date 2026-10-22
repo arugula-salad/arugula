@@ -2506,3 +2506,41 @@ async fn an_agent_starts_a_run_waits_for_it_and_reads_its_log() {
     assert!(mine.iter().all(|(_, auth, _)| auth.starts_with(&format!("v2 {} ", keys.id()))), "{mine:?}");
     s.cancel().await.unwrap();
 }
+
+/// M184: a tool call another machine sends for its agent (a hosted
+/// workspace's machine, driven by a project person's laptop) runs here as
+/// the owner's would, naming the caller as who started it; a read-only
+/// caller there stays read only here; an agent block's turn is prompted
+/// and interrupted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machines_forwarded_call_runs_here() {
+    let d = Daemon::child();
+    let call_here = |tool: &str, arguments: Value, read_only: bool| {
+        d.post(
+            "/api/mcp/call",
+            json!({ "tool": tool, "arguments": arguments, "client": "claude-code via laptop", "read_only": read_only }),
+        )
+    };
+    let v = call_here("run", json!({ "command": "echo forwarded-$((6*7))", "wait": true }), false);
+    assert_ne!(v["isError"], true, "{v}");
+    let out = &v["structuredContent"];
+    assert_eq!(out["exit"], 0, "{v}");
+    assert!(out.to_string().contains("forwarded-42"), "{v}");
+    let pane = out["pane"].as_u64().unwrap();
+    let panes = d.get("/api/panes");
+    assert!(panes.to_string().contains("mcp:claude-code via laptop"), "started by the caller: {panes}");
+
+    let v = call_here("run", json!({ "command": "true" }), true);
+    assert_eq!(v["isError"], true, "a read-only caller can't run: {v}");
+    let v = call_here("read_output", json!({ "pane": pane }), true);
+    assert_ne!(v["isError"], true, "{v}");
+
+    let b = d.open("hello");
+    d.wait(b, "idle");
+    let v = call_here("prompt_agent", json!({ "pane": b, "text": "recall" }), false);
+    assert_eq!(v["structuredContent"]["result"], "done", "{v}");
+    let v = call_here("machine_read", json!({ "kind": "cancel", "pane": b }), false);
+    assert_ne!(v["isError"], true, "{v}");
+    let v = call_here("machine_read", json!({ "kind": "cancel", "pane": pane }), false);
+    assert_eq!(v["isError"], true, "a terminal isn't an agent block: {v}");
+}

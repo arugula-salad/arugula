@@ -40,7 +40,7 @@ use tracing::Instrument as _;
 
 use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke, Standing},
-    hosted::{EnrollAsk, EnrollGiven, Enrolled, WakeAnswer},
+    hosted::{EnrollAsk, EnrollGiven, Enrolled, SetupPlan, SetupReport, WakeAnswer},
     work::{Report, Reported, Work},
 };
 
@@ -284,6 +284,49 @@ struct WorkArgs {
 struct ReportArgs {
     machine: HostedMachine,
     report: Report,
+}
+
+#[derive(Serialize, Deserialize)]
+struct HostedArgs {
+    project: String,
+    workspace: String,
+    machine: String,
+    #[serde(default)]
+    report: Option<SetupReport>,
+}
+
+fn hosted_args(project: &str, workspace: &str, machine: &str, report: Option<&SetupReport>) -> HostedArgs {
+    HostedArgs {
+        project: project.to_owned(),
+        workspace: workspace.to_owned(),
+        machine: machine.to_owned(),
+        report: report.cloned(),
+    }
+}
+
+/// A machine and the account it acts for (M184's `machine_drives`).
+#[derive(Serialize, Deserialize)]
+struct DrivesArgs {
+    daemon: String,
+    account: String,
+}
+
+/// A hosted machine's transcript (M184): its workspace and machine, as the
+/// hub's hosted certificate names them.
+#[derive(Serialize, Deserialize)]
+struct TranscriptArgs {
+    workspace: String,
+    machine: String,
+    transcript: arugula_control_wire::transcripts::TranscriptPost,
+}
+
+/// Public previews (M187): a preview's id, or a workspace's.
+#[derive(Serialize, Deserialize)]
+struct PreviewArgs {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    workspace: String,
 }
 
 fn ids(v: &[String]) -> IdsArgs {
@@ -608,6 +651,16 @@ impl PlatformPort for HttpPlatform {
         Box::pin(self.0.call("hosted_wake", a))
     }
 
+    fn public_preview<'a>(&'a self, id: &'a str) -> BoxFuture<'a, anyhow::Result<Option<crate::PublicPreview>>> {
+        let a = PreviewArgs { id: id.to_owned(), workspace: String::new() };
+        Box::pin(self.0.call("public_preview", a))
+    }
+
+    fn public_ports<'a>(&'a self, workspace: &'a str) -> BoxFuture<'a, anyhow::Result<Vec<(u16, String)>>> {
+        let a = PreviewArgs { id: String::new(), workspace: workspace.to_owned() };
+        Box::pin(self.0.call("public_ports", a))
+    }
+
     fn hosted_turn<'a>(
         &'a self,
         workspace: &'a str,
@@ -652,6 +705,44 @@ impl PlatformPort for HttpPlatform {
         report: &'a Report,
     ) -> BoxFuture<'a, anyhow::Result<Reported>> {
         Box::pin(self.0.call("hosted_report", ReportArgs { machine: machine.clone(), report: report.clone() }))
+    }
+
+    fn hosted_plan<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<Option<SetupPlan>>> {
+        Box::pin(self.0.call("hosted_plan", hosted_args(project, workspace, machine, None)))
+    }
+
+    fn hosted_setup<'a>(
+        &'a self,
+        project: &'a str,
+        workspace: &'a str,
+        machine: &'a str,
+        report: &'a SetupReport,
+    ) -> BoxFuture<'a, anyhow::Result<bool>> {
+        Box::pin(self.0.call("hosted_setup", hosted_args(project, workspace, machine, Some(report))))
+    }
+
+    fn machine_drives<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, anyhow::Result<bool>> {
+        let a = DrivesArgs { daemon: daemon.to_owned(), account: account.to_owned() };
+        Box::pin(self.0.call("machine_drives", a))
+    }
+
+    fn hosted_transcript<'a>(
+        &'a self,
+        workspace: &'a str,
+        machine: &'a str,
+        transcript: &'a arugula_control_wire::transcripts::TranscriptPost,
+    ) -> BoxFuture<'a, anyhow::Result<crate::Archived>> {
+        let a = TranscriptArgs {
+            workspace: workspace.to_owned(),
+            machine: machine.to_owned(),
+            transcript: transcript.clone(),
+        };
+        Box::pin(self.0.call("hosted_transcript", a))
     }
 }
 
@@ -719,6 +810,25 @@ async fn platform_call(
                 let a: ReportArgs = args(&body)?;
                 answer(p.hosted_report(&a.machine, &a.report).await?)?
             }
+            "hosted_plan" => {
+                let a: HostedArgs = args(&body)?;
+                answer(p.hosted_plan(&a.project, &a.workspace, &a.machine).await?)?
+            }
+            "hosted_setup" => {
+                let a: HostedArgs = args(&body)?;
+                let r = a.report.ok_or_else(|| anyhow::anyhow!("no report"))?;
+                answer(p.hosted_setup(&a.project, &a.workspace, &a.machine, &r).await?)?
+            }
+            "machine_drives" => {
+                let a: DrivesArgs = args(&body)?;
+                answer(p.machine_drives(&a.daemon, &a.account).await?)?
+            }
+            "hosted_transcript" => {
+                let a: TranscriptArgs = args(&body)?;
+                answer(p.hosted_transcript(&a.workspace, &a.machine, &a.transcript).await?)?
+            }
+            "public_preview" => answer(p.public_preview(&args::<PreviewArgs>(&body)?.id).await?)?,
+            "public_ports" => answer(p.public_ports(&args::<PreviewArgs>(&body)?.workspace).await?)?,
             _ => return Ok(None),
         }))
     }
@@ -926,6 +1036,25 @@ mod tests {
             ) -> BoxFuture<'a, anyhow::Result<bool>> {
                 Box::pin(async move { Ok(t == "ht_1") })
             }
+            fn public_preview<'a>(
+                &'a self,
+                id: &'a str,
+            ) -> BoxFuture<'a, anyhow::Result<Option<crate::PublicPreview>>> {
+                let p = (id == "p1").then(|| crate::PublicPreview {
+                    id: id.into(),
+                    workspace: "hw_1".into(),
+                    project: "prj_a".into(),
+                    machine: Some("m1".into()),
+                    port: 5173,
+                    state: "ready".into(),
+                    by: Some("alice".into()),
+                    until: 9,
+                });
+                Box::pin(async move { Ok(p) })
+            }
+            fn public_ports<'a>(&'a self, w: &'a str) -> BoxFuture<'a, anyhow::Result<Vec<(u16, String)>>> {
+                Box::pin(async move { Ok(vec![(5173, format!("{w}-p1"))]) })
+            }
         }
         let base = serve(serve_platform(Arc::new(Plans), key())).await;
         let p = HttpPlatform::new(&base, key()).unwrap();
@@ -939,6 +1068,10 @@ mod tests {
             crate::TurnAnswer::Refused { status: 403, reason: Some("no_key".into()), error: "hw_1 m1 claude".into() }
         );
         assert!(p.hosted_turn_end("hw_1", "m1", "ht_1").await.unwrap());
+        // M187: public previews, by id and by workspace.
+        assert_eq!(p.public_preview("p1").await.unwrap().map(|p| (p.port, p.machine)), Some((5173, Some("m1".into()))));
+        assert_eq!(p.public_preview("nope").await.unwrap(), None);
+        assert_eq!(p.public_ports("hw_1").await.unwrap(), [(5173, "hw_1-p1".to_owned())]);
         p.roster_changed("t").await.unwrap();
         let e = p.account_deleted(&Deleted { account: "a".into(), machines: vec![], disbanded: vec![] }).await;
         assert!(format!("{:#}", e.unwrap_err()).contains("not now"), "an error crosses as an error");

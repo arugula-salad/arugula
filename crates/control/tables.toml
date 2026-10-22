@@ -956,7 +956,7 @@ name = "hosted_workspaces"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A hosted workspace (M179): its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the digest of its egress rules (M185), the last error, the worker's lease, who made it and when."
+what = "A hosted workspace (M179): its project, name and spec (clone URLs, packages, its setup script and the names of the env vars it takes), the spec's hash and the one its box was built from, the provider, the template and sandbox id of its box, its state, what was asked of it, the create's journal, when its enrollment runs out, the hosted machine it enrolled as, the digest of its egress rules (M185), the last error, the worker's lease, who made it and when; and how its box's setup goes (M183): its status, its step, the pane it runs in, and a failed setup's reason as a fixed code, never the pane's text."
 why_asleep = "The platform makes, wakes, pauses and deletes hosted workspaces' boxes itself, and the page lists them, with every machine asleep."
 with_account = "partly"
 note = "It stops naming the account as its maker. Workspaces in its personal project and its disbanded teams' projects are deleted, boxes and all, by the worker; their rows stay, marked deleted."
@@ -1000,10 +1000,21 @@ name = "hosted_ports"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A port a dev server listens on in a hosted workspace (M186), its label, and who made it public and until when (M187)."
+what = "A port of a hosted workspace (M186), its label, and while it's public (M187) its preview id (32 random hex characters, the label of its host under the preview domain), who made it public or last renewed it, and until when."
 why_asleep = "Previews are served and expire with every machine asleep."
 with_account = "partly"
 note = "It stops naming the account as who made a port public. They go with their workspace."
+seen_by = ["litestream"]
+
+[[table]]
+name = "hosted_transcripts"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A closed agent block's transcript from a hosted workspace's box (M184): its project, workspace, machine and block, the agent, its title and working directory, when it ran, and its text (prompts, the agent's messages and tool calls, cut to 768 KiB), kept read only."
+why_asleep = "A project's people read what its hosted workspaces' agents did after the box is paused, rebuilt or deleted."
+with_account = "partly"
+note = "Those of its personal project and its disbanded teams' projects go. A team's stay with its project: its other people read them."
 seen_by = ["litestream"]
 
 [[table]]

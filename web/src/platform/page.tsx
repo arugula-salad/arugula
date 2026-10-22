@@ -23,6 +23,7 @@ import { Missing, ProjectHome } from "./pages/project";
 import { Installed, ProjectSettings } from "./pages/project-settings";
 import { SettingsPage } from "./pages/settings";
 import { PastPage, WorkspacesPage } from "./pages/workspace";
+import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 
 export function PlatformPage() {
   useSubscribe((fn) => session.subscribe(fn));
@@ -55,13 +56,23 @@ function body(r: Route, lost: string | null) {
     case "issue":
       return <IssuePage project={r.project} issue={r.issue} msg={r.msg} />;
     case "workspaces":
-      return <WorkspacesPage />;
+      return (
+        <>
+          <HostedWorkspaces project={r.project} />
+          <WorkspacesPage />
+        </>
+      );
     case "project-settings":
       return <ProjectSettings id={r.project} link={r.link} />;
     case "installed":
       return <Installed project={r.project} repo={r.repo} />;
     case "workspace":
-      return <WorkspacesPage workspace={r.workspace} />;
+      // M184: a hosted workspace is a machine of the project.
+      return r.workspace.startsWith("hw_") ? (
+        <HostedWorkspacePage project={r.project} workspace={r.workspace} />
+      ) : (
+        <WorkspacesPage workspace={r.workspace} />
+      );
     case "past":
       return <PastPage id={r.id} />;
     case "inbox":

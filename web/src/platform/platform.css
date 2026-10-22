@@ -333,3 +333,31 @@
   display: block;
   padding: 4px 0;
 }
+
+/* A hosted workspace (M184): its label, and its closed agents' transcripts. */
+.hosted-label {
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.hosted-transcripts {
+  list-style: none;
+  padding: 0;
+}
+
+.hosted-transcripts li {
+  margin: 6px 0;
+}
+
+.hosted-transcript {
+  max-height: 60vh;
+  overflow: auto;
+  margin: 6px 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+  background: var(--surface);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+}

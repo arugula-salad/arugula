@@ -77,7 +77,7 @@ pub mod window;
 pub mod work;
 
 pub use hub::HubPort;
-pub use port::{Deleted, PlatformPort, TurnAnswer};
+pub use port::{Archived, Deleted, PlatformPort, PublicPreview, TurnAnswer};
 pub use router::{paths, router};
 
 /// What the platform is told when it starts.

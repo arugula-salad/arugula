@@ -32,6 +32,7 @@
 mod capabilities;
 mod cloud;
 mod forge_ops;
+pub(crate) mod hosted;
 mod issues;
 pub(crate) mod ops;
 pub mod relay;
@@ -161,6 +162,7 @@ pub fn routes(app: &Arc<App>) -> Router<Arc<App>> {
         .nest_service(PATH, service)
         .layer(middleware::from_fn_with_state(app.clone(), authenticate))
         .merge(tokens::api_routes())
+        .merge(hosted::routes())
 }
 
 /// What serves a VM agent's relayed connections: an MCP session each, on

@@ -70,6 +70,7 @@ use arugula_mux::perm;
 #[cfg(windows)]
 mod pipe;
 mod ports;
+mod public_preview;
 use arugula_mux::procinfo;
 use arugula_mux::provider;
 mod push;

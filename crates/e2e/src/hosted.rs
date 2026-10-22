@@ -188,8 +188,9 @@ impl DelegationRevoke {
     }
 }
 
-/// Control's hosted key: it signs hosted machines' certificates, and
-/// nothing else signs with it. A delegation names its public half.
+/// Control's hosted key: it signs hosted machines' certificates and
+/// public previews' grants (M187, [`crate::preview`]), each under a first
+/// line of its own, and nothing else. A delegation names its public half.
 pub struct HostedKey(SigningKey);
 
 impl HostedKey {
@@ -212,6 +213,12 @@ impl HostedKey {
 
     pub fn sign(&self, cert: &mut HostedCert) {
         cert.sig = hex::encode(self.0.sign(cert.body().as_bytes()).to_bytes());
+    }
+
+    /// An Ed25519 signature over `body`, which starts with a first line of
+    /// its own (`crate::preview`'s grant).
+    pub(crate) fn sign_bytes(&self, body: &[u8]) -> [u8; 64] {
+        self.0.sign(body).to_bytes()
     }
 }
 
