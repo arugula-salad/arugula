@@ -44,6 +44,7 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-011](docs/decisions/aru-011-layout-is-a-file-written-atomically.md): Layout is a file written atomically
 - [aru-012](docs/decisions/aru-012-restart-policies-decide-what-runs-after-a-restore.md): Restart policies decide what runs after a restore
 - [aru-013](docs/decisions/aru-013-panes-outlive-the-daemon.md): Panes outlive the daemon
+- [aru-103](docs/decisions/aru-103-the-deploy-event-log-is-append-only-and-anyone-c.md): The deploy event log is append-only, and anyone can verify its approvals
 
 ## The mux and panes
 
@@ -68,6 +69,8 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-085](docs/decisions/aru-085-sending-as-a-person-uses-a-one-use-user-token-fa.md): Sending as a person uses a one-use user token, falling back to their machine
 - [aru-086](docs/decisions/aru-086-private-items-are-shown-per-viewer-by-their-own.md): Private items are shown per viewer, by their own GitHub access
 - [aru-095](docs/decisions/aru-095-control-enrolls-hosted-machines-under-a-project.md): Control enrolls hosted machines under a project delegation
+- [aru-099](docs/decisions/aru-099-one-standing-grant-per-project-starts-runs.md): One standing grant per project starts runs
+- [aru-101](docs/decisions/aru-101-a-deploy-needs-an-owner-device-s-approval-and-ag.md): A deploy needs an owner device's approval, and agents never approve
 
 ## Clients
 
@@ -135,6 +138,9 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-092](docs/decisions/aru-092-a-hosted-machine-is-arugulad-in-a-rented-sandbox.md): A hosted machine is arugulad in a rented sandbox
 - [aru-093](docs/decisions/aru-093-the-substrate-is-built-to-e2b-s-api.md): The substrate is built to E2B's API
 - [aru-097](docs/decisions/aru-097-public-previews-live-on-a-registrable-domain-of.md): Public previews live on a registrable domain of their own
+- [aru-098](docs/decisions/aru-098-a-run-is-a-platform-object-on-a-hosted-workspace.md): A run is a platform object on a hosted workspace
+- [aru-100](docs/decisions/aru-100-run-logs-on-hosted-workspaces-are-readable-by-th.md): Run logs on hosted workspaces are readable by the platform
+- [aru-102](docs/decisions/aru-102-a-driver-is-a-run-with-a-credential.md): A driver is a run with a credential
 
 ## Build and release
 
@@ -146,3 +152,4 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-068](docs/decisions/aru-068-control-pushes-labs-flags-the-machine-overrides.md): Control pushes Labs flags; the machine overrides
 - [aru-069](docs/decisions/aru-069-zig-0-16-builds-ghostty-the-toolchain-is-pinned.md): Zig 0.16 builds Ghostty; the toolchain is pinned
 - [aru-070](docs/decisions/aru-070-windows-is-a-full-platform-built-on-github-s-runners.md): Windows is a full platform, built on GitHub's runners
+- [aru-104](docs/decisions/aru-104-drivers-come-in-order-chant-to-fly-then-apps-pla.md): Drivers come in order: chant to Fly, then apps-platform; planter in step 8
