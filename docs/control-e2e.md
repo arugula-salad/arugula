@@ -994,8 +994,8 @@ page that framed them with `postMessage`. Every message carries
 
 - **When:** a port or editor block whose state has a `site_key`, on a
   machine this page reaches through a control whose `/control.json` says
-  `block_domain`. Not a hosted sandbox's (its daemon doesn't dial
-  control's relay). The frame is `<page's scheme>//b-<site_key>.<block
+  `block_domain`: a hosted machine's too (M186). Not an M20 hosted
+  sandbox's (its daemon doesn't dial control's relay). The frame is `<page's scheme>//b-<site_key>.<block
   domain>[:<page's port>]` plus the daemon's `src` made a path.
 - **The editor's `src`:** code-server opens a file from VS Code's
   `payload` (`[["openFile","vscode-remote://<host>/path"]]`), where the
@@ -1028,6 +1028,36 @@ page that framed them with `postMessage`. Every message carries
   up ("Blocks: relayed", "Blocks: 1 direct, 1 relayed"), in the words
   the host button uses for the machine's own channel. A block on the
   daemon's own page says nothing.
+
+### Hosted machines' previews
+
+M186 (#1247, aru-097): a dev server in a hosted workspace shows in a
+browser block for the project's people, the same way as any machine's:
+on a block origin, through the hosted machine's relay socket.
+
+- **The hosted daemon** reads `block_domain` and control's URLs from
+  `/control.json` on each refresh, as other daemons do, so its port and
+  editor blocks get sites reached by block channels (it never has a block
+  listener).
+- **Control relays** a block's socket to a hosted machine it knows and
+  that's connected, metered against its project, as the machine's own
+  socket is. It doesn't wake a paused box for a block socket: the page's
+  own channel, which has a session, does that (M182). A removed machine
+  is unknown.
+- **Members only.** The relay has no session on a block origin, so the
+  daemon decides, as for every block: a grant counts only when it's signed
+  by a device it lets open blocks. On a hosted machine that's a device of
+  one of the project's owners or editors, from the roster or the account it
+  pinned (a locked team's: its owners). A viewer's, an outsider's, or a
+  removed device's grant is refused (`untrusted`), and a page with no
+  device signed in has nothing to sign one with.
+- **Never the provider's preview URLs.** E2B's are public by default and
+  need a header browsers can't send. A test (`no_provider_preview_urls`
+  in `crates/control/src/blocks.rs`) keeps their hosts out of the tree.
+- **Public previews (M187)** are a separate path: a port a member marks
+  public (`hosted_ports.public_by`, `public_until`) is served through the
+  relay on a registrable domain of its own, never under the block domain,
+  since every block origin shares a site with every other.
 
 ### Machines with no block flags
 

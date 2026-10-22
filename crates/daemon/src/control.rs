@@ -1269,11 +1269,22 @@ impl Control {
     /// framing, and the one to move to when it says it's moved and the new
     /// URL agrees that `url` is one of its own.
     async fn where_control_is(&self, url: &str) -> Option<String> {
-        let at = |u: &str| format!("{}{}", u.trim_end_matches('/'), wire::CONTROL_JSON);
-        let get = |u: String| async move {
-            self.http.get(u).send().await.ok()?.error_for_status().ok()?.json::<wire::ControlWhere>().await.ok()
-        };
-        let here = get(at(url)).await?;
+        let here = self.control_here(url).await?;
+        let to = follow(url, &here)?;
+        let there = self.control_json(&to).await?;
+        same(&follow_target(&there), &to).then_some(())?;
+        there.urls.iter().any(|u| same(u, url)).then_some(to)
+    }
+
+    async fn control_json(&self, url: &str) -> Option<wire::ControlWhere> {
+        let at = format!("{}{}", url.trim_end_matches('/'), wire::CONTROL_JSON);
+        self.http.get(at).send().await.ok()?.error_for_status().ok()?.json::<wire::ControlWhere>().await.ok()
+    }
+
+    /// Control's `/control.json` at `url`: the URLs it answers at, kept for
+    /// framing, and whether it serves block origins.
+    async fn control_here(&self, url: &str) -> Option<wire::ControlWhere> {
+        let here = self.control_json(url).await?;
         *self.control_urls.lock().unwrap() = here.urls.clone();
         // Its page shows this daemon's blocks on control's block origins
         // (M50), with or without a block listener here.
@@ -1282,10 +1293,7 @@ impl Control {
             info!(block_domain = here.block_domain.as_deref().unwrap_or(""), "blocks through control's page");
         }
         crate::sites::set_control_blocks(blocks);
-        let to = follow(url, &here)?;
-        let there = get(at(&to)).await?;
-        same(&follow_target(&there), &to).then_some(())?;
-        there.urls.iter().any(|u| same(u, url)).then_some(to)
+        Some(here)
     }
 
     /// POST JSON to control, signed over exactly the bytes sent.
@@ -1322,6 +1330,10 @@ impl Control {
     /// pinned. It publishes nothing and asks for no push subscriptions:
     /// control answers a hosted machine only there and on the relay.
     async fn refresh_hosted(&self, e: &Enrolled, number: u64) -> anyhow::Result<bool> {
+        // Its dev servers show on control's block origins too (M186,
+        // members' previews). It never follows a move: the release pins
+        // control's URL.
+        self.control_here(&e.saved.url).await;
         let got: arugula_control_wire::hosted::Enrollment =
             self.get(e, arugula_control_wire::hosted::HOSTED_TRUST).await?;
         let saved = crate::hosted::enroll::saved_from(got, &e.keys, Some(&e.saved))?;
@@ -4027,6 +4039,21 @@ pub(crate) mod tests {
         assert_eq!(who(&hosted_saved, &viewer), (false, Some(Role::Viewer)));
         assert_eq!(who(&hosted_saved, &owner), (true, None));
         assert_eq!(who(&team_saved, &editor), (false, Some(Role::Editor)));
+
+        // M186: members' previews. A block's grant counts from the
+        // project's owners' and editors' devices, never a viewer's or an
+        // outsider's.
+        let (_, outsider) = device("x", Kind::Browser);
+        let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+        c.install(Some(Enrolled::build(hosted_saved, Arc::new(DeviceKeys::generate()), &acl, false)));
+        for (who, c2, ok) in [
+            ("owner", &owner, true),
+            ("editor", &editor, true),
+            ("viewer", &viewer, false),
+            ("outsider", &outsider, false),
+        ] {
+            assert_eq!(c.block_signer(&c2.device).is_some(), ok, "{who}");
+        }
     }
 
     /// #386: a team's other owner gets in as the owner, but is someone of
