@@ -41,6 +41,10 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/issues/1272"
   - title: "#1273"
     url: "https://github.com/arugula-salad/arugula/issues/1273"
+  - title: "#1305"
+    url: "https://github.com/arugula-salad/arugula/pull/1305"
+  - title: "#1318"
+    url: "https://github.com/arugula-salad/arugula/pull/1318"
 decided_by: "jhgaylor"
 decided_on: "2026-10-21"
 reviews: []
@@ -60,7 +64,7 @@ a deploy.
 - **One room kind, `object`.** A thread is a `chat_rooms` row of kind
   `object`, scope `project:<id>`, with `project_id` set to the object's
   project, no machine, and the object's global id as its target: `iss_…` a
-  native issue, `fi_…` a mirrored GitHub item, `cw_…` a workspace. There is
+  native issue, `fi_…` a mirrored GitHub item, `hw_…` a hosted workspace. There is
   one room per target, made on its first message, as pane and session
   threads are (`chat_room_for`).
 - **Whoever can see the object sees its thread.** That's a third visibility
@@ -79,5 +83,10 @@ a deploy.
 
 Agents read and post in object threads under grants ("Agents are in
 conversations").
+
+**Hosted workspaces' threads target `hw_…` ids** (step 5's M179, #1305;
+their threads in #1318), not `cw_…`. A `cw_…` is an old Cloud workspace: it
+stays visible to its account only, so its thread answers `not_yet`, and
+those workspaces are retired in M189.
 Where: `crates/platform/src/chat.rs`, `crates/platform/src/db/chat.rs` (`chat_room_for`), `crates/control-wire/src/chat.rs`, `crates/platform/migrations/` (M196).
-From: #1263 (platform roadmap, step 6), M193 (#1264), M196 (#1267), M201 (#1272), M202 (#1273).
+From: #1263 (platform roadmap, step 6), M193 (#1264), M196 (#1267, #1318), M201 (#1272), M202 (#1273), M179 (#1305).
