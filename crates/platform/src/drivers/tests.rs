@@ -28,7 +28,8 @@ fn env(driver: &str) -> Environment {
             .collect();
         arugula_e2e::drivers::settings(driver, &given).unwrap()
     } else {
-        Settings::new()
+        // Defaults filled in (M221's bump and lane); none for the others.
+        arugula_e2e::drivers::settings(driver, &Settings::new()).unwrap()
     };
     Environment {
         id: "env_1".into(),
@@ -97,7 +98,7 @@ fn reported() -> Value {
 #[test]
 fn every_named_driver_plans_and_checks() {
     // Tests may name the fake one; a platform without the switch can't.
-    assert_eq!(names(), ["chant-fly", "apps-platform", "fake"]);
+    assert_eq!(names(), ["chant-fly", "apps-platform", "arugula-release", "fake"]);
     assert!(driver("planter").is_none(), "planter's waits for step 8");
     for name in names() {
         let d = driver(name).unwrap();
@@ -112,7 +113,11 @@ fn every_named_driver_plans_and_checks() {
             p.text
         );
         assert!(p.text.contains(&format!("driver {name}\n")), "it names its driver: {}", p.text);
-        let ok = if name == "chant-fly" { reported() } else { Value::Null };
+        let ok = match name {
+            "chant-fly" => reported(),
+            arugula_release::NAME => released(),
+            _ => Value::Null,
+        };
         assert_eq!(d.verify(&e, &deploy(&p.digest), &run(Some(0)), &ok), Verdict::Healthy, "{name}");
         assert_eq!(
             d.verify(&e, &deploy(&p.digest), &run(Some(2)), &ok),
@@ -132,6 +137,106 @@ fn every_named_driver_plans_and_checks() {
     assert!(driver("fake").unwrap().rolls_back());
     assert!(driver("apps-platform").unwrap().rolls_back(), "M222's");
     assert_eq!(Mint::GithubRead { name: "GITHUB_TOKEN" }.name(), "GITHUB_TOKEN");
+}
+
+/// What arugula-release's box reports when the release went out.
+fn released() -> Value {
+    json!({
+        "tag": "v0.59.1",
+        "version": "0.59.1",
+        "commit": "e".repeat(40),
+        "main": "d".repeat(40),
+        "script": "5".repeat(40),
+        "release": "https://github.com/arugula-salad/arugula/releases/tag/v0.59.1",
+        "published": true,
+        "workflow": { "run": "https://github.com/arugula-salad/arugula/actions/runs/42", "conclusion": "failure",
+                      "failed_jobs": ["template", "extension"] },
+    })
+}
+
+/// Arugula's own release (M221): it plans only a commit of
+/// arugula-salad/arugula, with its bump and lane; it mints one token,
+/// `contents: write` on that repository alone, for every run; only the
+/// project the platform names may use it; it checks the box published the
+/// tag of the environment's lane; and it never rolls back.
+#[test]
+fn arugula_release_plans_a_bump_mints_for_arugula_only_and_never_rolls_back() {
+    let d = driver("arugula-release").unwrap();
+    let e = env("arugula-release");
+    assert_eq!(e.settings["bump"], "patch");
+    assert_eq!(e.settings["lane"], "daemon");
+    let sha = "c".repeat(40);
+    let source = Source { kind: SourceKind::Commit, reference: sha.clone(), place: "arugula-salad/arugula".into() };
+    let p = d.plan(&e, &source);
+    for says in [
+        "driver arugula-release\n".to_owned(),
+        "setting bump patch\n".to_owned(),
+        format!("run scripts/release bump patch {sha}"),
+        "no roll back".to_owned(),
+    ] {
+        assert!(p.text.contains(&says), "{says:?} in {}", p.text);
+    }
+    assert!(d.refuses(&source).is_none());
+    for bad in [
+        Source { place: "acme/arugula".into(), ..source.clone() },
+        Source { kind: SourceKind::Artifact, ..source.clone() },
+        Source { reference: "main".into(), ..source.clone() },
+    ] {
+        assert!(d.refuses(&bad).is_some(), "{bad:?}");
+    }
+    assert_eq!(
+        d.mints(&e),
+        [
+            Mint::GithubWrite { name: "RELEASE_TOKEN", repo: "arugula-salad/arugula" },
+            Mint::GithubFollow { name: "RELEASE_READ_TOKEN", repo: "arugula-salad/arugula" }
+        ]
+    );
+    assert_eq!(d.secret_names(), ["RELEASE_TOKEN", "RELEASE_READ_TOKEN"]);
+    assert!(!d.rolls_back());
+    let r = RollBack { deploy: format!("dep_{}", "b".repeat(32)), to: Settings::new() };
+    assert!(d.plan_roll_back(&e, &source, &r).is_none());
+
+    // Only the project the platform names.
+    assert!(arugula_release::project_named(Some("prj_a, prj_b"), "prj_b"));
+    assert!(!arugula_release::project_named(Some("prj_a"), "prj_b"));
+    assert!(!arugula_release::project_named(Some(""), ""), "empty names none");
+    assert!(!arugula_release::project_named(None, "prj_a"));
+    assert!(d.allowed_in("prj_1").is_err(), "unset in tests: no project");
+    assert!(driver("chant-fly").unwrap().allowed_in("prj_1").is_ok());
+
+    // What the box reported, checked.
+    let dep = deploy(&p.digest);
+    let ok = run(Some(0));
+    assert_eq!(d.verify(&e, &dep, &ok, &released()), Verdict::Healthy, "published, other jobs failed or not");
+    for (what, f) in [
+        ("which tag", &(|r: &mut Value| r["tag"] = "app-v0.59.1".into()) as &dyn Fn(&mut Value)),
+        ("which tag", &|r| r["tag"] = "v0.59".into()),
+        ("which commit", &|r| r["commit"] = "main".into()),
+        ("didn't publish", &|r| r["published"] = false.into()),
+        ("didn't publish", &|r| r["release"] = "https://evil.example/v0.59.1".into()),
+    ] {
+        let mut r = released();
+        f(&mut r);
+        match d.verify(&e, &dep, &ok, &r) {
+            Verdict::Unhealthy(why) => assert!(why.contains(what), "{what}: {why}"),
+            v => panic!("{what}: {v:?}"),
+        }
+    }
+    let kept = d.kept(&e, &dep, &released());
+    assert_eq!(kept["tag"], "v0.59.1");
+    assert_eq!(kept["release"], "https://github.com/arugula-salad/arugula/releases/tag/v0.59.1");
+    assert_eq!(kept["workflow_run"], "https://github.com/arugula-salad/arugula/actions/runs/42");
+    assert_eq!(kept["published"], true);
+    assert_eq!(kept["script"], "5".repeat(40), "the scripts/release it ran, by blob id");
+    let mut bad = released();
+    bad["workflow"]["run"] = "https://evil.example/runs/1".into();
+    assert!(!d.kept(&e, &dep, &bad).contains_key("workflow_run"));
+    // The app's lane: an app-v* tag.
+    let app = Environment {
+        settings: arugula_e2e::drivers::settings("arugula-release", &[("lane".into(), "app".into())].into()).unwrap(),
+        ..e.clone()
+    };
+    assert!(matches!(d.verify(&app, &dep, &ok, &released()), Verdict::Unhealthy(_)), "a v* tag in the app's lane");
 }
 
 /// The apps-platform driver (M222): its plan names the list, the pointer's
@@ -260,4 +365,28 @@ fn chant_fly_rolls_back_to_what_a_deploy_kept() {
     assert!(back.text.contains(&format!("flyctl deploy --app acme-web --image {}", image('2'))), "{}", back.text);
     assert!(back.text.contains(&format!("roll back to {}\n", r.deploy)), "{}", back.text);
     assert!(driver("apps-platform").unwrap().plan_roll_back(&env("apps-platform"), &source(), &r).is_none());
+}
+
+/// What GitHub says of a commit before Arugula's release mints anything
+/// (M221), as it answered for real ones (2026-10-22): a `ci/green` ref
+/// (200, or 404 for none; a short sha is 404 too, the ref is exact), a
+/// `ci/revoked` one, and `compare/{sha}...main` (`ahead` with `behind_by`
+/// 0 for a commit on main; `diverged` for a branch's).
+#[test]
+fn arugula_release_checks_the_commit_with_github() {
+    let sha = "fe284314420e9e803d7c2ca93f62b7d9f72bdc69";
+    let on_main = json!({ "ahead_by": 337, "behind_by": 0, "status": "ahead" });
+    assert_eq!(arugula_release::source_verdict(sha, 200, 404, &on_main), Ok(()));
+    let head = json!({ "ahead_by": 0, "behind_by": 0, "status": "identical" });
+    assert_eq!(arugula_release::source_verdict(sha, 200, 404, &head), Ok(()));
+    for (green, revoked, compare, why) in [
+        (404, 404, on_main.clone(), "no ci/green"),
+        (200, 200, on_main.clone(), "ci/revoked"),
+        (200, 404, json!({ "ahead_by": 3, "behind_by": 1, "status": "diverged" }), "isn't on"),
+        (200, 404, json!({ "ahead_by": 0, "behind_by": 337, "status": "behind" }), "isn't on"),
+        (200, 404, json!({}), "isn't on"),
+    ] {
+        let e = arugula_release::source_verdict(sha, green, revoked, &compare).unwrap_err();
+        assert!(e.contains(why), "{why}: {e}");
+    }
 }

@@ -420,6 +420,8 @@ pub async fn create_environment(
     // runs (M222: the apps-platform driver's `SOURCE_TOKEN`); one it mints
     // only when the environment holds none of its own may be held.
     if let Some(d) = crate::drivers::driver(&b.driver) {
+        // A driver some projects only may use (M221: Arugula's release).
+        d.allowed_in(&p.id).map_err(|why| err(StatusCode::FORBIDDEN, &why))?;
         let would = Environment {
             id: String::new(),
             project: p.id.clone(),
@@ -556,8 +558,11 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
     if let Some(why) = driver.refuses(&source) {
         return Err(err(StatusCode::BAD_REQUEST, &why));
     }
-    // A token its run mints that writes (M222's list, M220's ledger): the
-    // App must be able to, or the deploy can't run once it's approved.
+    // A driver some projects only may use (M221: Arugula's release).
+    driver.allowed_in(&p.id).map_err(|why| err(StatusCode::FORBIDDEN, &why))?;
+    // A token its run mints that writes (M222's list, M220's ledger, M221's
+    // release): the App must be able to, or the deploy can't run once it's
+    // approved.
     if let Some(why) = crate::drivers::mint::plan_refuses(app, &env, &source).await {
         return Err(err(StatusCode::CONFLICT, &why));
     }

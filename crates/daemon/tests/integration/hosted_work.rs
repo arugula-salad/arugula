@@ -667,19 +667,34 @@ fn deploy_item_by(
     dep: &str,
     source: &str,
     by: &DeviceKeys,
+    driver: (&str, &str, &[&str]),
+) -> WorkItem {
+    deploy_item_with(f, run, dep, source, by, driver, Default::default())
+}
+
+/// [`deploy_item_by`] with its environment's driver settings (M221: the
+/// release's bump and lane), which its plan names.
+fn deploy_item_with(
+    f: &Fake,
+    run: &str,
+    dep: &str,
+    source: &str,
+    by: &DeviceKeys,
     (driver, place, secrets): (&str, &str, &[&str]),
+    settings: arugula_e2e::drivers::Settings,
 ) -> WorkItem {
     use base64::Engine as _;
-    let op = Operation {
+    let mut op = Operation {
         project: PROJECT.into(),
         environment: "env_1".into(),
         environment_name: "production".into(),
-        plan: arugula_e2e::deploy::plan_digest(driver, "production", "commit", source, place),
+        plan: String::new(),
         source_kind: "commit".into(),
         source_ref: source.into(),
         source_where: place.into(),
         planned: "cd".repeat(32),
     };
+    op.plan = arugula_e2e::drivers::plan_digest(driver, &op, &settings, None);
     let approval = Approval::new(by, dep, &op, "acct1", Decision::Once, arugula_e2e::now_ms() + 3_600_000);
     let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
     let cd = json!({ "type": "webauthn.get", "challenge": approval.passkey_challenge(), "origin": "https://c.test" });
@@ -710,7 +725,7 @@ fn deploy_item_by(
             }),
             driver: driver.into(),
             secrets: secrets.iter().map(|s| s.to_string()).collect(),
-            settings: Default::default(),
+            settings,
             roll_back: None,
             approval_id: None,
         }),
@@ -1094,6 +1109,140 @@ fn a_deploy_box_applies_an_apps_platform_deploy() {
     assert!(pointer.contains(&format!("  ref:\n    commit: {sha}")), "{pointer}");
     std::thread::sleep(Duration::from_millis(300));
     for token in [WRITE, READ] {
+        assert!(!text.contains(token), "a token is in the pane: {text}");
+        let found: Vec<PathBuf> =
+            [d.state.as_path(), marks.as_path()].iter().flat_map(|dir| holding(dir, token.as_bytes())).collect();
+        assert!(found.is_empty(), "a token is on disk: {found:?}");
+    }
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// M221: Arugula's own release on a deploy's box, through the daemon: its
+/// minted token comes on the driver's standard input, `arugulad
+/// _arugula-release` runs the commit's real `scripts/release bump` against
+/// a bare repository standing in for GitHub, which tags v0.1.1 and pushes
+/// it with main; the write token is revoked; the release workflow is
+/// followed with the read token (a fake API shaped as GitHub's), which is
+/// revoked after; the run succeeds and reports the tag on its result pipe.
+/// Neither token is ever on disk or in the pane.
+#[test]
+fn a_deploy_box_releases_arugula() {
+    const TOKEN: &str = "ghs_m221releaseTOKENneverOnDisk0000000"; // gitleaks:allow
+    const READ: &str = "ghs_m221readTOKENneverOnDisk000000000"; // gitleaks:allow
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::new();
+    *f.purpose.lock().unwrap() = Some("deploy".into());
+    *f.given.lock().unwrap() = Some(vec![
+        Secret { name: "RELEASE_TOKEN".into(), value: TOKEN.into(), revoke: None },
+        Secret { name: "RELEASE_READ_TOKEN".into(), value: READ.into(), revoke: None },
+    ]);
+    let url = serve(&rt, f.clone());
+    let marks: PathBuf = std::env::temp_dir().join(format!("arugula-release-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&marks);
+    std::fs::create_dir_all(&marks).unwrap();
+    let seed = include_str!("../../src/work_arugula_release_seed.sh");
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/release");
+    let out = std::process::Command::new("bash").args(["-c", seed, "seed"]).arg(&marks).arg(script).output().unwrap();
+    assert!(out.status.success(), "seed: {}", String::from_utf8_lossy(&out.stderr));
+    let two = String::from_utf8_lossy(&out.stdout).split(' ').next().unwrap().to_owned();
+    // GitHub's API: the release workflow's run, done; its jobs; the
+    // release; and the token's revoke.
+    let revoked = Arc::new(Mutex::new(Vec::<String>::new()));
+    let api = rt.block_on(async {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let at = format!("http://{}", l.local_addr().unwrap());
+        let revoked = revoked.clone();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+            while let Ok((mut s, _)) = l.accept().await {
+                let mut buf = vec![0u8; 4096];
+                let n = s.read(&mut buf).await.unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).into_owned();
+                let path = req.split_whitespace().nth(1).unwrap_or_default().to_owned();
+                let repo = "/repos/arugula-salad/arugula";
+                let (status, body) = if req.starts_with("DELETE /installation/token ") {
+                    let auth = req
+                        .lines()
+                        .find_map(|l| l.to_ascii_lowercase().strip_prefix("authorization: bearer ").map(str::to_owned));
+                    revoked.lock().unwrap().push(auth.unwrap_or_default());
+                    ("204 No Content", String::new())
+                } else if path.starts_with(&format!("{repo}/actions/runs?")) {
+                    let body = r#"{"total_count":1,"workflow_runs":[{"conclusion":"success","event":"push","head_branch":"v0.1.1","html_url":"https://github.com/arugula-salad/arugula/actions/runs/39845854046","id":39845854046,"name":"release","path":".github/workflows/release.yml","status":"completed"}]}"#;
+                    ("200 OK", body.to_owned())
+                } else if path.starts_with(&format!("{repo}/actions/runs/39845854046/jobs")) {
+                    ("200 OK", r#"{"total_count":1,"jobs":[{"name":"publish","status":"completed","conclusion":"success"}]}"#.into())
+                } else if path.starts_with(&format!("{repo}/releases/tags/v0.1.1")) {
+                    ("200 OK", r#"{"tag_name":"v0.1.1","draft":false,"prerelease":false}"#.into())
+                } else {
+                    ("404 Not Found", String::new())
+                };
+                let _ = s
+                    .write_all(format!("HTTP/1.1 {status}\r\ncontent-length: {}\r\n\r\n{body}", body.len()).as_bytes())
+                    .await;
+            }
+        });
+        at
+    });
+    let d = arugulad!("arugularelease")
+        .no_wisp()
+        .no_tailscale()
+        .home_in_state()
+        .args(["--hosted"])
+        .env("ARUGULA_HOSTED_TICKET", "ticket-1")
+        .env("ARUGULA_CONTROL_URL", &url)
+        .env("ARUGULA_WORK_PULL_MS", "150")
+        .env("ARUGULA_HOSTED_RUN_USER", "")
+        // No `runner` user here: a deploy's box refuses that, but in tests.
+        .env("ARUGULA_HOSTED_TESTS_UNSAFE", "1")
+        .env("ARUGULA_HOSTED_FAKE_DRIVER", "1")
+        .env("ARUGULA_HOSTED_ARUGULA_RELEASE_GIT", format!("{}/", marks.join("remotes").display()))
+        .env("ARUGULA_HOSTED_ARUGULA_RELEASE_API", &api)
+        .env("RUST_LOG", "info")
+        .args(["--log-file", &marks.join("arugulad.log").to_string_lossy()])
+        .wait_secs(30)
+        .start();
+    wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
+    let run = run_id('d');
+    let dep = format!("dep_{}", "4".repeat(32));
+    let settings = [("bump".to_owned(), "patch".to_owned()), ("lane".to_owned(), "daemon".to_owned())].into();
+    let item = deploy_item_with(
+        &f,
+        &run,
+        &dep,
+        &two,
+        &f.root,
+        ("arugula-release", "arugula-salad/arugula", &["RELEASE_TOKEN", "RELEASE_READ_TOKEN"]),
+        settings,
+    );
+    f.items.lock().unwrap().push(item);
+    wait(&marks, &f, "the deploy ran", || f.reports_of(&run).len() == 2);
+    let reports = f.reports_of(&run);
+    let (logs, _) = f.uploads_of(&run);
+    let mut all = Vec::new();
+    for u in &logs {
+        let Upload::Log { n, .. } = u else { unreachable!() };
+        all.extend_from_slice(&f.objects.lock().unwrap()[&format!("{run}/log/{n}")]);
+    }
+    let text = String::from_utf8_lossy(&all).into_owned();
+    assert_eq!(
+        states(&reports),
+        [(3, "approved".into(), "running".into()), (4, "running".into(), "succeeded".into())],
+        "{text}"
+    );
+    assert!(text.contains("scripts/release: pushed v0.1.1") && text.contains("v0.1.1 is out"), "{text}");
+    let end: serde_json::Value = serde_json::from_str(&reports[1].detail).unwrap();
+    assert_eq!(end["result"]["tag"], "v0.1.1", "{end}");
+    assert_eq!(end["result"]["published"], true, "{end}");
+    assert_eq!(
+        *revoked.lock().unwrap(),
+        [TOKEN.to_ascii_lowercase(), READ.to_ascii_lowercase()],
+        "both tokens revoked from the box, the write one first"
+    );
+    let bare = marks.join("remotes/arugula-salad/arugula.git");
+    assert_eq!(git(&bare, &["rev-parse", "v0.1.1^{commit}^"]), two, "v0.1.1 is a bump on the commit");
+    assert!(git(&bare, &["cat-file", "-p", "v0.1.1"]).contains(&format!("Arugula-Deploy: {dep}")));
+    std::thread::sleep(Duration::from_millis(300));
+    for token in [TOKEN, READ] {
         assert!(!text.contains(token), "a token is in the pane: {text}");
         let found: Vec<PathBuf> =
             [d.state.as_path(), marks.as_path()].iter().flat_map(|dir| holding(dir, token.as_bytes())).collect();

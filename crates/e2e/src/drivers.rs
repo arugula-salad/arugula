@@ -21,6 +21,9 @@ use sha2::{Digest, Sha256};
 
 use crate::deploy::Operation;
 
+#[path = "drivers_arugula_release.rs"]
+pub mod arugula_release;
+
 /// The chant→Fly driver's name, as environments name it.
 pub const CHANT_FLY: &str = "chant-fly";
 
@@ -83,10 +86,11 @@ pub const CHANT_DIGEST: &str = "chant_digest";
 /// expires (`fly tokens create deploy -a <app> -x 720h`).
 pub const FLY_API_TOKEN: &str = "FLY_API_TOKEN";
 
-/// Whether a chant→Fly deploy's source is one: a commit, by its full
-/// 40-hex id (never a branch, a tag or a short id the box resolves).
+/// Whether a chant→Fly (or arugula-release, M221) deploy's source is one:
+/// a commit, by its full 40-hex id (never a branch, a tag or a short id
+/// the box resolves).
 pub fn source_ok(driver: &str, kind: &str, reference: &str) -> bool {
-    driver != CHANT_FLY
+    (driver != CHANT_FLY && driver != arugula_release::DRIVER)
         || (kind == "commit"
             && reference.len() == 40
             && reference.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
@@ -157,6 +161,9 @@ pub fn word(s: &str) -> bool {
 /// `driver`'s settings as an environment keeps them, defaults filled in:
 /// `Err` why not. A driver without settings takes none.
 pub fn settings(driver: &str, given: &Settings) -> Result<Settings, String> {
+    if driver == arugula_release::DRIVER {
+        return arugula_release::settings(given);
+    }
     if driver != CHANT_FLY {
         return match given.keys().next() {
             None => Ok(Settings::new()),
@@ -252,6 +259,11 @@ pub fn plan_text(
     }
     if driver == CHANT_FLY {
         t.push_str(&chant_fly_does(source_ref, source_where, settings, roll_back));
+    }
+    // Arugula's own release (M221) never rolls back: a roll back's plan
+    // says nothing it'd do, and nothing applies it.
+    if driver == arugula_release::DRIVER && roll_back.is_none() {
+        t.push_str(&arugula_release::plan_lines(source_kind, source_ref, source_where, settings));
     }
     t
 }

@@ -224,6 +224,13 @@ pub fn driver_argv(driver: &str) -> Result<Vec<String>, Refused> {
             argv.extend(apps_platform_test_flags());
             Ok(argv)
         }
+        arugula_e2e::drivers::arugula_release::DRIVER => {
+            let exe = std::env::current_exe()
+                .map_err(|e| Refused("driver", format!("this box can't find its own daemon: {e}")))?;
+            let mut argv = vec![exe.to_string_lossy().into_owned(), "_arugula-release".into()];
+            argv.extend(arugula_release_test_flags());
+            Ok(argv)
+        }
         other => Err(Refused("driver", format!("this box has no {} driver yet", printable(other)))),
     }
 }
@@ -234,7 +241,8 @@ pub fn driver_argv(driver: &str) -> Result<Vec<String>, Refused> {
 /// nothing it reads can change), not only in its environment.
 pub fn driver_argv_for(d: &DeployWork) -> Result<Vec<String>, Refused> {
     let mut argv = driver_argv(&d.driver)?;
-    if d.driver == arugula_e2e::deploy::apps_platform::DRIVER {
+    let release = d.driver == arugula_e2e::drivers::arugula_release::DRIVER;
+    if d.driver == arugula_e2e::deploy::apps_platform::DRIVER || release {
         let o = &d.operation;
         for (flag, v) in [
             ("--deploy", &d.deploy),
@@ -247,11 +255,42 @@ pub fn driver_argv_for(d: &DeployWork) -> Result<Vec<String>, Refused> {
             argv.extend([flag.to_owned(), v.clone()]);
         }
         // A roll back (M220's): the plan names the deploy it goes back to.
+        // Arugula's release never rolls back, and refuses the flag.
         if let Some(r) = &d.roll_back {
             argv.extend(["--roll-back".to_owned(), r.deploy.clone()]);
         }
     }
+    // Its settings (M221), which its plan names: the bump and the lane.
+    if release {
+        for (k, flag) in [("bump", "--bump"), ("lane", "--lane")] {
+            if let Some(v) = d.settings.get(k) {
+                argv.extend([flag.to_owned(), v.clone()]);
+            }
+        }
+    }
     Ok(argv)
+}
+
+/// Where the arugula-release driver clones, pushes and asks, on a box that
+/// runs the fake driver too (tests and testnet only): a directory of bare
+/// repositories for GitHub (`ARUGULA_HOSTED_ARUGULA_RELEASE_GIT`) and a
+/// fake GitHub API (`ARUGULA_HOSTED_ARUGULA_RELEASE_API`), asked often.
+fn arugula_release_test_flags() -> Vec<String> {
+    if !fake_on() {
+        return vec![];
+    }
+    let mut flags = vec![];
+    for (var, flag) in
+        [("ARUGULA_HOSTED_ARUGULA_RELEASE_GIT", "--git-base"), ("ARUGULA_HOSTED_ARUGULA_RELEASE_API", "--api-base")]
+    {
+        if let Some(v) = std::env::var(var).ok().filter(|v| !v.is_empty()) {
+            flags.extend([flag.to_owned(), v]);
+        }
+    }
+    if !flags.is_empty() {
+        flags.extend(["--poll-ms".into(), "200".into(), "--follow-ms".into(), "30000".into()]);
+    }
+    flags
 }
 
 /// Where the apps-platform driver pushes and asks, on a box that runs the
@@ -608,6 +647,11 @@ fn driver_command(
     ]
     .into_iter()
     .map(|(k, v)| (k.to_owned(), v))
+    .chain(
+        // A box that runs the fake driver (tests, testnet) says so: only
+        // there do drivers take the flags that point them at fakes (M221).
+        fake_on().then(|| ("ARUGULA_HOSTED_FAKE_DRIVER".to_owned(), "1".to_owned())),
+    )
     .collect();
     let script = driver_script(&work, argv);
     let mut c = match as_ {
@@ -1290,6 +1334,8 @@ mod tests {
         assert_eq!(driver_argv("chant-fly").unwrap()[..3], ["node", "--input-type=module", "-e"]);
         let ap = driver_argv("apps-platform").unwrap();
         assert_eq!(ap[1], "_apps-platform", "the daemon itself, as the apps-platform driver: {ap:?}");
+        let ar = driver_argv("arugula-release").unwrap();
+        assert_eq!(ar[1], "_arugula-release", "the daemon itself, as Arugula's release: {ar:?}");
         assert!(good_name("FLY_API_TOKEN") && !good_name("1X") && !good_name("a") && !good_name("A B"));
     }
 

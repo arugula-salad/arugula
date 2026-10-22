@@ -797,3 +797,148 @@ async fn chant_fly_links_chants_ledger_and_rolls_back_to_what_it_kept() {
     assert!(run.chant_ledger.is_some());
     assert!(app.db.verify_deploy_log(&env).unwrap().is_ok());
 }
+
+/// [`world`], with the App against a fake GitHub that has it installed on
+/// arugula-salad/arugula, writing its contents (M221).
+async fn world_with_github() -> (Arc<TestHub>, Arc<Platform>, String, String, crate::forge::links_tests::Shared) {
+    use crate::forge::links_tests::{SECRET, Shared, fake_github, granted, throwaway_key};
+    let gh: Shared = Arc::default();
+    {
+        let mut g = gh.lock().unwrap();
+        g.installed.insert("arugula-salad/arugula".into(), (9, 500, "arugula-salad".into()));
+        g.repos.insert("arugula-salad/arugula".into(), (1001, false));
+        let mut grants = granted();
+        grants["contents"] = "write".into();
+        g.grants.insert("arugula-salad/arugula".into(), grants);
+    }
+    let api = fake_github(gh.clone()).await;
+    let hub = Arc::new(TestHub::default());
+    let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
+    let mut p = Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
+    p.secret_key = Some(Arc::new(SecretCipher::new(KEY).unwrap()));
+    p.compute = Some(Arc::new(Fake::default()));
+    p.hosted = crate::hosted::Config { template: Some("tpl".into()), ..Default::default() };
+    p.github =
+        Some(crate::forge::GithubApp::new("1".into(), "arugula-test".into(), SECRET.into(), &api, throwaway_key()));
+    let app = Arc::new(p);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", l.local_addr().unwrap());
+    let router = crate::cloud::tests::router(app.clone());
+    tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
+    crate::projects::follow(&app).await.unwrap();
+    crate::cache::catch_up(&app).await.unwrap();
+    let t = crate::projects::team_project(&app, "t").await.unwrap().unwrap();
+    hub.delegate(&t);
+    (hub, app, base, t, gh)
+}
+
+/// Plan a release of `sha` (as b), ask, and approve it (a's phone): its id
+/// and its plan's text.
+async fn release_approved(base: &str, hub: &TestHub, t: &str, env: &str, sha: &str) -> (String, String) {
+    let body =
+        json!({ "environment": env, "source": { "kind": "commit", "ref": sha, "where": "arugula-salad/arugula" } });
+    let (st, d) = call(base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
+    assert_eq!(st, 200, "{d}");
+    let id = d["id"].as_str().unwrap().to_owned();
+    let text = d["plan_text"].as_str().unwrap().to_owned();
+    assert_eq!(crate::deploys_tests::digest(&text), d["plan"].as_str().unwrap(), "the text is the digest's");
+    let (st, d) = call(base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
+    assert_eq!(st, 200, "{d}");
+    let op = d["operation"]["hash"].as_str().unwrap().to_owned();
+    let a = devices(hub, "a");
+    let body = signed(&a.phone, "a", &id, &op, Decision::Once);
+    let (st, d) = call(base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(body)).await;
+    assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
+    (id, text)
+}
+
+/// Arugula's own release on the platform (M221), with the App: planned
+/// where the App writes arugula-salad/arugula, its plan saying the bump,
+/// the lane and that it never rolls back; its box handed the settings and
+/// its two tokens, minted only once GitHub says the commit is on main and
+/// green; what the box reports (the tag, published) succeeds the deploy,
+/// its log keeping the tag, the release's page and the script's blob id.
+/// A commit CI passed that isn't on main gets no tokens, nor does a
+/// project the platform no longer names.
+#[tokio::test]
+async fn arugula_release_mints_only_for_a_green_commit_on_main_in_arugulas_project() {
+    let (hub, app, base, t, gh) = world_with_github().await;
+    crate::drivers::arugula_release::TEST_PROJECTS.lock().unwrap().push(t.clone());
+    let body = json!({ "name": "release", "driver": "arugula-release", "settings": { "lane": "daemon" } });
+    let (st, env) = call(&base, "a", "POST", &format!("/api/projects/{t}/environments"), Some(body)).await;
+    assert_eq!(st, 200, "{env}");
+    let env = env["id"].as_str().unwrap().to_owned();
+    let (good, branch) = ("a1".repeat(20), "b2".repeat(20));
+    {
+        let mut g = gh.lock().unwrap();
+        g.green.extend([good.clone(), branch.clone()]);
+        g.on_main.insert(good.clone());
+    }
+
+    let (id, text) = release_approved(&base, &hub, &t, &env, &good).await;
+    for says in [
+        "driver arugula-release\n".to_owned(),
+        "setting bump patch\nsetting lane daemon\n".to_owned(),
+        format!("run scripts/release bump patch {good}"),
+        "no roll back".to_owned(),
+    ] {
+        assert!(text.contains(&says), "{says:?} in {text}");
+    }
+    let m = boot(&app, &hub, &id).await;
+    let w = pull(&app, &m, &[TAKES_RUN, TAKES_DEPLOY]).await;
+    let dw = w.items[0].deploy.clone().unwrap();
+    assert_eq!((dw.settings["bump"].as_str(), dw.settings["lane"].as_str()), ("patch", "daemon"));
+    assert_eq!(dw.secrets, ["RELEASE_TOKEN", "RELEASE_READ_TOKEN"], "the minted tokens' names only");
+    assert!(arugula_e2e::drivers::planned(&dw.driver, &dw.operation, &dw.settings, None));
+    let run = app.db.run(&app.db.deploy_run(&id).unwrap().unwrap().run).unwrap().unwrap();
+    work::report(&app, &m.m, &m.report(&run, RunState::Approved, RunState::Running, now_ms(), "{}")).await.unwrap();
+    match ask(&app, &m, &run.id).await {
+        SecretsGiven::Given { secrets } => {
+            let names: Vec<&str> = secrets.iter().map(|s| s.name.as_str()).collect();
+            assert_eq!(names, ["RELEASE_TOKEN", "RELEASE_READ_TOKEN"]);
+        }
+        other => panic!("{other:?}"),
+    }
+    let end = json!({ "exit": 0, "result": {
+        "tag": "v0.59.1", "version": "0.59.1", "commit": "e".repeat(40), "main": "d".repeat(40),
+        "script": "5".repeat(40),
+        "release": "https://github.com/arugula-salad/arugula/releases/tag/v0.59.1", "published": true,
+        "workflow": { "run": "https://github.com/arugula-salad/arugula/actions/runs/39845854046",
+                      "conclusion": "failure", "failed_jobs": ["template", "extension"] },
+    } })
+    .to_string();
+    let run = app.db.run(&run.id).unwrap().unwrap();
+    assert_eq!(
+        work::report(&app, &m.m, &m.report(&run, RunState::Running, RunState::Succeeded, now_ms(), &end))
+            .await
+            .unwrap(),
+        Reported::Taken
+    );
+    assert_eq!(state(&app, &id), State::Succeeded);
+    let kept = app.db.deploy_history(&id).unwrap().pop().unwrap().detail_json().unwrap();
+    assert_eq!(kept["tag"], "v0.59.1", "{kept}");
+    assert_eq!(kept["release"], "https://github.com/arugula-salad/arugula/releases/tag/v0.59.1");
+    assert_eq!(kept["script"], "5".repeat(40));
+
+    // Green, but a branch's: GitHub says it isn't on main, so no tokens.
+    let (id, _) = release_approved(&base, &hub, &t, &env, &branch).await;
+    let m = boot(&app, &hub, &id).await;
+    pull(&app, &m, &[TAKES_RUN, TAKES_DEPLOY]).await;
+    let run = app.db.run(&app.db.deploy_run(&id).unwrap().unwrap().run).unwrap().unwrap();
+    work::report(&app, &m.m, &m.report(&run, RunState::Approved, RunState::Running, now_ms(), "{}")).await.unwrap();
+    match ask(&app, &m, &run.id).await {
+        SecretsGiven::Refused { why } => assert!(why.contains("isn't on arugula-salad/arugula's main"), "{why}"),
+        other => panic!("{other:?}"),
+    }
+    let run = app.db.run(&run.id).unwrap().unwrap();
+    let failed = r#"{"exit":2}"#;
+    work::report(&app, &m.m, &m.report(&run, RunState::Running, RunState::Failed, now_ms(), failed)).await.unwrap();
+
+    // The platform stops naming the project: not even planned.
+    crate::drivers::arugula_release::TEST_PROJECTS.lock().unwrap().retain(|p| p != &t);
+    let body =
+        json!({ "environment": env, "source": { "kind": "commit", "ref": good, "where": "arugula-salad/arugula" } });
+    let (st, v) = call(&base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
+    assert_eq!(st, 403, "{v}");
+}

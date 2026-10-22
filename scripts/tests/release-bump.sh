@@ -122,9 +122,17 @@ git fetch -q "$forge" main && git checkout -q FETCH_HEAD
 tree 0.1.1 0.2.0
 git commit -qam "Arugula 0.1.1"
 git push -q "$forge" HEAD:main
-run 0 "release v0.1.2 over main's 0.1.1" bump
+ARUGULA_RELEASE_TRAILER=$'two\nlines' run 2 "a trailer of two lines" bump --dry-run
+ARUGULA_RELEASE_TRAILER="no colon" run 2 "a trailer that isn't Key: value" bump --dry-run
+# As the arugula-release deploy driver runs it (M221): its trailer on the
+# bump, the tag and the merge.
+ARUGULA_RELEASE_TRAILER="Arugula-Deploy: dep_m221" run 0 "release v0.1.2 over main's 0.1.1" bump
 has "v0.1.2: from main's version" "v0.1.2: 0.1.0 -> 0.1.2 on ${two:0:12}"
+has "v0.1.2: the line the deploy driver reads" "pushed v0.1.2 ("
 tag=$(git rev-parse "v0.1.2^{commit}")
+if git cat-file -p v0.1.2 | grep -qx "Arugula-Deploy: dep_m221" && git log -1 --format=%B "$tag" | grep -qx "Arugula-Deploy: dep_m221" &&
+  git fetch -q "$forge" main && git log -1 --format=%B FETCH_HEAD | grep -qx "Arugula-Deploy: dep_m221"; then ok "v0.1.2: the deploy's trailer on the bump, the tag and the merge"
+else bad "v0.1.2: no trailer: $(git cat-file -p v0.1.2)"; fi
 if [ "$(git diff --name-only "$two" "$tag" | tr '\n' ' ')" = "Cargo.lock Cargo.toml THIRD_PARTY.md crates/daemon/Cargo.toml crates/desktop/Cargo.lock crates/desktop/THIRD_PARTY.md crates/proto/fixtures/releases/0.1.2/session.jsonl docs/releases/0.1.2.md " ]; then ok "the daemon's bump's files, the fixtures' copy among them"
 else bad "the daemon's bump changed: $(git diff --name-only "$two" "$tag")"; fi
 main=$(remote refs/heads/main)

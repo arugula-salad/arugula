@@ -42,6 +42,11 @@
 #                                  and push the tag with main, the bump merged
 #                                  into it (#524). --dry-run makes the bump in a
 #                                  throwaway worktree, shows it, and stops.
+#                                  ARUGULA_RELEASE_TRAILER, when set (one line,
+#                                  `Key: value`), ends the bump's, the tag's and
+#                                  the merge's messages: the arugula-release
+#                                  deploy driver's `Arugula-Deploy: dep_...`
+#                                  (M221), which runs this from a deploy's box.
 #
 # GH_TOKEN (upload, sums) writes releases (in CI, the job token with
 # contents: write; by hand, your gh login); HOMEBREW_TAP_KEY (homebrew) is
@@ -316,6 +321,14 @@ case "${1:-}" in
         *) if [ -n "$commit" ]; then echo "release bump: two commits ($commit, $a)" >&2; exit 2; fi; commit=$a ;;
       esac
     done
+    # The deploy that ran it (M221), as a trailer: one line, `Key: value`.
+    trailer=${ARUGULA_RELEASE_TRAILER:-}
+    case "$trailer" in
+      *$'\n'*) echo "ARUGULA_RELEASE_TRAILER is one line" >&2; exit 2 ;;
+      '') ;;
+      *': '*) trailer=$'\n\n'$trailer ;;
+      *) echo "ARUGULA_RELEASE_TRAILER is \`Key: value\`" >&2; exit 2 ;;
+    esac
     git fetch -q "$url" main
     main=$(git rev-parse FETCH_HEAD)
     # The ci/ tags, read once.
@@ -376,10 +389,10 @@ case "${1:-}" in
       echo "Dry run: nothing committed, tagged or pushed."
       exit 0
     fi
-    git commit -qm "$title"
+    git commit -qm "$title$trailer"
     bumped=$(git rev-parse HEAD)
     bump_only "$bumped" || { echo "the bump commit changes more than versions: $(git diff --name-only "$sha" "$bumped" | tr '\n' ' ')" >&2; exit 1; }
-    git tag -a "$tag" -m "${title/Arugula/arugula}"
+    git tag -a "$tag" -m "${title/Arugula/arugula}$trailer"
     # main gets the bump: a fast-forward when it's still at the green commit,
     # else a merge. A conflict in the version lines (main bumped too) takes
     # main's files and bumps them again; any other conflict stops here.
@@ -401,13 +414,14 @@ case "${1:-}" in
         apply_bump "$lane" "$at_main" "$new"
         git add -A
       fi
-      git commit -qm "Merge $tag into main"
+      git commit -qm "Merge $tag into main$trailer"
     fi
     if ! git push -q --atomic "$url" HEAD:refs/heads/main "refs/tags/$tag"; then
       git tag -d "$tag" >/dev/null
       echo "pushing main and $tag was refused (main moved?): nothing was pushed; run it again" >&2
       exit 1
     fi
+    # The arugula-release deploy driver (M221) reads this line.
     echo "pushed $tag (${bumped:0:12}) and main ($(git rev-parse --short=12 HEAD))"
     ;;
   sidecars)

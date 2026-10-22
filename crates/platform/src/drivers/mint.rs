@@ -52,13 +52,19 @@ pub enum Mint {
     /// An installation token that writes the deploy's source repository's
     /// contents (a commit's `where`) and nothing else.
     GithubWriteSource { name: &'static str },
+    /// An installation token that reads `repo`'s Actions runs and contents
+    /// (M221: following a release's workflow), and writes nothing.
+    GithubFollow { name: &'static str, repo: &'static str },
 }
 
 impl Mint {
     /// The name the run gets it under.
     pub fn name(&self) -> &'static str {
         match self {
-            Mint::GithubRead { name } | Mint::GithubWrite { name, .. } | Mint::GithubWriteSource { name } => name,
+            Mint::GithubRead { name }
+            | Mint::GithubWrite { name, .. }
+            | Mint::GithubWriteSource { name }
+            | Mint::GithubFollow { name, .. } => name,
         }
     }
 
@@ -72,7 +78,7 @@ impl Mint {
     /// `None` when it only reads.
     pub fn writes<'a>(&self, source: &'a Source) -> Option<&'a str> {
         match self {
-            Mint::GithubRead { .. } => None,
+            Mint::GithubRead { .. } | Mint::GithubFollow { .. } => None,
             Mint::GithubWrite { repo, .. } => Some(repo),
             Mint::GithubWriteSource { .. } => Some(&source.place),
         }
@@ -170,6 +176,13 @@ pub async fn mint(app: &Platform, m: Mint, d: &Deploy, project: &str, run: &str)
                 .await?
                 .with_context(|| format!("the GitHub App isn't installed on {repo}"))?;
             gh.deploy_write_token(&caller, install.id, Repo::Name(repo)).await?.0
+        }
+        Mint::GithubFollow { repo, .. } => {
+            let install = gh
+                .installation(&app.http, repo)
+                .await?
+                .with_context(|| format!("the GitHub App isn't installed on {repo}"))?;
+            gh.deploy_follow_token(&caller, install.id, Repo::Name(repo)).await?.0
         }
     };
     Ok(held(app, run, m.name(), token, gh.revoke_url()))

@@ -727,6 +727,18 @@ pub async fn secrets(app: &Platform, m: &HostedMachine, ask: &SecretsAsk) -> Res
         }
     }
     if let Some(driver) = drivers::driver(&env.driver) {
+        // Nothing is minted for a project that may not use its driver
+        // (M221: Arugula's release), whatever was approved.
+        if let Err(why) = driver.allowed_in(&env.project) {
+            return refused(&why);
+        }
+        // Arugula's release (M221): only a commit GitHub says is on main
+        // and green gets its tokens.
+        if driver.name() == drivers::arugula_release::NAME
+            && let Err(why) = drivers::arugula_release::source_checked(app, &d).await
+        {
+            return refused(&why);
+        }
         for mint in driver.mints(&env) {
             match drivers::mint(app, mint, &d, &env.project, &run.id).await {
                 Ok(s) => out.push(s),

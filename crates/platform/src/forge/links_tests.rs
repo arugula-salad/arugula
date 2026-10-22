@@ -30,15 +30,15 @@ use crate::{
     },
 };
 
-pub(super) const SECRET: &str = "whsec-test";
+pub(crate) const SECRET: &str = "whsec-test";
 
 /// What the fake GitHub knows: where the App is installed (repo →
 /// installation, account id, login), each repo's id and privacy, and
 /// each person's role on a repo (repo, login → role, user id).
 #[derive(Default)]
-pub(super) struct Gh {
-    pub(super) installed: BTreeMap<String, (u64, u64, String)>,
-    pub(super) repos: BTreeMap<String, (u64, bool)>,
+pub(crate) struct Gh {
+    pub(crate) installed: BTreeMap<String, (u64, u64, String)>,
+    pub(crate) repos: BTreeMap<String, (u64, bool)>,
     pub(super) roles: BTreeMap<(String, String), (String, u64)>,
     /// How many times a person's permission was asked.
     pub(super) asked: usize,
@@ -51,12 +51,17 @@ pub(super) struct Gh {
     pub(super) refuse: Option<u16>,
     /// What an installation grants the App, by repo, when not the real
     /// App's today ([`granted`]).
-    pub(super) grants: BTreeMap<String, Value>,
+    pub(crate) grants: BTreeMap<String, Value>,
+    /// Commits with a `ci/green/<sha>` tag, a `ci/revoked/<sha>` one, and
+    /// those on main (M221's release checks them).
+    pub(crate) green: std::collections::BTreeSet<String>,
+    pub(crate) revoked: std::collections::BTreeSet<String>,
+    pub(crate) on_main: std::collections::BTreeSet<String>,
 }
 
 /// What the platform's real App (`arugula-io`) is granted today: it reads
 /// contents and writes issues and pull requests (to send).
-pub(super) fn granted() -> Value {
+pub(crate) fn granted() -> Value {
     let mut g = read_grant();
     g["issues"] = "write".into();
     g["pull_requests"] = "write".into();
@@ -91,7 +96,7 @@ pub(super) fn not_granted() -> Response {
     (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "message": m }))).into_response()
 }
 
-pub(super) type Shared = Arc<Mutex<Gh>>;
+pub(crate) type Shared = Arc<Mutex<Gh>>;
 
 async fn installation(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> Response {
     let h = h.lock().unwrap();
@@ -147,6 +152,33 @@ async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
     Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": covers })).into_response()
 }
 
+/// `ci/green/<sha>` or `ci/revoked/<sha>`, as GitHub answers a ref: 200
+/// with it, or 404.
+async fn ci_ref(State(h): State<Shared>, Path((_, _, kind, sha)): Path<(String, String, String, String)>) -> Response {
+    let h = h.lock().unwrap();
+    let has = match kind.as_str() {
+        "green" => h.green.contains(&sha),
+        "revoked" => h.revoked.contains(&sha),
+        _ => false,
+    };
+    if has {
+        Json(json!({ "ref": format!("refs/tags/ci/{kind}/{sha}"), "object": { "type": "tag" } })).into_response()
+    } else {
+        (StatusCode::NOT_FOUND, Json(json!({ "message": "Not Found", "status": "404" }))).into_response()
+    }
+}
+
+/// `compare/{sha}...main`, as GitHub answered for real commits: `ahead`
+/// with `behind_by` 0 for one on main, `diverged` for a branch's.
+async fn compare(State(h): State<Shared>, Path((_, _, spec)): Path<(String, String, String)>) -> Response {
+    let sha = spec.split("...").next().unwrap_or_default();
+    if h.lock().unwrap().on_main.contains(sha) {
+        Json(json!({ "ahead_by": 3, "behind_by": 0, "status": "ahead" })).into_response()
+    } else {
+        Json(json!({ "ahead_by": 3, "behind_by": 1, "status": "diverged" })).into_response()
+    }
+}
+
 async fn repo(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> Response {
     let name = format!("{o}/{r}");
     match h.lock().unwrap().repos.get(&name) {
@@ -197,7 +229,7 @@ async fn post_as(
     Json(json!({ "number": 12, "html_url": format!("https://github.com{path}#posted") })).into_response()
 }
 
-pub(super) async fn fake_github(h: Shared) -> String {
+pub(crate) async fn fake_github(h: Shared) -> String {
     let r = Router::new()
         .route("/user", get(user))
         .route("/repos/{o}/{r}/issues/{n}/comments", post(post_as))
@@ -207,6 +239,8 @@ pub(super) async fn fake_github(h: Shared) -> String {
         .route("/app/installations/{id}/access_tokens", post(token))
         .route("/repos/{o}/{r}", get(repo))
         .route("/repos/{o}/{r}/collaborators/{login}/permission", get(permission))
+        .route("/repos/{o}/{r}/git/ref/tags/ci/{kind}/{sha}", get(ci_ref))
+        .route("/repos/{o}/{r}/compare/{spec}", get(compare))
         .with_state(h);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
@@ -214,7 +248,7 @@ pub(super) async fn fake_github(h: Shared) -> String {
     base
 }
 
-pub(super) fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
+pub(crate) fn throwaway_key() -> aws_lc_rs::rsa::KeyPair {
     let k = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa2048).unwrap();
     let der = AsDer::<aws_lc_rs::encoding::Pkcs8V1Der>::as_der(&k).unwrap();
     aws_lc_rs::rsa::KeyPair::from_pkcs8(der.as_ref()).unwrap()

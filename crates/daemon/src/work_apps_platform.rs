@@ -486,25 +486,38 @@ pub struct Git {
 
 impl Git {
     pub fn new(cfg: &Config, list: &str, source: &str, t: &Tokens) -> Self {
+        let tokens = [(cfg.url(list), t.write.as_deref()), (cfg.url(source), t.read.as_deref())];
+        Self::with(&cfg.work, &cfg.path, cfg.git_timeout, AUTHOR, &tokens)
+    }
+
+    /// git in `home`, with `path`, committing as `author`, each token for
+    /// its own URL only (M221's arugula-release driver too).
+    pub fn with(
+        home: &Path,
+        path: &str,
+        timeout: Duration,
+        author: (&str, &str),
+        tokens: &[(String, Option<&str>)],
+    ) -> Self {
         let mut config: Vec<(String, String)> = vec![("credential.helper".into(), String::new())];
-        for (url, token) in [(cfg.url(list), &t.write), (cfg.url(source), &t.read)] {
+        for (url, token) in tokens {
             if let Some(token) = token {
                 let basic = base64::engine::general_purpose::STANDARD.encode(format!("x-access-token:{token}"));
                 config.push((format!("http.{url}.extraHeader"), format!("Authorization: Basic {basic}")));
             }
         }
-        let home = cfg.work.to_string_lossy().into_owned();
+        let home = home.to_string_lossy().into_owned();
         let mut env: Vec<(String, String)> = [
-            ("PATH", cfg.path.as_str()),
+            ("PATH", path),
             ("HOME", home.as_str()),
             ("LANG", "C"),
             ("GIT_TERMINAL_PROMPT", "0"),
             ("GIT_CONFIG_NOSYSTEM", "1"),
             ("GIT_CONFIG_GLOBAL", "/dev/null"),
-            ("GIT_AUTHOR_NAME", AUTHOR.0),
-            ("GIT_AUTHOR_EMAIL", AUTHOR.1),
-            ("GIT_COMMITTER_NAME", AUTHOR.0),
-            ("GIT_COMMITTER_EMAIL", AUTHOR.1),
+            ("GIT_AUTHOR_NAME", author.0),
+            ("GIT_AUTHOR_EMAIL", author.1),
+            ("GIT_COMMITTER_NAME", author.0),
+            ("GIT_COMMITTER_EMAIL", author.1),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_owned(), v.to_owned()))
@@ -514,11 +527,11 @@ impl Git {
             env.push((format!("GIT_CONFIG_KEY_{i}"), k));
             env.push((format!("GIT_CONFIG_VALUE_{i}"), v));
         }
-        Git { env, timeout: cfg.git_timeout }
+        Git { env, timeout }
     }
 
-    /// The environment git gets (tests check no argument holds a token).
-    #[cfg(test)]
+    /// The environment git gets (tests check no argument holds a token; the
+    /// arugula-release driver runs `scripts/release` in it).
     pub fn env(&self) -> &[(String, String)] {
         &self.env
     }
@@ -785,11 +798,18 @@ async fn read_app(
 /// Best effort: it lasts an hour at most, and the platform revokes it too
 /// when the run ends.
 pub async fn revoke(cfg: &Config, what: &str, token: Option<&str>) {
+    revoke_at("apps-platform", &cfg.api_base, what, token).await;
+}
+
+/// [`revoke`] at `api_base`, said as `driver`'s (M221's arugula-release
+/// driver too).
+pub async fn revoke_at(driver: &str, api_base: &str, what: &str, token: Option<&str>) {
+    let say = |s: &str| println!("{driver}: {}", crate::work::printable(s));
     let Some(token) = token.filter(|t| t.starts_with("ghs_")) else { return };
     let client = reqwest::Client::builder().timeout(Duration::from_secs(10)).build();
     let sent = match client {
         Ok(c) => c
-            .delete(format!("{}/installation/token", cfg.api_base.trim_end_matches('/')))
+            .delete(format!("{}/installation/token", api_base.trim_end_matches('/')))
             .bearer_auth(token)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "arugula-deploy")

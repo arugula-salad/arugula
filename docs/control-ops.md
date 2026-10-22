@@ -563,6 +563,86 @@ approval step.
   `packaging/control/`:
   `fly deploy --image registry.fly.io/illogical-control:vX.Y.Z`.
 
+### Releasing Arugula as a deploy (M221)
+
+Arugula's own release can run as a deploy in Arugula's project, approved
+from an owner's phone, instead of `just release` from a shell. It does
+what `just release` does: the deploy's box runs `scripts/release bump` as
+the deploy's commit has it.
+
+**What it does.** A deploy of the `arugula-release` driver releases one
+commit of `arugula-salad/arugula`, by its full id. Its box:
+
+1. clones `main` and checks the commit is on it, with a `ci/green/<sha>`
+   tag and no `ci/revoked/<sha>` one (the platform asked GitHub the same
+   before it minted the run's tokens);
+2. runs `scripts/release bump <bump> [--app] <sha>`, which stops if main
+   has no `docs/releases/X.Y.Z.md`, the tag exists, or the commit is in a
+   release already. Otherwise it commits the bump, tags it, and pushes the
+   tag and main in one atomic push. Each of the three carries
+   `Arugula-Deploy: dep_…`, and a deploy whose id is on main already is
+   refused;
+3. revokes its write token, then follows the tag's release workflow for
+   up to 45 minutes with its read token, and revokes that. The run
+   succeeds once the
+   workflow's `publish` job succeeded and the release is out. It reports
+   the tag, the commits, `scripts/release`'s blob id, the release's page,
+   the workflow's run and the jobs that failed (today `template` and `extension` fail on every
+   release; they don't fail the deploy).
+
+**There's no roll back.** A bad release is fixed by a new patch release,
+deployed the same way.
+
+**Its credentials** are two installation tokens of the platform's GitHub
+App (illogical-by-arugula), minted for the run, for
+`arugula-salad/arugula` alone: `RELEASE_TOKEN` (`contents: write`,
+revoked right after the push) and `RELEASE_READ_TOKEN` (Actions and
+contents, read-only, to follow the workflow within the App's rate limit).
+No PAT, nothing long-lived. The release
+workflow's own secrets (the updater key, Apple's, the marketplaces') stay
+in GitHub Actions: CI builds, signs and publishes after the tag, as
+before.
+
+**Set up once:**
+
+- The App gets **Contents: write** on its installation in arugula-salad
+  (it already reads Actions), and a **bypass** on main's ruleset (the push
+  to main is the bump merged in, not a PR). Nothing else.
+- The platform's `ARUGULA_PLATFORM_RELEASE_PROJECT` names Arugula's
+  project id (`prj_…`; comma separated for more). No other project can
+  make an `arugula-release` environment, plan with it, or have its token
+  minted. Unset, nobody can.
+- An owner makes the environment, with no secrets:
+
+  ```
+  POST /api/projects/{project}/environments
+  {"name": "release", "driver": "arugula-release", "settings": {"bump": "patch", "lane": "daemon"}}
+  ```
+
+  `bump` is `patch` (the default), `minor` or `major`; `lane` is `daemon`
+  (a `v*` tag, the default) or `app` (an `app-v*` tag). Settings can't be
+  changed later, so make one environment for each kind you use
+  (`release`, `release-minor`, `release-app`).
+
+**Each release:** merge the notes to main, find the newest green commit
+(`just green`), and plan a deploy of it to the environment:
+
+```
+POST /api/projects/{project}/deploys
+{"environment": "env_…", "source": {"kind": "commit", "ref": "<40-hex sha>", "where": "arugula-salad/arugula"}}
+```
+
+Then ask for approval, and approve it on the phone. The plan in the dialog
+says the commit, the bump and the lane, what runs, and that it never rolls
+back. It doesn't say the version number: that's the next one after the
+higher of the commit's and main's, as `just release` picks it. The run's
+log and the deploy's log show the tag.
+
+If the box's run fails after the push (the workflow didn't publish within
+45 minutes), the tag and main are pushed anyway: follow the workflow by
+hand and fix forward. A `scripts/release` that runs over 20 minutes is
+stopped, and the run says whether it had pushed a tag.
+
 ### The platform
 
 Control is two processes ("Control is two processes: a hub and a

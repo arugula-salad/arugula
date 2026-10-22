@@ -72,8 +72,9 @@ fn new_deploy_id() -> String {
 
 /// The drivers an environment may name (M219-M222), besides the fake one
 /// where it's allowed (`crate::drivers::names`). Planter's waits for step
-/// 8.
-pub const DRIVERS: &[&str] = &["chant-fly", "apps-platform"];
+/// 8. arugula-release (M221) only in Arugula's own project
+/// (`crate::drivers::Driver::allowed_in`).
+pub const DRIVERS: &[&str] = &["chant-fly", "apps-platform", "arugula-release"];
 
 /// The first event's `prev_hash`.
 pub const GENESIS: &str = "0000000000000000000000000000000000000000000000000000000000000000";

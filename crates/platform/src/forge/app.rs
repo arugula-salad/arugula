@@ -109,6 +109,9 @@ enum Scope {
     /// A deploy's run that commits (M222's apps-platform driver): one
     /// repository's contents, written, for that run alone.
     DeployWrite,
+    /// A deploy's run that follows a workflow (M221's arugula-release
+    /// driver): one repository's Actions and contents, read-only.
+    DeployFollow,
 }
 
 impl Scope {
@@ -117,6 +120,7 @@ impl Scope {
             Scope::Read(_) => read_only(),
             Scope::Deploy => json!({ "metadata": "read", "contents": "read" }),
             Scope::DeployWrite => json!({ "metadata": "read", "contents": "write" }),
+            Scope::DeployFollow => json!({ "metadata": "read", "contents": "read", "actions": "read" }),
             Scope::Send(Writes::Issues) => json!({ "metadata": "read", "issues": "write" }),
             Scope::Send(Writes::PullRequests) => json!({ "metadata": "read", "pull_requests": "write" }),
             Scope::Send(Writes::Both) => json!({ "metadata": "read", "issues": "write", "pull_requests": "write" }),
@@ -129,6 +133,7 @@ impl Scope {
             Scope::Read(Purpose::Read) => "read",
             Scope::Deploy => "deploy",
             Scope::DeployWrite => "deploy:contents",
+            Scope::DeployFollow => "deploy:actions",
             Scope::Send(Writes::Issues) => "send:issues",
             Scope::Send(Writes::PullRequests) => "send:pull_requests",
             Scope::Send(Writes::Both) => "send:issues+pull_requests",
@@ -558,6 +563,19 @@ impl GithubApp {
         repo: Repo<'_>,
     ) -> anyhow::Result<(String, String)> {
         let (secret, expires_at, _) = self.mint(c, install, repo, Scope::DeployWrite).await?;
+        Ok((secret, expires_at))
+    }
+
+    /// A token that reads one repository's Actions runs and releases for
+    /// one deploy's run (M221): as [`GithubApp::deploy_token`], minted now
+    /// (and logged), never cached, revoked by its holder when it's done.
+    pub async fn deploy_follow_token(
+        &self,
+        c: &Caller<'_>,
+        install: u64,
+        repo: Repo<'_>,
+    ) -> anyhow::Result<(String, String)> {
+        let (secret, expires_at, _) = self.mint(c, install, repo, Scope::DeployFollow).await?;
         Ok((secret, expires_at))
     }
 
