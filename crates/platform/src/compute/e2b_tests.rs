@@ -273,11 +273,12 @@ async fn create_pauses_on_timeout_and_never_auto_resumes() {
     assert_eq!(body["autoPauseMemory"], true);
     assert_eq!(body["autoResume"], json!({"enabled": false}));
     assert_eq!(body["secure"], true, "envd takes anyone in a box made without it");
+    assert_eq!(body["network"]["allowPublicTraffic"], false, "E2B serves the box's ports to anyone without it");
     assert_eq!(body["timeout"], 300);
     assert_eq!(body["templateID"], "base");
     assert_eq!(body["envVars"], json!({"ARUGULA_HOSTED_TICKET": "t1"}));
     assert_eq!(body["metadata"], json!({"arugula_workspace": "hw_1", "arugula_project": "prj_1"}));
-    assert!(body.get("network").is_none(), "no rules, no network config");
+    assert!(body["network"].get("rules").is_none(), "no rules, no rules config");
     assert!(!body.to_string().contains(KEY), "the key goes in a header, never a body");
     let shown = format!("{made:?}{e2b:?}");
     assert!(!shown.contains("secret") && !shown.contains(KEY));
@@ -449,7 +450,7 @@ async fn rules() {
     assert!(!format!("{b:?}").contains("sk-ant"), "{b:?}");
     let id = e2b.create(&b).await.unwrap().id;
     let want = json!({"api.anthropic.com": [{"transform": {"headers": {"x-api-key": "sk-ant-fake-value"}}}]}); // gitleaks:allow
-    assert_eq!(calls(&s)[0].2["network"], json!({"rules": want}));
+    assert_eq!(calls(&s)[0].2["network"], json!({"allowPublicTraffic": false, "rules": want}));
 
     let both: Rules = [
         ("api.anthropic.com".to_owned(), [("x-api-key".to_owned(), fill("arugula-platform-anthropic"))].into()),
