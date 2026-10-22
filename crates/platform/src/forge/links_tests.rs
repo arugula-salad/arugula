@@ -403,6 +403,9 @@ async fn an_uninstall_unlinks_and_the_purge_leaves_nothing() {
     assert_eq!(hook(&base, "installation_repositories", "d1", &removed).await, 202);
     assert!(app.db.linked_repo(99).unwrap().unwrap().unlinked_at.is_some());
     assert!(app.db.linked_repo(77).unwrap().unwrap().unlinked_at.is_none(), "the rest of the installation stays");
+    // The uninstall below must come at least a millisecond later, or both
+    // purges are due together (seen on a fast macOS runner).
+    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
 
     // acme uninstalls the App.
     let deleted = json!({ "action": "deleted", "installation": { "id": 9, "account": { "id": 500, "login": "acme", "type": "Organization" } } });
