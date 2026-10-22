@@ -1269,11 +1269,22 @@ impl Control {
     /// framing, and the one to move to when it says it's moved and the new
     /// URL agrees that `url` is one of its own.
     async fn where_control_is(&self, url: &str) -> Option<String> {
-        let at = |u: &str| format!("{}{}", u.trim_end_matches('/'), wire::CONTROL_JSON);
-        let get = |u: String| async move {
-            self.http.get(u).send().await.ok()?.error_for_status().ok()?.json::<wire::ControlWhere>().await.ok()
-        };
-        let here = get(at(url)).await?;
+        let here = self.control_here(url).await?;
+        let to = follow(url, &here)?;
+        let there = self.control_json(&to).await?;
+        same(&follow_target(&there), &to).then_some(())?;
+        there.urls.iter().any(|u| same(u, url)).then_some(to)
+    }
+
+    async fn control_json(&self, url: &str) -> Option<wire::ControlWhere> {
+        let at = format!("{}{}", url.trim_end_matches('/'), wire::CONTROL_JSON);
+        self.http.get(at).send().await.ok()?.error_for_status().ok()?.json::<wire::ControlWhere>().await.ok()
+    }
+
+    /// Control's `/control.json` at `url`: the URLs it answers at, kept for
+    /// framing, and whether it serves block origins.
+    async fn control_here(&self, url: &str) -> Option<wire::ControlWhere> {
+        let here = self.control_json(url).await?;
         *self.control_urls.lock().unwrap() = here.urls.clone();
         // Its page shows this daemon's blocks on control's block origins
         // (M50), with or without a block listener here.
@@ -1282,10 +1293,7 @@ impl Control {
             info!(block_domain = here.block_domain.as_deref().unwrap_or(""), "blocks through control's page");
         }
         crate::sites::set_control_blocks(blocks);
-        let to = follow(url, &here)?;
-        let there = get(at(&to)).await?;
-        same(&follow_target(&there), &to).then_some(())?;
-        there.urls.iter().any(|u| same(u, url)).then_some(to)
+        Some(here)
     }
 
     /// POST JSON to control, signed over exactly the bytes sent.
@@ -1322,22 +1330,35 @@ impl Control {
     /// pinned. It publishes nothing and asks for no push subscriptions:
     /// control answers a hosted machine only there and on the relay.
     async fn refresh_hosted(&self, e: &Enrolled, number: u64) -> anyhow::Result<bool> {
+        // Its dev servers show on control's block origins too (M186,
+        // members' previews). It never follows a move: the release pins
+        // control's URL.
+        self.control_here(&e.saved.url).await;
         let got: arugula_control_wire::hosted::Enrollment =
             self.get(e, arugula_control_wire::hosted::HOSTED_TRUST).await?;
         let saved = crate::hosted::enroll::saved_from(got, &e.keys, Some(&e.saved))?;
         let changed = serde_json::to_value(&saved).ok() != serde_json::to_value(&e.saved).ok();
-        if changed {
-            write_saved(&self.state_dir, &saved)?;
-        }
+        let wrote = changed && self.save_refreshed(&saved)?;
         let next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
         info!(devices = next.trusted.devices.len(), others = next.others.len(), changed, "hosted: project refreshed");
         self.install(Some(next));
         self.refreshed.send_modify(|n| *n = (*n).max(number));
-        Ok(changed)
+        Ok(wrote)
+    }
+
+    /// Save what a refresh found, unless the machine left while it was
+    /// under way: saving would join it again. True if it saved.
+    fn save_refreshed(&self, saved: &Saved) -> anyhow::Result<bool> {
+        if !self.state_dir.join(FILE).exists() {
+            return Ok(false);
+        }
+        write_saved(&self.state_dir, saved)?;
+        Ok(true)
     }
 
     /// Fetch certificates (the account's, the team's, people's shared
-    /// with); keep what checks out against what this daemon pinned.
+    /// with); keep what checks out against what this daemon pinned. True
+    /// if it saved `control.json` (something changed).
     async fn refresh(&self) -> anyhow::Result<bool> {
         let Some(e) = self.enrolled() else { return Ok(false) };
         let number = self.started.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
@@ -1477,9 +1498,7 @@ impl Control {
             )
             || saved.team_certs != e.saved.team_certs
             || saved.team_names != e.saved.team_names;
-        if changed {
-            write_saved(&self.state_dir, &saved)?;
-        }
+        let wrote = changed && self.save_refreshed(&saved)?;
         let mut next = Enrolled::build(saved, e.keys.clone(), &self.acl, self.open_agents());
         if next.trusted.get(&next.saved.cert.device).is_none() {
             warn!("this daemon's own certificate no longer checks out (revoked?)");
@@ -1492,7 +1511,7 @@ impl Control {
         info!(devices = next.trusted.devices.len(), others = next.others.len(), changed, "certificates refreshed");
         self.install(Some(next));
         self.refreshed.send_modify(|n| *n = (*n).max(number));
-        Ok(changed)
+        Ok(wrote)
     }
 
     /// Notify people through control (M21): every verified subscription
@@ -1846,7 +1865,13 @@ impl Control {
                     };
                     if last_refresh.is_none_or(|t| t.elapsed() >= every) {
                         last_refresh = Some(std::time::Instant::now());
-                        match me.refresh().await {
+                        let refreshed = me.refresh().await;
+                        // Past its own save only: a leave or a join again
+                        // while it was under way is noticed next time round.
+                        if matches!(refreshed, Ok(true)) {
+                            stamp = file_stamp(&me.state_dir);
+                        }
+                        match refreshed {
                             // Roles may have changed: re-filter everyone.
                             // Someone an invite waits for may be reachable.
                             // Beside the loop: a slow control doesn't hold up
@@ -1890,7 +1915,6 @@ impl Control {
                                 me.set_link(|l| l.refresh_error = Some(e.to_string()));
                             }
                         }
-                        stamp = file_stamp(&me.state_dir);
                     }
                     if me.dropped_now() {
                         // Nothing to dial: control would refuse it.
@@ -3596,6 +3620,36 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&r.dir);
     }
 
+    /// A leave while a refresh is under way is noticed when it's over, and
+    /// the refresh doesn't write `control.json` back. The loop used to take
+    /// the file's stamp after every refresh, so a removal in the middle of
+    /// one looked like nothing changed: the daemon stayed joined until a
+    /// restart (the desktop app's join test, whose leave came 3 s after
+    /// the join, as the first refresh's retry went out).
+    #[tokio::test]
+    async fn a_leave_during_a_refresh_is_noticed() {
+        let mut r = rig("leave-mid-refresh").await;
+        let c = r.daemon().await;
+        while r.at_peers.try_recv().is_ok() {}
+
+        let held = r.hold.clone().lock_owned().await;
+        c.poke();
+        r.at_peers.recv().await.unwrap();
+        std::fs::remove_file(r.dir.join(FILE)).unwrap();
+        // Something the refresh would save: it mustn't join again by it.
+        r.fake.lock().unwrap().routed = true;
+        r.grant();
+        drop(held);
+
+        let t = std::time::Instant::now();
+        while c.enrolled().is_some() && t.elapsed() < Duration::from_secs(10) {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(c.enrolled().is_none(), "the daemon noticed it left");
+        assert!(!r.dir.join(FILE).exists(), "and the refresh didn't save it again");
+        let _ = std::fs::remove_dir_all(&r.dir);
+    }
+
     /// Only a refresh that went through counts (#232): not a reload or a
     /// change of trust (`changed`), and not one that failed. With control
     /// unreachable, `refresh_now` gives up after the timeout.
@@ -4027,6 +4081,21 @@ pub(crate) mod tests {
         assert_eq!(who(&hosted_saved, &viewer), (false, Some(Role::Viewer)));
         assert_eq!(who(&hosted_saved, &owner), (true, None));
         assert_eq!(who(&team_saved, &editor), (false, Some(Role::Editor)));
+
+        // M186: members' previews. A block's grant counts from the
+        // project's owners' and editors' devices, never a viewer's or an
+        // outsider's.
+        let (_, outsider) = device("x", Kind::Browser);
+        let c = Control::new(&dir, vec![], String::new(), acl.clone(), false);
+        c.install(Some(Enrolled::build(hosted_saved, Arc::new(DeviceKeys::generate()), &acl, false)));
+        for (who, c2, ok) in [
+            ("owner", &owner, true),
+            ("editor", &editor, true),
+            ("viewer", &viewer, false),
+            ("outsider", &outsider, false),
+        ] {
+            assert_eq!(c.block_signer(&c2.device).is_some(), ok, "{who}");
+        }
     }
 
     /// #386: a team's other owner gets in as the owner, but is someone of

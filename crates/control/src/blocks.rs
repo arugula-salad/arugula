@@ -37,6 +37,16 @@
 //! connected get the same answer, so control says no more about a daemon
 //! than the daemon's own answer to a handshake would (which anyone holding
 //! its id and Noise key can already get).
+//!
+//! **Hosted machines' previews (M186).** A dev server in a hosted
+//! workspace shows on a block origin the same way, through the hosted
+//! machine's relay socket: a members' preview. Its daemon lets in only
+//! grants from its project's owners' and editors' devices, so the
+//! project's people, signed in, see it, and nobody else. The provider's
+//! own preview URLs are never used (aru-097). Public previews (M187) are
+//! not served here: they get a registrable domain of their own, never a
+//! block origin, since a block origin is cross-site to control but shares
+//! a site with every other block.
 
 use std::{
     collections::HashMap,
@@ -365,17 +375,16 @@ async fn relay(app: Arc<App>, origin_key: String, req: Request) -> Response {
         Ok(up) => up,
         Err(e) => return e.into_response(),
     };
-    // Unknown and not connected look the same (a hosted sandbox, reached
-    // through its provider rather than a relay socket, is neither here).
-    let owner = app.db.daemon_account(&daemon).ok().flatten();
-    let mux = owner.as_ref().and_then(|_| app.relay.daemon_mux(&daemon));
-    let (Some(owner), Some(mux)) = (owner, mux) else {
-        return plain(StatusCode::NOT_FOUND, UNREACHABLE);
-    };
+    // Unknown and not connected look the same (an M20 sandbox, reached
+    // through its provider rather than a relay socket, is neither here). A
+    // paused hosted machine isn't woken for a block (M182 wakes it for the
+    // page's own channel, which has a session).
+    let Some(owner) = block_owner(&app, &daemon) else { return plain(StatusCode::NOT_FOUND, UNREACHABLE) };
+    let Some(mux) = app.relay.daemon_mux(&daemon) else { return plain(StatusCode::NOT_FOUND, UNREACHABLE) };
     let Some(seat) = take_seat(&app, &daemon, &origin_key) else {
         return plain(StatusCode::TOO_MANY_REQUESTS, "too many connections to this block or machine at once");
     };
-    let ticket = match app.relay.admit_block(&app.db, &owner, app.cfg.billing) {
+    let ticket = match app.relay.admit_block(&app.db, owner.meter(), app.cfg.billing) {
         Ok(t) => t,
         Err(crate::relay::Refused::Full) => {
             // A browser can't read a refused upgrade's status: it gets the
@@ -391,7 +400,11 @@ async fn relay(app: Arc<App>, origin_key: String, req: Request) -> Response {
         }
     };
     let Ok(stream) = mux.open() else { return plain(StatusCode::NOT_FOUND, UNREACHABLE) };
-    let slow = crate::plans::relay_standing(&app, &owner).await.is_ok_and(|(_, _, slow)| slow);
+    let slow = match &owner {
+        Owner::Account(a) => crate::plans::relay_standing(&app, a).await.is_ok_and(|(_, _, slow)| slow),
+        Owner::Project(_) => false,
+    };
+    let owner = owner.meter().to_owned();
     let deadlines = app.blocks.deadlines;
     up.max_message_size(MAX_WIRE).read_buffer_size(CLIENT_READ_BUFFER).on_upgrade(move |ws| async move {
         let _seat = seat;
@@ -404,6 +417,37 @@ async fn relay(app: Arc<App>, origin_key: String, req: Request) -> Response {
             warn!(error = %e, "metering");
         }
     })
+}
+
+/// Whose a block socket's daemon is, for the meter.
+enum Owner {
+    /// A joined machine's account.
+    Account(String),
+    /// A hosted machine's project (M186), as its own relay socket is
+    /// metered. Its project's hosted compute is metered apart (M188), so
+    /// the free plan's slowdown doesn't apply.
+    Project(String),
+}
+
+impl Owner {
+    fn meter(&self) -> &str {
+        match self {
+            Owner::Account(a) | Owner::Project(a) => a,
+        }
+    }
+}
+
+/// The daemon a block socket names, if control knows it: a joined machine,
+/// or a hosted one (M186, members' previews). Control only relays: the
+/// daemon admits a block's channel only with a grant signed by a device it
+/// lets open blocks, which on a hosted machine is one of its project's
+/// owners or editors, signed in (`block_signer` in the daemon's
+/// `control.rs`). Outsiders, and pages with no device, are refused there.
+fn block_owner(app: &App, daemon: &str) -> Option<Owner> {
+    if let Some(h) = app.db.hosted(daemon).ok().flatten() {
+        return Some(Owner::Project(h.cert.project));
+    }
+    app.db.daemon_account(daemon).ok().flatten().map(Owner::Account)
 }
 
 /// When a block socket closes for want of traffic.
@@ -550,6 +594,47 @@ mod tests {
         for control in ["control.arugula.io", "notarugula.run", &format!("b-{KEY}.arugula.run.evil.example")] {
             assert_eq!(host(d, &h(control)), Host::Control, "{control}");
         }
+    }
+
+    /// M186 (aru-097): the provider's own preview URLs are never used.
+    /// E2B's are a host per port and sandbox under its own domains, public
+    /// by default; nothing in the tree may name one. Its API and docs hosts
+    /// are fine.
+    #[test]
+    fn no_provider_preview_urls() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let (app, dev) = (["e2b", "app"].join("."), ["e2b", "dev"].join("."));
+        // A host under either: something and a dot before it, other than
+        // the API's and the docs'.
+        let host = |line: &str, at: usize| {
+            let before = &line[..at];
+            before.ends_with('.') && !before.ends_with("api.") && !before.ends_with("docs.")
+        };
+        let mut found = Vec::new();
+        let mut dirs: Vec<std::path::PathBuf> =
+            ["crates", "web/src", "packaging", "testnet", "scripts"].iter().map(|d| root.join(d)).collect();
+        while let Some(d) = dirs.pop() {
+            let Ok(entries) = std::fs::read_dir(&d) else { continue };
+            for e in entries.flatten() {
+                let p = e.path();
+                let name = e.file_name().to_string_lossy().into_owned();
+                if p.is_dir() {
+                    if !matches!(name.as_str(), "target" | "node_modules" | "dist" | ".state") && !name.starts_with('.')
+                    {
+                        dirs.push(p);
+                    }
+                    continue;
+                }
+                let Ok(text) = std::fs::read_to_string(&p) else { continue };
+                for (n, line) in text.lines().enumerate() {
+                    let mut at = line.match_indices(&app).chain(line.match_indices(&dev));
+                    if at.any(|(at, _)| host(line, at)) {
+                        found.push(format!("{}:{}: {}", p.display(), n + 1, line.trim()));
+                    }
+                }
+            }
+        }
+        assert!(found.is_empty(), "the provider's preview URLs are never used (aru-097):\n{}", found.join("\n"));
     }
 
     #[test]

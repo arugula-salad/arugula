@@ -16,14 +16,30 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { certBody, deviceMac, evaluate, joinCode, joinMac, revocationBody, splitJoinCode, unhex, type Cert, type Revocation } from "../src/shell/e2e/cert.ts";
-import { E2ESocket } from "../src/shell/e2e/channel.ts";
+import { daemonNow, E2ESocket } from "../src/shell/e2e/channel.ts";
 import type { WakeSaid } from "../src/shell/e2e/relaymux.ts";
+import { mint } from "../src/shell/blocks/through-control.ts";
 import { generateKeys, signText, type DeviceKeys } from "../src/shell/e2e/keys.ts";
 import { acceptHosted, signDelegation, signRevoke, type Delegation, type DelegationRevoke, type HostedProof } from "../src/shell/e2e/hosted.ts";
 import { signGrant, signGrantRevoke, type ProjectGrant } from "../src/shell/e2e/run-grant.ts";
 import { askBody, askOk, inviteKey, newInviteKey, signAskInvite, signRoster, teamJoinBody, word, type AccountCerts, type AskInvite, type Roster, type TeamPin, type TeamRole } from "../src/shell/e2e/team.ts";
 
 const subtle = globalThis.crypto.subtle;
+
+/** The Origin a block's channel sends (`preview`): Node's WebSocket sends
+ * none, and control's relay on a block origin wants the block's own. The
+ * block channel's code takes the WebSocket class when it's first imported,
+ * so this one stays in place, and a socket made with headers of its own
+ * (`connect`, `routed`) keeps them. */
+const blockHeaders: { origin?: string } = {};
+{
+  const Native = globalThis.WebSocket;
+  globalThis.WebSocket = class extends Native {
+    constructor(u: string | URL, p?: string | string[]) {
+      super(u, (p ?? (blockHeaders.origin ? { headers: { origin: blockHeaders.origin } } : undefined)) as string[]);
+    }
+  } as typeof WebSocket;
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export interface DeviceOptions {
@@ -383,6 +399,74 @@ export class Device {
       });
     } finally {
       ws.close();
+    }
+  }
+
+  /** M186: what a browser block shows of a port on daemon `id`, as a
+   * block's frame on control's page loads it. With `port`, this device opens
+   * a port block there over its own channel (learning the daemon's clock and
+   * the block's site key); with `block`, it uses one already open (an
+   * outsider's try: the daemon's Noise key from `noise`, the expiry by this
+   * clock). Then it signs a grant for a one-off key, opens the block's
+   * channel through control's relay on the block's own origin
+   * (`origin(siteKey)`, reached as `reach` says), and fetches `path`.
+   * Returns the block, the status and body, or the daemon's refusal. */
+  async preview(
+    id: string,
+    o: { port?: number; block?: { id: string; siteKey: string }; noise?: string; origin: (siteKey: string) => string; path?: string; timeoutMs?: number },
+  ): Promise<{ block: string; siteKey: string; status?: number; body?: string; refused?: string }> {
+    const timeoutMs = o.timeoutMs ?? 20_000;
+    let block = o.block;
+    let noise = o.noise;
+    let now = Date.now();
+    if (o.port !== undefined) {
+      const sock = await this.connect(id);
+      try {
+        const texts: string[] = [];
+        sock.onText = (t) => texts.push(t);
+        sock.start();
+        const until = Date.now() + timeoutMs;
+        while (!texts.some((t) => t.includes('"hello"'))) {
+          if (Date.now() > until) throw new Error("no hello from the daemon");
+          await sleep(100);
+        }
+        if (!sock.clock) throw new Error("the daemon sent no clock");
+        const before = texts.length;
+        const r = await sock.request("POST", "/api/blocks", { type: "browser", config: { port: o.port, path: "/" }, split: null }, timeoutMs);
+        if (!r.ok) throw new Error(`opening a port block: ${r.status} ${await r.text()}`);
+        const pane = String(((await r.json()) as { block: number }).block);
+        // The block's state, with its site key, comes on the channel.
+        const re = /"site_key":"([0-9a-f]{16,61})"/;
+        while (!block) {
+          const hit = texts.slice(before).map((t) => re.exec(t)).findLast(Boolean);
+          if (hit) block = { id: pane, siteKey: hit[1] };
+          else if (Date.now() > until) throw new Error(`no site key for block ${pane}`);
+          else await sleep(100);
+        }
+        now = daemonNow(sock.clock);
+        noise = (await this.hostedEntry(id))?.hosted.cert.noise ?? (await this.trusted()).get(id)?.noise;
+      } finally {
+        sock.close();
+      }
+    }
+    if (!block || !noise) throw new Error("a port or a block, and the daemon's Noise key");
+    const origin = o.origin(block.siteKey);
+    blockHeaders.origin = origin;
+    const { BlockChannel, Refused } = await import("../src/shell/block/channel.ts");
+    const creds = await mint({ keys: this.keys, daemon: { id, noise }, block: block.id, now, route: "relay" });
+    const url = `${origin.replace(/^http/, "ws")}/.arugula/relay?d=${encodeURIComponent(id)}`;
+    try {
+      const ch = await BlockChannel.connect(url, creds, timeoutMs);
+      try {
+        const res = await ch.fetch("GET", o.path ?? "/", [["accept", "text/html"]], new Uint8Array());
+        const body = await new Response(res.body).text();
+        return { block: block.id, siteKey: block.siteKey, status: res.head.status, body };
+      } finally {
+        ch.close();
+      }
+    } catch (e) {
+      if (e instanceof Refused) return { block: block.id, siteKey: block.siteKey, refused: e.code };
+      throw e;
     }
   }
 

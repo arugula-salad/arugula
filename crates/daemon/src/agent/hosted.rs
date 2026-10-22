@@ -13,8 +13,8 @@
 //!   block shows instead of sending the prompt. The turn's end is said
 //!   too ([`Gate::end`]), for the caps on the platform's key.
 //!
-//! Only on a hosted box: [`init`] turns it on, when `ARUGULA_HOSTED` says
-//! this daemon is one (M180's `--hosted` sets it). Anywhere else nothing
+//! Only on a hosted box: [`init`] turns it on for a daemon started with
+//! `--hosted` (M180) or with `ARUGULA_HOSTED` set. Anywhere else nothing
 //! here happens. The calls are signed as the daemon's control identity,
 //! which on a hosted box is its hosted machine (M178/M180): the hub takes
 //! only that signature on these routes.
@@ -72,9 +72,11 @@ pub fn hosted_env(v: Option<&str>) -> bool {
     v.is_some_and(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "" | "0" | "n" | "no" | "f" | "false" | "off"))
 }
 
-/// Turn it on for agents started after this, on a hosted box.
-pub fn init(gate: Arc<dyn Gate>) {
-    if hosted_env(std::env::var("ARUGULA_HOSTED").ok().as_deref()) {
+/// Turn it on for agents started after this, on a hosted box: one started
+/// with `--hosted` (which the template's start command passes, and clap
+/// doesn't put back in the environment), or with `ARUGULA_HOSTED` set.
+pub fn init(gate: Arc<dyn Gate>, hosted: bool) {
+    if hosted || hosted_env(std::env::var("ARUGULA_HOSTED").ok().as_deref()) {
         let _ = GATE.set(gate);
     }
 }
