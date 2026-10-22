@@ -552,6 +552,10 @@ pub struct ShadowCompared {
     pub compared: u32,
     pub agree: u32,
     pub disagree: u32,
+    /// Differences the platform can't help by design (a mention where
+    /// content isn't mirrored): not in `compared`.
+    #[serde(default)]
+    pub explained: u32,
 }
 
 /// `POST /api/forge/drafts/{id}/send` ([`SendDraft`], M168): a person sends
