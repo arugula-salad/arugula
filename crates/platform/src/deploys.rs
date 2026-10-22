@@ -556,6 +556,11 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
     if let Some(why) = driver.refuses(&source) {
         return Err(err(StatusCode::BAD_REQUEST, &why));
     }
+    // A token its run mints that writes (M222's list, M220's ledger): the
+    // App must be able to, or the deploy can't run once it's approved.
+    if let Some(why) = crate::drivers::mint::plan_refuses(app, &env, &source).await {
+        return Err(err(StatusCode::CONFLICT, &why));
+    }
     // Its settings as its driver takes them (M220): an environment made
     // before they were checked is refused until it's made again.
     if driver.settings(&env.settings).ok().as_ref() != Some(&env.settings) {

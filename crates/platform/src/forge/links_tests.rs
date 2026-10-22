@@ -49,27 +49,74 @@ pub(super) struct Gh {
     pub(super) posted: Vec<(String, String, Value)>,
     /// A status every post is refused with, while set.
     pub(super) refuse: Option<u16>,
+    /// What an installation grants the App, by repo, when not the real
+    /// App's today ([`granted`]).
+    pub(super) grants: BTreeMap<String, Value>,
+}
+
+/// What the platform's real App (`arugula-io`) is granted today: it reads
+/// contents and writes issues and pull requests (to send).
+pub(super) fn granted() -> Value {
+    let mut g = read_grant();
+    g["issues"] = "write".into();
+    g["pull_requests"] = "write".into();
+    g
+}
+
+/// An installation that reads everything the App reads, and writes
+/// nothing.
+pub(super) fn read_grant() -> Value {
+    json!({
+        "metadata": "read", "contents": "read", "pull_requests": "read", "issues": "read",
+        "checks": "read", "statuses": "read", "actions": "read",
+    })
+}
+
+/// Whether a mint `asked` for more than an installation `grants`, as
+/// GitHub refuses one (422 "The permissions requested are not granted to
+/// this installation.").
+pub(super) fn exceeds(asked: &Value, grants: &Value) -> bool {
+    let rank = |v: &Value| match v.as_str() {
+        Some("read") => 1,
+        Some("write") => 2,
+        Some("admin") => 3,
+        _ => 0,
+    };
+    asked.as_object().is_none_or(|a| a.iter().any(|(k, v)| rank(v) > rank(&grants[k])))
+}
+
+/// GitHub's answer to a mint that asks for more than it's granted.
+pub(super) fn not_granted() -> Response {
+    let m = "The permissions requested are not granted to this installation.";
+    (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "message": m }))).into_response()
 }
 
 pub(super) type Shared = Arc<Mutex<Gh>>;
 
 async fn installation(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> Response {
-    match h.lock().unwrap().installed.get(&format!("{o}/{r}")) {
-        Some((id, account, login)) => {
-            Json(json!({ "id": id, "account": { "id": account, "login": login, "type": "Organization" } }))
-                .into_response()
-        }
+    let h = h.lock().unwrap();
+    let repo = format!("{o}/{r}");
+    match h.installed.get(&repo) {
+        Some((id, account, login)) => Json(json!({
+            "id": id, "account": { "id": account, "login": login, "type": "Organization" },
+            "permissions": h.grants.get(&repo).cloned().unwrap_or_else(granted),
+        }))
+        .into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
-async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Json<Value> {
-    // Read only, for one repository: what the App asks for. GitHub's answer
-    // names the repository it covers, as M167 checks.
+async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Response {
+    // For one repository, no more than its installation grants. GitHub's
+    // answer names the repository it covers, as M167 checks.
     assert_eq!(b["permissions"]["metadata"], "read");
     assert_eq!(b["repositories"].as_array().map(Vec::len), Some(1));
     let short = b["repositories"][0].as_str().unwrap();
     let h = h.lock().unwrap();
+    let grants = h.grants.iter().find(|(name, _)| name.rsplit('/').next() == Some(short)).map(|(_, g)| g.clone());
+    if exceeds(&b["permissions"], &grants.unwrap_or_else(granted)) {
+        return not_granted();
+    }
     // A repo the test made, or else one the App is installed on (id 0: a
     // test that only installs the App doesn't say the repo's id).
     let mut covers: Vec<Value> = h
@@ -86,7 +133,7 @@ async fn token(State(h): State<Shared>, Json(b): Json<Value>) -> Json<Value> {
             .map(|name| json!({ "id": 0, "full_name": name }))
             .collect();
     }
-    Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": covers }))
+    Json(json!({ "token": "ghs_fake", "expires_at": "2099-01-01T00:00:00Z", "repositories": covers })).into_response()
 }
 
 async fn repo(State(h): State<Shared>, Path((o, r)): Path<(String, String)>) -> Response {
@@ -492,4 +539,55 @@ async fn a_machine_links_for_its_owner_with_its_grant() {
     app.db.revoke_grant("alice", &g.id, 1).unwrap();
     let (s, _) = as_machine("GET", "/api/projects/personal/repos", None).await;
     assert_eq!(s, 403);
+}
+
+/// A deploy whose run would mint a token that writes (M220's chant→Fly
+/// ledger, M222's list) is refused when it's planned unless the App's
+/// installation on that repository grants `contents: write`, as GitHub
+/// itself refuses such a mint; an environment's own token needs no mint.
+#[tokio::test]
+async fn a_write_mint_needs_an_installation_that_grants_it() {
+    use crate::{
+        db::deploys::{Environment, Source, SourceKind},
+        drivers::mint::plan_refuses,
+    };
+    let hub = Arc::new(TestHub::default());
+    let (gh, app, _) = serve(&hub).await;
+    {
+        let mut g = gh.lock().unwrap();
+        g.installed.insert("acme/app".into(), (9, 500, "acme".into()));
+        g.installed.insert("acme/site".into(), (9, 500, "acme".into()));
+        g.grants.insert("acme/site".into(), json!({ "metadata": "read", "contents": "write" }));
+    }
+    let env = |driver: &str, secrets: &[&str]| Environment {
+        id: "env_1".into(),
+        project: "prj_1".into(),
+        name: "production".into(),
+        driver: driver.into(),
+        secret_names: secrets.iter().map(|s| (*s).to_owned()).collect(),
+        settings: Default::default(),
+        created_at: 0,
+        updated_at: 0,
+    };
+    let at = |repo: &str| Source { kind: SourceKind::Commit, reference: "a".repeat(40), place: repo.into() };
+    let chant = env("chant-fly", &[]);
+    // Read-only, as the real App was: refused, and GitHub would refuse it too.
+    let why = plan_refuses(&app, &chant, &at("acme/app")).await.unwrap();
+    assert!(why.contains("can't write acme/app's contents") && why.contains("GITHUB_TOKEN of its own"), "{why}");
+    let gha = app.github.as_ref().unwrap();
+    let caller = super::Caller::of(&app, "platform");
+    let e = gha.deploy_write_token(&caller, 9, super::Repo::Name("acme/app")).await.unwrap_err();
+    assert!(format!("{e:#}").contains("not granted to this installation"), "{e:#}");
+    // Not installed: refused.
+    let why = plan_refuses(&app, &chant, &at("evil/app")).await.unwrap();
+    assert!(why.contains("isn't installed on evil/app"), "{why}");
+    // Granted: planned, and minted.
+    assert_eq!(plan_refuses(&app, &chant, &at("acme/site")).await, None);
+    assert!(gha.deploy_write_token(&caller, 9, super::Repo::Name("acme/site")).await.is_ok());
+    // The environment's own token: nothing to mint.
+    assert_eq!(plan_refuses(&app, &env("chant-fly", &["GITHUB_TOKEN"]), &at("acme/app")).await, None);
+    // apps-platform writes its list, wherever the app is.
+    let why = plan_refuses(&app, &env("apps-platform", &[]), &at("acme/site")).await.unwrap();
+    assert!(why.contains("arugula-salad/planter-apps") && why.contains("APPS_PLATFORM_TOKEN of its own"), "{why}");
+    assert_eq!(plan_refuses(&app, &env("apps-platform", &["APPS_PLATFORM_TOKEN"]), &at("acme/site")).await, None);
 }

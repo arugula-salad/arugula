@@ -733,7 +733,7 @@ async fn chant_fly_applied(app: &Arc<Platform>, hub: &TestHub, id: &str, end: &s
 async fn chant_fly_links_chants_ledger_and_rolls_back_to_what_it_kept() {
     let (hub, app, base, t, _fake) = world().await;
     let body = json!({
-        "name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN"],
+        "name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN", "GITHUB_TOKEN"],
         "settings": { "fly_app": "acme-web", "chant_dir": "ops", "chant_env": "github" },
     });
     let (st, env) = call(&base, "a", "POST", &format!("/api/projects/{t}/environments"), Some(body)).await;
@@ -744,6 +744,7 @@ async fn chant_fly_links_chants_ledger_and_rolls_back_to_what_it_kept() {
     );
     let env = env["id"].as_str().unwrap().to_owned();
     assert_eq!(set_secret(&base, "a", &env, "FLY_API_TOKEN").await.0, 200);
+    assert_eq!(set_secret(&base, "a", &env, "GITHUB_TOKEN").await.0, 200);
 
     // A release that goes well.
     let good = chant_fly_approved(&base, &hub, &t, &env, "aaa1", false).await;

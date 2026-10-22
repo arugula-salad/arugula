@@ -7,8 +7,12 @@
 //! then `chant run <op>`; at each gate the op stops at, `chant approve` it
 //! as the approver (the approval's account, relayed by arugula, the
 //! approval noted); `chant run <op>` again; link chant's ledger entry; and
-//! check the Fly app is healthy. Its credential is the environment's
-//! `FLY_API_TOKEN`, a Fly deploy token for one org, given to that run only.
+//! check the Fly app is healthy. Its credentials, given to that run only:
+//! the environment's `FLY_API_TOKEN`, a Fly deploy token for one app, and
+//! `GITHUB_TOKEN`, which pushes chant's ledger: a GitHub App installation
+//! token minted for the run, writing the deploy's repository's contents
+//! only ([`Mint::GithubWriteSource`], revoked when the run ends), unless
+//! the environment holds one of its own.
 //!
 //! **Its box half** is arugulad's (`work_deploy`'s chant→Fly script). It
 //! ends its run with what it did: chant's ledger entry (a link to the line
@@ -30,7 +34,7 @@ use arugula_e2e::drivers::{
 };
 use serde_json::{Map, Value};
 
-use super::{Driver, Verdict, exited_0};
+use super::{Driver, Mint, Verdict, exited_0};
 use crate::db::{
     deploys::{Deploy, Environment},
     runs::Run,
@@ -39,6 +43,9 @@ use crate::db::{
 pub use arugula_e2e::drivers::CHANT_FLY as NAME;
 
 pub struct ChantFly;
+
+/// The name the run gets its GitHub token under.
+pub const GITHUB_TOKEN: &str = "GITHUB_TOKEN";
 
 /// The log's name for chant's ledger entry.
 const LEDGER: &str = "chant_ledger";
@@ -70,6 +77,14 @@ fn record<'a>(env: &Environment, d: &Deploy, reported: &'a Value) -> Option<&'a 
 impl Driver for ChantFly {
     fn name(&self) -> &'static str {
         NAME
+    }
+
+    fn mints(&self, env: &Environment) -> Vec<Mint> {
+        if env.secret_names.iter().any(|n| n == GITHUB_TOKEN) {
+            vec![]
+        } else {
+            vec![Mint::GithubWriteSource { name: GITHUB_TOKEN }]
+        }
     }
 
     fn verify(&self, env: &Environment, d: &Deploy, run: &Run, reported: &Value) -> Verdict {

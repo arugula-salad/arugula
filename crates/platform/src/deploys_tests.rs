@@ -248,7 +248,7 @@ async fn production(base: &str, t: &str) -> String {
         "POST",
         &format!("/api/projects/{t}/environments"),
         Some(json!({
-            "name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN"],
+            "name": "production", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN", "GITHUB_TOKEN"],
             "settings": { "fly_app": "acme-app", "chant_env": "github" },
         })),
     )
@@ -917,7 +917,8 @@ async fn an_apps_platform_plan_names_the_list_and_the_pointer() {
     let (st, v) = call(&base, "a", "POST", &envs, with("home2", &["SOURCE_TOKEN"])).await;
     assert_eq!(st, 400, "{v}");
     assert!(v.to_string().contains("SOURCE_TOKEN is the token"), "{v}");
-    assert_eq!(call(&base, "a", "POST", &envs, with("home3", &["APPS_PLATFORM_TOKEN"])).await.0, 200);
+    let (st, own) = call(&base, "a", "POST", &envs, with("home3", &["APPS_PLATFORM_TOKEN"])).await;
+    assert_eq!(st, 200, "{own}");
     let sha = "d".repeat(40);
     let plan = |kind: &str, sha: &str, place: &str| {
         Some(json!({ "environment": env, "source": { "kind": kind, "ref": sha, "where": place } }))
@@ -933,7 +934,15 @@ async fn an_apps_platform_plan_names_the_list_and_the_pointer() {
         assert_eq!(st, 400, "{v}");
         assert!(v.to_string().contains(why), "{v}");
     }
-    let (st, d) = call(&base, "a", "POST", &path, plan("commit", &sha, "arugula-salad/app")).await;
+    // Its run would mint a token that writes the list, and this platform
+    // has no GitHub App to mint it: refused when it's planned, not when it
+    // runs. An environment with a token of its own plans.
+    let (st, v) = call(&base, "a", "POST", &path, plan("commit", &sha, "arugula-salad/app")).await;
+    assert_eq!(st, 409, "{v}");
+    assert!(v.to_string().contains("no GitHub App to mint APPS_PLATFORM_TOKEN"), "{v}");
+    let body =
+        json!({ "environment": own["id"], "source": { "kind": "commit", "ref": sha, "where": "arugula-salad/app" } });
+    let (st, d) = call(&base, "a", "POST", &path, Some(body)).await;
     assert_eq!(st, 200, "{d}");
     let text = d["plan_text"].as_str().unwrap();
     assert_eq!(digest(text), d["plan"].as_str().unwrap(), "the text is what the digest is over");
