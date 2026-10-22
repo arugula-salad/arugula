@@ -164,7 +164,7 @@ impl Rig {
         let node = node().unwrap();
         let node_dir = Path::new(&node).parent().unwrap().to_string_lossy().into_owned();
         let path = format!("{}:{node_dir}:/usr/bin:/bin", self.dir.join("bin").display());
-        let (r, w) = nix::unistd::pipe2(nix::fcntl::OFlag::O_CLOEXEC).unwrap();
+        let (r, w) = crate::agent::pipe_cloexec().unwrap();
         let wfd = w.as_raw_fd();
         let mut c = Command::new(&node);
         c.env_clear()

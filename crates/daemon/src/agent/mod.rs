@@ -55,6 +55,8 @@ pub mod defs;
 pub mod hosted;
 pub mod images;
 mod link;
+#[cfg(unix)]
+pub(crate) use link::pipe_cloexec;
 pub mod transcript;
 
 use std::{
