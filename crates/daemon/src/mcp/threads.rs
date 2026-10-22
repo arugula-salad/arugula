@@ -160,7 +160,11 @@ impl Call<'_> {
         self.owners_agent("list kind threads").await?;
         let v = self.threads_call(Method::GET, AGENT_ROOMS, None).await?;
         let rooms = v["rooms"].as_array().cloned().unwrap_or_default();
+        let reached = v["reach"].as_array().is_some_and(|r| !r.is_empty());
         let summary = match rooms.len() {
+            // A grant reaches a project with no rooms yet: an issue's thread
+            // is made on its first message.
+            0 if reached => "No conversations yet where this machine's grants reach (an issue's thread starts with its first comment).".to_owned(),
             0 => "No conversations: this machine's owner hasn't given its agents a thread grant (`arugula grants add <machine> threads.read --project <id>` or `--dms`, or Settings, Agents in conversations, on the platform page).".to_owned(),
             n => format!(
                 "{n}: {}",
