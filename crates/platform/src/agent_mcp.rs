@@ -141,7 +141,10 @@ pub async fn endpoint(State(app): State<Arc<Platform>>, TokenAgent(token): Token
         Ok(v) => v,
         Err(e) => return Json(rpc_error(Value::Null, -32700, &format!("parse error: {e}"))).into_response(),
     };
-    let agent = Agent { app, token };
+    // Its owner as people know them, for what the agent is told.
+    let owner = crate::chat::name_of(&app, &token.account).await.ok().filter(|n| !n.is_empty());
+    let owner = owner.unwrap_or_else(|| token.account.clone());
+    let agent = Agent { app, token, owner };
     match msg {
         Value::Array(batch) if batch.is_empty() => {
             Json(rpc_error(Value::Null, -32600, "an empty batch")).into_response()
@@ -214,6 +217,8 @@ fn to_value<T: serde::Serialize>(v: T) -> Value {
 struct Agent {
     app: Arc<Platform>,
     token: AgentToken,
+    /// Its owner's name (their account's id if the hub has none).
+    owner: String,
 }
 
 impl Agent {
@@ -274,7 +279,7 @@ impl Agent {
                  project's owners to approve it; read_deploy follows it) and project secrets (set_secret, \
                  write-only). You never approve anything: an owner approves a deploy on their phone or in a \
                  browser.",
-                self.token.account,
+                self.owner,
                 token_label(&self.token.name)
             ),
         })
@@ -389,7 +394,7 @@ impl Agent {
         let label = token_label(&self.token.name);
         let text = format!(
             "You're {}'s agent, labelled \"{label}\". {} project(s): {}. You never approve anything.",
-            self.token.account,
+            self.owner,
             projects.len(),
             projects
                 .iter()
@@ -409,7 +414,7 @@ impl Agent {
                 .join("; ")
         );
         let value = json!({
-            "agent": { "token": self.token.id, "name": self.token.name, "label": label, "owner": self.token.account },
+            "agent": { "token": self.token.id, "name": self.token.name, "label": label, "owner": self.token.account, "owner_name": self.owner },
             "projects": projects,
             "approves": false,
         });
@@ -454,8 +459,7 @@ impl Agent {
         let b = ChatPost { text: a.text, pane: None, quote: None };
         let r = agent_threads::post(self.state(), self.me(), Path(a.room.clone()), Json(b)).await?.0;
         let v = to_value(&r);
-        let text =
-            format!("Posted in {} as {}'s agent on {}: {v}", a.room, self.token.account, token_label(&self.token.name));
+        let text = format!("Posted in {} as {}'s agent on {}: {v}", a.room, self.owner, token_label(&self.token.name));
         Ok(Done { text, value: v, project: None, note: format!("posted in {}", a.room) })
     }
 
@@ -559,11 +563,8 @@ impl Agent {
             }
         };
         let project = v["project"].as_str().or(v["issue"]["project"].as_str()).map(str::to_owned);
-        let text = format!(
-            "Done, at once, as {}'s agent on {}: {what}.\n{v}",
-            self.token.account,
-            token_label(&self.token.name)
-        );
+        let text =
+            format!("Done, at once, as {}'s agent on {}: {what}.\n{v}", self.owner, token_label(&self.token.name));
         let _ = id;
         Ok(Done { text, value: v, project, note: what })
     }
@@ -630,7 +631,7 @@ impl Agent {
             "Started {} ({}), as {}'s agent on {}.{waits} wait with run {} follows it; read_run reads its log.",
             r.id,
             r.state,
-            self.token.account,
+            self.owner,
             token_label(&self.token.name),
             r.id
         );
@@ -732,7 +733,7 @@ impl Agent {
         let text = format!(
             "Planned and asked, as {}'s agent on {}: {id} is {}. The project's owners got a card; one of them \
              approves it on their phone or in a browser, and you can't. read_deploy {id} follows it.\n{}",
-            self.token.account,
+            self.owner,
             token_label(&self.token.name),
             d["state"].as_str().unwrap_or("?"),
             d["plan_text"].as_str().unwrap_or_default()
