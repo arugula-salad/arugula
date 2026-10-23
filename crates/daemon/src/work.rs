@@ -668,6 +668,7 @@ fn firewall_nft(_: &Path, _: &str) -> bool {
 /// The nftables table [`firewall_nft`] loads: TCP on loopback from `uid`
 /// to the ports [`firewall_ports`] lists is reset. Declaring the table and
 /// deleting it first makes loading it again replace it.
+#[cfg_attr(not(unix), allow(dead_code))]
 pub fn firewall_script(state: &Path, uid: u32) -> String {
     let ports = firewall_ports(state).iter().map(|p| p.replace(':', "-")).collect::<Vec<_>>().join(", ");
     format!(
