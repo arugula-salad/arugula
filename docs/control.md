@@ -631,8 +631,10 @@ App ([control-ops.md](control-ops.md#planters-deploys-m233)).
   `port_env`, `secrets`. Its source is an artifact the platform keeps
   (`sha256:<hex>`, where `platform`), sent by an agent with the hosted MCP's
   `plan_deploy` and `files`; the box fetches it and checks its digest. A
-  shipped app's name is one project's, and a ship never goes over an app
-  another project (or planter) shipped last.
+  shipped app's name is one project's (the first environment to name it),
+  it's never an arugula-salad repository's name (as planter's App sees
+  them), and a ship never goes over an app another project (or planter)
+  shipped last.
 - **`planter-promote`** (promote): the pull request moving a shipped app from
   loam to the cluster, from a commit of `shipped`. Setting: `app`. A person
   merges it.

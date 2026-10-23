@@ -575,8 +575,12 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
     }
     // A driver some projects only may use (M221: Arugula's release).
     driver.allowed_in(&p.id).map_err(|why| err(StatusCode::FORBIDDEN, &why))?;
-    // What its settings name, another project's since (M233).
+    // What its settings name, another project's since (M233), or an
+    // arugula-salad repository's.
     if let Some(why) = driver.claims(app, &env) {
+        return Err(err(StatusCode::CONFLICT, &why));
+    }
+    if let Some(why) = crate::drivers::planter::ship_name_taken(app, &env).await {
         return Err(err(StatusCode::CONFLICT, &why));
     }
     // A token its run mints that writes (M222's list, M220's ledger, M221's

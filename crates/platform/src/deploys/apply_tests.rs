@@ -960,6 +960,8 @@ async fn world_with_planters_app() -> (Arc<TestHub>, Arc<Platform>, String, Stri
             grants["contents"] = "write".into();
             g.grants.insert(repo.into(), grants);
         }
+        // An app's own repository: its name isn't a ship's.
+        g.installed.insert("arugula-salad/ocarina".into(), (31, 500, "arugula-salad".into()));
     }
     let api = fake_github(Arc::default()).await;
     let planter_api = fake_github(planter.clone()).await;
@@ -1095,6 +1097,21 @@ async fn planter_ship_mints_from_planters_app_and_gives_its_box_the_artifact() {
     assert_eq!(state(&app, &id), State::Succeeded);
     let kept = app.db.deploy_history(&id).unwrap().pop().unwrap().detail_json().unwrap();
     assert_eq!(kept["commit"], "c".repeat(40), "{kept}");
+
+    // A name that's an arugula-salad repository's: not shipped under.
+    let body = json!({ "name": "ocarina", "driver": "planter-ship", "settings": { "app": "ocarina" } });
+    let (st, oc) = call(&base, "a", "POST", &format!("/api/projects/{t}/environments"), Some(body)).await;
+    assert_eq!(st, 200, "{oc}");
+    let (st, v) = call(
+        &base,
+        "b",
+        "POST",
+        &format!("/api/projects/{t}/deploys"),
+        Some(json!({ "environment": oc["id"], "source": source })),
+    )
+    .await;
+    assert_eq!(st, 409, "{v}");
+    assert!(v.to_string().contains("arugula-salad/ocarina is a repository"), "{v}");
 
     // A platform without planter's App: not even planned.
     let (_, _, base2, t2, _) = world_with_github().await;

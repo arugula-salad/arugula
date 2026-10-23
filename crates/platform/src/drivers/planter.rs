@@ -97,6 +97,27 @@ fn claimed(app: &Platform, env: &Environment) -> Option<String> {
     None
 }
 
+/// Why a Ship to `env` can't have its app's name, asked of GitHub when
+/// it's planned: a repository of arugula-salad by that name, whose app and
+/// image the name belongs to (planter's ship refused it too). Asked through
+/// planter's App, so a repository it isn't installed on goes unseen:
+/// `shipped`'s pointer check on the box is the backstop.
+pub async fn ship_name_taken(app: &Platform, env: &Environment) -> Option<String> {
+    if env.driver != p::SHIP {
+        return None;
+    }
+    let name = env.settings.get(p::APP)?;
+    let gh = app.deploy_app.as_ref()?;
+    let repo = format!("{}/{name}", p::ORG);
+    match gh.installation(&app.http, &repo).await {
+        Ok(Some(_)) => Some(format!(
+            "{repo} is a repository, whose app and image the name {name} belongs to: ship under another name"
+        )),
+        Ok(None) => None,
+        Err(e) => Some(format!("couldn't ask GitHub whether {repo} is a repository: {e:#}")),
+    }
+}
+
 impl Driver for Prod {
     fn name(&self) -> &'static str {
         p::PROD
