@@ -520,6 +520,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> anyhow::Result<()> {
     }
     super::run_grants::erase_account(c, account)?;
     super::agent_tokens::erase_account(c, account)?;
+    super::planter::erase_account(c, account)?;
     Ok(())
 }
 

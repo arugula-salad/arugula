@@ -52,6 +52,11 @@ Start with `src/lib.rs`, then:
 - `src/boxes.rs`: hud boxes as clients (M237): a bound box's project's
   members and its reviews posted into object threads (kept `via` the box),
   which the hub asks for through `PlatformPort`.
+- `src/planter.rs`: planter's import (M232): its backup read, and
+  `arugula-platform import planter`, which links the repos planter's boxes
+  were planted from to projects and reports each box
+  (`docs/control-ops.md`, "Importing planter"). Its fixture backup is
+  `fixtures/planter-backup`.
 - `src/page.rs`: the platform page (M150's build, `web/dist-platform`),
   embedded, its CSP, and how it's served on `app.arugula.io` (M151): by
   the hub in process, by the binary for the hub's forwarded GETs out of

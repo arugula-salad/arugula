@@ -348,7 +348,7 @@ pub struct LinkEvent {
     pub client: String,
     /// The product's user (empty for a consent with no link).
     pub user: String,
-    /// `linked`, `renamed` or `unlinked`.
+    /// `linked`, `renamed`, `unlinked`, or `imported` (M232: by an operator, from a backup).
     pub event: String,
     /// `product`, `account` or `operator`.
     pub by: String,
@@ -443,6 +443,75 @@ pub fn remove_client(c: &mut Connection, id: &str) -> anyhow::Result<bool> {
     let gone = tx.execute("DELETE FROM issuer_clients WHERE id = ?1", params![id])? > 0;
     tx.commit()?;
     Ok(gone)
+}
+
+/// What importing a product's user (M232, planter's import) found, or
+/// did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Imported {
+    /// Linked now (or, dry, would be), audited `imported` by the operator.
+    Linked,
+    /// Linked to this account already: left as it is.
+    Already,
+    /// The account had a link with this product, and it ended at this time
+    /// (ms): the import never links it again, so an unlink sticks.
+    UnlinkedSince(u64),
+    /// The product's user is linked to this other account.
+    UserLinkedElsewhere(String),
+    /// The account is linked to this other user of the product.
+    AccountLinkedElsewhere(String),
+}
+
+/// The account whose GitHub identity has this numeric id, and the login it
+/// last signed in with: by the number only, never a login.
+pub fn account_by_github(c: &Connection, github_id: u64) -> anyhow::Result<Option<(String, String)>> {
+    Ok(c.query_row(
+        "SELECT account, COALESCE(login, '') FROM identities WHERE provider = 'github' AND subject = ?1",
+        params![github_id.to_string()],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .optional()?)
+}
+
+/// Import `link` (M232): an operator links a product's user to the
+/// account with the same numeric GitHub id, without the person's assertion,
+/// audited `imported` by `operator`. Nothing that's there is changed: the
+/// same link again is [`Imported::Already`], a link either side has
+/// elsewhere is reported, and an account that was ever unlinked from this
+/// product (its tombstone, or an `unlinked` in the audit, kept a year) is
+/// never linked again by an import. `dry`: write nothing. Run it inside the
+/// caller's transaction.
+pub fn import_link(c: &Connection, link: &Link, dry: bool) -> anyhow::Result<Imported> {
+    c.execute_batch(SCHEMA)?;
+    if let Some(had) = link_of_user(c, &link.client, &link.user)? {
+        return Ok(if had.account == link.account {
+            Imported::Already
+        } else {
+            Imported::UserLinkedElsewhere(had.account)
+        });
+    }
+    if let Some(had) = link_of_account(c, &link.client, &link.account)? {
+        return Ok(Imported::AccountLinkedElsewhere(had.user));
+    }
+    let ended: Option<u64> = c.query_row(
+        "SELECT MAX(at) FROM (
+             SELECT at FROM account_link_events WHERE account = ?1 AND client = ?2 AND event = 'unlinked'
+             UNION ALL SELECT unlinked FROM account_link_tombstones WHERE account = ?1 AND client = ?2)",
+        params![link.account, link.client],
+        |r| r.get(0),
+    )?;
+    if let Some(at) = ended {
+        return Ok(Imported::UnlinkedSince(at));
+    }
+    if !dry {
+        c.execute(
+            "INSERT INTO account_links (client, product_user, account, github_id, name, linked)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![link.client, link.user, link.account, link.github_id.to_string(), link.name, link.linked],
+        )?;
+        link_event(c, (&link.account, &link.client, &link.user), "imported", LinkBy::Operator, link.linked)?;
+    }
+    Ok(Imported::Linked)
 }
 
 /// The ops counter of bulk link calls: (client, what, count, last ms).

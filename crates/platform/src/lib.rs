@@ -79,6 +79,7 @@ pub mod links;
 #[cfg(test)]
 mod object_threads_tests;
 pub mod page;
+pub mod planter;
 mod port;
 pub mod projects;
 pub mod remote;

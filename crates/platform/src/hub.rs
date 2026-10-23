@@ -334,6 +334,25 @@ pub trait HubPort: Send + Sync {
         let _ = (account, client);
         Box::pin(async { anyhow::bail!("this hub doesn't link products' accounts") })
     }
+
+    /// The platform account a product's user is linked to (M229), with the
+    /// numeric GitHub id it was linked by, or `None`: what planter's import
+    /// (M232) asks of each planter, by planter's own user id. A hub from
+    /// before M232 can't say.
+    fn linked_account<'a>(&'a self, client: &'a str, user: &'a str) -> BoxFuture<'a, HubResult<Option<LinkedAccount>>> {
+        let _ = (client, user);
+        Box::pin(async { anyhow::bail!("this hub doesn't say products' links") })
+    }
+}
+
+/// A product's user's link (M232, [`HubPort::linked_account`]). A link is
+/// never authorization.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkedAccount {
+    /// The platform account (the hub's).
+    pub account: String,
+    /// The numeric GitHub id it was linked by.
+    pub github_id: u64,
 }
 
 /// A product an account let sign it in, or is linked to (M229,

@@ -374,6 +374,20 @@ impl HubPort for InProcess {
         })
     }
 
+    fn linked_account<'a>(
+        &'a self,
+        client: &'a str,
+        user: &'a str,
+    ) -> BoxFuture<'a, HubResult<Option<arugula_platform::hub::LinkedAccount>>> {
+        Box::pin(async move {
+            Ok(self
+                .app()?
+                .db
+                .account_link(client, user)?
+                .map(|l| arugula_platform::hub::LinkedAccount { account: l.account, github_id: l.github_id }))
+        })
+    }
+
     fn hosted_enrollment<'a>(
         &'a self,
         ask: &'a arugula_control_wire::hosted::EnrollAsk,
@@ -849,6 +863,32 @@ mod tests {
             assert_eq!(f.hub().client_account("aat_made_up", "studio").await.unwrap(), None);
             f.app.db.drop_session("hub-session-hash").unwrap();
             assert_eq!(f.hub().client_account(token, "studio").await.unwrap(), None, "ends with its hub session");
+        }
+    }
+
+    /// A product's user's link (M232: what planter's repo import asks),
+    /// in process and over HTTP: the account and the GitHub id it was
+    /// linked by, or none.
+    #[tokio::test]
+    async fn the_hub_says_a_product_users_link() {
+        use contract::Fixture as _;
+
+        use crate::db::issuer::Link;
+        for f in [Fixture::new().await, Fixture::over_http().await] {
+            let now = arugula_e2e::now_ms();
+            assert_eq!(f.hub().linked_account("planter", "77").await.unwrap(), None);
+            let link = Link {
+                client: "planter".into(),
+                user: "77".into(),
+                account: "acct-pl".into(),
+                github_id: 77,
+                name: None,
+                linked: now,
+            };
+            assert_eq!(f.app.db.link_account(&link, now / 1000).unwrap(), Ok(true));
+            let got = f.hub().linked_account("planter", "77").await.unwrap();
+            assert_eq!(got, Some(arugula_platform::hub::LinkedAccount { account: "acct-pl".into(), github_id: 77 }));
+            assert_eq!(f.hub().linked_account("studio", "77").await.unwrap(), None, "per product");
         }
     }
 

@@ -358,6 +358,14 @@ impl HubPort for Timed {
     fn client_account<'a>(&'a self, token: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
         timed!(self.0.client_account(token, client))
     }
+
+    fn linked_account<'a>(
+        &'a self,
+        client: &'a str,
+        user: &'a str,
+    ) -> BoxFuture<'a, HubResult<Option<crate::hub::LinkedAccount>>> {
+        timed!(self.0.linked_account(client, user))
+    }
 }
 
 #[cfg(test)]

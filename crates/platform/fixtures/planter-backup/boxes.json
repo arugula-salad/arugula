@@ -1,0 +1,8 @@
+{
+  "fern-a1b2": { "name": "fern-a1b2", "title": "kit-app", "repo": "jake-gh/kit-app", "branch": "main", "owner": "4242", "state": "ready", "createdAt": 1760001000000, "url": "https://fern-a1b2.boxes.example", "tokenExpiresAt": 1760004600000, "fountain": { "environmentId": "env_fixture1", "conversationId": "conv_fixture1" }, "secrets": "sealed-box-fixture", "chats": {} },
+  "fern-c3d4": { "name": "fern-c3d4", "title": "site", "repo": "acme/site", "branch": "preview", "owner": "4242", "state": "ready", "createdAt": 1760002000000, "url": "https://fern-c3d4.boxes.example", "fountain": { "environmentId": "env_fixture2" }, "secrets": "sealed-box-fixture", "chats": {} },
+  "fern-e5f6": { "name": "fern-e5f6", "title": "kit-app", "repo": "jake-gh/kit-app", "branch": "main", "owner": "5151", "state": "building", "createdAt": 1760003000000, "fountain": {}, "secrets": "sealed-box-fixture", "chats": {} },
+  "fern-g7h8": { "name": "fern-g7h8", "title": "thing", "repo": "newbie/thing", "branch": "main", "owner": "7777", "state": "ready", "createdAt": 1760004000000, "fountain": {}, "secrets": "sealed-box-fixture", "chats": {} },
+  "fern-i9j0": { "name": "fern-i9j0", "title": "no-app", "repo": "jake-gh/no-app", "branch": "main", "owner": "4242", "state": "failed", "createdAt": 1760005000000, "fountain": {}, "secrets": "sealed-box-fixture", "chats": {} },
+  "fern-k1l2": { "name": "fern-k1l2", "title": "kit-app", "repo": "Jake-GH/Kit-App", "branch": "work", "owner": "4242", "state": "ready", "createdAt": 1760006000000, "fountain": {}, "secrets": "sealed-box-fixture", "chats": {} }
+}
