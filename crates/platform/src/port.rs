@@ -298,6 +298,7 @@ impl PlatformPort for Platform {
                 // Before the projects go: their hosted workspaces are deleted.
                 db::hosted::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
                 db::inference::erase_account(&tx, deleted)?;
+                db::clients::erase_account(&tx, deleted)?;
                 db::hosted_transcripts::erase_account(&tx, deleted)?;
                 db::projects::erase_account(&tx, deleted)?;
                 db::forge::erase_account(&tx, deleted, arugula_e2e::now_ms())?;

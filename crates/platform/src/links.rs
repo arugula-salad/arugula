@@ -29,16 +29,34 @@ pub const UNLINK_PRODUCT: &str = "/api/linked-products/{client}/unlink";
 
 type R = Result<Json<Value>, ApiError>;
 
-/// `GET /api/linked-products`: `{ links: [{ client, product, granted?, user?, name?, linked? }] }`.
+/// `GET /api/linked-products`: `{ links: [{ client, product, granted?,
+/// user?, name?, linked?, projects? }] }`. `projects` (M236) is there for
+/// a product that's also a registered client of the platform: whether the
+/// reader lets it see their projects (`crate::clients`).
 pub async fn list(State(app): State<Arc<Platform>>, s: Person) -> R {
     let links = app.hub.product_links(&s.account).await?;
+    let sees = app.db.client_consents(&s.account, crate::clients::Scope::Projects)?;
+    let registered = &app.hosted.broker.clients.policies;
+    let links: Vec<Value> = links
+        .into_iter()
+        .map(|l| {
+            let mut v = json!(l);
+            if registered.contains_key(&l.client) {
+                v["projects"] = json!(sees.contains(&l.client));
+            }
+            v
+        })
+        .collect();
     Ok(Json(json!({ "links": links })))
 }
 
 /// `POST /api/linked-products/{client}/unlink`: end what the reader has
-/// with a product, its link and its consent. 404 when there's neither.
+/// with a product, its link and its consent, and (M236) whatever they let
+/// it do on the platform: see their projects, use Claude for them. 404
+/// when there was none of it.
 pub async fn unlink(State(app): State<Arc<Platform>>, s: Person, Path(client): Path<String>) -> R {
-    if !app.hub.unlink_product(&s.account, &client).await? {
+    let ended = app.db.end_client_consents(&s.account, &client)?;
+    if !app.hub.unlink_product(&s.account, &client).await? && !ended {
         return Err(err(StatusCode::NOT_FOUND, "no such linked product"));
     }
     Ok(Json(json!({ "unlinked": true })))

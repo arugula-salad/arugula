@@ -1145,6 +1145,7 @@ async fn run() -> anyhow::Result<()> {
     if let Some(p) = app.platform.local() {
         arugula_platform::hosted::start(p);
         arugula_platform::keys::start(p);
+        arugula_platform::clients::start(p);
         // The job worker: runs' dispatch (M212) and schedules (M214).
         arugula_platform::work::start(p);
         // Runs' logs past their days (M213).

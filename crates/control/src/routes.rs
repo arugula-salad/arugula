@@ -56,6 +56,7 @@ enum Auth {
     AgentToken,
     ClientSecret,
     SessionOrClient,
+    Client,
 }
 
 #[derive(Deserialize, PartialEq)]
