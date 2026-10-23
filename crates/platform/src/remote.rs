@@ -357,7 +357,6 @@ struct PasskeyArgs {
 struct UnlinkArgs {
     account: String,
     client: String,
-    user: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -538,13 +537,8 @@ impl HubPort for HttpHub {
         Box::pin(self.0.call("product_links", AccountArgs { account: account.to_owned() }))
     }
 
-    fn unlink_product<'a>(
-        &'a self,
-        account: &'a str,
-        client: &'a str,
-        user: &'a str,
-    ) -> BoxFuture<'a, HubResult<bool>> {
-        let a = UnlinkArgs { account: account.to_owned(), client: client.to_owned(), user: user.to_owned() };
+    fn unlink_product<'a>(&'a self, account: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<bool>> {
+        let a = UnlinkArgs { account: account.to_owned(), client: client.to_owned() };
         Box::pin(self.0.call("unlink_product", a))
     }
 }
@@ -657,7 +651,7 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "product_links" => answer(hub.product_links(&args::<AccountArgs>(&body)?.account).await?)?,
             "unlink_product" => {
                 let a: UnlinkArgs = args(&body)?;
-                answer(hub.unlink_product(&a.account, &a.client, &a.user).await?)?
+                answer(hub.unlink_product(&a.account, &a.client).await?)?
             }
             _ => return Ok(None),
         }))

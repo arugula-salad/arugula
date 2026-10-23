@@ -561,6 +561,7 @@ fn routes() -> Routes {
         .route("/.well-known/openid-configuration", get(issuer::discovery))
         .route("/.well-known/jwks.json", get(issuer::jwks))
         .route("/oauth/authorize", get(issuer::authorize))
+        .route("/oauth/consent", post(issuer::consent))
         .route("/oauth/token", post(issuer::token_endpoint))
         .route("/oauth/userinfo", get(issuer::userinfo))
         .route("/oauth/hud", get(issuer::hud))

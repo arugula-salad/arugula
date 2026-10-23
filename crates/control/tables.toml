@@ -147,8 +147,35 @@ name = "account_link_events"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "The audit of account links (M229): a link made or ended, the client and product user, the account, by the product or the person, when. Kept a year."
+what = "The audit of account links (M229): a link made, renamed or ended (with the consent), the client and product user, the account, by the product, the person or an operator, when. Kept a year."
 with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "issuer_grants"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A person's yes on the consent screen (M229): the account, the product's client, when. Kept until they unlink the product."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "account_link_tombstones"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "When an account last unlinked a product (M229): the client, the account, when. An assertion issued until then never links. Kept a day, far past any assertion's life."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "link_alerts"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "The ops counter of bulk link calls (M229): per product's client and kind (unlinks, lookups), how many went over the alert line, and when last."
+with_account = "none"
 seen_by = ["litestream"]
 
 [[table]]

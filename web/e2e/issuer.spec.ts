@@ -2,7 +2,9 @@
 // a signed-out browser to /oauth/authorize; control's page signs them in
 // with GitHub (`#issuer-signin=`) and the browser comes back to the product
 // with a code, which the product swaps for an ID token that verifies against
-// the JWKS. Signed in now, the next sign-in goes straight through.
+// the JWKS. The first time, the hub asks "Link <product> to your Arugula
+// account?" (M229) between the two. Signed in and having said yes, the next
+// sign-in goes straight through.
 
 import { execFileSync } from "node:child_process";
 import { createHash, createPublicKey, randomBytes, verify } from "node:crypto";
@@ -57,6 +59,10 @@ test("a signed-out person signs in on control's page and comes back to the produ
   await page.goto(first.path);
   await expect(page).toHaveURL(new RegExp(`^${t.base}/#issuer-signin=`));
   await page.locator("[data-signin=github]").click();
+  // M229: the consent screen, on the hub, before anything reaches the product.
+  await page.waitForURL(`${t.base}/oauth/authorize?**`, { timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Link E2E to your Arugula account?" })).toBeVisible();
+  await page.locator("[data-consent-allow]").click();
   await page.waitForURL(`${BACK}?**`, { timeout: 30_000 });
   const back = new URL(page.url());
   expect(back.searchParams.get("state")).toBe("st-e2e");
@@ -79,7 +85,7 @@ test("a signed-out person signs in on control's page and comes back to the produ
   expect(claims.aud).toBe(CLIENT);
   expect(typeof claims.github_id).toBe("number");
 
-  // Signed in now: straight through, no page of control's drawn.
+  // Signed in and said yes: straight through, no page of control's drawn.
   const second = authorize();
   await page.goto(`${t.base}${second.path}`);
   await page.waitForURL(`${BACK}?**`, { timeout: 15_000 });

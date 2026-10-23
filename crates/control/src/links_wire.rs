@@ -3,8 +3,10 @@
 //! only; the same link again is no change; a user or an account already
 //! linked otherwise is refused until that link ends; the same GitHub login
 //! with another numeric id links nothing; and an unlink on the platform
-//! page is audited as the person's and seen by the product on its next
-//! call.
+//! page is audited as the person's, seen by the product on its next call,
+//! and sticks: a token from before it never links again (the tombstone),
+//! and the next sign-in through that product asks the person again (the
+//! consent screen).
 
 use arugula_control_common::issuer::IssuerKey;
 use arugula_e2e::now_ms;
@@ -34,10 +36,17 @@ impl Control {
         format!("ilg_session=session-{account}")
     }
 
-    /// An ID token for `CLIENT`, for whoever `cookie` is.
+    /// An ID token for `CLIENT`, for whoever `cookie` is, saying yes to
+    /// the consent screen if it's shown.
     async fn id_token_as(&self, cookie: &str, seed: u8) -> String {
+        self.id_token_asked(cookie, seed).await.0
+    }
+
+    /// The same, and whether the consent screen was shown.
+    async fn id_token_asked(&self, cookie: &str, seed: u8) -> (String, bool) {
         let (v, ch) = pkce(seed);
-        let (st, at, _) = self.get(&self.authorize_path(CLIENT, BACK, &ch, "S256"), Some(cookie)).await;
+        let (st, at, asked) =
+            self.through_consent(&self.authorize_path(CLIENT, BACK, &ch, "S256"), cookie, "allow").await;
         assert_eq!(st, 303, "{at}");
         let code = query(&at)["code"].clone();
         let (st, t) = self
@@ -50,7 +59,7 @@ impl Control {
             ])
             .await;
         assert_eq!(st, 200, "{t}");
-        t["id_token"].as_str().unwrap().to_owned()
+        (t["id_token"].as_str().unwrap().to_owned(), asked)
     }
 
     async fn links(&self, method: &str, path: &str, auth: Option<(&str, &str)>, body: Option<Value>) -> (u16, Value) {
@@ -67,8 +76,11 @@ impl Control {
     }
 
     async fn link(&self, user: &str, github_id: u64, assertion: &str) -> (u16, Value) {
-        let body =
-            json!({ "user": user, "github_id": github_id, "assertion": assertion, "name": format!("{user} here") });
+        self.link_named(user, github_id, assertion, &format!("{user} here")).await
+    }
+
+    async fn link_named(&self, user: &str, github_id: u64, assertion: &str, name: &str) -> (u16, Value) {
+        let body = json!({ "user": user, "github_id": github_id, "assertion": assertion, "name": name });
         self.links("POST", "/oauth/links", Some((CLIENT, SECRET)), Some(body)).await
     }
 
@@ -140,6 +152,10 @@ async fn a_product_links_its_user_and_the_person_unlinks_on_the_platform_page() 
     let (st, v) = c.show("studio-u1").await;
     assert_eq!((st, v["platform_account"].as_str()), (200, Some("a")));
     assert_eq!(c.audit("a"), said(&[("linked", "product")]));
+    // A new name is kept, and audited.
+    let (st, v) = c.link_named("studio-u1", 4242, &token, "Jake G").await;
+    assert_eq!((st, v["created"].as_bool()), (200, Some(false)));
+    assert_eq!(c.audit("a"), said(&[("renamed", "product"), ("linked", "product")]));
 
     // A hud box's assertion isn't an ID token: never a link, even for the
     // same account. (A hud client can't hold a link secret at all.)
@@ -160,27 +176,38 @@ async fn a_product_links_its_user_and_the_person_unlinks_on_the_platform_page() 
     assert_eq!(v["links"][0]["client"], CLIENT);
     assert_eq!(v["links"][0]["product"], format!("{CLIENT} (test)"));
     assert_eq!(v["links"][0]["user"], "studio-u1");
-    assert_eq!(v["links"][0]["name"], "studio-u1 here");
+    assert_eq!(v["links"][0]["name"], "Jake G");
+    assert!(v["links"][0]["granted"].as_u64().is_some(), "{v}");
     // Someone else can't end it, and sees none.
     let b = c.person("b", "5151", "someone");
     assert_eq!(c.page("GET", "/api/linked-products", &b).await.1["links"], json!([]));
-    let unlink = format!("/api/linked-products/{CLIENT}/studio-u1/unlink");
+    let unlink = format!("/api/linked-products/{CLIENT}/unlink");
     assert_eq!(c.page("POST", &unlink, &b).await.0, 404);
     assert_eq!(c.page("POST", &unlink, "").await.0, 401);
     assert_eq!(c.show("studio-u1").await.0, 200);
     let (st, v) = c.page("POST", &unlink, COOKIE).await;
     assert_eq!((st, v["unlinked"].as_bool()), (200, Some(true)));
     assert_eq!(c.page("POST", &unlink, COOKIE).await.0, 404, "once");
-    assert_eq!(c.audit("a"), said(&[("unlinked", "account"), ("linked", "product")]));
+    assert_eq!(c.audit("a")[0], ("unlinked".to_owned(), "account".to_owned()));
+    assert_eq!(c.page("GET", "/api/linked-products", COOKIE).await.1["links"], json!([]), "the consent went too");
 
     // The product sees it on its next call.
     let (st, v) = c.show("studio-u1").await;
     assert_eq!((st, v["error"].as_str()), (404, Some("not_linked")));
 
-    // It comes back only with a fresh sign-in through the product.
-    let token = c.sign_in(2).await.0;
+    // It sticks: the token from before the unlink never links again.
     let (st, v) = c.link("studio-u1", 4242, &token).await;
-    assert_eq!((st, v["created"].as_bool()), (200, Some(true)));
+    assert_eq!((st, v["error"].as_str()), (401, Some("invalid_token")), "{v}");
+    assert_eq!(c.rows(), 0);
+
+    // It comes back only with a fresh sign-in through the product, which
+    // asks the person again (in a later second than the unlink: `iat` has
+    // a second's grain).
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    let (token, asked) = c.id_token_asked(COOKIE, 2).await;
+    assert!(asked, "the consent screen again after an unlink");
+    let (st, v) = c.link("studio-u1", 4242, &token).await;
+    assert_eq!((st, v["created"].as_bool()), (200, Some(true)), "{v}");
 
     // The product ends it itself.
     let del = || c.links("DELETE", "/oauth/links/studio-u1", Some((CLIENT, SECRET)), None);
@@ -188,6 +215,95 @@ async fn a_product_links_its_user_and_the_person_unlinks_on_the_platform_page() 
     assert_eq!(del().await, (200, json!({ "unlinked": false })));
     assert_eq!(c.audit("a")[0], ("unlinked".to_owned(), "product".to_owned()));
     assert_eq!(c.rows(), 0);
+    // The product's unlink sticks too.
+    let (st, _) = c.link("studio-u1", 4242, &token).await;
+    assert_eq!(st, 401);
+    assert!(!c.app.db.issuer_grant("a", CLIENT).unwrap(), "and ends the consent");
+}
+
+/// The consent screen (M229): the first sign-in through a product asks
+/// "Link <product> to your Arugula account?"; only an answer from
+/// control's own page, with its ticket, in the session it was shown in,
+/// counts, once; a no tells the product `access_denied`; a yes is kept until
+/// the person unlinks. hud boxes never ask.
+#[tokio::test]
+async fn the_first_sign_in_through_a_product_asks_and_an_unlink_asks_again() {
+    let c = control(keys(&IssuerKey::generate(), None, None)).await;
+    let b = c.person("b", "5151", "bee");
+    let (_, ch) = pkce(7);
+    let path = c.authorize_path(CLIENT, BACK, &ch, "S256");
+
+    // Not asked yet: prompt=none can't.
+    let (st, at, _) = c.get(&format!("{path}&prompt=none"), Some(&b)).await;
+    assert_eq!((st, query(&at)["error"].as_str()), (303, "consent_required"));
+
+    // The screen: no script, no framing.
+    let r = c.http.get(format!("{}{path}", c.base)).header(header::HOST, "control.test").header(header::COOKIE, &b);
+    let r = r.send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let csp = r.headers()[header::CONTENT_SECURITY_POLICY].to_str().unwrap().to_owned();
+    assert!(csp.contains("frame-ancestors 'none'") && csp.contains("default-src 'none'"), "{csp}");
+    let page = r.text().await.unwrap();
+    assert!(page.contains(&format!("Link {CLIENT} (test) to your Arugula account?")), "{page}");
+    assert!(!page.contains("<script"));
+    let ticket = |p: &str| p.split("name=\"ticket\" value=\"").nth(1).unwrap().split('"').next().unwrap().to_owned();
+    let t = ticket(&page);
+
+    // From another site: refused, and the ticket still waits.
+    assert_eq!(c.answer(&t, &b, "allow", Some("https://evil.example")).await.0, 403);
+    // In another session: refused, and the ticket is spent.
+    assert_eq!(c.answer(&t, COOKIE, "allow", Some(crate::issuer_wire::CONTROL)).await.0, 403);
+    assert_eq!(c.answer(&t, &b, "allow", Some(crate::issuer_wire::CONTROL)).await.0, 403, "once");
+    assert!(!c.app.db.issuer_grant("b", CLIENT).unwrap());
+
+    // No: the product hears so, and nothing is kept.
+    let (st, at, asked) = c.through_consent(&path, &b, "deny").await;
+    assert!(asked);
+    assert_eq!((st, query(&at)["error"].as_str(), query(&at)["state"].as_str()), (303, "access_denied", "st-1"));
+    assert!(!c.app.db.issuer_grant("b", CLIENT).unwrap());
+
+    // Yes: a code, and the next sign-in goes straight through.
+    let (st, at, asked) = c.through_consent(&path, &b, "allow").await;
+    assert!(asked);
+    assert_eq!(st, 303);
+    assert!(query(&at).contains_key("code"), "{at}");
+    let (st, at, asked) = c.through_consent(&path, &b, "allow").await;
+    assert_eq!((st, asked), (303, false));
+    assert!(query(&at).contains_key("code"));
+    assert_eq!(c.get(&format!("{path}&prompt=none"), Some(&b)).await.0, 303);
+
+    // The platform page lists the consent with no link; unlinking it is
+    // revoking it, so the next sign-in asks again.
+    let (_, v) = c.page("GET", "/api/linked-products", &b).await;
+    assert_eq!(v["links"][0]["client"], CLIENT);
+    assert!(v["links"][0]["granted"].as_u64().is_some() && v["links"][0]["user"].is_null(), "{v}");
+    assert_eq!(c.page("POST", &format!("/api/linked-products/{CLIENT}/unlink"), &b).await.0, 200);
+    assert_eq!(c.audit("b")[0], ("unlinked".to_owned(), "account".to_owned()));
+    assert!(c.through_consent(&path, &b, "allow").await.2, "asked again");
+
+    // A hud box never asks.
+    let page = "https://box1.example/hud/";
+    c.app.db.put_issuer_client(&client("box1", ClientKind::Hud, page)).unwrap();
+    let enc = |u: &str| url::form_urlencoded::byte_serialize(u.as_bytes()).collect::<String>();
+    let (st, at, _) =
+        c.get(&format!("/oauth/hud?client_id=box1&redirect_uri={}&nonce=nonce-0002", enc(page)), Some(&b)).await;
+    assert_eq!(st, 303);
+    assert!(at.contains("#hud-forge="), "{at}");
+}
+
+/// Bulk unlinks or lookups from one product are logged and counted (the ops
+/// counter), never refused below the product's limit.
+#[tokio::test]
+async fn bulk_unlinks_and_lookups_are_counted() {
+    let c = control(keys(&IssuerKey::generate(), None, None)).await;
+    c.give_secret(CLIENT, SECRET);
+    for i in 0..=crate::limit::LINK_UNLINKS_ALERT.1 {
+        let (st, _) = c.links("DELETE", &format!("/oauth/links/u{i}"), Some((CLIENT, SECRET)), None).await;
+        assert_eq!(st, 200);
+    }
+    let alerts = crate::db::issuer::link_alerts(&c.app.db.conn()).unwrap();
+    assert_eq!(alerts.len(), 1);
+    assert_eq!((alerts[0].0.as_str(), alerts[0].1.as_str(), alerts[0].2), (CLIENT, "unlinks", 1));
 }
 
 /// Logins change hands: a product user who was `jake-gh` (GitHub id 4242)
@@ -282,7 +398,8 @@ async fn an_assertion_counts_only_for_its_own_client() {
     // Taken out: its links and its secret go too.
     let body = json!({ "user": "u", "github_id": 4242, "assertion": c.sign_in(2).await.0 });
     assert_eq!(c.links("POST", "/oauth/links", Some((CLIENT, "acs_new")), Some(body)).await.0, 200);
-    assert!(crate::db::issuer::remove_client(&c.app.db.conn(), CLIENT).unwrap());
+    assert!(crate::db::issuer::remove_client(&mut c.app.db.conn(), CLIENT).unwrap());
     assert_eq!(c.rows(), 0);
+    assert_eq!(c.audit("a")[0], ("unlinked".to_owned(), "operator".to_owned()));
     assert_eq!(c.links("GET", "/oauth/links/u", Some((CLIENT, "acs_new")), None).await.0, 401);
 }

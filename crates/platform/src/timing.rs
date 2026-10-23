@@ -352,13 +352,8 @@ impl HubPort for Timed {
     fn product_links<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Vec<crate::hub::ProductLink>>> {
         timed!(self.0.product_links(account))
     }
-    fn unlink_product<'a>(
-        &'a self,
-        account: &'a str,
-        client: &'a str,
-        user: &'a str,
-    ) -> BoxFuture<'a, HubResult<bool>> {
-        timed!(self.0.unlink_product(account, client, user))
+    fn unlink_product<'a>(&'a self, account: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<bool>> {
+        timed!(self.0.unlink_product(account, client))
     }
 }
 

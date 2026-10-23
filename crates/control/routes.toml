@@ -151,6 +151,14 @@ note = "A registered client and an exact redirect address, PKCE S256. Without a 
 
 [[route]]
 method = "POST"
+path = "/oauth/consent"
+process = "hub"
+auth = "session"
+clients = ["browser"]
+note = "M229: the person's answer to the consent screen, from control's own origin, with the screen's single-use ticket in the hub session it was shown in. Allowed: kept per account and client until an unlink, and the code goes to the client; cancelled: access_denied."
+
+[[route]]
+method = "POST"
 path = "/oauth/token"
 process = "hub"
 auth = "issuer_code"
@@ -1178,7 +1186,7 @@ clients = ["page"]
 
 [[route]]
 method = "POST"
-path = "/api/linked-products/{client}/{user}/unlink"
+path = "/api/linked-products/{client}/unlink"
 process = "platform"
 auth = "session"
 clients = ["page"]

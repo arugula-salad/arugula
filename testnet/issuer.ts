@@ -27,8 +27,11 @@
 //               (linked, then the same again: no change); with another
 //               numeric id, refused (logins change hands); the person's
 //               platform page lists it and they unlink it there (unless
-//               --skip-unlink); the product's next GET says not_linked:
-//               {platform_account, sub, created, again, mismatch, listed, after}
+//               --skip-unlink); the product's next GET says not_linked; the
+//               token from before the unlink no longer links (the
+//               tombstone); a fresh sign-in asks for consent again and links:
+//               {platform_account, sub, created, again, mismatch, listed,
+//               after, stale, asked_again, relinked}
 
 import { createHash, createPublicKey, randomBytes, verify, type KeyObject } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -63,10 +66,13 @@ type Jwk = { kty: string; crv: string; x: string; kid: string };
 /** A browser: cookies by name, redirects followed by hand. */
 class Browser {
   jar: Record<string, string> = {};
-  async get(url: string): Promise<Response> {
+  /** Consent screens (M229) this browser said yes to. */
+  consents = 0;
+  async get(url: string, init: RequestInit = {}): Promise<Response> {
     const res = await fetch(reach(url), {
+      ...init,
       redirect: "manual",
-      headers: { cookie: Object.entries(this.jar).map(([k, v]) => `${k}=${v}`).join("; ") },
+      headers: { ...(init.headers as Record<string, string>), cookie: Object.entries(this.jar).map(([k, v]) => `${k}=${v}`).join("; ") },
     });
     for (const c of res.headers.getSetCookie()) {
       const [kv] = c.split(";");
@@ -91,7 +97,20 @@ async function signInThrough(b: Browser, path: string, login: string, stop: (u: 
   for (let i = 0; i < 8; i++) {
     const u = new URL(url);
     if (u.pathname === "/login/oauth/authorize") u.searchParams.set("login", login);
-    const res = await b.get(u.href);
+    let res = await b.get(u.href);
+    // M229: the hub asks before a product first signs someone in; say yes,
+    // as the person would, from control's own page.
+    if (res.status === 200 && u.pathname === "/oauth/authorize") {
+      const page = await res.text();
+      const ticket = /name="ticket" value="([^"]+)"/.exec(page)?.[1] ?? fail(`no consent ticket: ${page.slice(0, 200)}`);
+      if (opts["consent-out"]) writeFileSync(opts["consent-out"], page);
+      res = await b.get(`${control}/oauth/consent`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: control },
+        body: new URLSearchParams({ ticket, decision: "allow" }).toString(),
+      });
+      b.consents++;
+    }
     const next = res.headers.get("location");
     if (!next) fail(`signing in: ${res.status} at ${u.pathname}: ${(await res.text()).slice(0, 200)}`);
     url = new URL(next!, url).href;
@@ -196,6 +215,7 @@ async function hud() {
 async function link() {
   const [client, secret, user] = [need("client"), need("secret"), need("user")];
   const { b, t, claims } = await signedIn(need("login"), client, need("redirect"));
+  if (b.consents !== 1) fail(`the first sign-in through the product asked ${b.consents} times`);
   const basic = `Basic ${Buffer.from(`${client}:${secret}`).toString("base64")}`;
   const product = async (method: string, path: string, body?: unknown) => {
     const r = await fetch(reach(control + path), {
@@ -226,12 +246,22 @@ async function link() {
   const links = (listed.v.links ?? []) as { client: string; user: string }[];
   if (listed.status !== 200 || !links.some((l) => l.client === client && l.user === user)) fail(`the platform page lists ${listed.status} ${JSON.stringify(listed.v)}`);
   if (!opts["skip-unlink"]) {
-    const u = await page("POST", `/api/linked-products/${encodeURIComponent(client)}/${encodeURIComponent(user)}/unlink`);
+    const u = await page("POST", `/api/linked-products/${encodeURIComponent(client)}/unlink`);
     if (u.status !== 200) fail(`unlink on the platform page: ${u.status} ${JSON.stringify(u.v)}`);
   }
   // The product sees it on its next call.
   const after = await product("GET", `/oauth/links/${encodeURIComponent(user)}`);
   if (after.status !== 404 || after.v.error !== "not_linked") fail(`the product still sees a link after the unlink: ${after.status} ${JSON.stringify(after.v)}`);
+  // The unlink sticks: the token from before it never links again.
+  const stale = await send(gh);
+  if (stale.status !== 401 || stale.v.error !== "invalid_token") fail(`a token from before the unlink: ${stale.status} ${JSON.stringify(stale.v)}`);
+  // A fresh sign-in (a second later: iat has a second's grain) asks again,
+  // and links.
+  await new Promise((r) => setTimeout(r, 1100));
+  const fresh = await signedIn(need("login"), client, need("redirect"));
+  if (fresh.b.consents !== 1) fail("the sign-in after the unlink didn't ask for consent again");
+  const relink = await product("POST", "/oauth/links", { user, github_id: gh, assertion: fresh.t.id_token });
+  if (relink.status !== 200 || relink.v.created !== true) fail(`relinking with a fresh sign-in: ${relink.status} ${JSON.stringify(relink.v)}`);
   return {
     platform_account: first.v.platform_account,
     sub: claims.sub,
@@ -241,6 +271,9 @@ async function link() {
     mismatch: other.v.error,
     listed: links.length,
     after: after.v.error,
+    stale: stale.v.error,
+    asked_again: fresh.b.consents === 1,
+    relinked: relink.v.created,
   };
 }
 

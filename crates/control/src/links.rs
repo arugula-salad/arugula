@@ -1,42 +1,51 @@
 //! Account links (M229, platform step 8): a product (studio, planter, a
-//! registered issuer client) tells the hub which of its own users a person
-//! is, and gets back their platform account, the hub's account. Identity
-//! stays in the hub ("The hub stays the identity provider"), so links live
-//! beside the issuer's clients (`db/issuer.rs`).
+//! registered `oidc` issuer client) tells the hub which of its own users a
+//! person is, and gets back their platform account, the hub's account.
+//! Identity stays in the hub ("The hub stays the identity provider"), so
+//! links live beside the issuer's clients (`db/issuer.rs`).
+//!
+//! **A link is never authorization.** It says which product user a person
+//! is, nothing more: nothing on the hub or the platform may grant a power, a
+//! project, a role or a machine because of an `account_links` row.
 //!
 //! A product calls these from its server, never a browser, as itself: HTTP
 //! Basic with its client id and the link secret an operator gave it
 //! (`arugula-control issuer link-secret`, for `oidc` clients only: a hud box
-//! has no users of its own to link). A public client's tokens prove
-//! only who signed in, so without the secret anyone could name any of the
-//! product's users.
+//! has no users of its own to link). A public client's tokens prove only
+//! who signed in, so without the secret anyone could name any of the
+//! product's users. Each call counts against the caller's address
+//! (`issuer::limited`) and against the product (`limit::ACCOUNT_LINKS`);
+//! bulk unlinks or lookups by one product are logged at warn and counted
+//! (`link_alerts`).
 //!
 //! - `POST /oauth/links`: `{ user, github_id, assertion, name? }`. The
 //!   assertion is an ID token the hub issued to this very client (its
 //!   `aud` is the caller's id: a token minted for studio never links a
-//!   planter user), checked with `arugula_control_common::issuer`. The product's `github_id` for its
-//!   user must be the account's numeric GitHub id, in the token and in the
-//!   hub now: matching is by that number only, never a login, because
-//!   logins change hands. Idempotent; a product user already linked to
-//!   another account, or an account already linked to another of the
-//!   product's users, is refused until that link is ended.
+//!   planter user), checked with `arugula_control_common::issuer`. The
+//!   product's `github_id` for its user must be the account's numeric
+//!   GitHub id, in the token and in the hub now: matching is by that number
+//!   only, never a login, because logins change hands. Idempotent; a
+//!   product user already linked to another account, or an account already
+//!   linked to another of the product's users, is refused until that link
+//!   ends; and a token issued no later than the account's last unlink from
+//!   this product is refused (the tombstone), so an unlink sticks.
 //! - `GET /oauth/links/{user}`: the link, or 404 `not_linked`.
 //! - `DELETE /oauth/links/{user}`: the product ends it.
 //!
-//! The person ends a link on the platform page (Settings, "Linked
-//! products", through `HubPort::unlink_product`). The hub doesn't call the
-//! product: the product sees it on its next call (`GET` answers 404), and a
-//! link comes back only with a fresh assertion, the person signing in
-//! through that product again. Links made and ended are audited
+//! The person unlinks on the platform page (Settings, "Linked products",
+//! through `HubPort::unlink_product`). Every unlink also ends the person's
+//! consent (`issuer_grants`), so the next sign-in through that product asks
+//! again. The hub doesn't call the product: the product sees it on its next
+//! call (`GET` answers 404). Links made, renamed and ended are audited
 //! (`account_link_events`).
 
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use arugula_e2e::now_ms;
 use axum::{
     Json,
     body::Bytes,
-    extract::{Path, State},
+    extract::{ConnectInfo, Path, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -45,8 +54,9 @@ use serde::Deserialize;
 
 use crate::{
     App,
-    db::issuer::{Link, LinkBy, LinkRefused},
-    issuer::{github_id, no_store, off},
+    db::issuer::{Link, LinkRefused},
+    issuer::{github_id, limited, no_store, off},
+    limit,
 };
 
 /// The longest product user id the hub keeps.
@@ -76,6 +86,43 @@ fn client(app: &App, headers: &HeaderMap) -> Option<String> {
     app.db.issuer_client_secret_ok(id, secret).ok()?.then(|| id.to_owned())
 }
 
+/// Every link call: the issuer's limit on the address, then the product's
+/// credentials, then its own limit. The product's id, or the refusal.
+fn admit(app: &App, peer: SocketAddr, headers: &HeaderMap) -> Result<String, Box<Response>> {
+    if app.issuer.is_none() {
+        return Err(Box::new(off()));
+    }
+    if let Some(r) = limited(app, peer, headers) {
+        return Err(Box::new(r));
+    }
+    let client = client(app, headers).ok_or_else(|| Box::new(invalid_client()))?;
+    app.limits.check_client(limit::ACCOUNT_LINKS, &client).map_err(|e| Box::new(e.into_response()))?;
+    Ok(client)
+}
+
+/// Counts an unlink or a lookup by `client` against its alert line; past
+/// it, a warn (once an hour per product and kind) and the ops counter.
+/// Never refuses.
+fn watch(app: &App, client: &str, what: &'static str) {
+    let line = if what == "unlinks" { limit::LINK_UNLINKS_ALERT } else { limit::LINK_LOOKUPS_ALERT };
+    if app.limits.check_client(line, client).is_ok() {
+        return;
+    }
+    if let Err(e) = app.db.bump_link_alert(client, what, now_ms()) {
+        tracing::warn!("the link alert counter wasn't kept: {e:#}");
+    }
+    if app.limits.check_client(limit::LINK_ALERT_LOG, &format!("{client}/{what}")).is_ok() {
+        tracing::warn!(
+            ops = "account-links-bulk",
+            client,
+            what,
+            line = line.1,
+            "a product is making bulk {what} of account links: over {} an hour (arugula-control issuer link-alerts)",
+            line.1
+        );
+    }
+}
+
 /// A product user id: 1 to [`USER_MAX`] bytes, no control characters.
 fn user_ok(u: &str) -> bool {
     (1..=USER_MAX).contains(&u.len()) && !u.chars().any(char::is_control)
@@ -99,22 +146,28 @@ struct LinkBody {
     name: Option<String>,
 }
 
-/// Who an ID token issued to `client` (and to no other client: its `aud`
-/// is checked against the caller's own id) says signed in: the account and
-/// its numeric GitHub id, as the hub's keys vouch now.
-fn signed_in(app: &App, id_token: &str, client: &str) -> Result<(String, Option<u64>), String> {
+/// What an ID token issued to `client` (and to no other client: its `aud`
+/// is checked against the caller's own id) says: the account, its numeric
+/// GitHub id, and when it was issued (`iat`, seconds), as the hub's keys
+/// vouch now.
+fn signed_in(app: &App, id_token: &str, client: &str) -> Result<(String, Option<u64>, u64), String> {
     let issuer = app.issuer.as_ref().ok_or("this control isn't an issuer")?;
     let c = issuer.verify(&app.cfg.public_url, id_token, client).map_err(|e| e.to_string())?;
-    Ok((c.sub, c.github_id))
+    Ok((c.sub, c.github_id, c.iat))
 }
 
-/// `POST /oauth/links`: link the product's user to the account an
-/// assertion is for, when their numeric GitHub ids are the same.
-pub async fn link(State(app): State<Arc<App>>, headers: HeaderMap, body: Bytes) -> Response {
-    if app.issuer.is_none() {
-        return off();
-    }
-    let Some(client) = client(&app, &headers) else { return invalid_client() };
+/// `POST /oauth/links`: link the product's user to the account an ID token
+/// it was issued is for, when their numeric GitHub ids are the same.
+pub async fn link(
+    State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let client = match admit(&app, peer, &headers) {
+        Ok(c) => c,
+        Err(r) => return *r,
+    };
     let Ok(b) = serde_json::from_slice::<LinkBody>(&body) else {
         return error(StatusCode::BAD_REQUEST, "invalid_request", "a JSON body: user, github_id (a number), assertion");
     };
@@ -125,7 +178,7 @@ pub async fn link(State(app): State<Arc<App>>, headers: HeaderMap, body: Bytes) 
     {
         return error(StatusCode::BAD_REQUEST, "invalid_request", "user is 1 to 200 characters, name at most 100");
     }
-    let (account, token_github) = match signed_in(&app, b.assertion.trim(), &client) {
+    let (account, token_github, iat) = match signed_in(&app, b.assertion.trim(), &client) {
         Ok(v) => v,
         Err(why) => return error(StatusCode::UNAUTHORIZED, "invalid_token", &why),
     };
@@ -146,7 +199,7 @@ pub async fn link(State(app): State<Arc<App>>, headers: HeaderMap, body: Bytes) 
         );
     }
     let link = Link { client: client.clone(), user: b.user, account, github_id: b.github_id, name, linked: now_ms() };
-    match app.db.link_account(&link) {
+    match app.db.link_account(&link, iat) {
         Ok(Ok(created)) => {
             if created {
                 tracing::info!(client, "an account was linked");
@@ -156,6 +209,11 @@ pub async fn link(State(app): State<Arc<App>>, headers: HeaderMap, body: Bytes) 
             v["created"] = created.into();
             no_store(Json(v).into_response())
         }
+        Ok(Err(LinkRefused::Unlinked)) => error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
+            "this sign-in is from before the person unlinked this product: sign in through Arugula again",
+        ),
         Ok(Err(LinkRefused::UserLinkedElsewhere)) => error(
             StatusCode::CONFLICT,
             "user_linked_elsewhere",
@@ -174,11 +232,17 @@ pub async fn link(State(app): State<Arc<App>>, headers: HeaderMap, body: Bytes) 
 }
 
 /// `GET /oauth/links/{user}`: the product's user's link, or 404.
-pub async fn show(State(app): State<Arc<App>>, headers: HeaderMap, Path(user): Path<String>) -> Response {
-    if app.issuer.is_none() {
-        return off();
-    }
-    let Some(client) = client(&app, &headers) else { return invalid_client() };
+pub async fn show(
+    State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(user): Path<String>,
+) -> Response {
+    let client = match admit(&app, peer, &headers) {
+        Ok(c) => c,
+        Err(r) => return *r,
+    };
+    watch(&app, &client, "lookups");
     match app.db.account_link(&client, &user) {
         Ok(Some(l)) => no_store(Json(shown(&l)).into_response()),
         Ok(None) => error(StatusCode::NOT_FOUND, "not_linked", "this user isn't linked to an Arugula account"),
@@ -189,13 +253,20 @@ pub async fn show(State(app): State<Arc<App>>, headers: HeaderMap, Path(user): P
     }
 }
 
-/// `DELETE /oauth/links/{user}`: the product ends its user's link.
-pub async fn unlink(State(app): State<Arc<App>>, headers: HeaderMap, Path(user): Path<String>) -> Response {
-    if app.issuer.is_none() {
-        return off();
-    }
-    let Some(client) = client(&app, &headers) else { return invalid_client() };
-    match app.db.unlink_account(&client, &user, None, LinkBy::Product, now_ms()) {
+/// `DELETE /oauth/links/{user}`: the product ends its user's link, and
+/// that account's consent to it.
+pub async fn unlink(
+    State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Path(user): Path<String>,
+) -> Response {
+    let client = match admit(&app, peer, &headers) {
+        Ok(c) => c,
+        Err(r) => return *r,
+    };
+    watch(&app, &client, "unlinks");
+    match app.db.unlink_user(&client, &user, now_ms()) {
         Ok(gone) => {
             if gone {
                 tracing::info!(client, "a product ended an account link");

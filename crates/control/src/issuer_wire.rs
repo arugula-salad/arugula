@@ -54,6 +54,8 @@ pub(crate) async fn control(keys: Keys) -> Control {
     app.db.account_for("github", "4242", "jake-gh", "a", now).unwrap();
     app.db.add_session(&hash("session-a"), "a", now, now + 3_600_000).unwrap();
     app.db.put_issuer_client(&client(CLIENT, ClientKind::Oidc, BACK)).unwrap();
+    // `a` has said yes to CLIENT's consent screen (M229, links_wire).
+    app.db.put_issuer_grant("a", CLIENT, now).unwrap();
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
     let svc = crate::router(app.clone()).into_make_service_with_connect_info::<SocketAddr>();
@@ -103,8 +105,47 @@ impl Control {
     }
 
     /// A code for the signed-in browser.
+    /// GET `path` as `cookie`; a consent screen (M229) is answered
+    /// `decision` from control's own page, and what that answers is the
+    /// answer. Whether there was a screen, too.
+    pub(crate) async fn through_consent(&self, path: &str, cookie: &str, decision: &str) -> (u16, String, bool) {
+        let (st, at, body) = self.get(path, Some(cookie)).await;
+        if st != 200 {
+            return (st, at, false);
+        }
+        let ticket = body.split("name=\"ticket\" value=\"").nth(1).and_then(|r| r.split('"').next()).expect(&body);
+        let (st, at) = self.answer(ticket, cookie, decision, Some(CONTROL)).await;
+        (st, at, true)
+    }
+
+    /// POST the consent screen's answer, from `origin`.
+    pub(crate) async fn answer(
+        &self,
+        ticket: &str,
+        cookie: &str,
+        decision: &str,
+        origin: Option<&str>,
+    ) -> (u16, String) {
+        let body = url::form_urlencoded::Serializer::new(String::new())
+            .extend_pairs([("ticket", ticket), ("decision", decision)])
+            .finish();
+        let mut r = self
+            .http
+            .post(format!("{}/oauth/consent", self.base))
+            .header(header::HOST, "control.test")
+            .header(header::COOKIE, cookie)
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
+        if let Some(o) = origin {
+            r = r.header(header::ORIGIN, o);
+        }
+        let r = r.body(body).send().await.unwrap();
+        let at = r.headers().get(header::LOCATION).and_then(|v| v.to_str().ok()).unwrap_or("").to_owned();
+        (r.status().as_u16(), at)
+    }
+
     async fn code(&self, challenge: &str) -> String {
-        let (st, at, _) = self.get(&self.authorize_path(CLIENT, BACK, challenge, "S256"), Some(COOKIE)).await;
+        let (st, at, _) =
+            self.through_consent(&self.authorize_path(CLIENT, BACK, challenge, "S256"), COOKIE, "allow").await;
         assert_eq!(st, 303, "{at}");
         assert!(at.starts_with(&format!("{BACK}?")), "{at}");
         let q = query(&at);

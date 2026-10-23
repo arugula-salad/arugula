@@ -346,35 +346,25 @@ impl HubPort for InProcess {
             Ok(self
                 .app()?
                 .db
-                .account_links(account)?
+                .account_products(account)?
                 .into_iter()
-                .map(|(l, product)| arugula_platform::hub::ProductLink {
-                    client: l.client,
-                    product,
-                    user: l.user,
-                    name: l.name,
-                    linked: l.linked,
+                .map(|p| arugula_platform::hub::ProductLink {
+                    client: p.client,
+                    product: p.name,
+                    granted: p.granted,
+                    user: p.link.as_ref().map(|l| l.user.clone()),
+                    name: p.link.as_ref().and_then(|l| l.name.clone()),
+                    linked: p.link.as_ref().map(|l| l.linked),
                 })
                 .collect())
         })
     }
 
-    fn unlink_product<'a>(
-        &'a self,
-        account: &'a str,
-        client: &'a str,
-        user: &'a str,
-    ) -> BoxFuture<'a, HubResult<bool>> {
+    fn unlink_product<'a>(&'a self, account: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<bool>> {
         Box::pin(async move {
-            let gone = self.app()?.db.unlink_account(
-                client,
-                user,
-                Some(account),
-                crate::db::issuer::LinkBy::Account,
-                arugula_e2e::now_ms(),
-            )?;
+            let gone = self.app()?.db.unlink_product(account, client, arugula_e2e::now_ms())?;
             if gone {
-                tracing::info!(client, "a person ended an account link on the platform page");
+                tracing::info!(client, "a person unlinked a product on the platform page");
             }
             Ok(gone)
         })
@@ -793,20 +783,23 @@ mod tests {
                 name: Some("pl on studio".into()),
                 linked: now,
             };
-            assert_eq!(f.app.db.link_account(&link).unwrap(), Ok(true));
+            assert_eq!(f.app.db.link_account(&link, now / 1000).unwrap(), Ok(true));
             let links = f.hub().product_links("acct-pl").await.unwrap();
             assert_eq!(links.len(), 1);
             assert_eq!(
-                (links[0].client.as_str(), links[0].product.as_str(), links[0].user.as_str()),
-                ("studio", "Studio", "u-1")
+                (links[0].client.as_str(), links[0].product.as_str(), links[0].user.as_deref()),
+                ("studio", "Studio", Some("u-1"))
             );
-            assert_eq!(links[0].name.as_deref(), Some("pl on studio"));
+            assert_eq!(
+                (links[0].name.as_deref(), links[0].linked, links[0].granted),
+                (Some("pl on studio"), Some(now), None)
+            );
             assert!(f.hub().product_links("acct-other").await.unwrap().is_empty());
 
-            assert!(!f.hub().unlink_product("acct-other", "studio", "u-1").await.unwrap(), "not theirs");
+            assert!(!f.hub().unlink_product("acct-other", "studio").await.unwrap(), "not theirs");
             assert!(f.app.db.account_link("studio", "u-1").unwrap().is_some());
-            assert!(f.hub().unlink_product("acct-pl", "studio", "u-1").await.unwrap());
-            assert!(!f.hub().unlink_product("acct-pl", "studio", "u-1").await.unwrap(), "once");
+            assert!(f.hub().unlink_product("acct-pl", "studio").await.unwrap());
+            assert!(!f.hub().unlink_product("acct-pl", "studio").await.unwrap(), "once");
             assert!(f.app.db.account_link("studio", "u-1").unwrap().is_none());
             let events = f.app.db.account_link_events("acct-pl").unwrap();
             let said: Vec<(&str, &str)> = events.iter().map(|e| (e.event.as_str(), e.by.as_str())).collect();

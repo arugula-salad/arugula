@@ -215,8 +215,11 @@
 #           add-client`, `link-secret`) signs a person in through the hub,
 #           then from its server links its user by the token's numeric
 #           GitHub id (the same again is no change; another numeric id is
-#           refused); the person's platform page lists the link and they
-#           unlink it there; the product's next look says not_linked.
+#           refused); the first sign-in through the product shows the
+#           consent screen; the person's platform page lists the link and
+#           they unlink it there; the product's next look says not_linked;
+#           the token from before the unlink no longer links; a fresh
+#           sign-in asks for consent again and links.
 #           Broken: nobody unlinks, so the product still sees the link.
 #   public-preview
 #           Only with hosted workspaces at the fake E2B
@@ -1157,7 +1160,7 @@ claim_links() {
   secret="$(docker exec "$TESTNET-control" "$cli" issuer link-secret --db "$db" --id "$client" 2>/dev/null)" ||
     { note "links: no link secret"; return 1; }
   if ! iss link --login "links-$$" --client "$client" --redirect "$cb" --secret "$secret" --user "$user" \
-    "${skip[@]}" > "$WORK/links" 2> "$WORK/links.err"; then
+    --consent-out "$STATE/links-consent.html" "${skip[@]}" > "$WORK/links" 2> "$WORK/links.err"; then
     note "links: $(cat "$WORK/links.err")"; return 1
   fi
   note "links: $(cat "$WORK/links")"

@@ -1,8 +1,10 @@
-// Linked products (M229): the products (studio, planter, ...) whose own
-// accounts are linked to yours by your numeric GitHub id, never a login.
-// The hub keeps the links (`/api/linked-products`, through the platform).
-// Unlinking is audited, and the product sees it the next time it asks the
-// hub; it links again only when you sign in to it through Arugula again.
+// Linked products (M229): the products (studio, planter, ...) you let sign
+// you in with Arugula, and whose own accounts are linked to yours by your
+// numeric GitHub id, never a login. The hub keeps both
+// (`/api/linked-products`, through the platform). Unlinking ends both, is
+// audited, and the product sees it the next time it asks the hub; it links
+// again only when you sign in to it through Arugula again, which asks you
+// first. A link is never authorization: it grants nothing here.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
@@ -10,9 +12,10 @@ import { platformFetch } from "../../shared/maintenance";
 export type ProductLink = {
   client: string;
   product: string;
-  user: string;
+  granted?: number;
+  user?: string;
   name?: string;
-  linked: number;
+  linked?: number;
 };
 
 async function call<T>(path: string, post = false): Promise<T> {
@@ -33,11 +36,10 @@ export function LinkedProducts() {
     );
   useEffect(() => void load(), []);
   const unlink = async (l: ProductLink) => {
-    const key = `${l.client}/${l.user}`;
     setErr("");
-    setBusy(key);
+    setBusy(l.client);
     try {
-      await call(`/api/linked-products/${encodeURIComponent(l.client)}/${encodeURIComponent(l.user)}/unlink`, true);
+      await call(`/api/linked-products/${encodeURIComponent(l.client)}/unlink`, true);
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -49,20 +51,21 @@ export function LinkedProducts() {
     <>
       <h2>Linked products</h2>
       <p class="dim">
-        Your accounts on other products, linked to this one by your GitHub account's number, never its name. Unlinking takes effect the next time
-        that product checks; it links again only if you sign in to it through Arugula again.
+        Products you let sign you in with Arugula, and your accounts there linked to this one by your GitHub account's number, never its name.
+        Unlinking takes effect the next time that product checks; it links again only if you sign in to it through Arugula again, which asks you
+        first.
       </p>
       {links.length === 0 && <p class="dim" data-linked-none>No products linked yet.</p>}
       {links.length > 0 && (
         <ul class="platform-list" data-linked-products>
           {links.map((l) => {
-            const key = `${l.client}/${l.user}`;
+            const since = l.linked ?? l.granted;
             return (
-              <li key={key} data-linked-product={key}>
+              <li key={l.client} data-linked-product={l.client}>
                 <strong>{l.product}</strong>
-                {l.name ? <> as {l.name}</> : null}{" "}
-                <span class="dim">since {new Date(l.linked).toLocaleDateString()}</span>{" "}
-                <button class="control-linkish" data-unlink={key} disabled={busy === key} onClick={() => void unlink(l)}>
+                {l.user ? (l.name ? <> as {l.name}</> : <> (linked)</>) : <span class="dim"> signs you in, no account linked there</span>}{" "}
+                {since ? <span class="dim">since {new Date(since).toLocaleDateString()}</span> : null}{" "}
+                <button class="control-linkish" data-unlink={l.client} disabled={busy === l.client} onClick={() => void unlink(l)}>
                   Unlink
                 </button>
               </li>
