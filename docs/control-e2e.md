@@ -1334,6 +1334,19 @@ leaves it. So:
   wrote to you"), tagged `chat-<room>` with the room for the tap. A mention
   pushes, and anything in a DM; not your own posts, a room you have open or
   muted, or a room you were pushed for in the last minute.
+- **What someone hears:** an account turns three kinds on or off
+  (`/api/push/prefs`, the *Push:* items under *Notify this device*), for
+  every device it turned on:
+  - **Chat:** the platform's `chat-…` pushes.
+  - **Machines:** what daemons relay. Control stops handing a daemon the
+    subscriptions of someone who turned these off, and holds back a relay
+    from a daemon that hasn't fetched since (answering 204).
+  - **Projects:** the platform's other pushes (inbox, deploys, runs,
+    workspaces).
+
+  Notices about the account always go: control's own, and the platform's
+  `agent-token-…` and `client-secret-reads-…`. Control can tell the kinds
+  apart without reading a daemon's push: it knows who sent it.
 
 This is confirmed by construction: the daemon's existing RFC 8291 encrypt
 plus a separate VAPID signer is exactly what the RFC allows. The push work adds the
@@ -1495,9 +1508,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 114 tables in two planes ("Two planes, two trust rules"):
+Control's database has 115 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (43 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (44 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (71 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1534,6 +1547,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `hosted_enrollments` | metadata | A one-time hosted enrollment (M178): a hash of its ticket or the box's sandbox id, the project, workspace and delegation, when it runs out and when it was used. | yes |  |
 | `hosted_machines` | metadata | A hosted machine (M178): its certificate (public keys, project, workspace, delegation, signed with control's hosted key), its addresses, when it was last seen and removed. | yes |  |
 | `push_subs` | metadata | A browser's signed push subscription: the push service's endpoint and the keys pushes are encrypted to. | yes |  |
+| `push_prefs` | metadata | Which kinds of push an account turned off: chat, its machines, or its projects. | yes |  |
 | `settings` | **plaintext** | Control's own VAPID key pair, which signs the pushes it sends, and its hosted key (M178), which signs the hosted machines enrolled under a project's delegation. | nothing of one |  |
 | `notices` | metadata | A notice for an account with no push, made from names control holds ("Ada left Acme"). | yes |  |
 | `labs_flags` | metadata | The Labs flags an account or a team turned on for its machines. | yes: a team's go when the team does. | PostHog |

@@ -5,17 +5,25 @@
 import { OPS, opPath } from "../ops";
 import { useEffect, useState } from "preact/hooks";
 import type { Client } from "../client";
-import { disablePush, enablePush, ios, pushState, standalone, type PushState } from "../push";
+import { disablePush, enablePush, ios, pushPrefs, pushState, setPushPrefs, standalone, type PushPrefs, type PushState } from "../push";
 import type { MenuItem } from "../../shared/ui/menu";
 import { CopyText } from "../../shared/ui/copy";
 import { openGettingStarted } from "./welcome";
 
 let push: PushState = "unsupported";
+/** What control pushes the account about; null off control, or not yet asked. */
+let prefs: PushPrefs | null = null;
 const listeners = new Set<() => void>();
 void pushState().then((s) => {
   push = s;
   listeners.forEach((fn) => fn());
+  if (s === "on") void loadPrefs();
 });
+
+async function loadPrefs() {
+  prefs = await pushPrefs().catch(() => null);
+  listeners.forEach((fn) => fn());
+}
 
 export const pushNow = () => push;
 export function subscribePush(fn: () => void) {
@@ -52,7 +60,25 @@ async function toggle(client: Client) {
       push = await enablePush();
       // Prove it: the daemon sends this device one now.
       if (push === "on") void fetch(opPath("push.test"), { method: OPS["push.test"].method }).catch(() => {});
+      if (push === "on") void loadPrefs();
     }
+  } catch (e) {
+    client.toast(String(e));
+  }
+  listeners.forEach((fn) => fn());
+  client.emit();
+}
+
+/** The kinds of push an account chooses on control, as the menu says them. */
+const KINDS: { key: keyof PushPrefs; label: string; hint: string }[] = [
+  { key: "chat", label: "Chat", hint: "Messages in team channels, DMs and pane threads" },
+  { key: "machines", label: "Machines", hint: "A pane or an agent on your machines that needs you" },
+  { key: "projects", label: "Projects", hint: "Your inbox, deploys, runs and workspaces" },
+];
+
+async function setKind(client: Client, key: keyof PushPrefs, on: boolean) {
+  try {
+    prefs = (await setPushPrefs({ [key]: on })) ?? prefs;
   } catch (e) {
     client.toast(String(e));
   }
@@ -65,7 +91,20 @@ export function notificationItems(client: Client): MenuItem[] {
   // Plain http: the fix is Tailscale, a button in Getting started's phone step.
   if (push === "insecure") return [{ label: `${blocked}…`, run: () => openGettingStarted("phone") }];
   if (blocked) return [{ label: blocked, disabled: true, run: () => {} }];
-  return [{ label: "Notify this device", checked: push === "on", run: () => void toggle(client) }];
+  const device: MenuItem = { label: "Notify this device", checked: push === "on", run: () => void toggle(client) };
+  // On control, what to push about, for every device that's on. Notices
+  // about the account (a device waiting, a new agent token) always go.
+  const p = push === "on" ? prefs : null;
+  if (!p) return [device];
+  return [
+    device,
+    ...KINDS.map(({ key, label, hint }): MenuItem => ({
+      label: `Push: ${label}`,
+      hint: `${hint}. On every device you turned on.`,
+      checked: p[key],
+      run: () => void setKind(client, key, !p[key]),
+    })),
+  ];
 }
 
 /** M29: someone other than the owner chooses which agents they're told

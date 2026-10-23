@@ -106,6 +106,8 @@ if (session) {
       }
       return "off";
     },
+    prefs: () => session.pushPrefs(),
+    setPrefs: (p) => session.setPushPrefs(p),
   });
   session.subscribe(() => {
     directory.setControl(

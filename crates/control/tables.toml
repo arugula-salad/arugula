@@ -332,6 +332,15 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "push_prefs"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "Which kinds of push an account turned off: chat, its machines, or its projects."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "settings"
 plane = "machine"
 process = "hub"

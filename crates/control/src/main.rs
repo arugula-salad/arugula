@@ -643,6 +643,7 @@ fn routes() -> Routes {
         .route("/api/relay/link/{id}", get(relay::link))
         .route("/api/push/subscribe", post(push::subscribe))
         .route("/api/push/unsubscribe", post(push::unsubscribe))
+        .route("/api/push/prefs", get(push::prefs).post(push::set_prefs))
         .route(wire::PUSH_SUBS, get(push::daemon_subs))
         .route(wire::PUSH, post(push::daemon_send))
         .route("/api/doc-links", get(doc_links::list))
