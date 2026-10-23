@@ -501,10 +501,12 @@ impl Db {
 pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> anyhow::Result<()> {
     let account = &d.account;
     crate::keys::erase_projects(c, "SELECT id FROM projects WHERE account_id = ?1", account)?;
+    super::clients::erase_projects(c, "SELECT id FROM projects WHERE account_id = ?1", account)?;
     c.execute("DELETE FROM projects WHERE account_id = ?1", params![account])?;
     c.execute("DELETE FROM team_members WHERE account_id = ?1", params![account])?;
     for t in &d.disbanded {
         crate::keys::erase_projects(c, "SELECT id FROM projects WHERE team_id = ?1", t)?;
+        super::clients::erase_projects(c, "SELECT id FROM projects WHERE team_id = ?1", t)?;
         c.execute("DELETE FROM projects WHERE team_id = ?1", params![t])?;
         c.execute("DELETE FROM team_members WHERE team_id = ?1", params![t])?;
     }

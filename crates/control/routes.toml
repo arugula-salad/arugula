@@ -49,7 +49,10 @@
 #     other route reads;
 #   - `session_or_client`: a session (or a CLI device), or a registered
 #     client's credential, which the platform checks itself
-#     (`hosted::broker::clients`, M231).
+#     (`hosted::broker::clients`, M231);
+#   - `client`: a registered client's credential only (M236,
+#     `Authorization: Bearer`, checked by the platform as M231's are), on
+#     the client's own `/api/client/...` routes.
 # - `clients`: who calls it: `page` (control's web page, in a browser or the
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
@@ -1228,7 +1231,125 @@ path = "/api/linked-products/{client}/unlink"
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "Audited in the hub as the person's."
+note = "Audited in the hub as the person's. Also ends what the person let that product do on the platform (M236): see their projects, use Claude for them."
+
+[[route]]
+method = "PUT"
+path = "/api/linked-products/{client}/projects"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Let a registered client (studio's lobby) see the signed-in account's projects and its role in each, and keep its apps in the ones it edits (M236). Off until this; the page's only (trust, never a CLI's or an agent's)."
+
+[[route]]
+method = "DELETE"
+path = "/api/linked-products/{client}/projects"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Stop a registered client seeing the signed-in account's projects (M236): its next call naming the account is refused."
+
+# ---- platform: studio as a client (M236)
+# A registered client (studio's lobby), by its credential: its apps by
+# project, the projects of the accounts that let it see them, and the
+# project secrets a project's owners let it read. A link is never
+# authorization: an account's own switch, and a project owner's grant, are.
+
+[[route]]
+method = "GET"
+path = "/api/client/projects"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "The projects of the account the client names (arugula-account), its role and the members in each, as the platform page shows them to it: only once that account let the client see its projects, and with that person's own access token from the hub, issued to this client (arugula-access-token), as on every route here that names an account."
+
+[[route]]
+method = "GET"
+path = "/api/client/apps"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "The client's apps in the named account's projects, with its role in each (so an app's owners are its project's members): only once the account let the client see its projects."
+
+[[route]]
+method = "GET"
+path = "/api/client/apps/{app}"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "One of the client's apps and the named account's role in its project, read fresh (404 no_app, 403 not_member)."
+
+[[route]]
+method = "PUT"
+path = "/api/client/apps/{app}"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "Keep the client's app in a project the named account edits or owns (`personal` is its own); a move needs that of the project it leaves too."
+
+[[route]]
+method = "DELETE"
+path = "/api/client/apps/{app}"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "The client forgets its own app (studio retired it)."
+
+[[route]]
+method = "GET"
+path = "/api/client/apps/{app}/secrets/{name}"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "The value of the app's project's own secret (project/<NAME>), only under a project owner's grant for this client, this app and this host (?host=), and not once an agent changed the value since the grant: studio's egress broker, server side. Every read is counted and kept as an event for the project's owners, never with its value; 6,000 an hour per client and 600 per secret, and an hour of 120 reads of one secret is pushed to its owners."
+
+[[route]]
+method = "PUT"
+path = "/api/client/apps/{app}/secrets/{name}"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "The client asks, for an owner of the app's project (named, with their access token), to send the project's own secret `name` for this app to `host`. The project's owners grant it on its settings page; a new host asks afresh."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/clients"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "The registered clients' apps in a project (M236), for its members; for its owners also which of its own secrets each client asked to send and may send, for which app and host, the reads, whether the value changed since the grant and by whom, and the latest events. Never a value."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/clients/{client}/apps/{app}/secrets/{name}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's owner lets a registered client send one of its own secrets (set already) for one of its apps there, to the host it asked for (M236); granting again after an agent changed the value says it's still the owner's. The page's only (trust); audited as an event."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/clients/{client}/apps/{app}/secrets/{name}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's owner ends a registered client's grant (or ask) of one of its own secrets for one of its apps (M236): its next read is refused. Audited as an event."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/secrets/{name}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's owner sets one of its own secrets by name (M236; agents set them with set_secret, M230): sealed with the project's key (M209) and never shown. The page's only."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/secrets/{name}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's owner clears one of its own secrets (M236), which ends every client's grant to read it."
 
 # ---- platform: projects
 # The platform page's list of the reader's projects (M150): their own and

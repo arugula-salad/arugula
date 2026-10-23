@@ -367,6 +367,12 @@ struct UnlinkArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+struct AccessArgs {
+    token: String,
+    client: String,
+}
+
+#[derive(Serialize, Deserialize)]
 struct UploadArgs {
     machine: HostedMachine,
     upload: Upload,
@@ -548,6 +554,11 @@ impl HubPort for HttpHub {
         let a = UnlinkArgs { account: account.to_owned(), client: client.to_owned() };
         Box::pin(self.0.call("unlink_product", a))
     }
+
+    fn client_account<'a>(&'a self, token: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        let a = AccessArgs { token: token.to_owned(), client: client.to_owned() };
+        Box::pin(self.0.call("client_account", a))
+    }
 }
 
 /// What one side's internal API answers with: the port it serves, and
@@ -656,6 +667,10 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
                 answer(hub.owner_browser_signed(&a.owner, &a.device, &a.body, &a.sig).await?)?
             }
             "product_links" => answer(hub.product_links(&args::<AccountArgs>(&body)?.account).await?)?,
+            "client_account" => {
+                let a: AccessArgs = args(&body)?;
+                answer(hub.client_account(&a.token, &a.client).await?)?
+            }
             "unlink_product" => {
                 let a: UnlinkArgs = args(&body)?;
                 answer(hub.unlink_product(&a.account, &a.client).await?)?

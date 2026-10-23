@@ -1134,6 +1134,49 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "client_consents"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "An account letting a registered client (studio's lobby) see its projects and its role in each, and keep the client's apps in the ones it edits (M236): which account, which client, what, and since when. Off until the account turns it on; unlinking the product ends it."
+why_asleep = "The client asks on the account's behalf whenever someone opens or lists its apps, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "client_apps"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A registered client's app (studio's `app-xxxxxxxx`) and the project it's in (M236), so its owners are the project's members: the client, the app's id and title, the project, and who put it there and when."
+why_asleep = "The client reads it to list and open its apps, with every machine asleep."
+with_account = "partly"
+seen_by = ["litestream"]
+note = "Deleting an account forgets it as `added_by`; its personal project's apps go with the project."
+
+[[table]]
+name = "client_secret_grants"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A project's own secret a registered client may send for one of its apps, to one host (M236): the project, the client, the secret's name, the app, the host, who asked (an owner, through the client) and when, who let it and when, and how many reads and the last. Never a value."
+why_asleep = "Studio's egress broker reads the secret on its apps' behalf, with every machine asleep."
+with_account = "partly"
+seen_by = ["litestream"]
+note = "Deleting an account forgets it as `granted_by` and `requested_by`; its personal project's grants go with the project."
+
+[[table]]
+name = "client_secret_events"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "What happened to a client's reach into a project's secrets (M236): asked for, granted and revoked by an owner, read by the client for one of its apps and host, ended when the app moved or went, with when. Never a value. Kept 90 days."
+why_asleep = "Written as the client reads, with every machine asleep, for the project's owners to see."
+with_account = "partly"
+seen_by = ["litestream"]
+note = "Deleting an account forgets it as the owner who granted or revoked; its personal project's events go with the project."
+
+[[table]]
 name = "run_grants"
 plane = "platform"
 process = "platform"

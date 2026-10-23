@@ -51,6 +51,9 @@ pub mod cache;
 pub mod chat;
 #[cfg(test)]
 mod chat_tests;
+pub mod clients;
+#[cfg(test)]
+mod clients_tests;
 pub mod cloud;
 pub mod compute;
 #[cfg(feature = "contract")]

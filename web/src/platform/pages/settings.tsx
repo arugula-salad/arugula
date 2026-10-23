@@ -1,9 +1,8 @@
 // `/settings`: the account's platform settings (M150): plan and usage
 // (`/api/billing`, the platform's), and which machines' agents read and
 // post in conversations (M197), agents with no machine (M230), the
-// products linked to the account (M229), and which apps may use Claude
-// through Arugula for the account, with what was spent on its own key
-// (M231). Sign-in, passkeys, devices and teams are
+// products linked to the account (M229), and which apps may use Claude through
+// Arugula for the account, with what was spent on its own key (M231). Sign-in, passkeys, devices and teams are
 // trust, signed by a device, so they stay on control's page and this links
 // there.
 

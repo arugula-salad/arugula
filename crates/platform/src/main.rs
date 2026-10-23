@@ -194,6 +194,8 @@ async fn run() -> anyhow::Result<()> {
     }
     arugula_platform::hosted::start(&p);
     arugula_platform::keys::start(&p);
+    // Clients' secret events past their days (M236).
+    arugula_platform::clients::start(&p);
     // The job worker: runs' dispatch (M212) and schedules (M214).
     arugula_platform::work::start(&p);
     // Runs' logs past their days (M213).

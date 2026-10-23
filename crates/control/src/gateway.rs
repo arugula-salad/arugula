@@ -408,7 +408,8 @@ fn hop(name: &HeaderName) -> bool {
 /// endpoint's agent grant token (M230), and a registered client's
 /// credential on the inference broker (M231,
 /// `/api/projects/{project}/inference/anthropic/{*rest}`) and on its
-/// account's month there ([`INFERENCE_SPEND`]). On every other platform
+/// account's month there ([`INFERENCE_SPEND`]), and a registered client's
+/// own routes (M236, [`client_route`]). On every other platform
 /// route it's dropped, so no route can come to trust one by mistake: the
 /// broker's other routes (`/api/inference/spend/paid`, the consent switch)
 /// are a signed-in person's.
@@ -417,6 +418,19 @@ pub fn bearer_route(path: &str) -> bool {
     path == arugula_control_wire::agent_mcp::MCP
         || path == INFERENCE_SPEND
         || matches!(s.as_slice(), ["api", "projects", p, "inference", "anthropic", _, ..] if !p.is_empty())
+        || client_route(&s)
+}
+
+/// A registered client's own routes (M236, `arugula_platform::clients`):
+/// these four shapes, each segment filled, and nothing else under
+/// `/api/client/`.
+fn client_route(s: &[&str]) -> bool {
+    match s {
+        ["api", "client", "projects"] | ["api", "client", "apps"] => true,
+        ["api", "client", "apps", app] => !app.is_empty(),
+        ["api", "client", "apps", app, "secrets", name] => !app.is_empty() && !name.is_empty(),
+        _ => false,
+    }
 }
 
 /// An account's month on the platform's key through the inference broker
@@ -637,8 +651,16 @@ mod tests {
         kept.sort();
         assert_eq!(kept, ["host", "last-event-id", "origin", "stripe-signature"]);
         // A bearer crosses to the routes it's for (M230; M231's broker and
-        // a client's view of its account's month), only.
-        for path in ["/api/mcp", "/api/projects/prj_1/inference/anthropic/v1/messages", "/api/inference/spend"] {
+        // a client's view of its account's month; M236's client routes), only.
+        for path in [
+            "/api/mcp",
+            "/api/projects/prj_1/inference/anthropic/v1/messages",
+            "/api/inference/spend",
+            "/api/client/projects",
+            "/api/client/apps",
+            "/api/client/apps/app-1",
+            "/api/client/apps/app-1/secrets/STRIPE",
+        ] {
             assert!(forwarded_headers(&h, path).contains_key(header::AUTHORIZATION), "{path}");
         }
         for path in [
@@ -652,6 +674,18 @@ mod tests {
             "/api/inference/clients",
             "/api/inference/clients/studio/consent",
             "/api/inference/spend/",
+            // M236's are the client's four route shapes, and nothing else under them.
+            "/api/client",
+            "/api/client/",
+            "/api/client/other",
+            "/api/client/apps/",
+            "/api/client/apps/app-1/secrets",
+            "/api/client/apps/app-1/secrets/",
+            "/api/client/apps/app-1/other/STRIPE",
+            "/api/client/apps/app-1/secrets/STRIPE/x",
+            "/api/projects/prj_1/clients",
+            "/api/projects/prj_1/secrets/STRIPE",
+            "/api/linked-products/studio/projects",
         ] {
             assert!(!forwarded_headers(&h, path).contains_key(header::AUTHORIZATION), "{path}");
         }

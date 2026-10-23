@@ -360,6 +360,10 @@ impl HubPort for InProcess {
         })
     }
 
+    fn client_account<'a>(&'a self, token: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        Box::pin(async move { Ok(crate::issuer::access_token_for(&*self.app()?, token, client)) })
+    }
+
     fn unlink_product<'a>(&'a self, account: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<bool>> {
         Box::pin(async move {
             let gone = self.app()?.db.unlink_product(account, client, arugula_e2e::now_ms())?;
@@ -802,6 +806,49 @@ mod tests {
             let events = f.app.db.account_link_events("acct-pl").unwrap();
             let said: Vec<(&str, &str)> = events.iter().map(|e| (e.event.as_str(), e.by.as_str())).collect();
             assert_eq!(said, [("unlinked", "account"), ("linked", "product")]);
+        }
+    }
+
+    /// Which account a product's access token is for (M236), in process
+    /// and over HTTP: only the client it was issued to, only while it and
+    /// its hub session stand.
+    #[tokio::test]
+    async fn the_hub_says_whose_access_token_a_product_holds() {
+        use contract::Fixture as _;
+
+        use crate::db::issuer::{Client, ClientKind};
+        for f in [Fixture::new().await, Fixture::over_http().await] {
+            let now = arugula_e2e::now_ms();
+            f.app.db.account_for("github", "78", "at", "acct-at", now).unwrap();
+            for id in ["studio", "planter"] {
+                let c = Client {
+                    id: id.into(),
+                    kind: ClientKind::Oidc,
+                    name: id.into(),
+                    redirect_uris: vec![format!("https://{id}.example/cb")],
+                    created: now,
+                    project: None,
+                };
+                f.app.db.put_issuer_client(&c).unwrap();
+            }
+            f.app.db.add_session("hub-session-hash", "acct-at", now, now + 3_600_000).unwrap();
+            let token = "aat_test_token_for_studio";
+            f.app
+                .db
+                .add_issuer_token(
+                    &crate::auth::hash(token),
+                    "acct-at",
+                    "studio",
+                    "hub-session-hash",
+                    now,
+                    now + 600_000,
+                )
+                .unwrap();
+            assert_eq!(f.hub().client_account(token, "studio").await.unwrap().as_deref(), Some("acct-at"));
+            assert_eq!(f.hub().client_account(token, "planter").await.unwrap(), None, "another client's");
+            assert_eq!(f.hub().client_account("aat_made_up", "studio").await.unwrap(), None);
+            f.app.db.drop_session("hub-session-hash").unwrap();
+            assert_eq!(f.hub().client_account(token, "studio").await.unwrap(), None, "ends with its hub session");
         }
     }
 
