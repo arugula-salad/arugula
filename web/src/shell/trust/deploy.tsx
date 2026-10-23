@@ -32,7 +32,7 @@ import {
   type DeployEvent,
   type Operation,
 } from "../e2e/deploy.ts";
-import { PRF_SALTS, prfSignKey } from "../e2e/keys.ts";
+import { PRF_SALTS, prfBytes, prfSignKey } from "../e2e/keys.ts";
 import { platformHref } from "../platform-links";
 import { clearHash } from "./common";
 
@@ -140,7 +140,7 @@ async function passkey(body: string): Promise<{ assertion: Assertion; second?: A
   const r = cred.response as AuthenticatorAssertionResponse;
   return {
     assertion: { id: b64u(cred.rawId), clientDataJSON: b64u(r.clientDataJSON), authenticatorData: b64u(r.authenticatorData), signature: b64u(r.signature) },
-    second: (cred.getClientExtensionResults() as { prf?: { results?: { second?: ArrayBuffer } } }).prf?.results?.second,
+    second: prfBytes((cred.getClientExtensionResults() as { prf?: { results?: { second?: unknown } } }).prf?.results?.second),
   };
 }
 
@@ -170,9 +170,14 @@ export function DeployPrompt({ s, id }: { s: ControlSession; id: string }) {
       const a = { deploy: d.id, op: d.operation.hash, account: s.account, decision, expires: Date.now() + DEFAULT_LIFE_MS, by: s.keys.id };
       const { assertion, second } = await passkey(approvalBody(a));
       let key = s.keys.sign.privateKey;
+      // This browser's key is the passkey's own (#764) only if it derives
+      // to this device's: otherwise, or if it won't derive, its own.
       if (second) {
-        const derived = await prfSignKey(second);
-        if (derived.pub === s.keys.signPub) key = derived.key;
+        const derived = await prfSignKey(second).catch((e: Error) => {
+          console.warn("arugula: the passkey's PRF output gave no key:", e);
+          return null;
+        });
+        if (derived?.pub === s.keys.signPub) key = derived.key;
       }
       const signed = await signApproval(a, key);
       const after = await api<Deploy>(`/api/deploys/${d.id}/${decision === "once" ? "approve" : "deny"}`, {
