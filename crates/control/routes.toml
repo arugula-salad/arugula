@@ -788,6 +788,14 @@ clients = ["daemon"]
 note = "A hosted machine's deploy run asks for its environment's secrets (M219): given once, only to the run's own machine, while the run runs and its deploy is being applied by it, opened from their seals then, with the driver's short-lived tokens minted then (PlatformPort::hosted_secrets). The platform logs their names, never their values."
 
 [[route]]
+method = "POST"
+path = "/api/hosted/work/artifact"  # wire::work::WORK_ARTIFACT
+process = "hub"
+auth = "hosted"
+clients = ["daemon"]
+note = "A hosted machine's deploy run asks for the artifact it applies (M233: the source an agent shipped through planter-ship): only to the run's own machine, while the run runs and its deploy is being applied by it, from the project's own artifacts (PlatformPort::hosted_artifact). Not a secret: the driver checks its digest against the approved operation."
+
+[[route]]
 method = "GET"
 path = "/api/hosted/spec"  # wire::hosted::SPEC
 process = "hub"

@@ -27,6 +27,9 @@ fn env(driver: &str) -> Environment {
             .map(|(k, v)| (k.to_owned(), v.to_owned()))
             .collect();
         arugula_e2e::drivers::settings(driver, &given).unwrap()
+    } else if ["planter-ship", "planter-promote"].contains(&driver) {
+        // planter's (M233): the shipped app.
+        arugula_e2e::drivers::settings(driver, &[("app".to_owned(), "hello".to_owned())].into()).unwrap()
     } else {
         // Defaults filled in (M221's bump and lane); none for the others.
         arugula_e2e::drivers::settings(driver, &Settings::new()).unwrap()
@@ -98,8 +101,20 @@ fn reported() -> Value {
 #[test]
 fn every_named_driver_plans_and_checks() {
     // Tests may name the fake one; a platform without the switch can't.
-    assert_eq!(names(), ["chant-fly", "apps-platform", "arugula-release", "fake"]);
-    assert!(driver("planter").is_none(), "planter's waits for step 8");
+    assert_eq!(
+        names(),
+        [
+            "chant-fly",
+            "apps-platform",
+            "arugula-release",
+            "planter-prod",
+            "planter-go-live",
+            "planter-ship",
+            "planter-promote",
+            "fake"
+        ]
+    );
+    assert!(driver("planter").is_none(), "planter's are four, by flow (M233)");
     for name in names() {
         let d = driver(name).unwrap();
         assert_eq!(d.name(), name);
@@ -116,6 +131,10 @@ fn every_named_driver_plans_and_checks() {
         let ok = match name {
             "chant-fly" => reported(),
             arugula_release::NAME => released(),
+            // planter's (M233): what each reports it did.
+            "planter-prod" => json!({ "pull": "https://github.com/acme/app/pull/1" }),
+            "planter-ship" => json!({ "commit": SHA }),
+            "planter-promote" => json!({ "pull": "https://github.com/arugula-salad/shipped/pull/1" }),
             _ => Value::Null,
         };
         assert_eq!(d.verify(&e, &deploy(&p.digest), &run(Some(0)), &ok), Verdict::Healthy, "{name}");

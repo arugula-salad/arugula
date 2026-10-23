@@ -771,7 +771,7 @@ impl Agent {
     /// deploy's source names. Planned and asked, as any deploy: an owner
     /// approves it on their device.
     async fn ship(&self, a: PlanDeploy) -> Out {
-        use arugula_e2e::deploy::planter as planter;
+        use arugula_e2e::deploy::planter;
         use base64::Engine as _;
         if !a.commit.trim().is_empty() || !a.repo.trim().is_empty() || a.roll_back {
             return Err(failed("files ship a source: leave out commit, repo and roll_back"));
@@ -789,9 +789,9 @@ impl Agent {
             )));
         };
         let text: String = a.files.unwrap_or_default().split_whitespace().collect();
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(text.as_bytes())
-            .map_err(|_| failed("files: the app's source as a gzipped tar, base64 (tar -czf - -C DIR . | base64 -w0)"))?;
+        let bytes = base64::engine::general_purpose::STANDARD.decode(text.as_bytes()).map_err(|_| {
+            failed("files: the app's source as a gzipped tar, base64 (tar -czf - -C DIR . | base64 -w0)")
+        })?;
         if bytes.len() > planter::MAX_TARBALL {
             return Err(failed(format!(
                 "files is {} bytes: a ship carries at most {} (leave out node_modules and builds)",

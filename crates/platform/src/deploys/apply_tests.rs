@@ -1044,9 +1044,14 @@ async fn planter_ship_mints_from_planters_app_and_gives_its_box_the_artifact() {
     assert_eq!(st, 200, "{d}");
     let op = d["operation"]["hash"].as_str().unwrap().to_owned();
     let a = devices(&hub, "a");
-    let (st, d) =
-        call(&base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(signed(&a.phone, "a", &id, &op, Decision::Once)))
-            .await;
+    let (st, d) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/deploys/{id}/approve"),
+        Some(signed(&a.phone, "a", &id, &op, Decision::Once)),
+    )
+    .await;
     assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
 
     let m = boot(&app, &hub, &id).await;

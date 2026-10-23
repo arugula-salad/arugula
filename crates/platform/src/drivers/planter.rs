@@ -200,7 +200,11 @@ impl Driver for Promote {
     }
 
     fn mints(&self, _: &Environment) -> Vec<Mint> {
-        vec![Mint::Planter { name: p::SHIPPED_TOKEN, repo: PlanterRepo::Named(SHIPPED_REPO), scope: DeployScope::Pulls }]
+        vec![Mint::Planter {
+            name: p::SHIPPED_TOKEN,
+            repo: PlanterRepo::Named(SHIPPED_REPO),
+            scope: DeployScope::Pulls,
+        }]
     }
 
     fn claims(&self, app: &Platform, env: &Environment) -> Option<String> {

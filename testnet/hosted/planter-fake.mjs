@@ -1,11 +1,13 @@
 // What planter's Ship reaches on home-cloud and GitHub, faked on the hosted
-// box for testnet's `planter-deploy` claim (M233), run as `runner`:
+// box for testnet's `planter-deploy` claim (M233), run as root (a run's
+// end kills whatever the run user left, and this outlives runs):
 //
 // - GitHub's API and the app, on 127.0.0.1:9100: `GET /health` answers 200
 //   once the app's image is pinned; `DELETE /installation/token` is logged
 //   (`revoke <Authorization>`, to LOG).
-// - shipped's build: every half second, a ship commit on the bare
-//   `arugula-salad/shipped` (under ROOT) with no pin after it gets one, as
+// - shipped's build: every half second, a ship commit of Arugula's
+//   planter-ship driver at the head of the bare `arugula-salad/shipped`
+//   (under ROOT) gets a pin, as
 //   the repository's workflow pins it (`deploy(<app>): pin image ...`, the
 //   image by digest in `<app>/k8s/kustomization.yaml`).
 //
@@ -18,10 +20,11 @@ import { join } from "node:path";
 
 const [root, log] = process.argv.slice(2);
 const bare = join(root, "arugula-salad/shipped.git");
-const env = { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "github-actions[bot]",
+const env = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "github-actions[bot]",
   GIT_AUTHOR_EMAIL: "github-actions[bot]@users.noreply.github.com", GIT_COMMITTER_NAME: "github-actions[bot]",
   GIT_COMMITTER_EMAIL: "github-actions[bot]@users.noreply.github.com" };
-const git = (cwd, ...args) => execFileSync("git", args, { cwd, env, encoding: "utf8" }).trim();
+// The repositories are runner's: root reads them as safe.
+const git = (cwd, ...args) => execFileSync("git", ["-c", "safe.directory=*", ...args], { cwd, env, encoding: "utf8" }).trim();
 let pinned = false;
 
 createServer((req, res) => {
@@ -35,8 +38,8 @@ createServer((req, res) => {
 
 setInterval(() => {
   try {
-    const msg = git(bare, "log", "-1", "--format=%B", "main");
-    const app = /^([a-z0-9-]+): ship to loam/.exec(msg)?.[1];
+    const msg = git(bare, "log", "-1", "--format=%an%n%B", "main");
+    const app = /^Arugula deploy\n([a-z0-9-]+): ship to loam/.exec(msg)?.[1];
     if (!app) return;
     const w = mkdtempSync(join(tmpdir(), "build-"));
     git(w, "clone", "--quiet", bare, "c");

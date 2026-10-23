@@ -49,9 +49,9 @@ use std::{
 
 use arugula_e2e::{
     deploy::planter::{
-        self as p, APP, APP_TOKEN, ARTIFACT_WHERE, GO_LIVE, HEALTH, LOAM_DOMAIN, MAX_FILES, MAX_TARBALL,
-        MAX_UNPACKED, ORG, POINTERS_BRANCH, POINTERS_REPO, POINTERS_TOKEN, PORT, PORT_ENV, PROD, PROMOTE,
-        SCAFFOLD_BRANCH, SECRETS, SHIP, SHIPPED_BRANCH, SHIPPED_REPO, SHIPPED_TOKEN, SOURCE_TOKEN,
+        self as p, APP, APP_TOKEN, ARTIFACT_WHERE, GO_LIVE, HEALTH, LOAM_DOMAIN, MAX_FILES, MAX_TARBALL, MAX_UNPACKED,
+        ORG, POINTERS_BRANCH, POINTERS_REPO, POINTERS_TOKEN, PORT, PORT_ENV, PROD, PROMOTE, SCAFFOLD_BRANCH, SECRETS,
+        SHIP, SHIPPED_BRANCH, SHIPPED_REPO, SHIPPED_TOKEN, SOURCE_TOKEN,
     },
     drivers::{RollBack, Settings},
 };
@@ -192,9 +192,10 @@ pub fn parse(
             return Err(format!("{name} in its environment isn't the deploy on its command line"));
         }
     }
-    if var("DEPLOY_SETTINGS").filter(|s| !s.is_empty()).is_some_and(|s| {
-        serde_json::from_str::<Settings>(&s).ok().as_ref() != Some(&d.settings)
-    }) {
+    if var("DEPLOY_SETTINGS")
+        .filter(|s| !s.is_empty())
+        .is_some_and(|s| serde_json::from_str::<Settings>(&s).ok().as_ref() != Some(&d.settings))
+    {
         return Err("DEPLOY_SETTINGS in its environment aren't the settings on its command line".into());
     }
     if arugula_e2e::drivers::settings(&d.driver, &d.settings).ok().as_ref() != Some(&d.settings) {
@@ -369,7 +370,13 @@ pub fn planter_manifest(text: &str) -> Result<Value, String> {
 // ---- GitHub's API ----
 
 /// `method` `path` at GitHub's API with `token`: its status and its JSON.
-async fn api(cfg: &Config, method: reqwest::Method, path: &str, token: &str, body: Option<&Value>) -> Result<(u16, Value), String> {
+async fn api(
+    cfg: &Config,
+    method: reqwest::Method,
+    path: &str,
+    token: &str,
+    body: Option<&Value>,
+) -> Result<(u16, Value), String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
@@ -395,14 +402,9 @@ async fn api(cfg: &Config, method: reqwest::Method, path: &str, token: &str, bod
 /// The open pull request from `branch` into `repo`, if there's one: its URL.
 async fn open_pull(cfg: &Config, repo: &str, branch: &str, token: &str) -> Result<Option<String>, String> {
     let owner = repo.split('/').next().unwrap_or_default();
-    let (status, v) = api(
-        cfg,
-        reqwest::Method::GET,
-        &format!("repos/{repo}/pulls?state=open&head={owner}:{branch}"),
-        token,
-        None,
-    )
-    .await?;
+    let (status, v) =
+        api(cfg, reqwest::Method::GET, &format!("repos/{repo}/pulls?state=open&head={owner}:{branch}"), token, None)
+            .await?;
     if status != 200 {
         return Err(format!("GitHub said {status} listing {repo}'s pull requests"));
     }
@@ -410,7 +412,15 @@ async fn open_pull(cfg: &Config, repo: &str, branch: &str, token: &str) -> Resul
 }
 
 /// Open a pull request from `branch` into `base` of `repo`: its URL.
-async fn open(cfg: &Config, repo: &str, branch: &str, base: &str, title: &str, body: &str, token: &str) -> Result<String, String> {
+async fn open(
+    cfg: &Config,
+    repo: &str,
+    branch: &str,
+    base: &str,
+    title: &str,
+    body: &str,
+    token: &str,
+) -> Result<String, String> {
     let ask = json!({ "head": branch, "base": base, "title": title, "body": body });
     let (status, v) = api(cfg, reqwest::Method::POST, &format!("repos/{repo}/pulls"), token, Some(&ask)).await?;
     match (status, v["html_url"].as_str()) {
@@ -429,9 +439,12 @@ async fn clone(cfg: &Config, git: &Git, repo: &str, branch: &str, dir: &Path) ->
     let _ = std::fs::remove_dir_all(dir);
     say(&format!("cloning {repo} ({branch})"));
     let d = dir.to_string_lossy().into_owned();
-    git.run(&cfg.work, &["clone", "--quiet", "--no-tags", "--single-branch", "--branch", branch, &cfg_url(cfg, repo), &d])
-        .await
-        .map_err(refused)?;
+    git.run(
+        &cfg.work,
+        &["clone", "--quiet", "--no-tags", "--single-branch", "--branch", branch, &cfg_url(cfg, repo), &d],
+    )
+    .await
+    .map_err(refused)?;
     if du(dir) > cfg.max_repo_bytes {
         return Err(refused(format!("{repo} is over {} MiB", cfg.max_repo_bytes >> 20)));
     }
@@ -857,7 +870,13 @@ pub async fn pinned(cfg: &Config, app: &str, after: &str, timeout: Duration) -> 
 
 /// The whole Ship: commit, revoke both tokens, wait for the pin, then for
 /// the app's loam address to answer. What it reports.
-pub async fn ship(cfg: &Config, pin_timeout: Duration, d: &Deploy, t: &Tokens, shipped_token: Option<&str>) -> Result<Value, Failed> {
+pub async fn ship(
+    cfg: &Config,
+    pin_timeout: Duration,
+    d: &Deploy,
+    t: &Tokens,
+    shipped_token: Option<&str>,
+) -> Result<Value, Failed> {
     let done = ship_commit(cfg, d, t, shipped_token).await;
     revoke_at(SHIP, &cfg.api_base, "shipped's write", shipped_token).await;
     revoke_at(SHIP, &cfg.api_base, "list's write", t.write.as_deref()).await;
@@ -907,9 +926,8 @@ async fn promote_pull(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<V
     git.run(&shipped, &["checkout", "--quiet", "-B", &branch, sha]).await.map_err(refused)?;
     let text = std::fs::read_to_string(shipped.join(&app).join("app.yaml"))
         .map_err(|_| refused(format!("{app} hasn't been shipped (no {app}/app.yaml at {sha})")))?;
-    let manifest = planter_manifest(&text).map_err(|why| {
-        refused(format!("{app}/app.yaml isn't one planter's ship wrote ({why}): promote it by hand"))
-    })?;
+    let manifest = planter_manifest(&text)
+        .map_err(|why| refused(format!("{app}/app.yaml isn't one planter's ship wrote ({why}): promote it by hand")))?;
     if manifest["runtime"] != "loam" {
         return Err(refused(format!("{app} is already runtime {}", manifest["runtime"])));
     }
@@ -1011,9 +1029,19 @@ async fn prod_pull(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<Valu
         .map(str::to_owned)
         .ok_or_else(|| refused(format!("{} has no default branch", d.place)))?;
     say(&format!("reading {} ({base})", d.place));
-    git.run(&repo, &["fetch", "--quiet", "--no-tags", "--filter=blob:none", "origin", &format!("+refs/heads/{base}:refs/remotes/origin/{base}")])
-        .await
-        .map_err(refused)?;
+    git.run(
+        &repo,
+        &[
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "--filter=blob:none",
+            "origin",
+            &format!("+refs/heads/{base}:refs/remotes/origin/{base}"),
+        ],
+    )
+    .await
+    .map_err(refused)?;
     if git.run(&repo, &["merge-base", "--is-ancestor", sha, &format!("refs/remotes/origin/{base}")]).await.is_err() {
         return Err(refused(format!("{sha} isn't on {}'s default branch, {base}", d.place)));
     }
@@ -1040,7 +1068,8 @@ async fn prod_pull(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<Valu
         .ok_or_else(|| refused(format!("{dir}/package.json is missing: prod needs the app member to be a Node app")))?;
     let lockfile = repo.join(format!("{dir}/package-lock.json")).is_file();
     let mut options = serde_json::Map::new();
-    for (k, key) in [(p::HEALTH, "health"), (p::PORT_ENV, "portEnv"), (p::DATA_ENV, "dataEnv"), (p::METRICS, "metrics")] {
+    for (k, key) in [(p::HEALTH, "health"), (p::PORT_ENV, "portEnv"), (p::DATA_ENV, "dataEnv"), (p::METRICS, "metrics")]
+    {
         if let Some(v) = d.settings.get(k) {
             options.insert(key.into(), v.clone().into());
         }
@@ -1112,35 +1141,32 @@ async fn prod_pull(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<Valu
 // ---- the command line ----
 
 /// Its result, on fd 3 if it was given one (the daemon's result pipe),
-/// close-on-exec from the start so nothing it runs inherits it.
-pub struct ResultFd(#[cfg(unix)] Option<std::fs::File>);
+/// close-on-exec from the start so nothing it runs inherits it. Nothing
+/// elsewhere: a deploy's box is Linux.
+pub struct ResultFd(Option<std::fs::File>);
 
 impl ResultFd {
+    #[cfg(unix)]
     pub fn take() -> Self {
-        #[cfg(unix)]
-        {
-            use std::os::fd::FromRawFd as _;
-            // Only an fd 3 that's open: set close-on-exec, then own it.
-            let ok = nix::fcntl::fcntl(
-                unsafe { std::os::fd::BorrowedFd::borrow_raw(3) },
-                nix::fcntl::FcntlArg::F_SETFD(nix::fcntl::FdFlag::FD_CLOEXEC),
-            )
-            .is_ok();
-            // SAFETY: fd 3 is open (fcntl took it), and nothing else here owns it.
-            ResultFd(ok.then(|| unsafe { std::fs::File::from_raw_fd(3) }))
-        }
-        #[cfg(not(unix))]
-        ResultFd()
+        use std::os::fd::FromRawFd as _;
+        // SAFETY: fd 3 is only borrowed here, to set its flag; it's checked
+        // to be open first by that call succeeding.
+        let open = unsafe { std::os::fd::BorrowedFd::borrow_raw(3) };
+        let ok = nix::fcntl::fcntl(open, nix::fcntl::FcntlArg::F_SETFD(nix::fcntl::FdFlag::FD_CLOEXEC)).is_ok();
+        // SAFETY: fd 3 is open (fcntl took it), and nothing else here owns it.
+        ResultFd(ok.then(|| unsafe { std::fs::File::from_raw_fd(3) }))
+    }
+
+    #[cfg(not(unix))]
+    pub fn take() -> Self {
+        ResultFd(None)
     }
 
     pub fn say(self, v: &Value) {
-        #[cfg(unix)]
         if let Some(mut f) = self.0 {
             use std::io::Write as _;
             let _ = f.write_all(v.to_string().as_bytes());
         }
-        #[cfg(not(unix))]
-        let _ = v;
     }
 }
 

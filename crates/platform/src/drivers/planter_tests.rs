@@ -75,7 +75,8 @@ fn deploy(kind: SourceKind, reference: &str, place: &str) -> Deploy {
 #[test]
 fn planters_drivers_mint_only_from_planters_app() {
     use crate::{drivers::mint::PlanterRepo, forge::DeployScope};
-    let want: [(&str, Vec<(&str, PlanterRepo, DeployScope)>); 4] = [
+    type Mints = Vec<(&'static str, PlanterRepo, DeployScope)>;
+    let want: [(&str, Mints); 4] = [
         (p::PROD, vec![(p::APP_TOKEN, PlanterRepo::Source, DeployScope::Scaffold)]),
         (
             p::GO_LIVE,

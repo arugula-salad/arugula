@@ -1042,27 +1042,32 @@ assert all(k["answered"] and not k.get("refused") for k in e), e' "$WORK/dep-led
 # app and shipped's build are testnet/hosted/planter-fake.mjs, as `runner`.
 planter_box() {
   local g=/srv/fake-github
-  hroot sh -c "rm -rf $g /tmp/planter-captured /tmp/planter-fake.*; mkdir -p $g/arugula-salad"
+  hroot sh -c "pkill -f '[p]lanter-fake.mjs'; rm -rf $g /tmp/planter-captured /tmp/planter-fake.*; mkdir -p $g/arugula-salad"
   docker cp "$ROOT/crates/daemon/tests/planter-captured" "$TESTNET-hosted-box:/tmp/planter-captured"
   docker cp "$HERE/hosted/planter-fake.mjs" "$TESTNET-hosted-box:/tmp/planter-fake.mjs"
   hroot sh -c "chown -R runner $g /tmp/planter-captured /tmp/planter-fake.mjs" || return 1
   docker exec -u runner -e HOME=/tmp "$TESTNET-hosted-box" sh -c '
     set -e; export GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=planter GIT_AUTHOR_EMAIL=p@p GIT_COMMITTER_NAME=planter GIT_COMMITTER_EMAIL=p@p
     g=/srv/fake-github/arugula-salad; c=/tmp/planter-captured
-    for r in shipped planter-apps; do git init -q --bare -b main $g/$r.git; done
+    for r in shipped planter-apps; do git init -q --bare --shared=0777 -b main $g/$r.git; done
     w=$(mktemp -d); cd $w; git init -q -b main; mkdir apps; : > apps/.gitkeep
     cp $c/planter-apps/*.yaml apps/; git add -A; git commit -qm "planter-apps: the pointers planter writes"; git push -q $g/planter-apps.git HEAD:main
     w=$(mktemp -d); cd $w; git init -q -b main; cp -r $c/shipped/redone-hello .; git add -A
     git commit -q -F $c/shipped/redone-hello.last-commit; git push -q $g/shipped.git HEAD:main' > /dev/null || return 1
-  docker exec -d -u runner -e HOME=/tmp "$TESTNET-hosted-box" node /tmp/planter-fake.mjs /srv/fake-github /tmp/planter-fake.log
+  # As root: a run's end kills everything the run user left.
+  docker exec -d -e HOME=/root "$TESTNET-hosted-box" node /tmp/planter-fake.mjs /srv/fake-github /tmp/planter-fake.log
 }
+# What the planter driver said in its run's pane (its log on the box).
+planter_said() { hroot sh -c 'grep -rah "planter-ship:\|planter-promote:\|arugula:" /home/user/.local/state/arugula 2>/dev/null | tail -30'; }
+# git on the box's fake GitHub, as `runner`, who owns it.
+hgit() { docker exec -u runner -e HOME=/tmp "$TESTNET-hosted-box" git -C "/srv/fake-github/arugula-salad/$1.git" "${@:2}"; }
 # A tools/call to control's /api/mcp with the agent's token $1: the answer.
 mcp_call() {
   curl -sS -X POST "http://127.0.0.1:$ARUGULA_TESTNET_CONTROL_PORT/api/mcp" -H "authorization: Bearer $1" \
     -H 'content-type: application/json' --data-binary @-
 }
 claim_planter_deploy() {
-  local ok=1 own="$WORK/powner.json" acct proj envid token dep sbx tk app=m233-hello src tarb
+  local ok=1 own="$WORK/powner.json" acct proj envid token dep sbx tk app="m233-$$-$RANDOM" src tarb
   [ -z "$BREAK" ] || app=redone-hello
   fresh_hosted_box
   planter_box || { note "planter-deploy: the box's fake GitHub isn't set up"; return 1; }
@@ -1091,23 +1096,25 @@ claim_planter_deploy() {
   [ -n "$tk" ] || { note "planter-deploy: the platform made no box at the fake E2B"; return 1; }
   deploy_box_daemon "$tk" -e ARUGULA_HOSTED_PLANTER_GIT=/srv/fake-github/ -e ARUGULA_HOSTED_PLANTER_API=http://127.0.0.1:9100 \
     -e ARUGULA_HOSTED_PLANTER_HEALTH=http://127.0.0.1:9100
+  # Broken: planter's own redone-hello, which this project never ships
+  # over. The deploy fails, nothing pushed: the claim doesn't hold.
   if [ -n "$BREAK" ]; then
-    wait_dep "$own" "$dep" failed 180 || ok=0
-    hroot git -C /srv/fake-github/arugula-salad/shipped.git log -1 --format=%B main | grep -q 'Shipped-By: redone' ||
-      { note "planter-deploy: something was pushed over planter's redone-hello"; ok=0; }
-    [ "$ok" = 1 ] && note "planter-deploy: a ship over planter's own redone-hello failed, nothing pushed"
+    wait_dep "$own" "$dep" failed 180 &&
+      planter_said | grep -q "isn't this project's to change" &&
+      hgit shipped log -1 --format=%B main | grep -q 'Shipped-By: redone' &&
+      note "planter-deploy: the ship over planter's own redone-hello failed, nothing pushed"
     fresh_hosted_box
-    return $((1 - ok))
+    return 1
   fi
-  wait_dep "$own" "$dep" succeeded 240 || { ok=0; hbox tail -40 /home/user/arugulad.log >&2; }
+  wait_dep "$own" "$dep" succeeded 240 || { ok=0; planter_said >&2; hroot cat /tmp/planter-fake.log >&2; }
   local commit
-  commit="$(hroot git -C /srv/fake-github/arugula-salad/shipped.git log --format=%H --fixed-strings --grep "Arugula-Deploy: $dep" main | head -1)"
+  commit="$(hgit shipped log --format=%H --fixed-strings --grep "Arugula-Deploy: $dep" main | head -1)"
   [ "${#commit}" = 40 ] || { note "planter-deploy: shipped has no commit of $dep"; ok=0; }
-  hroot git -C /srv/fake-github/arugula-salad/shipped.git log --format=%B -1 "$commit" 2>/dev/null | grep -q "Arugula-Project: $proj" ||
+  hgit shipped log --format=%B -1 "$commit" 2>/dev/null | grep -q "Arugula-Project: $proj" ||
     { note "planter-deploy: shipped has no commit of the project's"; ok=0; }
-  hroot git -C /srv/fake-github/arugula-salad/shipped.git show "$commit:$app/src/server.js" 2>/dev/null | grep -q 'hello from redone' ||
+  hgit shipped show "$commit:$app/src/server.js" 2>/dev/null | grep -q 'hello from redone' ||
     { note "planter-deploy: the source isn't in shipped"; ok=0; }
-  hroot git -C /srv/fake-github/arugula-salad/planter-apps.git show "main:apps/$app.yaml" 2>/dev/null | grep -q "path: ./$app/k8s" ||
+  hgit planter-apps show "main:apps/$app.yaml" 2>/dev/null | grep -q "path: ./$app/k8s" ||
     { note "planter-deploy: no pointer for $app"; ok=0; }
   [ "$(hroot grep -c '^revoke Bearer ghs_testnet' /tmp/planter-fake.log 2>/dev/null)" = 2 ] ||
     { note "planter-deploy: the driver didn't revoke both tokens: $(hroot cat /tmp/planter-fake.log)"; ok=0; }

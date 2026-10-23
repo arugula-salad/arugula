@@ -88,8 +88,8 @@ mod viewer_tests;
 mod webhook;
 
 pub use app::{
-    Caller, DeployScope, GithubApp, GithubUser, Install, Purpose, ReadToken, Repo, RepoRole, WriteToken, Writes, epoch_of,
-    parse_pem,
+    Caller, DeployScope, GithubApp, GithubUser, Install, Purpose, ReadToken, Repo, RepoRole, WriteToken, Writes,
+    epoch_of, parse_pem,
 };
 pub use webhook::{pokes, signed, webhook};
 

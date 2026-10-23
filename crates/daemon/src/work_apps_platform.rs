@@ -287,6 +287,7 @@ fn refused(why: impl Into<String>) -> Failed {
 
 /// A new pointer for `name`, pinned at `sha` of `place`: what planter
 /// writes, with the commit for its branch.
+#[cfg(test)]
 pub fn render(name: &str, place: &str, sha: &str) -> String {
     pointer_for(&APPS_PLATFORM, name, place, sha, &[])
 }
@@ -714,12 +715,8 @@ pub fn say(s: &str) {
     println!("{}: {}", LABEL.get().copied().unwrap_or(ap::DRIVER), crate::work::printable(s));
 }
 
-/// Apply `d`: clone, pin, commit, push. What was committed, or why not.
-pub async fn commit(cfg: &Config, d: &Deploy, t: &Tokens) -> Result<(Applied, AppYaml), Failed> {
-    commit_as(cfg, &APPS_PLATFORM, d, t).await
-}
-
-/// [`commit`] as `f`'s driver (M233: planter's Go live too).
+/// Apply `d` as `f`'s driver (apps-platform's, or M233's planter Go
+/// live): clone, pin, commit, push. What was committed, or why not.
 pub async fn commit_as(cfg: &Config, f: &Flavor, d: &Deploy, t: &Tokens) -> Result<(Applied, AppYaml), Failed> {
     if let Some(why) = (f.refuses)(&d.kind, &d.reference, &d.place) {
         return Err(refused(why));

@@ -94,11 +94,17 @@ impl Fake {
         // shipped's redone-hello as planter's ship left it.
         let mut files = vec![];
         for rel in ["app.yaml", "src/Dockerfile", "src/server.js", "k8s/kustomization.yaml"] {
-            files.push((format!("redone-hello/{rel}"), std::fs::read_to_string(captured(&format!("shipped/redone-hello/{rel}"))).unwrap()));
+            files.push((
+                format!("redone-hello/{rel}"),
+                std::fs::read_to_string(captured(&format!("shipped/redone-hello/{rel}"))).unwrap(),
+            ));
         }
         for p in ["dashboard", "deployment", "kustomization"] {
             let rel = format!("k8s/platform/{p}.yaml");
-            files.push((format!("redone-hello/{rel}"), std::fs::read_to_string(captured(&format!("shipped/redone-hello/{rel}"))).unwrap()));
+            files.push((
+                format!("redone-hello/{rel}"),
+                std::fs::read_to_string(captured(&format!("shipped/redone-hello/{rel}"))).unwrap(),
+            ));
         }
         let files: Vec<(&str, &str)> = files.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
         let msg = std::fs::read_to_string(captured("shipped/redone-hello.last-commit")).unwrap();
@@ -314,7 +320,9 @@ fn a_shipped_pointer_is_planters() {
     let ours = shipped_pointer("redone-hello");
     let line1 = |s: &str| s.lines().skip(1).collect::<Vec<_>>().join("\n");
     assert_eq!(line1(&ours), line1(&real));
-    assert!(ours.starts_with("# redone-hello in prod, at https://redone-hello.run.inevitable.fyi. Written by Arugula's"));
+    assert!(
+        ours.starts_with("# redone-hello in prod, at https://redone-hello.run.inevitable.fyi. Written by Arugula's")
+    );
 }
 
 /// The deploy comes from its command line, its plan recomputed with its
@@ -326,8 +334,24 @@ fn the_deploy_comes_from_its_command_line_and_its_plan() {
     let d = deploy(SHIP, "artifact", &digest, ARTIFACT_WHERE, &[("app", "hello")], 1);
     let args = |d: &Deploy, extra: &[&str]| -> Vec<String> {
         let mut a: Vec<String> = [
-            "--driver", &d.driver, "--deploy", &d.id, "--project", &d.project, "--environment", &d.environment,
-            "--kind", &d.kind, "--ref", &d.reference, "--where", &d.place, "--plan", &d.plan, "--artifact", "/tmp/x",
+            "--driver",
+            &d.driver,
+            "--deploy",
+            &d.id,
+            "--project",
+            &d.project,
+            "--environment",
+            &d.environment,
+            "--kind",
+            &d.kind,
+            "--ref",
+            &d.reference,
+            "--where",
+            &d.place,
+            "--plan",
+            &d.plan,
+            "--artifact",
+            "/tmp/x",
         ]
         .iter()
         .map(|s| (*s).to_owned())
@@ -357,7 +381,9 @@ fn the_deploy_comes_from_its_command_line_and_its_plan() {
     let mut fake = d.clone();
     fake.driver = "fake".into();
     assert!(parse(&args(&fake, &[]), none, Config::new("/w".into())).unwrap_err().contains("planter's drivers"));
-    assert!(parse(&args(&d, &["--roll-back", &format!("dep_{}", "b".repeat(32))]), none, Config::new("/w".into())).is_err());
+    assert!(
+        parse(&args(&d, &["--roll-back", &format!("dep_{}", "b".repeat(32))]), none, Config::new("/w".into())).is_err()
+    );
 }
 
 /// Ship, end to end against shipped and planter-apps as planter left
@@ -388,13 +414,15 @@ async fn ship_commits_the_source_planters_way_and_waits_for_the_pin() {
         let (bare, root) = (bare.clone(), f.root.clone());
         move || {
             for _ in 0..200 {
-                let out = Command::new("git").current_dir(&bare).args(["log", "-1", "--format=%B", "main"]).output().unwrap();
+                let out =
+                    Command::new("git").current_dir(&bare).args(["log", "-1", "--format=%B", "main"]).output().unwrap();
                 if String::from_utf8_lossy(&out.stdout).contains("hello2: ship to loam") {
                     let w = root.join("builder");
                     git(&root, &["clone", "--quiet", &bare.to_string_lossy(), &w.to_string_lossy()]);
                     let k = w.join("hello2/k8s/kustomization.yaml");
                     let text = std::fs::read_to_string(&k).unwrap();
-                    std::fs::write(&k, text.replace("newTag: unpinned", &format!("digest: sha256:{}", "7".repeat(64)))).unwrap();
+                    std::fs::write(&k, text.replace("newTag: unpinned", &format!("digest: sha256:{}", "7".repeat(64))))
+                        .unwrap();
                     git(&w, &["commit", "--quiet", "-am", "deploy(hello2): pin image 777777777777"]);
                     git(&w, &["push", "--quiet", "origin", "HEAD:main"]);
                     return true;
@@ -421,7 +449,11 @@ async fn ship_commits_the_source_planters_way_and_waits_for_the_pin() {
     assert_eq!(at_commit("k8s/kustomization.yaml"), swap(want["planter"]["top"].as_str().unwrap()));
     assert_eq!(at_commit("src/server.js").as_bytes(), src[1].1.as_slice());
     let msg = git(&bare, &["log", "-1", "--format=%B", &commit]);
-    for says in [format!("Arugula-Deploy: {}", d.id), format!("Arugula-Project: {PROJECT}"), "Arugula-Driver: planter-ship".into()] {
+    for says in [
+        format!("Arugula-Deploy: {}", d.id),
+        format!("Arugula-Project: {PROJECT}"),
+        "Arugula-Driver: planter-ship".into(),
+    ] {
         assert!(msg.contains(&says), "{says} in {msg}");
     }
     assert_eq!(
@@ -438,7 +470,8 @@ async fn ship_commits_the_source_planters_way_and_waits_for_the_pin() {
     assert!(again.why.contains("already") && !again.pushed, "{}", again.why);
 
     // Each refused, nothing pushed.
-    let heads = || (git(&bare, &["rev-parse", "main"]), git(&f.bare("arugula-salad/planter-apps"), &["rev-parse", "main"]));
+    let heads =
+        || (git(&bare, &["rev-parse", "main"]), git(&f.bare("arugula-salad/planter-apps"), &["rev-parse", "main"]));
     let before = heads();
     let mut n = 10;
     let refused = |why: &str, d: Deploy| {
@@ -488,7 +521,11 @@ async fn promote_opens_planters_pull_request() {
     let api = fake_api().await;
     let cfg = f.cfg(&api);
     // redone-hello, shipped again by this project (as planter wrote it).
-    let sha = f.seed("arugula-salad/shipped", &[("redone-hello/src/README", "x")], &format!("redone-hello: ship\n\n{PROJECT_TRAILER}: {PROJECT}\n"));
+    let sha = f.seed(
+        "arugula-salad/shipped",
+        &[("redone-hello/src/README", "x")],
+        &format!("redone-hello: ship\n\n{PROJECT_TRAILER}: {PROJECT}\n"),
+    );
     let d = deploy(PROMOTE, "commit", &sha, SHIPPED_REPO, &[("app", "redone-hello")], 1);
     let got = promote(&cfg, &d, Some(SHIPPED_T)).await.unwrap();
     assert_eq!(got["pull"], "https://github.com/arugula-salad/shipped/pull/1");
@@ -502,7 +539,10 @@ async fn promote_opens_planters_pull_request() {
     assert_eq!(parent, sha, "from the approved commit");
     assert_eq!(
         api.log(),
-        [format!("pull arugula-salad/shipped promote/redone-hello Bearer {SHIPPED_T}"), format!("revoke Bearer {SHIPPED_T}")]
+        [
+            format!("pull arugula-salad/shipped promote/redone-hello Bearer {SHIPPED_T}"),
+            format!("revoke Bearer {SHIPPED_T}")
+        ]
     );
     let body = api.state.lock().unwrap().pulls[0].2.clone();
     assert_eq!(body["base"], "main");
@@ -587,7 +627,10 @@ async fn go_live_pins_and_asks_for_custom_domains() {
     ap::apply_as(&cfg, &GO_LIVE_FLAVOR, &d.as_ap(), &t).await.unwrap();
     let pointer = f.show("arugula-salad/planter-apps", "main:apps/fern.yaml").unwrap();
     assert!(pointer.contains("    platform.arugula.io/domains: shop.example.com\n"), "{pointer}");
-    assert!(pointer.contains(&format!("    commit: {sha}\n")) && pointer.contains("Written by Arugula's planter-go-live driver"));
+    assert!(
+        pointer.contains(&format!("    commit: {sha}\n"))
+            && pointer.contains("Written by Arugula's planter-go-live driver")
+    );
 }
 
 #[test]
@@ -595,7 +638,10 @@ fn needs_domain_reads_planters_lists() {
     use super::ap::needs_domain;
     assert_eq!(needs_domain("name: x\n").unwrap(), Vec::<String>::new());
     assert_eq!(needs_domain("needs:\n  domain: [a.b.c, d.e]\n").unwrap(), ["a.b.c", "d.e"]);
-    assert_eq!(needs_domain("needs:\n  telemetry: true\n  domain:\n    - a.b.c\n    - 'd.e' # x\n").unwrap(), ["a.b.c", "d.e"]);
+    assert_eq!(
+        needs_domain("needs:\n  telemetry: true\n  domain:\n    - a.b.c\n    - 'd.e' # x\n").unwrap(),
+        ["a.b.c", "d.e"]
+    );
     assert!(needs_domain("needs:\n  domain: a.b\n").is_err());
     assert!(needs_domain("needs:\n  domain: [a b]\n").is_err());
 }

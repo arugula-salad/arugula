@@ -611,8 +611,8 @@ async fn a_token_opens_no_other_route() {
 /// without deploys.plan (which keeps nothing).
 #[tokio::test]
 async fn an_agent_ships_with_files_and_the_platform_keeps_its_source() {
-    use base64::Engine as _;
     use crate::forge::links_tests::{Shared, fake_github, granted};
+    use base64::Engine as _;
     let gh: Shared = Arc::default();
     {
         let mut g = gh.lock().unwrap();
@@ -663,13 +663,21 @@ async fn an_agent_ships_with_files_and_the_platform_keeps_its_source() {
     }
     let big = base64::engine::general_purpose::STANDARD
         .encode([&[0x1f, 0x8b][..], &vec![0u8; arugula_e2e::deploy::planter::MAX_TARBALL]].concat());
-    let why = refused(&tool(&base, &token, "plan_deploy", json!({ "project": t, "environment": "hello", "files": big })).await);
+    let why = refused(
+        &tool(&base, &token, "plan_deploy", json!({ "project": t, "environment": "hello", "files": big })).await,
+    );
     assert!(why.contains("at most"), "{why}");
 
     // Without deploys.plan: refused, and nothing kept.
     let (_, minted) = mint(&base, "a", "reader", &[&t], &["threads.read"]).await;
     let other = base64::engine::general_purpose::STANDARD.encode([0x1f, 0x8b, 1]);
-    let r = tool(&base, minted["token"].as_str().unwrap(), "plan_deploy", json!({ "project": t, "environment": "hello", "files": other })).await;
+    let r = tool(
+        &base,
+        minted["token"].as_str().unwrap(),
+        "plan_deploy",
+        json!({ "project": t, "environment": "hello", "files": other }),
+    )
+    .await;
     refused(&r);
     let n: i64 = app.db.c().query_row("SELECT count(*) FROM deploy_artifacts", params![], |r| r.get(0)).unwrap();
     assert_eq!(n, 1, "only the one shipped");
