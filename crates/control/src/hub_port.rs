@@ -418,13 +418,10 @@ impl HubPort for InProcess {
             let Some(people) = crate::hosted::people(&app.db, &o)? else { return Ok(false) };
             // Here the desktop app's devices from before it had a kind are
             // refused too (`Cert::is_browser` on every link), but just above
-            // a browser one approved back then (`legacy_app`).
+            // a browser one approved back then (`legacy_app`): the check a
+            // hosted machine makes against the set it pinned.
             let children = crate::hosted::legacy_app_children(&app.db, &people)?;
-            let link = |c: &arugula_e2e::Cert, below: Option<&arugula_e2e::Cert>| {
-                c.is_browser()
-                    || children.get(&c.account).is_some_and(|l| arugula_e2e::cert::legacy_app_link(c, below, l))
-            };
-            Ok(people.owners().browser_signed_by(owner, device, body, sig, link))
+            Ok(people.owners().browser_signed(owner, device, body, sig, &children))
         })
     }
 }

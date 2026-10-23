@@ -283,6 +283,12 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
+        version: 32,
+        name: "inference_broker",
+        sql: include_str!("../../migrations/sqlite/0032_inference_broker.sql"),
+        additive: true,
+    },
+    Migration {
         version: 33,
         name: "product_posts",
         sql: include_str!("../../migrations/sqlite/0033_product_posts.sql"),
@@ -478,6 +484,12 @@ const POSTGRES: &[Migration] = &[
         version: 31,
         name: "agent_tokens",
         sql: include_str!("../../migrations/postgres/0031_agent_tokens.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 32,
+        name: "inference_broker",
+        sql: include_str!("../../migrations/postgres/0032_inference_broker.sql"),
         additive: true,
     },
     Migration {

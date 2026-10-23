@@ -2761,7 +2761,9 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   text-decoration: none;
 }
 
-/* Never taller than the window: it scrolls inside, and its × stays put. */
+/* Never taller than the window: it scrolls inside, and its × stays put. Its
+   end stays above a phone browser's toolbar (dvh, not vh), so the buttons
+   under a long deploy plan can be reached. */
 .control-prompt {
   position: relative;
   max-height: calc(100vh - 15vh - 24px);
@@ -3223,12 +3225,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   padding: 8px 12px;
   border-left: 2px solid var(--divider);
   color: var(--dim);
-}
-
-/* Taller than the window (the device list): it scrolls. */
-.prompt.control-prompt {
-  max-height: calc(85vh - 16px);
-  overflow-y: auto;
 }
 
 /* Add a phone or browser (#105): the control URL as a QR code. */
