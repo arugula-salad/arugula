@@ -54,6 +54,10 @@ fn the_vendored_renderer_renders_planters_fixtures_identically() {
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
         std::fs::write(p, text).unwrap();
     }
+    // Run through a symlink, as macOS's temporary directory is one.
+    let link = dir.with_extension("link");
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(&dir, &link).unwrap();
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/planter/fixtures");
     let mut seen = vec![];
     for e in std::fs::read_dir(&fixtures).unwrap() {
@@ -61,7 +65,7 @@ fn the_vendored_renderer_renders_planters_fixtures_identically() {
         let fx: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(fx["captured"]["repo"], "arugula-salad/planter", "{}", path.display());
         let mut c = Command::new("node")
-            .arg(dir.join("renderer.mjs"))
+            .arg(link.join("renderer.mjs"))
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .spawn()
@@ -75,6 +79,7 @@ fn the_vendored_renderer_renders_planters_fixtures_identically() {
         seen.push(fx["name"].as_str().unwrap().to_owned());
     }
     let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_file(&link);
     seen.sort();
     for want in ["real-ocarina", "real-redone-hello", "ship-hello", "promote-hello", "scaffold-ocarina", "fern-hosts"] {
         assert!(seen.iter().any(|s| s == want), "{want} in {seen:?}");

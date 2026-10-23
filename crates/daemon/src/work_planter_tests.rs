@@ -735,7 +735,9 @@ async fn a_ships_tar_is_read_with_caps_and_never_extracted() {
     let big = root.join("big");
     std::fs::create_dir_all(&big).unwrap();
     std::fs::write(big.join("Dockerfile"), "x").unwrap();
-    std::fs::File::create(big.join("zeros")).unwrap().set_len(MAX_UNPACKED + 1).unwrap();
+    // Written, not set_len: a sparse file is a pax sparse entry to macOS's
+    // bsdtar, its map and not its bytes.
+    std::fs::write(big.join("zeros"), vec![0u8; MAX_UNPACKED as usize + 1]).unwrap();
     let (at, d) = tar("big", &["."], &big);
     let e = unpack(&at, &d).await.unwrap_err();
     assert!(e.contains("MiB"), "{e}");
