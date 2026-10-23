@@ -37,6 +37,8 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/issues/1236"
   - title: "#1246"
     url: "https://github.com/arugula-salad/arugula/issues/1246"
+  - title: "#1337"
+    url: "https://github.com/arugula-salad/arugula/issues/1337"
 decided_by: "jhgaylor"
 decided_on: "2026-10-21"
 reviews: []
@@ -69,6 +71,12 @@ Agents on hosted machines need an inference key (Jake, 2026-10-21, #1235).
   when an agent starts, with a link to add one.
 
 Release notes and the privacy page say whose key pays.
+
+**Inference covers studio's broker** (step 8, #1337). studio's Claude
+credential broker and its metering move to the platform, on these keys,
+caps and tables, and studio's lobby calls it instead of brokering itself;
+the lobby's rules are ported, so nobody's limits change on the day ("The
+Claude credential broker and its metering move to the platform").
 Where: `crates/platform/src/hosted/inference.rs` (whose key pays, project
 keys, caps, the box's egress rules), `crates/platform/src/compute/` (egress
 rules, E2B's `${e2b.secrets.<name>}` for the platform's keys),
@@ -76,4 +84,4 @@ rules, E2B's `${e2b.secrets.<name>}` for the platform's keys),
 before each turn), docs/control-ops.md (making the platform's keys and
 their limits) (M185). loam's E2B API has no secrets broker yet
 (arugula-salad/loam#8).
-From: #1235 (platform roadmap, step 5), M175 (#1236), M185 (#1246).
+From: #1235 (platform roadmap, step 5), M175 (#1236), M185 (#1246), #1337 (platform step 8).

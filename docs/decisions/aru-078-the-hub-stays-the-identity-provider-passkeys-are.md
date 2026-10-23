@@ -29,6 +29,8 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/issues/1150"
   - title: "#1151"
     url: "https://github.com/arugula-salad/arugula/issues/1151"
+  - title: "#1337"
+    url: "https://github.com/arugula-salad/arugula/issues/1337"
 decided_by: "jhgaylor"
 decided_on: "2026-10-20"
 reviews: []
@@ -46,5 +48,13 @@ again. The platform never sees a cookie, a passkey or a daemon signature:
 it trusts the principal the hub's gateway signs ("Platform paths stay on
 control.arugula.io forever, behind the hub's gateway"). A separate identity
 provider, if one is ever needed, is a later step and its own record.
+
+**The hub issues assertions to other products** (step 8, #1337). This is
+the record left for later above, and it keeps identity in the hub rather
+than in a separate provider: the hub serves OIDC-shaped endpoints and hud's
+Ed25519 assertions, short-lived, with keys at a JWKS URL, rotated, so
+studio, hud and the platform page sign people in through it ("The hub is an
+issuer: one identity for every product"). Passkeys stay bound to
+`control.arugula.io`.
 Where: `crates/control/src/auth.rs`, `crates/control/src/passkey.rs` (`rp_id`).
-From: #1150, M134 (#1151).
+From: #1150, M134 (#1151), #1337 (platform step 8).
