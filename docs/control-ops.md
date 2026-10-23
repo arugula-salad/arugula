@@ -973,6 +973,16 @@ hashes, uploads or their tarballs.
   `secrets.write` over the project. The platform keeps the hash redone
   kept, so the agent's token works unchanged (below). The owner is pushed
   a notice, and sees and revokes it in Settings, Agents with no machine.
+- **Each app becomes a `planter-ship` environment** (M233) of its tenant's
+  project, named as the app, with its live plan's port, health path, port
+  variable and secrets' names as its settings. That claims the app's name
+  for the project from then on, so nobody takes it first; a name another
+  project's ship environment has already is reported, not taken over.
+  (`--driver fake` is for the test stack only.)
+- **redone's apps were shipped by planter** (redone held a ship token), so
+  the ship driver won't ship over one until a commit in `shipped` names the
+  project (M233's rule for planter's own apps): each needs that commit, by
+  hand or with M232's import, before its first deploy through the platform.
 - **Safe to run again.** What it carried over is in `redone_imports`, so a
   second run changes nothing, and a token revoked since is never carried
   over again. It never deletes anything.

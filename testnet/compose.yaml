@@ -218,6 +218,9 @@ services:
       GITHUB_APP_SLUG: arugula-testnet
       GITHUB_APP_WEBHOOK_SECRET: whsec-github-testnet
       GITHUB_APP_PRIVATE_KEY_FILE: /keys/github-app.pem
+      # The stack's own master key, so project secrets are sealed (M230's
+      # set_secret, M235's redone claim).
+      ARUGULA_CLOUD_SECRET_KEY: 5ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec0
       # The Infisical projection (M235), into the fake Infisical in `fakes`
       # as a writer identity of its own (the redone claim).
       ARUGULA_INFISICAL_PROJECTION: "on"
