@@ -88,7 +88,18 @@ export async function answer(req) {
   }
 }
 
-const main = process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href;
+// Run as a script, compared by real path: import.meta.url is resolved through symlinks, argv isn't
+// (macOS's temporary directories are under /var, a link to /private/var).
+const main = await (async () => {
+  if (!process.argv[1]) return false;
+  const { realpathSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
 if (main) {
   const chunks = [];
   for await (const c of process.stdin) chunks.push(c);

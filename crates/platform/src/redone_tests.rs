@@ -550,12 +550,24 @@ async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
     let upload_id = up["upload_id"].as_str().unwrap().to_owned();
     assert_eq!(upload_id, format!("sha256:{}", sha(&tgz)));
     assert_eq!(app.db.deploy_artifact(&fern, &upload_id).unwrap().as_deref(), Some(&tgz[..]));
-    // Not gzipped, too big, or with no token: refused.
-    for (body, bearer_token, want) in [
-        (b"not a tar".to_vec(), token.clone(), 422),
-        (vec![0x1f, 0x8b].into_iter().chain(std::iter::repeat_n(0u8, 3 << 20)).collect(), token.clone(), 413),
-        (tgz.clone(), "rdn_nope".to_owned(), 401),
-    ] {
+    // Too big: refused before it's read. Windows aborts the connection
+    // under the bytes still being sent rather than let the client read the
+    // 413, so there a request error is the refusal.
+    let big: Vec<u8> = vec![0x1f, 0x8b].into_iter().chain(std::iter::repeat_n(0u8, 3 << 20)).collect();
+    match reqwest::Client::new()
+        .put(format!("{base}/api/mcp/uploads"))
+        .header("authorization", format!("Bearer {token}"))
+        .body(big)
+        .send()
+        .await
+    {
+        Ok(r) => assert_eq!(r.status().as_u16(), 413),
+        Err(e) => assert!(cfg!(windows) && e.is_request(), "{e}"),
+    }
+    // Not gzipped, or with no token: refused.
+    for (body, bearer_token, want) in
+        [(b"not a tar".to_vec(), token.clone(), 422), (tgz.clone(), "rdn_nope".to_owned(), 401)]
+    {
         let r = reqwest::Client::new()
             .put(format!("{base}/api/mcp/uploads"))
             .header("authorization", format!("Bearer {bearer_token}"))
