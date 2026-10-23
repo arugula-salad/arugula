@@ -121,11 +121,17 @@ pub fn harden_sudo(as_: &RunAs) -> Result<(), Refused> {
     // `closefrom_override`: the driver's result pipe (fd 3, M220) reaches
     // it through `sudo -C 4`.
     let rule = format!("{me} ALL=({}) NOPASSWD: ALL\nDefaults:{me} closefrom_override\n", as_.user);
-    // The narrow rule in, the blanket one out; the user's password locked
-    // and its admin groups gone, so nothing gives it root back.
+    // The narrow rule in, the blanket ones out: the template's
+    // /etc/sudoers.d/user, and in /etc/sudoers itself (checked by visudo
+    // before it replaces the file) E2B's base image's line for this user and
+    // the sudo, admin and wheel groups' rules, which this process keeps
+    // matching by the groups it started with. The user's password locked and
+    // its admin groups gone, so nothing gives it root back.
     let script = format!(
         "set -e; umask 0337; printf '%s' \"$1\" > {RUNNER_RULE}.new; visudo -cqf {RUNNER_RULE}.new; \
-         mv -f {RUNNER_RULE}.new {RUNNER_RULE}; rm -f /etc/sudoers.d/user; passwd -l \"$2\" >/dev/null; \
+         mv -f {RUNNER_RULE}.new {RUNNER_RULE}; rm -f /etc/sudoers.d/user; \
+         sed -E \"/^($2|%sudo|%admin|%wheel)[[:space:]]/d\" /etc/sudoers > /etc/sudoers.arugula; visudo -cqf /etc/sudoers.arugula; \
+         mv -f /etc/sudoers.arugula /etc/sudoers; passwd -l \"$2\" >/dev/null; \
          for g in sudo admin wheel; do gpasswd -d \"$2\" \"$g\" >/dev/null 2>&1 || true; done"
     );
     let ran = std::process::Command::new("sudo")
