@@ -24,10 +24,15 @@ env:
 
 jobs:
   # On the home cloud's runners (arugula-amd64, a fresh pod per job,
-  # docs/development.md). A tag's run can only read main's caches, so it
-  # takes check.yml's static one: x86_64's build starts warm.
+  # docs/development.md). A tag's run can only read main's caches and its
+  # own, and main never saves release-static, so rust-cache starts cold:
+  # sccache (check.yml's, through the setup action) is what keeps a
+  # release's unchanged crates from compiling again. x86_64 alone, as the
+  # deploys wait for this job; aarch64 builds beside it (linux-arm64).
   linux:
     runs-on: arugula-amd64
+    env:
+      SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -48,11 +53,30 @@ jobs:
           path: ${{ runner.temp }}/control-binaries.tar
           retention-days: 7
           compression-level: 1
-      - run: just static aarch64
       - run: just dist
       # The editor extension, from the daemon that carries it (#529).
       - run: '"$CARGO_TARGET_DIR/x86_64-unknown-linux-musl/release/arugulad" _vsix dist'
       - run: scripts/release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.vsix
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The arm64 tarball, cross-compiled with Zig: nothing deploys from it, so
+  # it holds back only publish.
+  linux-arm64:
+    runs-on: arugula-amd64
+    env:
+      SCCACHE_WEBDAV_PASSWORD: ${{ secrets.SCCACHE_WEBDAV_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: release-static-aarch64
+          packages: gh
+      - run: just bootstrap
+      - run: scripts/release check-version "$GITHUB_REF_NAME"
+      - run: just static aarch64
+      - run: just dist
+      - run: scripts/release upload "$GITHUB_REF_NAME" dist/*.tar.gz
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -106,7 +130,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish:
-    needs: [linux, macos, windows]
+    needs: [linux, linux-arm64, macos, windows]
     runs-on: arugula-amd64
     steps:
       - uses: actions/checkout@v4

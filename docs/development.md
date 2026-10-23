@@ -304,8 +304,12 @@ disk but held up to 96 GB of a machine that is now also a cluster node.
 The release workflows' Linux jobs (release.yml's and app-release.yml's
 `linux` and `publish`) and forges-nightly.yml's run there too, on the same
 pods and the same setup, plus `gh` for publishing. A tag's run can only
-read main's caches, so release.yml's build takes check.yml's `static`
-cache; the nightly saves its own. Until 2026-10-10 they ran on a host
+read main's caches and its own, and main never saves release.yml's
+(`release-static`, at full opt-level, unlike check.yml's `static`), so
+its rust-cache starts cold: sccache, through the setup action as in
+check.yml, is what spares a release's unchanged crates. release.yml builds
+x86_64 (`linux`, which the deploys wait for) and aarch64 (`linux-arm64`)
+in jobs of their own. The nightly saves its own cache. Until 2026-10-10 they ran on a host
 runner on geek that kept its builds in `~/.cache/illogical-ci/`, which
 `scripts/ci-cap-target` kept under 30 GB a job: cargo never prunes it, and
 on 2026-10-02 it grew to 136 GB, filled jake-mini's disk and took the home
