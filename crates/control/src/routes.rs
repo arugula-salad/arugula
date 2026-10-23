@@ -51,6 +51,8 @@ enum Auth {
     HostedEnrollment,
     Hosted,
     DaemonOrHosted,
+    IssuerCode,
+    IssuerToken,
     AgentToken,
 }
 
@@ -65,6 +67,7 @@ enum Client {
     Github,
     Stripe,
     Operator,
+    Product,
     Agent,
 }
 

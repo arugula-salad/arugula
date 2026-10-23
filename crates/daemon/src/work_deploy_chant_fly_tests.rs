@@ -40,7 +40,8 @@ const FAKE_CHANT: &str = r#"#!/bin/bash
 set -e
 fly=no; [ "$FLY_API_TOKEN" = "$FAKE_TOKEN" ] && fly=yes
 gh=no; [ -n "$GITHUB_TOKEN" ] && gh=yes
-echo "chant $* | fly:$fly gh:$gh user:$USER" >> "$FAKE_LOG"
+fd3=no; (: >&3) 2>/dev/null && fd3=yes
+echo "chant $* | fly:$fly gh:$gh fd3:$fd3 user:$USER" >> "$FAKE_LOG"
 export LC_ALL=C
 B=refs/heads/chant/lifecycle
 now() { date -u +%Y-%m-%dT%H:%M:%S.000Z; }
@@ -135,7 +136,8 @@ esac
 const FAKE_FLYCTL: &str = r#"#!/bin/bash
 fly=no; [ "$FLY_API_TOKEN" = "$FAKE_TOKEN" ] && fly=yes
 gh=no; [ -n "$GITHUB_TOKEN" ] && gh=yes
-echo "flyctl $* | fly:$fly gh:$gh" >> "$FAKE_LOG"
+fd3=no; (: >&3) 2>/dev/null && fd3=yes
+echo "flyctl $* | fly:$fly gh:$gh fd3:$fd3" >> "$FAKE_LOG"
 img=$(cat "$FAKE_DIR/image")
 case "$1" in
   version) echo "flyctl v0.4.104 linux/amd64 Commit: 815f54c0 BuildDate: 2026-09-15T17:40:56Z" ;;
@@ -187,7 +189,8 @@ esac
 const FAKE_NPM: &str = r#"#!/bin/bash
 fly=no; [ -n "$FLY_API_TOKEN" ] && fly=yes
 gh=no; [ -n "$GITHUB_TOKEN" ] && gh=yes
-echo "npm $* | fly:$fly gh:$gh" >> "$FAKE_LOG"
+fd3=no; (: >&3) 2>/dev/null && fd3=yes
+echo "npm $* | fly:$fly gh:$gh fd3:$fd3" >> "$FAKE_LOG"
 "#;
 
 struct Rig {
@@ -363,6 +366,8 @@ fn chant_fly_releases_through_chants_gate_and_links_its_ledger() {
         };
         assert!(saw.starts_with(want), "{l}");
         assert!(!call.contains(TOKEN) && !call.contains(GH), "on a command line: {l}");
+        // Only the driver holds its result pipe: what it runs starts without it.
+        assert!(!saw.contains("fd3:yes"), "fd 3 reached a program the driver ran: {l}");
     }
     assert!(r.log().iter().filter(|l| l.starts_with("chant")).all(|l| l.ends_with("user:arugula")));
     assert!(!ran.out.contains(TOKEN) && !ran.out.contains(GH), "{}", ran.out);

@@ -439,16 +439,26 @@ test-build: web
 # arugula-control's binary.
 test_bins := cargo + " build --workspace --bins --example interop"
 
+# PART (check.yml's test and test-2, 1 or 2) runs half the Rust tests,
+# nextest's count:PART/2; only the first half runs the doctests and
+# control-smoke after them.
 [private]
-test-run:
-    {{cargo}} nextest run --workspace
+test-run part="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{part}}" in
+      '') {{cargo}} nextest run --workspace ;;
+      1|2) {{cargo}} nextest run --workspace --partition "count:{{part}}/2" ;;
+      *) echo "test-run: PART is 1 or 2" >&2; exit 2 ;;
+    esac
+    [ "{{part}}" != 2 ] || exit 0
     {{cargo}} test --workspace --doc
     just e2e-interop control-smoke
 
 # The platform's suite on Postgres (M143), as hosted control runs it: a
 # postgres:17 container of its own on a free port, removed after. The same
-# tests as on SQLite (`Db::test`); check.yml's test job runs it after
-# `test-run`, on what test-build built.
+# tests as on SQLite (`Db::test`); check.yml's test-2 job runs it after
+# `test-run 2`, on what test-build built.
 test-platform-postgres:
     #!/usr/bin/env bash
     set -euo pipefail

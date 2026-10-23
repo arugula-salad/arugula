@@ -5,7 +5,8 @@
 //! analytics the same way, and agree on who is asking (`Principal`, and the
 //! signed header the hub forwards it in once the platform is its own
 //! process, M140), and how the two sign the calls between them
-//! (`internal`), and how each backs its database up off-site (`backup`).
+//! (`internal`), and how each backs its database up off-site (`backup`),
+//! and the hub's tokens for other products, which either checks (`issuer`).
 //!
 //! Nothing here knows about either side's state: no `App`, no tables.
 
@@ -13,6 +14,7 @@ pub mod analytics;
 pub mod backup;
 pub mod error;
 pub mod internal;
+pub mod issuer;
 pub mod limit;
 pub mod principal;
 pub mod roots;

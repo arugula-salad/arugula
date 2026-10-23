@@ -625,18 +625,25 @@ const KEPT_JOIN_MS = 15 * 60 * 1000;
 /** M152: the hub's `/signin/platform` sent someone without a session here
  * to sign in, with its query as `#platform-signin=` (base64url). Once
  * they're signed in, back to it: it sends the browser on to the platform
- * page with a one-time code. Whether the page is leaving. */
+ * page with a one-time code. M228: the issuer's `/oauth/authorize` and
+ * `/oauth/hud` do the same with `#issuer-signin=`, their path and query.
+ * Whether the page is leaving. */
 export function resumePlatformSignIn(): boolean {
-  const m = /^#platform-signin=([A-Za-z0-9_-]{1,4096})$/.exec(location.hash);
+  const m = /^#(platform|issuer)-signin=([A-Za-z0-9_-]{1,4096})$/.exec(location.hash);
   if (!m) return false;
-  let q: URLSearchParams;
+  let to: string;
   try {
-    q = new URLSearchParams(atob(m[1].replace(/-/g, "+").replace(/_/g, "/")));
+    const raw = atob(m[2].replace(/-/g, "+").replace(/_/g, "/"));
+    if (m[1] === "platform") to = `/signin/platform?${new URLSearchParams(raw)}`;
+    // M228: the hub's issuer sent a product's sign-in here, as the path
+    // it came in on: only its own two, never anywhere else.
+    else if (/^\/oauth\/(authorize|hud)\?[^#\\]*$/.test(raw)) to = raw;
+    else return false;
   } catch {
     return false;
   }
   history.replaceState(null, "", location.pathname + location.search);
-  location.replace(`/signin/platform?${q}`);
+  location.replace(to);
   return true;
 }
 
