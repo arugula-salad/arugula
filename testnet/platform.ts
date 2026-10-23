@@ -44,7 +44,8 @@
 //                 the approve tool, the approve and deny routes and the
 //                 standing grant's sign route, and the hub's device approval.
 //                 The owner reads each, labelled as their agent on the token,
-//                 the deploy still waiting, and the agent's calls noted.
+//                 the deploy still waiting (and newest in the project's
+//                 history), and the agent's calls noted.
 //                 --break: the owner revokes the token first, so the agent
 //                 files nothing: {project, token_id, issue, run, deploy, refused}
 //   issues-write  native issues before a platform restart (M206): chat on, a
@@ -544,6 +545,11 @@ async function agentMcp(d: Device, project: string, broken: boolean) {
     throw new Error(`the deploy moved: ${JSON.stringify(seenDeploy)}`);
   }
   if (seenDeploy.agent?.machine_name !== "redone (MCP)") throw new Error(`the deploy isn't labelled: ${JSON.stringify(seenDeploy.agent)}`);
+  // And in the project's history, without its push: the environment's newest.
+  const history = (await must(d, "GET", `/api/projects/${project}/deploys?environment=production`)).deploys;
+  if (history[0]?.id !== deploy.id || history[0]?.state !== "pending" || history[0]?.agent?.machine_name !== "redone (MCP)") {
+    throw new Error(`the history doesn't list the deploy: ${JSON.stringify(history)}`);
+  }
   const calls = (await must(d, "GET", `/api/agent-tokens/${tokenId}/calls`)).calls;
   const outcomes = Object.fromEntries(calls.map((c: any) => [c.tool, c.outcome]));
   for (const [t, o] of [["issue_write", "ok"], ["start_run", "ok"], ["plan_deploy", "ok"], ["approve", "refused"]]) {
