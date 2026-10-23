@@ -759,6 +759,95 @@ There's no overlap to wait for:
    tracked. The kid in each ID token's header, and in each hud assertion
    (`kid`), says which key signed it.
 
+### Importing planter (M232)
+
+planter's accounts and repos join the platform from a backup of planter's
+data directory (`/data`, the JSON files its `store.mjs` writes), in two
+commands, each where its rows live. Both read the backup and nothing else of
+planter, never change it, never delete anything, and are safe to run again:
+what's done is recorded, so a second run changes nothing. `--dry-run` prints
+exactly what a run would change and writes nothing; `--json` prints the same
+as JSON.
+
+1. **The backup.** Only `accounts.json` and `boxes.json` are read, so copy
+   only those (`sessions.json` holds sealed GitHub tokens: leave it). From
+   the cluster planter runs in:
+
+   ```
+   mkdir planter-backup
+   kubectl -n arugula exec deploy/planter -- cat /data/accounts.json > planter-backup/accounts.json
+   kubectl -n arugula exec deploy/planter -- cat /data/boxes.json > planter-backup/boxes.json
+   ```
+
+   Put a copy on each machine (the files hold logins and repo names: delete
+   them from the machines afterwards):
+
+   ```
+   fly ssh console -a illogical-control -C "mkdir -p /data/planter-backup"
+   fly ssh sftp put -a illogical-control planter-backup/accounts.json /data/planter-backup/accounts.json
+   fly ssh sftp put -a illogical-control planter-backup/boxes.json /data/planter-backup/boxes.json
+   ```
+
+   and the same on `arugula-platform` (a directory the server can't serve,
+   `/tmp/planter-backup` is fine). The platform runs two machines: put it on
+   one and run step 4 there, with `--machine <id>` on both (`fly machine
+   list -a arugula-platform`).
+2. **planter's client** must be registered on the hub (`issuer add-client
+   --kind oidc --id planter`, as for M229's links). The real run refuses
+   without it; the dry run warns.
+3. **Accounts, on the hub:**
+
+   ```
+   fly ssh console -a illogical-control -C "/arugula-control import planter --db /data/control.db --backup /data/planter-backup --dry-run"
+   fly ssh console -a illogical-control -C "/arugula-control import planter --db /data/control.db --backup /data/planter-backup"
+   ```
+
+   Each planter account with a numeric GitHub id is linked (client
+   `planter`, M229's `account_links`) to the hub account whose GitHub
+   identity has that number, **never by login**, audited `imported` by
+   `operator`. It reports, and doesn't link:
+   - **waiting for their first sign-in**: no account has that GitHub id
+     yet. Nothing is made for them; run it again later to pick them up;
+   - an account that **was unlinked** from planter (its tombstone, or an
+     `unlinked` in the audit): the import never links it again;
+   - a link either side already has elsewhere, and an account planter says
+     it linked to a different platform account (`platformAccount`);
+   - an entry with no numeric GitHub id (skipped).
+4. **Repos and boxes, on the platform** (after the hub's run: it links
+   repos only for planters linked there):
+
+   ```
+   fly ssh console -a arugula-platform --machine <id> -C "/arugula-platform import planter --backup /tmp/planter-backup --dry-run"
+   fly ssh console -a arugula-platform --machine <id> -C "/arugula-platform import planter --backup /tmp/planter-backup --org ORG=prj_… --dry-run"
+   fly ssh console -a arugula-platform --machine <id> -C "/arugula-platform import planter --backup /tmp/planter-backup --org ORG=prj_…"
+   ```
+
+   It uses the running server's database, hub and GitHub App (from this
+   shell's environment, else the server's). Each repo a box was planted
+   from becomes a step 4 repo link, as linking by hand makes one: the
+   platform's App must be installed for it, and the planter must be an
+   admin or maintainer on GitHub. Where it goes:
+   - **a user's repo** goes to the planter's **personal project** (made if
+     they have none);
+   - **an organization's repo** (GitHub says the App's installation is an
+     Organization's) goes where `--org ORG=<project>` says: a team's
+     project the planter is an owner or editor of, or `--org ORG=personal`.
+     Without one it waits, so nothing lands in the wrong project;
+   - a repo planted by several people is offered to them in the order of
+     their first box; once it's linked, the others are told where.
+
+   It reports, and doesn't link: planters not linked on the hub yet, repos
+   the App isn't installed for (with the install link), organizations with
+   no `--org`, a role short of maintain, a repo linked to another project,
+   and one unlinked since. **A repo the import linked once is never linked
+   again by it**, even after it's unlinked and purged
+   (`planter_imports`). Every **box** is listed with its owner and
+   imported as nothing: boxes were Managoat conversations, and Managoat is
+   gone, so their owners use hosted workspaces instead.
+
+Run both again whenever someone new signs in or installs the App: only
+what's new changes.
+
 ### Daemon census
 
 Control keeps, on each daemon's row, when it was last on the relay

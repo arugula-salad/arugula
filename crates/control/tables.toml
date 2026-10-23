@@ -147,7 +147,7 @@ name = "account_link_events"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "The audit of account links (M229): a link made, renamed or ended (with the consent), the client and product user, the account, by the product, the person or an operator, when. Kept a year."
+what = "The audit of account links (M229): a link made, renamed, ended (with the consent) or imported from a product's backup by an operator (M232), the client and product user, the account, by the product, the person or an operator, when. Kept a year."
 with_account = "deleted"
 seen_by = ["litestream"]
 
@@ -648,6 +648,17 @@ what = "Every tool call a token's agent made on the platform's MCP endpoint (M23
 why_asleep = "Its owner reads what their agent did on the platform page and with the CLI, with every machine asleep."
 with_account = "deleted"
 note = "The account's tokens' calls go with them."
+seen_by = ["litestream"]
+
+[[table]]
+name = "planter_imports"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "planter's import (M232): each repo planter's boxes were planted from that the operator's import linked to a project (or found linked there already), by planter's user id (the numeric GitHub id) and the repo's name: GitHub's repo id, the project, the platform account it was imported for, and when. Never updated, so a repo unlinked since is never linked again by the import."
+why_asleep = "It's the record of a one-off import, read by the import when it's run again, and kept with the repo links it made."
+with_account = "deleted"
+note = "What was imported for the account goes; the repo links stay as linking's own rows do."
 seen_by = ["litestream"]
 
 [[table]]

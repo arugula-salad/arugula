@@ -363,7 +363,7 @@ pub fn secrets_open(path: &Path, key: &str, previous: Option<&str>) -> anyhow::R
 /// it in its environment: on a Fly machine, `fly ssh console` doesn't
 /// always carry the app's secrets, and the server's are the ones that
 /// matter. `None` off Linux, or when there's no such process.
-fn running_env(var: &str) -> Option<(u32, String)> {
+pub(crate) fn running_env(var: &str) -> Option<(u32, String)> {
     let me = std::process::id();
     let exe = std::env::current_exe().ok()?;
     for e in std::fs::read_dir("/proc").ok()?.flatten() {
@@ -386,7 +386,7 @@ fn running_env(var: &str) -> Option<(u32, String)> {
 
 /// The first words that make either binary run one of these instead of
 /// serving (and `platform`, control's prefix for them).
-pub const COMMANDS: [&str; 10] = [
+pub const COMMANDS: [&str; 11] = [
     "copy",
     "checksums",
     "secrets-check",
@@ -397,6 +397,7 @@ pub const COMMANDS: [&str; 10] = [
     "run-logs",
     "stuck",
     "platform",
+    "import",
 ];
 
 #[derive(Parser, Debug)]

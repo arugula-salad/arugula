@@ -130,7 +130,13 @@ fn main() -> anyhow::Result<()> {
     // operator's takedown (M187). `run-logs`: runs' logs and artifacts in
     // the run-log bucket, by project (M213), read-only. `stuck`: runs and
     // deploys that are stuck, and unsticking one (M223).
+    // `import planter`: planter's repos as repo links (M232,
+    // `arugula_platform::planter`), with the server's configuration.
     let mut argv = std::env::args().skip(1).peekable();
+    if argv.peek().is_some_and(|a| a == "import") {
+        argv.next();
+        return arugula_platform::planter::run("arugula-platform import", argv);
+    }
     if argv.peek().is_some_and(|a| {
         ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "previews", "run-logs", "stuck"]
             .contains(&a.as_str())

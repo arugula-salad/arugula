@@ -71,6 +71,7 @@ mod maintenance;
 mod notice;
 mod passkey;
 mod plans;
+mod planter_import;
 mod platform_host;
 #[cfg(test)]
 mod platform_host_wire;
@@ -864,7 +865,8 @@ fn main() -> anyhow::Result<()> {
     // (device_review.rs). `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
     // `notice`: a notice for every account (notice.rs). `issuer`: the
-    // issuer's keys and clients (issuer.rs). `hosted-enrollment`:
+    // issuer's keys and clients (issuer.rs). `import planter`: planter's
+    // accounts as account links (planter_import.rs, M232). `hosted-enrollment`:
     // what the platform asks as it makes a hosted box (hosted.rs). `platform`: a
     // window's tools, the platform's own code (`arugula_platform::window`).
     let mut argv = std::env::args().skip(1).peekable();
@@ -882,6 +884,9 @@ fn main() -> anyhow::Result<()> {
     }
     if argv.peek().is_some_and(|a| a == "issuer") {
         return issuer::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "import") {
+        return planter_import::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "notice") {
         return notice::run(argv.skip(1));

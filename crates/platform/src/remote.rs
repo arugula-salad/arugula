@@ -354,6 +354,12 @@ struct PasskeyArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+struct ProductUserArgs {
+    client: String,
+    user: String,
+}
+
+#[derive(Serialize, Deserialize)]
 struct UnlinkArgs {
     account: String,
     client: String,
@@ -541,6 +547,15 @@ impl HubPort for HttpHub {
         let a = UnlinkArgs { account: account.to_owned(), client: client.to_owned() };
         Box::pin(self.0.call("unlink_product", a))
     }
+
+    fn linked_account<'a>(
+        &'a self,
+        client: &'a str,
+        user: &'a str,
+    ) -> BoxFuture<'a, HubResult<Option<crate::hub::LinkedAccount>>> {
+        let a = ProductUserArgs { client: client.to_owned(), user: user.to_owned() };
+        Box::pin(self.0.call("linked_account", a))
+    }
 }
 
 /// What one side's internal API answers with: the port it serves, and
@@ -652,6 +667,10 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "unlink_product" => {
                 let a: UnlinkArgs = args(&body)?;
                 answer(hub.unlink_product(&a.account, &a.client).await?)?
+            }
+            "linked_account" => {
+                let a: ProductUserArgs = args(&body)?;
+                answer(hub.linked_account(&a.client, &a.user).await?)?
             }
             _ => return Ok(None),
         }))

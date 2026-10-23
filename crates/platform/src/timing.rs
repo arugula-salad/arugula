@@ -355,6 +355,13 @@ impl HubPort for Timed {
     fn unlink_product<'a>(&'a self, account: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<bool>> {
         timed!(self.0.unlink_product(account, client))
     }
+    fn linked_account<'a>(
+        &'a self,
+        client: &'a str,
+        user: &'a str,
+    ) -> BoxFuture<'a, HubResult<Option<crate::hub::LinkedAccount>>> {
+        timed!(self.0.linked_account(client, user))
+    }
 }
 
 #[cfg(test)]

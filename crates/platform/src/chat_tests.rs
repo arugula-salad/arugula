@@ -88,6 +88,9 @@ struct State {
     /// the hub can't say.
     activity: BTreeMap<String, bool>,
     activity_down: bool,
+    /// Products' users linked to accounts (M229), by (client, user): the
+    /// account and the GitHub id.
+    product_links: BTreeMap<(String, String), (String, u64)>,
 }
 
 fn done<'a, T: Send + 'a>(t: T) -> BoxFuture<'a, HubResult<T>> {
@@ -205,6 +208,12 @@ impl TestHub {
     /// The forge pokes it was handed.
     pub(crate) fn pokes(&self) -> Vec<arugula_control_wire::forge::Poke> {
         self.state.lock().unwrap().pokes.clone()
+    }
+
+    /// A product's user linked to an account by GitHub id (M229).
+    pub(crate) fn link_product(&self, client: &str, user: &str, account: &str, github_id: u64) {
+        let mut s = self.state.lock().unwrap();
+        s.product_links.insert((client.into(), user.into()), (account.into(), github_id));
     }
 
     pub(crate) fn github(&self, account: &str, id: u64, login: &str) {
@@ -414,6 +423,17 @@ impl HubPort for TestHub {
         self.called("forge_pokes");
         self.state.lock().unwrap().pokes.extend_from_slice(pokes);
         done(pokes.len() as u32)
+    }
+
+    fn linked_account<'a>(
+        &'a self,
+        client: &'a str,
+        user: &'a str,
+    ) -> BoxFuture<'a, HubResult<Option<crate::hub::LinkedAccount>>> {
+        self.called("linked_account");
+        let s = self.state.lock().unwrap();
+        let l = s.product_links.get(&(client.to_owned(), user.to_owned())).cloned();
+        done(l.map(|(account, github_id)| crate::hub::LinkedAccount { account, github_id }))
     }
 
     fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<crate::forge::GithubUser>>> {
