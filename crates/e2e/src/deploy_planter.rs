@@ -134,9 +134,49 @@ pub fn ship_name_ok(name: &str) -> bool {
     label(name, 32) && !reserved(name)
 }
 
+/// Names nobody ships under (M233's review: a reserved list, besides
+/// asking GitHub): the org's own products and services, and names a host
+/// should never be.
+pub const RESERVED_NAMES: &[&str] = &[
+    "arugula",
+    "studio",
+    "hud",
+    "fleet",
+    "redone",
+    "experimental",
+    "home-cloud",
+    "control",
+    "hub",
+    "api",
+    "www",
+    "admin",
+    "auth",
+    "login",
+    "signin",
+    "oauth",
+    "mail",
+    "smtp",
+    "status",
+    "docs",
+    "loam",
+    "fountain",
+    "managoat",
+    "chant",
+    "beds",
+    "lobby",
+    "door",
+    "grafana",
+    "infisical",
+    "flux",
+    "github",
+    "registry",
+    "ghcr",
+];
+
 /// Names planter never let an agent ship under: the platform's own
 /// (`platform`, `platform-*`), `shipped`, planter's (`planter*`), `app`
-/// and `apps`; and what Flux keeps beside the pointers (M222's).
+/// and `apps`; what Flux keeps beside the pointers (M222's); and
+/// [`RESERVED_NAMES`].
 pub fn reserved(name: &str) -> bool {
     name == "platform"
         || name.starts_with("platform-")
@@ -145,6 +185,7 @@ pub fn reserved(name: &str) -> bool {
         || name == "app"
         || name == "apps"
         || apps_platform::RESERVED_APP_NAMES.contains(&name)
+        || RESERVED_NAMES.contains(&name)
 }
 
 fn label(name: &str, max: usize) -> bool {
@@ -176,6 +217,16 @@ pub fn artifact_ok(reference: &str) -> bool {
 /// ship put it.
 pub const ARTIFACT_WHERE: &str = "platform";
 
+/// The variable naming the projects planter's drivers may be used in,
+/// comma separated (M233's review): none when it's unset or empty.
+pub const PROJECTS_VAR: &str = "PLANTER_PROJECTS";
+
+/// The most a project's kept artifacts may add up to, in bytes.
+pub const MAX_PROJECT_ARTIFACTS: u64 = 200 * 1024 * 1024;
+
+/// The most custom domains Go live asks for.
+pub const MAX_DOMAINS: usize = 10;
+
 /// The most a ship's tarball may be, as sent (planter took 16 MiB; the
 /// platform keeps it in its database until its deploy has run, and it
 /// comes through MCP, so less).
@@ -200,10 +251,34 @@ pub const VOLUME: &str = "volume";
 /// Ship's and Promote's: the app, and (Ship) what its `app.yaml` says.
 pub const APP: &str = "app";
 pub const PORT: &str = "port";
+/// Go live's: the custom domains a new pointer asks for, space separated,
+/// which the plan lists and the app's `app.yaml` must ask for exactly.
+pub const DOMAINS: &str = "domains";
 
 const PROD_SETTINGS: &[&str] = &[APP_DIR, HEALTH, PORT_ENV, DATA_ENV, SECRETS, POSTGRES, METRICS, VOLUME];
 const SHIP_SETTINGS: &[&str] = &[APP, PORT, HEALTH, PORT_ENV, SECRETS];
 const PROMOTE_SETTINGS: &[&str] = &[APP];
+const GO_LIVE_SETTINGS: &[&str] = &[DOMAINS];
+
+/// A host name a custom domain may be: lowercase labels, a dot, at most 253.
+pub fn host_ok(h: &str) -> bool {
+    h.len() <= 253
+        && h.contains('.')
+        && h.split('.').all(|l| {
+            (1..=63).contains(&l.len())
+                && l.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                && !l.starts_with('-')
+                && !l.ends_with('-')
+        })
+}
+
+/// Go live's custom domains, as the setting lists them (space separated).
+pub fn domains(settings: &Settings) -> Vec<String> {
+    settings
+        .get(DOMAINS)
+        .map(|d| d.split(' ').filter(|h| !h.is_empty()).map(str::to_owned).collect())
+        .unwrap_or_default()
+}
 
 fn env_name_ok(s: &str) -> bool {
     (1..=64).contains(&s.len())
@@ -244,6 +319,7 @@ pub fn settings(driver: &str, given: &Settings) -> Result<Settings, String> {
         PROD => PROD_SETTINGS,
         SHIP => SHIP_SETTINGS,
         PROMOTE => PROMOTE_SETTINGS,
+        GO_LIVE => GO_LIVE_SETTINGS,
         _ => &[],
     };
     if let Some(k) = given.keys().find(|k| !takes.contains(&k.as_str())) {
@@ -287,6 +363,17 @@ pub fn settings(driver: &str, given: &Settings) -> Result<Settings, String> {
             Some(a) if ship_name_ok(a) => {}
             _ => return Err("planter-promote needs app: the shipped app it promotes".into()),
         },
+        GO_LIVE => {
+            if let Some(d) = s.get(DOMAINS) {
+                let hosts: Vec<&str> = d.split(' ').collect();
+                if hosts.len() > MAX_DOMAINS
+                    || !hosts.iter().all(|h| host_ok(h))
+                    || hosts.iter().enumerate().any(|(i, h)| hosts[..i].contains(h))
+                {
+                    return Err(format!("domains is up to {MAX_DOMAINS} host names, space separated, each once"));
+                }
+            }
+        }
         _ => {}
     }
     if s.get(HEALTH).is_some_and(|h| !path_ok(h)) || s.get(METRICS).is_some_and(|m| !path_ok(m)) {
@@ -350,6 +437,14 @@ const SHIP_FIELDS: &[SettingField] = &[
     field(SECRETS, false, None, &[], "The secrets it's given as env, by name, comma separated."),
 ];
 
+const GO_LIVE_FIELDS: &[SettingField] = &[field(
+    DOMAINS,
+    false,
+    None,
+    &[],
+    "Custom domains a new pointer asks for, space separated: exactly those its app.yaml routes beyond its own two.",
+)];
+
 const PROMOTE_FIELDS: &[SettingField] =
     &[field(APP, true, None, &[], "The shipped app it moves from loam into the cluster.")];
 
@@ -359,6 +454,7 @@ pub fn setting_fields(driver: &str) -> &'static [SettingField] {
         PROD => PROD_FIELDS,
         SHIP => SHIP_FIELDS,
         PROMOTE => PROMOTE_FIELDS,
+        GO_LIVE => GO_LIVE_FIELDS,
         _ => &[],
     }
 }
@@ -421,12 +517,15 @@ pub fn plan_lines(driver: &str, kind: &str, reference: &str, source_where: &str,
         GO_LIVE => {
             let name = app_of(source_where).unwrap_or_default();
             let path = apps_platform::pointer_path(name);
+            let asked = domains(settings);
+            let asked = if asked.is_empty() { "none".to_owned() } else { asked.join(", ") };
             t.push_str(&format!(
                 "repo {POINTERS_REPO} (branch {POINTERS_BRANCH})\npath {path}\nchange pin the GitRepository {name} \
                  (https://github.com/{source_where}) at commit {reference}; with no pointer, a new one as planter's Go \
-                 live writes it, asking for the custom domains that commit's app.yaml routes \
-                 (platform.arugula.io/domains, sorted by planter's validate()); a revert commit when it rolls back \
-                 the last deploy\n\
+                 live writes it; a revert commit when it rolls back the last deploy\n\
+                 custom domains a new pointer asks for (platform.arugula.io/domains): {asked}; that commit's \
+                 app.yaml must route exactly these beyond its own two hosts (sorted by planter's validate()), or \
+                 nothing is pushed. An existing pointer's are left as they are\n\
                  check the commit is on {source_where}'s default branch, its app.yaml names {name} and runtime k8s, \
                  and no other app holds the name\n\
                  verify https://{name}.{APPS_DOMAIN} answers 200 at its app.yaml's health path; when the answer \
@@ -483,7 +582,8 @@ pub fn plan_lines(driver: &str, kind: &str, reference: &str, source_where: &str,
                  the settings), k8s/platform/ rendered from it, and k8s/kustomization.yaml if there's none; stop if \
                  {app}/app.yaml says another runtime (a promoted app changes by pull request only)\n\
                  does: the first time, point {POINTERS_REPO}'s apps/{app}.yaml at {SHIPPED_REPO}'s {app}/k8s (branch \
-                 {SHIPPED_BRANCH}), as planter did; stop if another app holds the name\n\
+                 {SHIPPED_BRANCH}), as planter did; stop if another app holds the name, it's a repository of {ORG}'s \
+                 (asked of GitHub), or (with secrets) anyone else ever shipped or pointed at {app}\n\
                  verify {SHIPPED_REPO}'s build pins {app}'s image by digest after this commit, then \
                  https://{app}.{LOAM_DOMAIN} answers 200 at {health}, within 20 minutes\n\
                  with: {mint}, that writes {SHIPPED_REPO}'s contents only, and one that writes {POINTERS_REPO}'s \

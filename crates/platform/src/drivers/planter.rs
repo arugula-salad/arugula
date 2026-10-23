@@ -21,11 +21,18 @@
 //! - **Roll back:** Go live only, as apps-platform's: a revert commit of
 //!   the pointer. A ship goes back by shipping the old source again; a
 //!   promotion by closing its pull request.
+//! - **Only named projects, and accounts hosted workspaces allow**
+//!   ([`Driver::allowed_in`], [`account_allowed`]): `PLANTER_PROJECTS`
+//!   lists the projects (none when it's unset or empty), as
+//!   `ARUGULA_RELEASE_PROJECT` does for Arugula's release.
 //! - **A shipped app's name is one project's** ([`Driver::claims`]): the
-//!   first project to make a Ship or Promote environment for it has it;
-//!   another is refused, when it makes one and when it plans. The box
-//!   checks the same in `shipped`'s history: it won't ship over an app
-//!   another project (or planter, before the platform) shipped last.
+//!   first project to make a Ship or Promote environment for it has it,
+//!   in `planter_app_claims` (its key makes it atomic); another is refused,
+//!   when it makes one and when it plans. It's never a reserved name, nor an
+//!   arugula-salad repository's ([`ship_name_taken`]: GitHub's public API,
+//!   and planter's App's installations). The box checks again in
+//!   `shipped`'s history (it won't ship over an app another project, or
+//!   planter, shipped last) and on GitHub before it pushes.
 
 use arugula_e2e::deploy::planter::{self as p, POINTERS_REPO, SHIPPED_REPO};
 use serde_json::{Map, Value};
@@ -39,6 +46,42 @@ use crate::{
     },
     forge::DeployScope,
 };
+
+pub use arugula_e2e::deploy::planter::PROJECTS_VAR;
+
+/// Projects tests name, as `PLANTER_PROJECTS` would.
+#[cfg(test)]
+pub static TEST_PROJECTS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Whether `project` may use planter's drivers: one `PLANTER_PROJECTS`
+/// names (`*`, every project, only where the fake driver is allowed: tests
+/// and testnet).
+pub fn project_allowed(project: &str) -> Result<(), String> {
+    #[cfg(test)]
+    if TEST_PROJECTS.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|p| p == project || p == "*") {
+        return Ok(());
+    }
+    let named = std::env::var(PROJECTS_VAR).ok();
+    let every = super::fake_allowed() && named.as_deref().is_some_and(|n| n.split(',').any(|p| p.trim() == "*"));
+    if every || super::arugula_release::project_named(named.as_deref(), project) {
+        Ok(())
+    } else {
+        Err(format!(
+            "planter's drivers deploy to home-cloud's app platform: only the projects the platform names \
+             ({PROJECTS_VAR}) may use them"
+        ))
+    }
+}
+
+/// Whether `account` may make or plan planter's deploys: one hosted
+/// workspaces allow, since every apply runs on a hosted box.
+pub fn account_allowed(app: &Platform, account: &str) -> Result<(), String> {
+    if app.hosted.allows(account) {
+        Ok(())
+    } else {
+        Err("planter's drivers apply on hosted boxes, and this account can't use them yet".into())
+    }
+}
 
 pub struct Prod;
 pub struct GoLive;
@@ -77,24 +120,18 @@ fn keep(pairs: &[(&str, Option<&str>)]) -> Map<String, Value> {
 }
 
 /// Why `env` (a Ship or Promote environment, being made or planned to)
-/// can't have its app: another project's Ship or Promote environment has
-/// it.
+/// can't have its app: another project claimed the name first. Claims it
+/// for `env`'s project when it's free, atomically.
 fn claimed(app: &Platform, env: &Environment) -> Option<String> {
     let name = env.settings.get(p::APP)?;
-    for driver in [p::SHIP, p::PROMOTE] {
-        let all = match app.db.environments_driven_by(driver) {
-            Ok(all) => all,
-            Err(e) => return Some(format!("couldn't read who has {name}: {e:#}")),
-        };
-        if all.iter().any(|e| e.project != env.project && e.settings.get(p::APP) == Some(name)) {
-            return Some(format!(
-                "the shipped app {name} is another project's: name yours otherwise (its host is \
-                 https://<app>.{})",
-                p::LOAM_DOMAIN
-            ));
-        }
+    match app.db.claim_planter_app(name, &env.project, arugula_e2e::now_ms()) {
+        Ok(true) => None,
+        Ok(false) => Some(format!(
+            "the shipped app {name} is another project's: name yours otherwise (its host is https://<app>.{})",
+            p::LOAM_DOMAIN
+        )),
+        Err(e) => Some(format!("couldn't claim the name {name}: {e:#}")),
     }
-    None
 }
 
 /// Why a Ship to `env` can't have its app's name, asked of GitHub when
@@ -107,12 +144,32 @@ pub async fn ship_name_taken(app: &Platform, env: &Environment) -> Option<String
         return None;
     }
     let name = env.settings.get(p::APP)?;
+    if p::reserved(name) {
+        return Some(format!("{name} is reserved for the platform: ship under another name"));
+    }
     let gh = app.deploy_app.as_ref()?;
     let repo = format!("{}/{name}", p::ORG);
+    let taken = || {
+        Some(format!("{repo} is a repository, whose app and image the name {name} belongs to: ship under another name"))
+    };
+    // A public repository, as anyone sees it.
+    let public = app
+        .http
+        .get(format!("{}/repos/{repo}", gh.api))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "arugula-control")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await;
+    match public.map(|r| r.status().as_u16()) {
+        Ok(200 | 301) => return taken(),
+        Ok(404) => {}
+        Ok(n) => return Some(format!("couldn't ask GitHub whether {repo} is a repository (it said {n}): plan again")),
+        Err(_) => return Some(format!("couldn't ask GitHub whether {repo} is a repository: plan again")),
+    }
+    // A private one planter's App is installed on.
     match gh.installation(&app.http, &repo).await {
-        Ok(Some(_)) => Some(format!(
-            "{repo} is a repository, whose app and image the name {name} belongs to: ship under another name"
-        )),
+        Ok(Some(_)) => taken(),
         Ok(None) => None,
         Err(e) => Some(format!("couldn't ask GitHub whether {repo} is a repository: {e:#}")),
     }
@@ -121,6 +178,10 @@ pub async fn ship_name_taken(app: &Platform, env: &Environment) -> Option<String
 impl Driver for Prod {
     fn name(&self) -> &'static str {
         p::PROD
+    }
+
+    fn allowed_in(&self, project: &str) -> Result<(), String> {
+        project_allowed(project)
     }
 
     fn refuses(&self, source: &Source) -> Option<String> {
@@ -143,6 +204,10 @@ impl Driver for Prod {
 impl Driver for GoLive {
     fn name(&self) -> &'static str {
         p::GO_LIVE
+    }
+
+    fn allowed_in(&self, project: &str) -> Result<(), String> {
+        project_allowed(project)
     }
 
     fn refuses(&self, source: &Source) -> Option<String> {
@@ -177,6 +242,10 @@ impl Driver for GoLive {
 impl Driver for Ship {
     fn name(&self) -> &'static str {
         p::SHIP
+    }
+
+    fn allowed_in(&self, project: &str) -> Result<(), String> {
+        project_allowed(project)
     }
 
     fn refuses(&self, source: &Source) -> Option<String> {
@@ -214,6 +283,10 @@ impl Driver for Ship {
 impl Driver for Promote {
     fn name(&self) -> &'static str {
         p::PROMOTE
+    }
+
+    fn allowed_in(&self, project: &str) -> Result<(), String> {
+        project_allowed(project)
     }
 
     fn refuses(&self, source: &Source) -> Option<String> {

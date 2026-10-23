@@ -625,6 +625,7 @@ async fn an_agent_ships_with_files_and_the_platform_keeps_its_source() {
         }
     }
     let (_, app, base, t, _) = platform_with(Some(fake_github(gh).await)).await;
+    crate::drivers::planter::TEST_PROJECTS.lock().unwrap().push(t.clone());
     production(&base, &t).await;
     let (st, env) = call(
         &base,

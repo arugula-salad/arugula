@@ -51,10 +51,11 @@
 //!
 //! **planter's Go live (M233)** is this same apply, as another [`Flavor`]
 //! (`work_planter.rs`): its own driver name and trailer, planter's App's
-//! tokens. Both write a new pointer as planter's Go live did, asking for
-//! the custom domains the app's `app.yaml` routes
-//! (`platform.arugula.io/domains`), sorted by planter's own `validate()`
-//! (the vendored renderer, run only when there's a host to sort).
+//! tokens, and a new pointer that asks for the custom domains its approved
+//! plan lists (`platform.arugula.io/domains`), as planter's Go live did:
+//! the app's `app.yaml` must route exactly those, sorted by planter's own
+//! `validate()` (the vendored renderer, run only when there's a host to
+//! sort). apps-platform's own new pointers ask for none, as before.
 
 use std::{
     path::{Path, PathBuf},
@@ -717,7 +718,18 @@ pub fn say(s: &str) {
 
 /// Apply `d` as `f`'s driver (apps-platform's, or M233's planter Go
 /// live): clone, pin, commit, push. What was committed, or why not.
-pub async fn commit_as(cfg: &Config, f: &Flavor, d: &Deploy, t: &Tokens) -> Result<(Applied, AppYaml), Failed> {
+///
+/// `asked`: the custom domains a new pointer asks for, as the approved
+/// plan lists them (M233's Go live); the app's `app.yaml` must route
+/// exactly these beyond its own two hosts. `None` (apps-platform's): a new
+/// pointer asks for none.
+pub async fn commit_as(
+    cfg: &Config,
+    f: &Flavor,
+    d: &Deploy,
+    t: &Tokens,
+    asked: Option<&[String]>,
+) -> Result<(Applied, AppYaml), Failed> {
     if let Some(why) = (f.refuses)(&d.kind, &d.reference, &d.place) {
         return Err(refused(why));
     }
@@ -772,7 +784,24 @@ pub async fn commit_as(cfg: &Config, f: &Flavor, d: &Deploy, t: &Tokens) -> Resu
             Some(text) => pin(text, &name, &d.place, sha).map_err(refused)?.0,
             // A new pointer asks for the custom domains its app.yaml routes,
             // as planter's Go live's did.
-            None => pointer_for(f, &name, &d.place, sha, &custom_domains(cfg, &name, &app.domains)?),
+            None => match asked {
+                Some(asked) => {
+                    let routed = custom_domains(cfg, &name, &app.domains)?;
+                    let (mut a, mut r) = (asked.to_vec(), routed.clone());
+                    a.sort();
+                    r.sort();
+                    if a != r {
+                        return Err(refused(format!(
+                            "its app.yaml asks for the custom domains [{}], and the approved plan for [{}]: plan \
+                             again with those",
+                            routed.join(", "),
+                            asked.join(", ")
+                        )));
+                    }
+                    pointer_for(f, &name, &d.place, sha, asked)
+                }
+                None => pointer_for(f, &name, &d.place, sha, &[]),
+            },
         };
         if now.as_deref() == Some(new.as_str()) {
             say(&format!("{path} pins {sha} already: nothing to commit"));
@@ -1050,12 +1079,18 @@ pub async fn ready(cfg: &Config, url: &str, revisions: &[String]) -> Result<(), 
 /// The whole apply: commit, revoke the tokens (nothing after needs them),
 /// then wait until ready.
 pub async fn apply(cfg: &Config, d: &Deploy, t: &Tokens) -> Result<Applied, Failed> {
-    apply_as(cfg, &APPS_PLATFORM, d, t).await
+    apply_as(cfg, &APPS_PLATFORM, d, t, None).await
 }
 
 /// [`apply`] as `f`'s driver (M233: planter's Go live too).
-pub async fn apply_as(cfg: &Config, f: &Flavor, d: &Deploy, t: &Tokens) -> Result<Applied, Failed> {
-    let committed = commit_as(cfg, f, d, t).await;
+pub async fn apply_as(
+    cfg: &Config,
+    f: &Flavor,
+    d: &Deploy,
+    t: &Tokens,
+    asked: Option<&[String]>,
+) -> Result<Applied, Failed> {
+    let committed = commit_as(cfg, f, d, t, asked).await;
     revoke(cfg, "list's write", t.write.as_deref()).await;
     revoke(cfg, "app repository's read", t.read.as_deref()).await;
     let (applied, app) = committed?;

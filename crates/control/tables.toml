@@ -1026,8 +1026,19 @@ name = "deploy_artifacts"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A source shipped to one of a project's planter-ship environments (M233): the gzipped tar of an app's source an agent (or a person) shipped, by its SHA-256, the project, its size, the account that shipped it and when. The deploy's source names it; the deploy's box reads it to apply it. A project's go 30 days after they're shipped, when it ships another."
+what = "A source shipped to one of a project's planter-ship environments (M233): the gzipped tar of an app's source an agent (or a person) shipped, by its SHA-256, the project, its size, the account that shipped it and when. The deploy's source names it; the deploy's box reads it to apply it. Kept once its deploy is planned, and gone once no deploy that names it is waiting or running (30 days at most); a project keeps at most 200 MiB."
 why_asleep = "An agent ships while every machine is asleep, and the deploy's box, made for it after an owner approves, reads it then."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest stay, as their project's."
+seen_by = ["litestream"]
+
+[[table]]
+name = "planter_app_claims"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A shipped app's name (M233), claimed by the project whose planter-ship or planter-promote environment named it first, and when: one project per name."
+why_asleep = "Environments are made and deploys planned with every machine asleep, and each checks the name is the project's."
 with_account = "partly"
 note = "Those of projects that go with it go. The rest stay, as their project's."
 seen_by = ["litestream"]

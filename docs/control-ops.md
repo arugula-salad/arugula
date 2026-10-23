@@ -864,10 +864,24 @@ Infisical project `planter`, where planter keeps them as `GITHUB_APP_ID` and
   messages);
 - `PLANTER_APP_PRIVATE_KEY`: the App's private key, the PEM itself (`\n`s
   allowed), or `PLANTER_APP_PRIVATE_KEY_FILE`, a path.
+- `PLANTER_PROJECTS` (*config*): the projects that may use planter's
+  drivers, comma separated (`prj_…`); none when it's unset or empty. Their
+  accounts must also be ones hosted workspaces allow
+  (`ARUGULA_HOSTED_ACCOUNTS`). `*` (every project) is honoured only where
+  the fake driver is (testnet).
 
 ```
-fly secrets set -a arugula-platform PLANTER_APP_ID=… PLANTER_APP_PRIVATE_KEY="$(cat planter-app.pem)"
+fly secrets set -a arugula-platform PLANTER_APP_ID=… PLANTER_APP_PRIVATE_KEY="$(cat planter-app.pem)" PLANTER_PROJECTS=prj_…
 ```
+
+A shipped app's name is claimed by the first project to make a
+`planter-ship` or `planter-promote` environment for it (`planter_app_claims`).
+It's refused when it's reserved (`arugula_e2e::deploy::planter::RESERVED_NAMES`
+and the platform's own), or an arugula-salad repository's: GitHub's public
+API, and planter's App's installations, asked when the environment is made
+and when a deploy is planned, and again (public API) on the box before it
+pushes. A ship asks for secrets (Infisical `/<app>`) only under a name
+nobody else ever shipped or pointed at.
 
 With the platform in process, the hub reads the same names. The platform
 uses the key to mint tokens for planter's drivers' runs and for nothing

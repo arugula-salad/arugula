@@ -85,7 +85,14 @@ fn the_vendored_renderer_renders_planters_fixtures_identically() {
 fn settings_are_checked_and_filled_in() {
     assert_eq!(settings(PROD, &s(&[])).unwrap(), s(&[(APP_DIR, "app")]));
     assert!(settings(GO_LIVE, &s(&[])).unwrap().is_empty());
-    assert!(settings(GO_LIVE, &s(&[(APP, "x")])).unwrap_err().contains("takes no settings"));
+    assert!(settings(GO_LIVE, &s(&[(APP, "x")])).unwrap_err().contains("it takes domains"));
+    assert!(settings(GO_LIVE, &s(&[(DOMAINS, "shop.example.com www.example.com")])).is_ok());
+    for bad in ["shop", "Shop.example.com", "a.com a.com", "-a.com", "a.com,b.com"] {
+        assert!(settings(GO_LIVE, &s(&[(DOMAINS, bad)])).is_err(), "{bad}");
+    }
+    for name in ["arugula", "studio", "hud", "planter-x", "flux-system", "shipped"] {
+        assert!(!ship_name_ok(name), "{name} is reserved");
+    }
     assert!(settings(SHIP, &s(&[])).unwrap_err().contains("needs app"));
     assert_eq!(
         settings(SHIP, &s(&[(APP, "hello")])).unwrap(),
@@ -182,7 +189,14 @@ fn each_driver_takes_its_own_source() {
 /// and the token it holds: planter's App, never the platform's.
 #[test]
 fn the_plans_say_what_they_write_and_with_what() {
+    let asked = settings(GO_LIVE, &s(&[(DOMAINS, "shop.example.com")])).unwrap();
+    let with = plan_text(GO_LIVE, "production", "commit", SHA, "arugula-salad/ocarina", &asked, None);
+    assert!(
+        with.contains("custom domains a new pointer asks for (platform.arugula.io/domains): shop.example.com;"),
+        "{with}"
+    );
     let live = plan_text(GO_LIVE, "production", "commit", SHA, "arugula-salad/ocarina", &Settings::new(), None);
+    assert!(live.contains("(platform.arugula.io/domains): none;"), "{live}");
     for says in [
         format!("renderer planter's platform-app/render.mjs and prod-scaffold.mjs from {VENDORED_FROM}"),
         format!("sha256 {}", renderer_digest()),

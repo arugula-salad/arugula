@@ -23,6 +23,8 @@ use serde_json::{Value, json};
 use super::*;
 
 const PROJECT: &str = "prj_m233test";
+/// A repository of arugula-salad's that GitHub shows anyone.
+const TAKEN: &str = "a-public-repo";
 const SHIPPED_T: &str = "ghs_shippedTOKENfortests000000000000"; // gitleaks:allow
 const POINTERS_T: &str = "ghs_pointersTOKENfortests00000000000"; // gitleaks:allow
 
@@ -159,7 +161,8 @@ impl Fake {
 
 /// A fake GitHub API and app: `GET /health` answers 200; `DELETE
 /// /installation/token` is logged; pull requests are listed, opened (once
-/// per head) and logged.
+/// per head) and logged; `GET /repos/arugula-salad/<name>` answers 200 for
+/// [`TAKEN`], as a repository anyone sees, else 404.
 #[derive(Default)]
 struct ApiState {
     log: Vec<String>,
@@ -209,11 +212,15 @@ async fn fake_api() -> Api {
         let n = s.pulls.len();
         (StatusCode::CREATED, Json(json!({ "html_url": format!("https://github.com/{repo}/pull/{n}"), "number": n })))
     }
+    async fn repo(UrlPath((o, r)): UrlPath<(String, String)>) -> StatusCode {
+        if o == "arugula-salad" && r == TAKEN { StatusCode::OK } else { StatusCode::NOT_FOUND }
+    }
     let state: S = Arc::default();
     let r = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/installation/token", delete(revoke))
         .route("/repos/{o}/{r}/pulls", get(pulls).post(open))
+        .route("/repos/{o}/{r}", get(repo))
         .with_state(state.clone());
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
@@ -595,9 +602,9 @@ async fn prod_opens_planters_scaffold_pull_request() {
 }
 
 /// Go live: apps-platform's apply as planter's flavor. A new app's pointer
-/// asks for the custom domains its app.yaml routes, as planter's Go live's
-/// did (sorted by planter's validate()), and carries planter-go-live's
-/// trailer; ocarina's existing pointer (planter's, tracking main) is pinned
+/// asks for the custom domains its approved plan lists, as planter's Go
+/// live's did, only when its app.yaml routes exactly those (sorted by
+/// planter's validate()), and carries planter-go-live's trailer; ocarina's existing pointer (planter's, tracking main) is pinned
 /// at the commit, nothing else in it changing.
 #[tokio::test(flavor = "multi_thread")]
 async fn go_live_pins_and_asks_for_custom_domains() {
@@ -609,7 +616,7 @@ async fn go_live_pins_and_asks_for_custom_domains() {
     let sha = f.seed("arugula-salad/ocarina", &[("app.yaml", app), ("k8s/kustomization.yaml", "x")], "app");
     let d = deploy(GO_LIVE, "commit", &sha, "arugula-salad/ocarina", &[], 1);
     let t = Tokens { write: Some(POINTERS_T.into()), read: Some(SHIPPED_T.into()) };
-    ap::apply_as(&cfg, &GO_LIVE_FLAVOR, &d.as_ap(), &t).await.unwrap();
+    ap::apply_as(&cfg, &GO_LIVE_FLAVOR, &d.as_ap(), &t, Some(&[])).await.unwrap();
     let pointer = f.show("arugula-salad/planter-apps", "main:apps/ocarina.yaml").unwrap();
     let real = std::fs::read_to_string(captured("planter-apps/ocarina.yaml")).unwrap();
     assert_eq!(pointer, real.replace("    branch: main\n", &format!("    commit: {sha}\n")), "pinned, nothing else");
@@ -622,9 +629,15 @@ async fn go_live_pins_and_asks_for_custom_domains() {
     std::fs::create_dir_all(f.bare("arugula-salad/fern")).unwrap();
     git(&f.bare("arugula-salad/fern"), &["init", "--quiet", "--bare", "--initial-branch=main"]);
     let sha = f.seed("arugula-salad/fern", &[("app.yaml", app), ("k8s/kustomization.yaml", "x")], "app");
-    let d = deploy(GO_LIVE, "commit", &sha, "arugula-salad/fern", &[], 2);
     let cfg = f.cfg(&api);
-    ap::apply_as(&cfg, &GO_LIVE_FLAVOR, &d.as_ap(), &t).await.unwrap();
+    // The plan must name it: one that asks for none pushes nothing.
+    let none = deploy(GO_LIVE, "commit", &sha, "arugula-salad/fern", &[], 2);
+    let e =
+        ap::apply_as(&cfg, &GO_LIVE_FLAVOR, &none.as_ap(), &t, Some(&p::domains(&none.settings))).await.unwrap_err();
+    assert!(e.why.contains("[shop.example.com]") && !e.pushed, "{}", e.why);
+    assert!(f.show("arugula-salad/planter-apps", "main:apps/fern.yaml").is_none());
+    let d = deploy(GO_LIVE, "commit", &sha, "arugula-salad/fern", &[("domains", "shop.example.com")], 3);
+    ap::apply_as(&cfg, &GO_LIVE_FLAVOR, &d.as_ap(), &t, Some(&p::domains(&d.settings))).await.unwrap();
     let pointer = f.show("arugula-salad/planter-apps", "main:apps/fern.yaml").unwrap();
     assert!(pointer.contains("    platform.arugula.io/domains: shop.example.com\n"), "{pointer}");
     assert!(
@@ -644,4 +657,184 @@ fn needs_domain_reads_planters_lists() {
     );
     assert!(needs_domain("needs:\n  domain: a.b\n").is_err());
     assert!(needs_domain("needs:\n  domain: [a b]\n").is_err());
+}
+
+/// A link, `..`, an absolute path, a device or a hard link in a ship's tar
+/// is refused before anything is written; so is a tar over planter's
+/// limits, by the running count and size, and anything that isn't a gzipped
+/// tar. What's read keeps each file's bytes and its executable bit.
+#[tokio::test]
+async fn a_ships_tar_is_read_with_caps_and_never_extracted() {
+    let root = crate::hosted::scratch("planter-tar");
+    let digest_of = |p: &Path| format!("sha256:{}", hex::encode(Sha256::digest(std::fs::read(p).unwrap())));
+    let tar = |name: &str, args: &[&str], dir: &Path| -> (PathBuf, String) {
+        let at = root.join(format!("{name}.tgz"));
+        let st = Command::new("tar").arg("-czf").arg(&at).arg("-C").arg(dir).args(args).status().unwrap();
+        assert!(st.success(), "{name}");
+        let d = digest_of(&at);
+        (at, d)
+    };
+    let src = root.join("src");
+    std::fs::create_dir_all(src.join("bin")).unwrap();
+    std::fs::write(src.join("Dockerfile"), "FROM scratch\n").unwrap();
+    std::fs::write(src.join("bin/run"), "#!/bin/sh\n").unwrap();
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(src.join("bin/run"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (ok, d) = tar("ok", &["."], &src);
+    let files = unpack(&ok, &d).await.unwrap();
+    let names: Vec<(&str, bool)> = files.iter().map(|(p, _, x)| (p.as_str(), *x)).collect();
+    assert_eq!(names, [("Dockerfile", false), ("bin/run", true)]);
+    assert_eq!(files[0].1, b"FROM scratch\n");
+
+    let refused = |what: &str, at: &Path, digest: &str| {
+        let (what, at, digest) = (what.to_owned(), at.to_owned(), digest.to_owned());
+        async move {
+            let e = unpack(&at, &digest).await.unwrap_err();
+            assert!(e.contains(&what), "{what}: {e}");
+        }
+    };
+    refused("not the", &ok, &format!("sha256:{}", "0".repeat(64))).await;
+    // A symlink, and a hard link.
+    let linked = root.join("linked");
+    std::fs::create_dir_all(&linked).unwrap();
+    std::fs::write(linked.join("Dockerfile"), "x").unwrap();
+    std::os::unix::fs::symlink("/etc/passwd", linked.join("passwd")).unwrap();
+    let (at, d) = tar("symlink", &["."], &linked);
+    refused("not a regular file", &at, &d).await;
+    let hard = root.join("hard");
+    std::fs::create_dir_all(&hard).unwrap();
+    std::fs::write(hard.join("Dockerfile"), "x").unwrap();
+    std::fs::hard_link(hard.join("Dockerfile"), hard.join("again")).unwrap();
+    let (at, d) = tar("hardlink", &["."], &hard);
+    refused("not a regular file", &at, &d).await;
+    // `..` and an absolute path (tar -P keeps them).
+    let (at, d) = tar("dotdot", &["-P", "../src/Dockerfile"], &root.join("hard"));
+    refused("isn't a path in the app", &at, &d).await;
+    let abs = src.join("Dockerfile");
+    let (at, d) = tar("absolute", &["-P", abs.to_str().unwrap()], &src);
+    refused("isn't a path in the app", &at, &d).await;
+    // No Dockerfile; not gzipped; not a tar.
+    let bare = root.join("bare");
+    std::fs::create_dir_all(&bare).unwrap();
+    std::fs::write(bare.join("server.js"), "x").unwrap();
+    let (at, d) = tar("bare", &["."], &bare);
+    refused("no Dockerfile", &at, &d).await;
+    let plain = root.join("plain.tgz");
+    std::fs::write(&plain, b"not gzip").unwrap();
+    refused("gzipped", &plain, &digest_of(&plain)).await;
+    // Over planter's limits: more files than it takes, and more bytes (a
+    // file of zeros, which gzips small: the running caps stop it).
+    let many = root.join("many");
+    std::fs::create_dir_all(&many).unwrap();
+    std::fs::write(many.join("Dockerfile"), "x").unwrap();
+    for i in 0..MAX_FILES {
+        std::fs::write(many.join(format!("f{i}")), "").unwrap();
+    }
+    let (at, d) = tar("many", &["."], &many);
+    refused("at most 2000 files", &at, &d).await;
+    let big = root.join("big");
+    std::fs::create_dir_all(&big).unwrap();
+    std::fs::write(big.join("Dockerfile"), "x").unwrap();
+    std::fs::File::create(big.join("zeros")).unwrap().set_len(MAX_UNPACKED + 1).unwrap();
+    let (at, d) = tar("big", &["."], &big);
+    let e = unpack(&at, &d).await.unwrap_err();
+    assert!(e.contains("MiB"), "{e}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A path through a symlink is never written or read: a checkout's link
+/// (an app's repository could hold one) can't point a write, or a read of
+/// its package.json, out of the clone.
+#[test]
+fn paths_through_links_are_refused() {
+    let root = crate::hosted::scratch("planter-links");
+    let outside = root.join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("package.json"), "{}").unwrap();
+    let repo = root.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    std::os::unix::fs::symlink(&outside, repo.join("app")).unwrap();
+    assert!(read_under(&repo, "app/package.json", 1 << 16).unwrap_err().contains("symlink"));
+    assert!(write_under(&repo, "app/Dockerfile", b"x", false).unwrap_err().contains("symlink"));
+    assert!(!outside.join("Dockerfile").exists(), "nothing written through it");
+    std::fs::create_dir_all(repo.join("k8s")).unwrap();
+    std::os::unix::fs::symlink("/etc/passwd", repo.join("k8s/kustomization.yaml")).unwrap();
+    assert!(write_under(&repo, "k8s/kustomization.yaml", b"x", false).is_err());
+    for bad in ["../x", "/etc/x", "a//b"] {
+        assert!(write_under(&repo, bad, b"x", false).is_err(), "{bad}");
+    }
+    write_under(&repo, "k8s/platform/deployment.yaml", b"ok", false).unwrap();
+    assert_eq!(read_under(&repo, "k8s/platform/deployment.yaml", 16).unwrap().as_deref(), Some("ok"));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Prod against a repository whose app member's package.json is a link to
+/// a file outside it: checked out as the link's text (core.symlinks off),
+/// it isn't the app's package.json, and nothing is pushed.
+#[tokio::test(flavor = "multi_thread")]
+async fn prod_never_follows_a_link_in_the_apps_repository() {
+    needs_node!();
+    let f = Fake::new("prod-link");
+    let api = fake_api().await;
+    let w = f.root.join("seed/arugula-salad/ocarina");
+    let pkg = fixture("scaffold-ocarina")["request"]["packageJson"].as_str().unwrap().to_owned();
+    let outside = f.root.join("outside.json");
+    std::fs::write(&outside, &pkg).unwrap();
+    let sha = f.seed("arugula-salad/ocarina", &[("README", "x")], "readme");
+    std::fs::create_dir_all(w.join("app")).unwrap();
+    std::os::unix::fs::symlink(&outside, w.join("app/package.json")).unwrap();
+    git(&w, &["add", "-A"]);
+    git(&w, &["commit", "--quiet", "-m", "a link"]);
+    git(&w, &["push", "--quiet", "origin", "HEAD:main"]);
+    let linked = git(&w, &["rev-parse", "HEAD"]);
+    assert_ne!(linked, sha);
+    let d = deploy(PROD, "commit", &linked, "arugula-salad/ocarina", &[], 1);
+    let e = prod(&f.cfg(&api), &d, Some(SHIPPED_T)).await.unwrap_err();
+    assert!(!e.pushed, "{}", e.why);
+    assert!(f.show("arugula-salad/ocarina", "planter/prod:Dockerfile").is_none(), "nothing pushed");
+}
+
+/// Ship's names, checked on the box before anything is pushed: an
+/// arugula-salad repository GitHub shows anyone is refused; and secrets,
+/// which load `/<app>` from Infisical, only for a name nobody else ever
+/// shipped or pointed at (planter-apps' history holds a pointer someone
+/// took out), while the same ship without secrets goes.
+#[tokio::test(flavor = "multi_thread")]
+async fn ship_names_are_checked_on_github_and_secrets_need_a_name_never_used() {
+    needs_node!();
+    let f = Fake::new("ship-names");
+    let api = fake_api().await;
+    let cfg = f.cfg(&api);
+    let src = hello_src();
+    let files: Vec<(&str, &[u8])> = src.iter().map(|(p, b)| (*p, b.as_slice())).collect();
+    let (at, digest) = tarball(&f.root, &files, false);
+    let t = Tokens { write: Some(POINTERS_T.into()), read: None };
+    let with = |app: &str, extra: &[(&str, &str)], n: u32| {
+        let mut st = vec![("app", app)];
+        st.extend_from_slice(extra);
+        let mut d = deploy(SHIP, "artifact", &digest, ARTIFACT_WHERE, &st, n);
+        d.artifact = Some(at.clone());
+        d
+    };
+    let heads = || git(&f.bare("arugula-salad/shipped"), &["rev-parse", "main"]);
+    let before = heads();
+    let e = ship_commit(&cfg, &with(TAKEN, &[], 1), &t, Some(SHIPPED_T)).await.unwrap_err();
+    assert!(e.why.contains("is a repository") && !e.pushed, "{}", e.why);
+    // A pointer someone else wrote, and took out.
+    f.seed("arugula-salad/planter-apps", &[("apps/old.yaml", "x")], "old: into prod");
+    let w = f.root.join("seed/arugula-salad/planter-apps");
+    git(&w, &["rm", "-q", "apps/old.yaml"]);
+    git(&w, &["commit", "--quiet", "-m", "old: out of prod"]);
+    git(&w, &["push", "--quiet", "origin", "HEAD:main"]);
+    let e = ship_commit(&cfg, &with("old", &[("secrets", "STRIPE_KEY")], 2), &t, Some(SHIPPED_T)).await.unwrap_err();
+    assert!(e.why.contains("may hold another app's secrets") && !e.pushed, "{}", e.why);
+    assert_eq!(heads(), before, "nothing pushed");
+    let done = ship_commit(&cfg, &with("old", &[], 3), &t, Some(SHIPPED_T)).await.unwrap();
+    assert!(done.commit.is_some(), "without secrets it ships");
+    // This project's own name since: its secrets come too.
+    let src2: Vec<(&str, &[u8])> = vec![("Dockerfile", b"FROM scratch\n"), ("server.js", b"2")];
+    let (at2, digest2) = tarball(&f.root.join("two"), &src2, false);
+    let mut d = deploy(SHIP, "artifact", &digest2, ARTIFACT_WHERE, &[("app", "fresh"), ("secrets", "STRIPE_KEY")], 4);
+    d.artifact = Some(at2);
+    assert!(ship_commit(&cfg, &d, &t, Some(SHIPPED_T)).await.unwrap().commit.is_some());
 }

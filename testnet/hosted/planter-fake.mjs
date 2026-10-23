@@ -4,7 +4,8 @@
 //
 // - GitHub's API and the app, on 127.0.0.1:9100: `GET /health` answers 200
 //   once the app's image is pinned; `DELETE /installation/token` is logged
-//   (`revoke <Authorization>`, to LOG).
+//   (`revoke <Authorization>`, to LOG); `GET /repos/arugula-salad/<name>` is
+//   404 (no repository holds a shipped app's name).
 // - shipped's build: every half second, a ship commit of Arugula's
 //   planter-ship driver at the head of the bare `arugula-salad/shipped`
 //   (under ROOT) gets a pin, as
@@ -36,6 +37,8 @@ createServer((req, res) => {
     return res.writeHead(204).end();
   }
   if (req.method === "GET" && req.url === "/health") return res.writeHead(pinned ? 200 : 503).end(pinned ? "ok" : "");
+  // No repository of arugula-salad's is named as a shipped app is.
+  if (req.method === "GET" && /^\/repos\/arugula-salad\/[^/]+$/.test(req.url)) return res.writeHead(404).end();
   res.writeHead(404).end();
 }).listen(9100, "127.0.0.1");
 

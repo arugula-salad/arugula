@@ -441,7 +441,18 @@ async fn clone(cfg: &Config, git: &Git, repo: &str, branch: &str, dir: &Path) ->
     let d = dir.to_string_lossy().into_owned();
     git.run(
         &cfg.work,
-        &["clone", "--quiet", "--no-tags", "--single-branch", "--branch", branch, &cfg_url(cfg, repo), &d],
+        &[
+            "clone",
+            "--quiet",
+            "--no-tags",
+            "--single-branch",
+            "-c",
+            "core.symlinks=false",
+            "--branch",
+            branch,
+            &cfg_url(cfg, repo),
+            &d,
+        ],
     )
     .await
     .map_err(refused)?;
@@ -520,96 +531,292 @@ async fn owned(git: &Git, shipped: &Path, app: &str, project: &str) -> Result<()
 pub type Unpacked = Vec<(String, Vec<u8>, bool)>;
 
 /// Read the artifact at `at`, check it's `digest` (`sha256:<hex>`), and
-/// unpack it in `into` as planter's ship did: a gzipped tar, regular files
-/// only (no link or device), `.git` left out, at most [`MAX_FILES`] files
-/// and [`MAX_UNPACKED`] bytes, with a `Dockerfile` at its root.
-pub async fn unpack(at: &Path, digest: &str, into: &Path) -> Result<Unpacked, String> {
-    let meta = std::fs::metadata(at).map_err(|e| format!("the artifact: {e}"))?;
-    if meta.len() > MAX_TARBALL as u64 {
-        return Err(format!("the artifact is over {} MiB", MAX_TARBALL >> 20));
+/// read its files as planter's ship took them: a gzipped tar of regular
+/// files only (no link, device or anything else), `.git` left out, at most
+/// [`MAX_FILES`] files and [`MAX_UNPACKED`] bytes, with a `Dockerfile` at
+/// its root. Nothing is extracted to disk: `gzip -dc` decompresses it,
+/// read with a cap, and [`read_tar`] reads the entries with running caps.
+pub async fn unpack(at: &Path, digest: &str) -> Result<Unpacked, String> {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    let meta = std::fs::symlink_metadata(at).map_err(|e| format!("the artifact: {e}"))?;
+    if !meta.is_file() || meta.len() > MAX_TARBALL as u64 {
+        return Err(format!("the artifact isn't a file of at most {} MiB", MAX_TARBALL >> 20));
     }
     let bytes = std::fs::read(at).map_err(|e| format!("the artifact: {e}"))?;
     let got = format!("sha256:{}", hex::encode(Sha256::digest(&bytes)));
     if got != digest {
         return Err(format!("the artifact is {got}, not the {digest} approved"));
     }
-    let _ = std::fs::remove_dir_all(into);
-    std::fs::create_dir_all(into).map_err(|e| format!("its directory: {e}"))?;
-    let tar = tokio::process::Command::new("tar")
+    let mut gz = tokio::process::Command::new("gzip")
         .env_clear()
         .env("PATH", "/usr/bin:/bin:/usr/local/bin")
-        .env("LANG", "C")
-        .args(["-xzf", "-", "--no-same-owner", "--no-same-permissions", "-C"])
-        .arg(into)
+        .args(["-dc"])
         .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| format!("tar didn't start: {e}"))?;
-    let run = async move {
-        let mut tar = tar;
-        if let Some(mut stdin) = tar.stdin.take() {
-            use tokio::io::AsyncWriteExt as _;
-            let _ = stdin.write_all(&bytes).await;
+        .map_err(|e| format!("gzip didn't start: {e}"))?;
+    let mut stdin = gz.stdin.take().ok_or("gzip's input")?;
+    let mut stdout = gz.stdout.take().ok_or("gzip's output")?;
+    let feed = tokio::spawn(async move {
+        let _ = stdin.write_all(&bytes).await;
+    });
+    // Its entries' headers and padding on top of the files' bytes.
+    let cap = MAX_UNPACKED as usize + (MAX_FILES + 64) * 3 * 512 + 2 * 512;
+    let read = async {
+        let mut out = Vec::new();
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            let n = stdout.read(&mut buf).await.map_err(|e| format!("gzip: {e}"))?;
+            if n == 0 {
+                return Ok(out);
+            }
+            out.extend_from_slice(&buf[..n]);
+            if out.len() > cap {
+                return Err(format!("it unpacks to over {} MiB", MAX_UNPACKED >> 20));
+            }
         }
-        tar.wait_with_output().await
     };
-    let out = tokio::time::timeout(Duration::from_secs(60), run)
+    let tar = tokio::time::timeout(Duration::from_secs(60), read)
         .await
-        .map_err(|_| "unpacking it took over a minute".to_owned())?
-        .map_err(|e| format!("tar: {e}"))?;
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        return Err(format!(
-            "it isn't a gzipped tar: {}",
-            crate::work::printable(err.lines().last().unwrap_or("").chars().take(200).collect::<String>().as_str())
-        ));
+        .map_err(|_| "unpacking it took over a minute".to_owned())??;
+    let _ = feed.await;
+    let status = gz.wait().await.map_err(|e| format!("gzip: {e}"))?;
+    if !status.success() {
+        return Err("it isn't gzipped".into());
     }
-    let mut files = Vec::new();
-    let mut total = 0u64;
-    let mut dirs = vec![(into.to_path_buf(), String::new())];
-    while let Some((d, rel)) = dirs.pop() {
-        let mut entries: Vec<_> = std::fs::read_dir(&d).map_err(|e| format!("{rel}: {e}"))?.flatten().collect();
-        entries.sort_by_key(|e| e.file_name());
-        for e in entries {
-            let name = e.file_name().to_string_lossy().into_owned();
-            let relative = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
-            if relative.bytes().any(|b| b < 0x20 || b == 0x7f || b == b'\\') {
-                return Err(format!("{} has a name this doesn't ship", crate::work::printable(&relative)));
-            }
-            let m = std::fs::symlink_metadata(e.path()).map_err(|e| format!("{relative}: {e}"))?;
-            if m.is_dir() {
-                if name != ".git" {
-                    dirs.push((e.path(), relative));
-                }
-            } else if m.is_file() {
-                if files.len() >= MAX_FILES {
-                    return Err(format!("a ship carries at most {MAX_FILES} files"));
-                }
-                total += m.len();
-                if total > MAX_UNPACKED {
-                    return Err(format!("a ship carries at most {} MiB unpacked", MAX_UNPACKED >> 20));
-                }
-                let content = std::fs::read(e.path()).map_err(|e| format!("{relative}: {e}"))?;
-                #[cfg(unix)]
-                let exec = std::os::unix::fs::PermissionsExt::mode(&m.permissions()) & 0o111 != 0;
-                #[cfg(not(unix))]
-                let exec = false;
-                files.push((relative, content, exec));
-            } else {
-                return Err(format!(
-                    "{} is not a regular file (a link or a device); ship files only",
-                    crate::work::printable(&relative)
-                ));
-            }
-        }
-    }
+    let files = read_tar(&tar)?;
     if !files.iter().any(|(p, ..)| p == "Dockerfile") {
         return Err("the app has no Dockerfile at its root: the platform builds its image from it".into());
     }
+    Ok(files)
+}
+
+/// A tar stream's regular files (ustar, GNU long names, pax paths), read
+/// with running caps: each path relative, with no `..` and nothing that
+/// isn't printable, once; `.git` left out; directories skipped; anything
+/// else (a link, a device, a FIFO) refused.
+pub fn read_tar(data: &[u8]) -> Result<Unpacked, String> {
+    fn cstr(b: &[u8]) -> &[u8] {
+        &b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())]
+    }
+    fn octal(b: &[u8]) -> Option<u64> {
+        if b.first().is_some_and(|c| c & 0x80 != 0) {
+            // GNU's base-256: big-endian, the top bit a flag.
+            let mut n: u64 = u64::from(b[0] & 0x7f);
+            for &c in &b[1..] {
+                n = n.checked_mul(256)?.checked_add(u64::from(c))?;
+            }
+            return Some(n);
+        }
+        let s = std::str::from_utf8(cstr(b)).ok()?.trim_matches(|c: char| c == ' ' || c == '\0');
+        if s.is_empty() {
+            return Some(0);
+        }
+        u64::from_str_radix(s, 8).ok()
+    }
+    let mut files: Unpacked = Vec::new();
+    let mut total = 0u64;
+    let mut off = 0usize;
+    let mut long: Option<String> = None;
+    loop {
+        let Some(h) = data.get(off..off + 512) else { return Err("it ends part way through a tar header".into()) };
+        if h.iter().all(|&b| b == 0) {
+            break;
+        }
+        let sum: u64 =
+            h.iter().enumerate().map(|(i, &b)| if (148..156).contains(&i) { 32 } else { u64::from(b) }).sum();
+        if octal(&h[148..156]) != Some(sum) {
+            return Err("it isn't a tar (a header's checksum doesn't add up)".into());
+        }
+        let size = octal(&h[124..136]).ok_or("a tar header's size doesn't read")?;
+        let kind = h[156];
+        let start = off + 512;
+        let len = usize::try_from(size).map_err(|_| "a tar entry is too big")?;
+        let end = start.checked_add(len).filter(|&e| e <= data.len()).ok_or("it ends part way through a file")?;
+        let body = &data[start..end];
+        off = start + len.div_ceil(512) * 512;
+        let mut name = String::from_utf8_lossy(cstr(&h[0..100])).into_owned();
+        if &h[257..262] == b"ustar" {
+            let prefix = String::from_utf8_lossy(cstr(&h[345..500])).into_owned();
+            if !prefix.is_empty() {
+                name = format!("{prefix}/{name}");
+            }
+        }
+        match kind {
+            // GNU's long name, for the next entry.
+            b'L' => {
+                if len > 4096 {
+                    return Err("a tar entry's name is too long".into());
+                }
+                long = Some(String::from_utf8_lossy(cstr(body)).into_owned());
+                continue;
+            }
+            // pax: its path, for the next entry; the rest ignored.
+            b'x' => {
+                if len > 64 * 1024 {
+                    return Err("a tar entry's pax header is too long".into());
+                }
+                let text = String::from_utf8_lossy(body);
+                for record in text.split('\n') {
+                    if let Some((_, kv)) = record.split_once(' ')
+                        && let Some(path) = kv.strip_prefix("path=")
+                    {
+                        long = Some(path.to_owned());
+                    }
+                }
+                continue;
+            }
+            b'g' => continue,
+            _ => {}
+        }
+        let name = long.take().unwrap_or(name);
+        let rel = name.trim_start_matches("./").trim_end_matches('/').to_owned();
+        let printable = |c: char| !c.is_control() && c != '\\';
+        if rel.starts_with('/') || rel.split('/').any(|c| c == "..") || !rel.chars().all(printable) {
+            return Err(format!("{} isn't a path in the app", crate::work::printable(&name)));
+        }
+        match kind {
+            b'5' => continue,
+            b'0' | 0 => {}
+            _ => {
+                return Err(format!(
+                    "{} is not a regular file (a link or a device); ship files only",
+                    crate::work::printable(&rel)
+                ));
+            }
+        }
+        if rel.is_empty() || rel == "." || rel.split('/').any(|c| c.is_empty() || c == ".") {
+            return Err(format!("{} isn't a path in the app", crate::work::printable(&name)));
+        }
+        if rel.split('/').any(|c| c == ".git") {
+            continue;
+        }
+        if files.len() >= MAX_FILES {
+            return Err(format!("a ship carries at most {MAX_FILES} files"));
+        }
+        total += size;
+        if total > MAX_UNPACKED {
+            return Err(format!("a ship carries at most {} MiB unpacked", MAX_UNPACKED >> 20));
+        }
+        if files.iter().any(|(p, ..)| *p == rel) {
+            return Err(format!("{} is in it twice", crate::work::printable(&rel)));
+        }
+        let exec = octal(&h[100..108]).is_some_and(|m| m & 0o111 != 0);
+        files.push((rel, body.to_vec(), exec));
+    }
     files.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(files)
+}
+
+/// Write `bytes` at `rel` under `root`, refusing a path any existing part
+/// of which is a symlink (a checkout's or a tar's could point out of it).
+pub fn write_under(root: &Path, rel: &str, bytes: &[u8], exec: bool) -> Result<(), String> {
+    let path = no_links(root, rel)?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{rel}: {e}"))?;
+    }
+    // Made again since: nothing here makes links, but check once more.
+    no_links(root, rel)?;
+    std::fs::write(&path, bytes).map_err(|e| format!("{rel}: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = if exec { 0o755 } else { 0o644 };
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).map_err(|e| format!("{rel}: {e}"))?;
+    }
+    #[cfg(not(unix))]
+    let _ = exec;
+    Ok(())
+}
+
+/// `root/rel`, once no existing part of it (from `root` down) is a
+/// symlink, and `rel` is relative with no `..`.
+pub fn no_links(root: &Path, rel: &str) -> Result<PathBuf, String> {
+    if rel.starts_with('/') || rel.split('/').any(|c| c == ".." || c.is_empty()) {
+        return Err(format!("{} isn't a path here", crate::work::printable(rel)));
+    }
+    let mut at = root.to_path_buf();
+    for part in rel.split('/') {
+        at.push(part);
+        match std::fs::symlink_metadata(&at) {
+            Ok(m) if m.file_type().is_symlink() => {
+                return Err(format!("{} goes through a symlink", crate::work::printable(rel)));
+            }
+            _ => {}
+        }
+    }
+    Ok(at)
+}
+
+/// Read `rel` under `root` (at most `max` bytes), refusing a symlink on the
+/// way: `None` when it isn't there.
+pub fn read_under(root: &Path, rel: &str, max: u64) -> Result<Option<String>, String> {
+    let path = no_links(root, rel)?;
+    match std::fs::symlink_metadata(&path) {
+        Ok(m) if m.is_file() && m.len() <= max => {
+            std::fs::read_to_string(&path).map(Some).map_err(|e| format!("{rel}: {e}"))
+        }
+        Ok(m) if m.is_file() => Err(format!("{rel} is over {} KiB", max >> 10)),
+        Ok(_) => Err(format!("{rel} isn't a file")),
+        Err(_) => Ok(None),
+    }
+}
+
+/// Whether `ORG/name` is a repository on GitHub, asked with no token (as
+/// anyone sees it, M233's review): `Err` when GitHub says so, or doesn't
+/// answer.
+pub async fn not_a_repo(cfg: &Config, name: &str) -> Result<(), String> {
+    let repo = format!("{ORG}/{name}");
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("an HTTP client: {e}"))?;
+    let r = client
+        .get(format!("{}/repos/{repo}", cfg.api_base.trim_end_matches('/')))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "arugula-deploy")
+        .send()
+        .await
+        .map(|r| r.status().as_u16());
+    match r {
+        Ok(404) => Ok(()),
+        Ok(200 | 301) => Err(format!("{repo} is a repository, whose app and image the name {name} belongs to")),
+        Ok(n) => Err(format!("couldn't ask GitHub whether {repo} is a repository (it said {n})")),
+        Err(_) => Err(format!("couldn't ask GitHub whether {repo} is a repository")),
+    }
+}
+
+/// Whether the name `app` was only ever this project's in `shipped` and the
+/// pointers' history: a ship whose secrets would load `/<app>` from
+/// Infisical gets them only when nobody else ever shipped or pointed at
+/// that name (the folder might hold another app's).
+async fn never_anyone_elses(
+    git: &Git,
+    shipped: &Path,
+    pointers: &Path,
+    app: &str,
+    project: &str,
+) -> Result<(), Failed> {
+    let mine = format!("{PROJECT_TRAILER}: {project}");
+    for (dir, paths) in
+        [(shipped, vec![format!("{app}/src"), format!("{app}/app.yaml")]), (pointers, vec![ap_pointer_path(app)])]
+    {
+        let mut args = vec!["log".to_owned(), "--format=%B%x1e".to_owned(), "--".to_owned()];
+        args.extend(paths);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let log = git.run(dir, &args).await.map_err(refused)?;
+        for body in log.split('\u{1e}').map(str::trim).filter(|b| !b.is_empty()) {
+            if !body.lines().any(|l| l.trim() == mine) {
+                return Err(refused(format!(
+                    "{app} was shipped or pointed at before, not by this project: its Infisical folder (/{app}) may \
+                     hold another app's secrets, so a ship under it can't ask for secrets"
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// planter's pointer for a shipped app (`prod.mjs`'s `pointer()` with
@@ -671,7 +878,7 @@ pub async fn ship_commit(cfg: &Config, d: &Deploy, t: &Tokens, shipped_token: Op
     let app = d.setting(APP).to_owned();
     let at = d.artifact.as_deref().ok_or_else(|| refused("no artifact"))?;
     say(&format!("unpacking {} (the source shipped)", d.reference));
-    let files = unpack(at, &d.reference, &cfg.work.join("unpacked")).await.map_err(refused)?;
+    let files = unpack(at, &d.reference).await.map_err(refused)?;
     say(&format!("{} files, a Dockerfile at its root", files.len()));
     let secrets: Vec<&str> = match d.settings.get(SECRETS) {
         Some(s) => s.split(',').collect(),
@@ -699,7 +906,7 @@ pub async fn ship_commit(cfg: &Config, d: &Deploy, t: &Tokens, shipped_token: Op
     replayed(&git, &pointers, &d.id, POINTERS_REPO).await?;
     // The name: free, or this shipped app's own pointer already.
     let ppath = ap_pointer_path(&app);
-    let existing = std::fs::read_to_string(pointers.join(&ppath)).ok();
+    let existing = read_under(&pointers, &ppath, cfg.max_file_bytes).map_err(refused)?;
     if existing.as_deref().is_some_and(|t| !t.contains(&format!("url: https://github.com/{SHIPPED_REPO}\n"))) {
         return Err(refused(format!(
             "{app} is an app of its own repository already ({POINTERS_REPO}'s {ppath}): ship under another name"
@@ -708,10 +915,16 @@ pub async fn ship_commit(cfg: &Config, d: &Deploy, t: &Tokens, shipped_token: Op
     if let Some(why) = collides(&pointers, &app, &ppath) {
         return Err(refused(why));
     }
+    if !secrets.is_empty() {
+        never_anyone_elses(&git, &shipped, &pointers, &app, &d.project).await?;
+    }
+    // Nobody's repository, as GitHub says now (the platform asked when it
+    // was planned).
+    not_a_repo(cfg, &app).await.map_err(refused)?;
 
     let mut commit = None;
     for attempt in 1..=3 {
-        if let Ok(text) = std::fs::read_to_string(shipped.join(&app).join("app.yaml")) {
+        if let Some(text) = read_under(&shipped, &format!("{app}/app.yaml"), cfg.max_file_bytes).map_err(refused)? {
             let runtime = app_yaml(&text).runtime;
             if runtime != "loam" {
                 return Err(refused(format!(
@@ -723,25 +936,13 @@ pub async fn ship_commit(cfg: &Config, d: &Deploy, t: &Tokens, shipped_token: Op
         }
         owned(&git, &shipped, &app, &d.project).await?;
         // The app's own kustomization (its build pins the image there) stays.
-        let kust = std::fs::read_to_string(shipped.join(&app).join("k8s/kustomization.yaml")).unwrap_or(top.clone());
+        let kust = read_under(&shipped, &format!("{app}/k8s/kustomization.yaml"), cfg.max_file_bytes)
+            .map_err(refused)?
+            .unwrap_or_else(|| top.clone());
         git.run(&shipped, &["rm", "-r", "-q", "--ignore-unmatch", "--", &app]).await.map_err(refused)?;
         let _ = std::fs::remove_dir_all(shipped.join(&app));
         let write = |rel: &str, bytes: &[u8], exec: bool| -> Result<(), Failed> {
-            let path = shipped.join(&app).join(rel);
-            if let Some(dir) = path.parent() {
-                std::fs::create_dir_all(dir).map_err(|e| refused(format!("{app}/{rel}: {e}")))?;
-            }
-            std::fs::write(&path, bytes).map_err(|e| refused(format!("{app}/{rel}: {e}")))?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt as _;
-                let mode = if exec { 0o755 } else { 0o644 };
-                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode))
-                    .map_err(|e| refused(format!("{app}/{rel}: {e}")))?;
-            }
-            #[cfg(not(unix))]
-            let _ = exec;
-            Ok(())
+            write_under(&shipped, &format!("{app}/{rel}"), bytes, exec).map_err(refused)
         };
         for (rel, bytes, exec) in &files {
             write(&format!("src/{rel}"), bytes, *exec)?;
@@ -791,11 +992,7 @@ pub async fn ship_commit(cfg: &Config, d: &Deploy, t: &Tokens, shipped_token: Op
     let mut pointer = None;
     if existing.is_none() {
         for attempt in 1..=3 {
-            let file = pointers.join(&ppath);
-            if let Some(dir) = file.parent() {
-                std::fs::create_dir_all(dir).map_err(|e| fail(format!("{ppath}: {e}")))?;
-            }
-            std::fs::write(&file, shipped_pointer(&app)).map_err(|e| fail(format!("{ppath}: {e}")))?;
+            write_under(&pointers, &ppath, shipped_pointer(&app).as_bytes(), false).map_err(fail)?;
             git.run(&pointers, &["add", "--", &ppath]).await.map_err(fail)?;
             let msg = format!(
                 "{app}: shipped to loam at https://{app}.{LOAM_DOMAIN}\n\nFrom {SHIPPED_REPO}/{app}, through Arugula's \
@@ -924,8 +1121,9 @@ async fn promote_pull(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<V
         return Err(refused(format!("{sha} isn't on {SHIPPED_REPO}'s {SHIPPED_BRANCH}")));
     }
     git.run(&shipped, &["checkout", "--quiet", "-B", &branch, sha]).await.map_err(refused)?;
-    let text = std::fs::read_to_string(shipped.join(&app).join("app.yaml"))
-        .map_err(|_| refused(format!("{app} hasn't been shipped (no {app}/app.yaml at {sha})")))?;
+    let text = read_under(&shipped, &format!("{app}/app.yaml"), cfg.max_file_bytes)
+        .map_err(refused)?
+        .ok_or_else(|| refused(format!("{app} hasn't been shipped (no {app}/app.yaml at {sha})")))?;
     let manifest = planter_manifest(&text)
         .map_err(|why| refused(format!("{app}/app.yaml isn't one planter's ship wrote ({why}): promote it by hand")))?;
     if manifest["runtime"] != "loam" {
@@ -943,13 +1141,9 @@ async fn promote_pull(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<V
     )
     .map_err(refused)?;
     let yaml = rendered["appYaml"].as_str().ok_or_else(|| refused("the renderer wrote no app.yaml"))?;
-    std::fs::write(shipped.join(&app).join("app.yaml"), yaml).map_err(|e| refused(format!("app.yaml: {e}")))?;
+    write_under(&shipped, &format!("{app}/app.yaml"), yaml.as_bytes(), false).map_err(refused)?;
     for (rel, text) in files_of(&rendered) {
-        let path = shipped.join(&app).join(&rel);
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| refused(format!("{rel}: {e}")))?;
-        }
-        std::fs::write(&path, text).map_err(|e| refused(format!("{rel}: {e}")))?;
+        write_under(&shipped, &format!("{app}/{rel}"), text.as_bytes(), false).map_err(refused)?;
     }
     git.run(&shipped, &["add", "-A", "--", &app]).await.map_err(refused)?;
     let host = format!("{app}.{}", p::SECOND_DOMAIN);
@@ -1021,6 +1215,9 @@ async fn prod_pull(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<Valu
     let _ = std::fs::remove_dir_all(&repo);
     std::fs::create_dir_all(&repo).map_err(|e| refused(format!("its directory: {e}")))?;
     git.run(&repo, &["init", "--quiet"]).await.map_err(refused)?;
+    // A link in the app's repository is checked out as a file, never
+    // followed.
+    git.run(&repo, &["config", "core.symlinks", "false"]).await.map_err(refused)?;
     git.run(&repo, &["remote", "add", "origin", &cfg_url(cfg, &d.place)]).await.map_err(refused)?;
     let head = git.run(&repo, &["ls-remote", "--symref", "origin", "HEAD"]).await.map_err(refused)?;
     let base = head
@@ -1049,24 +1246,17 @@ async fn prod_pull(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<Valu
     if du(&repo) > cfg.max_repo_bytes {
         return Err(refused(format!("{} is over {} MiB", d.place, cfg.max_repo_bytes >> 20)));
     }
-    if repo.join("k8s/kustomization.yaml").exists() {
+    if std::fs::symlink_metadata(repo.join("k8s/kustomization.yaml")).is_ok() {
         return Err(refused(format!("{} has a k8s/ at {sha} already: plan a {GO_LIVE} deploy", d.place)));
     }
     let dir = d.setting(p::APP_DIR).trim_end_matches('/').to_owned();
-    let read = |rel: &str| -> Result<Option<String>, Failed> {
-        let path = repo.join(rel);
-        match std::fs::symlink_metadata(&path) {
-            Ok(m) if m.is_file() && m.len() <= cfg.max_file_bytes => {
-                std::fs::read_to_string(&path).map(Some).map_err(|e| refused(format!("{rel}: {e}")))
-            }
-            Ok(m) if m.is_file() => Err(refused(format!("{rel} is over {} KiB", cfg.max_file_bytes >> 10))),
-            Ok(_) => Err(refused(format!("{rel} isn't a file"))),
-            Err(_) => Ok(None),
-        }
-    };
+    let read = |rel: &str| read_under(&repo, rel, cfg.max_file_bytes).map_err(refused);
     let package = read(&format!("{dir}/package.json"))?
         .ok_or_else(|| refused(format!("{dir}/package.json is missing: prod needs the app member to be a Node app")))?;
-    let lockfile = repo.join(format!("{dir}/package-lock.json")).is_file();
+    let lockfile = no_links(&repo, &format!("{dir}/package-lock.json"))
+        .map_err(refused)?
+        .symlink_metadata()
+        .is_ok_and(|m| m.is_file());
     let mut options = serde_json::Map::new();
     for (k, key) in [(p::HEALTH, "health"), (p::PORT_ENV, "portEnv"), (p::DATA_ENV, "dataEnv"), (p::METRICS, "metrics")]
     {
@@ -1093,11 +1283,7 @@ async fn prod_pull(cfg: &Config, d: &Deploy, token: Option<&str>) -> Result<Valu
     .map_err(refused)?;
     let files = files_of(&rendered);
     for (rel, text) in &files {
-        let path = repo.join(rel);
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| refused(format!("{rel}: {e}")))?;
-        }
-        std::fs::write(&path, text).map_err(|e| refused(format!("{rel}: {e}")))?;
+        write_under(&repo, rel, text.as_bytes(), false).map_err(refused)?;
         git.run(&repo, &["add", "--", rel]).await.map_err(refused)?;
     }
     let url = format!("https://{name}.{}", p::APPS_DOMAIN);
@@ -1204,10 +1390,12 @@ pub fn cli(args: &[String]) -> ! {
                 match d.driver.as_str() {
                     GO_LIVE => {
                         let t = Tokens { write: var(POINTERS_TOKEN), read: var(SOURCE_TOKEN) };
-                        ap::apply_as(&cfg, &GO_LIVE_FLAVOR, &d.as_ap(), &t).await.map(|a| match a {
-                            Applied::Pinned(c) | Applied::Reverted { commit: c, .. } => json!({ "commit": c }),
-                            Applied::Unchanged => json!({}),
-                        })
+                        ap::apply_as(&cfg, &GO_LIVE_FLAVOR, &d.as_ap(), &t, Some(&p::domains(&d.settings))).await.map(
+                            |a| match a {
+                                Applied::Pinned(c) | Applied::Reverted { commit: c, .. } => json!({ "commit": c }),
+                                Applied::Unchanged => json!({}),
+                            },
+                        )
                     }
                     SHIP => {
                         let t = Tokens { write: var(POINTERS_TOKEN), read: None };

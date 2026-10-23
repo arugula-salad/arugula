@@ -760,7 +760,7 @@ impl Agent {
         let p = self.project(a.project.as_deref()).await?;
         self.app.limits.check_account(ACCOUNT_DEPLOY_ASKS, &self.token.account)?;
         let source = json!({ "kind": "commit", "ref": commit, "where": repo });
-        self.plan_and_ask(p, a.environment.trim(), source, a.roll_back).await
+        self.plan_and_ask(p, a.environment.trim(), source, a.roll_back, None).await
     }
 
     /// `plan_deploy` with `files` (M233): planter's ship API's shape, its
@@ -802,15 +802,33 @@ impl Agent {
         if !bytes.starts_with(&[0x1f, 0x8b]) {
             return Err(failed("files isn't gzipped: tar -czf"));
         }
+        // The project's quota, before anything's planned.
+        let kept = self.app.db.deploy_artifacts_size(&p)?;
+        if kept + bytes.len() as u64 > planter::MAX_PROJECT_ARTIFACTS {
+            return Err(failed(format!(
+                "the project keeps {} MiB of shipped sources waiting for their deploys, and at most {} MiB: wait for \
+                 those to be approved or denied",
+                kept >> 20,
+                planter::MAX_PROJECT_ARTIFACTS >> 20
+            )));
+        }
         let digest = format!("sha256:{}", hex::encode(<sha2::Sha256 as sha2::Digest>::digest(&bytes)));
-        self.app.db.put_deploy_artifact(&p, &digest, &bytes, &self.token.account, now_ms())?;
         let source = json!({ "kind": "artifact", "ref": digest, "where": planter::ARTIFACT_WHERE });
-        self.plan_and_ask(p, &env.id, source, false).await
+        self.plan_and_ask(p, &env.id, source, false, Some(&bytes)).await
     }
 
     /// Plan a deploy of `source` to `environment` in project `p`, and ask
     /// its owners: what `plan_deploy` answers.
-    async fn plan_and_ask(&self, p: String, environment: &str, source: Value, roll_back: bool) -> Out {
+    /// With `keep` (a ship's source): it's kept as the project's artifact
+    /// once the deploy is planned, before anyone is asked.
+    async fn plan_and_ask(
+        &self,
+        p: String,
+        environment: &str,
+        source: Value,
+        roll_back: bool,
+        keep: Option<&[u8]>,
+    ) -> Out {
         let plan: deploys::Plan = args(&json!({
             "environment": environment,
             "source": source,
@@ -818,6 +836,12 @@ impl Agent {
         }))?;
         let d = deploys::agent::plan(self.state(), self.me(), Path(p.clone()), Json(plan)).await?.0;
         let id = d["id"].as_str().unwrap_or_default().to_owned();
+        if let (Some(bytes), Some(digest)) = (keep, source["ref"].as_str()) {
+            let quota = arugula_e2e::deploy::planter::MAX_PROJECT_ARTIFACTS;
+            if let Err(e) = self.app.db.put_deploy_artifact(&p, digest, bytes, &self.token.account, now_ms(), quota) {
+                return Err(failed(format!("planned {id}, but its source wasn't kept ({e:#}), so it isn't asked")));
+            }
+        }
         let d = match deploys::agent::request(self.state(), self.me(), Path(id.clone())).await {
             Ok(d) => d.0,
             Err(e) => {

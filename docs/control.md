@@ -604,8 +604,9 @@ Rolling back is a deploy of the last good commit: when the pointer's last
 commit is this driver's and it pinned that commit before, it's a revert
 commit of it.
 
-**planter's drivers (M233).** planter's four ways to put an app on
-home-cloud's app platform are drivers, writing the same repositories planter
+**planter's drivers (M233).** Only in the projects `PLANTER_PROJECTS`
+names, and for accounts hosted workspaces allow. planter's four ways to put
+an app on home-cloud's app platform are drivers, writing the same repositories planter
 wrote (`arugula-salad/planter-apps`, `arugula-salad/shipped`), each deploy
 approved on an owner's device like any other. They render with planter's own
 `render.mjs` and `prod-scaffold.mjs`, vendored byte for byte in
@@ -622,10 +623,13 @@ App ([control-ops.md](control-ops.md#planters-deploys-m233)).
   `volume` where the app's own files don't say (planter read them through
   chant; here the plan names them). A person merges it.
 - **`planter-go-live`** (Go live): apps-platform's apply, through planter's
-  App: the pointer pinned at the approved commit, a new one asking for the
-  custom domains its `app.yaml` routes, as planter's did. Rolls back.
-- **`planter-ship`** (ship): an agent's source, a gzipped tar with a
-  Dockerfile at its root (at most 2 MiB), into `shipped`'s `<app>/` with
+  App: the pointer pinned at the approved commit. A new pointer asks for the
+  custom domains its setting `domains` lists (space separated, in the plan),
+  as planter's did, and only when the app's `app.yaml` routes exactly
+  those. Rolls back.
+- **`planter-ship`** (ship): an agent's source, a gzipped tar of regular
+  files with a Dockerfile at its root (at most 2 MiB, read on the box with
+  running caps, never extracted), into `shipped`'s `<app>/` with
   `app.yaml` for loam and its render, at `https://<app>.run.inevitable.fyi`;
   the pointer the first time. Settings: `app` (required), `port`, `health`,
   `port_env`, `secrets`. Its source is an artifact the platform keeps
@@ -634,7 +638,11 @@ App ([control-ops.md](control-ops.md#planters-deploys-m233)).
   shipped app's name is one project's (the first environment to name it),
   it's never an arugula-salad repository's name (as planter's App sees
   them), and a ship never goes over an app another project (or planter)
-  shipped last.
+    shipped last. Its `secrets` are loaded from Infisical's `/<app>`, so a
+  ship asks for them only under a name nobody else ever shipped or pointed
+  at. The platform keeps a source only once its deploy is planned, drops
+  it when no deploy waiting or running names it, and keeps at most 200 MiB
+  a project.
 - **`planter-promote`** (promote): the pull request moving a shipped app from
   loam to the cluster, from a commit of `shipped`. Setting: `app`. A person
   merges it.

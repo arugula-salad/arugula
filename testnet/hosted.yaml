@@ -23,6 +23,9 @@ services:
       # takes any App's JWT.
       PLANTER_APP_ID: "4242"
       PLANTER_APP_PRIVATE_KEY_FILE: /keys/github-app.pem
+      # Every project may use planter's drivers here: `*` is honoured only
+      # where the fake driver is (ARUGULA_PLATFORM_FAKE_DRIVER=1, compose.yaml).
+      PLANTER_PROJECTS: "*"
       # The platform's worker says what it does to each box.
       RUST_LOG: arugula_control=debug,arugula_platform=info
     # The E2B adapter's HTTP client wants the system's roots, as two.yaml's

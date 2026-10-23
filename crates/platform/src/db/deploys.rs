@@ -85,8 +85,44 @@ pub const DRIVERS: &[&str] = &[
     "planter-promote",
 ];
 
-/// How long a project's shipped artifacts are kept (M233).
+/// How long a project's shipped artifacts are kept at most (M233).
 pub const ARTIFACT_DAYS: u64 = 30;
+
+/// A project's kept artifacts would pass its quota (M233).
+#[derive(Debug)]
+pub struct OverQuota {
+    pub kept: u64,
+    pub quota: u64,
+}
+
+impl std::fmt::Display for OverQuota {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "the project keeps {} MiB of shipped sources waiting for their deploys, and at most {} MiB",
+            self.kept >> 20,
+            self.quota >> 20
+        )
+    }
+}
+
+impl std::error::Error for OverQuota {}
+
+/// Drop `environment`'s project's artifacts no deploy that's waiting or
+/// running names (M233): a deploy that ended, was denied, expired or went
+/// stale no longer needs its source. In the transaction that moved it.
+fn prune_artifacts(tx: &impl Sql, environment: &str) -> Result<()> {
+    tx.execute(
+        "DELETE FROM deploy_artifacts
+         WHERE project_id = (SELECT project_id FROM environments WHERE id = ?1)
+           AND digest NOT IN (
+             SELECT d.source_ref FROM deploys d JOIN environments e ON e.id = d.environment_id
+             WHERE e.project_id = deploy_artifacts.project_id AND d.source_kind = 'artifact'
+               AND d.state IN ('planned', 'pending', 'approved', 'running'))",
+        params![environment],
+    )?;
+    Ok(())
+}
 
 /// The first event's `prev_hash`.
 pub const GENESIS: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -1229,6 +1265,7 @@ fn write(
             tx.execute("UPDATE deploys SET state = 'stale', updated_at = ?2 WHERE id = ?1", params![other, at])?;
         }
     }
+    prune_artifacts(tx, &environment)?;
     Ok(Ok(Recorded { deploy: d, events }))
 }
 
@@ -1302,21 +1339,67 @@ impl Db {
     }
 
     /// Keep `bytes`, an artifact shipped to `project` (M233: planter's
-    /// Ship), under `digest` (`sha256:<hex>` of them): the same bytes again
-    /// are the same row. The project's artifacts older than
-    /// [`ARTIFACT_DAYS`] go.
-    pub fn put_deploy_artifact(&self, project: &str, digest: &str, bytes: &[u8], by: &str, at: u64) -> Result<()> {
-        let c = self.c();
-        c.execute(
+    /// Ship), under `digest` (`sha256:<hex>` of them), once a deploy of it
+    /// is planned: the same bytes again are the same row. Refused
+    /// ([`OverQuota`]) when the project's kept artifacts would pass
+    /// `quota` bytes. Each goes once no deploy that names it is waiting or
+    /// running ([`prune_artifacts`]), or after [`ARTIFACT_DAYS`] anyway.
+    pub fn put_deploy_artifact(
+        &self,
+        project: &str,
+        digest: &str,
+        bytes: &[u8],
+        by: &str,
+        at: u64,
+        quota: u64,
+    ) -> Result<()> {
+        let mut c = self.c();
+        let tx = c.immediate()?;
+        tx.execute(
             "DELETE FROM deploy_artifacts WHERE project_id = ?1 AND created_at < ?2",
             params![project, at.saturating_sub(ARTIFACT_DAYS * 24 * 3600 * 1000)],
         )?;
-        c.execute(
+        let kept = self.deploy_artifacts_size_in(&tx, project, digest)?;
+        if kept + bytes.len() as u64 > quota {
+            return Err(OverQuota { kept, quota }.into());
+        }
+        tx.execute(
             "INSERT INTO deploy_artifacts (project_id, digest, bytes, size, created_by, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (project_id, digest) DO NOTHING",
             params![project, digest, bytes.to_vec(), bytes.len() as u64, by, at],
         )?;
+        tx.commit()?;
         Ok(())
+    }
+
+    /// The bytes `project`'s kept artifacts add up to, but `digest`'s.
+    fn deploy_artifacts_size_in(&self, tx: &impl Sql, project: &str, digest: &str) -> Result<u64> {
+        let n: i64 = tx.query_row(
+            "SELECT COALESCE(SUM(size), 0) FROM deploy_artifacts WHERE project_id = ?1 AND digest != ?2",
+            params![project, digest],
+            |r| r.get(0),
+        )?;
+        Ok(n.max(0) as u64)
+    }
+
+    /// The bytes `project`'s kept artifacts add up to.
+    pub fn deploy_artifacts_size(&self, project: &str) -> Result<u64> {
+        let c = self.c();
+        self.deploy_artifacts_size_in(&c, project, "")
+    }
+
+    /// Claim the shipped app name `app` for `project` (M233), atomically:
+    /// whether it's `project`'s now (claimed now, or by it before).
+    pub fn claim_planter_app(&self, app: &str, project: &str, at: u64) -> Result<bool> {
+        let c = self.c();
+        c.execute(
+            "INSERT INTO planter_app_claims (app, project_id, created_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT (app) DO NOTHING",
+            params![app, project, at],
+        )?;
+        let owner: String =
+            c.query_row("SELECT project_id FROM planter_app_claims WHERE app = ?1", params![app], |r| r.get(0))?;
+        Ok(owner == project)
     }
 
     /// `project`'s artifact `digest`, if it keeps one.
@@ -1571,6 +1654,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute("DELETE FROM deploy_events WHERE environment_id NOT IN (SELECT id FROM environments)", params![])?;
     c.execute("DELETE FROM deploys WHERE environment_id NOT IN (SELECT id FROM environments)", params![])?;
     c.execute("DELETE FROM deploy_artifacts WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
+    c.execute("DELETE FROM planter_app_claims WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     super::deploy_approvals::erase_account(c)?;
     super::deploy_runs::erase_account(c)?;
     c.execute("UPDATE deploys SET planned_by = '', planned_by_agent = NULL WHERE planned_by = ?1", params![d.account])?;
