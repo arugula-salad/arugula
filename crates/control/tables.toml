@@ -107,6 +107,24 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "issuer_clients"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A product that may ask the hub who someone is (M228): its id, its name, the exact addresses a sign-in may go back to. Registered by an operator."
+with_account = "none"
+seen_by = ["litestream"]
+
+[[table]]
+name = "issuer_tokens"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "An access token the issuer handed a product (M228): a hash of it, its account and client, the hub session it was made from (it ends when that one does), when it ends."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "passkeys"
 plane = "machine"
 process = "hub"

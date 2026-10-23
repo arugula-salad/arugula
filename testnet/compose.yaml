@@ -156,8 +156,15 @@ services:
       # ARUGULA_TESTNET_PREVIEW_DOMAIN=previews.localhost serves
       # <id>.previews.localhost on control's port.
       ARUGULA_PREVIEW_DOMAIN: ${ARUGULA_TESTNET_PREVIEW_DOMAIN:-}
+      # The hub as an issuer (M228): its keys are files up.sh makes in the
+      # state directory (an empty one is unset), which the `issuer` claim
+      # rewrites and restarts control to rotate.
+      ARUGULA_ISSUER_KEY: file:/issuer/current
+      ARUGULA_ISSUER_KEY_NEXT: file:/issuer/next
+      ARUGULA_ISSUER_KEY_PREVIOUS: file:/issuer/previous
     volumes:
       - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
+      - ${ARUGULA_TESTNET_STATE:-./.state}/issuer:/issuer:ro
     tmpfs: [/var/lib/arugula-control]
     ports:
       - "127.0.0.1:${ARUGULA_TESTNET_CONTROL_PORT:-22980}:8080"

@@ -364,6 +364,10 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
 - `ARUGULA_CLOUD_ACCOUNTS`: whose hosted workspaces run on the platform's
   inference key (M185; `*` is no one: only accounts named).
 - `POSTHOG_API_KEY`: product analytics (`analytics.rs`).
+- `ARUGULA_ISSUER_KEY`, and `ARUGULA_ISSUER_KEY_NEXT` and
+  `ARUGULA_ISSUER_KEY_PREVIOUS` only during a rotation: the hub's signing
+  keys as an issuer (M228, "The issuer" below). Not set yet: where they're
+  kept is Jake's call.
 - `ARUGULA_PLATFORM_KEY`: the key the hub and an out-of-process platform
   share ("The platform" below). Unused while the platform runs in process.
 - `SPRITES_TOKEN`: read by nothing since hosted sandboxes (M20) were
@@ -478,6 +482,146 @@ copy" has how to make one).
    ARUGULA_CLOUD_SECRET_KEY_PREVIOUS`. Until then the old key still opens
    everything it wrapped, so don't leave it set. Keep it in Infisical until
    the next nightly dump has been restored with the new one.
+
+### The issuer (M228)
+
+The hub signs other products in (studio, hud boxes, the platform page
+later): OIDC-shaped endpoints on control's own site (`issuer.rs`). It's
+off until `ARUGULA_ISSUER_KEY` is set, and every route below answers 404
+until then.
+
+| Route | What |
+|---|---|
+| `GET /.well-known/openid-configuration` | discovery |
+| `GET /.well-known/jwks.json` | the published keys (cached 5 minutes) |
+| `GET /oauth/authorize` | the authorization code flow, PKCE S256 only |
+| `POST /oauth/token` | the code and its verifier for an ID token and an access token |
+| `GET /oauth/userinfo` | who an access token is for |
+| `GET /oauth/hud` | hud's forge assertion for a box, in its page's fragment |
+
+- **Clients.** A product is a row in `issuer_clients`: an id, a name, and
+  the exact addresses a sign-in may go back to (https, or http on loopback).
+  Nothing is seeded. An unregistered client or address is shown an error
+  and sent nowhere. Every client is public, with no secret: PKCE stands in.
+
+  ```
+  fly ssh console -a illogical-control -C "/arugula-control issuer add-client --db /data/control.db \
+      --id studio --name Studio --redirect https://studio.example/auth/arugula/callback"
+  fly ssh console -a illogical-control -C "/arugula-control issuer clients --db /data/control.db"
+  fly ssh console -a illogical-control -C "/arugula-control issuer remove-client --db /data/control.db --id studio"
+  ```
+
+  A hud box is a client too, with its `HUD_FORGE_SIGNIN_AUDIENCE` as its
+  id and its page as its address. Set the box's `HUD_FORGE_SIGNIN_URL` to
+  `https://control.arugula.io/oauth/hud?client_id=<id>&redirect_uri=<page>`.
+  Set its `HUD_FORGE_SIGNIN_KEY` to the signing key's SPKI (`issuer keys`,
+  below).
+- **What a token says.** An ID token is a JWT signed `EdDSA`, with the key's
+  `kid` in its header. It holds `iss` (control's URL), `sub` (the account),
+  `aud` (the client), `iat`, `exp` (5 minutes on), `github_id` (the numeric
+  GitHub id, when the account has one) and the client's `nonce`. An access
+  token is opaque and lasts 10 minutes. It ends sooner if the hub session it
+  came from ends: signing out, "End all sessions", or deleting the account.
+  Neither one carries a project or a role. A product reads those from the
+  platform with the access token. hud's assertion is hud's own `hudfs1`
+  format, from the same key. It lasts 5 minutes and says `github:<login>`,
+  so it needs an account that has signed in with GitHub.
+- **Sign-in.** Someone signed in to control's page gets their code with no
+  prompt. Anyone else is sent to control's page (`#issuer-signin=`), signs in
+  with GitHub or a passkey as always, and comes back to the same request.
+  `prompt=none` returns `login_required` instead.
+
+#### The issuer's keys
+
+Three settings. Each takes 32 bytes of hex, or `file:<path>` for a file that
+holds them. An empty value, or an empty file, means unset.
+
+- `ARUGULA_ISSUER_KEY`: the key that signs.
+- `ARUGULA_ISSUER_KEY_NEXT`: published in the JWKS but not signing yet, so
+  clients have it before its first token.
+- `ARUGULA_ISSUER_KEY_PREVIOUS`: no longer signs, but stays published until
+  the tokens it signed have run out.
+
+A key's `kid` is its RFC 7638 thumbprint, worked out from its public half,
+so nothing has to keep the two in step. The hub logs the kids at start
+("the issuer's keys: signs with …, next …, previous …"). It refuses to start
+if NEXT or PREVIOUS is set without the key, or if a key is set twice. To
+print the public halves (never the secrets) of what an environment sets,
+with each one's SPKI for hud:
+
+```
+fly ssh console -a illogical-control -C "/arugula-control issuer keys"
+```
+
+Where the secrets are kept is Jake's call, still open in M228's PR: Fly
+secrets with an escrow copy in Infisical (as the master key is), Infisical
+alone synced to Fly, or a file on the volume. Wherever they live, the hub
+reads only these three settings.
+
+#### Rotating the issuer's key
+
+Every step restarts the hub, which drops relay connections for a moment.
+Daemons reconnect by themselves, but pick a quiet hour.
+
+1. **Make a key**, and escrow it before anything else:
+   `arugula-control issuer new-key` prints the seed on stdout, and its kid
+   and hud SPKI on stderr.
+2. **Publish it:** `fly secrets set -a illogical-control
+   ARUGULA_ISSUER_KEY_NEXT=<new>`. Wait at least the JWKS cache (5 minutes)
+   plus the longest client-side JWKS cache you know of. A client that meets
+   an unknown kid fetches the JWKS again and so recovers anyway, but this
+   way none has to.
+3. **Sign with it.** In one deploy:
+
+   ```
+   fly secrets set -a illogical-control --stage \
+       ARUGULA_ISSUER_KEY=<new> ARUGULA_ISSUER_KEY_PREVIOUS=<old>
+   fly secrets unset -a illogical-control --stage ARUGULA_ISSUER_KEY_NEXT
+   fly secrets deploy -a illogical-control
+   ```
+
+   **hud boxes** hold a single key (`HUD_FORGE_SIGNIN_KEY`), not the JWKS.
+   Set each box's key to the new SPKI at this step. A box still on the old
+   key refuses assertions until it's changed, and a box changed early
+   refuses them until this step.
+4. **Drop the old key** once its tokens are out: 10 minutes after step 3
+   (the longest token lasts 10). Run `fly secrets unset -a illogical-control
+   ARUGULA_ISSUER_KEY_PREVIOUS`. Keep it in escrow until you're sure nothing
+   needs it to explain a log.
+
+`issuer_wire::a_rotation_overlaps` runs these steps. The testnet's `issuer`
+claim runs them against a running hub.
+
+#### If an issuer key leaks
+
+Whoever holds the key can sign a token for any account, to any client,
+until clients stop trusting that key. There's no overlap to wait for:
+
+1. **Make a new key** (`issuer new-key`) and escrow it.
+2. **Swap at once**, leaving the leaked key out of every slot. Don't set it
+   as PREVIOUS:
+
+   ```
+   fly secrets set -a illogical-control --stage ARUGULA_ISSUER_KEY=<new>
+   fly secrets unset -a illogical-control --stage ARUGULA_ISSUER_KEY_NEXT ARUGULA_ISSUER_KEY_PREVIOUS
+   fly secrets deploy -a illogical-control
+   ```
+
+   Once the hub has restarted, the JWKS no longer lists the leaked kid.
+3. **Clients pick it up.** A client that caches the JWKS drops the leaked
+   key within its cache time (5 minutes for ours). Ask each product's
+   owner to fetch the JWKS again now. Tokens the leaked key signed stop
+   verifying as soon as it does. hud boxes take the new SPKI by hand, as in
+   a rotation. Until a box does, it refuses every assertion, which is the
+   safe failure.
+4. **End what the key could have reached.** Access tokens are the hub's
+   own rows, not signed, so they don't depend on the key. If the key was
+   used, end the affected accounts' sessions ("End all sessions", or delete
+   their `sessions` rows), which ends their access tokens too. Tokens a
+   forger made live 10 minutes at most, unless a client accepts more.
+5. **Find out how it leaked**, and write it up where the incident is
+   tracked. The kid in each ID token's header, and in each hud assertion
+   (`kid`), says which key signed it.
 
 ### Daemon census
 

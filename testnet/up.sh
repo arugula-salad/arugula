@@ -81,6 +81,11 @@ if [ ! -f "$STATE/github-app.pem" ]; then
   ssh-keygen -q -t rsa -b 2048 -m PEM -N '' -C github-app -f "$STATE/github-app.pem"
   rm -f "$STATE/github-app.pem.pub"
 fi
+# The issuer's keys (M228, compose.yaml): one that signs, and no next or
+# previous until the `issuer` claim rotates them.
+mkdir -p "$STATE/issuer"
+[ -s "$STATE/issuer/current" ] || openssl rand -hex 32 > "$STATE/issuer/current"
+for f in next previous; do [ -f "$STATE/issuer/$f" ] || : > "$STATE/issuer/$f"; done
 # The git server's HTTPS (M183): a self-signed certificate for `git`, which
 # the boxes are told to trust (GIT_SSL_CAINFO), and a password for its basic
 # auth, user x-access-token, as a forge takes a token.

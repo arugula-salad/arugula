@@ -13,6 +13,8 @@ anyhow = { workspace = true }
 arugula-e2e = { workspace = true }
 axum = { workspace = true }
 base64 = { workspace = true }
+# The issuer's tokens (`issuer`, M228): EdDSA JWTs and hud's assertions.
+ed25519-dalek = { workspace = true }
 # Litestream's flags (`backup`), which both binaries flatten into theirs.
 clap = { workspace = true, features = ["derive", "env"] }
 hmac = { workspace = true }

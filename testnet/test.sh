@@ -180,6 +180,22 @@
 #           reads the answer labelled as their agent on box-systemd; after
 #           the read grant is revoked, read_thread is refused. Broken: no
 #           grant given, so the box's first read is refused.
+#   issuer  The hub as an issuer (M228), as a product signs a person in:
+#           signed out, /oauth/authorize sends them through control's
+#           sign-in (the fake GitHub) and back with a code; the code and its
+#           PKCE verifier get an ID token that verifies against the JWKS,
+#           says who and nothing of projects or roles, and userinfo agrees.
+#           Then a rotation, a control restart per step, as
+#           docs/control-ops.md runs it: the new key published as next (the
+#           old one still signs), then signing with the old one previous: a
+#           token the new key signed verifies against the JWKS the client
+#           cached while the new key was next, and the old key's tokens
+#           against the JWKS now. A hud box's assertion verifies with the SPKI
+#           `issuer keys` prints, as hud checks it. Once the old key is
+#           dropped, its tokens stop verifying. Last of the claims: it
+#           restarts control, which forgets its tmpfs database. Broken: the
+#           old key dropped at the switch instead of kept as previous, so the
+#           tokens it signed stop verifying too soon.
 #   public-preview
 #           Only with hosted workspaces at the fake E2B
 #           (ARUGULA_TESTNET_HOSTED=1) and a preview domain
@@ -204,7 +220,7 @@ PROFILE="${1:-ssh}"; shift || true
 CFG="$STATE/ssh_config"
 BREAK="${BREAK:-}"
 SSH_CLAIMS="login jump no-route bare bytes agent linger"
-CONTROL_CLAIMS="signin reach relay unreachable cli team hosted platform platform-page agents"
+CONTROL_CLAIMS="signin reach relay unreachable cli team hosted platform platform-page agents issuer"
 
 need_docker
 
@@ -1046,6 +1062,69 @@ claim_platform_page() {
   pp_says || { note "platform-page: /control.json doesn't say where the platform page is: $(cat "$WORK/b")"; rc=1; }
   [ "$rc" != 0 ] || note "platform-page: $host serves the platform page ($js), and control.json says so"
   return "$rc"
+}
+
+# shellcheck disable=SC2086 # CONTROL_VIA is several words
+iss() { node --experimental-strip-types --no-warnings "$HERE/issuer.ts" "$@" --control "$CONTROL_URL" $CONTROL_VIA; }
+# Control restarted with the issuer's key files as they are now, and the
+# claim's clients registered (its database is tmpfs).
+iss_restart() {
+  docker restart "$TESTNET-control" >/dev/null || return 1
+  for _ in $(seq 1 60); do
+    curl -fsS "http://127.0.0.1:$ARUGULA_TESTNET_CONTROL_PORT/control.json" >/dev/null 2>&1 && break
+    sleep 0.5
+  done
+  local c
+  for c in "testnet-studio http://127.0.0.1:9/cb" "testnet-hud-box http://127.0.0.1:9/hud/"; do
+    # shellcheck disable=SC2086 # an id and an address
+    set -- $c
+    docker exec "$TESTNET-control" /opt/arugula/arugula-control issuer add-client \
+      --db /var/lib/arugula-control/control.db --id "$1" --name "$1" --redirect "$2" >/dev/null || return 1
+  done
+}
+claim_issuer() {
+  local d="$STATE/issuer" a b login="issuer-$$" cb=http://127.0.0.1:9/cb spki k1 k3 old=""
+  keyf() { printf '%s\n' "$2" > "$d/$1.new" && mv "$d/$1.new" "$d/$1"; }
+  signs() { iss signin --login "$login" --client testnet-studio --redirect "$cb" \
+    --token-out "$WORK/iss-t$1" --jwks-out "$WORK/iss-j$1" > "$WORK/iss-s$1"; }
+  kid() { field kid < "$WORK/iss-s$1"; }
+  a="$(openssl rand -hex 32)"; b="$(openssl rand -hex 32)"
+  [ -n "$BREAK" ] || old="$a"
+  # 1. The old key signs; a person signs in through the hub.
+  keyf current "$a"; keyf next ""; keyf previous ""
+  iss_restart || { note "issuer: control didn't come back"; return 1; }
+  signs 1 || { note "issuer: the first sign-in failed"; return 1; }
+  k1="$(kid 1)"
+  # 2. The new key published as next: the old one still signs.
+  keyf next "$b"
+  iss_restart || return 1
+  signs 2 || { note "issuer: signing in with a next key failed"; return 1; }
+  [ "$(kid 2)" = "$k1" ] || { note "issuer: the next key signed before its turn"; return 1; }
+  grep -q '"jwks":\["[^"]*","[^"]*"\]' "$WORK/iss-s2" || { note "issuer: the next key isn't published: $(cat "$WORK/iss-s2")"; return 1; }
+  # 3. The new key signs, the old one previous.
+  keyf current "$b"; keyf next ""; keyf previous "$old"
+  iss_restart || return 1
+  signs 3 || { note "issuer: signing in after the switch failed"; return 1; }
+  k3="$(kid 3)"
+  [ "$k3" != "$k1" ] || { note "issuer: still signing with the old key"; return 1; }
+  iss verify --client testnet-studio --token "$WORK/iss-t3" --jwks "$WORK/iss-j2" >/dev/null ||
+    { note "issuer: the new key's token didn't verify against the JWKS cached while it was next"; return 1; }
+  for t in 1 2; do
+    iss verify --client testnet-studio --token "$WORK/iss-t$t" >/dev/null ||
+      { note "issuer: a token the old key signed didn't verify after the switch"; return 1; }
+  done
+  # A hud box's assertion, checked with the key as a box is given it.
+  spki="$(docker exec "$TESTNET-control" /opt/arugula/arugula-control issuer keys | awk '$1 == "current" { print $5 }')"
+  iss hud --login "$login" --client testnet-hud-box --redirect http://127.0.0.1:9/hud/ --spki "$spki" > "$WORK/iss-hud" ||
+    { note "issuer: the hud assertion didn't verify"; return 1; }
+  # 4. The old key dropped: its tokens stop verifying, the new key's don't.
+  keyf previous ""
+  iss_restart || return 1
+  if iss verify --client testnet-studio --token "$WORK/iss-t1" >/dev/null 2>&1; then
+    note "issuer: a dropped key's token still verifies"; return 1
+  fi
+  iss verify --client testnet-studio --token "$WORK/iss-t3" >/dev/null || { note "issuer: the new key's token stopped verifying"; return 1; }
+  note "issuer: signed in as $(field sub < "$WORK/iss-s1") (github_id $(sed -n 's/.*"github_id":\([0-9]*\).*/\1/p' "$WORK/iss-s1")), rotated $k1 -> $k3 with no token lost; hud: $(cat "$WORK/iss-hud")"
 }
 
 claim_platform_restart() {
