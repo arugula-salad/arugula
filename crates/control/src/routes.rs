@@ -54,6 +54,7 @@ enum Auth {
     IssuerCode,
     IssuerToken,
     AgentToken,
+    ClientSecret,
     SessionOrClient,
 }
 

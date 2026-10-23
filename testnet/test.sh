@@ -221,6 +221,17 @@
 #           restarts control, which forgets its tmpfs database. Broken: the
 #           old key dropped at the switch instead of kept as previous, so the
 #           tokens it signed stop verifying too soon.
+#   links   Account links (M229), as a product links its own user: a
+#           client registered with a link secret (`arugula-control issuer
+#           add-client`, `link-secret`) signs a person in through the hub,
+#           then from its server links its user by the token's numeric
+#           GitHub id (the same again is no change; another numeric id is
+#           refused); the first sign-in through the product shows the
+#           consent screen; the person's platform page lists the link and
+#           they unlink it there; the product's next look says not_linked;
+#           the token from before the unlink no longer links; a fresh
+#           sign-in asks for consent again and links.
+#           Broken: nobody unlinks, so the product still sees the link.
 #   public-preview
 #           Only with hosted workspaces at the fake E2B
 #           (ARUGULA_TESTNET_HOSTED=1) and a preview domain
@@ -245,7 +256,7 @@ PROFILE="${1:-ssh}"; shift || true
 CFG="$STATE/ssh_config"
 BREAK="${BREAK:-}"
 SSH_CLAIMS="login jump no-route bare bytes agent linger"
-CONTROL_CLAIMS="signin reach relay unreachable cli team hosted platform platform-page agents broker issuer"
+CONTROL_CLAIMS="signin reach relay unreachable cli team hosted platform platform-page agents links broker issuer"
 
 need_docker
 
@@ -1150,6 +1161,22 @@ hud_verifier() {
     > "$WORK/hud/http/on-behalf-of.ts" || return 1
   grep -q '^export function forgePrincipal' "$WORK/hud/http/on-behalf-of.ts"
 }
+
+claim_links() {
+  local cb=http://127.0.0.1:9/link-cb client=testnet-product secret user="prod-$$" skip=()
+  local db=/var/lib/arugula-control/control.db cli=/opt/arugula/arugula-control
+  [ -z "$BREAK" ] || skip=(--skip-unlink 1)
+  docker exec "$TESTNET-control" "$cli" issuer add-client --db "$db" --id "$client" --kind oidc \
+    --name "Testnet product" --redirect "$cb" >/dev/null || { note "links: the client wasn't registered"; return 1; }
+  secret="$(docker exec "$TESTNET-control" "$cli" issuer link-secret --db "$db" --id "$client" 2>/dev/null)" ||
+    { note "links: no link secret"; return 1; }
+  if ! iss link --login "links-$$" --client "$client" --redirect "$cb" --secret "$secret" --user "$user" \
+    --consent-out "$STATE/links-consent.html" "${skip[@]}" > "$WORK/links" 2> "$WORK/links.err"; then
+    note "links: $(cat "$WORK/links.err")"; return 1
+  fi
+  note "links: $(cat "$WORK/links")"
+}
+
 claim_issuer() {
   local d="$STATE/issuer" a b login="issuer-$$" cb=http://127.0.0.1:9/cb spki k1 k3 err until
   keyf() { printf '%s\n' "$2" > "$d/$1.new" && mv "$d/$1.new" "$d/$1"; }
