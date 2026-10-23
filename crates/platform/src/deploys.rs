@@ -8,7 +8,8 @@
 //! **Who may do what,** by their role in the deploy's project (a personal
 //! project's account is its owner; anyone else gets 404, as if it weren't
 //! there):
-//! - **read** a deploy, with its operation, approvals and log: any member;
+//! - **read** a deploy, with its operation, approvals and log, and the
+//!   project's history of them: any member;
 //! - **make an environment:** an owner;
 //! - **plan a deploy and ask for its approval:** an owner or an editor, or
 //!   their agent ([`agent`]'s routes): the agent's owner must be an owner
@@ -86,7 +87,7 @@ use arugula_e2e::{
 };
 use axum::{
     Json,
-    extract::{FromRequestParts, Path, State},
+    extract::{FromRequestParts, Path, Query, State},
     http::{StatusCode, request::Parts},
 };
 use serde::Deserialize;
@@ -724,6 +725,116 @@ async fn push_owners(app: &Platform, by: &Actor, d: &Deploy, env: &Environment, 
 pub async fn get(State(app): State<Arc<Platform>>, s: Person, Path(id): Path<String>) -> J {
     let (d, env, p, role) = deploy_as(&app, &s.account, &id, false).await?;
     Ok(Json(deploy_json(&app, &d, &env, &p, role == TeamRole::Owner).await?))
+}
+
+/// A project's history: this many deploys a page unless the reader says,
+/// and never more than [`HISTORY_MAX`].
+const HISTORY_DEFAULT: u32 = 20;
+const HISTORY_MAX: u32 = 100;
+
+#[derive(Deserialize)]
+pub struct HistoryQuery {
+    /// Its id (`env_…`), or its name in the project.
+    #[serde(default)]
+    environment: Option<String>,
+    /// A deploy of the project: the page after it.
+    #[serde(default)]
+    before: Option<String>,
+    #[serde(default)]
+    limit: Option<u32>,
+}
+
+/// A deploy as a project's history lists it: where it went, what, its
+/// state, who planned it and when it was planned, decided (approved or
+/// denied) and finished (applied, failed, or ended otherwise), from its
+/// events. `deploy_json` has the rest: its plan, approvals and log.
+fn summary_json(
+    d: &Deploy,
+    env: &Environment,
+    events: &[crate::db::deploys::Event],
+    name: &dyn Fn(&str) -> String,
+    machine_name: &dyn Fn(&str) -> String,
+) -> Value {
+    let at =
+        |kinds: &[EventKind]| events.iter().rev().find(|e| kinds.iter().any(|k| k.as_str() == e.kind)).map(|e| e.at);
+    let roll_back = events
+        .iter()
+        .find(|e| e.kind == EventKind::Planned.as_str())
+        .and_then(|e| e.detail_json().ok())
+        .and_then(|v| v.get("roll_back").cloned());
+    use EventKind as K;
+    json!({
+        "id": d.id,
+        "environment": { "id": env.id, "name": env.name, "driver": env.driver },
+        "source": { "kind": d.source.kind.as_str(), "ref": d.source.reference, "where": d.source.place },
+        "roll_back": roll_back,
+        "state": d.state.as_str(),
+        "run": d.run,
+        "planned_by": d.planned_by,
+        "planned_by_name": name(&d.planned_by),
+        "agent": d.planned_by_agent.as_ref().map(|m| json!({ "machine": m, "machine_name": machine_name(m) })),
+        "created_at": d.created_at,
+        "updated_at": d.updated_at,
+        "planned_at": at(&[K::Planned]),
+        "decided_at": at(&[K::Approved, K::Denied]),
+        "finished_at": at(&[K::Succeeded, K::Failed, K::Denied, K::Canceled, K::Expired, K::Staled]),
+    })
+}
+
+/// `GET /api/projects/{project}/deploys?environment=&before=&limit=`: the
+/// project's deploys, newest first, for its members (as its environments
+/// are). `next`: the `before` of the page after this one, while there may
+/// be one.
+pub async fn list(
+    State(app): State<Arc<Platform>>,
+    s: Person,
+    Path(project): Path<String>,
+    Query(q): Query<HistoryQuery>,
+) -> J {
+    let (p, _) = project_as(&app, &s.account, &project, false).await?;
+    let envs = app.db.environments(&p.id)?;
+    let env = match q.environment.as_deref().map(str::trim).filter(|e| !e.is_empty()) {
+        Some(e) => Some(
+            envs.iter()
+                .find(|x| x.id == e || x.name == e)
+                .ok_or_else(|| err(StatusCode::NOT_FOUND, "the project has no such environment"))?,
+        ),
+        None => None,
+    };
+    let before = match q.before.as_deref().map(str::trim).filter(|b| !b.is_empty()) {
+        Some(b) => {
+            let d = app.db.deploy(b)?.filter(|d| envs.iter().any(|e| e.id == d.environment));
+            Some(d.ok_or_else(|| err(StatusCode::BAD_REQUEST, "before is one of the project's deploys"))?)
+        }
+        None => None,
+    };
+    let limit = q.limit.unwrap_or(HISTORY_DEFAULT).clamp(1, HISTORY_MAX);
+    let page = app.db.project_deploys(
+        &p.id,
+        env.map(|e| e.id.as_str()),
+        before.as_ref().map(|d| (d.created_at, d.id.as_str())),
+        limit,
+    )?;
+    let mut ids: Vec<String> = page.iter().map(|(d, _)| d.planned_by.clone()).filter(|a| !a.is_empty()).collect();
+    ids.sort();
+    ids.dedup();
+    let names = app.cache.accounts(&*app.hub, &ids).await?;
+    let mut machines: Vec<String> = page.iter().filter_map(|(d, _)| d.planned_by_agent.clone()).collect();
+    machines.sort();
+    machines.dedup();
+    let machine_names =
+        if machines.is_empty() { Default::default() } else { crate::grants::agent_names(&app, &machines).await? };
+    let name = |a: &str| names.get(a).map(|a| a.name.clone()).unwrap_or_default();
+    let machine_name = |m: &str| machine_names.get(m).map(|d| d.name.clone()).unwrap_or_default();
+    let next = (page.len() == limit as usize).then(|| page.last().map(|(d, _)| d.id.clone())).flatten();
+    let deploys: Vec<Value> = page
+        .iter()
+        .filter_map(|(d, events)| {
+            let env = envs.iter().find(|e| e.id == d.environment)?;
+            Some(summary_json(d, env, events, &name, &machine_name))
+        })
+        .collect();
+    Ok(Json(json!({ "deploys": deploys, "next": next })))
 }
 
 /// `GET /api/deploys/waiting`: the deploys waiting for the reader's

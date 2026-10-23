@@ -1,7 +1,8 @@
 // A project's environments and planning a deploy on the platform page
 // (M252): what the platform's driver list says (`GET
 // /api/projects/{project}/drivers`), and the bodies the page sends to make
-// an environment and to plan a deploy. Plain functions, tested in
+// an environment and to plan a deploy, and a project's history of deploys
+// (`GET /api/projects/{project}/deploys`). Plain functions, tested in
 // scripts/environments.test.mjs.
 
 /** One of a driver's settings, as `arugula_e2e::drivers::setting_fields`
@@ -102,3 +103,47 @@ export function planBody(
   if (!repoOk.test(r)) return { error: "The repo on GitHub: OWNER/NAME." };
   return { body: { environment, source: { kind: "commit", ref: c, where: r }, roll_back: rollBack } };
 }
+
+/** A deploy as a project's history lists it (`GET
+ * /api/projects/{project}/deploys`): its own page has the rest. */
+export interface DeploySummary {
+  id: string;
+  environment: { id: string; name: string; driver: string };
+  source: { kind: string; ref: string; where: string };
+  /** A roll back's deploy and what it goes back to, or null. */
+  roll_back: { deploy: string } | null;
+  state: string;
+  planned_by: string;
+  planned_by_name: string;
+  agent: { machine: string; machine_name: string } | null;
+  created_at: number;
+  planned_at: number | null;
+  /** When it was approved or denied. */
+  decided_at: number | null;
+  /** When it ended: applied, failed, denied, canceled, expired or stale. */
+  finished_at: number | null;
+}
+
+/** A page of a project's history; `next` is the `before` of the page
+ * after it, while there may be one. */
+export interface DeployHistory {
+  deploys: DeploySummary[];
+  next: string | null;
+}
+
+/** The history's path: `environment`'s deploys only (its id or name),
+ * at most `limit`, those after `before`. */
+export function historyPath(project: string, environment?: string, limit?: number, before?: string | null): string {
+  const q = new URLSearchParams();
+  if (environment) q.set("environment", environment);
+  if (limit) q.set("limit", String(limit));
+  if (before) q.set("before", before);
+  const s = q.toString();
+  return `/api/projects/${encodeURIComponent(project)}/deploys${s ? `?${s}` : ""}`;
+}
+
+/** When a deploy last moved: it ended, it was decided, or it was planned. */
+export const lastMoved = (d: Pick<DeploySummary, "finished_at" | "decided_at" | "created_at">) => d.finished_at ?? d.decided_at ?? d.created_at;
+
+/** A commit's or an artifact's reference, short. */
+export const shortRef = (ref: string) => ref.slice(0, 12);
