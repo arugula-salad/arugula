@@ -111,7 +111,7 @@ name = "issuer_clients"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A product that may ask the hub who someone is (M228): its id, its kind (oidc, or a hud box), its name, the exact addresses a sign-in may go back to. Registered by an operator."
+what = "A product that may ask the hub who someone is (M228): its id, its kind (oidc, or a hud box), its name, the exact addresses a sign-in may go back to, and a hud box's platform project (M237). Registered by an operator."
 with_account = "none"
 seen_by = ["litestream"]
 
@@ -129,7 +129,7 @@ name = "issuer_client_secrets"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A product's link secret (M229): a hash of it, which client it is, when it was made. The product calls the link API with it."
+what = "A client's secret (M229, M237): a hash of it, which client it is, when it was made. A product calls the link API with it; a bound hud box, its roster and review threads."
 with_account = "none"
 seen_by = ["litestream"]
 
@@ -148,6 +148,15 @@ plane = "machine"
 process = "hub"
 holds = "metadata"
 what = "The audit of account links (M229): a link made, renamed or ended (with the consent), the client and product user, the account, by the product, the person or an operator, when. Kept a year."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "hud_signins"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "Who the hub gave a project-bound hud box's assertion to (M237): the client, the account, when last. The box posts review threads only for these, for a month."
 with_account = "deleted"
 seen_by = ["litestream"]
 

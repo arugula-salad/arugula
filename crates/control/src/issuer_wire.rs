@@ -41,7 +41,14 @@ pub(crate) fn keys(current: &IssuerKey, next: Option<&IssuerKey>, previous: Opti
 }
 
 pub(crate) fn client(id: &str, kind: ClientKind, back: &str) -> Client {
-    Client { id: id.into(), kind, name: format!("{id} (test)"), redirect_uris: vec![back.into()], created: 0 }
+    Client {
+        id: id.into(),
+        kind,
+        name: format!("{id} (test)"),
+        redirect_uris: vec![back.into()],
+        created: 0,
+        project: None,
+    }
 }
 
 /// A control with these keys, a registered client, and account `a` signed

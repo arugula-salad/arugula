@@ -24,6 +24,7 @@ just testnet test control platform # M140: chat and Cloud through control's own 
 just testnet test control platform-page # M151: the platform page on app.control.test
 just testnet test control agents # M198: a box's agent reads and posts in a channel over MCP, granted
 just testnet test control links # M229: a product links its user by numeric GitHub id; the person unlinks on the platform page
+just testnet test control hud-box # M237: a hud box bound to a project: its roster, a member let in, a review in an issue's thread (ARUGULA_TESTNET_HUD: hud's own proxy)
 just testnet test control issuer # M228: a product signs in through the hub's issuer, verifies against the JWKS, survives a rotation
 ARUGULA_TESTNET_PLATFORM=out just testnet up control  # the platform out of process (M140)
 just testnet test control platform-restart  # out of process: a relayed session outlives a platform restart

@@ -19,9 +19,11 @@ const hud = await import(pathToFileURL(join(dir, "proxy", "forge-signin.ts")).hr
 const token = readFileSync(file, "utf8").trim();
 const box = (aud: string) => new hud.ForgeSignin(hud.forgeSigninFromEnv({ HUD_FORGE_SIGNIN_KEY: spki, HUD_FORGE_SIGNIN_AUDIENCE: aud }));
 const signin = box(audience);
-const first = signin.take(token);
-const again = signin.take(token);
-const other = box(`${audience}-other`).take(token);
+// hud from M237 on takes an assertion asynchronously (the platform's JWKS);
+// `await` reads either.
+const first = await signin.take(token);
+const again = await signin.take(token);
+const other = await box(`${audience}-other`).take(token);
 const fail = (why: string) => {
   console.error(`hud-check: ${why}: ${JSON.stringify({ first, again, other })}`);
   process.exit(1);

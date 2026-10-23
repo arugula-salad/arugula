@@ -48,6 +48,7 @@ use arugula_control_wire::{
 use crate::{
     Deleted, PlatformPort,
     auth::Asked,
+    boxes::{BoxMember, BoxPost, BoxPosted},
     forge::{
         GithubUser, TokenAnswer,
         send::{Outcome, UserToken},
@@ -319,6 +320,12 @@ fn hosted_args(project: &str, workspace: &str, machine: &str, report: Option<&Se
         machine: machine.to_owned(),
         report: report.cloned(),
     }
+}
+
+/// A bound hud box's project (M237's `box_members`).
+#[derive(Serialize, Deserialize)]
+struct ProjectArgs {
+    project: String,
 }
 
 /// A machine and the account it acts for (M184's `machine_drives`).
@@ -860,6 +867,14 @@ impl PlatformPort for HttpPlatform {
     ) -> BoxFuture<'a, anyhow::Result<Uploaded>> {
         Box::pin(self.0.call("hosted_uploaded", UploadArgs { machine: machine.clone(), upload: upload.clone() }))
     }
+
+    fn box_members<'a>(&'a self, project: &'a str) -> BoxFuture<'a, anyhow::Result<Option<Vec<BoxMember>>>> {
+        Box::pin(self.0.call("box_members", ProjectArgs { project: project.to_owned() }))
+    }
+
+    fn box_post<'a>(&'a self, post: &'a BoxPost) -> BoxFuture<'a, anyhow::Result<BoxPosted>> {
+        Box::pin(self.0.call("box_post", post.clone()))
+    }
 }
 
 /// The platform's internal API: every `PlatformPort` method of `port`,
@@ -957,6 +972,8 @@ async fn platform_call(
                 let a: UploadArgs = args(&body)?;
                 answer(p.hosted_uploaded(&a.machine, &a.upload).await?)?
             }
+            "box_members" => answer(p.box_members(&args::<ProjectArgs>(&body)?.project).await?)?,
+            "box_post" => answer(p.box_post(&args::<BoxPost>(&body)?).await?)?,
             _ => return Ok(None),
         }))
     }

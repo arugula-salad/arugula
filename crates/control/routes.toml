@@ -35,8 +35,9 @@
 #     address and PKCE verifier (M228);
 #   - `issuer_token`: an access token the issuer handed out, as a bearer
 #     (M228).
-#   - `client_secret`: a registered issuer client's id and link secret, as
-#     HTTP Basic (M229).
+#   - `client_secret`: a registered issuer client's id and secret, as
+#     HTTP Basic (M229: an `oidc` client's link secret; M237: a `hud`
+#     box's).
 #   - `hosted_enrollment`: a hosted box's one-time ticket or sandbox id,
 #     and its key proving it holds the key it enrolls (M178);
 #   - `hosted`: a live hosted machine's signature (`auth::HostedAuth`),
@@ -178,6 +179,24 @@ process = "hub"
 auth = "session"
 clients = ["browser"]
 note = "hud's forge assertion for a box registered as a client, in the fragment of its own page. Without a session it signs in first, as /oauth/authorize does."
+
+# hud boxes bound to a project (M237, hud_box.rs): the box's server, with its secret.
+
+[[route]]
+method = "GET"
+path = "/oauth/hud/members"
+process = "hub"
+auth = "client_secret"
+clients = ["product"]
+note = "A bound box's roster: its project's members now (the platform's answer), with numeric GitHub ids to match on. An unbound box gets 409 not_bound."
+
+[[route]]
+method = "POST"
+path = "/oauth/hud/threads"
+process = "hub"
+auth = "client_secret"
+clients = ["product"]
+note = "A bound box's review into the thread on an object in its project, for a member the hub gave the box's assertion to in the last month; kept as posted via the box."
 
 # Account links (M229, links.rs): a product's server, with its link secret.
 

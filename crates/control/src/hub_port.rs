@@ -772,6 +772,7 @@ mod tests {
                     name: "Studio".into(),
                     redirect_uris: vec!["https://studio.example/cb".into()],
                     created: now,
+                    project: None,
                 })
                 .unwrap();
             assert!(f.hub().product_links("acct-pl").await.unwrap().is_empty());

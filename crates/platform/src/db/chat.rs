@@ -57,6 +57,8 @@ pub struct Message {
     pub imported: Option<String>,
     /// The machine whose agent wrote it (M197); `author` is its owner.
     pub agent: Option<String>,
+    /// The product that posted it for `author` (M237): a hud box's name.
+    pub via: Option<String>,
 }
 
 /// How many of chat's live events are kept for pages that resume
@@ -91,6 +93,8 @@ pub struct NewMessage<'a> {
     pub mentions: &'a [String],
     /// Written by an agent on this machine (M197), for `author`.
     pub agent: Option<&'a str>,
+    /// Posted by this product for `author` (M237): a hud box's name.
+    pub via: Option<&'a str>,
 }
 
 /// A message brought in from a machine (M124): its number there, and the
@@ -130,7 +134,7 @@ pub struct Search<'a> {
 
 const ROOM_COLS: &str = "id, scope, kind, name, machine, target, created_by, created, archived, last_seq";
 const MSG_COLS: &str =
-    "room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, edited, deleted, imported, agent";
+    "room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, edited, deleted, imported, agent, via";
 
 fn room_row(r: &Row) -> Result<Room> {
     Ok(Room {
@@ -163,6 +167,7 @@ fn msg_row(r: &Row) -> Result<Message> {
         deleted: r.get(10)?,
         imported: r.get(11)?,
         agent: r.get(12)?,
+        via: r.get(13)?,
     })
 }
 
@@ -382,8 +387,8 @@ impl Db {
             |r| r.get(0),
         )?;
         tx.execute(
-            "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, agent)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO chat_messages (room, seq, author, at, text, quote, ref_machine, ref_pane, mentions, agent, via)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 room,
                 seq,
@@ -394,7 +399,8 @@ impl Db {
                 m.ref_machine,
                 m.ref_pane,
                 serde_json::to_string(m.mentions)?,
-                m.agent
+                m.agent,
+                m.via
             ],
         )?;
         if m.agent.is_some() {
@@ -960,7 +966,7 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     drop_rooms_where(tx, "kind = ?1 AND scope NOT IN (SELECT 'project:' || id FROM projects)", "object")?;
     tx.execute(
         "UPDATE chat_messages SET author = '', text = '', quote = NULL, ref_machine = NULL, ref_pane = NULL,
-         mentions = '[]', imported = NULL, agent = NULL, deleted = coalesce(deleted, ?2) WHERE author = ?1",
+         mentions = '[]', imported = NULL, agent = NULL, via = NULL, deleted = coalesce(deleted, ?2) WHERE author = ?1",
         params![account, arugula_e2e::now_ms()],
     )?;
     // Out of others' mentions and reader lists (JSON lists in text).
@@ -1030,7 +1036,17 @@ mod tests {
     fn post(db: &Db, room: &str, author: &str, text: &str, quote: Option<&str>, mentions: &[String]) -> i64 {
         db.add_chat_message(
             room,
-            &NewMessage { author, at: 1, text, quote, ref_machine: None, ref_pane: None, mentions, agent: None },
+            &NewMessage {
+                author,
+                at: 1,
+                text,
+                quote,
+                ref_machine: None,
+                ref_pane: None,
+                mentions,
+                agent: None,
+                via: None,
+            },
         )
         .unwrap()
     }
@@ -1088,6 +1104,7 @@ mod tests {
                     ref_pane: None,
                     mentions: &[],
                     agent: None,
+                    via: None,
                 },
             })
             .collect();

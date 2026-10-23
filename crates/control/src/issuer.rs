@@ -825,7 +825,8 @@ fn refuse_hud(status: StatusCode, why: &'static str) -> Response {
 /// box's own page: `#hud-forge=hudfs1.…`. hud signs a session in as
 /// `github:<login>`, so the account needs a GitHub sign-in, and its login
 /// must be no one else's here. A `nonce` the box sends is echoed in the
-/// assertion (hud ignores it today; M237 can bind it to the box's session).
+/// assertion: hud from M237 on binds it to the browser that asked, and
+/// requires it for a sign-in that admits someone by project membership.
 pub async fn hud(
     State(app): State<Arc<App>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -881,6 +882,14 @@ pub async fn hud(
         kid: issuer.keys.current.kid().to_owned(),
         nonce: q.nonce,
     };
+    // A bound box (M237) may post review threads for whoever signs in to
+    // it through here, for a while (`hud_box.rs`).
+    if client.project.is_some()
+        && let Err(e) = app.db.hud_signed_in(&claims.aud, &claims.account, now)
+    {
+        tracing::warn!("the issuer couldn't note a box's sign-in: {e:#}");
+        return refuse_hud(StatusCode::INTERNAL_SERVER_ERROR, "try again");
+    }
     let assertion = sign_hud(&issuer.keys.current, &claims);
     no_store(Redirect::to(&format!("{redirect_uri}#hud-forge={assertion}")).into_response())
 }
@@ -927,15 +936,25 @@ enum What {
         /// be on an origin that serves only hud's own UI.
         #[arg(long = "redirect", required = true)]
         redirect_uris: Vec<String>,
+        /// A hud box's platform project (M237, `prj_…`): its members are the
+        /// box's roster, and its reviews post to threads on that project's
+        /// objects (with a client secret, `client-secret`). Left out, the
+        /// box keeps its own roster; changing it ends who the box may post
+        /// for until they sign in to it again.
+        #[arg(long)]
+        project: Option<String>,
     },
     /// The registered clients.
     Clients {
         #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
         db: std::path::PathBuf,
     },
-    /// Give a client a link secret (M229: what it calls the link API with,
-    /// as HTTP Basic with its id), shown once on stdout. A new one replaces
-    /// the old at once; --revoke takes it away.
+    /// Give a client a secret, shown once on stdout: what it calls the
+    /// hub with, as HTTP Basic with its id. An oidc client links accounts
+    /// with it (M229); a hud box bound to a project reads its members and
+    /// posts review threads (M237). A new one replaces the old at once;
+    /// --revoke takes it away.
+    #[command(visible_alias = "client-secret")]
     LinkSecret {
         #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
         db: std::path::PathBuf,
@@ -996,17 +1015,27 @@ pub fn run(args: impl Iterator<Item = String>) -> anyhow::Result<()> {
                 println!("previous kid {}  hud {}  until {until} ({state})", k.kid(), k.spki_base64());
             }
         }
-        What::AddClient { db, id, kind, name, redirect_uris } => {
+        What::AddClient { db, id, kind, name, redirect_uris, project } => {
             let c = open(&db)?;
             let created =
                 crate::db::issuer::clients(&c)?.into_iter().find(|c| c.id == id).map_or(now_ms(), |c| c.created);
-            let stored =
-                crate::db::issuer::put_client(&c, &Client { id: id.clone(), kind, name, redirect_uris, created })?;
-            println!("client {id} ({}) registered: {}", kind.as_str(), stored.redirect_uris.join(" "));
+            let stored = crate::db::issuer::put_client(
+                &c,
+                &Client { id: id.clone(), kind, name, redirect_uris, created, project },
+            )?;
+            let bound = stored.project.as_deref().map(|p| format!(" (project {p})")).unwrap_or_default();
+            println!("client {id} ({}){bound} registered: {}", kind.as_str(), stored.redirect_uris.join(" "));
         }
         What::Clients { db } => {
             for c in crate::db::issuer::clients(&open(&db)?)? {
-                println!("{}\t{}\t{}\t{}", c.id, c.kind.as_str(), c.name, c.redirect_uris.join(" "));
+                println!(
+                    "{}\t{}\t{}\t{}\t{}",
+                    c.id,
+                    c.kind.as_str(),
+                    c.name,
+                    c.redirect_uris.join(" "),
+                    c.project.as_deref().unwrap_or("-")
+                );
             }
         }
         What::LinkSecret { db, id, revoke } => {
@@ -1015,16 +1044,12 @@ pub fn run(args: impl Iterator<Item = String>) -> anyhow::Result<()> {
                 let had = crate::db::issuer::drop_client_secret(&c, &id)?;
                 println!(
                     "{}",
-                    if had {
-                        format!("client {id}'s link secret revoked")
-                    } else {
-                        format!("client {id} had no link secret")
-                    }
+                    if had { format!("client {id}'s secret revoked") } else { format!("client {id} had no secret") }
                 );
             } else {
                 let secret = format!("acs_{}", token());
                 crate::db::issuer::set_client_secret(&c, &id, &hash(&secret), now_ms())?;
-                eprintln!("client {id}'s link secret (shown once; the old one, if any, stopped working):");
+                eprintln!("client {id}'s secret (shown once; the old one, if any, stopped working):");
                 println!("{secret}");
             }
         }

@@ -19,17 +19,17 @@ use crate::{
     issuer_wire::{BACK, CLIENT, COOKIE, Control, client, control, keys, pkce, query},
 };
 
-const SECRET: &str = "acs_test-secret";
+pub(crate) const SECRET: &str = "acs_test-secret";
 
 impl Control {
     /// `CLIENT` gets the link secret [`SECRET`].
-    fn give_secret(&self, client: &str, secret: &str) {
+    pub(crate) fn give_secret(&self, client: &str, secret: &str) {
         set_client_secret(&self.app.db.conn(), client, &hash(secret), now_ms()).unwrap();
     }
 
     /// Another account signed in with GitHub as (`github_id`, `login`),
     /// and its session cookie.
-    fn person(&self, account: &str, github_id: &str, login: &str) -> String {
+    pub(crate) fn person(&self, account: &str, github_id: &str, login: &str) -> String {
         let now = now_ms();
         self.app.db.account_for("github", github_id, login, account, now).unwrap();
         self.app.db.add_session(&hash(&format!("session-{account}")), account, now, now + 3_600_000).unwrap();
@@ -62,7 +62,13 @@ impl Control {
         (t["id_token"].as_str().unwrap().to_owned(), asked)
     }
 
-    async fn links(&self, method: &str, path: &str, auth: Option<(&str, &str)>, body: Option<Value>) -> (u16, Value) {
+    pub(crate) async fn links(
+        &self,
+        method: &str,
+        path: &str,
+        auth: Option<(&str, &str)>,
+        body: Option<Value>,
+    ) -> (u16, Value) {
         let mut r = self.http.request(method.parse().unwrap(), format!("{}{path}", self.base));
         if let Some((id, secret)) = auth {
             r = r.basic_auth(id, Some(secret));
@@ -89,7 +95,7 @@ impl Control {
     }
 
     /// A platform route, as the platform page calls it with `cookie`.
-    async fn page(&self, method: &str, path: &str, cookie: &str) -> (u16, Value) {
+    pub(crate) async fn page(&self, method: &str, path: &str, cookie: &str) -> (u16, Value) {
         let r = self
             .http
             .request(method.parse().unwrap(), format!("{}{path}", self.base))
@@ -158,10 +164,14 @@ async fn a_product_links_its_user_and_the_person_unlinks_on_the_platform_page() 
     assert_eq!(c.audit("a"), said(&[("renamed", "product"), ("linked", "product")]));
 
     // A hud box's assertion isn't an ID token: never a link, even for the
-    // same account. (A hud client can't hold a link secret at all.)
+    // same account. A hud box's secret (M237) never links either.
     let page = "https://box1.example/hud/";
     c.app.db.put_issuer_client(&client("box1", ClientKind::Hud, page)).unwrap();
-    assert!(set_client_secret(&c.app.db.conn(), "box1", &hash("acs_box"), now_ms()).is_err());
+    assert!(set_client_secret(&c.app.db.conn(), "nobody", &hash("acs_box"), now_ms()).is_err());
+    c.give_secret("box1", "acs_box");
+    let (st, v) = c.links("POST", "/oauth/links", Some(("box1", "acs_box")), Some(body.clone())).await;
+    assert_eq!((st, v["error"].as_str()), (401, Some("invalid_client")));
+    assert_eq!(c.links("GET", "/oauth/links/studio-u1", Some(("box1", "acs_box")), None).await.0, 401);
     let enc = |u: &str| url::form_urlencoded::byte_serialize(u.as_bytes()).collect::<String>();
     let (st, at_hud, _) =
         c.get(&format!("/oauth/hud?client_id=box1&redirect_uri={}&nonce=nonce-0001", enc(page)), Some(COOKIE)).await;

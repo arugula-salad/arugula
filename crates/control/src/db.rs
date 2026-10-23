@@ -598,7 +598,7 @@ impl Db {
         conn.execute_batch(hosted::SCHEMA)?;
         conn.execute_batch(changes::SCHEMA)?;
         conn.execute_batch(platform::SCHEMA)?;
-        conn.execute_batch(issuer::SCHEMA)?;
+        issuer::ensure(&conn)?;
         migrate(&conn)?;
         if !answers_before {
             grandfather_shares(&conn)?;
@@ -613,7 +613,7 @@ impl Db {
         conn.execute_batch(hosted::SCHEMA).unwrap();
         conn.execute_batch(changes::SCHEMA).unwrap();
         conn.execute_batch(platform::SCHEMA).unwrap();
-        conn.execute_batch(issuer::SCHEMA).unwrap();
+        issuer::ensure(&conn).unwrap();
         migrate(&conn).unwrap();
         Self { conn: Mutex::new(conn) }
     }
@@ -2373,6 +2373,7 @@ impl Db {
             "DELETE FROM account_link_events WHERE account = ?1",
             "DELETE FROM issuer_grants WHERE account = ?1",
             "DELETE FROM account_link_tombstones WHERE account = ?1",
+            "DELETE FROM hud_signins WHERE account = ?1",
             "DELETE FROM passkeys WHERE account = ?1",
             "DELETE FROM devices WHERE account = ?1",
             "DELETE FROM turned_down WHERE account = ?1",
