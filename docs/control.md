@@ -249,6 +249,37 @@ arugula cloud key ls --project acme
 arugula cloud key clear anthropic --project acme
 ```
 
+**The inference broker (M231, Arugula #29).** Claude through the platform
+for a project's members and for registered clients (studio's lobby), with
+the key set on the way out and never handed to the caller ("The Claude
+credential broker and its metering move to the platform"). Point Anthropic's
+SDK or Claude Code at
+`ANTHROPIC_BASE_URL=<control>/api/projects/<project>/inference/anthropic`:
+`POST /v1/messages` (streamed or not), `/v1/messages/count_tokens` and
+`GET /v1/models` go to Anthropic, anything else is a 404. A member calls as
+themselves (a session or a CLI device); a registered client sends its
+credential as a bearer and names the account (`arugula-account`, a member
+of the project) and, if its policy lets it, a sponsor (`arugula-sponsor`)
+and a visitor (`arugula-visitor`). Whose key pays, in the lobby's order: a
+visitor's own key, a sponsor's own key, the project's own key, the
+account's own key (its personal project's: `arugula cloud key set anthropic
+--project personal`), then the platform's key under a monthly cap per
+account (`ARUGULA_INFERENCE_ANTHROPIC_KEY`; the client's cap for any of its
+accounts, else `ARUGULA_INFERENCE_MONTHLY_USD` for accounts on
+`ARUGULA_CLOUD_ACCOUNTS`), else a refusal with how to add a key. Every
+refusal is a 403 (Claude Code shows it at once) in Anthropic's error shape,
+with `arugula.reason` (`no_key`, `cap` with `resets`, `key_refused`,
+`payers`) for a client; the answer's `arugula-pays` header says whose key
+paid. Each message is read for its usage as it streams, priced at list
+prices (the lobby's table, studio-058), and kept per project and per account
+(`inference_calls`, 90 days); the cap is checked before a call goes out. The
+project's settings page shows what its calls cost this month
+(`GET /api/projects/{project}/inference/spend`), with its hosted agent turns
+beside them (their calls go through E2B's proxy, which doesn't see their
+usage, so they're counted, not priced); `GET /api/inference/spend` is an
+account's month on the platform's key and its cap, as the lobby showed it
+(`crates/platform/src/hosted/broker/`).
+
 **Agents on hosted workspaces (M184, #1245).** A hosted workspace's agent
 blocks are its machine's, as on a laptop: + Agent on the platform page's
 workspace (`/p/:project/workspaces/hw_…`) opens Start an agent on control's

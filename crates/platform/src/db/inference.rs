@@ -2,6 +2,10 @@
 //! on hosted boxes and the caps they count against, and the digest of the
 //! egress rules each box was last given. Made by migration `0018`; what each column
 //! means is there. The logic is [`crate::hosted::inference`]'s.
+//!
+//! And the inference broker's (M231, migration `0032`): each call it made,
+//! priced, which its monthly caps on the platform's key count and the
+//! project's spend shows ([`crate::hosted::broker`]).
 
 use anyhow::Result;
 
@@ -263,11 +267,159 @@ impl Db {
     }
 }
 
+/// A call the inference broker made (M231), as [`Db::record_call`] keeps
+/// it: what migration `0032` says each column is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Call {
+    pub id: String,
+    pub project: String,
+    pub account: Option<String>,
+    pub client: Option<String>,
+    pub provider: String,
+    /// `project`, `account` or `platform`.
+    pub pays: String,
+    /// Whose own key paid, for `account`.
+    pub payer: Option<String>,
+    pub model: Option<String>,
+    pub status: u16,
+    pub input: u64,
+    pub output: u64,
+    pub cache_write: u64,
+    pub cache_write_1h: u64,
+    pub cache_read: u64,
+    pub cost_micros: u64,
+    pub priced_as: Option<String>,
+    pub started_at: u64,
+    pub ended_at: u64,
+}
+
+/// One line of a project's spend ([`Db::project_spend`]): an account's
+/// calls through one client (or none) on one kind of key.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Spent {
+    pub account: Option<String>,
+    pub client: Option<String>,
+    pub pays: String,
+    pub calls: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cost_micros: u64,
+}
+
+/// A project's agent turns on its hosted boxes ([`Db::project_turns`]):
+/// how many, how many on the platform's key, and their minutes.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct Turns {
+    pub turns: u64,
+    pub platform_turns: u64,
+    pub minutes: u64,
+}
+
+/// How long the broker's calls are kept: the month a cap counts and the
+/// two before it.
+pub const CALLS_KEEP_MS: u64 = 90 * DAY_MS;
+
+impl Db {
+    /// Keep a call the broker made.
+    pub fn record_call(&self, c: &Call) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO inference_calls (id, project_id, account, client, provider, pays, payer, model, status,
+                 input_tokens, output_tokens, cache_write_tokens, cache_write_1h_tokens, cache_read_tokens,
+                 cost_micros, priced_as, started_at, ended_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+            params![
+                c.id,
+                c.project,
+                c.account,
+                c.client,
+                c.provider,
+                c.pays,
+                c.payer,
+                c.model,
+                u32::from(c.status),
+                c.input,
+                c.output,
+                c.cache_write,
+                c.cache_write_1h,
+                c.cache_read,
+                c.cost_micros,
+                c.priced_as,
+                c.started_at,
+                c.ended_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// What `account`'s calls through `client` (`None`: its own, with no
+    /// client) cost on the platform's key since `since`, in millionths of
+    /// a dollar: what its monthly cap counts.
+    pub fn platform_spend(&self, account: &str, client: Option<&str>, since: u64) -> Result<u64> {
+        self.c().query_row(
+            "SELECT CAST(COALESCE(SUM(cost_micros), 0) AS BIGINT) FROM inference_calls
+             WHERE pays = 'platform' AND account = ?1 AND COALESCE(client, '') = ?2 AND started_at >= ?3",
+            params![account, client.unwrap_or(""), since],
+            |r| r.get(0),
+        )
+    }
+
+    /// What a project's calls cost in `[since, until)`, by account, client
+    /// and whose key, dearest first.
+    pub fn project_spend(&self, project: &str, since: u64, until: u64) -> Result<Vec<Spent>> {
+        self.c().query_map(
+            "SELECT account, client, pays, CAST(count(*) AS BIGINT),
+                 CAST(COALESCE(SUM(input_tokens + cache_write_tokens + cache_write_1h_tokens + cache_read_tokens), 0) AS BIGINT),
+                 CAST(COALESCE(SUM(output_tokens), 0) AS BIGINT),
+                 CAST(COALESCE(SUM(cost_micros), 0) AS BIGINT)
+             FROM inference_calls WHERE project_id = ?1 AND started_at >= ?2 AND started_at < ?3
+             GROUP BY account, client, pays ORDER BY 7 DESC, 1, 2, 3",
+            params![project, since, until],
+            |r| {
+                Ok(Spent {
+                    account: r.get(0)?,
+                    client: r.get(1)?,
+                    pays: r.get(2)?,
+                    calls: r.get(3)?,
+                    input_tokens: r.get(4)?,
+                    output_tokens: r.get(5)?,
+                    cost_micros: r.get(6)?,
+                })
+            },
+        )
+    }
+
+    /// A project's agent turns on its hosted boxes that started in
+    /// `[since, until)` (step 5's `hosted_turns`), a turn with no end
+    /// counting until it's stale, as the caps count it.
+    pub fn project_turns(&self, project: &str, since: u64, until: u64, now: u64) -> Result<Turns> {
+        let (turns, platform, ms): (u64, u64, i64) = self.c().query_row(
+            "SELECT CAST(count(*) AS BIGINT),
+                 CAST(COALESCE(SUM(CASE WHEN t.pays = 'platform' THEN 1 ELSE 0 END), 0) AS BIGINT),
+                 CAST(COALESCE(SUM(
+                     (CASE WHEN COALESCE(t.ended_at, ?4) < t.started_at + ?5 THEN COALESCE(t.ended_at, ?4)
+                           ELSE t.started_at + ?5 END) - t.started_at), 0) AS BIGINT)
+             FROM hosted_turns t JOIN hosted_workspaces w ON w.id = t.workspace_id
+             WHERE w.project_id = ?1 AND t.started_at >= ?2 AND t.started_at < ?3",
+            params![project, since, until, now, STALE_MS],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+        Ok(Turns { turns, platform_turns: platform, minutes: u64::try_from(ms.max(0)).unwrap_or(0) / 60_000 })
+    }
+
+    /// Forget the broker's calls older than [`CALLS_KEEP_MS`].
+    pub fn tidy_inference_calls(&self, now: u64) -> Result<usize> {
+        self.c()
+            .execute("DELETE FROM inference_calls WHERE started_at < ?1", params![now.saturating_sub(CALLS_KEEP_MS)])
+    }
+}
+
 /// An account is gone: no key or turn names it any more. Its projects'
 /// keys go when the sweep finds their project gone.
 pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute("UPDATE project_inference_keys SET set_by = NULL WHERE set_by = ?1", params![d.account])?;
     c.execute("UPDATE hosted_turns SET account = NULL WHERE account = ?1", params![d.account])?;
+    c.execute("UPDATE inference_calls SET account = NULL WHERE account = ?1", params![d.account])?;
+    c.execute("UPDATE inference_calls SET payer = NULL WHERE payer = ?1", params![d.account])?;
     Ok(())
 }
 

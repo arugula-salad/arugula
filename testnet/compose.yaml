@@ -132,6 +132,16 @@ services:
       # workspaces this account made: `runs` makes its workspace as it.
       ARUGULA_HOSTED_PLATFORM_KEYS: anthropic
       ARUGULA_CLOUD_ACCOUNTS: acct-testnet-runs-maker
+      # The inference broker (M231): Anthropic is the fake in `fakes`
+      # (9004), the platform's key a test value, and studio's lobby a
+      # registered client (its credential is `testnet-studio-client-credential`,
+      # its SHA-256 here) whose accounts the platform's key pays for up to
+      # $20 a month, naming sponsors. Projects' own keys are sealed with
+      # the stack's master key (hosted.yaml's).
+      ARUGULA_INFERENCE_UPSTREAM: http://fakes:9004
+      ARUGULA_INFERENCE_ANTHROPIC_KEY: sk-ant-api03-testnet-platform-key-0123456789
+      ARUGULA_INFERENCE_CLIENTS: studio:6655cc9fd497644fe53b64282c8b0c0a8d98a037102691345774f41b6dd01d3a:20:payers
+      ARUGULA_CLOUD_SECRET_KEY: 5ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec0
       # Environments may name the fake driver (M219's `deploys`).
       ARUGULA_PLATFORM_FAKE_DRIVER: "1"
       STRIPE_SECRET_KEY: sk_test_testnet
@@ -209,6 +219,16 @@ services:
       # workspaces this account made: `runs` makes its workspace as it.
       ARUGULA_HOSTED_PLATFORM_KEYS: anthropic
       ARUGULA_CLOUD_ACCOUNTS: acct-testnet-runs-maker
+      # The inference broker (M231): Anthropic is the fake in `fakes`
+      # (9004), the platform's key a test value, and studio's lobby a
+      # registered client (its credential is `testnet-studio-client-credential`,
+      # its SHA-256 here) whose accounts the platform's key pays for up to
+      # $20 a month, naming sponsors. Projects' own keys are sealed with
+      # the stack's master key (hosted.yaml's).
+      ARUGULA_INFERENCE_UPSTREAM: http://fakes:9004
+      ARUGULA_INFERENCE_ANTHROPIC_KEY: sk-ant-api03-testnet-platform-key-0123456789
+      ARUGULA_INFERENCE_CLIENTS: studio:6655cc9fd497644fe53b64282c8b0c0a8d98a037102691345774f41b6dd01d3a:20:payers
+      ARUGULA_CLOUD_SECRET_KEY: 5ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec0
       STRIPE_SECRET_KEY: sk_test_testnet
       STRIPE_WEBHOOK_SECRET: whsec_testnet
       ARUGULA_PLATFORM_KEY: *platform-key
@@ -245,7 +265,9 @@ services:
 
   # The fakes control-smoke uses (web/fixtures/fakes.ts): GitHub sign-in on
   # 9001 (published, for the browser's redirect), Stripe on 9002, a Web Push
-  # endpoint on 9003. Only control talks to them, over the outer network.
+  # endpoint on 9003, Anthropic on 9004 (the inference broker's upstream,
+  # M231). Only control and the platform talk to them, over the outer
+  # network.
   fakes:
     profiles: [control]
     image: node:22-slim

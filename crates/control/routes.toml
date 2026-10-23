@@ -43,7 +43,10 @@
 #     (`auth::Dialer`);
 #   - `agent_token`: a live agent grant token (M230), `Authorization:
 #     Bearer aru_agent_…`, which the platform finds by its hash and no
-#     other route reads.
+#     other route reads;
+#   - `session_or_client`: a session (or a CLI device), or a registered
+#     client's credential, which the platform checks itself
+#     (`hosted::broker::clients`, M231).
 # - `clients`: who calls it: `page` (control's web page, in a browser or the
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
@@ -1453,6 +1456,30 @@ process = "platform"
 auth = "cloud_driver"
 clients = ["cli", "daemon"]
 note = "Turns a port's public preview off (M187): a project's owner or editor. The hub's and the machine's caches let it go within a minute."
+
+[[route]]
+method = "ANY"
+path = "/api/projects/{project}/inference/anthropic/{*rest}"
+process = "platform"
+auth = "session_or_client"
+clients = ["page", "cli", "product"]
+note = "The inference broker (M231): Anthropic's API (POST v1/messages and v1/messages/count_tokens, GET v1/models; anything else is a 404) for a member of the project, or for the account a registered client names (studio's lobby). The platform sets the key that pays (a visitor's or sponsor's the client names, the project's, the account's own, or the platform's under a monthly cap) in place of the caller's credential, streams the answer back, and meters each message. No key is ever answered."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/inference/spend"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "What a project's Claude calls through the broker cost in a month (M231), by account, client and whose key paid, with its hosted agent turns beside them: for its members."
+
+[[route]]
+method = "GET"
+path = "/api/inference/spend"
+process = "platform"
+auth = "session_or_client"
+clients = ["page", "cli", "product"]
+note = "An account's month on the platform's key through the broker, and its cap (M231): a member's own, or the account a registered client names, through that client."
 
 [[route]]
 method = "GET"

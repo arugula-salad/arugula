@@ -59,6 +59,7 @@ use sha2::{Digest as _, Sha256};
 
 use crate::{Platform, secrets::SecretCipher};
 
+pub mod broker;
 pub mod enroll;
 pub mod hold;
 pub mod inference;
@@ -132,6 +133,28 @@ pub struct Args {
     /// (docs/control-ops.md, "Public previews").
     #[arg(long, env = "ARUGULA_PREVIEW_DOMAIN")]
     pub preview_domain: Option<String>,
+    /// The platform's own Anthropic key for the inference broker (M231):
+    /// it pays, under a monthly cap per account, for calls a registered
+    /// client's policy covers and for accounts on ARUGULA_CLOUD_ACCOUNTS,
+    /// when no project's or account's own key does. A dedicated key with a
+    /// hard monthly spend limit at Anthropic (docs/control-ops.md). Unlike
+    /// hosted boxes' (E2B's broker holds that one), the platform holds this
+    /// one; it's never answered or logged. Unset: the platform's key pays
+    /// for nothing through the broker.
+    #[arg(long, env = "ARUGULA_INFERENCE_ANTHROPIC_KEY", hide_env_values = true)]
+    pub inference_anthropic_key: Option<broker::Key>,
+    /// Anthropic's API, for the broker (a fake on the testnet).
+    #[arg(long, env = "ARUGULA_INFERENCE_UPSTREAM", default_value = broker::ANTHROPIC)]
+    pub inference_upstream: String,
+    /// What the platform's key may spend through the broker each UTC month
+    /// for an account on ARUGULA_CLOUD_ACCOUNTS calling it itself (a
+    /// client's accounts have the client's cap).
+    #[arg(long, env = "ARUGULA_INFERENCE_MONTHLY_USD", default_value_t = broker::MONTHLY_USD)]
+    pub inference_monthly_usd: f64,
+    /// The broker's registered clients (studio's lobby): `id:sha256[:house_usd[:payers]]`,
+    /// comma-separated (`hosted::broker::clients::parse`). Empty: none.
+    #[arg(long, env = "ARUGULA_INFERENCE_CLIENTS", value_delimiter = ',')]
+    pub inference_clients: Vec<String>,
 }
 
 impl Args {
@@ -159,6 +182,12 @@ impl Args {
             idle_timeout: self.hosted_idle_timeout.filter(|s| *s > 0).map(Duration::from_secs),
             runtime_cap: self.hosted_runtime_cap.filter(|s| *s > 0).map(Duration::from_secs),
             preview_domain: previews::domain(self.preview_domain.as_deref().unwrap_or(""))?,
+            broker: broker::Config::new(
+                self.inference_anthropic_key,
+                &self.inference_upstream,
+                self.inference_monthly_usd,
+                &self.inference_clients,
+            )?,
         })
     }
 }
@@ -190,6 +219,8 @@ pub struct Config {
     pub inference: inference::Settings,
     /// Public previews' domain (M187), when they're on.
     pub preview_domain: Option<String>,
+    /// The inference broker's key, clients and caps (M231).
+    pub broker: broker::Config,
 }
 
 impl std::fmt::Debug for Config {
@@ -202,6 +233,7 @@ impl std::fmt::Debug for Config {
             .field("runtime_cap", &self.runtime_cap)
             .field("inference", &self.inference)
             .field("preview_domain", &self.preview_domain)
+            .field("broker", &self.broker)
             .finish_non_exhaustive()
     }
 }
