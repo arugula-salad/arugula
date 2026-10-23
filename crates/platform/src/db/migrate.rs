@@ -283,9 +283,9 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 34,
+        version: 36,
         name: "deploy_artifacts",
-        sql: include_str!("../../migrations/sqlite/0034_deploy_artifacts.sql"),
+        sql: include_str!("../../migrations/sqlite/0036_deploy_artifacts.sql"),
         additive: true,
     },
 ];
@@ -481,9 +481,9 @@ const POSTGRES: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 34,
+        version: 36,
         name: "deploy_artifacts",
-        sql: include_str!("../../migrations/postgres/0034_deploy_artifacts.sql"),
+        sql: include_str!("../../migrations/postgres/0036_deploy_artifacts.sql"),
         additive: true,
     },
 ];
