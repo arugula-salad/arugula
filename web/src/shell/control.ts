@@ -501,7 +501,9 @@ export async function passkeyRegister(name?: string, device?: PasskeySigner): Pr
   };
   let o: Options;
   try {
-    o = await api<Options>("/auth/passkey/register", name === undefined ? {} : { name });
+    // This page's device, so control knows whether it may sign for a first
+    // passkey or a GitHub sign-in must vouch for it.
+    o = await api<Options>("/auth/passkey/register", { ...(name === undefined ? {} : { name }), ...(device ? { device: device.id } : {}) });
   } catch (e) {
     if (e instanceof HttpError && e.body.reason === "reauth") {
       location.assign(`/auth/github?reauth=true&next=${encodeURIComponent(location.pathname + ADD_PASSKEY_HASH)}`);
