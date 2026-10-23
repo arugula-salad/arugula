@@ -24,29 +24,29 @@ use crate::{
     issuer::{CODES_PER_SESSION, Issuer, Keys, access_token_for},
 };
 
-const CONTROL: &str = "http://control.test";
-const CLIENT: &str = "studio-test";
-const BACK: &str = "https://studio.example/auth/arugula/callback";
-const COOKIE: &str = "ilg_session=session-a";
+pub(crate) const CONTROL: &str = "http://control.test";
+pub(crate) const CLIENT: &str = "studio-test";
+pub(crate) const BACK: &str = "https://studio.example/auth/arugula/callback";
+pub(crate) const COOKIE: &str = "ilg_session=session-a";
 
-struct Control {
-    base: String,
-    http: reqwest::Client,
-    app: Arc<App>,
+pub(crate) struct Control {
+    pub(crate) base: String,
+    pub(crate) http: reqwest::Client,
+    pub(crate) app: Arc<App>,
 }
 
 /// Keys with a previous one published for ten more minutes.
-fn keys(current: &IssuerKey, next: Option<&IssuerKey>, previous: Option<&IssuerKey>) -> Keys {
+pub(crate) fn keys(current: &IssuerKey, next: Option<&IssuerKey>, previous: Option<&IssuerKey>) -> Keys {
     Keys { current: current.clone(), next: next.cloned(), previous: previous.map(|k| (k.clone(), now() + 600)) }
 }
 
-fn client(id: &str, kind: ClientKind, back: &str) -> Client {
+pub(crate) fn client(id: &str, kind: ClientKind, back: &str) -> Client {
     Client { id: id.into(), kind, name: format!("{id} (test)"), redirect_uris: vec![back.into()], created: 0 }
 }
 
 /// A control with these keys, a registered client, and account `a` signed
 /// in with GitHub (id 4242, login jake-gh) as `session-a`.
-async fn control(keys: Keys) -> Control {
+pub(crate) async fn control(keys: Keys) -> Control {
     let mut app = App::for_tests(CONTROL);
     app.issuer = Some(Issuer::new(keys));
     let app = app.start();
@@ -67,18 +67,18 @@ fn b64url(b: &[u8]) -> String {
 }
 
 /// A PKCE verifier and its S256 challenge.
-fn pkce(seed: u8) -> (String, String) {
+pub(crate) fn pkce(seed: u8) -> (String, String) {
     let verifier = b64url(&[seed; 32]);
     let challenge = b64url(&Sha256::digest(verifier.as_bytes()));
     (verifier, challenge)
 }
 
-fn query(u: &str) -> std::collections::HashMap<String, String> {
+pub(crate) fn query(u: &str) -> std::collections::HashMap<String, String> {
     url::Url::parse(u).unwrap().query_pairs().into_owned().collect()
 }
 
 impl Control {
-    async fn get(&self, path: &str, cookie: Option<&str>) -> (u16, String, String) {
+    pub(crate) async fn get(&self, path: &str, cookie: Option<&str>) -> (u16, String, String) {
         let mut r = self.http.get(format!("{}{path}", self.base)).header(header::HOST, "control.test");
         if let Some(c) = cookie {
             r = r.header(header::COOKIE, c);
@@ -88,7 +88,7 @@ impl Control {
         (r.status().as_u16(), at, r.text().await.unwrap())
     }
 
-    fn authorize_path(&self, client: &str, back: &str, challenge: &str, method: &str) -> String {
+    pub(crate) fn authorize_path(&self, client: &str, back: &str, challenge: &str, method: &str) -> String {
         let q = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("response_type", "code")
             .append_pair("client_id", client)
@@ -113,7 +113,7 @@ impl Control {
         q["code"].clone()
     }
 
-    async fn token(&self, form: &[(&str, &str)]) -> (u16, Value) {
+    pub(crate) async fn token(&self, form: &[(&str, &str)]) -> (u16, Value) {
         let body = url::form_urlencoded::Serializer::new(String::new()).extend_pairs(form).finish();
         let r = self
             .http
@@ -138,7 +138,7 @@ impl Control {
     }
 
     /// An ID token and an access token, the whole way.
-    async fn sign_in(&self, seed: u8) -> (String, String) {
+    pub(crate) async fn sign_in(&self, seed: u8) -> (String, String) {
         let (v, c) = pkce(seed);
         let code = self.code(&c).await;
         let (st, t) = self.swap(&code, &v).await;

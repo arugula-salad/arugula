@@ -125,6 +125,33 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "issuer_client_secrets"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A product's link secret (M229): a hash of it, which client it is, when it was made. The product calls the link API with it."
+with_account = "none"
+seen_by = ["litestream"]
+
+[[table]]
+name = "account_links"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A product's user linked to a platform account (M229): the client, the product's own id for its user and the name it gives them, the account, the numeric GitHub id both had, when."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "account_link_events"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "The audit of account links (M229): a link made or ended, the client and product user, the account, by the product or the person, when. Kept a year."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "passkeys"
 plane = "machine"
 process = "hub"

@@ -20,6 +20,15 @@
 //               a hud box's sign-in: /oauth/hud's assertion in the box page's
 //               fragment, checked as hud's proxy/forge-signin.ts checks it,
 //               with the SPKI a box is given: {sub, aud, kid}
+//   link --login L --client ID --redirect URI --secret S --user U [--skip-unlink 1]
+//               M229, a product linking its own user U: signs in as above,
+//               then from the product's "server" (HTTP Basic, its link
+//               secret) POST /oauth/links with the token's numeric github_id
+//               (linked, then the same again: no change); with another
+//               numeric id, refused (logins change hands); the person's
+//               platform page lists it and they unlink it there (unless
+//               --skip-unlink); the product's next GET says not_linked:
+//               {platform_account, sub, created, again, mismatch, listed, after}
 
 import { createHash, createPublicKey, randomBytes, verify, type KeyObject } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -113,8 +122,10 @@ async function jwksNow(): Promise<{ keys: Jwk[] }> {
   return r.json();
 }
 
-async function signin() {
-  const [login, client, redirect] = [need("login"), need("client"), need("redirect")];
+/** Signed in through the hub as a product: the browser (with control's
+ * session), the ID token, its claims and the access token. */
+async function signedIn(login: string, client: string, redirect: string) {
+  const b = new Browser();
   const verifier = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
   const state = b64url(randomBytes(12));
@@ -129,7 +140,7 @@ async function signin() {
     code_challenge: challenge,
     code_challenge_method: "S256",
   });
-  const back = await signInThrough(new Browser(), `/oauth/authorize?${q}`, login, (u) => u.startsWith(redirect));
+  const back = await signInThrough(b, `/oauth/authorize?${q}`, login, (u) => u.startsWith(redirect));
   const got = new URL(back).searchParams;
   if (got.get("state") !== state || !got.get("code")) fail(`back without a code: ${back}`);
   const res = await fetch(reach(`${control}/oauth/token`), {
@@ -145,6 +156,11 @@ async function signin() {
   if (typeof claims.github_id !== "number") fail("no numeric github_id");
   const me = await (await fetch(reach(`${control}/oauth/userinfo`), { headers: { authorization: `Bearer ${t.access_token}` } })).json();
   if (me.sub !== claims.sub || me.github_id !== claims.github_id) fail(`userinfo ${JSON.stringify(me)}`);
+  return { b, t, jwks, kid, claims };
+}
+
+async function signin() {
+  const { t, jwks, kid, claims } = await signedIn(need("login"), need("client"), need("redirect"));
   writeFileSync(need("token-out"), t.id_token);
   writeFileSync(need("jwks-out"), JSON.stringify(jwks));
   return { kid, sub: claims.sub, github_id: claims.github_id, jwks: jwks.keys.map((k) => k.kid) };
@@ -177,9 +193,60 @@ async function hud() {
   return { sub: p.sub, aud: p.aud, kid: p.kid };
 }
 
-const run = { signin, verify: check, hud }[cmd ?? ""];
+async function link() {
+  const [client, secret, user] = [need("client"), need("secret"), need("user")];
+  const { b, t, claims } = await signedIn(need("login"), client, need("redirect"));
+  const basic = `Basic ${Buffer.from(`${client}:${secret}`).toString("base64")}`;
+  const product = async (method: string, path: string, body?: unknown) => {
+    const r = await fetch(reach(control + path), {
+      method,
+      headers: { authorization: basic, ...(body ? { "content-type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { status: r.status, v: (await r.json().catch(() => ({}))) as Record<string, unknown> };
+  };
+  const gh = claims.github_id as number;
+  const send = (github_id: number) => product("POST", "/oauth/links", { user, github_id, assertion: t.id_token, name: `${user} (testnet)` });
+  const first = await send(gh);
+  if (first.status !== 200) fail(`link: ${first.status} ${JSON.stringify(first.v)}`);
+  if (first.v.platform_account !== claims.sub) fail(`linked to ${first.v.platform_account}, not ${claims.sub}`);
+  const again = await send(gh);
+  if (again.status !== 200 || again.v.created !== false) fail(`the same link again: ${again.status} ${JSON.stringify(again.v)}`);
+  // The same person, but the product says another numeric id: a login that
+  // changed hands. Never a link.
+  const other = await product("POST", "/oauth/links", { user: `${user}-other`, github_id: gh + 1, assertion: t.id_token });
+  if (other.status !== 403 || other.v.error !== "github_id_mismatch") fail(`another numeric id: ${other.status} ${JSON.stringify(other.v)}`);
+  // The person's platform page, on control's site with their session.
+  const cookie = Object.entries(b.jar).map(([k, v]) => `${k}=${v}`).join("; ");
+  const page = async (method: string, path: string) => {
+    const r = await fetch(reach(control + path), { method, headers: { cookie, origin: control } });
+    return { status: r.status, v: (await r.json().catch(() => ({}))) as Record<string, unknown> };
+  };
+  const listed = await page("GET", "/api/linked-products");
+  const links = (listed.v.links ?? []) as { client: string; user: string }[];
+  if (listed.status !== 200 || !links.some((l) => l.client === client && l.user === user)) fail(`the platform page lists ${listed.status} ${JSON.stringify(listed.v)}`);
+  if (!opts["skip-unlink"]) {
+    const u = await page("POST", `/api/linked-products/${encodeURIComponent(client)}/${encodeURIComponent(user)}/unlink`);
+    if (u.status !== 200) fail(`unlink on the platform page: ${u.status} ${JSON.stringify(u.v)}`);
+  }
+  // The product sees it on its next call.
+  const after = await product("GET", `/oauth/links/${encodeURIComponent(user)}`);
+  if (after.status !== 404 || after.v.error !== "not_linked") fail(`the product still sees a link after the unlink: ${after.status} ${JSON.stringify(after.v)}`);
+  return {
+    platform_account: first.v.platform_account,
+    sub: claims.sub,
+    github_id: gh,
+    created: first.v.created,
+    again: again.v.created,
+    mismatch: other.v.error,
+    listed: links.length,
+    after: after.v.error,
+  };
+}
+
+const run = { signin, verify: check, hud, link }[cmd ?? ""];
 if (!run) {
-  console.error("usage: issuer.ts signin|verify|hud --control URL ...");
+  console.error("usage: issuer.ts signin|verify|hud|link --control URL ...");
   process.exit(2);
 }
 run()

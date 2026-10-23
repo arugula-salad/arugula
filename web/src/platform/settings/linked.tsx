@@ -1,0 +1,76 @@
+// Linked products (M229): the products (studio, planter, ...) whose own
+// accounts are linked to yours by your numeric GitHub id, never a login.
+// The hub keeps the links (`/api/linked-products`, through the platform).
+// Unlinking is audited, and the product sees it the next time it asks the
+// hub; it links again only when you sign in to it through Arugula again.
+
+import { useEffect, useState } from "preact/hooks";
+import { platformFetch } from "../../shared/maintenance";
+
+export type ProductLink = {
+  client: string;
+  product: string;
+  user: string;
+  name?: string;
+  linked: number;
+};
+
+async function call<T>(path: string, post = false): Promise<T> {
+  const r = await platformFetch(path, { method: post ? "POST" : "GET", credentials: "same-origin" });
+  const v = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((v as { error?: string }).error ?? `Request failed (${r.status})`);
+  return v as T;
+}
+
+export function LinkedProducts() {
+  const [links, setLinks] = useState<ProductLink[] | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState("");
+  const load = () =>
+    call<{ links: ProductLink[] }>("/api/linked-products").then(
+      (v) => setLinks(v.links),
+      (e: Error) => setErr(e.message),
+    );
+  useEffect(() => void load(), []);
+  const unlink = async (l: ProductLink) => {
+    const key = `${l.client}/${l.user}`;
+    setErr("");
+    setBusy(key);
+    try {
+      await call(`/api/linked-products/${encodeURIComponent(l.client)}/${encodeURIComponent(l.user)}/unlink`, true);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+    await load();
+    setBusy("");
+  };
+  if (links === null) return err ? <p class="control-error">{err}</p> : null;
+  return (
+    <>
+      <h2>Linked products</h2>
+      <p class="dim">
+        Your accounts on other products, linked to this one by your GitHub account's number, never its name. Unlinking takes effect the next time
+        that product checks; it links again only if you sign in to it through Arugula again.
+      </p>
+      {links.length === 0 && <p class="dim" data-linked-none>No products linked yet.</p>}
+      {links.length > 0 && (
+        <ul class="platform-list" data-linked-products>
+          {links.map((l) => {
+            const key = `${l.client}/${l.user}`;
+            return (
+              <li key={key} data-linked-product={key}>
+                <strong>{l.product}</strong>
+                {l.name ? <> as {l.name}</> : null}{" "}
+                <span class="dim">since {new Date(l.linked).toLocaleDateString()}</span>{" "}
+                <button class="control-linkish" data-unlink={key} disabled={busy === key} onClick={() => void unlink(l)}>
+                  Unlink
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {err ? <p class="control-error">{err}</p> : null}
+    </>
+  );
+}

@@ -951,6 +951,10 @@ impl Db {
         c.execute("DELETE FROM presigned_invites WHERE expires <= ?1", params![now])?;
         // A notice nobody came back for in a month isn't news any more.
         c.execute("DELETE FROM notices WHERE created < ?1", params![now.saturating_sub(NOTICE_TTL_MS)])?;
+        c.execute(
+            "DELETE FROM account_link_events WHERE at < ?1",
+            params![now.saturating_sub(issuer::LINK_EVENT_TTL_MS)],
+        )?;
         Ok(n)
     }
 
@@ -2360,6 +2364,8 @@ impl Db {
             "DELETE FROM sessions WHERE account = ?1",
             "DELETE FROM app_sessions WHERE account = ?1",
             "DELETE FROM issuer_tokens WHERE account = ?1",
+            "DELETE FROM account_links WHERE account = ?1",
+            "DELETE FROM account_link_events WHERE account = ?1",
             "DELETE FROM passkeys WHERE account = ?1",
             "DELETE FROM devices WHERE account = ?1",
             "DELETE FROM turned_down WHERE account = ?1",

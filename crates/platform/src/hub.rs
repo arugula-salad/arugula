@@ -306,6 +306,45 @@ pub trait HubPort: Send + Sync {
         let _ = (account, challenge, assertion);
         Box::pin(async { anyhow::bail!("this hub doesn't check passkeys for the platform") })
     }
+
+    /// The products an account is linked to (M229): each product's user
+    /// that a product linked to it by numeric GitHub id, by product. Empty
+    /// for an account with none, or that isn't there. A hub from before
+    /// M229 can't say.
+    fn product_links<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Vec<ProductLink>>> {
+        let _ = account;
+        Box::pin(async { anyhow::bail!("this hub doesn't link products' accounts") })
+    }
+
+    /// End one of `account`'s product links (M229), as the person asked on
+    /// the platform page: audited, and the product sees it on its next
+    /// call. Whether there was such a link of this account's. A hub from
+    /// before M229 can't.
+    fn unlink_product<'a>(
+        &'a self,
+        account: &'a str,
+        client: &'a str,
+        user: &'a str,
+    ) -> BoxFuture<'a, HubResult<bool>> {
+        let _ = (account, client, user);
+        Box::pin(async { anyhow::bail!("this hub doesn't link products' accounts") })
+    }
+}
+
+/// A product's user linked to an account (M229, [`HubPort::product_links`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProductLink {
+    /// The product: its issuer client id.
+    pub client: String,
+    /// The product's name, as its client is registered.
+    pub product: String,
+    /// The product's own id for its user.
+    pub user: String,
+    /// How the product names its user, when it said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// When it was linked (ms).
+    pub linked: u64,
 }
 
 /// A passkey's assertion, as the page got it from `navigator.credentials.get`

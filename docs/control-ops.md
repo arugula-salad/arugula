@@ -570,6 +570,49 @@ then. `/oauth/*` is rate-limited per client address (`limit::ISSUER`).
   it, which closes login CSRF through a link carrying someone else's
   assertion. Both need hud's change, and neither breaks today's format.
 
+#### Account links (M229)
+
+A product links its own users to their platform account (the hub's
+account) with `links.rs`, from its server:
+
+| Route | What |
+|---|---|
+| `POST /oauth/links` | `{user, github_id, assertion, name?}`: link the product's user to the account an ID token issued to this client is for |
+| `GET /oauth/links/{user}` | the link, or 404 `not_linked` |
+| `DELETE /oauth/links/{user}` | the product ends it |
+
+- **Only with a link secret.** A public client's tokens prove who signed in,
+  not which of the product's users that is, so these routes take the
+  client's id and a link secret as HTTP Basic (ids and secrets are URL-safe,
+  not encoded). A client without one can't link, and only `oidc` clients can
+  have one (a hud box has no users of its own). The assertion must be an ID
+  token issued to the calling client itself: a token minted for studio never
+  links a planter user. The secret is shown once; a new one replaces the old
+  at once:
+
+  ```
+  fly ssh console -a illogical-control -C "/arugula-control issuer link-secret --db /data/control.db --id studio"
+  fly ssh console -a illogical-control -C "/arugula-control issuer link-secret --db /data/control.db --id studio --revoke"
+  ```
+
+  Keep it in the product's own secrets, never in a browser.
+- **By the number only.** The product sends the numeric GitHub id it has for
+  its user. The hub links only when that is the account's, in the token and
+  in the hub now: 403 `github_id_mismatch` otherwise, and for an account that
+  never signed in with GitHub. Never a login, because logins change hands.
+- **One to one.** The same link again is a 200 with `created: false`. A user
+  linked to another account (`user_linked_elsewhere`), or an account linked
+  to another of the product's users (`account_linked_elsewhere`), is a 409
+  until that link ends.
+- **Unlinking.** The person unlinks on the platform page (Settings, "Linked
+  products"), or the product does with `DELETE`. The hub doesn't call the
+  product: **the product sees it on its next call** (`GET` answers 404), so a
+  product checks whenever its user signs in. A link comes back only with a
+  fresh assertion, the person signing in through that product again.
+- **Audited.** `account_link_events` keeps each link made and ended, by the
+  product or the person, for a year. Deleting the account deletes its links
+  and their audit; removing a client deletes its links and its secret.
+
 #### The issuer's keys
 
 Four settings, each a Fly secret on `illogical-control`, with a copy of

@@ -293,7 +293,7 @@ fn nonce_shaped(s: &str) -> bool {
     (8..=200).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b))
 }
 
-fn no_store(mut r: Response) -> Response {
+pub(crate) fn no_store(mut r: Response) -> Response {
     let h = r.headers_mut();
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     h.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
@@ -301,7 +301,7 @@ fn no_store(mut r: Response) -> Response {
     r
 }
 
-fn off() -> Response {
+pub(crate) fn off() -> Response {
     (StatusCode::NOT_FOUND, "this control isn't an issuer").into_response()
 }
 
@@ -380,6 +380,9 @@ pub async fn discovery(State(app): State<Arc<App>>) -> Response {
         "scopes_supported": ["openid"],
         "claims_supported": ["iss", "sub", "aud", "iat", "exp", "nonce", "github_id"],
         "authorization_response_iss_parameter_supported": true,
+        // M229: a product's own user to the platform account, with the
+        // client's link secret (HTTP Basic), from its server.
+        "arugula_links_endpoint": format!("{iss}/oauth/links"),
     }))
     .into_response();
     public_json(&mut r, 300);
@@ -499,7 +502,7 @@ fn token_error(status: StatusCode, error: &str, why: &str) -> Response {
 }
 
 /// The account's numeric GitHub id, when it has one, and its login then.
-fn github_id(app: &App, account: &str) -> anyhow::Result<Option<(u64, String)>> {
+pub(crate) fn github_id(app: &App, account: &str) -> anyhow::Result<Option<(u64, String)>> {
     Ok(app.db.github_identity(account)?.and_then(|(id, login)| id.parse().ok().map(|id| (id, login))))
 }
 
@@ -750,7 +753,19 @@ enum What {
         #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
         db: std::path::PathBuf,
     },
-    /// Take a client out, and the access tokens it holds.
+    /// Give a client a link secret (M229: what it calls the link API with,
+    /// as HTTP Basic with its id), shown once on stdout. A new one replaces
+    /// the old at once; --revoke takes it away.
+    LinkSecret {
+        #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
+        db: std::path::PathBuf,
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        revoke: bool,
+    },
+    /// Take a client out, and the access tokens, link secret and account
+    /// links it holds.
     RemoveClient {
         #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
         db: std::path::PathBuf,
@@ -806,6 +821,25 @@ pub fn run(args: impl Iterator<Item = String>) -> anyhow::Result<()> {
         What::Clients { db } => {
             for c in crate::db::issuer::clients(&open(&db)?)? {
                 println!("{}\t{}\t{}\t{}", c.id, c.kind.as_str(), c.name, c.redirect_uris.join(" "));
+            }
+        }
+        What::LinkSecret { db, id, revoke } => {
+            let c = open(&db)?;
+            if revoke {
+                let had = crate::db::issuer::drop_client_secret(&c, &id)?;
+                println!(
+                    "{}",
+                    if had {
+                        format!("client {id}'s link secret revoked")
+                    } else {
+                        format!("client {id} had no link secret")
+                    }
+                );
+            } else {
+                let secret = format!("acs_{}", token());
+                crate::db::issuer::set_client_secret(&c, &id, &hash(&secret), now_ms())?;
+                eprintln!("client {id}'s link secret (shown once; the old one, if any, stopped working):");
+                println!("{secret}");
             }
         }
         What::RemoveClient { db, id } => {

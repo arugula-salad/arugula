@@ -354,6 +354,13 @@ struct PasskeyArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+struct UnlinkArgs {
+    account: String,
+    client: String,
+    user: String,
+}
+
+#[derive(Serialize, Deserialize)]
 struct UploadArgs {
     machine: HostedMachine,
     upload: Upload,
@@ -526,6 +533,20 @@ impl HubPort for HttpHub {
             PasskeyArgs { account: account.to_owned(), challenge: challenge.to_owned(), assertion: assertion.clone() };
         Box::pin(self.0.call("verify_passkey", a))
     }
+
+    fn product_links<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Vec<crate::hub::ProductLink>>> {
+        Box::pin(self.0.call("product_links", AccountArgs { account: account.to_owned() }))
+    }
+
+    fn unlink_product<'a>(
+        &'a self,
+        account: &'a str,
+        client: &'a str,
+        user: &'a str,
+    ) -> BoxFuture<'a, HubResult<bool>> {
+        let a = UnlinkArgs { account: account.to_owned(), client: client.to_owned(), user: user.to_owned() };
+        Box::pin(self.0.call("unlink_product", a))
+    }
 }
 
 /// What one side's internal API answers with: the port it serves, and
@@ -632,6 +653,11 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "owner_browser_signed" => {
                 let a: SignedArgs = args(&body)?;
                 answer(hub.owner_browser_signed(&a.owner, &a.device, &a.body, &a.sig).await?)?
+            }
+            "product_links" => answer(hub.product_links(&args::<AccountArgs>(&body)?.account).await?)?,
+            "unlink_product" => {
+                let a: UnlinkArgs = args(&body)?;
+                answer(hub.unlink_product(&a.account, &a.client, &a.user).await?)?
             }
             _ => return Ok(None),
         }))

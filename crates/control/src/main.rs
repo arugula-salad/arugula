@@ -64,6 +64,9 @@ mod issuer_wire;
 mod labs_flags;
 mod legacy_app;
 mod limit;
+mod links;
+#[cfg(test)]
+mod links_wire;
 mod maintenance;
 mod notice;
 mod passkey;
@@ -561,6 +564,9 @@ fn routes() -> Routes {
         .route("/oauth/token", post(issuer::token_endpoint))
         .route("/oauth/userinfo", get(issuer::userinfo))
         .route("/oauth/hud", get(issuer::hud))
+        // Account links (M229): a product's user to the platform account.
+        .route("/oauth/links", post(links::link))
+        .route("/oauth/links/{user}", get(links::show).delete(links::unlink))
         .route("/auth/app", post(app_login::ask))
         .route("/auth/app/{id}/redeem", post(app_login::redeem))
         .route("/api/app-login/{id}", get(app_login::show))
