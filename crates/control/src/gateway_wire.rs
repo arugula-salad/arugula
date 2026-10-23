@@ -12,9 +12,7 @@ use std::{
 use arugula_control_common::principal::{self, NotVouched, PrincipalKey, Vouch};
 use arugula_e2e::now_ms;
 use arugula_platform::{
-    Platform, PlatformPort,
-    cloud::{Cloud, CloudModel, provider::Provider, secrets::SecretCipher},
-    page,
+    Platform, PlatformPort, page,
     remote::{self, HttpHub},
 };
 use axum::{
@@ -79,8 +77,7 @@ pub(crate) struct Split {
     pub(crate) platform: Arc<Platform>,
 }
 
-/// The hub and a real platform, each its own server; the platform with
-/// Cloud on for account `a`.
+/// The hub and a real platform, each its own server.
 pub(crate) async fn split() -> Split {
     split_with(|hub| hub).await
 }
@@ -122,12 +119,6 @@ pub(crate) async fn split_github(
         reqwest::Client::new(),
         Default::default(),
     );
-    p.cloud = Some(Cloud {
-        secret_cipher: Some(SecretCipher::new(&"01".repeat(32)).unwrap()),
-        provider: Provider::new("https://provider.example", "platform-key".into()).unwrap(),
-        accounts: vec!["a".into()],
-        models: vec![CloudModel { runtime: "claude".into(), model: "anthropic/test-model".into() }],
-    });
     let slug = github.as_ref().map(|g| g.slug.clone());
     p.github = github;
     let p = Arc::new(p);
@@ -164,12 +155,12 @@ async fn the_platform_answers_through_the_gateway() {
     let http = reqwest::Client::new();
     let cookie = "ilg_session=session-a";
 
-    let r = http.get(format!("{}/api/cloud/workspaces", s.base)).header("cookie", cookie).send().await.unwrap();
-    assert_eq!(answer(r).await, (200, serde_json::json!({ "cloud_workspaces": [] })));
-    let r = http.get(format!("{}/api/cloud/workspaces", s.base)).send().await.unwrap();
+    let r = http.get(format!("{}/api/workspaces", s.base)).header("cookie", cookie).send().await.unwrap();
+    assert_eq!(answer(r).await, (200, serde_json::json!({ "workspaces": [] })));
+    let r = http.get(format!("{}/api/workspaces", s.base)).send().await.unwrap();
     assert_eq!(answer(r).await, (401, serde_json::json!({ "error": "sign in first" })));
     let r = http
-        .post(format!("{}/api/cloud/secrets/x", s.base))
+        .post(format!("{}/api/projects/prj_x/workspaces/hw_x/secrets/X", s.base))
         .header("cookie", cookie)
         .header("origin", "https://elsewhere.test")
         .send()
@@ -177,7 +168,7 @@ async fn the_platform_answers_through_the_gateway() {
         .unwrap();
     assert_eq!(answer(r).await.0, 405, "PUT, not POST: the method list is routes.toml's");
     let r = http
-        .put(format!("{}/api/cloud/secrets/x", s.base))
+        .put(format!("{}/api/projects/prj_x/workspaces/hw_x/secrets/X", s.base))
         .header("cookie", cookie)
         .header("origin", "https://elsewhere.test")
         .json(&serde_json::json!({ "value": "v" }))
@@ -190,18 +181,17 @@ async fn the_platform_answers_through_the_gateway() {
     let forged = key().sign(
         &arugula_control_common::Principal::Person { account: "a".into() },
         "GET",
-        "/api/cloud/workspaces",
+        "/api/workspaces",
         "req-x",
         now_ms(),
     );
-    let r =
-        http.get(format!("{}/api/cloud/workspaces", s.base)).header(principal::HEADER, forged).send().await.unwrap();
+    let r = http.get(format!("{}/api/workspaces", s.base)).header(principal::HEADER, forged).send().await.unwrap();
     assert_eq!(answer(r).await.0, 401, "even one signed with the right key");
 
     // A machine drives its account's Cloud workspaces: the platform finds
     // its grant from the hub (`daemons`, over HTTP).
     let keys = daemon(&s.hub, "a", "geek");
-    let path = "/api/cloud/workspaces";
+    let path = "/api/workspaces";
     let sig = v2(&keys, "GET", path, b"");
     let r = http.get(format!("{}{path}", s.base)).header("x-arugula-auth", &sig).send().await.unwrap();
     assert_eq!(answer(r).await.0, 200, "a joined machine drives at once");
@@ -227,7 +217,7 @@ async fn the_platform_answers_through_the_gateway() {
 async fn where_the_time_went_comes_back() {
     let s = split().await;
     let r = reqwest::Client::new()
-        .get(format!("{}/api/cloud/workspaces", s.base))
+        .get(format!("{}/api/workspaces", s.base))
         .header("cookie", "ilg_session=session-a")
         .send()
         .await
@@ -378,7 +368,7 @@ async fn what_crosses_the_gateway() {
     // body it covers goes on as it was.
     let keys = daemon(&app, "acct-a", "geek");
     let body = vec![b'x'; 1000];
-    let path = "/api/cloud/import";
+    let path = arugula_control_wire::chat::CHAT_IMPORT;
     let sig = v2(&keys, "POST", path, &body);
     http.post(format!("{base}{path}")).header("x-arugula-auth", sig).body(body).send().await.unwrap();
     let (_, h, n) = seen.0.lock().unwrap().pop().unwrap();

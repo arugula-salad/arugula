@@ -26,11 +26,11 @@ use super::*;
 use crate::{
     Platform,
     chat_tests::{TestHub, call},
-    cloud::secrets::SecretCipher,
     db::sql::{Sql as _, params},
     deploys_tests::{asked, devices, signed, signed_until},
     hosted::tests::{Fake, drive},
     jobs::{Clock, Worker},
+    secrets::SecretCipher,
     work::{self, Dispatch},
 };
 
@@ -72,7 +72,7 @@ pub(crate) async fn world_with(logs: bool) -> (Arc<TestHub>, Arc<Platform>, Stri
     let app = Arc::new(p);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let router = crate::cloud::tests::router(app.clone());
+    let router = crate::testing::router(app.clone());
     tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
     crate::projects::follow(&app).await.unwrap();
@@ -823,7 +823,7 @@ async fn world_with_github() -> (Arc<TestHub>, Arc<Platform>, String, String, cr
     let app = Arc::new(p);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let router = crate::cloud::tests::router(app.clone());
+    let router = crate::testing::router(app.clone());
     tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
     crate::projects::follow(&app).await.unwrap();

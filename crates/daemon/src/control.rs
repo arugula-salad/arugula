@@ -1804,8 +1804,9 @@ impl Control {
         Ok(serde_json::from_value(v).unwrap_or_default())
     }
 
-    /// A call to control's Cloud workspace routes (`/api/cloud/...`) as
-    /// this machine (#1094): signed with its key, so control acts as its
+    /// A call to control's platform routes (Cloud workspaces' `/api/workspaces`
+    /// and `/api/projects/...`, issues, runs, forge operations) as this
+    /// machine (#1094): signed with its key, so control acts as its
     /// account, the machine's owner. The error is control's own words, or
     /// what to do about it, for an agent to read. An agent's call: it waits
     /// out a maintenance window (M141) for up to five minutes.
@@ -1819,9 +1820,8 @@ impl Control {
     }
 
     /// [`cloud`](Self::cloud) without waiting out a maintenance window,
-    /// which it says as [`CloudRefused::Maintenance`]: for a Cloud workspace
-    /// block, which reads again every few seconds anyway and whose clicks
-    /// shouldn't hang, and for `capabilities`, which answers in seconds.
+    /// which it says as [`CloudRefused::Maintenance`]: for a call that
+    /// shouldn't hang, such as `capabilities`, which answers in seconds.
     pub async fn cloud_now(
         &self,
         method: reqwest::Method,
@@ -1863,7 +1863,7 @@ impl Control {
         }
         let said = v["error"].as_str().map_or_else(|| format!("control answered {status}"), str::to_owned);
         Err(match (status, said.as_str()) {
-            (404, "cloud agents are not configured") => CloudRefused::Off,
+            (404, "hosted workspaces aren't set up on this control") => CloudRefused::Off,
             // A control from before #1094 takes only people there.
             (401, "sign in first") => CloudRefused::OldControl,
             _ => CloudRefused::Said { status, said, reason: v["reason"].as_str().map(str::to_owned) },
@@ -2236,7 +2236,7 @@ async fn relay_once(
     crate::dial::serve_mux(ws, accept, Some(raw), Some(&control.nudge), Some(texts)).await
 }
 
-/// Why a call to control's Cloud workspace routes didn't happen
+/// Why a call to control's platform routes didn't happen
 /// ([`Control::cloud`]).
 #[derive(Debug, Clone, PartialEq)]
 pub enum CloudRefused {
@@ -3124,10 +3124,10 @@ pub(crate) mod tests {
         };
         let p = plain.clone();
         let app = Router::new()
-            .route("/api/cloud/models", get(window.clone()))
-            .route("/api/cloud/workspaces", post(window))
+            .route("/api/workspaces", get(window.clone()))
+            .route("/api/projects/prj_a/workspaces", post(window))
             .route(
-                "/api/cloud/agents",
+                "/api/projects/prj_a/workspaces/hw_a/rebuild",
                 post(move || {
                     p.fetch_add(1, Ordering::SeqCst);
                     async { (StatusCode::SERVICE_UNAVAILABLE, "no healthy upstream") }
@@ -3146,24 +3146,27 @@ pub(crate) mod tests {
             total: Duration::from_secs(5),
         };
         use reqwest::Method;
-        let got = c.cloud_with(Some(quick), Method::GET, "/api/cloud/models", None).await.unwrap();
+        let got = c.cloud_with(Some(quick), Method::GET, "/api/workspaces", None).await.unwrap();
         assert_eq!(got["ok"], true);
         let body = serde_json::json!({ "name": "w" });
-        let got = c.cloud_with(Some(quick), Method::POST, "/api/cloud/workspaces", Some(&body)).await.unwrap();
+        let got = c.cloud_with(Some(quick), Method::POST, "/api/projects/prj_a/workspaces", Some(&body)).await.unwrap();
         assert_eq!((got["ok"].as_bool(), hits.load(Ordering::SeqCst)), (Some(true), 6), "a POST too");
         // Not waiting: said at once, in words an agent or a person can take.
-        let e = c.cloud_now(Method::GET, "/api/cloud/models", None).await.unwrap_err();
+        let e = c.cloud_now(Method::GET, "/api/workspaces", None).await.unwrap_err();
         assert_eq!(e, CloudRefused::Maintenance);
         assert!(e.to_string().contains("briefly down for maintenance"), "{e}");
         // Out of patience: the same.
         let short = Patience { total: Duration::from_millis(10), ..quick };
         hits.store(0, Ordering::SeqCst);
         assert_eq!(
-            c.cloud_with(Some(short), Method::GET, "/api/cloud/models", None).await,
+            c.cloud_with(Some(short), Method::GET, "/api/workspaces", None).await,
             Err(CloudRefused::Maintenance)
         );
         // Any other 503 is the answer: not sent again.
-        let e = c.cloud_with(Some(quick), Method::POST, "/api/cloud/agents", Some(&body)).await.unwrap_err();
+        let e = c
+            .cloud_with(Some(quick), Method::POST, "/api/projects/prj_a/workspaces/hw_a/rebuild", Some(&body))
+            .await
+            .unwrap_err();
         assert!(matches!(e, CloudRefused::Said { status: 503, .. }), "{e:?}");
         assert_eq!(plain.load(Ordering::SeqCst), 1);
         std::fs::remove_dir_all(dir).unwrap();

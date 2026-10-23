@@ -1456,26 +1456,17 @@ async fn capabilities_says_what_is_here_and_whether_hooks_are_live() {
 struct FakeCloud {
     signed: Arc<std::sync::Mutex<Vec<String>>>,
     bodies: Arc<std::sync::Mutex<Vec<Value>>>,
-    /// Reads of the tab since its prompt (none: not prompted).
-    reads: Arc<std::sync::Mutex<Option<u32>>>,
 }
 
-fn fake_tab(f: &FakeCloud) -> Value {
-    let status = match *f.reads.lock().unwrap() {
-        Some(2) => "running",
-        _ => "idle",
-    };
-    json!({ "id": "cwc_0b", "cloud_workspace": "cw_0a", "agent_name": "Coding agent", "status": status })
-}
-
+/// A fake control's Cloud workspaces (hosted ones, M184): one, `hw_0a`
+/// in `prj_a`, its box still being made.
 async fn fake_cloud(f: FakeCloud) -> String {
     use axum::{
         Json, Router,
-        extract::{Query, Request, State},
+        extract::{Request, State},
         middleware::{self, Next},
         routing::{get, post},
     };
-    use std::collections::HashMap;
     async fn note(State(f): State<FakeCloud>, req: Request, next: Next) -> axum::response::Response {
         if let Some(h) = req.headers().get("x-arugula-auth").and_then(|h| h.to_str().ok()) {
             f.signed.lock().unwrap().push(format!("{} {h}", req.uri().path()));
@@ -1483,9 +1474,8 @@ async fn fake_cloud(f: FakeCloud) -> String {
         next.run(req).await
     }
     let workspace =
-        json!({ "id": "cw_0a", "name": "App box", "status": "ready", "saved_spec": { "repositories": [] } });
+        json!({ "id": "hw_0a", "name": "App box", "project": "prj_a", "project_name": "App", "state": "starting" });
     let (listed, made) = (workspace.clone(), workspace);
-    let tab = "/api/cloud/workspaces/cw_0a/tabs/cwc_0b";
     let app = Router::new()
         .route("/control.json", get(|| async { Json(json!({ "daemon_auth": 2 })) }))
         .route("/api/daemon/trust", get(|| async { Json(json!({ "certs": [], "revocations": [] })) }))
@@ -1493,64 +1483,20 @@ async fn fake_cloud(f: FakeCloud) -> String {
         .route("/api/daemon/push-subs", get(|| async { Json(json!({ "subs": [] })) }))
         .route("/api/daemon/access", post(|| async { Json(json!({})) }))
         .route(
-            "/api/cloud/models",
-            get(|| async { Json(json!({ "models": [{ "runtime": "claude", "model": "anthropic/test" }] })) }),
-        )
-        .route(
-            "/api/cloud/workspaces",
+            "/api/workspaces",
             get(move || {
                 let w = listed.clone();
-                async move { Json(json!({ "cloud_workspaces": [w] })) }
-            })
-            .post(move |State(f): State<FakeCloud>, Json(body): Json<Value>| {
+                async move { Json(json!({ "workspaces": [w] })) }
+            }),
+        )
+        .route(
+            "/api/projects/prj_a/workspaces",
+            post(move |State(f): State<FakeCloud>, Json(body): Json<Value>| {
                 let w = made.clone();
                 async move {
                     f.bodies.lock().unwrap().push(body);
                     Json(w)
                 }
-            }),
-        )
-        .route(
-            "/api/cloud/workspaces/cw_0a/tabs",
-            post(|State(f): State<FakeCloud>, Json(body): Json<Value>| async move {
-                f.bodies.lock().unwrap().push(body);
-                Json(fake_tab(&f))
-            }),
-        )
-        .route(
-            tab,
-            get(|State(f): State<FakeCloud>| async move {
-                if let Some(n) = f.reads.lock().unwrap().as_mut() {
-                    *n += 1;
-                }
-                Json(fake_tab(&f))
-            }),
-        )
-        .route(
-            &format!("{tab}/prompt"),
-            post(|State(f): State<FakeCloud>, Json(body): Json<Value>| async move {
-                f.bodies.lock().unwrap().push(body);
-                *f.reads.lock().unwrap() = Some(0);
-                Json(json!({}))
-            }),
-        )
-        .route(
-            &format!("{tab}/events"),
-            get(|State(f): State<FakeCloud>, Query(q): Query<HashMap<String, String>>| async move {
-                let after: u64 = q.get("after").and_then(|a| a.parse().ok()).unwrap_or(0);
-                let mut all = vec![json!({ "id": 7, "blocks": [{ "kind": "prompt", "body": "earlier" }] })];
-                if f.reads.lock().unwrap().is_some_and(|n| n >= 2) {
-                    all.push(json!({ "id": 8, "blocks": [{ "kind": "prompt", "body": "fix it" }] }));
-                    all.push(json!({ "id": 9, "blocks": [{ "kind": "text", "body": "Fixed " }, { "kind": "text", "body": "it." }] }));
-                }
-                let events: Vec<Value> = all.into_iter().filter(|e| e["id"].as_u64().unwrap() > after).collect();
-                Json(json!({ "events": events }))
-            }),
-        )
-        .route(
-            "/api/cloud/workspaces/cw_0a/file",
-            get(|Query(q): Query<HashMap<String, String>>| async move {
-                Json(json!({ "path": q["path"], "size": 5, "truncated": false, "encoding": "utf-8", "content": "hello" }))
             }),
         )
         .layer(middleware::from_fn_with_state(f.clone(), note))
@@ -1591,50 +1537,36 @@ async fn an_agent_drives_cloud_workspaces_through_control() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 
+    // A Cloud workspace is a machine of a project.
     let create = json!({
-        "kind": "create", "name": "App box", "apt": ["ffmpeg"],
+        "kind": "create", "name": "App box", "apt": ["ffmpeg"], "npm": ["pnpm"],
         "repositories": [{ "url": "https://github.com/example/app" }],
     });
+    let why = refused(&s, "cloud", create.clone()).await;
+    assert!(why.contains("give project"), "{why}");
+    let mut create = create;
+    create["project"] = json!("prj_a");
     let made = call(&s, "cloud", create).await;
-    assert_eq!(made["cloud_workspace"]["id"], "cw_0a", "{made}");
-    assert_eq!(made["link"], format!("{url}/#cloud-ws=cw_0a"), "{made}");
-    let listed = call(&s, "list", json!({ "kind": "cloud_workspaces" })).await;
-    assert_eq!(listed["cloud_workspaces"][0]["name"], "App box", "{listed}");
-    let opened = call(&s, "cloud", json!({ "kind": "open_tab", "cloud_workspace": "cw_0a" })).await;
-    assert_eq!(opened["cloud_tab"]["id"], "cwc_0b", "{opened}");
+    assert_eq!(made["cloud_workspace"]["id"], "hw_0a", "{made}");
     {
         let bodies = fake.bodies.lock().unwrap();
-        assert_eq!(bodies[0]["spec"]["packages"]["apt"], json!(["ffmpeg"]), "{bodies:?}");
-        assert!(bodies[0]["request_key"].as_str().unwrap().starts_with("mcp-"), "{bodies:?}");
-        // The default agent, on the first model offered.
-        let tab = &bodies[1];
-        assert_eq!((tab["agent_id"].as_str(), tab["model"].as_str()), (Some("curated_coding"), Some("anthropic/test")));
+        assert_eq!(bodies[0]["name"], "App box", "{bodies:?}");
+        assert_eq!(bodies[0]["spec"]["repos"], json!(["https://github.com/example/app"]), "{bodies:?}");
+        assert_eq!(bodies[0]["spec"]["packages"], json!(["ffmpeg", "pnpm"]), "{bodies:?}");
     }
-
-    // A prompt waits for the turn: control still reading idle right after
-    // it isn't the end of it.
-    let prompt =
-        json!({ "kind": "prompt", "cloud_workspace": "cw_0a", "tab": "cwc_0b", "text": "fix it", "timeout": 30 });
-    let r = call(&s, "cloud", prompt).await;
-    assert_eq!((r["state"].as_str(), r["offset"].as_u64()), (Some("idle"), Some(7)), "{r}");
-    assert!(r["reply"].as_str().unwrap().contains("> fix it\n\nFixed it."), "{r}");
-    let read = json!({ "kind": "events", "cloud_workspace": "cw_0a", "tab": "cwc_0b", "offset": 8 });
-    let page = call(&s, "read_cloud", read).await;
-    assert_eq!((page["text"].as_str(), page["next_offset"].as_u64()), (Some("\nFixed it."), Some(9)), "{page}");
-    let w = call(&s, "wait", json!({ "cloud_workspace": "cw_0a", "tab": "cwc_0b", "until": "idle" })).await;
-    assert_eq!(w["state"], "idle", "{w}");
-    let why = refused(&s, "wait", json!({ "cloud_workspace": "cw_0a", "tab": "cwc_0b", "until": "exit" })).await;
+    let listed = call(&s, "list", json!({ "kind": "cloud_workspaces" })).await;
+    let row = &listed["cloud_workspaces"][0];
+    assert_eq!((row["kind"].as_str(), row["name"].as_str()), (Some("hosted"), Some("App box")), "{listed}");
+    let why = refused(&s, "read_cloud", json!({ "kind": "files", "cloud_workspace": "cw_0a" })).await;
+    assert!(why.contains("no hosted workspace cw_0a"), "{why}");
+    let why = refused(&s, "wait", json!({ "cloud_workspace": "hw_0a", "tab": "3", "until": "exit" })).await;
     assert!(why.contains("until idle or needs_input"), "{why}");
-    let file = json!({ "kind": "file", "cloud_workspace": "cw_0a", "path": "/home/sprite/app/a b" });
-    let f = call(&s, "read_cloud", file).await;
-    assert_eq!((f["path"].as_str(), f["content"].as_str()), (Some("/home/sprite/app/a b"), Some("hello")), "{f}");
-    let why = refused(&s, "read_cloud", json!({ "kind": "files", "cloud_workspace": "../daemon" })).await;
-    assert!(why.contains("isn't a cloud_workspace id"), "{why}");
 
     // Every call was signed as this machine.
     let signed = fake.signed.lock().unwrap().clone();
-    let cloud: Vec<&String> = signed.iter().filter(|s| s.starts_with("/api/cloud/")).collect();
-    assert!(cloud.len() > 8, "{signed:?}");
+    let cloud: Vec<&String> =
+        signed.iter().filter(|s| s.starts_with("/api/workspaces") || s.starts_with("/api/projects/")).collect();
+    assert!(cloud.len() >= 4, "{signed:?}");
     assert!(cloud.iter().all(|s| s.contains(&format!(" v2 {} ", keys.id()))), "{signed:?}");
     s.cancel().await.unwrap();
     drop(d);

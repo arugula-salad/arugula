@@ -71,8 +71,7 @@ fn make(kind: JobKind, effects: &Arc<Mutex<Vec<String>>>, die_after_effect: bool
     Make { kind, effects: effects.clone(), die_after_effect }
 }
 
-/// `cloud_workspace_delete_survives_a_restart_part_way`'s, for any kind: a
-/// machine that dies mid-step leaves the job held until its lease runs
+/// For any kind: a machine that dies mid-step leaves the job held until its lease runs
 /// out, then the other machine carries on from the checkpoint without
 /// repeating the effect.
 #[tokio::test]

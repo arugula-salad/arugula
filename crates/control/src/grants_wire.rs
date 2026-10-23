@@ -1,6 +1,6 @@
 //! Grants (M130) over HTTP, through the hub's gate to the platform, which
 //! holds them since step 2 (#1150): a revoked grant refuses only its own
-//! machine on the Cloud workspace routes, a machine that just joined drives
+//! machine on the Cloud (hosted) workspace routes, a machine that just joined drives
 //! at once, and one that leaves and joins again starts with a new grant.
 //! The hub writes no grant: a machine's joining reaches the platform through
 //! the change feed (`arugula_platform::projects::follow`), or the first time
@@ -9,10 +9,7 @@
 use std::sync::Arc;
 
 use arugula_e2e::{Cert, DeviceKeys, Kind, now_ms};
-use arugula_platform::{
-    cloud::{Cloud, CloudModel, provider::Provider, secrets::SecretCipher},
-    db::projects::CLOUD_DRIVE,
-};
+use arugula_platform::db::projects::CLOUD_DRIVE;
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 
@@ -21,23 +18,16 @@ use crate::{
     routing_wire::{daemon, v2},
 };
 
-/// The hub with Cloud on in its platform (M137): accounts `a`, `b` and `c`
-/// with sessions `session-a`…, and `a` and `b` in the beta. Calls go
-/// through the hub's gate and `hub_port::InProcess`, as they do in
-/// production.
+/// The hub with its platform in process: accounts `a`, `b` and `c` with
+/// sessions `session-a`…. Calls go through the hub's gate and
+/// `hub_port::InProcess`, as they do in production.
 fn cloud_app() -> Arc<App> {
-    let mut app = App::for_tests("https://control.example");
+    let app = App::for_tests("https://control.example");
     let now = now_ms();
     for id in ["a", "b", "c"] {
         app.db.account_for("test", id, id, id, now).unwrap();
         app.db.add_session(&crate::auth::hash(&format!("session-{id}")), id, now, now + 60_000).unwrap();
     }
-    app.platform.inner_mut().cloud = Some(Cloud {
-        secret_cipher: Some(SecretCipher::new(&"01".repeat(32)).unwrap()),
-        provider: Provider::new("https://provider.example", "platform-key".into()).unwrap(),
-        accounts: vec!["a".into(), "b".into()],
-        models: vec![CloudModel { runtime: "claude".into(), model: "anthropic/test-model".into() }],
-    });
     app.start()
 }
 
@@ -73,7 +63,7 @@ async fn person(base: &str, account: &str, method: &str, path: &str, body: Optio
 }
 
 /// Revoking one machine's grant refuses that machine on the Cloud
-/// workspace routes and leaves the owner's other machine alone; giving
+/// (hosted) workspace routes and leaves the owner's other machine alone; giving
 /// it back lets it in again.
 #[tokio::test]
 async fn a_revoked_grant_refuses_only_its_own_machine() {
@@ -117,10 +107,7 @@ async fn a_revoked_grant_refuses_only_its_own_machine() {
     assert!(grants.iter().all(|g| g["power"] == CLOUD_DRIVE && g["live"] == true && g["scope"]["id"] == "a"));
     assert_eq!(grants[0]["subject"]["name"], "geek");
     let geeks = grants[0]["id"].as_str().unwrap().to_owned();
-    let (status, made) =
-        call(&geek, "POST", "/api/cloud/workspaces", Some(json!({"request_key":"k","spec":{"name":"box"}}))).await;
-    assert_eq!(status, StatusCode::OK, "{made}");
-    let id = made["id"].as_str().unwrap().to_owned();
+    assert_eq!(call(&geek, "GET", "/api/workspaces", None).await.0, StatusCode::OK);
 
     // A machine can't manage grants, not even its own.
     assert_eq!(call(&geek, "GET", "/api/grants", None).await.0, StatusCode::UNAUTHORIZED);
@@ -130,31 +117,27 @@ async fn a_revoked_grant_refuses_only_its_own_machine() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(revoked["live"], false);
     // What `cloud` and `read_cloud` call, from the revoked machine:
-    // refused, naming it and how to restore it.
-    let tab = json!({"request_key":"t","agent_id":"curated_coding","runtime":"claude","model":"anthropic/test-model"});
+    // refused, naming it and how to restore it, before anything else is
+    // looked at.
+    let project = "prj_0123456789abcdef0123456789abcdef";
     for (method, path, body) in [
-        ("GET", "/api/cloud/workspaces".to_owned(), None),
-        ("POST", "/api/cloud/workspaces".to_owned(), Some(json!({"request_key":"k2","spec":{"name":"x"}}))),
-        ("GET", format!("/api/cloud/workspaces/{id}"), None),
-        ("GET", format!("/api/cloud/workspaces/{id}/tabs"), None),
-        ("POST", format!("/api/cloud/workspaces/{id}/tabs"), Some(tab.clone())),
-        ("GET", format!("/api/cloud/workspaces/{id}/files"), None),
-        ("POST", format!("/api/cloud/workspaces/{id}/retry"), None),
-        ("GET", "/api/cloud/models".to_owned(), None),
-        ("GET", "/api/cloud/agents".to_owned(), None),
+        ("GET", "/api/workspaces".to_owned(), None),
+        ("GET", format!("/api/projects/{project}/workspaces"), None),
+        ("POST", format!("/api/projects/{project}/workspaces"), Some(json!({"name":"box"}))),
+        ("GET", format!("/api/projects/{project}/workspaces/hw_00"), None),
+        ("POST", format!("/api/projects/{project}/workspaces/hw_00/rebuild"), None),
+        ("GET", format!("/api/projects/{project}/transcripts"), None),
     ] {
         let (status, said) = call(&geek, method, &path, body).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}: {said}");
         let said = said["error"].as_str().unwrap_or_default();
         assert!(said.starts_with("geek can't drive") && said.contains("arugula grants restore geek"), "{said}");
     }
-    // The owner's other machine, and the owner, still drive it.
-    let (status, listed) = call(&mini, "GET", "/api/cloud/workspaces", None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(listed["cloud_workspaces"][0]["id"], id.as_str());
-    let (status, opened) = call(&mini, "POST", &format!("/api/cloud/workspaces/{id}/tabs"), Some(tab)).await;
-    assert_eq!(status, StatusCode::OK, "{opened}");
-    assert_eq!(person("GET", "/api/cloud/workspaces", None).await.0, StatusCode::OK);
+    // The owner's other machine, and the owner, still drive them.
+    let (status, listed) = call(&mini, "GET", "/api/workspaces", None).await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    assert_eq!(listed["workspaces"], json!([]));
+    assert_eq!(person("GET", "/api/workspaces", None).await.0, StatusCode::OK);
 
     // Another account can't give it back, or give one for a machine
     // that isn't its own; the owner can.
@@ -175,10 +158,10 @@ async fn a_revoked_grant_refuses_only_its_own_machine() {
     assert_eq!(status, StatusCode::OK);
     assert!(given["live"] == true && given["id"] != geeks.as_str(), "a new grant: {given}");
     assert_eq!(person("POST", "/api/grants", Some(give)).await.1["id"], given["id"], "a live one is the answer");
-    assert_eq!(call(&geek, "GET", "/api/cloud/workspaces", None).await.0, StatusCode::OK);
+    assert_eq!(call(&geek, "GET", "/api/workspaces", None).await.0, StatusCode::OK);
     // A machine's signature still covers its one request: the hub's
     // gate takes it once, for the platform's routes as for its own.
-    let path = "/api/cloud/workspaces";
+    let path = "/api/workspaces";
     let h = v2(&geek, "GET", path, b"");
     let ok = client.get(format!("{base}{path}")).header("x-arugula-auth", &h).send().await.unwrap();
     assert_eq!(ok.status(), StatusCode::OK);
@@ -220,11 +203,11 @@ async fn a_machine_that_joins_again_starts_with_a_new_grant() {
     arugula_platform::projects::follow(app.platform.inner()).await.unwrap();
     let keys = daemon(&app, "a", "geek");
     let (base, server) = serve(app.clone()).await;
-    assert_eq!(call(&base, &keys, "GET", "/api/cloud/workspaces").await.0, StatusCode::OK, "it drives at once");
+    assert_eq!(call(&base, &keys, "GET", "/api/workspaces").await.0, StatusCode::OK, "it drives at once");
     let (_, listed) = person(&base, "a", "GET", "/api/grants", None).await;
     let id = listed["grants"][0]["id"].as_str().unwrap().to_owned();
     assert_eq!(person(&base, "a", "POST", &format!("/api/grants/{id}/revoke"), None).await.0, StatusCode::OK);
-    assert_eq!(call(&base, &keys, "GET", "/api/cloud/workspaces").await.0, StatusCode::FORBIDDEN);
+    assert_eq!(call(&base, &keys, "GET", "/api/workspaces").await.0, StatusCode::FORBIDDEN);
 
     // It's removed, and joins again with the same key, before the
     // platform's feed tick.
@@ -232,7 +215,7 @@ async fn a_machine_that_joins_again_starts_with_a_new_grant() {
     let cert = Cert::new(&keys, "a", Kind::Daemon, "geek");
     app.db.put_device(&cert, true, now_ms()).unwrap();
     app.db.put_daemon("a", &cert.device, "geek", &[]).unwrap();
-    assert_eq!(call(&base, &keys, "GET", "/api/cloud/workspaces").await.0, StatusCode::OK, "a new grant");
+    assert_eq!(call(&base, &keys, "GET", "/api/workspaces").await.0, StatusCode::OK, "a new grant");
     let (_, listed) = person(&base, "a", "GET", "/api/grants", None).await;
     let grants = listed["grants"].as_array().unwrap();
     assert_eq!(grants.len(), 1, "the revoked one went when it left: {listed}");

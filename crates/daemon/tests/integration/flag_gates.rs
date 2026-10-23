@@ -148,7 +148,7 @@ fn managoat_is_gone_and_an_old_flag_changes_nothing() {
         let out = arugulad(args);
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success(), "{args:?}");
-        assert!(err.contains("isn't a flag any more") && err.contains("Cloud agents"), "{args:?}: {err}");
+        assert!(err.contains("isn't a flag any more") && err.contains("Cloud workspaces"), "{args:?}: {err}");
     }
 }
 

@@ -2,7 +2,7 @@
 //! and their ports, made by migration `0013`. The lifecycle is
 //! [`crate::hosted`]'s; what each column means is in the migration.
 //!
-//! The worker leases a row as `cloud_jobs` are leased: a claim takes one
+//! The worker leases a row as `platform_jobs` are leased: a claim takes one
 //! that's due and free (on Postgres `FOR UPDATE SKIP LOCKED`), and its
 //! checkpoint frees it with when to look again. What a person asks
 //! (`asked`) is written beside the lease and never overwritten by a

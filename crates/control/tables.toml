@@ -46,15 +46,11 @@ never = [
 # Who else sees what control holds, for the doc.
 [parties.litestream]
 name = "Litestream's bucket"
-sees = "Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. On Postgres, the platform's tables go there in its nightly dump instead: encrypted, kept 30 days. Cloud secrets are there sealed, and their key isn't."
+sees = "Litestream copies the whole database to a bucket (Cloudflare R2, for the hosted control), so every table is there too, for as long as control's backups are kept. On Postgres, the platform's tables go there in its nightly dump instead: encrypted, kept 30 days. Secrets are there sealed, and their key isn't."
 
 [parties.run_logs]
 name = "The run-log bucket"
 sees = "Runs on hosted workspaces (and only those) send their logs, the whole of their pane's output, and the files they leave as artifacts to a bucket in Cloudflare R2 (M213), through URLs the platform signs for one run at a time. The platform reads them and serves them to the project's members, with every machine asleep. The bucket deletes them after 30 days, and the platform forgets their rows then. A person's own machines never send any."
-
-[parties.managoat]
-name = "Managoat"
-sees = "Managoat runs Cloud workspaces and cloud runs, on Sprites VMs: it gets their specs, agents, prompts and secrets, and sends back their transcripts and approvals."
 
 [parties.e2b]
 name = "E2B"
@@ -529,123 +525,12 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
-name = "cloud_agents"
-plane = "platform"
-process = "platform"
-holds = "plaintext"
-what = "A cloud agent's definition: its name, instructions, skills, MCP servers and the names of the secrets it uses."
-why_asleep = "Cloud workspaces and runs work with every machine off."
-with_account = "deleted"
-seen_by = ["litestream", "managoat"]
-
-[[table]]
-name = "cloud_runs"
-plane = "platform"
-process = "platform"
-holds = "plaintext"
-what = "A cloud run: the agent, model, repository and prompt it ran with, its state, and its result."
-why_asleep = "Cloud workspaces and runs work with every machine off."
-with_account = "deleted"
-seen_by = ["litestream", "managoat"]
-
-[[table]]
-name = "cloud_secrets"
-plane = "platform"
-process = "platform"
-holds = "plaintext"
-what = "A cloud secret's name and value, sealed with its project's key (project_keys) or, until it's re-sealed, the master key control holds apart from the database; control opens it to put it in a Cloud workspace's vault."
-why_asleep = "Cloud workspaces and runs work with every machine off."
-with_account = "deleted"
-seen_by = ["litestream", "managoat"]
-
-[[table]]
-name = "cloud_run_secrets"
-plane = "platform"
-process = "platform"
-holds = "plaintext"
-what = "The secrets a cloud run started with, sealed as cloud_secrets are."
-why_asleep = "Cloud workspaces and runs work with every machine off."
-with_account = "deleted"
-seen_by = ["litestream", "managoat"]
-
-[[table]]
-name = "cloud_jobs"
-plane = "platform"
-process = "platform"
-holds = "plaintext"
-what = "The worker's job for a run, a Cloud workspace or a tab: what it was asked (the spec), Managoat's ids, its lease."
-why_asleep = "Control's worker drives Cloud workspaces with every machine off."
-with_account = "deleted"
-seen_by = ["litestream", "managoat"]
-
-[[table]]
-name = "cloud_requests"
-plane = "platform"
-process = "platform"
-holds = "plaintext"
-what = "What an agent in the cloud asks someone to approve, and the answer."
-why_asleep = "An agent in the cloud asks while every machine is off."
-with_account = "deleted"
-seen_by = ["litestream", "managoat"]
-
-[[table]]
-name = "cloud_notifications"
-plane = "platform"
-process = "platform"
-holds = "metadata"
-what = "Whether a push about an approval went out yet, and when to try again."
-why_asleep = "An agent in the cloud asks while every machine is off."
-with_account = "deleted"
-seen_by = ["litestream"]
-
-[[table]]
-name = "cloud_events"
-plane = "platform"
-process = "platform"
-holds = "plaintext"
-what = "A cloud conversation's transcript: prompts, replies, tool calls and results, as Managoat sent them."
-why_asleep = "Transcripts are read with every machine off."
-with_account = "deleted"
-seen_by = ["litestream", "managoat"]
-
-[[table]]
-name = "cloud_workspaces"
-plane = "platform"
-process = "platform"
-holds = "plaintext"
-what = "A Cloud workspace: its name, its spec (repositories, packages, setup script, environment variables, networking, secret names), its status and errors, and the hosted workspace it moved to (M189)."
-why_asleep = "Cloud workspaces work with every machine off."
-with_account = "deleted"
-note = "Its Managoat resources go first: deleting is refused until they have."
-seen_by = ["litestream", "managoat"]
-
-[[table]]
-name = "cloud_workspace_specs"
-plane = "platform"
-process = "platform"
-holds = "plaintext"
-what = "The spec a Cloud workspace's environment revision was saved as (the newest few)."
-why_asleep = "Cloud workspaces work with every machine off."
-with_account = "deleted"
-seen_by = ["litestream", "managoat"]
-
-[[table]]
-name = "cloud_tabs"
-plane = "platform"
-process = "platform"
-holds = "plaintext"
-what = "A tab in a Cloud workspace: the agent, runtime, model and prompt it opened with, its status."
-why_asleep = "Cloud workspaces work with every machine off."
-with_account = "deleted"
-seen_by = ["litestream", "managoat"]
-
-[[table]]
 name = "projects"
 plane = "platform"
 process = "platform"
 holds = "metadata"
 what = "A project: its id, the team or account it belongs to, its name, whether it's the default one, the last number it gave a native issue, and its issue home (native or GitHub) if someone chose one."
-why_asleep = "Cloud workspaces, team channels, native issues and cloud secrets belong to one, and they exist with every machine asleep."
+why_asleep = "Cloud workspaces, team channels, native issues and secrets belong to one, and they exist with every machine asleep."
 with_account = "partly"
 note = "Its personal project goes, and the default projects of teams that go with it; other teams' stay."
 seen_by = ["litestream"]
@@ -1046,7 +931,7 @@ name = "hosted_transcripts"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A closed agent block's transcript from a hosted workspace's box (M184): its project, workspace, machine and block, the agent, its title and working directory, when it ran, and its text (prompts, the agent's messages and tool calls, cut to 768 KiB), kept read only. A beta Cloud workspace's tabs' transcripts, copied when it moved off Managoat (M189), are kept the same way."
+what = "A closed agent block's transcript from a hosted workspace's box (M184): its project, workspace, machine and block, the agent, its title and working directory, when it ran, and its text (prompts, the agent's messages and tool calls, cut to 768 KiB), kept read only. Transcripts copied from a beta Cloud workspace's tabs when it moved off Managoat (M189) are kept the same way."
 why_asleep = "A project's people read what its hosted workspaces' agents did after the box is paused, rebuilt or deleted."
 with_account = "partly"
 note = "Those of its personal project and its disbanded teams' projects go. A team's stay with its project: its other people read them."

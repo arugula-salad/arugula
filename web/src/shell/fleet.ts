@@ -66,8 +66,6 @@ export interface FleetHost extends HostRef {
 
 /** One pane of the merged list. */
 export interface FleetPane {
-  /** A Cloud workspace's tab (S40, M116): its workspace and tab ids. */
-  cloudTab?: { workspace: string; tab: string };
   /** `host:pane`, unique across the fleet. */
   key: string;
   host: string;
@@ -503,9 +501,6 @@ export class Fleet {
     return [...this.hosts.values()].filter((e) => e.client).length;
   }
 
-  private cloudPanes: FleetPane[] = [];
-  setCloudPanes(panes: FleetPane[]) { this.cloudPanes = panes; this.emit(); }
-
   private injected: FleetPane[] = [];
   /** Made-up panes drawn beside the real ones (M26's synthetic fleet, for
    * the frame-rate check and screenshots). */
@@ -571,7 +566,7 @@ export class Fleet {
         });
       }
     }
-    out.push(...this.cloudPanes, ...this.injected);
+    out.push(...this.injected);
     this.merged = out;
     return out;
   }

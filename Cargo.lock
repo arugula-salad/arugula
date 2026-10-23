@@ -184,15 +184,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arugula-cloud-wire"
-version = "0.0.0"
-dependencies = [
- "serde",
- "serde_json",
- "ts-rs",
-]
-
-[[package]]
 name = "arugula-control"
 version = "0.60.0"
 dependencies = [
@@ -335,7 +326,6 @@ name = "arugula-platform"
 version = "0.60.0"
 dependencies = [
  "anyhow",
- "arugula-cloud-wire",
  "arugula-control-common",
  "arugula-control-wire",
  "arugula-e2e",
@@ -370,7 +360,6 @@ dependencies = [
 name = "arugula-proto"
 version = "0.0.0"
 dependencies = [
- "arugula-cloud-wire",
  "arugula-control-wire",
  "arugula-core",
  "getrandom 0.4.3",

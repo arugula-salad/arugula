@@ -9,32 +9,14 @@
 #   an environment change, like a Fly secret), and their files must
 #   outlive that. The commands are compose.yaml's, with `--db` moved; keep
 #   them in step.
-# - Cloud is on in both, with a fake Managoat (`fakes-serve.ts --managoat`)
-#   and the stack's own cloud secret key, the same in both, as the
-#   platform's comes from Infisical and the hub's from Fly. Control takes
-#   plain http to Managoat only on loopback, so each has a sidecar in its
-#   network namespace forwarding 127.0.0.1:9004 to the one fake (window.sh
-#   recreates it with its service). Managoat's client wants the system's
-#   CA certificates, which debian-slim lacks (distroless has them): the
-#   host's are mounted.
+# - Both have the stack's own master key (ARUGULA_CLOUD_SECRET_KEY), the
+#   same in both, as the platform's comes from Infisical and the hub's from
+#   Fly. The host's CA certificates are mounted, which debian-slim lacks
+#   (distroless has them).
 # - The platform is held (ARUGULA_PLATFORM_PAUSED) while
 #   ARUGULA_TESTNET_PLATFORM_PAUSED is 1.
-x-managoat: &managoat
-  image: node:22-slim
-  command:
-    - node
-    - -e
-    - >-
-      const net = require("net");
-      net.createServer((c) => { const u = net.connect(9004, "fakes"); c.pipe(u).pipe(c);
-        u.on("error", () => c.destroy()); c.on("error", () => u.destroy()); }).listen(9004, "127.0.0.1")
-
 x-cloud: &cloud
-  ARUGULA_MANAGOAT_URL: http://127.0.0.1:9004
-  ARUGULA_MANAGOAT_API_KEY: mg_testnet
   ARUGULA_CLOUD_SECRET_KEY: c10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10d
-  ARUGULA_CLOUD_ACCOUNTS: "*"
-  ARUGULA_CLOUD_MODEL: anthropic/test
 
 services:
   control:
@@ -77,18 +59,3 @@ services:
     volumes:
       - ${ARUGULA_TESTNET_STATE:-./.state}/window/platform:/window
       - /etc/ssl/certs:/etc/ssl/certs:ro
-
-  fakes:
-    command: [node, --experimental-strip-types, --no-warnings, /fixtures/fakes-serve.ts, --managoat]
-
-  managoat-hub:
-    <<: *managoat
-    profiles: [control]
-    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-managoat-hub
-    network_mode: service:control
-
-  managoat-platform:
-    <<: *managoat
-    profiles: [platform]
-    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-managoat-platform
-    network_mode: service:platform

@@ -313,13 +313,13 @@ struct Running {
 async fn start(hub: &Arc<TestHub>, fake: &Arc<Fake>, db: Db) -> Running {
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
     let mut p = Platform::new(cfg, db, hub.clone(), reqwest::Client::new(), Default::default());
-    p.secret_key = Some(Arc::new(crate::cloud::secrets::SecretCipher::new(&"03".repeat(32)).unwrap()));
+    p.secret_key = Some(Arc::new(crate::secrets::SecretCipher::new(&"03".repeat(32)).unwrap()));
     p.compute = Some(fake.clone());
     p.hosted = crate::hosted::Config { template: Some("tpl".into()), ..Default::default() };
     let app = Arc::new(p);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let router = crate::cloud::tests::router(app.clone());
+    let router = crate::testing::router(app.clone());
     let serving = tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
     Running { app, base, serving }
 }

@@ -1,7 +1,5 @@
 import { AgentDialogLayer, startAgent } from "./ui/agent-dialog";
-import { cloudPanes, cloudWorkspaces } from "../shared/cloud";
 import { chat } from "../shared/chat-store";
-import { cloudFleet } from "./cloud-fleet";
 import { shellPlatformApi } from "./platform-api";
 import { platformOrigin, setPlatformOrigin } from "./platform-links";
 import { platformPath } from "./fragments";
@@ -55,7 +53,7 @@ const info = await detectControl();
 // Back from signing in with a presigned invite's link (kept off control).
 if (info) restoreInvite();
 if (info) showMoving(info);
-// M153: chat and Cloud workspaces are on the platform page, when control has one.
+// M153: chat is on the platform page, when control has one.
 setPlatformOrigin(info?.platform);
 // M154: an old link of the platform's (`#chat…`, `#cloud…`, `#cloud-ws…`)
 // lands on its new page there. Keep this forever (./fragments).
@@ -225,12 +223,6 @@ const cell = await measureCell();
 const root = document.getElementById("root")!;
 function ControlRoot({ s }: { s: ControlSession }) {
   useControl(s);
-  // M153: Cloud workspaces are the platform page's; the shell reads them
-  // only to link out to them (the sidebar, the overview, the swarm), so
-  // not at all without a platform page (M155).
-  const cloud = s.phase === "ready" && !!platformOrigin();
-  useEffect(() => { if (cloud) return cloudPanes.connect(s.account); }, [cloud, s.account]);
-  useEffect(() => { if (cloud) return cloudWorkspaces.connect(s.account); }, [cloud, s.account]);
   useSubscribe((fn) => directory.subscribe(fn));
   const body =
     s.phase !== "ready" ? (
@@ -285,12 +277,7 @@ const fleetHosts = (): HostRef[] =>
       hosted: !!d?.hosted,
     };
   });
-// The Cloud workspaces' tabs, in the swarm and the attention drawer: on
-// the platform page when opened (M153), and only with one (M155).
-cloudPanes.subscribe(() => fleet.setCloudPanes(platformOrigin() ? cloudFleet() : []));
 fleet.onOpen = (host, pane, share, reveal) => {
-  const tab = fleet.panes.find((p) => p.host === host && p.id === pane && p.cloudTab)?.cloudTab;
-  if (tab) { cloudWorkspaces.open(tab.workspace, tab.tab); return; }
   directory.select(host);
   // The host's client is made when the directory switches, then connects:
   // show the pane once it knows it.
@@ -357,7 +344,7 @@ function Swarm({ client }: { client: Client }) {
 
 const draw = () =>
   render(
-    // What a pane's thread and a Cloud workspace block reach the shell through (M147).
+    // What a pane's thread reaches the shell through (M147).
     <PlatformApiContext.Provider value={shellPlatformApi(client)}>
       {session ? <ControlRoot key={client.base} s={session} /> : <App key={client.base} client={client} cell={cell} />}
       <Swarm key={client.base} client={client} />

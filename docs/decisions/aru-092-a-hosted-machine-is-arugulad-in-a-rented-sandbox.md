@@ -47,7 +47,7 @@ reviews: []
 constrains:
   - "path:crates/platform/src/compute"
   - "path:crates/daemon/src/main.rs"
-  - "path:crates/platform/src/cloud"
+  - "path:crates/platform/src/hosted"
 ---
 
 # A hosted machine is arugulad in a rented sandbox
@@ -71,7 +71,7 @@ Daemon-less designs were rejected: the platform would be a second
 multiplexer (about 15–25k lines), and control would read terminals. This
 retires the M20 hosted-sandbox product (`arugulad` in a Sprites VM, joined
 with a one-time ticket) and Managoat as the Cloud workspace backend
-("Cloud execution is owned by Arugula control", amended). Both are removed
-in M189 and M190.
-Where: `crates/platform/src/compute/` (M176), `crates/daemon/` (`--hosted`, M180), `crates/platform/src/cloud/` (until M189).
+("Cloud execution is owned by Arugula control", amended). Both are removed:
+M20 in M190, and Managoat in M189 and M190 on 2026-10-23.
+Where: `crates/platform/src/compute/` (M176), `crates/daemon/` (`--hosted`, M180), `crates/platform/src/hosted/` (M179).
 From: #1235 (platform roadmap, step 5), M175 (#1236), M179 (#1240), M180 (#1241), M182 (#1243).

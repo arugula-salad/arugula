@@ -19,8 +19,8 @@
 # illogical-control.internal:7691.
 #
 # Secrets (fly secrets set -a arugula-platform): ARUGULA_PLATFORM_KEY (the
-# same as the hub's), and the platform's own: ARUGULA_MANAGOAT_API_KEY,
-# ARUGULA_CLOUD_SECRET_KEY, ARUGULA_CLOUD_ACCOUNTS, ARUGULA_CLOUD_MODELS,
+# same as the hub's), and the platform's own: ARUGULA_CLOUD_SECRET_KEY,
+# ARUGULA_CLOUD_ACCOUNTS, the E2B and hosted workspaces' ones,
 # POSTHOG_API_KEY; and Litestream's for platform.db's backup,
 # LITESTREAM_BUCKET, LITESTREAM_ENDPOINT, LITESTREAM_ACCESS_KEY_ID,
 # LITESTREAM_SECRET_ACCESS_KEY, under the bucket's `platform` path

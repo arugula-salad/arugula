@@ -243,7 +243,7 @@ async fn world_with(bucket: bool, ttl_ms: u64, daily: u64, at: Option<&str>) -> 
         .unwrap();
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let router = crate::cloud::tests::router(app.clone());
+    let router = crate::testing::router(app.clone());
     tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
     let me =
         HostedMachine { project: project.clone(), workspace: "hw_a".into(), machine: "dev_a".into(), sign: "".into() };

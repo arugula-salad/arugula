@@ -183,8 +183,8 @@ struct Args {
     #[arg(long, default_value_t = 60, hide = true)]
     forge_heartbeat_secs: u64,
 
-    /// Cloud workspaces: their flags and env vars are the platform's
-    /// (M137), with the names they always had.
+    /// The master key and the beta allowlist: the platform's flags and env
+    /// vars (M137), with the names they always had.
     #[command(flatten)]
     cloud: arugula_platform::cloud::Args,
 
@@ -438,7 +438,6 @@ fn platform(
     db: arugula_platform::db::Db,
     cfg: arugula_platform::Config,
     stripe: Option<arugula_platform::billing::Stripe>,
-    cloud: Option<arugula_platform::cloud::Cloud>,
     github: Option<arugula_platform::forge::GithubApp>,
     compute: Option<Arc<dyn arugula_platform::compute::Substrate>>,
     hosted: arugula_platform::hosted::Config,
@@ -449,7 +448,6 @@ fn platform(
     let hub = Arc::new(hub_port::InProcess::default());
     let mut p = arugula_platform::Platform::new(cfg, db, hub.clone(), http.clone(), analytics.clone());
     p.stripe = stripe;
-    p.cloud = cloud;
     p.github = github;
     p.compute = compute;
     // The master key (M209), which the hosted config was given.
@@ -475,7 +473,6 @@ impl App {
         let (platform, hub_port) = platform(
             arugula_platform::db::Db::memory(),
             cfg,
-            None,
             None,
             None,
             None,
@@ -999,7 +996,6 @@ async fn run() -> anyhow::Result<()> {
         // A second connection to the same file: the platform never reads
         // the hub's tables (#1153).
         let hosted = a.hosted.clone().config(&a.cloud)?;
-        let cloud = a.cloud.cloud()?;
         let cfg = arugula_platform::Config {
             public_url: public_url.clone(),
             sites: sites.iter().map(|s| s.url.clone()).collect(),
@@ -1009,7 +1005,7 @@ async fn run() -> anyhow::Result<()> {
         let github = a.github_app.app(&a.github_api)?;
         let compute = a.compute.clone().substrate()?;
         let run_logs = a.run_logs.bucket()?;
-        platform(a.platform_db.open(&a.db)?, cfg, stripe, cloud, github, compute, hosted, run_logs, &http, &analytics)
+        platform(a.platform_db.open(&a.db)?, cfg, stripe, github, compute, hosted, run_logs, &http, &analytics)
     } else {
         // The platform is its own process: this hub is its gateway (M140).
         let key = platform_key.clone().context("--platform is a URL, so ARUGULA_PLATFORM_KEY is needed")?;
@@ -1110,7 +1106,6 @@ async fn run() -> anyhow::Result<()> {
     // The platform's background work, when it's in process; out of
     // process its own binary runs it.
     if let Some(p) = app.platform.local() {
-        arugula_platform::cloud::start(p);
         arugula_platform::hosted::start(p);
         arugula_platform::keys::start(p);
         // The job worker: runs' dispatch (M212) and schedules (M214).
@@ -1168,7 +1163,7 @@ async fn run() -> anyhow::Result<()> {
         r = serve => r?,
         _ = stopping() => info!("stopping"),
     }
-    // An in-process platform's cloud jobs checkpoint before it goes (M144).
+    // An in-process platform's jobs checkpoint before it goes (M144).
     if let Some(p) = app.platform.local() {
         p.drain(std::time::Duration::from_secs(5)).await;
     }
@@ -1222,24 +1217,5 @@ mod tests {
     fn args() {
         use clap::CommandFactory;
         super::Args::command().debug_assert();
-    }
-
-    #[test]
-    fn retired_run_caps_still_parse() {
-        use clap::Parser;
-        let a = super::Args::try_parse_from([
-            "arugula-control",
-            "--cloud-daily-runs",
-            "10",
-            "--cloud-concurrent-runs",
-            "2",
-            "--cloud-run-minutes",
-            "30",
-        ])
-        .unwrap();
-        assert_eq!(a.cloud.cloud_daily_runs.as_deref(), Some("10"));
-        assert!(a.cloud.cloud_concurrent_runs.is_some() && a.cloud.cloud_run_minutes.is_some());
-        let help = <super::Args as clap::CommandFactory>::command().render_help().to_string();
-        assert!(!help.contains("daily-runs"), "{help}");
     }
 }

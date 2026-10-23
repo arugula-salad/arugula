@@ -185,14 +185,14 @@ pub(crate) async fn serve(enroll: EnrollBy) -> (Arc<TestHub>, Arc<Fake>, Arc<Pla
         template: Some("tpl".into()),
         enroll,
         accounts: vec!["alice".into(), "bob".into(), "vic".into(), "olga".into()],
-        cipher: Some(Arc::new(crate::cloud::secrets::SecretCipher::new(&"5e".repeat(32)).unwrap())),
+        cipher: Some(Arc::new(crate::secrets::SecretCipher::new(&"5e".repeat(32)).unwrap())),
         ..Default::default()
     };
     let app = Arc::new(p);
     let project = app.db.team_project("t1", "t1", 0).unwrap();
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let router = crate::cloud::tests::router(app.clone());
+    let router = crate::testing::router(app.clone());
     tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
     (hub, fake, app, base, project)
 }
@@ -572,7 +572,7 @@ async fn live_lifecycle() {
     let _ = (base, project);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let router = crate::cloud::tests::router(app.clone());
+    let router = crate::testing::router(app.clone());
     tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
     hub.delegate(&project_id);
 

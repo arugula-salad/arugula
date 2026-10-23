@@ -257,18 +257,14 @@ pub struct WaitArgs {
     /// Seconds before answering "still running" (default 100).
     #[serde(default)]
     pub timeout: Option<f64>,
-    /// A Cloud workspace's id (cw_…), with tab. Or a hosted one's
-    /// (hw_…): with tab (one of its agent blocks), or with pane to wait on
-    /// its machine.
+    /// A Cloud workspace (its hw_… id or its name): with tab (one of its
+    /// agent blocks), or with pane to wait on its machine.
     #[serde(default)]
     pub cloud_workspace: Option<String>,
-    /// A Cloud workspace's tab (cwc_…), to wait until idle or needs_input.
+    /// A Cloud workspace's tab (an agent block on its machine, by pane
+    /// number), to wait until idle or needs_input.
     #[serde(default)]
     pub tab: Option<String>,
-    /// With tab: the offset cloud kind prompt returned, so a turn just
-    /// prompted isn't taken for done before it starts.
-    #[serde(default)]
-    pub after: Option<u64>,
     /// Or a run in Arugula control (run_…, from start_run), not pane: until
     /// it ends (until command_end).
     #[serde(default)]
@@ -907,7 +903,6 @@ const SHOW: &[Kind] = &[
         flag: None,
     },
     super::ops::kind::<ConversationOpen>(),
-    super::cloud::SHOW,
     Kind {
         name: "app",
         description: "One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.",
@@ -1007,7 +1002,6 @@ const LIST: &[Kind] = &[
     },
     super::cloud::LIST_WORKSPACES,
     super::cloud::LIST_TABS,
-    super::cloud::LIST_AGENTS,
     super::repos::LIST_LINKED,
     super::threads::LIST,
 ];
@@ -1427,7 +1421,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "read_cloud",
             title: "Read a Cloud workspace",
-            description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff, git status or setup log. Reading never wakes a parked machine. A hosted Cloud workspace (hw_…) is a machine of a project: its tabs are its agent blocks, by pane number, and reading one wakes it.",
+            description: "Read one of the user's Cloud workspaces in Arugula control (list kind cloud_workspaces lists them, cloud_tabs their tabs): a tab's transcript or what it asks, or its machine's files, diff or git status. A Cloud workspace (hw_…) is a machine of a project: its tabs are its agent blocks, by pane number, and reading one wakes it.",
             args: Args::Kinds { kinds: table(super::cloud::READ), default: None },
             read_only: true,
             destructive: false,
@@ -1439,7 +1433,7 @@ fn all_defs() -> Vec<Def> {
         Def {
             name: "cloud",
             title: "Drive a Cloud workspace",
-            description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild or retry. The user sees it all on control's page. Changing a Cloud workspace's settings or deleting one is theirs, on that page. A hosted Cloud workspace (hw_…, made with project) is a machine of the project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace.",
+            description: "Drive the user's Cloud workspaces in Arugula control, as the user (the owner of this machine): make one in a project, open a tab (an agent on its machine), prompt it and wait for its turn, interrupt it, answer what it asks, close it, rebuild it. A Cloud workspace (hw_…) is a machine of its project: its tabs are agent blocks on it (claude or codex), by pane number, which the project's people see too; the machine tools reach it with cloud_workspace. Changing its settings or deleting it is the user's, on control's page.",
             args: Args::Kinds { kinds: table(super::cloud::DRIVE), default: None },
             read_only: false,
             destructive: true,
@@ -2001,10 +1995,6 @@ impl<'a> Call<'a> {
                 Ok(a) => self.list_cloud_tabs(a).await,
                 Err(e) => Err(e),
             },
-            ("list", Some("cloud_agents")) => match parse::<NoArgs>(args) {
-                Ok(_) => self.list_cloud_agents().await,
-                Err(e) => Err(e),
-            },
             ("list", Some("linked_repos")) => match parse(args) {
                 Ok(a) => self.list_linked_repos(a).await,
                 Err(e) => Err(e),
@@ -2099,10 +2089,6 @@ impl<'a> Call<'a> {
                 Err(e) => Err(e),
             },
             ("show", Some("conversation")) => super::ops::call::<ConversationOpen>(self, args).await,
-            ("show", Some("cloud_workspace")) => match parse(args) {
-                Ok(a) => self.show_cloud_workspace(a).await,
-                Err(e) => Err(e),
-            },
             ("show", Some("app")) => match parse(args) {
                 Ok(a) => self.open_app(a).await,
                 Err(e) => Err(e),
@@ -2842,17 +2828,21 @@ impl<'a> Call<'a> {
             if a.pane.is_some() {
                 return Err("give a pane, or a Cloud workspace's tab (cloud_workspace and tab), not both".into());
             }
-            let workspace =
-                a.cloud_workspace.as_deref().ok_or("a Cloud workspace's tab needs its cloud_workspace (cw_…) too")?;
+            let workspace = a
+                .cloud_workspace
+                .as_deref()
+                .map(str::trim)
+                .filter(|w| !w.is_empty())
+                .ok_or("a Cloud workspace's tab needs its cloud_workspace (hw_… or its name) too")?;
             let until = match a.until {
-                Until::Idle => super::cloud::TabUntil::Idle,
-                Until::NeedsInput => super::cloud::TabUntil::NeedsInput,
+                Until::Idle => "idle",
+                Until::NeedsInput => "needs_input",
                 _ => return Err("a Cloud workspace's tab waits until idle or needs_input".into()),
             };
-            return self.wait_tab(workspace, tab, until, a.after, Self::limit(a.timeout)).await;
+            return self.hosted_wait(workspace, tab, until, Some(Self::limit(a.timeout).as_secs_f64())).await;
         }
-        if a.cloud_workspace.is_some() || a.after.is_some() {
-            return Err("cloud_workspace and after go with tab (a Cloud workspace's tab)".into());
+        if a.cloud_workspace.is_some() {
+            return Err("cloud_workspace goes with tab (a Cloud workspace's tab) or pane".into());
         }
         let pane =
             a.pane.ok_or("wait for what? give a pane, or a Cloud workspace's tab (cloud_workspace and tab)")?.id()?;
@@ -4688,9 +4678,9 @@ mod tests {
         }
         // An error names only the kinds that are listed.
         let e = route("show", json!({ "kind": "terminal" }), fl(false)).err().unwrap();
-        // (`cloud_workspace` is listed: it isn't the Labs `workspace`.)
+        // (The Managoat-backed `cloud_workspace` block went in M190.)
         let named = |k: &str| e.split(|c: char| !c.is_ascii_alphanumeric() && c != '_').any(|w| w == k);
-        assert!(named("port") && named("cloud_workspace") && !e.contains("managoat") && !named("workspace"), "{e}");
+        assert!(named("port") && !named("cloud_workspace") && !e.contains("managoat") && !named("workspace"), "{e}");
         let every: Vec<&str> = all_defs().iter().map(|d| d.name).collect();
         for name in THREAD_TOOLS {
             assert!(defs(fl(false)).iter().any(|d| d.name == name), "{name} is everyone's");

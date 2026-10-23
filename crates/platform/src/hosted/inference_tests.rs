@@ -18,8 +18,8 @@ use super::{
 use crate::{
     Platform, PlatformPort as _, TurnAnswer,
     chat_tests::{TestHub, call},
-    cloud::secrets::SecretCipher,
     compute::{self, Substrate as _},
+    secrets::SecretCipher,
 };
 
 /// alice owns team t1 and isn't on the allowlist; bob edits it and is.
@@ -45,7 +45,7 @@ async fn serve(platform: &[&str], caps: Caps) -> (Arc<TestHub>, Arc<Fake>, Arc<P
     hub.delegate(&project);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let router = crate::cloud::tests::router(app.clone());
+    let router = crate::testing::router(app.clone());
     tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
     (hub, fake, app, base, project)
 }
@@ -182,7 +182,7 @@ async fn no_sealing_key_no_project_keys() {
     p.hosted = Config { cipher: None, ..app.hosted.clone() };
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let router = crate::cloud::tests::router(Arc::new(p));
+    let router = crate::testing::router(Arc::new(p));
     tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
     assert_eq!(key(&base, "alice", "personal", "anthropic", Some(SK)).await.0, 501);
 }

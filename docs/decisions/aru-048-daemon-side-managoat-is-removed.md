@@ -43,8 +43,8 @@ link, recipes run on Managoat (from the Agents page, the agents block,
 conversation's sandbox, `arugula managoat`, MCP's Managoat kinds, and the
 per-machine default for Managoat approvals) was retired by "Cloud execution
 is owned by Arugula control" (above) and taken out on 2026-10-18, Jake's
-decision. Control's own Managoat adapter (`crates/platform/src/cloud/`) is
-separate and stays. This ends "Fountain is a headless backend, and Arugula
+decision. Control's own Managoat adapter (`crates/platform/src/cloud/`) was
+separate and stayed, until it went too (2026-10-23, M189 and M190). This ends "Fountain is a headless backend, and Arugula
 is its UI" (#942, 2026-10-15), and with it the entries on the daemon's
 sign-in, the account view's cards, recipes on Managoat and the rename's
 aliases; S34's "no Fountain dependency" holds again for the daemon. Revive

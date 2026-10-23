@@ -52,7 +52,7 @@ async fn a_second_request_asks_the_hub_nothing() {
     for (who, path) in [
         ("a", "/api/grants"),
         ("b", "/api/chat"),
-        ("a", "/api/cloud/workspaces"),
+        ("a", "/api/workspaces"),
         ("a", "/api/billing"),
         ("b", "/api/chat/search?q=from%3Aa%20hello"),
         ("b", "/api/projects"),
@@ -65,9 +65,9 @@ async fn a_second_request_asks_the_hub_nothing() {
     assert_eq!(asked, Vec::<String>::new(), "a second request asked the hub");
     // A machine driving its owner's Cloud workspaces: its first call gives
     // it its grant (on the hub's word), and after that nothing.
-    assert_eq!(as_machine(&base, "a", "m0", "/api/cloud/workspaces").await.0, 200);
+    assert_eq!(as_machine(&base, "a", "m0", "/api/workspaces").await.0, 200);
     let calls = hub.calls();
-    assert_eq!(as_machine(&base, "a", "m0", "/api/cloud/workspaces").await.0, 200);
+    assert_eq!(as_machine(&base, "a", "m0", "/api/workspaces").await.0, 200);
     assert_eq!(hub.calls(), calls, "a machine with a live grant: no hub call");
     assert_eq!(hub.calls_of("resolve"), 0, "the hub vouched for the caller: nobody asks it again");
 }
@@ -84,7 +84,7 @@ async fn a_machine_that_just_joined_is_not_refused() {
     // The cache has heard there's no m9.
     assert!(app.cache.daemons(&*app.hub, &["m9".into()]).await.unwrap().is_empty());
     hub.daemon("m9", "a", None);
-    let (st, v) = as_machine(&base, "a", "m9", "/api/cloud/workspaces").await;
+    let (st, v) = as_machine(&base, "a", "m9", "/api/workspaces").await;
     assert_eq!(st, 200, "joined before the feed was read: {v}");
     // And its grant is listed by name, from what the hub said.
     let (_, v) = counted(&hub, &base, "a", "/api/grants").await;
@@ -151,7 +151,7 @@ async fn read_for(app: &crate::Platform, secs: u64) {
 const ROUTES: [(&str, &str); 5] = [
     ("a", "/api/grants"),
     ("b", "/api/chat"),
-    ("a", "/api/cloud/workspaces"),
+    ("a", "/api/workspaces"),
     ("a", "/api/billing"),
     ("b", "/api/chat/search?q=from%3Aa%20hello"),
 ];
@@ -308,7 +308,7 @@ async fn statements_per_request() {
     crate::cache::catch_up(&app).await.unwrap();
     let mut said = vec![];
     for (who, path, most) in
-        [("a", "/api/grants", 1), ("b", "/api/chat", 4), ("a", "/api/cloud/workspaces", 3), ("a", "/api/billing", 2)]
+        [("a", "/api/grants", 1), ("b", "/api/chat", 4), ("a", "/api/workspaces", 3), ("a", "/api/billing", 2)]
     {
         timing(&base, who, path).await;
         let h = timing(&base, who, path).await;

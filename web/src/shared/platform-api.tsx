@@ -1,15 +1,13 @@
-// What the platform's views (chat, Cloud workspaces: web/src/platform/)
-// reach the page they're drawn on through (M147). The shell gives one built
-// on its fleet and its control session (web/src/shell/platform-api.tsx); a
-// Cloud workspace block gives the same with its own way to control's
-// `/api/cloud/`; the platform page (M150) gives one with no machines at all.
+// What the platform's views (chat: web/src/platform/) reach the page
+// they're drawn on through (M147). The shell gives one built on its fleet
+// and its control session (web/src/shell/platform-api.tsx); the platform
+// page (M150) gives one with no machines at all.
 // The views never import the fleet, the daemon client or control's signing
 // code: what they need of them is here, and CI checks it (M148).
 
 import { createContext, type ComponentChildren, type ComponentType } from "preact";
 import { useContext } from "preact/hooks";
 import type { PaneQuote } from "./chat-store";
-import { cloudApi, type CloudApi } from "./cloud";
 
 /** A team this account is in, as the platform's views read it: control's
  * `Team` has these and more. */
@@ -43,8 +41,6 @@ export interface ChatNav {
 }
 
 export interface PlatformApi {
-  /** Control's `/api/cloud/`. */
-  cloud: CloudApi;
   /** The teams this account is in; none until they're known. */
   teams(): PlatformTeam[];
   /** Re-render on what the getters here read (teams, machines, panes). */
@@ -83,7 +79,6 @@ export const noMachines: Pick<PlatformApi, "machine" | "paneTitle" | "sessionNam
 };
 
 export const PlatformApiContext = createContext<PlatformApi>({
-  cloud: cloudApi,
   teams: () => [],
   subscribe: none,
   toast: () => {},
@@ -93,6 +88,3 @@ export const PlatformApiContext = createContext<PlatformApi>({
 });
 
 export const usePlatformApi = () => useContext(PlatformApiContext);
-
-/** Control's `/api/cloud/` as this page reaches it. */
-export const useCloudApi = () => usePlatformApi().cloud;

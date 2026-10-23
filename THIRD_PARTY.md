@@ -5666,7 +5666,6 @@ limitations under the License.
 Used by:
 - [libghostty-vt 0.2.1](https://github.com/uzaaft/libghostty-rs)
 - [arugula 0.60.0](https://github.com/arugula-salad/arugula)
-- [arugula-cloud-wire 0.0.0](https://github.com/arugula-salad/arugula)
 - [arugula-control 0.60.0](https://github.com/arugula-salad/arugula)
 - [arugula-control-common 0.60.0](https://github.com/arugula-salad/arugula)
 - [arugula-control-wire 0.0.0](https://github.com/arugula-salad/arugula)

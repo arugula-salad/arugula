@@ -7,8 +7,8 @@
 //
 //   chat          chat end to end through control: the chat flag on, a team
 //                 and a channel, a message posted, read back, and its event
-//                 heard on the live stream (SSE); Cloud and billing answered by the
-//                 platform: {room, live_ms}
+//                 heard on the live stream (SSE); hosted workspaces and billing
+//                 answered by the platform: {room, live_ms}
 //   hold BOX CONTAINER
 //                 one relayed session to BOX's first pane, held open while
 //                 CONTAINER restarts: a marker round-trips before and after
@@ -22,13 +22,6 @@
 //                 through the other, and a page that dropped from one resumes
 //                 on the other from its Last-Event-ID; exactly one leads:
 //                 {room, heard_ms: [1 from 2, 2 from 1], resumed, leader}
-//   handover FAKE_PORT STACK [--break]
-//                 a Cloud workspace's job held mid-step by the machine that
-//                 claimed it (the fake Managoat holds its read), that machine
-//                 killed, and the job taken by the other once its lease runs
-//                 out, then ready; with --break the other is paused too, so
-//                 nothing takes it: {holder, other, lease_left_ms,
-//                 taken_after_lease_ms, ready_ms}
 //   agents BOX SSH_CONFIG [--break]
 //                 agents in conversations (M198), signed by BOX's daemon: the
 //                 owner gives BOX threads.read and threads.post over a team's
@@ -112,11 +105,11 @@ async function chat(d: Device) {
   }
   const liveMs = Date.now() - posted;
   await reader.cancel();
-  // Cloud has no Managoat on the testnet, so the list is empty: answered by
-  // the platform (the hub has no Cloud route of its own to answer with).
-  const cloud = await call(d, "GET", "/api/cloud/workspaces");
-  if (cloud.status !== 200 || !Array.isArray(cloud.json.cloud_workspaces)) {
-    throw new Error(`GET /api/cloud/workspaces: ${cloud.status} ${JSON.stringify(cloud.json)}`);
+  // Hosted workspaces aren't set up on this stack, so the list is empty:
+  // answered by the platform (the hub has no such route of its own).
+  const hosted = await call(d, "GET", "/api/workspaces");
+  if (hosted.status !== 200 || !Array.isArray(hosted.json.workspaces)) {
+    throw new Error(`GET /api/workspaces: ${hosted.status} ${JSON.stringify(hosted.json)}`);
   }
   const billing = await must(d, "GET", "/api/billing");
   if (billing.billing !== true) throw new Error(`GET /api/billing: ${JSON.stringify(billing)}`);
@@ -185,7 +178,7 @@ async function measure(d: Device, n: number) {
     ["GET", "/api/me"],
     ["GET", "/api/chat"],
     ["GET", `/api/chat/rooms/${room}/messages`],
-    ["GET", "/api/cloud/workspaces"],
+    ["GET", "/api/workspaces"],
     ["POST", `/api/chat/rooms/${room}/read`, { seq: posted.seq }],
   ];
   const out: Record<string, { p50: number; p95: number; p99: number }> = {};
@@ -286,60 +279,6 @@ async function fanout(d: Device, ports: number[]) {
   if (back.text.includes('"type":"resync"')) throw new Error(`resynced instead of resuming from ${last}`);
   await back.reader.cancel();
   return { room, heard_ms: heard, resumed: last, leader: ports[health.findIndex((h) => h.leader)] };
-}
-
-async function handover(d: Device, fakePort: number, stack: string, broken: boolean) {
-  const names = [`${stack}-platform`, `${stack}-platform2`];
-  const ips = (c: string) =>
-    execFileSync("docker", ["inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}", c]).toString().trim().split(/\s+/);
-  const addrs = Object.fromEntries(names.map((n) => [n, ips(n)]));
-  const whose = (from: string) => names.find((n) => addrs[n].some((a) => a && from.endsWith(a)));
-  const fake = async (path: string, method = "GET") => (await fetch(`http://127.0.0.1:${fakePort}${path}`, { method })).json();
-  const psql = (sql: string) => execFileSync("docker", ["exec", `${stack}-postgres`, "psql", "-U", "postgres", "-d", "platform", "-Atc", sql]).toString().trim();
-  // Each machine reaches the fake through a sidecar in its network
-  // namespace, which a restart of the machine (platform-restart) leaves
-  // behind: join them again first.
-  const sidecar = (n: string) => n.replace(/-platform(2?)$/, "-managoat-platform$1");
-  for (const n of names) execFileSync("docker", ["restart", sidecar(n)], { stdio: "ignore" });
-  await sleep(1000);
-  // Its first read comes a few worker ticks after it's made (environment,
-  // vault, machine first), so the hold is armed in time.
-  const w = await must(d, "POST", "/api/cloud/workspaces", { request_key: `m144-${Date.now()}`, spec: { name: "handover" } });
-  await fake(`/hold?name=${w.id}`, "POST");
-  let held: { from: string; at: number; path: string } | null = null;
-  for (const until = Date.now() + 30_000; !held; await sleep(100)) {
-    if (Date.now() > until) throw new Error("no machine read the workspace");
-    held = (await fake("/held")).held;
-  }
-  const holder = whose(held.from);
-  const other = names.find((n) => n !== holder)!;
-  if (!holder) throw new Error(`the held read came from ${held.from}, neither ${JSON.stringify(addrs)}`);
-  const lease = Number(psql(`SELECT lease_until FROM cloud_jobs WHERE id = '${w.id}'`));
-  const killed = Date.now();
-  if (broken) execFileSync("docker", ["pause", other]);
-  execFileSync("docker", ["kill", holder], { stdio: "ignore" });
-  await fake("/release", "POST");
-  try {
-    let taken: { at: number } | undefined;
-    for (const until = lease + 30_000; !taken; await sleep(200)) {
-      if (Date.now() > until) throw new Error(`nothing took the job in the ${Math.round((until - killed) / 1000)} s after ${holder} died`);
-      const seen: { at: number; from: string; path: string }[] = (await fake(`/held?since=${killed}`)).seen;
-      taken = seen.find((s) => whose(s.from) === other && s.path === held!.path);
-    }
-    if (taken.at < lease - 1_000) throw new Error(`${other} took the job ${lease - taken.at} ms before its lease ran out`);
-    let ready = 0;
-    for (const until = Date.now() + 60_000; !ready; await sleep(500)) {
-      if (Date.now() > until) throw new Error("the workspace never got ready");
-      const r = await must(d, "GET", `/api/cloud/workspaces/${w.id}`);
-      if (r.error) throw new Error(`the workspace: ${r.error}`);
-      if (r.status === "ready") ready = Date.now();
-    }
-    return { workspace: w.id, holder, other, lease_left_ms: lease - killed, taken_after_lease_ms: taken.at - lease, ready_ms: ready - killed };
-  } finally {
-    if (broken) execFileSync("docker", ["unpause", other]);
-    execFileSync("docker", ["start", holder], { stdio: "ignore" });
-    execFileSync("docker", ["restart", sidecar(holder)], { stdio: "ignore" });
-  }
 }
 
 /** `arugula mcp` on `box` over ssh: MCP on its stdio, one call at a time. */
@@ -511,8 +450,6 @@ async function main() {
       return measure(d, Number(rest[0] ?? 300));
     case "fanout":
       return fanout(d, [Number(rest[0]), Number(rest[1])]);
-    case "handover":
-      return handover(d, Number(rest[0]), rest[1], rest.includes("--break"));
     case "agents":
       return agents(d, rest[0], rest[1], rest.includes("--break"));
     case "issues-write":
@@ -520,7 +457,7 @@ async function main() {
     case "issues-read":
       return issuesRead(d, rest[0]);
     default:
-      throw new Error(`unknown command ${cmd ?? "(none)"}: chat, hold, measure, fanout, handover, agents, issues-write, issues-read`);
+      throw new Error(`unknown command ${cmd ?? "(none)"}: chat, hold, measure, fanout, agents, issues-write, issues-read`);
   }
 }
 

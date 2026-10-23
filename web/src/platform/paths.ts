@@ -20,10 +20,8 @@
 //   /p/:project/runs/:run          a run (`?msg=N`: at that message in its
 //                                  thread)
 //   /dm/:room                      a direct message
-//   /p/:project/workspaces         its Cloud workspaces
-//   /p/:project/workspaces/:id     a Cloud workspace (`/:tab` for a tab)
-//   /p/:project/past/:id           a past run (`run_…`) or a closed tab
-//                                  (`cwc_…`), read only
+//   /p/:project/workspaces         its hosted workspaces
+//   /p/:project/workspaces/:id     a hosted workspace (`hw_…`)
 //   /p/:project/settings           its settings: linked repos (`?link=OWNER/REPO`
 //                                  fills in one to link), environments (M252)
 //   /p/:project/deploys/new        "Deploy…" (M252): plan a deploy and ask for
@@ -32,7 +30,6 @@
 //                                  setup URL): on to the project's settings
 //   /inbox                         the reader's inbox (M171): items that want
 //                                  something of them, and drafts waiting
-//   /agents                        the cloud agent library
 //   /settings                      account settings
 //   /deploys/:deploy               a deploy (M218): its card, approvals
 //                                  and log; a push for one opens here
@@ -45,8 +42,6 @@
 //   /chat/activity, /chat/search?q=…
 //   /issues/:issue                 an issue (`?msg=N`: at that comment)
 //   /runs/:run                     a run (a push for one that failed)
-//   /workspaces, /workspaces/:id[/:tab], /past/:id
-//                                  the reader's own Cloud workspaces
 //
 // Routes for changes wait for step 6 rather than shipping empty.
 
@@ -61,25 +56,21 @@ export type Route =
   | { page: "chat"; project: string; room?: string; msg?: number; view?: "activity" | "search"; q?: string }
   | { page: "dm"; room: string; msg?: number }
   | { page: "workspaces"; project: string }
-  | { page: "workspace"; project: string; workspace: string; tab?: string }
-  | { page: "past"; project: string; id: string }
+  | { page: "workspace"; project: string; workspace: string }
   | { page: "project-settings"; project: string; link?: string }
   | { page: "new-deploy"; project: string; env?: string }
   | { page: "installed"; project?: string; repo?: string }
   | { page: "inbox" }
-  | { page: "agents" }
   | { page: "settings" }
   | { page: "deploy"; deploy: string }
   /** An id-only address, to be put where it belongs (`resolve`). */
   | { page: "find"; what: "chat"; room?: string; msg?: number; view?: "activity" | "search"; q?: string }
-  | { page: "find"; what: "workspaces"; workspace?: string; tab?: string }
-  | { page: "find"; what: "past"; id: string }
   | { page: "find"; what: "issue"; issue: string; msg?: number }
   | { page: "find"; what: "run"; run: string; msg?: number }
   | { page: "missing"; path: string };
 
 /** An id at the front of a path segment, before its slug: `prj_8f2k`,
- * `ch_…`, `dm_…`, `cw_…`, `cwc_…`, `iss_…`, `run_…`. */
+ * `ch_…`, `dm_…`, `hw_…`, `iss_…`, `run_…`. */
 const ID = /^([a-z]{2,3}_[0-9a-f]{4,64})(?:-.*)?$/;
 
 /** `OWNER/NAME` on GitHub. */
@@ -124,7 +115,6 @@ export function parse(path: string, search = ""): Route {
   const msg = at !== null && /^-?\d+$/.test(at) ? { msg: Number(at) } : {};
   const missing: Route = { page: "missing", path };
   if (parts.length === 0) return { page: "home" };
-  if (parts.length === 1 && parts[0] === "agents") return { page: "agents" };
   if (parts.length === 1 && parts[0] === "inbox") return { page: "inbox" };
   if (parts.length === 1 && parts[0] === "settings") return { page: "settings" };
   if (parts[0] === "chat" && parts.length <= 2) {
@@ -134,12 +124,6 @@ export function parse(path: string, search = ""): Route {
     const room = idOf(parts[1]);
     return room ? { page: "find", what: "chat", room, ...msg } : missing;
   }
-  if (parts[0] === "workspaces" && parts.length <= 3) {
-    const workspace = parts[1] === undefined ? undefined : idOf(parts[1]);
-    const tab = parts[2] === undefined ? undefined : idOf(parts[2]);
-    if (workspace === null || tab === null) return missing;
-    return { page: "find", what: "workspaces", ...(workspace ? { workspace } : {}), ...(tab ? { tab } : {}) };
-  }
   if (parts[0] === "issues" && parts.length === 2) {
     const issue = idOf(parts[1]);
     return issue?.startsWith("iss_") ? { page: "find", what: "issue", issue, ...msg } : missing;
@@ -147,10 +131,6 @@ export function parse(path: string, search = ""): Route {
   if (parts[0] === "runs" && parts.length === 2) {
     const run = idOf(parts[1]);
     return run?.startsWith("run_") ? { page: "find", what: "run", run, ...msg } : missing;
-  }
-  if (parts[0] === "past" && parts.length === 2) {
-    const id = idOf(parts[1]);
-    return id && /^(run|cwc)_/.test(id) ? { page: "find", what: "past", id } : missing;
   }
   if (parts.length === 1 && parts[0] === "installed") {
     // The state linking handed GitHub: `<project>:<OWNER/NAME>`.
@@ -195,15 +175,9 @@ export function parse(path: string, search = ""): Route {
     return run?.startsWith("run_") ? { page: "run", project, run, ...msg } : missing;
   }
   if (parts[2] === "workspaces" && parts.length === 3) return { page: "workspaces", project };
-  if (parts[2] === "past" && parts.length === 4) {
-    const id = idOf(parts[3]);
-    return id && /^(run|cwc)_/.test(id) ? { page: "past", project, id } : missing;
-  }
-  if (parts[2] === "workspaces" && (parts.length === 4 || parts.length === 5)) {
+  if (parts[2] === "workspaces" && parts.length === 4) {
     const workspace = idOf(parts[3]);
-    const tab = parts[4] === undefined ? undefined : idOf(parts[4]);
-    if (!workspace || tab === null) return missing;
-    return { page: "workspace", project, workspace, ...(tab ? { tab } : {}) };
+    return workspace?.startsWith("hw_") ? { page: "workspace", project, workspace } : missing;
   }
   return missing;
 }
@@ -271,9 +245,7 @@ export function pathOf(r: Route, names: Names = () => null): string {
     case "workspaces":
       return `/p/${s(r.project)}/workspaces`;
     case "workspace":
-      return `/p/${s(r.project)}/workspaces/${s(r.workspace)}${r.tab ? `/${s(r.tab)}` : ""}`;
-    case "past":
-      return `/p/${s(r.project)}/past/${s(r.id)}`;
+      return `/p/${s(r.project)}/workspaces/${s(r.workspace)}`;
     case "project-settings":
       return `/p/${s(r.project)}/settings${r.link ? `?link=${encodeURIComponent(r.link)}` : ""}`;
     case "new-deploy":
@@ -282,8 +254,6 @@ export function pathOf(r: Route, names: Names = () => null): string {
       return r.project && r.repo ? `/installed?state=${encodeURIComponent(`${r.project}:${r.repo}`)}` : "/installed";
     case "inbox":
       return "/inbox";
-    case "agents":
-      return "/agents";
     case "settings":
       return "/settings";
     case "deploy":
@@ -294,10 +264,8 @@ export function pathOf(r: Route, names: Names = () => null): string {
         if (r.view === "search") return `/chat/search${r.q ? `?q=${encodeURIComponent(r.q)}` : ""}`;
         return r.room ? `/chat/${s(r.room)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}` : "/chat";
       }
-      if (r.what === "past") return `/past/${s(r.id)}`;
       if (r.what === "issue") return `/issues/${s(r.issue)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
-      if (r.what === "run") return `/runs/${s(r.run)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
-      return `/workspaces${r.workspace ? `/${s(r.workspace)}${r.tab ? `/${s(r.tab)}` : ""}` : ""}`;
+      return `/runs/${s(r.run)}${r.msg !== undefined ? `?msg=${r.msg}` : ""}`;
     case "missing":
       return r.path;
   }

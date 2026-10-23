@@ -209,7 +209,9 @@ mod tests {
         app.db.set_maintenance(Some(Maintenance { retry_after: 42, pause: true, since: 1 })).unwrap();
         refresh(&app).unwrap();
         assert!(app.platform.inner().is_paused(), "--pause holds the in-process platform's work");
-        for (m, p) in [("GET", "/api/chat"), ("POST", "/api/cloud/workspaces"), ("POST", "/api/stripe/webhook")] {
+        for (m, p) in
+            [("GET", "/api/chat"), ("POST", "/api/projects/prj_x/workspaces"), ("POST", "/api/stripe/webhook")]
+        {
             let r = http.request(m.parse().unwrap(), format!("{base}{p}")).send().await.unwrap();
             assert_eq!(r.status(), 503, "{m} {p}");
             assert_eq!(r.headers()["retry-after"], "42");

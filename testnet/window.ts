@@ -1,5 +1,5 @@
 // M141's window on the testnet (testnet/window.sh): what a signed-in person
-// has in chat and Cloud before the window, and whether it's all still
+// has in chat and a project's secrets before the window, and whether it's all still
 // there, and still works, after it. The device lives in a state file
 // (web/fixtures/device-cli.ts signs it in). One JSON object on stdout,
 // exit 0; or why on stderr, exit 1.
@@ -7,20 +7,19 @@
 //   node --experimental-strip-types testnet/window.ts --state FILE COMMAND ...
 //
 //   seed          chat on, a team with two channels and messages in them
-//                 (one word only they hold, for search), a read mark, a
-//                 cloud secret, a Cloud workspace that names it, set up, and
-//                 a tab with one turn answered: {team, rooms, messages,
-//                 word, secret, secret_sha256, workspace, tab}
+//                 (one word only they hold, for search), a read mark, and an
+//                 environment in the team's project with a secret set (sealed
+//                 with the project's key, which the master key wraps): {team,
+//                 rooms, messages, word, project, environment, secret}
 //   check SEED    everything seed made is listed and reads back the same:
-//                 rooms, messages, search, the secret's name, the workspace
-//                 and its tab's turn. --has TEXT: a message with this text is
-//                 in the first room too; --lacks TEXT: and this one isn't
+//                 rooms, messages, search, the environment and its secret's
+//                 name. --has TEXT: a message with this text is in the first
+//                 room too; --lacks TEXT: and this one isn't
 //   notice TITLE  the page is handed a notice with this title: {notice}
 //   write LABEL SEED
-//                 new work after the window: a message, another turn in the
-//                 tab, and a second workspace that names the secret (the
-//                 platform decrypts it to put it in Managoat's vault):
-//                 {message, workspace}
+//                 new work after the window: a message, and the secret set
+//                 again (the platform seals it with the project's key, which
+//                 it opens with the master key): {message}
 //   gateway N SEED
 //                 through control's gateway, as a page has it (M145, two
 //                 machines behind it): a live stream, then N messages posted
@@ -74,32 +73,9 @@ async function until<T>(what: string, f: () => Promise<T | undefined>, ms = 60_0
   }
 }
 
-/** A workspace that names the secret, set up and with its vault filled. */
-async function workspace(d: Device, name: string): Promise<string> {
-  const w = await must(d, "POST", "/api/cloud/workspaces", {
-    request_key: `window-${name}-${Date.now()}`,
-    spec: { name, secrets: [SECRET] },
-  });
-  await until(`workspace ${name} ready`, async () => {
-    const r = await must(d, "GET", `/api/cloud/workspaces/${w.id}`);
-    if (r.error) throw new Error(`workspace ${name}: ${r.error}`);
-    return r.status === "ready" && r.settings_applied ? r : undefined;
-  });
-  return w.id;
-}
-
-/** How many times `answer` is in a tab's events. */
-async function answers(d: Device, ws: string, tab: string, answer: string): Promise<number> {
-  const r = await must(d, "GET", `/api/cloud/workspaces/${ws}/tabs/${tab}/events`);
-  return JSON.stringify(r.events).split(answer).length - 1;
-}
-
-/** One turn in a tab: `prompt` goes in (none: the tab's first, sent when
- * it opened), and Managoat's `answer` comes back once more. */
-async function turn(d: Device, ws: string, tab: string, prompt: string | null, answer: string): Promise<void> {
-  const before = prompt === null ? 0 : await answers(d, ws, tab, answer);
-  if (prompt !== null) await must(d, "POST", `/api/cloud/workspaces/${ws}/tabs/${tab}/prompt`, { prompt });
-  await until(`the answer "${answer}" in tab ${tab}`, async () => ((await answers(d, ws, tab, answer)) > before ? true : undefined));
+/** Set the environment's secret to a new value, as an owner in a browser. */
+async function setSecret(d: Device, environment: string): Promise<void> {
+  await must(d, "POST", `/api/environments/${environment}/secrets/${SECRET}`, { value: `secret-${crypto.randomUUID()}` });
 }
 
 async function seed(d: Device) {
@@ -120,30 +96,15 @@ async function seed(d: Device) {
   }
   const last = (await must(d, "GET", `/api/chat/rooms/${rooms[0]}/messages`)).messages.at(-1).seq;
   await must(d, "POST", `/api/chat/rooms/${rooms[0]}/read`, { seq: last });
-  const value = `secret-${crypto.randomUUID()}`;
-  await must(d, "PUT", `/api/cloud/secrets/${SECRET}`, { value });
-  const ws = await workspace(d, "before");
-  const agent = (await must(d, "GET", "/api/cloud/agents")).agents[0].id;
-  const model = (await must(d, "GET", "/api/cloud/models")).models[0];
-  const tab = await must(d, "POST", `/api/cloud/workspaces/${ws}/tabs`, {
-    request_key: `window-tab-${Date.now()}`,
-    agent_id: agent,
-    runtime: model.runtime,
-    model: model.model,
-    prompt: "Write the docs",
+  const project = (await must(d, "GET", "/api/projects")).projects.find((p: any) => p.team?.id === team)?.id;
+  if (!project) throw new Error(`no default project for team ${team}`);
+  const env = await must(d, "POST", `/api/projects/${project}/environments`, {
+    name: "window",
+    driver: "window-rehearsal",
+    secret_names: [SECRET],
   });
-  await turn(d, ws, tab.id, null, "Docs written.");
-  const sha = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return {
-    team,
-    rooms,
-    messages,
-    word,
-    secret: SECRET,
-    secret_sha256: Buffer.from(sha).toString("hex"),
-    workspace: ws,
-    tab: tab.id,
-  };
+  await setSecret(d, env.id);
+  return { team, rooms, messages, word, project, environment: env.id, secret: SECRET };
 }
 
 async function check(d: Device, s: any) {
@@ -161,23 +122,18 @@ async function check(d: Device, s: any) {
   const found = (await must(d, "GET", `/api/chat/search?q=${s.word}`)).found;
   if (found.length !== 2) throw new Error(`search for ${s.word} found ${found.length}, not 2: ${JSON.stringify(found)}`);
   const unread = (await must(d, "GET", "/api/chat")).rooms.find((r: any) => r.id === s.rooms[0]);
-  const secrets = await must(d, "GET", "/api/cloud/secrets");
-  if (!JSON.stringify(secrets).includes(s.secret)) throw new Error(`the secret ${s.secret} isn't listed: ${JSON.stringify(secrets)}`);
-  const ws = await must(d, "GET", `/api/cloud/workspaces/${s.workspace}`);
-  if (ws.status !== "ready") throw new Error(`workspace ${s.workspace}: ${ws.status} ${ws.error ?? ""}`);
-  const tabs = (await must(d, "GET", `/api/cloud/workspaces/${s.workspace}/tabs`)).cloud_tabs.map((t: any) => t.id);
-  if (!tabs.includes(s.tab)) throw new Error(`tab ${s.tab} isn't listed: ${JSON.stringify(tabs)}`);
-  const turns = await answers(d, s.workspace, s.tab, "Docs written.");
-  if (turns < 1) throw new Error(`tab ${s.tab} lost its turn`);
-  return { rooms: s.rooms.length, messages: total, search: found.length, unread: unread?.unread ?? null, secret: s.secret, workspace: ws.status, turns };
+  const envs = JSON.stringify(await must(d, "GET", `/api/projects/${s.project}/environments`));
+  if (!envs.includes(s.environment) || !envs.includes(s.secret)) {
+    throw new Error(`the environment ${s.environment} or its secret ${s.secret} isn't listed: ${envs}`);
+  }
+  return { rooms: s.rooms.length, messages: total, search: found.length, unread: unread?.unread ?? null, environment: s.environment, secret: s.secret };
 }
 
 async function write(d: Device, label: string, s: any) {
   const text = `after the window: ${label}`;
   await must(d, "POST", `/api/chat/rooms/${s.rooms[0]}/messages`, { text });
-  await turn(d, s.workspace, s.tab, "Write more docs", "Docs written.");
-  const ws = await workspace(d, `after-${label}`);
-  return { message: text, workspace: ws };
+  await setSecret(d, s.environment);
+  return { message: text };
 }
 
 async function gateway(d: Device, n: number, s: any) {

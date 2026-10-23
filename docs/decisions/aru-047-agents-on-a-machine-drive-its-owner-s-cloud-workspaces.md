@@ -69,3 +69,10 @@ workspaces, and `run`, `start_agent`, `read_output` and `show` reach the
 workspace's machine like any machine's, through grants ("Grants, not
 impersonation"). The Managoat paths in `crates/daemon/src/mcp/cloud.rs` go
 in M190. From: M175 (#1236), M184 (#1245).
+
+They went on 2026-10-23 with Managoat itself ("Cloud execution is owned by
+Arugula control", amended): `list` kinds `cloud_workspaces` and
+`cloud_tabs`, `read_cloud`, `cloud` and `wait` on a tab serve hosted
+workspaces (`hw_…`) only, and the Cloud workspace block (`show` kind
+`cloud_workspace`), `list` kind `cloud_agents` and the `/api/cloud/…`
+routes are gone. The power and its grant are unchanged. From: M190 (#1251).

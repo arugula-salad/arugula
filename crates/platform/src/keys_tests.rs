@@ -23,31 +23,43 @@ fn projects(db: &Db, ids: &[&str]) {
     }
 }
 
-/// Two projects' cloud secrets, a hosted workspace's and a project's own
-/// inference key, sealed as they were before M209: with the master key
-/// itself.
-fn before_m209(db: &Db, master: &SecretCipher) {
-    projects(db, &["prj_a", "prj_b"]);
-    let c = db.c();
-    for (account, project, name, value) in
-        [("alice", "prj_a", "GITHUB_TOKEN", "ghp_alice"), ("bob", "prj_b", "NPM_TOKEN", "npm_bob")]
-    {
-        c.execute(
-            "INSERT INTO cloud_secrets (account, name, sealed, project_id) VALUES (?1, ?2, ?3, ?4)",
-            params![account, name, master.seal(account, name, value).unwrap(), project],
+/// A hosted workspace in `project`.
+fn workspace(db: &Db, id: &str, project: &str) {
+    db.c()
+        .execute(
+            "INSERT INTO hosted_workspaces (id, project_id, name, spec, spec_hash, state, created_at, updated_at)
+             VALUES (?1, ?2, 'dev', '{}', 'h', 'ready', 1, 1)",
+            params![id, project],
         )
         .unwrap();
-    }
-    c.execute(
-        "INSERT INTO hosted_workspaces (id, project_id, name, spec, spec_hash, state, created_at, updated_at)
-         VALUES ('hw_1', 'prj_b', 'dev', '{}', 'h', 'ready', 1, 1)",
-        params![],
-    )
-    .unwrap();
+}
+
+/// A hosted workspace's secret, sealed as it was before M209: with the
+/// master key itself.
+fn sealed_by_master(db: &Db, master: &SecretCipher, workspace: &str, name: &str, value: &str) {
+    db.c()
+        .execute(
+            "INSERT INTO hosted_workspace_secrets (workspace_id, name, store, sealed, updated_at)
+             VALUES (?1, ?2, 'sealed', ?3, 1)",
+            params![workspace, name, master.seal(workspace, name, value).unwrap()],
+        )
+        .unwrap();
+}
+
+/// Two projects' hosted workspaces' secrets and a project's own inference
+/// key, sealed as they were before M209: with the master key itself.
+fn before_m209(db: &Db, master: &SecretCipher) {
+    projects(db, &["prj_a", "prj_b"]);
+    workspace(db, "hw_a", "prj_a");
+    workspace(db, "hw_1", "prj_b");
+    sealed_by_master(db, master, "hw_a", "GITHUB_TOKEN", "ghp_alice");
+    sealed_by_master(db, master, "hw_1", "NPM_TOKEN", "npm_bob");
+    sealed_by_master(db, master, "hw_1", "DB_URL", "postgres://b");
+    let c = db.c();
     c.execute(
         "INSERT INTO hosted_workspace_secrets (workspace_id, name, store, sealed, updated_at)
-         VALUES ('hw_1', 'DB_URL', 'sealed', ?1, 1), ('hw_1', 'ANTHROPIC_KEY', 'broker', NULL, 1)",
-        params![master.seal("hw_1", "DB_URL", "postgres://b").unwrap()],
+         VALUES ('hw_1', 'ANTHROPIC_KEY', 'broker', NULL, 1)",
+        params![],
     )
     .unwrap();
     c.execute(
@@ -61,12 +73,12 @@ fn before_m209(db: &Db, master: &SecretCipher) {
 /// Every stored secret, opened as the platform opens it.
 fn values(db: &Db, master: &SecretCipher) -> Vec<String> {
     let mut out = Vec::new();
-    for (account, name) in [("alice", "GITHUB_TOKEN"), ("bob", "NPM_TOKEN")] {
-        let (project, sealed) = db.cloud_secret(account, name).unwrap().unwrap();
-        out.push(open_cloud(&db.c(), master, account, name, project.as_deref(), &sealed).unwrap());
+    for (project, workspace, name) in
+        [("prj_a", "hw_a", "GITHUB_TOKEN"), ("prj_b", "hw_1", "NPM_TOKEN"), ("prj_b", "hw_1", "DB_URL")]
+    {
+        let sealed = db.hosted_secret_sealed(workspace, name).unwrap().unwrap();
+        out.push(open_hosted(&db.c(), master, project, workspace, name, &sealed).unwrap());
     }
-    let sealed = db.hosted_secret_sealed("hw_1", "DB_URL").unwrap().unwrap();
-    out.push(open_hosted(&db.c(), master, "prj_b", "hw_1", "DB_URL", &sealed).unwrap());
     for (provider, sealed) in db.sealed_inference_keys("prj_a").unwrap() {
         out.push(open_inference(&db.c(), master, "prj_a", &provider, &sealed).unwrap());
     }
@@ -78,8 +90,7 @@ const VALUES: [&str; 4] = ["ghp_alice", "npm_bob", "postgres://b", "sk-ant-a"];
 fn key_versions(db: &Db) -> Vec<i64> {
     db.c()
         .query_map(
-            "SELECT key_version FROM cloud_secrets UNION ALL
-             SELECT key_version FROM hosted_workspace_secrets WHERE sealed IS NOT NULL UNION ALL
+            "SELECT key_version FROM hosted_workspace_secrets WHERE sealed IS NOT NULL UNION ALL
              SELECT key_version FROM project_inference_keys",
             params![],
             |r| r.get(0),
@@ -90,8 +101,7 @@ fn key_versions(db: &Db) -> Vec<i64> {
 fn sealed_bytes(db: &Db) -> Vec<Vec<u8>> {
     db.c()
         .query_map(
-            "SELECT sealed FROM cloud_secrets UNION ALL
-             SELECT sealed FROM hosted_workspace_secrets WHERE sealed IS NOT NULL UNION ALL
+            "SELECT sealed FROM hosted_workspace_secrets WHERE sealed IS NOT NULL UNION ALL
              SELECT sealed FROM project_inference_keys",
             params![],
             |r| r.get(0),
@@ -141,14 +151,14 @@ fn a_projects_key_cant_open_another_projects_secrets() {
 
     // Another table's sealed value, put in project_secrets under its own
     // name, doesn't open as one: the table is bound too.
-    let cloud = seal_value(&db.c(), &m, "prj_a", &cloud_name("alice", "T"), "cloud-a").unwrap();
+    let hosted = seal_value(&db.c(), &m, "prj_a", &hosted_name("hw_a", "T"), "hosted-a").unwrap();
     db.c()
         .execute(
             "INSERT INTO project_secrets (project_id, name, key_version, sealed, updated_at) VALUES ('prj_a', ?1, ?2, ?3, 1)",
-            params![cloud_name("alice", "T"), cloud.key_version, cloud.bytes],
+            params![hosted_name("hw_a", "T"), hosted.key_version, hosted.bytes],
         )
         .unwrap();
-    assert!(open(&db, &m, "prj_a", &cloud_name("alice", "T")).is_err());
+    assert!(open(&db, &m, "prj_a", &hosted_name("hw_a", "T")).is_err());
 }
 
 /// Making a project's key twice keeps the first; a new key seals with
@@ -193,9 +203,10 @@ fn reseal_is_idempotent_and_survives_stopping_halfway() {
     {
         let mut c = db.c();
         let tx = c.transaction().unwrap();
-        let s = seal_value(&tx, &m, "prj_b", &cloud_name("bob", "NPM_TOKEN"), "npm_bob").unwrap();
+        let s = seal_value(&tx, &m, "prj_b", &hosted_name("hw_1", "NPM_TOKEN"), "npm_bob").unwrap();
         tx.execute(
-            "UPDATE cloud_secrets SET sealed = ?1, key_version = ?2 WHERE account = 'bob'",
+            "UPDATE hosted_workspace_secrets SET sealed = ?1, key_version = ?2
+             WHERE workspace_id = 'hw_1' AND name = 'NPM_TOKEN'",
             params![s.bytes, s.key_version],
         )
         .unwrap();
@@ -224,27 +235,22 @@ fn reseal_leaves_what_it_cant_do() {
     let m = master(OLD);
     before_m209(&db, &m);
     projects(&db, &["prj_c"]);
-    let c = db.c();
-    c.execute(
-        "INSERT INTO cloud_secrets (account, name, sealed, project_id) VALUES ('carol', 'T', ?1, 'prj_c')",
-        params![master(NEW).seal("carol", "T", "other-key").unwrap()],
-    )
-    .unwrap();
-    drop(c);
+    workspace(&db, "hw_c", "prj_c");
+    sealed_by_master(&db, &master(NEW), "hw_c", "T", "other-key");
     let r = reseal(&db, &m, usize::MAX).unwrap();
     assert_eq!(r.resealed, 4);
-    assert_eq!(r.left, ["cloud_secrets carol T"]);
-    let (_, carol) = db.cloud_secret("carol", "T").unwrap().unwrap();
+    assert_eq!(r.left, ["hosted_workspace_secrets hw_c T"]);
+    let carol = db.hosted_secret_sealed("hw_c", "T").unwrap().unwrap();
     assert_eq!(carol.key_version, MASTER);
-    assert_eq!(master(NEW).open("carol", "T", &carol.bytes).unwrap(), "other-key", "never lost");
+    assert_eq!(master(NEW).open("hw_c", "T", &carol.bytes).unwrap(), "other-key", "never lost");
 
     // Changed under it: the newer value wins.
     let store = &STORES[0];
-    let row = store.read(&db.c()).unwrap().into_iter().find(|r| r.a == "carol").unwrap();
-    let newer = Sealed { key_version: MASTER, bytes: master(NEW).seal("carol", "T", "newer").unwrap() };
-    db.put_cloud_secret("carol", "prj_c", "T", &newer).unwrap();
+    let row = store.read(&db.c()).unwrap().into_iter().find(|r| r.a == "hw_c").unwrap();
+    let newer = Sealed { key_version: MASTER, bytes: master(NEW).seal("hw_c", "T", "newer").unwrap() };
+    db.set_hosted_secret("hw_c", "T", Some(&newer), 2).unwrap();
     assert!(!reseal_row(&db, &master(NEW), store, &row).unwrap());
-    assert_eq!(db.cloud_secret("carol", "T").unwrap().unwrap().1, newer);
+    assert_eq!(db.hosted_secret_sealed("hw_c", "T").unwrap().unwrap(), newer);
 }
 
 /// Rotating the master key re-wraps every project key, leaves every
@@ -321,25 +327,15 @@ fn a_row_an_old_build_wrote_over_still_opens_and_is_resealed() {
     assert_eq!(key_versions(&db), [1, 1, 1, 1]);
     // The upserts as main had them before M209, which don't know key_version.
     let c = db.c();
-    let old_put = match c.dialect() {
-        crate::db::migrate::Dialect::Sqlite => {
-            "INSERT INTO cloud_secrets(account,name,sealed,project_id) VALUES(?1,?2,?3,?4)
-             ON CONFLICT(account,name) DO UPDATE SET sealed=excluded.sealed"
-        }
-        crate::db::migrate::Dialect::Postgres => {
-            "INSERT INTO cloud_secrets(account,name,sealed,project_id) VALUES(?1,?2,?3,?4)
-             ON CONFLICT(project_id,name) DO UPDATE SET sealed=excluded.sealed"
-        }
-    };
-    c.execute(old_put, params!["alice", "GITHUB_TOKEN", m.seal("alice", "GITHUB_TOKEN", "ghp_new").unwrap(), "prj_a"])
+    for (workspace, name, value) in [("hw_a", "GITHUB_TOKEN", "ghp_new"), ("hw_1", "DB_URL", "postgres://new")] {
+        c.execute(
+            "INSERT INTO hosted_workspace_secrets (workspace_id, name, store, sealed, updated_at) VALUES (?1, ?2, 'sealed', ?3, 2)
+             ON CONFLICT (workspace_id, name) DO UPDATE SET store = excluded.store, sealed = excluded.sealed,
+                 updated_at = excluded.updated_at",
+            params![workspace, name, m.seal(workspace, name, value).unwrap()],
+        )
         .unwrap();
-    c.execute(
-        "INSERT INTO hosted_workspace_secrets (workspace_id, name, store, sealed, updated_at) VALUES ('hw_1', 'DB_URL', 'sealed', ?1, 2)
-         ON CONFLICT (workspace_id, name) DO UPDATE SET store = excluded.store, sealed = excluded.sealed,
-             updated_at = excluded.updated_at",
-        params![m.seal("hw_1", "DB_URL", "postgres://new").unwrap()],
-    )
-    .unwrap();
+    }
     c.execute(
         "INSERT INTO project_inference_keys (project_id, provider, sealed, set_by, updated_at) VALUES ('prj_a', 'anthropic', ?1, 'alice', 2)
          ON CONFLICT (project_id, provider) DO UPDATE SET sealed = excluded.sealed, set_by = excluded.set_by,
@@ -408,7 +404,7 @@ fn a_gone_projects_rows_are_left_alone() {
     assert_eq!(check(&db.c(), &m).unwrap(), Checked { opened: 2, by_master: 2, orphaned: 2, ..Default::default() });
     let r = reseal(&db, &m, usize::MAX).unwrap();
     assert_eq!(r.resealed, 2);
-    assert_eq!(r.left, ["cloud_secrets bob NPM_TOKEN", "hosted_workspace_secrets hw_1 DB_URL"]);
+    assert_eq!(r.left, ["hosted_workspace_secrets hw_1 DB_URL", "hosted_workspace_secrets hw_1 NPM_TOKEN"]);
     assert!(seal_value(&db.c(), &m, "prj_b", "X", "x").is_err());
     let keys: Vec<String> = db.c().query_map("SELECT project_id FROM project_keys", params![], |r| r.get(0)).unwrap();
     assert_eq!(keys, ["prj_a"]);

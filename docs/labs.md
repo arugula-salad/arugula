@@ -8,9 +8,9 @@ This page is the team's description of them. It was the *Labs* sections
 of the public features, teams, advanced and control pages until those
 moved to the site.
 
-Managoat was here until it left Labs (#942, F5), and its daemon side was
-removed on 2026-10-18; cloud agents run through Arugula control now
-([managoat.md](managoat.md)). Huddles,
+Managoat was here until it left Labs (#942, F5). Its daemon side was
+removed on 2026-10-18 and control's on 2026-10-23; agents in the cloud run
+on hosted workspaces now ([managoat.md](managoat.md)). Huddles,
 voice calls on a session, were here until they were removed (2026-10-18,
 DECISIONS.md "Huddles are removed"); a `huddles` flag left in `flags.json`
 does nothing.

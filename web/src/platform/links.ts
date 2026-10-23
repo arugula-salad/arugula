@@ -2,7 +2,6 @@
 // with each id's current name for its slug.
 
 import { chat } from "../shared/chat-store";
-import { cloudWorkspaces } from "../shared/cloud";
 import { issues } from "../shared/issues/store";
 import { runs } from "./runs";
 import { current, pathOf, type Route } from "./router";
@@ -35,15 +34,14 @@ export function roomPath(room: string, msg?: number): string {
 /** Each id's name now, for its slug. */
 export function names(id: string): string | undefined {
   if (id.startsWith("prj_")) return session.project(id)?.name;
-  if (id.startsWith("cw_")) return cloudWorkspaces.find(id)?.name;
   if (id.startsWith("iss_")) return issues.known(id)?.title;
   const r = chat.room(id);
   return r?.kind === "channel" ? r.name : undefined;
 }
 
-/** Where an id-only address (`/chat/:room`, `/workspaces/:id`…) belongs,
+/** Where an id-only address (`/chat/:room`, `/issues/:issue`…) belongs,
  * once the page knows enough to say: null until then. A room needs chat's
- * rooms (its team says its project); Cloud is the reader's own project's. */
+ * rooms (its team says its project). */
 export function resolve(r: Extract<Route, { page: "find" }>): string | null {
   const own = session.personal()?.id;
   if (!own) return null;
@@ -57,16 +55,12 @@ export function resolve(r: Extract<Route, { page: "find" }>): string | null {
     const team = session.projects.find((p) => p.team)?.id;
     return pathOf({ page: "chat", project: team ?? own, ...(r.view ? { view: r.view, q: r.q } : {}) }, names);
   }
-  if (r.what === "past") return pathOf({ page: "past", project: own, id: r.id }, names);
   if (r.what === "issue") {
     // Its project, once the page has read it (the page asks).
     const i = issues.known(r.issue);
     return i ? pathOf({ page: "issue", project: i.project, issue: i.id, ...(r.msg !== undefined ? { msg: r.msg } : {}) }, names) : null;
   }
-  if (r.what === "run") {
-    // Its project, once the page has read it (the page asks).
-    const x = runs.known(r.run);
-    return x ? pathOf({ page: "run", project: x.project, run: x.id, ...(r.msg !== undefined ? { msg: r.msg } : {}) }, names) : null;
-  }
-  return pathOf(r.workspace ? { page: "workspace", project: own, workspace: r.workspace, ...(r.tab ? { tab: r.tab } : {}) } : { page: "workspaces", project: own }, names);
+  // A run: its project, once the page has read it (the page asks).
+  const x = runs.known(r.run);
+  return x ? pathOf({ page: "run", project: x.project, run: x.id, ...(r.msg !== undefined ? { msg: r.msg } : {}) }, names) : null;
 }

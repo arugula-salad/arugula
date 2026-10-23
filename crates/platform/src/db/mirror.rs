@@ -1,6 +1,6 @@
 //! The forge mirror's rows (M164, #1210): a linked repo's items, checks
 //! and events, as the App's webhooks and the repo's poller write them, and
-//! the poller's lease on the repo (`linked_repos.lease`, `cloud_jobs`'
+//! the poller's lease on the repo (`linked_repos.lease`, `platform_jobs`'
 //! way). Nothing here hands items to a person: reading them is M165's,
 //! behind its per-viewer check.
 //!
@@ -462,7 +462,7 @@ pub enum Finish {
 pub const MAX_BACKOFF_MS: u64 = 3_600_000;
 
 /// What a claim's `SELECT` ends with: on Postgres it passes over a repo
-/// another machine's claim holds (`cloud_jobs`' way, M144). SQLite's
+/// another machine's claim holds (`platform_jobs`' way). SQLite's
 /// `BEGIN IMMEDIATE` makes claims take turns.
 fn skip_locked(c: &impl Sql) -> &'static str {
     match c.dialect() {

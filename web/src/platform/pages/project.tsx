@@ -1,18 +1,17 @@
 // `/p/:project`: a project's home (M150): its channels and direct
-// messages, its Cloud workspaces, its drafts waiting on linked repos
+// messages, its hosted workspaces, its drafts waiting on linked repos
 // (M170), and who's in its team. Membership shows read only: rosters
 // change in the shell, signed by a device ("The platform page is on
 // app.arugula.io, not on the keys' origin"), so the link goes there.
 
 import { chat } from "../../shared/chat-store";
-import { cloudWorkspaces, cloudWorkspaceState } from "../../shared/cloud";
-import { newCloudWorkspace } from "../cloud/workspaces";
 import { ProjectDrafts } from "../drafts";
 import { MsgAvatar } from "../../shared/chat/avatar";
 import { useSubscribe } from "../../shared/ui/hooks";
 import { names, roomPath } from "../links";
 import { follow, pathOf } from "../router";
 import { controlOrigin, session, type PlatformProject } from "../session";
+import { HostedWorkspaceList, NoWorkspaces, useHostedWorkspaces } from "./hosted-workspace";
 import { ProjectIssues } from "./issues";
 
 const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
@@ -20,13 +19,13 @@ const ROLE: Record<string, string> = { owner: "Owner", editor: "Editor", viewer:
 export function ProjectHome({ id }: { id: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   useSubscribe((fn) => chat.subscribe(fn));
-  useSubscribe((fn) => cloudWorkspaces.subscribe(fn));
+  const workspaces = useHostedWorkspaces(id);
   const p = session.project(id);
   if (!p) return <Missing what="That project isn't one of yours (or it's gone)." />;
   const rooms = chat.on ? chat.rooms.filter((r) => (p.team ? r.team === p.team.id : !r.team) && (r.kind === "channel" || r.kind === "dm")) : [];
-  const workspaces = p.team ? [] : cloudWorkspaces.list;
   const chatPath = pathOf({ page: "chat", project: p.id }, names);
   const settingsPath = pathOf({ page: "project-settings", project: p.id }, names);
+  const workspacesPath = pathOf({ page: "workspaces", project: p.id }, names);
   const nameOf = (account: string) =>
     account === session.me?.account ? "you" : (p.team?.members.find((m) => m.account === account)?.name ?? "someone who left");
   return (
@@ -64,29 +63,14 @@ export function ProjectHome({ id }: { id: string }) {
               })}
           </ul>
           {chat.on && <ProjectIssues p={p} />}
-          {!p.team && (
+          {(session.hosted || !!workspaces?.length) && (
             <>
               <h2>
-                <a href={pathOf({ page: "workspaces", project: p.id }, names)} onClick={(e) => follow(e, pathOf({ page: "workspaces", project: p.id }, names))}>
-                  Cloud workspaces
-                </a>{" "}
-                <button class="chat-new" title="New Cloud workspace" aria-label="New Cloud workspace" data-project-new-workspace onClick={() => newCloudWorkspace()}>
-                  +
-                </button>
+                <a href={workspacesPath} onClick={(e) => follow(e, workspacesPath)}>
+                  Workspaces
+                </a>
               </h2>
-              {cloudWorkspaces.loaded && workspaces.length === 0 && <p class="dim">None yet.</p>}
-              <ul class="platform-list" data-project-workspaces>
-                {workspaces.map((w) => {
-                  const to = pathOf({ page: "workspace", project: p.id, workspace: w.id }, names);
-                  return (
-                    <li key={w.id}>
-                      <a href={to} data-project-workspace={w.id} onClick={(e) => follow(e, to)}>
-                        {w.name} <span class="dim">· {cloudWorkspaceState(w).word}</span>
-                      </a>
-                    </li>
-                  );
-                })}
-              </ul>
+              {workspaces === null ? null : workspaces.length ? <HostedWorkspaceList project={p.id} list={workspaces} /> : <NoWorkspaces project={p.id} />}
             </>
           )}
         </div>

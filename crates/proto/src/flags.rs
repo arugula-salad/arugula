@@ -144,13 +144,13 @@ pub const FLAGS: &[Flag] = &[
 pub const RETIRED: &[(&str, &str)] = &[
     (
         "fountain",
-        "Direct Managoat execution is retired: open Cloud agents in your Arugula account to run agents or import old definitions",
+        "Direct Managoat execution is retired: agents in the cloud run on Cloud workspaces in your Arugula projects",
     ),
     ("huddles", "Huddles (voice calls on a session) were removed from Arugula"),
     // Never a flag, but the name it would have now.
     (
         "managoat",
-        "Direct Managoat execution is retired: open Cloud agents in your Arugula account to run agents or import old definitions",
+        "Direct Managoat execution is retired: agents in the cloud run on Cloud workspaces in your Arugula projects",
     ),
 ];
 
@@ -770,7 +770,10 @@ mod tests {
         assert_eq!(names(&d), [STUDIO]);
         for e in [set(&d, "fountain", true).unwrap_err(), unset(&d, "fountain").unwrap_err()] {
             assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
-            assert!(e.to_string().contains("isn't a flag any more") && e.to_string().contains("Cloud agents"), "{e}");
+            assert!(
+                e.to_string().contains("isn't a flag any more") && e.to_string().contains("Cloud workspaces"),
+                "{e}"
+            );
         }
         fs::remove_dir_all(&d).unwrap();
     }

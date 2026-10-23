@@ -31,9 +31,10 @@ use crate::{
 
 pub trait PlatformPort: Send + Sync {
     /// What stands in the way of deleting an account, as sentences for its
-    /// person: cloud runs still stopping, Cloud workspaces still being
-    /// deleted. With `start`, it also asks for what takes time to go
-    /// (Cloud workspaces at Managoat). Empty: go ahead.
+    /// person. With `start`, it also asks for what takes time to go. Empty:
+    /// go ahead. Nothing does now: Managoat-backed Cloud workspaces and runs
+    /// did until M189 and M190 removed them, and a hosted workspace is
+    /// deleted with the account (`account_deleted`).
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>>;
 
     /// An account is gone from the hub: erase what the platform holds of
@@ -196,8 +197,8 @@ pub trait PlatformPort: Send + Sync {
 
     /// Whether `daemon` holds a live `cloud.drive` grant for `account`
     /// (M184): the relay routes a machine to a hosted workspace's machine
-    /// only then, as the Cloud routes check it ("Grants, not
-    /// impersonation"). A platform from before M184 doesn't say: refused.
+    /// only then, as the hosted workspace routes check it ("Grants,
+    /// not impersonation"). A platform from before M184 doesn't say: refused.
     fn machine_drives<'a>(&'a self, daemon: &'a str, account: &'a str) -> BoxFuture<'a, anyhow::Result<bool>> {
         let _ = (daemon, account);
         Box::pin(async { anyhow::bail!("this platform doesn't route machines to hosted workspaces") })
@@ -267,8 +268,8 @@ pub struct Deleted {
 }
 
 /// In process. Billing (M139) answers `active_plans`, `roster_changed`
-/// and its part of `account_deleted`; Cloud (M137) `delete_blockers` and
-/// its part of `account_deleted`; chat (M138) `chat_on` and its part of
+/// and its part of `account_deleted`; `delete_blockers` has nothing to say
+/// since Cloud's Managoat side went (M189, M190); chat (M138) `chat_on` and its part of
 /// `account_deleted`; projects and grants, the forge mirror (M162) and
 /// native issues (M194), their part of `account_deleted`; the GitHub App
 /// (M161) `forge_standing` and `github_token`; sends (M168) `send_draft`;
@@ -283,10 +284,8 @@ pub struct Deleted {
 /// `hosted_secrets`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
-        Box::pin(async move {
-            let blockers = crate::cloud::account::delete_blockers(self, account, start)?;
-            Ok(blockers)
-        })
+        let _ = (account, start);
+        Box::pin(async { Ok(vec![]) })
     }
 
     fn account_deleted<'a>(&'a self, deleted: &'a Deleted) -> BoxFuture<'a, anyhow::Result<()>> {
@@ -314,7 +313,6 @@ impl PlatformPort for Platform {
             };
             crate::chat::account_gone(self, &rooms);
             crate::run_logs::delete_files(self, &run_files, arugula_e2e::now_ms()).await;
-            crate::cloud::account::account_deleted(self, &deleted.account)?;
             Ok(())
         })
     }

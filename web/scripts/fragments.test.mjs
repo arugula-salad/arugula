@@ -25,11 +25,6 @@ test("each old route of the platform's, with real parameters, lands on its new p
     ["#chat=search/", "/chat/search"],
     // A machine's own thread, from before M125: chat, from the top.
     ["#chat=laptop/pane-3", "/chat"],
-    ["#cloud=run_00ff11ee22", "/past/run_00ff11ee22"],
-    ["#cloud=cwc_00ff11ee22", "/past/cwc_00ff11ee22"],
-    ["#cloud-ws", "/workspaces"],
-    ["#cloud-ws=cw_0123abcd", "/workspaces/cw_0123abcd"],
-    ["#cloud-ws=cw_0123abcd/cwc_4567ef01", "/workspaces/cw_0123abcd/cwc_4567ef01"],
   ];
   for (const [hash, path] of cases) {
     assert.equal(platformPath(hash), path, hash);
@@ -59,6 +54,10 @@ test("the secret-bearing fragments, and the shell's own, are never redirected", 
     "#lend=on",
     "#chatty",
     "#cloudy",
+    // Managoat's Cloud workspaces went, and their old links with them.
+    "#cloud-ws",
+    "#cloud-ws=cw_0123abcd",
+    "#cloud=run_00ff11ee22",
   ]) {
     assert.equal(platformPath(hash), null, hash);
   }

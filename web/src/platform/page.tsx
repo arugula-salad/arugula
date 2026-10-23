@@ -12,7 +12,6 @@ import { go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
 import { signIn } from "./signin";
 import { toasts } from "./toast";
-import { AgentsPage } from "./pages/agents";
 import { IssuePage } from "./pages/issue";
 import { IssuesPage, NewIssuePage } from "./pages/issues";
 import { issues } from "../shared/issues/store";
@@ -24,7 +23,6 @@ import { InboxPage } from "./pages/inbox";
 import { Missing, ProjectHome } from "./pages/project";
 import { Installed, ProjectSettings } from "./pages/project-settings";
 import { SettingsPage } from "./pages/settings";
-import { PastPage, WorkspacesPage } from "./pages/workspace";
 import { HostedWorkspacePage, HostedWorkspaces } from "./pages/hosted-workspace";
 import { RunPage, RunsPage } from "./pages/runs";
 import { runs } from "./runs";
@@ -67,12 +65,7 @@ function body(r: Route, lost: string | null) {
     case "run":
       return <RunPage project={r.project} run={r.run} msg={r.msg} />;
     case "workspaces":
-      return (
-        <>
-          <HostedWorkspaces project={r.project} />
-          <WorkspacesPage />
-        </>
-      );
+      return <HostedWorkspaces project={r.project} />;
     case "project-settings":
       return <ProjectSettings id={r.project} link={r.link} />;
     case "new-deploy":
@@ -81,17 +74,9 @@ function body(r: Route, lost: string | null) {
       return <Installed project={r.project} repo={r.repo} />;
     case "workspace":
       // M184: a hosted workspace is a machine of the project.
-      return r.workspace.startsWith("hw_") ? (
-        <HostedWorkspacePage project={r.project} workspace={r.workspace} />
-      ) : (
-        <WorkspacesPage workspace={r.workspace} />
-      );
-    case "past":
-      return <PastPage id={r.id} />;
+      return <HostedWorkspacePage project={r.project} workspace={r.workspace} />;
     case "inbox":
       return <InboxPage />;
-    case "agents":
-      return <AgentsPage />;
     case "settings":
       return <SettingsPage />;
     case "deploy":

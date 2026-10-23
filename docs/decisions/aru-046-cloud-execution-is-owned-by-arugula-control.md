@@ -24,15 +24,16 @@ evidence:
     url: "https://github.com/arugula-salad/arugula/issues/1235"
   - title: "#1236"
     url: "https://github.com/arugula-salad/arugula/issues/1236"
+  - title: "#1250"
+    url: "https://github.com/arugula-salad/arugula/issues/1250"
+  - title: "#1251"
+    url: "https://github.com/arugula-salad/arugula/issues/1251"
 decided_by: "jhgaylor"
 decided_on: "2026-10-16"
 reviews: []
 constrains:
   - "path:crates/platform/src/cloud"
-  - "path:crates/platform/src/db/cloud.rs"
-  - "path:web/src/platform/cloud/cloud.tsx"
-  - "path:web/src/platform/cloud/workspaces.tsx"
-  - "path:web/src/platform/cloud/launch.tsx"
+  - "path:crates/platform/src/hosted"
   - "path:spikes/s40-cloud-workspaces/PLAN.md"
 ---
 
@@ -71,10 +72,9 @@ processes: a hub and a platform", #1150): the worker, its leases, Managoat
 and cloud secrets move there (M137), and the hub's gateway keeps the Cloud
 paths on `control.arugula.io`.
 
-Where: `crates/platform/src/cloud/`, `crates/platform/src/db/cloud.rs`,
-`web/src/platform/cloud/cloud.tsx`, `web/src/platform/cloud/workspaces.tsx`,
-`web/src/platform/cloud/launch.tsx`, [managed cloud agents](docs/managoat.md),
-`spikes/s40-cloud-workspaces/PLAN.md`.
+Where (until 2026-10-23): `crates/platform/src/cloud/`,
+`crates/platform/src/db/cloud.rs`, `web/src/platform/cloud/`,
+`spikes/s40-cloud-workspaces/PLAN.md`; in git before #1250's PR.
 From: Jake's managed-platform integration decisions, 2026-10-16; #1039.
 
 **Step 5 (#1235, Jake, 2026-10-21): a Cloud workspace becomes a hosted
@@ -87,3 +87,15 @@ deleted 14 days after the notice (M189). The M20 hosted-sandbox product
 (`arugulad` in a Sprites VM) is retired with it (M190). Control still owns
 the account and inference configuration ("Hosted inference: strangers bring
 their own key"). From: M175 (#1236).
+
+**Managoat removed (Jake, 2026-10-23).** Jake was the beta's only user, so
+instead of moving and archiving he chose to delete it all. Managoat's
+resources went first (`managoat-retire --execute`: 2 workspaces, 2 vaults,
+2 environments), then the code (the `/api/cloud/…` routes, the worker, the
+move, `managoat-retire`, the agent library, cloud secrets and past runs)
+and its 11 `cloud_*` tables (platform migration 0030), with nothing
+archived. Control's Cloud is hosted workspaces only now
+(`crates/platform/src/hosted/`). What the Managoat era left in
+`crates/platform/src/cloud/` is the `cloud.drive` check and the master key's
+and beta allowlist's flags. Where it went: [docs/managoat.md](docs/managoat.md).
+From: M189 (#1250), M190 (#1251).

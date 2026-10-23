@@ -1,4 +1,4 @@
-//! Who control trusts for outgoing TLS (GitHub, Stripe, Managoat,
+//! Who control trusts for outgoing TLS (GitHub, Stripe, PostHog,
 //! E2B), in both processes. The
 //! platform's roots first. On a machine with none (a bare container image
 //! without `ca-certificates`, where someone runs the static binary

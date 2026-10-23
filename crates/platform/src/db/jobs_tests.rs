@@ -1,5 +1,5 @@
-//! `platform_jobs`' lease (M208): `cloud_jobs`' lease tests in `db::cloud`,
-//! ported, plus the back-off, heartbeat and cancel. Each runs on SQLite and,
+//! `platform_jobs`' lease (M208): claims, checkpoints and a lease that
+//! runs out, plus the back-off, heartbeat and cancel. Each runs on SQLite and,
 //! with `ARUGULA_TEST_POSTGRES_URL`, on Postgres.
 use super::*;
 use serde_json::json;
@@ -86,7 +86,7 @@ fn a_stale_holder_cannot_write_over_the_job_once_reclaimed() {
     assert_eq!(db.claim_job(&[JobKind::Run], 130_000).unwrap().unwrap().id, "run_1");
 }
 
-/// Stricter than `cloud_jobs`: once its lease has run out a holder writes
+/// Once its lease has run out a holder writes
 /// nothing, even before another claim takes the job, and a heartbeat can't
 /// bring the lease back. A heartbeat holds it at most `MAX_EXTEND_MS` ahead.
 #[test]

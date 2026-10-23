@@ -66,17 +66,7 @@ their account's first device; only `DEV_CONTROL_LOGIN`'s are approved for
 you). Control is on 127.0.0.1, where WebAuthn refuses passkeys:
 `DEV_CONTROL_HOST=localhost` puts it on `http://localhost:7690`, with
 passkeys, in a state directory of its own
-(`~/.local/state/arugula-dev-control-localhost`). `DEV_CONTROL_CLOUD=1`
-turns Cloud on for every account, with a fake Managoat
-(`fakeManagoat()` in `web/fixtures/fakes.ts`, the one `cloud.spec.ts`
-uses) that keeps its state beside control's database. Its first run makes
-three Cloud workspaces to look at: *app*, ready with two tabs (one wrote a
-change for Changes, one waits on an approval, so its Rebuild asks to
-interrupt), *api*, ready with settings saved since it was built (*Rebuild
-needed*), and *web*, whose setup failed (*Retry* sets it up), plus a past
-run under *Cloud agents…*. Delete the state directory to make them again.
-With `DEV_CONTROL_CLOUD_FULL=1` too, Managoat has no machine free for a
-rebuild, so a Rebuild waits for a machine (with *Cancel*).
+(`~/.local/state/arugula-dev-control-localhost`).
 `DEV_CONTROL_CHAT=1` turns on control's chat (M123): team *Acme*, with
 `$DEV_CONTROL_LOGIN` its owner and everyone in `DEV_CONTROL_LOGINS` a
 member (each with a headless device of their own that approves their

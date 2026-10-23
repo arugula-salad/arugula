@@ -3,7 +3,7 @@
 // `Retry-After` in seconds and `{"error": …, "reason": "maintenance"}`,
 // while terminals and the relay keep working. The page waits them out:
 // `platformFetch` tries again in the background, and `maintenance` says a
-// window is on, so the chat page and Cloud workspaces show a calm note
+// window is on, so the chat page and the platform page show a calm note
 // (ui/maintenance-note.tsx) rather than an error.
 //
 // The hub's gateway answers that 503 before it forwards anything, so a
@@ -67,7 +67,7 @@ async function isMaintenance(res: Response): Promise<boolean> {
   return j?.reason === MAINTENANCE;
 }
 
-/** `fetch` for control's platform routes (`/api/chat…`, `/api/cloud/…`,
+/** `fetch` for control's platform routes (`/api/chat…`, `/api/projects/…`,
  * `/api/billing…`): a maintenance window is waited out for up to five
  * minutes, then its 503 is the answer (`maintenanceOf` says so). A network
  * failure throws, as `fetch` does. `init.body` must be sendable twice (a

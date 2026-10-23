@@ -1,5 +1,5 @@
 // The attention drawer (M111, #1026): what waits on you, on every machine,
-// and in Cloud workspace tabs, from the fleet model the swarm already builds. The
+// from the fleet model the swarm already builds. The
 // header's bell, the footer's "needs input" and the sidebar's Needs you
 // open it. Selecting an item shows what it would run, where and who asks;
 // Allow and Deny (or the question's answer) go through the existing
@@ -8,8 +8,6 @@
 // buttons.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { cloudPanes, cloudWorkspaces } from "../../../shared/cloud";
-import { cloudFleet } from "../../cloud-fleet";
 import { type Client } from "../../client";
 import type { FleetPane } from "../../fleet";
 import { directory } from "../../hosts";
@@ -52,13 +50,9 @@ function wants(info: PaneInfo): boolean {
 /** Owner-only asks (#234 invites, M79 tasks from another agent). */
 const ownersOnly = (info: PaneInfo) => info.ask?.source === "invite" || info.ask?.source === "a2a";
 
-/** A Cloud workspace's tab: control's, answered where it's shown. */
-const inCloud = (p: FleetPane) => !!p.cloudTab;
-
 /** Everything that wants you: the shown machine's panes from its own
  * client (live, and it's the one that can act), every other machine's from
- * the fleet's summaries, and the account's Cloud workspace tabs. Waiting first, then
- * newest first. */
+ * the fleet's summaries. Waiting first, then newest first. */
 export function attentionItems(client: Client): AttentionItem[] {
   const out: AttentionItem[] = [];
   const current = directory.current;
@@ -93,11 +87,11 @@ export function attentionItems(client: Client): AttentionItem[] {
     }
   }
   const fleet = getFleet();
-  const others = fleet ? fleet.panes.filter((p) => p.host !== current) : cloudFleet();
+  const others = fleet ? fleet.panes.filter((p) => p.host !== current) : [];
   for (const p of others) {
     if (!wants(p.info)) continue;
     const roles = fleet?.host(p.host)?.summary?.roles;
-    const viewer = inCloud(p) ? false : ownersOnly(p.info) ? !!roles : fleet?.role(p) === "viewer";
+    const viewer = ownersOnly(p.info) ? !!roles : fleet?.role(p) === "viewer";
     out.push({ p, here: false, waiting: p.info.attention === "needs_input", viewer });
   }
   const since = (i: AttentionItem) => i.p.info.reason?.since_ms ?? i.p.info.ask?.at_ms ?? 0;
@@ -109,11 +103,10 @@ export function waitingCount(client: Client): number {
   return attentionItems(client).filter((i) => i.waiting).length;
 }
 
-/** Re-render on the shown machine's state, the fleet's and Cloud workspaces'. */
+/** Re-render on the shown machine's state and the fleet's. */
 export function useAttentionTick(client: Client) {
   useSubscribe((fn) => client.subscribe(fn));
   useSubscribe((fn) => getFleet()?.subscribe(fn) ?? (() => {}));
-  useSubscribe((fn) => cloudPanes.subscribe(fn));
   useSubscribe((fn) => directory.subscribe(fn));
 }
 
@@ -209,19 +202,15 @@ function commandOf(p: FleetPane): string | null {
 
 function titleOf(i: AttentionItem): string {
   const r = reasonOf(i.p);
-  if (!r) return i.p.cloudTab ? "Cloud workspace tab waits for you" : "Needs you";
+  if (!r) return "Needs you";
   return cardTitle(r, 1, [shortHost(i.p.host)], agentOf(i.p) ?? undefined);
 }
 
-/** Go to the item's pane (or Cloud workspace tab), on its machine, without answering. */
+/** Go to the item's pane, on its machine, without answering. */
 export function goToItem(client: Client, i: AttentionItem) {
   closeAttention(false);
   const at = currentPlace();
   if (at !== "panes") closePlace(at);
-  if (i.p.cloudTab) {
-    cloudWorkspaces.open(i.p.cloudTab.workspace, i.p.cloudTab.tab);
-    return;
-  }
   if (i.here) {
     client.setActive(i.p.id);
     requestAnimationFrame(() => client.viewOf(i.p.id)?.focus());
@@ -302,7 +291,7 @@ export function AttentionDrawer({ client }: { client: Client }) {
             <span class="ws-att-item-text">
               <span class="ws-att-item-title">{titleOf(i)}</span>
               <span class="ws-att-item-sub">
-                {[inCloud(i.p) ? "Cloud" : shortHost(i.p.host), i.p.session?.name, whatItDoes(i.p)].filter(Boolean).join(" · ")}
+                {[shortHost(i.p.host), i.p.session?.name, whatItDoes(i.p)].filter(Boolean).join(" · ")}
               </span>
             </span>
           </button>
@@ -345,7 +334,7 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
     void act({ action, pane: p.id, id: r?.ask?.id ?? (r?.gate ? gateKey(r.gate) : ask?.id), ...extra });
   const rows: [string, string | null | undefined][] = [
     ["Command", command],
-    ["Machine", inCloud(p) ? "Cloud" : p.host],
+    ["Machine", p.host],
     ["Directory", p.info.cwd],
     ["Agent", agent],
     ["Where", [p.session?.name, item.tab].filter(Boolean).join(" › ") || null],
@@ -368,7 +357,7 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
         )}
       </dl>
       <div class="ws-att-answer">
-        {inCloud(p) ? null : item.viewer ? (
+        {item.viewer ? (
           <p class="ask-viewer">{VIEWER_NOTE}</p>
         ) : p.stale && !item.here ? (
           <p class="ask-viewer">{shortHost(p.host)} isn't connected: go to the pane to answer once it is.</p>
@@ -421,7 +410,7 @@ function Detail({ client, item }: { client: Client; item: AttentionItem }) {
       </div>
       <div class="ws-att-go">
         <button class="ws-att-goto" data-attention-goto onClick={() => goToItem(client, item)} title="Show it, on its machine; this doesn't answer it">
-          {p.cloudTab ? "Go to the tab" : "Go to pane"}
+          Go to pane
         </button>
       </div>
     </section>

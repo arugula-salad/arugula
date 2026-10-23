@@ -268,7 +268,7 @@ async fn world() -> World {
     let app = Arc::new(p);
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let router = crate::cloud::tests::router(app.clone());
+    let router = crate::testing::router(app.clone());
     tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
 
     hub.github("alice", 1001, "alice-gh");

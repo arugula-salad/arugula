@@ -8819,92 +8819,10 @@ html[data-finish="glass"] .prompt-backdrop {
   color: var(--dim);
 }
 
-.cloud-panel { width: min(850px, 85vw); max-height: 85vh; overflow: auto; }
-.cloud-form { display: grid; gap: 12px; margin: 16px 0; }
-.cloud-form label { display: grid; gap: 5px; }
-.cloud-form input:not([type=checkbox]), .cloud-form textarea, .cloud-form select { width: 100%; box-sizing: border-box; }
-.cloud-runs { list-style: none; padding: 0; }
-.cloud-runs li { display: flex; justify-content: space-between; gap: 12px; margin: 8px 0; }
-.cloud-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-.cloud-transcript { margin: 16px 0; }
-.prompt-backdrop:has(.cloud-panel) { padding-top: 4vh; }
-.prompt:has(.cloud-panel) { box-sizing: border-box; width: min(900px, calc(100vw - 24px)); }
-.prompt .cloud-panel { width: 100%; max-height: 85vh; }
-.cloud-form textarea, .cloud-form select { padding: 8px; color: var(--fg); background: var(--letterbox); border: 1px solid var(--raised-hover); border-radius: 6px; font: inherit; }
-
-/* Account-owned agent panes use the same bar, transcript and tab surfaces. */
-.main > .cloud-agent { box-sizing: border-box; flex: 1; min-width: 0; width: 100%; height: 100%; min-height: 0; overflow: auto; }
-/* A tab: the bar and notes on top, the transcript scrolling between, the
- * prompt box at the bottom. */
-.cloud-ws-view > .cloud-agent > :not(.cloud-transcript) { flex-shrink: 0; }
-/* A past run or past tab reads as one page: the pane scrolls, not its transcript. */
-.main > .cloud-agent > .cloud-transcript { flex: none; overflow: visible; }
-.cloud-agent .cloud-tool { margin: 0; }
-.cloud-agent .cloud-tool > summary { cursor: pointer; list-style: none; }
-.agent-perm-done { margin: 6px 0 0; color: var(--dim); font-size: 12px; }
-.cloud-setup-log > summary { cursor: pointer; }
-.cloud-setup-log > summary h3 { display: inline; }
-.cloud-setup-step { margin: 6px 0; }
-.cloud-setup-step > summary { cursor: pointer; }
-.cloud-setup-status { color: var(--dim); font-size: 12px; }
-.cloud-setup-status.failed { color: var(--danger); }
-.cloud-agent .agent-bar { flex-wrap: wrap; }
-.cloud-agent .cloud-transcript { min-height: 160px; }
-.cloud-agent > .agent-note { padding: 8px 12px; overflow-wrap: anywhere; }
-.cloud-agent pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-.cloud-agent > details, .cloud-agent > h3 { margin: 8px 12px; }
-
-.prompt-backdrop:has(.agent-dialog), .prompt-backdrop:has(.cloud-launch) { padding-top: 16px; }
-.prompt.agent-dialog, .prompt.cloud-launch { box-sizing: border-box; max-height: calc(var(--app-height, 100dvh) - 32px); overflow-y: auto; }
-.prompt .cloud-panel.cloud-launch-form { max-height: none; overflow: visible; }
-
-/* Cloud workspaces (S40, M116): the list, a workspace, a tab, and their place in the sidebar. */
-/* `.main` is a block in the shell: the view takes its height, so a long
- * transcript scrolls inside the tab, not the page under the shell. */
-.main > .cloud-ws-view { box-sizing: border-box; flex: 1; min-width: 0; width: 100%; height: 100%; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
-.cloud-ws-view > .cloud-agent { flex: 1; min-height: 0; overflow: auto; }
-.cloud-ws-view.empty, .cloud-ws-home, .cloud-ws-view[data-cloud-ws-list] { padding: 16px; }
-.cloud-ws-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.cloud-ws-list, .cloud-ws-repos, .cloud-ws-tabs { list-style: none; padding: 0; }
-.cloud-ws-list li, .cloud-ws-tabs li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 8px 0; overflow-wrap: anywhere; }
-/* A long name gives way, never the status. */
-.cloud-ws-list li { overflow-wrap: normal; }
-.cloud-ws-list-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
-.cloud-ws-list-state { flex: none; white-space: nowrap; color: var(--dim); }
-.cloud-ws-repos li { margin: 6px 0; overflow-wrap: anywhere; }
-.cloud-ws-failed { margin: 12px; padding: 10px 12px; border: 1px solid var(--danger); border-radius: 6px; }
-.cloud-ws-error { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-.cloud-ws-repository { display: grid; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--raised-hover); }
-.cloud-tab-prompt { margin: 8px 12px 16px; }
-.ws-cloud-group { display: flex; flex-direction: column; padding: 0 6px 8px; min-width: 0; }
-.ws-ov-cloud-head { margin: 24px 0 8px; font-size: 14px; }
+.prompt-backdrop:has(.agent-dialog) { padding-top: 16px; }
+.prompt.agent-dialog { box-sizing: border-box; max-height: calc(var(--app-height, 100dvh) - 32px); overflow-y: auto; }
 a.ws-ov-name, a.ws-ov-pane { text-decoration: none; }
 .tab .attention.working { opacity: 0.5; }
-/* A Cloud workspace's Settings (S40, M117): Built vs Saved, and the form. */
-.cloud-ws-settings { margin: 16px 0; }
-.cloud-ws-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.cloud-ws-pending { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
-.cloud-ws-pending th, .cloud-ws-pending td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--raised-hover); overflow-wrap: anywhere; }
-.cloud-ws-pending pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-.cloud-ws-settings-form { max-width: 720px; }
-/* Rebuild and Retry (S40, M120). */
-.cloud-ws-settings-head > h3 { margin-right: auto; }
-.cloud-ws-mid-turn { padding: 8px 12px; border: 1px solid var(--raised-hover); border-radius: 6px; }
-.cloud-ws-mid-turn p { margin: 4px 0; }
-/* Moving a beta Cloud workspace off Managoat (M189): the notice, the move. */
-.cloud-move-notice { margin: 12px; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 6px; }
-.cloud-move-notice p { margin: 0; }
-.cloud-move { margin: 8px 0 12px; }
-.cloud-move-dialog { max-width: 640px; }
-.cloud-move-repos, .cloud-move-makes, .cloud-move-notes { margin: 4px 0 8px; padding-left: 18px; }
-.cloud-move-repos p { margin: 2px 0 6px; }
-.cloud-ws-retry { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-.cloud-ws-rebuild-waiting { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); white-space: nowrap; }
-.cloud-ws-rebuild-waiting .control-error { white-space: normal; }
-/* The strip: its tabs scroll, "+ Agent" stays one word beside them. */
-.cloud-tabstrip { display: flex; align-items: stretch; min-width: 0; }
-.cloud-tabstrip > .tabbar { flex: 0 1 auto; min-width: 0; }
-.new-tab.cloud-new-agent { flex: none; width: auto; padding: 0 10px; font-size: 13px; white-space: nowrap; }
 
 /* ---- the workspace (M108, #1023; the only one since M113): a rail, the session sidebar, a
    context header, the tab strip and a status footer around `.main`. Only
@@ -10845,36 +10763,6 @@ html[data-workspace="new"] .thread-panel {
 .grid.with-headers .pane-badge {
   display: none;
 }
-
-/* A Cloud workspace's Changes (S40, M118): git status and diff per repository, and a file. */
-.cloud-changes { display: flex; flex-direction: column; gap: 12px; }
-.cloud-changes-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
-.cloud-changes-repo { border: 1px solid var(--divider); border-radius: 6px; overflow: hidden; }
-.cloud-changes-repo > h4 { margin: 0; padding: 8px 10px; font-size: 13px; overflow-wrap: anywhere; border-bottom: 1px solid var(--divider); }
-.cloud-changes-repo > p { margin: 8px 10px; }
-.cloud-changes-status { list-style: none; margin: 0; padding: 6px 10px; }
-.cloud-changes-status li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
-.cloud-changes-open { border: none; background: none; padding: 0; color: var(--fg); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
-.cloud-changes-open:hover:not(:disabled) { text-decoration: underline; }
-.cloud-changes-diff > summary { cursor: pointer; list-style: none; }
-.cloud-changes .adds { color: #a6e3a1; }
-.cloud-changes .dels { color: #f38ba8; }
-.cloud-changes-file { border: 1px solid var(--divider); border-radius: 6px; padding: 8px 10px; }
-.cloud-changes-path { overflow-wrap: anywhere; min-width: 0; }
-.cloud-changes-content { max-height: 480px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-.cloud-tab-changes { padding: 8px 12px; max-height: 50%; overflow: auto; flex-shrink: 0; border-bottom: 1px solid var(--divider); }
-.cloud-ws-view button.link { padding: 0; border: none; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
-
-/* A Cloud workspace block (#1117): control mode's views in a block. */
-.cloud-ws-block .review-body.cloud-ws-view { display: flex; flex-direction: column; }
-.cloud-ws-block .cloud-ws-block-note { padding: 16px; }
-.cloud-ws-block .review-bar a.browser-open { padding: 3px 8px; font-size: 12px; text-decoration: none; }
-/* Its tabs: Overview, then each agent's, under the bar. */
-.cloud-ws-block .cloud-tabstrip { flex: none; overflow-x: auto; padding: 0 6px; border-bottom: 1px solid var(--divider); }
-.cloud-ws-block .cloud-tabstrip .tabbar { display: flex; }
-.cloud-ws-block .cloud-tabstrip .tab { display: flex; align-items: center; gap: 6px; padding: 6px 10px; white-space: nowrap; color: var(--dim); border-bottom: 2px solid transparent; cursor: pointer; }
-.cloud-ws-block .cloud-tabstrip .tab:hover { color: var(--fg); }
-.cloud-ws-block .cloud-tabstrip .tab.selected { color: var(--fg); border-bottom-color: var(--accent); }
 
 /* An agent's message (M197): its owner's, labelled "<owner>'s agent on
    <machine>", set apart with its own rule and badge; and the line a room

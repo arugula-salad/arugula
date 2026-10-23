@@ -313,8 +313,6 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
 - `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT` (`backup.rs`), and
   `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` (checked by
   `backup.rs`, read by Litestream from the environment it inherits).
-- `ARUGULA_MANAGOAT_API_KEY`: Cloud workspaces' provider. Without it,
-  Cloud workspaces are off.
 - `ARUGULA_E2B_API_KEY`, `ARUGULA_E2B_URL` (`https://api.e2b.dev` unless
   set; loam's is `https://api.e2b.<loam domain>`): hosted workspaces'
   boxes (`compute/`, M176), the platform's only. Never sent to a client or
@@ -357,21 +355,14 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
 - `ARUGULA_HOSTED_CONCURRENT_TURNS` (2), `ARUGULA_HOSTED_DAILY_TURNS` (100),
   `ARUGULA_HOSTED_TURN_MINUTES` (120): caps on agent turns that run on the
   platform's key, per account: at once, per UTC day, and minutes per UTC
-  day. A project's own key has none. The old `ARUGULA_CLOUD_DAILY_RUNS`,
-  `ARUGULA_CLOUD_CONCURRENT_RUNS` and `ARUGULA_CLOUD_RUN_MINUTES` do
-  nothing.
+  day. A project's own key has none.
 - `ARUGULA_CLOUD_SECRET_KEY`: the master key. It wraps each project's
   data key, which seals that project's secrets and its own inference keys
   ("Secrets' keys" below). Without it, a project can't set an inference
   key. `ARUGULA_CLOUD_SECRET_KEY_NEXT` and `ARUGULA_CLOUD_SECRET_KEY_PREVIOUS`
   are set only while it's rotated. Set but empty, it stops the platform.
-- `ARUGULA_CLOUD_ACCOUNTS`: who may use Cloud workspaces (`*` for all),
-  and whose hosted workspaces run on the platform's inference key (M185;
-  there, `*` is no one: only accounts named).
-- `ARUGULA_CLOUD_MODELS`: the `runtime:model` pairs a Cloud workspace's
-  tabs may run on, the first the default. `ARUGULA_CLOUD_MODEL` and
-  `ARUGULA_CLOUD_RUNTIME` are only read when it's unset
-  (`cloud::configured_models`), so with it set they're stale.
+- `ARUGULA_CLOUD_ACCOUNTS`: whose hosted workspaces run on the platform's
+  inference key (M185; `*` is no one: only accounts named).
 - `POSTHOG_API_KEY`: product analytics (`analytics.rs`).
 - `ARUGULA_PLATFORM_KEY`: the key the hub and an out-of-process platform
   share ("The platform" below). Unused while the platform runs in process.
@@ -379,10 +370,13 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
   retired (M190). To unset it, keep its value in Infisical under
   `/illogical/control` first, then `fly secrets unset SPRITES_TOKEN`.
 
-Read, but they do nothing: `ARUGULA_CLOUD_DAILY_RUNS`,
-`ARUGULA_CLOUD_CONCURRENT_RUNS`, `ARUGULA_CLOUD_RUN_MINUTES`. Cloud runs
-were retired; control still parses them so an old deploy starts, and
-logs that they do nothing.
+Read by nothing since Managoat was removed (M189, M190: docs/managoat.md),
+so a deploy that still has them starts and ignores them; to unset each, keep
+its value in Infisical under `/illogical/control` first:
+`ARUGULA_MANAGOAT_API_KEY`, `ARUGULA_MANAGOAT_URL`,
+`ARUGULA_MANAGOAT_DELETE_AFTER`, `ARUGULA_CLOUD_MODELS`, and the old run
+caps `ARUGULA_CLOUD_DAILY_RUNS`, `ARUGULA_CLOUD_CONCURRENT_RUNS` and
+`ARUGULA_CLOUD_RUN_MINUTES`.
 
 Unset on 2026-10-20 (M132), their values kept in Infisical under
 `/illogical/control`: `ILLOGICAL_SANDBOX_ACCOUNTS`, which nothing read (the
@@ -2529,11 +2523,14 @@ boxes (their disks and memory, and its broker's secrets): docs/control-e2e.md
   E2B's console (its usage tab) has the bill itself; the two should agree
   within the time a box takes to start and pause.
 
-### Retiring Managoat (M189)
+### Retiring Managoat (M189, done)
 
-Beta Cloud workspaces move to hosted ones from their own pages (see
-docs/managoat.md, "Moving off Managoat"). Jake's call: 14 days' notice,
-then delete.
+Done on 2026-10-23: Jake was the only user, and chose to delete it all
+rather than move or archive it. Step 3 ran (2 workspaces, 2 vaults, 2
+environments; the account is empty), then step 4's PR removed the code,
+the `managoat-retire` command and the `cloud_*` tables (platform migration
+0030, not additive). What's left is unsetting the Managoat secrets after
+that release (the list above). The steps, as they were:
 
 1. Put the beta accounts on `ARUGULA_HOSTED_ACCOUNTS`, so they can move.
 2. Send the notice, and set `ARUGULA_MANAGOAT_DELETE_AFTER` (the day, 14

@@ -152,7 +152,7 @@ fn production_is_adopted_and_matches_a_new_database() {
         let n = |sql: &str| -> u64 { c.query_row(sql, [], |r| r.get(0)).unwrap() };
         assert_eq!(n("SELECT count(*) FROM accounts"), 1, "{name}: the hub's table");
         assert_eq!(n("SELECT count(*) FROM chat_fts WHERE chat_fts MATCH 'kettle'"), 1, "{name}: search");
-        assert_eq!(n("SELECT count(*) FROM cloud_jobs"), 1, "{name}");
+        assert_eq!(n("SELECT count(*) FROM sqlite_master WHERE name LIKE 'cloud%'"), 0, "{name}: 0030 dropped them");
     }
 }
 
@@ -217,8 +217,7 @@ fn an_older_release_is_upgraded_then_adopted() {
         assert_eq!(have.diff(&want), Vec::<String>::new(), "{name}");
         assert_eq!(count(&c, "SELECT count(*) FROM accounts"), 1, "{name}: the hub's table");
         assert_eq!(count(&c, "SELECT count(*) FROM chat_fts WHERE chat_fts MATCH 'kettle'"), 1, "{name}: search");
-        assert_eq!(count(&c, "SELECT count(*) FROM cloud_jobs WHERE id = 'run_1'"), 1, "{name}");
-        assert_eq!(count(&c, "SELECT count(*) FROM cloud_secrets WHERE project_id IS NULL"), 0, "{name}: backfilled");
+        assert_eq!(count(&c, "SELECT count(*) FROM sqlite_master WHERE name LIKE 'cloud%'"), 0, "{name}: dropped");
         assert_eq!(run(&mut c).unwrap(), Report::default(), "{name}: once");
     }
 }
@@ -255,13 +254,19 @@ fn a_half_matching_schema_is_refused() {
 }
 
 /// An older build (a rollback) starts on a database past it when every
-/// migration it doesn't know is additive, and leaves them be.
+/// migration it doesn't know is additive, and leaves them be; one from
+/// before the last migration that isn't additive refuses.
 #[test]
 fn an_older_build_starts_past_additive_migrations() {
     let mut c = fresh();
+    let floor = SQLITE.iter().rev().find(|m| !m.additive).unwrap().version;
     for known in 1..latest() {
-        let report = run_set(&mut c, &SQLITE[..known as usize], u32::MAX).unwrap();
-        assert_eq!(report, Report::default(), "a build that knows up to {known}");
+        let report = run_set(&mut c, &SQLITE[..known as usize], u32::MAX);
+        if known < floor {
+            assert!(report.is_err(), "a build that knows up to {known}, before {floor}");
+        } else {
+            assert_eq!(report.unwrap(), Report::default(), "a build that knows up to {known}");
+        }
     }
     assert_eq!(recorded(&c).len(), latest() as usize);
     // A later additive migration, from a build newer than this one.
@@ -349,8 +354,7 @@ fn normalising_ignores_comments_quotes_and_spacing() {
 
 /// Postgres's tables are SQLite's (M143): the same tables, each with the
 /// same columns, each as nullable, but for the columns only Postgres has
-/// (chat's and issues' `search`, and `rowid` where SQLite's implicit one is read) and a
-/// cloud secret's project, which is its key there. Runs when
+/// (chat's and issues' `search`). Runs when
 /// `ARUGULA_TEST_POSTGRES_URL` names a Postgres.
 #[test]
 fn postgres_has_sqlites_tables() {
@@ -362,13 +366,12 @@ fn postgres_has_sqlites_tables() {
     if pg.dialect() != Dialect::Postgres {
         return;
     }
-    let only_postgres =
-        ["chat_messages.search", "issues.search", "cloud_notifications.rowid", "cloud_workspace_specs.rowid"];
+    let only_postgres = ["chat_messages.search", "issues.search"];
     let columns = |db: &Db, sql: &str| -> Vec<(String, bool)> {
         db.c()
             .query_map(sql, params![], |r| {
                 let column = format!("{}.{}", r.get::<String>(0)?, r.get::<String>(1)?);
-                let null = r.get::<Value>(2)? == Value::Int(0) && column != "cloud_secrets.project_id";
+                let null = r.get::<Value>(2)? == Value::Int(0);
                 Ok((column, null))
             })
             .unwrap()
