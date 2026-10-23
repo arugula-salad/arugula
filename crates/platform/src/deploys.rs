@@ -683,6 +683,13 @@ async fn push_owners(app: &Platform, by: &Actor, d: &Deploy, env: &Environment, 
         Err(e) => return warn!(deploy = %d.id, error = format!("{e:#}"), "deploy: the project's owners"),
     };
     let asked = match by {
+        // An agent with no machine (M230): its token's name, said as a
+        // token's, so it can't read as a machine's.
+        Actor::Agent { account, machine } if crate::db::projects::subject_kind(machine) == "agent" => {
+            let token = app.db.agent_token(machine).ok().flatten().map_or_else(|| machine.clone(), |t| t.name);
+            let owner = crate::chat::name_of(app, account).await.ok().filter(|n| !n.is_empty());
+            format!("{}'s agent token \u{2018}{token}\u{2019}", owner.as_deref().unwrap_or("someone"))
+        }
         Actor::Agent { machine, .. } => {
             let name = crate::grants::agent_names(app, std::slice::from_ref(machine))
                 .await

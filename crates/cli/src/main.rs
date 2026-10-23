@@ -380,11 +380,11 @@ enum Command {
     },
     /// Tokens for agents with no machine, on Arugula control's MCP endpoint.
     ///
-    /// `add NAME POWER... --project NAME` makes one and prints it once: its
-    /// agent acts as yours over those projects, labelled with its name,
-    /// never past your role, and never approves anything. `ls` (the
-    /// default) lists them, `calls` what one's agent did, `revoke` takes
-    /// one back at once. Needs `arugula login`.
+    /// They're made on the platform page (Settings, Agents with no machine),
+    /// never from a CLI: its agent acts as yours over their projects,
+    /// labelled with its name, never past your role, and never approves
+    /// anything. `ls` (the default) lists them, `calls` what one's agent
+    /// did, `revoke` takes one back at once. Needs `arugula login`.
     AgentTokens {
         #[command(subcommand)]
         cmd: Option<cmd::agent_tokens::AgentTokensCmd>,

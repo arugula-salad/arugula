@@ -2,10 +2,11 @@
 // that runs somewhere without `arugulad` (a hosted service's), reaching
 // the platform's MCP endpoint. Each has powers over projects you read,
 // never approves anything, and its agent's writes are labelled
-// "<you>'s agent on <name> (MCP)". Made here or with `arugula agent-tokens
-// add`; the token shows once, right after it's made. Listed with what each
+// "<you>'s agent on <name> (MCP)". The token shows once, right after it's made. Listed with what each
 // one's agent did lately, and revoked at once (`/api/agent-tokens`, the
-// platform's).
+// platform's). Made only here, in a signed-in browser (the CLI lists and
+// revokes); every new one pushes the account's devices a notice. A token's
+// name is shown inside <bdi>, so it can't turn the text around it.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
@@ -48,7 +49,7 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
   return v as T;
 }
 
-function ago(ms: number): string {
+export function ago(ms: number): string {
   const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
   if (s < 60) return "just now";
   if (s < 3600) return `${Math.round(s / 60)}m ago`;
@@ -151,7 +152,9 @@ export function AgentTokens() {
       </p>
       {made && (
         <div class="deploy-form agent-token-made" data-agent-token-made>
-          <h3>{made.name}'s token</h3>
+          <h3>
+            <bdi>{made.name}</bdi>'s token
+          </h3>
           <p>
             Copy it now: it's shown this once, and only its hash is kept.
           </p>
@@ -178,7 +181,10 @@ export function AgentTokens() {
       <ul class="platform-list agent-tokens">
         {tokens.map((t) => (
           <li key={t.id} data-agent-token={t.id} class={t.live ? "" : "dim"}>
-            <strong>{t.name}</strong> <span class="dim">{reachOf(t)}</span>{" "}
+            <strong>
+              <bdi>{t.name}</bdi>
+            </strong>{" "}
+            <span class="dim">{reachOf(t)}</span>{" "}
             <span class="dim">
               {t.live ? (t.last_used_at ? `used ${ago(t.last_used_at)}` : "never used") : `revoked ${ago(t.revoked_at ?? 0)}`}
             </span>{" "}
@@ -236,6 +242,18 @@ export function AgentTokens() {
               </label>
             ))}
           </fieldset>
+          {powers.includes("threads.read") && projects.some((id) => session.projects.find((p) => p.id === id)?.team) && (
+            <p class="control-warning" data-agent-token-warn-threads>
+              <code>threads.read</code> over a team's project reaches every one of that team's channels, not only its issues.
+            </p>
+          )}
+          {powers.includes("runs.command") && (
+            <p class="control-warning" data-agent-token-warn-command>
+              <code>runs.command</code> runs anything on the project's hosted boxes, so its agent can read what a box holds: its
+              environment and secrets included.
+            </p>
+          )}
+          <p class="dim">The token is shown once, and your devices get a notice that it was made.</p>
           <div class="prompt-buttons">
             <button type="button" onClick={() => setMaking(false)}>
               Cancel

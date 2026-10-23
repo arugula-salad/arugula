@@ -62,7 +62,13 @@ fn routes() -> Routes {
         .route(agent_tokens::AGENT_TOKENS, get(agent_tokens::list).post(agent_tokens::mint))
         .route(agent_tokens::AGENT_TOKEN_REVOKE, post(agent_tokens::revoke))
         .route(agent_tokens::AGENT_TOKEN_CALLS, get(agent_tokens::calls))
-        .route(agent_mcp::MCP, post(agent_mcp::endpoint))
+        .route(
+            agent_mcp::MCP,
+            post(agent_mcp::endpoint).layer(axum::extract::DefaultBodyLimit::max(agent_mcp::MAX_BODY)),
+        )
+        .route("/api/projects/{project}/agent-tokens", get(agent_tokens::over))
+        .route("/api/projects/{project}/agent-tokens/{id}/revoke", post(agent_tokens::revoke_over))
+        .route("/api/projects/{project}/secrets", get(agent_tokens::secrets))
         .route(arugula_control_wire::projects::PROJECTS, get(projects::list))
         .route(arugula_control_wire::projects::PROJECT_REPOS, get(forge::links::list).post(forge::links::link))
         .route(

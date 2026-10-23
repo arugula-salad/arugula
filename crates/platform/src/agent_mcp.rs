@@ -82,6 +82,17 @@ const PROTOCOLS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
 /// Requests a token's agent makes, per hour, whatever they are: each
 /// tool's own limit is counted too.
 const REQUESTS: (&str, usize) = ("mcp-agent-request", 7_200);
+/// The same, across all of an account's tokens.
+pub(crate) const ACCOUNT_REQUESTS: (&str, usize) = ("mcp-account-request", 14_400);
+/// Deploys planned and asked for by an account's tokens' agents, per hour,
+/// all of them together (each token's are counted too).
+pub(crate) const ACCOUNT_DEPLOY_ASKS: (&str, usize) = ("mcp-account-deploy", 30);
+/// Runs started by an account's tokens' agents, per hour, all together.
+pub(crate) const ACCOUNT_RUN_STARTS: (&str, usize) = ("mcp-account-run", 120);
+/// The most a request's body holds, in bytes.
+pub const MAX_BODY: usize = 64 * 1024;
+/// The most secrets of its own a project keeps.
+pub const MAX_PROJECT_SECRETS: usize = 100;
 /// Secrets a token's agent sets, per hour.
 const SECRET_WRITES: (&str, usize) = ("mcp-agent-secret", 120);
 /// The most a secret's value holds, in bytes.
@@ -130,37 +141,44 @@ impl FromRequestParts<Arc<Platform>> for TokenAgent {
     }
 }
 
-/// `POST /api/mcp`: one JSON-RPC message, or a batch.
+/// `POST /api/mcp`: one JSON-RPC message. A batch is refused (MCP
+/// 2025-06-18 has none), and so is a request with no `id` (a tool call sent
+/// as a notification runs nothing). The body is at most [`MAX_BODY`]
+/// (the router's limit).
 pub async fn endpoint(State(app): State<Arc<Platform>>, TokenAgent(token): TokenAgent, body: Bytes) -> Response {
-    if let Err(e) = app.limits.check_daemon(REQUESTS, &token.id) {
+    let limited = app
+        .limits
+        .check_daemon(REQUESTS, &token.id)
+        .and_then(|()| app.limits.check_account(ACCOUNT_REQUESTS, &token.account));
+    if let Err(e) = limited {
         return e.into_response();
     }
     if let Err(e) = app.db.touch_agent_token(&token.id, now_ms()) {
         tracing::warn!(error = format!("{e:#}"), token = %token.id, "couldn't note an agent token's use");
     }
+    let bad = |code: i64, why: &str| (StatusCode::BAD_REQUEST, Json(rpc_error(Value::Null, code, why))).into_response();
     let msg: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
-        Err(e) => return Json(rpc_error(Value::Null, -32700, &format!("parse error: {e}"))).into_response(),
+        Err(e) => return bad(-32700, &format!("parse error: {e}")),
     };
+    if msg.is_array() {
+        return bad(-32600, "one JSON-RPC message per request: batches aren't taken (MCP 2025-06-18 has none)");
+    }
+    let method = msg.get("method").and_then(Value::as_str).unwrap_or_default();
+    if msg.get("id").is_none_or(Value::is_null) && !method.starts_with("notifications/") {
+        if method.is_empty() {
+            // A response the client sent: nothing to answer.
+            return StatusCode::ACCEPTED.into_response();
+        }
+        return bad(-32600, "a request needs an id: only notifications/… are sent without one, and they run nothing");
+    }
     // Its owner as people know them, for what the agent is told.
     let owner = crate::chat::name_of(&app, &token.account).await.ok().filter(|n| !n.is_empty());
     let owner = owner.unwrap_or_else(|| token.account.clone());
     let agent = Agent { app, token, owner };
-    match msg {
-        Value::Array(batch) if batch.is_empty() => {
-            Json(rpc_error(Value::Null, -32600, "an empty batch")).into_response()
-        }
-        Value::Array(batch) => {
-            let mut out = vec![];
-            for m in batch {
-                out.extend(agent.handle(m).await);
-            }
-            if out.is_empty() { StatusCode::ACCEPTED.into_response() } else { Json(Value::Array(out)).into_response() }
-        }
-        m => match agent.handle(m).await {
-            Some(r) => Json(r).into_response(),
-            None => StatusCode::ACCEPTED.into_response(),
-        },
+    match agent.handle(msg).await {
+        Some(r) => Json(r).into_response(),
+        None => StatusCode::ACCEPTED.into_response(),
     }
 }
 
@@ -289,6 +307,20 @@ impl Agent {
     /// `tools/call`: the tool's answer, noted for the token's owner.
     async fn call(&self, name: &str, a: &Value) -> Value {
         let out = self.dispatch(name, a).await;
+        // A name that's no tool is answered, never kept: the record holds
+        // only tools there are, and an ask to approve (as `approve`).
+        let known = tools().iter().any(|t| t["name"] == name);
+        let name = match () {
+            () if known => name,
+            () if never_tool(name) => "approve",
+            () => {
+                let why = match &out {
+                    Err(Failure::Refused(w) | Failure::Failed(w)) => w.clone(),
+                    Ok(_) => String::new(),
+                };
+                return json!({ "content": [{ "type": "text", "text": why }], "isError": true });
+            }
+        };
         let asked_project = a.get("project").and_then(Value::as_str).map(str::to_owned);
         let (outcome, project, note) = match &out {
             Ok(d) => ("ok", d.project.clone().or(asked_project), d.note.clone()),
@@ -298,7 +330,7 @@ impl Agent {
         let record = AgentCall {
             id: new_call(),
             token: self.token.id.clone(),
-            tool: name.chars().take(64).collect(),
+            tool: name.to_owned(),
             project,
             outcome: outcome.to_owned(),
             detail: note.chars().take(300).collect(),
@@ -334,7 +366,11 @@ impl Agent {
             "wait" => self.wait(args(a)?).await,
             "plan_deploy" => self.plan_deploy(args(a)?).await,
             "read_deploy" => self.read_deploy(args(a)?).await,
-            "set_secret" => self.set_secret(args(a)?).await,
+            // Never serde's words: they can quote the value.
+            "set_secret" => self.set_secret(serde_json::from_value(a.clone()).map_err(|_| {
+                failed("set_secret takes name and value (strings), and project (a string) if the token has more than one")
+            })?)
+            .await,
             n if never_tool(n) => Err(Failure::Refused(format!(
                 "there's no {n} here, and there never will be: agents never approve or deny anything, whatever \
                  grant they hold. plan_deploy asks the project's owners, and one of them approves on their phone \
@@ -613,6 +649,7 @@ impl Agent {
             return Err(failed("say what to run: a spec, a command, or an instruction (one of them)"));
         }
         let p = self.project(a.project.as_deref()).await?;
+        self.app.limits.check_account(ACCOUNT_RUN_STARTS, &self.token.account)?;
         let b = AgentRunStart {
             spec: a.spec,
             workspace: a.on_box,
@@ -715,6 +752,7 @@ impl Agent {
             return Err(failed(format!("repo: OWNER/NAME on GitHub, not {repo:?}")));
         }
         let p = self.project(a.project.as_deref()).await?;
+        self.app.limits.check_account(ACCOUNT_DEPLOY_ASKS, &self.token.account)?;
         let plan: deploys::Plan = args(&json!({
             "environment": a.environment.trim(),
             "source": { "kind": "commit", "ref": commit, "where": repo },
@@ -778,7 +816,14 @@ impl Agent {
             .secret_key
             .as_deref()
             .ok_or_else(|| failed("this platform keeps no secrets (it has no master key)"))?;
-        crate::keys::seal(&self.app.db, master, &p, &project_secret(name), &a.value)?;
+        let stored = project_secret(name);
+        if !self.app.db.has_project_secret(&p, &stored)?
+            && self.app.db.project_secrets(&p)?.len() >= MAX_PROJECT_SECRETS
+        {
+            return Err(failed(format!("the project keeps {MAX_PROJECT_SECRETS} secrets of its own already")));
+        }
+        crate::keys::seal(&self.app.db, master, &p, &stored, &a.value)?;
+        self.app.db.note_secret_writer(&p, &stored, &self.token.account, Some(&self.token.id))?;
         tracing::info!(token = %self.token.id, account = %self.token.account, project = %p, name, "an agent set a project's secret");
         let v = json!({ "project": p, "name": name, "set": true });
         let text = format!("Set {name} in {p}. It's sealed, and nothing here reads it back.");
@@ -789,7 +834,7 @@ impl Agent {
 /// Where a project's own secret (not an environment's) is kept by name in
 /// `project_secrets`: `project/<NAME>`.
 pub fn project_secret(name: &str) -> String {
-    format!("project/{name}")
+    format!("{}{name}", crate::db::agent_tokens::PROJECT_SECRET_PREFIX)
 }
 
 /// A tool name that would approve or deny something: refused as such.

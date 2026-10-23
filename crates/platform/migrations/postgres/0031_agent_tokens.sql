@@ -11,7 +11,9 @@
 -- live grant per power and project in `grants` (`subject_kind` 'agent',
 -- `subject_id` this id), given when it's minted. Only the token's SHA-256
 -- (hex) is kept: the token is shown once. Revoking it revokes its grants
--- too; a revoked one keeps its row, for the record.
+-- too; a revoked one keeps its row, for the record. It's minted only from
+-- a browser's session on the platform page; `minted_from` is that
+-- browser's User-Agent (the hub ties no session to a device).
 CREATE TABLE agent_tokens (
     id TEXT COLLATE pg_c_utf8 PRIMARY KEY,
     account_id TEXT COLLATE pg_c_utf8 NOT NULL,
@@ -19,7 +21,8 @@ CREATE TABLE agent_tokens (
     token_hash TEXT COLLATE pg_c_utf8 NOT NULL UNIQUE,
     created_at BIGINT NOT NULL,
     last_used_at BIGINT,
-    revoked_at BIGINT
+    revoked_at BIGINT,
+    minted_from TEXT COLLATE pg_c_utf8 NOT NULL DEFAULT ''
 );
 CREATE INDEX agent_tokens_account ON agent_tokens (account_id, created_at);
 
@@ -40,3 +43,9 @@ CREATE TABLE agent_token_calls (
 );
 CREATE INDEX agent_token_calls_token ON agent_token_calls (token_id, at);
 CREATE INDEX agent_token_calls_account ON agent_token_calls (account_id);
+
+-- Who last set each of a project's own secrets (`project/<NAME>`, M230):
+-- an account, and the agent grant token its agent set it with, if one did.
+-- Shown to the project's owners by name, never the value.
+ALTER TABLE project_secrets ADD COLUMN updated_by TEXT COLLATE pg_c_utf8;
+ALTER TABLE project_secrets ADD COLUMN updated_by_agent TEXT COLLATE pg_c_utf8;

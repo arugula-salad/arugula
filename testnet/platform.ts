@@ -546,7 +546,7 @@ async function agentMcp(d: Device, project: string, broken: boolean) {
   if (seenDeploy.agent?.machine_name !== "redone (MCP)") throw new Error(`the deploy isn't labelled: ${JSON.stringify(seenDeploy.agent)}`);
   const calls = (await must(d, "GET", `/api/agent-tokens/${tokenId}/calls`)).calls;
   const outcomes = Object.fromEntries(calls.map((c: any) => [c.tool, c.outcome]));
-  for (const [t, o] of [["issue_write", "ok"], ["start_run", "ok"], ["plan_deploy", "ok"], ["approve_deploy", "refused"]]) {
+  for (const [t, o] of [["issue_write", "ok"], ["start_run", "ok"], ["plan_deploy", "ok"], ["approve", "refused"]]) {
     if (outcomes[t] !== o) throw new Error(`the call ${t} is noted ${outcomes[t]}, not ${o}: ${JSON.stringify(calls)}`);
   }
   return { project, token_id: tokenId, issue: issue.id, run: [run.id, seenRun.state], deploy: [deploy.id, seenDeploy.state], refused, env: env.id };

@@ -36,7 +36,7 @@ pub const ID_PREFIX: &str = "agt_";
 pub const TOKEN_PREFIX: &str = "aru_agent_";
 
 /// The most tokens an account holds live at once.
-pub const MAX_LIVE: usize = 50;
+pub const MAX_LIVE: usize = 10;
 
 /// An agent grant token, without the token.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -47,6 +47,18 @@ pub struct AgentToken {
     pub created_at: u64,
     pub last_used_at: Option<u64>,
     pub revoked_at: Option<u64>,
+    /// The browser it was minted from (its User-Agent).
+    pub minted_from: String,
+}
+
+/// A token to keep: its id, its minter, its name, the token's hash and
+/// the browser it was minted from.
+pub struct NewToken {
+    pub id: String,
+    pub account: String,
+    pub name: String,
+    pub token_hash: String,
+    pub minted_from: String,
 }
 
 /// A tool call a token's agent made.
@@ -62,7 +74,7 @@ pub struct AgentCall {
     pub at: u64,
 }
 
-const COLUMNS: &str = "id, account_id, name, created_at, last_used_at, revoked_at";
+const COLUMNS: &str = "id, account_id, name, created_at, last_used_at, revoked_at, minted_from";
 
 fn row(r: &Row) -> anyhow::Result<AgentToken> {
     Ok(AgentToken {
@@ -72,6 +84,7 @@ fn row(r: &Row) -> anyhow::Result<AgentToken> {
         created_at: r.get(3)?,
         last_used_at: r.get(4)?,
         revoked_at: r.get(5)?,
+        minted_from: r.get(6)?,
     })
 }
 
@@ -96,21 +109,15 @@ impl Db {
     /// Keep a token minted by `account` (only its hash), with a live grant
     /// of each `(power, project)`, in one transaction. The caller has
     /// checked that the account reads each project now.
-    pub fn mint_agent_token(
-        &self,
-        id: &str,
-        account: &str,
-        name: &str,
-        token_hash: &str,
-        grants: &[(&str, &str)],
-        now: u64,
-    ) -> anyhow::Result<AgentToken> {
+    pub fn mint_agent_token(&self, t: &NewToken, grants: &[(&str, &str)], now: u64) -> anyhow::Result<AgentToken> {
         let mut c = self.c();
         let tx = c.transaction()?;
         tx.execute(
-            "INSERT INTO agent_tokens (id, account_id, name, token_hash, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, account, name, token_hash, now],
+            "INSERT INTO agent_tokens (id, account_id, name, token_hash, created_at, minted_from)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![t.id, t.account, t.name, t.token_hash, now, t.minted_from],
         )?;
+        let (id, account) = (&t.id, &t.account);
         for (power, project) in grants {
             tx.execute(
                 "INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
@@ -205,6 +212,44 @@ impl Db {
         Ok(t)
     }
 
+    /// The tokens with a live grant over `project`, anyone's, each with
+    /// its live grants there: what the project's owners see.
+    pub fn agent_tokens_over(&self, project: &str) -> anyhow::Result<Vec<(AgentToken, Vec<Grant>)>> {
+        let c = self.c();
+        let tokens = c.query_map(
+            &format!(
+                "SELECT {COLUMNS} FROM agent_tokens WHERE revoked_at IS NULL AND id IN (SELECT subject_id FROM grants
+                 WHERE subject_kind = 'agent' AND scope_kind = 'project' AND scope_id = ?1 AND revoked_at IS NULL)
+                 ORDER BY created_at DESC, id"
+            ),
+            params![project],
+            row,
+        )?;
+        let mut out = Vec::with_capacity(tokens.len());
+        for t in tokens {
+            let grants = c.query_map(
+                &format!(
+                    "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = 'agent' AND subject_id = ?1
+                     AND scope_kind = 'project' AND scope_id = ?2 AND revoked_at IS NULL ORDER BY power"
+                ),
+                params![t.id, project],
+                grant_row,
+            )?;
+            out.push((t, grants));
+        }
+        Ok(out)
+    }
+
+    /// Revoke token `id`'s grants over `project` (a project owner's
+    /// revoke): how many were live.
+    pub fn revoke_agent_token_over(&self, project: &str, id: &str, now: u64) -> anyhow::Result<usize> {
+        self.c().execute(
+            "UPDATE grants SET revoked_at = ?3 WHERE subject_kind = 'agent' AND subject_id = ?2
+             AND scope_kind = 'project' AND scope_id = ?1 AND revoked_at IS NULL",
+            params![project, id, now],
+        )
+    }
+
     /// Note that the token was used now.
     pub fn touch_agent_token(&self, id: &str, now: u64) -> anyhow::Result<()> {
         self.c().execute("UPDATE agent_tokens SET last_used_at = ?2 WHERE id = ?1", params![id, now])?;
@@ -240,6 +285,72 @@ impl Db {
                 })
             },
         )
+    }
+}
+
+/// Agent tokens' grants over a team's projects that a person who's no
+/// longer in the team gave go (M230): run in the transaction that rewrites
+/// the team's `team_members`.
+pub(crate) fn revoke_departed(c: &impl Sql, team: &str, now: u64) -> anyhow::Result<usize> {
+    c.execute(
+        "UPDATE grants SET revoked_at = ?2 WHERE subject_kind = 'agent' AND revoked_at IS NULL
+         AND scope_kind = 'project' AND scope_id IN (SELECT id FROM projects WHERE team_id = ?1)
+         AND granted_by NOT IN (SELECT account_id FROM team_members WHERE team_id = ?1)",
+        params![team, now],
+    )
+}
+
+/// A project's own secret's name, as its owners see it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ProjectSecret {
+    pub name: String,
+    pub updated_at: u64,
+    pub updated_by: Option<String>,
+    pub updated_by_agent: Option<String>,
+}
+
+/// What a project's own secrets are kept under in `project_secrets`.
+pub const PROJECT_SECRET_PREFIX: &str = "project/";
+
+impl Db {
+    /// A project's own secrets (`project/<NAME>`), by name: never a value.
+    pub fn project_secrets(&self, project: &str) -> anyhow::Result<Vec<ProjectSecret>> {
+        self.c().query_map(
+            "SELECT name, updated_at, updated_by, updated_by_agent FROM project_secrets
+             WHERE project_id = ?1 AND name LIKE 'project/%' ORDER BY name",
+            params![project],
+            |r| {
+                let name: String = r.get(0)?;
+                Ok(ProjectSecret {
+                    name: name.strip_prefix(PROJECT_SECRET_PREFIX).unwrap_or(&name).to_owned(),
+                    updated_at: r.get(1)?,
+                    updated_by: r.get(2)?,
+                    updated_by_agent: r.get(3)?,
+                })
+            },
+        )
+    }
+
+    /// Note who set a project's secret `name` (its stored name).
+    pub fn note_secret_writer(&self, project: &str, name: &str, by: &str, agent: Option<&str>) -> anyhow::Result<()> {
+        self.c().execute(
+            "UPDATE project_secrets SET updated_by = ?3, updated_by_agent = ?4 WHERE project_id = ?1 AND name = ?2",
+            params![project, name, by, agent],
+        )?;
+        Ok(())
+    }
+
+    /// Whether a project has its own secret by this stored name.
+    pub fn has_project_secret(&self, project: &str, name: &str) -> anyhow::Result<bool> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT 1 FROM project_secrets WHERE project_id = ?1 AND name = ?2",
+                params![project, name],
+                |r| r.get::<i64>(0),
+            )
+            .optional()?
+            .is_some())
     }
 }
 

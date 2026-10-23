@@ -361,6 +361,14 @@
   color: var(--danger, #c33);
 }
 
+.agent-token-warning,
+.deploy-form .control-warning {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--warn);
+  font-size: 12px;
+}
+
 .agent-token-made code {
   overflow-wrap: anywhere;
 }

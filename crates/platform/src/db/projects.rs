@@ -209,6 +209,9 @@ impl Db {
             )?;
         }
         team_project(&tx, &team.id, &team.name, now)?;
+        // An agent token's reach over the team's projects goes with its
+        // owner's place in the team (M230).
+        super::agent_tokens::revoke_departed(&tx, &team.id, now)?;
         tx.commit()?;
         Ok(())
     }

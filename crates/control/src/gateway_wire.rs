@@ -575,16 +575,20 @@ async fn the_platform_page_signs_in_through_the_hub() {
 /// with only the token is refused as no one's.
 #[tokio::test]
 async fn an_agent_token_reaches_the_mcp_endpoint_on_controls_site() {
-    use arugula_platform::db::agent_tokens::{hash, new_token};
+    use arugula_platform::db::agent_tokens::{NewToken, hash, new_token};
     use serde_json::json;
 
     async fn check(base: &str, platform: &Platform) {
         let project = platform.db.personal_project("a", now_ms()).unwrap();
         let (id, token) = new_token();
-        platform
-            .db
-            .mint_agent_token(&id, "a", "redone", &hash(&token), &[("threads.read", &project)], now_ms())
-            .unwrap();
+        let new = NewToken {
+            id: id.clone(),
+            account: "a".into(),
+            name: "redone".into(),
+            token_hash: hash(&token),
+            minted_from: "test".into(),
+        };
+        platform.db.mint_agent_token(&new, &[("threads.read", &project)], now_ms()).unwrap();
         let http = reqwest::Client::new();
         let bearer = format!("Bearer {token}");
         let caps = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": "capabilities" } });
@@ -607,4 +611,49 @@ async fn an_agent_token_reaches_the_mcp_endpoint_on_controls_site() {
     let c = crate::routing_wire::control(|_| {}).await;
     c.app.db.account_for("test", "a", "a", "a", now_ms()).unwrap();
     check(&c.base, c.app.platform.inner()).await;
+}
+
+/// A client's `Authorization` crosses the gateway to the MCP endpoint
+/// (M230) and the inference broker (M231) only: every other platform route
+/// gets none, whatever the client sent (M230's review).
+#[tokio::test]
+async fn a_bearer_crosses_only_to_the_routes_it_is_for() {
+    let (platform, seen) = fake_platform().await;
+    let (_app, base) = hub(&platform).await;
+    let http = reqwest::Client::new();
+    let mut sent = vec![];
+    for (path, keeps) in [
+        ("/api/mcp", true),
+        ("/api/projects/prj_1/inference/anthropic/v1/messages", true),
+        ("/api/chat/rooms/r1/messages", false),
+        ("/api/deploys/dep_1/approve", false),
+        ("/api/agent-tokens", false),
+        ("/api/stripe/webhook", false),
+    ] {
+        http.post(format!("{base}{path}"))
+            .header("authorization", "Bearer aru_agent_x")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        sent.push((path, keeps));
+    }
+    let seen = seen.0.lock().unwrap().clone();
+    for (path, keeps) in sent {
+        let Some((_, h, _)) = seen.iter().find(|(pq, _, _)| pq == path) else {
+            // A route the gateway doesn't forward (M231's isn't listed
+            // until it lands): nothing reached the platform at all.
+            assert!(!routes_toml_lists(path), "{path} wasn't forwarded");
+            continue;
+        };
+        assert_eq!(h.contains_key("authorization"), keeps, "{path}");
+    }
+}
+
+/// Whether routes.toml has a platform route this concrete path matches.
+fn routes_toml_lists(path: &str) -> bool {
+    crate::gateway::listed_platform_routes().iter().any(|(_, p)| {
+        let (a, b): (Vec<&str>, Vec<&str>) = (p.split('/').collect(), path.split('/').collect());
+        a.len() == b.len() && a.iter().zip(&b).all(|(x, y)| x.starts_with('{') || x == y)
+    })
 }

@@ -218,7 +218,7 @@ async fn an_agent_with_only_a_token_files_runs_plans_and_never_approves() {
     assert!(
         hub.pushes().iter().any(|(to, m, _)| to == "a"
             && m["deploy"] == json!(dep_id)
-            && m["body"].as_str().unwrap().contains("an agent on redone (MCP)")),
+            && m["body"].as_str().unwrap().contains("a's agent token \u{2018}redone\u{2019}")),
         "{:?}",
         hub.pushes()
     );
@@ -268,7 +268,7 @@ async fn an_agent_with_only_a_token_files_runs_plans_and_never_approves() {
     assert_eq!(of("issue_write"), ["ok", "ok"]);
     assert_eq!(of("start_run"), ["ok"]);
     assert_eq!(of("plan_deploy"), ["ok"]);
-    assert_eq!(of("approve_deploy"), ["refused"]);
+    assert_eq!(of("approve"), ["refused"; 4], "an ask to approve is kept, as `approve`");
     assert!(calls.iter().any(|c| c["detail"] == json!("set secret REDONE_TOKEN") && c["project"] == json!(t)));
     assert!(!serde_json::to_string(calls).unwrap().contains(secret));
     // b and c don't read a's token's calls.
@@ -338,21 +338,47 @@ async fn a_token_reaches_its_grants_and_its_owner_and_is_revoked() {
     }
 }
 
-/// JSON-RPC as MCP's Streamable HTTP takes it: a notification is 202 with
-/// nothing, a batch answers each request, a bad message says why, and
-/// `GET` has no stream.
+/// JSON-RPC as MCP 2025-06-18's Streamable HTTP takes it: a notification
+/// is 202 with nothing; a batch is refused; a tool call sent with no id
+/// runs nothing; a body over 64 KiB is refused; a name that's no tool is
+/// answered but never kept; a bad message says why; `GET` has no stream.
 #[tokio::test]
-async fn it_speaks_json_rpc_over_post() {
-    let (_hub, _app, base, t, _) = platform().await;
-    let (_, m) = mint(&base, "a", "rpc", &[&t], &["threads.read"]).await;
+async fn it_speaks_one_json_rpc_message_per_post() {
+    let (_hub, app, base, t, _) = platform().await;
+    let (_, m) = mint(&base, "a", "rpc", &[&t], &["threads.read", "issues.write"]).await;
     let token = m["token"].as_str().unwrap().to_owned();
+    let id = m["agent_token"]["id"].as_str().unwrap().to_owned();
     let note = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
     assert_eq!(bearer(&base, &token, "POST", "/api/mcp", Some(note.clone())).await.status().as_u16(), 202);
-    let batch =
-        json!([note, { "jsonrpc": "2.0", "id": 1, "method": "ping" }, { "jsonrpc": "2.0", "id": 2, "method": "nope" }]);
-    let v: Value = bearer(&base, &token, "POST", "/api/mcp", Some(batch)).await.json().await.unwrap();
-    assert_eq!(v[0], json!({ "jsonrpc": "2.0", "id": 1, "result": {} }));
-    assert_eq!(v[1]["error"]["code"], json!(-32601));
+
+    // No batches.
+    let batch = json!([{ "jsonrpc": "2.0", "id": 1, "method": "ping" }]);
+    let r = bearer(&base, &token, "POST", "/api/mcp", Some(batch)).await;
+    assert_eq!(r.status().as_u16(), 400);
+    assert_eq!(r.json::<Value>().await.unwrap()["error"]["code"], json!(-32600));
+
+    // A tool call as a notification: refused, and nothing filed.
+    let call = json!({ "jsonrpc": "2.0", "method": "tools/call",
+        "params": { "name": "issue_write", "arguments": { "kind": "create", "title": "sneaky" } } });
+    let r = bearer(&base, &token, "POST", "/api/mcp", Some(call.clone())).await;
+    assert_eq!(r.status().as_u16(), 400);
+    let mut nulled = call.clone();
+    nulled["id"] = Value::Null;
+    assert_eq!(bearer(&base, &token, "POST", "/api/mcp", Some(nulled)).await.status().as_u16(), 400);
+    let n: i64 = app.db.c().query_row("SELECT count(*) FROM issues", params![], |r| r.get(0)).unwrap();
+    assert_eq!(n, 0, "nothing was filed");
+
+    // At most 64 KiB.
+    let big = json!({ "jsonrpc": "2.0", "id": 3, "method": "ping", "params": { "pad": "x".repeat(70 * 1024) } });
+    assert_eq!(bearer(&base, &token, "POST", "/api/mcp", Some(big)).await.status().as_u16(), 413);
+
+    // A name that's no tool: answered, not kept.
+    for name in ["nope", &"z".repeat(500)] {
+        assert!(refused(&tool(&base, &token, name, json!({})).await).contains("no tool called"));
+    }
+    let (_, calls) = call_as(&base, "a", &format!("/api/agent-tokens/{id}/calls")).await;
+    assert_eq!(calls["calls"], json!([]), "{calls}");
+
     let r = reqwest::Client::new()
         .post(format!("{base}/api/mcp"))
         .header("authorization", format!("Bearer {token}"))
@@ -361,14 +387,172 @@ async fn it_speaks_json_rpc_over_post() {
         .await
         .unwrap();
     assert_eq!(r.json::<Value>().await.unwrap()["error"]["code"], json!(-32700));
+    let (st, v) = rpc(&base, &token, "nope", json!({})).await;
+    assert_eq!((st, &v["error"]["code"]), (200, &json!(-32601)));
     assert_eq!(bearer(&base, &token, "GET", "/api/mcp", None).await.status().as_u16(), 405);
     let r = tool(&base, &token, "capabilities", json!({})).await;
     let caps = ok(&r);
     assert_eq!(
         (&caps["approves"], &caps["projects"][0]["powers"]),
-        (&json!(false), &json!(["threads.read"])),
+        (&json!(false), &json!(["issues.write", "threads.read"])),
         "{caps}"
     );
+}
+
+async fn call_as(base: &str, who: &str, path: &str) -> (u16, Value) {
+    call(base, who, "GET", path, None).await
+}
+
+/// Minting is the platform page's alone, in a signed-in browser: a CLI's
+/// login is refused (its key is a file an agent could read). Every mint
+/// pushes the account a notice, and keeps the browser it came from. The
+/// names are plain text: no format characters. At most 10 live.
+#[tokio::test]
+async fn a_token_is_minted_only_from_a_browser_and_the_account_is_told() {
+    let (hub, app, base, t, _) = platform().await;
+    let cli = crate::deploys_tests::serve_with_cli(app.clone()).await;
+    let body = json!({ "name": "redone", "projects": [t], "powers": ["issues.write"] });
+    let r = reqwest::Client::new()
+        .post(format!("{cli}/api/agent-tokens"))
+        .header("x-test-cli", "a cli_dev")
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 403);
+    assert_eq!(app.db.live_agent_tokens("a").unwrap(), 0);
+    // The CLI still lists them.
+    let r = reqwest::Client::new()
+        .get(format!("{cli}/api/agent-tokens"))
+        .header("x-test-cli", "a cli_dev")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 200);
+
+    let r = reqwest::Client::new()
+        .post(format!("{base}/api/agent-tokens"))
+        .header("cookie", "ilg_session=session-a")
+        .header("user-agent", "TestBrowser/1.0")
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status().as_u16(), 200);
+    let v: Value = r.json().await.unwrap();
+    assert_eq!(v["agent_token"]["minted_from"], json!("TestBrowser/1.0"));
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(
+        hub.pushes().iter().any(|(to, m, _)| to == "a"
+            && m["title"] == "A new agent token"
+            && m["body"].as_str().unwrap().contains("redone")),
+        "{:?}",
+        hub.pushes()
+    );
+
+    for bad in ["red\u{202e}enod", "zero\u{200b}width", "tag\u{e0041}", "two\nlines"] {
+        assert_eq!(mint(&base, "a", bad, &[&t], &["issues.write"]).await.0, 400, "{bad:?}");
+    }
+    for i in 1..10 {
+        assert_eq!(mint(&base, "a", &format!("t{i}"), &[&t], &["issues.write"]).await.0, 200);
+    }
+    assert_eq!(mint(&base, "a", "eleventh", &[&t], &["issues.write"]).await.0, 409, "10 live at most");
+}
+
+/// On top of each token's limits, an account's tokens share one: requests,
+/// and deploys asked for, across all of them.
+#[tokio::test]
+async fn an_accounts_tokens_share_a_limit() {
+    use crate::agent_mcp::{ACCOUNT_DEPLOY_ASKS, ACCOUNT_REQUESTS};
+    let (_hub, app, base, t, _) = platform().await;
+    production(&base, &t).await;
+    let (_, m1) = mint(&base, "a", "one", &[&t], &["threads.read", "deploys.plan"]).await;
+    let (_, m2) = mint(&base, "a", "two", &[&t], &["threads.read", "deploys.plan"]).await;
+    let (one, two) = (m1["token"].as_str().unwrap().to_owned(), m2["token"].as_str().unwrap().to_owned());
+
+    // Deploys asked: the account's last one goes to token one; token two
+    // is refused, though it asked for none.
+    for _ in 0..ACCOUNT_DEPLOY_ASKS.1 - 1 {
+        app.limits.check_account(ACCOUNT_DEPLOY_ASKS, "a").unwrap();
+    }
+    let plan = |sha: &str| json!({ "environment": "production", "commit": sha.repeat(20), "repo": "acme/app" });
+    ok(&tool(&base, &one, "plan_deploy", plan("ab")).await);
+    let why = refused(&tool(&base, &two, "plan_deploy", plan("cd")).await);
+    assert!(why.contains("too many"), "{why}");
+
+    // Requests: the same, before any tool.
+    for _ in 0..ACCOUNT_REQUESTS.1 - 5 {
+        app.limits.check_account(ACCOUNT_REQUESTS, "a").unwrap();
+    }
+    let ping = |token: &str| {
+        let token = token.to_owned();
+        let base = base.clone();
+        async move {
+            bearer(&base, &token, "POST", "/api/mcp", Some(json!({ "jsonrpc": "2.0", "id": 1, "method": "ping" })))
+                .await
+                .status()
+                .as_u16()
+        }
+    };
+    assert_eq!(ping(&one).await, 200);
+    let mut statuses = vec![];
+    for _ in 0..4 {
+        statuses.push(ping(&two).await);
+    }
+    assert_eq!(statuses.last(), Some(&429), "{statuses:?}");
+}
+
+/// A token's reach over a team's project goes with its owner's place in
+/// the team: removed from the roster, its grants there are revoked (not
+/// only refused), and its agent's next call is refused.
+#[tokio::test]
+async fn a_token_loses_a_team_when_its_owner_leaves_it() {
+    let (hub, app, base, t, _) = platform().await;
+    let (st, m) = mint(&base, "b", "bees", &[&t], &["issues.write", "threads.read"]).await;
+    assert_eq!(st, 200, "{m}");
+    let token = m["token"].as_str().unwrap().to_owned();
+    let id = m["agent_token"]["id"].as_str().unwrap().to_owned();
+    ok(&tool(&base, &token, "issue_write", json!({ "kind": "create", "title": "while in" })).await);
+    hub.team("t", &[("a", TeamRole::Owner), ("x", TeamRole::Viewer)]);
+    crate::projects::follow(&app).await.unwrap();
+    assert!(app.db.agent_token_grants(&id, "b").unwrap().is_empty(), "revoked with b's place in t");
+    let why =
+        refused(&tool(&base, &token, "issue_write", json!({ "kind": "create", "title": "after", "project": t })).await);
+    assert!(why.contains("no such project") || why.contains("doesn't read"), "{why}");
+}
+
+/// A project's owners see every token over it, whoever minted it, and
+/// revoke its reach there; others don't. Its own secrets list by name with
+/// who set them, never a value.
+#[tokio::test]
+async fn a_projects_owners_see_and_revoke_tokens_over_it() {
+    let (_hub, _app, base, t, _) = platform().await;
+    let (_, m) = mint(&base, "b", "bees", &[&t], &["issues.write", "secrets.write"]).await;
+    let token = m["token"].as_str().unwrap().to_owned();
+    let id = m["agent_token"]["id"].as_str().unwrap().to_owned();
+    ok(&tool(&base, &token, "set_secret", json!({ "name": "B_KEY", "value": "hunter2" })).await);
+    let (st, over) = call_as(&base, "a", &format!("/api/projects/{t}/agent-tokens")).await;
+    assert_eq!((st, &over["tokens"][0]["id"], &over["tokens"][0]["owner"]["account"]), (200, &json!(id), &json!("b")));
+    let (st, secrets) = call_as(&base, "a", &format!("/api/projects/{t}/secrets")).await;
+    assert_eq!(st, 200, "{secrets}");
+    assert_eq!(secrets["secrets"][0]["name"], json!("B_KEY"));
+    assert_eq!(
+        (&secrets["secrets"][0]["updated_by"]["account"], &secrets["secrets"][0]["agent"]["id"]),
+        (&json!("b"), &json!(id))
+    );
+    assert!(!secrets.to_string().contains("hunter2"));
+    for who in ["b", "x"] {
+        assert_eq!(call_as(&base, who, &format!("/api/projects/{t}/agent-tokens")).await.0, 403, "{who}");
+        assert_eq!(call(&base, who, "POST", &format!("/api/projects/{t}/agent-tokens/{id}/revoke"), None).await.0, 403);
+    }
+    let (st, r) = call(&base, "a", "POST", &format!("/api/projects/{t}/agent-tokens/{id}/revoke"), None).await;
+    assert_eq!((st, &r["revoked"]), (200, &json!(2)), "{r}");
+    let why =
+        refused(&tool(&base, &token, "issue_write", json!({ "kind": "create", "title": "no", "project": t })).await);
+    assert!(why.contains("no issues.write grant"), "{why}");
+    // A bad argument never echoes a value.
+    let why = refused(&tool(&base, &token, "set_secret", json!({ "name": "A", "value": ["hunter2"] })).await);
+    assert!(!why.contains("hunter2"), "{why}");
 }
 
 /// The token opens the MCP endpoint and nothing else: every other route the

@@ -6,51 +6,24 @@
 //! `runs.start`, `runs.command` and `secrets.write` (set a project's
 //! secrets by name, never read them). None approves anything. Its agent
 //! acts as yours, labelled "<you>'s agent on <name> (MCP)", never past your
-//! role. The token is shown once, when it's made; `ls` lists them, `calls`
-//! what each one's agent did, and `revoke` takes one back at once. Through
-//! control, as this CLI's account (`arugula login`).
+//! role. They're made only on the platform page (Settings, Agents with no
+//! machine), in a signed-in browser: a CLI's login can't, since its key is
+//! a file an agent on this machine could read. The token is shown once,
+//! there. Here `ls` lists them, `calls` says what each one's agent did, and
+//! `revoke` takes one back at once. Through control, as this CLI's account
+//! (`arugula login`).
 
 use anyhow::bail;
 use arugula_control_wire::agent_mcp::{AGENT_TOKENS, agent_token_calls, agent_token_revoke};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::control::Enrolled;
 use crate::util::print_json;
-
-/// What a token can hold.
-const POWERS: [&str; 8] = [
-    "threads.read",
-    "threads.post",
-    "issues.write",
-    "deploys.plan",
-    "runs.read",
-    "runs.start",
-    "runs.command",
-    "secrets.write",
-];
 
 #[derive(clap::Subcommand)]
 pub enum AgentTokensCmd {
     /// Your agent tokens, live and revoked, with their powers.
     Ls,
-    /// Make a token for an agent with no machine, and print it (once).
-    ///
-    /// The powers are threads.read, threads.post, issues.write,
-    /// deploys.plan (plan deploys and ask for approval, never approve),
-    /// runs.read, runs.start (run specs), runs.command (commands of its
-    /// own) and secrets.write (set a project's secrets by name, never read
-    /// them), over each --project. A token's powers don't change: make
-    /// another for more.
-    Add {
-        /// What its agent is called: "<you>'s agent on <name> (MCP)".
-        name: String,
-        /// One or more powers.
-        #[arg(required = true)]
-        powers: Vec<String>,
-        /// A project, by its name or id (one or more).
-        #[arg(long = "project", required = true)]
-        projects: Vec<String>,
-    },
     /// Revoke a token, by its name or id: its agent is refused from its
     /// next call.
     Revoke {
@@ -80,7 +53,7 @@ pub fn run(cmd: Option<AgentTokensCmd>, json_out: bool) -> anyhow::Result<i32> {
             }
             let tokens = listed["tokens"].as_array().cloned().unwrap_or_default();
             if tokens.is_empty() {
-                println!("No agent tokens. `arugula agent-tokens add NAME POWER... --project NAME` makes one.");
+                println!("No agent tokens. Make one on the platform page: Settings, Agents with no machine.");
             }
             for t in &tokens {
                 println!("{}", line(t));
@@ -88,34 +61,6 @@ pub fn run(cmd: Option<AgentTokensCmd>, json_out: bool) -> anyhow::Result<i32> {
             if let Some(url) = listed["mcp_url"].as_str() {
                 println!("Their MCP endpoint: {url}");
             }
-        }
-        AgentTokensCmd::Add { name, powers, projects } => {
-            if let Some(p) = powers.iter().find(|p| !POWERS.contains(&p.as_str())) {
-                bail!("a token can't hold {p}: {}", POWERS.join(", "));
-            }
-            let all = e.api("GET", "/api/projects", None)?;
-            let ids =
-                projects.iter().map(|p| crate::cmd::grants::project_id(&all, p)).collect::<Result<Vec<_>, _>>()?;
-            let made =
-                e.api("POST", AGENT_TOKENS, Some(&json!({ "name": name, "projects": ids, "powers": powers })))?;
-            if json_out {
-                print_json(&made);
-                return Ok(0);
-            }
-            let token = made["token"].as_str().unwrap_or_default();
-            let url = made["mcp_url"].as_str().unwrap_or_default();
-            println!("{}", line(&made["agent_token"]));
-            println!();
-            println!("The token, shown this once (it isn't kept, only its hash):");
-            println!();
-            println!("  {token}");
-            println!();
-            println!("Give it to the agent as an MCP server over HTTP:");
-            println!("  url: {url}");
-            println!("  header: Authorization: Bearer {token}");
-            println!(
-                "For Claude Code: claude mcp add --transport http arugula {url} --header \"Authorization: Bearer {token}\""
-            );
         }
         AgentTokensCmd::Revoke { token } => {
             let id = token_id(&e, &token)?;
@@ -209,14 +154,12 @@ fn call_line(c: &Value) -> String {
 mod tests {
     use super::*;
     use clap::Parser;
+    use serde_json::json;
 
     #[test]
-    fn a_token_is_made_with_powers_over_projects() {
+    fn tokens_are_listed_revoked_and_read_never_made_here() {
         let parse = |args: &[&str]| crate::Cli::try_parse_from([&["arugula", "agent-tokens"], args].concat());
-        assert!(parse(&["add", "redone", "issues.write", "deploys.plan", "--project", "acme"]).is_ok());
-        assert!(parse(&["add", "redone", "issues.write", "--project", "acme", "--project", "web"]).is_ok());
-        assert!(parse(&["add", "redone", "issues.write"]).is_err(), "a project");
-        assert!(parse(&["add", "redone", "--project", "acme"]).is_err(), "a power");
+        assert!(parse(&["add", "redone", "issues.write", "--project", "acme"]).is_err(), "made on the page only");
         assert!(parse(&["revoke", "redone"]).is_ok());
         assert!(parse(&["calls", "redone", "--limit", "5"]).is_ok());
         assert!(parse(&[]).is_ok());

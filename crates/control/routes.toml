@@ -1034,8 +1034,8 @@ method = "POST"
 path = "/api/agent-tokens"  # wire::agent_mcp::AGENT_TOKENS
 process = "platform"
 auth = "session"
-clients = ["page", "cli"]
-note = "Mints one: a name, projects the minter reads (asked of the hub), powers. The token is in this answer only."
+clients = ["page"]
+note = "Mints one, from a browser's session on the platform page only (a CLI's login is refused): a name, projects the minter reads (asked of the hub), powers. The token is in this answer only; the account's devices are pushed a notice."
 
 [[route]]
 method = "POST"
@@ -1054,12 +1054,36 @@ clients = ["page", "cli"]
 note = "The calls a token's agent made, newest first: tool, project, outcome, what happened. Never a value."
 
 [[route]]
+method = "GET"
+path = "/api/projects/{project}/agent-tokens"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Every live agent token over the project, whoever minted it, with its powers there: the project's owners."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/agent-tokens/{id}/revoke"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project owner revokes a token's grants over the project, whoever minted it."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/secrets"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "The project's own secrets (set_secret's) by name, who last set each and when: never a value. The project's owners."
+
+[[route]]
 method = "POST"
 path = "/api/mcp"  # wire::agent_mcp::MCP
 process = "platform"
 auth = "agent_token"
 clients = ["agent"]
-note = "MCP (Streamable HTTP, JSON-RPC over POST, stateless) for agents with no machine: issues, threads, runs, deploy plans and asks, project secrets set by name. Never an approval. Every call is noted for the token's owner."
+note = "MCP (Streamable HTTP, one JSON-RPC message per POST, at most 64 KiB, stateless; no batches) for agents with no machine. The only platform route a client's Authorization reaches besides the inference broker's (gateway::bearer_route): issues, threads, runs, deploy plans and asks, project secrets set by name. Never an approval. Every call is noted for the token's owner."
 
 # ---- platform: projects
 # The platform page's list of the reader's projects (M150): their own and
