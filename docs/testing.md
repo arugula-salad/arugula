@@ -101,7 +101,7 @@ A commit on main whose required checks all passed gets a `ci/green/<sha>`
 tag, and one that passed and then failed a re-run gets `ci/revoked/<sha>`
 (chant's `ci.green`, #503). `chant.workspace.json` names the checks:
 lint; build, static and clippy; test; the e2e shards; macos (test) and
-macos (webkit); and Windows' workspace and desktop. A skipped macos or
+macos (webkit); and Windows' workspace, workspace-clippy and desktop. A skipped macos or
 desktop run counts as passed. testnet, stack, perf and the nightly
 workflows aren't required. `.github/workflows/chant-ci-green.yml` runs
 `chant ci tick` when check, windows or windows-desktop finish on main, and

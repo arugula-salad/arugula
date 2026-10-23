@@ -225,7 +225,7 @@
         "test": { "runs": ["test"], "skipped": "pass" },
         "e2e": { "runs": ["e2e*"], "skipped": "pass" },
         "macos": { "runs": ["macos*"], "skipped": "pass" },
-        "windows": { "runs": ["workspace", "desktop"], "skipped": "pass" }
+        "windows": { "runs": ["workspace", "workspace-clippy", "desktop"], "skipped": "pass" }
       },
       "require": ["lint", "build", "test", "e2e", "macos", "windows"]
     }
