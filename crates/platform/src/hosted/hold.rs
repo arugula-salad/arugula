@@ -26,8 +26,8 @@
 //! whatever was said. In the last stretch before it ([`cycle_window`]) the
 //! worker pauses and resumes the box at the next idle moment, which
 //! restarts the clock; a single turn that runs to the cap is woken at once
-//! and said on the workspace (`error`), and in the platform's log
-//! ([`super::worker`]).
+//! and said on the workspace (`error`), in the platform's log, and in a push
+//! to the workspace's maker, again each cap it runs on ([`super::worker`]).
 
 use std::{
     collections::{HashMap, HashSet},

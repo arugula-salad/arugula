@@ -36,9 +36,14 @@ export function tapUrl(n: { pane?: number; daemon?: string; reason?: unknown }):
 /** M156: where a chat push opens on the platform page (an id-only path,
  * which the page puts in its project), or undefined for a push that isn't
  * one of the platform's. */
-export function platformTap(n: { chat?: unknown; inbox?: unknown; deploy?: unknown }): string | undefined {
+export function platformTap(n: { chat?: unknown; inbox?: unknown; deploy?: unknown; hosted?: unknown }): string | undefined {
   // M218: a deploy waiting for an owner's approval.
   if (typeof n.deploy === "string" && /^dep_[0-9a-f]{32}$/.test(n.deploy)) return `/deploys/${n.deploy}`;
+  // A hosted workspace whose agent turn ran past the provider's limit.
+  const h = n.hosted as { project?: unknown; workspace?: unknown } | undefined;
+  if (h && typeof h.project === "string" && /^prj_[0-9a-f]{32}$/.test(h.project) && typeof h.workspace === "string" && /^hw_[0-9a-f]{32}$/.test(h.workspace)) {
+    return `/p/${h.project}/workspaces/${h.workspace}`;
+  }
   const c = n.chat as { room?: unknown; seq?: unknown } | undefined;
   if (c && typeof c.room === "string" && /^[a-z]{2}_[0-9a-f]{8,32}$/.test(c.room)) {
     const msg = typeof c.seq === "number" && Number.isInteger(c.seq) ? `?msg=${c.seq}` : "";
