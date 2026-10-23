@@ -41,6 +41,7 @@ use arugula_control_wire::{
     runs::{RunRevoke, RunStart},
 };
 use arugula_e2e::{
+    cert::LegacyAppChildren,
     hosted::{Owner, Owners},
     now_ms,
     project_grant::{self, GrantRefusal, GrantRevoke, ProjectGrant, Revokes, Running},
@@ -90,6 +91,15 @@ pub(crate) fn owners(saved: &Saved) -> Option<Owners<'_>> {
     }
 }
 
+/// The browsers and phones the desktop app's old windows approved, as this
+/// machine pinned them with its owners' certificates (#1394): an app window
+/// counts just above one of them and nowhere else. None pinned (a machine
+/// enrolled before #1394, until its first refresh): no app window counts.
+pub(crate) fn legacy_app_children(saved: &Saved) -> &LegacyAppChildren {
+    const NONE: &LegacyAppChildren = &LegacyAppChildren::new();
+    saved.hosted.as_ref().and_then(|p| p.legacy_app_children.as_ref()).unwrap_or(NONE)
+}
+
 /// Whether the platform may do `s.cap` on this machine under `s.grant` at
 /// `now`, with the revokes it sent (checked now) and the ones `kept` here
 /// (checked when they were kept).
@@ -103,7 +113,8 @@ pub fn check(saved: &Saved, s: &RunStart, kept: &[GrantRevoke], now: u64) -> Res
     }
     let owners = owners(saved).ok_or(GrantRefusal::Unsigned)?;
     let revokes = Revokes { delegation: &pin.revocations, sent: &s.revokes, kept };
-    project_grant::check(&s.grant, &pin.delegation, revokes, &owners, &s.cap, now)?;
+    let children = legacy_app_children(saved);
+    project_grant::check(&s.grant, &pin.delegation, revokes, &owners, children, &s.cap, now)?;
     Ok(())
 }
 
@@ -128,7 +139,9 @@ fn keep(dir: &Path, saved: &Saved, revokes: &[GrantRevoke]) -> anyhow::Result<bo
     let Some(newest) = revokes
         .iter()
         .filter(|r| {
-            r.project == pin.cert.project && r.delegation == delegation && r.signed_for(&pin.delegation.owner, &owners)
+            r.project == pin.cert.project
+                && r.delegation == delegation
+                && r.signed_for(&pin.delegation.owner, &owners, legacy_app_children(saved))
         })
         .max_by_key(|r| r.at)
     else {
@@ -236,7 +249,7 @@ pub fn revoke(app: &crate::server::App, r: &RunRevoke) -> OpAnswer {
                 .hosted
                 .as_ref()
                 .zip(owners(&saved))
-                .is_some_and(|(p, o)| r.revoke.signed_for(&p.delegation.owner, &o));
+                .is_some_and(|(p, o)| r.revoke.signed_for(&p.delegation.owner, &o, legacy_app_children(&saved)));
             if signed { OpAnswer::Done { url: None } } else { refused(GrantRefusal::Unsigned.into()) }
         }
         Err(e) => OpAnswer::Failed { error: format!("{e:#}") },
@@ -394,6 +407,32 @@ pub(crate) mod tests {
         assert!(read_kept(&dir).is_err(), "corrupt");
         std::fs::remove_file(dir.join(FILE)).unwrap();
         assert!(read_kept(&dir).is_err(), "missing, though one was kept");
+    }
+
+    /// A browser the desktop app's old window approved signs a grant only
+    /// once the machine pinned it as such (M253, #1394); the window never.
+    #[test]
+    fn an_app_window_counts_only_by_the_pinned_set() {
+        let (mut saved, d, root, _) = machine();
+        let mk = |name: &str, by: &DeviceKeys| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, "acct1", Kind::Browser, name);
+            c.sign_with(by);
+            (k, c)
+        };
+        let (window, window_cert) = mk("Arugula app on jake-air", &root);
+        let (firefox, firefox_cert) = mk("Firefox on Mac", &window);
+        let (edge, edge_cert) = mk("Edge", &window);
+        saved.certs.extend([window_cert, firefox_cert, edge_cert]);
+        let code =
+            |saved: &Saved, by: &DeviceKeys| check(saved, &start(&grant(&d, by, 10)), &[], 20).err().map(|r| r.code);
+        // Enrolled before #1394: none pinned, until its first refresh.
+        assert_eq!(code(&saved, &firefox), Some("grant_unsigned"));
+        saved.hosted.as_mut().unwrap().legacy_app_children = Some([("acct1".to_owned(), vec![firefox.id()])].into());
+        assert_eq!(code(&saved, &firefox), None);
+        assert_eq!(code(&saved, &edge), Some("grant_unsigned"), "not one it approved back then");
+        assert_eq!(code(&saved, &window), Some("grant_unsigned"), "the window itself");
+        assert_eq!(code(&saved, &root), None);
     }
 
     #[test]

@@ -1414,10 +1414,11 @@ chain; the device that signs must still be one the account trusts now,
 and a removed device approves nothing new. Rows approved before `approved_at` came
 have none; after the cutoff those were approved under #1343's rule, which
 refused a window approving a browser. The platform gets the list with an
-account's devices (`DeviceTrust::legacy_app_children`); a deploy's box pins
+account's devices (`DeviceTrust::legacy_app_children`); a hosted box pins
 the first list control sends (`Enrollment::legacy_app_children`), and each
 later refresh only shrinks it, never adds; a box that has none counts no
-window. The page gets it from `GET /api/devices` (`legacy_app_children`)
+window. A box checks a deploy's approval and a standing grant (and its
+revokes, M253) against the list it pinned, as the hub does. The page gets it from `GET /api/devices` (`legacy_app_children`)
 to show what control will take (Approve, recovery codes, standing grants).
 Daemons' and pages' own checks of team papers keep #1343's rule.
 
