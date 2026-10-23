@@ -262,13 +262,19 @@ fn app_id(app: &str) -> Result<(), Nope> {
     let ok = !app.is_empty()
         && app.len() <= 64
         && app.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'));
-    if ok { Ok(()) } else { Err(nope(StatusCode::BAD_REQUEST, "app", "An app's id is 1 to 64 letters, digits, '-', '_' or '.'.")) }
+    if ok {
+        Ok(())
+    } else {
+        Err(nope(StatusCode::BAD_REQUEST, "app", "An app's id is 1 to 64 letters, digits, '-', '_' or '.'."))
+    }
 }
 
 /// The account's role in `project`, read fresh, or why it has none there.
 async fn role_in(app: &Platform, account: &str, project: &str) -> Result<(String, TeamRole), Nope> {
     membership(app, account, project, true).await.map_err(|e| match e.0 {
-        StatusCode::NOT_FOUND => nope(StatusCode::FORBIDDEN, "not_member", format!("{account} isn't a member of that project.")),
+        StatusCode::NOT_FOUND => {
+            nope(StatusCode::FORBIDDEN, "not_member", format!("{account} isn't a member of that project."))
+        }
         _ => e.into(),
     })
 }
@@ -306,7 +312,11 @@ pub struct PutApp {
 async fn editor_in(app: &Platform, account: &str, project: &str) -> Result<String, Nope> {
     let (project, role) = role_in(app, account, project).await?;
     if role == TeamRole::Viewer {
-        return Err(nope(StatusCode::FORBIDDEN, "role", format!("{account} only views that project, so can't keep apps in it.")));
+        return Err(nope(
+            StatusCode::FORBIDDEN,
+            "role",
+            format!("{account} only views that project, so can't keep apps in it."),
+        ));
     }
     Ok(project)
 }
@@ -329,8 +339,10 @@ pub async fn put(
     {
         editor_in(&app, &account, &b.project).await?;
     }
-    let title: String = b.title.chars().filter(|c| !c.is_control()).collect::<String>().trim().chars().take(MAX_TITLE).collect();
-    let title = if title.is_empty() { before.as_ref().map(|b| b.title.clone()).unwrap_or_else(|| id.clone()) } else { title };
+    let title: String =
+        b.title.chars().filter(|c| !c.is_control()).collect::<String>().trim().chars().take(MAX_TITLE).collect();
+    let title =
+        if title.is_empty() { before.as_ref().map(|b| b.title.clone()).unwrap_or_else(|| id.clone()) } else { title };
     let kept = app.db.put_client_app(&client, &id, &target, &title, &account, now_ms())?;
     let moved = before.as_ref().map(|b| b.project.as_str()) != Some(target.as_str());
     if moved {
@@ -371,7 +383,9 @@ pub async fn secret(
         return Err(nope(
             StatusCode::FORBIDDEN,
             "no_grant",
-            format!("The owners of {id}'s project haven't let {client} read {name}. They do it in the project's settings."),
+            format!(
+                "The owners of {id}'s project haven't let {client} read {name}. They do it in the project's settings."
+            ),
         ));
     }
     let master = app
@@ -379,12 +393,17 @@ pub async fn secret(
         .as_deref()
         .ok_or_else(|| nope(StatusCode::NOT_FOUND, "no_secret", "This platform keeps no secrets."))?;
     let value = crate::keys::open(&app.db, master, &found.project, &project_secret(&name))?.ok_or_else(|| {
-        nope(StatusCode::NOT_FOUND, "no_secret", format!("{id}'s project has no secret {name}. Its owners set it in the project's settings."))
+        nope(
+            StatusCode::NOT_FOUND,
+            "no_secret",
+            format!("{id}'s project has no secret {name}. Its owners set it in the project's settings."),
+        )
     })?;
     let now = now_ms();
     app.db.note_client_secret_read(&found.project, &client, &name, &id, now)?;
     info!(%client, app = %id, project = %found.project, name, "a client read a project's secret");
-    Ok(([(header::CACHE_CONTROL, "no-store")], Json(json!({ "app": id, "name": name, "value": value }))).into_response())
+    Ok(([(header::CACHE_CONTROL, "no-store")], Json(json!({ "app": id, "name": name, "value": value })))
+        .into_response())
 }
 
 /// `PUT` (on) or `DELETE` (off) `/api/linked-products/{client}/projects`:
@@ -513,8 +532,12 @@ pub async fn set_project_secret(
     }
     let master =
         app.secret_key.as_deref().ok_or_else(|| err(StatusCode::NOT_FOUND, "this platform keeps no secrets"))?;
-    if !app.db.has_project_secret(&project, &stored)? && app.db.project_secrets(&project)?.len() >= MAX_PROJECT_SECRETS {
-        return Err(err(StatusCode::CONFLICT, &format!("the project keeps {MAX_PROJECT_SECRETS} secrets of its own already")));
+    if !app.db.has_project_secret(&project, &stored)? && app.db.project_secrets(&project)?.len() >= MAX_PROJECT_SECRETS
+    {
+        return Err(err(
+            StatusCode::CONFLICT,
+            &format!("the project keeps {MAX_PROJECT_SECRETS} secrets of its own already"),
+        ));
     }
     crate::keys::seal(&app.db, master, &project, &stored, &b.value)?;
     app.db.note_secret_writer(&project, &stored, &account, None)?;

@@ -64,7 +64,14 @@ async fn rig() -> Rig {
 
 impl Rig {
     /// As a client by its credential, for `account` when it names one.
-    async fn client(&self, credential: &str, account: Option<&str>, method: &str, path: &str, body: Option<Value>) -> (u16, Value) {
+    async fn client(
+        &self,
+        credential: &str,
+        account: Option<&str>,
+        method: &str,
+        path: &str,
+        body: Option<Value>,
+    ) -> (u16, Value) {
         let mut req = reqwest::Client::new()
             .request(method.parse().unwrap(), format!("{}{path}", self.base))
             .bearer_auth(credential)
@@ -144,8 +151,12 @@ async fn a_client_sees_projects_only_once_the_account_lets_it() {
     assert_eq!(projects.len(), 2, "{v}");
     assert_eq!((projects[0]["personal"].as_bool(), projects[0]["role"].as_str()), (Some(true), Some("owner")));
     assert_eq!((projects[1]["id"].as_str(), projects[1]["role"].as_str()), (Some(r.t1.as_str()), Some("owner")));
-    let members: Vec<(&str, &str)> =
-        projects[1]["members"].as_array().unwrap().iter().map(|m| (m["account"].as_str().unwrap(), m["role"].as_str().unwrap())).collect();
+    let members: Vec<(&str, &str)> = projects[1]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| (m["account"].as_str().unwrap(), m["role"].as_str().unwrap()))
+        .collect();
     assert_eq!(members, [("alice", "owner"), ("bob", "editor"), ("vic", "viewer")]);
     // Another client of alice's isn't let.
     assert_eq!(reason(&r.client(HUD, Some("alice"), "GET", "/api/client/projects", None).await.1), "consent");
@@ -166,9 +177,14 @@ async fn apps_are_kept_by_project_and_a_teammate_opens_one() {
     for a in ["alice", "bob", "vic", "dana"] {
         r.let_see(a).await;
     }
-    let (s, v) = r.studio("alice", "PUT", "/api/client/apps/app-1", Some(json!({ "project": r.t1, "title": "Pinboard\u{7}" }))).await;
+    let (s, v) = r
+        .studio("alice", "PUT", "/api/client/apps/app-1", Some(json!({ "project": r.t1, "title": "Pinboard\u{7}" })))
+        .await;
     assert_eq!(s, 200, "{v}");
-    assert_eq!((v["project"].as_str(), v["title"].as_str(), v["role"].as_str()), (Some(r.t1.as_str()), Some("Pinboard"), Some("owner")));
+    assert_eq!(
+        (v["project"].as_str(), v["title"].as_str(), v["role"].as_str()),
+        (Some(r.t1.as_str()), Some("Pinboard"), Some("owner"))
+    );
     assert_eq!(v["added_by"], "alice");
 
     // Bob, who didn't add it, sees it and opens it as an editor.
@@ -217,10 +233,13 @@ async fn apps_are_kept_by_project_and_a_teammate_opens_one() {
 
     // Alice moves it to her own project, then it's hers alone; a new title
     // without moving it keeps who put it there.
-    let (s, v) = r.studio("alice", "PUT", "/api/client/apps/app-1", Some(json!({ "project": "personal", "title": "" }))).await;
+    let (s, v) =
+        r.studio("alice", "PUT", "/api/client/apps/app-1", Some(json!({ "project": "personal", "title": "" }))).await;
     assert_eq!((s, v["personal"].as_bool(), v["title"].as_str()), (200, Some(true), Some("Pinboard")), "{v}");
     assert_eq!(reason(&r.studio("vic", "GET", "/api/client/apps/app-1", None).await.1), "not_member");
-    let (_, v) = r.studio("alice", "PUT", "/api/client/apps/app-1", Some(json!({ "project": "personal", "title": "Board" }))).await;
+    let (_, v) = r
+        .studio("alice", "PUT", "/api/client/apps/app-1", Some(json!({ "project": "personal", "title": "Board" })))
+        .await;
     assert_eq!((v["title"].as_str(), v["added_by"].as_str()), (Some("Board"), Some("alice")));
 
     // The client forgets it (retired), with no account.
@@ -272,7 +291,10 @@ async fn a_client_reads_a_project_secret_only_by_an_owners_grant() {
     // another name, nor an app the client doesn't keep.
     assert_eq!(reason(&r.read("app-2").await.1), "no_grant");
     assert_eq!(reason(&r.client(HUD, None, "GET", "/api/client/apps/app-1/secrets/STRIPE", None).await.1), "no_app");
-    assert_eq!(reason(&r.client(STUDIO, None, "GET", "/api/client/apps/app-1/secrets/OTHER", None).await.1), "no_grant");
+    assert_eq!(
+        reason(&r.client(STUDIO, None, "GET", "/api/client/apps/app-1/secrets/OTHER", None).await.1),
+        "no_grant"
+    );
     assert_eq!(reason(&r.read("app-9").await.1), "no_app");
     r.read("app-1").await;
 
@@ -309,7 +331,11 @@ async fn unlinking_ends_the_switches_and_an_account_goes_with_its_apps() {
     r.let_see("alice").await;
     r.app.db.set_consent("alice", "studio", true, 1).unwrap();
     let (_, v) = r.page("alice", "GET", "/api/linked-products", None).await;
-    assert_eq!((v["links"][0]["client"].as_str(), v["links"][0]["projects"].as_bool()), (Some("studio"), Some(true)), "{v}");
+    assert_eq!(
+        (v["links"][0]["client"].as_str(), v["links"][0]["projects"].as_bool()),
+        (Some("studio"), Some(true)),
+        "{v}"
+    );
     r.studio("alice", "PUT", "/api/client/apps/app-1", Some(json!({ "project": "personal" }))).await;
     r.studio("alice", "PUT", "/api/client/apps/app-2", Some(json!({ "project": r.t1 }))).await;
 

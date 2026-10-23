@@ -81,7 +81,18 @@ fn app_row(r: &super::sql::Row) -> Result<ClientApp> {
     })
 }
 
-fn event(c: &impl Sql, project: &str, client: &str, name: &str, kind: &str, app: Option<&str>, by: Option<&str>, at: u64) -> Result<()> {
+/// One event, as each of its writers knows it.
+#[allow(clippy::too_many_arguments)]
+fn event(
+    c: &impl Sql,
+    project: &str,
+    client: &str,
+    name: &str,
+    kind: &str,
+    app: Option<&str>,
+    by: Option<&str>,
+    at: u64,
+) -> Result<()> {
     c.execute(
         "INSERT INTO client_secret_events (project_id, client, name, kind, app, by_account, at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -136,8 +147,12 @@ impl Db {
     pub fn end_client_consents(&self, account: &str, client: &str) -> Result<bool> {
         let mut c = self.c();
         let tx = c.transaction()?;
-        let n = tx.execute("DELETE FROM client_consents WHERE account = ?1 AND client = ?2", params![account, client])?
-            + tx.execute("DELETE FROM inference_consents WHERE account = ?1 AND client = ?2", params![account, client])?;
+        let n = tx
+            .execute("DELETE FROM client_consents WHERE account = ?1 AND client = ?2", params![account, client])?
+            + tx.execute(
+                "DELETE FROM inference_consents WHERE account = ?1 AND client = ?2",
+                params![account, client],
+            )?;
         tx.commit()?;
         Ok(n > 0)
     }
@@ -172,7 +187,15 @@ impl Db {
 
     /// Keep `client`'s app `app` in `project`, titled `title`, put there by
     /// `by`: a new app, a new title, or a move. The app as it is now.
-    pub fn put_client_app(&self, client: &str, app: &str, project: &str, title: &str, by: &str, now: u64) -> Result<ClientApp> {
+    pub fn put_client_app(
+        &self,
+        client: &str,
+        app: &str,
+        project: &str,
+        title: &str,
+        by: &str,
+        now: u64,
+    ) -> Result<ClientApp> {
         self.c().execute(
             "INSERT INTO client_apps (client, app, project_id, title, added_by, added_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT (client, app) DO UPDATE SET title = excluded.title,

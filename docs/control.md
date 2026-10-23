@@ -302,6 +302,41 @@ retry headers), and a redirect isn't followed.
   /api/inference/spend` is an account's month on the platform's key and its
   cap, as the lobby showed it (`crates/platform/src/hosted/broker/`).
 
+**studio as a client (M236, Arugula #34).** studio's lobby is a full client
+of the platform ("studio is a full client: Sign in with Arugula, apps by
+project"): people sign in to it with Arugula (the hub's issuer, M228, and
+account links by numeric GitHub id, M229), an app's owners are its
+project's members, its egress secrets' values can come from the project's
+own secrets, and its boxes' Claude calls go through the broker above. A
+registered client (the broker's, by its credential) has routes of its own
+under `/api/client/`, the only other platform routes a bearer reaches
+(`crates/platform/src/clients.rs`):
+
+- **For an account it names** (`arugula-account`), only once that account
+  lets it see its projects: a switch beside the product under Settings,
+  Linked products, on the platform page, off until then; unlinking the
+  product there ends it, and its Claude switch too. It reads the account's
+  projects, its role and their members (`GET /api/client/projects`), its
+  apps in them with the account's role (`GET /api/client/apps`), one app
+  with the role read fresh (`GET /api/client/apps/{app}`: 404 `no_app`,
+  403 `not_member`), and keeps an app in a project the account edits or
+  owns (`PUT /api/client/apps/{app}`, `personal` for its own; a move needs
+  that of the project it leaves, too). Viewers see an app; editors and
+  owners open it.
+- **With no account,** it forgets an app it retired (`DELETE`), and reads
+  the value of one of the app's project's own secrets
+  (`GET /api/client/apps/{app}/secrets/{name}`), **only by a project
+  owner's grant of that secret to that client**, made on the project's
+  settings page. Every read is counted on the grant and kept as an event
+  (90 days) for the project's owners; nothing logs a value.
+- **Project owners** set and clear the project's own secrets on its
+  settings page (agents set them with `set_secret`, M230), grant each to a
+  client there, and see the reads; clearing a secret ends its grants. A
+  project's members see the clients' apps in it there too.
+
+A link is never authorization: the client acts for an account only by that
+account's own switch, and reads a secret only by its owner's grant.
+
 **Agents on hosted workspaces (M184, #1245).** A hosted workspace's agent
 blocks are its machine's, as on a laptop: + Agent on the platform page's
 workspace (`/p/:project/workspaces/hw_…`) opens Start an agent on control's

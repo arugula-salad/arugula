@@ -378,6 +378,9 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
   keeps (studio: in its own secrets).
   `house_usd`: what the platform's key may spend each UTC month for each
   account the client names (studio: 20, the lobby's `STUDIO_SPEND_CAP_USD`).
+  The same credential is the client's on its own routes (M236,
+  `/api/client/...`: its apps by project, its people's projects, the
+  secrets project owners grant it), which the gateway lets a bearer reach.
   `payers`: it may name a sponsor and a visitor. For studio:
   `studio:<sha256>:20:payers`. M228's registered clients replace the digest
   (the policy stays here).
@@ -615,6 +618,35 @@ then. `/oauth/*` is rate-limited per client address (`limit::ISSUER`).
   it, which closes login CSRF through a link carrying someone else's
   assertion. Both need hud's change, and neither breaks today's format.
 
+#### studio as a client (M236)
+
+What makes studio's lobby a client, once, in this order (each a choice for
+Jake: these are production secrets and a public product's sign-in):
+
+1. **The issuer client** (M228): `arugula-control issuer add-client --id studio
+   --kind oidc --name Studio --redirect https://studio.arugula.io/api/auth/arugula/callback`,
+   then its link secret (M229, above). studio holds them as
+   `ARUGULA_CLIENT_ID` and `ARUGULA_CLIENT_SECRET`, with `ARUGULA_ISSUER`.
+2. **The platform credential** (M231): a random credential studio keeps as
+   `ARUGULA_PLATFORM_CREDENTIAL`, whose SHA-256 goes in
+   `ARUGULA_INFERENCE_CLIENTS` as `studio:<sha256>:20:payers` on the
+   platform. Use the same id as the issuer client, so the platform page
+   shows the switches beside the linked product.
+3. **People turn it on themselves,** on the platform page: Settings, Linked
+   products, "Let Studio see my projects", and Settings, Claude, "Let studio
+   use Claude for me". Nothing turns either on for them. Until they do, the
+   lobby keeps an app its maker's and pays Claude as it did.
+4. **Project owners grant secrets** by name on the project's settings page,
+   after setting them there. A grant's reads and the latest events show
+   beside it.
+5. **beds** (studio's other pod): `STUDIO_SERVICE_PLANTING=off` once hosted
+   workspaces plant repos; studio's docs/planter-beds.md lists the rest.
+
+Revoking studio: take its entry out of `ARUGULA_INFERENCE_CLIENTS` and
+restart the platform (every `/api/client/` and broker call is refused at
+once), and remove the issuer client (its links, consents and secret go with
+it, M229).
+
 #### Account links (M229)
 
 A product links its own users to their platform account (the hub's
@@ -630,8 +662,8 @@ account) with `links.rs`, from its server:
 person is, and nothing more. Nothing on the hub or the platform may grant a
 power, a project, a role or a machine because an `account_links` row
 exists, and no product should either: a product decides what its own users
-may do, and reads projects and roles from the platform with an access
-token.
+may do, and reads projects and roles from the platform: as a registered
+client for an account that let it see them (M236, below).
 
 - **Only with a link secret.** A public client's tokens prove who signed in,
   not which of the product's users that is, so these routes take the
