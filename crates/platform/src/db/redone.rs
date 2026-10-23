@@ -40,6 +40,10 @@ pub struct Imported {
     /// What it became: an agent token (`agt_…`), an environment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub platform_id: Option<String>,
+    /// An app's Infisical folder the import vouches is the project's: one
+    /// redone had applied a deploy of. `None` for any other.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
     pub at: u64,
 }
 
@@ -61,7 +65,7 @@ pub struct Projection {
     pub at: u64,
 }
 
-const IMPORT_COLUMNS: &str = "kind, redone_id, tenant, project_id, account_id, platform_id, at";
+const IMPORT_COLUMNS: &str = "kind, redone_id, tenant, project_id, account_id, platform_id, folder, at";
 
 fn imported(r: &Row) -> anyhow::Result<Imported> {
     Ok(Imported {
@@ -71,7 +75,8 @@ fn imported(r: &Row) -> anyhow::Result<Imported> {
         project: r.get(3)?,
         account: r.get(4)?,
         platform_id: r.get(5)?,
-        at: r.get(6)?,
+        folder: r.get(6)?,
+        at: r.get(7)?,
     })
 }
 
@@ -122,9 +127,9 @@ impl Db {
     /// `platform_id` names). Again changes nothing.
     pub fn record_redone_import(&self, i: &Imported) -> anyhow::Result<()> {
         self.c().execute(
-            "INSERT INTO redone_imports (kind, redone_id, tenant, project_id, account_id, platform_id, at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT (kind, redone_id) DO NOTHING",
-            params![i.kind, i.redone_id, i.tenant, i.project, i.account, i.platform_id, i.at],
+            "INSERT INTO redone_imports (kind, redone_id, tenant, project_id, account_id, platform_id, folder, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT (kind, redone_id) DO NOTHING",
+            params![i.kind, i.redone_id, i.tenant, i.project, i.account, i.platform_id, i.folder, i.at],
         )?;
         Ok(())
     }
@@ -213,7 +218,7 @@ impl Db {
             .is_some();
         let imported = c
             .query_row(
-                "SELECT 1 FROM redone_imports WHERE kind = 'app' AND redone_id = ?1 AND project_id = ?2",
+                "SELECT 1 FROM redone_imports WHERE kind = 'app' AND folder = ?1 AND project_id = ?2",
                 params![app, project],
                 |r| r.get::<i64>(0),
             )
@@ -236,13 +241,53 @@ impl Db {
             .is_some();
         let imported = c
             .query_row(
-                "SELECT 1 FROM redone_imports WHERE kind = 'app' AND redone_id = ?1 AND project_id != ?2",
+                "SELECT 1 FROM redone_imports WHERE kind = 'app' AND folder = ?1 AND project_id != ?2",
                 params![app, project],
                 |r| r.get::<i64>(0),
             )
             .optional()?
             .is_some();
         Ok(wrote || imported)
+    }
+
+    /// The environments of the apps the import carried over with the
+    /// tenant agent token `token` came from (M235): all a carried token's
+    /// agent may plan to or set secrets of.
+    pub fn redone_token_environments(&self, token: &str) -> anyhow::Result<Vec<String>> {
+        self.c().query_map(
+            "SELECT a.platform_id FROM redone_imports a JOIN redone_imports t
+               ON t.kind = 'token' AND t.platform_id = ?1 AND a.kind = 'app' AND a.tenant = t.tenant
+               AND a.project_id = t.project_id
+             WHERE a.platform_id IS NOT NULL ORDER BY a.platform_id",
+            params![token],
+            |r| r.get(0),
+        )
+    }
+
+    /// The projects whose planter ship or promote environment holds the
+    /// app's name `app` (M233's claims: its `app` setting), sorted.
+    pub fn app_claimants(&self, app: &str) -> anyhow::Result<Vec<String>> {
+        use arugula_e2e::deploy::planter as p;
+        let mut out = vec![];
+        for driver in [p::SHIP, p::PROMOTE] {
+            for e in self.environments_driven_by(driver)? {
+                if e.settings.get(p::APP).map(String::as_str) == Some(app) {
+                    out.push(e.project);
+                }
+            }
+        }
+        out.sort();
+        out.dedup();
+        Ok(out)
+    }
+
+    /// The tenants the import made into `project`.
+    pub fn redone_tenants_in(&self, project: &str) -> anyhow::Result<Vec<String>> {
+        self.c().query_map(
+            "SELECT redone_id FROM redone_imports WHERE kind = 'tenant' AND project_id = ?1 ORDER BY redone_id",
+            params![project],
+            |r| r.get(0),
+        )
     }
 
     /// The stored names of `project`'s secrets that start with `prefix`
@@ -265,14 +310,14 @@ impl Db {
     }
 }
 
-/// Deleting an account: what the import carried over for it goes (its
-/// tokens go with [`super::agent_tokens::erase_account`]), its name comes
-/// off the projections it set, and what's left of projects that are gone
-/// goes. Run in the `account_deleted` transaction, after
+/// Deleting an account: the import's rows naming it lose its id but stay
+/// (a tombstone: a token carried over before is never carried over again,
+/// even once its account and its agent token are gone); its name comes off
+/// the projections it set, and the projections of projects that are gone
+/// go. Run in the `account_deleted` transaction, after
 /// [`super::projects::erase_account`].
 pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> anyhow::Result<()> {
-    c.execute("DELETE FROM redone_imports WHERE account_id = ?1", params![d.account])?;
-    c.execute("DELETE FROM redone_imports WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
+    c.execute("UPDATE redone_imports SET account_id = NULL WHERE account_id = ?1", params![d.account])?;
     c.execute(
         "UPDATE secret_projections SET by_account = NULL, by_agent = NULL WHERE by_account = ?1",
         params![d.account],

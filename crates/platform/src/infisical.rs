@@ -79,7 +79,7 @@ impl Mode {
 }
 
 /// The projection's configuration: the platform binary's flags.
-#[derive(clap::Args, Debug, Clone, Default)]
+#[derive(clap::Args, Clone, Default)]
 pub struct Args {
     /// The Infisical projection (M235): `off` (the default), `dry-run`
     /// (writes nothing, logs what it would), or `on`.
@@ -102,6 +102,19 @@ pub struct Args {
     /// Its client secret (redone's `INFISICAL_CLIENT_SECRET`).
     #[arg(long = "infisical-client-secret", env = "ARUGULA_INFISICAL_CLIENT_SECRET", hide_env_values = true)]
     pub client_secret: Option<String>,
+}
+
+impl std::fmt::Debug for Args {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Args")
+            .field("projection", &self.projection)
+            .field("url", &self.url)
+            .field("project_id", &self.project_id)
+            .field("environment", &self.environment)
+            .field("client_id", &self.client_id.as_ref().map(|_| "…"))
+            .field("client_secret", &self.client_secret.as_ref().map(|_| "…"))
+            .finish()
+    }
 }
 
 impl Args {
@@ -173,15 +186,18 @@ pub enum Put {
     Held,
 }
 
-/// Infisical's error line from an answer: its `message`, at most 200
-/// characters, with `value` taken out if it's in there.
-fn why(status: reqwest::StatusCode, body: &Value, value: Option<&str>) -> String {
+/// What's kept and said of a refused call: Infisical's status code only.
+/// Its message goes to the platform's own log (at most 200 characters,
+/// with `value` taken out if it's in there), never to the projection's
+/// log or an agent.
+fn why(what: &str, status: reqwest::StatusCode, body: &Value, value: Option<&str>) -> String {
     let m = body.get("message").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(|| body.to_string());
     let m = match value.filter(|v| !v.is_empty()) {
         Some(v) => m.replace(v, "…"),
         None => m,
     };
-    format!("Infisical answered {}: {}", status.as_u16(), m.chars().take(200).collect::<String>())
+    tracing::warn!(status = status.as_u16(), message = %m.chars().take(200).collect::<String>(), "Infisical refused {what}");
+    format!("{what}: Infisical answered {}", status.as_u16())
 }
 
 /// Whether Infisical's answer says the thing is there already (redone's
@@ -211,7 +227,13 @@ impl Writer {
     }
 
     async fn send(&self, req: reqwest::RequestBuilder) -> anyhow::Result<(reqwest::StatusCode, Value)> {
-        let r = req.timeout(Duration::from_secs(30)).send().await.context("Infisical didn't answer")?;
+        let r = match req.timeout(Duration::from_secs(30)).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, "Infisical didn't answer");
+                bail!("Infisical didn't answer");
+            }
+        };
         let status = r.status();
         let text = r.text().await.unwrap_or_default();
         Ok((status, serde_json::from_str(&text).unwrap_or(Value::String(text))))
@@ -229,7 +251,7 @@ impl Writer {
         let (status, v) =
             self.send(self.http.post(format!("{}/api/v1/auth/universal-auth/login", self.url)).json(&body)).await?;
         if !status.is_success() {
-            bail!("logging in to {}", why(status, &v, Some(&self.client_secret)));
+            bail!("{}", why("logging in", status, &v, Some(&self.client_secret)));
         }
         let t = v["accessToken"].as_str().context("Infisical's login answered no accessToken")?.to_owned();
         let life = v["expiresIn"].as_u64().unwrap_or(600).saturating_sub(60).max(60);
@@ -260,7 +282,7 @@ impl Writer {
             .finish();
         let (status, v) = self.call(reqwest::Method::GET, &format!("/api/v1/folders?{q}"), None).await?;
         if !status.is_success() {
-            bail!("listing folders: {}", why(status, &v, None));
+            bail!("{}", why("listing folders", status, &v, None));
         }
         Ok(v["folders"].as_array().into_iter().flatten().any(|f| f["name"].as_str() == Some(app)))
     }
@@ -271,7 +293,7 @@ impl Writer {
         let folder = json!({ "workspaceId": self.project, "environment": self.environment, "path": "/", "name": app });
         let (status, v) = self.call(reqwest::Method::POST, "/api/v1/folders", Some(&folder)).await?;
         if !status.is_success() && !exists(&v) {
-            bail!("making the folder /{app}: {}", why(status, &v, None));
+            bail!("{}", why(&format!("making the folder /{app}"), status, &v, None));
         }
         let body = json!({
             "workspaceId": self.project,
@@ -286,7 +308,7 @@ impl Writer {
             (status, v) = self.call(reqwest::Method::PATCH, &path, Some(&body)).await?;
         }
         if !status.is_success() {
-            bail!("writing /{app}/{key}: {}", why(status, &v, Some(value)));
+            bail!("{}", why(&format!("writing /{app}/{key}"), status, &v, Some(value)));
         }
         Ok(if v.get("secret").is_some() || v.get("approval").is_none() { Put::Written } else { Put::Held })
     }
@@ -399,6 +421,19 @@ async fn decide(app: &Platform, ask: &Ask<'_>) -> Result<bool, Decided> {
         return Err(Decided::Refused(format!("{:?} isn't an environment variable's name", ask.name)));
     }
     let failed = |e: anyhow::Error| Decided::Failed(format!("{e:#}"));
+    // The app's name must be this project's, and only this project's, by
+    // its planter ship or promote environment (M233's claims): the folder
+    // is the claimed name, never an environment's own name.
+    let holders = app.db.app_claimants(ask.app).map_err(failed)?;
+    if holders.iter().any(|p| p != ask.project) {
+        return Err(Decided::Refused(format!("the app {} is another project's", ask.app)));
+    }
+    if !holders.iter().any(|p| p == ask.project) {
+        return Err(Decided::Refused(format!(
+            "the app {} isn't this project's: it has no ship or promote environment for it",
+            ask.app
+        )));
+    }
     if app.db.folder_elsewhere(ask.project, ask.app).map_err(failed)? {
         return Err(Decided::Refused(format!("Infisical's /{}/ is another project's", ask.app)));
     }

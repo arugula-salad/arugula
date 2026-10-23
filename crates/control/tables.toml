@@ -594,10 +594,10 @@ name = "redone_imports"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "What `arugula-platform import redone` carried over (M235): a redone tenant and the project it became, with the account its tokens went to; a redone token's id and the agent grant token it became; an app's name. Ids and times only. A second run finds these and changes nothing."
+what = "What `arugula-platform import redone` carried over (M235): a redone tenant and the project it became, with the account its tokens went to; a redone token's id and the agent grant token it became; an app's name, the environment it became, and the Infisical folder the import vouches for (an app redone had deployed). Ids and times only. A second run finds these and changes nothing."
 why_asleep = "Agents with no machine call the platform's MCP endpoint with every machine asleep, and the projection checks which apps a project carried over."
 with_account = "partly"
-note = "The rows naming the account go, and so do those of projects that are gone; a team's tenant led by someone else stays."
+note = "The rows naming the account stay without its id: a tombstone, so a token carried over before is never carried over again. Nothing else in them is the account's."
 seen_by = ["litestream"]
 
 [[table]]

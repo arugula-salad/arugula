@@ -989,6 +989,26 @@ hashes, uploads or their tarballs.
 - `--dry-run` prints what a run would do and writes nothing; `--json`
   prints the report as JSON.
 
+**Take the backup from a frozen redone.** Scale redone to zero (or stop
+its MCP and admin from changing anything) before copying `state.json`, and
+keep it so until the cutover: a token minted or an app claimed after the
+copy isn't carried over, and a token revoked after it would be. The import
+prints the projects that got ship environments: planter's drivers deploy
+only for the projects they're allowed (`PLANTER_PROJECTS`, M233), so add
+those.
+
+**One project per tenant.** A tenant whose project another tenant has
+already (a person's two tenants, or two of one team) is refused unless
+`--merge` says to put them together.
+
+**A carried token reaches its tenant's apps only:** it plans only to the
+environments the import made from them, sets only their secrets (never a
+project-wide one), and is refused anything else in the project, though its
+grants are over the whole project.
+
+**Deleting an account** keeps the import's rows without its id: a token
+carried over for it is never carried over again.
+
 The production run (ask Jake first: it's step 8's "production imports"):
 
 ```

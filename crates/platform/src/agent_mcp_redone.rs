@@ -154,12 +154,57 @@ pub fn tools() -> Vec<Value> {
     out
 }
 
-/// Whether an environment's driver deploys to home-cloud's app platform,
-/// where an app reads its secrets from Infisical's `planter-apps` (planter's
-/// drivers, M233, and apps-platform, M222): only those apps' secrets are
-/// projected. The fake driver stands in for them where it's allowed.
-pub fn on_home_cloud(driver: &str) -> bool {
-    driver.starts_with("planter-") || driver == "apps-platform" || (driver == "fake" && crate::drivers::fake_allowed())
+/// The app's name an environment holds, if it's one of planter's ship or
+/// promote environments: its `app` setting, which M233 claims for its
+/// project across the platform. Only such an app's secrets are projected
+/// into Infisical, into the folder of that name (never an environment's
+/// own name, which any project may give any environment).
+pub fn claimed_app(env: &Environment) -> Option<&str> {
+    (env.driver == planter::SHIP || env.driver == planter::PROMOTE)
+        .then(|| env.settings.get(planter::APP).map(String::as_str))
+        .flatten()
+}
+
+/// What the app is called: its claimed name, or the environment's.
+fn app_name(env: &Environment) -> &str {
+    claimed_app(env).unwrap_or(&env.name)
+}
+
+/// What a carried-over token's agent may not do with the platform's own
+/// tools (M235): plan to an environment the import didn't make from its
+/// tenant's apps, or set a project-wide secret. `None` when it may.
+pub(super) async fn refuses(agent: &Agent, name: &str, a: &Value) -> Option<Failure> {
+    match name {
+        "set_secret" => Some(failed("a redone token sets its apps' secrets only: set_secret with app, key and value")),
+        "plan_deploy" => {
+            let wanted = a.get("environment").and_then(Value::as_str).unwrap_or_default().trim().to_owned();
+            let project = match agent.project(a.get("project").and_then(Value::as_str)).await {
+                Ok(p) => p,
+                Err(e) => return Some(e),
+            };
+            if let Err(e) =
+                agent_may(&agent.app, &agent.me(), DEPLOYS_PLAN, &AgentScope::Project(project.clone())).await
+            {
+                return Some(e.into());
+            }
+            let allowed = match agent.app.db.redone_token_environments(&agent.token.id) {
+                Ok(a) => a,
+                Err(e) => return Some(e.into()),
+            };
+            let envs = match agent.app.db.environments(&project) {
+                Ok(e) => e,
+                Err(e) => return Some(e.into()),
+            };
+            let env = envs.into_iter().find(|e| e.id == wanted || e.name == wanted);
+            match env {
+                Some(e) if allowed.contains(&e.id) => None,
+                _ => {
+                    Some(Failure::Refused(format!("a redone token plans only to the apps redone had: not {wanted:?}")))
+                }
+            }
+        }
+        _ => None,
+    }
 }
 
 /// What redone's agents were told, for a carried-over token's.
@@ -264,9 +309,12 @@ pub(super) async fn dispatch(agent: &Agent, name: &str, a: &Value) -> Option<Out
     })
 }
 
-/// The app's environment in project `p`: by its name, an environment the
-/// project's owner made (or the import made from redone's app). Never
-/// made here: an agent doesn't claim names.
+/// The app's environment in project `p`, the caller having asked for the
+/// token's grant there: one the import made from the token's tenant's
+/// redone apps (a carried-over token reaches those only). A planter ship
+/// or promote environment is found by the app's name it claims (ship's
+/// first), any other by its own name. Never made here: an agent doesn't
+/// claim names.
 fn app_env(agent: &Agent, p: &str, app: &str) -> Result<Environment, Failure> {
     let app = app.trim();
     if !infisical::valid_app(app) {
@@ -274,12 +322,26 @@ fn app_env(agent: &Agent, p: &str, app: &str) -> Result<Environment, Failure> {
             "app {app:?}: lowercase letters, digits and dashes, at most 32, and not one of the platform's names"
         )));
     }
-    agent.app.db.environments(p)?.into_iter().find(|e| e.name == app).ok_or_else(|| {
-        failed(format!(
-            "this project has no app {app}: its owner adds it on the platform page (an environment called {app}). \
-             An agent can't claim a name"
-        ))
-    })
+    let allowed = agent.app.db.redone_token_environments(&agent.token.id)?;
+    let mut envs: Vec<Environment> = agent
+        .app
+        .db
+        .environments(p)?
+        .into_iter()
+        .filter(|e| match claimed_app(e) {
+            Some(claimed) => claimed == app,
+            None => !e.driver.starts_with("planter-") && e.name == app,
+        })
+        .collect();
+    envs.sort_by_key(|e| e.driver != planter::SHIP);
+    let none = || {
+        failed(format!("this token has no app {app}: it reaches the apps redone had, and an agent can't claim a name"))
+    };
+    let env = envs.into_iter().next().ok_or_else(none)?;
+    if !allowed.contains(&env.id) {
+        return Err(none());
+    }
+    Ok(env)
 }
 
 async fn whoami(agent: &Agent) -> Out {
@@ -314,15 +376,16 @@ async fn list_apps(agent: &Agent) -> Out {
     let p = agent.project(None).await?;
     agent_may(&agent.app, &agent.me(), DEPLOYS_PLAN, &AgentScope::Project(p.clone())).await?;
     let mut apps = vec![];
+    let allowed = agent.app.db.redone_token_environments(&agent.token.id)?;
     for e in agent.app.db.environments(&p)? {
-        if !infisical::valid_app(&e.name) {
+        if !allowed.contains(&e.id) {
             continue;
         }
         let ds = deploys_of(agent, &e)?;
         let live = ds.iter().find(|d| d.state == DeployState::Succeeded).map(|d| d.id.clone());
         apps.push(json!({
-            "app": e.name,
-            "url": format!("https://{}.{LOAM_DOMAIN}", e.name),
+            "app": app_name(&e),
+            "url": format!("https://{}.{LOAM_DOMAIN}", app_name(&e)),
             "driver": e.driver,
             "current_plan": live,
             "deploys": ds.iter().filter(|d| d.state == DeployState::Succeeded).count(),
@@ -350,6 +413,9 @@ fn view(d: &Value, app: &str) -> Value {
 async fn ship(agent: &Agent, a: &Value) -> Out {
     let s: Ship = args(a)?;
     let p = agent.project(s.project.as_deref()).await?;
+    // The grant first: nothing of a project is read for a token that
+    // doesn't reach it.
+    agent_may(&agent.app, &agent.me(), DEPLOYS_PLAN, &AgentScope::Project(p.clone())).await?;
     let env = app_env(agent, &p, &s.app)?;
     // What the app is (its port, health path, secrets) is its
     // environment's, which its owner set: a plan doesn't change it.
@@ -365,7 +431,7 @@ async fn ship(agent: &Agent, a: &Value) -> Out {
         {
             return Err(failed(format!(
                 "{} {k} is {has}, not {given}: its owner changes that on the platform page",
-                env.name
+                app_name(&env)
             )));
         }
     }
@@ -382,7 +448,7 @@ async fn ship(agent: &Agent, a: &Value) -> Out {
     agent.app.limits.check_account(super::ACCOUNT_DEPLOY_ASKS, &agent.token.account)?;
     let source = json!({ "kind": "artifact", "ref": digest, "where": planter::ARTIFACT_WHERE });
     let done = agent.plan_and_ask(p.clone(), &env.id, source, false).await?;
-    let v = view(&done.value["deploy"], &env.name);
+    let v = view(&done.value["deploy"], app_name(&env));
     let text = format!(
         "{}\nIt waits for an owner's approval on their phone; you can't approve it. get_plan {} follows it.",
         done.text,
@@ -403,15 +469,15 @@ async fn rollback(agent: &Agent, a: &Value) -> Out {
     };
     let Some(target) = target else {
         return Err(failed(match &r.to {
-            Some(to) => format!("{to} was never applied to {}", env.name),
-            None => format!("{} has no earlier deploy to roll back to", env.name),
+            Some(to) => format!("{to} was never applied to {}", app_name(&env)),
+            None => format!("{} has no earlier deploy to roll back to", app_name(&env)),
         }));
     };
     agent.app.limits.check_account(super::ACCOUNT_DEPLOY_ASKS, &agent.token.account)?;
     let source =
         json!({ "kind": target.source.kind.as_str(), "ref": target.source.reference, "where": target.source.place });
     let out = agent.plan_and_ask(p.clone(), &env.id, source, false).await?;
-    let mut v = view(&out.value["deploy"], &env.name);
+    let mut v = view(&out.value["deploy"], app_name(&env));
     v["kind"] = json!("rollback");
     v["rollback_to"] = json!(target.id);
     Ok(Done { text: out.text, value: v, project: Some(p), note: format!("planned a roll back to {}", target.id) })
@@ -465,13 +531,13 @@ async fn app_status(agent: &Agent, a: &Value) -> Out {
         (None, None) => "not shipped",
     };
     let v = json!({
-        "app": env.name,
+        "app": app_name(&env),
         "state": state,
-        "url": format!("https://{}.{LOAM_DOMAIN}", env.name),
+        "url": format!("https://{}.{LOAM_DOMAIN}", app_name(&env)),
         "current_plan": live.map(|d| d.id.clone()),
         "applying": moving.map(|d| d.id.clone()),
     });
-    Ok(Done { text: format!("{v}"), value: v, project: Some(p), note: format!("status of {}", env.name) })
+    Ok(Done { text: format!("{v}"), value: v, project: Some(p), note: format!("status of {}", app_name(&env)) })
 }
 
 async fn app_logs(agent: &Agent, a: &Value) -> Out {
@@ -480,10 +546,11 @@ async fn app_logs(agent: &Agent, a: &Value) -> Out {
     agent_may(&agent.app, &agent.me(), DEPLOYS_PLAN, &AgentScope::Project(p.clone())).await?;
     let env = app_env(agent, &p, &q.app)?;
     let Some(run) = deploys_of(agent, &env)?.into_iter().find_map(|d| d.run) else {
-        let text = format!("{} has no deploy that ran yet (the app's own output isn't on the platform)", env.name);
+        let text =
+            format!("{} has no deploy that ran yet (the app's own output isn't on the platform)", app_name(&env));
         return Ok(Done {
             text,
-            value: json!({ "app": env.name, "log": null }),
+            value: json!({ "app": app_name(&env), "log": null }),
             project: Some(p),
             note: "no run".into(),
         });
@@ -492,7 +559,8 @@ async fn app_logs(agent: &Agent, a: &Value) -> Out {
     let mut out = agent.read_run(args(&a)?).await?;
     out.text = format!(
         "The log of {}'s latest deploy's run (the app's own output isn't on the platform):\n{}",
-        env.name, out.text
+        app_name(&env),
+        out.text
     );
     Ok(out)
 }
@@ -502,29 +570,30 @@ async fn set_secret(agent: &Agent, a: &Value) -> Out {
     let s: AppSecret = serde_json::from_value(a.clone())
         .map_err(|_| failed("set_secret takes app, key and value (strings), redone's way"))?;
     let p = agent.project(s.project.as_deref()).await?;
+    // The grant first: nothing of a project is read for a token that
+    // doesn't reach it.
+    agent_may(&agent.app, &agent.me(), SECRETS_WRITE, &AgentScope::Project(p.clone())).await?;
     let env = app_env(agent, &p, &s.app)?;
     let key = s.key.trim();
     if !infisical::valid_key(key) {
         return Err(failed("key: an environment variable's name, letters, digits and '_', not starting with a digit"));
     }
-    let stored = app_secret(&env.name, key);
-    let me = agent.me();
-    agent_may(&agent.app, &me, SECRETS_WRITE, &AgentScope::Project(p.clone())).await?;
-    agent.seal(&p, &stored, &s.value).await?;
-    if !on_home_cloud(&env.driver) {
-        let v = json!({ "project": p, "app": env.name, "key": key, "set": true, "projected": null });
+    let name = app_name(&env).to_owned();
+    agent.seal(&p, &app_secret(&name, key), &s.value).await?;
+    let note = format!("set {name}'s secret {key}");
+    let Some(claimed) = claimed_app(&env) else {
+        let v = json!({ "project": p, "app": name, "key": key, "set": true, "projected": null });
         let text = format!(
-            "{}: {key} is set on the platform. Its driver ({}) doesn't run on home-cloud, so it isn't put in \
-             Infisical.",
-            env.name, env.driver
+            "{name}: {key} is set on the platform. It isn't a shipped app of the project's, so it isn't put in \
+             Infisical."
         );
-        return Ok(Done { text, value: v, project: Some(p), note: format!("set {}'s secret {key}", env.name) });
-    }
+        return Ok(Done { text, value: v, project: Some(p), note });
+    };
     let projected = infisical::project(
         &agent.app,
         &infisical::Ask {
             project: &p,
-            app: &env.name,
+            app: claimed,
             name: key,
             value: &s.value,
             by_account: Some(&agent.token.account),
@@ -534,17 +603,17 @@ async fn set_secret(agent: &Agent, a: &Value) -> Out {
     .await?;
     let v = json!({
         "project": p,
-        "app": env.name,
+        "app": name,
         "key": key,
         "set": true,
         "projected": projected.as_ref().map(|r| r.outcome.clone()),
     });
     let text = match &projected {
-        Some(r) if r.outcome == "written" => format!("{}: {key} is set, and in the cluster's secrets.", env.name),
-        Some(r) => format!("{}: {key} is set on the platform; Infisical: {} ({}).", env.name, r.outcome, r.detail),
-        None => format!("{}: {key} is set on the platform.", env.name),
+        Some(r) if r.outcome == "written" => format!("{name}: {key} is set, and in the cluster's secrets."),
+        Some(r) => format!("{name}: {key} is set on the platform; Infisical: {} ({}).", r.outcome, r.detail),
+        None => format!("{name}: {key} is set on the platform."),
     };
-    Ok(Done { text, value: v, project: Some(p), note: format!("set {}'s secret {key}", env.name) })
+    Ok(Done { text, value: v, project: Some(p), note })
 }
 
 async fn list_secrets(agent: &Agent, a: &Value) -> Out {
@@ -552,7 +621,7 @@ async fn list_secrets(agent: &Agent, a: &Value) -> Out {
     let p = agent.project(None).await?;
     agent_may(&agent.app, &agent.me(), SECRETS_WRITE, &AgentScope::Project(p.clone())).await?;
     let env = app_env(agent, &p, &q.app)?;
-    let prefix = app_secret(&env.name, "");
+    let prefix = app_secret(app_name(&env), "");
     let keys: Vec<String> = agent
         .app
         .db
@@ -560,6 +629,6 @@ async fn list_secrets(agent: &Agent, a: &Value) -> Out {
         .into_iter()
         .map(|n| n.trim_start_matches(&prefix).to_owned())
         .collect();
-    let v = json!({ "app": env.name, "keys": keys });
+    let v = json!({ "app": app_name(&env), "keys": keys });
     Ok(Done { text: format!("{v}"), value: v, project: Some(p), note: format!("listed {}'s secrets", env.name) })
 }

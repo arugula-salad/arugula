@@ -218,6 +218,10 @@ services:
       GITHUB_APP_SLUG: arugula-testnet
       GITHUB_APP_WEBHOOK_SECRET: whsec-github-testnet
       GITHUB_APP_PRIVATE_KEY_FILE: /keys/github-app.pem
+      # planter's GitHub App, the deploy App (M233), against the fake GitHub
+      # in `fakes`, which takes any App's JWT: the redone claim plans a ship.
+      PLANTER_APP_ID: "4242"
+      PLANTER_APP_PRIVATE_KEY_FILE: /keys/github-app.pem
       # The stack's own master key, so project secrets are sealed (M230's
       # set_secret, M235's redone claim).
       ARUGULA_CLOUD_SECRET_KEY: 5ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec0

@@ -7,9 +7,13 @@
 -- What the import did, one row per redone object it carried over: a
 -- tenant (`redone_id` its id) and the project it became, a token (`tok_…`)
 -- and the agent grant token it became (`platform_id`, `agt_…`, owned by
--- `account_id`), or an app (its name) and what it became. Never updated,
--- never deleted by the import: a second run finds these and changes
--- nothing, and a token revoked since is never imported again.
+-- `account_id`), or an app (its name) and what it became. `folder` is
+-- the Infisical folder (`/<app>/`) the import vouches is the project's: an
+-- app redone had applied a deploy of (its secrets' folder is redone's
+-- doing); NULL otherwise, so the folder is checked before a first write.
+-- Never updated but to drop an account's id when it's deleted (the row
+-- stays, so a carried token is never carried over again), and never
+-- deleted: a second run finds these and changes nothing.
 CREATE TABLE redone_imports (
     kind TEXT NOT NULL CHECK (kind IN ('tenant', 'token', 'app')),
     redone_id TEXT NOT NULL,
@@ -17,6 +21,7 @@ CREATE TABLE redone_imports (
     project_id TEXT NOT NULL,
     account_id TEXT,
     platform_id TEXT,
+    folder TEXT,
     at INTEGER NOT NULL,
     PRIMARY KEY (kind, redone_id)
 );

@@ -208,6 +208,9 @@ pub struct Options {
     /// The driver each app's environment gets: planter's ship (M233)
     /// unless said (tests and testnet: `fake`).
     pub driver: String,
+    /// Two tenants may become one project (one person's two tenants, or
+    /// two tenants of one team): their apps and tokens then share it.
+    pub merge: bool,
     pub dry_run: bool,
 }
 
@@ -432,6 +435,21 @@ impl Report {
                 let _ = writeln!(out, "  app {} ({} deploys): {what}", a.app.name, a.app.deploys);
             }
         }
+        let ship: Vec<&str> = self
+            .tenants
+            .iter()
+            .filter(|t| {
+                t.apps.iter().any(|a| matches!(a.outcome, AppOutcome::Environment { .. } | AppOutcome::Already { .. }))
+            })
+            .filter_map(|t| t.apps.first().and_then(|a| a.project.as_deref()))
+            .collect();
+        if !ship.is_empty() {
+            let _ = writeln!(
+                out,
+                "\nplanter's drivers deploy only for the projects they're allowed (PLANTER_PROJECTS, M233): add {}",
+                ship.join(" ")
+            );
+        }
         for o in &self.orphans {
             let _ = writeln!(out, "\nnot carried over: {o}");
         }
@@ -472,6 +490,7 @@ async fn account_of(
 pub async fn import(app: &Platform, backup: &Backup, o: &Options) -> anyhow::Result<Report> {
     let now = now_ms();
     let mut seen = HashMap::new();
+    let mut taken = HashMap::new();
     let mut tenants = vec![];
     for t in &backup.tenants {
         let mut line = TenantLine {
@@ -493,7 +512,7 @@ pub async fn import(app: &Platform, backup: &Backup, o: &Options) -> anyhow::Res
         for id in &ids {
             line.people.push(Person { github_id: *id, account: account_of(app, &mut seen, *id).await?, role: None });
         }
-        line.outcome = tenant(app, o, t, &mut line.people, now).await?;
+        line.outcome = tenant(app, o, t, &mut line.people, &mut taken, now).await?;
         let (project, lead) = match &line.outcome {
             TenantOutcome::Project { project, made, .. } => {
                 ((!*made || !o.dry_run).then(|| project.clone()), line.people[0].account.clone())
@@ -536,6 +555,7 @@ async fn tenant(
     o: &Options,
     t: &Tenant,
     people: &mut [Person],
+    taken: &mut HashMap<String, String>,
     now: u64,
 ) -> anyhow::Result<TenantOutcome> {
     if let Some(i) = app.db.redone_imported("tenant", &t.id)? {
@@ -552,6 +572,7 @@ async fn tenant(
         project: project.to_owned(),
         account: Some(account.clone()),
         platform_id: None,
+        folder: None,
         at: now,
     };
     match o.teams.get(&t.id) {
@@ -563,6 +584,11 @@ async fn tenant(
             ),
         }),
         None => {
+            let had = app.db.redone_personal_project(&account)?;
+            let key = had.clone().unwrap_or_else(|| format!("personal:{account}"));
+            if let Some(why) = shared(app, o, t, had.as_deref(), &key, taken)? {
+                return Ok(TenantOutcome::Refused { why });
+            }
             if o.dry_run {
                 return Ok(match app.db.redone_personal_project(&account)? {
                     Some(p) => TenantOutcome::Project { project: p, personal: true, made: false },
@@ -573,7 +599,6 @@ async fn tenant(
                     },
                 });
             }
-            let had = app.db.redone_personal_project(&account)?;
             let Some(p) = crate::projects::personal_project(app, &account).await? else {
                 return Ok(TenantOutcome::Refused { why: format!("{account}'s account is gone") });
             };
@@ -591,6 +616,10 @@ async fn tenant(
                 return Ok(TenantOutcome::NotOnTeam { team: team.clone() });
             }
             let had = app.db.team_default_project(team)?;
+            let key = had.clone().unwrap_or_else(|| format!("team:{team}"));
+            if let Some(why) = shared(app, o, t, had.as_deref(), &key, taken)? {
+                return Ok(TenantOutcome::Refused { why });
+            }
             if o.dry_run {
                 return Ok(TenantOutcome::Project {
                     project: had.clone().unwrap_or_else(|| format!("(team {team}'s project, made now)")),
@@ -605,6 +634,37 @@ async fn tenant(
             Ok(TenantOutcome::Project { project: p, personal: false, made: had.is_none() })
         }
     }
+}
+
+/// Why tenant `t` can't go into the project `key` names (`project` when it
+/// exists already): another tenant is there, from an earlier run or this
+/// one, and the operator didn't say `--merge`. `None` when it can, noting
+/// it's there now.
+fn shared(
+    app: &Platform,
+    o: &Options,
+    t: &Tenant,
+    project: Option<&str>,
+    key: &str,
+    taken: &mut HashMap<String, String>,
+) -> anyhow::Result<Option<String>> {
+    let mut others: Vec<String> = match project {
+        Some(p) => app.db.redone_tenants_in(p)?.into_iter().filter(|x| *x != t.id).collect(),
+        None => vec![],
+    };
+    if let Some(x) = taken.get(key).filter(|x| **x != t.id) {
+        others.push(x.clone());
+    }
+    if !others.is_empty() && !o.merge {
+        others.sort();
+        others.dedup();
+        return Ok(Some(format!(
+            "its project would be tenant {}'s too: put them together only with --merge",
+            others.join(", ")
+        )));
+    }
+    taken.insert(key.to_owned(), t.id.clone());
+    Ok(None)
 }
 
 /// An app's environment's settings for `driver`, from its live plan's
@@ -659,6 +719,10 @@ async fn app_env(
         project: project.to_owned(),
         account: None,
         platform_id: Some(env.to_owned()),
+        // Infisical's /<app>/ is the project's on the import's word only
+        // when redone applied a deploy of it (so redone's identity wrote
+        // that folder); else it's checked before its first write.
+        folder: a.current.as_ref().map(|_| a.name.clone()),
         at: now,
     };
     if let Some(p) = project
@@ -824,6 +888,10 @@ struct RedoneArgs {
     /// a test platform has `fake`.
     #[arg(long, default_value = SHIP_DRIVER)]
     driver: String,
+    /// Let two tenants become one project (one person's two, or two of one
+    /// team's): without it, the second is refused.
+    #[arg(long)]
+    merge: bool,
     /// Say what would change, and write nothing.
     #[arg(long)]
     dry_run: bool,
@@ -875,6 +943,7 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
             people: a.people.into_iter().collect(),
             teams: a.teams.into_iter().collect(),
             driver: a.driver,
+            merge: a.merge,
             dry_run: a.dry_run,
         };
         let r = import(&p, &backup, &o).await?;

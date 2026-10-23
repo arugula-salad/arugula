@@ -383,10 +383,14 @@ impl Agent {
     }
 
     async fn dispatch(&self, name: &str, a: &Value) -> Out {
-        if self.is_redone()
-            && let Some(out) = redone::dispatch(self, name, a).await
-        {
-            return out;
+        if self.is_redone() {
+            if let Some(out) = redone::dispatch(self, name, a).await {
+                return out;
+            }
+            // A carried-over token reaches its tenant's apps only (M235).
+            if let Some(why) = redone::refuses(self, name, a).await {
+                return Err(why);
+            }
         }
         match name {
             "capabilities" => self.capabilities().await,

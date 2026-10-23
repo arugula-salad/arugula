@@ -41,8 +41,23 @@ async fn platform() -> (Arc<TestHub>, Arc<Platform>, String) {
     platform_with(Default::default()).await
 }
 
-/// [`platform`], projecting secrets as `projection` says.
+/// [`platform`], projecting secrets as `projection` says, with planter's
+/// App (M233) at a fake GitHub that has it installed on `shipped` and
+/// `planter-apps`, so ship deploys plan.
 async fn platform_with(projection: crate::infisical::Projection) -> (Arc<TestHub>, Arc<Platform>, String) {
+    use crate::forge::links_tests::{Shared, fake_github, granted};
+    let gh: Shared = Arc::default();
+    {
+        let mut g = gh.lock().unwrap();
+        for (repo, id) in [("arugula-salad/shipped", 2001), ("arugula-salad/planter-apps", 2002)] {
+            g.installed.insert(repo.into(), (31, 500, "arugula-salad".into()));
+            g.repos.insert(repo.into(), (id, false));
+            let mut grants = granted();
+            grants["contents"] = "write".into();
+            g.grants.insert(repo.into(), grants);
+        }
+    }
+    let api = fake_github(gh).await;
     let hub = Arc::new(TestHub::default());
     hub.github("a", 4242, "fern-gh");
     hub.github("b", 5151, "alder-gh");
@@ -53,6 +68,13 @@ async fn platform_with(projection: crate::infisical::Projection) -> (Arc<TestHub
     let mut p = Platform::new(cfg, Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
     p.secret_key = Some(Arc::new(crate::secrets::SecretCipher::new(&"07".repeat(32)).unwrap()));
     p.projection = projection;
+    p.deploy_app = Some(crate::forge::GithubApp::new(
+        "4242".into(),
+        "arugula-planter".into(),
+        String::new(),
+        &api,
+        crate::forge::links_tests::throwaway_key(),
+    ));
     let app = Arc::new(p);
     crate::projects::follow(&app).await.unwrap();
     crate::cache::catch_up(&app).await.unwrap();
@@ -77,8 +99,14 @@ fn options(dry_run: bool) -> Options {
         .collect(),
         teams: [("alder".to_owned(), "t".to_owned())].into_iter().collect(),
         driver: "fake".into(),
+        merge: false,
         dry_run,
     }
+}
+
+/// [`options`] with planter's ship driver, as production imports.
+fn ship_options(dry_run: bool) -> Options {
+    Options { driver: SHIP_DRIVER.into(), ..options(dry_run) }
 }
 
 fn line<'a>(r: &'a Report, tenant: &str) -> &'a TenantLine {
@@ -221,11 +249,16 @@ async fn tenants_become_projects_and_redone_tokens_work_through_the_platform() {
     assert_eq!(caps["projects"][0]["id"], json!(fern), "{caps}");
     assert_eq!(caps["agent"]["label"], json!("redone: fern laptop (MCP)"));
     assert_eq!(caps["approves"], json!(false));
-    // It sets a secret, by name, that it can't read back.
-    let r = tool(&base, &token, "set_secret", json!({ "name": "API_KEY", "value": "hunter2-m235" })).await;
+    // It sets its app's secret, which it can't read back; a project-wide
+    // secret is beyond a carried token.
+    let r = tool(&base, &token, "set_secret", json!({ "app": "fern-site", "key": "API_KEY", "value": "hunter2-m235" }))
+        .await;
     assert_eq!(ok(&r)["set"], json!(true));
     let master = app.secret_key.clone().unwrap();
-    assert_eq!(crate::keys::open(&app.db, &master, &fern, "project/API_KEY").unwrap().as_deref(), Some("hunter2-m235"));
+    let opened = crate::keys::open(&app.db, &master, &fern, "app/fern-site/API_KEY").unwrap();
+    assert_eq!(opened.as_deref(), Some("hunter2-m235"));
+    let why = refused(&tool(&base, &token, "set_secret", json!({ "name": "API_KEY", "value": "x" })).await);
+    assert!(why.contains("apps' secrets only"), "{why}");
     // It plans a deploy to its app, and asks: a gets the card.
     let sha1 = "cd".repeat(20);
     let r =
@@ -307,6 +340,7 @@ async fn a_tenant_goes_only_where_its_people_may_write() {
         people: [("alder".to_owned(), vec![3131]), ("fern".to_owned(), vec![1])].into_iter().collect(),
         teams: [("alder".to_owned(), "t".to_owned())].into_iter().collect(),
         driver: "fake".into(),
+        merge: false,
         dry_run: false,
     };
     let r = import(&app, &backup, &o).await.unwrap();
@@ -318,6 +352,7 @@ async fn a_tenant_goes_only_where_its_people_may_write() {
         people: [("alder".to_owned(), vec![5151])].into_iter().collect(),
         teams: [("alder".to_owned(), "no-such-team".to_owned())].into_iter().collect(),
         driver: "fake".into(),
+        merge: false,
         dry_run: true,
     };
     let r = import(&app, &backup, &o).await.unwrap();
@@ -340,8 +375,9 @@ async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
     let (hub, app, base) =
         platform_with(crate::infisical::Projection::new(crate::infisical::Mode::On, Some(writer))).await;
     let a = devices(&hub, "a");
-    import(&app, &Backup::read(&dir()).unwrap(), &options(false)).await.unwrap();
+    import(&app, &Backup::read(&dir()).unwrap(), &ship_options(false)).await.unwrap();
     let fern = app.db.redone_personal_project("a").unwrap().unwrap();
+    let alder = app.db.team_default_project("t").unwrap().unwrap();
     let token = raw("tok_fern1");
 
     // Its tools: the platform's, and redone's beside them. A token minted
@@ -405,8 +441,8 @@ async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
         "{secrets}"
     );
 
-    // An app that doesn't run on home-cloud keeps its secret on the
-    // platform only.
+    // BREAK (the review's 2): a carried token reaches the apps redone had,
+    // not an environment its owner made since, by any tool.
     let (st, env) = call(
         &base,
         "a",
@@ -417,8 +453,61 @@ async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
     )
     .await;
     assert_eq!(st, 200, "{env}");
-    let r = tool(&base, &token, "set_secret", json!({ "app": "flyapp", "key": "API_KEY", "value": value })).await;
-    assert_eq!((&ok(&r)["set"], &ok(&r)["projected"]), (&json!(true), &Value::Null), "{r}");
+    let why =
+        refused(&tool(&base, &token, "set_secret", json!({ "app": "flyapp", "key": "API_KEY", "value": value })).await);
+    assert!(why.contains("has no app flyapp"), "{why}");
+    let why = refused(
+        &tool(
+            &base,
+            &token,
+            "plan_deploy",
+            json!({ "environment": "flyapp", "commit": "ab".repeat(20), "repo": "f/s" }),
+        )
+        .await,
+    );
+    assert!(why.contains("only to the apps redone had"), "{why}");
+    assert!(app.db.deploys(env["id"].as_str().unwrap(), 10).unwrap().is_empty());
+
+    // BREAK (the review's 1): the exact exploit. Team t's ship environment
+    // holds `victim`; fern's project has an environment of its own called
+    // victim. Nothing of fern's reaches Infisical's /victim/.
+    let (st, _) = call(
+        &base,
+        "b",
+        "POST",
+        &format!("/api/projects/{alder}/environments"),
+        Some(json!({ "name": "victim", "driver": "planter-ship", "settings": { "app": "victim" } })),
+    )
+    .await;
+    assert_eq!(st, 200);
+    let (st, _) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/projects/{fern}/environments"),
+        Some(json!({ "name": "victim", "driver": "fake", "secret_names": ["APP_TOKEN"] })),
+    )
+    .await;
+    assert_eq!(st, 200);
+    let why =
+        refused(&tool(&base, &token, "set_secret", json!({ "app": "victim", "key": "API_KEY", "value": value })).await);
+    assert!(why.contains("has no app victim"), "{why}");
+    assert!(!infisical.secrets.lock().unwrap().contains_key("victim"));
+
+    // BREAK (the review's 3): another project, named outright, is refused
+    // before anything of it is read: none of its apps' names come back.
+    for (tool_name, args) in [
+        ("set_secret", json!({ "project": alder, "app": "alder-api", "key": "K", "value": value })),
+        ("plan_deploy", json!({ "project": alder, "app": "alder-api", "upload_id": "sha256:00" })),
+        (
+            "plan_deploy",
+            json!({ "project": alder, "environment": "alder-api", "commit": "ab".repeat(20), "repo": "a/b" }),
+        ),
+    ] {
+        let r = tool(&base, &token, tool_name, args).await;
+        let why = refused(&r);
+        assert!(!why.contains("alder-api") && !why.contains("victim"), "{tool_name}: {why}");
+    }
 
     // BREAK (Arugula #55): no name is claimed by an agent's call. A name
     // the project has no app of, and another tenant's app, are refused, and
@@ -431,7 +520,7 @@ async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
         assert!(why.contains("no app") || why.contains("platform's names"), "{app_name}: {why}");
     }
     assert_eq!(infisical.secrets.lock().unwrap().keys().collect::<Vec<_>>(), ["fern-site"]);
-    assert_eq!(app.db.environments(&fern).unwrap().len(), 3, "an agent's call made an environment");
+    assert_eq!(app.db.environments(&fern).unwrap().len(), 4, "an agent's call made an environment");
     let why =
         refused(&tool(&base, &token, "plan_deploy", json!({ "app": "brand-new", "upload_id": "sha256:00" })).await);
     assert!(why.contains("no app brand-new"), "{why}");
@@ -483,11 +572,7 @@ async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
     assert!(why.contains("no upload"), "{why}");
 
     // A deploy: get_plan and apply_plan read it, and never move it.
-    let sha1 = "ef".repeat(20);
-    let r =
-        tool(&base, &token, "plan_deploy", json!({ "environment": "fern-site", "commit": sha1, "repo": "fern/site" }))
-            .await;
-    let dep = ok(&r)["deploy"].clone();
+    let dep = shipped["deploy"].clone();
     let dep_id = dep["id"].as_str().unwrap().to_owned();
     let op = dep["operation"]["hash"].as_str().unwrap().to_owned();
     let got = ok(&tool(&base, &token, "get_plan", json!({ "plan_id": dep_id })).await).clone();
@@ -556,6 +641,7 @@ async fn apps_become_ship_environments_and_their_names_the_projects() {
         people: [("fern".to_owned(), vec![4242])].into_iter().collect(),
         teams: Default::default(),
         driver: SHIP_DRIVER.into(),
+        merge: false,
         dry_run,
     };
     let r = import(&app, &backup, &o(true)).await.unwrap();
@@ -605,4 +691,61 @@ async fn apps_become_ship_environments_and_their_names_the_projects() {
         ]
     );
     assert!(app_settings("fake", &spec).is_empty());
+}
+
+/// The review's 2: two tenants become one project only with `--merge`.
+#[tokio::test]
+async fn two_tenants_share_a_project_only_when_merged() {
+    let (_, app, _) = platform().await;
+    let backup = Backup::read(&dir()).unwrap();
+    let o = |merge, dry_run| Options {
+        people: [("fern".to_owned(), vec![4242]), ("moss".to_owned(), vec![4242])].into_iter().collect(),
+        teams: Default::default(),
+        driver: "fake".into(),
+        merge,
+        dry_run,
+    };
+    let r = import(&app, &backup, &o(false, true)).await.unwrap();
+    assert!(matches!(line(&r, "fern").outcome, TenantOutcome::Project { .. }));
+    assert!(
+        matches!(&line(&r, "moss").outcome, TenantOutcome::Refused { why } if why.contains("--merge")),
+        "{:?}",
+        line(&r, "moss")
+    );
+    let r = import(&app, &backup, &o(false, false)).await.unwrap();
+    assert!(matches!(&line(&r, "moss").outcome, TenantOutcome::Refused { why } if why.contains("--merge")));
+    assert_eq!(token_outcome(&r, "tok_moss1"), &TokenOutcome::WaitingTenant);
+    // A later run with --merge puts moss in fern's project.
+    let r = import(&app, &backup, &o(true, false)).await.unwrap();
+    let fern = app.db.redone_personal_project("a").unwrap().unwrap();
+    assert!(matches!(&line(&r, "moss").outcome, TenantOutcome::Project { project, .. } if *project == fern));
+    assert_eq!(app.db.redone_tenants_in(&fern).unwrap(), ["fern", "moss"]);
+}
+
+/// The review's 4: deleting an account keeps a tombstone of the tokens
+/// carried over for it, so a later import never revives one, even for the
+/// same person signing up again with the same GitHub id.
+#[tokio::test]
+async fn a_deleted_accounts_carried_tokens_are_never_carried_again() {
+    use crate::PlatformPort as _;
+    let (hub, app, base) = platform().await;
+    let backup = Backup::read(&dir()).unwrap();
+    import(&app, &backup, &options(false)).await.unwrap();
+    let (st, _) = rpc(&base, &raw("tok_fern1"), "tools/list", json!({})).await;
+    assert_eq!(st, 200);
+    app.account_deleted(&crate::Deleted { account: "a".into(), machines: vec![], disbanded: vec![] }).await.unwrap();
+    let i = app.db.redone_imported("token", "tok_fern1").unwrap().unwrap();
+    assert!(i.account.is_none() && i.platform_id.is_some(), "{i:?}");
+    let (st, _) = rpc(&base, &raw("tok_fern1"), "tools/list", json!({})).await;
+    assert_eq!(st, 401);
+    // The same person, a new account, the same GitHub id.
+    hub.github("a2", 4242, "fern-gh");
+    let mut o = options(false);
+    o.people.retain(|t, _| t == "fern");
+    let r = import(&app, &backup, &o).await.unwrap();
+    assert!(matches!(token_outcome(&r, "tok_fern1"), TokenOutcome::ImportedBefore { .. }));
+    assert!(matches!(token_outcome(&r, "tok_fern2"), TokenOutcome::ImportedBefore { .. }));
+    let (st, _) = rpc(&base, &raw("tok_fern1"), "tools/list", json!({})).await;
+    assert_eq!(st, 401);
+    assert!(app.db.agent_token_by_hash(&sha(raw("tok_fern1").as_bytes())).unwrap().is_none());
 }

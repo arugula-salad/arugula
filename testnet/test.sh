@@ -203,8 +203,8 @@
 #           GitHub gives them a numeric id) and adds a passkey; a backup of
 #           redone's state.json names a tenant, its rdn_ token (by hash) and
 #           an app; `arugula-platform import redone --people TENANT=<their
-#           GitHub id> --driver fake` on the platform's machine makes the
-#           tenant their personal project, the app its environment, and the
+#           GitHub id>` on the platform's machine makes the tenant their
+#           personal project, the app its planter-ship environment, and the
 #           token an agent grant token. With only that old token, redone's
 #           agent speaks MCP to control's /api/mcp with redone's tools:
 #           uploads a source, plans a deploy of it to the app and asks, sets
@@ -1235,7 +1235,7 @@ PY
   docker exec "$TESTNET-platform" rm -rf /tmp/redone-backup
   docker cp "$WORK/redone-backup" "$TESTNET-platform:/tmp/redone-backup" > /dev/null
   docker exec "$TESTNET-platform" /opt/arugula/arugula-platform import redone --backup /tmp/redone-backup \
-    --hub http://control:7691 --people "$tenant=$gh" --driver fake ${BREAK:+--dry-run} > "$WORK/redone-import.txt" 2>&1 ||
+    --hub http://control:7691 --people "$tenant=$gh" ${BREAK:+--dry-run} > "$WORK/redone-import.txt" 2>&1 ||
     { note "redone: the import:"; cat "$WORK/redone-import.txt" >&2; return 1; }
   note "redone: $(tr '\n' ' ' < "$WORK/redone-import.txt")"
   proj="$(pq "SELECT project_id FROM redone_imports WHERE kind = 'tenant' AND redone_id = '$tenant'")"

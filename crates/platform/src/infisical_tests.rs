@@ -150,6 +150,13 @@ fn platform(mode: Mode, writer: Option<Writer>) -> Platform {
     p
 }
 
+/// `project` holds the app's name `app` by a planter environment
+/// (`driver`, its `app` setting), as M233 claims it.
+pub fn claim(p: &Platform, project: &str, app: &str, driver: &str) {
+    let settings = [("app".to_owned(), app.to_owned())].into_iter().collect();
+    p.db.create_environment_with(project, app, driver, &[], &settings, 1).unwrap();
+}
+
 fn writer(url: &str, secret: &str) -> Writer {
     Writer::new(reqwest::Client::new(), url, "proj-planter-apps", "prod", "client-id", secret)
 }
@@ -206,7 +213,8 @@ async fn the_writer_logs_in_once_makes_the_folder_and_overwrites() {
     // A wrong client secret: refused, and the secret isn't in the error.
     let bad = writer(&url, "not-it");
     let e = format!("{:#}", bad.put("fern-site", "API_KEY", "v9").await.unwrap_err());
-    assert!(e.contains("401") && e.contains("Invalid credentials") && !e.contains("not-it"), "{e}");
+    // Only Infisical's status code: its message goes to the server's log.
+    assert!(e.contains("401") && !e.contains("Invalid credentials") && !e.contains("not-it"), "{e}");
 }
 
 #[tokio::test]
@@ -219,12 +227,15 @@ async fn off_writes_and_logs_nothing_and_a_dry_run_writes_nothing() {
 
     // Dry, with no credentials: nothing asked of Infisical at all.
     let dry = platform(Mode::DryRun, None);
+    claim(&dry, "prj_1", "fern-site", "planter-ship");
     let r = project(&dry, &ask("prj_1", "fern-site", "API_KEY", "v1")).await.unwrap().unwrap();
     assert_eq!((r.mode.as_str(), r.outcome.as_str()), ("dry_run", "would_write"));
     assert!(r.detail.contains("wasn't checked"), "{r:?}");
 
     // Dry, with them: the folder check only (a read), no write.
     let dry = platform(Mode::DryRun, Some(writer(&url, "s3cret")));
+    claim(&dry, "prj_1", "fern-site", "planter-ship");
+    claim(&dry, "prj_1", "beds", "planter-ship");
     let r = project(&dry, &ask("prj_1", "fern-site", "API_KEY", "v1")).await.unwrap().unwrap();
     assert_eq!(r.outcome, "would_write", "{r:?}");
     let r = project(&dry, &ask("prj_1", "beds", "API_KEY", "v1")).await.unwrap().unwrap();
@@ -239,6 +250,9 @@ async fn off_writes_and_logs_nothing_and_a_dry_run_writes_nothing() {
 async fn on_writes_only_into_the_projects_own_folder_and_never_logs_a_value() {
     let (f, url) = fake(&["beds", "fern-old"], "s3cret").await;
     let p = platform(Mode::On, Some(writer(&url, "s3cret")));
+    for app in ["fern-site", "fern-old", "beds"] {
+        claim(&p, "prj_1", app, "planter-ship");
+    }
     // fern-old was redone's app, carried over to prj_1: its folder is there,
     // and it's prj_1's.
     p.db.record_redone_import(&Imported {
@@ -248,6 +262,7 @@ async fn on_writes_only_into_the_projects_own_folder_and_never_logs_a_value() {
         project: "prj_1".into(),
         account: None,
         platform_id: None,
+        folder: Some("fern-old".into()),
         at: 1,
     })
     .unwrap();
@@ -279,6 +294,7 @@ async fn on_writes_only_into_the_projects_own_folder_and_never_logs_a_value() {
 
     // Infisical down: failed, logged, and no value in it.
     let down = platform(Mode::On, Some(writer("http://127.0.0.1:9", "s3cret")));
+    claim(&down, "prj_9", "fern-new", "planter-ship");
     let r = project(&down, &ask("prj_9", "fern-new", "API_KEY", value)).await.unwrap().unwrap();
     assert_eq!(r.outcome, "failed", "{r:?}");
 
@@ -317,4 +333,54 @@ fn modes_and_args() {
     assert!(!format!("{:?}", w.writer.unwrap()).contains("secret"));
     assert!(valid_app("fern-site") && !valid_app("planter-apps") && !valid_app("-x") && !valid_app(&"a".repeat(33)));
     assert!(valid_key("API_KEY") && valid_key("_x") && !valid_key("9A") && !valid_key(""));
+}
+
+/// The security review's exploit (M235): the folder is the app's claimed
+/// name, never an environment's own name. A project with an environment
+/// called `victim` can't write `/victim/` when another project's ship
+/// environment holds that name; a project that holds no such name can't
+/// write it either; a promote environment's claim counts as a ship's.
+#[tokio::test]
+async fn the_folder_is_the_claimed_name_never_an_environments_name() {
+    let (f, url) = fake(&["beds"], "s3cret").await;
+    let p = platform(Mode::On, Some(writer(&url, "s3cret")));
+    claim(&p, "prj_victim", "victim", "planter-ship");
+    // The attacker's own environment, named victim, of a driver that claims nothing.
+    p.db.create_environment_with("prj_evil", "victim", "fake", &[], &Default::default(), 1).unwrap();
+    let r = project(&p, &ask("prj_evil", "victim", "API_KEY", "x")).await.unwrap().unwrap();
+    assert_eq!(r.outcome, "refused", "{r:?}");
+    assert!(r.detail.contains("another project"), "{r:?}");
+    let r = project(&p, &ask("prj_none", "unclaimed", "API_KEY", "x")).await.unwrap().unwrap();
+    assert!(r.outcome == "refused" && r.detail.contains("isn't this project's"), "{r:?}");
+    claim(&p, "prj_promo", "promoted", "planter-promote");
+    let r = project(&p, &ask("prj_promo", "promoted", "API_KEY", "x")).await.unwrap().unwrap();
+    assert_eq!(r.outcome, "written", "{r:?}");
+    let r = project(&p, &ask("prj_victim", "victim", "API_KEY", "mine")).await.unwrap().unwrap();
+    assert_eq!(r.outcome, "written", "{r:?}");
+    assert_eq!(f.secrets.lock().unwrap()["victim"]["API_KEY"], "mine");
+    assert!(!f.secrets.lock().unwrap().contains_key("unclaimed"));
+}
+
+/// An app the import carried over that redone never applied a deploy of
+/// isn't vouched for: its folder is checked before its first write, as any
+/// new app's is (a cluster app's folder of that name is refused).
+#[tokio::test]
+async fn an_imported_app_never_deployed_is_checked_before_its_first_write() {
+    let (f, url) = fake(&["beds", "fern-blog"], "s3cret").await;
+    let p = platform(Mode::On, Some(writer(&url, "s3cret")));
+    claim(&p, "prj_1", "fern-blog", "planter-ship");
+    p.db.record_redone_import(&Imported {
+        kind: "app".into(),
+        redone_id: "fern-blog".into(),
+        tenant: "fern".into(),
+        project: "prj_1".into(),
+        account: None,
+        platform_id: None,
+        folder: None,
+        at: 1,
+    })
+    .unwrap();
+    let r = project(&p, &ask("prj_1", "fern-blog", "API_KEY", "x")).await.unwrap().unwrap();
+    assert!(r.outcome == "refused" && r.detail.contains("cluster app"), "{r:?}");
+    assert!(f.secrets.lock().unwrap().is_empty());
 }
