@@ -55,7 +55,7 @@ use sha2::{Digest as _, Sha256};
 
 use super::{
     Db,
-    sql::{Optional as _, Row, Sql, params},
+    sql::{Optional as _, Param, Row, Sql, params},
     taken,
 };
 use crate::Deleted;
@@ -1512,6 +1512,56 @@ impl Db {
             params![environment],
             deploy_row,
         )
+    }
+
+    /// A project's deploys, newest first (by when they were planned, then
+    /// by id), at most `limit`: in `environment` only when it's given, and
+    /// only those after `before` (a deploy's `created_at` and id) when
+    /// that is. Each with its events, oldest first: what a project's
+    /// history lists.
+    pub fn project_deploys(
+        &self,
+        project: &str,
+        environment: Option<&str>,
+        before: Option<(u64, &str)>,
+        limit: u32,
+    ) -> Result<Vec<(Deploy, Vec<Event>)>> {
+        let c = self.c();
+        let mut args: Vec<&dyn Param> = vec![&project];
+        let mut sql = format!(
+            "SELECT {DEPLOY_COLS} FROM deploys WHERE environment_id IN (SELECT id FROM environments WHERE project_id = ?)"
+        );
+        if let Some(env) = &environment {
+            sql += " AND environment_id = ?";
+            args.push(env);
+        }
+        if let Some((at, id)) = &before {
+            sql += " AND (created_at < ? OR (created_at = ? AND id < ?))";
+            args.extend([at as &dyn Param, at, id]);
+        }
+        sql += &format!(" ORDER BY created_at DESC, id DESC LIMIT {limit}");
+        let deploys = c.query_map(&sql, &args, deploy_row)?;
+        if deploys.is_empty() {
+            return Ok(vec![]);
+        }
+        let ids: Vec<&str> = deploys.iter().map(|d| d.id.as_str()).collect();
+        let marks = vec!["?"; ids.len()].join(", ");
+        let events = c.query_map(
+            &format!("SELECT {EVENT_COLS} FROM deploy_events WHERE deploy_id IN ({marks}) ORDER BY seq"),
+            &super::sql::list(&ids),
+            event_row,
+        )?;
+        let mut of: std::collections::HashMap<String, Vec<Event>> = std::collections::HashMap::new();
+        for e in events {
+            of.entry(e.deploy.clone()).or_default().push(e);
+        }
+        Ok(deploys
+            .into_iter()
+            .map(|d| {
+                let events = of.remove(&d.id).unwrap_or_default();
+                (d, events)
+            })
+            .collect())
     }
 
     /// Whether `deploy` may be approved now: it's waiting for approval and

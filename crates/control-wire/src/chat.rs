@@ -212,6 +212,11 @@ pub struct ChatMessage {
     /// "<name>'s agent on <machine_name>".
     #[serde(default)]
     pub agent: Option<ChatAgent>,
+    /// Posted for the author by a product (M237): a hud box's name, for a
+    /// review written there. Shown as "<name> via <via>".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub via: Option<String>,
 }
 
 /// `GET /api/chat/rooms/{id}/messages?after=N` (oldest first after N),

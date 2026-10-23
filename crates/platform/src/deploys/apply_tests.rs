@@ -797,6 +797,21 @@ async fn chant_fly_links_chants_ledger_and_rolls_back_to_what_it_kept() {
     assert_eq!(state(&app, &back), State::Succeeded);
     assert!(run.chant_ledger.is_some());
     assert!(app.db.verify_deploy_log(&env).unwrap().is_ok());
+
+    // The project's history: the roll back marked as one, each applied or
+    // failed with when it finished.
+    let (_, h) = call(&base, "b", "GET", &format!("/api/projects/{t}/deploys?environment={env}"), None).await;
+    let rows: Vec<_> = h["deploys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| (d["id"].as_str().unwrap(), d["state"].as_str().unwrap(), d["roll_back"]["deploy"].as_str()))
+        .collect();
+    assert_eq!(
+        rows,
+        [(back.as_str(), "succeeded", Some(good.as_str())), (&bad, "failed", None), (&good, "succeeded", None)]
+    );
+    assert!(h["deploys"].as_array().unwrap().iter().all(|d| d["finished_at"].as_u64() >= d["decided_at"].as_u64()));
 }
 
 /// [`world`], with the App against a fake GitHub that has it installed on

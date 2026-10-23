@@ -56,6 +56,10 @@ sees = "Runs on hosted workspaces (and only those) send their logs, the whole of
 name = "E2B"
 sees = "E2B runs hosted workspaces' boxes, so it processes their contents: it holds each box's disk and memory (the repos, files, terminals and agent conversations in it) while the box lives, paused too, the env and metadata each is made with (the workspace, project, release and template ids), its egress rules (which hold projects' own inference keys, and name the platform's), and the platform's inference keys in its secrets broker. It records each box's runs (when, how long, its size), which it bills by and the platform reads back to check its own usage."
 
+[parties.anthropic]
+name = "Anthropic"
+sees = "The inference broker (M231) forwards Claude calls to Anthropic for a project's members and for registered clients (studio's lobby): Anthropic gets each call's prompt and answer (they pass through the platform, which keeps neither), and the key that pays (a project's or an account's own, or the platform's), and bills that key's owner."
+
 [parties.posthog]
 name = "PostHog"
 sees = "PostHog gets product events, when control has a key for it: account, team and machine ids, a machine's version, OS and arch, plans, Labs flags and counts. No names, logins, addresses or content."
@@ -111,7 +115,7 @@ name = "issuer_clients"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A product that may ask the hub who someone is (M228): its id, its kind (oidc, or a hud box), its name, the exact addresses a sign-in may go back to. Registered by an operator."
+what = "A product that may ask the hub who someone is (M228): its id, its kind (oidc, or a hud box), its name, the exact addresses a sign-in may go back to, and a hud box's platform project (M237). Registered by an operator."
 with_account = "none"
 seen_by = ["litestream"]
 
@@ -122,6 +126,60 @@ process = "hub"
 holds = "metadata"
 what = "An access token the issuer handed a product (M228): a hash of it, its account and the client it was issued to (no other client may use it), the hub session it was made from (it ends when that one does), when it ends."
 with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "issuer_client_secrets"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A client's secret (M229, M237): a hash of it, which client it is, when it was made. A product calls the link API with it; a bound hud box, its roster and review threads."
+with_account = "none"
+seen_by = ["litestream"]
+
+[[table]]
+name = "account_links"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A product's user linked to a platform account (M229): the client, the product's own id for its user and the name it gives them, the account, the numeric GitHub id both had, when."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "account_link_events"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "The audit of account links (M229): a link made, renamed, ended (with the consent) or imported from a product's backup by an operator (M232), the client and product user, the account, by the product, the person or an operator, when. Kept a year."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "issuer_grants"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "A person's yes on the consent screen (M229): the account, the product's client, when. Kept until they unlink the product."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "account_link_tombstones"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "When an account last unlinked a product (M229): the client, the account, when. An assertion issued until then never links. Kept a day, far past any assertion's life."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "link_alerts"
+plane = "machine"
+process = "hub"
+holds = "metadata"
+what = "The ops counter of bulk link calls (M229): per product's client and kind (unlinks, lookups), how many went over the alert line, and when last."
+with_account = "none"
 seen_by = ["litestream"]
 
 [[table]]
@@ -597,6 +655,17 @@ note = "The account's tokens' calls go with them."
 seen_by = ["litestream"]
 
 [[table]]
+name = "planter_imports"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "planter's import (M232): each repo planter's boxes were planted from that the operator's import linked to a project (or found linked there already), by planter's user id (the numeric GitHub id) and the repo's name: GitHub's repo id, the project, the platform account it was imported for, and when. Never updated, so a repo unlinked since is never linked again by the import."
+why_asleep = "It's the record of a one-off import, read by the import when it's run again, and kept with the repo links it made."
+with_account = "deleted"
+note = "What was imported for the account goes; the repo links stay as linking's own rows do."
+seen_by = ["litestream"]
+
+[[table]]
 name = "hub_feed"
 plane = "platform"
 process = "platform"
@@ -1059,11 +1128,11 @@ name = "project_inference_keys"
 plane = "platform"
 process = "platform"
 holds = "plaintext"
-what = "A project's own inference key (M185), one per provider (Anthropic, OpenAI), sealed with the project's key (project_keys) or, until it's re-sealed, the master key control holds apart from the database, who set it and when. Control opens it only to write it into the project's boxes' egress rules, where E2B's proxy sets it on their requests to the provider; it's never answered back."
+what = "A project's own inference key (M185), one per provider (Anthropic, OpenAI), sealed with the project's key (project_keys) or, until it's re-sealed, the master key control holds apart from the database, who set it and when. Control opens it only to write it into the project's boxes' egress rules, where E2B's proxy sets it on their requests to the provider, and (Anthropic's, M231) to set it on the calls the inference broker makes for the project, or, a personal project's, for its account; it's never answered back."
 why_asleep = "A hosted workspace's agents run on the project's key with every other machine asleep, and the page shows whether it's set."
 with_account = "partly"
 note = "It stops naming the account as who set a key. Keys of its personal project and its disbanded teams' projects are dropped by the platform's sweep."
-seen_by = ["litestream", "e2b"]
+seen_by = ["litestream", "e2b", "anthropic"]
 
 [[table]]
 name = "hosted_turns"
@@ -1075,6 +1144,70 @@ why_asleep = "Caps on the platform's key are checked when a hosted box starts a 
 with_account = "partly"
 note = "It stops naming the account; the turns stay until they're 30 days old."
 seen_by = ["litestream"]
+
+[[table]]
+name = "inference_calls"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A call the inference broker made to Anthropic for a project (M231): the project, the account it was for and the registered client that made it (studio's lobby), whose key paid (the project's, an account's own, which account's, or the platform's), whether it's running, settled or kept at its reservation, the model, the provider's status, the tokens and web searches it reported, what it was reserved at and what it cost at list prices, and when it started and ended. Never a prompt or an answer. Kept 90 days."
+why_asleep = "The broker checks an account's month on the platform's key against its cap before each call, and a project's members see what its calls cost, with every machine asleep."
+with_account = "partly"
+note = "It stops naming the account, as whose call and as whose key paid; the calls stay until they're 90 days old."
+seen_by = ["litestream", "anthropic"]
+
+[[table]]
+name = "inference_consents"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "An account letting a registered client of the inference broker act for it (M231): which account, which client, and since when. Off until the account turns it on."
+why_asleep = "The broker checks it on every call a client makes, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "client_consents"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "An account letting a registered client (studio's lobby) see its projects and its role in each, and keep the client's apps in the ones it edits (M236): which account, which client, what, and since when. Off until the account turns it on; unlinking the product ends it."
+why_asleep = "The client asks on the account's behalf whenever someone opens or lists its apps, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "client_apps"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A registered client's app (studio's `app-xxxxxxxx`) and the project it's in (M236), so its owners are the project's members: the client, the app's id and title, the project, and who put it there and when."
+why_asleep = "The client reads it to list and open its apps, with every machine asleep."
+with_account = "partly"
+seen_by = ["litestream"]
+note = "Deleting an account forgets it as `added_by`; its personal project's apps go with the project."
+
+[[table]]
+name = "client_secret_grants"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A project's own secret a registered client may send for one of its apps, to one host (M236): the project, the client, the secret's name, the app, the host, who asked (an owner, through the client) and when, who let it and when, and how many reads and the last. Never a value."
+why_asleep = "Studio's egress broker reads the secret on its apps' behalf, with every machine asleep."
+with_account = "partly"
+seen_by = ["litestream"]
+note = "Deleting an account forgets it as `granted_by` and `requested_by`; its personal project's grants go with the project."
+
+[[table]]
+name = "client_secret_events"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "What happened to a client's reach into a project's secrets (M236): asked for, granted and revoked by an owner, read by the client for one of its apps and host, ended when the app moved or went, with when. Never a value. Kept 90 days."
+why_asleep = "Written as the client reads, with every machine asleep, for the project's owners to see."
+with_account = "partly"
+seen_by = ["litestream"]
+note = "Deleting an account forgets it as the owner who granted or revoked; its personal project's events go with the project."
 
 [[table]]
 name = "run_grants"

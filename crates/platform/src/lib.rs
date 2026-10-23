@@ -44,10 +44,16 @@ pub mod agent_tokens;
 mod agents_tests;
 pub mod auth;
 pub mod billing;
+pub mod boxes;
+#[cfg(test)]
+mod boxes_tests;
 pub mod cache;
 pub mod chat;
 #[cfg(test)]
 mod chat_tests;
+pub mod clients;
+#[cfg(test)]
+mod clients_tests;
 pub mod cloud;
 pub mod compute;
 #[cfg(feature = "contract")]
@@ -69,9 +75,11 @@ pub mod inbox;
 pub mod issues;
 pub mod jobs;
 pub mod keys;
+pub mod links;
 #[cfg(test)]
 mod object_threads_tests;
 pub mod page;
+pub mod planter;
 mod port;
 pub mod projects;
 pub mod remote;

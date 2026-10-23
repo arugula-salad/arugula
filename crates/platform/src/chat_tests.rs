@@ -88,6 +88,13 @@ struct State {
     /// the hub can't say.
     activity: BTreeMap<String, bool>,
     activity_down: bool,
+    /// Products accounts let sign them in (M229), by account.
+    products: BTreeMap<String, Vec<crate::hub::ProductLink>>,
+    /// Issuer access tokens (M228): token, then its account and client.
+    access: BTreeMap<String, (String, String)>,
+    /// Products' users linked to accounts (M229), by (client, user): the
+    /// account and the GitHub id.
+    product_links: BTreeMap<(String, String), (String, u64)>,
 }
 
 fn done<'a, T: Send + 'a>(t: T) -> BoxFuture<'a, HubResult<T>> {
@@ -134,6 +141,26 @@ impl TestHub {
             s.teams.insert(id.into(), Team { id: id.into(), name: id.into(), founder, locked, version, members });
         }
         self.change(ChangeKind::TeamRoster, id);
+    }
+
+    /// `account` let `client` sign it in, and links its user `user` (M229).
+    pub(crate) fn product(&self, account: &str, client: &str, user: &str) {
+        let link = crate::hub::ProductLink {
+            client: client.into(),
+            product: client.into(),
+            granted: Some(1),
+            user: Some(user.into()),
+            name: None,
+            linked: Some(1),
+        };
+        self.state.lock().unwrap().products.entry(account.into()).or_default().push(link);
+    }
+
+    /// An issuer access token for `account`, issued to `client`.
+    pub(crate) fn access_token(&self, account: &str, client: &str) -> String {
+        let t = format!("aat_{account}_{client}");
+        self.state.lock().unwrap().access.insert(t.clone(), (account.into(), client.into()));
+        t
     }
 
     pub(crate) fn daemon(&self, id: &str, account: &str, team: Option<&str>) {
@@ -205,6 +232,12 @@ impl TestHub {
     /// The forge pokes it was handed.
     pub(crate) fn pokes(&self) -> Vec<arugula_control_wire::forge::Poke> {
         self.state.lock().unwrap().pokes.clone()
+    }
+
+    /// A product's user linked to an account by GitHub id (M229).
+    pub(crate) fn link_product(&self, client: &str, user: &str, account: &str, github_id: u64) {
+        let mut s = self.state.lock().unwrap();
+        s.product_links.insert((client.into(), user.into()), (account.into(), github_id));
     }
 
     pub(crate) fn github(&self, account: &str, id: u64, login: &str) {
@@ -291,6 +324,23 @@ impl TestHub {
 }
 
 impl HubPort for TestHub {
+    fn client_account<'a>(&'a self, token: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        self.called("client_account");
+        let s = self.state.lock().unwrap();
+        done(s.access.get(token).filter(|(_, c)| c == client).map(|(a, _)| a.clone()))
+    }
+    fn product_links<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Vec<crate::hub::ProductLink>>> {
+        self.called("product_links");
+        done(self.state.lock().unwrap().products.get(account).cloned().unwrap_or_default())
+    }
+    fn unlink_product<'a>(&'a self, account: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<bool>> {
+        self.called("unlink_product");
+        let mut s = self.state.lock().unwrap();
+        let mine = s.products.entry(account.into()).or_default();
+        let before = mine.len();
+        mine.retain(|l| l.client != client);
+        done(mine.len() < before)
+    }
     fn resolve<'a>(&'a self, _: &'a Principal) -> BoxFuture<'a, HubResult<Option<Resolved>>> {
         self.called("resolve");
         done(None)
@@ -414,6 +464,17 @@ impl HubPort for TestHub {
         self.called("forge_pokes");
         self.state.lock().unwrap().pokes.extend_from_slice(pokes);
         done(pokes.len() as u32)
+    }
+
+    fn linked_account<'a>(
+        &'a self,
+        client: &'a str,
+        user: &'a str,
+    ) -> BoxFuture<'a, HubResult<Option<crate::hub::LinkedAccount>>> {
+        self.called("linked_account");
+        let s = self.state.lock().unwrap();
+        let l = s.product_links.get(&(client.to_owned(), user.to_owned())).cloned();
+        done(l.map(|(account, github_id)| crate::hub::LinkedAccount { account, github_id }))
     }
 
     fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<crate::forge::GithubUser>>> {

@@ -56,6 +56,9 @@ use crate::{
     db::issuer::{Client, ClientKind},
 };
 
+/// How long a consent screen waits for its answer (M229).
+pub const CONSENT_MS: u64 = 10 * 60_000;
+
 /// How long a code lasts: a redirect and a call.
 pub const CODE_MS: u64 = 60_000;
 /// Codes one hub session may have waiting at once.
@@ -228,11 +231,34 @@ struct Pending {
 pub struct Issuer {
     pub keys: Keys,
     codes: Mutex<HashMap<String, Pending>>,
+    /// Consent screens shown and not yet answered (M229), by their
+    /// ticket's hash: the request each answers, and its `state`.
+    asking: Mutex<HashMap<String, (Pending, String)>>,
+    /// hud boxes' reviews waiting for their author to post them on the
+    /// hub's own page (M237, `hud_box.rs`), by their id's hash.
+    pub(crate) box_posts: crate::hud_box::Waiting,
 }
 
 impl Issuer {
     pub fn new(keys: Keys) -> Self {
-        Issuer { keys, codes: Mutex::default() }
+        Issuer { keys, codes: Mutex::default(), asking: Mutex::default(), box_posts: Default::default() }
+    }
+
+    /// Keep a request waiting on the person's consent, unless its hub
+    /// session already has [`CODES_PER_SESSION`] waiting.
+    fn ask(&self, ticket_hash: String, p: Pending, state: String, now: u64) -> bool {
+        let mut m = self.asking.lock().unwrap();
+        m.retain(|_, (p, _)| p.until > now);
+        if m.values().filter(|(o, _)| o.hub_session == p.hub_session).count() >= CODES_PER_SESSION {
+            return false;
+        }
+        m.insert(ticket_hash, (p, state));
+        true
+    }
+
+    /// Single use: gone whatever the answer.
+    fn answer(&self, ticket_hash: &str) -> Option<(Pending, String)> {
+        self.asking.lock().unwrap().remove(ticket_hash)
     }
 
     /// Keep a code, unless its hub session already has
@@ -293,7 +319,7 @@ fn nonce_shaped(s: &str) -> bool {
     (8..=200).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b))
 }
 
-fn no_store(mut r: Response) -> Response {
+pub(crate) fn no_store(mut r: Response) -> Response {
     let h = r.headers_mut();
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     h.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
@@ -301,7 +327,7 @@ fn no_store(mut r: Response) -> Response {
     r
 }
 
-fn off() -> Response {
+pub(crate) fn off() -> Response {
     (StatusCode::NOT_FOUND, "this control isn't an issuer").into_response()
 }
 
@@ -315,12 +341,12 @@ fn not_registered() -> Response {
 }
 
 /// `/oauth/*` from one address, per hour (`limit.rs`).
-fn limited(app: &App, peer: SocketAddr, headers: &HeaderMap) -> Option<Response> {
+pub(crate) fn limited(app: &App, peer: SocketAddr, headers: &HeaderMap) -> Option<Response> {
     app.limits.check(crate::limit::ISSUER, app.limits.client_ip(peer, headers)).err().map(IntoResponse::into_response)
 }
 
 /// The hub session on this request, by its cookie: its hash and account.
-fn hub_session(app: &App, headers: &HeaderMap, now: u64) -> Option<(String, String)> {
+pub(crate) fn hub_session(app: &App, headers: &HeaderMap, now: u64) -> Option<(String, String)> {
     cookie(headers, SESSION_COOKIE)
         .map(hash)
         .and_then(|h| app.db.session_until(&h, now).ok().flatten().map(|(account, _)| (h, account)))
@@ -328,7 +354,7 @@ fn hub_session(app: &App, headers: &HeaderMap, now: u64) -> Option<(String, Stri
 
 /// Signed out here: control's page signs them in, then comes back to this
 /// same request (`#issuer-signin=`).
-fn sign_in_first(uri: &Uri) -> Response {
+pub(crate) fn sign_in_first(uri: &Uri) -> Response {
     let back = uri.path_and_query().map_or_else(|| uri.path(), |p| p.as_str());
     no_store(Redirect::to(&format!("/#issuer-signin={}", b64url(back.as_bytes()))).into_response())
 }
@@ -380,6 +406,9 @@ pub async fn discovery(State(app): State<Arc<App>>) -> Response {
         "scopes_supported": ["openid"],
         "claims_supported": ["iss", "sub", "aud", "iat", "exp", "nonce", "github_id"],
         "authorization_response_iss_parameter_supported": true,
+        // M229: a product's own user to the platform account, with the
+        // client's link secret (HTTP Basic), from its server.
+        "arugula_links_endpoint": format!("{iss}/oauth/links"),
     }))
     .into_response();
     public_json(&mut r, 300);
@@ -461,28 +490,193 @@ pub async fn authorize(
         }
         return sign_in_first(&uri);
     };
+    let p = Pending {
+        account,
+        hub_session,
+        client: client.id.clone(),
+        redirect_uri: redirect_uri.clone(),
+        challenge: q.code_challenge.unwrap_or_default(),
+        nonce: q.nonce,
+        until: now + CODE_MS,
+    };
+    // M229: a product signs someone in only once they've said it may, and
+    // again after they unlinked it.
+    match app.db.issuer_grant(&p.account, &p.client) {
+        Ok(true) => give_code(&app, issuer, p, state, now),
+        Ok(false) if q.prompt.as_deref() == Some("none") => {
+            fail("consent_required", "the person hasn't let this product sign them in yet")
+        }
+        Ok(false) => {
+            let ticket = token();
+            let who = app.db.account(&p.account).ok().flatten().map(|a| a.name).unwrap_or_default();
+            let p = Pending { until: now + CONSENT_MS, ..p };
+            if !issuer.ask(hash(&ticket), p, state.to_owned(), now) {
+                return fail("temporarily_unavailable", "too many sign-ins under way: try again in a minute");
+            }
+            consent_page(&client.name, &who, &ticket)
+        }
+        Err(e) => {
+            tracing::warn!("the issuer couldn't read a consent: {e:#}");
+            fail("server_error", "try again")
+        }
+    }
+}
+
+/// A code for `p`, back to its client's address.
+fn give_code(app: &App, issuer: &Issuer, p: Pending, state: &str, now: u64) -> Response {
+    let iss = app.cfg.public_url.as_str();
+    let redirect_uri = p.redirect_uri.clone();
     let code = token();
-    let kept = issuer.put(
-        hash(&code),
-        Pending {
-            account,
-            hub_session,
-            client: client.id,
-            redirect_uri: redirect_uri.clone(),
-            challenge: q.code_challenge.unwrap_or_default(),
-            nonce: q.nonce,
-            until: now + CODE_MS,
-        },
-        now,
-    );
-    if !kept {
-        return fail("temporarily_unavailable", "too many sign-ins under way: try again in a minute");
+    if !issuer.put(hash(&code), Pending { until: now + CODE_MS, ..p }, now) {
+        let mut q = vec![
+            ("error", "temporarily_unavailable"),
+            ("error_description", "too many sign-ins under way: try again in a minute"),
+            ("iss", iss),
+        ];
+        if !state.is_empty() {
+            q.push(("state", state));
+        }
+        return back(&redirect_uri, &q);
     }
-    let mut p = vec![("code", code.as_str()), ("iss", iss)];
+    let mut q = vec![("code", code.as_str()), ("iss", iss)];
     if !state.is_empty() {
-        p.push(("state", state));
+        q.push(("state", state));
     }
-    back(&redirect_uri, &p)
+    back(&redirect_uri, &q)
+}
+
+pub(crate) fn escape(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            '&' => "&amp;".into(),
+            '<' => "&lt;".into(),
+            '>' => "&gt;".into(),
+            '"' => "&quot;".into(),
+            '\'' => "&#39;".into(),
+            c => c.to_string(),
+        })
+        .collect()
+}
+
+/// The consent screen (M229): "Link <product> to your Arugula account?",
+/// a form back to `/oauth/consent` with the ticket that names the request.
+/// The ticket is single use and bound to this hub session, so a page
+/// elsewhere can't answer it; nothing here runs script, and nothing may
+/// frame it.
+fn consent_page(product: &str, who: &str, ticket: &str) -> Response {
+    let (product, who) = (escape(product), escape(who));
+    let as_who = if who.is_empty() { String::new() } else { format!(" (signed in as <b>{who}</b>)") };
+    let html = format!(
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Link {product} to Arugula?</title>
+<style>body{{font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:10vh auto;padding:0 16px;background:#0d1117;color:#e6edf3}}
+button{{font:inherit;padding:.5em 1.2em;margin-right:.6em;border-radius:6px;border:1px solid #30363d;background:#21262d;color:inherit;cursor:pointer}}
+button[value=allow]{{background:#238636;border-color:#238636}}p.dim{{color:#8b949e}}</style></head>
+<body><h1>Link {product} to your Arugula account?</h1>
+<p>{product} will learn who you are on Arugula{as_who}: your account and your GitHub account's number. Nothing else: not your projects, machines or teams.</p>
+<p class="dim">You can unlink it any time in the platform's Settings, under Linked products.</p>
+<form method="post" action="/oauth/consent"><input type="hidden" name="ticket" value="{ticket}">
+<button type="submit" name="decision" value="allow" data-consent-allow>Link {product}</button><button type="submit" name="decision" value="deny" data-consent-deny>Cancel</button></form>
+</body></html>"#
+    );
+    let mut r = no_store((StatusCode::OK, [(header::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response());
+    let h = r.headers_mut();
+    h.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(
+            "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
+        ),
+    );
+    h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    r
+}
+
+#[derive(Deserialize)]
+pub struct Consent {
+    ticket: Option<String>,
+    decision: Option<String>,
+}
+
+fn header_of(headers: &HeaderMap, h: &str) -> Option<String> {
+    headers.get(h).and_then(|v| v.to_str().ok()).map(str::to_owned)
+}
+
+/// Whether a form's post came from a page of the hub's own (the consent
+/// screen, M229; a hud box's review, M237): its Origin's host and port are
+/// the Host it came to (control answers on more than one site, so not only
+/// its public URL's), and its Sec-Fetch-Site, when sent, says same-origin.
+pub(crate) fn own_page_form(headers: &HeaderMap) -> bool {
+    let host = header_of(headers, "host").unwrap_or_default().to_ascii_lowercase();
+    let same = |o: &str| {
+        url::Url::parse(o).ok().is_some_and(|u| {
+            let authority = match (u.host_str(), u.port()) {
+                (Some(h), Some(p)) => format!("{h}:{p}"),
+                (Some(h), None) => h.to_owned(),
+                _ => return false,
+            };
+            authority.to_ascii_lowercase() == host
+        })
+    };
+    // A browser that was told no-referrer says `Origin: null` on a form's
+    // post; its Sec-Fetch-Site still says where the post came from.
+    let fetch_site = header_of(headers, "sec-fetch-site");
+    let origin_ok = match header_of(headers, "origin").as_deref() {
+        None => true,
+        Some("null") => fetch_site.as_deref() == Some("same-origin"),
+        Some(o) => same(o),
+    };
+    origin_ok && fetch_site.is_none_or(|s| s == "same-origin" || s == "none")
+}
+
+/// `POST /oauth/consent`: the person's answer to the consent screen. Only
+/// from the same origin it was shown on (a cross-site post is refused), with the
+/// ticket that screen was shown with, in the hub session it was shown in.
+/// Allowed: the consent is kept and the client gets its code. Cancelled:
+/// the client hears `access_denied`.
+pub async fn consent(
+    State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Form(b): Form<Consent>,
+) -> Response {
+    let Some(issuer) = &app.issuer else { return off() };
+    if let Some(r) = limited(&app, peer, &headers) {
+        return r;
+    }
+    let refused = |why: &str| no_store((StatusCode::FORBIDDEN, why.to_owned()).into_response());
+    if !own_page_form(&headers) {
+        tracing::info!(
+            origin = header_of(&headers, "origin").unwrap_or_default(),
+            fetch_site = header_of(&headers, "sec-fetch-site").unwrap_or_default(),
+            "a consent answer from another page was refused"
+        );
+        return refused("this answer didn't come from Arugula's own page");
+    }
+    let Some((p, state)) = b.ticket.as_deref().and_then(|t| issuer.answer(&hash(t))) else {
+        return refused("this question has been answered or has run out: start again from the product");
+    };
+    let now = now_ms();
+    if p.until <= now || hub_session(&app, &headers, now).is_none_or(|(h, a)| h != p.hub_session || a != p.account) {
+        return refused("this question has been answered or has run out: start again from the product");
+    }
+    let iss = app.cfg.public_url.as_str();
+    match b.decision.as_deref() {
+        Some("allow") => {
+            if let Err(e) = app.db.put_issuer_grant(&p.account, &p.client, now) {
+                tracing::warn!("a consent wasn't kept: {e:#}");
+                return refused("that didn't work: try again");
+            }
+            tracing::info!(client = p.client, "a person let a product sign them in");
+            give_code(&app, issuer, p, &state, now)
+        }
+        _ => {
+            let mut q = vec![("error", "access_denied"), ("error_description", "the person said no"), ("iss", iss)];
+            if !state.is_empty() {
+                q.push(("state", state.as_str()));
+            }
+            back(&p.redirect_uri, &q)
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -499,7 +693,7 @@ fn token_error(status: StatusCode, error: &str, why: &str) -> Response {
 }
 
 /// The account's numeric GitHub id, when it has one, and its login then.
-fn github_id(app: &App, account: &str) -> anyhow::Result<Option<(u64, String)>> {
+pub(crate) fn github_id(app: &App, account: &str) -> anyhow::Result<Option<(u64, String)>> {
     Ok(app.db.github_identity(account)?.and_then(|(id, login)| id.parse().ok().map(|id| (id, login))))
 }
 
@@ -642,7 +836,8 @@ fn refuse_hud(status: StatusCode, why: &'static str) -> Response {
 /// box's own page: `#hud-forge=hudfs1.…`. hud signs a session in as
 /// `github:<login>`, so the account needs a GitHub sign-in, and its login
 /// must be no one else's here. A `nonce` the box sends is echoed in the
-/// assertion (hud ignores it today; M237 can bind it to the box's session).
+/// assertion: hud from M237 on binds it to the browser that asked, and
+/// requires it for a sign-in that admits someone by project membership.
 pub async fn hud(
     State(app): State<Arc<App>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -744,13 +939,41 @@ enum What {
         /// be on an origin that serves only hud's own UI.
         #[arg(long = "redirect", required = true)]
         redirect_uris: Vec<String>,
+        /// A hud box's platform project (M237, `prj_…`): its members are the
+        /// box's roster, and its reviews post to threads on that project's
+        /// objects (with a client secret, `client-secret`). Left out, the
+        /// box keeps its own roster; changing it ends who the box may post
+        /// for until they sign in to it again.
+        #[arg(long)]
+        project: Option<String>,
     },
     /// The registered clients.
     Clients {
         #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
         db: std::path::PathBuf,
     },
-    /// Take a client out, and the access tokens it holds.
+    /// Give a client a secret, shown once on stdout: what it calls the
+    /// hub with, as HTTP Basic with its id. An oidc client links accounts
+    /// with it (M229); a hud box bound to a project reads its members and
+    /// posts review threads (M237). A new one replaces the old at once;
+    /// --revoke takes it away.
+    #[command(visible_alias = "client-secret")]
+    LinkSecret {
+        #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
+        db: std::path::PathBuf,
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        revoke: bool,
+    },
+    /// The ops counter of bulk link calls (M229): per client, how many
+    /// unlinks or lookups went over the alert line, and when last.
+    LinkAlerts {
+        #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
+        db: std::path::PathBuf,
+    },
+    /// Take a client out, and the access tokens, link secret, consents and
+    /// account links it holds (each link ended is audited).
     RemoveClient {
         #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
         db: std::path::PathBuf,
@@ -795,21 +1018,51 @@ pub fn run(args: impl Iterator<Item = String>) -> anyhow::Result<()> {
                 println!("previous kid {}  hud {}  until {until} ({state})", k.kid(), k.spki_base64());
             }
         }
-        What::AddClient { db, id, kind, name, redirect_uris } => {
+        What::AddClient { db, id, kind, name, redirect_uris, project } => {
             let c = open(&db)?;
             let created =
                 crate::db::issuer::clients(&c)?.into_iter().find(|c| c.id == id).map_or(now_ms(), |c| c.created);
-            let stored =
-                crate::db::issuer::put_client(&c, &Client { id: id.clone(), kind, name, redirect_uris, created })?;
-            println!("client {id} ({}) registered: {}", kind.as_str(), stored.redirect_uris.join(" "));
+            let stored = crate::db::issuer::put_client(
+                &c,
+                &Client { id: id.clone(), kind, name, redirect_uris, created, project },
+            )?;
+            let bound = stored.project.as_deref().map(|p| format!(" (project {p})")).unwrap_or_default();
+            println!("client {id} ({}){bound} registered: {}", kind.as_str(), stored.redirect_uris.join(" "));
         }
         What::Clients { db } => {
             for c in crate::db::issuer::clients(&open(&db)?)? {
-                println!("{}\t{}\t{}\t{}", c.id, c.kind.as_str(), c.name, c.redirect_uris.join(" "));
+                println!(
+                    "{}\t{}\t{}\t{}\t{}",
+                    c.id,
+                    c.kind.as_str(),
+                    c.name,
+                    c.redirect_uris.join(" "),
+                    c.project.as_deref().unwrap_or("-")
+                );
+            }
+        }
+        What::LinkSecret { db, id, revoke } => {
+            let c = open(&db)?;
+            if revoke {
+                let had = crate::db::issuer::drop_client_secret(&c, &id)?;
+                println!(
+                    "{}",
+                    if had { format!("client {id}'s secret revoked") } else { format!("client {id} had no secret") }
+                );
+            } else {
+                let secret = format!("acs_{}", token());
+                crate::db::issuer::set_client_secret(&c, &id, &hash(&secret), now_ms())?;
+                eprintln!("client {id}'s secret (shown once; the old one, if any, stopped working):");
+                println!("{secret}");
+            }
+        }
+        What::LinkAlerts { db } => {
+            for (client, what, count, last) in crate::db::issuer::link_alerts(&open(&db)?)? {
+                println!("{client}\t{what}\t{count}\tlast {last}");
             }
         }
         What::RemoveClient { db, id } => {
-            let gone = crate::db::issuer::remove_client(&open(&db)?, &id)?;
+            let gone = crate::db::issuer::remove_client(&mut open(&db)?, &id)?;
             println!("{}", if gone { format!("client {id} removed") } else { format!("no client {id}") });
         }
     }

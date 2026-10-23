@@ -57,6 +57,9 @@ mod hosted_work;
 #[cfg(test)]
 mod hub_latency_bench;
 mod hub_port;
+mod hud_box;
+#[cfg(test)]
+mod hud_box_wire;
 mod internal;
 mod issuer;
 #[cfg(test)]
@@ -64,10 +67,14 @@ mod issuer_wire;
 mod labs_flags;
 mod legacy_app;
 mod limit;
+mod links;
+#[cfg(test)]
+mod links_wire;
 mod maintenance;
 mod notice;
 mod passkey;
 mod plans;
+mod planter_import;
 mod platform_host;
 #[cfg(test)]
 mod platform_host_wire;
@@ -559,9 +566,17 @@ fn routes() -> Routes {
         .route("/.well-known/openid-configuration", get(issuer::discovery))
         .route("/.well-known/jwks.json", get(issuer::jwks))
         .route("/oauth/authorize", get(issuer::authorize))
+        .route("/oauth/consent", post(issuer::consent))
         .route("/oauth/token", post(issuer::token_endpoint))
         .route("/oauth/userinfo", get(issuer::userinfo))
         .route("/oauth/hud", get(issuer::hud))
+        // hud boxes bound to a project (M237): their roster, and reviews their people post.
+        .route("/oauth/hud/members", get(hud_box::members))
+        .route("/oauth/hud/posts", post(hud_box::posts))
+        .route("/oauth/hud/post", get(hud_box::post_page).post(hud_box::post_answer))
+        // Account links (M229): a product's user to the platform account.
+        .route("/oauth/links", post(links::link))
+        .route("/oauth/links/{user}", get(links::show).delete(links::unlink))
         .route("/auth/app", post(app_login::ask))
         .route("/auth/app/{id}/redeem", post(app_login::redeem))
         .route("/api/app-login/{id}", get(app_login::show))
@@ -859,7 +874,8 @@ fn main() -> anyhow::Result<()> {
     // (device_review.rs). `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
     // `notice`: a notice for every account (notice.rs). `issuer`: the
-    // issuer's keys and clients (issuer.rs). `hosted-enrollment`:
+    // issuer's keys and clients (issuer.rs). `import planter`: planter's
+    // accounts as account links (planter_import.rs, M232). `hosted-enrollment`:
     // what the platform asks as it makes a hosted box (hosted.rs). `platform`: a
     // window's tools, the platform's own code (`arugula_platform::window`).
     let mut argv = std::env::args().skip(1).peekable();
@@ -877,6 +893,9 @@ fn main() -> anyhow::Result<()> {
     }
     if argv.peek().is_some_and(|a| a == "issuer") {
         return issuer::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "import") {
+        return planter_import::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "notice") {
         return notice::run(argv.skip(1));
@@ -1140,6 +1159,7 @@ async fn run() -> anyhow::Result<()> {
     if let Some(p) = app.platform.local() {
         arugula_platform::hosted::start(p);
         arugula_platform::keys::start(p);
+        arugula_platform::clients::start(p);
         // The job worker: runs' dispatch (M212) and schedules (M214).
         arugula_platform::work::start(p);
         // Runs' logs past their days (M213).

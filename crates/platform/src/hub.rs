@@ -306,6 +306,76 @@ pub trait HubPort: Send + Sync {
         let _ = (account, challenge, assertion);
         Box::pin(async { anyhow::bail!("this hub doesn't check passkeys for the platform") })
     }
+
+    /// The products an account let sign it in or is linked to (M229), by
+    /// product: its consent, and the product's user linked to it by numeric
+    /// GitHub id, if any. Empty for an account with none, or that isn't
+    /// there. A hub from before M229 can't say.
+    fn product_links<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Vec<ProductLink>>> {
+        let _ = account;
+        Box::pin(async { anyhow::bail!("this hub doesn't link products' accounts") })
+    }
+
+    /// The account an issuer access token (M228, `aat_…`) is for, when it
+    /// was issued to `client` and still stands (minutes long, ending with
+    /// the hub session it came from): what a client sends to show a person
+    /// is present (M236). `None` for anything else. A hub from before M236
+    /// can't say.
+    fn client_account<'a>(&'a self, token: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        let _ = (token, client);
+        Box::pin(async { anyhow::bail!("this hub doesn't check access tokens for the platform") })
+    }
+
+    /// End what `account` has with a product (M229), as the person asked
+    /// on the platform page: its link and its consent, audited; the product
+    /// sees it on its next call, and the next sign-in through it asks again.
+    /// Whether there was either. A hub from before M229 can't.
+    fn unlink_product<'a>(&'a self, account: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<bool>> {
+        let _ = (account, client);
+        Box::pin(async { anyhow::bail!("this hub doesn't link products' accounts") })
+    }
+
+    /// The platform account a product's user is linked to (M229), with the
+    /// numeric GitHub id it was linked by, or `None`: what planter's import
+    /// (M232) asks of each planter, by planter's own user id. A hub from
+    /// before M232 can't say.
+    fn linked_account<'a>(&'a self, client: &'a str, user: &'a str) -> BoxFuture<'a, HubResult<Option<LinkedAccount>>> {
+        let _ = (client, user);
+        Box::pin(async { anyhow::bail!("this hub doesn't say products' links") })
+    }
+}
+
+/// A product's user's link (M232, [`HubPort::linked_account`]). A link is
+/// never authorization.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkedAccount {
+    /// The platform account (the hub's).
+    pub account: String,
+    /// The numeric GitHub id it was linked by.
+    pub github_id: u64,
+}
+
+/// A product an account let sign it in, or is linked to (M229,
+/// [`HubPort::product_links`]). A link is never authorization: nothing on
+/// the platform grants anything because of one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProductLink {
+    /// The product: its issuer client id.
+    pub client: String,
+    /// The product's name, as its client is registered.
+    pub product: String,
+    /// When the person let it sign them in (ms), the consent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub granted: Option<u64>,
+    /// The product's own id for its user linked to the account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    /// How the product names that user, when it said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// When it was linked (ms).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked: Option<u64>,
 }
 
 /// A passkey's assertion, as the page got it from `navigator.credentials.get`

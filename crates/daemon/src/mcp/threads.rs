@@ -107,19 +107,25 @@ fn room_name(r: &Value) -> String {
     }
 }
 
-/// Who wrote it: a person, or "<owner>'s agent on <machine>".
+/// Who wrote it: a person, or "<owner>'s agent on <machine>"; and
+/// "via <product>" when a product posted it for them (M237: a hud box's
+/// review).
 fn by(m: &Value) -> String {
     let name = m["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("someone");
-    match m["agent"]["machine_name"].as_str() {
+    let who = match m["agent"]["machine_name"].as_str() {
         Some(machine) => format!("{name}'s agent on {machine}"),
         None => name.to_owned(),
+    };
+    match m["via"].as_str() {
+        Some(v) => format!("{who} via {v}"),
+        None => who,
     }
 }
 
 /// A message as an agent reads it.
 fn message(m: &Value, mention: &str) -> Value {
     json!({
-        "seq": m["seq"], "at": m["at"], "by": by(m), "author": m["author"], "agent": m["agent"],
+        "seq": m["seq"], "at": m["at"], "by": by(m), "author": m["author"], "agent": m["agent"], "via": m["via"],
         "text": m["text"], "quote": m["quote"], "deleted": m["deleted"].is_u64(),
         "mentions_you": m["mentions"].as_array().is_some_and(|a| a.iter().any(|x| x == mention)),
     })
@@ -303,5 +309,21 @@ impl Call<'_> {
             note += " issue_write files and changes native issues where issues.write reaches, at once.";
         }
         ThreadsReach { live, scopes, note }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    /// Who wrote a message, as an agent reads it: a person, their agent,
+    /// and a product that posted it for them (M237) all say so.
+    #[test]
+    fn by_says_agents_and_products() {
+        assert_eq!(super::by(&json!({ "name": "Ada" })), "Ada");
+        assert_eq!(super::by(&json!({ "name": "Ada", "agent": { "machine_name": "geek" } })), "Ada's agent on geek");
+        assert_eq!(super::by(&json!({ "name": "Ada", "via": "notes (hud)" })), "Ada via notes (hud)");
+        let m = super::message(&json!({ "name": "Ada", "via": "notes (hud)", "mentions": [] }), "a");
+        assert_eq!(m["via"], "notes (hud)");
     }
 }

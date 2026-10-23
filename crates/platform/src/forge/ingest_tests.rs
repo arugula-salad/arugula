@@ -686,6 +686,37 @@ async fn a_missed_webhook_is_fixed_and_counted() {
     assert_eq!(turn, Some(poller::Turn::Done { repo: REPO, backfill: false, fixed: 0, drift: 0 }));
 }
 
+/// GitHub sends `check_run` when a run is made and when it completes,
+/// never when it starts: a run the reconcile finds in progress is fixed,
+/// not drift. Its completion, missed, is.
+#[tokio::test]
+async fn a_check_run_starting_isnt_drift() {
+    let (gh, app, _base, _hub) = serve().await;
+    let t0 = now_ms();
+    fill(&gh, t0);
+    let run = |status: &str, conclusion: Option<&str>, at: u64| {
+        json!({ "id": 2, "name": "build", "head_sha": "sha1", "status": status, "conclusion": conclusion,
+            "started_at": iso(at), "completed_at": conclusion.map(|_| iso(at)), "html_url": "https://x/2" })
+    };
+    gh.lock().unwrap().runs.insert("sha1".into(), vec![run("queued", None, t0 - 300_000)]);
+    link(&app, REPO, t0);
+    poller::tick(&app, t0).await.unwrap();
+    let every = app.github.as_ref().unwrap().ingest.settings.every_ms;
+    let stats = &app.github.as_ref().unwrap().ingest.stats;
+
+    let t1 = t0 + every;
+    gh.lock().unwrap().runs.insert("sha1".into(), vec![run("in_progress", None, t1 - 200_000)]);
+    let turn = poller::tick(&app, t1).await.unwrap();
+    assert_eq!(turn, Some(poller::Turn::Done { repo: REPO, backfill: false, fixed: 1, drift: 0 }));
+    assert_eq!(count(&app, "SELECT count(*) FROM forge_checks WHERE head_sha = 'sha1' AND status = 'in_progress'"), 1);
+    assert_eq!(stats.drift_today(t1).get(&REPO).copied().unwrap_or(0), 0);
+
+    let t2 = t1 + every;
+    gh.lock().unwrap().runs.insert("sha1".into(), vec![run("completed", Some("success"), t2 - 200_000)]);
+    let turn = poller::tick(&app, t2).await.unwrap();
+    assert_eq!(turn, Some(poller::Turn::Done { repo: REPO, backfill: false, fixed: 1, drift: 1 }));
+}
+
 /// With less than the reserve left of the installation's limit, the
 /// poller stops reading, gives its lease up and waits a minute; once the
 /// limit has room again, it carries on.

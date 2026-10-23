@@ -428,8 +428,9 @@ enum Command {
     },
     /// A project's deploys on Arugula control.
     ///
-    /// `envs` lists its environments, `plan --env NAME --commit SHA --repo
-    /// OWNER/NAME [--roll-back]` plans a deploy and prints its plan,
+    /// `envs` lists its environments, `ls [--env NAME]` its deploys, newest
+    /// first, `plan --env NAME --commit SHA --repo OWNER/NAME
+    /// [--roll-back]` plans a deploy and prints its plan,
     /// `request DEP` asks the project's owners to approve it, `show DEP`
     /// reads it (its plan, state and log). An owner approves on their phone
     /// or in a browser, with a passkey, never here; environments and their

@@ -349,6 +349,23 @@ impl HubPort for Timed {
     ) -> BoxFuture<'a, HubResult<crate::hub::PasskeyVerdict>> {
         timed!(self.0.verify_passkey(account, challenge, assertion))
     }
+    fn product_links<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Vec<crate::hub::ProductLink>>> {
+        timed!(self.0.product_links(account))
+    }
+    fn unlink_product<'a>(&'a self, account: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<bool>> {
+        timed!(self.0.unlink_product(account, client))
+    }
+    fn client_account<'a>(&'a self, token: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        timed!(self.0.client_account(token, client))
+    }
+
+    fn linked_account<'a>(
+        &'a self,
+        client: &'a str,
+        user: &'a str,
+    ) -> BoxFuture<'a, HubResult<Option<crate::hub::LinkedAccount>>> {
+        timed!(self.0.linked_account(client, user))
+    }
 }
 
 #[cfg(test)]

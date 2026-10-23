@@ -765,7 +765,7 @@ fn shown(issue: &Issue, events: &[IssueEvent], comments: &[ChatMessage], names: 
     }
     for c in comments {
         let n = if c.name.is_empty() { name(&c.author) } else { c.name.clone() };
-        out.push_str(&format!("\n{}, {}:\n", who(&n, c.agent.as_ref()), crate::hosts::ago(c.at)));
+        out.push_str(&format!("\n{}, {}:\n", via(who(&n, c.agent.as_ref()), c), crate::hosts::ago(c.at)));
         for l in c.text.lines() {
             out.push_str(&format!("  {l}\n"));
         }
@@ -779,6 +779,15 @@ fn who(name: &str, agent: Option<&ChatAgent>) -> String {
     match agent {
         Some(a) => format!("{name}'s agent on {}", a.machine_name),
         None => name.to_owned(),
+    }
+}
+
+/// A comment a product posted for its author (M237: a hud box's review)
+/// says so.
+fn via(who: String, c: &ChatMessage) -> String {
+    match &c.via {
+        Some(v) => format!("{who} via {v}"),
+        None => who,
     }
 }
 
@@ -1102,7 +1111,7 @@ fn prompt(
     }
     for c in comments {
         let name = if c.name.is_empty() { names.get(&c.author).cloned().unwrap_or_default() } else { c.name.clone() };
-        p.push_str(&format!("\nComment by {}:\n{}\n", who(&name, c.agent.as_ref()), defang(c.text.trim())));
+        p.push_str(&format!("\nComment by {}:\n{}\n", via(who(&name, c.agent.as_ref()), c), defang(c.text.trim())));
     }
     p.push_str(&format!("</{MARK}>\n"));
     p.push_str(&format!(
@@ -1322,6 +1331,7 @@ mod tests {
             deleted: None,
             imported: None,
             agent: None,
+            via: None,
         };
         let events = [event("opened", json!({})), event("closed", json!({ "reason": "not_planned" }))];
         let text = shown(&issue, &events, std::slice::from_ref(&comment), &names);

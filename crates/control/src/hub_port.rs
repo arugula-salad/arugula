@@ -338,6 +338,56 @@ impl HubPort for InProcess {
         })
     }
 
+    fn product_links<'a>(
+        &'a self,
+        account: &'a str,
+    ) -> BoxFuture<'a, HubResult<Vec<arugula_platform::hub::ProductLink>>> {
+        Box::pin(async move {
+            Ok(self
+                .app()?
+                .db
+                .account_products(account)?
+                .into_iter()
+                .map(|p| arugula_platform::hub::ProductLink {
+                    client: p.client,
+                    product: p.name,
+                    granted: p.granted,
+                    user: p.link.as_ref().map(|l| l.user.clone()),
+                    name: p.link.as_ref().and_then(|l| l.name.clone()),
+                    linked: p.link.as_ref().map(|l| l.linked),
+                })
+                .collect())
+        })
+    }
+
+    fn client_account<'a>(&'a self, token: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        Box::pin(async move { Ok(crate::issuer::access_token_for(&*self.app()?, token, client)) })
+    }
+
+    fn unlink_product<'a>(&'a self, account: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<bool>> {
+        Box::pin(async move {
+            let gone = self.app()?.db.unlink_product(account, client, arugula_e2e::now_ms())?;
+            if gone {
+                tracing::info!(client, "a person unlinked a product on the platform page");
+            }
+            Ok(gone)
+        })
+    }
+
+    fn linked_account<'a>(
+        &'a self,
+        client: &'a str,
+        user: &'a str,
+    ) -> BoxFuture<'a, HubResult<Option<arugula_platform::hub::LinkedAccount>>> {
+        Box::pin(async move {
+            Ok(self
+                .app()?
+                .db
+                .account_link(client, user)?
+                .map(|l| arugula_platform::hub::LinkedAccount { account: l.account, github_id: l.github_id }))
+        })
+    }
+
     fn hosted_enrollment<'a>(
         &'a self,
         ask: &'a arugula_control_wire::hosted::EnrollAsk,
@@ -386,13 +436,10 @@ impl HubPort for InProcess {
             let Some(people) = crate::hosted::people(&app.db, &o)? else { return Ok(false) };
             // Here the desktop app's devices from before it had a kind are
             // refused too (`Cert::is_browser` on every link), but just above
-            // a browser one approved back then (`legacy_app`).
+            // a browser one approved back then (`legacy_app`): the check a
+            // hosted machine makes against the set it pinned.
             let children = crate::hosted::legacy_app_children(&app.db, &people)?;
-            let link = |c: &arugula_e2e::Cert, below: Option<&arugula_e2e::Cert>| {
-                c.is_browser()
-                    || children.get(&c.account).is_some_and(|l| arugula_e2e::cert::legacy_app_link(c, below, l))
-            };
-            Ok(people.owners().browser_signed_by(owner, device, body, sig, link))
+            Ok(people.owners().browser_signed(owner, device, body, sig, &children))
         })
     }
 }
@@ -719,6 +766,130 @@ mod tests {
     #[tokio::test]
     async fn http_keeps_the_contract() {
         contract::run(&Fixture::over_http().await).await;
+    }
+
+    /// An account's product links (M229) reach the platform page, in
+    /// process and over HTTP, and the person ends only their own: audited
+    /// as theirs, and gone for the product's next call.
+    #[tokio::test]
+    async fn the_hub_says_and_ends_product_links() {
+        use contract::Fixture as _;
+
+        use crate::db::issuer::{Client, ClientKind, Link};
+        for f in [Fixture::new().await, Fixture::over_http().await] {
+            let now = arugula_e2e::now_ms();
+            f.app.db.account_for("github", "77", "pl", "acct-pl", now).unwrap();
+            f.app
+                .db
+                .put_issuer_client(&Client {
+                    id: "studio".into(),
+                    kind: ClientKind::Oidc,
+                    name: "Studio".into(),
+                    redirect_uris: vec!["https://studio.example/cb".into()],
+                    created: now,
+                    project: None,
+                })
+                .unwrap();
+            assert!(f.hub().product_links("acct-pl").await.unwrap().is_empty());
+            let link = Link {
+                client: "studio".into(),
+                user: "u-1".into(),
+                account: "acct-pl".into(),
+                github_id: 77,
+                name: Some("pl on studio".into()),
+                linked: now,
+            };
+            assert_eq!(f.app.db.link_account(&link, now / 1000).unwrap(), Ok(true));
+            let links = f.hub().product_links("acct-pl").await.unwrap();
+            assert_eq!(links.len(), 1);
+            assert_eq!(
+                (links[0].client.as_str(), links[0].product.as_str(), links[0].user.as_deref()),
+                ("studio", "Studio", Some("u-1"))
+            );
+            assert_eq!(
+                (links[0].name.as_deref(), links[0].linked, links[0].granted),
+                (Some("pl on studio"), Some(now), None)
+            );
+            assert!(f.hub().product_links("acct-other").await.unwrap().is_empty());
+
+            assert!(!f.hub().unlink_product("acct-other", "studio").await.unwrap(), "not theirs");
+            assert!(f.app.db.account_link("studio", "u-1").unwrap().is_some());
+            assert!(f.hub().unlink_product("acct-pl", "studio").await.unwrap());
+            assert!(!f.hub().unlink_product("acct-pl", "studio").await.unwrap(), "once");
+            assert!(f.app.db.account_link("studio", "u-1").unwrap().is_none());
+            let events = f.app.db.account_link_events("acct-pl").unwrap();
+            let said: Vec<(&str, &str)> = events.iter().map(|e| (e.event.as_str(), e.by.as_str())).collect();
+            assert_eq!(said, [("unlinked", "account"), ("linked", "product")]);
+        }
+    }
+
+    /// Which account a product's access token is for (M236), in process
+    /// and over HTTP: only the client it was issued to, only while it and
+    /// its hub session stand.
+    #[tokio::test]
+    async fn the_hub_says_whose_access_token_a_product_holds() {
+        use contract::Fixture as _;
+
+        use crate::db::issuer::{Client, ClientKind};
+        for f in [Fixture::new().await, Fixture::over_http().await] {
+            let now = arugula_e2e::now_ms();
+            f.app.db.account_for("github", "78", "at", "acct-at", now).unwrap();
+            for id in ["studio", "planter"] {
+                let c = Client {
+                    id: id.into(),
+                    kind: ClientKind::Oidc,
+                    name: id.into(),
+                    redirect_uris: vec![format!("https://{id}.example/cb")],
+                    created: now,
+                    project: None,
+                };
+                f.app.db.put_issuer_client(&c).unwrap();
+            }
+            f.app.db.add_session("hub-session-hash", "acct-at", now, now + 3_600_000).unwrap();
+            let token = "aat_test_token_for_studio";
+            f.app
+                .db
+                .add_issuer_token(
+                    &crate::auth::hash(token),
+                    "acct-at",
+                    "studio",
+                    "hub-session-hash",
+                    now,
+                    now + 600_000,
+                )
+                .unwrap();
+            assert_eq!(f.hub().client_account(token, "studio").await.unwrap().as_deref(), Some("acct-at"));
+            assert_eq!(f.hub().client_account(token, "planter").await.unwrap(), None, "another client's");
+            assert_eq!(f.hub().client_account("aat_made_up", "studio").await.unwrap(), None);
+            f.app.db.drop_session("hub-session-hash").unwrap();
+            assert_eq!(f.hub().client_account(token, "studio").await.unwrap(), None, "ends with its hub session");
+        }
+    }
+
+    /// A product's user's link (M232: what planter's repo import asks),
+    /// in process and over HTTP: the account and the GitHub id it was
+    /// linked by, or none.
+    #[tokio::test]
+    async fn the_hub_says_a_product_users_link() {
+        use contract::Fixture as _;
+
+        use crate::db::issuer::Link;
+        for f in [Fixture::new().await, Fixture::over_http().await] {
+            let now = arugula_e2e::now_ms();
+            assert_eq!(f.hub().linked_account("planter", "77").await.unwrap(), None);
+            let link = Link {
+                client: "planter".into(),
+                user: "77".into(),
+                account: "acct-pl".into(),
+                github_id: 77,
+                name: None,
+                linked: now,
+            };
+            assert_eq!(f.app.db.link_account(&link, now / 1000).unwrap(), Ok(true));
+            let got = f.hub().linked_account("planter", "77").await.unwrap();
+            assert_eq!(got, Some(arugula_platform::hub::LinkedAccount { account: "acct-pl".into(), github_id: 77 }));
+            assert_eq!(f.hub().linked_account("studio", "77").await.unwrap(), None, "per product");
+        }
     }
 
     /// What an account's grandfathered app windows approved
