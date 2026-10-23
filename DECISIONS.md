@@ -71,6 +71,8 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-095](docs/decisions/aru-095-control-enrolls-hosted-machines-under-a-project.md): Control enrolls hosted machines under a project delegation
 - [aru-099](docs/decisions/aru-099-one-standing-grant-per-project-starts-runs.md): One standing grant per project starts runs
 - [aru-101](docs/decisions/aru-101-a-deploy-needs-an-owner-device-s-approval-and-ag.md): A deploy needs an owner device's approval, and agents never approve
+- [aru-106](docs/decisions/aru-106-the-hub-is-an-issuer-one-identity-for-every-prod.md): The hub is an issuer: one identity for every product
+- [aru-113](docs/decisions/aru-113-accounts-link-by-numeric-github-id-old-sign-ins.md): Accounts link by numeric GitHub id; old sign-ins run 90 days beside the new
 
 ## Clients
 
@@ -114,6 +116,8 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-091](docs/decisions/aru-091-agents-are-in-conversations.md): Agents are in conversations
 - [aru-094](docs/decisions/aru-094-hosted-machines-pause-only-between-turns.md): Hosted machines pause only between turns
 - [aru-096](docs/decisions/aru-096-hosted-inference-strangers-bring-their-own-key.md): Hosted inference: strangers bring their own key
+- [aru-111](docs/decisions/aru-111-a-hosted-mcp-endpoint-serves-agents-with-no-mach.md): A hosted MCP endpoint serves agents with no machine
+- [aru-112](docs/decisions/aru-112-the-claude-credential-broker-and-its-metering-mo.md): The Claude credential broker and its metering move to the platform
 
 ## Federation and control
 
@@ -141,6 +145,12 @@ Not here: what each milestone built (the archive), how to build and test
 - [aru-098](docs/decisions/aru-098-a-run-is-a-platform-object-on-a-hosted-workspace.md): A run is a platform object on a hosted workspace
 - [aru-100](docs/decisions/aru-100-run-logs-on-hosted-workspaces-are-readable-by-th.md): Run logs on hosted workspaces are readable by the platform
 - [aru-102](docs/decisions/aru-102-a-driver-is-a-run-with-a-credential.md): A driver is a run with a credential
+- [aru-105](docs/decisions/aru-105-arugula-is-the-platform-s-home-experimental-s-d3.md): arugula is the platform's home; experimental's D3 is retired
+- [aru-107](docs/decisions/aru-107-the-platform-is-the-one-store-for-users-project.md): The platform is the one store for users' project secrets; Infisical stays the operator's
+- [aru-108](docs/decisions/aru-108-three-front-doors-the-platform-page-and-studio-a.md): Three front doors: the platform page, and studio and hud as clients
+- [aru-109](docs/decisions/aru-109-studio-is-a-full-client-sign-in-with-arugula-app.md): studio is a full client: Sign in with Arugula, apps by project
+- [aru-110](docs/decisions/aru-110-hud-is-an-in-app-client-platform-assertions-a-pr.md): hud is an in-app client: platform assertions, a project roster
+- [aru-114](docs/decisions/aru-114-experimental-is-archived.md): experimental is archived
 
 ## Build and release
 
