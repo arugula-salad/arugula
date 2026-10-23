@@ -54,7 +54,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     Cert, Kind, Revocation, Trust,
-    cert::verify_hex,
+    cert::{LegacyAppChildren, legacy_app_link, verify_hex},
     keys::{device_id, hex32},
     team::{AccountCerts, Roster, TeamRole},
 };
@@ -373,9 +373,25 @@ impl Owners<'_> {
         }
     }
 
-    /// [`Owners::browser_signed_by`] with `kind: browser` on each link.
-    pub fn browser_signed(&self, owner: &str, device: &str, body: &str, sig: &str) -> bool {
-        self.browser_signed_by(owner, device, body, sig, |c, _| c.kind == Kind::Browser)
+    /// [`Owners::browser_signed_by`] with a browser's or a phone's own
+    /// device on each link ([`Cert::is_browser`]), or the desktop app's
+    /// window from before it had a kind just above a browser it approved
+    /// back then (`children`, by account, [`legacy_app_link`]): never as
+    /// the device that signs, nor above anything else. The hub's check
+    /// (`owner_browser_signed`), and a hosted machine's against the set it
+    /// pinned, as for a deploy's approval (`deploy::check_apply`); one that
+    /// pinned none counts no app window.
+    pub fn browser_signed(
+        &self,
+        owner: &str,
+        device: &str,
+        body: &str,
+        sig: &str,
+        children: &LegacyAppChildren,
+    ) -> bool {
+        self.browser_signed_by(owner, device, body, sig, |c, below| {
+            c.is_browser() || children.get(&c.account).is_some_and(|l| legacy_app_link(c, below, l))
+        })
     }
 
     /// `account`'s place in the project: its team role, or owner of its
