@@ -975,3 +975,21 @@ For Claude Code: `claude mcp add --transport http arugula
 https://control.arugula.io/api/mcp --header "Authorization: Bearer
 aru_agent_…"`. The code is `crates/platform/src/agent_mcp.rs` and
 `agent_tokens.rs`.
+
+**redone's agents (M235, platform step 8).** redone's tenants, tokens and
+apps join the platform through an operator's import (`arugula-platform
+import redone`, docs/control-ops.md): a tenant is a project, found by its
+people's numeric GitHub ids; each app is an environment of it; each `rdn_`
+token is an agent grant token with `deploys.plan` and `secrets.write` over
+it, kept by the hash redone kept, so the token works on `/api/mcp`
+unchanged. Its agent gets redone's tools beside the platform's (`whoami`,
+`list_apps`, `plan_deploy {app, upload_id}`, `get_plan`, `apply_plan`,
+`plan_rollback`, `app_status`, `app_logs`, `set_secret {app, key, value}`,
+`list_secrets`) and uploads a source with `PUT /api/mcp/uploads`. Nothing
+of it approves: the approver key is gone, and an owner approves each deploy
+on their phone. An agent never claims an app's name: a call naming an app
+the project has no environment of is refused. An app's secret is the
+project's (`app/<app>/<KEY>`), and the platform projects it into the
+operator's Infisical when the projection is on
+(`crates/platform/src/infisical.rs`). The code is
+`crates/platform/src/redone.rs` and `agent_mcp_redone.rs`.

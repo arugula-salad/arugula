@@ -1003,7 +1003,25 @@ claude mcp add --transport http redone https://control.arugula.io/api/mcp \
   --header "Authorization: Bearer $REDONE_TOKEN"
 ```
 
-SHIM_TABLE
+| redone's | on the platform |
+| --- | --- |
+| `PUT /v1/uploads` | `PUT /api/mcp/uploads`, the same gzipped tar: `upload_id` is its digest (`sha256:…`), kept as the project's artifact. At most 2 MiB (redone took 16 MiB) |
+| `plan_deploy {app, upload_id, …}` | a deploy of that source to the app's environment, asked of the project's owners. `port`, `health`, `port_env` and `secrets` must be the environment's: its owner changes them |
+| (the approval page, `approve_url`) | the owners' phone card; an owner approves it with a passkey |
+| `apply_plan {plan_id}` | says where the deploy is: it applies itself once approved, and this never applies or approves |
+| `get_plan {plan_id}` | the deploy (`dep_…`): `pending`, `approved`, `running`, `applied`, `failed`, `rejected`, `expired`, `stale` |
+| `plan_rollback {app, to?}` | a deploy of an earlier deploy's source, asked like any |
+| `set_secret {app, key, value}` | the project's secret for the app (`app/<app>/<KEY>`, sealed), projected into Infisical (below) |
+| `list_secrets {app}` | its names, never a value |
+| `list_apps`, `app_status {app}`, `whoami` | the project's environments, their deploys, the token's project |
+| `app_logs {app}` | the latest deploy's run log: the app's own output isn't on the platform |
+| `promote {app}` | refused: its owner plans it on the platform page |
+
+An app is an environment of the token's project, by its name: the import
+made one per redone app, and an owner makes any other. **An agent can't
+claim a name** (Arugula #55: a redone plan claimed any free name). A call
+naming an app the project has no environment of is refused, and nothing of
+it reaches Infisical.
 
 The contract, until the token is revoked:
 

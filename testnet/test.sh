@@ -198,6 +198,24 @@
 #           the deploy still waits, and the token is in the platform's
 #           database only as its hash. Broken: the token is revoked first, so
 #           the agent files nothing.
+#   redone  Only with ARUGULA_TESTNET_PLATFORM=out and ARUGULA_TESTNET_POSTGRES=1
+#           at `up` (M235): redone absorbed. A person signs in (the fake
+#           GitHub gives them a numeric id) and adds a passkey; a backup of
+#           redone's state.json names a tenant, its rdn_ token (by hash) and
+#           an app; `arugula-platform import redone --people TENANT=<their
+#           GitHub id> --driver fake` on the platform's machine makes the
+#           tenant their personal project, the app its environment, and the
+#           token an agent grant token. With only that old token, redone's
+#           agent speaks MCP to control's /api/mcp with redone's tools:
+#           uploads a source, plans a deploy of it to the app and asks, sets
+#           the app's secret, and apply_plan applies nothing; the owner sees
+#           the deploy waiting for them (the phone's card) and approves it
+#           with their device and passkey. The secret is in the fake
+#           Infisical's /<app>/ (the projection, as redone's writer
+#           identity), sealed in the platform's database, and named in its
+#           projection log without its value. Broken: the import runs with
+#           --dry-run, so the token isn't carried over and the agent does
+#           nothing.
 #   agents  Agents in conversations (M198), signed by a joined box's daemon:
 #           box-systemd joins a person's account; they give it threads.read
 #           and threads.post over their team's project and @mention it in a
@@ -266,7 +284,7 @@ if [ "$PROFILE" = control ]; then
   # A platform of its own to restart, only out of process; two of them to
   # share chat and Cloud (M144).
   case "${ARUGULA_TESTNET_PLATFORM:-in}" in
-    out) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart github-webhook issues-restart runs agent-mcp" ;;
+    out) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart github-webhook issues-restart runs agent-mcp redone" ;;
     two) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart platform-fanout" ;;
   esac
   # Hosted workspaces at the fake E2B (M183).
@@ -1177,6 +1195,63 @@ claim_agent_mcp() {
     { note "agent-mcp: the token isn't kept as its hash"; return 1; }
   docker exec "$TESTNET-postgres" pg_dump -U postgres platform | grep -q 'aru_agent_' &&
     { note "agent-mcp: a token is in the platform's database"; return 1; }
+  return 0
+}
+
+# redone absorbed (M235): the header's comment says what. The fake
+# Infisical runs in `fakes` (9007, unpublished), from Infisical's captured
+# answers; the platform projects into it (compose.yaml).
+infisical_seen() {
+  docker exec "$TESTNET-fakes" node -e \
+    'fetch("http://127.0.0.1:9007/_testnet/seen").then((r) => r.text()).then((t) => process.stdout.write(t))'
+}
+claim_redone() {
+  local own="$WORK/redone-owner.json" login="redone$$x$RANDOM" acct gh tenant app token proj out secret="s3cr3t-m235-$$-$RANDOM"
+  pq "SELECT 1" > /dev/null 2>&1 || { note "redone: the platform isn't on the stack's Postgres (ARUGULA_TESTNET_POSTGRES=1)"; return 1; }
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
+  acct="$(devs "$own" signin --control "$CONTROL_URL" $CONTROL_VIA --login "$login" | field account)"
+  [ -n "$acct" ] || { note "redone: the owner didn't sign in"; return 1; }
+  devs "$own" passkey-add | grep -q '"id"' || { note "redone: no passkey"; return 1; }
+  gh="$(node --experimental-strip-types --no-warnings -e \
+    "import('$ROOT/web/fixtures/fakes.ts').then((m) => console.log(m.githubId('$login')))")"
+  [ -n "$gh" ] || { note "redone: no GitHub id"; return 1; }
+  tenant="t$RANDOM" app="app-$$-$RANDOM" token="rdn_$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
+  mkdir -p "$WORK/redone-backup"
+  python3 - "$WORK/redone-backup/state.json" "$tenant" "$app" "$token" <<'PY'
+import hashlib, json, sys
+out, tenant, app, token = sys.argv[1:]
+h = lambda s: hashlib.sha256(s.encode()).hexdigest()
+spec = {"port": 8080, "health": "/health", "secrets": ["API_KEY"], "portEnv": "PORT"}
+json.dump({
+    "tenants": {tenant: {"id": tenant, "name": "M235 testnet", "approver": h("rdn_approve_x"), "ntfyTopic": "t",
+                         "autoApproveUpdates": False, "at": 1}},
+    "tokens": {h(token): {"id": "tok_m235", "tenant": tenant, "agent": "testnet agent", "at": 2}},
+    "apps": {app: {"name": app, "tenant": tenant, "current": "plan_1", "history": ["plan_1"], "at": 3}},
+    "uploads": {},
+    "plans": {"plan_1": {"id": "plan_1", "tenant": tenant, "app": app, "kind": "deploy", "spec": spec,
+                         "state": "applied", "at": 3}},
+}, open(out, "w"))
+PY
+  docker exec "$TESTNET-platform" rm -rf /tmp/redone-backup
+  docker cp "$WORK/redone-backup" "$TESTNET-platform:/tmp/redone-backup" > /dev/null
+  docker exec "$TESTNET-platform" /opt/arugula/arugula-platform import redone --backup /tmp/redone-backup \
+    --hub http://control:7691 --people "$tenant=$gh" --driver fake ${BREAK:+--dry-run} > "$WORK/redone-import.txt" 2>&1 ||
+    { note "redone: the import:"; cat "$WORK/redone-import.txt" >&2; return 1; }
+  note "redone: $(tr '\n' ' ' < "$WORK/redone-import.txt")"
+  proj="$(pq "SELECT project_id FROM redone_imports WHERE kind = 'tenant' AND redone_id = '$tenant'")"
+  [ -n "$proj" ] || { note "redone: the tenant isn't a project"; return 1; }
+  node --experimental-strip-types --no-warnings "$HERE/platform.ts" --state "$own" redone "$token" "$app" "$secret" \
+    > "$WORK/redone.json" || { note "redone: redone's agent on the platform:"; return 1; }
+  note "redone: $(cat "$WORK/redone.json")"
+  out="$(infisical_seen)"
+  python3 -c 'import json, sys; s = json.loads(sys.argv[1]); assert s["secrets"][sys.argv[2]]["API_KEY"] == sys.argv[3], s' \
+    "$out" "$app" "$secret" || { note "redone: the secret isn't in Infisical's /$app/: $out"; return 1; }
+  [ "$(pq "SELECT outcome FROM secret_projections WHERE project_id = '$proj' AND app = '$app' AND name = 'API_KEY'")" = written ] ||
+    { note "redone: the projection isn't logged as written"; return 1; }
+  docker exec "$TESTNET-postgres" pg_dump -U postgres platform | grep -qF "$secret" &&
+    { note "redone: the secret is in the platform's database in the clear"; return 1; }
+  docker exec "$TESTNET-postgres" pg_dump -U postgres platform | grep -qF "$token" &&
+    { note "redone: the token is in the platform's database"; return 1; }
   return 0
 }
 

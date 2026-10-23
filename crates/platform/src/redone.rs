@@ -496,7 +496,7 @@ pub async fn import(app: &Platform, backup: &Backup, o: &Options) -> anyhow::Res
         line.outcome = tenant(app, o, t, &mut line.people, now).await?;
         let (project, lead) = match &line.outcome {
             TenantOutcome::Project { project, made, .. } => {
-                (Some(project.clone()).filter(|_| !*made || !o.dry_run), line.people[0].account.clone())
+                ((!*made || !o.dry_run).then(|| project.clone()), line.people[0].account.clone())
             }
             TenantOutcome::ImportedBefore { project, account, .. } => (Some(project.clone()), account.clone()),
             _ => (None, None),
