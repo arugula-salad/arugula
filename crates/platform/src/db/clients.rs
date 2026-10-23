@@ -3,7 +3,7 @@
 //! (`client_consents`), the client's apps by project (`client_apps`), and
 //! which of a project's own secrets its owners let a client read, with
 //! every read (`client_secret_grants`, `client_secret_events`). Migration
-//! `0033` says what each column is; `crate::clients` is who may do what.
+//! `0034` says what each column is; `crate::clients` is who may do what.
 
 use anyhow::Result;
 use serde::Serialize;
