@@ -318,6 +318,7 @@ impl PlatformPort for Platform {
                 let run_files = db::run_logs::erase_account(&tx)?;
                 db::runs::erase_account(&tx, deleted)?;
                 db::deploys::erase_account(&tx, deleted)?;
+                db::redone::erase_account(&tx, deleted)?;
                 db::triggers::erase_account(&tx, deleted)?;
                 let rooms = crate::chat::erase_account(&tx, deleted)?;
                 tx.commit()?;

@@ -182,6 +182,16 @@ pub trait HubPort: Send + Sync {
         Box::pin(async { anyhow::bail!("this hub doesn't say GitHub identities") })
     }
 
+    /// The account that signs in with this numeric GitHub id (M235), if
+    /// one does: how an import finds a person from another product's
+    /// records (redone's tenants), never by login, which changes hands
+    /// ("Accounts link by numeric GitHub id", aru-113). A hub from before
+    /// M235 doesn't have it.
+    fn github_account(&self, id: u64) -> BoxFuture<'_, HubResult<Option<String>>> {
+        let _ = id;
+        Box::pin(async { anyhow::bail!("this hub doesn't find accounts by GitHub id") })
+    }
+
     /// GitHub's authorization of the App for a person's send (M168): the
     /// hub keeps what it's for (the account, the draft, and the platform
     /// page's path to come back to) for a few minutes, for one use, and

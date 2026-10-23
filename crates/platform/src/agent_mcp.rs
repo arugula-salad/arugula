@@ -130,10 +130,16 @@ impl FromRequestParts<Arc<Platform>> for TokenAgent {
                  page (Settings, Agents with no machine) or with `arugula agent-tokens add`",
             ));
         };
-        if !token.starts_with(TOKEN_PREFIX) {
+        // A redone token (M235) works here once the import carried it
+        // over, and only then: it's found by the hash redone kept.
+        let redone = token.starts_with(crate::redone::TOKEN_PREFIX);
+        if !token.starts_with(TOKEN_PREFIX) && !redone {
             return Err(unauthorized("that isn't an agent grant token"));
         }
         match app.db.agent_token_by_hash(&hash(token)) {
+            Ok(Some(t)) if redone && t.imported_from.as_deref() != Some(crate::db::redone::FROM_REDONE) => {
+                Err(unauthorized("no such agent grant token"))
+            }
             Ok(Some(t)) if t.revoked_at.is_none() => Ok(TokenAgent(t)),
             Ok(Some(_)) => Err(unauthorized("this agent grant token was revoked")),
             Ok(None) => Err(unauthorized("no such agent grant token")),

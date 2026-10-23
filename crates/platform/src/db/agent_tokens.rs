@@ -47,8 +47,12 @@ pub struct AgentToken {
     pub created_at: u64,
     pub last_used_at: Option<u64>,
     pub revoked_at: Option<u64>,
-    /// The browser it was minted from (its User-Agent).
+    /// The browser it was minted from (its User-Agent), or, for one
+    /// carried over from another product, where from.
     pub minted_from: String,
+    /// The product it was carried over from (M235: `redone`), for a token
+    /// that wasn't minted on the platform page.
+    pub imported_from: Option<String>,
 }
 
 /// A token to keep: its id, its minter, its name, the token's hash and
@@ -74,7 +78,7 @@ pub struct AgentCall {
     pub at: u64,
 }
 
-const COLUMNS: &str = "id, account_id, name, created_at, last_used_at, revoked_at, minted_from";
+const COLUMNS: &str = "id, account_id, name, created_at, last_used_at, revoked_at, minted_from, imported_from";
 
 fn row(r: &Row) -> anyhow::Result<AgentToken> {
     Ok(AgentToken {
@@ -85,6 +89,7 @@ fn row(r: &Row) -> anyhow::Result<AgentToken> {
         last_used_at: r.get(4)?,
         revoked_at: r.get(5)?,
         minted_from: r.get(6)?,
+        imported_from: r.get(7)?,
     })
 }
 

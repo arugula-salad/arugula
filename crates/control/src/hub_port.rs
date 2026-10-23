@@ -282,6 +282,10 @@ impl HubPort for InProcess {
         Box::pin(async move { crate::forge::github_user(&*self.app()?, account) })
     }
 
+    fn github_account(&self, id: u64) -> BoxFuture<'_, HubResult<Option<String>>> {
+        Box::pin(async move { self.app()?.db.github_account(id) })
+    }
+
     fn send_authorization<'a>(
         &'a self,
         account: &'a str,

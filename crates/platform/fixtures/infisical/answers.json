@@ -1,0 +1,81 @@
+{
+  "login": {
+    "status": 200,
+    "body": { "accessToken": "fake-infisical-access-token", "expiresIn": 7200, "accessTokenMaxTTL": 43244, "tokenType": "Bearer" }
+  },
+  "login_refused": {
+    "status": 401,
+    "body": { "reqId": "req-fake-1", "statusCode": 401, "message": "Invalid credentials", "error": "Unauthorized" }
+  },
+  "folders": {
+    "status": 200,
+    "body": {
+      "folders": [
+        {
+          "id": "8d7c1e0e-1b7a-4b6e-9f53-0c9a1b2c3d4e",
+          "name": "beds",
+          "version": 1,
+          "createdAt": "2026-10-01T12:00:00.000Z",
+          "updatedAt": "2026-10-01T12:00:00.000Z",
+          "envId": "1f2e3d4c-5b6a-4987-8a9b-0c1d2e3f4a5b",
+          "parentId": "2a3b4c5d-6e7f-4809-9a1b-2c3d4e5f6a7b",
+          "isReserved": false,
+          "description": null,
+          "lastSecretModified": null,
+          "path": "/beds"
+        }
+      ]
+    }
+  },
+  "folder_created": {
+    "status": 200,
+    "body": {
+      "folder": {
+        "id": "3b4c5d6e-7f80-4912-a3b4-c5d6e7f8091a",
+        "name": "{name}",
+        "version": 1,
+        "createdAt": "2026-10-23T12:00:00.000Z",
+        "updatedAt": "2026-10-23T12:00:00.000Z",
+        "envId": "1f2e3d4c-5b6a-4987-8a9b-0c1d2e3f4a5b",
+        "parentId": "2a3b4c5d-6e7f-4809-9a1b-2c3d4e5f6a7b",
+        "isReserved": false,
+        "description": null,
+        "lastSecretModified": null,
+        "path": "/{name}"
+      }
+    }
+  },
+  "folder_exists": {
+    "status": 400,
+    "body": { "reqId": "req-fake-2", "statusCode": 400, "message": "Folder already exists", "error": "BadRequest" }
+  },
+  "secret_written": {
+    "status": 200,
+    "body": {
+      "secret": {
+        "id": "4c5d6e7f-8091-4a2b-b3c4-d5e6f708192a",
+        "_id": "4c5d6e7f-8091-4a2b-b3c4-d5e6f708192a",
+        "workspace": "{project}",
+        "environment": "{environment}",
+        "version": 1,
+        "type": "shared",
+        "secretKey": "{key}",
+        "secretValue": "{value}",
+        "secretComment": "",
+        "secretReminderNote": null,
+        "secretReminderRepeatDays": null,
+        "skipMultilineEncoding": false,
+        "createdAt": "2026-10-23T12:00:00.000Z",
+        "updatedAt": "2026-10-23T12:00:00.000Z"
+      }
+    }
+  },
+  "secret_exists": {
+    "status": 400,
+    "body": { "reqId": "req-fake-3", "statusCode": 400, "message": "Secret already exist", "error": "BadRequest" }
+  },
+  "forbidden": {
+    "status": 403,
+    "body": { "reqId": "req-fake-4", "statusCode": 403, "message": "You are not allowed to read secret values", "error": "PermissionDenied" }
+  }
+}

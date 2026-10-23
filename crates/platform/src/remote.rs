@@ -226,6 +226,11 @@ struct TokenArgs {
 }
 
 #[derive(Serialize, Deserialize)]
+struct GithubIdArgs {
+    id: u64,
+}
+
+#[derive(Serialize, Deserialize)]
 struct SendAuthArgs {
     account: String,
     draft: String,
@@ -459,6 +464,10 @@ impl HubPort for HttpHub {
         Box::pin(self.0.call("github_user", AccountArgs { account: account.to_owned() }))
     }
 
+    fn github_account(&self, id: u64) -> BoxFuture<'_, HubResult<Option<String>>> {
+        Box::pin(self.0.call("github_account", GithubIdArgs { id }))
+    }
+
     fn send_authorization<'a>(
         &'a self,
         account: &'a str,
@@ -607,6 +616,7 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "team_project" => answer(hub.team_project(&args::<TeamArgs>(&body)?.team).await?)?,
             "forge_pokes" => answer(hub.forge_pokes(&args::<PokesArgs>(&body)?.pokes).await?)?,
             "github_user" => answer(hub.github_user(&args::<AccountArgs>(&body)?.account).await?)?,
+            "github_account" => answer(hub.github_account(args::<GithubIdArgs>(&body)?.id).await?)?,
             "send_authorization" => {
                 let a: SendAuthArgs = args(&body)?;
                 answer(hub.send_authorization(&a.account, &a.draft, &a.back).await?)?

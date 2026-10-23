@@ -289,6 +289,9 @@ impl HubPort for Timed {
     fn github_user<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Option<crate::forge::GithubUser>>> {
         timed!(self.0.github_user(account))
     }
+    fn github_account(&self, id: u64) -> BoxFuture<'_, HubResult<Option<String>>> {
+        timed!(self.0.github_account(id))
+    }
     fn send_authorization<'a>(
         &'a self,
         account: &'a str,
