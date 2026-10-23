@@ -1,7 +1,9 @@
 // `/settings`: the account's platform settings (M150): plan and usage
 // (`/api/billing`, the platform's), and which machines' agents read and
-// post in conversations (M197), agents with no machine (M230), and the
-// products linked to the account (M229). Sign-in, passkeys, devices and teams are
+// post in conversations (M197), agents with no machine (M230), the
+// products linked to the account (M229), and which apps may use Claude
+// through Arugula for the account, with what was spent on its own key
+// (M231). Sign-in, passkeys, devices and teams are
 // trust, signed by a device, so they stay on control's page and this links
 // there.
 
@@ -11,7 +13,8 @@ import { Plan, type Billing } from "../settings/plan";
 import { AgentGrants } from "../settings/agents";
 import { AgentTokens } from "../settings/agent-tokens";
 import { LinkedProducts } from "../settings/linked";
-import { controlOrigin } from "../session";
+import { ClaudeSettings } from "../settings/claude";
+import { controlOrigin, session } from "../session";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {
@@ -55,6 +58,7 @@ export function SettingsPage() {
       <LinkedProducts />
       <AgentGrants />
       <AgentTokens />
+      <ClaudeSettings me={session.me?.account} />
       {plan && <Plan billing={billing} upgrade={upgrade} close={() => setPlan(false)} />}
     </section>
   );

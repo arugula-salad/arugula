@@ -25,6 +25,7 @@ just testnet test control platform-page # M151: the platform page on app.control
 just testnet test control agents # M198: a box's agent reads and posts in a channel over MCP, granted
 just testnet test control links # M229: a product links its user by numeric GitHub id; the person unlinks on the platform page
 just testnet test control issuer # M228: a product signs in through the hub's issuer, verifies against the JWKS, survives a rotation
+just testnet test control broker # M231: a lobby-shaped client calls Claude through the platform: whose key pays, the cap, spend, no key leaks
 ARUGULA_TESTNET_PLATFORM=out just testnet up control  # the platform out of process (M140)
 just testnet test control platform-restart  # out of process: a relayed session outlives a platform restart
 just testnet test control issues-restart    # out of process: native issues and their threads outlive a platform restart

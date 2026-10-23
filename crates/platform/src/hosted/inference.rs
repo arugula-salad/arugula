@@ -169,6 +169,12 @@ impl Settings {
         Settings { accounts, platform, caps }
     }
 
+    /// Whether `account` is on the beta allowlist: the platform's key may
+    /// pay for it, under caps.
+    pub fn allowlisted(&self, account: &str) -> bool {
+        self.accounts.iter().any(|a| a == account)
+    }
+
     /// Whether the platform's key pays for `p` in workspaces `maker` made.
     fn covers(&self, maker: Option<&str>, p: Provider) -> Option<String> {
         let maker = maker?;
@@ -400,8 +406,10 @@ impl std::fmt::Debug for NewKey {
     }
 }
 
+/// A project's keys are kept where they're used: hosted workspaces, or the
+/// inference broker (M231).
 fn hosted_on(app: &Platform) -> Result<(), ApiError> {
-    if app.compute.is_none() {
+    if app.compute.is_none() && !app.hosted.broker.on() {
         return Err(err(StatusCode::NOT_FOUND, "hosted workspaces aren't set up on this control"));
     }
     Ok(())
@@ -486,9 +494,10 @@ pub async fn clear_key(
 const SWEEP: Duration = Duration::from_secs(60);
 
 /// Keys whose project is gone are dropped; a paused or deleted box's open
-/// turns end; old turns go.
+/// turns end; old turns, and the broker's old calls (M231), go.
 pub async fn sweep(app: &Platform) -> anyhow::Result<()> {
     app.db.drop_orphan_inference_keys()?;
+    app.db.tidy_inference_calls(now_ms())?;
     app.db.tidy_hosted_turns(now_ms())
 }
 

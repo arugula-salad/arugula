@@ -45,7 +45,10 @@
 #     (`auth::Dialer`);
 #   - `agent_token`: a live agent grant token (M230), `Authorization:
 #     Bearer aru_agent_…`, which the platform finds by its hash and no
-#     other route reads.
+#     other route reads;
+#   - `session_or_client`: a session (or a CLI device), or a registered
+#     client's credential, which the platform checks itself
+#     (`hosted::broker::clients`, M231).
 # - `clients`: who calls it: `page` (control's web page, in a browser or the
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
@@ -1508,6 +1511,62 @@ process = "platform"
 auth = "cloud_driver"
 clients = ["cli", "daemon"]
 note = "Turns a port's public preview off (M187): a project's owner or editor. The hub's and the machine's caches let it go within a minute."
+
+[[route]]
+method = "ANY"
+path = "/api/projects/{project}/inference/anthropic/{*rest}"
+process = "platform"
+auth = "session_or_client"
+clients = ["page", "cli", "product"]
+note = "The inference broker (M231): Anthropic's API (POST v1/messages and v1/messages/count_tokens, GET v1/models; anything else is a 404) for a member of the project, or for an account a registered client names (studio's lobby) that let it. The platform sets the key that pays (a visitor's or sponsor's the client names and that let it, the project's for an editor or owner, the account's own, or the platform's under a monthly cap and a cap on calls at once) in place of the caller's credential, streams the answer back with allowlisted headers, and reserves each message before it goes out, settling it at its final usage. No key is ever answered."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/inference/spend"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "What a project's Claude calls through the broker cost in a month (M231), by account, client and whose key paid, with its hosted agent turns beside them: for its members."
+
+[[route]]
+method = "GET"
+path = "/api/inference/spend"
+process = "platform"
+auth = "session_or_client"
+clients = ["page", "cli", "product"]
+note = "An account's month on the platform's key through the broker, and its cap (M231): a member's own, or the account a registered client names, through that client."
+
+[[route]]
+method = "GET"
+path = "/api/inference/spend/paid"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "What calls on the signed-in account's own key cost in a month (M231), by project, account and client: its own, and those a registered client made naming it as a sponsor or a visitor."
+
+[[route]]
+method = "GET"
+path = "/api/inference/clients"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "The inference broker's registered clients (M231), and which the signed-in account lets act for it."
+
+[[route]]
+method = "PUT"
+path = "/api/inference/clients/{client}/consent"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Let a registered client act for the signed-in account (M231): name it in a broker call, and spend its own key when it names it as the payer (a sponsor, a visitor). Off until this; the page's only (trust, never a CLI's or an agent's)."
+
+[[route]]
+method = "DELETE"
+path = "/api/inference/clients/{client}/consent"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Stop a registered client acting for the signed-in account (M231): its next call naming the account is refused."
 
 [[route]]
 method = "GET"

@@ -356,6 +356,42 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
   `ARUGULA_HOSTED_TURN_MINUTES` (120): caps on agent turns that run on the
   platform's key, per account: at once, per UTC day, and minutes per UTC
   day. A project's own key has none.
+- `ARUGULA_INFERENCE_ANTHROPIC_KEY`: the platform's own Anthropic key for
+  the inference broker (M231), on the platform (a Fly secret of the
+  platform's app; not set yet). Unlike hosted boxes' key, the platform holds
+  this one: the broker sets it on the calls it forwards. It pays, under a
+  monthly cap per account, for a registered client's accounts with no key
+  of their own (studio's lobby: its house key, studio-018) and for accounts
+  on `ARUGULA_CLOUD_ACCOUNTS` calling the broker themselves. Make it as the
+  hosted one (step 1 above): its own Anthropic workspace (`arugula-broker`),
+  with a hard monthly spend limit there, which is the bound; the caps are
+  fairness. Infisical keeps it as `ARUGULA_INFERENCE_ANTHROPIC_KEY`. Moving
+  studio's lobby over (M236): use the key beds holds as its
+  `ANTHROPIC_API_KEY` today, so the same Anthropic account pays as before.
+  Rotating: set the new value and restart the platform; calls under way
+  finish on the old one. Unset, the platform's key pays for nothing through
+  the broker.
+- `ARUGULA_INFERENCE_CLIENTS`: the broker's registered clients, comma-separated
+  `id:sha256[:house_usd[:payers]]` (`hosted::broker::clients`). `sha256` is
+  the hex SHA-256 of the client's credential (`printf %s "$CREDENTIAL" |
+  sha256sum`): the platform never holds the credential, which the client
+  keeps (studio: in its own secrets).
+  `house_usd`: what the platform's key may spend each UTC month for each
+  account the client names (studio: 20, the lobby's `STUDIO_SPEND_CAP_USD`).
+  `payers`: it may name a sponsor and a visitor. For studio:
+  `studio:<sha256>:20:payers`. M228's registered clients replace the digest
+  (the policy stays here).
+- `ARUGULA_INFERENCE_CONCURRENT` (4): how many of an account's calls may
+  run on the platform's key at once, through the broker.
+- `ARUGULA_INFERENCE_PLATFORM_BETAS` (none): the `anthropic-beta` values
+  the broker sends on the platform's key, comma-separated; the rest are
+  dropped, and the long-context ones (`context-1m-*`, billed at a premium)
+  are refused there and can't be listed.
+- `ARUGULA_INFERENCE_MONTHLY_USD` (20): what the platform's key may spend
+  through the broker each UTC month for an account on `ARUGULA_CLOUD_ACCOUNTS`
+  calling it itself.
+- `ARUGULA_INFERENCE_UPSTREAM` (`https://api.anthropic.com`): Anthropic's
+  API, for the broker (the testnet's is its fake).
 - `ARUGULA_CLOUD_SECRET_KEY`: the master key. It wraps each project's
   data key, which seals that project's secrets and its own inference keys
   ("Secrets' keys" below). Without it, a project can't set an inference
@@ -1560,6 +1596,7 @@ machines' writes took turns; M144 replaced it). What's left:
 | `chat_events` (transaction) | `Db::add_chat_event` | events commit in `seq` order, so a machine that has sent up to N never passes one still uncommitted below it |
 | `leader` (session) | the listening connection | one machine applies the feed and reports usage |
 | `window` (transaction) | `copy --to postgres://` | two copies at once wait for each other |
+| `inference:<account>` (transaction) | `Db::reserve_call` | an account's month on the platform's key and its calls running are sums over its calls (M231): two calls at once can't both take the last of its cap |
 
 Row-level instead of the old lock:
 

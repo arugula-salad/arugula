@@ -192,6 +192,17 @@
 #           reads the answer labelled as their agent on box-systemd; after
 #           the read grant is revoked, read_thread is refused. Broken: no
 #           grant given, so the box's first read is refused.
+#   broker  The inference broker (M231) as studio's lobby calls it
+#           (testnet/lobby.ts, a registered client), against the fake
+#           Anthropic: for an app's owner with no key, the platform's key
+#           pays and the answer streams back as sent, until $25 of calls
+#           passes studio's $20 a month and the next is refused before it
+#           goes out; the owner's own key then pays, and a sponsor's over
+#           it; the project's spend shows each. Anthropic saw only the key
+#           that paid, never the client's credential or a cookie, and no
+#           answer holds a key; before the owner lets studio act for them,
+#           it can't. Broken: the first call is a small one, so
+#           the cap never holds.
 #   issuer  The hub as an issuer (M228), as a product signs a person in:
 #           signed out, /oauth/authorize sends them through control's
 #           sign-in (the fake GitHub) and back with a code; the code and its
@@ -245,7 +256,7 @@ PROFILE="${1:-ssh}"; shift || true
 CFG="$STATE/ssh_config"
 BREAK="${BREAK:-}"
 SSH_CLAIMS="login jump no-route bare bytes agent linger"
-CONTROL_CLAIMS="signin reach relay unreachable cli team hosted platform platform-page agents links issuer"
+CONTROL_CLAIMS="signin reach relay unreachable cli team hosted platform platform-page agents links broker issuer"
 
 need_docker
 
@@ -1222,6 +1233,23 @@ claim_issuer() {
   until="$(docker logs --since 2m "$TESTNET-control" 2>&1 | grep -c 'no longer published' || true)"
   keyf previous ""; keyf previous_until ""
   note "issuer: signed in as $(field sub < "$WORK/iss-s1") (github_id $(sed -n 's/.*"github_id":\([0-9]*\).*/\1/p' "$WORK/iss-s1")), rotated $k1 -> $k3 with no token lost, the old key gone at its time (warned: $until); hud: $(cat "$WORK/iss-hud"); hud's own verifier: $(cat "$WORK/iss-hudown")"
+}
+
+# The inference broker (M231), as studio's lobby will call it (M236):
+# testnet/lobby.ts, a registered client, for an app's owner and their
+# sponsor, against the fake Anthropic in `fakes`.
+claim_broker() {
+  local owner="$WORK/broker-owner.json" sponsor="$WORK/broker-sponsor.json"
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
+  devs "$owner" signin --control "$CONTROL_URL" $CONTROL_VIA --login "broker-owner-$$-$RANDOM" > /dev/null ||
+    { note "broker: no owner signed in"; return 1; }
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
+  devs "$sponsor" signin --control "$CONTROL_URL" $CONTROL_VIA --login "broker-sponsor-$$-$RANDOM" > /dev/null ||
+    { note "broker: no sponsor signed in"; return 1; }
+  node --experimental-strip-types --no-warnings "$HERE/lobby.ts" --state "$owner" --sponsor "$sponsor" \
+    --credential testnet-studio-client-credential ${BREAK:+--break} > "$WORK/broker.json" ||
+    { note "broker: the lobby's calls through the platform"; return 1; }
+  note "broker: $(cat "$WORK/broker.json")"
 }
 
 claim_platform_restart() {
