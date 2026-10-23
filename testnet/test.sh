@@ -171,6 +171,21 @@
 #           (the claim's comment says the rest). Broken: the secret is
 #           written into the box's state directory, so the disk check
 #           finds it.
+#   planter-deploy
+#           Only with ARUGULA_TESTNET_HOSTED=1 at `up` (M233): planter's
+#           ship through the platform. An owner makes a planter-ship
+#           environment and mints an agent grant token with deploys.plan;
+#           the agent, with only the token, ships redone-hello's real source
+#           (a gzipped tar) with the hosted MCP's plan_deploy; the owner
+#           approves on their device with a passkey. The deploy's box fetches
+#           the source, the platform mints its two tokens from planter's App
+#           (the deploy App, at the fake GitHub), and the real `_planter`
+#           driver commits it to a bare arugula-salad/shipped seeded with what
+#           planter wrote, writes planter-apps' pointer, revokes both tokens,
+#           waits for the fake build's pin and the app's health: the deploy
+#           succeeds, keeping the commit. Broken: the app is planter's own
+#           shipped redone-hello, which a project never ships over, so the
+#           deploy fails with nothing pushed.
 #   agent-mcp
 #           Only with ARUGULA_TESTNET_PLATFORM=out and ARUGULA_TESTNET_POSTGRES=1
 #           at `up` (M230): an agent with no machine, with only an agent
@@ -303,7 +318,7 @@ if [ "$PROFILE" = control ]; then
     two) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart platform-fanout" ;;
   esac
   # Hosted workspaces at the fake E2B (M183).
-  [ "${ARUGULA_TESTNET_HOSTED:-}" != 1 ] || CONTROL_CLAIMS="$CONTROL_CLAIMS hosted-setup deploys"
+  [ "${ARUGULA_TESTNET_HOSTED:-}" != 1 ] || CONTROL_CLAIMS="$CONTROL_CLAIMS hosted-setup deploys planter-deploy"
   # Public previews (M187): with hosted workspaces at the fake E2B and a
   # preview domain on control.
   PREVIEW_DOMAIN="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$TESTNET-control" 2>/dev/null |
@@ -970,8 +985,9 @@ fresh_hosted_box() {
 }
 # Start the box's daemon with the ticket the platform put in its env.
 deploy_box_daemon() {
-  docker exec -d -u user -e HOME=/home/user -e ARUGULA_HOSTED_TICKET="$1" -e ARUGULA_CONTROL_URL="$CONTROL_URL" \
-    -e ARUGULA_WORK_PULL_MS=1000 -e RUST_LOG=info -e ARUGULA_HOSTED_FAKE_DRIVER=1 "$TESTNET-hosted-box" \
+  local ticket="$1"; shift
+  docker exec -d -u user -e HOME=/home/user -e ARUGULA_HOSTED_TICKET="$ticket" -e ARUGULA_CONTROL_URL="$CONTROL_URL" \
+    -e ARUGULA_WORK_PULL_MS=1000 -e RUST_LOG=info -e ARUGULA_HOSTED_FAKE_DRIVER=1 "$@" "$TESTNET-hosted-box" \
     sh -c 'exec /opt/arugula/arugulad --hosted >> /home/user/arugulad.log 2>&1'
 }
 # The newest live box at the fake E2B for project $1 that isn't $2: `<id> <ticket>`.
@@ -1065,6 +1081,97 @@ assert all(k["answered"] and not k.get("refused") for k in e), e' "$WORK/dep-led
   for _ in $(seq 1 20); do docker logs "$TESTNET-control" 2>&1 | grep "paged the owners" | grep -q "$bad" && break; sleep 0.5; done
   docker logs "$TESTNET-control" 2>&1 | grep "paged the owners" | grep -q "$bad" || { note "deploys: nobody was paged"; ok=0; }
   deleted_at_e2b "$proj" "$sbx2" || ok=0
+  fresh_hosted_box
+  [ "$ok" = 1 ]
+}
+
+# M233: planter's Ship as a driver, end to end on the hosted box (the claim's
+# comment in the header says what). The box's GitHub is bare repositories in
+# /srv/fake-github owned by `runner` (the driver pushes there as it), seeded
+# from crates/daemon/tests/planter-captured (what planter wrote); its API, the
+# app and shipped's build are testnet/hosted/planter-fake.mjs, as `runner`.
+planter_box() {
+  local g=/srv/fake-github
+  hroot sh -c "pkill -f '[p]lanter-fake.mjs'; rm -rf $g /tmp/planter-captured /tmp/planter-fake.*; mkdir -p $g/arugula-salad"
+  docker cp "$ROOT/crates/daemon/tests/planter-captured" "$TESTNET-hosted-box:/tmp/planter-captured"
+  docker cp "$HERE/hosted/planter-fake.mjs" "$TESTNET-hosted-box:/tmp/planter-fake.mjs"
+  hroot sh -c "chown -R runner $g /tmp/planter-captured /tmp/planter-fake.mjs" || return 1
+  docker exec -u runner -e HOME=/tmp "$TESTNET-hosted-box" sh -c '
+    set -e; export GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=planter GIT_AUTHOR_EMAIL=p@p GIT_COMMITTER_NAME=planter GIT_COMMITTER_EMAIL=p@p
+    g=/srv/fake-github/arugula-salad; c=/tmp/planter-captured
+    for r in shipped planter-apps; do git init -q --bare --shared=0777 -b main $g/$r.git; done
+    w=$(mktemp -d); cd $w; git init -q -b main; mkdir apps; : > apps/.gitkeep
+    cp $c/planter-apps/*.yaml apps/; git add -A; git commit -qm "planter-apps: the pointers planter writes"; git push -q $g/planter-apps.git HEAD:main
+    w=$(mktemp -d); cd $w; git init -q -b main; cp -r $c/shipped/redone-hello .; git add -A
+    git commit -q -F $c/shipped/redone-hello.last-commit; git push -q $g/shipped.git HEAD:main' > /dev/null || return 1
+  # As root: a run's end kills everything the run user left.
+  docker exec -d -e HOME=/root "$TESTNET-hosted-box" node /tmp/planter-fake.mjs /srv/fake-github /tmp/planter-fake.log
+}
+# What the planter driver said in its run's pane (its log on the box).
+planter_said() { hroot sh -c 'grep -rah "planter-ship:\|planter-promote:\|arugula:" /home/user/.local/state/arugula 2>/dev/null | tail -30'; }
+# git on the box's fake GitHub, as `runner`, who owns it.
+hgit() { docker exec -u runner -e HOME=/tmp "$TESTNET-hosted-box" git -C "/srv/fake-github/arugula-salad/$1.git" "${@:2}"; }
+# A tools/call to control's /api/mcp with the agent's token $1: the answer.
+mcp_call() {
+  curl -sS -X POST "http://127.0.0.1:$ARUGULA_TESTNET_CONTROL_PORT/api/mcp" -H "authorization: Bearer $1" \
+    -H 'content-type: application/json' --data-binary @-
+}
+claim_planter_deploy() {
+  local ok=1 own="$WORK/powner.json" acct proj envid token dep sbx tk app="m233-$$-$RANDOM" src tarb
+  [ -z "$BREAK" ] || app=redone-hello
+  fresh_hosted_box
+  planter_box || { note "planter-deploy: the box's fake GitHub isn't set up"; return 1; }
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
+  acct="$(devs "$own" signin --control "$CONTROL_URL" $CONTROL_VIA --login "powner$$" | field account)"
+  [ -n "$acct" ] || { note "planter-deploy: the owner didn't sign in"; return 1; }
+  devs "$own" passkey-add | grep -q '"id"' || { note "planter-deploy: no passkey"; return 1; }
+  proj="$(devs "$own" delegate | field project)"
+  [ -n "$proj" ] || { note "planter-deploy: no delegation"; return 1; }
+  envid="$(devs "$own" environment-with "$app" planter-ship "{\"app\":\"$app\"}" | field environment)"
+  [ -n "$envid" ] || { note "planter-deploy: no planter-ship environment"; return 1; }
+  token="$(devs "$own" agent-token redone deploys.plan | field token)"
+  [ -n "$token" ] || { note "planter-deploy: no agent token"; return 1; }
+
+  # The agent ships, with only its token: redone-hello's real source.
+  src="$ROOT/crates/daemon/tests/planter-captured/shipped/redone-hello/src"
+  tarb="$(tar -czf - -C "$src" . | base64 -w0)"
+  python3 -c 'import json, sys; print(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "plan_deploy",
+    "arguments": {"project": sys.argv[1], "environment": sys.argv[2], "files": sys.argv[3]}}}))' "$proj" "$app" "$tarb" |
+    mcp_call "$token" > "$WORK/ship.json"
+  dep="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["result"]["structuredContent"]["deploy"]["id"])' "$WORK/ship.json" 2>/dev/null)"
+  [ -n "$dep" ] || { note "planter-deploy: the agent's ship wasn't planned: $(head -c 400 "$WORK/ship.json")"; return 1; }
+  dep_field "$own" "$dep" 'd["plan_text"]' | grep -q "arugula-salad/shipped's $app/" || { note "planter-deploy: the plan doesn't say where it ships"; ok=0; }
+  devs "$own" deploy-approve "$dep" | grep -q '"state":"approved"' || { note "planter-deploy: not approved"; return 1; }
+  read -r sbx tk <<< "$(new_box "$proj" "")"
+  [ -n "$tk" ] || { note "planter-deploy: the platform made no box at the fake E2B"; return 1; }
+  deploy_box_daemon "$tk" -e ARUGULA_HOSTED_PLANTER_GIT=/srv/fake-github/ -e ARUGULA_HOSTED_PLANTER_API=http://127.0.0.1:9100 \
+    -e ARUGULA_HOSTED_PLANTER_HEALTH=http://127.0.0.1:9100
+  # Broken: planter's own redone-hello, which this project never ships
+  # over. The deploy fails, nothing pushed: the claim doesn't hold.
+  if [ -n "$BREAK" ]; then
+    wait_dep "$own" "$dep" failed 180 &&
+      planter_said | grep -q "isn't this project's to change" &&
+      hgit shipped log -1 --format=%B main | grep -q 'Shipped-By: redone' &&
+      note "planter-deploy: the ship over planter's own redone-hello failed, nothing pushed"
+    fresh_hosted_box
+    return 1
+  fi
+  wait_dep "$own" "$dep" succeeded 240 || { ok=0; planter_said >&2; hroot cat /tmp/planter-fake.log >&2; }
+  local commit
+  commit="$(hgit shipped log --format=%H --fixed-strings --grep "Arugula-Deploy: $dep" main | head -1)"
+  [ "${#commit}" = 40 ] || { note "planter-deploy: shipped has no commit of $dep"; ok=0; }
+  hgit shipped log --format=%B -1 "$commit" 2>/dev/null | grep -q "Arugula-Project: $proj" ||
+    { note "planter-deploy: shipped has no commit of the project's"; ok=0; }
+  hgit shipped show "$commit:$app/src/server.js" 2>/dev/null | grep -q 'hello from redone' ||
+    { note "planter-deploy: the source isn't in shipped"; ok=0; }
+  hgit planter-apps show "main:apps/$app.yaml" 2>/dev/null | grep -q "path: ./$app/k8s" ||
+    { note "planter-deploy: no pointer for $app"; ok=0; }
+  [ "$(hroot grep -c '^revoke Bearer ghs_testnet' /tmp/planter-fake.log 2>/dev/null)" = 2 ] ||
+    { note "planter-deploy: the driver didn't revoke both tokens: $(hroot cat /tmp/planter-fake.log)"; ok=0; }
+  [ "$(docker logs "$TESTNET-control" 2>&1 | grep 'installation token minted' | grep -c 'planter-app')" -ge 2 ] ||
+    { note "planter-deploy: the tokens weren't planter's App's"; ok=0; }
+  deleted_at_e2b "$proj" "$sbx" || ok=0
+  [ "$ok" = 1 ] && note "planter-deploy: $dep shipped $app to shipped at $commit, through planter's App, approved on the owner's device"
   fresh_hosted_box
   [ "$ok" = 1 ]
 }

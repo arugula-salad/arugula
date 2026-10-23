@@ -88,7 +88,8 @@ mod viewer_tests;
 mod webhook;
 
 pub use app::{
-    Caller, GithubApp, GithubUser, Install, Purpose, ReadToken, Repo, RepoRole, WriteToken, Writes, epoch_of, parse_pem,
+    Caller, DeployScope, GithubApp, GithubUser, Install, Purpose, ReadToken, Repo, RepoRole, WriteToken, Writes,
+    epoch_of, parse_pem,
 };
 pub use webhook::{pokes, signed, webhook};
 
@@ -135,6 +136,20 @@ pub struct Args {
     /// unless set.
     #[arg(long, env = "ARUGULA_FORGE_RATE_RESERVE", value_parser = clap::value_parser!(u8).range(0..=100))]
     pub forge_rate_reserve: Option<u8>,
+    /// planter's GitHub App, the deploy App (M233, aru-108): planter's
+    /// drivers' runs get installation tokens of it, never of the platform's
+    /// own App, which isn't asked for any more than it has. Its id, slug
+    /// and private key (a PEM file, or the PEM itself in
+    /// PLANTER_APP_PRIVATE_KEY, as a Fly secret). Off without an id and a
+    /// key: planter's drivers then plan nothing.
+    #[arg(long, env = "PLANTER_APP_ID")]
+    pub planter_app_id: Option<String>,
+    #[arg(long, env = "PLANTER_APP_SLUG", default_value = "arugula-planter")]
+    pub planter_app_slug: String,
+    #[arg(long, env = "PLANTER_APP_PRIVATE_KEY_FILE")]
+    pub planter_app_private_key_file: Option<std::path::PathBuf>,
+    #[arg(long, env = "PLANTER_APP_PRIVATE_KEY", hide_env_values = true)]
+    pub planter_app_private_key: Option<String>,
 }
 
 impl Args {
@@ -186,6 +201,31 @@ impl Args {
             ..d
         };
         Ok(Some(app))
+    }
+}
+
+impl Args {
+    /// planter's App, the deploy App (M233), if there's an id, with GitHub's
+    /// API at `api`: it mints tokens for planter's drivers' runs and does
+    /// nothing else here (no webhook, no reads). An id with no key is
+    /// refused.
+    pub fn deploy_app(&self, api: &str) -> anyhow::Result<Option<GithubApp>> {
+        use anyhow::Context as _;
+        let Some(id) = self.planter_app_id.as_deref().filter(|s| !s.is_empty()) else {
+            info!("no PLANTER_APP_ID: planter's deploy drivers plan nothing here");
+            return Ok(None);
+        };
+        let pem = match (&self.planter_app_private_key, &self.planter_app_private_key_file) {
+            (Some(k), _) if !k.is_empty() => k.clone(),
+            (_, Some(f)) => std::fs::read_to_string(f)
+                .with_context(|| format!("reading PLANTER_APP_PRIVATE_KEY_FILE {}", f.display()))?,
+            _ => anyhow::bail!(
+                "PLANTER_APP_ID is set but there's no PLANTER_APP_PRIVATE_KEY or PLANTER_APP_PRIVATE_KEY_FILE"
+            ),
+        };
+        let key = parse_pem(&pem).context("PLANTER_APP_PRIVATE_KEY")?;
+        info!(app = id, slug = self.planter_app_slug, "planter's GitHub App: the deploy App");
+        Ok(Some(GithubApp::new(id.to_owned(), self.planter_app_slug.clone(), String::new(), api, key)))
     }
 }
 

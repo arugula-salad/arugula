@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::deploy::Operation;
+use crate::deploy::{Operation, planter};
 
 #[path = "drivers_arugula_release.rs"]
 pub mod arugula_release;
@@ -90,6 +90,10 @@ pub const FLY_API_TOKEN: &str = "FLY_API_TOKEN";
 /// a commit, by its full 40-hex id (never a branch, a tag or a short id
 /// the box resolves).
 pub fn source_ok(driver: &str, kind: &str, reference: &str) -> bool {
+    // planter's (M233): Ship an artifact by its digest, the rest a commit.
+    if planter::is_planter(driver) {
+        return planter::source_ok(driver, kind, reference);
+    }
     (driver != CHANT_FLY && driver != arugula_release::DRIVER)
         || (kind == "commit"
             && reference.len() == 40
@@ -163,6 +167,9 @@ pub fn word(s: &str) -> bool {
 pub fn settings(driver: &str, given: &Settings) -> Result<Settings, String> {
     if driver == arugula_release::DRIVER {
         return arugula_release::settings(given);
+    }
+    if planter::is_planter(driver) {
+        return planter::settings(driver, given);
     }
     if driver != CHANT_FLY {
         return match given.keys().next() {
@@ -264,6 +271,11 @@ pub fn plan_text(
     // says nothing it'd do, and nothing applies it.
     if driver == arugula_release::DRIVER && roll_back.is_none() {
         t.push_str(&arugula_release::plan_lines(source_kind, source_ref, source_where, settings));
+    }
+    // planter's (M233): only Go live rolls back (a revert commit, as
+    // apps-platform's), and its plan says so either way.
+    if planter::is_planter(driver) && (roll_back.is_none() || driver == planter::GO_LIVE) {
+        t.push_str(&planter::plan_lines(driver, source_kind, source_ref, source_where, settings));
     }
     t
 }
@@ -403,6 +415,7 @@ pub fn setting_fields(driver: &str) -> &'static [SettingField] {
     match driver {
         CHANT_FLY => CHANT_FLY_FIELDS,
         arugula_release::DRIVER => ARUGULA_RELEASE_FIELDS,
+        d if planter::is_planter(d) => planter::setting_fields(d),
         _ => &[],
     }
 }

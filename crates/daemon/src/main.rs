@@ -503,6 +503,11 @@ fn main() -> anyhow::Result<()> {
     if argv.get(1).map(String::as_str) == Some("_apps-platform") {
         work::apps_platform::cli(&argv[2..]);
     }
+    // planter's drivers (M233), as a deploy's run user: nothing else of the
+    // daemon runs.
+    if argv.get(1).map(String::as_str) == Some("_planter") {
+        work::planter::cli(&argv[2..]);
+    }
     // Arugula's own release (M221), as a deploy's run user: nothing else
     // of the daemon runs.
     if argv.get(1).map(String::as_str) == Some("_arugula-release") {

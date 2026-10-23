@@ -1,0 +1,49 @@
+{
+ "captured": {
+  "repo": "arugula-salad/planter",
+  "render": "795d81b6704e8771ed7ecfd6eb5fb3cada4aee78",
+  "scaffold": "7512bf468f750a69450592bf60ff7446c89dfb37"
+ },
+ "name": "ship-hello",
+ "note": "ship.mjs ship(): manifestText runtime loam, validate(parse()), render, topKustomization",
+ "request": {
+  "op": "ship",
+  "name": "redone-hello",
+  "port": 8080,
+  "health": "/health",
+  "portEnv": "PORT",
+  "secrets": []
+ },
+ "planter": {
+  "appYaml": "# What redone-hello needs from the platform. Its build renders k8s/platform/ from this on every build of\n# main (arugula-salad/planter, platform-app/render.mjs, says what each key gives).\nname: redone-hello\nhealth: /health\n# On loam, at https://redone-hello.run.inevitable.fyi: asleep until a request wakes it. Moving it into the\n# cluster is changing this to k8s (with its domain), in a pull request a person merges.\nruntime: loam\nneeds:\n  domain: [redone-hello.run.inevitable.fyi]\n  telemetry: logs\n",
+  "spec": {
+   "name": "redone-hello",
+   "image": "ghcr.io/arugula-salad/redone-hello",
+   "port": 8080,
+   "health": "/health",
+   "runtime": "loam",
+   "volume": null,
+   "portEnv": "PORT",
+   "dataEnv": null,
+   "host": "redone-hello.run.inevitable.fyi",
+   "ownHost": false,
+   "secondHost": false,
+   "custom": [],
+   "secrets": [],
+   "secretsOn": false,
+   "telemetry": false,
+   "logs": true,
+   "metrics": null,
+   "postgres": false,
+   "bucket": null,
+   "allSecrets": false,
+   "pullSecret": "ghcr"
+  },
+  "files": {
+   "k8s/platform/deployment.yaml": "# Generated from app.yaml by arugula-salad/planter's platform-app (the app, on loam). Don't edit: the next\n# build of main renders it again. Change app.yaml, or patch it from k8s/kustomization.yaml.\n# redone-hello runs on loam, at https://redone-hello.run.inevitable.fyi, not here: this Deployment has no replicas. It is the\n# record home-cloud's loam provisioner (apps/apps-platform) reads: the pinned image, the port, the\n# health path and the secrets, from which it makes the app's sandbox in loam project apps and runs\n# the image's program in it as a service, replacing the sandbox whenever the image changes.\n# Promoting the app to the cluster is changing app.yaml's runtime to k8s, in a pull request a person merges.\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: redone-hello\n  labels:\n    app.kubernetes.io/name: redone-hello\n    platform.arugula.io/runtime: loam\n  annotations:\n    platform.arugula.io/loam-port: \"8080\"\n    platform.arugula.io/loam-port-env: PORT\n    platform.arugula.io/loam-health: /health\nspec:\n  replicas: 0\n  selector:\n    matchLabels:\n      app.kubernetes.io/name: redone-hello\n  template:\n    metadata:\n      labels:\n        app.kubernetes.io/name: redone-hello\n    spec:\n      imagePullSecrets:\n        - name: ghcr\n      automountServiceAccountToken: false\n      securityContext:\n        runAsNonRoot: true\n        seccompProfile:\n          type: RuntimeDefault\n      containers:\n        - name: redone-hello\n          image: ghcr.io/arugula-salad/redone-hello\n          securityContext:\n            allowPrivilegeEscalation: false\n            readOnlyRootFilesystem: true\n            capabilities:\n              drop: [ALL]\n",
+   "k8s/platform/dashboard.yaml": "# Generated from app.yaml by arugula-salad/planter's platform-app (needs.telemetry). Don't edit: the next\n# build of main renders it again. Change app.yaml, or patch it from k8s/kustomization.yaml.\n# A Grafana dashboard for redone-hello, \"redone-hello (planter-apps)\": its service's log, which home-cloud's loam log\n# shipper (apps/apps-platform) sends to Loki as {namespace=\"planter-apps\", app=\"redone-hello\", runtime=\"loam\"}, the\n# labels the cluster gives its pods' logs, so the panel keeps its history if the app is promoted.\n# Grafana loads every ConfigMap labelled grafana_dashboard: \"1\".\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: redone-hello-dashboard\n  labels:\n    app.kubernetes.io/name: redone-hello\n    grafana_dashboard: \"1\"\ndata:\n  redone-hello.json: |\n    {\n      \"uid\": \"planter-redone-hello\",\n      \"title\": \"redone-hello (planter-apps)\",\n      \"tags\": [\n        \"planter-apps\",\n        \"loam\"\n      ],\n      \"timezone\": \"browser\",\n      \"schemaVersion\": 39,\n      \"time\": {\n        \"from\": \"now-6h\",\n        \"to\": \"now\"\n      },\n      \"links\": [\n        {\n          \"title\": \"https://redone-hello.run.inevitable.fyi\",\n          \"url\": \"https://redone-hello.run.inevitable.fyi\",\n          \"type\": \"link\",\n          \"targetBlank\": true\n        }\n      ],\n      \"panels\": [\n        {\n          \"id\": 1,\n          \"title\": \"Logs\",\n          \"type\": \"logs\",\n          \"gridPos\": {\n            \"x\": 0,\n            \"y\": 0,\n            \"w\": 24,\n            \"h\": 20\n          },\n          \"datasource\": {\n            \"type\": \"loki\",\n            \"uid\": \"loki\"\n          },\n          \"targets\": [\n            {\n              \"datasource\": {\n                \"type\": \"loki\",\n                \"uid\": \"loki\"\n              },\n              \"expr\": \"{namespace=\\\"planter-apps\\\", app=\\\"redone-hello\\\"}\",\n              \"refId\": \"A\"\n            }\n          ]\n        }\n      ]\n    }\n",
+   "k8s/platform/kustomization.yaml": "# Generated from app.yaml by arugula-salad/planter's platform-app (the list of what it renders). Don't edit: the next\n# build of main renders it again. Change app.yaml, or patch it from k8s/kustomization.yaml.\napiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - deployment.yaml\n  - dashboard.yaml\n"
+  },
+  "top": "# https://redone-hello.run.inevitable.fyi: redone-hello on home-cloud, applied by Flux from this directory. platform/ is rendered\n# from app.yaml on every build of main (don't edit it); this file is yours: add kustomize patches here\n# for anything app.yaml can't say. Every app shares the `planter-apps` namespace, which the platform\n# owns along with the `ghcr` pull secret and the `planter-apps-secrets` ServiceAccount.\napiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nnamespace: planter-apps\nresources:\n  - platform\nimages:\n  - name: ghcr.io/arugula-salad/redone-hello\n    # Pinned by .github/workflows/build.yml on every build of main. `unpinned` is a placeholder\n    # that does not exist: the app does not run until CI has replaced it.\n    newTag: unpinned\n"
+ }
+}

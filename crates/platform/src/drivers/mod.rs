@@ -39,6 +39,9 @@
 //! Arugula's own release, for Arugula's own project only
 //! ([`Driver::allowed_in`]).
 //!
+//! **planter's** ([`planter`], M233): Prod, Go live, Ship and Promote,
+//! through planter's GitHub App, the deploy App (aru-108).
+//!
 //! **The fake driver** ([`fake::Fake`], `fake`) is for tests and testnet:
 //! environments may name it only where the platform says so
 //! (`ARUGULA_PLATFORM_FAKE_DRIVER=1`), and boxes run it only where they
@@ -49,6 +52,7 @@ pub mod arugula_release;
 pub mod chant_fly;
 pub mod fake;
 pub mod mint;
+pub mod planter;
 
 use arugula_e2e::drivers::{RollBack, Settings};
 use serde_json::{Map, Value};
@@ -56,9 +60,12 @@ use sha2::{Digest as _, Sha256};
 
 pub use mint::{Held, Mint, mint, revoke_run};
 
-use crate::db::{
-    deploys::{Deploy, Environment, Source},
-    runs::Run,
+use crate::{
+    Platform,
+    db::{
+        deploys::{Deploy, Environment, Source},
+        runs::Run,
+    },
 };
 
 /// A plan: what a person reads before they approve, and its SHA-256 (hex),
@@ -138,6 +145,14 @@ pub trait Driver: Send + Sync {
     fn allowed_in(&self, project: &str) -> Result<(), String> {
         let _ = project;
         Ok(())
+    }
+
+    /// Why `env` (one being made, or one a deploy is planned to) can't
+    /// have what its settings name, given what the platform holds (M233: a
+    /// shipped app's name is one project's): `None` when it can.
+    fn claims(&self, app: &Platform, env: &Environment) -> Option<String> {
+        let _ = (app, env);
+        None
     }
 
     /// The short-lived tokens it mints at apply, each from a long-lived
@@ -224,6 +239,10 @@ static CHANT_FLY: chant_fly::ChantFly = chant_fly::ChantFly;
 static APPS_PLATFORM: apps_platform::AppsPlatform = apps_platform::AppsPlatform;
 static ARUGULA_RELEASE: arugula_release::ArugulaRelease = arugula_release::ArugulaRelease;
 static FAKE: fake::Fake = fake::Fake;
+static PLANTER_PROD: planter::Prod = planter::Prod;
+static PLANTER_GO_LIVE: planter::GoLive = planter::GoLive;
+static PLANTER_SHIP: planter::Ship = planter::Ship;
+static PLANTER_PROMOTE: planter::Promote = planter::Promote;
 
 /// Whether environments here may name the fake driver: tests, and a
 /// platform started with `ARUGULA_PLATFORM_FAKE_DRIVER=1` (testnet).
@@ -237,6 +256,10 @@ pub fn driver(name: &str) -> Option<&'static dyn Driver> {
         "chant-fly" => Some(&CHANT_FLY),
         "apps-platform" => Some(&APPS_PLATFORM),
         arugula_release::NAME => Some(&ARUGULA_RELEASE),
+        arugula_e2e::deploy::planter::PROD => Some(&PLANTER_PROD),
+        arugula_e2e::deploy::planter::GO_LIVE => Some(&PLANTER_GO_LIVE),
+        arugula_e2e::deploy::planter::SHIP => Some(&PLANTER_SHIP),
+        arugula_e2e::deploy::planter::PROMOTE => Some(&PLANTER_PROMOTE),
         fake::NAME if fake_allowed() => Some(&FAKE),
         _ => None,
     }

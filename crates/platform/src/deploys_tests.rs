@@ -1151,6 +1151,7 @@ async fn the_drivers_a_project_may_name_say_their_settings_and_secrets() {
     let (st, v) = call(&base, "x", "GET", &path, None).await;
     assert_eq!(st, 200, "a viewer reads it: {v}");
     let names: Vec<&str> = v["drivers"].as_array().unwrap().iter().map(|d| d["name"].as_str().unwrap()).collect();
+    // planter's (M233) only where PLANTER_PROJECTS names the project.
     assert_eq!(names, ["chant-fly", "apps-platform", "fake"], "{v}");
     let driver =
         |v: &Value, n: &str| v["drivers"].as_array().unwrap().iter().find(|d| d["name"] == n).cloned().unwrap();

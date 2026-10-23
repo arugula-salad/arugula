@@ -72,6 +72,7 @@ their token, passkeys and devices keep public keys. They stay the hub's.
 | `ARUGULA_RUN_LOGS_ACCESS_KEY_ID`, `ARUGULA_RUN_LOGS_SECRET_ACCESS_KEY` | Infisical `/illogical/run-logs` | Operator |
 | `ARUGULA_RUN_LOGS_BUCKET`, `ARUGULA_RUN_LOGS_ENDPOINT` (*config*) | | Operator |
 | `ARUGULA_E2B_API_KEY` | Infisical `/illogical/control` (and `E2B_API_KEY` there) | Operator |
+| `PLANTER_APP_ID`, `PLANTER_APP_SLUG` (*config*), `PLANTER_APP_PRIVATE_KEY` (M233: planter's App, the deploy App; **not set yet**) | Infisical project `planter` (as planter's `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY`) | Operator. Mints planter's drivers' tokens; planter's own copy goes with planter (M234) |
 | `POSTHOG_API_KEY` | the hub | Operator |
 | `ARUGULA_CLOUD_ACCOUNTS`, `ARUGULA_HOSTED_ACCOUNTS`, `ARUGULA_HOSTED_PLATFORM_KEYS`, `ARUGULA_PLATFORM_RELEASE_PROJECT`, `ARUGULA_PREVIEW_DOMAIN` (*config*) | | Operator |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | read by code, set nowhere (billing is off) | Operator, when billing starts |

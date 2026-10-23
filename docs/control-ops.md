@@ -1144,6 +1144,94 @@ If the box's run fails after the push (the workflow didn't publish within
 hand and fix forward. A `scripts/release` that runs over 20 minutes is
 stopped, and the run says whether it had pushed a tag.
 
+### planter's deploys (M233)
+
+planter's Prod, Go live, ship and promote are four drivers (`planter-prod`,
+`planter-go-live`, `planter-ship`, `planter-promote`; docs/control.md says
+what each does). Their runs get installation tokens of **planter's GitHub
+App** (*Arugula Planter*, `arugula-planter`), the deploy App: never the
+platform's own App, which isn't asked for more than it has (aru-108). Until
+planter's App is set on the platform, their deploys are refused when
+they're planned ("this platform has no planter GitHub App").
+
+On `arugula-platform` (none is set yet: Jake sets them, from planter's
+Infisical project `planter`, where planter keeps them as `GITHUB_APP_ID` and
+`GITHUB_PRIVATE_KEY`):
+
+- `PLANTER_APP_ID`: the App's id;
+- `PLANTER_APP_SLUG`: `arugula-planter` unless set (it only names the App in
+  messages);
+- `PLANTER_APP_PRIVATE_KEY`: the App's private key, the PEM itself (`\n`s
+  allowed), or `PLANTER_APP_PRIVATE_KEY_FILE`, a path.
+- `PLANTER_PROJECTS` (*config*): the projects that may use planter's
+  drivers, comma separated (`prj_…`); none when it's unset or empty. Their
+  accounts must also be ones hosted workspaces allow
+  (`ARUGULA_HOSTED_ACCOUNTS`). `*` (every project) is honoured only where
+  the fake driver is (testnet).
+
+```
+fly secrets set -a arugula-platform PLANTER_APP_ID=… PLANTER_APP_PRIVATE_KEY="$(cat planter-app.pem)" PLANTER_PROJECTS=prj_…
+```
+
+A shipped app's name is claimed by the first project to make a
+`planter-ship` or `planter-promote` environment for it (`planter_app_claims`).
+It's refused when it's reserved (`arugula_e2e::deploy::planter::RESERVED_NAMES`
+and the platform's own), or an arugula-salad repository's: GitHub's public
+API, and planter's App's installations, asked when the environment is made
+and when a deploy is planned, and again (public API) on the box before it
+pushes. A ship asks for secrets (Infisical `/<app>`) only under a name
+nobody else ever shipped or pointed at.
+
+With the platform in process, the hub reads the same names. The platform
+uses the key to mint tokens for planter's drivers' runs and for nothing
+else (no webhook, no reads); each mint is logged in `github_token_mints`
+with caller `planter-app`.
+
+What the App's installation must grant, checked when a deploy is planned:
+
+| Driver | Repository | Permissions |
+| --- | --- | --- |
+| `planter-prod` | the app's (`arugula-salad/<app>`, linked to the project) | Contents, Pull requests and Workflows: write |
+| `planter-go-live` | `arugula-salad/planter-apps`; the app's | Contents: write; Contents: read |
+| `planter-ship` | `arugula-salad/shipped`; `arugula-salad/planter-apps` | Contents: write, each |
+| `planter-promote` | `arugula-salad/shipped` | Contents and Pull requests: write |
+
+planter already has all of these on those repositories (its Prod needs
+Workflows: write).
+
+**planter's ship API, retired (M234).** Ship tokens become agent grant
+tokens (M230) with `deploys.plan` over the project. An agent ships with
+the hosted MCP's `plan_deploy`, `files` instead of `commit` and `repo`. The
+shim planter's `/api/ship` keeps for 90 days answers through the platform
+the same way, so it needs:
+
+- **One agent token per ship token**, minted by the owner of the project its
+  apps move to, named after the ship token's agent (`redone
+  (redone.arugula.io)`), with `deploys.plan` over that project. The shim
+  keeps a map from ship token id to agent token, sealed as planter seals its
+  secrets.
+- **One `planter-ship` environment per shipped app** in that project, named
+  as the app (`settings.app` its name, and its port, health path and
+  secrets as its `app.yaml` says).
+- `POST /api/ship {name, files, port?, health?, secrets?, portEnv?}`
+  becomes `tools/call plan_deploy {project, environment: name, files}`; a
+  `port`, `health`, `secrets` or `portEnv` that isn't the environment's is
+  refused (the owner changes the environment). The answer's deploy is
+  `waiting` until an owner approves it on their device: the shim answers
+  `202 {name, url, state: "waiting", deploy}` (planter answered
+  `building`).
+- `GET /api/ship/<name>` becomes `read_deploy` of the environment's last
+  deploy: `waiting`, `building` (running, before the pin), `serving`
+  (succeeded) or `failed`.
+- `POST /api/ship/<name>/promote` becomes `plan_deploy` to the app's
+  `planter-promote` environment, of shipped's head commit.
+- **planter's own shipped apps** (`redone-hello`, `mvp-redone-app`) are
+  shipped over only by the project whose `Arugula-Project:` trailer is on
+  their last ship: the platform refuses a ship over an app planter shipped
+  last. Their first ship through the platform needs one commit naming the
+  project (M232's import, or by hand), or they stay planter's until the
+  shim ends.
+
 ### The platform
 
 Control is two processes ("Control is two processes: a hub and a

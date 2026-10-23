@@ -1,0 +1,89 @@
+#!/usr/bin/env node
+// Vendors planter's renderer into crates/e2e/src/planter/ (M233), and captures planter's own output as
+// the fixtures arugula's copy must render identically (crates/e2e/src/deploy_planter.rs's tests).
+//
+//   scripts/vendor-planter <planter checkout> [--check]
+//
+// From the checkout, at its HEAD: platform-app/render.mjs and prod-scaffold.mjs, each with the
+// `// arugula vendor:` lines naming where they came from (the file is planter's byte for byte without
+// them), and for each fixture in crates/e2e/src/planter/fixtures/ its `planter` answer, made again by
+// planter's own modules from the fixture's `request` (the real app.yaml files and package.json it
+// holds), YAML parsed with planter's own `yaml` package (`npm ci` in its platform-app/ first).
+// --check changes nothing and fails when a file would change. It only reads the checkout.
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const args = process.argv.slice(2);
+const check = args.includes('--check');
+const [planter] = args.filter((a) => a !== '--check');
+if (!planter) {
+  process.stderr.write('usage: scripts/vendor-planter <planter checkout> [--check]\n');
+  process.exit(2);
+}
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const out = join(root, 'crates/e2e/src/planter');
+const git = (...a) => execFileSync('git', ['-C', planter, ...a]).toString().trim();
+const head = git('rev-parse', 'HEAD');
+let changed = [];
+const put = (path, text) => {
+  let now = null;
+  try { now = readFileSync(path, 'utf8'); } catch {}
+  if (now === text) return;
+  changed.push(path.slice(root.length + 1));
+  if (!check) writeFileSync(path, text);
+};
+
+const header = (file, last, sha) => [
+  `// arugula vendor: arugula-salad/planter's ${file} at ${head}`,
+  `// arugula vendor: (last changed in ${last}), byte for byte but for these lines. Arugula's planter and`,
+  '// arugula vendor: apps-platform deploy drivers render with it on a deploy\'s box (M233,',
+  '// arugula vendor: crates/e2e/src/deploy_planter.rs). Don\'t edit it here: change planter, then run',
+  '// arugula vendor: scripts/vendor-planter, which copies it again and captures planter\'s own output',
+  `// arugula vendor: as the fixtures its test renders identically (upstream sha256 ${sha}).`,
+].join('\n');
+for (const [file, dest] of [['platform-app/render.mjs', 'platform-app/render.mjs'], ['prod-scaffold.mjs', 'prod-scaffold.mjs']]) {
+  const text = readFileSync(join(planter, file), 'utf8');
+  const sha = createHash('sha256').update(text).digest('hex');
+  const last = git('log', '-1', '--format=%H', '--', file);
+  const lines = text.split('\n');
+  const shebang = lines[0].startsWith('#!') ? [lines.shift()] : [];
+  put(join(out, dest), [...shebang, header(file, last, sha), ...lines].join('\n'));
+}
+
+const R = await import(pathToFileURL(join(planter, 'platform-app/render.mjs')).href);
+const S = await import(pathToFileURL(join(planter, 'prod-scaffold.mjs')).href);
+const { parse } = await import(pathToFileURL(join(planter, 'platform-app/node_modules/yaml/dist/index.js')).href);
+const captured = { repo: 'arugula-salad/planter', render: git('log', '-1', '--format=%H', '--', 'platform-app/render.mjs'), scaffold: git('log', '-1', '--format=%H', '--', 'prod-scaffold.mjs') };
+const dir = join(out, 'fixtures');
+for (const f of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
+  const fx = JSON.parse(readFileSync(join(dir, f), 'utf8'));
+  const req = fx.request;
+  let ans;
+  if (req.op === 'render') {
+    // A real app.yaml is parsed again from its text, as planter's CLI does.
+    const manifest = req.appYaml != null ? parse(req.appYaml, { uniqueKeys: true }) : req.manifest;
+    req.manifest = manifest;
+    const spec = R.validate(manifest, req.repo != null ? { repo: req.repo } : {});
+    ans = { spec, files: R.render(spec), top: R.topKustomization(spec) };
+    if ('committedMatches' in fx.planter) ans.committedMatches = fx.planter.committedMatches;
+  } else if (req.op === 'ship') {
+    const yaml = R.manifestText({ name: req.name, runtime: 'loam', port: req.port, health: req.health, portEnv: req.portEnv, secrets: req.secrets });
+    const spec = R.validate(parse(yaml), { repo: req.name });
+    ans = { appYaml: yaml, spec, files: R.render(spec), top: R.topKustomization(spec) };
+  } else if (req.op === 'promote') {
+    const o = req.old;
+    const yaml = R.manifestText({ name: req.name, runtime: 'k8s', domains: [`${req.name}.${R.SECOND_DOMAIN}`], port: o.port, health: o.health, portEnv: o.portEnv, secrets: o.secrets.length ? o.secrets : o.secretsOn });
+    const spec = R.validate(parse(yaml), { repo: req.name });
+    ans = { appYaml: yaml, spec, files: R.render(spec) };
+  } else if (req.op === 'scaffold') {
+    const read = (p) => (p === `${req.app.dir}/package.json` ? req.packageJson : p === `${req.app.dir}/package-lock.json` && req.lockfile ? '{}' : null);
+    const facts = await S.readAppFacts(read, { app: req.app });
+    ans = { facts, files: S.prodScaffold({ ...facts, ...(req.options ?? {}), name: req.name }) };
+  } else throw new Error(`${f}: no op ${req.op}`);
+  put(join(dir, f), `${JSON.stringify({ captured, name: fx.name, note: fx.note, request: req, planter: ans }, null, 1)}\n`);
+}
+process.stdout.write(changed.length ? `${check ? 'would change' : 'changed'}: ${changed.join(', ')}\n` : 'up to date\n');
+if (check && changed.length) process.exit(1);

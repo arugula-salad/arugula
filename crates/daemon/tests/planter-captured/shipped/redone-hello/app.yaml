@@ -1,0 +1,10 @@
+# What redone-hello needs from the platform. Its build renders k8s/platform/ from this on every build of
+# main (arugula-salad/planter, platform-app/render.mjs, says what each key gives).
+name: redone-hello
+health: /health
+# On loam, at https://redone-hello.run.inevitable.fyi: asleep until a request wakes it. Moving it into the
+# cluster is changing this to k8s (with its domain), in a pull request a person merges.
+runtime: loam
+needs:
+  domain: [redone-hello.run.inevitable.fyi]
+  telemetry: logs

@@ -16,7 +16,7 @@ use arugula_control_wire::{
     hosted::{SetupPlan, SetupReport},
     run_logs::{Upload, UploadGiven, Uploaded},
     transcripts::TranscriptPost,
-    work::{Report, Reported, SecretsAsk, SecretsGiven, Work},
+    work::{ArtifactGiven, Report, Reported, SecretsAsk, SecretsGiven, Work},
 };
 
 pub use crate::hosted::{inference::TurnAnswer, previews::PublicPreview, transcripts::Archived};
@@ -168,6 +168,18 @@ pub trait PlatformPort: Send + Sync {
     ) -> BoxFuture<'a, anyhow::Result<SecretsGiven>> {
         let _ = (machine, ask);
         Box::pin(async { Ok(SecretsGiven::Refused { why: "this platform doesn't apply deploys".into() }) })
+    }
+
+    /// A hosted machine's deploy run's artifact (M233: planter's Ship), for
+    /// the hub's `POST /api/hosted/work/artifact`, while the run runs. A
+    /// platform from before M233 has none to give.
+    fn hosted_artifact<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a SecretsAsk,
+    ) -> BoxFuture<'a, anyhow::Result<ArtifactGiven>> {
+        let _ = (machine, ask);
+        Box::pin(async { Ok(ArtifactGiven::Refused { why: "this platform keeps no artifacts".into() }) })
     }
 
     /// What a hosted machine sets up on its box's first boot (M183), for the
@@ -439,6 +451,14 @@ impl PlatformPort for Platform {
         ask: &'a SecretsAsk,
     ) -> BoxFuture<'a, anyhow::Result<SecretsGiven>> {
         Box::pin(crate::deploys::apply::secrets(self, machine, ask))
+    }
+
+    fn hosted_artifact<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a SecretsAsk,
+    ) -> BoxFuture<'a, anyhow::Result<ArtifactGiven>> {
+        Box::pin(crate::deploys::apply::artifact(self, machine, ask))
     }
 
     fn hosted_plan<'a>(

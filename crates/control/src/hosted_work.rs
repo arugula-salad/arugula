@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use arugula_control_wire::{
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{Report, Reported, SecretsAsk, SecretsGiven, Work},
+    work::{ArtifactGiven, Report, Reported, SecretsAsk, SecretsGiven, Work},
 };
 use arugula_platform::{PlatformPort as _, work::HostedMachine};
 use axum::{
@@ -81,6 +81,17 @@ pub async fn secrets(
     Json(a): Json<SecretsAsk>,
 ) -> Result<Json<SecretsGiven>, ApiError> {
     Ok(Json(app.platform.hosted_secrets(&machine(&h.0), &a).await?))
+}
+
+/// `POST /api/hosted/work/artifact` (M233): the artifact a deploy run of
+/// this machine's applies (planter's Ship), while it runs. Only this hosted
+/// machine's signature opens it, for its own run.
+pub async fn artifact(
+    State(app): State<Arc<App>>,
+    h: HostedAuth,
+    Json(a): Json<SecretsAsk>,
+) -> Result<Json<ArtifactGiven>, ApiError> {
+    Ok(Json(app.platform.hosted_artifact(&machine(&h.0), &a).await?))
 }
 
 #[cfg(test)]

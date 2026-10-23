@@ -21,6 +21,12 @@ use crate::{
 /// workspace `dev` (on the hosted beta's list: a, b, x); team u is c's
 /// alone. The platform keeps secrets. Its routes, t's project and u's.
 async fn platform() -> (Arc<TestHub>, Arc<Platform>, String, String, String) {
+    platform_with(None).await
+}
+
+/// [`platform`], with planter's App (M233) at the fake GitHub `planter`
+/// when given.
+async fn platform_with(planter: Option<String>) -> (Arc<TestHub>, Arc<Platform>, String, String, String) {
     let hub = Arc::new(TestHub::default());
     hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
     hub.team("u", &[("c", TeamRole::Owner)]);
@@ -29,6 +35,15 @@ async fn platform() -> (Arc<TestHub>, Arc<Platform>, String, String, String) {
     let mut p = Platform::new(cfg, Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
     p.hosted = crate::hosted::Config { accounts: vec!["a".into(), "b".into(), "x".into()], ..Default::default() };
     p.secret_key = Some(Arc::new(crate::secrets::SecretCipher::new(&"07".repeat(32)).unwrap()));
+    p.deploy_app = planter.map(|api| {
+        crate::forge::GithubApp::new(
+            "4242".into(),
+            "arugula-planter".into(),
+            String::new(),
+            &api,
+            crate::forge::links_tests::throwaway_key(),
+        )
+    });
     let app = Arc::new(p);
     crate::projects::follow(&app).await.unwrap();
     crate::cache::catch_up(&app).await.unwrap();
@@ -368,8 +383,9 @@ async fn it_speaks_one_json_rpc_message_per_post() {
     let n: i64 = app.db.c().query_row("SELECT count(*) FROM issues", params![], |r| r.get(0)).unwrap();
     assert_eq!(n, 0, "nothing was filed");
 
-    // At most 64 KiB.
-    let big = json!({ "jsonrpc": "2.0", "id": 3, "method": "ping", "params": { "pad": "x".repeat(70 * 1024) } });
+    // At most MAX_BODY (3 MiB since M233: a ship's source).
+    let pad = "x".repeat(crate::agent_mcp::MAX_BODY + 1024);
+    let big = json!({ "jsonrpc": "2.0", "id": 3, "method": "ping", "params": { "pad": pad } });
     assert_eq!(bearer(&base, &token, "POST", "/api/mcp", Some(big)).await.status().as_u16(), 413);
 
     // A name that's no tool: answered, not kept.
@@ -585,4 +601,85 @@ async fn a_token_opens_no_other_route() {
         }
     }
     assert!(opened.is_empty(), "a bearer token opened: {opened:#?}");
+}
+
+/// planter's ship API's shape on `plan_deploy` (M233): `files`, a gzipped
+/// tar, to a planter-ship environment. The tar is kept as the project's
+/// artifact by its digest, which the deploy's source names; the deploy waits
+/// for an owner, as every one does. Refused: files to another driver's
+/// environment, not gzipped, too big, with a commit too, and from a token
+/// without deploys.plan (which keeps nothing).
+#[tokio::test]
+async fn an_agent_ships_with_files_and_the_platform_keeps_its_source() {
+    use crate::forge::links_tests::{Shared, fake_github, granted};
+    use base64::Engine as _;
+    let gh: Shared = Arc::default();
+    {
+        let mut g = gh.lock().unwrap();
+        for (repo, id) in [("arugula-salad/shipped", 2001), ("arugula-salad/planter-apps", 2002)] {
+            g.installed.insert(repo.into(), (31, 500, "arugula-salad".into()));
+            g.repos.insert(repo.into(), (id, false));
+            let mut grants = granted();
+            grants["contents"] = "write".into();
+            g.grants.insert(repo.into(), grants);
+        }
+    }
+    let (_, app, base, t, _) = platform_with(Some(fake_github(gh).await)).await;
+    crate::drivers::planter::TEST_PROJECTS.lock().unwrap().push(t.clone());
+    production(&base, &t).await;
+    let (st, env) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/projects/{t}/environments"),
+        Some(json!({ "name": "hello", "driver": "planter-ship", "settings": { "app": "hello" } })),
+    )
+    .await;
+    assert_eq!(st, 200, "{env}");
+    let (_, minted) = mint(&base, "a", "redone", &[&t], &["deploys.plan"]).await;
+    let token = minted["token"].as_str().unwrap().to_owned();
+    let tar = vec![0x1f, 0x8b, 8, 0, 9, 9, 9];
+    let files = base64::engine::general_purpose::STANDARD.encode(&tar);
+    let digest = format!("sha256:{}", hex::encode(<sha2::Sha256 as sha2::Digest>::digest(&tar)));
+
+    let r = tool(&base, &token, "plan_deploy", json!({ "project": t, "environment": "hello", "files": &files })).await;
+    let d = &ok(&r)["deploy"];
+    assert_eq!(d["state"], "pending", "{d}");
+    assert_eq!(d["source"], json!({ "kind": "artifact", "ref": digest, "where": "platform" }));
+    assert!(d["plan_text"].as_str().unwrap().contains("arugula-salad/shipped's hello/"), "{d}");
+    assert_eq!(app.db.deploy_artifact(&t, &digest).unwrap(), Some(tar.clone()));
+    assert!(r["content"][0]["text"].as_str().unwrap().contains("you can't"), "{r}");
+
+    for (args, says) in [
+        (json!({ "project": t, "environment": "production", "files": &files }), "planter-ship environment"),
+        (json!({ "project": t, "environment": "hello", "files": "aGVsbG8=" }), "isn't gzipped"),
+        (
+            json!({ "project": t, "environment": "hello", "files": &files, "commit": "a".repeat(40), "repo": "x/y" }),
+            "leave out commit",
+        ),
+        (json!({ "project": t, "environment": "hello", "files": "!!" }), "base64"),
+    ] {
+        let why = refused(&tool(&base, &token, "plan_deploy", args).await);
+        assert!(why.contains(says), "{says}: {why}");
+    }
+    let big = base64::engine::general_purpose::STANDARD
+        .encode([&[0x1f, 0x8b][..], &vec![0u8; arugula_e2e::deploy::planter::MAX_TARBALL]].concat());
+    let why = refused(
+        &tool(&base, &token, "plan_deploy", json!({ "project": t, "environment": "hello", "files": big })).await,
+    );
+    assert!(why.contains("at most"), "{why}");
+
+    // Without deploys.plan: refused, and nothing kept.
+    let (_, minted) = mint(&base, "a", "reader", &[&t], &["threads.read"]).await;
+    let other = base64::engine::general_purpose::STANDARD.encode([0x1f, 0x8b, 1]);
+    let r = tool(
+        &base,
+        minted["token"].as_str().unwrap(),
+        "plan_deploy",
+        json!({ "project": t, "environment": "hello", "files": other }),
+    )
+    .await;
+    refused(&r);
+    let n: i64 = app.db.c().query_row("SELECT count(*) FROM deploy_artifacts", params![], |r| r.get(0)).unwrap();
+    assert_eq!(n, 1, "only the one shipped");
 }

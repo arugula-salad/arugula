@@ -165,6 +165,10 @@ pub struct Platform {
     /// The GitHub App (M40, here since M161), when this control has its id
     /// and key: its webhook, `may()` and installation tokens.
     pub github: Option<forge::GithubApp>,
+    /// planter's GitHub App, the deploy App (M233, aru-108), when this
+    /// platform has its id and key: it mints the tokens planter's drivers'
+    /// runs get, and nothing else.
+    pub deploy_app: Option<forge::GithubApp>,
     /// Chat's live streams and recent events (M122, here since M138).
     pub chat: chat::Hub,
     /// The hub's answers chat asks for, following its change feed (M138).
@@ -256,6 +260,7 @@ impl Platform {
             secret_key: None,
             wakes: Default::default(),
             github: None,
+            deploy_app: None,
             chat,
             cache: Default::default(),
             feed: Default::default(),

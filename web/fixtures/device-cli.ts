@@ -42,6 +42,12 @@
 //   environment NAME DRIVER SECRETS [TEAM]
 //                          as an owner, an environment with a driver and its
 //                          secrets' names (comma-separated, or -): {environment, project}
+//   environment-with NAME DRIVER SETTINGS_JSON [TEAM]
+//                          as an owner, an environment with a driver and its
+//                          settings, no secrets (M233): {environment, project}
+//   agent-token NAME POWERS [TEAM]
+//                          mint an agent grant token (M230) over the project,
+//                          POWERS comma-separated: {token, id, project}
 //   environment-secret ENV NAME VALUE
 //                          as an owner, set one of its secrets: {set}
 //   deploy-plan ENV REF WHERE [TEAM]
@@ -174,6 +180,10 @@ async function main() {
     }
     case "environment":
       return out(await d.environment(rest[0], rest[1], rest[2] && rest[2] !== "-" ? rest[2].split(",") : [], rest[3]));
+    case "environment-with":
+      return out(await d.environmentWith(rest[0], rest[1], JSON.parse(rest[2]), rest[3]));
+    case "agent-token":
+      return out(await d.agentToken(rest[0], rest[1].split(","), rest[2]));
     case "environment-secret":
       return out(await d.environmentSecret(rest[0], rest[1], rest[2]));
     case "deploy-plan":

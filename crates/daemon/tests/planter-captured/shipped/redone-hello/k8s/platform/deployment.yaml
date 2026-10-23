@@ -1,0 +1,43 @@
+# Generated from app.yaml by arugula-salad/planter's platform-app (the app, on loam). Don't edit: the next
+# build of main renders it again. Change app.yaml, or patch it from k8s/kustomization.yaml.
+# redone-hello runs on loam, at https://redone-hello.run.inevitable.fyi, not here: this Deployment has no replicas. It is the
+# record home-cloud's loam provisioner (apps/apps-platform) reads: the pinned image, the port, the
+# health path and the secrets, from which it makes the app's sandbox in loam project apps and runs
+# the image's program in it as a service, replacing the sandbox whenever the image changes.
+# Promoting the app to the cluster is changing app.yaml's runtime to k8s, in a pull request a person merges.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redone-hello
+  labels:
+    app.kubernetes.io/name: redone-hello
+    platform.arugula.io/runtime: loam
+  annotations:
+    platform.arugula.io/loam-port: "8080"
+    platform.arugula.io/loam-port-env: PORT
+    platform.arugula.io/loam-health: /health
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redone-hello
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redone-hello
+    spec:
+      imagePullSecrets:
+        - name: ghcr
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redone-hello
+          image: ghcr.io/arugula-salad/redone-hello
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]

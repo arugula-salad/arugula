@@ -438,6 +438,19 @@ pub async fn create_environment(
             created_at: 0,
             updated_at: 0,
         };
+        // planter's (M233): only an account hosted workspaces allow, and a
+        // name that's free: not reserved, nobody's repository, and not
+        // another project's (claimed now, atomically).
+        if arugula_e2e::deploy::planter::is_planter(d.name()) {
+            crate::drivers::planter::account_allowed(&app, &s.account)
+                .map_err(|why| err(StatusCode::FORBIDDEN, &why))?;
+            if let Some(why) = crate::drivers::planter::ship_name_taken(&app, &would).await {
+                return Err(err(StatusCode::CONFLICT, &why));
+            }
+        }
+        if let Some(why) = d.claims(&app, &would) {
+            return Err(err(StatusCode::CONFLICT, &why));
+        }
         if let Some(m) = d.mints(&would).into_iter().find(|m| b.secret_names.iter().any(|n| n == m.name())) {
             return Err(err(
                 StatusCode::BAD_REQUEST,
@@ -571,6 +584,17 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
     }
     // A driver some projects only may use (M221: Arugula's release).
     driver.allowed_in(&p.id).map_err(|why| err(StatusCode::FORBIDDEN, &why))?;
+    // planter's (M233): an account hosted workspaces allow; a name still
+    // the project's, and nobody's repository.
+    if arugula_e2e::deploy::planter::is_planter(driver.name()) {
+        crate::drivers::planter::account_allowed(app, account).map_err(|why| err(StatusCode::FORBIDDEN, &why))?;
+    }
+    if let Some(why) = driver.claims(app, &env) {
+        return Err(err(StatusCode::CONFLICT, &why));
+    }
+    if let Some(why) = crate::drivers::planter::ship_name_taken(app, &env).await {
+        return Err(err(StatusCode::CONFLICT, &why));
+    }
     // A token its run mints that writes (M222's list, M220's ledger, M221's
     // release): the App must be able to, or the deploy can't run once it's
     // approved.

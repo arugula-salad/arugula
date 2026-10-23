@@ -48,6 +48,14 @@
 //!
 //! It never prints a token. What it prints goes through the box's redactor
 //! into the run's pane anyway.
+//!
+//! **planter's Go live (M233)** is this same apply, as another [`Flavor`]
+//! (`work_planter.rs`): its own driver name and trailer, planter's App's
+//! tokens, and a new pointer that asks for the custom domains its approved
+//! plan lists (`platform.arugula.io/domains`), as planter's Go live did:
+//! the app's `app.yaml` must route exactly those, sorted by planter's own
+//! `validate()` (the vendored renderer, run only when there's a host to
+//! sort). apps-platform's own new pointers ask for none, as before.
 
 use std::{
     path::{Path, PathBuf},
@@ -70,7 +78,34 @@ pub const READ_TOKEN: &str = "SOURCE_TOKEN";
 /// reverts only.
 pub const TRAILER: &str = "Arugula-Driver: apps-platform";
 /// Who its commits are by.
-const AUTHOR: (&str, &str) = ("Arugula deploy", "deploy@arugula.invalid");
+pub const AUTHOR: (&str, &str) = ("Arugula deploy", "deploy@arugula.invalid");
+
+/// Which driver this apply is (M233): apps-platform's own, or planter's Go
+/// live, which differ only in these.
+#[derive(Debug, Clone, Copy)]
+pub struct Flavor {
+    /// As environments name it, and as its output says it.
+    pub driver: &'static str,
+    /// The trailer every commit of it carries: what a roll back reverts.
+    pub trailer: &'static str,
+    /// Why it can't deploy a source (`kind`, `ref`, `where`): `None` when it can.
+    pub refuses: fn(&str, &str, &str) -> Option<String>,
+    /// The app a source's `where` names, if it's one.
+    pub app: fn(&str) -> Option<&str>,
+}
+
+/// apps-platform's own (M222).
+pub const APPS_PLATFORM: Flavor =
+    Flavor { driver: ap::DRIVER, trailer: TRAILER, refuses: ap::refuses, app: ap::app_name };
+
+static LABEL: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+
+/// What its output says it is, for the whole process (`arugulad
+/// _apps-platform` or `_planter` runs one driver): apps-platform's unless
+/// set.
+pub fn set_label(driver: &'static str) {
+    let _ = LABEL.set(driver);
+}
 
 /// Where it works and how long it waits.
 #[derive(Debug, Clone)]
@@ -253,9 +288,27 @@ fn refused(why: impl Into<String>) -> Failed {
 
 /// A new pointer for `name`, pinned at `sha` of `place`: what planter
 /// writes, with the commit for its branch.
+#[cfg(test)]
 pub fn render(name: &str, place: &str, sha: &str) -> String {
+    pointer_for(&APPS_PLATFORM, name, place, sha, &[])
+}
+
+/// A new pointer for `name`, pinned at `sha` of `place`, written by `f`'s
+/// driver: planter's Go live's (`prod.mjs`'s `pointer()`), with the commit
+/// for its branch, and the custom domains the app asks for, as planter
+/// wrote them.
+pub fn pointer_for(f: &Flavor, name: &str, place: &str, sha: &str, domains: &[String]) -> String {
+    let annotations = if domains.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "  annotations:\n    # Custom domains for home-cloud to grant {name}, by a pull request it opens once each \
+             resolves to the cluster.\n    platform.arugula.io/domains: {}\n",
+            domains.join(" ")
+        )
+    };
     format!(
-        "# {name} in prod, at https://{name}.{APPS_DOMAIN}. Written by Arugula's apps-platform driver; Flux applies\n\
+        "# {name} in prod, at https://{name}.{APPS_DOMAIN}. Written by Arugula's {} driver; Flux applies\n\
          # github.com/{place}'s k8s/ at the commit below as planter-apps-deployer, into namespace planter-apps.\n\
          # Deleting this file takes the app out of prod, and prunes what it made (its volume's data too).\n\
          apiVersion: source.toolkit.fluxcd.io/v1\n\
@@ -277,6 +330,7 @@ pub fn render(name: &str, place: &str, sha: &str) -> String {
          metadata:\n\
          \x20 name: {name}\n\
          \x20 namespace: planter-apps-system\n\
+         {annotations}\
          spec:\n\
          \x20 interval: 10m\n\
          \x20 retryInterval: 2m\n\
@@ -288,7 +342,8 @@ pub fn render(name: &str, place: &str, sha: &str) -> String {
          \x20 targetNamespace: planter-apps\n\
          \x20 sourceRef:\n\
          \x20   kind: GitRepository\n\
-         \x20   name: {name}\n"
+         \x20   name: {name}\n",
+        f.driver
     )
 }
 
@@ -398,10 +453,19 @@ pub struct AppYaml {
     /// The revisions its answer may report: the commit, and the image its
     /// `k8s/kustomization.yaml` pins there (filled in by [`read_app`]).
     pub revisions: Vec<String>,
+    /// The hosts its `needs.domain` lists (M233), as written: `Err` when
+    /// it's there in a form this driver doesn't read.
+    pub domains: Result<Vec<String>, String>,
 }
 
 pub fn app_yaml(text: &str) -> AppYaml {
-    let mut a = AppYaml { name: None, health: "/health".into(), runtime: "k8s".into(), revisions: vec![] };
+    let mut a = AppYaml {
+        name: None,
+        health: "/health".into(),
+        runtime: "k8s".into(),
+        revisions: vec![],
+        domains: needs_domain(text),
+    };
     for line in text.lines() {
         if line.starts_with([' ', '\t', '#']) {
             continue;
@@ -416,6 +480,72 @@ pub fn app_yaml(text: &str) -> AppYaml {
         }
     }
     a
+}
+
+/// `needs.domain` of an `app.yaml`, as planter's files write it: a flow
+/// list (`domain: [a, b]`) or a block one (`- a` lines under it), under a
+/// top-level `needs:`. Absent: none (the app's own host). Anything else is
+/// an `Err`, which stops a new pointer: its domains couldn't be asked for.
+pub fn needs_domain(text: &str) -> Result<Vec<String>, String> {
+    let bare = |l: &str| l.split(" #").next().unwrap_or_default().trim_end().to_owned();
+    let lines: Vec<String> = text.lines().map(bare).collect();
+    let Some(needs) = lines.iter().position(|l| l == "needs:") else { return Ok(vec![]) };
+    let mut i = needs + 1;
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    let mut found = None;
+    while i < lines.len() && (lines[i].is_empty() || indent(&lines[i]) > 0) {
+        let l = &lines[i];
+        if l.trim_start().starts_with("domain:") && found.is_none() {
+            found = Some(i);
+        }
+        i += 1;
+    }
+    let Some(at) = found else { return Ok(vec![]) };
+    let hosts = |items: Vec<&str>| -> Result<Vec<String>, String> {
+        let h: Vec<String> =
+            items.iter().map(|s| s.trim().trim_matches(|c| c == '"' || c == '\'').to_owned()).collect();
+        if h.iter().all(|h| !h.is_empty() && h.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')) {
+            Ok(h)
+        } else {
+            Err("its app.yaml's needs.domain names something that isn't a host".into())
+        }
+    };
+    let value = lines[at].trim_start()["domain:".len()..].trim().to_owned();
+    if let Some(list) = value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return hosts(if list.trim().is_empty() { vec![] } else { list.split(',').collect() });
+    }
+    if value.is_empty() {
+        let own = indent(&lines[at]);
+        let items: Vec<&str> = lines[at + 1..]
+            .iter()
+            .take_while(|l| !l.is_empty() && indent(l) > own && l.trim_start().starts_with("- "))
+            .map(|l| &l.trim_start()[2..])
+            .collect();
+        if !items.is_empty() {
+            return hosts(items);
+        }
+    }
+    Err("its app.yaml's needs.domain isn't a list this driver reads ([a, b], or - lines)".into())
+}
+
+/// The custom domains a new pointer for `name` asks for: those of `domains`
+/// that aren't its own two hosts, as planter's `validate()` sorts them (the
+/// vendored renderer, run only when there's one to sort); refused when
+/// planter's would refuse them (another's zone, say).
+fn custom_domains(cfg: &Config, name: &str, domains: &Result<Vec<String>, String>) -> Result<Vec<String>, Failed> {
+    let domains = domains.as_ref().map_err(|why| refused(why.clone()))?;
+    let own = [format!("{name}.{APPS_DOMAIN}"), format!("{name}.{}", arugula_e2e::deploy::planter::SECOND_DOMAIN)];
+    if domains.iter().all(|d| own.contains(d)) {
+        return Ok(vec![]);
+    }
+    let answer = super::planter::renderer(
+        &cfg.work,
+        &cfg.path,
+        &serde_json::json!({ "op": "hosts", "name": name, "domains": domains }),
+    )
+    .map_err(|why| refused(format!("its app.yaml's domains: {why}")))?;
+    let custom = answer["custom"].as_array().cloned().unwrap_or_default();
+    Ok(custom.iter().filter_map(|h| h.as_str().map(str::to_owned)).collect())
 }
 
 /// The commits a `kustomization.yaml` pins images at: each `newTag:
@@ -581,17 +711,29 @@ fn size_of(dir: &Path) -> u64 {
 
 // ---- the apply ----
 
-/// Say a step on the run's output.
-fn say(s: &str) {
-    println!("apps-platform: {}", crate::work::printable(s));
+/// Say a step on the run's output, as this process's driver.
+pub fn say(s: &str) {
+    println!("{}: {}", LABEL.get().copied().unwrap_or(ap::DRIVER), crate::work::printable(s));
 }
 
-/// Apply `d`: clone, pin, commit, push. What was committed, or why not.
-pub async fn commit(cfg: &Config, d: &Deploy, t: &Tokens) -> Result<(Applied, AppYaml), Failed> {
-    if let Some(why) = ap::refuses(&d.kind, &d.reference, &d.place) {
+/// Apply `d` as `f`'s driver (apps-platform's, or M233's planter Go
+/// live): clone, pin, commit, push. What was committed, or why not.
+///
+/// `asked`: the custom domains a new pointer asks for, as the approved
+/// plan lists them (M233's Go live); the app's `app.yaml` must route
+/// exactly these beyond its own two hosts. `None` (apps-platform's): a new
+/// pointer asks for none.
+pub async fn commit_as(
+    cfg: &Config,
+    f: &Flavor,
+    d: &Deploy,
+    t: &Tokens,
+    asked: Option<&[String]>,
+) -> Result<(Applied, AppYaml), Failed> {
+    if let Some(why) = (f.refuses)(&d.kind, &d.reference, &d.place) {
         return Err(refused(why));
     }
-    let name = ap::app_name(&d.place).unwrap_or_default().to_owned();
+    let name = (f.app)(&d.place).unwrap_or_default().to_owned();
     let sha = d.reference.as_str();
     let path = ap::pointer_path(&name);
     let git = Git::new(cfg, LIST_REPO, &d.place, t);
@@ -630,21 +772,44 @@ pub async fn commit(cfg: &Config, d: &Deploy, t: &Tokens) -> Result<(Applied, Ap
         if let Some(why) = collides(&list, &name, &path) {
             return Err(refused(why));
         }
-        let (new, kpath) = match &now {
-            Some(text) => pin(text, &name, &d.place, sha).map_err(refused)?,
-            None => (render(&name, &d.place, sha), "./k8s".to_owned()),
+        let kpath = match &now {
+            Some(text) => pin(text, &name, &d.place, sha).map_err(refused)?.1,
+            None => "./k8s".to_owned(),
         };
         if fetched.is_none() {
             fetched = Some(read_app(cfg, &git, &source, d, &name, &kpath).await?);
         }
         let app = fetched.clone().unwrap_or_else(|| app_yaml(""));
+        let new = match &now {
+            Some(text) => pin(text, &name, &d.place, sha).map_err(refused)?.0,
+            // A new pointer asks for the custom domains its app.yaml routes,
+            // as planter's Go live's did.
+            None => match asked {
+                Some(asked) => {
+                    let routed = custom_domains(cfg, &name, &app.domains)?;
+                    let (mut a, mut r) = (asked.to_vec(), routed.clone());
+                    a.sort();
+                    r.sort();
+                    if a != r {
+                        return Err(refused(format!(
+                            "its app.yaml asks for the custom domains [{}], and the approved plan for [{}]: plan \
+                             again with those",
+                            routed.join(", "),
+                            asked.join(", ")
+                        )));
+                    }
+                    pointer_for(f, &name, &d.place, sha, asked)
+                }
+                None => pointer_for(f, &name, &d.place, sha, &[]),
+            },
+        };
         if now.as_deref() == Some(new.as_str()) {
             say(&format!("{path} pins {sha} already: nothing to commit"));
             return Ok((Applied::Unchanged, app));
         }
         let short = &sha[..12];
         let reverts = match &now {
-            Some(_) => revertible(&git, &list, &path, &new).await,
+            Some(_) => revertible(&git, &list, &path, &new, f.trailer).await,
             None => None,
         };
         let applied = match reverts {
@@ -658,8 +823,8 @@ pub async fn commit(cfg: &Config, d: &Deploy, t: &Tokens) -> Result<(Applied, Ap
                 let msg = format!(
                     "Roll back {name} to {short} ({})\n\nThis reverts commit {of}, the deploy before it: \
                      {path} pins https://github.com/{} at {sha} again, for the environment {}.\n\n\
-                     Arugula-Deploy: {}\n{TRAILER}\n",
-                    d.id, d.place, d.environment, d.id
+                     Arugula-Deploy: {}\n{}\n",
+                    d.id, d.place, d.environment, d.id, f.trailer
                 );
                 git.run(&list, &["commit", "--quiet", "-m", &msg]).await.map_err(refused)?;
                 Applied::Reverted { commit: String::new(), of }
@@ -673,8 +838,8 @@ pub async fn commit(cfg: &Config, d: &Deploy, t: &Tokens) -> Result<(Applied, Ap
                 git.run(&list, &["add", "--", &path]).await.map_err(refused)?;
                 let msg = format!(
                     "Deploy {name} at {short} ({})\n\n{path} pins https://github.com/{} at {sha}, for the \
-                     environment {}. Flux applies it.\n\nArugula-Deploy: {}\n{TRAILER}\n",
-                    d.id, d.place, d.environment, d.id
+                     environment {}. Flux applies it.\n\nArugula-Deploy: {}\n{}\n",
+                    d.id, d.place, d.environment, d.id, f.trailer
                 );
                 git.run(&list, &["commit", "--quiet", "-m", &msg]).await.map_err(refused)?;
                 Applied::Pinned(String::new())
@@ -711,14 +876,14 @@ pub async fn commit(cfg: &Config, d: &Deploy, t: &Tokens) -> Result<(Applied, Ap
 /// The commit a roll back to `new` reverts, if there's one: the last
 /// commit to `path` is this driver's, changed only `path`, and its parent's
 /// `path` is `new` exactly.
-async fn revertible(git: &Git, list: &Path, path: &str, new: &str) -> Option<String> {
+async fn revertible(git: &Git, list: &Path, path: &str, new: &str, trailer: &str) -> Option<String> {
     let c = git.run(list, &["log", "-1", "--format=%H", "--", path]).await.ok()?.trim().to_owned();
     // Its parents, unsimplified: one.
     let parents = git.run(list, &["rev-list", "--parents", "-n", "1", &c]).await.ok()?;
     let [_, parent] = parents.split_whitespace().collect::<Vec<_>>()[..] else { return None };
     let parent = parent.to_owned();
     let body = git.run(list, &["log", "-1", "--format=%B", &c]).await.ok()?;
-    if !body.lines().any(|l| l.trim() == TRAILER) {
+    if !body.lines().any(|l| l.trim() == trailer) {
         return None;
     }
     let changed = git.run(list, &["diff-tree", "--no-commit-id", "--name-only", "-r", &c]).await.ok()?;
@@ -914,11 +1079,22 @@ pub async fn ready(cfg: &Config, url: &str, revisions: &[String]) -> Result<(), 
 /// The whole apply: commit, revoke the tokens (nothing after needs them),
 /// then wait until ready.
 pub async fn apply(cfg: &Config, d: &Deploy, t: &Tokens) -> Result<Applied, Failed> {
-    let committed = commit(cfg, d, t).await;
+    apply_as(cfg, &APPS_PLATFORM, d, t, None).await
+}
+
+/// [`apply`] as `f`'s driver (M233: planter's Go live too).
+pub async fn apply_as(
+    cfg: &Config,
+    f: &Flavor,
+    d: &Deploy,
+    t: &Tokens,
+    asked: Option<&[String]>,
+) -> Result<Applied, Failed> {
+    let committed = commit_as(cfg, f, d, t, asked).await;
     revoke(cfg, "list's write", t.write.as_deref()).await;
     revoke(cfg, "app repository's read", t.read.as_deref()).await;
     let (applied, app) = committed?;
-    let name = ap::app_name(&d.place).unwrap_or_default();
+    let name = (f.app)(&d.place).unwrap_or_default();
     let base = cfg.health_base.clone().unwrap_or_else(|| format!("https://{name}.{APPS_DOMAIN}"));
     let url = format!("{}{}", base.trim_end_matches('/'), app.health);
     ready(cfg, &url, &app.revisions).await.map_err(|why| Failed { pushed: applied != Applied::Unchanged, why })?;

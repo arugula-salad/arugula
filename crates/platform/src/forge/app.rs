@@ -112,6 +112,56 @@ enum Scope {
     /// A deploy's run that follows a workflow (M221's arugula-release
     /// driver): one repository's Actions and contents, read-only.
     DeployFollow,
+    /// A deploy's run that opens a pull request (M233's planter-promote):
+    /// one repository's contents and pull requests, written.
+    DeployPull,
+    /// A deploy's run that opens a pull request adding a workflow (M233's
+    /// planter-prod): one repository's contents, pull requests and
+    /// workflows, written.
+    DeployScaffold,
+}
+
+/// What a deploy's run's token may do on its one repository (M219–M233).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeployScope {
+    /// Its contents, read.
+    Read,
+    /// Its contents, written.
+    Contents,
+    /// Its Actions runs and contents, read.
+    Follow,
+    /// Its contents and pull requests, written.
+    Pulls,
+    /// Its contents, pull requests and workflows, written.
+    Scaffold,
+}
+
+impl DeployScope {
+    fn scope(self) -> Scope {
+        match self {
+            DeployScope::Read => Scope::Deploy,
+            DeployScope::Contents => Scope::DeployWrite,
+            DeployScope::Follow => Scope::DeployFollow,
+            DeployScope::Pulls => Scope::DeployPull,
+            DeployScope::Scaffold => Scope::DeployScaffold,
+        }
+    }
+
+    /// The permissions it asks GitHub for.
+    pub fn permissions(self) -> Value {
+        self.scope().permissions()
+    }
+
+    /// Each permission it writes, by GitHub's name: what an installation
+    /// must grant for it to be minted.
+    pub fn writes(self) -> &'static [&'static str] {
+        match self {
+            DeployScope::Read | DeployScope::Follow => &[],
+            DeployScope::Contents => &["contents"],
+            DeployScope::Pulls => &["contents", "pull_requests"],
+            DeployScope::Scaffold => &["contents", "pull_requests", "workflows"],
+        }
+    }
 }
 
 impl Scope {
@@ -121,6 +171,10 @@ impl Scope {
             Scope::Deploy => json!({ "metadata": "read", "contents": "read" }),
             Scope::DeployWrite => json!({ "metadata": "read", "contents": "write" }),
             Scope::DeployFollow => json!({ "metadata": "read", "contents": "read", "actions": "read" }),
+            Scope::DeployPull => json!({ "metadata": "read", "contents": "write", "pull_requests": "write" }),
+            Scope::DeployScaffold => {
+                json!({ "metadata": "read", "contents": "write", "pull_requests": "write", "workflows": "write" })
+            }
             Scope::Send(Writes::Issues) => json!({ "metadata": "read", "issues": "write" }),
             Scope::Send(Writes::PullRequests) => json!({ "metadata": "read", "pull_requests": "write" }),
             Scope::Send(Writes::Both) => json!({ "metadata": "read", "issues": "write", "pull_requests": "write" }),
@@ -134,6 +188,8 @@ impl Scope {
             Scope::Deploy => "deploy",
             Scope::DeployWrite => "deploy:contents",
             Scope::DeployFollow => "deploy:actions",
+            Scope::DeployPull => "deploy:contents+pull_requests",
+            Scope::DeployScaffold => "deploy:contents+pull_requests+workflows",
             Scope::Send(Writes::Issues) => "send:issues",
             Scope::Send(Writes::PullRequests) => "send:pull_requests",
             Scope::Send(Writes::Both) => "send:issues+pull_requests",
@@ -576,6 +632,20 @@ impl GithubApp {
         repo: Repo<'_>,
     ) -> anyhow::Result<(String, String)> {
         let (secret, expires_at, _) = self.mint(c, install, repo, Scope::DeployFollow).await?;
+        Ok((secret, expires_at))
+    }
+
+    /// A token for one deploy's run with `scope` on one repository (M233's
+    /// planter drivers, through the deploy App): minted now (and logged),
+    /// never cached, revoked by its holder when the run ends.
+    pub async fn deploy_scoped(
+        &self,
+        c: &Caller<'_>,
+        install: u64,
+        repo: Repo<'_>,
+        scope: DeployScope,
+    ) -> anyhow::Result<(String, String)> {
+        let (secret, expires_at, _) = self.mint(c, install, repo, scope.scope()).await?;
         Ok((secret, expires_at))
     }
 

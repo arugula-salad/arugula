@@ -34,7 +34,7 @@
 
 use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
-use arugula_control_wire::work::{DeployWork, Secret, SecretsAsk, WORK_SECRETS, WorkItem};
+use arugula_control_wire::work::{DeployWork, Secret, SecretsAsk, WORK_ARTIFACT, WORK_SECRETS, WorkItem};
 use arugula_e2e::{
     deploy::{PasskeyParts, check_apply},
     now_ms,
@@ -237,6 +237,14 @@ pub fn driver_argv(driver: &str) -> Result<Vec<String>, Refused> {
             argv.extend(arugula_release_test_flags());
             Ok(argv)
         }
+        // planter's (M233): one command, the driver on its command line.
+        d if arugula_e2e::deploy::planter::is_planter(d) => {
+            let exe = std::env::current_exe()
+                .map_err(|e| Refused("driver", format!("this box can't find its own daemon: {e}")))?;
+            let mut argv = vec![exe.to_string_lossy().into_owned(), "_planter".into(), "--driver".into(), d.into()];
+            argv.extend(planter_test_flags());
+            Ok(argv)
+        }
         other => Err(Refused("driver", format!("this box has no {} driver yet", printable(other)))),
     }
 }
@@ -245,10 +253,11 @@ pub fn driver_argv(driver: &str) -> Result<Vec<String>, Refused> {
 /// that reads them, the operation this machine checked, on its command
 /// line (which the driver's shell builds from this daemon's words, and
 /// nothing it reads can change), not only in its environment.
-pub fn driver_argv_for(d: &DeployWork) -> Result<Vec<String>, Refused> {
+pub fn driver_argv_for(d: &DeployWork, run: &str) -> Result<Vec<String>, Refused> {
     let mut argv = driver_argv(&d.driver)?;
     let release = d.driver == arugula_e2e::drivers::arugula_release::DRIVER;
-    if d.driver == arugula_e2e::deploy::apps_platform::DRIVER || release {
+    let planter = arugula_e2e::deploy::planter::is_planter(&d.driver);
+    if d.driver == arugula_e2e::deploy::apps_platform::DRIVER || release || planter {
         let o = &d.operation;
         for (flag, v) in [
             ("--deploy", &d.deploy),
@@ -264,6 +273,17 @@ pub fn driver_argv_for(d: &DeployWork) -> Result<Vec<String>, Refused> {
         // Arugula's release never rolls back, and refuses the flag.
         if let Some(r) = &d.roll_back {
             argv.extend(["--roll-back".to_owned(), r.deploy.clone()]);
+        }
+    }
+    // planter's (M233): its project (whose a shipped app is), every
+    // setting its plan names, and Ship's artifact, as this daemon fetched it.
+    if planter {
+        argv.extend(["--project".to_owned(), d.operation.project.clone()]);
+        for (k, v) in &d.settings {
+            argv.extend(["--setting".to_owned(), format!("{k}={v}")]);
+        }
+        if super::planter::ships(&d.driver, &d.operation.source_where) {
+            argv.extend(["--artifact".to_owned(), super::planter::artifact_path(run).to_string_lossy().into_owned()]);
         }
     }
     // Its settings (M221), which its plan names: the bump and the lane.
@@ -320,6 +340,34 @@ fn apps_platform_test_flags() -> Vec<String> {
     }
     if !flags.is_empty() {
         flags.extend(["--settle-ms".into(), "0".into(), "--poll-ms".into(), "200".into()]);
+    }
+    flags
+}
+
+/// Where planter's drivers push, ask and look, on a box that runs the fake
+/// driver too (tests and testnet only): a directory of bare repositories
+/// for GitHub (`ARUGULA_HOSTED_PLANTER_GIT`), a fake GitHub API
+/// (`ARUGULA_HOSTED_PLANTER_API`), a fake app (`ARUGULA_HOSTED_PLANTER_HEALTH`),
+/// and short waits.
+fn planter_test_flags() -> Vec<String> {
+    if !fake_on() {
+        return vec![];
+    }
+    let mut flags = vec![];
+    for (var, flag) in [
+        ("ARUGULA_HOSTED_PLANTER_GIT", "--git-base"),
+        ("ARUGULA_HOSTED_PLANTER_API", "--api-base"),
+        ("ARUGULA_HOSTED_PLANTER_HEALTH", "--health-base"),
+    ] {
+        if let Some(v) = std::env::var(var).ok().filter(|v| !v.is_empty()) {
+            flags.extend([flag.to_owned(), v]);
+        }
+    }
+    if !flags.is_empty() {
+        flags.extend(
+            ["--settle-ms", "0", "--poll-ms", "200", "--timeout-ms", "30000", "--pin-timeout-ms", "60000"]
+                .map(str::to_owned),
+        );
     }
     flags
 }
@@ -1011,8 +1059,16 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
             return Err(format!("deploy_applied: {} was applied on this machine already", d.deploy));
         }
         started(&app, &l.run).await?;
-        let argv = driver_argv_for(&d).map_err(|r| r.1)?;
+        let argv = driver_argv_for(&d, &l.run).map_err(|r| r.1)?;
         let given = secrets(&app, &l.run, &d.secrets).await?;
+        // planter's Ship (M233): the source it ships, where its driver reads
+        // it; not a secret (the driver checks its digest).
+        if super::planter::ships(&d.driver, &d.operation.source_where)
+            && let Err(e) = fetch_artifact(&app, &l.run).await
+        {
+            wipe(given);
+            return Err(e);
+        }
         revocable = given.iter().filter_map(|s| s.revoke.clone().map(|u| (u, s.value.clone()))).collect();
         let pipe = match ResultPipe::new() {
             Ok(p) => p,
@@ -1117,7 +1173,53 @@ pub async fn apply(app: Arc<App>, mut l: Ledger, item: WorkItem, as_: Option<Run
     let _ = follower.await;
     crate::run_logs::finish(&app, &l.run, pane, epoch, as_.as_ref()).await;
     remove_home(as_.as_ref(), &work_dir(&l.run, as_.as_ref(), &dir)).await;
+    let _ = std::fs::remove_file(super::planter::artifact_path(&l.run));
     finish(end, result).await;
+}
+
+/// The most of control's answer with a run's artifact that's read: planter's
+/// largest ship, base64, and the rest.
+const MAX_ARTIFACT_ANSWER: usize = arugula_e2e::deploy::planter::MAX_TARBALL * 4 / 3 + 64 * 1024;
+
+/// Fetch the artifact the run applies (M233: planter's Ship) from control,
+/// and leave it where its driver reads it, readable by the run user
+/// (`super::planter::artifact_path`). Its digest is checked here, and again
+/// by the driver against the approved operation.
+async fn fetch_artifact(app: &App, run: &str) -> Result<(), String> {
+    use base64::Engine as _;
+    let ask = SecretsAsk { run: run.into() };
+    let bytes = app
+        .control
+        .post_signed_bytes(WORK_ARTIFACT, &ask, MAX_ARTIFACT_ANSWER)
+        .await
+        .map_err(|e| format!("its artifact: {e:#}"))?;
+    let given: arugula_control_wire::work::ArtifactGiven =
+        serde_json::from_slice(&bytes).map_err(|_| "its artifact: control's answer doesn't read".to_owned())?;
+    let (digest, b64) = match given {
+        arugula_control_wire::work::ArtifactGiven::Given { digest, bytes } => (digest, bytes),
+        arugula_control_wire::work::ArtifactGiven::Refused { why } => {
+            return Err(format!("its artifact: {}", printable(&why)));
+        }
+    };
+    let tar = base64::engine::general_purpose::STANDARD
+        .decode(b64.as_bytes())
+        .map_err(|_| "its artifact: control's answer doesn't read".to_owned())?;
+    {
+        use sha2::Digest as _;
+        if format!("sha256:{}", hex::encode(sha2::Sha256::digest(&tar))) != digest {
+            return Err("its artifact isn't the digest control named".into());
+        }
+    }
+    let at = super::planter::artifact_path(run);
+    let _ = std::fs::remove_file(&at);
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o644);
+    let mut f = o.open(&at).map_err(|e| format!("its artifact: {e}"))?;
+    std::io::Write::write_all(&mut f, &tar).map_err(|e| format!("its artifact: {e}"))?;
+    info!(run, size = tar.len(), "hosted: fetched a deploy run's artifact");
+    Ok(())
 }
 
 /// Revoke each short-lived token at its revoke URL, the token as its own
