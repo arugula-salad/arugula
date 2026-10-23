@@ -78,9 +78,7 @@ pub use arugula_control_wire::agent_mcp::MCP;
 #[path = "agent_mcp_redone.rs"]
 mod redone;
 
-/// Where an agent uploads a source to ship (M235): a gzipped tar, by
-/// itself, as redone's agents did.
-pub const UPLOADS: &str = "/api/mcp/uploads";
+pub use arugula_control_wire::agent_mcp::UPLOADS;
 
 /// The MCP version answered when the client asks for one this doesn't
 /// know.
@@ -1309,4 +1307,52 @@ pub fn tools() -> Vec<Value> {
             false,
         ),
     ]
+}
+#[derive(Deserialize)]
+pub struct UploadQuery {
+    #[serde(default)]
+    project: Option<String>,
+}
+
+/// `PUT /api/mcp/uploads[?project=]`: a source to ship (M235), a gzipped
+/// tar as the body, by itself, as redone's agents upload one (so it never
+/// passes through the agent's context). Kept as the project's artifact
+/// (M233's `deploy_artifacts`), by its digest, which is the answer's
+/// `upload_id`: `plan_deploy {app, upload_id}` ships it. Only an agent
+/// grant token with `deploys.plan` over the project, its owner an owner or
+/// editor there. At most [`planter::MAX_TARBALL`].
+pub async fn upload(
+    State(app): State<Arc<Platform>>,
+    TokenAgent(token): TokenAgent,
+    Query(q): Query<UploadQuery>,
+    body: Bytes,
+) -> Response {
+    use arugula_e2e::deploy::planter;
+    let owner = token.account.clone();
+    let agent = Agent { app: app.clone(), token, owner };
+    let out: Result<Value, Failure> = async {
+        app.limits.check_daemon(REQUESTS, &agent.token.id)?;
+        app.limits.check_account(ACCOUNT_DEPLOY_ASKS, &agent.token.account)?;
+        let p = agent.project(q.project.as_deref()).await?;
+        agent_may(&app, &agent.me(), DEPLOYS_PLAN, &AgentScope::Project(p.clone())).await?;
+        let (_, role) = deploys::project_as(&app, &agent.token.account, &p, true).await?;
+        if role == TeamRole::Viewer {
+            return Err(Failure::Refused("a viewer doesn't ship: its owner is a viewer there".into()));
+        }
+        if body.len() > planter::MAX_TARBALL {
+            return Err(failed(format!("the upload is {} bytes: a ship carries at most {}", body.len(), planter::MAX_TARBALL)));
+        }
+        if !body.starts_with(&[0x1f, 0x8b]) {
+            return Err(failed("the upload isn't gzipped: tar -czf - -C <dir> ."));
+        }
+        let digest = format!("sha256:{}", hex::encode(<sha2::Sha256 as sha2::Digest>::digest(&body)));
+        app.db.put_deploy_artifact(&p, &digest, &body, &agent.token.account, now_ms())?;
+        Ok(json!({ "upload_id": digest, "project": p, "bytes": body.len(), "next": "plan_deploy with app and this upload_id" }))
+    }
+    .await;
+    match out {
+        Ok(v) => (StatusCode::CREATED, Json(v)).into_response(),
+        Err(Failure::Refused(why)) => (StatusCode::FORBIDDEN, Json(json!({ "error": why }))).into_response(),
+        Err(Failure::Failed(why)) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({ "error": why }))).into_response(),
+    }
 }

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    routing::{MethodRouter, get, post},
+    routing::{MethodRouter, get, post, put},
 };
 
 use arugula_control_wire::{issues, runs as wire_runs};
@@ -65,6 +65,13 @@ fn routes() -> Routes {
         .route(
             agent_mcp::MCP,
             post(agent_mcp::endpoint).layer(axum::extract::DefaultBodyLimit::max(agent_mcp::MAX_BODY)),
+        )
+        // A source to ship, as redone's agents upload one (M235).
+        .route(
+            agent_mcp::UPLOADS,
+            put(agent_mcp::upload)
+                .post(agent_mcp::upload)
+                .layer(axum::extract::DefaultBodyLimit::max(arugula_e2e::deploy::planter::MAX_TARBALL + 1)),
         )
         .route("/api/projects/{project}/agent-tokens", get(agent_tokens::over))
         .route("/api/projects/{project}/agent-tokens/{id}/revoke", post(agent_tokens::revoke_over))

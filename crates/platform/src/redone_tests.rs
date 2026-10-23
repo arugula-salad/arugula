@@ -436,6 +436,52 @@ async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
         refused(&tool(&base, &token, "plan_deploy", json!({ "app": "brand-new", "upload_id": "sha256:00" })).await);
     assert!(why.contains("no app brand-new"), "{why}");
 
+    // redone's way to ship: the source uploaded by itself, then planned to
+    // the app by its upload_id, and asked.
+    // The platform checks it's gzipped; the deploy's box unpacks it (M233).
+    let tgz: Vec<u8> = vec![0x1f, 0x8b, 8, 0, 2, 3, 5, 7, 11];
+    let up = reqwest::Client::new()
+        .put(format!("{base}/api/mcp/uploads"))
+        .header("authorization", format!("Bearer {token}"))
+        .body(tgz.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(up.status().as_u16(), 201);
+    let up: Value = up.json().await.unwrap();
+    let upload_id = up["upload_id"].as_str().unwrap().to_owned();
+    assert_eq!(upload_id, format!("sha256:{}", sha(&tgz)));
+    assert_eq!(app.db.deploy_artifact(&fern, &upload_id).unwrap().as_deref(), Some(&tgz[..]));
+    // Not gzipped, too big, or with no token: refused.
+    for (body, bearer_token, want) in [
+        (b"not a tar".to_vec(), token.clone(), 422),
+        (vec![0x1f, 0x8b].into_iter().chain(std::iter::repeat_n(0u8, 3 << 20)).collect(), token.clone(), 413),
+        (tgz.clone(), "rdn_nope".to_owned(), 401),
+    ] {
+        let r = reqwest::Client::new()
+            .put(format!("{base}/api/mcp/uploads"))
+            .header("authorization", format!("Bearer {bearer_token}"))
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status().as_u16(), want);
+    }
+    let r = tool(&base, &token, "plan_deploy", json!({ "app": "fern-site", "upload_id": upload_id })).await;
+    let shipped = ok(&r).clone();
+    assert_eq!((&shipped["state"], &shipped["app"]), (&json!("pending"), &json!("fern-site")), "{shipped}");
+    assert_eq!(shipped["deploy"]["source"]["ref"], json!(upload_id), "{shipped}");
+    let why = refused(
+        &tool(
+            &base,
+            &token,
+            "plan_deploy",
+            json!({ "app": "fern-site", "upload_id": format!("sha256:{}", "0".repeat(64)) }),
+        )
+        .await,
+    );
+    assert!(why.contains("no upload"), "{why}");
+
     // A deploy: get_plan and apply_plan read it, and never move it.
     let sha1 = "ef".repeat(20);
     let r =
@@ -485,4 +531,78 @@ async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
         assert!(calls.iter().any(|c| c.tool == tool_name && c.outcome == outcome), "{tool_name}/{outcome}: {calls:?}");
     }
     assert!(!format!("{calls:?}").contains(value));
+}
+
+/// redone's apps become planter's ship environments (M233), with what
+/// their live plan said, and their names the project's from the import on;
+/// a name another project's ship environment has already is refused, not
+/// taken over. The dry run says so too.
+#[tokio::test]
+async fn apps_become_ship_environments_and_their_names_the_projects() {
+    let (_, app, base) = platform().await;
+    let t = crate::projects::team_project(&app, "t").await.unwrap().unwrap();
+    // b's team has a ship environment for fern-site already.
+    let (st, env) = call(
+        &base,
+        "b",
+        "POST",
+        &format!("/api/projects/{t}/environments"),
+        Some(json!({ "name": "fern-site", "driver": "planter-ship", "settings": { "app": "fern-site" } })),
+    )
+    .await;
+    assert_eq!(st, 200, "{env}");
+    let backup = Backup::read(&dir()).unwrap();
+    let o = |dry_run| Options {
+        people: [("fern".to_owned(), vec![4242])].into_iter().collect(),
+        teams: Default::default(),
+        driver: SHIP_DRIVER.into(),
+        dry_run,
+    };
+    let r = import(&app, &backup, &o(true)).await.unwrap();
+    assert!(
+        matches!(app_outcome(&r, "fern-site"), AppOutcome::Refused { why } if why.contains("another project")),
+        "{:?}",
+        app_outcome(&r, "fern-site")
+    );
+    assert!(matches!(app_outcome(&r, "fern-blog"), AppOutcome::Environment { environment: None, .. }));
+    let r = import(&app, &backup, &o(false)).await.unwrap();
+    assert!(matches!(app_outcome(&r, "fern-site"), AppOutcome::Refused { .. }));
+    let AppOutcome::Environment { environment: Some(blog), driver } = app_outcome(&r, "fern-blog").clone() else {
+        panic!("{:?}", app_outcome(&r, "fern-blog"))
+    };
+    assert_eq!(driver, "planter-ship");
+    let blog = app.db.environment(&blog).unwrap().unwrap();
+    assert_eq!(blog.settings.get("app").map(String::as_str), Some("fern-blog"));
+    assert_eq!(blog.settings.get("port").map(String::as_str), Some("8080"));
+    // Now nobody else takes fern-blog.
+    let (st, why) = call(
+        &base,
+        "b",
+        "POST",
+        &format!("/api/projects/{t}/environments"),
+        Some(json!({ "name": "fern-blog", "driver": "planter-ship", "settings": { "app": "fern-blog" } })),
+    )
+    .await;
+    assert_eq!(st, 409, "{why}");
+    // Its spec is the environment's: a fern-site that came over keeps its
+    // health path, secrets and port.
+    let spec = App {
+        name: "x".into(),
+        tenant: "fern".into(),
+        current: Some("p".into()),
+        spec: json!({ "port": 3000, "health": "/up", "secrets": ["B", "A"], "portEnv": "PORT" }),
+        deploys: 1,
+    };
+    let s = app_settings(SHIP_DRIVER, &spec);
+    assert_eq!(
+        s.into_iter().collect::<Vec<_>>(),
+        [
+            ("app".to_owned(), "x".to_owned()),
+            ("health".to_owned(), "/up".to_owned()),
+            ("port".to_owned(), "3000".to_owned()),
+            ("port_env".to_owned(), "PORT".to_owned()),
+            ("secrets".to_owned(), "B,A".to_owned())
+        ]
+    );
+    assert!(app_settings("fake", &spec).is_empty());
 }

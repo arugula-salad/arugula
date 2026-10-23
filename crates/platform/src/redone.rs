@@ -676,6 +676,22 @@ async fn app_env(
         Ok(s) => s,
         Err(why) => return Ok(AppOutcome::Refused { why }),
     };
+    // Its name is the project's from now on (M233: a shipped app's name is
+    // one project's), so nobody takes it first; unless another project
+    // has it already.
+    let would = crate::db::deploys::Environment {
+        id: String::new(),
+        project: project.unwrap_or_default().to_owned(),
+        name: a.name.clone(),
+        driver: o.driver.clone(),
+        secret_names: vec![],
+        settings: settings.clone(),
+        created_at: 0,
+        updated_at: 0,
+    };
+    if let Some(why) = d.claims(app, &would) {
+        return Ok(AppOutcome::Refused { why });
+    }
     let (Some(p), false) = (project, o.dry_run) else {
         return Ok(AppOutcome::Environment { environment: None, driver: o.driver.clone() });
     };

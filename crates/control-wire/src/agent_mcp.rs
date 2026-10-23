@@ -5,6 +5,9 @@
 /// The MCP endpoint (Streamable HTTP: JSON-RPC over `POST`), behind an
 /// agent grant token (`Authorization: Bearer aru_agent_…`).
 pub const MCP: &str = "/api/mcp";
+/// A source to ship, a gzipped tar as the body (M235: redone's agents'
+/// uploads), with an agent grant token.
+pub const UPLOADS: &str = "/api/mcp/uploads";
 
 /// An account's agent grant tokens: `GET` lists them, `POST` mints one.
 pub const AGENT_TOKENS: &str = "/api/agent-tokens";

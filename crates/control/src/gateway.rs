@@ -399,13 +399,14 @@ fn hop(name: &HeaderName) -> bool {
 
 /// The platform routes a client's own `Authorization` is for, and so the
 /// only ones it reaches (in process too, `hub_port::gate`): the MCP
-/// endpoint's agent grant token (M230) and the inference broker's bearer
+/// endpoint's agent grant token (M230) and its uploads (M235), and the inference broker's bearer
 /// (M231, `/api/projects/{project}/inference/anthropic/{*rest}`). On every
 /// other platform route it's dropped, so no route can come to trust one by
 /// mistake.
 pub fn bearer_route(path: &str) -> bool {
     let s: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     path == arugula_control_wire::agent_mcp::MCP
+        || path == arugula_control_wire::agent_mcp::UPLOADS
         || matches!(s.as_slice(), ["api", "projects", p, "inference", "anthropic", _, ..] if !p.is_empty())
 }
 
@@ -623,11 +624,12 @@ mod tests {
         kept.sort();
         assert_eq!(kept, ["host", "last-event-id", "origin", "stripe-signature"]);
         // A bearer crosses to the two routes it's for (M230, M231), only.
-        for path in ["/api/mcp", "/api/projects/prj_1/inference/anthropic/v1/messages"] {
+        for path in ["/api/mcp", "/api/mcp/uploads", "/api/projects/prj_1/inference/anthropic/v1/messages"] {
             assert!(forwarded_headers(&h, path).contains_key(header::AUTHORIZATION), "{path}");
         }
         for path in [
             "/api/mcp/x",
+            "/api/mcp/uploads/x",
             "/api/deploys/dep_1/approve",
             "/api/projects/prj_1/inference/anthropic",
             "/api/projects//inference/anthropic/v1",

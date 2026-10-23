@@ -29,6 +29,7 @@
 //!   key the platform doesn't hold: it reads the deploy's run log instead),
 //!   and `promote` (an owner plans it, to the app's promote environment).
 
+use arugula_e2e::deploy::planter;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -223,6 +224,14 @@ struct Logs {
     tail: Option<u64>,
 }
 
+/// A comma-separated list of names, sorted and once each.
+fn sorted(list: &str) -> String {
+    let mut v: Vec<&str> = list.split(',').map(str::trim).filter(|n| !n.is_empty()).collect();
+    v.sort_unstable();
+    v.dedup();
+    v.join(",")
+}
+
 /// redone's state names for a deploy's.
 fn redone_state(s: &str) -> &str {
     match s {
@@ -348,10 +357,11 @@ async fn ship(agent: &Agent, a: &Value) -> Out {
         ("port", s.port.map(|v| v.to_string())),
         ("health", s.health.clone()),
         ("port_env", s.port_env.clone()),
-        ("secrets", s.secrets.as_ref().map(|v| v.join(","))),
+        ("secrets", s.secrets.as_ref().map(|v| sorted(&v.join(",")))),
     ] {
-        if let (Some(given), Some(has)) = (given.as_ref(), env.settings.get(k))
-            && given != has
+        let has = env.settings.get(k).map(|h| if k == "secrets" { sorted(h) } else { h.clone() });
+        if let (Some(given), Some(has)) = (given.as_ref(), has)
+            && *given != has
         {
             return Err(failed(format!(
                 "{} {k} is {has}, not {given}: its owner changes that on the platform page",
@@ -360,15 +370,17 @@ async fn ship(agent: &Agent, a: &Value) -> Out {
         }
     }
     let digest = s.upload_id.trim();
-    // M233-REBASE: M233's artifacts (deploy_artifacts) hold uploads.
-    if digest.is_empty() || !digest.is_empty() {
+    if !planter::artifact_ok(digest) {
+        return Err(failed(format!("upload_id: what PUT {} answered (sha256:…)", agent.upload_url())));
+    }
+    if agent.app.db.deploy_artifact(&p, digest)?.is_none() {
         return Err(failed(format!(
             "no upload {digest} in this project: PUT the source to {} first",
             agent.upload_url()
         )));
     }
     agent.app.limits.check_account(super::ACCOUNT_DEPLOY_ASKS, &agent.token.account)?;
-    let source = json!({ "kind": "artifact", "ref": digest, "where": "platform" });
+    let source = json!({ "kind": "artifact", "ref": digest, "where": planter::ARTIFACT_WHERE });
     let done = agent.plan_and_ask(p.clone(), &env.id, source, false).await?;
     let v = view(&done.value["deploy"], &env.name);
     let text = format!(
