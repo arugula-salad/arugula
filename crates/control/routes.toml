@@ -716,6 +716,20 @@ clients = ["page"]
 
 [[route]]
 method = "GET"
+path = "/api/push/prefs"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/push/prefs"
+process = "hub"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
 path = "/api/daemon/push-subs"  # wire::PUSH_SUBS
 process = "hub"
 auth = "daemon"
