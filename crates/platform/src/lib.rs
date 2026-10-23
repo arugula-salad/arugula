@@ -34,8 +34,12 @@ use arugula_control_common::{analytics::Analytics, limit::Limits};
 
 #[cfg(test)]
 mod agent_issues_tests;
+pub mod agent_mcp;
+#[cfg(test)]
+mod agent_mcp_tests;
 #[cfg(test)]
 mod agent_threads_tests;
+pub mod agent_tokens;
 #[cfg(test)]
 mod agents_tests;
 pub mod auth;

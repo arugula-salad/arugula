@@ -276,6 +276,12 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0030_drop_managoat.sql"),
         additive: false,
     },
+    Migration {
+        version: 31,
+        name: "agent_tokens",
+        sql: include_str!("../../migrations/sqlite/0031_agent_tokens.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -461,6 +467,12 @@ const POSTGRES: &[Migration] = &[
         name: "drop_managoat",
         sql: include_str!("../../migrations/postgres/0030_drop_managoat.sql"),
         additive: false,
+    },
+    Migration {
+        version: 31,
+        name: "agent_tokens",
+        sql: include_str!("../../migrations/postgres/0031_agent_tokens.sql"),
+        additive: true,
     },
 ];
 

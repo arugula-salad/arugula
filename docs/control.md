@@ -842,3 +842,65 @@ moves the run, and looks every 2 seconds for a move another machine made.
 At most 8 are open at once per account and per machine (429 past that,
 and `wait` backs off), and they're counted per hour apart from other
 reads (2000), so long waits don't use up a machine's reads.
+
+**Agents with no machine (M230, platform step 8).** An agent that runs
+somewhere without `arugulad` (a hosted service's, redone's) reaches a
+person's projects through the platform's own MCP endpoint, `POST /api/mcp`
+on control's site, behind the hub's gateway like every platform path. It
+amends "MCP is served by the daemon" (aru-038): machines' agents still use
+their daemon's.
+
+- **A bearer agent grant token** says who it is. Its owner mints one over
+  projects they read, with powers from the agents' list (`threads.read`,
+  `threads.post`, `issues.write`, `deploys.plan`, `runs.read`, `runs.start`,
+  `runs.command`) and `secrets.write`. Never `cloud.drive`, and never an
+  approval. The token (`aru_agent_…`) is shown once. The platform keeps its
+  SHA-256 (`agent_tokens`), and its powers as grants (`subject_kind`
+  `agent`, "Grants, not impersonation"). Its powers are fixed when it's
+  made: a token that should do more is another token.
+
+  ```
+  arugula agent-tokens add redone issues.write deploys.plan runs.start --project acme
+  arugula agent-tokens                  # live and revoked, last used
+  arugula agent-tokens calls redone     # what its agent did, newest first
+  arugula agent-tokens revoke redone    # refused from its next call
+  ```
+
+  or Settings, Agents with no machine, on the platform page. The API is
+  `GET`/`POST /api/agent-tokens`, `POST /api/agent-tokens/{id}/revoke` and
+  `GET /api/agent-tokens/{id}/calls`, for a signed-in person or a CLI
+  login. A CLI login mints them as it gives machines grants, so an agent
+  with a shell on your machine could mint itself one, as it could `arugula
+  grants add`.
+- **The same checks as a machine's agents.** Each tool is the route a
+  machine's agents call, with the token in the machine's place: its live
+  grant over the project, asked on every call (`grants::agent_may`), the
+  owner's reach and role as the ceiling, the same rate limits, counted per
+  token. What it writes is its owner's, labelled "Jake's agent on redone
+  (MCP)" wherever an agent's machine is named, and every room its
+  `threads.*` grants reach says so.
+- **The tools** keep the daemon's names where they overlap:
+  `capabilities`, `list` (kind `threads`), `read_thread`, `post_thread`,
+  `search_threads`, `issue_write`, `forge_read` (kinds `issue` and
+  `native_issues`), `start_run`, `read_run`, `wait` (a run), `plan_deploy`
+  (plans and asks) and `read_deploy`. And `set_secret`: a project's secret
+  by name (`secrets.write`, the owner an owner or editor there), sealed
+  with the project's key under `project/<NAME>` in `project_secrets`, and
+  never read back by any tool. It can't set an environment's secrets: those
+  are an owner's, from a browser (M219).
+- **It never approves.** No tool approves or denies anything, a call that
+  names one is refused and noted, and the approve and deny routes take a
+  person's session and their device's signature, never a token. The token
+  opens `/api/mcp` and nothing else: no other route reads it.
+- **Streamable HTTP, stateless:** JSON-RPC 2.0 over `POST` (one message or
+  a batch), `202` for a notification, no session and no server stream. A
+  missing, unknown or revoked token is `401` with `WWW-Authenticate:
+  Bearer`.
+- **Every call is noted** for its owner (`agent_token_calls`): the tool,
+  the project, `ok`, `refused` or `failed`, and what it made or why not,
+  never an argument's value.
+
+For Claude Code: `claude mcp add --transport http arugula
+https://control.arugula.io/api/mcp --header "Authorization: Bearer
+aru_agent_…"`. The code is `crates/platform/src/agent_mcp.rs` and
+`agent_tokens.rs`.

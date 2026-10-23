@@ -344,6 +344,27 @@
   padding: 4px 0;
 }
 
+/* Agents with no machine (M230): their tokens, each one's calls, and a
+   new token shown once. */
+.agent-tokens li {
+  padding: 4px 0;
+}
+
+.agent-token-calls {
+  margin: 4px 0 8px;
+  padding-left: 16px;
+  font-size: 12px;
+}
+
+.agent-token-calls .agent-call-refused,
+.agent-token-calls .agent-call-failed {
+  color: var(--danger, #c33);
+}
+
+.agent-token-made code {
+  overflow-wrap: anywhere;
+}
+
 /* A deploy's card (M218): where it goes and its state, what it deploys,
    the plan's digest in full, the operation an approval signs, and Approve
    and Deny, which open on control's page. */

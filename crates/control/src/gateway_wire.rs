@@ -567,3 +567,44 @@ async fn the_platform_page_signs_in_through_the_hub() {
     s.hub.db.drop_sessions("a").unwrap();
     assert_eq!(projects().await.unwrap().status().as_u16(), 401);
 }
+
+/// An agent with no machine (M230): its agent grant token reaches the
+/// platform's MCP endpoint on control's own site, in process and through
+/// the gateway out of process (the hub forwards `Authorization` and vouches
+/// for nobody), and opens nothing of the hub's: a device or join approval
+/// with only the token is refused as no one's.
+#[tokio::test]
+async fn an_agent_token_reaches_the_mcp_endpoint_on_controls_site() {
+    use arugula_platform::db::agent_tokens::{hash, new_token};
+    use serde_json::json;
+
+    async fn check(base: &str, platform: &Platform) {
+        let project = platform.db.personal_project("a", now_ms()).unwrap();
+        let (id, token) = new_token();
+        platform
+            .db
+            .mint_agent_token(&id, "a", "redone", &hash(&token), &[("threads.read", &project)], now_ms())
+            .unwrap();
+        let http = reqwest::Client::new();
+        let bearer = format!("Bearer {token}");
+        let caps = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": "capabilities" } });
+        let r = http.post(format!("{base}/api/mcp")).header("authorization", &bearer).json(&caps).send().await.unwrap();
+        let (st, v) = answer(r).await;
+        assert_eq!((st, &v["result"]["structuredContent"]["agent"]["id"]), (200, &Value::Null), "{v}");
+        assert_eq!(v["result"]["structuredContent"]["agent"]["token"], json!(id), "{v}");
+        assert_eq!(v["result"]["structuredContent"]["approves"], json!(false), "{v}");
+        let r = http.post(format!("{base}/api/mcp")).json(&caps).send().await.unwrap();
+        assert_eq!(r.status().as_u16(), 401, "no token");
+        for path in ["/api/devices/dev_x/approve", "/api/joins/ABCD/approve", "/api/workspaces", "/api/grants"] {
+            let r = http.post(format!("{base}{path}")).header("authorization", &bearer).send().await.unwrap();
+            let st = r.status().as_u16();
+            assert!(matches!(st, 401 | 403 | 405), "{path}: {st}");
+        }
+    }
+
+    let s = split().await;
+    check(&s.base, &s.platform).await;
+    let c = crate::routing_wire::control(|_| {}).await;
+    c.app.db.account_for("test", "a", "a", "a", now_ms()).unwrap();
+    check(&c.base, c.app.platform.inner()).await;
+}

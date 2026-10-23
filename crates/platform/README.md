@@ -64,6 +64,10 @@ Start with `src/lib.rs`, then:
   platform …`): copy the platform's tables from one file to another,
   proven by a count and a checksum per table, and check that sealed
   secrets open with the running server's key.
+- `src/agent_mcp.rs` and `src/agent_tokens.rs`: the MCP endpoint for
+  agents with no machine (M230, `POST /api/mcp`), and the bearer agent
+  grant tokens that open it, which only it reads. Each tool calls the
+  route a machine's agents call, with the token in the machine's place.
 - `src/contract.rs` (feature `contract`): the tests every `HubPort` passes.
   Control runs them against its in-process port and against `HttpHub`
   over its internal API (`hub_port.rs`).

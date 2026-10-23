@@ -20,6 +20,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod activity;
+pub mod agent_mcp;
 pub mod chat;
 pub mod deploys;
 pub mod forge;

@@ -167,7 +167,7 @@ fn scope_of(e: &Enrolled, s: &Scope) -> anyhow::Result<Option<Value>> {
 }
 
 /// A project named on the command line, by its id or name (any case).
-fn project_id(projects: &Value, want: &str) -> anyhow::Result<String> {
+pub(crate) fn project_id(projects: &Value, want: &str) -> anyhow::Result<String> {
     let all = projects["projects"].as_array().cloned().unwrap_or_default();
     let ids: Vec<String> = all
         .iter()

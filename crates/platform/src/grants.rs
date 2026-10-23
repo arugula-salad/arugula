@@ -52,8 +52,10 @@ use serde_json::{Value, json};
 use crate::{
     Platform,
     auth::{Machine, Person},
-    db::projects::{AGENT_POWERS, CLOUD_DRIVE, DEPLOYS_PLAN, Grant, ISSUES_WRITE, RUN_POWERS},
-    hub::HubResult,
+    db::projects::{
+        AGENT_POWERS, CLOUD_DRIVE, DEPLOYS_PLAN, Grant, ISSUES_WRITE, RUN_POWERS, SECRETS_WRITE, subject_kind,
+    },
+    hub::{Daemon, HubResult},
 };
 
 type R = Result<Json<Value>, ApiError>;
@@ -123,7 +125,40 @@ pub fn is_agent_power(power: &str) -> bool {
 /// Whether an agent's `power` is over a project only, never the owner's
 /// DMs.
 fn project_only(power: &str) -> bool {
-    power == ISSUES_WRITE || power == DEPLOYS_PLAN || RUN_POWERS.contains(&power)
+    power == ISSUES_WRITE || power == DEPLOYS_PLAN || power == SECRETS_WRITE || RUN_POWERS.contains(&power)
+}
+
+/// Whether `power` is one an agent grant token may hold (M230): the agent
+/// powers, and `secrets.write`. Never `cloud.drive`, and never an approval:
+/// no grant is.
+pub fn is_token_power(power: &str) -> bool {
+    is_agent_power(power) || power == SECRETS_WRITE
+}
+
+/// What an agent with no machine is called beside its owner's name, in
+/// place of a machine's: "<owner>'s agent on <this>".
+pub fn token_label(name: &str) -> String {
+    format!("{name} (MCP)")
+}
+
+/// The machines these ids name, as [`Cache::daemons`] has them, and the
+/// agent grant tokens among them (M230, `agt_…`) as if they were machines
+/// of their owners named [`token_label`]: for the label on what an agent
+/// wrote, wherever an agent's machine is named. Never for whether a
+/// machine is someone's: only the hub says that.
+///
+/// [`Cache::daemons`]: crate::cache::Cache::daemons
+pub async fn agent_names(app: &Platform, ids: &[String]) -> HubResult<std::collections::HashMap<String, Daemon>> {
+    let (tokens, machines): (Vec<String>, Vec<String>) =
+        ids.iter().cloned().partition(|id| subject_kind(id) == "agent");
+    let mut out =
+        if machines.is_empty() { Default::default() } else { app.cache.daemons(&*app.hub, &machines).await? };
+    for id in tokens {
+        if let Some(t) = app.db.agent_token(&id)? {
+            out.insert(id.clone(), Daemon { id, account: t.account, team: None, name: token_label(&t.name) });
+        }
+    }
+    Ok(out)
 }
 
 /// How the owner gives this grant, for a refusal.
@@ -152,17 +187,27 @@ pub async fn agent_may(
     power: &str,
     scope: &AgentScope,
 ) -> Result<AgentPrincipal, ApiError> {
-    if !is_agent_power(power) || (project_only(power) && matches!(scope, AgentScope::Account(_))) {
+    let token = subject_kind(&machine.daemon) == "agent";
+    let known = if token { is_token_power(power) } else { is_agent_power(power) };
+    if !known || (project_only(power) && matches!(scope, AgentScope::Account(_))) {
         return Err(err(StatusCode::BAD_REQUEST, &format!("{power} isn't a power over that")));
     }
     let owner = &machine.account;
-    let machine_name = app
-        .cache
-        .daemons(&*app.hub, std::slice::from_ref(&machine.daemon))
-        .await?
-        .remove(&machine.daemon)
-        .map_or_else(|| machine.daemon.clone(), |d| d.name);
     let refused = |why: String| refusal(StatusCode::FORBIDDEN, AGENT_UNGRANTED, &why);
+    let machine_name = if token {
+        // An agent grant token (M230): its owner's, and live, asked on
+        // every call as a grant is.
+        match app.db.agent_token(&machine.daemon)? {
+            Some(t) if t.account == *owner && t.revoked_at.is_none() => token_label(&t.name),
+            _ => return Err(refused("this agent grant token was revoked".to_owned())),
+        }
+    } else {
+        app.cache
+            .daemons(&*app.hub, std::slice::from_ref(&machine.daemon))
+            .await?
+            .remove(&machine.daemon)
+            .map_or_else(|| machine.daemon.clone(), |d| d.name)
+    };
     let Some(scope_name) = owner_reads(app, owner, scope, false).await? else {
         return Err(refused(format!(
             "{machine_name}'s agents can't reach that: its owner doesn't read it, and an agent never reaches more \
@@ -170,10 +215,15 @@ pub async fn agent_may(
         )));
     };
     if app.db.live_grant(&machine.daemon, power, scope.row(), owner)?.is_none() {
-        return Err(refused(format!(
-            "{machine_name} has no {power} grant over {scope_name}: {}",
+        let how = if token {
+            format!(
+                "a token's powers are given when it's minted, so its owner mints one with {power} over {scope_name} \
+                 (`arugula agent-tokens add`, or Settings, Agents with no machine, on the platform page)"
+            )
+        } else {
             how_to_grant(&machine_name, power, scope, &scope_name)
-        )));
+        };
+        return Err(refused(format!("{machine_name} has no {power} grant over {scope_name}: {how}")));
     }
     Ok(AgentPrincipal { machine: machine.daemon.clone(), machine_name, owner: owner.clone() })
 }
@@ -277,6 +327,9 @@ pub async fn list(State(app): State<Arc<Platform>>, s: Person) -> R {
             rows = app.db.grants(&s.account)?;
         }
     }
+    // Agent grant tokens' grants are listed with their tokens
+    // (`/api/agent-tokens`), not by machine.
+    rows.retain(|g| g.subject_kind == "daemon");
     let mut grants = named(&app, rows).await?;
     grants.sort_by(|a, b| {
         let name = |g: &Grant| g.subject_name.clone().unwrap_or_else(|| g.subject_id.clone());

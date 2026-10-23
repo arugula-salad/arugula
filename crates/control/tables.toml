@@ -550,10 +550,32 @@ name = "grants"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A grant: a subject (a machine), a power over a scope (an account or a project), who gave it, when, and when it was revoked. The powers: cloud.drive (its agents drive its owner's Cloud workspaces; given on join), and for its agents in conversations (M197) threads.read, threads.post and issues.write, and over a project's runs (M216) runs.read, runs.start and runs.command, off until its owner gives one over a scope the owner reads."
+what = "A grant: a subject (a machine, or an agent grant token, M230), a power over a scope (an account or a project), who gave it, when, and when it was revoked. The powers: cloud.drive (its agents drive its owner's Cloud workspaces; given on join), and for its agents in conversations (M197) threads.read, threads.post and issues.write, and over a project's runs (M216) runs.read, runs.start and runs.command, off until its owner gives one over a scope the owner reads."
 why_asleep = "Control checks it on the Cloud workspace routes and wherever an agent reads or writes threads and issues or starts and reads runs, which work with every other machine asleep."
 with_account = "deleted"
 note = "Grants to its machines, over it, or that it gave."
+seen_by = ["litestream"]
+
+[[table]]
+name = "agent_tokens"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "An agent grant token (M230): what an agent with no machine shows the platform's MCP endpoint. Its id, the account that minted it (whose agent it is), its name, the SHA-256 of the token (never the token, which is shown once), when it was made, last used and revoked. Its powers are grants (`subject_kind` agent)."
+why_asleep = "An agent with no machine calls the platform's MCP endpoint, which finds its token here, with every machine asleep."
+with_account = "deleted"
+note = "The account's tokens go, with the grants it gave them."
+seen_by = ["litestream"]
+
+[[table]]
+name = "agent_token_calls"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Every tool call a token's agent made on the platform's MCP endpoint (M230), for its owner: the token, the tool, the project, how it went (ok, refused, failed), a line of what it made or why not, and when. Never an argument's value: a secret's name, never the secret."
+why_asleep = "Its owner reads what their agent did on the platform page and with the CLI, with every machine asleep."
+with_account = "deleted"
+note = "The account's tokens' calls go with them."
 seen_by = ["litestream"]
 
 [[table]]

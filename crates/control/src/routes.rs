@@ -51,6 +51,7 @@ enum Auth {
     HostedEnrollment,
     Hosted,
     DaemonOrHosted,
+    AgentToken,
 }
 
 #[derive(Deserialize, PartialEq)]
@@ -64,6 +65,7 @@ enum Client {
     Github,
     Stripe,
     Operator,
+    Agent,
 }
 
 const METHODS: [&str; 6] = ["GET", "POST", "PUT", "PATCH", "DELETE", "ANY"];

@@ -203,7 +203,7 @@ pub(crate) async fn role(
 
 /// The project as `account` sees it, with their role: 404 unless they're
 /// in it, 403 for a viewer when `write`.
-async fn project_as(
+pub(crate) async fn project_as(
     app: &Platform,
     account: &str,
     project: &str,
@@ -313,7 +313,8 @@ pub(crate) async fn deploy_json(
     let name = |a: &str| names.get(a).map(|a| a.name.clone()).unwrap_or_default();
     let agent = match &d.planned_by_agent {
         Some(m) => {
-            let machine_name = app.cache.daemons(&*app.hub, std::slice::from_ref(m)).await?.remove(m).map(|d| d.name);
+            let machine_name =
+                crate::grants::agent_names(app, std::slice::from_ref(m)).await?.remove(m).map(|d| d.name);
             json!({ "machine": m, "machine_name": machine_name.unwrap_or_default() })
         }
         None => Value::Null,
@@ -329,7 +330,7 @@ pub(crate) async fn deploy_json(
     machines.sort();
     machines.dedup();
     let machine_names =
-        if machines.is_empty() { Default::default() } else { app.cache.daemons(&*app.hub, &machines).await? };
+        if machines.is_empty() { Default::default() } else { crate::grants::agent_names(app, &machines).await? };
     // Who each event is by, as people read it.
     let by = |a: &Option<Actor>| match a {
         Some(Actor::Person(p)) => Some(name(p)).filter(|n| !n.is_empty()).unwrap_or_else(|| "a deleted account".into()),
@@ -683,9 +684,7 @@ async fn push_owners(app: &Platform, by: &Actor, d: &Deploy, env: &Environment, 
     };
     let asked = match by {
         Actor::Agent { machine, .. } => {
-            let name = app
-                .cache
-                .daemons(&*app.hub, std::slice::from_ref(machine))
+            let name = crate::grants::agent_names(app, std::slice::from_ref(machine))
                 .await
                 .ok()
                 .and_then(|mut m| m.remove(machine));

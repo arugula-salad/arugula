@@ -32,6 +32,21 @@
 //                 answer labelled as their agent on BOX; once the read grant
 //                 is revoked, the next read_thread is refused:
 //                 {room, machine, posted}
+//   agent-mcp-setup
+//                 chat on and a team (M230): {project, account}
+//   agent-mcp PROJECT [--break]
+//                 an agent with no machine (M230): the owner makes a
+//                 production environment (chant-fly) and mints an agent token
+//                 over PROJECT; then, with only that token (no cookie, no
+//                 device), the agent speaks MCP to control's /api/mcp: files a
+//                 native issue, starts a run (PROJECT has a hosted workspace),
+//                 plans a deploy and asks for it; it's refused an approval by
+//                 the approve tool, the approve and deny routes and the
+//                 standing grant's sign route, and the hub's device approval.
+//                 The owner reads each, labelled as their agent on the token,
+//                 the deploy still waiting, and the agent's calls noted.
+//                 --break: the owner revokes the token first, so the agent
+//                 files nothing: {project, token_id, issue, run, deploy, refused}
 //   issues-write  native issues before a platform restart (M206): chat on, a
 //                 team, two issues in its project (one closed), comments in
 //                 the first's thread, read to the first; what was seen:
@@ -439,6 +454,104 @@ async function issuesRead(d: Device, file: string) {
   return { project: was.project, issues: 3, back_ms };
 }
 
+/** M230's setup: chat on, and a team whose project the agent works in. */
+async function agentMcpSetup(d: Device) {
+  await must(d, "POST", "/api/flags", { name: "chat", on: true });
+  const team = await d.createTeam("m230 agent");
+  let p: any;
+  for (let i = 0; i < 20 && !p; i++) {
+    p = (await must(d, "GET", "/api/projects")).projects.find((x: any) => x.team?.id === team);
+    if (!p) await sleep(500);
+  }
+  if (!p) throw new Error(`no project for team ${team}`);
+  const me = await must(d, "GET", "/api/me");
+  return { project: p.id, account: me.account ?? me.id };
+}
+
+/** An agent with no machine (M230), with only its token. */
+async function agentMcp(d: Device, project: string, broken: boolean) {
+  const env = await must(d, "POST", `/api/projects/${project}/environments`, {
+    name: "production",
+    driver: "chant-fly",
+    secret_names: ["FLY_API_TOKEN", "GITHUB_TOKEN"],
+    settings: { fly_app: "m230-app", chant_env: "github" },
+  });
+  const minted = await must(d, "POST", "/api/agent-tokens", {
+    name: "redone",
+    projects: [project],
+    powers: ["threads.read", "threads.post", "issues.write", "runs.read", "runs.command", "deploys.plan"],
+  });
+  const token: string = minted.token;
+  const tokenId: string = minted.agent_token.id;
+  if (!token?.startsWith("aru_agent_")) throw new Error(`minted no token: ${JSON.stringify(minted)}`);
+  if (broken) await must(d, "POST", `/api/agent-tokens/${tokenId}/revoke`, {});
+  // The agent: no cookie, no device, only the token.
+  const bearer = async (method: string, path: string, body?: unknown) => {
+    const res = await fetch(d.reach(d.control + path), {
+      method,
+      headers: { authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "content-type": "application/json" }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: res.status, json: await res.json().catch(() => ({})) };
+  };
+  let id = 0;
+  const rpc = async (method: string, params: unknown) => {
+    const r = await bearer("POST", "/api/mcp", { jsonrpc: "2.0", id: ++id, method, params });
+    if (r.status !== 200) throw new Error(`${method}: ${r.status} ${JSON.stringify(r.json)}`);
+    return r.json;
+  };
+  const tool = async (name: string, args: unknown) => {
+    const r = (await rpc("tools/call", { name, arguments: args })).result;
+    if (r?.isError) throw new Error(`${name}: ${r.content?.[0]?.text}`);
+    return r.structuredContent;
+  };
+  const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "m230", version: "0" } });
+  if (!init.result?.serverInfo) throw new Error(`initialize: ${JSON.stringify(init)}`);
+  const tools = (await rpc("tools/list", {})).result.tools.map((t: any) => t.name);
+  if (tools.some((n: string) => /approv|deny/.test(n))) throw new Error(`a tool approves: ${tools}`);
+
+  const issue = await tool("issue_write", { kind: "create", project, title: "Filed by an agent with no machine", body: "M230" });
+  const run = (await tool("start_run", { project, command: ["sh", "-c", "echo m230"] })).run;
+  const commit = "c0ffee".padEnd(40, "0");
+  const deploy = (await tool("plan_deploy", { project, environment: "production", commit, repo: "acme/app" })).deploy;
+
+  // Never an approval: no tool, no route.
+  const refused: Record<string, number | string> = {};
+  const asked = (await rpc("tools/call", { name: "approve_deploy", arguments: { id: deploy.id } })).result;
+  if (!asked.isError || !/never approve/.test(asked.content[0].text)) throw new Error(`approve_deploy: ${JSON.stringify(asked)}`);
+  refused.approve_deploy = "isError";
+  const sig = { op: deploy.operation?.hash, expires: Date.now() + 3600_000, by: "x", sig: "00" };
+  for (const path of [
+    `/api/deploys/${deploy.id}/approve`,
+    `/api/deploys/${deploy.id}/deny`,
+    `/api/projects/${project}/runs/grant`,
+    "/api/devices/0000000000000000/approve",
+  ]) {
+    const r = await bearer("POST", path, sig);
+    if (![401, 403, 405].includes(r.status)) throw new Error(`${path} with the token: ${r.status} ${JSON.stringify(r.json)}`);
+    refused[path] = r.status;
+  }
+
+  // The owner sees each as their agent's, labelled with the token.
+  const seenIssue = await must(d, "GET", `/api/issues/${issue.id}`);
+  if (seenIssue.agent?.machine !== tokenId || seenIssue.agent?.machine_name !== "redone (MCP)") {
+    throw new Error(`the issue isn't labelled as the agent's: ${JSON.stringify(seenIssue)}`);
+  }
+  const seenRun = await must(d, "GET", `/api/runs/${run.id}`);
+  if (seenRun.started_by_agent !== tokenId) throw new Error(`the run isn't the agent's: ${JSON.stringify(seenRun)}`);
+  const seenDeploy = await must(d, "GET", `/api/deploys/${deploy.id}`);
+  if (seenDeploy.state !== "pending" || (seenDeploy.approvals ?? []).length) {
+    throw new Error(`the deploy moved: ${JSON.stringify(seenDeploy)}`);
+  }
+  if (seenDeploy.agent?.machine_name !== "redone (MCP)") throw new Error(`the deploy isn't labelled: ${JSON.stringify(seenDeploy.agent)}`);
+  const calls = (await must(d, "GET", `/api/agent-tokens/${tokenId}/calls`)).calls;
+  const outcomes = Object.fromEntries(calls.map((c: any) => [c.tool, c.outcome]));
+  for (const [t, o] of [["issue_write", "ok"], ["start_run", "ok"], ["plan_deploy", "ok"], ["approve_deploy", "refused"]]) {
+    if (outcomes[t] !== o) throw new Error(`the call ${t} is noted ${outcomes[t]}, not ${o}: ${JSON.stringify(calls)}`);
+  }
+  return { project, token_id: tokenId, issue: issue.id, run: [run.id, seenRun.state], deploy: [deploy.id, seenDeploy.state], refused, env: env.id };
+}
+
 async function main() {
   const d = await Device.load(state);
   switch (cmd) {
@@ -456,8 +569,12 @@ async function main() {
       return issuesWrite(d);
     case "issues-read":
       return issuesRead(d, rest[0]);
+    case "agent-mcp-setup":
+      return agentMcpSetup(d);
+    case "agent-mcp":
+      return agentMcp(d, rest[0], rest.includes("--break"));
     default:
-      throw new Error(`unknown command ${cmd ?? "(none)"}: chat, hold, measure, fanout, agents, issues-write, issues-read`);
+      throw new Error(`unknown command ${cmd ?? "(none)"}: chat, hold, measure, fanout, agents, issues-write, issues-read, agent-mcp-setup, agent-mcp`);
   }
 }
 

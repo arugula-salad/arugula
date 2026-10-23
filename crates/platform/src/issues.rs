@@ -169,7 +169,7 @@ async fn machine_names(
     if ids.is_empty() {
         return Ok(Default::default());
     }
-    Ok(app.cache.daemons(&*app.hub, &ids).await?.into_iter().map(|(id, d)| (id, d.name)).collect())
+    Ok(crate::grants::agent_names(app, &ids).await?.into_iter().map(|(id, d)| (id, d.name)).collect())
 }
 
 type Names = std::collections::HashMap<String, String>;
