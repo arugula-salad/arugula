@@ -313,26 +313,38 @@ under `/api/client/`, the only other platform routes a bearer reaches
 (`crates/platform/src/clients.rs`):
 
 - **For an account it names** (`arugula-account`), only once that account
-  lets it see its projects: a switch beside the product under Settings,
+  lets it see its projects (a switch beside the product under Settings,
   Linked products, on the platform page, off until then; unlinking the
-  product there ends it, and its Claude switch too. It reads the account's
-  projects, its role and their members (`GET /api/client/projects`), its
-  apps in them with the account's role (`GET /api/client/apps`), one app
-  with the role read fresh (`GET /api/client/apps/{app}`: 404 `no_app`,
-  403 `not_member`), and keeps an app in a project the account edits or
-  owns (`PUT /api/client/apps/{app}`, `personal` for its own; a move needs
-  that of the project it leaves, too). Viewers see an app; editors and
-  owners open it.
+  product there ends it, and its Claude switch too), **and only with that
+  person's own access token from the hub** (`arugula-access-token`: M228's,
+  issued to that client, minutes long, ending with the person's hub
+  session; the hub answers whose it is, `HubPort::client_account`), so the
+  credential alone never acts for anyone who isn't there. It reads the
+  account's projects, its role and their members (`GET
+  /api/client/projects`), its apps in them with the account's role (`GET
+  /api/client/apps`), one app with the role read fresh (`GET
+  /api/client/apps/{app}`: 404 `no_app`, 403 `not_member`), keeps an app
+  in a project the account edits or owns (`PUT /api/client/apps/{app}`,
+  `personal` for its own; a move needs that of the project it leaves too,
+  and ends every secret grant the app had), and asks, for an owner of the
+  app's project, to send one of the project's own secrets for that app to
+  one host (`PUT /api/client/apps/{app}/secrets/{name}` `{host}`).
+  Viewers see an app; editors and owners open it.
 - **With no account,** it forgets an app it retired (`DELETE`), and reads
   the value of one of the app's project's own secrets
-  (`GET /api/client/apps/{app}/secrets/{name}`), **only by a project
-  owner's grant of that secret to that client**, made on the project's
-  settings page. Every read is counted on the grant and kept as an event
-  (90 days) for the project's owners; nothing logs a value.
+  (`GET /api/client/apps/{app}/secrets/{name}?host=`), **only under a
+  project owner's grant for that client, that app and that host**, and
+  not once an agent changed the value since the grant (an owner allows it
+  again). Every read is counted on the grant and kept as an event (90
+  days); reads are limited to 6,000 an hour per client and 600 per secret,
+  and an hour of 120 reads of one secret is pushed to the project's owners
+  (and logged, `ops="client-secret-reads"`). Nothing logs a value.
 - **Project owners** set and clear the project's own secrets on its
-  settings page (agents set them with `set_secret`, M230), grant each to a
-  client there, and see the reads; clearing a secret ends its grants. A
-  project's members see the clients' apps in it there too.
+  settings page (agents set them with `set_secret`, M230), see each
+  client's asks beside each secret (which app, which host), allow or stop
+  each, and see the reads and whether the value changed since it was
+  allowed, and by whom; clearing a secret ends its grants. A project's
+  members see the clients' apps in it there too.
 
 A link is never authorization: the client acts for an account only by that
 account's own switch, and reads a secret only by its owner's grant.

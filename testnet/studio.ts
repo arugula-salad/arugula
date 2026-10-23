@@ -17,9 +17,10 @@
 //      sees it by its project as an editor and opens it. The project's
 //      settings list it.
 //   5. Its box claims it, and its egress secret takes its value from the
-//      project's own secret, which Jake sets and grants studio on the
-//      platform page: refused before the grant, and after it the fake API
-//      gets the value, never the box. The read is counted there.
+//      project's own secret, which Jake sets on the platform page. Saving
+//      it in the lobby asks the platform for this app and this host; it's
+//      refused until Jake allows that on the platform page, and after it
+//      the fake API gets the value, never the box. The read is counted.
 //   6. The box's Claude call goes through the platform's broker as studio,
 //      for Jake: the platform's key pays, and Anthropic never sees the
 //      box's token or studio's credential.
@@ -205,8 +206,10 @@ async function main() {
   expect(secret.status === 200, "Jake, an owner of the project, takes STRIPE's value from it", secret.json);
   const egress = () => fetch(`${studio}/egress/STRIPE/v1/models`, { headers: { "x-api-key": box } });
   const refused = await egress();
-  expect(refused.status === 403 && /haven't let studio read STRIPE_TEST/.test(await refused.text()), "not granted: refused", refused.status);
-  await jake.api(`/api/projects/${project}/clients/studio/secrets/STRIPE_TEST`, undefined, "PUT");
+  expect(refused.status === 403 && /haven't let studio send STRIPE_TEST to http:\/\/fakes:9004/.test(await refused.text()), "asked, not granted: refused", refused.status);
+  const asks = await jake.api<{ grants: { app: string; name: string; host: string; granted_at: number | null }[] }>(`/api/projects/${project}/clients`);
+  expect(asks.grants.some((g) => g.app === app && g.name === "STRIPE_TEST" && g.host === "http://fakes:9004" && g.granted_at === null), "studio asked, for this app and this host", asks);
+  await jake.api(`/api/projects/${project}/clients/studio/apps/${app}/secrets/STRIPE_TEST`, undefined, "PUT");
   const mark = seen().length;
   const used = await egress();
   expect(used.status === 200, "granted: the box's request goes out", `${used.status} ${await used.clone().text()}`);

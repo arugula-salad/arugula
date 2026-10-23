@@ -636,11 +636,21 @@ Jake: these are production secrets and a public product's sign-in):
    products, "Let Studio see my projects", and Settings, Claude, "Let studio
    use Claude for me". Nothing turns either on for them. Until they do, the
    lobby keeps an app its maker's and pays Claude as it did.
-4. **Project owners grant secrets** by name on the project's settings page,
-   after setting them there. A grant's reads and the latest events show
-   beside it.
+4. **Project owners allow secrets** on the project's settings page, after
+   setting them there: studio asks for each one it would send, for one app
+   and one host, and an owner allows that ask. A grant's reads, whether the
+   value changed since and by whom, and the latest events show beside it.
+   An hour of unusually many reads of one secret is pushed to the owners
+   and logged (`ops="client-secret-reads"`).
 5. **beds** (studio's other pod): `STUDIO_SERVICE_PLANTING=off` once hosted
    workspaces plant repos; studio's docs/planter-beds.md lists the rest.
+
+What studio's credential can do alone, if it leaks: read the project
+secrets owners allowed it, for the apps and hosts they allowed (limited,
+counted and pushed as above), and act for people only with their own access
+token from the hub, which lasts minutes. The next step is binding the
+credential to studio itself (`private_key_jwt` against a key studio holds,
+or an egress IP allowlist on the platform): Jake's call.
 
 Revoking studio: take its entry out of `ARUGULA_INFERENCE_CLIENTS` and
 restart the platform (every `/api/client/` and broker call is refused at
