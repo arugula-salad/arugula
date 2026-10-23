@@ -128,14 +128,11 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
-    // `import redone`: redone's tenants, tokens and apps (M235).
-    let mut argv = std::env::args().skip(1).peekable();
-    if argv.peek().is_some_and(|a| a == "import") {
-        let rest: Vec<String> = argv.collect();
-        if rest.get(1).is_some_and(|w| w == "redone") {
-            return arugula_platform::redone::run("arugula-platform import", rest.into_iter().skip(1));
-        }
-        anyhow::bail!("arugula-platform import: redone (M235)");
+    // `import redone`: redone's tenants, tokens and apps (M235). Any other
+    // `import` falls through to `import planter` below.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|a| a == "import") && args.get(1).is_some_and(|w| w == "redone") {
+        return arugula_platform::redone::run("arugula-platform import", args.into_iter().skip(1));
     }
     // `copy`, `checksums`, `secrets-check`, `migrations`: a window's tools
     // (window.rs, M141, M145), run on the platform's machine beside the
