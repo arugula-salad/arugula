@@ -780,7 +780,8 @@
 }
 
 .deploy-form h3,
-.deploy-secrets h3 {
+.deploy-secrets h3,
+.deploy-history h3 {
   margin: 0;
   font-size: 14px;
 }
@@ -875,4 +876,44 @@ h2 .button.deploy-new {
 
 .deploy-env .deploy-actions {
   margin-top: 8px;
+}
+
+/* An environment's latest deploys: a row each, opening its page. */
+.deploy-history {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.deploy-history p {
+  margin: 0;
+}
+
+.deploy-history li a {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.deploy-history li a:hover code {
+  text-decoration: underline;
+}
+
+.deploy-history .deploy-state {
+  min-width: 9em;
+}
+
+.deploy-history .control-linkish {
+  justify-self: start;
+}
+
+.deploy-roll-back {
+  padding: 0 6px;
+  border: 1px solid var(--raised);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--dim);
 }

@@ -107,7 +107,7 @@ fn routes() -> Routes {
         .route(issues::AGENT_ISSUE_EVENTS, get(crate::issues::agent::events))
         // Deploys and their approval (M218).
         .route(deploys::ENVIRONMENTS, get(deploys::environments).post(deploys::create_environment))
-        .route(deploys::PROJECT_DEPLOYS, post(deploys::plan_route))
+        .route(deploys::PROJECT_DEPLOYS, get(deploys::list).post(deploys::plan_route))
         .route(deploys::WAITING, get(deploys::waiting))
         .route(deploys::DEPLOY, get(deploys::get))
         .route(deploys::DEPLOY_REQUEST, post(deploys::request_route))
