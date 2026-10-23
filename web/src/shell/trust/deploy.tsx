@@ -105,6 +105,7 @@ async function check(d: Deploy): Promise<Checked | string> {
   return { op, plan, planner: who.machine ? `${name}'s agent on ${d.agent?.machine_name || who.machine}` : name };
 }
 
+const unb64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
 const b64u = (b: ArrayBuffer) =>
   btoa(String.fromCharCode(...new Uint8Array(b)))
     .replace(/\+/g, "-")
@@ -124,9 +125,16 @@ interface Assertion {
  * signing when it gives one. */
 async function passkey(body: string): Promise<{ assertion: Assertion; second?: ArrayBuffer }> {
   const challenge = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)));
+  // Only the account's own passkeys: a password manager may keep others
+  // for this site (one control refused to keep, or another account's).
+  const mine = await api<{ passkeys: { id: string }[] }>("/api/me/passkeys").then(
+    (r) => r.passkeys.map((p) => ({ type: "public-key" as const, id: unb64u(p.id) })),
+    () => [],
+  );
   const cred = (await navigator.credentials.get({
     publicKey: {
       challenge,
+      ...(mine.length ? { allowCredentials: mine } : {}),
       // Control's passkeys are made for the host its page is on (its
       // `rp_id`: the host, no port), which is this page's: nothing to ask,
       // and no sign-in challenge issued for nothing.
