@@ -72,7 +72,13 @@ async fn mint(base: &str, who: &str, name: &str, projects: &[&str], powers: &[&s
 }
 
 /// A request with only a bearer token, as an agent with no machine sends.
-async fn bearer(base: &str, token: &str, method: &str, path: &str, body: Option<Value>) -> reqwest::Response {
+pub(crate) async fn bearer(
+    base: &str,
+    token: &str,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+) -> reqwest::Response {
     let mut req = reqwest::Client::new()
         .request(method.parse().unwrap(), format!("{base}{path}"))
         .header("authorization", format!("Bearer {token}"));
@@ -83,7 +89,7 @@ async fn bearer(base: &str, token: &str, method: &str, path: &str, body: Option<
 }
 
 /// One JSON-RPC request to the endpoint: its status and answer.
-async fn rpc(base: &str, token: &str, method: &str, params: Value) -> (u16, Value) {
+pub(crate) async fn rpc(base: &str, token: &str, method: &str, params: Value) -> (u16, Value) {
     let r = bearer(
         base,
         token,
@@ -96,18 +102,18 @@ async fn rpc(base: &str, token: &str, method: &str, params: Value) -> (u16, Valu
 }
 
 /// A tool's result.
-async fn tool(base: &str, token: &str, name: &str, args: Value) -> Value {
+pub(crate) async fn tool(base: &str, token: &str, name: &str, args: Value) -> Value {
     let (st, v) = rpc(base, token, "tools/call", json!({ "name": name, "arguments": args })).await;
     assert_eq!((st, &v["id"]), (200, &json!(7)), "{v}");
     v["result"].clone()
 }
 
-fn ok(r: &Value) -> &Value {
+pub(crate) fn ok(r: &Value) -> &Value {
     assert_eq!(r["isError"], json!(false), "{r}");
     &r["structuredContent"]
 }
 
-fn refused(r: &Value) -> String {
+pub(crate) fn refused(r: &Value) -> String {
     assert_eq!(r["isError"], json!(true), "{r}");
     r["content"][0]["text"].as_str().unwrap().to_owned()
 }

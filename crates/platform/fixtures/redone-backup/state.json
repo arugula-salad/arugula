@@ -1,0 +1,257 @@
+{
+  "tenants": {
+    "fern": {
+      "id": "fern",
+      "name": "Fern",
+      "approver": "f4fb0b28939f7840ec532f5d943023541f77ebbaf345dea31ca474e6bbe1ccca",
+      "ntfyTopic": "fern-plans",
+      "autoApproveUpdates": true,
+      "at": 1700000000000
+    },
+    "moss": {
+      "id": "moss",
+      "name": "Moss",
+      "approver": "5dec4430554baeb1073b5e66561f4b327b3fa911e8f4ac2e1cc6f1456c3edd69",
+      "ntfyTopic": null,
+      "autoApproveUpdates": false,
+      "at": 1700000000100
+    },
+    "alder": {
+      "id": "alder",
+      "name": "Alder crew",
+      "approver": "b303fcd26a67541271d123dbd4f7a8a6680ffd316ec007860d667307c2f500db",
+      "ntfyTopic": null,
+      "autoApproveUpdates": false,
+      "at": 1700000000200
+    },
+    "newbie": {
+      "id": "newbie",
+      "name": "Newbie",
+      "approver": "0a1e1910eef34e3cec698ccef65fd9173da946a95aba9439ac7f5e467965e492",
+      "ntfyTopic": null,
+      "autoApproveUpdates": false,
+      "at": 1700000000300
+    },
+    "lonely": {
+      "id": "lonely",
+      "name": "Lonely",
+      "approver": "94577ea8831669abc45374b1539b10d89d5ba53e8d1d205682436d5f1aa3c136",
+      "ntfyTopic": null,
+      "autoApproveUpdates": false,
+      "at": 1700000000400
+    }
+  },
+  "tokens": {
+    "74cf2d3f8861d0e70064fcc2d4f027b47ab537a4c1907b9323483e59aa8cc26f": {
+      "id": "tok_fern1",
+      "tenant": "fern",
+      "agent": "fern laptop",
+      "at": 1700000001000
+    },
+    "d528fbefa3664b8b4918c0bb16e385a1dd920415a17f322955ad1ca4a53ca890": {
+      "id": "tok_fern2",
+      "tenant": "fern",
+      "agent": "fern desktop",
+      "at": 1700000002000
+    },
+    "505f1d8a8524e12e689e3cf359e0c666001c44ea102bde7a896594aa5f679e7f": {
+      "id": "tok_moss1",
+      "tenant": "moss",
+      "agent": "moss laptop",
+      "at": 1700000003000
+    },
+    "f585a63967c58250b0fe78f463c155e5195567b66a53b9ce921c36d0a1c9d8cd": {
+      "id": "tok_alder1",
+      "tenant": "alder",
+      "agent": "alder ci",
+      "at": 1700000004000
+    },
+    "4e77f6bc81fac96e8032256288ed5e230ffb19c20142261666290c03916a6bbc": {
+      "id": "tok_new1",
+      "tenant": "newbie",
+      "agent": "newbie laptop",
+      "at": 1700000005000
+    },
+    "ec192dbe5db978c5933feeac4b748237e5ef81e9ee52731d31865ddedaae1080": {
+      "id": "tok_ghost1",
+      "tenant": "ghost",
+      "agent": "ghost laptop",
+      "at": 1700000006000
+    }
+  },
+  "apps": {
+    "fern-site": {
+      "name": "fern-site",
+      "tenant": "fern",
+      "current": "plan_fern2",
+      "history": [
+        "plan_fern1",
+        "plan_fern2"
+      ],
+      "at": 1700000010000
+    },
+    "fern-blog": {
+      "name": "fern-blog",
+      "tenant": "fern",
+      "current": null,
+      "history": [],
+      "at": 1700000011000
+    },
+    "alder-api": {
+      "name": "alder-api",
+      "tenant": "alder",
+      "current": "plan_alder1",
+      "history": [
+        "plan_alder1"
+      ],
+      "at": 1700000012000
+    }
+  },
+  "uploads": {
+    "up_fern1": {
+      "id": "up_fern1",
+      "tenant": "fern",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size": 120,
+      "files": {
+        "Dockerfile": "aaaaaaaaaaaaaaaa"
+      },
+      "at": 1700000009000
+    }
+  },
+  "plans": {
+    "plan_fern1": {
+      "id": "plan_fern1",
+      "tenant": "fern",
+      "app": "fern-site",
+      "kind": "deploy",
+      "spec": {
+        "port": 8080,
+        "health": "/health",
+        "secrets": [
+          "API_KEY"
+        ],
+        "portEnv": "PORT"
+      },
+      "upload": "up_fern1",
+      "base": null,
+      "rollbackTo": null,
+      "diff": {
+        "create": true,
+        "config": [],
+        "files": {
+          "added": 1,
+          "changed": 0,
+          "removed": 0,
+          "paths": []
+        }
+      },
+      "missingSecrets": [],
+      "state": "applied",
+      "at": 1700000010000,
+      "appliedAt": 1700000010500,
+      "result": {
+        "url": "https://fern-site.run.inevitable.fyi",
+        "commit": "c1"
+      }
+    },
+    "plan_fern2": {
+      "id": "plan_fern2",
+      "tenant": "fern",
+      "app": "fern-site",
+      "kind": "deploy",
+      "spec": {
+        "port": 8080,
+        "health": "/up",
+        "secrets": [
+          "API_KEY"
+        ],
+        "portEnv": "PORT"
+      },
+      "upload": "up_fern1",
+      "base": "plan_fern1",
+      "rollbackTo": null,
+      "diff": {
+        "create": false,
+        "config": [],
+        "files": {
+          "added": 0,
+          "changed": 1,
+          "removed": 0,
+          "paths": [
+            "~ server.js"
+          ]
+        }
+      },
+      "missingSecrets": [],
+      "state": "applied",
+      "at": 1700000020000,
+      "appliedAt": 1700000020500,
+      "result": {
+        "url": "https://fern-site.run.inevitable.fyi",
+        "commit": "c2"
+      }
+    },
+    "plan_alder1": {
+      "id": "plan_alder1",
+      "tenant": "alder",
+      "app": "alder-api",
+      "kind": "deploy",
+      "spec": {
+        "port": 3000,
+        "health": "/health",
+        "secrets": [],
+        "portEnv": "PORT"
+      },
+      "upload": "up_fern1",
+      "base": null,
+      "rollbackTo": null,
+      "diff": {
+        "create": true,
+        "config": [],
+        "files": {
+          "added": 1,
+          "changed": 0,
+          "removed": 0,
+          "paths": []
+        }
+      },
+      "missingSecrets": [],
+      "state": "applied",
+      "at": 1700000030000,
+      "appliedAt": 1700000030500,
+      "result": {
+        "url": "https://alder-api.run.inevitable.fyi",
+        "commit": "c3"
+      }
+    },
+    "plan_fern3": {
+      "id": "plan_fern3",
+      "tenant": "fern",
+      "app": "fern-blog",
+      "kind": "deploy",
+      "spec": {
+        "port": 8080,
+        "health": "/health",
+        "secrets": [],
+        "portEnv": "PORT"
+      },
+      "upload": "up_fern1",
+      "base": null,
+      "rollbackTo": null,
+      "diff": {
+        "create": true,
+        "config": [],
+        "files": {
+          "added": 1,
+          "changed": 0,
+          "removed": 0,
+          "paths": []
+        }
+      },
+      "missingSecrets": [],
+      "state": "pending",
+      "at": 1700000040000
+    }
+  }
+}

@@ -482,6 +482,14 @@ impl HubPort for TestHub {
         done(self.state.lock().unwrap().github.get(account).cloned())
     }
 
+    fn github_account(&self, id: u64) -> BoxFuture<'_, HubResult<Option<String>>> {
+        self.called("github_account");
+        let s = self.state.lock().unwrap();
+        let mut found: Vec<&String> = s.github.iter().filter(|(_, u)| u.id == id).map(|(a, _)| a).collect();
+        found.sort();
+        done(found.first().map(|a| (*a).clone()))
+    }
+
     fn send_authorization<'a>(
         &'a self,
         account: &'a str,

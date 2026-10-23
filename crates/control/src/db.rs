@@ -685,6 +685,19 @@ impl Db {
             .optional()?)
     }
 
+    /// The account whose GitHub identity has this numeric id (M235): by
+    /// the number only, never by login.
+    pub fn github_account(&self, id: u64) -> anyhow::Result<Option<String>> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT account FROM identities WHERE provider = 'github' AND subject = ?1",
+                params![id.to_string()],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
     pub fn account(&self, id: &str) -> anyhow::Result<Option<Account>> {
         Ok(self
             .c()

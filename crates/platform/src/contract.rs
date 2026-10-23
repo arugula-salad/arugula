@@ -426,6 +426,11 @@ async fn pokes(f: &dyn Fixture) {
     assert_eq!(hub.forge_pokes(&[]).await.unwrap(), 0);
     // M163: who someone is on GitHub; nobody, for an account that isn't.
     assert_eq!(hub.github_user("acct-none").await.unwrap(), None);
+    // M235: who signs in with a numeric GitHub id, by the number only (the
+    // fixture's identities' subjects are their accounts' ids).
+    f.account("7350235", "acct-gh-login", "").unwrap();
+    assert_eq!(hub.github_account(7_350_235).await.unwrap().as_deref(), Some("7350235"));
+    assert_eq!(hub.github_account(7_350_236).await.unwrap(), None);
     // M180: a machine that isn't on the relay says nothing about whether
     // it's working. What a connected one says is `relay`'s, over a socket.
     assert!(hub.activity(&ids(&["d-not-connected"])).await.unwrap().is_empty());

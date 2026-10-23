@@ -1221,6 +1221,22 @@ auth = "agent_token"
 clients = ["agent"]
 note = "MCP (Streamable HTTP, one JSON-RPC message per POST, at most 64 KiB, stateless; no batches) for agents with no machine. The only platform route a client's Authorization reaches besides the inference broker's (gateway::bearer_route): issues, threads, runs, deploy plans and asks, project secrets set by name. Never an approval. Every call is noted for the token's owner."
 
+[[route]]
+method = "PUT"
+path = "/api/mcp/uploads"  # wire::agent_mcp::UPLOADS
+process = "platform"
+auth = "agent_token"
+clients = ["agent"]
+note = "A source to ship (M235, as redone's agents upload one): a gzipped tar as the body, at most 2 MiB, kept as the project's artifact (deploys.plan over the project). Its upload_id is the artifact's digest, which plan_deploy {app, upload_id} ships. The only other platform route a client's Authorization reaches (gateway::bearer_route)."
+
+[[route]]
+method = "POST"
+path = "/api/mcp/uploads"  # wire::agent_mcp::UPLOADS
+process = "platform"
+auth = "agent_token"
+clients = ["agent"]
+note = "The same as PUT, for clients that only POST."
+
 # ---- platform: linked products (M229)
 # The platform page's Settings: the products whose users are linked to the
 # reader's account (the hub keeps them, beside its issuer's clients), and

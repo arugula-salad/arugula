@@ -85,6 +85,7 @@ async fn wire(app: &Platform, t: &AgentToken, grants: &[Grant]) -> Result<Value,
         "revoked_at": t.revoked_at,
         "live": t.revoked_at.is_none(),
         "minted_from": t.minted_from,
+        "imported_from": t.imported_from,
         "grants": gs,
     }))
 }

@@ -68,6 +68,10 @@ sees = "PostHog gets product events, when control has a key for it: account, tea
 name = "GitHub"
 sees = "GitHub signs people in: it knows the identities control keeps for it. Through the GitHub App, linked repos' PRs, issues, checks and content come from it, it makes every token control mints and sees each one used, every draft sent goes to it, and it sends the webhooks."
 
+[parties.infisical]
+name = "Infisical (the operator's)"
+sees = "The operator's Infisical, which materializes secrets into home-cloud's Kubernetes, gets the values of the project secrets the platform projects there (M235): an app's secrets, set through the platform, written as redone's writer identity into the app's folder, when the projection is on. The platform's sealed copy is the truth; Infisical's is a copy the operator holds."
+
 [parties.stripe]
 name = "Stripe"
 sees = "Stripe bills, when control has a key for it: it holds the customers and subscriptions control keeps ids for, and gets sandbox minutes."
@@ -637,10 +641,32 @@ name = "agent_tokens"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "An agent grant token (M230): what an agent with no machine shows the platform's MCP endpoint. Its id, the account that minted it (whose agent it is), its name, the SHA-256 of the token (never the token, which is shown once), when it was made, last used and revoked. Its powers are grants (`subject_kind` agent). Minted only from a browser on the platform page: the browser it came from (its User-Agent)."
+what = "An agent grant token (M230): what an agent with no machine shows the platform's MCP endpoint. Its id, the account that minted it (whose agent it is), its name, the SHA-256 of the token (never the token, which is shown once), when it was made, last used and revoked. Its powers are grants (`subject_kind` agent). Minted only from a browser on the platform page: the browser it came from (its User-Agent). Or carried over from redone by the operator's import (M235, `imported_from`): the hash redone kept, the token never seen."
 why_asleep = "An agent with no machine calls the platform's MCP endpoint, which finds its token here, with every machine asleep."
 with_account = "deleted"
 note = "The account's tokens go, with the grants it gave them."
+seen_by = ["litestream"]
+
+[[table]]
+name = "redone_imports"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "What `arugula-platform import redone` carried over (M235): a redone tenant and the project it became, with the account its tokens went to; a redone token's id and the agent grant token it became; an app's name, the environment it became, and the Infisical folder the import vouches for (an app redone had deployed). Ids and times only. A second run finds these and changes nothing."
+why_asleep = "Agents with no machine call the platform's MCP endpoint with every machine asleep, and the projection checks which apps a project carried over."
+with_account = "partly"
+note = "The rows naming the account stay without its id: a tombstone, so a token carried over before is never carried over again. Nothing else in them is the account's."
+seen_by = ["litestream"]
+
+[[table]]
+name = "secret_projections"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "Each write of a project's secret into the operator's Infisical (M235), or, in a dry run, what would have been written: the project, the app (Infisical's folder), the secret's name, never its value; written, would write, refused or failed, with a line of why; who set it (an account, and its agent token)."
+why_asleep = "Secrets are set and projected by agents with no machine, with every machine asleep."
+with_account = "partly"
+note = "The account's name comes off the rows it set; those of projects that are gone go."
 seen_by = ["litestream"]
 
 [[table]]
@@ -1022,7 +1048,7 @@ what = "A project's secret that has no table of its own, such as a deploy enviro
 why_asleep = "Deploys run with every machine off."
 with_account = "partly"
 note = "A personal project's secrets go with it, and so do a disbanded team's; other teams' stay."
-seen_by = ["litestream"]
+seen_by = ["litestream", "infisical"]
 
 [[table]]
 name = "hosted_ports"

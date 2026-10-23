@@ -413,8 +413,8 @@ fn hop(name: &HeaderName) -> bool {
 
 /// The platform routes a client's own `Authorization` is for, and so the
 /// only ones it reaches (in process too, `hub_port::gate`): the MCP
-/// endpoint's agent grant token (M230), and a registered client's
-/// credential on the inference broker (M231,
+/// endpoint's agent grant token (M230) and its uploads (M235), and a
+/// registered client's credential on the inference broker (M231,
 /// `/api/projects/{project}/inference/anthropic/{*rest}`) and on its
 /// account's month there ([`INFERENCE_SPEND`]), and a registered client's
 /// own routes (M236, [`client_route`]). On every other platform
@@ -424,6 +424,7 @@ fn hop(name: &HeaderName) -> bool {
 pub fn bearer_route(path: &str) -> bool {
     let s: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     path == arugula_control_wire::agent_mcp::MCP
+        || path == arugula_control_wire::agent_mcp::UPLOADS
         || path == INFERENCE_SPEND
         || matches!(s.as_slice(), ["api", "projects", p, "inference", "anthropic", _, ..] if !p.is_empty())
         || client_route(&s)
@@ -658,10 +659,12 @@ mod tests {
         let mut kept: Vec<&str> = f.keys().map(HeaderName::as_str).collect();
         kept.sort();
         assert_eq!(kept, ["host", "last-event-id", "origin", "stripe-signature"]);
-        // A bearer crosses to the routes it's for (M230; M231's broker and
-        // a client's view of its account's month; M236's client routes), only.
+        // A bearer crosses to the routes it's for (M230 and M235's uploads;
+        // M231's broker and a client's view of its account's month; M236's
+        // client routes), only.
         for path in [
             "/api/mcp",
+            "/api/mcp/uploads",
             "/api/projects/prj_1/inference/anthropic/v1/messages",
             "/api/inference/spend",
             "/api/client/projects",
@@ -673,6 +676,7 @@ mod tests {
         }
         for path in [
             "/api/mcp/x",
+            "/api/mcp/uploads/x",
             "/api/deploys/dep_1/approve",
             "/api/projects/prj_1/inference/anthropic",
             "/api/projects//inference/anthropic/v1",

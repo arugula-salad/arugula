@@ -51,6 +51,7 @@ pub mod pg;
 pub mod planter;
 pub mod previews;
 pub mod projects;
+pub mod redone;
 pub mod run_grants;
 pub mod run_logs;
 pub mod run_work;

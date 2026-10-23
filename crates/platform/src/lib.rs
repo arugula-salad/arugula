@@ -72,6 +72,7 @@ pub mod hub;
 #[cfg(test)]
 mod hub_calls_tests;
 pub mod inbox;
+pub mod infisical;
 pub mod issues;
 pub mod jobs;
 pub mod keys;
@@ -82,6 +83,7 @@ pub mod page;
 pub mod planter;
 mod port;
 pub mod projects;
+pub mod redone;
 pub mod remote;
 #[cfg(test)]
 mod restart_tests;
@@ -200,6 +202,9 @@ pub struct Platform {
     /// Short-lived tokens minted for deploys' runs (M219), revoked when
     /// each run ends: this machine's, in memory only.
     pub deploy_tokens: drivers::Held,
+    /// The Infisical projection (M235): off unless the platform binary is
+    /// told otherwise (`ARUGULA_INFISICAL_PROJECTION`).
+    pub projection: infisical::Projection,
 }
 
 impl Platform {
@@ -271,6 +276,7 @@ impl Platform {
             inbox: Default::default(),
             run_logs: None,
             deploy_tokens: Default::default(),
+            projection: Default::default(),
         }
     }
 }

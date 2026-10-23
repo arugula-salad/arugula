@@ -94,6 +94,12 @@ struct Args {
     #[command(flatten)]
     billing: arugula_platform::billing::Args,
 
+    /// The Infisical projection (M235): ARUGULA_INFISICAL_PROJECTION, and
+    /// the writer identity's address, project, environment and
+    /// credentials.
+    #[command(flatten)]
+    infisical: arugula_platform::infisical::Args,
+
     /// The GitHub App (M161): its id, slug, private key and webhook secret,
     /// with the names they had on the hub.
     #[command(flatten)]
@@ -122,6 +128,15 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+    // `import redone`: redone's tenants, tokens and apps (M235).
+    let mut argv = std::env::args().skip(1).peekable();
+    if argv.peek().is_some_and(|a| a == "import") {
+        let rest: Vec<String> = argv.collect();
+        if rest.get(1).is_some_and(|w| w == "redone") {
+            return arugula_platform::redone::run("arugula-platform import", rest.into_iter().skip(1));
+        }
+        anyhow::bail!("arugula-platform import: redone (M235)");
+    }
     // `copy`, `checksums`, `secrets-check`, `migrations`: a window's tools
     // (window.rs, M141, M145), run on the platform's machine beside the
     // server, and by the nightly dump. `usage`: hosted workspaces' usage
@@ -194,6 +209,10 @@ async fn run() -> anyhow::Result<()> {
     p.github = a.github_app.app(&a.github_api)?;
     p.deploy_app = a.github_app.deploy_app(&a.github_api)?;
     p.run_logs = a.run_logs.bucket()?;
+    p.projection = a.infisical.projection(&p.http)?;
+    if p.projection.mode != arugula_platform::infisical::Mode::Off {
+        info!(mode = ?p.projection.mode, "the Infisical projection");
+    }
     p.paused = a.paused.into();
     let p = Arc::new(p);
     if a.paused {
