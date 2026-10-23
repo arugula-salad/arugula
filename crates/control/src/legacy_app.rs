@@ -26,6 +26,12 @@
 //! have none; they were approved before this shipped, under #1343's rule
 //! when after the cutoff, which refused a window approving a browser, so
 //! none of those is a window's child.
+//!
+//! Revocations don't change the set, as they don't change a chain's links
+//! anywhere else (`Trust::chained`): what a removed device approved before
+//! it was removed stands. They count where they always do: the device that
+//! signs must be trusted now (`Trust::evaluate`), and a removed device
+//! approves nothing new, a window included.
 
 use std::collections::HashMap;
 
@@ -43,10 +49,9 @@ pub const APP_KIND_SHIPPED_MS: u64 = 1_792_700_280_000;
 /// approved `browser` certificates that aren't the app's
 /// ([`Cert::is_browser`]), signed by an approved `browser` certificate the
 /// app named ([`Cert::from_app`]), both rows stored and approved before
-/// [`APP_KIND_SHIPPED_MS`], and neither revoked.
+/// [`APP_KIND_SHIPPED_MS`]. Revoked or not: see the module's doc.
 pub fn children(db: &Db, account: &str) -> anyhow::Result<Vec<String>> {
-    let revoked = db.revocations(account)?;
-    let ok = |c: &Cert| c.account == account && !revoked.iter().any(|r| r.device == c.device);
+    let ok = |c: &Cert| c.account == account;
     let old = db.browsers_stored_before(account, APP_KIND_SHIPPED_MS)?;
     let windows: HashMap<&str, &Cert> = old
         .iter()
@@ -102,28 +107,32 @@ mod tests {
         let (_, waited) = cert("Brave", Kind::Browser, &window);
         db.put_device(&waited, false, before).unwrap();
         db.put_device(&waited, true, APP_KIND_SHIPPED_MS + 2).unwrap();
-        // A child that was revoked.
+        // A child removed since: what it approved before stands.
         let (_, gone) = put("Vivaldi", Kind::Browser, &window, before);
         db.add_revocation(&Revocation::new("a", &gone.device, &phone)).unwrap();
         let mut got = children(&db, "a").unwrap();
         got.sort();
-        let mut want = vec![firefox.device.clone(), older.device.clone()];
+        let mut want = vec![firefox.device.clone(), older.device.clone(), gone.device.clone()];
         want.sort();
         assert_eq!(got, want);
 
         // Stored again later: still when first stored and approved.
         db.put_device(&firefox, true, APP_KIND_SHIPPED_MS + 5).unwrap();
-        assert_eq!(children(&db, "a").unwrap().len(), 2, "a later put keeps the row's times");
+        assert_eq!(children(&db, "a").unwrap().len(), 3, "a later put keeps the row's times");
         // Made to wait and approved again: from then.
         db.put_device(&firefox, false, APP_KIND_SHIPPED_MS + 6).unwrap();
         db.put_device(&firefox, true, APP_KIND_SHIPPED_MS + 7).unwrap();
-        assert_eq!(children(&db, "a").unwrap(), vec![older.device.clone()]);
+        let mut got = children(&db, "a").unwrap();
+        got.sort();
+        let mut want = vec![older.device.clone(), gone.device.clone()];
+        want.sort();
+        assert_eq!(got, want);
         assert!(children(&db, "b").unwrap().is_empty());
     }
 
     /// A window approved after the cutoff, though it asked before: nothing
-    /// it approved counts, even rows stored before; nor anything under a
-    /// revoked window.
+    /// it approved counts, even rows stored before. One removed since keeps
+    /// what it approved back then.
     #[test]
     fn a_window_approved_after_the_cutoff_has_no_children() {
         let db = Db::memory();
@@ -149,6 +158,6 @@ mod tests {
         db.put_device(&c, true, before).unwrap();
         assert_eq!(children(&db, "a").unwrap(), vec![c.device.clone()]);
         db.add_revocation(&Revocation::new("a", &w.device, &phone)).unwrap();
-        assert!(children(&db, "a").unwrap().is_empty(), "the window was revoked");
+        assert_eq!(children(&db, "a").unwrap(), vec![c.device.clone()], "the window was removed since");
     }
 }

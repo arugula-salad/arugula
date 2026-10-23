@@ -777,6 +777,43 @@ async fn a_browser_a_grandfathered_app_window_let_in_approves() {
     assert_eq!((st, &d["state"]), (200, &json!("approved")), "both grandfathered: {d}");
 }
 
+/// root → window W → browser X → browser Y, X a child the hub lists: X
+/// removed since doesn't take Y with it, so Y approves; Y removed doesn't.
+#[tokio::test]
+async fn a_browser_removed_on_the_way_keeps_what_it_approved() {
+    let (hub, _app, base, t, _) = seeded().await;
+    let a = devices(&hub, "a");
+    let env = production(&base, &t).await;
+    let (id, op) = asked(&base, "a", &t, &env, "deadbeef").await;
+    let approve = format!("/api/deploys/{id}/approve");
+    let mk = |keys: &DeviceKeys, name: &str, by: &DeviceKeys| {
+        let mut c = Cert::new(keys, "a", Kind::Browser, name);
+        c.created = now_ms() - 60_000;
+        c.sign_with(by);
+        c
+    };
+    let (w, x, y) = (DeviceKeys::generate(), DeviceKeys::generate(), DeviceKeys::generate());
+    let certs = vec![
+        mk(&a.phone, "Pixel", &a.phone),
+        mk(&w, "illogical app on geek", &a.phone),
+        mk(&x, "Firefox on Linux", &w),
+        mk(&y, "Firefox on Mac", &x),
+    ];
+    let (x_gone, y_gone) = (Revocation::new("a", &x.id(), &a.phone), Revocation::new("a", &y.id(), &a.phone));
+    let trust = |revocations: Vec<Revocation>| DeviceTrust {
+        root: a.phone.id(),
+        certs: certs.clone(),
+        revocations,
+        legacy_app_children: vec![x.id()],
+    };
+    hub.devices("a", trust(vec![x_gone.clone(), y_gone]));
+    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&y, "a", &id, &op, Decision::Once))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "Y removed: {v}");
+    hub.devices("a", trust(vec![x_gone]));
+    let (st, d) = call(&base, "a", "POST", &approve, Some(signed(&y, "a", &id, &op, Decision::Once))).await;
+    assert_eq!((st, &d["state"]), (200, &json!("approved")), "X removed after it approved Y: {d}");
+}
+
 /// A team's owner approves only if a browser made them an owner: the
 /// roster version that made a an owner signed by b's CLI (or a's own CLI
 /// founding the team) doesn't count, signature and passkey good; the same

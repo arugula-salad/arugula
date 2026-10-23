@@ -339,9 +339,11 @@ pub struct DeviceTrust {
     pub revocations: Vec<arugula_e2e::Revocation>,
     /// Its browsers and phones that a grandfathered app window approved:
     /// both rows stored and approved by the hub before the app had a kind
-    /// of its own (by the hub's own record of when), neither revoked. The
-    /// window counts as the link just above one of them, nowhere else
-    /// (`arugula_e2e::cert::legacy_app_link`). Empty from a hub that
+    /// of its own (by the hub's own record of when), removed since or not,
+    /// as a removed device's past approvals stand on any chain. The window
+    /// counts as the link just above one of them, nowhere else
+    /// (`arugula_e2e::cert::legacy_app_link`); the device that signs must
+    /// still be trusted now. Empty from a hub that
     /// doesn't send it, which only refuses more.
     #[serde(default)]
     pub legacy_app_children: Vec<String>,

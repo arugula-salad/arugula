@@ -767,6 +767,57 @@ mod tests {
         assert_eq!(check(&edge, &pinned("a", &[&firefox])), Err(ApplyRefusal::Device), "what it certifies now");
     }
 
+    /// root → window W → browser X → browser Y: X removed since doesn't
+    /// take Y with it (a removed device's past approvals stand on any
+    /// chain); Y removed can't approve; W removed certifies nothing new.
+    #[test]
+    fn a_link_removed_since_keeps_what_it_approved() {
+        use crate::{Cert, Kind, Revocation};
+        let mk = |name: &str, kind, by: Option<&DeviceKeys>, created: u64| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, "a", kind, name);
+            c.created = created;
+            c.sign_with(by.unwrap_or(&k));
+            (k, c)
+        };
+        let revoke = |device: &DeviceKeys, by: &DeviceKeys, at: u64| {
+            let mut r = Revocation::new("a", &device.id(), by);
+            r.at = at;
+            r.sig = hex::encode(by.signature(r.body().as_bytes()));
+            r
+        };
+        let (phone, root) = mk("Pixel", Kind::Browser, None, 1);
+        let (w, wc) = mk("illogical app on geek", Kind::Browser, Some(&phone), 10);
+        let (x, xc) = mk("Firefox on Linux", Kind::Browser, Some(&w), 20);
+        let (y, yc) = mk("Firefox on Mac", Kind::Browser, Some(&x), 30);
+        let (z, zc) = mk("Edge", Kind::Browser, Some(&w), 60);
+        let certs = [root, wc, xc, yc, zc];
+        let children = vec![x.id()];
+        let p = phone.id();
+        assert!(approver_chained("a", &p, &certs, &y.id(), &children), "links on the way aren't checked for removal");
+
+        let trust = Trust { account: "a".into(), root: p.clone() };
+        let now = 1_000;
+        let check = |revs: &[Revocation], by: &DeviceKeys| {
+            let mine = Owners::Account { trust: &trust, certs: &certs, revocations: revs };
+            let a = Approval::new(by, "dep_1", &op(), "a", Decision::Once, now + 1);
+            let (cd, ad) = passkey_over(&a, "webauthn.get", 0x05);
+            let parts = Some(PasskeyParts { client_data_json: &cd, authenticator_data: &ad });
+            let pinned = LegacyAppChildren::from([("a".to_owned(), vec![x.id(), z.id()])]);
+            check_apply(&a, &op(), "dep_1", &mine, &pinned, parts, now)
+        };
+        let x_gone = revoke(&x, &phone, 40);
+        assert_eq!(check(std::slice::from_ref(&x_gone), &y), Ok(()), "X removed after it approved Y");
+        let y_gone = revoke(&y, &phone, 40);
+        assert_eq!(check(&[x_gone.clone(), y_gone], &y), Err(ApplyRefusal::Device), "Y removed");
+        // W removed at 50: Z, which it certified at 60, isn't trusted, so it
+        // doesn't approve even were it listed.
+        let w_gone = revoke(&w, &phone, 50);
+        assert!(trust.evaluate(&certs, std::slice::from_ref(&w_gone)).get(&z.id()).is_none());
+        assert_eq!(check(std::slice::from_ref(&w_gone), &z), Err(ApplyRefusal::Device), "what W certifies after");
+        assert_eq!(check(&[w_gone, x_gone], &y), Ok(()), "W and X removed after Y came: Y stands");
+    }
+
     #[test]
     fn a_plan_names_its_driver_and_secrets_never_take_a_reserved_name() {
         let mut o = op();

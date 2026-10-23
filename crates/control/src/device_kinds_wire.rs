@@ -492,3 +492,64 @@ async fn a_grandfathered_app_window_counts_on_the_way() {
     let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(&firefox))).await;
     assert_eq!(st, 200, "{v}");
 }
+
+/// root → window W → browser X → browser Y, W and X stored and approved
+/// before the cutoff: X removed since doesn't take Y with it (a removed
+/// device's past approvals stand), so Y approves a browser. Y removed
+/// approves nothing, and neither does W removed.
+#[tokio::test]
+async fn a_browser_removed_since_keeps_what_it_approved() {
+    use crate::legacy_app::APP_KIND_SHIPPED_MS as CUTOFF;
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let put = |by: &DeviceKeys, name: &str, at: u64| {
+        let k = DeviceKeys::generate();
+        let mut cert = Cert::new(&k, "a1", Kind::Browser, name);
+        cert.created = now_ms() - 60_000;
+        cert.sign_with(by);
+        c.app.db.put_device(&cert, true, at).unwrap();
+        k
+    };
+    let w = put(&root, "illogical app on geek", CUTOFF - 60_000);
+    let x = put(&w, "Firefox on Linux", CUTOFF - 30_000);
+    let y = put(&x, "Firefox on Mac", now_ms());
+    c.app.db.add_revocation(&arugula_e2e::Revocation::new("a1", &x.id(), &root)).unwrap();
+    assert_eq!(crate::legacy_app::children(&c.app.db, "a1").unwrap(), vec![x.id()], "X stays a child");
+    let cookie = session(&c.app, "a1");
+    let approve_by = |by: &DeviceKeys, name: &str| {
+        let k = DeviceKeys::generate();
+        let ask = Cert::new(&k, "a1", Kind::Browser, name);
+        let mut cert = ask.clone();
+        cert.sign_with(by);
+        (ask, cert)
+    };
+    let try_approve = |ask: Cert, cert: Cert| {
+        let c = &c;
+        let cookie = cookie.clone();
+        async move {
+            let (st, v) = c.as_person(&cookie, "POST", "/api/devices", Some(json!({ "cert": ask }))).await;
+            assert_eq!((st, &v["approved"]), (200, &json!(false)), "{v}");
+            let path = format!("/api/devices/{}/approve", ask.device);
+            c.as_person(&cookie, "POST", &path, Some(json!({ "cert": cert }))).await
+        }
+    };
+    let (ask, cert) = approve_by(&y, "Safari on iPhone");
+    let (st, v) = try_approve(ask, cert).await;
+    assert_eq!(st, 200, "Y, though X was removed: {v}");
+
+    // W removed: it approves nothing new.
+    c.app.db.add_revocation(&arugula_e2e::Revocation::new("a1", &w.id(), &root)).unwrap();
+    let (ask, cert) = approve_by(&w, "Edge on Windows");
+    let (st, v) = try_approve(ask, cert).await;
+    assert_eq!(st, 403, "W removed: {v}");
+    // Y, which W's child approved before either was removed, still does.
+    let (ask, cert) = approve_by(&y, "Chrome on Linux");
+    let (st, v) = try_approve(ask, cert).await;
+    assert_eq!(st, 200, "Y, though W and X were removed: {v}");
+
+    // Y removed: refused.
+    c.app.db.add_revocation(&arugula_e2e::Revocation::new("a1", &y.id(), &root)).unwrap();
+    let (ask, cert) = approve_by(&y, "Brave");
+    let (st, v) = try_approve(ask, cert).await;
+    assert_eq!(st, 403, "Y removed: {v}");
+}

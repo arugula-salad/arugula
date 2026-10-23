@@ -1408,7 +1408,10 @@ made. "Before" is control's own record, not the certificates' `created`
 `devices.created`, control's clock when the row was first stored (kept
 when the same device is put again), and `devices.approved_at`, its clock
 when the row became approved (so a window that asked before and was
-approved after doesn't count). Rows approved before `approved_at` came
+approved after doesn't count). Removing the window or the browser later
+doesn't change that, as a removed device's past approvals stand on any
+chain; the device that signs must still be one the account trusts now,
+and a removed device approves nothing new. Rows approved before `approved_at` came
 have none; after the cutoff those were approved under #1343's rule, which
 refused a window approving a browser. The platform gets the list with an
 account's devices (`DeviceTrust::legacy_app_children`); a deploy's box pins
