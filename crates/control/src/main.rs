@@ -59,6 +59,7 @@ mod hub_latency_bench;
 mod hub_port;
 mod internal;
 mod labs_flags;
+mod legacy_app;
 mod limit;
 mod maintenance;
 mod notice;

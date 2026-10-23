@@ -383,3 +383,89 @@ async fn the_apps_window_doesnt_delete_remove_passkeys_or_sign_out_everywhere() 
     let (st, v) = c.as_person(&browser, "POST", "/api/me/sessions/end-all", Some(json!({}))).await;
     assert!(st < 300, "{st} {v}");
 }
+
+/// The desktop app's window from before it had a kind, stored by control
+/// before #1343 shipped (`legacy_app`), counts on the way back again: a
+/// browser it let in approves a browser and recovery codes, removes a
+/// browser and makes a team's owner. The window itself doesn't, nor one
+/// control stored after, nor a browser that one let in.
+#[tokio::test]
+async fn a_grandfathered_app_window_counts_on_the_way() {
+    use arugula_e2e::team::TeamRole;
+
+    use crate::{
+        legacy_app::APP_KIND_SHIPPED_MS as CUTOFF,
+        routing_wire::{member, roster},
+    };
+    let c = control(|_| {}).await;
+    let root = person(&c.app, "jake", "a1");
+    let bob = person(&c.app, "bob", "b1");
+    let put = |by: &DeviceKeys, name: &str, at: u64| {
+        let (k, cert) = signed(by, "a1", Kind::Browser, name);
+        c.app.db.put_device(&cert, true, at).unwrap();
+        k
+    };
+    let window = put(&root, "Arugula app on jake-air", CUTOFF - 60_000);
+    let firefox = put(&window, "Firefox on Mac", CUTOFF - 30_000);
+    let late = put(&root, "Arugula app on jake-mini", CUTOFF);
+    let chrome = put(&late, "Chrome on Mac", CUTOFF + 1);
+    let cookie = session(&c.app, "a1");
+    let refused = [(&window, "the window itself"), (&late, "a window stored after"), (&chrome, "what that let in")];
+
+    // A browser asks; Firefox approves it.
+    let k = DeviceKeys::generate();
+    let ask = Cert::new(&k, "a1", Kind::Browser, "Safari on iPhone");
+    let (st, v) = c.as_person(&cookie, "POST", "/api/devices", Some(json!({ "cert": ask }))).await;
+    assert_eq!((st, &v["approved"]), (200, &json!(false)), "{v}");
+    let approve = format!("/api/devices/{}/approve", ask.device);
+    for (by, who) in refused {
+        let mut cert = ask.clone();
+        cert.sign_with(by);
+        let (st, v) = c.as_person(&cookie, "POST", &approve, Some(json!({ "cert": cert }))).await;
+        assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "{who}: {v}");
+    }
+    let mut cert = ask.clone();
+    cert.sign_with(&firefox);
+    let (st, v) = c.as_person(&cookie, "POST", &approve, Some(json!({ "cert": cert }))).await;
+    assert_eq!(st, 200, "{v}");
+
+    // Recovery codes.
+    for (by, who) in refused {
+        let (_, code) = signed(by, "a1", Kind::Recovery, "recovery 1");
+        let (st, v) = c.as_person(&cookie, "POST", "/api/recovery", Some(json!({ "certs": [code] }))).await;
+        assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "{who}: {v}");
+    }
+    let (_, code) = signed(&firefox, "a1", Kind::Recovery, "recovery 1");
+    let (st, v) = c.as_person(&cookie, "POST", "/api/recovery", Some(json!({ "certs": [code] }))).await;
+    assert_eq!(st, 200, "{v}");
+
+    // Removing a browser.
+    let phone = device(&c, &root, "a1", Kind::Browser, "Pixel");
+    let revoke = |by: &DeviceKeys| json!({ "revocation": arugula_e2e::Revocation::new("a1", &phone.id(), by) });
+    for (by, who) in refused {
+        let (st, v) = c.as_person(&cookie, "POST", "/api/revocations", Some(revoke(by))).await;
+        assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "{who}: {v}");
+    }
+    let (st, v) = c.as_person(&cookie, "POST", "/api/revocations", Some(revoke(&firefox))).await;
+    assert_eq!(st, 200, "{v}");
+
+    // Making a team's owner.
+    let team = "0123456789abcdef";
+    let v1 = roster(team, 1, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Viewer)], &root);
+    let t = crate::db::Team {
+        id: team.into(),
+        name: "Acme".into(),
+        founder: "a1".into(),
+        founder_root: root.id(),
+        locked: false,
+    };
+    c.app.db.add_team(&t, 1, &serde_json::to_string(&v1).unwrap(), now_ms()).unwrap();
+    let path = format!("/api/teams/{team}/roster");
+    let promote = |by: &DeviceKeys| json!({ "roster": roster(team, 2, vec![member("a1", &root, TeamRole::Owner), member("b1", &bob, TeamRole::Owner)], by) });
+    for (by, who) in refused {
+        let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(by))).await;
+        assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "{who}: {v}");
+    }
+    let (st, v) = c.as_person(&cookie, "POST", &path, Some(promote(&firefox))).await;
+    assert_eq!(st, 200, "{v}");
+}

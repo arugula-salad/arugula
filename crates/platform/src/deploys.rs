@@ -23,7 +23,9 @@
 //! app's) device key: the Ed25519 key it holds non-extractable, or derives
 //! from a passkey (#764), certified by browsers all the way back to the
 //! account's root (a CLI's or the app's certificate anywhere on the way
-//! refuses it; recovery codes may be links on the way) and not revoked, which the platform checks itself
+//! refuses it; recovery codes may be links on the way, and so may the app's
+//! windows from before it had a kind that the hub stored before then,
+//! [`DeviceTrust::legacy_app`]) and not revoked, which the platform checks itself
 //! from what the hub keeps ([`HubPort::device_trust`],
 //! `arugula_e2e::Trust::evaluate`). Not a CLI's device: its key is a file
 //! on a machine, where an agent can read it. Not a machine's, and not a
@@ -66,6 +68,7 @@
 //! [`db::deploys`]: crate::db::deploys
 //! [`db::deploys::EventKind::allows`]: crate::db::deploys::EventKind::allows
 //! [`HubPort::device_trust`]: crate::hub::HubPort::device_trust
+//! [`DeviceTrust::legacy_app`]: crate::hub::DeviceTrust::legacy_app
 //! [`HubPort::verify_passkey`]: crate::hub::HubPort::verify_passkey
 
 pub mod agent;
@@ -782,7 +785,7 @@ pub async fn approving_device(app: &Platform, account: &str, device: &str) -> Re
              signing in with a passkey",
         ));
     };
-    if !browsers_all_the_way(account, &t.root, &t.certs, device) {
+    if !browsers_all_the_way(account, &t.root, &t.certs, device, &t.legacy_app) {
         return Err(not_a_device(
             "this device can't approve deploys: it, or a device that approved it on the way back to your account's \
              first device, is a CLI's or the desktop app's, whose keys a program on its computer can read. Approve \
@@ -823,7 +826,7 @@ pub async fn owner_made_by_a_browser(app: &Platform, team: &str, account: &str) 
         if !arugula_e2e::cert::verify_hex(&signer.sign, body.as_bytes(), &made.sig) {
             continue;
         }
-        return match browsers_all_the_way(&m.account, &m.root, &t.certs, &made.by) {
+        return match browsers_all_the_way(&m.account, &m.root, &t.certs, &made.by, &t.legacy_app) {
             true => Ok(()),
             false => Err(refuse(
                 "your owner role in this team was given by a CLI's or the app's key, which a program could hold, so it \
@@ -844,9 +847,20 @@ pub async fn owner_made_by_a_browser(app: &Platform, team: &str, account: &str) 
 /// CLI's or the app's keys are files a program on their computer can read,
 /// so a device they let in, or that comes after one they let in, doesn't
 /// count. Every certificate kept for an id on the way is checked; a link
-/// with none, or a chain longer than 64, is refused.
-fn browsers_all_the_way(account: &str, root: &str, certs: &[arugula_e2e::Cert], device: &str) -> bool {
-    arugula_e2e::deploy::approver_chained(account, root, certs, device)
+/// with none, or a chain longer than 64, is refused. The app's windows from
+/// before it had a kind that the hub grandfathered (`legacy`,
+/// [`DeviceTrust::legacy_app`]) count on the way, the root included, never
+/// as `device`.
+///
+/// [`DeviceTrust::legacy_app`]: crate::hub::DeviceTrust::legacy_app
+fn browsers_all_the_way(
+    account: &str,
+    root: &str,
+    certs: &[arugula_e2e::Cert],
+    device: &str,
+    legacy: &[String],
+) -> bool {
+    arugula_e2e::deploy::approver_chained(account, root, certs, device, legacy)
 }
 
 /// Check an approval as `account`'s: good for now and not too long, signed

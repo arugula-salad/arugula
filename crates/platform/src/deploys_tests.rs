@@ -59,7 +59,12 @@ pub(crate) fn devices(hub: &TestHub, account: &str) -> Devices {
     }
     hub.devices(
         account,
-        DeviceTrust { root: phone.id(), certs: vec![root, cli_cert, removed_cert], revocations: vec![revocation] },
+        DeviceTrust {
+            root: phone.id(),
+            certs: vec![root, cli_cert, removed_cert],
+            revocations: vec![revocation],
+            legacy_app: vec![],
+        },
     );
     Devices { phone, cli, removed }
 }
@@ -658,7 +663,7 @@ async fn a_device_a_cli_certified_never_approves() {
     let mut root = Cert::new(&a.phone, "a", Kind::Browser, "Pixel");
     root.sign_with(&a.phone);
     let certs = vec![root.clone(), cert(&a.cli, Kind::Cli, &a.phone), cert(&minted, Kind::Browser, &a.cli)];
-    hub.devices("a", DeviceTrust { root: a.phone.id(), certs, revocations: vec![] });
+    hub.devices("a", DeviceTrust { root: a.phone.id(), certs, revocations: vec![], legacy_app: vec![] });
     let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&minted, "a", &id, &op, Decision::Once))).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "a CLI's browser: {v}");
 
@@ -668,7 +673,7 @@ async fn a_device_a_cli_certified_never_approves() {
     croot.sign_with(&cli_root);
     let browser = DeviceKeys::generate();
     let certs = vec![croot, cert(&browser, Kind::Browser, &cli_root)];
-    hub.devices("a", DeviceTrust { root: cli_root.id(), certs, revocations: vec![] });
+    hub.devices("a", DeviceTrust { root: cli_root.id(), certs, revocations: vec![], legacy_app: vec![] });
     let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&browser, "a", &id, &op, Decision::Once))).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "a CLI-rooted chain: {v}");
     assert!(v["error"].as_str().unwrap().contains("signing in with a passkey"), "says what to do: {v}");
@@ -680,7 +685,7 @@ async fn a_device_a_cli_certified_never_approves() {
     old_app.sign_with(&a.phone);
     let let_in = DeviceKeys::generate();
     let certs = vec![root.clone(), old_app, cert(&let_in, Kind::Browser, &app_window)];
-    hub.devices("a", DeviceTrust { root: a.phone.id(), certs, revocations: vec![] });
+    hub.devices("a", DeviceTrust { root: a.phone.id(), certs, revocations: vec![], legacy_app: vec![] });
     for (who, keys) in [("the app's window", &app_window), ("a browser the app let in", &let_in)] {
         let (st, v) = call(&base, "a", "POST", &approve, Some(signed(keys, "a", &id, &op, Decision::Once))).await;
         assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "{who}: {v}");
@@ -692,11 +697,79 @@ async fn a_device_a_cli_certified_never_approves() {
     let code = DeviceKeys::generate();
     let recovered = DeviceKeys::generate();
     let certs = vec![root, cert(&code, Kind::Recovery, &a.phone), cert(&recovered, Kind::Browser, &code)];
-    hub.devices("a", DeviceTrust { root: a.phone.id(), certs, revocations: vec![] });
+    hub.devices("a", DeviceTrust { root: a.phone.id(), certs, revocations: vec![], legacy_app: vec![] });
     let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&code, "a", &id, &op, Decision::Once))).await;
     assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "a recovery code itself never signs: {v}");
     let (st, d) = call(&base, "a", "POST", &approve, Some(signed(&recovered, "a", &id, &op, Decision::Once))).await;
     assert_eq!((st, &d["state"]), (200, &json!("approved")), "a recovered browser: {d}");
+}
+
+/// The desktop app's window from before it had a kind, stored by the hub
+/// before then (`legacy_app`), counts on the way back: a browser it let in
+/// approves, and so does a team owner whose role a browser it let in gave.
+/// The same window the hub didn't grandfather (stored after) doesn't, nor
+/// does the window itself.
+#[tokio::test]
+async fn a_browser_a_grandfathered_app_window_let_in_approves() {
+    let (hub, _app, base, t, _) = seeded().await;
+    let a = devices(&hub, "a");
+    let b = devices(&hub, "b");
+    let env = production(&base, &t).await;
+    let (id, op) = asked(&base, "a", &t, &env, "deadbeef").await;
+    let approve = format!("/api/deploys/{id}/approve");
+    let mut root = Cert::new(&a.phone, "a", Kind::Browser, "Pixel");
+    root.sign_with(&a.phone);
+    let window = DeviceKeys::generate();
+    let mut old_app = Cert::new(&window, "a", Kind::Browser, "Arugula app on jake-air");
+    old_app.sign_with(&a.phone);
+    let firefox = DeviceKeys::generate();
+    let mut ff = Cert::new(&firefox, "a", Kind::Browser, "Firefox on Mac");
+    ff.sign_with(&window);
+    let certs = vec![root, old_app, ff];
+    let trust = |legacy_app: Vec<String>| DeviceTrust {
+        root: a.phone.id(),
+        certs: certs.clone(),
+        revocations: vec![],
+        legacy_app,
+    };
+
+    // Stored after the app had a kind: not grandfathered.
+    hub.devices("a", trust(vec![]));
+    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&firefox, "a", &id, &op, Decision::Once))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "not grandfathered: {v}");
+
+    // Grandfathered: the window itself still never approves.
+    hub.devices("a", trust(vec![window.id()]));
+    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&window, "a", &id, &op, Decision::Once))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_A_DEVICE)), "the window itself: {v}");
+    assert_eq!(state(&base, &id).await, json!("pending"));
+
+    // A team's owner made by a browser the window let in: b's roster
+    // version 2 makes a an owner, signed by b's Firefox.
+    let (ar, br) = (a.phone.id(), b.phone.id());
+    let mut b_root = Cert::new(&b.phone, "b", Kind::Browser, "Pixel");
+    b_root.sign_with(&b.phone);
+    let b_window = DeviceKeys::generate();
+    let mut b_app = Cert::new(&b_window, "b", Kind::Browser, "illogical app");
+    b_app.sign_with(&b.phone);
+    let b_firefox = DeviceKeys::generate();
+    let mut b_ff = Cert::new(&b_firefox, "b", Kind::Browser, "Firefox");
+    b_ff.sign_with(&b_window);
+    let b_trust = |legacy_app: Vec<String>| DeviceTrust {
+        root: br.clone(),
+        certs: vec![b_root.clone(), b_app.clone(), b_ff.clone()],
+        revocations: vec![],
+        legacy_app,
+    };
+    let v1 = roster(1, &[("b", &br, TeamRole::Owner), ("a", &ar, TeamRole::Editor)], &b.phone);
+    let both = [("b", br.as_str(), TeamRole::Owner), ("a", ar.as_str(), TeamRole::Owner)];
+    hub.rosters("t", vec![v1, roster(2, &both, &b_firefox)]);
+    hub.devices("b", b_trust(vec![]));
+    let (st, v) = call(&base, "a", "POST", &approve, Some(signed(&firefox, "a", &id, &op, Decision::Once))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some(NOT_AN_OWNER)), "b's window not grandfathered: {v}");
+    hub.devices("b", b_trust(vec![b_window.id()]));
+    let (st, d) = call(&base, "a", "POST", &approve, Some(signed(&firefox, "a", &id, &op, Decision::Once))).await;
+    assert_eq!((st, &d["state"]), (200, &json!("approved")), "both grandfathered: {d}");
 }
 
 /// A team's owner approves only if a browser made them an owner: the

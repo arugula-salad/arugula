@@ -465,6 +465,29 @@ pub fn browser_link(c: &Cert, device: &str, browser: impl Fn(&Cert) -> bool) -> 
     browser(c) || (c.kind == Kind::Recovery && c.device != device)
 }
 
+/// Grandfathered app windows ([`legacy_app_link`]) by account: what a
+/// hosted machine pins beside its owners' certificates.
+pub type LegacyApp = std::collections::BTreeMap<String, Vec<String>>;
+
+/// A link of a browser chain to `device` that's the desktop app's window
+/// from before it had a kind (a `browser` certificate it named,
+/// [`Cert::from_app`]) and that the hub grandfathered: one of `legacy`, the
+/// account's device ids control stored before the app had a kind of its
+/// own (control's `legacy_app`). Only a link before `device`, never
+/// `device` itself: what such a window approved back then stands, but its
+/// key, which a program on its computer may hold, signs nothing that needs
+/// a browser now.
+pub fn legacy_app_link(c: &Cert, device: &str, legacy: &[String]) -> bool {
+    c.device != device && c.kind == Kind::Browser && c.from_app() && legacy.contains(&c.device)
+}
+
+/// [`browser_link`] with [`Cert::is_browser`], or a grandfathered app
+/// window on the way ([`legacy_app_link`]): a link of a chain that's a
+/// browser's or a phone's all the way back.
+pub fn browser_or_legacy_link(c: &Cert, device: &str, legacy: &[String]) -> bool {
+    browser_link(c, device, Cert::is_browser) || legacy_app_link(c, device, legacy)
+}
+
 /// Which check an approval failed (#327).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refusal {

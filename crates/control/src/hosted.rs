@@ -29,6 +29,7 @@ use arugula_control_wire::hosted::{
 };
 use arugula_e2e::{
     Cert, Revocation, Trust,
+    cert::LegacyApp,
     hosted::{Delegation, DelegationRevoke, HostedCert, HostedKey, Owner, Owners, enroll_proof_body, live},
     now_ms,
     team::{AccountCerts, Roster, TeamPin, TeamRole},
@@ -111,6 +112,23 @@ pub(crate) fn people(db: &Db, owner: &Owner) -> anyhow::Result<Option<People>> {
             Some(People::Account { trust: Trust { account: a.clone(), root }, certs, revocations })
         }
     })
+}
+
+/// The grandfathered app windows (`legacy_app`) of `people`'s accounts:
+/// what a hosted machine pins beside their certificates.
+pub(crate) fn legacy_app(db: &Db, people: &People) -> anyhow::Result<LegacyApp> {
+    let accounts: Vec<&str> = match people {
+        People::Team { roster, .. } => roster.members.iter().map(|m| m.account.as_str()).collect(),
+        People::Account { trust, .. } => vec![trust.account.as_str()],
+    };
+    let mut out = LegacyApp::new();
+    for a in accounts {
+        let l = crate::legacy_app::devices(db, a)?;
+        if !l.is_empty() {
+            out.insert(a.to_owned(), l);
+        }
+    }
+    Ok(out)
 }
 
 fn revokes(row: &DelegationRow) -> Vec<DelegationRevoke> {
@@ -299,9 +317,14 @@ fn enrollment(app: &App, h: &HostedRow) -> anyhow::Result<Enrollment> {
         trust: None,
         account_certs: vec![],
         account_revocations: vec![],
+        legacy_app: Default::default(),
         purpose: h.purpose.clone(),
     };
-    match Owner::parse(&h.cert.owner).and_then(|o| people(&app.db, &o).transpose()).transpose()? {
+    let people = Owner::parse(&h.cert.owner).and_then(|o| people(&app.db, &o).transpose()).transpose()?;
+    if let Some(p) = &people {
+        e.legacy_app = legacy_app(&app.db, p)?;
+    }
+    match people {
         Some(People::Team { pin, roster, certs }) => {
             e.team = Some(pin);
             e.roster = Some(*roster);

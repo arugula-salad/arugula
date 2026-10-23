@@ -1070,7 +1070,9 @@ impl Db {
     // ---- devices
 
     /// Store a device's certificate; the first approved one becomes the
-    /// account's root.
+    /// account's root. `now` is control's clock: `created` is when the row
+    /// was first stored, and putting the same device again (asking again,
+    /// being approved) keeps it (`legacy_app` relies on that).
     pub fn put_device(&self, cert: &Cert, approved: bool, now: u64) -> anyhow::Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
@@ -1129,6 +1131,20 @@ impl Db {
             if approved { yes.push(cert) } else { no.push(cert) }
         }
         Ok((yes, no))
+    }
+
+    /// An account's approved `browser` certificates whose rows this database
+    /// first stored before `before` (ms): `created` is control's clock when
+    /// the row was inserted ([`Db::put_device`]), never the certificate's
+    /// own time, and a later put of the same device keeps it.
+    pub fn browsers_stored_before(&self, account: &str, before: u64) -> anyhow::Result<Vec<Cert>> {
+        let c = self.c();
+        let mut q = c.prepare(
+            "SELECT cert FROM devices WHERE account = ?1 AND kind = 'browser' AND approved = 1 AND created < ?2
+             ORDER BY created",
+        )?;
+        let rows = q.query_map(params![account, before as i64], |r| cert_of(r.get(0)?))?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Turn a pending device down, remembering which device did (by name)

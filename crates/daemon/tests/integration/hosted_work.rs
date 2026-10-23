@@ -222,6 +222,7 @@ async fn enroll(Axum(f): Axum<Fake>, Json(b): Json<EnrollRequest>) -> Response {
         trust: Some(Trust { account: "acct1".into(), root: f.root.id() }),
         account_certs: vec![f.root_cert.clone()],
         account_revocations: vec![],
+        legacy_app: Default::default(),
         purpose: f.purpose.lock().unwrap().clone(),
     };
     *f.enrolled.lock().unwrap() = Some((e.clone(), b.sign));

@@ -48,7 +48,13 @@ use sha2::{Digest, Sha256};
 #[path = "deploy_apps_platform.rs"]
 pub mod apps_platform;
 
-use crate::{Cert, Trust, cert::verify_hex, hosted::Owners, keys::DeviceKeys, team::TeamRole};
+use crate::{
+    Cert, Trust,
+    cert::{LegacyApp, verify_hex},
+    hosted::Owners,
+    keys::DeviceKeys,
+    team::TeamRole,
+};
 
 /// An approval's longest life (S37 q4: at most 7 days), from when it's
 /// taken, with S37's ten minutes' slack for the approver's clock.
@@ -320,10 +326,17 @@ impl Approval {
 /// keys a program on its computer can read), by [`Trust::chained`] over
 /// every certificate kept on the way. The platform asks it before it takes
 /// an approval, and a hosted machine before it applies one (M219).
-pub fn approver_chained(account: &str, root: &str, certs: &[Cert], device: &str) -> bool {
+///
+/// `legacy` is the account's grandfathered app windows: `browser`
+/// certificates the desktop app named, which control stored before the app
+/// had a kind of its own (control's `legacy_app`, by control's own record
+/// of when it stored each). They count as links on the way, the root
+/// included, never as `device` itself ([`crate::cert::legacy_app_link`]).
+pub fn approver_chained(account: &str, root: &str, certs: &[Cert], device: &str, legacy: &[String]) -> bool {
     let trust = Trust { account: account.to_owned(), root: root.to_owned() };
     trust.chained(certs, device, |c| {
-        crate::cert::browser_link(c, device, Cert::is_browser) && (c.device != root || c.is_browser())
+        crate::cert::browser_or_legacy_link(c, device, legacy)
+            && (c.device != root || c.is_browser() || crate::cert::legacy_app_link(c, device, legacy))
     })
 }
 
@@ -397,8 +410,9 @@ impl ApplyRefusal {
 
 /// What a machine checks before it applies `deploy`'s operation `op` (M219),
 /// with the owners it pinned at enrollment (`owners`: its team's roster
-/// and members' certificates, or its account's chain), at `now` by its own
-/// clock:
+/// and members' certificates, or its account's chain) and the grandfathered
+/// app windows it pinned with them (`legacy`, by account: see
+/// [`approver_chained`]), at `now` by its own clock:
 /// - the approval is `once`, for this deploy, over exactly this operation,
 ///   and not past its `expires`;
 /// - its account is an owner of the project, and its device one of that
@@ -409,11 +423,16 @@ impl ApplyRefusal {
 ///   verification. Its signature is the hub's to check (it keeps passkeys'
 ///   public keys); until the hub publishes them, the machine checks the
 ///   rest.
+///
+/// The machine takes `legacy` from control at enrollment, as it takes the
+/// certificates: whoever could mark an app window grandfathered there could
+/// as well send it certificates, so it trusts control no more than it did.
 pub fn check_apply(
     approval: &Approval,
     op: &Operation,
     deploy: &str,
     owners: &Owners,
+    legacy: &LegacyApp,
     passkey: Option<PasskeyParts>,
     now: u64,
 ) -> Result<(), ApplyRefusal> {
@@ -447,7 +466,8 @@ pub fn check_apply(
         }
     };
     let Some(cert) = trusted.get(&approval.by) else { return Err(ApplyRefusal::Device) };
-    if !approver_chained(&approval.account, &root, all, &approval.by) {
+    let legacy = legacy.get(&approval.account).map(Vec::as_slice).unwrap_or_default();
+    if !approver_chained(&approval.account, &root, all, &approval.by, legacy) {
         return Err(ApplyRefusal::Device);
     }
     if !approval.signed_by(&cert.sign) {
@@ -623,7 +643,7 @@ mod tests {
         let now = 1_000;
         let check = |owners: &Owners, a: &Approval, pk: Option<(String, String)>| {
             let parts = pk.as_ref().map(|(c, d)| PasskeyParts { client_data_json: c, authenticator_data: d });
-            check_apply(a, &op(), "dep_1", owners, parts, now)
+            check_apply(a, &op(), "dep_1", owners, &LegacyApp::new(), parts, now)
         };
         let good = Approval::new(&phone, "dep_1", &op(), "a", Decision::Once, now + 1);
         for owners in [&team, &mine] {
@@ -657,6 +677,87 @@ mod tests {
         let b = Approval::new(&bphone, "dep_1", &op(), "b", Decision::Once, now + 1);
         assert_eq!(check(&team, &b, ok_pk(&b)), Err(ApplyRefusal::NotAnOwner));
         assert_eq!(check(&mine, &b, ok_pk(&b)), Err(ApplyRefusal::NotAnOwner), "not this account");
+    }
+
+    /// A browser the desktop app's window approved before the app had a
+    /// kind of its own counts when the hub grandfathered that window (its
+    /// id in `legacy`), and only then; a CLI never does, nor the window
+    /// itself, nor an `app` certificate.
+    #[test]
+    fn a_grandfathered_app_window_counts_on_the_way_and_only_on_the_way() {
+        use crate::{Cert, Kind, Revocation};
+        let phone = DeviceKeys::generate();
+        let mut root = Cert::new(&phone, "a", Kind::Browser, "Pixel");
+        root.sign_with(&phone);
+        let window = DeviceKeys::generate();
+        let mut window_cert = Cert::new(&window, "a", Kind::Browser, "Arugula app on jake-air");
+        window_cert.sign_with(&phone);
+        let firefox = DeviceKeys::generate();
+        let mut firefox_cert = Cert::new(&firefox, "a", Kind::Browser, "Firefox on Mac");
+        firefox_cert.sign_with(&window);
+        let cli = DeviceKeys::generate();
+        let mut cli_cert = Cert::new(&cli, "a", Kind::Cli, "geek");
+        cli_cert.sign_with(&phone);
+        let chrome = DeviceKeys::generate();
+        let mut chrome_cert = Cert::new(&chrome, "a", Kind::Browser, "Chrome");
+        chrome_cert.sign_with(&cli);
+        let app = DeviceKeys::generate();
+        let mut app_cert = Cert::new(&app, "a", Kind::App, "Arugula app on jake-mini");
+        app_cert.sign_with(&phone);
+        let safari = DeviceKeys::generate();
+        let mut safari_cert = Cert::new(&safari, "a", Kind::Browser, "Safari");
+        safari_cert.sign_with(&app);
+        let certs =
+            [root.clone(), window_cert.clone(), firefox_cert.clone(), cli_cert, chrome_cert, app_cert, safari_cert];
+        let p = phone.id();
+        let ids = |ks: &[&DeviceKeys]| ks.iter().map(|k| k.id()).collect::<Vec<_>>();
+        let chained = |device: &DeviceKeys, legacy: &[String]| approver_chained("a", &p, &certs, &device.id(), legacy);
+        assert!(chained(&firefox, &ids(&[&window])), "the window was grandfathered");
+        assert!(!chained(&firefox, &[]), "it wasn't");
+        assert!(!chained(&firefox, &ids(&[&firefox])), "another device's id doesn't help");
+        assert!(!chained(&window, &ids(&[&window])), "the window itself never approves");
+        assert!(!chained(&chrome, &ids(&[&cli])), "a CLI never counts, listed or not");
+        assert!(!chained(&safari, &ids(&[&app])), "nor an `app` certificate");
+        assert!(chained(&phone, &[]) && chained(&phone, &ids(&[&window])), "the phone is as it was");
+
+        // A grandfathered window as the root (self-signed, from before the
+        // app couldn't be one) counts as the root on the way.
+        let mut wroot = Cert::new(&window, "b", Kind::Browser, "illogical app");
+        wroot.sign_with(&window);
+        let mut b_firefox = Cert::new(&firefox, "b", Kind::Browser, "Firefox");
+        b_firefox.sign_with(&window);
+        let b = [wroot, b_firefox];
+        assert!(approver_chained("b", &window.id(), &b, &firefox.id(), &ids(&[&window])));
+        assert!(!approver_chained("b", &window.id(), &b, &firefox.id(), &[]));
+        assert!(!approver_chained("b", &window.id(), &b, &window.id(), &ids(&[&window])));
+
+        // A machine checks it with the set it pinned, by account.
+        let trust = Trust { account: "a".into(), root: p.clone() };
+        let mine = Owners::Account { trust: &trust, certs: &certs, revocations: &[] as &[Revocation] };
+        let now = 1_000;
+        let a = Approval::new(&firefox, "dep_1", &op(), "a", Decision::Once, now + 1);
+        let (cd, ad) = passkey_over(&a, "webauthn.get", 0x05);
+        let parts = Some(PasskeyParts { client_data_json: &cd, authenticator_data: &ad });
+        let pinned = |account: &str, ks: &[&DeviceKeys]| LegacyApp::from([(account.to_owned(), ids(ks))]);
+        assert_eq!(check_apply(&a, &op(), "dep_1", &mine, &pinned("a", &[&window]), parts, now), Ok(()));
+        assert_eq!(
+            check_apply(&a, &op(), "dep_1", &mine, &LegacyApp::new(), parts, now),
+            Err(ApplyRefusal::Device),
+            "pinned none"
+        );
+        assert_eq!(
+            check_apply(&a, &op(), "dep_1", &mine, &pinned("b", &[&window]), parts, now),
+            Err(ApplyRefusal::Device),
+            "another account's"
+        );
+        let w = Approval::new(&window, "dep_1", &op(), "a", Decision::Once, now + 1);
+        let (cd, ad) = passkey_over(&w, "webauthn.get", 0x05);
+        let parts = Some(PasskeyParts { client_data_json: &cd, authenticator_data: &ad });
+        assert_eq!(
+            check_apply(&w, &op(), "dep_1", &mine, &pinned("a", &[&window]), parts, now),
+            Err(ApplyRefusal::Device),
+            "the window's own approval"
+        );
     }
 
     #[test]

@@ -1391,6 +1391,28 @@ Sessions made before `via` that look like the app's window (they said
 they're one of its devices, or their User-Agent names it) are marked
 `app` when the column comes.
 
+**Old app windows are grandfathered on the way back.** Before #1343 the
+desktop app's window enrolled as a `browser` device it named ("Arugula app
+on …", "illogical app"), and it approved browsers. Such a certificate
+counts as a link on the way back to the root again, wherever control
+checks "a browser all the way back" (signing for a passkey, approving a
+browser or recovery codes, removing a browser, raising a team's owner or
+editor, a standing grant's signature, approving a deploy), when control
+stored it before #1343 shipped: before `2026-10-22T20:18:00Z`
+(`legacy_app::APP_KIND_SHIPPED_MS`, when the v0.59.0 release run's
+`control` job finished, rounded down). That's control's own record of
+when it first stored the row (`devices.created`, its clock, kept when the
+same device is put again), not the certificate's `created`, which its
+signer chose; a stolen app key can't backdate it. The window itself never
+counts as the device that signs, only as a link before it; one stored
+later never counts; nor does a revoked one. The platform gets the list
+with an account's devices (`DeviceTrust::legacy_app`), and a deploy's box
+pins it with its owners' certificates at enrollment
+(`Enrollment::legacy_app`), trusting it as far as it trusts those. The
+page gets it from `GET /api/devices` (`legacy_app`) to show what control
+will take (Approve, recovery codes, standing grants). Daemons' and pages'
+own checks of team papers keep #1343's rule.
+
 Every WebAuthn ceremony is refused from inside another site's frame
 (`crossOrigin`, `topOrigin`).
 

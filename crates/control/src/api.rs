@@ -146,16 +146,18 @@ fn approval_ok(app: &App, account: &str, cert: &Cert, what: &str) -> Result<(), 
     // included, is one too (`Cert::is_browser`): not the desktop app's
     // devices from before it had a kind of its own (`browser` ones it
     // named), nor anything they certified, from now on. What they approved
-    // before stands. A recovery code approves a browser when the browser
-    // that made the code is one all the way back.
+    // before stands, and those control stored before then count on the
+    // way (`legacy_app`), never as the approver. A recovery code approves a
+    // browser when the browser that made the code is one all the way back.
     if matches!(cert.kind, Kind::Browser | Kind::Recovery) {
+        let legacy = crate::legacy_app::devices(&app.db, account)?;
         let by = trust.evaluate(&certs, &revs).get(&cert.approver).cloned();
         let from = match &by {
             Some(a) if a.kind == Kind::Recovery && cert.kind == Kind::Browser => Some(a.approver.clone()),
             Some(a) => Some(a.device.clone()),
             None => None,
         };
-        if !from.is_some_and(|d| browser_all_the_way(&trust, &certs, &d)) {
+        if !from.is_some_and(|d| browser_all_the_way(&trust, &certs, &d, &legacy)) {
             let r = Refusal::NeedsBrowser;
             refused(what, account, cert, r.check());
             return Err(refusal(StatusCode::FORBIDDEN, r.code(), refused_say(r)));
@@ -168,9 +170,12 @@ fn approval_ok(app: &App, account: &str, cert: &Cert, what: &str) -> Result<(), 
 /// included), is a browser's or a phone's own (`Cert::is_browser`): not a
 /// CLI, not the desktop app, not the app's devices from before it had a
 /// kind. What may make a browser, a recovery code, a team's owner or
-/// editor, or remove a browser, here.
-pub(crate) fn browser_all_the_way(trust: &Trust, certs: &[Cert], device: &str) -> bool {
-    trust.chained(certs, device, |c| arugula_e2e::cert::browser_link(c, device, Cert::is_browser))
+/// editor, or remove a browser, here. Recovery codes count on the way, and
+/// so do the app's windows from before it had a kind that control stored
+/// before then (`legacy`: `legacy_app::devices` of the account `trust`
+/// names), never as `device` itself.
+pub(crate) fn browser_all_the_way(trust: &Trust, certs: &[Cert], device: &str, legacy: &[String]) -> bool {
+    trust.chained(certs, device, |c| arugula_e2e::cert::browser_or_legacy_link(c, device, legacy))
 }
 
 #[derive(Deserialize)]
@@ -332,12 +337,13 @@ pub async fn add_recovery(State(app): State<Arc<App>>, s: PageSession, Json(b): 
         }
     }
     let now = trust.as_ref().map(|t| t.evaluate(&certs, &revs)).unwrap_or_default();
+    let legacy = crate::legacy_app::devices(&app.db, &s.account)?;
     for r in &b.revocations {
         // The old codes go only by a browser or a phone all the way back,
         // and now: one backdated would take out the browsers they let in.
         let ok = now.get(&r.device).is_some_and(|c| c.kind == Kind::Recovery)
             && now.get(&r.by).is_some_and(|c| c.kind.connects() && r.account == s.account && r.signed_by(c))
-            && trust.as_ref().is_some_and(|t| browser_all_the_way(t, &certs, &r.by))
+            && trust.as_ref().is_some_and(|t| browser_all_the_way(t, &certs, &r.by, &legacy))
             && r.at.abs_diff(now_ms()) <= REVOKE_SKEW_MS;
         if !ok {
             return Err(err(StatusCode::FORBIDDEN, "that revocation doesn't check out"));
@@ -385,9 +391,12 @@ pub async fn devices(State(app): State<Arc<App>>, s: Session) -> R {
     // #764: devices whose keys come from a passkey (they pinned their root),
     // for the page to say removing one signs out every browser with it.
     let passkeys = app.db.pinned_devices(&s.account)?;
+    // The app's windows control grandfathered (`legacy_app`), for the page
+    // to count them on the way back as control does.
+    let legacy_app = crate::legacy_app::devices(&app.db, &s.account)?;
     Ok(Json(json!({
         "trust": trust, "certs": certs, "revocations": revs, "pending": pending, "joins": joins, "used": used,
-        "features": features, "passkeys": passkeys,
+        "features": features, "passkeys": passkeys, "legacy_app": legacy_app,
     })))
 }
 
@@ -501,7 +510,8 @@ pub async fn revoke(State(app): State<Arc<App>>, s: Session, Json(b): Json<Revok
     // A recovery code counts as a browser here: one revoked backdated
     // would take out the browser it let in.
     let of_browser = certs.iter().any(|c| c.device == r.device && matches!(c.kind, Kind::Browser | Kind::Recovery));
-    if of_browser && !browser_all_the_way(&trust, &certs, &r.by) {
+    let legacy = crate::legacy_app::devices(&app.db, &s.account)?;
+    if of_browser && !browser_all_the_way(&trust, &certs, &r.by, &legacy) {
         return Err(refusal(
             StatusCode::FORBIDDEN,
             Refusal::NeedsBrowser.code(),

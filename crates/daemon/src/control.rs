@@ -189,6 +189,12 @@ pub struct HostedPin {
     /// never stops being one.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub deploy: bool,
+    /// The project owners' grandfathered app windows, by account, as
+    /// control sent them with their certificates
+    /// (`arugula_e2e::deploy::check_apply`): pinned with the certificates,
+    /// and trusted as far as they are.
+    #[serde(default, skip_serializing_if = "arugula_e2e::cert::LegacyApp::is_empty")]
+    pub legacy_app: arugula_e2e::cert::LegacyApp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4195,6 +4201,7 @@ pub(crate) mod tests {
                 delegation: d,
                 revocations: vec![],
                 deploy: false,
+                legacy_app: Default::default(),
             }),
             ..team_saved.clone()
         };
@@ -4307,6 +4314,7 @@ pub(crate) mod tests {
                 delegation: d,
                 revocations: vec![],
                 deploy: false,
+                legacy_app: Default::default(),
             }),
             ..team_saved.clone()
         };
