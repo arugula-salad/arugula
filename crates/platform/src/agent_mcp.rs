@@ -64,7 +64,7 @@ use crate::{
     chat::agent_threads,
     db::{
         agent_tokens::{AgentCall, AgentToken, TOKEN_PREFIX, hash, new_call},
-        projects::SECRETS_WRITE,
+        projects::{DEPLOYS_PLAN, SECRETS_WRITE},
     },
     deploys,
     grants::{AgentScope, agent_may, owner_reads, token_label},
@@ -89,8 +89,9 @@ pub(crate) const ACCOUNT_REQUESTS: (&str, usize) = ("mcp-account-request", 14_40
 pub(crate) const ACCOUNT_DEPLOY_ASKS: (&str, usize) = ("mcp-account-deploy", 30);
 /// Runs started by an account's tokens' agents, per hour, all together.
 pub(crate) const ACCOUNT_RUN_STARTS: (&str, usize) = ("mcp-account-run", 120);
-/// The most a request's body holds, in bytes.
-pub const MAX_BODY: usize = 64 * 1024;
+/// The most a request's body holds, in bytes: a ship's source, base64
+/// (M233), and the rest of its call.
+pub const MAX_BODY: usize = 3 * 1024 * 1024;
 /// The most secrets of its own a project keeps.
 pub const MAX_PROJECT_SECRETS: usize = 100;
 /// Secrets a token's agent sets, per hour.
@@ -738,6 +739,11 @@ impl Agent {
     }
 
     async fn plan_deploy(&self, a: PlanDeploy) -> Out {
+        // planter's ship (M233): the source itself, to a planter-ship
+        // environment, kept as the deploy's artifact.
+        if a.files.is_some() {
+            return self.ship(a).await;
+        }
         let commit = a.commit.trim().to_ascii_lowercase();
         if commit.len() != 40 || !commit.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err(failed(format!("commit: its full 40-hex id, not {:?}", a.commit)));
@@ -753,10 +759,62 @@ impl Agent {
         }
         let p = self.project(a.project.as_deref()).await?;
         self.app.limits.check_account(ACCOUNT_DEPLOY_ASKS, &self.token.account)?;
+        let source = json!({ "kind": "commit", "ref": commit, "where": repo });
+        self.plan_and_ask(p, a.environment.trim(), source, a.roll_back).await
+    }
+
+    /// `plan_deploy` with `files` (M233): planter's ship API's shape, its
+    /// `{ name, files }` as an environment and a gzipped tar, base64. The
+    /// environment is a planter-ship one (its settings say the app's name,
+    /// port, health path and secrets: the owner's, so the plan names them);
+    /// the tar is kept as the project's artifact, by its digest, which the
+    /// deploy's source names. Planned and asked, as any deploy: an owner
+    /// approves it on their device.
+    async fn ship(&self, a: PlanDeploy) -> Out {
+        use arugula_e2e::deploy::planter as planter;
+        use base64::Engine as _;
+        if !a.commit.trim().is_empty() || !a.repo.trim().is_empty() || a.roll_back {
+            return Err(failed("files ship a source: leave out commit, repo and roll_back"));
+        }
+        let p = self.project(a.project.as_deref()).await?;
+        self.app.limits.check_account(ACCOUNT_DEPLOY_ASKS, &self.token.account)?;
+        agent_may(&self.app, &self.me(), DEPLOYS_PLAN, &AgentScope::Project(p.clone())).await?;
+        let wanted = a.environment.trim();
+        let env = self.app.db.environments(&p)?.into_iter().find(|e| e.id == wanted || e.name == wanted);
+        let Some(env) = env.filter(|e| e.driver == planter::SHIP) else {
+            return Err(failed(format!(
+                "files ship to a {} environment, and the project has none called {wanted:?}: its owner makes one \
+                 (its app's name, port and health path are its settings)",
+                planter::SHIP
+            )));
+        };
+        let text: String = a.files.unwrap_or_default().split_whitespace().collect();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(text.as_bytes())
+            .map_err(|_| failed("files: the app's source as a gzipped tar, base64 (tar -czf - -C DIR . | base64 -w0)"))?;
+        if bytes.len() > planter::MAX_TARBALL {
+            return Err(failed(format!(
+                "files is {} bytes: a ship carries at most {} (leave out node_modules and builds)",
+                bytes.len(),
+                planter::MAX_TARBALL
+            )));
+        }
+        if !bytes.starts_with(&[0x1f, 0x8b]) {
+            return Err(failed("files isn't gzipped: tar -czf"));
+        }
+        let digest = format!("sha256:{}", hex::encode(<sha2::Sha256 as sha2::Digest>::digest(&bytes)));
+        self.app.db.put_deploy_artifact(&p, &digest, &bytes, &self.token.account, now_ms())?;
+        let source = json!({ "kind": "artifact", "ref": digest, "where": planter::ARTIFACT_WHERE });
+        self.plan_and_ask(p, &env.id, source, false).await
+    }
+
+    /// Plan a deploy of `source` to `environment` in project `p`, and ask
+    /// its owners: what `plan_deploy` answers.
+    async fn plan_and_ask(&self, p: String, environment: &str, source: Value, roll_back: bool) -> Out {
         let plan: deploys::Plan = args(&json!({
-            "environment": a.environment.trim(),
-            "source": { "kind": "commit", "ref": commit, "where": repo },
-            "roll_back": a.roll_back,
+            "environment": environment,
+            "source": source,
+            "roll_back": roll_back,
         }))?;
         let d = deploys::agent::plan(self.state(), self.me(), Path(p.clone()), Json(plan)).await?.0;
         let id = d["id"].as_str().unwrap_or_default().to_owned();
@@ -963,10 +1021,15 @@ struct PlanDeploy {
     #[serde(default)]
     project: Option<String>,
     environment: String,
+    #[serde(default)]
     commit: String,
+    #[serde(default)]
     repo: String,
     #[serde(default)]
     roll_back: bool,
+    /// planter's ship (M233): the source, a gzipped tar, base64.
+    #[serde(default)]
+    files: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1139,16 +1202,23 @@ pub fn tools() -> Vec<Value> {
         tool(
             "plan_deploy",
             "Plan a deploy of a commit to one of a project's environments and ask the project's owners to approve \
-             it (deploys.plan). Agents plan and ask; they never approve: an owner approves (or denies) it on their \
-             phone or in a browser, with a passkey. Returns the deploy (dep_…), waiting for approval.",
+             it (deploys.plan). Or ship an app's source (planter's ship): files, to a planter-ship environment, \
+             which says the app's name, port and health path; it runs at https://<app>.run.inevitable.fyi once \
+             approved. Agents plan and ask; they never approve: an owner approves (or denies) it on their phone or \
+             in a browser, with a passkey. Returns the deploy (dep_…), waiting for approval.",
             json!({
                 "project": prop("string", PROJECT),
                 "environment": prop("string", "Its name in the project (production), or its id (env_…)."),
-                "commit": prop("string", "The commit's full 40-hex id."),
-                "repo": prop("string", "OWNER/NAME on GitHub."),
+                "commit": prop("string", "The commit's full 40-hex id (not with files)."),
+                "repo": prop("string", "OWNER/NAME on GitHub (not with files)."),
                 "roll_back": prop("boolean", "Deploy a commit this environment ran before, with what it ran then."),
+                "files": prop(
+                    "string",
+                    "To ship: the app's source, a directory with its Dockerfile at its root, as a gzipped tar, base64 \
+                     (tar -czf - -C DIR . | base64 -w0), at most 2 MiB before base64.",
+                ),
             }),
-            &["environment", "commit", "repo"],
+            &["environment"],
             false,
         ),
         tool(

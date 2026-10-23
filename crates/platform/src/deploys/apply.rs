@@ -57,7 +57,9 @@
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
-use arugula_control_wire::work::{DeployWork, PasskeyAssertion, Reported, Secret, SecretsAsk, SecretsGiven};
+use arugula_control_wire::work::{
+    ArtifactGiven, DeployWork, PasskeyAssertion, Reported, Secret, SecretsAsk, SecretsGiven,
+};
 use arugula_e2e::{
     run::{DeployApply, Op},
     team::TeamRole,
@@ -749,6 +751,43 @@ pub async fn secrets(app: &Platform, m: &HostedMachine, ask: &SecretsAsk) -> Res
     let names: Vec<&str> = out.iter().map(|s| s.name.as_str()).collect();
     info!(run = run.id, deploy = d.id, ?names, "gave a deploy run its secrets, once");
     Ok(SecretsGiven::Given { secrets: out })
+}
+
+/// `POST /api/hosted/work/artifact` from `m` (M233): the artifact its
+/// deploy run applies (planter's Ship: an agent's source), while the run
+/// runs and its deploy is being applied by it. Not a secret, so not once:
+/// the box checks its bytes against the approved digest.
+pub async fn artifact(app: &Platform, m: &HostedMachine, ask: &SecretsAsk) -> Result<ArtifactGiven> {
+    let refused = |why: &str| {
+        info!(run = ask.run, machine = m.machine, why, "refused a deploy run's artifact");
+        Ok(ArtifactGiven::Refused { why: why.into() })
+    };
+    let db = &app.db;
+    let Some(run) = db.run(&ask.run)? else { return refused("no such run") };
+    if run.project != m.project || run.workspace.as_deref() != Some(m.workspace.as_str()) || run.daemon != m.machine {
+        return refused("the run isn't this machine's");
+    }
+    if run.state != RunState::Running {
+        return refused("the run isn't running");
+    }
+    let Some(dr) = db.deploy_run_of(&run.id)? else { return refused("the run isn't a deploy's") };
+    let Some(d) = db.deploy(&dr.deploy)? else { return refused("no such deploy") };
+    if d.state != State::Running || d.run.as_deref() != Some(run.id.as_str()) {
+        return refused("its deploy isn't being applied by this run");
+    }
+    if d.source.kind != crate::db::deploys::SourceKind::Artifact {
+        return refused("its deploy's source isn't an artifact");
+    }
+    let env = db.environment(&d.environment)?.context("a deploy's environment is gone")?;
+    let Some(bytes) = db.deploy_artifact(&env.project, &d.source.reference)? else {
+        return refused("the project keeps no such artifact (it's 30 days old, or was never shipped)");
+    };
+    use base64::Engine as _;
+    info!(run = run.id, deploy = d.id, size = bytes.len(), "gave a deploy run its artifact");
+    Ok(ArtifactGiven::Given {
+        digest: d.source.reference.clone(),
+        bytes: base64::engine::general_purpose::STANDARD.encode(bytes),
+    })
 }
 
 #[cfg(test)]

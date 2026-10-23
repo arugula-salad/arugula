@@ -1,0 +1,14 @@
+# https://redone-hello.run.inevitable.fyi: redone-hello on home-cloud, applied by Flux from this directory. platform/ is rendered
+# from app.yaml on every build of main (don't edit it); this file is yours: add kustomize patches here
+# for anything app.yaml can't say. Every app shares the `planter-apps` namespace, which the platform
+# owns along with the `ghcr` pull secret and the `planter-apps-secrets` ServiceAccount.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: planter-apps
+resources:
+  - platform
+images:
+  - name: ghcr.io/arugula-salad/redone-hello
+    # Pinned by .github/workflows/build.yml on every build of main. `unpinned` is a placeholder
+    # that does not exist: the app does not run until CI has replaced it.
+    digest: sha256:7e4aef32d044196c477870617ce20a884412a9fe2bff1806d536dbfcdfdd9e75

@@ -282,6 +282,12 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0031_agent_tokens.sql"),
         additive: true,
     },
+    Migration {
+        version: 34,
+        name: "deploy_artifacts",
+        sql: include_str!("../../migrations/sqlite/0034_deploy_artifacts.sql"),
+        additive: true,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -472,6 +478,12 @@ const POSTGRES: &[Migration] = &[
         version: 31,
         name: "agent_tokens",
         sql: include_str!("../../migrations/postgres/0031_agent_tokens.sql"),
+        additive: true,
+    },
+    Migration {
+        version: 34,
+        name: "deploy_artifacts",
+        sql: include_str!("../../migrations/postgres/0034_deploy_artifacts.sql"),
         additive: true,
     },
 ];

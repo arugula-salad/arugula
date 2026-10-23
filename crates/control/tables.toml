@@ -1022,6 +1022,17 @@ note = "Those of projects that go with it go. The rest stay, naming no planner."
 seen_by = ["litestream"]
 
 [[table]]
+name = "deploy_artifacts"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "A source shipped to one of a project's planter-ship environments (M233): the gzipped tar of an app's source an agent (or a person) shipped, by its SHA-256, the project, its size, the account that shipped it and when. The deploy's source names it; the deploy's box reads it to apply it. A project's go 30 days after they're shipped, when it ships another."
+why_asleep = "An agent ships while every machine is asleep, and the deploy's box, made for it after an owner approves, reads it then."
+with_account = "partly"
+note = "Those of projects that go with it go. The rest stay, as their project's."
+seen_by = ["litestream"]
+
+[[table]]
 name = "deploy_events"
 plane = "platform"
 process = "platform"

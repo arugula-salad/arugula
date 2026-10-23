@@ -42,7 +42,7 @@ use arugula_control_wire::{
     forge::{DaemonOp, OpAnswer, Poke, Standing},
     hosted::{EnrollAsk, EnrollGiven, Enrolled, SetupPlan, SetupReport, WakeAnswer},
     run_logs::{Upload, UploadGiven, Uploaded},
-    work::{Report, Reported, SecretsAsk, SecretsGiven, Work},
+    work::{ArtifactGiven, Report, Reported, SecretsAsk, SecretsGiven, Work},
 };
 
 use crate::{
@@ -787,6 +787,14 @@ impl PlatformPort for HttpPlatform {
         Box::pin(self.0.call("hosted_secrets", SecretsArgs { machine: machine.clone(), ask: ask.clone() }))
     }
 
+    fn hosted_artifact<'a>(
+        &'a self,
+        machine: &'a HostedMachine,
+        ask: &'a SecretsAsk,
+    ) -> BoxFuture<'a, anyhow::Result<ArtifactGiven>> {
+        Box::pin(self.0.call("hosted_artifact", SecretsArgs { machine: machine.clone(), ask: ask.clone() }))
+    }
+
     fn hosted_plan<'a>(
         &'a self,
         project: &'a str,
@@ -909,6 +917,10 @@ async fn platform_call(
             "hosted_secrets" => {
                 let a: SecretsArgs = args(&body)?;
                 answer(p.hosted_secrets(&a.machine, &a.ask).await?)?
+            }
+            "hosted_artifact" => {
+                let a: SecretsArgs = args(&body)?;
+                answer(p.hosted_artifact(&a.machine, &a.ask).await?)?
             }
             "hosted_plan" => {
                 let a: HostedArgs = args(&body)?;

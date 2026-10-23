@@ -943,3 +943,167 @@ async fn arugula_release_mints_only_for_a_green_commit_on_main_in_arugulas_proje
     let (st, v) = call(&base, "b", "POST", &format!("/api/projects/{t}/deploys"), Some(body)).await;
     assert_eq!(st, 403, "{v}");
 }
+
+/// [`world_with_github`], and planter's App (M233), the deploy App, against
+/// a fake GitHub of its own that has it installed on arugula-salad's shipped
+/// and planter-apps, writing their contents. The platform's own App's fake
+/// has neither: a token minted there would fail.
+async fn world_with_planters_app() -> (Arc<TestHub>, Arc<Platform>, String, String, crate::forge::links_tests::Shared) {
+    use crate::forge::links_tests::{SECRET, Shared, fake_github, granted, throwaway_key};
+    let planter: Shared = Arc::default();
+    {
+        let mut g = planter.lock().unwrap();
+        for (repo, id) in [("arugula-salad/shipped", 2001), ("arugula-salad/planter-apps", 2002)] {
+            g.installed.insert(repo.into(), (31, 500, "arugula-salad".into()));
+            g.repos.insert(repo.into(), (id, false));
+            let mut grants = granted();
+            grants["contents"] = "write".into();
+            g.grants.insert(repo.into(), grants);
+        }
+    }
+    let api = fake_github(Arc::default()).await;
+    let planter_api = fake_github(planter.clone()).await;
+    let hub = Arc::new(TestHub::default());
+    let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
+    let mut p = Platform::new(cfg, crate::db::Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
+    p.secret_key = Some(Arc::new(SecretCipher::new(KEY).unwrap()));
+    p.compute = Some(Arc::new(Fake::default()));
+    p.hosted = crate::hosted::Config { template: Some("tpl".into()), ..Default::default() };
+    p.github =
+        Some(crate::forge::GithubApp::new("1".into(), "arugula-test".into(), SECRET.into(), &api, throwaway_key()));
+    p.deploy_app = Some(crate::forge::GithubApp::new(
+        "4242".into(),
+        "arugula-planter".into(),
+        String::new(),
+        &planter_api,
+        throwaway_key(),
+    ));
+    let app = Arc::new(p);
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", l.local_addr().unwrap());
+    let router = crate::testing::router(app.clone());
+    tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
+    hub.team("t", &[("a", TeamRole::Owner), ("b", TeamRole::Editor), ("x", TeamRole::Viewer)]);
+    hub.team("u", &[("a", TeamRole::Owner)]);
+    crate::projects::follow(&app).await.unwrap();
+    crate::cache::catch_up(&app).await.unwrap();
+    let t = crate::projects::team_project(&app, "t").await.unwrap().unwrap();
+    hub.delegate(&t);
+    (hub, app, base, t, planter)
+}
+
+/// planter's ship as a deploy (M233): an artifact the project keeps,
+/// planned to a planter-ship environment (its plan naming the renderer, the
+/// app and planter's App), approved on the owner's phone; its box gets
+/// exactly the driver's two tokens, minted by planter's App and logged as
+/// its (the platform's own App isn't installed anywhere here), and the
+/// artifact, only while it applies; what it reports (the commit) is kept.
+/// Another project can't take the app's name; a platform without planter's
+/// App refuses the plan; an artifact the project doesn't keep is never given.
+#[tokio::test]
+async fn planter_ship_mints_from_planters_app_and_gives_its_box_the_artifact() {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    let (hub, app, base, t, _) = world_with_planters_app().await;
+    let body = json!({ "name": "hello", "driver": "planter-ship", "settings": { "app": "hello" } });
+    let (st, env) = call(&base, "a", "POST", &format!("/api/projects/{t}/environments"), Some(body.clone())).await;
+    assert_eq!(st, 200, "{env}");
+    assert_eq!(env["settings"]["port"], "8080", "defaults filled in: {env}");
+    let env = env["id"].as_str().unwrap().to_owned();
+    // The name is t's: u's owner can't make one for it.
+    let u = crate::projects::team_project(&app, "u").await.unwrap().unwrap();
+    let (st, v) = call(&base, "a", "POST", &format!("/api/projects/{u}/environments"), Some(body)).await;
+    assert_eq!(st, 409, "{v}");
+    assert!(v.to_string().contains("another project's"), "{v}");
+
+    let tar: Vec<u8> = vec![0x1f, 0x8b, 8, 0, 1, 2, 3, 4];
+    let digest = format!("sha256:{}", hex::encode(sha2::Sha256::digest(&tar)));
+    app.db.put_deploy_artifact(&t, &digest, &tar, "b", now_ms()).unwrap();
+    let source = json!({ "kind": "artifact", "ref": digest, "where": "platform" });
+    let (st, d) = call(
+        &base,
+        "b",
+        "POST",
+        &format!("/api/projects/{t}/deploys"),
+        Some(json!({ "environment": env, "source": source })),
+    )
+    .await;
+    assert_eq!(st, 200, "{d}");
+    let text = d["plan_text"].as_str().unwrap();
+    for says in [
+        "driver planter-ship\n",
+        "setting app hello\n",
+        "arugula-salad/shipped's hello/",
+        "planter's GitHub App (the deploy App; not the platform's)",
+        &arugula_e2e::deploy::planter::renderer_digest(),
+    ] {
+        assert!(text.contains(says), "{says:?} in {text}");
+    }
+    let id = d["id"].as_str().unwrap().to_owned();
+    let (st, d) = call(&base, "b", "POST", &format!("/api/deploys/{id}/request"), None).await;
+    assert_eq!(st, 200, "{d}");
+    let op = d["operation"]["hash"].as_str().unwrap().to_owned();
+    let a = devices(&hub, "a");
+    let (st, d) =
+        call(&base, "a", "POST", &format!("/api/deploys/{id}/approve"), Some(signed(&a.phone, "a", &id, &op, Decision::Once)))
+            .await;
+    assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
+
+    let m = boot(&app, &hub, &id).await;
+    let w = pull(&app, &m, &[TAKES_RUN, TAKES_DEPLOY]).await;
+    let dw = w.items[0].deploy.clone().unwrap();
+    assert_eq!(dw.secrets, ["SHIPPED_TOKEN", "PLANTER_APPS_TOKEN"]);
+    assert!(arugula_e2e::drivers::planned(&dw.driver, &dw.operation, &dw.settings, None));
+    let run = app.db.run(&app.db.deploy_run(&id).unwrap().unwrap().run).unwrap().unwrap();
+    // Not before it runs.
+    let early = artifact(&app, &m.m, &SecretsAsk { run: run.id.clone() }).await.unwrap();
+    assert!(matches!(early, ArtifactGiven::Refused { .. }), "{early:?}");
+    work::report(&app, &m.m, &m.report(&run, RunState::Approved, RunState::Running, now_ms(), "{}")).await.unwrap();
+    match ask(&app, &m, &run.id).await {
+        SecretsGiven::Given { secrets } => {
+            let names: Vec<&str> = secrets.iter().map(|s| s.name.as_str()).collect();
+            assert_eq!(names, ["SHIPPED_TOKEN", "PLANTER_APPS_TOKEN"]);
+        }
+        other => panic!("{other:?}"),
+    }
+    let minted: i64 = app
+        .db
+        .c()
+        .query_row("SELECT count(*) FROM github_token_mints WHERE caller = 'planter-app'", params![], |r| r.get(0))
+        .unwrap();
+    assert_eq!(minted, 2, "both minted by planter's App, and logged as its");
+    match artifact(&app, &m.m, &SecretsAsk { run: run.id.clone() }).await.unwrap() {
+        ArtifactGiven::Given { digest: d, bytes } => {
+            assert_eq!(d, digest);
+            assert_eq!(base64::engine::general_purpose::STANDARD.decode(bytes).unwrap(), tar);
+        }
+        other => panic!("{other:?}"),
+    }
+    let end = json!({ "exit": 0, "result": { "commit": "c".repeat(40), "pointer": null } }).to_string();
+    let run = app.db.run(&run.id).unwrap().unwrap();
+    assert_eq!(
+        work::report(&app, &m.m, &m.report(&run, RunState::Running, RunState::Succeeded, now_ms(), &end))
+            .await
+            .unwrap(),
+        Reported::Taken
+    );
+    assert_eq!(state(&app, &id), State::Succeeded);
+    let kept = app.db.deploy_history(&id).unwrap().pop().unwrap().detail_json().unwrap();
+    assert_eq!(kept["commit"], "c".repeat(40), "{kept}");
+
+    // A platform without planter's App: not even planned.
+    let (_, _, base2, t2, _) = world_with_github().await;
+    let body = json!({ "name": "hello", "driver": "planter-ship", "settings": { "app": "hello" } });
+    let (st, env2) = call(&base2, "a", "POST", &format!("/api/projects/{t2}/environments"), Some(body)).await;
+    assert_eq!(st, 200, "{env2}");
+    let (st, v) = call(
+        &base2,
+        "b",
+        "POST",
+        &format!("/api/projects/{t2}/deploys"),
+        Some(json!({ "environment": env2["id"], "source": source })),
+    )
+    .await;
+    assert_eq!(st, 409, "{v}");
+    assert!(v.to_string().contains("no planter GitHub App"), "{v}");
+}

@@ -62,6 +62,20 @@ export function fakeGithub(port: number, host = "127.0.0.1", user: () => string 
       // A send's user token, revoked (M168).
       await body(req);
       res.writeHead(204).end();
+    } else if (req.method === "GET" && /^\/repos\/arugula-salad\/[^/]+\/installation$/.test(u.pathname)) {
+      // An App installed on arugula-salad (M233: planter's, the deploy App),
+      // granting what planter's drivers ask for. Any App's JWT is taken.
+      json({ id: 77, account: { login: "arugula-salad", id: 1, type: "Organization" },
+        permissions: { metadata: "read", contents: "write", pull_requests: "write", workflows: "write" } });
+    } else if (req.method === "POST" && u.pathname === "/app/installations/77/access_tokens") {
+      // An installation token for the one repository asked for, by name.
+      const asked = JSON.parse((await body(req)).toString() || "{}");
+      const [name] = asked.repositories ?? [];
+      if (typeof name !== "string" || (asked.repositories ?? []).length !== 1) return res.writeHead(422).end();
+      json({ token: `ghs_testnet${Math.random().toString(36).slice(2)}`, expires_at: new Date(Date.now() + 3600_000).toISOString(),
+        repositories: [{ id: githubId(name), full_name: `arugula-salad/${name}` }] });
+    } else if (req.method === "DELETE" && u.pathname === "/installation/token") {
+      res.writeHead(204).end();
     } else res.writeHead(404).end();
   }).listen(port, host);
 }

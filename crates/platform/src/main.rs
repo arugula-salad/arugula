@@ -186,6 +186,7 @@ async fn run() -> anyhow::Result<()> {
     p.secret_key = p.hosted.cipher.clone();
     p.compute = a.compute.substrate()?;
     p.github = a.github_app.app(&a.github_api)?;
+    p.deploy_app = a.github_app.deploy_app(&a.github_api)?;
     p.run_logs = a.run_logs.bucket()?;
     p.paused = a.paused.into();
     let p = Arc::new(p);

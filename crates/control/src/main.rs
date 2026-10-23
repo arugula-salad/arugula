@@ -448,7 +448,7 @@ fn platform(
     db: arugula_platform::db::Db,
     cfg: arugula_platform::Config,
     stripe: Option<arugula_platform::billing::Stripe>,
-    github: Option<arugula_platform::forge::GithubApp>,
+    github: (Option<arugula_platform::forge::GithubApp>, Option<arugula_platform::forge::GithubApp>),
     compute: Option<Arc<dyn arugula_platform::compute::Substrate>>,
     hosted: arugula_platform::hosted::Config,
     run_logs: Option<arugula_platform::run_logs::Bucket>,
@@ -458,7 +458,8 @@ fn platform(
     let hub = Arc::new(hub_port::InProcess::default());
     let mut p = arugula_platform::Platform::new(cfg, db, hub.clone(), http.clone(), analytics.clone());
     p.stripe = stripe;
-    p.github = github;
+    // The platform's own App, and planter's, the deploy App (M233).
+    (p.github, p.deploy_app) = github;
     p.compute = compute;
     // The master key (M209), which the hosted config was given.
     p.secret_key = hosted.cipher.clone();
@@ -484,7 +485,7 @@ impl App {
             arugula_platform::db::Db::memory(),
             cfg,
             None,
-            None,
+            (None, None),
             None,
             Default::default(),
             None,
@@ -647,6 +648,7 @@ fn routes() -> Routes {
         .route(wire::work::WORK, get(hosted_work::work))
         .route(wire::work::WORK_REPORT, post(hosted_work::report))
         .route(wire::work::WORK_SECRETS, post(hosted_work::secrets))
+        .route(wire::work::WORK_ARTIFACT, post(hosted_work::artifact))
         .route(wire::hosted::SPEC, get(hosted::spec))
         .route(wire::hosted::SETUP, post(hosted::setup))
         .route(wire::run_logs::WORK_UPLOAD, post(hosted_work::upload))
@@ -1031,7 +1033,7 @@ async fn run() -> anyhow::Result<()> {
             relay_free_bytes: a.relay_free_mb * 1_000_000,
         };
         info!("the platform runs in process");
-        let github = a.github_app.app(&a.github_api)?;
+        let github = (a.github_app.app(&a.github_api)?, a.github_app.deploy_app(&a.github_api)?);
         let compute = a.compute.clone().substrate()?;
         let run_logs = a.run_logs.bucket()?;
         platform(a.platform_db.open(&a.db)?, cfg, stripe, github, compute, hosted, run_logs, &http, &analytics)

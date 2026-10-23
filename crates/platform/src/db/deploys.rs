@@ -70,11 +70,23 @@ fn new_deploy_id() -> String {
     format!("dep_{}", hex::encode(arugula_e2e::random::<16>()))
 }
 
-/// The drivers an environment may name (M219-M222), besides the fake one
-/// where it's allowed (`crate::drivers::names`). Planter's waits for step
-/// 8. arugula-release (M221) only in Arugula's own project
-/// (`crate::drivers::Driver::allowed_in`).
-pub const DRIVERS: &[&str] = &["chant-fly", "apps-platform", "arugula-release"];
+/// The drivers an environment may name (M219-M222, and planter's four,
+/// M233), besides the fake one where it's allowed
+/// (`crate::drivers::names`). arugula-release (M221) only in Arugula's own
+/// project (`crate::drivers::Driver::allowed_in`).
+pub const DRIVERS: &[&str] = &[
+    "chant-fly",
+    "apps-platform",
+    "arugula-release",
+    // planter's (M233).
+    "planter-prod",
+    "planter-go-live",
+    "planter-ship",
+    "planter-promote",
+];
+
+/// How long a project's shipped artifacts are kept (M233).
+pub const ARTIFACT_DAYS: u64 = 30;
 
 /// The first event's `prev_hash`.
 pub const GENESIS: &str = "0000000000000000000000000000000000000000000000000000000000000000";
@@ -1289,6 +1301,45 @@ impl Db {
         )
     }
 
+    /// Keep `bytes`, an artifact shipped to `project` (M233: planter's
+    /// Ship), under `digest` (`sha256:<hex>` of them): the same bytes again
+    /// are the same row. The project's artifacts older than
+    /// [`ARTIFACT_DAYS`] go.
+    pub fn put_deploy_artifact(&self, project: &str, digest: &str, bytes: &[u8], by: &str, at: u64) -> Result<()> {
+        let c = self.c();
+        c.execute(
+            "DELETE FROM deploy_artifacts WHERE project_id = ?1 AND created_at < ?2",
+            params![project, at.saturating_sub(ARTIFACT_DAYS * 24 * 3600 * 1000)],
+        )?;
+        c.execute(
+            "INSERT INTO deploy_artifacts (project_id, digest, bytes, size, created_by, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT (project_id, digest) DO NOTHING",
+            params![project, digest, bytes.to_vec(), bytes.len() as u64, by, at],
+        )?;
+        Ok(())
+    }
+
+    /// `project`'s artifact `digest`, if it keeps one.
+    pub fn deploy_artifact(&self, project: &str, digest: &str) -> Result<Option<Vec<u8>>> {
+        self.c()
+            .query_row(
+                "SELECT bytes FROM deploy_artifacts WHERE project_id = ?1 AND digest = ?2",
+                params![project, digest],
+                |r| r.get::<Vec<u8>>(0),
+            )
+            .optional()
+    }
+
+    /// Every project's environments that `driver` drives, oldest first
+    /// (M233: who has a shipped app's name).
+    pub fn environments_driven_by(&self, driver: &str) -> Result<Vec<Environment>> {
+        self.c().query_map(
+            &format!("SELECT {ENV_COLS} FROM environments WHERE driver = ?1 ORDER BY created_at, id"),
+            params![driver],
+            environment_row,
+        )
+    }
+
     /// Set the names of the secrets an environment's driver runs get.
     /// `None`: there's no such environment.
     pub fn set_environment_secrets(&self, id: &str, names: &[String], at: u64) -> Result<Option<Environment>> {
@@ -1519,6 +1570,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute("DELETE FROM environments WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     c.execute("DELETE FROM deploy_events WHERE environment_id NOT IN (SELECT id FROM environments)", params![])?;
     c.execute("DELETE FROM deploys WHERE environment_id NOT IN (SELECT id FROM environments)", params![])?;
+    c.execute("DELETE FROM deploy_artifacts WHERE project_id NOT IN (SELECT id FROM projects)", params![])?;
     super::deploy_approvals::erase_account(c)?;
     super::deploy_runs::erase_account(c)?;
     c.execute("UPDATE deploys SET planned_by = '', planned_by_agent = NULL WHERE planned_by = ?1", params![d.account])?;

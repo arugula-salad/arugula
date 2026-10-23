@@ -392,6 +392,22 @@ export class Device {
     return { environment: e.id, project: p.id };
   }
 
+  /** As an owner, make an environment with a driver's settings (M220,
+   * M233) and no secrets. */
+  async environmentWith(name: string, driver: string, settings: Record<string, string>, team?: string): Promise<{ environment: string; project: string }> {
+    const p = await this.project(team);
+    const e = await this.api<{ id: string }>(`/api/projects/${p.id}/environments`, { name, driver, secret_names: [], settings });
+    return { environment: e.id, project: p.id };
+  }
+
+  /** Mint an agent grant token (M230) over the account's project, or
+   * TEAM's, with `powers`: the token, shown once. */
+  async agentToken(name: string, powers: string[], team?: string): Promise<{ token: string; id: string; project: string }> {
+    const p = await this.project(team);
+    const m = await this.api<{ token: string; agent_token: { id: string } }>("/api/agent-tokens", { name, projects: [p.id], powers });
+    return { token: m.token, id: m.agent_token.id, project: p.id };
+  }
+
   /** As an owner, set one of an environment's secrets (M219). */
   async environmentSecret(env: string, name: string, value: string): Promise<{ set: boolean }> {
     return this.api<{ set: boolean }>(`/api/environments/${env}/secrets/${name}`, { value });

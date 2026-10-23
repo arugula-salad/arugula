@@ -39,6 +39,12 @@ pub const TAKES_DEPLOY: &str = "deploy";
 /// Answered [`SecretsGiven`].
 pub const WORK_SECRETS: &str = "/api/hosted/work/secrets";
 
+/// `POST` [`SecretsAsk`], signed as the hosted machine (M233): the artifact
+/// one of its deploy runs applies (planter's Ship: the source an agent
+/// shipped), while it runs. Answered [`ArtifactGiven`]. Not a secret: the
+/// driver checks its digest against the approved operation.
+pub const WORK_ARTIFACT: &str = "/api/hosted/work/artifact";
+
 /// [`WORK`]'s query: what the machine takes, comma-separated. A machine
 /// that says nothing takes nothing, so an older one never gets work.
 pub struct WorkQuery;
@@ -146,6 +152,16 @@ pub enum SecretsGiven {
     /// The environment's secrets and the driver's short-lived tokens, by
     /// name. Given once per run.
     Given { secrets: Vec<Secret> },
+    /// Not given, and asking again won't change that.
+    Refused { why: String },
+}
+
+/// [`WORK_ARTIFACT`]'s answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ArtifactGiven {
+    /// Its bytes (standard base64) and its digest (`sha256:<hex>`).
+    Given { digest: String, bytes: String },
     /// Not given, and asking again won't change that.
     Refused { why: String },
 }

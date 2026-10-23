@@ -1,0 +1,7 @@
+# Generated from app.yaml by arugula-salad/planter's platform-app (the list of what it renders). Don't edit: the next
+# build of main renders it again. Change app.yaml, or patch it from k8s/kustomization.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - deployment.yaml
+  - dashboard.yaml

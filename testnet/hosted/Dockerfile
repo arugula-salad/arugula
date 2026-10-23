@@ -3,9 +3,10 @@
 # `arugulad --hosted` with sudo; runs run as `runner`, which has no sudo,
 # reads /home/user through `user`'s group, and never arugulad's state. The
 # claim starts the daemon with the stack's static binaries (/opt/arugula)
-# and a ticket from control.
+# and a ticket from control. node is the planter drivers' renderer's (M233),
+# as the real template has it.
 FROM debian:bookworm-slim
-RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends bash ca-certificates git iptables procps sudo \
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends bash ca-certificates git iptables nodejs procps sudo \
  && rm -rf /var/lib/apt/lists/*
 RUN useradd -m -u 1000 -s /bin/bash user \
  && echo 'user ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/user && chmod 0440 /etc/sudoers.d/user \

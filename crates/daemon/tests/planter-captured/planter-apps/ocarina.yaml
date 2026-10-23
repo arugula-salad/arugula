@@ -1,0 +1,34 @@
+# ocarina in prod, at https://ocarina.apps.arugula.io. Written by planter; Flux applies
+# github.com/arugula-salad/ocarina's k8s/ as planter-apps-deployer, into namespace planter-apps.
+# Deleting this file takes the app out of prod, and prunes what it made (its volume's data too).
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: ocarina
+  namespace: planter-apps-system
+spec:
+  interval: 5m
+  url: https://github.com/arugula-salad/ocarina
+  provider: github
+  secretRef:
+    name: arugula-github-app
+  ref:
+    branch: main
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ocarina
+  namespace: planter-apps-system
+spec:
+  interval: 10m
+  retryInterval: 2m
+  timeout: 5m
+  path: ./k8s
+  prune: true
+  wait: true
+  serviceAccountName: planter-apps-deployer
+  targetNamespace: planter-apps
+  sourceRef:
+    kind: GitRepository
+    name: ocarina

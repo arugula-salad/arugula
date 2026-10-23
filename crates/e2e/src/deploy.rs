@@ -47,6 +47,8 @@ use sha2::{Digest, Sha256};
 
 #[path = "deploy_apps_platform.rs"]
 pub mod apps_platform;
+#[path = "deploy_planter.rs"]
+pub mod planter;
 
 use crate::{
     Cert, Trust,
@@ -209,6 +211,8 @@ pub fn driver_secrets(driver: &str) -> Option<&'static [&'static str]> {
         // (one writes, one follows the workflow), always minted; the
         // environment holds nothing of its own.
         "arugula-release" => &["RELEASE_TOKEN", "RELEASE_READ_TOKEN"],
+        // planter's (M233): the tokens planter's App mints for the run.
+        d if planter::is_planter(d) => return planter::secrets(d),
         _ => return None,
     })
 }

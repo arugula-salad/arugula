@@ -93,6 +93,9 @@ pub mod apps_platform;
 #[path = "work_arugula_release.rs"]
 pub mod arugula_release;
 
+#[path = "work_planter.rs"]
+pub mod planter;
+
 /// The ledger's directory, in the state directory.
 pub const DIR: &str = "work";
 /// How often the machine asks for work.

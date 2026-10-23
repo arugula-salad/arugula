@@ -437,6 +437,11 @@ pub async fn create_environment(
             created_at: 0,
             updated_at: 0,
         };
+        // What its settings name may be another project's (M233: a shipped
+        // app's name).
+        if let Some(why) = d.claims(&app, &would) {
+            return Err(err(StatusCode::CONFLICT, &why));
+        }
         if let Some(m) = d.mints(&would).into_iter().find(|m| b.secret_names.iter().any(|n| n == m.name())) {
             return Err(err(
                 StatusCode::BAD_REQUEST,
@@ -570,6 +575,10 @@ pub(crate) async fn plan(app: &Platform, by: &Actor, project: &str, b: Plan) -> 
     }
     // A driver some projects only may use (M221: Arugula's release).
     driver.allowed_in(&p.id).map_err(|why| err(StatusCode::FORBIDDEN, &why))?;
+    // What its settings name, another project's since (M233).
+    if let Some(why) = driver.claims(app, &env) {
+        return Err(err(StatusCode::CONFLICT, &why));
+    }
     // A token its run mints that writes (M222's list, M220's ledger, M221's
     // release): the App must be able to, or the deploy can't run once it's
     // approved.
