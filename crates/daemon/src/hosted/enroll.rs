@@ -155,7 +155,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         trust,
         account_certs,
         account_revocations,
-        legacy_app,
+        legacy_app_children,
         purpose,
     } = got;
     ensure!(cert.device == keys.id(), "control sent a certificate for another key");
@@ -233,12 +233,32 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
         }
         None => anyhow::bail!("the delegation names no owner"),
     };
-    // Grandfathered app windows, as control sends them with the
-    // certificates: for the accounts whose certificates the box keeps.
-    let mut legacy_app = legacy_app;
-    legacy_app.retain(|a, _| match &roster {
-        Some(_) => team_certs.contains_key(a),
-        None => *a == account,
+    // What grandfathered app windows approved (M219's `check_apply`): the
+    // first set control sends is pinned, and every later one only takes
+    // from it (what both say), never adds; one control doesn't send keeps
+    // what's pinned. Only for the accounts whose certificates the box keeps.
+    let pinned = prev.and_then(|p| p.hosted.as_ref()).and_then(|h| h.legacy_app_children.as_ref());
+    let legacy_app_children = match (pinned, legacy_app_children) {
+        (old, None) => old.cloned(),
+        (None, Some(new)) => Some(new),
+        (Some(old), Some(new)) => Some(
+            old.iter()
+                .map(|(a, ids)| {
+                    let sent = new.get(a).map(Vec::as_slice).unwrap_or_default();
+                    (a.clone(), ids.iter().filter(|id| sent.contains(id)).cloned().collect::<Vec<_>>())
+                })
+                .collect(),
+        ),
+    }
+    .map(|mut m| {
+        m.retain(|a, ids| {
+            !ids.is_empty()
+                && match &roster {
+                    Some(_) => team_certs.contains_key(a),
+                    None => *a == account,
+                }
+        });
+        m
     });
     let own = Cert {
         v: 1,
@@ -275,7 +295,7 @@ pub fn saved_from(got: hosted::Enrollment, keys: &DeviceKeys, prev: Option<&Save
             revocations,
             deploy: purpose.as_deref() == Some(hosted::DEPLOY)
                 || prev.and_then(|p| p.hosted.as_ref()).is_some_and(|h| h.deploy),
-            legacy_app,
+            legacy_app_children,
         }),
     })
 }
@@ -357,7 +377,7 @@ mod tests {
             trust: Some(Trust { account: "acct1".into(), root: root.id() }),
             account_certs: vec![root_cert],
             account_revocations: vec![],
-            legacy_app: Default::default(),
+            legacy_app_children: None,
             purpose: None,
         };
         (got, root)
@@ -390,15 +410,16 @@ mod tests {
         assert_eq!(third.revocations.len(), 1);
     }
 
-    /// The grandfathered app windows control sends are pinned with the
-    /// certificates, for the accounts whose certificates the box keeps
-    /// (another account's are dropped), and a refresh takes control's
-    /// again, as it does the certificates. A deploy's approval from a
-    /// browser one let in then checks on the box (`check_apply`).
+    /// What grandfathered app windows approved, as control sends it, is
+    /// pinned with the certificates (another account's is dropped): the
+    /// first set taken, and then only shrunk. A refresh that adds an id
+    /// doesn't add it, and an approval through it is refused; one that
+    /// leaves an id out takes it away for good. A box from before (none
+    /// pinned) counts no window until a refresh brings its first set.
     #[test]
-    fn grandfathered_app_windows_are_pinned_with_the_certificates() {
+    fn what_grandfathered_app_windows_approved_is_pinned_and_only_shrinks() {
         use arugula_e2e::{
-            cert::LegacyApp,
+            cert::LegacyAppChildren,
             deploy::{ApplyRefusal, Approval, Decision, Operation, PasskeyParts, check_apply},
         };
         let keys = DeviceKeys::generate();
@@ -407,14 +428,17 @@ mod tests {
         let mut wc = Cert::new(&window, "acct1", Kind::Browser, "Arugula app on jake-air");
         wc.sign_with(&root);
         let (firefox, fc) = approved("acct1", &window);
-        got.account_certs.extend([wc, fc]);
-        got.legacy_app = LegacyApp::from([
-            ("acct1".to_owned(), vec![window.id()]),
-            ("someone-else".to_owned(), vec!["x".to_owned()]),
-        ]);
+        let (edge, ec) = approved("acct1", &window);
+        got.account_certs.extend([wc, fc, ec]);
+        let set = |ids: &[&DeviceKeys]| {
+            LegacyAppChildren::from([("acct1".to_owned(), ids.iter().map(|k| k.id()).collect::<Vec<_>>())])
+        };
+        let mut with_other = set(&[&firefox]);
+        with_other.insert("someone-else".into(), vec!["x".into()]);
+        got.legacy_app_children = Some(with_other);
         let first = saved_from(got.clone(), &keys, None).unwrap();
-        let pin = first.hosted.as_ref().unwrap();
-        assert_eq!(pin.legacy_app, LegacyApp::from([("acct1".to_owned(), vec![window.id()])]));
+        let pinned = |s: &Saved| s.hosted.as_ref().unwrap().legacy_app_children.clone();
+        assert_eq!(pinned(&first), Some(set(&[&firefox])), "another account's is dropped");
 
         let op = Operation {
             project: "prj_1".into(),
@@ -426,27 +450,55 @@ mod tests {
             source_where: "acme/app".into(),
             planned: "ef".repeat(32),
         };
-        let a = Approval::new(&firefox, "dep_1", &op, "acct1", Decision::Once, 2_000);
-        let cd = {
-            use base64::Engine as _;
-            let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
-            let mut data = vec![0u8; 32];
-            data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
-            let json = serde_json::json!({ "type": "webauthn.get", "challenge": a.passkey_challenge() });
-            (b64.encode(json.to_string()), b64.encode(data))
-        };
-        let parts = || Some(PasskeyParts { client_data_json: &cd.0, authenticator_data: &cd.1 });
-        let check = |s: &Saved| {
+        // As `work_deploy::check` does: none pinned is an empty set.
+        let check = |s: &Saved, by: &DeviceKeys| {
+            let a = Approval::new(by, "dep_1", &op, "acct1", Decision::Once, 2_000);
+            let (cd, ad) = {
+                use base64::Engine as _;
+                let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+                let mut data = vec![0u8; 32];
+                data.extend_from_slice(&[0x05, 0, 0, 0, 0]);
+                let json = serde_json::json!({ "type": "webauthn.get", "challenge": a.passkey_challenge() });
+                (b64.encode(json.to_string()), b64.encode(data))
+            };
+            let parts = Some(PasskeyParts { client_data_json: &cd, authenticator_data: &ad });
             let owners = crate::hosted::runs::owners(s).unwrap();
-            check_apply(&a, &op, "dep_1", &owners, &s.hosted.as_ref().unwrap().legacy_app, parts(), 1_000)
+            let children = pinned(s).unwrap_or_default();
+            check_apply(&a, &op, "dep_1", &owners, &children, parts, 1_000)
         };
-        assert_eq!(check(&first), Ok(()));
+        assert_eq!(check(&first, &firefox), Ok(()));
+        assert_eq!(check(&first, &edge), Err(ApplyRefusal::Device), "not in the set");
 
-        // Control stops saying so: the box goes with it, as with certificates.
-        got.legacy_app = LegacyApp::new();
-        let second = saved_from(got, &keys, Some(&first)).unwrap();
-        assert!(second.hosted.as_ref().unwrap().legacy_app.is_empty());
-        assert_eq!(check(&second), Err(ApplyRefusal::Device));
+        // A refresh that adds Edge: not added.
+        got.legacy_app_children = Some(set(&[&firefox, &edge]));
+        let second = saved_from(got.clone(), &keys, Some(&first)).unwrap();
+        assert_eq!(pinned(&second), Some(set(&[&firefox])), "a refresh never adds");
+        assert_eq!(check(&second, &edge), Err(ApplyRefusal::Device), "an approval through it");
+        assert_eq!(check(&second, &firefox), Ok(()));
+        // One from a control that doesn't send it: kept as pinned.
+        got.legacy_app_children = None;
+        let third = saved_from(got.clone(), &keys, Some(&second)).unwrap();
+        assert_eq!(pinned(&third), Some(set(&[&firefox])));
+        // One that leaves Firefox out: gone, and a later one can't bring it back.
+        got.legacy_app_children = Some(set(&[&edge]));
+        let fourth = saved_from(got.clone(), &keys, Some(&third)).unwrap();
+        assert_eq!(pinned(&fourth), Some(LegacyAppChildren::new()));
+        assert_eq!(check(&fourth, &firefox), Err(ApplyRefusal::Device));
+        got.legacy_app_children = Some(set(&[&firefox]));
+        let fifth = saved_from(got.clone(), &keys, Some(&fourth)).unwrap();
+        assert_eq!(pinned(&fifth), Some(LegacyAppChildren::new()));
+
+        // A box from before this (its saved state has no set) against a
+        // control that sends one: no window counts until it refreshes,
+        // which takes its first set.
+        let mut old = serde_json::to_value(&first).unwrap();
+        old["hosted"].as_object_mut().unwrap().remove("legacy_app_children");
+        let old: Saved = serde_json::from_value(old).unwrap();
+        assert_eq!(pinned(&old), None);
+        assert_eq!(check(&old, &firefox), Err(ApplyRefusal::Device), "fails closed");
+        let refreshed = saved_from(got, &keys, Some(&old)).unwrap();
+        assert_eq!(pinned(&refreshed), Some(set(&[&firefox])));
+        assert_eq!(check(&refreshed, &firefox), Ok(()));
     }
 
     /// A team's project: owner `o` (who signs the delegation and the
@@ -509,7 +561,7 @@ mod tests {
             trust: None,
             account_certs: vec![],
             account_revocations: vec![],
-            legacy_app: Default::default(),
+            legacy_app_children: None,
             purpose: None,
         };
         Team { got, o, e, phone }

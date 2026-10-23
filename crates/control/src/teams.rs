@@ -474,8 +474,9 @@ fn is_key(k: &str) -> bool {
 /// someone to `raised` (`team::raise_ok`), here: an owner's raise from a
 /// browser or a phone all the way back (`Cert::is_browser` on every link),
 /// an editor's from that or the desktop app's device (Jake, 2026-10-22),
-/// never from a CLI. The app's windows control grandfathered count on the
-/// way (`legacy_app`, of the account `trust` names).
+/// never from a CLI. An app window from before it had a kind counts just
+/// above a browser it approved back then (`legacy_app`, of the account
+/// `trust` names).
 fn raise_ok_here(
     app: &App,
     trust: &Trust,
@@ -484,8 +485,8 @@ fn raise_ok_here(
     raised: Option<TeamRole>,
 ) -> anyhow::Result<bool> {
     let Some(d) = certs.iter().find(|c| c.device == device) else { return Ok(raised.is_none()) };
-    let legacy = crate::legacy_app::devices(&app.db, &trust.account)?;
-    Ok(arugula_e2e::team::raise_ok(raised, d, || crate::api::browser_all_the_way(trust, certs, device, &legacy)))
+    let children = crate::legacy_app::children(&app.db, &trust.account)?;
+    Ok(arugula_e2e::team::raise_ok(raised, d, || crate::api::browser_all_the_way(trust, certs, device, &children)))
 }
 
 /// Whether one of `account`'s own devices (from `root`) signed `ask`: for

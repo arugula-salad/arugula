@@ -293,7 +293,7 @@ pub(crate) mod tests {
             trust: Some(Trust { account: "acct1".into(), root: root.id() }),
             account_certs: vec![root_cert, phone_cert],
             account_revocations: vec![],
-            legacy_app: Default::default(),
+            legacy_app_children: None,
             purpose: None,
         };
         (super::super::enroll::saved_from(got, &keys, None).unwrap(), d, root, phone)

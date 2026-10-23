@@ -311,7 +311,7 @@ impl HubPort for InProcess {
                 root,
                 certs,
                 revocations: app.db.revocations(account)?,
-                legacy_app: crate::legacy_app::devices(&app.db, account)?,
+                legacy_app_children: crate::legacy_app::children(&app.db, account)?,
             }))
         })
     }
@@ -385,12 +385,12 @@ impl HubPort for InProcess {
             let Some(o) = arugula_e2e::hosted::Owner::parse(owner) else { return Ok(false) };
             let Some(people) = crate::hosted::people(&app.db, &o)? else { return Ok(false) };
             // Here the desktop app's devices from before it had a kind are
-            // refused too (`Cert::is_browser` on every link), but for those
-            // control grandfathered, on the way (`legacy_app`).
-            let legacy = crate::hosted::legacy_app(&app.db, &people)?;
-            let link = |c: &arugula_e2e::Cert| {
+            // refused too (`Cert::is_browser` on every link), but just above
+            // a browser one approved back then (`legacy_app`).
+            let children = crate::hosted::legacy_app_children(&app.db, &people)?;
+            let link = |c: &arugula_e2e::Cert, below: Option<&arugula_e2e::Cert>| {
                 c.is_browser()
-                    || legacy.get(&c.account).is_some_and(|l| arugula_e2e::cert::legacy_app_link(c, device, l))
+                    || children.get(&c.account).is_some_and(|l| arugula_e2e::cert::legacy_app_link(c, below, l))
             };
             Ok(people.owners().browser_signed_by(owner, device, body, sig, link))
         })
@@ -716,10 +716,11 @@ mod tests {
         contract::run(&Fixture::over_http().await).await;
     }
 
-    /// An account's grandfathered app windows (`legacy_app`) reach the
-    /// platform with its devices, in process and over HTTP; and a standing
-    /// grant's signature from a browser one let in counts, from the window
-    /// itself or through one stored after the cutoff it doesn't.
+    /// What an account's grandfathered app windows approved
+    /// (`legacy_app::children`) reaches the platform with its devices, in
+    /// process and over HTTP; and a standing grant's signature from such a
+    /// browser counts. The window's own doesn't, nor one from what it
+    /// certified after the cutoff, nor through a window stored after.
     #[tokio::test]
     async fn the_hub_says_which_app_windows_are_grandfathered() {
         use contract::Fixture as _;
@@ -742,9 +743,10 @@ mod tests {
             let window = put("Arugula app on jake-air", &root, CUTOFF - 1);
             let firefox = put("Firefox on Mac", &window, CUTOFF - 1);
             let late = put("Arugula app on jake-mini", &root, CUTOFF);
-            let chrome = put("Chrome on Mac", &late, now);
+            let chrome = put("Chrome on Mac", &late, CUTOFF - 1);
+            let edge = put("Edge", &window, now);
             let t = f.hub().device_trust("acct-l").await.unwrap().unwrap();
-            assert_eq!(t.legacy_app, vec![window.id()]);
+            assert_eq!(t.legacy_app_children, vec![firefox.id()]);
 
             let signed = |k: &DeviceKeys| hex::encode(k.signature(b"a grant"));
             let ok = |k: &DeviceKeys| {
@@ -754,6 +756,7 @@ mod tests {
             assert!(ok(&firefox).await, "through a grandfathered window");
             assert!(!ok(&window).await, "the window itself");
             assert!(!ok(&chrome).await, "through a window stored after");
+            assert!(!ok(&edge).await, "what the window certified after");
         }
     }
 

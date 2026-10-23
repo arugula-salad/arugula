@@ -337,14 +337,14 @@ pub struct DeviceTrust {
     /// Its approved certificates.
     pub certs: Vec<arugula_e2e::Cert>,
     pub revocations: Vec<arugula_e2e::Revocation>,
-    /// Its grandfathered app windows: the desktop app's `browser`
-    /// certificates the hub stored before the app had a kind of its own
-    /// (by the hub's own record of when), approved and not revoked. They
-    /// count on the way back to an approver's root, never as the approver
+    /// Its browsers and phones that a grandfathered app window approved:
+    /// both rows stored and approved by the hub before the app had a kind
+    /// of its own (by the hub's own record of when), neither revoked. The
+    /// window counts as the link just above one of them, nowhere else
     /// (`arugula_e2e::cert::legacy_app_link`). Empty from a hub that
     /// doesn't send it, which only refuses more.
     #[serde(default)]
-    pub legacy_app: Vec<String>,
+    pub legacy_app_children: Vec<String>,
 }
 
 /// How a push goes ([`HubPort::push_with`]). The default is what

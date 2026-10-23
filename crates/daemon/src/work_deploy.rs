@@ -8,9 +8,9 @@
 //!   browsers over exactly that deploy's operation, not past its
 //!   `expires` by this machine's clock, confirmed with a passkey over its
 //!   bytes (`arugula_e2e::deploy::check_apply`, with the team's roster and
-//!   members' certificates, or the account's chain, and the grandfathered
-//!   app windows control sent with them, as this machine keeps them). A
-//!   run whose approval doesn't verify here fails, and nothing runs.
+//!   members' certificates, or the account's chain, and what grandfathered
+//!   app windows approved, as this machine pinned them). A run whose
+//!   approval doesn't verify here fails, and nothing runs.
 //! - **Started only once control takes its start** ([`apply`]): its
 //!   `running` report is sent and answered before anything runs, because
 //!   that's when the platform starts the deploy (and refuses a stale one,
@@ -368,7 +368,9 @@ pub fn check(app: &App, item: &WorkItem, d: &DeployWork) -> Result<(), Refused> 
         .passkey
         .as_ref()
         .map(|p| PasskeyParts { client_data_json: &p.client_data_json, authenticator_data: &p.authenticator_data });
-    check_apply(&d.approval, o, &d.deploy, &owners, &pin.legacy_app, pk, now_ms())
+    // A box that pinned none counts no app window.
+    let children = pin.legacy_app_children.clone().unwrap_or_default();
+    check_apply(&d.approval, o, &d.deploy, &owners, &children, pk, now_ms())
         .map_err(|r| Refused(r.code(), r.says().into()))?;
     // The plan the owner approved names the driver, its settings and the
     // roll back (M220): the platform can't swap in another driver, another

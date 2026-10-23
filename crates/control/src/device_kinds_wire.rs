@@ -384,11 +384,13 @@ async fn the_apps_window_doesnt_delete_remove_passkeys_or_sign_out_everywhere() 
     assert!(st < 300, "{st} {v}");
 }
 
-/// The desktop app's window from before it had a kind, stored by control
-/// before #1343 shipped (`legacy_app`), counts on the way back again: a
-/// browser it let in approves a browser and recovery codes, removes a
-/// browser and makes a team's owner. The window itself doesn't, nor one
-/// control stored after, nor a browser that one let in.
+/// What the desktop app's window (from before it had a kind) approved,
+/// both stored and approved by control before #1343 shipped (`legacy_app`),
+/// counts again: that browser approves a browser and recovery codes,
+/// removes a browser and makes a team's owner. The window itself doesn't;
+/// nor a browser it certified after the cutoff, or one a window stored
+/// after let in, or one a window asked before and approved after let in;
+/// nor a recovery code it made before the cutoff, approving a browser now.
 #[tokio::test]
 async fn a_grandfathered_app_window_counts_on_the_way() {
     use arugula_e2e::team::TeamRole;
@@ -407,10 +409,23 @@ async fn a_grandfathered_app_window_counts_on_the_way() {
     };
     let window = put(&root, "Arugula app on jake-air", CUTOFF - 60_000);
     let firefox = put(&window, "Firefox on Mac", CUTOFF - 30_000);
+    let edge = put(&window, "Edge", now_ms());
     let late = put(&root, "Arugula app on jake-mini", CUTOFF);
-    let chrome = put(&late, "Chrome on Mac", CUTOFF + 1);
+    let chrome = put(&late, "Chrome on Mac", CUTOFF - 1);
+    // Asked before the cutoff, approved after: what it let in, though
+    // stored before, doesn't count.
+    let (waited, wc) = signed(&root, "a1", Kind::Browser, "Arugula app on geek");
+    c.app.db.put_device(&wc, false, CUTOFF - 60_000).unwrap();
+    c.app.db.put_device(&wc, true, now_ms()).unwrap();
+    let opera = put(&waited, "Opera", CUTOFF - 30_000);
     let cookie = session(&c.app, "a1");
-    let refused = [(&window, "the window itself"), (&late, "a window stored after"), (&chrome, "what that let in")];
+    let refused = [
+        (&window, "the window itself"),
+        (&edge, "what it certified after"),
+        (&late, "a window stored after"),
+        (&chrome, "what that let in"),
+        (&opera, "what a window approved after let in"),
+    ];
 
     // A browser asks; Firefox approves it.
     let k = DeviceKeys::generate();
@@ -424,6 +439,14 @@ async fn a_grandfathered_app_window_counts_on_the_way() {
         let (st, v) = c.as_person(&cookie, "POST", &approve, Some(json!({ "cert": cert }))).await;
         assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "{who}: {v}");
     }
+    // A recovery code the window made before the cutoff.
+    let (code, cc) = signed(&window, "a1", Kind::Recovery, "recovery 0");
+    c.app.db.put_device(&cc, true, CUTOFF - 30_000).unwrap();
+    let mut cert = ask.clone();
+    cert.sign_with(&code);
+    let (st, v) = c.as_person(&cookie, "POST", &approve, Some(json!({ "cert": cert }))).await;
+    assert_eq!((st, v["reason"].as_str()), (403, Some("needs_browser")), "a code the window made: {v}");
+    c.app.db.add_revocation(&arugula_e2e::Revocation::new("a1", &code.id(), &root)).unwrap();
     let mut cert = ask.clone();
     cert.sign_with(&firefox);
     let (st, v) = c.as_person(&cookie, "POST", &approve, Some(json!({ "cert": cert }))).await;

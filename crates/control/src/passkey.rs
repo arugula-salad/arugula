@@ -162,11 +162,11 @@ fn browser_devices(app: &App, account: &str) -> anyhow::Result<Vec<arugula_e2e::
     let revs = app.db.revocations(account)?;
     let trust = arugula_e2e::Trust { account: account.to_owned(), root };
     let now = trust.evaluate(&certs, &revs);
-    let legacy = crate::legacy_app::devices(&app.db, account)?;
+    let children = crate::legacy_app::children(&app.db, account)?;
     Ok(now
         .devices
         .into_values()
-        .filter(|c| c.is_browser() && crate::api::browser_all_the_way(&trust, &certs, &c.device, &legacy))
+        .filter(|c| c.is_browser() && crate::api::browser_all_the_way(&trust, &certs, &c.device, &children))
         .collect())
 }
 
@@ -1401,9 +1401,10 @@ mod tests {
     }
 
     /// A browser that the desktop app's window let in, from before the app
-    /// had a kind, signs for a new passkey when control stored that window
-    /// before #1343 shipped (`legacy_app`); not through one stored after,
-    /// and never the window itself.
+    /// had a kind, signs for a new passkey when control stored and approved
+    /// both before #1343 shipped (`legacy_app`); not one the window let in
+    /// after, nor through a window stored after, and never the window
+    /// itself.
     #[tokio::test]
     async fn a_browser_a_grandfathered_app_window_let_in_signs_for_a_passkey() {
         use arugula_e2e::{Cert, DeviceKeys, Kind};
@@ -1425,12 +1426,13 @@ mod tests {
         let window = put("Arugula app on jake-air", &root, CUTOFF - 1);
         let firefox = put("Firefox on Mac", &window, CUTOFF - 1);
         let late = put("Arugula app on jake-mini", &root, CUTOFF);
-        let chrome = put("Chrome on Mac", &late, now_ms());
+        let chrome = put("Chrome on Mac", &late, CUTOFF - 1);
+        let edge = put("Edge", &window, now_ms());
         let mut can: Vec<String> = browser_devices(&app, "acct-g").unwrap().into_iter().map(|c| c.device).collect();
         can.sort();
         let mut want = vec![root.id(), firefox.id()];
         want.sort();
-        assert_eq!(can, want, "the root and Firefox: not either window, nor Chrome");
+        assert_eq!(can, want, "the root and Firefox: not either window, nor Chrome or Edge");
         // The page asking is the root's; the device signing for it varies.
         async fn sign(app: &Arc<App>, h: &HeaderMap, page: &str, k: &DeviceKeys, seed: u8) -> Result<String, ApiError> {
             let a = Authn::new(seed);
@@ -1446,6 +1448,7 @@ mod tests {
         let page = root.id();
         assert!(sign(&app, &h, &page, &window, 50).await.is_err(), "the window itself");
         assert!(sign(&app, &h, &page, &chrome, 51).await.is_err(), "through a window stored after");
+        assert!(sign(&app, &h, &page, &edge, 53).await.is_err(), "what the window let in after");
         assert_eq!(sign(&app, &h, &page, &firefox, 52).await.unwrap(), "acct-g");
         assert_eq!(app.db.passkeys("acct-g").unwrap()[0].added_device.as_deref(), Some(firefox.id().as_str()));
     }

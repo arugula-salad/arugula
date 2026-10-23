@@ -18,7 +18,7 @@
 
 use arugula_e2e::{
     Cert, Revocation, Trust,
-    cert::LegacyApp,
+    cert::LegacyAppChildren,
     hosted::{Delegation, DelegationRevoke, HostedCert},
     team::{AccountCerts, Roster, TeamPin},
 };
@@ -174,13 +174,13 @@ pub struct Enrollment {
     pub account_certs: Vec<Cert>,
     #[serde(default)]
     pub account_revocations: Vec<Revocation>,
-    /// The owners' grandfathered app windows, by account
-    /// (`arugula_e2e::cert::legacy_app_link`): the desktop app's `browser`
-    /// certificates control stored before the app had a kind of its own,
-    /// which count on the way back to a deploy approver's root
-    /// (`arugula_e2e::deploy::check_apply`). Pinned with the certificates.
-    #[serde(default, skip_serializing_if = "LegacyApp::is_empty")]
-    pub legacy_app: LegacyApp,
+    /// The owners' browsers and phones that grandfathered app windows
+    /// approved, by account (control's `legacy_app::children`,
+    /// `arugula_e2e::cert::legacy_app_link`), which count on the way back
+    /// to a deploy approver's root (`arugula_e2e::deploy::check_apply`).
+    /// `None` from a control from before: the box keeps what it pinned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_app_children: Option<LegacyAppChildren>,
     /// What the box is for (M219): [`DEPLOY`], or `None` for a people's
     /// workspace. A box that hears `deploy` stays one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
