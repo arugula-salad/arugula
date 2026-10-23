@@ -8,8 +8,8 @@ topic: [panes and sessions](https://docs.arugula.io/panes/),
 [attention and history](https://docs.arugula.io/attention/) and
 [sharing](https://docs.arugula.io/sharing/). Labs features (chat, threads,
 VMs and the rest) are described for the team in [labs.md](labs.md),
-and cloud agents, run through Arugula control, in
-[managoat.md](managoat.md). The workspace, below, is here until the
+and hosted (Cloud) workspaces in [control.md](control.md). The workspace,
+below, is here until the
 site's panes page has it.
 
 ## The workspace (0.46)
@@ -50,28 +50,16 @@ around your panes. A phone keeps its own header and sheet.
   the machine, the focused pane's repository and branch, agents running,
   what needs input, and the keys.
 
-**Cloud workspaces** (in the cloud beta) are machines in the cloud, run
-through Arugula control, with your repositories on them
-([managoat.md](managoat.md)). They're on the platform page
-(`app.arugula.io`, [control-ops.md](control-ops.md)), and
-control's page links there: *Cloud workspaces ↗* under the sessions, the
-session overview's cards (each with its state and tabs), *New agent* →
-*Run on: Cloud*, and the attention drawer's Cloud tabs open them on the
-platform page. There, the list shows their state (*Setting up*, *Ready*,
-*Parked*, *Failed*, *Rebuild needed*) and *New Cloud workspace* makes one.
-Each tab is an agent working there, all of them on one disk: *+ Agent*
-opens one with its agent, runtime and model, and the directory it starts
-in. Tabs ask for approval in the tab and a push. The header shows the
-state and *Delete*, which names the tabs it ends; closed tabs, and those of
-deleted Cloud workspaces, stay readable under *Past tabs*. Cloud runs (a
-fresh checkout per agent) are retired: past ones stay readable, with their
-downloads, under *Past runs* in Cloud agents. Control's page draws none of
-this itself since M155: a control with no platform page offers no Cloud
-workspaces there. An agent can also put one of your Cloud workspaces
-beside its pane, on any machine joined to control, as a **Cloud workspace
-block** (MCP `show` kind `cloud_workspace`): its status, repositories and
-tabs, each tab and its Changes a link to the platform page
-([managoat.md](managoat.md)).
+**Cloud workspaces** are hosted workspaces: `arugulad` in a rented
+sandbox, attached to a project ([control.md](control.md), "Hosted
+workspaces"). A project's are listed on the platform page
+(`app.arugula.io/p/:project/workspaces`, [control-ops.md](control-ops.md));
+`arugula cloud create` makes one. Each is a machine like any other: its
+sessions and agent blocks open on control's page, and an agent on one of
+your own machines drives it over MCP (`list kind cloud_workspaces`, `cloud`,
+`read_cloud`). The Managoat-backed Cloud workspaces that came first, their
+tabs, past runs and the Cloud workspace block were removed in M189 and
+M190 ([managoat.md](managoat.md)).
 
 While the connection is down the workspace says so: it shows what it last
 heard, claims nothing is working or running, and turns off what would

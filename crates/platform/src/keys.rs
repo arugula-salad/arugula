@@ -7,8 +7,7 @@
 //! project's key never opens another's secrets, and a row moved to
 //! another project or name doesn't open either.
 //!
-//! - **What's sealed this way:** cloud secrets (`cloud_secrets`, the
-//!   owner's personal project's), hosted workspaces' sealed secrets
+//! - **What's sealed this way:** hosted workspaces' sealed secrets
 //!   (`hosted_workspace_secrets`, the workspace's project's), projects' own
 //!   inference keys (`project_inference_keys`, M185), and secrets
 //!   with no table of their own, such as an environment's (M217): those are
@@ -16,7 +15,7 @@
 //! - **Which key sealed a row:** its `key_version`. `0` ([`MASTER`]) is the
 //!   master key itself, as everything was sealed before M209, bound to an
 //!   owner and a name; a version is that version of the project's data key.
-//!   Both open ([`open_cloud`], [`open_hosted`], [`open_inference`]). A
+//!   Both open ([`open_hosted`], [`open_inference`]). A
 //!   build from before M209 that writes a re-sealed row (a rolling deploy,
 //!   a rollback) seals it with the master key but leaves its version, so a
 //!   row the project's key doesn't open is tried with the master key too,
@@ -39,7 +38,7 @@
 //!   re-sealed nor counted by [`check`].
 //!
 //! A build from before M209 can't open what's been re-sealed: a rollback
-//! past it leaves cloud secrets closed until it's rolled forward again.
+//! past it leaves those secrets closed until it's rolled forward again.
 
 use std::sync::Arc;
 
@@ -48,11 +47,11 @@ use chacha20poly1305::{KeyInit as _, XChaCha20Poly1305};
 
 use crate::{
     Platform,
-    cloud::secrets::{SecretCipher, open_with, seal_with},
     db::{
         Db,
         sql::{Optional as _, Sql, params},
     },
+    secrets::{SecretCipher, open_with, seal_with},
 };
 
 /// The `key_version` of a secret the master key sealed itself (before
@@ -65,11 +64,6 @@ pub struct Sealed {
     /// [`MASTER`], or the version of the project's data key.
     pub key_version: i64,
     pub bytes: Vec<u8>,
-}
-
-/// The name a cloud secret is sealed under, beside its project.
-pub fn cloud_name(account: &str, name: &str) -> String {
-    format!("cloud_secrets/{account}/{name}")
 }
 
 /// The name a hosted workspace's secret is sealed under, beside its
@@ -301,7 +295,7 @@ pub fn wrapped_by(c: &impl Sql, master_id: &str) -> Result<u64> {
 }
 
 /// `value`, sealed with `project`'s data key and bound to the project and
-/// `name` (which says what it is: [`cloud_name`], [`hosted_name`],
+/// `name` (which says what it is: [`hosted_name`], [`inference_name`],
 /// [`environment_name`]). For a table that keeps its own sealed values;
 /// [`seal`] keeps it in `project_secrets`.
 pub fn seal_value(c: &impl Sql, master: &SecretCipher, project: &str, name: &str, value: &str) -> Result<Sealed> {
@@ -311,8 +305,8 @@ pub fn seal_value(c: &impl Sql, master: &SecretCipher, project: &str, name: &str
 }
 
 /// What [`seal_value`] sealed for `project` under `name`. One the master
-/// key sealed ([`MASTER`]) is its table's to open ([`open_cloud`],
-/// [`open_hosted`]).
+/// key sealed ([`MASTER`]) is its table's to open ([`open_hosted`],
+/// [`open_inference`]).
 pub fn open_value(c: &impl Sql, master: &SecretCipher, project: &str, name: &str, sealed: &Sealed) -> Result<String> {
     if sealed.key_version == MASTER {
         bail!("sealed with the master key, not a project's");
@@ -385,20 +379,6 @@ fn open_either(
     }
 }
 
-/// A cloud secret of `account`'s, opened. `project` is its row's (the
-/// account's personal project; `None` only on a SQLite row from before
-/// M129, which the master key sealed).
-pub fn open_cloud(
-    c: &impl Sql,
-    master: &SecretCipher,
-    account: &str,
-    name: &str,
-    project: Option<&str>,
-    sealed: &Sealed,
-) -> Result<String> {
-    Ok(open_either(c, master, project, &cloud_name(account, name), (account, name), sealed)?.0)
-}
-
 /// A hosted workspace's sealed secret, opened: `project` is the
 /// workspace's.
 pub fn open_hosted(
@@ -450,17 +430,7 @@ struct Row {
     live: bool,
 }
 
-const STORES: [Store; 3] = [
-    Store {
-        table: "cloud_secrets",
-        rows: "SELECT account, name, project_id, key_version, sealed,
-                   EXISTS (SELECT 1 FROM projects p WHERE p.id = s.project_id)
-               FROM cloud_secrets s ORDER BY key_version, account, name",
-        update: "UPDATE cloud_secrets SET sealed = ?1, key_version = ?2
-                 WHERE account = ?3 AND name = ?4 AND sealed = ?5 AND key_version = ?6",
-        legacy: |r| (r.a.clone(), r.b.clone()),
-        name: |r| cloud_name(&r.a, &r.b),
-    },
+const STORES: [Store; 2] = [
     Store {
         table: "hosted_workspace_secrets",
         rows: "SELECT s.workspace_id, s.name, w.project_id, s.key_version, s.sealed,

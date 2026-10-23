@@ -196,7 +196,7 @@ async fn platform_routes_reach_the_gateway_on_the_platform_host() {
     assert_eq!(a.status, 401, "{}", a.body);
     assert_eq!(serde_json::from_str::<Value>(&a.body).unwrap()["error"], "sign in first");
     assert!(a.is_the_platforms());
-    for path in ["/api/chat", "/api/cloud/workspaces", "/api/billing"] {
+    for path in ["/api/chat", "/api/workspaces", "/api/billing"] {
         assert_eq!(c.get(APP, Method::GET, path).await.status, 401, "{path}");
     }
     // A method the route doesn't take is no platform route: the hub's 404.

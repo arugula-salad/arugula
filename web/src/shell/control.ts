@@ -73,7 +73,7 @@ export interface ControlInfo {
    * absent when control doesn't serve blocks. */
   block_domain?: string;
   /** The platform page's origin (M151), `https://app.arugula.io`: chat and
-   * Cloud workspaces are there. Null or absent when control has none. */
+   * hosted workspaces are there. Null or absent when control has none. */
   platform?: string | null;
 }
 

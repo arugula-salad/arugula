@@ -16,8 +16,6 @@ schemars = { version = "1.0", optional = true }
 ts-rs = { workspace = true, optional = true, features = ["no-serde-warnings"] }
 # Only for the web client's copy of control's chat types (`ts`).
 arugula-control-wire = { workspace = true, optional = true }
-# And of its Cloud types (`ts`, M137).
-arugula-cloud-wire = { workspace = true, optional = true }
 tungstenite = { workspace = true, optional = true }
 tracing = { workspace = true }
 
@@ -29,8 +27,6 @@ ts = [
     "arugula-core/ts",
     "dep:arugula-control-wire",
     "arugula-control-wire/ts",
-    "dep:arugula-cloud-wire",
-    "arugula-cloud-wire/ts",
 ]
 # JSON Schema for the types an MCP tool answers with (its `outputSchema`,
 # #580); the daemon turns it on.

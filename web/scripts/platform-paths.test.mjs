@@ -16,7 +16,7 @@ test("only the id is read: any slug, or none, lands on the same project", () => 
 
 test("each route parses", () => {
   assert.deepEqual(parse("/"), { page: "home" });
-  assert.deepEqual(parse("/agents"), { page: "agents" });
+  assert.equal(parse("/agents").page, "missing", "the cloud agent library is gone");
   assert.deepEqual(parse("/inbox"), { page: "inbox" });
   assert.equal(pathOf({ page: "inbox" }), "/inbox");
   assert.deepEqual(parse("/settings"), { page: "settings" });
@@ -26,8 +26,7 @@ test("each route parses", () => {
   assert.deepEqual(parse(`/p/${P}/chat/activity`), { page: "chat", project: P, view: "activity" });
   assert.deepEqual(parse(`/p/${P}/chat/search`, "?q=from%3A%40sam"), { page: "chat", project: P, view: "search", q: "from:@sam" });
   assert.deepEqual(parse("/dm/dm_00aa11bb22cc33dd-sam"), { page: "dm", room: "dm_00aa11bb22cc33dd" });
-  assert.deepEqual(parse(`/p/${P}/workspaces/cw_0123abcd-app`), { page: "workspace", project: P, workspace: "cw_0123abcd" });
-  assert.deepEqual(parse(`/p/${P}/workspaces/cw_0123abcd/cwc_4567ef01`), { page: "workspace", project: P, workspace: "cw_0123abcd", tab: "cwc_4567ef01" });
+  assert.deepEqual(parse(`/p/${P}/workspaces/hw_0123456789abcdef0123456789abcdef-app`), { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" });
   assert.deepEqual(parse(`/p/${P}-x/settings`), { page: "project-settings", project: P });
   assert.deepEqual(parse(`/p/${P}/settings`, "?link=acme%2Fapp"), { page: "project-settings", project: P, link: "acme/app" });
   assert.deepEqual(parse(`/p/${P}/settings`, "?link=..%2F..%2Fx"), { page: "project-settings", project: P }, "not a repo");
@@ -41,7 +40,7 @@ test("each route parses", () => {
 });
 
 test("anything else is missing, never a guess", () => {
-  for (const p of ["/p", "/p/arugula", `/p/${P}/nope`, "/dm/sam", `/p/${P}/workspaces/app`, `/p/${P}/workspaces/cw_0123abcd/tab`, "/settings/x", "/chats", `/p/${P}/deploys`, `/p/${P}/deploys/old`]) {
+  for (const p of ["/p", "/p/arugula", `/p/${P}/nope`, "/dm/sam", `/p/${P}/workspaces/app`, `/p/${P}/workspaces/cw_0123abcd`, `/p/${P}/workspaces/hw_0123456789abcdef0123456789abcdef/tab`, `/p/${P}/past/run_00ff11ee`, "/settings/x", "/chats", `/p/${P}/deploys`, `/p/${P}/deploys/old`]) {
     assert.equal(parse(p).page, "missing", p);
   }
   assert.equal(parse(`/p/${P}/chat/ch_0123456789abcdef`, "?msg=x").msg, undefined);
@@ -54,7 +53,7 @@ test("links carry the current slug, and read back as the same route", () => {
     { page: "chat", project: P, room: "ch_0123456789abcdef", msg: 4 },
     { page: "chat", project: P, view: "search", q: "has:quote deploy" },
     { page: "dm", room: "dm_00aa11bb22cc33dd" },
-    { page: "workspace", project: P, workspace: "cw_0123abcd", tab: "cwc_4567ef01" },
+    { page: "workspace", project: P, workspace: "hw_0123456789abcdef0123456789abcdef" },
     { page: "project-settings", project: P, link: "acme/app" },
     { page: "installed", project: P, repo: "acme/app" },
     { page: "new-deploy", project: P, env: `env_${"0a".repeat(16)}` },
@@ -78,12 +77,9 @@ test("slugs", () => {
   assert.equal(idOf("cw_zz"), null);
 });
 
-test("Cloud's list and past runs and tabs", () => {
+test("a project's hosted workspaces", () => {
   assert.deepEqual(parse(`/p/${P}/workspaces`), { page: "workspaces", project: P });
-  assert.deepEqual(parse(`/p/${P}/past/run_00ff11ee`), { page: "past", project: P, id: "run_00ff11ee" });
-  assert.deepEqual(parse(`/p/${P}/past/cwc_00ff11ee`), { page: "past", project: P, id: "cwc_00ff11ee" });
-  assert.equal(parse(`/p/${P}/past/cw_00ff11ee`).page, "missing");
-  for (const r of [{ page: "workspaces", project: P }, { page: "past", project: P, id: "run_00ff11ee" }]) assert.deepEqual(parse(pathOf(r)), r);
+  assert.deepEqual(parse(pathOf({ page: "workspaces", project: P })), { page: "workspaces", project: P });
 });
 
 test("runs and a run (M215)", () => {
@@ -110,11 +106,8 @@ test("runs and a run (M215)", () => {
 test("id-only addresses, for links that don't know the project", () => {
   assert.deepEqual(parse("/chat"), { page: "find", what: "chat" });
   assert.deepEqual(parse("/chat/ch_0123456789abcdef", "?msg=7"), { page: "find", what: "chat", room: "ch_0123456789abcdef", msg: 7 });
-  assert.deepEqual(parse("/workspaces"), { page: "find", what: "workspaces" });
-  assert.deepEqual(parse("/workspaces/cw_0123abcd/cwc_4567ef01"), { page: "find", what: "workspaces", workspace: "cw_0123abcd", tab: "cwc_4567ef01" });
-  assert.deepEqual(parse("/past/run_00ff11ee"), { page: "find", what: "past", id: "run_00ff11ee" });
-  for (const p of ["/chat/general", "/workspaces/app", "/past/cw_00ff", "/chat/a/b"]) assert.equal(parse(p).page, "missing", p);
-  for (const r of [{ page: "find", what: "chat", room: "ch_0123456789abcdef", msg: 7 }, { page: "find", what: "workspaces", workspace: "cw_0123abcd" }, { page: "find", what: "past", id: "cwc_00ff" }]) {
+  for (const p of ["/chat/general", "/workspaces", "/workspaces/cw_0123abcd", "/past/run_00ff11ee", "/chat/a/b"]) assert.equal(parse(p).page, "missing", p);
+  for (const r of [{ page: "find", what: "chat", room: "ch_0123456789abcdef", msg: 7 }]) {
     const [p, q] = pathOf(r).split("?");
     assert.deepEqual(parse(p, q ? `?${q}` : ""), r);
   }

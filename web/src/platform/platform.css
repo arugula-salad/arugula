@@ -127,9 +127,19 @@
   text-decoration: none;
 }
 
-.platform-workspace .cloud-ws-view {
+.platform-workspace .hosted-ws-view {
   flex: 1;
   overflow: auto;
+}
+
+.hosted-ws-view button.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
 }
 
 .platform-toast {

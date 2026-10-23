@@ -1,13 +1,13 @@
 // `/settings`: the account's platform settings (M150): plan and usage
-// (`/api/billing`, the platform's), the way to cloud agents and secrets,
-// and which machines' agents read and post in conversations (M197). Sign-in, passkeys, devices and teams are trust, signed by a
-// device, so they stay on control's page and this links there.
+// (`/api/billing`, the platform's), and which machines' agents read and
+// post in conversations (M197). Sign-in, passkeys, devices and teams are
+// trust, signed by a device, so they stay on control's page and this links
+// there.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { Plan, type Billing } from "../settings/plan";
 import { AgentGrants } from "../settings/agents";
-import { follow } from "../router";
 import { controlOrigin } from "../session";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
@@ -42,11 +42,6 @@ export function SettingsPage() {
             </button>
           </li>
         )}
-        <li>
-          <a href="/agents" onClick={(e) => follow(e, "/agents")}>
-            Cloud agents and secrets
-          </a>
-        </li>
         <li>
           <a href={controlOrigin()} data-settings-control>
             Sign-in, passkeys, devices, teams and usage reports

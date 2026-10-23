@@ -19,25 +19,11 @@
 #   dump's image (packaging/platform-dump, built by window2.sh around this
 #   tree's static binary), run once with `docker compose run`.
 x-cloud: &cloud
-  ARUGULA_MANAGOAT_URL: http://127.0.0.1:9004
-  ARUGULA_MANAGOAT_API_KEY: mg_testnet
   ARUGULA_CLOUD_SECRET_KEY: c10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10d
-  ARUGULA_CLOUD_ACCOUNTS: "*"
-  ARUGULA_CLOUD_MODEL: anthropic/test
   RUST_LOG: arugula_platform=info
   STRIPE_SECRET_KEY: sk_test_testnet
   STRIPE_WEBHOOK_SECRET: whsec_testnet
   ARUGULA_PLATFORM_KEY: 7e577e577e577e577e577e577e577e577e577e577e577e577e577e577e577e57
-
-x-managoat: &managoat
-  image: node:22-slim
-  command:
-    - node
-    - -e
-    - >-
-      const net = require("net");
-      net.createServer((c) => { const u = net.connect(9004, "fakes"); c.pipe(u).pipe(c);
-        u.on("error", () => c.destroy()); c.on("error", () => u.destroy()); }).listen(9004, "127.0.0.1")
 
 services:
   platform:
@@ -79,12 +65,6 @@ services:
     networks:
       outer:
         aliases: [platforms]
-
-  managoat-platform2:
-    <<: *managoat
-    profiles: [two]
-    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-managoat-platform2
-    network_mode: service:platform2
 
   s3:
     profiles: [platform]

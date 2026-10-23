@@ -82,7 +82,7 @@ pub enum Linked {
 }
 
 /// What a claim's `SELECT` of a repo to purge ends with: on Postgres it
-/// passes over one another machine is purging (`cloud_jobs`' way, M144).
+/// passes over one another machine is purging (`platform_jobs`' way).
 fn skip_locked(c: &impl Sql) -> &'static str {
     match c.dialect() {
         Dialect::Sqlite => "",

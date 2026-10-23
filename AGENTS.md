@@ -53,9 +53,6 @@ Each has a `README.md` with where to start reading.
 - `crates/control-wire`: the enrolment, routing, relay, push and TURN messages
   between daemons and control (and the CLI's join), one type each, so both
   sides build from the same definition.
-- `crates/cloud-wire`: what control's `/api/cloud/` takes and answers with
-  (Cloud workspaces, tabs, agents); the web client's copy is generated
-  from it (`just proto-ts`).
 - `crates/forge-github`: the GitHub reader (M160): GitHub's REST API onto
   the forge model (PRs, issues, checks, reviews, events, which Forgejo and
   GitLab map onto too), with its tokens from a `TokenSource`. The daemon's

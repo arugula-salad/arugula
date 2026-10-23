@@ -4,13 +4,13 @@
 // kept to say), else the dialog the account menu opened, else the one-time
 // usage counts question. Also the account's and the host menu's items.
 //
-// The platform's settings (plan and usage, Cloud agents) are on the platform
-// page (M153); the account menu links out to them, and offers neither
-// without one (M155). The usage reports question is the account's, drawn
+// The platform's settings (plan and usage) are on the platform page
+// (M153); the account menu links out to them, and offers none without one
+// (M155). The usage reports question is the account's, drawn
 // by ../../shared/ui/account-telemetry from what's passed it (M149).
 
 import { useEffect, useState } from "preact/hooks";
-import { openPlatform, platformOrigin, workspacePath } from "../platform-links";
+import { openPlatform, platformOrigin } from "../platform-links";
 import { TelemetryAsk } from "../../shared/ui/account-telemetry";
 import type { MenuItem } from "../../shared/ui/menu";
 import { Modal } from "../../shared/ui/modal";
@@ -34,14 +34,6 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
   useEffect(() => {
     const on = () => setHash(location.hash);
     const open = (e: Event) => setPanel((e as CustomEvent<Panel>).detail);
-    const cloudMessage = (event: MessageEvent) => {
-      // A tapped Cloud push: on the platform page (M153).
-      if (event.data?.type === "open-cloud-run" && /^run_[0-9a-f]+$/.test(event.data.run)) openPlatform(`/past/${event.data.run}`);
-      if (event.data?.type === "open-cloud-tab" && /^cw_[0-9a-f]+$/.test(event.data.cloud_workspace) && /^cwc_[0-9a-f]+$/.test(event.data.cloud_tab)) {
-        openPlatform(workspacePath(event.data.cloud_workspace, event.data.cloud_tab));
-      }
-    };
-    navigator.serviceWorker?.addEventListener("message", cloudMessage);
     addEventListener("hashchange", on);
     addEventListener("arugula:control-panel", open);
     // Says the panel event has a listener, so a test can wait for it
@@ -52,7 +44,6 @@ export function ControlOverlay({ s }: { s: ControlSession }) {
     // hashchange that fired before this listener was there.
     on();
     return () => {
-      navigator.serviceWorker?.removeEventListener("message", cloudMessage);
       removeEventListener("hashchange", on);
       removeEventListener("arugula:control-panel", open);
       delete document.documentElement.dataset.controlPanels;
@@ -142,8 +133,6 @@ export function accountItems(s: ControlSession, docs = false): MenuItem[] {
     { label: "Devices and machines…", run: openPanel("devices") },
     // #1066: follows the `docs` flag of the machine shown.
     ...(docs ? [{ label: "Shared Docs…", run: openPanel("shared-docs") } as MenuItem] : []),
-    // M153: the platform page's, when control has one; none without (M155).
-    ...(platformOrigin() ? [{ label: "Cloud agents…", run: () => openPlatform("/agents") } as MenuItem] : []),
     { label: "Add a phone or browser…", run: openPanel("add-device") },
     { label: "Sign-in and account…", run: openPanel("account") },
     ...(platformOrigin() && s.billing?.billing ? [{ label: s.billing.relay.warning ? "Plan and usage… (over the free relay)" : "Plan and usage…", run: () => openPlatform("/settings") }] : []),

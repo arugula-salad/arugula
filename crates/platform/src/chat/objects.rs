@@ -17,11 +17,7 @@
 //!   no threads.
 //! - `hw_`: a hosted workspace (step 5's M179), in its project, until
 //!   it's deleted.
-//! - `run_`: a run (step 7's M210), in its project (M215). Only the
-//!   platform's runs: a Managoat Cloud run's id has the same prefix, but
-//!   it isn't in `runs`, so it names nothing here.
-//! - `cw_`: a Managoat Cloud workspace, which M189 retires: not yet (its
-//!   rows are an account's, not its project's members').
+//! - `run_`: a run (step 7's M210), in its project (M215).
 //! - Anything else: no such object.
 //!
 //! **Who sees one:** the third rule beside a team's roster and a machine's
@@ -53,8 +49,6 @@ pub(super) fn project_of(room: &Room) -> Option<&str> {
 
 /// The reason a refusal gives for a private repo's item.
 pub const PRIVATE_REPO: &str = "private_repo";
-/// ...and for an object whose threads haven't come yet (a workspace's).
-pub const NOT_YET: &str = "not_yet";
 
 /// What a global id names, as an object thread needs it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,7 +76,6 @@ enum Prefix {
     Mirrored,
     Hosted,
     Run,
-    Cloud,
 }
 
 fn prefix(target: &str) -> Option<Prefix> {
@@ -95,13 +88,12 @@ fn prefix(target: &str) -> Option<Prefix> {
         "fi" => Some(Prefix::Mirrored),
         "hw" => Some(Prefix::Hosted),
         "run" => Some(Prefix::Run),
-        "cw" => Some(Prefix::Cloud),
         _ => None,
     }
 }
 
 /// Whether `target` is an object's global id by its shape (`iss_…`,
-/// `fi_…`, `hw_…`, `run_…`, `cw_…`), not a room's: an agent names an object's
+/// `fi_…`, `hw_…`, `run_…`), not a room's: an agent names an object's
 /// thread by it (M198).
 pub(super) fn is_object(target: &str) -> bool {
     prefix(target).is_some()
@@ -109,8 +101,7 @@ pub(super) fn is_object(target: &str) -> bool {
 
 /// The objects these ids name, by id: one statement per kind for all of
 /// them. An id that names nothing (an unknown prefix, a row that isn't
-/// there, an unlinked repo's item, a deleted workspace, a Cloud workspace)
-/// isn't in the map.
+/// there, an unlinked repo's item, a deleted workspace) isn't in the map.
 pub(super) fn find(app: &Platform, targets: &[&str]) -> anyhow::Result<HashMap<String, Object>> {
     let mut out = HashMap::new();
     let of = |p| targets.iter().copied().filter(move |t| prefix(t) == Some(p));
@@ -140,24 +131,15 @@ pub(super) fn find(app: &Platform, targets: &[&str]) -> anyhow::Result<HashMap<S
         let short = id.trim_start_matches("run_").chars().take(8).collect::<String>();
         out.insert(id, Object { project, name: format!("run {short}"), guard: Guard::Members });
     }
-    // Cloud workspaces never get threads ([`resolve`] says so).
     Ok(out)
 }
 
 /// The object `target` names, for someone opening its thread: 404 for an
-/// id that names nothing, and "not yet" for a Cloud workspace.
+/// id that names nothing.
 pub(super) fn resolve(app: &Platform, target: &str) -> Result<Object, ApiError> {
     let nothing = || err(StatusCode::NOT_FOUND, "no such object");
-    match prefix(target).ok_or_else(nothing)? {
-        Prefix::Cloud => Err(refusal(
-            StatusCode::NOT_IMPLEMENTED,
-            NOT_YET,
-            "a Cloud workspace has no thread: hosted workspaces' (hw_) do",
-        )),
-        Prefix::Issue | Prefix::Mirrored | Prefix::Hosted | Prefix::Run => {
-            find(app, &[target])?.remove(target).ok_or_else(nothing)
-        }
-    }
+    prefix(target).ok_or_else(nothing)?;
+    find(app, &[target])?.remove(target).ok_or_else(nothing)
 }
 
 /// Whether `account` is a member of `project` now: its account for a
@@ -265,8 +247,7 @@ mod tests {
         assert_eq!(prefix("fi_00ff"), Some(Prefix::Mirrored));
         assert_eq!(prefix("hw_9d81"), Some(Prefix::Hosted));
         assert_eq!(prefix("run_9d81"), Some(Prefix::Run));
-        assert_eq!(prefix("cw_9d81"), Some(Prefix::Cloud));
-        for bad in ["prj_1", "iss_", "fi", "fi_a-b", "_x", "", &format!("fi_{}", "a".repeat(65))] {
+        for bad in ["cw_9d81", "prj_1", "iss_", "fi", "fi_a-b", "_x", "", &format!("fi_{}", "a".repeat(65))] {
             assert_eq!(prefix(bad), None, "{bad}");
         }
     }

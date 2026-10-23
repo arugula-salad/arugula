@@ -46,7 +46,7 @@ async function lands(hash: string): Promise<string> {
   return alice.url();
 }
 
-test("each old route of chat's and Cloud's lands on the platform page", async () => {
+test("each old route of chat's lands on the platform page", async () => {
   test.setTimeout(120_000);
   const project = /^\/p\/(prj_[0-9a-f]+)-acme\/chat/;
   let at = new URL(await lands(`#chat=${room}&msg=${seq}`));
@@ -66,13 +66,6 @@ test("each old route of chat's and Cloud's lands on the platform page", async ()
   // A machine's own thread, from before M125: chat, from the top.
   at = new URL(await lands("#chat=laptop/pane-3"));
   expect(at.pathname).toMatch(project);
-  // Cloud's: the reader's own project.
-  at = new URL(await lands("#cloud-ws"));
-  expect(at.pathname).toMatch(/^\/p\/prj_[0-9a-f]+-personal\/workspaces$/);
-  at = new URL(await lands("#cloud-ws=cw_0123abcd/cwc_4567ef01"));
-  expect(at.pathname).toMatch(/^\/p\/prj_[0-9a-f]+-personal\/workspaces\/cw_0123abcd\/cwc_4567ef01$/);
-  at = new URL(await lands("#cloud=run_00ff11ee"));
-  expect(at.pathname).toMatch(/^\/p\/prj_[0-9a-f]+-personal\/past\/run_00ff11ee$/);
 });
 
 test("followed on control's page as a hash change, an old link lands too", async () => {

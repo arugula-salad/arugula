@@ -50,7 +50,7 @@ fn the_tables_are_the_platforms_own() {
     assert!(t.contains(&"chat_messages".to_owned()) && t.contains(&"hub_feed".to_owned()), "{t:?}");
     assert!(t.iter().all(|n| n != "platform_migrations" && !n.starts_with("chat_fts") && !n.starts_with("sqlite_")));
     assert!(
-        t.iter().position(|n| n == "cloud_runs") < t.iter().position(|n| n == "cloud_run_secrets"),
+        t.iter().position(|n| n == "hosted_workspaces") < t.iter().position(|n| n == "hosted_workspace_secrets"),
         "parents first"
     );
     let db = crate::db::Db::memory();
@@ -92,7 +92,7 @@ fn a_copy_moves_every_row_and_proves_it() {
     assert_eq!(count(&platform, "SELECT rowid FROM issues_fts WHERE issues_fts MATCH 'canary'"), 3, "issues' too");
 }
 
-/// The rowids some queries order by survive (a delete left a gap).
+/// Rowids survive (a delete left a gap).
 #[test]
 fn rowids_are_kept() {
     let d = Dir::new();
@@ -101,12 +101,12 @@ fn rowids_are_kept() {
     copy(&hub, &platform, false).unwrap();
     let rows = |p: &Path| -> Vec<(i64, String)> {
         let c = read_only(p).unwrap();
-        let mut q = c.prepare("SELECT rowid, conversation FROM cloud_notifications ORDER BY rowid").unwrap();
+        let mut q = c.prepare("SELECT rowid, reader FROM hub_feed ORDER BY rowid").unwrap();
         q.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap()
     };
     assert_eq!(rows(&platform), rows(&hub));
-    assert_eq!(rows(&hub).iter().map(|r| r.1.as_str()).collect::<Vec<_>>(), ["c1", "c3"]);
-    assert_eq!(rows(&hub)[0].0, 2, "c2's rowid was 1, and stays a gap");
+    assert_eq!(rows(&hub).iter().map(|r| r.1.as_str()).collect::<Vec<_>>(), ["projects", "chat"]);
+    assert_eq!(rows(&hub)[0].0, 2, "gone's rowid was 1, and stays a gap");
 }
 
 /// `platform_migrations` isn't copied: the target's runner made the schema
@@ -223,7 +223,7 @@ fn secrets_open_only_with_their_key() {
     let opened = crate::keys::Checked { opened: 1, by_master: 1, ..Default::default() };
     assert_eq!(secrets_open(&hub, SAMPLE_KEY, None).unwrap(), opened);
     let wrong = "02".repeat(32);
-    let failed = vec![("acct-a".into(), "GITHUB_TOKEN".into())];
+    let failed = vec![("hw_1".into(), "GITHUB_TOKEN".into())];
     assert_eq!(secrets_open(&hub, &wrong, None).unwrap(), crate::keys::Checked { failed, ..Default::default() });
 }
 
@@ -241,14 +241,11 @@ fn a_copy_to_postgres_and_back_matches() {
     hub_file(&hub);
     let (file, to) = (Place::File(hub.clone()), Place::Postgres(url));
     let refused = portable::copy(&file, &to, false).unwrap_err();
-    assert!(format!("{refused:#}").contains("writing cloud_notifications"), "{refused:#}");
+    assert!(format!("{refused:#}").contains("writing hub_feed"), "{refused:#}");
     let n: u64 =
         pg.c().query_row("SELECT count(*) FROM chat_messages", crate::db::sql::params![], |r| r.get(0)).unwrap();
     assert_eq!(n, 0, "nothing was written");
-    rusqlite::Connection::open(&hub)
-        .unwrap()
-        .execute("UPDATE cloud_notifications SET next_attempt = 2 WHERE next_attempt = 2.5", [])
-        .unwrap();
+    rusqlite::Connection::open(&hub).unwrap().execute("UPDATE hub_feed SET seq = 2 WHERE seq = 2.5", []).unwrap();
 
     let r = portable::copy(&file, &to, false).unwrap();
     assert!(r.tables.iter().all(|t| t.matches()), "{}", r.render(&file, &to));
@@ -280,15 +277,6 @@ fn a_copy_to_postgres_and_back_matches() {
     let r = portable::copy(&to, &back, false).unwrap();
     assert_eq!(r.fts_rows, Some(5), "chat_fts rebuilt there");
     assert_eq!(portable::checksums(&back).unwrap(), portable::checksums(&to).unwrap());
-    let c = read_only(&d.at("back.db")).unwrap();
-    let rowids: Vec<i64> = c
-        .prepare("SELECT rowid FROM cloud_notifications ORDER BY rowid")
-        .unwrap()
-        .query_map([], |r| r.get(0))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
-    assert_eq!(rowids, [2, 3], "the rowids queries order by, kept");
     assert_eq!(count(&d.at("back.db"), "SELECT rowid FROM issues_fts WHERE issues_fts MATCH 'canary'"), 3);
 }
 
@@ -361,10 +349,7 @@ fn checksums_in_an_exported_snapshot() {
     let d = Dir::new();
     let hub = d.at("control.db");
     hub_file(&hub);
-    rusqlite::Connection::open(&hub)
-        .unwrap()
-        .execute("UPDATE cloud_notifications SET next_attempt = 2 WHERE next_attempt = 2.5", [])
-        .unwrap();
+    rusqlite::Connection::open(&hub).unwrap().execute("UPDATE hub_feed SET seq = 2 WHERE seq = 2.5", []).unwrap();
     let at = Place::Postgres(url);
     portable::copy(&Place::File(hub), &at, false).unwrap();
     let before = portable::checksums(&at).unwrap();

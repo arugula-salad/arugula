@@ -255,7 +255,7 @@ async fn hub_latency_bench() {
         "hub_latency_bench: {} ms added to every hub call; the platform on {on}; {ROUNDS} rounds",
         DELAY.as_millis()
     )];
-    for path in ["/api/me", "/api/grants", "/api/chat", "/api/billing", "/api/cloud/workspaces"] {
+    for path in ["/api/me", "/api/grants", "/api/chat", "/api/billing", "/api/workspaces"] {
         for _ in 0..10 {
             get(path).await;
         }

@@ -108,8 +108,8 @@ For working on Arugula itself:
   your terminals.
 - [DECISIONS.md](DECISIONS.md): the decisions that still hold, an index of the records in
   [docs/decisions/](docs/decisions/).
-- [docs/managoat.md](docs/managoat.md): managed cloud agents, run through Arugula control on
-  Managoat, and what became of the daemon's own Managoat integration.
+- [docs/managoat.md](docs/managoat.md): Managoat, the first backend for Cloud workspaces,
+  and what became of it (removed, on control's side and the daemon's).
 - [docs/platform-features.md](docs/platform-features.md): which agent platform features (ACP, MCP,
   A2A, skills, scheduled tasks) Arugula brings in, which are planned, and the gaps.
 - [docs/plan-archive.md](docs/plan-archive.md): the original plan and every milestone.

@@ -667,7 +667,7 @@ function AgentBlock({ client, id, s }: { client: Client; id: PaneId; s: AgentSta
           ))}
         </div>
       )}
-      {archived ? <p class="agent-note">Archived cloud transcript. Open Cloud agents in your Arugula account to start a new run.</p> : <Composer client={client} id={id} s={s} attached={attached} setAttached={setAttached} />}
+      {archived ? <p class="agent-note">Archived cloud transcript. Agents in the cloud run on Cloud workspaces in your Arugula projects now.</p> : <Composer client={client} id={id} s={s} attached={attached} setAttached={setAttached} />}
     </div>
   );
 }

@@ -5,8 +5,7 @@
 # put in its env. up.sh adds this file with ARUGULA_TESTNET_HOSTED=1.
 #
 # - The platform's E2B adapter takes plain http only on loopback, so the
-#   fake is reached through a sidecar in control's network namespace, as
-#   two.yaml reaches its fake Managoat.
+#   fake is reached through a sidecar in control's network namespace.
 # - Boxes enroll by ticket (they boot fresh, not from a snapshot), and
 #   anyone may make one. Secrets are sealed with the stack's own key.
 

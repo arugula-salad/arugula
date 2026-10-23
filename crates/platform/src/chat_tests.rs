@@ -603,7 +603,7 @@ async fn serve_on(hub: Arc<TestHub>, db: crate::db::Db) -> (Arc<Platform>, Strin
     let app = Arc::new(Platform::new(cfg, db, hub, reqwest::Client::new(), Default::default()));
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let router = crate::cloud::tests::router(app.clone());
+    let router = crate::testing::router(app.clone());
     tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
     (app, base)
 }

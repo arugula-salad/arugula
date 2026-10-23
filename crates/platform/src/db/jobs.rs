@@ -2,14 +2,14 @@
 //! background work of workspaces, runs, deploys and schedules, which the
 //! platform's machines take turns at ([`crate::jobs`] is the worker).
 //!
-//! The lease is `cloud_jobs`' (M144), made stricter:
+//! The lease:
 //! - A claim takes one due job and leases it for [`LEASE_MS`] under a new
 //!   random `lease`. On Postgres its `SELECT` is `FOR UPDATE SKIP LOCKED`,
 //!   so two machines never take the same job and neither waits for the
 //!   other; SQLite's `BEGIN IMMEDIATE` makes claims take turns.
 //! - Every write names the lease it holds and is refused ([`LeaseLost`])
 //!   once the lease has run out, whether or not another claim has taken
-//!   the job yet (`cloud_jobs` lets a late holder write until then). A
+//!   the job yet. A
 //!   step longer than the lease keeps it with heartbeats ([`Db::extend_job`],
 //!   which the worker sends every third of a lease), and a heartbeat can't
 //!   bring back a lease that has run out.
@@ -51,14 +51,13 @@ use std::sync::{
 };
 
 /// How long a claim or a heartbeat leases its job: what a machine that dies
-/// mid-step costs before another takes the job over. `cloud_jobs`'
-/// ([`super::cloud::LEASE_MS`]).
-pub const LEASE_MS: u64 = super::cloud::LEASE_MS;
+/// mid-step costs before another takes the job over.
+pub const LEASE_MS: u64 = 120_000;
 
 /// The furthest ahead a heartbeat may hold its job, from its own clock.
 pub const MAX_EXTEND_MS: u64 = 3 * LEASE_MS;
 
-/// The first wait after a failure (`cloud::worker`'s), doubled for each
+/// The first wait after a failure, doubled for each
 /// failure in a row up to [`RETRY_MAX_MS`].
 pub const RETRY_MS: u64 = 10_000;
 pub const RETRY_MAX_MS: u64 = 3_600_000;
@@ -223,9 +222,8 @@ pub(crate) fn job_row(r: &Row) -> Result<JobRow> {
 
 /// Whether `job` still holds its lease at `now`, locking its row until `tx`
 /// ends so no claim takes it meanwhile. What a kind's own writes check
-/// first, in their transaction, to write only while holding the job (as
-/// `append_conversation_events` does for `cloud_jobs`); [`Db::under_lease`]
-/// does both.
+/// first, in their transaction, to write only while holding the job;
+/// [`Db::under_lease`] does both.
 pub fn holds(tx: &impl Sql, job: &LeasedJob, now: u64) -> Result<bool> {
     Ok(tx
         .query_row(

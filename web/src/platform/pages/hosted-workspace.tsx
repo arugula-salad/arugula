@@ -13,7 +13,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { HOSTED_LABEL, HOSTED_MEANS } from "../../shared/hosted";
 import { usePlatformApi } from "../../shared/platform-api";
 import { names } from "../links";
-import { pathOf } from "../router";
+import { follow, pathOf } from "../router";
 import { controlOrigin, session } from "../session";
 import { Missing } from "./project";
 
@@ -75,10 +75,10 @@ const when = (ms: number) => (ms ? new Date(ms).toLocaleString() : "");
 
 const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KiB` : `${(n / 1024 / 1024).toFixed(1)} MiB`);
 
-/** A project's hosted workspaces, above its Cloud workspaces: none, where
+/** A project's hosted workspaces: null until they're read, and none where
  * the platform has none. */
-export function HostedWorkspaces({ project: id }: { project: string }) {
-  const [list, setList] = useState<HostedWorkspace[]>([]);
+export function useHostedWorkspaces(id: string): HostedWorkspace[] | null {
+  const [list, setList] = useState<HostedWorkspace[] | null>(null);
   useEffect(() => {
     let live = true;
     get<{ workspaces: HostedWorkspace[] }>(`${project(id)}/workspaces`).then(
@@ -87,21 +87,45 @@ export function HostedWorkspaces({ project: id }: { project: string }) {
     );
     return () => void (live = false);
   }, [id]);
-  if (!list.length) return null;
+  return list;
+}
+
+/** The links to a project's hosted workspaces, each with its state. */
+export function HostedWorkspaceList({ project: id, list }: { project: string; list: HostedWorkspace[] }) {
   return (
-    <section class="platform-section hosted-list" data-hosted-workspaces>
-      <h2>Hosted workspaces</h2>
-      <ul>
-        {list.map((w) => (
+    <ul class="platform-list" data-hosted-workspaces-list>
+      {list.map((w) => {
+        const to = pathOf({ page: "workspace", project: id, workspace: w.id }, names);
+        return (
           <li key={w.id}>
-            <a href={pathOf({ page: "workspace", project: id, workspace: w.id }, names)} data-hosted-workspace-link={w.id}>
+            <a href={to} data-hosted-workspace-link={w.id} onClick={(e) => follow(e, to)}>
               {w.name}
             </a>{" "}
-            <span class="dim">{said(w)}</span>
+            <span class="dim">· {said(w)}</span>
           </li>
-        ))}
-      </ul>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** `/p/:project/workspaces`: the project's hosted workspaces. */
+export function HostedWorkspaces({ project: id }: { project: string }) {
+  const list = useHostedWorkspaces(id);
+  return (
+    <section class="platform-section hosted-list" data-hosted-workspaces>
+      <h1>Workspaces</h1>
+      {list === null ? <p class="dim">Loading…</p> : list.length ? <HostedWorkspaceList project={id} list={list} /> : <NoWorkspaces project={id} />}
     </section>
+  );
+}
+
+/** What a project with no hosted workspaces says. */
+export function NoWorkspaces({ project: id }: { project: string }) {
+  return (
+    <p class="dim" data-no-workspaces>
+      None yet. <code>arugula cloud create NAME --project {id}</code> makes one, as do agents with Arugula's <code>cloud</code> tool.
+    </p>
   );
 }
 
@@ -165,7 +189,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
           </button>
         )}
       </nav>
-      <div class="cloud-ws-view">
+      <div class="hosted-ws-view">
         <section class="platform-section">
           <p class="hosted-label" title={HOSTED_MEANS}>
             {HOSTED_LABEL}: {HOSTED_MEANS}

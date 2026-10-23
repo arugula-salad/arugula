@@ -756,7 +756,6 @@ install: build
 # control (fake GitHub sign-in) on 7690 with machines joined to it
 # (default: workstation laptop), rebuilt on every change (web/dev-control.ts).
 # DEV_CONTROL_APPROVE_BROWSERS=0 leaves a signed-in browser waiting.
-# DEV_CONTROL_CLOUD=1 turns Cloud on, with a fake Managoat and Cloud workspaces.
 dev-control *machines:
     {{cargo}} build -p arugulad -p arugula-control
     cd web && TARGET_DIR="{{target_dir}}/debug" node --experimental-strip-types --no-warnings dev-control.ts {{machines}}
@@ -764,8 +763,8 @@ dev-control *machines:
 # The platform page (M150) on 127.0.0.1:7691, beside `just dev-control`
 # (run that first): Vite serves it and sends control's paths to 7690. Sign
 # in on control's page; the session cookie is the same host's, so this page
-# is signed in too. DEV_CONTROL_CHAT=1 and DEV_CONTROL_CLOUD=1 on
-# dev-control give it a team's chat and Cloud workspaces to show.
+# is signed in too. DEV_CONTROL_CHAT=1 on dev-control gives it a team's
+# chat to show.
 dev-platform:
     cd web && pnpm run dev-platform
 

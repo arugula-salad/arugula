@@ -1,10 +1,8 @@
-// The platform page's `PlatformApi` (M150): what chat and the Cloud
-// workspace views reach this page through. It has no machines: a pane's
-// chip shows its quote and says where the pane is, and opening one is the
-// shell's (a link to control's page). Its links are paths
-// ("Platform URLs are ids with cosmetic slugs").
+// The platform page's `PlatformApi` (M150): what chat reaches this page
+// through. It has no machines: a pane's chip shows its quote and says where
+// the pane is, and opening one is the shell's (a link to control's page).
+// Its links are paths ("Platform URLs are ids with cosmetic slugs").
 
-import { cloudApi } from "../shared/cloud";
 import { noMachines, type PlatformApi, type PlatformTeam } from "../shared/platform-api";
 import { PlatformBar } from "./bar";
 import { names, roomPath, routeProject } from "./links";
@@ -18,7 +16,6 @@ const chatIn = (view?: "activity" | "search", q?: string): Route | null => {
 };
 
 export const platformApi: PlatformApi = {
-  cloud: cloudApi,
   teams: (): PlatformTeam[] =>
     session.projects.flatMap((p) => (p.team ? [{ team: p.team.id, role: p.team.role, roster: { name: p.team.name, members: p.team.members } }] : [])),
   subscribe: (fn) => session.subscribe(fn),

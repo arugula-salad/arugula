@@ -10,8 +10,9 @@
 #
 # What it does, as production will:
 #   1. up: control as the gateway, the platform out of process on its file,
-#      Cloud on (a fake Managoat), Postgres beside it, an S3 store for R2
-#   2. a person's chat and Cloud, written through the gateway (window.ts seed)
+#      Postgres beside it, an S3 store for R2
+#   2. a person's chat and a project's secret, written through the gateway
+#      (window.ts seed)
 #   3. the notice, a day ahead
 #   4. pre-checks: a timed trial copy into Postgres, its migrations, and its
 #      secrets open with the platform's key
@@ -94,7 +95,6 @@ healthy() {
 
 control_up() {
   dc up -d --wait control >/dev/null 2>&1 || dc up -d control
-  dc up -d --force-recreate --no-deps managoat-hub >/dev/null 2>&1
   for _ in $(seq 1 60); do
     curl -fsS "http://127.0.0.1:$cport/control.json" >/dev/null 2>&1 && return 0
     sleep 0.5
@@ -107,7 +107,6 @@ control_up() {
 machine_up() {
   local svc=$1 port=$2
   dc up -d --wait "$svc" >/dev/null 2>&1 || dc up -d "$svc"
-  dc up -d --force-recreate --no-deps "managoat-$svc" >/dev/null 2>&1
   healthy "$port" >/dev/null
 }
 platform_up() { machine_up platform "$ARUGULA_TESTNET_PLATFORM_PORT"; }
@@ -145,7 +144,7 @@ logged "$TESTNET-control" 'the platform runs out of process' || die "control isn
 echo "control: the gateway; the platform: out of process on /window/platform.db" | record
 
 # ---- 2. seed
-step "2. a person's chat and Cloud, before the window"
+step "2. a person's chat and secrets, before the window"
 # shellcheck disable=SC2086 # CONTROL_VIA is several words
 node --experimental-strip-types --no-warnings "$ROOT/web/fixtures/device-cli.ts" --state "$W/device.json" \
   signin --control "$CONTROL_URL" $CONTROL_VIA --login "window2-$$" > /dev/null
@@ -179,7 +178,7 @@ must_503
 echo "GET /api/chat: 503; GET /control.json: 200" | record
 ARUGULA_TESTNET_PLATFORM_PAUSED=1
 platform_up
-logged "$TESTNET-platform" 'paused: no cloud worker' || die "the platform isn't held"
+logged "$TESTNET-platform" 'paused: no job worker' || die "the platform isn't held"
 put_url
 plat checksums --db /window/platform.db --portable > "$W/before.txt"
 t="$(now)"
@@ -214,7 +213,7 @@ platform_up
 t2="$(now)"
 ARUGULA_TESTNET_PLATFORM_PAUSED=0
 platform_up
-if logged "$TESTNET-platform" 'paused: no cloud worker'; then die "the platform is still held"; fi
+if logged "$TESTNET-platform" 'paused: no job worker'; then die "the platform is still held"; fi
 t3="$(now)"
 hub maintenance off --db /window/control.db | record
 sleep 2
@@ -225,10 +224,11 @@ step "6. post-checks on Postgres, then new work there"
 win check "$W/seed.json" | record
 claim platform | record
 win write pg "$W/seed.json" | record
-vault="$(docker exec "$TESTNET-fakes" node -e "fetch('http://127.0.0.1:9005/').then(r => r.text()).then(t => process.stdout.write(t))")"
-want="$(sed -n 's/.*"secret_sha256":"\([0-9a-f]*\)".*/\1/p' "$W/seed.json")"
-case "$vault" in *"$want"*) ;; *) die "Managoat's vault got $vault, not the secret seeded on the file ($want)" ;; esac
-echo "the secret written on the file, decrypted from Postgres for Managoat: sha256 $want" | record
+put_url
+plat secrets-check --db @/tmp/pg.url > "$W/secrets-pg.txt"
+record < "$W/secrets-pg.txt"
+grep -q '^  1 open$' "$W/secrets-pg.txt" || die "the secret set on Postgres doesn't open with the platform's key"
+echo "the secret set again on Postgres, sealed with the project's key: it opens" | record
 
 # ---- 7. two machines
 step "7. two machines, and the hub through Flycast's stand-in"
@@ -264,7 +264,7 @@ drill() {
     ARUGULA_DRILL_ACCESS_KEY_ID=testnet-key ARUGULA_DRILL_SECRET_ACCESS_KEY=testnet-secret \
     "$ROOT/scripts/platform-restore-drill" --identity "$W/dump.key" --bin "$ARUGULA_TESTNET_BINARIES/arugula-platform" "$@"
 }
-# The testnet's cloud secret key (window.yaml's), as Infisical holds production's.
+# The testnet's master key (window.yaml's), as Infisical holds production's.
 ARUGULA_CLOUD_SECRET_KEY=c10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10d drill --secrets 2>&1 | record
 drill --age 2>&1 | record
 # A record that lies about one table: the drill must say so. Put through
@@ -328,7 +328,7 @@ hub maintenance on --retry-after 30 --db /window/control.db | record
 ARUGULA_TESTNET_PLATFORM_PAUSED=1
 platform_up
 platform2_up
-dc rm -sf platform2 managoat-platform2 >/dev/null 2>&1
+dc rm -sf platform2 >/dev/null 2>&1
 ARUGULA_TESTNET_PLATFORM_URL=http://platform:7700
 control_up
 plat copy --from env:ARUGULA_PLATFORM_DATABASE_URL --to /window/back.db > "$W/back.txt"

@@ -1,5 +1,5 @@
 //! Arugula control's platform ("Control is two processes: a hub and a
-//! platform", #1150): chat, Cloud and billing, and step 1's projects and
+//! platform", #1150): chat, hosted workspaces and billing, and step 1's projects and
 //! grants, which deploy as often as they like without dropping a relayed
 //! terminal. The hub (`arugula-control`) keeps identity, devices, rosters,
 //! the relay, push, block and doc origins, the jump host, daemons' forge
@@ -18,7 +18,8 @@
 //! - [`page`] is the platform page (M150's build), which the hub serves on
 //!   the platform's own host, `app.arugula.io` (M151).
 //!
-//! Billing moved in first (M139), then Cloud ([`cloud`], M137), then chat
+//! Billing moved in first (M139), then Cloud (M137, Managoat-backed until
+//! M189 and M190 removed it), then chat
 //! ([`chat`], M138), which follows the hub's change feed through [`cache`],
 //! then projects and grants ([`projects`], [`grants`]), which follow it
 //! too, then the GitHub App's webhook and key ([`forge`], M161). It runs inside the hub's process (`--platform in-process`, the
@@ -80,7 +81,10 @@ pub mod run_log;
 pub mod run_logs;
 #[cfg(test)]
 mod runs_page_tests;
+pub mod secrets;
 pub mod stuck;
+#[cfg(test)]
+pub(crate) mod testing;
 pub mod timing;
 pub mod triggers;
 pub mod window;
@@ -121,8 +125,7 @@ impl Config {
 /// The platform: its own database, its view of the hub, and what it keeps
 /// in memory (on each of its machines, M144: what's kept here is that
 /// machine's alone, as docs/control-ops.md lists). Each feature that moved in brought its own fields, as `App`
-/// had them: billing's `stripe`, Cloud's `cloud`, chat's `chat`, and
-/// projects' `feed`.
+/// had them: billing's `stripe`, chat's `chat`, and projects' `feed`.
 pub struct Platform {
     pub cfg: Config,
     pub db: db::Db,
@@ -135,8 +138,6 @@ pub struct Platform {
     pub analytics: Analytics,
     /// Billing (M22), when there's a Stripe key: `billing`.
     pub stripe: Option<billing::Stripe>,
-    /// Cloud workspaces (M137), when this control has a Managoat key.
-    pub cloud: Option<cloud::Cloud>,
     /// Hosted workspaces' boxes (M176), when this platform has an E2B key:
     /// [`hosted`]'s worker drives them (M179).
     pub compute: Option<Arc<dyn compute::Substrate>>,
@@ -145,7 +146,7 @@ pub struct Platform {
     pub hosted: hosted::Config,
     /// The master key (`ARUGULA_CLOUD_SECRET_KEY`, and the old one while
     /// it's rotated), which wraps each project's data key ([`keys`]).
-    pub secret_key: Option<Arc<cloud::secrets::SecretCipher>>,
+    pub secret_key: Option<Arc<secrets::SecretCipher>>,
     /// Wakes asked of hosted workspaces' boxes (M182): one at a time per
     /// workspace, and the worker started on them at once.
     pub wakes: hosted::wake::Wakes,
@@ -159,9 +160,9 @@ pub struct Platform {
     /// Held while [`projects::follow`] applies the hub's change feed to
     /// projects and grants: one reader at a time.
     pub feed: tokio::sync::Mutex<()>,
-    /// Background work held for a window (M141): the cloud worker, Cloud's
-    /// approval pushes, billing's usage reports and the projects and grants
-    /// feed follower wait while it's set, so
+    /// Background work held for a window (M141): the job worker, hosted
+    /// workspaces' worker, billing's usage reports and the projects and
+    /// grants feed follower wait while it's set, so
     /// the platform's tables hold still while they're copied. Requests are
     /// held by the hub's maintenance switch, not this.
     pub paused: std::sync::atomic::AtomicBool,
@@ -169,10 +170,10 @@ pub struct Platform {
     /// notifications, and whether this machine is the leader
     /// ([`Platform::is_leader`]). `None` on SQLite: one machine.
     pub listening: Option<db::Listening>,
-    /// Set when the machine is stopping (a deploy): the cloud worker takes
-    /// no new job, and [`Platform::drain`] waits for the ones it holds.
+    /// Set when the machine is stopping (a deploy): the job worker takes no
+    /// new job, and [`Platform::drain`] waits for the ones it holds.
     pub stopping: std::sync::atomic::AtomicBool,
-    /// Cloud jobs this machine holds a lease on right now.
+    /// Jobs this machine holds a lease on right now.
     pub busy: std::sync::atomic::AtomicUsize,
     /// The linked repos' items whose inbox to work out again (M171), as
     /// this machine's ingest wrote them, and its pushes lately.
@@ -206,7 +207,7 @@ impl Platform {
         self.stopping.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// The machine is stopping: take no new cloud job, and wait up to
+    /// The machine is stopping: take no new job, and wait up to
     /// `within` for the ones held to checkpoint, which hands each back
     /// within seconds instead of at the end of its lease (M144: a rolling
     /// deploy's machine hands its jobs to the other).
@@ -219,7 +220,7 @@ impl Platform {
         }
         let left = self.busy.load(SeqCst);
         if left > 0 {
-            tracing::warn!(jobs = left, "stopping with cloud jobs held: each waits out its lease");
+            tracing::warn!(jobs = left, "stopping with jobs held: each waits out its lease");
         }
     }
 }
@@ -238,7 +239,6 @@ impl Platform {
             limits: Limits::new(None),
             analytics,
             stripe: None,
-            cloud: None,
             compute: None,
             hosted: Default::default(),
             secret_key: None,

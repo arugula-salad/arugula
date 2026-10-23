@@ -85,10 +85,6 @@ sw.addEventListener("fetch", (event: FetchEvent) => {
 });
 
 interface Msg {
-  cloud_run?: string;
-  /** A Cloud workspace tab's approval (S40): its workspace and tab. */
-  cloud_workspace?: string;
-  cloud_tab?: string;
   title?: string;
   body?: string;
   tag?: string;
@@ -155,9 +151,9 @@ sw.addEventListener("push", (event: PushEvent) => {
       tag: msg.tag || "arugula",
       renotify: true,
       icon: "/icon.svg",
-      requireInteraction: !!(approve || ask || gate || point || msg.cloud_run || msg.cloud_tab),
+      requireInteraction: !!(approve || ask || gate || point),
       actions,
-      data: { cloud_run: msg.cloud_run, cloud_workspace: msg.cloud_workspace, cloud_tab: msg.cloud_tab, pane: msg.pane, daemon: msg.daemon, chat: msg.chat, inbox: msg.inbox, deploy: msg.deploy, approve, ask, reason, control: msg.control === true },
+      data: { pane: msg.pane, daemon: msg.daemon, chat: msg.chat, inbox: msg.inbox, deploy: msg.deploy, approve, ask, reason, control: msg.control === true },
     } as NotificationOptions),
   );
 });
@@ -202,11 +198,11 @@ async function failed(pane: number, daemon: string | undefined, what: string) {
 sw.addEventListener("notificationclick", (event: ClickEvent) => {
   event.notification.close();
   const data = (event.notification.data || {}) as Msg & { approve: Msg["approve"] | null; ask: Msg["ask"] | null };
-  // M156: a chat push, or a Cloud workspace's, opens on the platform page,
+  // M156: a chat push opens on the platform page,
   // signed in there by the hub's silent hop (M152): straight there, not
   // through this page. Push stays this app's: one install, one permission
   // ("Push stays on the hub's app"). Without a platform page, as before.
-  const there = !event.action && (data.control || data.cloud_run || data.cloud_workspace) ? platformTap(data) : undefined;
+  const there = !event.action && data.control ? platformTap(data) : undefined;
   if (there) {
     event.waitUntil(
       (async () => {
@@ -327,8 +323,8 @@ sw.addEventListener("notificationclick", (event: ClickEvent) => {
   );
 });
 
-/** A chat push's or a Cloud one's tap on this page, as before the
- * platform page: a page of this app's that's open shows it, else one opens. */
+/** A chat push's tap on this page, as before the platform page: a page of
+ * this app's that's open shows it, else one opens. */
 async function here(data: Msg): Promise<unknown> {
   const windows = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
   const show = (msg: Record<string, unknown>, url: string) => {
@@ -340,10 +336,6 @@ async function here(data: Msg): Promise<unknown> {
     }
     return sw.clients.openWindow(url);
   };
-  if (data.cloud_run && /^run_[0-9a-f]+$/.test(data.cloud_run)) return show({ type: "open-cloud-run", run: data.cloud_run }, `/#cloud=${data.cloud_run}`);
-  if (data.cloud_workspace && data.cloud_tab && /^cw_[0-9a-f]+$/.test(data.cloud_workspace) && /^cwc_[0-9a-f]+$/.test(data.cloud_tab)) {
-    return show({ type: "open-cloud-tab", cloud_workspace: data.cloud_workspace, cloud_tab: data.cloud_tab }, `/#cloud-ws=${data.cloud_workspace}/${data.cloud_tab}`);
-  }
   const room = data.control ? chatTap(data) : undefined;
   if (room) return show({ type: "open-room", url: room }, room);
 }

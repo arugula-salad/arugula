@@ -57,7 +57,7 @@ use std::{collections::BTreeMap, time::Duration};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
-use crate::{Platform, cloud::secrets::SecretCipher};
+use crate::{Platform, secrets::SecretCipher};
 
 pub mod enroll;
 pub mod hold;
@@ -132,11 +132,6 @@ pub struct Args {
     /// (docs/control-ops.md, "Public previews").
     #[arg(long, env = "ARUGULA_PREVIEW_DOMAIN")]
     pub preview_domain: Option<String>,
-    /// The day beta Cloud workspaces still on Managoat are deleted
-    /// (`YYYY-MM-DD`, M189): their pages say so, and offer the move to
-    /// hosted ones. Unset, nothing says so.
-    #[arg(long, env = "ARUGULA_MANAGOAT_DELETE_AFTER")]
-    pub managoat_delete_after: Option<String>,
 }
 
 impl Args {
@@ -164,15 +159,6 @@ impl Args {
             idle_timeout: self.hosted_idle_timeout.filter(|s| *s > 0).map(Duration::from_secs),
             runtime_cap: self.hosted_runtime_cap.filter(|s| *s > 0).map(Duration::from_secs),
             preview_domain: previews::domain(self.preview_domain.as_deref().unwrap_or(""))?,
-            managoat_delete_after: self
-                .managoat_delete_after
-                .filter(|d| !d.trim().is_empty())
-                .map(|d| {
-                    d.trim().parse::<jiff::civil::Date>().map_err(|e| {
-                        anyhow::anyhow!("ARUGULA_MANAGOAT_DELETE_AFTER is a date (YYYY-MM-DD), not {d:?}: {e}")
-                    })
-                })
-                .transpose()?,
         })
     }
 }
@@ -204,8 +190,6 @@ pub struct Config {
     pub inference: inference::Settings,
     /// Public previews' domain (M187), when they're on.
     pub preview_domain: Option<String>,
-    /// [`Args::managoat_delete_after`], when it's set.
-    pub managoat_delete_after: Option<jiff::civil::Date>,
 }
 
 impl std::fmt::Debug for Config {
@@ -218,7 +202,6 @@ impl std::fmt::Debug for Config {
             .field("runtime_cap", &self.runtime_cap)
             .field("inference", &self.inference)
             .field("preview_domain", &self.preview_domain)
-            .field("managoat_delete_after", &self.managoat_delete_after)
             .finish_non_exhaustive()
     }
 }
@@ -313,7 +296,7 @@ impl Spec {
         if self.env.len() > MAX_ENV {
             return Err(format!("at most {MAX_ENV} env names"));
         }
-        if let Some(n) = self.env.iter().find(|n| !crate::cloud::secrets::valid_name(n)) {
+        if let Some(n) = self.env.iter().find(|n| !crate::secrets::valid_name(n)) {
             return Err(format!("{n:?} isn't an env name a workspace may take"));
         }
         Ok(())

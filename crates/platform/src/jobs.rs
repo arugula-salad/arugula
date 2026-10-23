@@ -6,8 +6,7 @@
 //! ([`crate::work::Dispatch`]) and schedules' ([`crate::triggers::schedule::Ticks`]),
 //! which [`crate::work::start`] runs on one worker.
 //!
-//! It is `cloud::worker`'s loop, kept apart until M190 moves the Cloud
-//! kinds here: four workers on each machine, a claim leases its job for
+//! Four workers on each machine: a claim leases its job for
 //! [`LEASE_MS`] (on Postgres `FOR UPDATE SKIP LOCKED`, so two machines
 //! never take the same job), and a machine that dies holding a job leaves
 //! it to the next claim when the lease runs out, which carries on from the
@@ -257,7 +256,7 @@ pub fn start(app: Arc<Platform>, worker: Worker) {
 }
 
 /// Counts a tick in [`Platform::busy`] while it runs, so a stopping machine
-/// waits for it ([`Platform::drain`]), as `cloud::worker`'s do.
+/// waits for it ([`Platform::drain`]).
 struct Busy<'a>(&'a Platform);
 
 impl<'a> Busy<'a> {

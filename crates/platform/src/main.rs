@@ -58,8 +58,8 @@ struct Args {
     #[arg(long, default_value_t = 10_000, env = "ARUGULA_RELAY_FREE_MB")]
     relay_free_mb: u64,
 
-    /// Hold background work at start (the cloud worker, Cloud's approval
-    /// pushes, billing's usage reports, the projects and grants feed
+    /// Hold background work at start (the job worker, hosted workspaces'
+    /// worker, billing's usage reports, the projects and grants feed
     /// follower): for a window that copies the platform's tables (M141,
     /// M145). The variable is on unless it's empty, `0`, `false`, `no` or
     /// `off`, so the runbook's `ARUGULA_PLATFORM_PAUSED=1` holds it.
@@ -70,6 +70,8 @@ struct Args {
     #[command(flatten)]
     database: arugula_platform::db::Args,
 
+    /// The master key (ARUGULA_CLOUD_SECRET_KEY, and the others while it's
+    /// rotated) and the beta allowlist (ARUGULA_CLOUD_ACCOUNTS).
     #[command(flatten)]
     cloud: arugula_platform::cloud::Args,
 
@@ -126,15 +128,9 @@ fn main() -> anyhow::Result<()> {
     // and cost (M188), read-only. `rotate-key`: the master key's rotation
     // (M209, `keys::rotate`). `previews`: public previews, and the
     // operator's takedown (M187). `run-logs`: runs' logs and artifacts in
-    // the run-log bucket, by project (M213), read-only. `managoat-retire`:
-    // deleting what beta Cloud workspaces left on Managoat (M189,
-    // `cloud::retire`). `stuck`: runs and deploys that are stuck, and
-    // unsticking one (M223).
+    // the run-log bucket, by project (M213), read-only. `stuck`: runs and
+    // deploys that are stuck, and unsticking one (M223).
     let mut argv = std::env::args().skip(1).peekable();
-    if argv.peek().is_some_and(|a| a == "managoat-retire") {
-        argv.next();
-        return arugula_platform::cloud::retire::run("arugula-platform managoat-retire", argv);
-    }
     if argv.peek().is_some_and(|a| {
         ["copy", "checksums", "secrets-check", "migrations", "usage", "rotate-key", "previews", "run-logs", "stuck"]
             .contains(&a.as_str())
@@ -188,16 +184,14 @@ async fn run() -> anyhow::Result<()> {
     p.stripe = a.billing.stripe()?;
     p.hosted = a.hosted.config(&a.cloud)?;
     p.secret_key = p.hosted.cipher.clone();
-    p.cloud = a.cloud.cloud()?;
     p.compute = a.compute.substrate()?;
     p.github = a.github_app.app(&a.github_api)?;
     p.run_logs = a.run_logs.bucket()?;
     p.paused = a.paused.into();
     let p = Arc::new(p);
     if a.paused {
-        info!("paused: no cloud worker, approval pushes, usage reports or grant follower until restarted without it");
+        info!("paused: no job worker, hosted worker, usage reports or grant follower until restarted without it");
     }
-    arugula_platform::cloud::start(&p);
     arugula_platform::hosted::start(&p);
     arugula_platform::keys::start(&p);
     // The job worker: runs' dispatch (M212) and schedules (M214).

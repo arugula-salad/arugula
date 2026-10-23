@@ -270,6 +270,12 @@ const SQLITE: &[Migration] = &[
         sql: include_str!("../../migrations/sqlite/0029_environment_settings.sql"),
         additive: true,
     },
+    Migration {
+        version: 30,
+        name: "drop_managoat",
+        sql: include_str!("../../migrations/sqlite/0030_drop_managoat.sql"),
+        additive: false,
+    },
 ];
 
 /// Postgres's (M143): the same versions, names and `additive` flags as
@@ -449,6 +455,12 @@ const POSTGRES: &[Migration] = &[
         name: "environment_settings",
         sql: include_str!("../../migrations/postgres/0029_environment_settings.sql"),
         additive: true,
+    },
+    Migration {
+        version: 30,
+        name: "drop_managoat",
+        sql: include_str!("../../migrations/postgres/0030_drop_managoat.sql"),
+        additive: false,
     },
 ];
 

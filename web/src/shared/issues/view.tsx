@@ -8,8 +8,7 @@
 // Owners and editors edit, close, reopen, label and assign; everyone in the
 // project comments.
 //
-// The view reads and changes the issue through `IssueApiContext` (as
-// Cloud workspace views reach control through the page's `cloud`): the
+// The view reads and changes the issue through `IssueApiContext`: the
 // platform's routes as the reader by default, or what the page says it.
 // It reads it again when the platform says it changed (chat's live
 // stream), when the page comes back into view, and when `refresh` moves.

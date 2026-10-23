@@ -8,11 +8,10 @@
 //!   (a hosted workspace's `hw_…` id or its name): the call is made on its
 //!   machine instead of here ([`Call::on_workspace`]), and its panes and
 //!   blocks are that machine's (pass it again to reach them).
-//! - **`cloud` and `read_cloud`** take a hosted workspace's id where they
-//!   take a Cloud workspace's: its tabs are agent blocks on its machine,
-//!   by pane id ([`Call::hosted_read`], [`Call::hosted_drive`]); `list kind
-//!   cloud_workspaces` lists hosted workspaces first, with `kind: hosted`.
-//!   Managoat's Cloud workspaces (`cw_…`) work beside them until M189.
+//! - **`cloud` and `read_cloud`** take a hosted workspace: its tabs are
+//!   agent blocks on its machine, by pane id ([`Call::hosted_read`],
+//!   [`Call::hosted_drive`]); `list kind cloud_workspaces` lists them,
+//!   with `kind: hosted`.
 //!
 //! **How.** Control's `/api/workspaces` says which machine a workspace is,
 //! for this machine's owner (a `cloud.drive` grant). This daemon opens a
@@ -80,8 +79,8 @@ pub(crate) fn with_workspace(
     let mut s = (*schema).clone();
     if let Some(Value::Object(props)) = s.get_mut("properties") {
         match props.get_mut(ARG) {
-            // A grouped tool's kind takes one already (list kind cloud_tabs,
-            // show kind cloud_workspace): said beside it.
+            // A grouped tool's kind takes one already (list kind
+            // cloud_tabs): said beside it.
             Some(Value::Object(p)) => {
                 let was = p.get("description").and_then(Value::as_str).unwrap_or_default().to_owned();
                 p.insert(
@@ -98,18 +97,17 @@ pub(crate) fn with_workspace(
 }
 
 /// The hosted workspace a machine tool's call names, taken out of its
-/// arguments. A `wait` on a Cloud workspace's tab (`tab`), or one naming a
-/// Managoat one, is `wait`'s own.
+/// arguments. A `wait` on a Cloud workspace's tab (`tab`) is `wait`'s own.
 pub(crate) fn take_workspace(tool: &str, args: &mut Value) -> Option<Result<String, String>> {
     if !TOOLS.contains(&tool) {
         return None;
     }
     let o = args.as_object_mut()?;
-    if tool == "wait" && (o.get("tab").is_some_and(|t| !t.is_null()) || !o.get(ARG)?.as_str().is_some_and(is_hosted)) {
+    if tool == "wait" && o.get("tab").is_some_and(|t| !t.is_null()) {
         return None;
     }
-    // The kinds that name a Cloud workspace themselves.
-    if matches!(o.get("kind").and_then(Value::as_str), Some("cloud_tabs" | "cloud_workspace")) {
+    // The kind that names a Cloud workspace itself.
+    if o.get("kind").and_then(Value::as_str) == Some("cloud_tabs") {
         return None;
     }
     match o.remove(ARG)? {
@@ -117,11 +115,6 @@ pub(crate) fn take_workspace(tool: &str, args: &mut Value) -> Option<Result<Stri
         Value::String(s) if !s.trim().is_empty() => Some(Ok(s.trim().to_owned())),
         v => Some(Err(format!("{ARG} is a hosted Cloud workspace's id or name, not {v}"))),
     }
-}
-
-/// Whether `id` is a hosted workspace's (`hw_…`), not a Managoat one's.
-pub(crate) fn is_hosted(id: &str) -> bool {
-    id.trim().starts_with("hw_")
 }
 
 /// A tab of a hosted workspace: an agent block on its machine, by pane id.
@@ -287,15 +280,15 @@ impl Call<'_> {
         self.app().control.enrolled().map(|e| e.saved.cert.name.clone()).unwrap_or_else(|| "another machine".into())
     }
 
-    /// The hosted workspaces, for `list kind cloud_workspaces`: none when
-    /// control has none (or says nothing of them, an older one).
-    pub(crate) async fn hosted_rows(&self) -> Vec<Value> {
-        let Ok(all) = self.hosted_workspaces().await else { return Vec::new() };
+    /// The hosted workspaces, for `list kind cloud_workspaces`.
+    pub(crate) async fn hosted_rows(&self) -> Result<Vec<Value>, String> {
+        let all = self.hosted_workspaces().await?;
         let online: Vec<String> = match peer::machines(&self.app().control).await {
             Ok(ms) => ms.into_iter().filter(|m| m.online).map(|m| m.id).collect(),
             Err(_) => Vec::new(),
         };
-        all.into_iter()
+        Ok(all
+            .into_iter()
             .map(|w| {
                 let up = w.machine.as_ref().is_some_and(|m| online.contains(m));
                 json!({
@@ -304,7 +297,7 @@ impl Call<'_> {
                     "machine": w.machine, "online": up,
                 })
             })
-            .collect()
+            .collect())
     }
 
     // ------------------------------------------------------------ cloud tools
@@ -348,10 +341,7 @@ impl Call<'_> {
                 }
                 self.on_workspace(MACHINE_READ, which, a).await
             }
-            "setup_log" => Err(format!(
-                "a hosted workspace's setup runs in a pane on its machine: list with workspace {which} shows its panes, read_output reads one"
-            )),
-            k => Err(format!("read_cloud kind {k} isn't wired up for hosted workspaces")),
+            k => Err(format!("read_cloud kind {k} isn't wired up")),
         }
     }
 
@@ -409,7 +399,7 @@ impl Call<'_> {
                 let v = self.on_workspace("close", which, json!({ "pane": tab()? })).await?;
                 Ok(v)
             }
-            "rebuild" | "retry" => {
+            "rebuild" => {
                 let w = self.hosted_workspace(which).await?;
                 let path = format!("/api/projects/{}/workspaces/{}/rebuild", w.project, w.id);
                 let got = self.app().control.cloud(Method::POST, &path, None).await.map_err(|e| e.to_string())?;
@@ -418,7 +408,7 @@ impl Call<'_> {
                     json!({ "cloud_workspace": got }),
                 )
             }
-            k => Err(format!("cloud kind {k} isn't wired up for hosted workspaces")),
+            k => Err(format!("cloud kind {k} isn't wired up")),
         }
     }
 
@@ -685,22 +675,21 @@ mod tests {
         let mut other = json!({ "cloud_workspace": "dev" });
         assert_eq!(take_workspace("cloud", &mut other), None, "not a machine tool");
         assert_eq!(other["cloud_workspace"], "dev");
-        // wait: a pane on a hosted one's machine; a tab is wait's own, and so
-        // is a Managoat one.
+        // wait: a pane on a hosted one's machine, by id or name; a tab is
+        // wait's own.
         let mut w = json!({ "cloud_workspace": "hw_ab", "pane": 3, "until": "idle" });
         assert_eq!(take_workspace("wait", &mut w), Some(Ok("hw_ab".into())));
+        let mut w = json!({ "cloud_workspace": "dev", "pane": 3, "until": "idle" });
+        assert_eq!(take_workspace("wait", &mut w), Some(Ok("dev".into())));
         assert_eq!(take_workspace("wait", &mut json!({ "cloud_workspace": "hw_ab", "tab": "3" })), None);
-        assert_eq!(take_workspace("wait", &mut json!({ "cloud_workspace": "cw_ab", "tab": "cwc_1" })), None);
-        // list kind cloud_tabs and show kind cloud_workspace name one themselves.
+        // list kind cloud_tabs names one itself.
         assert_eq!(take_workspace("list", &mut json!({ "kind": "cloud_tabs", "cloud_workspace": "hw_ab" })), None);
-        assert_eq!(take_workspace("show", &mut json!({ "kind": "cloud_workspace", "cloud_workspace": "cw_ab" })), None);
         assert!(take_workspace("list", &mut json!({ "kind": "panes", "cloud_workspace": "hw_ab" })).is_some());
 
         let schema = Arc::new(json!({ "type": "object", "properties": { "pane": {} } }).as_object().unwrap().clone());
         assert!(with_workspace("read_output", schema.clone())["properties"]["cloud_workspace"].is_object());
         assert!(with_workspace("cloud", schema)["properties"].get("cloud_workspace").is_none());
 
-        assert!(is_hosted(" hw_ab12") && !is_hosted("cw_ab12"));
         assert_eq!(tab_pane("%7").unwrap(), json!(7));
         assert!(tab_pane("cwc_ab").is_err());
     }

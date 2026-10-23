@@ -1,6 +1,6 @@
 //! The windows' tools (M141, #1158): copy the platform's tables from one
 //! SQLite file to another, prove the copy with a row count and a checksum
-//! per table, and check that cloud secrets open with the key a process
+//! per table, and check that sealed secrets open with the key a process
 //! has. Both binaries carry them, because the two Fly apps have separate
 //! volumes and the file has to move between them:
 //!
@@ -665,7 +665,7 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
             let (new, old) = ("ARUGULA_CLOUD_SECRET_KEY", "ARUGULA_CLOUD_SECRET_KEY_PREVIOUS");
             let Some((new_key, whose)) = key_from(new)? else { bail!("no {new}: the new master key") };
             let Some((old_key, _)) = key_from(old)? else { bail!("no {old}: the old master key, to rotate from") };
-            let keys = crate::cloud::secrets::SecretCipher::new(&new_key)?.with_previous(Some(&old_key))?;
+            let keys = crate::secrets::SecretCipher::new(&new_key)?.with_previous(Some(&old_key))?;
             let m = portable::migrations(&db)?;
             if !m.pending.is_empty() {
                 bail!("{db} isn't at this build's migrations: run it with the build the platform runs");
@@ -697,7 +697,7 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
     Ok(())
 }
 
-/// The cloud secret key [`sample`]'s secret is sealed with (tests).
+/// The master key [`sample`]'s secret is sealed with (tests).
 #[cfg(any(test, feature = "contract"))]
 pub const SAMPLE_KEY: &str = "0101010101010101010101010101010101010101010101010101010101010101";
 
@@ -706,12 +706,12 @@ pub const SAMPLE_KEY: &str = "01010101010101010101010101010101010101010101010101
 /// that search finds, a read mark, projects, an issue search finds and its
 /// timeline, a run spec with a schedule and a rule, an environment with a
 /// deploy and its log (whose trigger `--replace` has to get past), a
-/// grant, the feed's position,
-/// cloud notifications with a gap in their rowids, and a cloud secret
-/// sealed with [`SAMPLE_KEY`]. Accounts `acct-a` and `acct-b`.
+/// grant, the feed's positions (a gap in their rowids, and a real where
+/// an integer goes, which Postgres can't keep), and a hosted workspace's
+/// secret sealed with [`SAMPLE_KEY`]. Accounts `acct-a` and `acct-b`.
 #[cfg(any(test, feature = "contract"))]
 pub fn sample(db: &crate::db::Db) {
-    let cipher = crate::cloud::secrets::SecretCipher::new(SAMPLE_KEY).unwrap();
+    let cipher = crate::secrets::SecretCipher::new(SAMPLE_KEY).unwrap();
     let c = db.sqlite();
     c.execute_batch(
         "INSERT INTO projects (id, team_id, account_id, name, is_default, created_at)
@@ -728,7 +728,9 @@ pub fn sample(db: &crate::db::Db) {
          INSERT INTO chat_reads (room, account, seq) VALUES ('r1', 'acct-a', 3);
          INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
              VALUES ('g1', 'daemon', 'd1', 'cloud.drive', 'account', 'acct-a', 'acct-a', 30);
-         INSERT INTO hub_feed (reader, seq) VALUES ('projects', 1234);
+         INSERT INTO hub_feed (reader, seq) VALUES ('gone', 1), ('projects', 1234);
+         DELETE FROM hub_feed WHERE reader = 'gone';
+         INSERT INTO hub_feed (reader, seq) VALUES ('chat', 2.5);
          UPDATE projects SET last_issue = 1 WHERE id = 'prj_t';
          INSERT INTO issues (search_id, id, project_id, number, title, body, author, labels, created_at, updated_at)
              VALUES (3, 'iss_1', 'prj_t', 1, 'Rehearsal notes', 'the canary held', 'acct-a', '[\"ops\"]', 24, 24);
@@ -753,15 +755,14 @@ pub fn sample(db: &crate::db::Db) {
              VALUES ('dep_1', 'env_1', 'commit', 'abc', 'acme/app', 'ff', 'planned', 1, 'acct-a', 25, 25);
          INSERT INTO deploy_events (id, environment_id, seq, deploy_id, kind, actor, at, prev_hash, hash)
              VALUES (6, 'env_1', 1, 'dep_1', 'planned', 'person acct-a', 25, '00', 'ff');
-         INSERT INTO cloud_notifications (conversation, account, request, next_attempt)
-             VALUES ('c2', 'acct-a', 'q2', 1), ('c1', 'acct-a', 'q1', 1);
-         DELETE FROM cloud_notifications WHERE conversation = 'c2';
-         INSERT INTO cloud_notifications (conversation, account, request, next_attempt) VALUES ('c3', 'acct-a', 'q3', 2.5);",
+         INSERT INTO hosted_workspaces (id, project_id, name, spec, spec_hash, state, created_at, updated_at)
+             VALUES ('hw_1', 'prj_t', 'dev', '{}', 'h', 'ready', 25, 25);",
     )
     .unwrap();
     c.execute(
-        "INSERT INTO cloud_secrets (account, name, sealed, project_id) VALUES ('acct-a', 'GITHUB_TOKEN', ?1, 'prj_a')",
-        [cipher.seal("acct-a", "GITHUB_TOKEN", "ghp_never_printed").unwrap()],
+        "INSERT INTO hosted_workspace_secrets (workspace_id, name, store, sealed, updated_at)
+         VALUES ('hw_1', 'GITHUB_TOKEN', 'sealed', ?1, 25)",
+        [cipher.seal("hw_1", "GITHUB_TOKEN", "ghp_never_printed").unwrap()],
     )
     .unwrap();
 }

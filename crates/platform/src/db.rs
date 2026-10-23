@@ -10,7 +10,7 @@
 //! the platform's tests, whose database is its own.
 //!
 //! Each feature brings its own queries as it moves in (billing's in
-//! [`billing`], M139; Cloud's in [`cloud`], M137; chat's in [`chat`], M138;
+//! [`billing`], M139; chat's in [`chat`], M138;
 //! projects, team members and grants in [`projects`]; the forge mirror in
 //! [`forge`], M162; native issues in [`issues`], M194; runs in [`runs`],
 //! M210; environments and deploys in [`deploys`], M217; what starts runs
@@ -29,8 +29,6 @@ use rusqlite::Connection;
 
 pub mod billing;
 pub mod chat;
-pub mod cloud;
-pub mod cloud_moves;
 pub mod content;
 pub mod deploy_approvals;
 pub mod deploy_runs;

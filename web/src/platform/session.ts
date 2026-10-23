@@ -1,14 +1,12 @@
 // Who's reading the platform page, and their projects (M150): one read of
 // the platform's `GET /api/projects`, which the page asks the platform
-// alone. Then chat and the Cloud workspaces start as the shell starts them,
-// for the same account. Someone without a session here is sent through the
+// alone. Then chat starts as the shell starts it, for the same account. Someone without a session here is sent through the
 // hub to get one (./signin, M152): one silent hop when they're signed in on
 // the hub. A hop that just came back without one isn't tried again by
 // itself, and the page says where to sign in.
 
 import type { PlatformMe, PlatformProject, PlatformProjects } from "../shared/proto.gen";
 import { chat } from "../shared/chat-store";
-import { cloudPanes, cloudWorkspaces } from "../shared/cloud";
 import { platformFetch, refusalOf } from "../shared/maintenance";
 import { finishSignIn, signIn, triedJustNow } from "./signin";
 
@@ -74,8 +72,6 @@ export const session = {
       if (first) {
         const roster = v.projects.flatMap((p) => p.team?.members.filter((m) => m.account === v.me.account).map((m) => m.name) ?? []);
         chat.start(v.me.account, [v.me.login, v.me.name, ...roster]);
-        cloudPanes.connect(v.me.account);
-        cloudWorkspaces.connect(v.me.account);
       }
     } catch (e) {
       this.state = { error: (e as Error).message };

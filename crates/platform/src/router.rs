@@ -14,13 +14,13 @@ use axum::{
 use arugula_control_wire::{issues, runs as wire_runs};
 
 use crate::{
-    Platform, billing, chat, cloud, deploys, forge, grants, hosted, projects, run_grant, run_logs,
+    Platform, billing, chat, deploys, forge, grants, hosted, projects, run_grant, run_logs,
     triggers::{agent as run_agents, routes as runs},
 };
 
 /// Every route the platform answers. Each moved here from `routes()` in
 /// `crates/control/src/main.rs` with the same path and methods: billing's
-/// (M139), Cloud's (M137), chat's (M138), then grants'; the platform
+/// (M139), chat's (M138), then grants'; the platform
 /// page's own (M150); the GitHub App's webhook (M161); linked repos
 /// (M163); their items, each read checked against the viewer (M165);
 /// drafts on them (M170); the inbox (M171); native issues' (M195), for
@@ -34,44 +34,6 @@ fn routes() -> Routes {
         .route("/api/billing/checkout", post(billing::checkout))
         .route("/api/billing/report", post(billing::report_now))
         .route("/api/stripe/webhook", post(billing::webhook))
-        .route("/api/cloud/secrets", get(cloud::list_secrets))
-        .route("/api/cloud/secrets/{name}", axum::routing::put(cloud::put_secret).delete(cloud::delete_secret))
-        // Past runs (S40, decision 10): read only. Nothing starts, cancels or
-        // answers a run any more.
-        .route("/api/cloud/runs", get(cloud::runs))
-        .route("/api/cloud/runs/{id}", get(cloud::run))
-        .route("/api/cloud/runs/{id}/requests", get(cloud::requests))
-        .route("/api/cloud/runs/{id}/events", get(cloud::events))
-        .route("/api/cloud/workspaces", get(cloud::workspaces::list).post(cloud::workspaces::create))
-        .route(
-            "/api/cloud/workspaces/{id}",
-            get(cloud::workspaces::show).patch(cloud::workspaces::update).delete(cloud::workspaces::delete),
-        )
-        .route("/api/cloud/workspaces/{id}/files", get(cloud::files::files))
-        .route("/api/cloud/workspaces/{id}/file", get(cloud::files::file))
-        .route("/api/cloud/workspaces/{id}/diff", get(cloud::files::diff))
-        .route("/api/cloud/workspaces/{id}/git-status", get(cloud::files::git_status))
-        .route("/api/cloud/workspaces/{id}/setup-log", get(cloud::files::setup_log))
-        .route("/api/cloud/workspaces/{id}/tabs", get(cloud::tabs::list).post(cloud::tabs::open))
-        .route("/api/cloud/workspaces/{id}/tabs/{tab}", get(cloud::tabs::show).delete(cloud::tabs::close))
-        .route("/api/cloud/workspaces/{id}/tabs/{tab}/prompt", post(cloud::tabs::prompt))
-        .route("/api/cloud/workspaces/{id}/tabs/{tab}/interrupt", post(cloud::tabs::interrupt))
-        .route("/api/cloud/workspaces/{id}/tabs/{tab}/events", get(cloud::tabs::events))
-        .route("/api/cloud/workspaces/{id}/tabs/{tab}/requests", get(cloud::tabs::requests))
-        .route("/api/cloud/workspaces/{id}/tabs/{tab}/requests/{request}", post(cloud::tabs::answer))
-        .route("/api/cloud/workspaces/{id}/rebuild", post(cloud::rebuild::rebuild).delete(cloud::rebuild::cancel))
-        .route("/api/cloud/workspaces/{id}/retry", post(cloud::rebuild::retry))
-        .route("/api/cloud/workspaces/{id}/move", get(cloud::moving::plan).post(cloud::moving::go))
-        .route("/api/cloud/workspaces/{id}/move/bundle", get(cloud::moving::bundle))
-        .route("/api/cloud/moving", get(cloud::moving::overview))
-        .route("/api/cloud/past-tabs", get(cloud::tabs::past))
-        .route("/api/cloud/past-tabs/{tab}", get(cloud::tabs::past_show))
-        .route("/api/cloud/past-tabs/{tab}/events", get(cloud::tabs::past_events))
-        .route("/api/cloud/past-tabs/{tab}/requests", get(cloud::tabs::past_requests))
-        .route("/api/cloud/models", get(cloud::models))
-        .route("/api/cloud/import", post(cloud::migration::import))
-        .route("/api/cloud/agents", get(cloud::catalog).post(cloud::create_agent))
-        .route("/api/cloud/agents/{id}", axum::routing::put(cloud::update_agent).delete(cloud::delete_agent))
         .route("/api/chat", get(chat::rooms))
         .route("/api/chat/live", get(chat::live))
         .route("/api/chat/live/open", post(chat::open))

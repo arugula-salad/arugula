@@ -1,5 +1,5 @@
-//! One leased poller per linked repo (M164, #1210), in `cloud::worker`'s
-//! way: each machine claims a repo whose turn it is (`Db::claim_poll`; on
+//! One leased poller per linked repo (M164, #1210), in the job worker's
+//! way ([`crate::jobs`]): each machine claims a repo whose turn it is (`Db::claim_poll`; on
 //! Postgres `FOR UPDATE SKIP LOCKED`, so two machines never poll the same
 //! one), renews the lease between reads, and lets it go when it's done.
 //!

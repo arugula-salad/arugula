@@ -10,7 +10,6 @@ import "./lazy";
 import "./forge";
 import "./invite";
 import "./doc";
-import "./cloud-workspace";
 
 export { makeBlockView, type BlockView } from "./view";
 export { openPort } from "./browser";

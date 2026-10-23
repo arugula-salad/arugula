@@ -15,9 +15,8 @@
 //! **The portable checksum.** A row's digest is SHA-256 over its columns in
 //! name order (this build's columns: Postgres's generated `search` isn't
 //! one), each value as one of null, integer, real, text or bytes. A
-//! boolean is the integer 0 or 1, as SQLite keeps it. SQLite's rowid is in
-//! it only for the tables Postgres keeps it for, as a column named `rowid`
-//! (`cloud_notifications`, `cloud_workspace_specs`: queries order by it).
+//! boolean is the integer 0 or 1, as SQLite keeps it. SQLite's rowid isn't
+//! in it: since the Managoat-era tables went (M189), Postgres keeps none.
 //! A table's checksum is SHA-256 over its rows' digests sorted. It isn't
 //! the SQLite-to-SQLite copy's checksum ([`super::sum`], which has every
 //! rowid and SQLite's own types), so the first window's numbers stay as
@@ -30,8 +29,8 @@
 //! unless `--replace`, a source that isn't this build's tables. And what
 //! Postgres can't hold the same: a value that would change type (a real
 //! in an integer column), or a row whose foreign key points at nothing.
-//! On Postgres the identities (`chat_messages.id`, `chat_events.seq`, the
-//! two `rowid`s) are moved past the copied rows; on SQLite `chat_fts` is
+//! On Postgres the identities (`chat_messages.id`, `chat_events.seq`) are
+//! moved past the copied rows; on SQLite `chat_fts` is
 //! rebuilt and checked.
 //!
 //! **The tools that only read** (`checksums`, `secrets-check`,
@@ -52,10 +51,6 @@ use crate::db::{
     migrate::Dialect,
     sql::{Param, Sql, Value, params},
 };
-
-/// The tables whose SQLite rowid Postgres keeps, as a column named `rowid`
-/// (M143).
-pub const ROWID_TABLES: [&str; 2] = ["cloud_notifications", "cloud_workspace_specs"];
 
 /// Rows written per `INSERT`.
 const CHUNK: usize = 200;
@@ -172,32 +167,22 @@ impl Report {
 }
 
 /// Each table's columns as the portable checksum reads them: this build's
-/// (its SQLite migrations'), in name order, with `rowid` for
-/// [`ROWID_TABLES`].
+/// (its SQLite migrations'), in name order.
 fn shapes() -> Vec<(String, Vec<String>)> {
     let db = Db::memory();
     let c = db.sqlite();
     super::tables()
         .into_iter()
         .map(|t| {
-            let mut cols: Vec<String> =
-                super::columns(&c, "main", &t).expect("this build's columns").into_iter().collect();
-            if ROWID_TABLES.contains(&t.as_str()) {
-                cols.push("rowid".into());
-                cols.sort();
-            }
+            let cols: Vec<String> = super::columns(&c, "main", &t).expect("this build's columns").into_iter().collect();
             (t, cols)
         })
         .collect()
 }
 
-/// A column as a `SELECT` names it: SQLite's rowid isn't quoted, so it's
-/// the rowid on SQLite and the column on Postgres.
+/// The columns as a `SELECT` names them.
 fn select(cols: &[String]) -> String {
-    cols.iter()
-        .map(|c| if c == "rowid" { "rowid".to_owned() } else { format!("\"{c}\"") })
-        .collect::<Vec<_>>()
-        .join(", ")
+    cols.iter().map(|c| format!("\"{c}\"")).collect::<Vec<_>>().join(", ")
 }
 
 fn rows(c: &impl Sql, table: &str, cols: &[String]) -> anyhow::Result<Vec<Vec<Value>>> {
@@ -501,7 +486,7 @@ fn read_source(from: &Place) -> anyhow::Result<Read> {
             let mut dangling = Vec::new();
             for (t, cols) in &shapes {
                 let have = super::columns(&c, "main", t)?;
-                let want: BTreeSet<String> = cols.iter().filter(|c| *c != "rowid").cloned().collect();
+                let want: BTreeSet<String> = cols.iter().cloned().collect();
                 if have.is_empty() {
                     wrong.push(format!("{t}: not in the source"));
                 } else if have != want {

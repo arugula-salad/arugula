@@ -38,7 +38,7 @@ async fn start(hub: Arc<TestHub>, db: Db) -> Running {
     let app = Arc::new(Platform::new(cfg, db, hub, reqwest::Client::new(), Default::default()));
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let router = crate::cloud::tests::router(app.clone());
+    let router = crate::testing::router(app.clone());
     let serving = tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
     Running { app, base, serving }
 }

@@ -4,7 +4,6 @@
 
 import { useState } from "preact/hooks";
 import { chat } from "../../shared/chat-store";
-import { cloudPanes, useCloudPanes } from "../../shared/cloud";
 import { openPlatform, platformOrigin } from "../platform-links";
 import { CopyText } from "../../shared/ui/copy";
 import { useSubscribe } from "../../shared/ui/hooks";
@@ -16,7 +15,6 @@ import { AccountButton } from "../ui/app-bar";
 /** Ready, but no machine to show yet: the account's menu (#97), any team
  * this account is waiting on (#103), and how to add a machine (#98). */
 export function NoMachines({ s }: { s: ControlSession }) {
-  useCloudPanes();
   useSubscribe((fn) => chat.subscribe(fn));
   return (
     <div class="control-page">
@@ -31,22 +29,12 @@ export function NoMachines({ s }: { s: ControlSession }) {
             Waiting for {a.owners.length ? a.owners.join(" or ") : "an owner"} to add you to <b>{a.name}</b>. Their machines appear here when they do.
           </p>
         ))}
-        {/* M123: chat is control's, and needs no machine; it and Cloud
-            workspaces are on the platform page (M153), when there's one. */}
-        {platformOrigin() && (
-          <>
-            {chat.on && (
-              <button data-open-chat onClick={() => openPlatform("/chat")}>
-                Chat
-              </button>
-            )}
-            {cloudPanes.enabled && (
-              <button data-open-cloud-workspaces onClick={() => openPlatform("/workspaces")}>
-                Cloud workspaces
-              </button>
-            )}
-            <button onClick={() => openPlatform("/agents")}>Cloud agents</button>
-          </>
+        {/* M123: chat is control's, and needs no machine; it's on the
+            platform page (M153), when there's one. */}
+        {platformOrigin() && chat.on && (
+          <button data-open-chat onClick={() => openPlatform("/chat")}>
+            Chat
+          </button>
         )}
         <h1>{s.asked.length ? "Add your own machine" : "Add a machine"}</h1>
         <AddMachine s={s} />

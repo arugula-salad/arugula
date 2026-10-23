@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use crate::{
     Platform,
-    chat::objects::{NOT_YET, PRIVATE_REPO},
+    chat::objects::PRIVATE_REPO,
     chat_tests::{TestHub, call, hears, open_live, serve},
     db::sql::{Sql as _, params},
 };
@@ -147,17 +147,15 @@ async fn a_private_repos_threads_need_github_access() {
 }
 
 /// What an id names, by its prefix: an unknown one or a missing row is no
-/// object; a Cloud workspace has no thread.
+/// object.
 #[tokio::test]
 async fn an_id_names_an_object_or_nothing() {
     let hub = Arc::new(TestHub::default());
     let (app, base) = serve(hub.clone()).await;
     seed(&app, &hub);
-    for target in ["prj_1", "fi_00", "hw_00", "nothing", ""] {
+    for target in ["prj_1", "fi_00", "hw_00", "cw_9d81", "nothing", ""] {
         assert_eq!(open(&base, "a", target).await.0, 404, "{target}");
     }
-    let (st, v) = open(&base, "a", "cw_9d81").await;
-    assert_eq!((st, &v["reason"]), (501, &json!(NOT_YET)), "{v}");
     // An unlinked repo's items have no threads.
     app.db.c().execute("UPDATE linked_repos SET unlinked_at = 5 WHERE repo_id = 7", params![]).unwrap();
     assert_eq!(open(&base, "a", "fi_pub").await.0, 404);

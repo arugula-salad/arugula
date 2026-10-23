@@ -8,11 +8,11 @@
 #   just testnet down        afterwards
 #
 # What it does, as production will:
-#   1. up: control with its platform in process, Cloud on (a fake
-#      Managoat), and the out-of-process platform deployed beside it, held
-#      (ARUGULA_PLATFORM_PAUSED) on an empty database
-#   2. a person with chat rooms, messages, a read mark, a cloud secret, a
-#      Cloud workspace that names it and a tab with a turn (window.ts seed)
+#   1. up: control with its platform in process, and the out-of-process
+#      platform deployed beside it, held (ARUGULA_PLATFORM_PAUSED) on an
+#      empty database
+#   2. a person with chat rooms, messages, a read mark, and a project's
+#      environment with a secret set (window.ts seed)
 #   3. the notice, a day ahead (arugula-control notice post)
 #   4. pre-checks: a trial copy, carried to the platform, whose secrets open
 #      with the platform's key
@@ -24,8 +24,8 @@
 #   7. rollback within the window: back in process on the hub's copies,
 #      which the out-of-process time didn't touch
 #   8. the window again over the platform's earlier copy (--replace), then
-#      new work after it: a message, a turn, a workspace whose secret the
-#      platform decrypts for Managoat, the same value seeded before
+#      new work after it: a message, and the secret set again, which the
+#      platform seals with the project's key it opens with the master key
 #   9. rollback after the window: the platform's file copied back over the
 #      hub's copies, then in process, with that new work there
 #
@@ -70,7 +70,6 @@ answers() { curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$cport$1"; 
 # says, answering.
 control_up() {
   dc up -d --wait control >/dev/null 2>&1 || dc up -d control
-  dc up -d --force-recreate --no-deps managoat-hub >/dev/null 2>&1
   for _ in $(seq 1 60); do
     curl -fsS "http://127.0.0.1:$cport/control.json" >/dev/null 2>&1 && return 0
     sleep 0.5
@@ -80,7 +79,6 @@ control_up() {
 }
 platform_up() {
   dc up -d --wait platform >/dev/null 2>&1 || dc up -d platform
-  dc up -d --force-recreate --no-deps managoat-platform >/dev/null 2>&1
   for _ in $(seq 1 60); do
     docker exec "$TESTNET-platform" bash -c 'exec 3<>/dev/tcp/127.0.0.1/7700' 2>/dev/null && return 0
     sleep 0.5
@@ -113,11 +111,11 @@ cport="$ARUGULA_TESTNET_CONTROL_PORT"
 dc up -d --wait fakes >/dev/null 2>&1 || dc up -d fakes
 control_up
 platform_up
-logged "$TESTNET-platform" 'paused: no cloud worker' || die "the platform isn't held"
+logged "$TESTNET-platform" 'paused: no job worker' || die "the platform isn't held"
 echo "control in process, platform held on an empty file" | record
 
 # ---- 2. seed
-step "2. a person's chat and Cloud, before the window"
+step "2. a person's chat and secrets, before the window"
 # shellcheck disable=SC2086 # CONTROL_VIA is several words
 node --experimental-strip-types --no-warnings "$ROOT/web/fixtures/device-cli.ts" --state "$W/device.json" \
   signin --control "$CONTROL_URL" $CONTROL_VIA --login "window-$$" > /dev/null
@@ -208,10 +206,10 @@ step "6.2 post-checks, and new work after the window"
 win check "$W/seed.json" | record
 win write flip "$W/seed.json" > "$W/write.json"
 record < "$W/write.json"
-vault="$(docker exec "$TESTNET-fakes" node -e "fetch('http://127.0.0.1:9005/').then(r => r.text()).then(t => process.stdout.write(t))")"
-want="$(sed -n 's/.*"secret_sha256":"\([0-9a-f]*\)".*/\1/p' "$W/seed.json")"
-case "$vault" in *"$want"*) ;; *) die "Managoat's vault got $vault, not the secret seeded before the window ($want)" ;; esac
-echo "the secret written before the window, decrypted by the platform after it: sha256 $want" | record
+plat secrets-check --db /window/platform.db > "$W/secrets-after.txt"
+record < "$W/secrets-after.txt"
+grep -q '^  1 open$' "$W/secrets-after.txt" || die "the secret set after the window doesn't open with the platform's key"
+echo "the secret set after the window, sealed by the platform with the project's key: it opens" | record
 claim platform | record
 
 # ---- 9. rollback after the window: copy back

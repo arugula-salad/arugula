@@ -1,9 +1,9 @@
 // The shell's side of the platform's views (M147): what a pane's thread
 // (../shared/chat/) reaches the shell through, built on this page's fleet
 // and control session. The views never import any of it; they take a
-// `PlatformApi` (../shared/platform-api). Chat's page and Cloud
-// workspaces are the platform page's (M153), and the shell draws neither
-// since M155: their links go there.
+// `PlatformApi` (../shared/platform-api). Chat's page is the
+// platform page's (M153), and the shell doesn't draw it since M155: its
+// links go there.
 
 import { useState } from "preact/hooks";
 import type { Client } from "./client";
@@ -16,7 +16,6 @@ import { getControlSession } from "./ui/people";
 import { openChat, openChatView, openRoom } from "./ui/places";
 import { closeRoomDrawer } from "./ui/threads";
 import type { PaneQuote } from "../shared/chat-store";
-import { cloudApi } from "../shared/cloud";
 import type { PlatformApi } from "../shared/platform-api";
 import { useSubscribe } from "../shared/ui/hooks";
 
@@ -40,7 +39,6 @@ function fleetPane(machine: string | null | undefined, pane: number | string): F
 function build(client: Client): PlatformApi {
   const toast = (s: string) => client.toast(s);
   return {
-    cloud: cloudApi,
     teams: () => getControlSession()?.teams ?? [],
     subscribe(fn) {
       const offs = [getFleet()?.subscribe(fn), getControlSession()?.subscribe(fn)];
@@ -96,7 +94,7 @@ function QuotePicker({ close, take }: { close: () => void; take: (q: PaneQuote) 
   const [picked, setPicked] = useState<FleetPane | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [err, setErr] = useState("");
-  const panes = (fleet?.panes ?? []).filter((p) => !p.stale && !p.cloudTab && fleet?.host(p.host)?.id);
+  const panes = (fleet?.panes ?? []).filter((p) => !p.stale && fleet?.host(p.host)?.id);
   const choose = async (p: FleetPane) => {
     setPicked(p);
     setText(null);

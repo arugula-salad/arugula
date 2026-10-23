@@ -232,9 +232,9 @@ test("with no machine yet, the account's menu is there (#97)", async () => {
   await laptop.getByRole("button", { name: "Make a team" }).click();
   await expect(laptop.locator("[data-team] h3")).toHaveText("Solo");
   await laptop.locator(".prompt").getByRole("button", { name: "Done" }).click();
-  // The plan, where billing is on (faked here: no Stripe in tests), and
-  // Cloud agents are the platform page's (platform.spec.ts): with none,
-  // the menu doesn't offer them (M155).
+  // The plan, where billing is on (faked here: no Stripe in tests), is the
+  // platform page's (platform.spec.ts): with none, the menu doesn't offer
+  // it (M155).
   await laptop.route("**/api/billing", (r) =>
     r.fulfill({
       json: { billing: true, plan: "personal", relay: { bytes: 0, allowance: 1e9, warning: false, slowed: false }, sandbox_minutes: 0, teams: [] },
@@ -244,7 +244,6 @@ test("with no machine yet, the account's menu is there (#97)", async () => {
   await laptop.locator("[data-account-bar] [data-account-menu]").click();
   await expect(laptop.getByRole("menuitem", { name: "Teams…" })).toBeVisible();
   await expect(laptop.getByRole("menuitem", { name: /^Plan and usage/ })).toHaveCount(0);
-  await expect(laptop.getByRole("menuitem", { name: "Cloud agents…" })).toHaveCount(0);
   await laptop.keyboard.press("Escape");
   await laptop.unroute("**/api/billing");
   // Owning one, step 2 mentions --team.

@@ -1,15 +1,17 @@
 # arugula-platform
 
 Arugula control's platform ("Control is two processes: a hub and a
-platform", #1150): chat, Cloud and billing, and step 1's projects and
+platform", #1150): chat, hosted workspaces and billing, and step 1's projects and
 grants. It deploys as often as it likes without dropping a relayed terminal,
 because the relay stays in the hub (`arugula-control`), which is also the
 gateway for every platform path.
 
 Billing has moved in (M139:
 `src/billing.rs`, its tables in `src/db/billing.rs`), and so have Cloud
-(M137: `src/cloud/`, its tables in `src/db/cloud.rs`, its flags in
-`cloud::Args`, its API types in `arugula-cloud-wire`) and chat (M138:
+(M137, Managoat-backed until M189 and M190 removed it: what's left in
+`src/cloud/` is the `cloud.drive` check and `cloud::Args`, the master key
+and beta allowlist; Cloud workspaces are hosted workspaces, `src/hosted/`)
+and chat (M138:
 `src/chat.rs`, its tables in `src/db/chat.rs`, its API types in
 `arugula-control-wire`), and then projects and grants (`src/projects.rs`
 and `src/grants.rs`, their tables in `src/db/projects.rs`), and the GitHub
@@ -55,16 +57,16 @@ Start with `src/lib.rs`, then:
   `serve_platform`), each call signed with the shared key; and `vouched`,
   the check of the principal header every forwarded call carries.
 - `src/main.rs`: the `arugula-platform` binary: its database, `HttpHub`,
-  the background work (the cloud worker, chat's and grants' feed
-  followers, usage reports), and the routes behind `vouched`.
+  the background work (the job worker, hosted workspaces' worker, chat's
+  and grants' feed followers, usage reports), and the routes behind `vouched`.
 - `src/window.rs`: a window's tools (M141), in both binaries
   (`arugula-platform copy|checksums|secrets-check`, and `arugula-control
   platform …`): copy the platform's tables from one file to another,
-  proven by a count and a checksum per table, and check that cloud secrets
-  open with the running server's key.
+  proven by a count and a checksum per table, and check that sealed
+  secrets open with the running server's key.
 - `src/contract.rs` (feature `contract`): the tests every `HubPort` passes.
   Control runs them against its in-process port and against `HttpHub`
   over its internal API (`hub_port.rs`).
 
-Depends on `arugula-control-common`, `arugula-cloud-wire`,
-`arugula-control-wire` and `arugula-e2e`, never on `arugula-control`.
+Depends on `arugula-control-common`, `arugula-control-wire`,
+`arugula-forge-github` and `arugula-e2e`, never on `arugula-control`.

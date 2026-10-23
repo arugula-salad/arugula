@@ -4,11 +4,11 @@
 // header, which is why secrets ride in them; the shell's own places stay
 // fragments because the shell is one page the daemon serves (aru-026).
 //
-// Only the platform's routes left: `#chat…`, `#cloud=…` and `#cloud-ws…`
-// are the platform page's paths now ("Platform URLs are ids with cosmetic
-// slugs"), and the shell sends an old link to its new place. **Keep those
-// redirects forever**: they're in old notifications, bookmarks, and
-// messages from old daemons.
+// Only the platform's routes left: `#chat…` is the platform page's paths
+// now ("Platform URLs are ids with cosmetic slugs"), and the shell sends an
+// old link to its new place. **Keep those redirects forever**: they're in
+// old notifications, bookmarks, and messages from old daemons. (`#cloud=…`
+// and `#cloud-ws…` went with Managoat's Cloud workspaces, which are gone.)
 //
 // `scripts/fragments.test.mjs` checks that every file listening for
 // `hashchange` is named here, and the redirects.
@@ -68,9 +68,7 @@ const ID = "[a-z]{2,3}_[0-9a-f]{4,64}";
 /** Where an old link of the platform's lands on the platform page, as a
  * path there, or null when `hash` isn't one: `#chat` (and anything else of
  * chat's, like a machine's thread from before M125), `#chat=<room>` with
- * `&msg=N`, `#chat=activity`, `#chat=search/<words>`, `#cloud=run_…` and
- * `#cloud=cwc_…` (past ones), `#cloud-ws`, `#cloud-ws=cw_…`,
- * `#cloud-ws=cw_…/cwc_…`. */
+ * `&msg=N`, `#chat=activity`, `#chat=search/<words>`. */
 export function platformPath(hash: string): string | null {
   let m: RegExpExecArray | null;
   if ((m = new RegExp(`^#chat=(${ID})(?:&msg=(-?\\d+))?$`).exec(hash))) return `/chat/${m[1]}${m[2] !== undefined ? `?msg=${m[2]}` : ""}`;
@@ -85,9 +83,5 @@ export function platformPath(hash: string): string | null {
     return `/chat/search${q ? `?q=${encodeURIComponent(q)}` : ""}`;
   }
   if (/^#chat(?:=|$)/.test(hash)) return "/chat";
-  if ((m = /^#cloud=((?:run|cwc)_[0-9a-f]+)$/.exec(hash))) return `/past/${m[1]}`;
-  if ((m = /^#cloud-ws(?:=(cw_[0-9a-f]+)(?:\/(cwc_[0-9a-f]+))?)?$/.exec(hash))) {
-    return `/workspaces${m[1] ? `/${m[1]}${m[2] ? `/${m[2]}` : ""}` : ""}`;
-  }
   return null;
 }

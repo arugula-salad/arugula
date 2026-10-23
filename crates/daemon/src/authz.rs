@@ -346,9 +346,6 @@ mod tests {
         assert_eq!(policy(&p, "/api/blocks/7/call/native_issue"), Policy::Owner);
         assert_eq!(policy(&p, "/api/blocks/7/call/why"), Policy::On(7, Role::Editor));
         assert_eq!(policy(&p, "/api/blocks/7/call/graph"), Policy::Owner);
-        // #1117: a Cloud workspace block's reads and writes reach control as
-        // the owner, for an editor too (#1094: whoever may run things here).
-        assert_eq!(policy(&p, "/api/blocks/7/call/cloud"), Policy::On(7, Role::Editor));
         // #963: a Doc is written by its owner only, and read by a viewer.
         // #1066: ...and so is a Doc's link, whose methods publish it, take
         // it down and read its key back.

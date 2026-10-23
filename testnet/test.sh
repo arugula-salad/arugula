@@ -93,7 +93,7 @@
 #           process answers (ARUGULA_TESTNET_PLATFORM=in or out at `up`): a
 #           person turns chat on, makes a team and a channel, posts, reads
 #           the message back and hears it on the live stream; the platform
-#           answers Cloud's and billing's routes. Broken: the maintenance
+#           answers hosted workspaces' and billing's routes. Broken: the maintenance
 #           switch on (`arugula-control maintenance on`, and off
 #           afterwards), so every platform route answers 503.
 #   platform-page
@@ -149,13 +149,6 @@
 #           resumes on the other from its Last-Event-ID. Broken: platform2
 #           on a file of its own (ARUGULA_TESTNET_PLATFORM2_DB empty), two
 #           machines that share no database.
-#   platform-handover
-#           Only with two platform machines: a Cloud workspace's job is
-#           held mid-step by the machine that claimed it (the fake Managoat
-#           holds its read), that machine is killed, and the other takes the
-#           job once its lease runs out (not before, and within seconds
-#           after), and sets the workspace up. Broken: the other machine is
-#           paused too, so nothing takes it.
 #   hosted-setup
 #           Only with ARUGULA_TESTNET_HOSTED=1 at `up` (M183, hosted.yaml): a
 #           team's owner delegates its project and, from the CLI on the
@@ -229,7 +222,7 @@ if [ "$PROFILE" = control ]; then
   # share chat and Cloud (M144).
   case "${ARUGULA_TESTNET_PLATFORM:-in}" in
     out) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart github-webhook issues-restart runs" ;;
-    two) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart platform-fanout platform-handover" ;;
+    two) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart platform-fanout" ;;
   esac
   # Hosted workspaces at the fake E2B (M183).
   [ "${ARUGULA_TESTNET_HOSTED:-}" != 1 ] || CONTROL_CLAIMS="$CONTROL_CLAIMS hosted-setup deploys"
@@ -1118,7 +1111,7 @@ claim_issues_restart() {
 platform2() {
   # shellcheck disable=SC2086 # the files and profiles up.sh used
   ARUGULA_TESTNET_PLATFORM2_DB="$1" docker compose $ARUGULA_TESTNET_COMPOSE up -d --force-recreate --no-deps --wait \
-    platform2 managoat-platform2 >/dev/null 2>&1
+    platform2 >/dev/null 2>&1
 }
 
 claim_platform_fanout() {
@@ -1129,12 +1122,6 @@ claim_platform_fanout() {
   [ -z "$BREAK" ] || platform2 postgres://postgres:testnet@postgres:5432/platform
   if [ "$rc" = 0 ]; then note "platform-fanout: $(cat "$WORK/fanout.json")"; fi
   return "$rc"
-}
-
-claim_platform_handover() {
-  signin "handover-$$-$RANDOM" > /dev/null || { note "platform-handover: no device signed in"; return 1; }
-  plat handover "$ARUGULA_TESTNET_MANAGOAT_PORT" "$TESTNET" ${BREAK:+--break} > "$WORK/handover.json" || return 1
-  note "platform-handover: $(cat "$WORK/handover.json")"
 }
 
 # M183: a hosted workspace's setup, end to end (the header says what).

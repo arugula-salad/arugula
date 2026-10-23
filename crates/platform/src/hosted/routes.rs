@@ -249,7 +249,7 @@ pub async fn put_secret(
     enabled(&app)?;
     let project = changer(&app, &account, &project, false).await?;
     let w = found(app.db.hosted_workspace(&project, &id)?)?;
-    if !crate::cloud::secrets::valid_name(&name) {
+    if !crate::secrets::valid_name(&name) {
         return Err(err(StatusCode::BAD_REQUEST, "a secret's name: capital letters, digits and '_'"));
     }
     if b.value.is_empty() || b.value.len() > MAX_SECRET {
@@ -282,7 +282,7 @@ pub async fn delete_secret(
 
 /// Every hosted workspace in the caller's projects: its personal one's,
 /// then each team's, by name. None where hosted workspaces aren't set up
-/// (rather than a refusal: MCP lists Managoat's beside these).
+/// (rather than a refusal: MCP's list says there are none).
 pub async fn all(
     State(app): State<Arc<Platform>>,
     CloudDriver(Person { account }): CloudDriver,

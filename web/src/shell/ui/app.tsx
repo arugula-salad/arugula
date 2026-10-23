@@ -101,7 +101,7 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
 
   const state = client.state;
   const tab = client.tabView();
-  // Chat and Cloud workspaces are on the platform page (M153, M155).
+  // Chat is on the platform page (M153, M155).
   const overviewOpen = ws && !!overview && !!state;
   const main = (
     <main class="main" inert={overviewOpen}>

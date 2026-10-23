@@ -38,7 +38,7 @@ fn the_list_reads_the_same_at_compile_time() {
         assert!(names.insert(&e.name), "secrets.toml lists {} twice", e.name);
         assert!(!e.name.is_empty() && !e.name.contains('"'), "a bad environment name: {:?}", e.name);
         for s in &e.secrets {
-            assert!(arugula_platform::cloud::secrets::valid_name(s), "{}: {s} is a reserved or bad name", e.name);
+            assert!(arugula_platform::secrets::valid_name(s), "{}: {s} is a reserved or bad name", e.name);
             assert!(arugula_platform::keys::is_listed(&e.name, s), "{}: {s} isn't read at compile time", e.name);
         }
         assert!(!arugula_platform::keys::is_listed(&e.name, "NOT_LISTED_ANYWHERE"));

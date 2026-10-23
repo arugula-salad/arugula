@@ -10,30 +10,11 @@
 #   ARUGULA_TESTNET_PLATFORM2_PORT), only so the claims can call one or the
 #   other directly with a principal signed with the stack's key: the
 #   platform-fanout claim posts through one and listens on the other.
-# - Cloud is on in both with the fake Managoat (`fakes-serve.ts
-#   --managoat`), each through a loopback sidecar in its network namespace
-#   (Cloud takes plain http only on loopback), as in window.yaml. The fake's
-#   control port (9005) is published (ARUGULA_TESTNET_MANAGOAT_PORT) so the
-#   platform-handover claim can hold a request and see who sent it.
 # - ARUGULA_TESTNET_PLATFORM2_DB set to empty puts platform2 on a file of
 #   its own: the platform-fanout claim's BREAK=1, two machines that share
 #   no database.
-x-managoat: &managoat
-  image: node:22-slim
-  command:
-    - node
-    - -e
-    - >-
-      const net = require("net");
-      net.createServer((c) => { const u = net.connect(9004, "fakes"); c.pipe(u).pipe(c);
-        u.on("error", () => c.destroy()); c.on("error", () => u.destroy()); }).listen(9004, "127.0.0.1")
-
-x-cloud: &cloud
-  ARUGULA_MANAGOAT_URL: http://127.0.0.1:9004
-  ARUGULA_MANAGOAT_API_KEY: mg_testnet
+x-platform: &platform
   ARUGULA_CLOUD_SECRET_KEY: c10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10dc10d
-  ARUGULA_CLOUD_ACCOUNTS: "*"
-  ARUGULA_CLOUD_MODEL: anthropic/test
   RUST_LOG: arugula_platform=debug
   STRIPE_SECRET_KEY: sk_test_testnet
   STRIPE_WEBHOOK_SECRET: whsec_testnet
@@ -42,7 +23,7 @@ x-cloud: &cloud
 services:
   platform:
     environment:
-      <<: *cloud
+      <<: *platform
       ARUGULA_PLATFORM_DATABASE_URL: postgres://postgres:testnet@postgres:5432/platform
     ports:
       - "127.0.0.1:${ARUGULA_TESTNET_PLATFORM_PORT:-22983}:7700"
@@ -70,7 +51,7 @@ services:
       - --stripe-seat-price=price_seat
       - --stripe-minutes-price=price_min
     environment:
-      <<: *cloud
+      <<: *platform
       ARUGULA_PLATFORM_DATABASE_URL: ${ARUGULA_TESTNET_PLATFORM2_DB-postgres://postgres:testnet@postgres:5432/platform}
     ports:
       - "127.0.0.1:${ARUGULA_TESTNET_PLATFORM2_PORT:-22984}:7700"
@@ -80,20 +61,3 @@ services:
     networks:
       outer:
         aliases: [platforms]
-
-  fakes:
-    command: [node, --experimental-strip-types, --no-warnings, /fixtures/fakes-serve.ts, --managoat]
-    ports:
-      - "127.0.0.1:${ARUGULA_TESTNET_MANAGOAT_PORT:-22985}:9005"
-
-  managoat-platform:
-    <<: *managoat
-    profiles: [platform]
-    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-managoat-platform
-    network_mode: service:platform
-
-  managoat-platform2:
-    <<: *managoat
-    profiles: [two]
-    container_name: ${COMPOSE_PROJECT_NAME:-arugula-testnet}-managoat-platform2
-    network_mode: service:platform2

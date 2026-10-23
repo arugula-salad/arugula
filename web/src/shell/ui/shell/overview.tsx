@@ -16,8 +16,6 @@ import { escapeTaken } from "../../../shared/ui/menu";
 import { closeOverview, overviewRoute } from "../places";
 import { BranchIcon } from "./icons";
 import { showSession, summarize } from "./session-sidebar";
-import { cloudTabAttention, cloudWorkspaces, cloudWorkspaceState, useCloudPanes } from "../../../shared/cloud";
-import { openPlatform, platformHref, platformOrigin, workspacePath } from "../../platform-links";
 
 /** Whether `#overview` is up, kept current with the route. */
 export function useOverview(): { session?: number } | null {
@@ -191,62 +189,6 @@ export function SessionOverview({ client, session }: { client: Client; session?:
           );
         })}
       </div>
-      <CloudWorkspaceCards />
     </section>
-  );
-}
-
-/** The Cloud workspaces after the machine's sessions, each with its status
- * and tabs, as links to the platform page, where they are (M153; the
- * shell draws none of its views since M155). None without one. */
-function CloudWorkspaceCards() {
-  useCloudPanes();
-  const list = cloudWorkspaces.list;
-  if (!platformOrigin() || !list.length) return null;
-  const go = (e: MouseEvent, path: string) => {
-    e.preventDefault();
-    openPlatform(path);
-  };
-  return (
-    <>
-      <h2 class="ws-ov-cloud-head">
-        Cloud workspaces <span class="dim">↗</span>
-      </h2>
-      <div class="ws-ov-grid">
-        {list.map((w) => {
-          const { word, dot } = cloudWorkspaceState(w);
-          return (
-            <article key={w.id} class="ws-ov-session" data-overview-cloud-workspace={w.id}>
-              <header class="ws-ov-session-head">
-                <a class="ws-ov-name" href={platformHref(workspacePath(w.id))} title={`${w.name}, on the platform page`} onClick={(e) => go(e, workspacePath(w.id))}>
-                  <span class={`ws-dot ${dot}`} aria-hidden="true" />
-                  <span class="ws-ellipsis">{w.name}</span>
-                </a>
-                <span class="ws-ov-counts">{word}</span>
-              </header>
-              <ul class="ws-ov-panes">
-                {(cloudWorkspaces.tabs.get(w.id) ?? []).map((t) => (
-                  <li key={t.id}>
-                    <a
-                      class="ws-ov-pane"
-                      href={platformHref(workspacePath(w.id, t.id))}
-                      data-overview-cloud-tab={t.id}
-                      data-attention={cloudTabAttention(t)}
-                      title={`This tab, on the platform page${cloudTabAttention(t) === "needs_input" ? " (this doesn't answer it)" : ""}\n${t.cwd}`}
-                      onClick={(e) => go(e, workspacePath(w.id, t.id))}
-                    >
-                      <span class={`ws-dot ${cloudTabAttention(t)}`} aria-hidden="true" />
-                      <span class="ws-ov-kind">{t.runtime}</span>
-                      <span class="ws-ov-pane-name ws-ellipsis">{t.agent_name}</span>
-                      <span class="ws-ov-where ws-ellipsis">{t.cwd}</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </article>
-          );
-        })}
-      </div>
-    </>
   );
 }

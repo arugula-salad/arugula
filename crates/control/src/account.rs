@@ -323,7 +323,7 @@ pub async fn delete(State(app): State<Arc<App>>, s: PageSession, Json(b): Json<C
 pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Result<(), ApiError> {
     let mut p = plan(app, account)?;
     p.pays = pays(app, account, &p).await?;
-    // The platform's first (Cloud's runs still stopping, M137).
+    // The platform's first (none since Cloud's Managoat side went).
     p.blockers.splice(0..0, app.platform.delete_blockers(account, false).await?);
     if !typed.trim().eq_ignore_ascii_case(p.confirm.trim()) {
         return Err(err(StatusCode::BAD_REQUEST, &format!("type {} to confirm", p.confirm)));
@@ -334,8 +334,8 @@ pub async fn delete_account(app: &Arc<App>, account: &str, typed: &str) -> Resul
     if !p.pays.is_empty() {
         return Err(err(StatusCode::CONFLICT, &format!("cancel {} first", p.pays.join(" and "))));
     }
-    // What takes time to go, the platform starts now (Cloud workspaces at
-    // Managoat, in its worker), and refuses until it's done.
+    // What takes time to go, the platform starts now, and refuses until
+    // it's done (nothing since Cloud's Managoat side went, M189).
     if let Some(why) = app.platform.delete_blockers(account, true).await?.first() {
         return Err(err(StatusCode::CONFLICT, why));
     }

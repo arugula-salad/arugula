@@ -31,7 +31,7 @@ just testnet test control runs              # M212: a run on a hosted box runs o
 just testnet test control deploys           # M219 (with ARUGULA_TESTNET_HOSTED=1): each deploy on a fresh box at the fake E2B; its secret never on disk
 just testnet test control github-webhook    # out of process: the GitHub App's webhook lands on the platform (M161)
 ARUGULA_TESTNET_PLATFORM=two just testnet up control  # two platform machines on Postgres (M144)
-just testnet test control platform-fanout platform-handover  # chat and Cloud across the two
+just testnet test control platform-fanout  # chat across the two
 ARUGULA_TESTNET_HOSTED=1 just testnet up control  # hosted workspaces at a fake E2B (M183, hosted.yaml)
 just testnet test control hosted-setup  # M183: a hosted workspace's setup in a pane, rebuild needed, rebuild's warning
 just testnet measure control   # M140: platform routes' latency, in process vs out
@@ -150,11 +150,7 @@ Everything in `ssh`, and:
   addresses, as Fly's `.internal` does. Each is published on the host
   (`127.0.0.1:22983` and `22984`, `ARUGULA_TESTNET_PLATFORM_PORT` and
   `ARUGULA_TESTNET_PLATFORM2_PORT`) only so the claims can call one or the
-  other directly, with a principal signed with the stack's key. Cloud is
-  on in both, with the fake Managoat (`fakes-serve.ts --managoat`, through
-  a loopback sidecar each, as in `window.yaml`), whose control port is
-  published too (`22985`, `ARUGULA_TESTNET_MANAGOAT_PORT`): the handover
-  claim holds a request there and sees which machine sent it.
+  other directly, with a principal signed with the stack's key.
 
 A person on the host is `web/fixtures/device-cli.ts`, the headless
 approving device ([docs/testing.md](../docs/testing.md#a-device-that-approves-things)): it signs in, enrolls, approves join
@@ -200,14 +196,13 @@ The `control` profile's:
 | `issues-restart` | only out of process (M206): two native issues (one closed) and comments in the thread on one, written through control's site, read back the same after the `platform` container restarts (issues, timelines, thread, read mark); the next issue and comment are numbered on with no gap, and search finds both (`testnet/platform.ts issues-write`, `issues-read`) | the `platform` container recreated instead, so its database file is new |
 | `platform-fanout` | only with two machines (M144): both answer their health check on the database and exactly one leads; a live stream held on each hears a message posted through the other; a page that dropped from one resumes on the other from its `Last-Event-ID`, without a resync (`testnet/platform.ts fanout`) | `platform2` on a file of its own (`ARUGULA_TESTNET_PLATFORM2_DB` empty): two machines that share no database |
 | `hosted-setup` | only with `ARUGULA_TESTNET_HOSTED=1` at `up` (M183, `hosted.yaml`: the platform in process makes boxes at the fake E2B in `fakes`, which makes none): a team's owner delegates its project and, from the CLI on the bastion, makes a hosted workspace with two repos on `git` (HTTPS) and a setup script, and sets its `GIT_TOKEN`; the real `arugulad --hosted` on box-systemd enrolls with the ticket the platform put in that box's env; its setup runs in a pane in session `setup` that the CLI captures, both repos are cloned (their remotes plain URLs), the script ran in the first, and `cloud open --wait` ends set up; a spec edit shows "rebuild needed"; work on the box that isn't pushed stops `cloud rebuild`, and `--download` saves it and rebuilds (a new box at the fake, the old deleted) | the wrong `GIT_TOKEN`: the clone fails at `clone app`, and `--wait` shows the pane's last lines, read from the box |
-| `platform-handover` | only with two machines: the fake Managoat holds a Cloud workspace's read, so the machine that claimed its job holds it mid-step; that machine is killed; the other takes the job once its lease (120 s) runs out, not before and within seconds after, and sets the workspace up; the killed one is started again (`testnet/platform.ts handover`) | the other machine paused too, so nothing takes the job |
 | `runs` | only out of process on Postgres (M212): the real `arugulad --hosted` in `hosted-box`, enrolled by ticket, takes runs started by hand under the project's standing grant. A run executes once, as `runner`, in its own copy of a repo in /home/user (left as it was), across a platform restart, signed by the box; its pane, watched end to end through control's relay, says what it ran; what it left running is killed; `runner` can't read the daemon's key or reach its port; sent again after the daemon restarts, it isn't run again; an agent run is Claude Code (a stand-in), headless, its login on stdin; a revoke saying `running stop` stops a run and all of `runner`'s processes | the box's ledger is wiped before it's sent again, so it runs twice |
 | `deploys` | only with `ARUGULA_TESTNET_HOSTED=1` at `up` (M219, `hosted.yaml`): the owner adds a passkey through control's WebAuthn routes, makes an environment with the fake driver and one secret, plans a deploy and approves it with a browser device's signature and the passkey. The platform makes the deploy's own box at the fake E2B; `hosted-box`, reset to the template's users, stands in for it with the ticket from that create. The real `arugulad --hosted` hears it's a deploy's box, gives up root, checks the approval against the account it pinned, applies it as `runner`, and stops once its run is reported. The deploy succeeds and its log verifies; the box is listed to nobody; the driver's directory is gone; the secret was given once, its pane's log says only `[redacted APP_TOKEN]`, and afterwards it's in no file on the box, nor in control's database file or log; the platform deletes the box at the fake E2B. A second deploy gets a box of its own, its driver fails part way, it fails and pages the owners, and that box goes too | the secret is written into the box's state directory after the run, so the disk check finds it |
 
 `just testnet measure control [samples]` (`measure-control.sh`) times a
 few routes from the host as a signed-in person (`GET /api/me` for the
 hub's floor, then `GET /api/chat`, a room's messages,
-`GET /api/cloud/workspaces` and a `POST` marking a room read), 300 times
+`GET /api/workspaces` and a `POST` marking a room read), 300 times
 each after a warm-up, in whichever way the stack runs the platform. Each
 run is kept in `testnet/.measure-<stack>/` (which `down` leaves); with
 both ways measured it compares their p95s and fails over M140's 20 ms
@@ -219,13 +214,12 @@ gate.
 "The first window") against the `control` profile, with `window.yaml`
 added to compose.yaml: control and the platform keep their databases in
 the state directory (bind mounts, as the host's user, so they outlive the
-recreations that stand in for Fly secret changes), Cloud is on in both
-with a fake Managoat (`fakes-serve.ts --managoat`, reached through a
-loopback sidecar since Cloud takes plain http only on loopback), and the
-platform starts held (`ARUGULA_PLATFORM_PAUSED=1`). In order:
+recreations that stand in for Fly secret changes), both have the stack's
+master key, and the platform starts held (`ARUGULA_PLATFORM_PAUSED=1`).
+In order:
 
-1. a person with two channels of messages, a read mark, a cloud secret, a
-   Cloud workspace that names it and a tab with a turn (`window.ts seed`);
+1. a person with two channels of messages, a read mark, and an environment
+   in their team's project with a secret set (`window.ts seed`);
 2. the notice (`arugula-control notice post`), as the page gets it;
 3. a trial copy carried to the platform, whose secrets open there;
 4. the window: maintenance on with `--pause`, `platform copy` on control,
@@ -237,9 +231,8 @@ platform starts held (`ARUGULA_PLATFORM_PAUSED=1`). In order:
 6. the rollback within the window: the platform held, control back in
    process on its own copies, unchanged by the time out of process;
 7. the window again, over the platform's earlier copy (`--replace`), then
-   new work: a message, a turn, and a workspace whose secret the platform
-   decrypted for Managoat, the value seeded before the window
-   (`fakes-serve.ts` tells its SHA-256 on 9005);
+   new work: a message, and the secret set again, which the platform seals
+   with the project's key and `secrets-check` opens;
 8. the rollback after the window: the platform's file copied back over
    control's copies, control in process, the new work there.
 
@@ -263,7 +256,8 @@ machine, and both answer to `platforms`, the stand-in for Flycast. `s3`
 image (packaging/platform-dump) around this tree's static binary. In
 order:
 
-1. a person's chat and Cloud, written through the gateway (`window.ts seed`);
+1. a person's chat and a project's secret, written through the gateway
+   (`window.ts seed`);
 2. the notice;
 3. pre-checks: `migrations` on the file, a timed trial copy into Postgres
    (the URL handed over as `@/tmp/pg.url`, as `fly ssh sftp put` will),
@@ -273,8 +267,8 @@ order:
    checksums and the file's both equal `before.txt`; secrets open. Then
    the flip onto Postgres (still paused), a rollback to the untouched file,
    the flip again, the unpause, and maintenance off;
-5. post-checks, then new work on Postgres, including a secret decrypted
-   for Managoat;
+5. post-checks, then new work on Postgres, including the secret set again,
+   which opens there;
 6. two machines: `platform2` up, exactly one leading, and the hub switched
    to `platforms`. Both serve: a stream and posts through the gateway, the
    `platform-fanout` claim, and each machine stopped in turn while the
@@ -293,8 +287,7 @@ order:
 As with `window.sh`, it stops at the first thing that doesn't hold. The
 transcript is in `.state/window/transcript.txt`. Run it with its own
 `COMPOSE_PROJECT_NAME` and ports, adding `ARUGULA_TESTNET_PLATFORM_PORT`,
-`ARUGULA_TESTNET_PLATFORM2_PORT`, `ARUGULA_TESTNET_MANAGOAT_PORT` and
-`ARUGULA_TESTNET_S3_PORT`, and run `just testnet down` afterwards.
+`ARUGULA_TESTNET_PLATFORM2_PORT` and `ARUGULA_TESTNET_S3_PORT`, and run `just testnet down` afterwards.
 
 ## Conventions
 

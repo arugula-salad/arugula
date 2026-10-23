@@ -34,8 +34,7 @@ use super::{
 };
 use crate::{Deleted, hub::Team};
 
-/// A new project's id: `prj_` and 32 hex characters, beside `cw_` for
-/// Cloud workspaces.
+/// A new project's id: `prj_` and 32 hex characters.
 fn new_id() -> String {
     format!("prj_{}", hex::encode(arugula_e2e::random::<16>()))
 }
@@ -544,15 +543,15 @@ mod tests {
         conn.query_row(sql, params![], |r| r.get(0)).unwrap()
     }
 
-    /// What the platform backfilled on its own (M129), now its last
-    /// migration's: every account with Cloud rows gets its personal project
-    /// and those rows get it. Team channels wait for their team's name from
-    /// the hub (`projects::start`).
+    /// What the platform backfilled on its own (M129), now migration 3's:
+    /// every account with Cloud rows gets its personal project and those
+    /// rows get it (until a later migration drops them, M189). Team
+    /// channels wait for their team's name from the hub (`projects::start`).
     #[test]
     fn the_backfill_gives_every_cloud_row_its_personal_project() {
         let mut conn = unattached();
-        let ran = super::super::migrate::run(&mut conn).unwrap().ran;
-        assert_eq!(ran[0], 3, "{ran:?}");
+        let ran = super::super::migrate::run_to(&mut conn, 3).unwrap().ran;
+        assert_eq!(ran, [3], "{ran:?}");
         assert_eq!(
             dump(&conn, "SELECT account_id, name FROM projects WHERE is_default = 1 ORDER BY 1"),
             [["alice", "Personal"], ["bob", "Personal"], ["dave", "Personal"]]
@@ -584,7 +583,7 @@ mod tests {
         assert_eq!(backfill.name, "personal_projects");
         conn.execute_batch(backfill.sql).unwrap();
         assert_eq!(dump(&conn, all), before);
-        assert_eq!(super::super::migrate::run(&mut conn).unwrap(), Default::default());
+        assert_eq!(super::super::migrate::run_to(&mut conn, 3).unwrap(), Default::default());
     }
 
     #[test]

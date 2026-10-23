@@ -1,11 +1,7 @@
 // Starting an agent block: which agent, where it runs, and the first prompt.
-// Opened from a pane's menu and the phone's sheet. Run on: Cloud opens the
-// platform page's Cloud workspaces, where a cloud agent starts (M153, M155).
+// Opened from a pane's menu and the phone's sheet.
 
-import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { cloudPanes, useCloudPanes } from "../../shared/cloud";
-import { openPlatform, platformHref } from "../platform-links";
 import type { Client } from "../client";
 import type { PaneId } from "../../shared/proto";
 import { AdapterHelp, installAdapter, loadAdapters, type Adapter } from "./adapter";
@@ -61,7 +57,7 @@ type Remembered = { kind?: Kind; acp?: string; model?: string };
 const remembered = (): Remembered => {
   try {
     const last = JSON.parse(localStorage.getItem("arugula.agent") ?? "{}") as Omit<Remembered, "kind"> & { kind?: Kind | "fountain" | "managoat" };
-    // Cloud agents are chosen under Run on: Cloud.
+    // Agents that are gone start as Claude Code.
     return { ...last, kind: last.kind === "fountain" || last.kind === "managoat" ? "claude" : last.kind };
   } catch {
     return {};
@@ -69,8 +65,6 @@ const remembered = (): Remembered => {
 };
 
 function AgentDialog({ client, where, close }: { client: Client; where: AgentWhere; close: () => void }) {
-  useCloudPanes();
-  const [execution, setExecution] = useState(client.state ? "local" : "cloud");
   const last = remembered();
   const [kind, setKind] = useState<Kind>(last.kind ?? "claude");
   const [acp, setAcp] = useState(last.acp ?? "");
@@ -110,11 +104,6 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
     await client.newAgent({ config, vm: vm && canVm, split: where.split, session: where.session, from: where.from });
   };
 
-  // Cloud only once control has a platform page (M155).
-  const cloud = cloudPanes.enabled && !!platformHref("/workspaces");
-  const executionChoice = <label>Run on<select aria-label="Run on" value={execution} onChange={(e) => setExecution(e.currentTarget.value)}><option value="local" disabled={!client.state}>This machine</option>{cloud && <option value="cloud">Cloud</option>}</select></label>;
-  // S40: a cloud agent opens as a tab in a Cloud workspace, on the platform page.
-  if (execution === "cloud" && cloud) return <CloudAgentLink close={close} choice={executionChoice} />;
   return (
     <div class="prompt-backdrop" role="dialog" aria-label="Start an agent" onPointerDown={(e) => e.target === e.currentTarget && close()}>
       <form
@@ -127,7 +116,6 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
         onKeyDown={(e) => e.key === "Escape" && close()}
       >
         <h2>Start an agent</h2>
-        {executionChoice}
         <p class="hint">
           Or{" "}
           <button
@@ -198,29 +186,6 @@ function AgentDialog({ client, where, close }: { client: Client; where: AgentWhe
           </button>
           <button type="submit" class="primary" disabled={blocked}>
             Start
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-/** Run on: Cloud (S40, M119): a cloud agent starts as a tab in a Cloud
- * workspace, on the platform page (M153), where + Agent opens one. */
-function CloudAgentLink({ close, choice }: { close: () => void; choice: ComponentChildren }) {
-  return (
-    <div class="prompt-backdrop" role="dialog" aria-label="Start an agent" onKeyDown={(e) => e.key === "Escape" && close()} onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <form class="prompt agent-dialog cloud-launch" aria-label="Start an agent" onSubmit={(e) => (e.preventDefault(), close(), openPlatform("/workspaces"))}>
-        <h2>Start an agent</h2>
-        {choice}
-        <p class="dim">
-          It opens as a tab in a Cloud workspace: a machine in the cloud with your repositories on it, which its tabs share. Cloud
-          workspaces are on the platform page: pick one there and press + Agent, or make one.
-        </p>
-        <div class="prompt-buttons">
-          <button type="button" onClick={close}>Cancel</button>
-          <button type="submit" class="primary" data-cloud-launch-link>
-            Open Cloud workspaces ↗
           </button>
         </div>
       </form>
