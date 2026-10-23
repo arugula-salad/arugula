@@ -548,10 +548,13 @@ then. `/oauth/*` is rate-limited per client address (`limit::ISSUER`).
     the box's `HUD_FORGE_SIGNIN_AUDIENCE`, and its address is a page on the
     box. **Register a box's page only on an origin that serves hud's own UI,
     never agent or app content.** The assertion arrives in that page's
-    fragment, and anything that runs on that origin can read it. Set the
-    box's `HUD_FORGE_SIGNIN_URL` to
-    `https://control.arugula.io/oauth/hud?client_id=<id>&redirect_uri=<page>`.
-    Set its `HUD_FORGE_SIGNIN_KEY` to the signing key's SPKI (`issuer keys`,
+    fragment, and anything that runs on that origin can read it. A box with
+    hud's platform client (M237) sets `HUD_PLATFORM_URL` to control's URL
+    and registers `<HUD_PUBLIC_URL>/__hud/signin/back`, a page the box's
+    proxy serves itself. It reads the keys from the JWKS. An older box sets
+    `HUD_FORGE_SIGNIN_URL` to
+    `https://control.arugula.io/oauth/hud?client_id=<id>&redirect_uri=<page>`
+    and its `HUD_FORGE_SIGNIN_KEY` to the signing key's SPKI (`issuer keys`,
     below).
 
   ```
@@ -562,6 +565,55 @@ then. `/oauth/*` is rate-limited per client address (`limit::ISSUER`).
   ```
 
   Changing a client's kind ends its access tokens.
+- **A hud box bound to a project (M237).** `add-client --kind hud --project
+  prj_…` binds a box to a platform project, and `client-secret --id <box>`
+  gives it a secret (shown once). The box reads it from a 0600 file
+  (`HUD_PLATFORM_SECRET_FILE`), and refuses to start with it unless its
+  agent runs as another OS user (`HUD_AGENT_RUN_AS`), so nothing the agent
+  writes or runs can read it. Then:
+  - `GET /oauth/hud/members` (HTTP Basic, the box's id and secret) is the
+    box's roster: the project's members now, each with their numeric GitHub
+    id. A member who signs in to the box through control (`/__hud/signin`
+    on the box) is let in with no invite, matched by that number.
+  - **How long a removed member keeps a box:** at most about 71 seconds
+    after the hub takes them out of the team. The platform's cache has
+    the change within a feed tick and a cache tick (11 s,
+    `arugula_platform::cache::DELAY`); the box reads its roster afresh every
+    60 s and takes off anyone who left, which ends their session there. If
+    the box can't reach control, it takes nobody off until it can: run
+    `hud revoke` on the box to end every session at once.
+  - `POST /oauth/hud/posts` `{target, author, text}` posts nothing. It keeps
+    a comment-mode review for ten minutes and answers a link to the hub's
+    own page (`/oauth/hud/post?id=`). There the review's author, signed in
+    to control, sees which box, which object, and the text word for word,
+    and presses **Post** or **Cancel**. The page runs no script and nothing
+    may frame it, and its answer is taken only from that page (the consent
+    screen's same-origin check), once. So an app on the box (the agent's own
+    code included) can ask, but can't post for anyone. Posted, it's in the
+    thread on that object (the box's `HUD_PLATFORM_REVIEW_THREAD`, an
+    `iss_…` or a `fi_…`), shown as "<name> via <the client's name>" on the
+    page, in pushes and the inbox, over MCP and in the CLI. It's posted only
+    if the author may post there now, as when they post themselves. An object
+    outside the project is "no such object".
+  - **Limits:** 600 calls an hour per box, 120 reviews an hour, and 50
+    waiting at once. Past 30 reviews in an hour, a warn
+    (`hud-box-posts-bulk`, once an hour) and a `posts` row in
+    `issuer link-alerts`.
+  - The secret does nothing else. An `oidc` client's secret can't call
+    these, and a box's can't link accounts. An unbound box gets 409
+    `not_bound` and keeps its own roster. Changing a client's kind drops its
+    secret.
+
+  ```
+  fly ssh console -a illogical-control -C "/arugula-control issuer add-client --db /data/control.db \
+      --id notes-box --kind hud --name 'notes (hud)' --project prj_… \
+      --redirect https://notes.box.example/__hud/signin/back"
+  fly ssh console -a illogical-control -C "/arugula-control issuer client-secret --db /data/control.db --id notes-box"
+  ```
+
+  The CLI can't check that the project exists (the platform's database may
+  be elsewhere): a box bound to one that isn't there gets 404
+  `no_such_project`, and admits nobody by membership.
 - **What a client must do** (studio's lobby, or any `oidc` product):
   - send `state` (and `nonce`), and on the callback **check `state` first**,
     before anything else. Refuse a callback whose `state` isn't one this
@@ -593,8 +645,10 @@ then. `/oauth/*` is rate-limited per client address (`limit::ISSUER`).
   that has signed in with GitHub. If another GitHub account here has signed
   in with the same login since (someone renamed and the name was taken),
   it's refused (409) until they sign in again. It also carries `account`,
-  `github_id`, `kid`, and the box's `nonce` if the box sent one. hud reads
-  only `sub` today (see M237, below).
+  `github_id`, `kid`, and the box's `nonce` if the box sent one. hud from
+  M237 on matches people on `github_id`, never the login in `sub`, and
+  takes an assertion only with the nonce of the sign-in that browser
+  started on the box (login CSRF).
 - **Sign-in.** Anyone not signed in is sent to control's page
   (`#issuer-signin=`), signs in with GitHub or a passkey as always, and comes
   back to the same request. `prompt=none` returns `login_required` instead.
@@ -609,11 +663,6 @@ then. `/oauth/*` is rate-limited per client address (`limit::ISSUER`).
   code; no sends the client `access_denied`. With the consent kept, sign-in
   goes straight through; `prompt=none` without it returns
   `consent_required`. hud boxes never ask.
-- **For M237 (hud as a client):** have hud match people on `github_id`, not
-  the login in `sub`. Logins change hands, and `github_id` is already in the
-  payload. Have hud send a `nonce` tied to the session that asked, and check
-  it, which closes login CSRF through a link carrying someone else's
-  assertion. Both need hud's change, and neither breaks today's format.
 
 #### Account links (M229)
 
@@ -738,10 +787,12 @@ Daemons reconnect by themselves, but pick a quiet hour.
    fly secrets deploy -a illogical-control
    ```
 
-   **hud boxes** hold a single key (`HUD_FORGE_SIGNIN_KEY`), not the JWKS.
-   Set each box's key to the new SPKI at this step. A box still on the old
-   key refuses the new assertions (no one can sign in to it) until it's
-   changed. A box changed early refuses them until this step.
+   **hud boxes** with `HUD_PLATFORM_URL` (M237) read the JWKS, kept at most
+   5 minutes, and need nothing. Older boxes hold a single key
+   (`HUD_FORGE_SIGNIN_KEY`): set each one's key to the new SPKI at this
+   step. A box still on the old key refuses the new assertions (no one can
+   sign in to it) until it's changed. A box changed early refuses them
+   until this step.
 4. **Drop the old key** once `_UNTIL` has passed: `fly secrets unset -a
    illogical-control ARUGULA_ISSUER_KEY_PREVIOUS
    ARUGULA_ISSUER_KEY_PREVIOUS_UNTIL`. The hub has already stopped publishing
@@ -777,7 +828,10 @@ There's no overlap to wait for:
      leaked key when their cached copy expires: 5 minutes for ours, longer
      if a client caches longer. Ask each product's owner to fetch the JWKS
      again (or restart) at once. Until they do, they accept forged tokens.
-   - **hud boxes** hold the leaked key itself, so **a box still on it
+   - **hud boxes with `HUD_PLATFORM_URL`** (M237) read the JWKS and stop
+     trusting the leaked key within 5 minutes of the swap (their cached
+     copy's age), or at once on a restart.
+   - **Older hud boxes** hold the leaked key itself, so **a box still on it
      accepts forged assertions** for any login, for as long as it keeps it.
      Change every box's `HUD_FORGE_SIGNIN_KEY` to the new SPKI right away,
      or take its `HUD_FORGE_SIGNIN_KEY` off (no forge sign-ins at all) if it

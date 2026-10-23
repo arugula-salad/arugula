@@ -115,7 +115,7 @@ name = "issuer_clients"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A product that may ask the hub who someone is (M228): its id, its kind (oidc, or a hud box), its name, the exact addresses a sign-in may go back to. Registered by an operator."
+what = "A product that may ask the hub who someone is (M228): its id, its kind (oidc, or a hud box), its name, the exact addresses a sign-in may go back to, and a hud box's platform project (M237). Registered by an operator."
 with_account = "none"
 seen_by = ["litestream"]
 
@@ -133,7 +133,7 @@ name = "issuer_client_secrets"
 plane = "machine"
 process = "hub"
 holds = "metadata"
-what = "A product's link secret (M229): a hash of it, which client it is, when it was made. The product calls the link API with it."
+what = "A client's secret (M229, M237): a hash of it, which client it is, when it was made. A product calls the link API with it; a bound hud box, its roster and review threads."
 with_account = "none"
 seen_by = ["litestream"]
 

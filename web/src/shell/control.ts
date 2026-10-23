@@ -636,8 +636,9 @@ export function resumePlatformSignIn(): boolean {
     const raw = atob(m[2].replace(/-/g, "+").replace(/_/g, "/"));
     if (m[1] === "platform") to = `/signin/platform?${new URLSearchParams(raw)}`;
     // M228: the hub's issuer sent a product's sign-in here, as the path
-    // it came in on: only its own two, never anywhere else.
-    else if (/^\/oauth\/(authorize|hud)\?[^#\\]*$/.test(raw)) to = raw;
+    // it came in on: only its own, never anywhere else (M237: a hud box's
+    // review, waiting for its author on the hub's page).
+    else if (/^\/oauth\/(authorize|hud|hud\/post)\?[^#\\]*$/.test(raw)) to = raw;
     else return false;
   } catch {
     return false;

@@ -35,8 +35,9 @@
 #     address and PKCE verifier (M228);
 #   - `issuer_token`: an access token the issuer handed out, as a bearer
 #     (M228).
-#   - `client_secret`: a registered issuer client's id and link secret, as
-#     HTTP Basic (M229).
+#   - `client_secret`: a registered issuer client's id and secret, as
+#     HTTP Basic (M229: an `oidc` client's link secret; M237: a `hud`
+#     box's).
 #   - `hosted_enrollment`: a hosted box's one-time ticket or sandbox id,
 #     and its key proving it holds the key it enrolls (M178);
 #   - `hosted`: a live hosted machine's signature (`auth::HostedAuth`),
@@ -181,6 +182,40 @@ process = "hub"
 auth = "session"
 clients = ["browser"]
 note = "hud's forge assertion for a box registered as a client, in the fragment of its own page. Without a session it signs in first, as /oauth/authorize does."
+
+# hud boxes bound to a project (M237, hud_box.rs): the box's server, with its secret, and its people on the hub's page.
+
+[[route]]
+method = "GET"
+path = "/oauth/hud/members"
+process = "hub"
+auth = "client_secret"
+clients = ["product"]
+note = "A bound box's roster: its project's members now (the platform's answer), with numeric GitHub ids to match on. An unbound box gets 409 not_bound."
+
+[[route]]
+method = "POST"
+path = "/oauth/hud/posts"
+process = "hub"
+auth = "client_secret"
+clients = ["product"]
+note = "A bound box's review, waiting ten minutes for its author to post it on the hub's own page: the answer is that page's address. Nothing is posted here."
+
+[[route]]
+method = "GET"
+path = "/oauth/hud/post"
+process = "hub"
+auth = "session"
+clients = ["browser"]
+note = "The hub's page where a box review's author posts it into the object's thread, or doesn't: the text word for word, no script, no framing. Without a session it signs in first."
+
+[[route]]
+method = "POST"
+path = "/oauth/hud/post"
+process = "hub"
+auth = "session"
+clients = ["browser"]
+note = "The author's answer, from that page only (same origin), once: posted via the box, if they may post there now."
 
 # Account links (M229, links.rs): a product's server, with its link secret.
 

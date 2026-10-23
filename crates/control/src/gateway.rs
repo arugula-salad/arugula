@@ -262,6 +262,20 @@ impl PlatformPort for PlatformAt {
     ) -> BoxFuture<'a, anyhow::Result<arugula_control_wire::run_logs::Uploaded>> {
         self.port().hosted_uploaded(machine, upload)
     }
+
+    fn box_members<'a>(
+        &'a self,
+        project: &'a str,
+    ) -> BoxFuture<'a, anyhow::Result<Option<Vec<arugula_platform::boxes::BoxMember>>>> {
+        self.port().box_members(project)
+    }
+
+    fn box_post<'a>(
+        &'a self,
+        post: &'a arugula_platform::boxes::BoxPost,
+    ) -> BoxFuture<'a, anyhow::Result<arugula_platform::boxes::BoxPosted>> {
+        self.port().box_post(post)
+    }
 }
 
 /// An out-of-process platform: `PlatformPort` over HTTP, and the way this

@@ -132,6 +132,7 @@ async fn bench(out_of_process: bool) -> String {
                 ref_pane: None,
                 mentions: &mentions,
                 agent: None,
+                via: None,
             };
             db.add_chat_message(r, &m).unwrap();
         }

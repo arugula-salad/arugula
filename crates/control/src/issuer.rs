@@ -234,11 +234,14 @@ pub struct Issuer {
     /// Consent screens shown and not yet answered (M229), by their
     /// ticket's hash: the request each answers, and its `state`.
     asking: Mutex<HashMap<String, (Pending, String)>>,
+    /// hud boxes' reviews waiting for their author to post them on the
+    /// hub's own page (M237, `hud_box.rs`), by their id's hash.
+    pub(crate) box_posts: crate::hud_box::Waiting,
 }
 
 impl Issuer {
     pub fn new(keys: Keys) -> Self {
-        Issuer { keys, codes: Mutex::default(), asking: Mutex::default() }
+        Issuer { keys, codes: Mutex::default(), asking: Mutex::default(), box_posts: Default::default() }
     }
 
     /// Keep a request waiting on the person's consent, unless its hub
@@ -343,7 +346,7 @@ pub(crate) fn limited(app: &App, peer: SocketAddr, headers: &HeaderMap) -> Optio
 }
 
 /// The hub session on this request, by its cookie: its hash and account.
-fn hub_session(app: &App, headers: &HeaderMap, now: u64) -> Option<(String, String)> {
+pub(crate) fn hub_session(app: &App, headers: &HeaderMap, now: u64) -> Option<(String, String)> {
     cookie(headers, SESSION_COOKIE)
         .map(hash)
         .and_then(|h| app.db.session_until(&h, now).ok().flatten().map(|(account, _)| (h, account)))
@@ -351,7 +354,7 @@ fn hub_session(app: &App, headers: &HeaderMap, now: u64) -> Option<(String, Stri
 
 /// Signed out here: control's page signs them in, then comes back to this
 /// same request (`#issuer-signin=`).
-fn sign_in_first(uri: &Uri) -> Response {
+pub(crate) fn sign_in_first(uri: &Uri) -> Response {
     let back = uri.path_and_query().map_or_else(|| uri.path(), |p| p.as_str());
     no_store(Redirect::to(&format!("/#issuer-signin={}", b64url(back.as_bytes()))).into_response())
 }
@@ -542,7 +545,7 @@ fn give_code(app: &App, issuer: &Issuer, p: Pending, state: &str, now: u64) -> R
     back(&redirect_uri, &q)
 }
 
-fn escape(s: &str) -> String {
+pub(crate) fn escape(s: &str) -> String {
     s.chars()
         .map(|c| match c {
             '&' => "&amp;".into(),
@@ -594,6 +597,37 @@ pub struct Consent {
     decision: Option<String>,
 }
 
+fn header_of(headers: &HeaderMap, h: &str) -> Option<String> {
+    headers.get(h).and_then(|v| v.to_str().ok()).map(str::to_owned)
+}
+
+/// Whether a form's post came from a page of the hub's own (the consent
+/// screen, M229; a hud box's review, M237): its Origin's host and port are
+/// the Host it came to (control answers on more than one site, so not only
+/// its public URL's), and its Sec-Fetch-Site, when sent, says same-origin.
+pub(crate) fn own_page_form(headers: &HeaderMap) -> bool {
+    let host = header_of(headers, "host").unwrap_or_default().to_ascii_lowercase();
+    let same = |o: &str| {
+        url::Url::parse(o).ok().is_some_and(|u| {
+            let authority = match (u.host_str(), u.port()) {
+                (Some(h), Some(p)) => format!("{h}:{p}"),
+                (Some(h), None) => h.to_owned(),
+                _ => return false,
+            };
+            authority.to_ascii_lowercase() == host
+        })
+    };
+    // A browser that was told no-referrer says `Origin: null` on a form's
+    // post; its Sec-Fetch-Site still says where the post came from.
+    let fetch_site = header_of(headers, "sec-fetch-site");
+    let origin_ok = match header_of(headers, "origin").as_deref() {
+        None => true,
+        Some("null") => fetch_site.as_deref() == Some("same-origin"),
+        Some(o) => same(o),
+    };
+    origin_ok && fetch_site.is_none_or(|s| s == "same-origin" || s == "none")
+}
+
 /// `POST /oauth/consent`: the person's answer to the consent screen. Only
 /// from the same origin it was shown on (a cross-site post is refused), with the
 /// ticket that screen was shown with, in the hub session it was shown in.
@@ -610,33 +644,10 @@ pub async fn consent(
         return r;
     }
     let refused = |why: &str| no_store((StatusCode::FORBIDDEN, why.to_owned()).into_response());
-    // Same origin as this request: the Origin's host and port are the
-    // Host this came to (control answers on more than one site, so not
-    // only its public URL's).
-    let header_is = |h: &str| headers.get(h).and_then(|v| v.to_str().ok()).map(str::to_owned);
-    let host = header_is("host").unwrap_or_default().to_ascii_lowercase();
-    let same = |o: &str| {
-        url::Url::parse(o).ok().is_some_and(|u| {
-            let authority = match (u.host_str(), u.port()) {
-                (Some(h), Some(p)) => format!("{h}:{p}"),
-                (Some(h), None) => h.to_owned(),
-                _ => return false,
-            };
-            authority.to_ascii_lowercase() == host
-        })
-    };
-    // A browser that was told no-referrer says `Origin: null` on a form's
-    // post; its Sec-Fetch-Site still says where the post came from.
-    let fetch_site = header_is("sec-fetch-site");
-    let origin_ok = match header_is("origin").as_deref() {
-        None => true,
-        Some("null") => fetch_site.as_deref() == Some("same-origin"),
-        Some(o) => same(o),
-    };
-    if !origin_ok || fetch_site.is_some_and(|s| s != "same-origin" && s != "none") {
+    if !own_page_form(&headers) {
         tracing::info!(
-            origin = header_is("origin").unwrap_or_default(),
-            fetch_site = header_is("sec-fetch-site").unwrap_or_default(),
+            origin = header_of(&headers, "origin").unwrap_or_default(),
+            fetch_site = header_of(&headers, "sec-fetch-site").unwrap_or_default(),
             "a consent answer from another page was refused"
         );
         return refused("this answer didn't come from Arugula's own page");
@@ -825,7 +836,8 @@ fn refuse_hud(status: StatusCode, why: &'static str) -> Response {
 /// box's own page: `#hud-forge=hudfs1.…`. hud signs a session in as
 /// `github:<login>`, so the account needs a GitHub sign-in, and its login
 /// must be no one else's here. A `nonce` the box sends is echoed in the
-/// assertion (hud ignores it today; M237 can bind it to the box's session).
+/// assertion: hud from M237 on binds it to the browser that asked, and
+/// requires it for a sign-in that admits someone by project membership.
 pub async fn hud(
     State(app): State<Arc<App>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
@@ -927,15 +939,25 @@ enum What {
         /// be on an origin that serves only hud's own UI.
         #[arg(long = "redirect", required = true)]
         redirect_uris: Vec<String>,
+        /// A hud box's platform project (M237, `prj_…`): its members are the
+        /// box's roster, and its reviews post to threads on that project's
+        /// objects (with a client secret, `client-secret`). Left out, the
+        /// box keeps its own roster; changing it ends who the box may post
+        /// for until they sign in to it again.
+        #[arg(long)]
+        project: Option<String>,
     },
     /// The registered clients.
     Clients {
         #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
         db: std::path::PathBuf,
     },
-    /// Give a client a link secret (M229: what it calls the link API with,
-    /// as HTTP Basic with its id), shown once on stdout. A new one replaces
-    /// the old at once; --revoke takes it away.
+    /// Give a client a secret, shown once on stdout: what it calls the
+    /// hub with, as HTTP Basic with its id. An oidc client links accounts
+    /// with it (M229); a hud box bound to a project reads its members and
+    /// posts review threads (M237). A new one replaces the old at once;
+    /// --revoke takes it away.
+    #[command(visible_alias = "client-secret")]
     LinkSecret {
         #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
         db: std::path::PathBuf,
@@ -996,17 +1018,27 @@ pub fn run(args: impl Iterator<Item = String>) -> anyhow::Result<()> {
                 println!("previous kid {}  hud {}  until {until} ({state})", k.kid(), k.spki_base64());
             }
         }
-        What::AddClient { db, id, kind, name, redirect_uris } => {
+        What::AddClient { db, id, kind, name, redirect_uris, project } => {
             let c = open(&db)?;
             let created =
                 crate::db::issuer::clients(&c)?.into_iter().find(|c| c.id == id).map_or(now_ms(), |c| c.created);
-            let stored =
-                crate::db::issuer::put_client(&c, &Client { id: id.clone(), kind, name, redirect_uris, created })?;
-            println!("client {id} ({}) registered: {}", kind.as_str(), stored.redirect_uris.join(" "));
+            let stored = crate::db::issuer::put_client(
+                &c,
+                &Client { id: id.clone(), kind, name, redirect_uris, created, project },
+            )?;
+            let bound = stored.project.as_deref().map(|p| format!(" (project {p})")).unwrap_or_default();
+            println!("client {id} ({}){bound} registered: {}", kind.as_str(), stored.redirect_uris.join(" "));
         }
         What::Clients { db } => {
             for c in crate::db::issuer::clients(&open(&db)?)? {
-                println!("{}\t{}\t{}\t{}", c.id, c.kind.as_str(), c.name, c.redirect_uris.join(" "));
+                println!(
+                    "{}\t{}\t{}\t{}\t{}",
+                    c.id,
+                    c.kind.as_str(),
+                    c.name,
+                    c.redirect_uris.join(" "),
+                    c.project.as_deref().unwrap_or("-")
+                );
             }
         }
         What::LinkSecret { db, id, revoke } => {
@@ -1015,16 +1047,12 @@ pub fn run(args: impl Iterator<Item = String>) -> anyhow::Result<()> {
                 let had = crate::db::issuer::drop_client_secret(&c, &id)?;
                 println!(
                     "{}",
-                    if had {
-                        format!("client {id}'s link secret revoked")
-                    } else {
-                        format!("client {id} had no link secret")
-                    }
+                    if had { format!("client {id}'s secret revoked") } else { format!("client {id} had no secret") }
                 );
             } else {
                 let secret = format!("acs_{}", token());
                 crate::db::issuer::set_client_secret(&c, &id, &hash(&secret), now_ms())?;
-                eprintln!("client {id}'s link secret (shown once; the old one, if any, stopped working):");
+                eprintln!("client {id}'s secret (shown once; the old one, if any, stopped working):");
                 println!("{secret}");
             }
         }

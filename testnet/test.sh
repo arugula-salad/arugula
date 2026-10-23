@@ -232,6 +232,19 @@
 #           the token from before the unlink no longer links; a fresh
 #           sign-in asks for consent again and links.
 #           Broken: nobody unlinks, so the product still sees the link.
+#   hud-box A hud box as a client of the platform (M237): a hud client
+#           bound to a person's personal project (`issuer add-client
+#           --project`, `client-secret`) reads its roster, the project's
+#           members by numeric GitHub id; the member opens the box with no
+#           invite (with ARUGULA_TESTNET_HUD naming a hud checkout built
+#           with hud's platform client, hud's own proxy: /__hud/signin,
+#           control, and back with the box's nonce), someone who isn't a
+#           member is refused. The box asks to post a review, which posts
+#           nothing: the member opens control's page it names, an answer
+#           from the box's origin is refused, and Post there puts it in the
+#           issue's thread, via the box. Without a hud checkout, the box's
+#           calls by hand. Broken: the box isn't bound to the project, so
+#           it has no roster.
 #   public-preview
 #           Only with hosted workspaces at the fake E2B
 #           (ARUGULA_TESTNET_HOSTED=1) and a preview domain
@@ -256,7 +269,7 @@ PROFILE="${1:-ssh}"; shift || true
 CFG="$STATE/ssh_config"
 BREAK="${BREAK:-}"
 SSH_CLAIMS="login jump no-route bare bytes agent linger"
-CONTROL_CLAIMS="signin reach relay unreachable cli team hosted platform platform-page agents links broker issuer"
+CONTROL_CLAIMS="signin reach relay unreachable cli team hosted platform platform-page agents links broker hud-box issuer"
 
 need_docker
 
@@ -1175,6 +1188,34 @@ claim_links() {
     note "links: $(cat "$WORK/links.err")"; return 1
   fi
   note "links: $(cat "$WORK/links")"
+}
+
+claim_hud_box() {
+  local db=/var/lib/arugula-control/control.db cli=/opt/arugula/arugula-control client=testnet-hud-bound
+  local name="Testnet hud box" port project secret hud=() st="$WORK/hud-box.json"
+  port="$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
+  local back="http://127.0.0.1:$port/__hud/signin/back"
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
+  hbox() { node --experimental-strip-types --no-warnings "$HERE/hud-box.ts" "$@" --control "$CONTROL_URL" $CONTROL_VIA; }
+  docker exec "$TESTNET-control" "$cli" issuer add-client --db "$db" --id "$client" --kind hud \
+    --name "$name" --redirect "$back" >/dev/null || { note "hud-box: the client wasn't registered"; return 1; }
+  hbox setup --login "hudm-$$" --client "$client" --port "$port" --state "$st" > "$WORK/hud-setup" 2> "$WORK/hud-box.err" ||
+    { note "hud-box: $(cat "$WORK/hud-box.err")"; return 1; }
+  project="$(sed -n 's/.*"project":"\([^"]*\)".*/\1/p' "$WORK/hud-setup")"
+  if [ -z "$BREAK" ]; then
+    docker exec "$TESTNET-control" "$cli" issuer add-client --db "$db" --id "$client" --kind hud \
+      --name "$name" --redirect "$back" --project "$project" >/dev/null || { note "hud-box: not bound to $project"; return 1; }
+  fi
+  secret="$(docker exec "$TESTNET-control" "$cli" issuer client-secret --db "$db" --id "$client" 2>/dev/null)" ||
+    { note "hud-box: no client secret"; return 1; }
+  [ -z "${ARUGULA_TESTNET_HUD:-}" ] || hud=(--hud "$ARUGULA_TESTNET_HUD")
+  if ! hbox box --state "$st" --client "$client" --secret "$secret" --port "$port" --name "$name" \
+    --login2 "hudx-$$" "${hud[@]}" > "$WORK/hud-box" 2> "$WORK/hud-box.err"; then
+    note "hud-box: $(cat "$WORK/hud-box.err")"; return 1
+  fi
+  local from="the box's calls by hand"
+  [ "${#hud[@]}" = 0 ] || from="hud's own proxy from $ARUGULA_TESTNET_HUD"
+  note "hud-box: $(cat "$WORK/hud-setup") $(cat "$WORK/hud-box") ($from)"
 }
 
 claim_issuer() {
