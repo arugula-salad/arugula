@@ -1391,6 +1391,36 @@ Sessions made before `via` that look like the app's window (they said
 they're one of its devices, or their User-Agent names it) are marked
 `app` when the column comes.
 
+**What old app windows approved is grandfathered.** Before #1343 the
+desktop app's window enrolled as a `browser` device it named ("Arugula app
+on …", "illogical app"), and it approved browsers. A browser or a phone
+such a window approved counts again wherever control checks "a browser all
+the way back" (signing for a passkey, approving a browser or recovery
+codes, removing a browser, raising a team's owner or editor, a standing
+grant's signature, approving a deploy), when control stored and approved
+both rows before #1343 shipped: before `2026-10-22T20:18:00Z`
+(`legacy_app::APP_KIND_SHIPPED_MS`, when the v0.59.0 release run's
+`control` job finished, rounded down). The window then counts as the link
+just above that browser in the chain, and nowhere else: never as the
+device that signs, never above what it certifies now or a recovery code it
+made. "Before" is control's own record, not the certificates' `created`
+(their signer's claim, which a stolen key could backdate):
+`devices.created`, control's clock when the row was first stored (kept
+when the same device is put again), and `devices.approved_at`, its clock
+when the row became approved (so a window that asked before and was
+approved after doesn't count). Removing the window or the browser later
+doesn't change that, as a removed device's past approvals stand on any
+chain; the device that signs must still be one the account trusts now,
+and a removed device approves nothing new. Rows approved before `approved_at` came
+have none; after the cutoff those were approved under #1343's rule, which
+refused a window approving a browser. The platform gets the list with an
+account's devices (`DeviceTrust::legacy_app_children`); a deploy's box pins
+the first list control sends (`Enrollment::legacy_app_children`), and each
+later refresh only shrinks it, never adds; a box that has none counts no
+window. The page gets it from `GET /api/devices` (`legacy_app_children`)
+to show what control will take (Approve, recovery codes, standing grants).
+Daemons' and pages' own checks of team papers keep #1343's rule.
+
 Every WebAuthn ceremony is refused from inside another site's frame
 (`crossOrigin`, `topOrigin`).
 

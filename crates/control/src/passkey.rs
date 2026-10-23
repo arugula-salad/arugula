@@ -162,10 +162,11 @@ fn browser_devices(app: &App, account: &str) -> anyhow::Result<Vec<arugula_e2e::
     let revs = app.db.revocations(account)?;
     let trust = arugula_e2e::Trust { account: account.to_owned(), root };
     let now = trust.evaluate(&certs, &revs);
+    let children = crate::legacy_app::children(&app.db, account)?;
     Ok(now
         .devices
         .into_values()
-        .filter(|c| c.is_browser() && crate::api::browser_all_the_way(&trust, &certs, &c.device))
+        .filter(|c| c.is_browser() && crate::api::browser_all_the_way(&trust, &certs, &c.device, &children))
         .collect())
 }
 
@@ -1397,6 +1398,59 @@ mod tests {
         assert_eq!(opts["step_up"], "passkey");
         let r = register(&app, &fresh, Authn::new(31).create(opts["challenge"].as_str().unwrap(), None)).await;
         assert_eq!(r.map_err(reason).err(), Some(Some("step_up")));
+    }
+
+    /// A browser that the desktop app's window let in, from before the app
+    /// had a kind, signs for a new passkey when control stored and approved
+    /// both before #1343 shipped (`legacy_app`); not one the window let in
+    /// after, nor through a window stored after, and never the window
+    /// itself.
+    #[tokio::test]
+    async fn a_browser_a_grandfathered_app_window_let_in_signs_for_a_passkey() {
+        use arugula_e2e::{Cert, DeviceKeys, Kind};
+
+        use crate::legacy_app::APP_KIND_SHIPPED_MS as CUTOFF;
+        let app = App::for_tests(ORIGIN).start();
+        let h = signed_in(&app, "acct-g", auth::Via::Github, REAUTH_MS + 60_000);
+        let root = DeviceKeys::generate();
+        let mut rc = Cert::new(&root, "acct-g", Kind::Browser, "Safari on iPhone");
+        rc.sign_with(&root);
+        app.db.put_device(&rc, true, 1).unwrap();
+        let put = |name: &str, by: &DeviceKeys, at: u64| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, "acct-g", Kind::Browser, name);
+            c.sign_with(by);
+            app.db.put_device(&c, true, at).unwrap();
+            k
+        };
+        let window = put("Arugula app on jake-air", &root, CUTOFF - 1);
+        let firefox = put("Firefox on Mac", &window, CUTOFF - 1);
+        let late = put("Arugula app on jake-mini", &root, CUTOFF);
+        let chrome = put("Chrome on Mac", &late, CUTOFF - 1);
+        let edge = put("Edge", &window, now_ms());
+        let mut can: Vec<String> = browser_devices(&app, "acct-g").unwrap().into_iter().map(|c| c.device).collect();
+        can.sort();
+        let mut want = vec![root.id(), firefox.id()];
+        want.sort();
+        assert_eq!(can, want, "the root and Firefox: not either window, nor Chrome or Edge");
+        // The page asking is the root's; the device signing for it varies.
+        async fn sign(app: &Arc<App>, h: &HeaderMap, page: &str, k: &DeviceKeys, seed: u8) -> Result<String, ApiError> {
+            let a = Authn::new(seed);
+            let opts = start_on(app, h, Some(page)).await.unwrap();
+            let ch = opts["challenge"].as_str().unwrap().to_owned();
+            let mut r = a.create(&ch, None);
+            r.device = Some(DeviceSig {
+                id: k.id(),
+                sig: hex::encode(k.signature(add_passkey_device_body("acct-g", &a.id(), &ch).as_bytes())),
+            });
+            register(app, h, r).await.map(|r| r.0)
+        }
+        let page = root.id();
+        assert!(sign(&app, &h, &page, &window, 50).await.is_err(), "the window itself");
+        assert!(sign(&app, &h, &page, &chrome, 51).await.is_err(), "through a window stored after");
+        assert!(sign(&app, &h, &page, &edge, 53).await.is_err(), "what the window let in after");
+        assert_eq!(sign(&app, &h, &page, &firefox, 52).await.unwrap(), "acct-g");
+        assert_eq!(app.db.passkeys("acct-g").unwrap()[0].added_device.as_deref(), Some(firefox.id().as_str()));
     }
 
     /// The desktop app's window signing in with a passkey stays the app's

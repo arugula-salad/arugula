@@ -48,7 +48,13 @@ use sha2::{Digest, Sha256};
 #[path = "deploy_apps_platform.rs"]
 pub mod apps_platform;
 
-use crate::{Cert, Trust, cert::verify_hex, hosted::Owners, keys::DeviceKeys, team::TeamRole};
+use crate::{
+    Cert, Trust,
+    cert::{LegacyAppChildren, verify_hex},
+    hosted::Owners,
+    keys::DeviceKeys,
+    team::TeamRole,
+};
 
 /// An approval's longest life (S37 q4: at most 7 days), from when it's
 /// taken, with S37's ten minutes' slack for the approver's clock.
@@ -320,10 +326,16 @@ impl Approval {
 /// keys a program on its computer can read), by [`Trust::chained`] over
 /// every certificate kept on the way. The platform asks it before it takes
 /// an approval, and a hosted machine before it applies one (M219).
-pub fn approver_chained(account: &str, root: &str, certs: &[Cert], device: &str) -> bool {
+///
+/// `children` is the account's browsers and phones that a grandfathered
+/// app window approved (control's `legacy_app::children`): such a window
+/// counts as the link just above one of them, the root included, and
+/// nowhere else ([`crate::cert::legacy_app_link`]).
+pub fn approver_chained(account: &str, root: &str, certs: &[Cert], device: &str, children: &[String]) -> bool {
     let trust = Trust { account: account.to_owned(), root: root.to_owned() };
-    trust.chained(certs, device, |c| {
-        crate::cert::browser_link(c, device, Cert::is_browser) && (c.device != root || c.is_browser())
+    trust.chained_below(certs, device, |c, below| {
+        crate::cert::browser_or_legacy_link(c, below, device, children)
+            && (c.device != root || c.is_browser() || crate::cert::legacy_app_link(c, below, children))
     })
 }
 
@@ -397,7 +409,9 @@ impl ApplyRefusal {
 
 /// What a machine checks before it applies `deploy`'s operation `op` (M219),
 /// with the owners it pinned at enrollment (`owners`: its team's roster
-/// and members' certificates, or its account's chain), at `now` by its own
+/// and members' certificates, or its account's chain) and the browsers
+/// grandfathered app windows approved that it pinned with them
+/// (`children`, by account: see [`approver_chained`]), at `now` by its own
 /// clock:
 /// - the approval is `once`, for this deploy, over exactly this operation,
 ///   and not past its `expires`;
@@ -409,11 +423,20 @@ impl ApplyRefusal {
 ///   verification. Its signature is the hub's to check (it keeps passkeys'
 ///   public keys); until the hub publishes them, the machine checks the
 ///   rest.
+///
+/// `children` is what the machine pinned: the first set control sent it
+/// (at enrollment, or at the first refresh that carried one, for a machine
+/// enrolled before control sent it), and since then only what every later
+/// refresh also sent (their intersection): a refresh never adds to it. A
+/// machine that pinned none passes an empty set, so no window counts on it.
+/// Control could have sent a wrong first set, as it could have sent wrong
+/// certificates at enrollment: the machine trusts it no more than that.
 pub fn check_apply(
     approval: &Approval,
     op: &Operation,
     deploy: &str,
     owners: &Owners,
+    children: &LegacyAppChildren,
     passkey: Option<PasskeyParts>,
     now: u64,
 ) -> Result<(), ApplyRefusal> {
@@ -447,7 +470,8 @@ pub fn check_apply(
         }
     };
     let Some(cert) = trusted.get(&approval.by) else { return Err(ApplyRefusal::Device) };
-    if !approver_chained(&approval.account, &root, all, &approval.by) {
+    let children = children.get(&approval.account).map(Vec::as_slice).unwrap_or_default();
+    if !approver_chained(&approval.account, &root, all, &approval.by, children) {
         return Err(ApplyRefusal::Device);
     }
     if !approval.signed_by(&cert.sign) {
@@ -623,7 +647,7 @@ mod tests {
         let now = 1_000;
         let check = |owners: &Owners, a: &Approval, pk: Option<(String, String)>| {
             let parts = pk.as_ref().map(|(c, d)| PasskeyParts { client_data_json: c, authenticator_data: d });
-            check_apply(a, &op(), "dep_1", owners, parts, now)
+            check_apply(a, &op(), "dep_1", owners, &LegacyAppChildren::new(), parts, now)
         };
         let good = Approval::new(&phone, "dep_1", &op(), "a", Decision::Once, now + 1);
         for owners in [&team, &mine] {
@@ -657,6 +681,141 @@ mod tests {
         let b = Approval::new(&bphone, "dep_1", &op(), "b", Decision::Once, now + 1);
         assert_eq!(check(&team, &b, ok_pk(&b)), Err(ApplyRefusal::NotAnOwner));
         assert_eq!(check(&mine, &b, ok_pk(&b)), Err(ApplyRefusal::NotAnOwner), "not this account");
+    }
+
+    /// A browser the desktop app's window approved before the app had a
+    /// kind of its own counts when the hub says so (its id in `children`):
+    /// the window is a link just above it, and nowhere else. Not as the
+    /// device that signs, not above what it certifies now or a recovery
+    /// code it made (listed or not), and a CLI or an `app` certificate
+    /// never.
+    #[test]
+    fn a_grandfathered_app_window_counts_just_above_what_it_approved() {
+        use crate::{Cert, Kind, Revocation};
+        let mk = |name: &str, kind, account: &str, by: Option<&DeviceKeys>| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, account, kind, name);
+            c.sign_with(by.unwrap_or(&k));
+            (k, c)
+        };
+        let (phone, root) = mk("Pixel", Kind::Browser, "a", None);
+        let (window, window_cert) = mk("Arugula app on jake-air", Kind::Browser, "a", Some(&phone));
+        let (firefox, firefox_cert) = mk("Firefox on Mac", Kind::Browser, "a", Some(&window));
+        let (later, later_cert) = mk("Firefox on Linux", Kind::Browser, "a", Some(&firefox));
+        let (edge, edge_cert) = mk("Edge", Kind::Browser, "a", Some(&window));
+        let (code, code_cert) = mk("recovery 1", Kind::Recovery, "a", Some(&window));
+        let (opera, opera_cert) = mk("Opera", Kind::Browser, "a", Some(&code));
+        let (cli, cli_cert) = mk("geek", Kind::Cli, "a", Some(&phone));
+        let (chrome, chrome_cert) = mk("Chrome", Kind::Browser, "a", Some(&cli));
+        let (app, app_cert) = mk("Arugula app on jake-mini", Kind::App, "a", Some(&phone));
+        let (safari, safari_cert) = mk("Safari", Kind::Browser, "a", Some(&app));
+        let certs = [
+            root,
+            window_cert,
+            firefox_cert,
+            later_cert,
+            edge_cert,
+            code_cert,
+            opera_cert,
+            cli_cert,
+            chrome_cert,
+            app_cert,
+            safari_cert,
+        ];
+        let p = phone.id();
+        let ids = |ks: &[&DeviceKeys]| ks.iter().map(|k| k.id()).collect::<Vec<_>>();
+        let chained =
+            |device: &DeviceKeys, children: &[String]| approver_chained("a", &p, &certs, &device.id(), children);
+        let ff = ids(&[&firefox]);
+        assert!(chained(&firefox, &ff), "what the window approved back then");
+        assert!(chained(&later, &ff), "and what that approves now");
+        assert!(!chained(&firefox, &[]) && !chained(&later, &[]), "not when the hub doesn't say so");
+        assert!(!chained(&firefox, &ids(&[&window])), "the window's own id isn't a child");
+        assert!(!chained(&edge, &ff), "what the window certifies now");
+        assert!(!chained(&window, &ff) && !chained(&window, &ids(&[&window])), "the window itself never signs");
+        assert!(!chained(&opera, &ff) && !chained(&opera, &ids(&[&code])), "a recovery code the window made");
+        assert!(!chained(&chrome, &ids(&[&chrome])), "a CLI never counts");
+        assert!(!chained(&safari, &ids(&[&safari])), "nor an `app` certificate");
+        assert!(chained(&phone, &[]) && chained(&phone, &ff), "the phone is as it was");
+
+        // A window as the root (self-signed, from before the app couldn't be
+        // one) counts as the root just above what it approved.
+        let mut wroot = Cert::new(&window, "b", Kind::Browser, "illogical app");
+        wroot.sign_with(&window);
+        let mut b_firefox = Cert::new(&firefox, "b", Kind::Browser, "Firefox");
+        b_firefox.sign_with(&window);
+        let b = [wroot, b_firefox];
+        assert!(approver_chained("b", &window.id(), &b, &firefox.id(), &ff));
+        assert!(!approver_chained("b", &window.id(), &b, &firefox.id(), &[]));
+        assert!(!approver_chained("b", &window.id(), &b, &window.id(), &ff));
+
+        // A machine checks it with the set it pinned, by account.
+        let trust = Trust { account: "a".into(), root: p.clone() };
+        let mine = Owners::Account { trust: &trust, certs: &certs, revocations: &[] as &[Revocation] };
+        let now = 1_000;
+        let check = |by: &DeviceKeys, children: &LegacyAppChildren| {
+            let a = Approval::new(by, "dep_1", &op(), "a", Decision::Once, now + 1);
+            let (cd, ad) = passkey_over(&a, "webauthn.get", 0x05);
+            let parts = Some(PasskeyParts { client_data_json: &cd, authenticator_data: &ad });
+            check_apply(&a, &op(), "dep_1", &mine, children, parts, now)
+        };
+        let pinned = |account: &str, ks: &[&DeviceKeys]| LegacyAppChildren::from([(account.to_owned(), ids(ks))]);
+        assert_eq!(check(&firefox, &pinned("a", &[&firefox])), Ok(()));
+        assert_eq!(check(&firefox, &LegacyAppChildren::new()), Err(ApplyRefusal::Device), "pinned none");
+        assert_eq!(check(&firefox, &pinned("b", &[&firefox])), Err(ApplyRefusal::Device), "another account's");
+        assert_eq!(check(&window, &pinned("a", &[&firefox])), Err(ApplyRefusal::Device), "the window's own");
+        assert_eq!(check(&edge, &pinned("a", &[&firefox])), Err(ApplyRefusal::Device), "what it certifies now");
+    }
+
+    /// root → window W → browser X → browser Y: X removed since doesn't
+    /// take Y with it (a removed device's past approvals stand on any
+    /// chain); Y removed can't approve; W removed certifies nothing new.
+    #[test]
+    fn a_link_removed_since_keeps_what_it_approved() {
+        use crate::{Cert, Kind, Revocation};
+        let mk = |name: &str, kind, by: Option<&DeviceKeys>, created: u64| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, "a", kind, name);
+            c.created = created;
+            c.sign_with(by.unwrap_or(&k));
+            (k, c)
+        };
+        let revoke = |device: &DeviceKeys, by: &DeviceKeys, at: u64| {
+            let mut r = Revocation::new("a", &device.id(), by);
+            r.at = at;
+            r.sig = hex::encode(by.signature(r.body().as_bytes()));
+            r
+        };
+        let (phone, root) = mk("Pixel", Kind::Browser, None, 1);
+        let (w, wc) = mk("illogical app on geek", Kind::Browser, Some(&phone), 10);
+        let (x, xc) = mk("Firefox on Linux", Kind::Browser, Some(&w), 20);
+        let (y, yc) = mk("Firefox on Mac", Kind::Browser, Some(&x), 30);
+        let (z, zc) = mk("Edge", Kind::Browser, Some(&w), 60);
+        let certs = [root, wc, xc, yc, zc];
+        let children = vec![x.id()];
+        let p = phone.id();
+        assert!(approver_chained("a", &p, &certs, &y.id(), &children), "links on the way aren't checked for removal");
+
+        let trust = Trust { account: "a".into(), root: p.clone() };
+        let now = 1_000;
+        let check = |revs: &[Revocation], by: &DeviceKeys| {
+            let mine = Owners::Account { trust: &trust, certs: &certs, revocations: revs };
+            let a = Approval::new(by, "dep_1", &op(), "a", Decision::Once, now + 1);
+            let (cd, ad) = passkey_over(&a, "webauthn.get", 0x05);
+            let parts = Some(PasskeyParts { client_data_json: &cd, authenticator_data: &ad });
+            let pinned = LegacyAppChildren::from([("a".to_owned(), vec![x.id(), z.id()])]);
+            check_apply(&a, &op(), "dep_1", &mine, &pinned, parts, now)
+        };
+        let x_gone = revoke(&x, &phone, 40);
+        assert_eq!(check(std::slice::from_ref(&x_gone), &y), Ok(()), "X removed after it approved Y");
+        let y_gone = revoke(&y, &phone, 40);
+        assert_eq!(check(&[x_gone.clone(), y_gone], &y), Err(ApplyRefusal::Device), "Y removed");
+        // W removed at 50: Z, which it certified at 60, isn't trusted, so it
+        // doesn't approve even were it listed.
+        let w_gone = revoke(&w, &phone, 50);
+        assert!(trust.evaluate(&certs, std::slice::from_ref(&w_gone)).get(&z.id()).is_none());
+        assert_eq!(check(std::slice::from_ref(&w_gone), &z), Err(ApplyRefusal::Device), "what W certifies after");
+        assert_eq!(check(&[w_gone, x_gone], &y), Ok(()), "W and X removed after Y came: Y stands");
     }
 
     #[test]

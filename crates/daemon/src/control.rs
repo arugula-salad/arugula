@@ -189,6 +189,15 @@ pub struct HostedPin {
     /// never stops being one.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub deploy: bool,
+    /// The project owners' browsers and phones that grandfathered app
+    /// windows approved, by account (`arugula_e2e::deploy::check_apply`):
+    /// the first set control sent, and since then only what every later
+    /// refresh also sent; a refresh never adds to it
+    /// (`crate::hosted::enroll::saved_from`). `None` until control sends
+    /// one (a box enrolled before takes its first at its next refresh), and
+    /// then no app window counts here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_app_children: Option<arugula_e2e::cert::LegacyAppChildren>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4195,6 +4204,7 @@ pub(crate) mod tests {
                 delegation: d,
                 revocations: vec![],
                 deploy: false,
+                legacy_app_children: None,
             }),
             ..team_saved.clone()
         };
@@ -4307,6 +4317,7 @@ pub(crate) mod tests {
                 delegation: d,
                 revocations: vec![],
                 deploy: false,
+                legacy_app_children: None,
             }),
             ..team_saved.clone()
         };

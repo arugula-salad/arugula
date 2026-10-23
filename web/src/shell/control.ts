@@ -994,6 +994,11 @@ export class ControlSession {
   enrollment: Enrollment | undefined;
   /** Every device the account trusts, by this browser's reckoning. */
   trusted = new Map<string, Cert>();
+  /** Browsers and phones that the desktop app's windows (from before it
+   * had a kind) approved before #1343 shipped, as control says
+   * (`legacy_app_children`): such a window counts just above one of them on
+   * the way back to the root, as control counts it, and nowhere else. */
+  legacyAppChildren = new Set<string>();
   /** Devices asking to join, for this one to approve. */
   pending: Cert[] = [];
   /** #326: the machine's join code a waiting device came to approve, by
@@ -1476,12 +1481,14 @@ export class ControlSession {
           features?: Record<string, string>;
           used?: Record<string, number>;
           passkeys?: string[];
+          legacy_app_children?: string[];
         }>("/api/devices"),
         api<{ daemons: ForeignEntry[]; offers?: ShareOffer[] }>("/api/directory"),
       ]);
       this.rootMismatch = !!devs.trust && devs.trust.root !== e.root;
       this.trusted = await evaluate({ account: e.account, root: e.root }, devs.certs, devs.revocations);
       this.revocations = devs.revocations;
+      this.legacyAppChildren = new Set(devs.legacy_app_children ?? []);
       // #327: this browser's own place, checked like any other device's.
       // (A different root is said elsewhere, and isn't fixed by enrolling
       // again under control's.)
@@ -2120,17 +2127,22 @@ export class ControlSession {
   /** Whether this device may approve one of `kind` (`Kind::certifies`):
    * the desktop app, its devices from before it had a kind, and anything
    * they certified approve machines, CLIs and apps, not browsers, phones
-   * or recovery codes. */
+   * or recovery codes; but an app window from before it had a kind counts
+   * just above a browser it approved back then (`legacyAppChildren`). */
   canApprove(kind: Kind): boolean {
     const me = this.enrollment?.cert;
     if (!me || !certifies(me.kind, kind)) return false;
     if (kind !== "browser" && kind !== "recovery") return true;
     // A browser's own all the way back to the root, as control asks.
     let c: Cert | undefined = me;
+    let below: Cert | undefined;
     for (let i = 0; c && i < 64; i++) {
-      // A recovery code that let a browser in counts on the way back.
-      if (!(c.kind === "recovery" && c !== me) && (c.kind !== "browser" || fromApp(c))) return false;
+      // A recovery code that let a browser in counts on the way back, and
+      // so does an app window just above a browser it approved back then.
+      const legacy = c.kind === "browser" && fromApp(c) && !!below && below.approver === c.device && below.kind === "browser" && !fromApp(below) && this.legacyAppChildren.has(below.device);
+      if (!(c.kind === "recovery" && c !== me) && !legacy && (c.kind !== "browser" || fromApp(c))) return false;
       if (c.approver === c.device) return c.device === this.enrollment?.root;
+      below = c;
       c = this.trusted.get(c.approver);
     }
     return false;

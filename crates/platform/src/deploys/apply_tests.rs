@@ -293,11 +293,12 @@ async fn an_approved_deploy_is_applied_by_its_run_with_its_secrets_once() {
     use crate::HubPort as _;
     let roster = hub.team_rosters("t").await.unwrap().pop().unwrap();
     let trust = hub.device_trust("a").await.unwrap().unwrap();
+    let children: arugula_e2e::cert::LegacyAppChildren = [("a".to_owned(), trust.legacy_app_children)].into();
     let certs: arugula_e2e::team::AccountCerts = [("a".to_owned(), (trust.certs, trust.revocations))].into();
     let owners = Owners::Team { roster: &roster, certs: &certs };
     let pk = dw.passkey.as_ref().unwrap();
     let parts = PasskeyParts { client_data_json: &pk.client_data_json, authenticator_data: &pk.authenticator_data };
-    assert_eq!(check_apply(&dw.approval, &dw.operation, &id, &owners, Some(parts), now_ms()), Ok(()));
+    assert_eq!(check_apply(&dw.approval, &dw.operation, &id, &owners, &children, Some(parts), now_ms()), Ok(()));
 
     // No secrets before it runs.
     assert!(matches!(ask(&app, &m, &run.id).await, SecretsGiven::Refused { .. }));

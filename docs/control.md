@@ -759,6 +759,11 @@ daemons and pages refuse those papers unless a browser all the way back to
 the account's root signed them. The desktop app's
 window is an `app` device: it reaches your machines and approves machines,
 CLIs and apps, but not browsers, phones, recovery codes or deploys.
+Before #1343 the app's window enrolled as a browser it named ("Arugula app
+on …"). A browser such a window approved, both stored and approved by
+control before #1343 shipped (2026-10-22 20:18 UTC, by control's own
+record), counts again: it can sign for a passkey and approve deploys. The
+window itself can't, nor anything it approves now.
 [control-e2e.md](control-e2e.md#page-only-actions-need-a-browser-and-a-passkey)
 has the details.
 

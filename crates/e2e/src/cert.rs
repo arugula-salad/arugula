@@ -373,6 +373,43 @@ impl Trust {
         self.chained(certs, device, |c| browser_link(c, device, |c| c.kind == Kind::Browser))
     }
 
+    /// [`Trust::chained`], where `link` also sees the certificate just
+    /// below each link in the chain: the one it certified, of the device
+    /// before it (`None` for `device` itself). A device reached from two
+    /// below is looked at from each.
+    pub fn chained_below(&self, certs: &[Cert], device: &str, link: impl Fn(&Cert, Option<&Cert>) -> bool) -> bool {
+        let mut by_id: HashMap<&str, Vec<&Cert>> = HashMap::new();
+        for c in certs {
+            if c.account == self.account && c.check_form().is_ok() {
+                by_id.entry(c.device.as_str()).or_default().push(c);
+            }
+        }
+        let mut next: Vec<(String, Option<&Cert>)> = vec![(device.to_owned(), None)];
+        let mut seen = std::collections::HashSet::new();
+        while let Some((id, below)) = next.pop() {
+            if !seen.insert((id.clone(), below.map(|b| b.device.clone()))) {
+                continue;
+            }
+            if seen.len() > 64 {
+                return false;
+            }
+            let Some(these) = by_id.get(id.as_str()) else { return false };
+            for c in these {
+                if !link(c, below) {
+                    return false;
+                }
+                if c.approver == c.device {
+                    if c.device != self.root {
+                        return false;
+                    }
+                } else {
+                    next.push((c.approver.clone(), Some(c)));
+                }
+            }
+        }
+        true
+    }
+
     fn chained_in(&self, by_id: &HashMap<&str, Vec<&Cert>>, device: &str, link: &dyn Fn(&Cert) -> bool) -> bool {
         let mut next = vec![device.to_owned()];
         let mut seen = std::collections::HashSet::new();
@@ -463,6 +500,34 @@ impl Trust {
 /// says, a link before it as that or a recovery code.
 pub fn browser_link(c: &Cert, device: &str, browser: impl Fn(&Cert) -> bool) -> bool {
     browser(c) || (c.kind == Kind::Recovery && c.device != device)
+}
+
+/// The browsers and phones grandfathered app windows approved
+/// ([`legacy_app_link`]), by account: what a hosted machine pins beside its
+/// owners' certificates.
+pub type LegacyAppChildren = std::collections::BTreeMap<String, Vec<String>>;
+
+/// A link of a browser chain that's the desktop app's window from before it
+/// had a kind (a `browser` certificate it named, [`Cert::from_app`]),
+/// counted for what it approved back then: `below`, the certificate just
+/// below it in this chain (which it signed), is a browser's or a phone's
+/// ([`Cert::is_browser`]) and one of `children`, the account's devices the
+/// hub says such a window approved before the app had a kind of its own
+/// (control's `legacy_app::children`). Never `device` itself (it has
+/// nothing below it), nor above anything else: what it certifies now, a
+/// recovery code it made, another app device.
+pub fn legacy_app_link(c: &Cert, below: Option<&Cert>, children: &[String]) -> bool {
+    c.kind == Kind::Browser
+        && c.from_app()
+        && below.is_some_and(|b| b.approver == c.device && b.is_browser() && children.contains(&b.device))
+}
+
+/// [`browser_link`] with [`Cert::is_browser`], or a grandfathered app
+/// window above what it approved ([`legacy_app_link`]): a link of a chain
+/// to `device` that's a browser's or a phone's all the way back, for
+/// [`Trust::chained_below`].
+pub fn browser_or_legacy_link(c: &Cert, below: Option<&Cert>, device: &str, children: &[String]) -> bool {
+    browser_link(c, device, Cert::is_browser) || legacy_app_link(c, below, children)
 }
 
 /// Which check an approval failed (#327).

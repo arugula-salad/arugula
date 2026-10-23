@@ -18,6 +18,7 @@
 
 use arugula_e2e::{
     Cert, Revocation, Trust,
+    cert::LegacyAppChildren,
     hosted::{Delegation, DelegationRevoke, HostedCert},
     team::{AccountCerts, Roster, TeamPin},
 };
@@ -173,6 +174,13 @@ pub struct Enrollment {
     pub account_certs: Vec<Cert>,
     #[serde(default)]
     pub account_revocations: Vec<Revocation>,
+    /// The owners' browsers and phones that grandfathered app windows
+    /// approved, by account (control's `legacy_app::children`,
+    /// `arugula_e2e::cert::legacy_app_link`), which count on the way back
+    /// to a deploy approver's root (`arugula_e2e::deploy::check_apply`).
+    /// `None` from a control from before: the box keeps what it pinned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_app_children: Option<LegacyAppChildren>,
     /// What the box is for (M219): [`DEPLOY`], or `None` for a people's
     /// workspace. A box that hears `deploy` stays one.
     #[serde(default, skip_serializing_if = "Option::is_none")]

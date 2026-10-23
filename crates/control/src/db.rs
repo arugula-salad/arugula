@@ -383,6 +383,11 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             "ALTER TABLE passkeys ADD COLUMN added_device TEXT; ALTER TABLE passkeys ADD COLUMN added_session TEXT;",
         )?;
     }
+    // When a device's row became approved, by control's clock: NULL for
+    // rows approved before the column came (`legacy_app` reads it).
+    if !has("devices", "approved_at")? {
+        conn.execute_batch("ALTER TABLE devices ADD COLUMN approved_at INTEGER")?;
+    }
     // #1095: agents are out of chat, and the conversation an offer named
     // (#857) with them.
     conn.execute_batch("DROP TABLE IF EXISTS daemon_offer_reasons")?;
@@ -1070,13 +1075,21 @@ impl Db {
     // ---- devices
 
     /// Store a device's certificate; the first approved one becomes the
-    /// account's root.
+    /// account's root. `now` is control's clock: `created` is when the row
+    /// was first stored, and putting the same device again (asking again,
+    /// being approved) keeps it; `approved_at` is when it became approved
+    /// (kept while it stays approved, cleared if it waits again). Both are
+    /// what `legacy_app` relies on.
     pub fn put_device(&self, cert: &Cert, approved: bool, now: u64) -> anyhow::Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
         tx.execute(
-            "INSERT INTO devices (account, id, kind, cert, approved, created) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT (account, id) DO UPDATE SET cert = excluded.cert, approved = excluded.approved",
+            "INSERT INTO devices (account, id, kind, cert, approved, created, approved_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, CASE WHEN ?5 THEN ?6 END)
+             ON CONFLICT (account, id) DO UPDATE SET cert = excluded.cert, approved = excluded.approved,
+                 approved_at = CASE WHEN NOT excluded.approved THEN NULL
+                                    WHEN devices.approved THEN devices.approved_at
+                                    ELSE excluded.approved_at END",
             params![cert.account, cert.device, cert.kind.as_str(), serde_json::to_string(cert)?, approved, now],
         )?;
         // Asking again (or being approved) clears a turn-down.
@@ -1129,6 +1142,22 @@ impl Db {
             if approved { yes.push(cert) } else { no.push(cert) }
         }
         Ok((yes, no))
+    }
+
+    /// An account's `browser` certificates whose rows this database first
+    /// stored, and approved, before `before` (ms), by control's clock
+    /// ([`Db::put_device`]), never the certificate's own time. A row with
+    /// no `approved_at` was approved before that column came, which was
+    /// after #1343 shipped: see `legacy_app` for why those count.
+    pub fn browsers_stored_before(&self, account: &str, before: u64) -> anyhow::Result<Vec<Cert>> {
+        let c = self.c();
+        let mut q = c.prepare(
+            "SELECT cert FROM devices WHERE account = ?1 AND kind = 'browser' AND approved = 1 AND created < ?2
+                 AND (approved_at IS NULL OR approved_at < ?2)
+             ORDER BY created",
+        )?;
+        let rows = q.query_map(params![account, before as i64], |r| cert_of(r.get(0)?))?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// Turn a pending device down, remembering which device did (by name)
