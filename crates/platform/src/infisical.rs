@@ -80,6 +80,7 @@ impl Mode {
 
 /// The projection's configuration: the platform binary's flags.
 #[derive(clap::Args, Clone, Default)]
+#[group(id = "infisical")]
 pub struct Args {
     /// The Infisical projection (M235): `off` (the default), `dry-run`
     /// (writes nothing, logs what it would), or `on`.
