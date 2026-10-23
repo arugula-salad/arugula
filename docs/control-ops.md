@@ -902,13 +902,14 @@ exactly what a run would change and writes nothing; `--json` prints the same
 as JSON.
 
 1. **The backup.** Only `accounts.json` and `boxes.json` are read, so copy
-   only those (`sessions.json` holds sealed GitHub tokens: leave it). From
-   the cluster planter runs in:
+   only those (`sessions.json` holds sealed GitHub tokens: leave it).
+   planter's pods are gone since 2026-10-23 ([Retired
+   domains](#retired-domains-m239)), so take them from the copy of `/data`
+   made that day, or from its volume, which is kept:
 
    ```
    mkdir planter-backup
-   kubectl -n arugula exec deploy/planter -- cat /data/accounts.json > planter-backup/accounts.json
-   kubectl -n arugula exec deploy/planter -- cat /data/boxes.json > planter-backup/boxes.json
+   tar -xzf planter-data-2026-10-23.tgz -C planter-backup ./accounts.json ./boxes.json
    ```
 
    Put a copy on each machine (the files hold logins and repo names: delete
@@ -1199,7 +1200,16 @@ What the App's installation must grant, checked when a deploy is planned:
 planter already has all of these on those repositories (its Prod needs
 Workflows: write).
 
-**planter's ship API, retired (M234).** Ship tokens become agent grant
+**planter's ship API, retired (M234).** No shim was built: when planter's
+pods went (2026-10-23), its ship tokens still live were two, held by redone
+(`redone (redone.arugula.io)`, retired with it, its agents on the platform's
+MCP) and a Managoat vault (`Fountain vault planter-ship`, Managoat retired),
+and every other one was a revoked test token. So `/api/ship` ended with the
+pods, and both its hosts redirect. If a holder ever turns up before
+2026-11-06, the shim is built as below, from the token hashes in the
+`/data` copy. What it would have been:
+
+Ship tokens become agent grant
 tokens (M230) with `deploys.plan` over the project. An agent ships with
 the hosted MCP's `plan_deploy`, `files` instead of `commit` and `repo`. The
 shim planter's `/api/ship` keeps for 90 days answers through the platform
@@ -1248,8 +1258,10 @@ becomes the platform's:
 | an ntfy topic | nothing: the project's owners get a phone card for each deploy |
 | `auto-approve-updates` | nothing: every deploy waits for an owner's device |
 
-Nothing here revokes a redone token, stops redone, or takes over its
-Infisical identity: each of those is Jake's to say.
+redone's pods are gone and `redone.arugula.io` redirects since 2026-10-23
+([Retired domains](#retired-domains-m239)). Its `rdn_` tokens work on the
+platform until **2026-11-06**, when they're revoked (steps there). Taking
+over its Infisical identity is still Jake's to say.
 
 #### The import
 
@@ -1359,10 +1371,10 @@ The contract, until the token is revoked:
 - **Nothing approves.** `apply_plan` doesn't apply: a deploy applies
   itself once an owner approves it on their phone. It answers the deploy's
   state.
-- **The end.** Old `rdn_` tokens are revoked on a date Jake announces.
-  After it, each person mints a token on the platform page, and their
-  agent uses the platform's own tool names. Revoking them all is one
-  query, run then (and not before):
+- **The end.** Old `rdn_` tokens are revoked on **2026-11-06** ([the
+  steps](#on-2026-11-06)). After it, each person mints a token on the
+  platform page, and their agent uses the platform's own tool names.
+  Revoking them all is one query, run then (and not before):
 
   ```sql
   UPDATE grants SET revoked_at = <now> WHERE subject_kind = 'agent' AND revoked_at IS NULL
@@ -1408,6 +1420,82 @@ What it writes, and never:
 - **Never a read of a value, never a delete.** The identity can't anyway.
 - **In process** (`arugula-control --platform in-process`) the projection
   is off: production runs the platform as its own app.
+
+### Retired domains (M239)
+
+A product the platform absorbed keeps its domain as a redirect to
+`https://app.arugula.io/`, for at least a year: a bookmark, an old link or
+an old agent config lands on the platform rather than on nothing. Every
+path goes to the platform's front page (`/api/ship/x` too), with a 301 for
+`GET` and a 308 otherwise.
+
+| Host | Was | Redirects to | Since | Kept until | Route |
+| --- | --- | --- | --- | --- | --- |
+| `planter.arugula.io` | planter's pages and API | `https://app.arugula.io/` | 2026-10-23 | 2027-10-23 | arugula-salad/planter `k8s/ingressroute.yaml` |
+| `planter.inevitable.fyi` | planter's ship API (`/api/ship`), for agents in sandboxes | `https://app.arugula.io/` | 2026-10-23 | 2027-10-23 | the same |
+| `redone.arugula.io` | redone's MCP server and pages | `https://app.arugula.io/` | 2026-10-23 | 2027-10-23 | arugula-salad/redone `k8s/ingressroute.yaml` |
+
+**DNS is never reused.** These names never point at anything else, after
+the redirect ends too: someone else's app on an old name would get the
+old one's links, bookmarks and agents' tokens. Today they need no DNS of
+their own (wildcard records for `*.arugula.io` and `*.inevitable.fyi`
+reach home-cloud's Traefik), so "never reused" means no product, planted
+app or environment ever takes one of these names.
+
+**Where the routes live.** Each product's repo is now only a redirect
+(a Traefik `redirectRegex` middleware in front of `noop@internal`, with its
+certificate), its volume, its service accounts and its Infisical secret.
+arugula-salad/fleet's pointers (`clusters/home/apps/planter.yaml`,
+`redone.yaml`) apply them: removing a pointer before 2027-10-23 prunes the
+redirect with it. Archiving a repo doesn't stop Flux reading it.
+
+**The data.** Each volume stays (`planter-data`, `redone-data` in
+namespace `arugula`, both persistent volumes `Retain`), and a copy of each
+`/data` was taken before its pods went, kept off the cluster by Jake:
+`planter-data-2026-10-23.tgz` (accounts, boxes, sessions, ship tokens'
+hashes and ships) and `redone-data-2026-10-23.tgz` (`state.json` and two
+uploads). Neither is ever printed: they hold sealed sessions and token
+hashes. To read a volume again, mount it read-only in a pod of your own
+(planter's and redone's run as uid 1000) and `tar` it out.
+
+#### On 2026-11-06
+
+The end of the old tokens, announced on 2026-10-23.
+
+1. **redone's `rdn_` tokens.** Each owner can revoke theirs in Settings,
+   Agents with no machine (named `redone: …`). The rest, all at once, in
+   the platform's Postgres:
+
+   ```
+   fly mpg connect 1zqyxr76dp1owp8m
+   ```
+   ```sql
+   BEGIN;
+   SELECT id, account_id, name, last_used_at FROM agent_tokens
+    WHERE imported_from = 'redone' AND revoked_at IS NULL;
+   UPDATE grants SET revoked_at = (EXTRACT(EPOCH FROM now()) * 1000)::BIGINT
+    WHERE subject_kind = 'agent' AND revoked_at IS NULL
+      AND subject_id IN (SELECT id FROM agent_tokens WHERE imported_from = 'redone');
+   UPDATE agent_tokens SET revoked_at = (EXTRACT(EPOCH FROM now()) * 1000)::BIGINT
+    WHERE imported_from = 'redone' AND revoked_at IS NULL;
+   COMMIT;
+   ```
+
+   Then a call with an old token to `https://control.arugula.io/api/mcp`
+   is refused (401), and the owners' agents use a token minted on the
+   platform page.
+2. **planter's ship tokens.** Nothing to run: none was carried over, and
+   nothing answers them since the pods went. Their hashes stay only in the
+   `/data` copy and the volume.
+3. **Archive the repos:** `gh repo archive arugula-salad/planter` and
+   `gh repo archive arugula-salad/redone`. Keep fleet's pointers (above).
+4. **Not on the day, Jake's call:** revoking redone's client secret of the
+   `planter-apps-secret-writer` Infisical identity (once the platform has
+   its own, [The Infisical projection](#the-infisical-projection)), and
+   deleting the volumes.
+
+On 2027-10-23 the redirects may go (remove fleet's pointers); the names
+stay retired.
 
 ### The platform
 
