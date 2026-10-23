@@ -253,7 +253,9 @@ jobs:
       - name: Playwright's Chromium
         run: just browsers chromium
       - name: The tests, built
-        run: just test-build
+        # Four, not ci-env's six: since platform step 8 three test compiles
+        # of ~3.2-3.5 GiB each ran at once and the pod was OOM-killed.
+        run: CARGO_BUILD_JOBS=4 just test-build
       - name: Wait for static
         run: scripts/ci-wait-job static
       - name: static's binaries
@@ -297,7 +299,9 @@ jobs:
       - name: Playwright's Chromium
         run: just browsers chromium
       - name: The tests, built
-        run: just test-build
+        # Four, not ci-env's six: since platform step 8 three test compiles
+        # of ~3.2-3.5 GiB each ran at once and the pod was OOM-killed.
+        run: CARGO_BUILD_JOBS=4 just test-build
       - name: Wait for static
         run: scripts/ci-wait-job static
       - name: static's binaries
