@@ -17,3 +17,7 @@ e771ade639388899e13ce76f9b0a6eb7b26c9bbd:crates/daemon/tests/fixtures/chant/why/
 87a9a1627dc7af2fe38b268c22019b5ce4b9f500:crates/control/src/blocks_wire.rs:generic-api-key:446
 d8a5873faca467daa189019deee9419afeed88f3:crates/control/src/blocks_wire.rs:generic-api-key:446
 2d96d82c92eeeae964770d9c4ac1f80568321cc3:crates/control/src/blocks_wire.rs:generic-api-key:446
+# M232 (step 8's m232-planter-import branch): planter backup fixtures, a made-up session token and box records, not secrets. CI's lint scans every pushed branch.
+3631df1a35d4785fe284775c267f4eb399ea0f6d:crates/platform/fixtures/planter-backup/sessions.json:generic-api-key:1
+3631df1a35d4785fe284775c267f4eb399ea0f6d:crates/platform/fixtures/planter-backup/boxes.json:generic-api-key:2
+3631df1a35d4785fe284775c267f4eb399ea0f6d:crates/platform/fixtures/planter-backup/boxes.json:generic-api-key:3
