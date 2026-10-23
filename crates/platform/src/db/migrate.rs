@@ -283,9 +283,9 @@ const SQLITE: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 32,
+        version: 33,
         name: "product_posts",
-        sql: include_str!("../../migrations/sqlite/0032_product_posts.sql"),
+        sql: include_str!("../../migrations/sqlite/0033_product_posts.sql"),
         additive: true,
     },
 ];
@@ -481,9 +481,9 @@ const POSTGRES: &[Migration] = &[
         additive: true,
     },
     Migration {
-        version: 32,
+        version: 33,
         name: "product_posts",
-        sql: include_str!("../../migrations/postgres/0032_product_posts.sql"),
+        sql: include_str!("../../migrations/postgres/0033_product_posts.sql"),
         additive: true,
     },
 ];
