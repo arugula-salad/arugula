@@ -222,6 +222,13 @@ jobs:
   # started 4 min into the run, after static and a pod's queue, and was
   # the run's longest path (2026-10-18). #466 left it behind static while
   # the jobs shared geek; each has a pod of its own now.
+  #
+  # Half the Rust tests each, on a pod each (`just test-run PART`): on one
+  # pod the run took 9-10 min, the run's longest path with the e2e shards
+  # (2026-10-23). test runs the first half, the doctests and
+  # control-smoke; test-2 the second half and the platform on Postgres.
+  # Two jobs, not a matrix: a skipped matrix job's check run is named
+  # without its part, and chant's test phase names both.
   test:
     needs: changes
     if: needs.changes.outputs.suite == 'true'
@@ -258,9 +265,50 @@ jobs:
         run: mkdir -p "$CI_RUN" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUN"
       # The suite, on what test-build built: `just test` would build the web
       # client again first, for nothing.
-      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run
+      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 1
         env:
           # The service tests run, or fail (testkit's user_manager).
+          ARUGULA_REQUIRE_SYSTEMD: "1"
+      - name: sccache's hits
+        if: always() && env.RUSTC_WRAPPER == 'sccache'
+        run: sccache --show-stats
+      - name: Take the test stack down
+        if: always()
+        run: just testnet down
+
+  # The second half of test's: the same steps.
+  test-2:
+    needs: changes
+    if: needs.changes.outputs.suite == 'true'
+    runs-on: arugula-amd64
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: test
+          ghostty-key: gnu
+          claude-code: "true"
+      - run: scripts/ci-env testnet
+      - run: just bootstrap
+      - name: Playwright's Chromium
+        run: just browsers chromium
+      - name: The tests, built
+        run: just test-build
+      - name: Wait for static
+        run: scripts/ci-wait-job static
+      - name: static's binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: run-static
+          path: ${{ runner.temp }}/artifacts
+      - name: Into the run directory
+        run: mkdir -p "$CI_RUN" && tar -xf "$RUNNER_TEMP/artifacts/run-static.tar" -C "$CI_RUN"
+      - run: ARUGULA_SSH_BINARIES="$CI_RUN/x86_64-unknown-linux-musl/release" just test-run 2
+        env:
           ARUGULA_REQUIRE_SYSTEMD: "1"
       # The platform's suite again, on Postgres (M143): a postgres:17
       # container on the pod's Docker (its dind sidecar), reached as the

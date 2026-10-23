@@ -58,9 +58,12 @@ once (#287); a new push to a branch cancels that branch's run:
     and `just notices-check`;
   - **core**: `just check-core`, clippy and the daemon's and the CLI's
     tests with the `labs` feature off (#452);
-  - **test**: `just test`, the box's binaries from static: it builds
-    beside static and waits for them (`scripts/ci-wait-job`) only before
-    the tests run; then the platform's tests again on Postgres;
+  - **test** and **test-2**: `just test` in two halves on two pods
+    (`just test-run 1` and `2`, nextest's `--partition count:N/2`), the
+    box's binaries from static: each builds beside static and waits for
+    them (`scripts/ci-wait-job`) only before the tests run. test runs the
+    doctests and control-smoke too, test-2 the platform's tests again on
+    Postgres;
   - **testnet**: the test stack's ssh and control profiles;
   - **e2e**: the specs (`E2E_SET=rest`) in six shards split by recorded
     time (`web/scripts/e2e-shard.mjs` from `web/e2e/durations.json`; refresh
@@ -100,10 +103,10 @@ all (lint and clippy), for anything pushed without a pull request.
 A commit on main whose required checks all passed gets a `ci/green/<sha>`
 tag, and one that passed and then failed a re-run gets `ci/revoked/<sha>`
 (chant's `ci.green`, #503). `chant.workspace.json` names the checks:
-lint; build, static and clippy; test; the e2e shards; macos (test) and
-macos (webkit); and Windows' workspace, workspace-clippy and desktop. A skipped macos or
-desktop run counts as passed. testnet, stack, perf and the nightly
-workflows aren't required. `.github/workflows/chant-ci-green.yml` runs
+lint; build, static and clippy; test and test-2; the e2e shards; macos
+(test) and macos (webkit); and Windows' workspace, workspace-clippy and
+desktop. A skipped macos or desktop run counts as passed. testnet, stack,
+perf and the nightly workflows aren't required. `.github/workflows/chant-ci-green.yml` runs
 `chant ci tick` when check, windows or windows-desktop finish on main, and
 every 15 minutes. It's generated: after changing `ci.green` or those
 workflows' job names, run `npx @intentius/chant@0.108.0 ci workflow`. A

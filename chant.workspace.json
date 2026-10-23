@@ -222,7 +222,7 @@
       "phases": {
         "lint": ["lint", "changes", "suite-changed"],
         "build": { "runs": ["build", "static", "clippy"], "skipped": "pass" },
-        "test": { "runs": ["test"], "skipped": "pass" },
+        "test": { "runs": ["test", "test-2"], "skipped": "pass" },
         "e2e": { "runs": ["e2e*"], "skipped": "pass" },
         "macos": { "runs": ["macos*"], "skipped": "pass" },
         "windows": { "runs": ["workspace", "workspace-clippy", "desktop"], "skipped": "pass" }
