@@ -9,7 +9,7 @@
 // directory and the keys, but it can't slip in a daemon of its own (and a
 // daemon can't be reached by a device it hasn't approved).
 
-import { certBody, certifies, DEVICE_SECRET, fromApp, deviceId, deviceMac, deviceMacOk, devicePinBody, devicePinOk, evaluate, hex, JOIN_SECRET, joinCode, joinMac, newSecret, normalizeCode, normalizeSecret, splitJoinCode, type Cert, type Kind, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
+import { browserOrLegacyChained, certBody, certifies, DEVICE_SECRET, fromApp, deviceId, deviceMac, deviceMacOk, devicePinBody, devicePinOk, evaluate, hex, JOIN_SECRET, joinCode, joinMac, newSecret, normalizeCode, normalizeSecret, splitJoinCode, type Cert, type Kind, type Revocation, revocationBody, unhex } from "./e2e/cert.ts";
 import {
   adoptKeys,
   adoptPrfKeys,
@@ -1001,6 +1001,9 @@ export class ControlSession {
   enrollment: Enrollment | undefined;
   /** Every device the account trusts, by this browser's reckoning. */
   trusted = new Map<string, Cert>();
+  /** Every certificate control has for the account, revoked devices' too:
+   * the links of a chain back to the root (`canApprove`). */
+  private certs: Cert[] = [];
   /** Browsers and phones that the desktop app's windows (from before it
    * had a kind) approved before #1343 shipped, as control says
    * (`legacy_app_children`): such a window counts just above one of them on
@@ -1494,6 +1497,7 @@ export class ControlSession {
       ]);
       this.rootMismatch = !!devs.trust && devs.trust.root !== e.root;
       this.trusted = await evaluate({ account: e.account, root: e.root }, devs.certs, devs.revocations);
+      this.certs = devs.certs;
       this.revocations = devs.revocations;
       this.legacyAppChildren = new Set(devs.legacy_app_children ?? []);
       // #327: this browser's own place, checked like any other device's.
@@ -2141,18 +2145,8 @@ export class ControlSession {
     if (!me || !certifies(me.kind, kind)) return false;
     if (kind !== "browser" && kind !== "recovery") return true;
     // A browser's own all the way back to the root, as control asks.
-    let c: Cert | undefined = me;
-    let below: Cert | undefined;
-    for (let i = 0; c && i < 64; i++) {
-      // A recovery code that let a browser in counts on the way back, and
-      // so does an app window just above a browser it approved back then.
-      const legacy = c.kind === "browser" && fromApp(c) && !!below && below.approver === c.device && below.kind === "browser" && !fromApp(below) && this.legacyAppChildren.has(below.device);
-      if (!(c.kind === "recovery" && c !== me) && !legacy && (c.kind !== "browser" || fromApp(c))) return false;
-      if (c.approver === c.device) return c.device === this.enrollment?.root;
-      below = c;
-      c = this.trusted.get(c.approver);
-    }
-    return false;
+    const e = this.enrollment;
+    return !!e && browserOrLegacyChained({ account: e.account, root: e.root }, this.certs, me.device, this.legacyAppChildren);
   }
 
   /** Allow it: control answers with the app's loopback address, which this

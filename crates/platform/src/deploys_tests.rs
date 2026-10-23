@@ -1214,3 +1214,80 @@ async fn a_deploy_names_its_environment_by_name_too() {
     assert_eq!((st, &d["environment"]["id"], &d["agent"]["machine"]), (200, &json!(env), &json!("geek")), "{d}");
     assert!(d["plan_text"].as_str().unwrap().contains("fly_app acme-app"), "{d}");
 }
+
+/// A project's history (`GET /api/projects/{project}/deploys`): every
+/// member reads it, a viewer too, and nobody else; newest first, by
+/// environment when asked (by its name or id), a page at a time; each with
+/// its state, source, roll-back mark, planner, and when it was planned,
+/// decided and finished.
+#[tokio::test]
+async fn a_projects_history_lists_its_deploys_newest_first() {
+    let (hub, _app, base, t, _) = seeded().await;
+    let a = devices(&hub, "a");
+    let env = production(&base, &t).await;
+    let (st, staging) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/projects/{t}/environments"),
+        Some(json!({ "name": "staging", "driver": "fake", "secret_names": ["APP_TOKEN"] })),
+    )
+    .await;
+    assert_eq!(st, 200, "{staging}");
+    let staging = staging["id"].as_str().unwrap().to_owned();
+    let tick = || tokio::time::sleep(std::time::Duration::from_millis(3));
+    // Denied by a's phone, then one to staging and one still planned.
+    let (denied, op) = asked(&base, "b", &t, &env, "deadbeef").await;
+    let deny = Some(signed(&a.phone, "a", &denied, &op, Decision::Deny));
+    let (st, v) = call(&base, "a", "POST", &format!("/api/deploys/{denied}/deny"), deny).await;
+    assert_eq!((st, &v["state"]), (200, &json!("denied")), "{v}");
+    let plan = async |who: &str, env: &str, sha: &str| {
+        tick().await;
+        let (st, d) = call(&base, who, "POST", &format!("/api/projects/{t}/deploys"), plan_body(env, sha)).await;
+        assert_eq!(st, 200, "{d}");
+        d["id"].as_str().unwrap().to_owned()
+    };
+    let to_staging = plan("b", &staging, "beef").await;
+    let planned = plan("a", &env, "cafe").await;
+
+    let history = format!("/api/projects/{t}/deploys");
+    let ids = |v: &Value| -> Vec<String> {
+        v["deploys"].as_array().unwrap().iter().map(|d| d["id"].as_str().unwrap().to_owned()).collect()
+    };
+    for who in ["a", "b", "x"] {
+        let (st, v) = call(&base, who, "GET", &history, None).await;
+        assert_eq!((st, ids(&v)), (200, vec![planned.clone(), to_staging.clone(), denied.clone()]), "{who}: {v}");
+        assert_eq!(v["next"], Value::Null);
+    }
+    let (st, v) = call(&base, "c", "GET", &history, None).await;
+    assert_eq!(st, 404, "c isn't in t: {v}");
+
+    let (_, v) = call(&base, "x", "GET", &history, None).await;
+    let d = &v["deploys"][2];
+    assert_eq!(
+        (&d["state"], &d["environment"]["name"], &d["source"]["ref"], &d["source"]["where"], &d["planned_by"]),
+        (&json!("denied"), &json!("production"), &json!(full("deadbeef")), &json!("acme/app"), &json!("b")),
+        "{d}"
+    );
+    assert_eq!((&d["roll_back"], &d["agent"]), (&Value::Null, &Value::Null));
+    assert_eq!(d["planned_at"], d["created_at"]);
+    assert!(d["decided_at"].as_u64().is_some() && d["decided_at"] == d["finished_at"], "{d}");
+    let d = &v["deploys"][0];
+    assert_eq!((&d["state"], &d["decided_at"], &d["finished_at"]), (&json!("planned"), &Value::Null, &Value::Null));
+
+    // By environment, by its name or its id; one the project hasn't is 404.
+    let (_, v) = call(&base, "x", "GET", &format!("{history}?environment=production"), None).await;
+    assert_eq!(ids(&v), [planned.clone(), denied.clone()]);
+    let (_, v) = call(&base, "x", "GET", &format!("{history}?environment={staging}"), None).await;
+    assert_eq!(ids(&v), [to_staging.as_str()]);
+    let (st, _) = call(&base, "x", "GET", &format!("{history}?environment=nope"), None).await;
+    assert_eq!(st, 404);
+
+    // A page at a time: `next` is the next page's `before`.
+    let (_, v) = call(&base, "x", "GET", &format!("{history}?limit=2"), None).await;
+    assert_eq!((ids(&v), &v["next"]), (vec![planned.clone(), to_staging.clone()], &json!(to_staging)));
+    let (_, v) = call(&base, "x", "GET", &format!("{history}?limit=2&before={to_staging}"), None).await;
+    assert_eq!((ids(&v), &v["next"]), (vec![denied.clone()], &Value::Null));
+    let (st, _) = call(&base, "x", "GET", &format!("{history}?before=dep_nope"), None).await;
+    assert_eq!(st, 400, "before is one of the project's deploys");
+}

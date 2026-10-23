@@ -35,6 +35,8 @@
 #     address and PKCE verifier (M228);
 #   - `issuer_token`: an access token the issuer handed out, as a bearer
 #     (M228).
+#   - `client_secret`: a registered issuer client's id and link secret, as
+#     HTTP Basic (M229).
 #   - `hosted_enrollment`: a hosted box's one-time ticket or sandbox id,
 #     and its key proving it holds the key it enrolls (M178);
 #   - `hosted`: a live hosted machine's signature (`auth::HostedAuth`),
@@ -152,6 +154,14 @@ note = "A registered client and an exact redirect address, PKCE S256. Without a 
 
 [[route]]
 method = "POST"
+path = "/oauth/consent"
+process = "hub"
+auth = "session"
+clients = ["browser"]
+note = "M229: the person's answer to the consent screen, from control's own origin, with the screen's single-use ticket in the hub session it was shown in. Allowed: kept per account and client until an unlink, and the code goes to the client; cancelled: access_denied."
+
+[[route]]
+method = "POST"
 path = "/oauth/token"
 process = "hub"
 auth = "issuer_code"
@@ -171,6 +181,31 @@ process = "hub"
 auth = "session"
 clients = ["browser"]
 note = "hud's forge assertion for a box registered as a client, in the fragment of its own page. Without a session it signs in first, as /oauth/authorize does."
+
+# Account links (M229, links.rs): a product's server, with its link secret.
+
+[[route]]
+method = "POST"
+path = "/oauth/links"
+process = "hub"
+auth = "client_secret"
+clients = ["product"]
+note = "Links the product's user to the account an ID token it was issued is for, only when the product's numeric GitHub id for that user is the account's. Idempotent; a user or account linked otherwise is a 409."
+
+[[route]]
+method = "GET"
+path = "/oauth/links/{user}"
+process = "hub"
+auth = "client_secret"
+clients = ["product"]
+note = "The product's user's link, or 404 not_linked: how a product sees an unlink made on the platform page."
+
+[[route]]
+method = "DELETE"
+path = "/oauth/links/{user}"
+process = "hub"
+auth = "client_secret"
+clients = ["product"]
 
 [[route]]
 method = "POST"
@@ -1140,6 +1175,26 @@ auth = "agent_token"
 clients = ["agent"]
 note = "MCP (Streamable HTTP, one JSON-RPC message per POST, at most 64 KiB, stateless; no batches) for agents with no machine. The only platform route a client's Authorization reaches besides the inference broker's (gateway::bearer_route): issues, threads, runs, deploy plans and asks, project secrets set by name. Never an approval. Every call is noted for the token's owner."
 
+# ---- platform: linked products (M229)
+# The platform page's Settings: the products whose users are linked to the
+# reader's account (the hub keeps them, beside its issuer's clients), and
+# ending one. The product sees an unlink on its next call to /oauth/links.
+
+[[route]]
+method = "GET"
+path = "/api/linked-products"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/linked-products/{client}/unlink"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Audited in the hub as the person's."
+
 # ---- platform: projects
 # The platform page's list of the reader's projects (M150): their own and
 # each team's default one, with the team's members read only.
@@ -1881,6 +1936,14 @@ process = "platform"
 auth = "session"
 clients = ["page"]
 note = "Sets one of an environment's secrets (M219): owners, from a browser's session only (a CLI's login and an agent's machine are refused), a name the environment lists, never a reserved one. Sealed with the project's key (M209) and never read back: only a deploy run's machine gets it, once, while it runs."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/deploys"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project's deploys, newest first (by environment, a page at a time after `before`), whatever became of them: for its members."
 
 [[route]]
 method = "POST"

@@ -537,17 +537,24 @@ platform page, and planning is in the CLI and MCP too:
   and the repo it's in (the project's linked repos are offered), and
   whether it's a roll back. Plan shows the plan's text, which is what an
   owner approves. Ask for approval sends each owner a card.
+- **A project's history** (any member): each environment on the settings
+  page lists its latest deploys, whatever became of them (state, commit, a
+  roll back's mark, when), each opening its own page, with older ones a
+  click away. `GET /api/projects/{project}/deploys` (`environment` by id
+  or name, `limit`, and `before` a deploy, for the page after `next`)
+  answers them newest first.
 - **The CLI**, as your person:
 
   ```
   arugula deploys envs --project acme
+  arugula deploys ls --project acme [--env production]
   arugula deploys plan --project acme --env production --commit <sha> --repo acme/web [--roll-back]
   arugula deploys request dep_…
   arugula deploys show dep_…
   ```
 
-  An agent's shell (`CLAUDECODE` or `AI_AGENT` set) may run `envs` and
-  `show` only. There's no `approve` and no secrets.
+  An agent's shell (`CLAUDECODE` or `AI_AGENT` set) may run `envs`, `ls`
+  and `show` only. There's no `approve` and no secrets.
 - **An agent**, with its machine's `deploys.plan` grant over the project:
   MCP `plan_deploy` (`project`, `environment` by name or id, `commit`,
   `repo`, `roll_back`) plans and asks in one call, and `read_deploy`

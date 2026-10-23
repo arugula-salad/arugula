@@ -595,16 +595,94 @@ then. `/oauth/*` is rate-limited per client address (`limit::ISSUER`).
   it's refused (409) until they sign in again. It also carries `account`,
   `github_id`, `kid`, and the box's `nonce` if the box sent one. hud reads
   only `sub` today (see M237, below).
-- **Sign-in.** Someone signed in to control's page gets their code with no
-  prompt. Anyone else is sent to control's page (`#issuer-signin=`), signs in
-  with GitHub or a passkey as always, and comes back to the same request.
-  `prompt=none` returns `login_required` instead. One hub session can have
-  20 codes waiting at a time.
+- **Sign-in.** Anyone not signed in is sent to control's page
+  (`#issuer-signin=`), signs in with GitHub or a passkey as always, and comes
+  back to the same request. `prompt=none` returns `login_required` instead.
+  One hub session can have 20 codes waiting at a time.
+- **Consent (M229).** The first time an account signs in through an `oidc`
+  client, and again after it unlinks that product, the hub asks "Link
+  <product> to your Arugula account?" (a page of the hub's own, no script,
+  no framing). The answer is a form post to `POST /oauth/consent` from
+  control's own origin (another origin or `Sec-Fetch-Site` is refused), with
+  the screen's single-use ticket, in the hub session it was shown in. Yes is
+  kept per account and client (`issuer_grants`) and the client gets its
+  code; no sends the client `access_denied`. With the consent kept, sign-in
+  goes straight through; `prompt=none` without it returns
+  `consent_required`. hud boxes never ask.
 - **For M237 (hud as a client):** have hud match people on `github_id`, not
   the login in `sub`. Logins change hands, and `github_id` is already in the
   payload. Have hud send a `nonce` tied to the session that asked, and check
   it, which closes login CSRF through a link carrying someone else's
   assertion. Both need hud's change, and neither breaks today's format.
+
+#### Account links (M229)
+
+A product links its own users to their platform account (the hub's
+account) with `links.rs`, from its server:
+
+| Route | What |
+|---|---|
+| `POST /oauth/links` | `{user, github_id, assertion, name?}`: link the product's user to the account an ID token issued to this client is for |
+| `GET /oauth/links/{user}` | the link, or 404 `not_linked` |
+| `DELETE /oauth/links/{user}` | the product ends it |
+
+**A link is never authorization.** It says which of a product's users a
+person is, and nothing more. Nothing on the hub or the platform may grant a
+power, a project, a role or a machine because an `account_links` row
+exists, and no product should either: a product decides what its own users
+may do, and reads projects and roles from the platform with an access
+token.
+
+- **Only with a link secret.** A public client's tokens prove who signed in,
+  not which of the product's users that is, so these routes take the
+  client's id and a link secret as HTTP Basic (ids and secrets are URL-safe,
+  not encoded). A client without one can't link, and only `oidc` clients can
+  have one (a hud box has no users of its own). The assertion must be an ID
+  token issued to the calling client itself: a token minted for studio never
+  links a planter user. The secret is shown once; a new one replaces the old
+  at once:
+
+  ```
+  fly ssh console -a illogical-control -C "/arugula-control issuer link-secret --db /data/control.db --id studio"
+  fly ssh console -a illogical-control -C "/arugula-control issuer link-secret --db /data/control.db --id studio --revoke"
+  ```
+
+  Keep it in the product's own secrets, never in a browser.
+- **By the number only.** The product sends the numeric GitHub id it has for
+  its user. The hub links only when that is the account's, in the token and
+  in the hub now: 403 `github_id_mismatch` otherwise, and for an account that
+  never signed in with GitHub. Never a login, because logins change hands.
+- **One to one.** The same link again is a 200 with `created: false`. A user
+  linked to another account (`user_linked_elsewhere`), or an account linked
+  to another of the product's users (`account_linked_elsewhere`), is a 409
+  until that link ends.
+- **Unlinking.** The person unlinks on the platform page (Settings, "Linked
+  products"), or the product does with `DELETE`. Either ends the link and the
+  person's consent. The hub doesn't call the product: **the product sees it
+  on its next call** (`GET` answers 404), so a product checks whenever its
+  user signs in.
+- **Unlinks stick.** Each unlink keeps a tombstone (client, account, when;
+  `account_link_tombstones`, a day): an ID token issued no later than the
+  unlink's second never links again (401 `invalid_token`). A link comes back
+  only with a fresh sign-in through that product, which asks for consent
+  again.
+- **Limits and alerts.** Each call counts against the caller's address (the
+  issuer's `/oauth/*` limit) and against the product (6,000 an hour, then
+  429). More than 20 unlinks or 1,000 lookups an hour from one product is
+  logged at warn (`ops="account-links-bulk"`, once an hour per product and
+  kind) and counted, never refused for it. Read the counter with:
+
+  ```
+  fly ssh console -a illogical-control -C "/arugula-control issuer link-alerts --db /data/control.db"
+  fly logs -a illogical-control | grep account-links-bulk
+  ```
+
+  A count that climbs is a product's server in a loop or a leaked link
+  secret: rotate the secret (`issuer link-secret`), then ask the product.
+- **Audited.** `account_link_events` keeps each link made, renamed and
+  ended, by the product, the person or an operator, for a year. Deleting the
+  account deletes its links, consents and their audit; removing a client
+  ends its links (audited as the operator's) and deletes its secret.
 
 #### The issuer's keys
 

@@ -47,6 +47,8 @@ Start with `src/lib.rs`, then:
 - `src/projects.rs`: projects and team members, and the feed follower that
   keeps them and grants (from where it got to, in `hub_feed`).
 - `src/router.rs`: its routes, which the hub mounts in process.
+- `src/links.rs`: the platform page's "Linked products" (M229), which the
+  hub keeps beside its issuer's clients and answers through `HubPort`.
 - `src/page.rs`: the platform page (M150's build, `web/dist-platform`),
   embedded, its CSP, and how it's served on `app.arugula.io` (M151): by
   the hub in process, by the binary for the hub's forwarded GETs out of

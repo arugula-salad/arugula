@@ -9,6 +9,19 @@
 //!   client each was issued to and the hub session each came from: a token
 //!   ends when it runs out or when that session ends, whichever is first,
 //!   as the platform page's sessions do.
+//! - `issuer_client_secrets` (M229): a client's secret for the link API, by
+//!   its hash. A client without one can't link accounts.
+//! - `account_links` (M229): which platform account (the hub's account) a
+//!   product's own user is, matched by numeric GitHub id. One account per
+//!   product user, and one product user per account in each product.
+//! - `account_link_events` (M229): the audit of links made, renamed and
+//!   ended, kept a year.
+//! - `issuer_grants` (M229): which products a person let sign them in (the
+//!   consent screen), per account and client; ending it is unlinking.
+//! - `account_link_tombstones` (M229): when an account last unlinked from a
+//!   product: assertions issued until then never link.
+//! - `link_alerts` (M229): the ops counter of bulk unlinks and lookups by a
+//!   client.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -31,6 +44,51 @@ CREATE TABLE IF NOT EXISTS issuer_tokens (
     expires INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS issuer_tokens_hub_session ON issuer_tokens (hub_session);
+CREATE TABLE IF NOT EXISTS issuer_client_secrets (
+    client TEXT PRIMARY KEY,
+    secret_hash TEXT NOT NULL,
+    created INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS account_links (
+    client TEXT NOT NULL,
+    product_user TEXT NOT NULL,
+    account TEXT NOT NULL,
+    github_id TEXT NOT NULL,
+    name TEXT,
+    linked INTEGER NOT NULL,
+    PRIMARY KEY (client, product_user),
+    UNIQUE (client, account)
+);
+CREATE INDEX IF NOT EXISTS account_links_account ON account_links (account);
+CREATE TABLE IF NOT EXISTS account_link_events (
+    id INTEGER PRIMARY KEY,
+    account TEXT NOT NULL,
+    client TEXT NOT NULL,
+    product_user TEXT NOT NULL,
+    event TEXT NOT NULL,
+    by TEXT NOT NULL,
+    at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS account_link_events_account ON account_link_events (account);
+CREATE TABLE IF NOT EXISTS issuer_grants (
+    account TEXT NOT NULL,
+    client TEXT NOT NULL,
+    granted INTEGER NOT NULL,
+    PRIMARY KEY (account, client)
+);
+CREATE TABLE IF NOT EXISTS account_link_tombstones (
+    client TEXT NOT NULL,
+    account TEXT NOT NULL,
+    unlinked INTEGER NOT NULL,
+    PRIMARY KEY (client, account)
+);
+CREATE TABLE IF NOT EXISTS link_alerts (
+    client TEXT NOT NULL,
+    what TEXT NOT NULL,
+    count INTEGER NOT NULL,
+    last INTEGER NOT NULL,
+    PRIMARY KEY (client, what)
+);
 ";
 
 /// Which flow a client takes. Each refuses the other kind, so a hud box's
@@ -59,6 +117,12 @@ impl ClientKind {
         }
     }
 }
+
+/// How long the audit of links keeps an event.
+pub const LINK_EVENT_TTL_MS: u64 = 365 * 24 * 3_600_000;
+/// How long an unlink's tombstone is kept: far longer than any assertion
+/// issued before it lives.
+pub const TOMBSTONE_TTL_MS: u64 = 24 * 3_600_000;
 
 /// A registered client.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,15 +215,353 @@ pub fn clients(c: &Connection) -> anyhow::Result<Vec<Client>> {
     Ok(q.query_map([], row)?.collect::<Result<_, _>>()?)
 }
 
-/// Take a client out, and the access tokens it holds. Whether it was
-/// there.
-pub fn remove_client(c: &Connection, id: &str) -> anyhow::Result<bool> {
+/// Give a registered client a link secret (its hash), replacing any it
+/// had: the old one stops working at once.
+pub fn set_client_secret(c: &Connection, client: &str, secret_hash: &str, now: u64) -> anyhow::Result<()> {
     c.execute_batch(SCHEMA)?;
-    c.execute("DELETE FROM issuer_tokens WHERE client = ?1", params![id])?;
-    Ok(c.execute("DELETE FROM issuer_clients WHERE id = ?1", params![id])? > 0)
+    let kind: Option<String> =
+        c.query_row("SELECT kind FROM issuer_clients WHERE id = ?1", params![client], |r| r.get(0)).optional()?;
+    let Some(kind) = kind else { anyhow::bail!("no client {client}: register it first (issuer add-client)") };
+    anyhow::ensure!(
+        kind == ClientKind::Oidc.as_str(),
+        "client {client} is a {kind} client: only oidc clients (products with users of their own) link accounts"
+    );
+    c.execute(
+        "INSERT INTO issuer_client_secrets (client, secret_hash, created) VALUES (?1, ?2, ?3)
+         ON CONFLICT (client) DO UPDATE SET secret_hash = ?2, created = ?3",
+        params![client, secret_hash, now],
+    )?;
+    Ok(())
+}
+
+/// Take a client's link secret away. Whether it had one.
+pub fn drop_client_secret(c: &Connection, client: &str) -> anyhow::Result<bool> {
+    c.execute_batch(SCHEMA)?;
+    Ok(c.execute("DELETE FROM issuer_client_secrets WHERE client = ?1", params![client])? > 0)
+}
+
+/// A product's user linked to a platform account (M229).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Link {
+    pub client: String,
+    /// The product's own id for its user.
+    pub user: String,
+    /// The hub's account: the platform account.
+    pub account: String,
+    /// The numeric GitHub id both sides had when it was linked.
+    pub github_id: u64,
+    /// How the product names its user, for the platform page.
+    pub name: Option<String>,
+    pub linked: u64,
+}
+
+/// What the platform page lists for one product (M229): the person let it
+/// sign them in (`granted`, the consent), and maybe linked one of its users.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Product {
+    pub client: String,
+    /// The client's registered name.
+    pub name: String,
+    pub granted: Option<u64>,
+    pub link: Option<Link>,
+}
+
+/// Why a link wasn't made.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkRefused {
+    /// The product's user is another account's: unlink it first.
+    UserLinkedElsewhere,
+    /// The account is another of the product's users'.
+    AccountLinkedElsewhere,
+    /// The assertion was issued no later than this account's last unlink
+    /// from this product: an unlink sticks until the person signs in again.
+    Unlinked,
+}
+
+/// Who made or ended a link, for the audit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkBy {
+    /// The product, with its secret.
+    Product,
+    /// The person, on the platform page.
+    Account,
+    /// An operator, taking the client out.
+    Operator,
+}
+
+impl LinkBy {
+    fn as_str(self) -> &'static str {
+        match self {
+            LinkBy::Product => "product",
+            LinkBy::Account => "account",
+            LinkBy::Operator => "operator",
+        }
+    }
+}
+
+/// One entry of the audit of links.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkEvent {
+    pub client: String,
+    /// The product's user (empty for a consent with no link).
+    pub user: String,
+    /// `linked`, `renamed` or `unlinked`.
+    pub event: String,
+    /// `product`, `account` or `operator`.
+    pub by: String,
+    pub at: u64,
+}
+
+fn link_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Link> {
+    let gh: String = r.get(3)?;
+    Ok(Link {
+        client: r.get(0)?,
+        user: r.get(1)?,
+        account: r.get(2)?,
+        github_id: gh.parse().unwrap_or_default(),
+        name: r.get(4)?,
+        linked: r.get(5)?,
+    })
+}
+
+const LINK_COLUMNS: &str = "client, product_user, account, github_id, name, linked";
+
+fn link_event(
+    c: &Connection,
+    (account, client, user): (&str, &str, &str),
+    event: &str,
+    by: LinkBy,
+    now: u64,
+) -> rusqlite::Result<usize> {
+    c.execute(
+        "INSERT INTO account_link_events (account, client, product_user, event, by, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![account, client, user, event, by.as_str(), now],
+    )
+}
+
+fn link_of_user(c: &Connection, client: &str, user: &str) -> rusqlite::Result<Option<Link>> {
+    c.query_row(
+        &format!("SELECT {LINK_COLUMNS} FROM account_links WHERE client = ?1 AND product_user = ?2"),
+        params![client, user],
+        link_row,
+    )
+    .optional()
+}
+
+fn link_of_account(c: &Connection, client: &str, account: &str) -> rusqlite::Result<Option<Link>> {
+    c.query_row(
+        &format!("SELECT {LINK_COLUMNS} FROM account_links WHERE client = ?1 AND account = ?2"),
+        params![client, account],
+        link_row,
+    )
+    .optional()
+}
+
+/// End what `account` has with `client` (M229): its link, if any, and its
+/// consent, which the next sign-in through that product asks for again; a
+/// tombstone refuses any assertion issued until now; audited as `by`'s.
+/// Whether there was a link or a consent to end.
+fn end(c: &Connection, client: &str, account: &str, by: LinkBy, now: u64) -> rusqlite::Result<bool> {
+    let link = link_of_account(c, client, account)?;
+    let links = c.execute("DELETE FROM account_links WHERE client = ?1 AND account = ?2", params![client, account])?;
+    let grants = c.execute("DELETE FROM issuer_grants WHERE client = ?1 AND account = ?2", params![client, account])?;
+    if links + grants == 0 {
+        return Ok(false);
+    }
+    c.execute(
+        "INSERT INTO account_link_tombstones (client, account, unlinked) VALUES (?1, ?2, ?3)
+         ON CONFLICT (client, account) DO UPDATE SET unlinked = MAX(unlinked, ?3)",
+        params![client, account, now],
+    )?;
+    let user = link.map(|l| l.user).unwrap_or_default();
+    link_event(c, (account, client, &user), "unlinked", by, now)?;
+    Ok(true)
+}
+
+/// Take a client out, and the access tokens, link secret, consents and
+/// account links it holds: each link ended is audited as the operator's
+/// (the audit keeps them). Whether it was there.
+pub fn remove_client(c: &mut Connection, id: &str) -> anyhow::Result<bool> {
+    c.execute_batch(SCHEMA)?;
+    let tx = c.transaction()?;
+    let now = arugula_e2e::now_ms();
+    let accounts: Vec<String> = {
+        let mut q = tx.prepare(
+            "SELECT account FROM account_links WHERE client = ?1 UNION SELECT account FROM issuer_grants WHERE client = ?1",
+        )?;
+        q.query_map(params![id], |r| r.get(0))?.collect::<Result<_, _>>()?
+    };
+    for a in &accounts {
+        end(&tx, id, a, LinkBy::Operator, now)?;
+    }
+    tx.execute("DELETE FROM account_link_tombstones WHERE client = ?1", params![id])?;
+    tx.execute("DELETE FROM issuer_tokens WHERE client = ?1", params![id])?;
+    tx.execute("DELETE FROM issuer_client_secrets WHERE client = ?1", params![id])?;
+    let gone = tx.execute("DELETE FROM issuer_clients WHERE id = ?1", params![id])? > 0;
+    tx.commit()?;
+    Ok(gone)
+}
+
+/// The ops counter of bulk link calls: (client, what, count, last ms).
+pub fn link_alerts(c: &Connection) -> anyhow::Result<Vec<(String, String, u64, u64)>> {
+    c.execute_batch(SCHEMA)?;
+    let mut q = c.prepare("SELECT client, what, count, last FROM link_alerts ORDER BY last DESC")?;
+    let rows = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 impl Db {
+    /// Whether `secret` is `client`'s link secret, and the client is still
+    /// registered, as an `oidc` client.
+    pub fn issuer_client_secret_ok(&self, client: &str, secret: &str) -> anyhow::Result<bool> {
+        Ok(self.c().query_row(
+            "SELECT COUNT(*) > 0 FROM issuer_client_secrets s JOIN issuer_clients c ON c.id = s.client
+             WHERE s.client = ?1 AND s.secret_hash = ?2 AND c.kind = ?3",
+            params![client, crate::auth::hash(secret), ClientKind::Oidc.as_str()],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Whether `account` let `client` sign it in (the consent, M229).
+    pub fn issuer_grant(&self, account: &str, client: &str) -> anyhow::Result<bool> {
+        Ok(self.c().query_row(
+            "SELECT COUNT(*) > 0 FROM issuer_grants WHERE account = ?1 AND client = ?2",
+            params![account, client],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// `account` lets `client` sign it in, from now until it unlinks.
+    pub fn put_issuer_grant(&self, account: &str, client: &str, now: u64) -> anyhow::Result<()> {
+        self.c().execute(
+            "INSERT INTO issuer_grants (account, client, granted) VALUES (?1, ?2, ?3)
+             ON CONFLICT (account, client) DO NOTHING",
+            params![account, client, now],
+        )?;
+        Ok(())
+    }
+
+    /// Link `link.user` of `link.client` to `link.account`, in one
+    /// transaction, for an assertion issued at `iat` (seconds): the same link
+    /// again is no change (`Ok(false)`, though a new name is kept and
+    /// audited); a user or account already linked otherwise is refused, and
+    /// so is an assertion issued no later than the second of the account's
+    /// last unlink from this product (`iat` has a second's grain, so one
+    /// issued in that second counts as before it). A new link is audited.
+    pub fn link_account(&self, link: &Link, iat: u64) -> anyhow::Result<Result<bool, LinkRefused>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let unlinked: Option<u64> = tx
+            .query_row(
+                "SELECT unlinked FROM account_link_tombstones WHERE client = ?1 AND account = ?2",
+                params![link.client, link.account],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if unlinked.is_some_and(|u| iat <= u / 1000) {
+            return Ok(Err(LinkRefused::Unlinked));
+        }
+        let who = (link.account.as_str(), link.client.as_str(), link.user.as_str());
+        if let Some(had) = link_of_user(&tx, &link.client, &link.user)? {
+            if had.account != link.account {
+                return Ok(Err(LinkRefused::UserLinkedElsewhere));
+            }
+            if link.name.is_some() && link.name != had.name {
+                tx.execute(
+                    "UPDATE account_links SET name = ?3 WHERE client = ?1 AND product_user = ?2",
+                    params![link.client, link.user, link.name],
+                )?;
+                link_event(&tx, who, "renamed", LinkBy::Product, link.linked)?;
+                tx.commit()?;
+            }
+            return Ok(Ok(false));
+        }
+        if link_of_account(&tx, &link.client, &link.account)?.is_some() {
+            return Ok(Err(LinkRefused::AccountLinkedElsewhere));
+        }
+        tx.execute(
+            "INSERT INTO account_links (client, product_user, account, github_id, name, linked)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![link.client, link.user, link.account, link.github_id.to_string(), link.name, link.linked],
+        )?;
+        link_event(&tx, who, "linked", LinkBy::Product, link.linked)?;
+        tx.commit()?;
+        Ok(Ok(true))
+    }
+
+    /// The link of a product's user, when there is one.
+    pub fn account_link(&self, client: &str, user: &str) -> anyhow::Result<Option<Link>> {
+        Ok(link_of_user(&self.c(), client, user)?)
+    }
+
+    /// The products an account let sign it in or linked, by product: each
+    /// with its consent and its link.
+    pub fn account_products(&self, account: &str) -> anyhow::Result<Vec<Product>> {
+        let c = self.c();
+        let mut q = c.prepare(
+            "SELECT k.client, COALESCE(c.name, k.client), g.granted FROM
+                 (SELECT client FROM issuer_grants WHERE account = ?1
+                  UNION SELECT client FROM account_links WHERE account = ?1) k
+             LEFT JOIN issuer_clients c ON c.id = k.client
+             LEFT JOIN issuer_grants g ON g.client = k.client AND g.account = ?1
+             ORDER BY k.client",
+        )?;
+        let rows: Vec<(String, String, Option<u64>)> =
+            q.query_map(params![account], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
+        rows.into_iter()
+            .map(|(client, name, granted)| {
+                let link = link_of_account(&c, &client, account)?;
+                Ok(Product { client, name, granted, link })
+            })
+            .collect()
+    }
+
+    /// The product ends its user's link (and that account's consent),
+    /// audited as the product's. Whether there was one.
+    pub fn unlink_user(&self, client: &str, user: &str, now: u64) -> anyhow::Result<bool> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let Some(l) = link_of_user(&tx, client, user)? else { return Ok(false) };
+        let gone = end(&tx, client, &l.account, LinkBy::Product, now)?;
+        tx.commit()?;
+        Ok(gone)
+    }
+
+    /// The person ends what their account has with a product, on the
+    /// platform page: its link and its consent, audited as theirs. Whether
+    /// there was either.
+    pub fn unlink_product(&self, account: &str, client: &str, now: u64) -> anyhow::Result<bool> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let gone = end(&tx, client, account, LinkBy::Account, now)?;
+        tx.commit()?;
+        Ok(gone)
+    }
+
+    /// The audit of an account's links, newest first.
+    pub fn account_link_events(&self, account: &str) -> anyhow::Result<Vec<LinkEvent>> {
+        let c = self.c();
+        let mut q = c.prepare(
+            "SELECT client, product_user, event, by, at FROM account_link_events WHERE account = ?1 ORDER BY id DESC",
+        )?;
+        let rows = q.query_map(params![account], |r| {
+            Ok(LinkEvent { client: r.get(0)?, user: r.get(1)?, event: r.get(2)?, by: r.get(3)?, at: r.get(4)? })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// One more bulk use of the link API by `client` (`what`: `unlinks` or
+    /// `lookups`) went over its alert line: the ops counter, which
+    /// `arugula-control issuer link-alerts` reads.
+    pub fn bump_link_alert(&self, client: &str, what: &str, now: u64) -> anyhow::Result<()> {
+        self.c().execute(
+            "INSERT INTO link_alerts (client, what, count, last) VALUES (?1, ?2, 1, ?3)
+             ON CONFLICT (client, what) DO UPDATE SET count = count + 1, last = ?3",
+            params![client, what, now],
+        )?;
+        Ok(())
+    }
+
     pub fn issuer_client(&self, id: &str) -> anyhow::Result<Option<Client>> {
         Ok(self
             .c()

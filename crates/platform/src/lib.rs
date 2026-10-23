@@ -69,6 +69,7 @@ pub mod inbox;
 pub mod issues;
 pub mod jobs;
 pub mod keys;
+pub mod links;
 #[cfg(test)]
 mod object_threads_tests;
 pub mod page;

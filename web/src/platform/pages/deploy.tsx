@@ -1,7 +1,8 @@
 // Deploys waiting for an owner (M218): a card per deploy, showing where it
 // goes, what it deploys, the plan's digest and the operation an approval
 // signs. `/deploys/:id` is one deploy with its approvals and log; the
-// inbox lists the deploys waiting for the reader.
+// inbox lists the deploys waiting for the reader, and a project's
+// environments their history (`DeployRow`).
 //
 // Approving needs a device key, and this page holds none ("The platform
 // page is on app.arugula.io, not on the keys' origin"): Approve and Deny
@@ -12,6 +13,7 @@ import { useEffect, useState } from "preact/hooks";
 import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { controlOrigin } from "../session";
 import { follow } from "../router";
+import { lastMoved, shortRef, type DeploySummary } from "../deploys-text";
 
 export interface Deploy {
   id: string;
@@ -53,10 +55,10 @@ async function get<T>(path: string): Promise<T> {
   return v;
 }
 
-const when = (ms: number) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+export const when = (ms: number) => new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 /** Who planned it: a person, or "<owner>'s agent on <machine>". */
-const planner = (d: Deploy) => {
+export const planner = (d: Pick<Deploy, "planned_by_name" | "agent">) => {
   const who = d.planned_by_name || "a deleted account";
   return d.agent ? `${who}'s agent on ${d.agent.machine_name || d.agent.machine}` : who;
 };
@@ -73,6 +75,9 @@ const STATE: Record<string, string> = {
   failed: "Failed",
   stale: "Stale",
 };
+
+/** A deploy's state, as people read it. */
+export const stateText = (state: string) => STATE[state] ?? state;
 
 /** Where Approve and Deny go: the deploy on control's page. */
 export const approveHref = (id: string) => `${controlOrigin()}/#deploy=${id}`;
@@ -93,14 +98,14 @@ export function DeployCard({ d, link, planOpen }: { d: Deploy; link?: boolean; p
             <>Deploy to {d.environment.name}</>
           )}
         </h2>
-        <span class={`deploy-state deploy-state-${d.state}`}>{STATE[d.state] ?? d.state}</span>
+        <span class={`deploy-state deploy-state-${d.state}`}>{stateText(d.state)}</span>
       </header>
       <dl class="deploy-facts">
         <dt>Project</dt>
         <dd>{d.project.name}</dd>
         <dt>Source</dt>
         <dd>
-          {d.source.kind} <code title={d.source.ref}>{d.source.ref.slice(0, 12)}</code> from <code>{d.source.where}</code>
+          {d.source.kind} <code title={d.source.ref}>{shortRef(d.source.ref)}</code> from <code>{d.source.where}</code>
         </dd>
         <dt>Plan</dt>
         <dd>
@@ -184,6 +189,26 @@ export function DeployPage({ id }: { id: string }) {
         ))}
       </ol>
     </section>
+  );
+}
+
+/** One deploy in a history: its state, what it deployed, a roll back's
+ * mark and when it last moved, opening its own page. */
+export function DeployRow({ d }: { d: DeploySummary }) {
+  const path = `/deploys/${d.id}`;
+  return (
+    <li data-deploy-row={d.id} data-deploy-state={d.state}>
+      <a href={path} onClick={(e) => follow(e, path)} title={`${d.source.kind} ${d.source.ref} from ${d.source.where}, planned by ${planner(d)}`}>
+        <span class={`deploy-state deploy-state-${d.state}`}>{stateText(d.state)}</span>
+        <code>{shortRef(d.source.ref)}</code>
+        {d.roll_back ? (
+          <span class="deploy-roll-back" data-deploy-roll-back>
+            roll back
+          </span>
+        ) : null}
+        <span class="dim">{when(lastMoved(d))}</span>
+      </a>
+    </li>
   );
 }
 

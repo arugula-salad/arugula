@@ -81,6 +81,12 @@ impl Limits {
         self.count(what, format!("daemon:{daemon}"), "too many of those from this machine lately; try again later")
     }
 
+    /// Count one use by an issuer client (M229: a product's server, by its
+    /// client id); refuse once over the limit.
+    pub fn check_client(&self, what: (&'static str, usize), client: &str) -> Result<(), ApiError> {
+        self.count(what, format!("client:{client}"), "too many of those from this client lately; try again later")
+    }
+
     /// Count one use by an install (its telemetry id); refuse once over the limit.
     pub fn check_install(&self, what: (&'static str, usize), install: &str) -> Result<(), ApiError> {
         self.count(what, format!("install:{install}"), "too many reports from this install lately; try again later")
