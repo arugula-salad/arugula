@@ -1,8 +1,8 @@
 //! Agent grant tokens (M230, platform step 8): how an owner lets an agent
 //! with no machine of its own (redone's, a hosted service's) act on their
 //! projects, through the platform's MCP endpoint ([`crate::agent_mcp`]).
-//! "A hosted MCP endpoint serves agents with no machine, using a bearer
-//! agent-grant token" (amending aru-038), as grants ("Grants, not
+//! "A hosted MCP endpoint serves agents with no machine" (aru-111), with
+//! a bearer agent grant token that is a grant ("Grants, not
 //! impersonation", aru-073).
 //!
 //! - **Minted by a person** (a signed-in browser, or the CLI's login, as

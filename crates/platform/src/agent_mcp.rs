@@ -1,9 +1,10 @@
 //! The platform's MCP endpoint for agents with no machine (M230, platform
 //! step 8): `POST /api/mcp` on control's own site, behind the hub's
 //! gateway like every platform path, for an agent that runs somewhere
-//! with no `arugulad` of its own (redone's, a hosted service's). It amends
-//! "MCP is served by the daemon" (aru-038): the daemon still serves every
-//! machine's agents; this serves the rest.
+//! with no `arugulad` of its own (redone's, a hosted service's): "A hosted
+//! MCP endpoint serves agents with no machine" (aru-111), amending "MCP is
+//! served by the daemon" (aru-038), which still serves every machine's
+//! agents.
 //!
 //! - **Streamable HTTP, stateless.** JSON-RPC 2.0 over `POST`: one message
 //!   (or a batch) in, its answer as JSON out; a notification gets `202`.

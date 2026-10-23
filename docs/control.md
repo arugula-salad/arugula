@@ -846,9 +846,9 @@ reads (2000), so long waits don't use up a machine's reads.
 **Agents with no machine (M230, platform step 8).** An agent that runs
 somewhere without `arugulad` (a hosted service's, redone's) reaches a
 person's projects through the platform's own MCP endpoint, `POST /api/mcp`
-on control's site, behind the hub's gateway like every platform path. It
-amends "MCP is served by the daemon" (aru-038): machines' agents still use
-their daemon's.
+on control's site, behind the hub's gateway like every platform path ("A
+hosted MCP endpoint serves agents with no machine", aru-111, amending
+aru-038): machines' agents still use their daemon's.
 
 - **A bearer agent grant token** says who it is. Its owner mints one over
   projects they read, with powers from the agents' list (`threads.read`,
