@@ -14,7 +14,7 @@ Arugula is MIT OR Apache-2.0. Its binaries include the software below.
 - **The web client** bundles npm packages: xterm.js, preact, fzstd and three.js (below). three.js draws the swarm's city and loads only when that theme is picked.
 - **Rust crates**, by license:
 
-- Apache License 2.0 (284)
+- Apache License 2.0 (283)
 - MIT License (71)
 - Unicode License v3 (20)
 - BSD 3-Clause "New" or "Revised" License (11)
