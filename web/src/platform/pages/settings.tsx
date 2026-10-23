@@ -1,6 +1,7 @@
 // `/settings`: the account's platform settings (M150): plan and usage
 // (`/api/billing`, the platform's), and which machines' agents read and
-// post in conversations (M197), and agents with no machine (M230). Sign-in, passkeys, devices and teams are
+// post in conversations (M197), agents with no machine (M230), and the
+// products linked to the account (M229). Sign-in, passkeys, devices and teams are
 // trust, signed by a device, so they stay on control's page and this links
 // there.
 
@@ -9,6 +10,7 @@ import { platformFetch } from "../../shared/maintenance";
 import { Plan, type Billing } from "../settings/plan";
 import { AgentGrants } from "../settings/agents";
 import { AgentTokens } from "../settings/agent-tokens";
+import { LinkedProducts } from "../settings/linked";
 import { controlOrigin } from "../session";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
@@ -50,6 +52,7 @@ export function SettingsPage() {
           <span class="dim">are on control's page, where your devices sign them.</span>
         </li>
       </ul>
+      <LinkedProducts />
       <AgentGrants />
       <AgentTokens />
       {plan && <Plan billing={billing} upgrade={upgrade} close={() => setPlan(false)} />}

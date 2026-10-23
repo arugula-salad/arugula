@@ -19,6 +19,16 @@ pub const SIGN_INS: (&str, usize) = ("sign-in", 60);
 /// generous; a code's guessing is out of reach at any rate.
 pub const ISSUER: (&str, usize) = ("issuer", 6_000);
 pub const LINKS: (&str, usize) = ("link", 240);
+/// The link API's calls per product (M229), per hour: a lookup at every
+/// sign-in of a linked user, so generous; past this a product waits.
+pub const ACCOUNT_LINKS: (&str, usize) = ("account-link", 6_000);
+/// The alert lines (M229): more unlinks or lookups than this from one
+/// product in an hour is logged at warn and counted (`link_alerts`), once
+/// an hour per product, but not refused.
+pub const LINK_UNLINKS_ALERT: (&str, usize) = ("account-link-unlinks", 20);
+pub const LINK_LOOKUPS_ALERT: (&str, usize) = ("account-link-lookups", 1_000);
+/// One warn per product and kind of alert an hour.
+pub const LINK_ALERT_LOG: (&str, usize) = ("account-link-alert-log", 1);
 /// Block relay sockets opened, per client address (M50): a dev page's
 /// worker and shim open one each per load, and again after the browser
 /// stops an idle worker.

@@ -338,6 +338,38 @@ impl HubPort for InProcess {
         })
     }
 
+    fn product_links<'a>(
+        &'a self,
+        account: &'a str,
+    ) -> BoxFuture<'a, HubResult<Vec<arugula_platform::hub::ProductLink>>> {
+        Box::pin(async move {
+            Ok(self
+                .app()?
+                .db
+                .account_products(account)?
+                .into_iter()
+                .map(|p| arugula_platform::hub::ProductLink {
+                    client: p.client,
+                    product: p.name,
+                    granted: p.granted,
+                    user: p.link.as_ref().map(|l| l.user.clone()),
+                    name: p.link.as_ref().and_then(|l| l.name.clone()),
+                    linked: p.link.as_ref().map(|l| l.linked),
+                })
+                .collect())
+        })
+    }
+
+    fn unlink_product<'a>(&'a self, account: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<bool>> {
+        Box::pin(async move {
+            let gone = self.app()?.db.unlink_product(account, client, arugula_e2e::now_ms())?;
+            if gone {
+                tracing::info!(client, "a person unlinked a product on the platform page");
+            }
+            Ok(gone)
+        })
+    }
+
     fn hosted_enrollment<'a>(
         &'a self,
         ask: &'a arugula_control_wire::hosted::EnrollAsk,
@@ -716,6 +748,60 @@ mod tests {
     #[tokio::test]
     async fn http_keeps_the_contract() {
         contract::run(&Fixture::over_http().await).await;
+    }
+
+    /// An account's product links (M229) reach the platform page, in
+    /// process and over HTTP, and the person ends only their own: audited
+    /// as theirs, and gone for the product's next call.
+    #[tokio::test]
+    async fn the_hub_says_and_ends_product_links() {
+        use contract::Fixture as _;
+
+        use crate::db::issuer::{Client, ClientKind, Link};
+        for f in [Fixture::new().await, Fixture::over_http().await] {
+            let now = arugula_e2e::now_ms();
+            f.app.db.account_for("github", "77", "pl", "acct-pl", now).unwrap();
+            f.app
+                .db
+                .put_issuer_client(&Client {
+                    id: "studio".into(),
+                    kind: ClientKind::Oidc,
+                    name: "Studio".into(),
+                    redirect_uris: vec!["https://studio.example/cb".into()],
+                    created: now,
+                })
+                .unwrap();
+            assert!(f.hub().product_links("acct-pl").await.unwrap().is_empty());
+            let link = Link {
+                client: "studio".into(),
+                user: "u-1".into(),
+                account: "acct-pl".into(),
+                github_id: 77,
+                name: Some("pl on studio".into()),
+                linked: now,
+            };
+            assert_eq!(f.app.db.link_account(&link, now / 1000).unwrap(), Ok(true));
+            let links = f.hub().product_links("acct-pl").await.unwrap();
+            assert_eq!(links.len(), 1);
+            assert_eq!(
+                (links[0].client.as_str(), links[0].product.as_str(), links[0].user.as_deref()),
+                ("studio", "Studio", Some("u-1"))
+            );
+            assert_eq!(
+                (links[0].name.as_deref(), links[0].linked, links[0].granted),
+                (Some("pl on studio"), Some(now), None)
+            );
+            assert!(f.hub().product_links("acct-other").await.unwrap().is_empty());
+
+            assert!(!f.hub().unlink_product("acct-other", "studio").await.unwrap(), "not theirs");
+            assert!(f.app.db.account_link("studio", "u-1").unwrap().is_some());
+            assert!(f.hub().unlink_product("acct-pl", "studio").await.unwrap());
+            assert!(!f.hub().unlink_product("acct-pl", "studio").await.unwrap(), "once");
+            assert!(f.app.db.account_link("studio", "u-1").unwrap().is_none());
+            let events = f.app.db.account_link_events("acct-pl").unwrap();
+            let said: Vec<(&str, &str)> = events.iter().map(|e| (e.event.as_str(), e.by.as_str())).collect();
+            assert_eq!(said, [("unlinked", "account"), ("linked", "product")]);
+        }
     }
 
     /// What an account's grandfathered app windows approved
