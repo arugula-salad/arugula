@@ -205,8 +205,15 @@ pub struct Options {
     pub people: BTreeMap<String, Vec<u64>>,
     /// Tenants that become a team's project.
     pub teams: BTreeMap<String, String>,
+    /// The driver each app's environment gets: planter's ship (M233)
+    /// unless said (tests and testnet: `fake`).
+    pub driver: String,
     pub dry_run: bool,
 }
+
+/// The driver redone's apps become environments of: planter's ship
+/// (M233), which ships a source to loam as redone's apply did.
+pub const SHIP_DRIVER: &str = "planter-ship";
 
 /// A person of a tenant.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -273,6 +280,37 @@ pub struct TokenLine {
     pub outcome: TokenOutcome,
 }
 
+/// What became of an app.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum AppOutcome {
+    /// It's this environment of the tenant's project now (or, dry, would
+    /// be), and its name the project's.
+    Environment {
+        environment: Option<String>,
+        driver: String,
+    },
+    /// The project has an environment by its name already: recorded as
+    /// the app's, and left as it is.
+    Already {
+        environment: String,
+    },
+    /// An earlier run carried it over: unchanged.
+    ImportedBefore {
+        environment: Option<String>,
+        at: u64,
+    },
+    /// It waits for its tenant.
+    WaitingTenant,
+    /// This platform has no such driver yet.
+    WaitingDriver {
+        driver: String,
+    },
+    Refused {
+        why: String,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AppLine {
     #[serde(flatten)]
@@ -280,7 +318,8 @@ pub struct AppLine {
     /// Its tenant's project, when the tenant has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
-    pub note: String,
+    #[serde(flatten)]
+    pub outcome: AppOutcome,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -376,7 +415,21 @@ impl Report {
                 let _ = writeln!(out, "  token {} ({}): {what}", k.token.id, k.token.agent);
             }
             for a in &t.apps {
-                let _ = writeln!(out, "  app {} ({} deploys): {}", a.app.name, a.app.deploys, a.note);
+                let what = match &a.outcome {
+                    AppOutcome::Environment { environment, driver } => format!(
+                        "{} its environment ({driver}){}",
+                        if dry { "would become" } else { "became" },
+                        environment.as_ref().map(|e| format!(" {e}")).unwrap_or_default()
+                    ),
+                    AppOutcome::Already { environment } => format!("the project's environment {environment} already"),
+                    AppOutcome::ImportedBefore { at, .. } => format!("carried over before (at {at}): unchanged"),
+                    AppOutcome::WaitingTenant => "waits for its tenant".into(),
+                    AppOutcome::WaitingDriver { driver } => {
+                        format!("waiting: this platform has no {driver} driver yet")
+                    }
+                    AppOutcome::Refused { why } => format!("not carried over: {why}"),
+                };
+                let _ = writeln!(out, "  app {} ({} deploys): {what}", a.app.name, a.app.deploys);
             }
         }
         for o in &self.orphans {
@@ -455,17 +508,9 @@ pub async fn import(app: &Platform, backup: &Backup, o: &Options) -> anyhow::Res
             line.tokens.push(TokenLine { token: k.clone(), outcome });
         }
         for a in backup.apps.iter().filter(|a| a.tenant == t.id) {
-            line.apps.push(AppLine {
-                app: a.clone(),
-                project: project.clone(),
-                note: if ready {
-                    "waits for planter's ship driver (M233): it becomes a planter-ship environment of the project, \
-                     and the app's name the project's"
-                        .into()
-                } else {
-                    "waits for its tenant".into()
-                },
-            });
+            let outcome =
+                if ready { app_env(app, o, t, a, project.as_deref(), now).await? } else { AppOutcome::WaitingTenant };
+            line.apps.push(AppLine { app: a.clone(), project: project.clone(), outcome });
         }
         tenants.push(line);
     }
@@ -560,6 +605,87 @@ async fn tenant(
             Ok(TenantOutcome::Project { project: p, personal: false, made: had.is_none() })
         }
     }
+}
+
+/// An app's environment's settings for `driver`, from its live plan's
+/// spec: planter's ship takes the app's name, port, health path, port
+/// variable and secrets' names (M233); a driver that takes none gets none.
+fn app_settings(driver: &str, a: &App) -> arugula_e2e::drivers::Settings {
+    let mut s = arugula_e2e::drivers::Settings::new();
+    if driver != SHIP_DRIVER {
+        return s;
+    }
+    s.insert("app".into(), a.name.clone());
+    if let Some(port) = a.spec["port"].as_u64() {
+        s.insert("port".into(), port.to_string());
+    }
+    if let Some(h) = a.spec["health"].as_str() {
+        s.insert("health".into(), h.to_owned());
+    }
+    if let Some(e) = a.spec["portEnv"].as_str() {
+        s.insert("port_env".into(), e.to_owned());
+    }
+    let secrets: Vec<&str> = a.spec["secrets"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+    if !secrets.is_empty() {
+        s.insert("secrets".into(), secrets.join(","));
+    }
+    s
+}
+
+/// One app: an environment of its tenant's `project` (`None` while dry
+/// and the project isn't made), named as the app, with the driver the
+/// import is given.
+async fn app_env(
+    app: &Platform,
+    o: &Options,
+    t: &Tenant,
+    a: &App,
+    project: Option<&str>,
+    now: u64,
+) -> anyhow::Result<AppOutcome> {
+    if let Some(i) = app.db.redone_imported("app", &a.name)? {
+        return Ok(AppOutcome::ImportedBefore { environment: i.platform_id, at: i.at });
+    }
+    if !crate::infisical::valid_app(&a.name) || !crate::db::deploys::valid_environment_name(&a.name) {
+        return Ok(AppOutcome::Refused { why: format!("{:?} isn't an app's name here", a.name) });
+    }
+    let Some(d) = crate::drivers::driver(&o.driver) else {
+        return Ok(AppOutcome::WaitingDriver { driver: o.driver.clone() });
+    };
+    let record = |project: &str, env: &str| Imported {
+        kind: "app".into(),
+        redone_id: a.name.clone(),
+        tenant: t.id.clone(),
+        project: project.to_owned(),
+        account: None,
+        platform_id: Some(env.to_owned()),
+        at: now,
+    };
+    if let Some(p) = project
+        && let Some(e) = app.db.environments(p)?.into_iter().find(|e| e.name == a.name)
+    {
+        if !o.dry_run {
+            app.db.record_redone_import(&record(p, &e.id))?;
+        }
+        return Ok(AppOutcome::Already { environment: e.id });
+    }
+    if let Err(why) = project.map_or(Ok(()), |p| d.allowed_in(p)) {
+        return Ok(AppOutcome::Refused { why });
+    }
+    let settings = match d.settings(&app_settings(&o.driver, a)) {
+        Ok(s) => s,
+        Err(why) => return Ok(AppOutcome::Refused { why }),
+    };
+    let (Some(p), false) = (project, o.dry_run) else {
+        return Ok(AppOutcome::Environment { environment: None, driver: o.driver.clone() });
+    };
+    let env = match app.db.create_environment_with(p, &a.name, &o.driver, &[], &settings, now) {
+        Ok(e) => e,
+        Err(e) => return Ok(AppOutcome::Refused { why: format!("{e:#}") }),
+    };
+    app.db.record_redone_import(&record(p, &env.id))?;
+    tracing::info!(project = %p, app = %a.name, environment = %env.id, "carried a redone app over");
+    Ok(AppOutcome::Environment { environment: Some(env.id), driver: o.driver.clone() })
 }
 
 /// A token's name on the platform: "redone: <its agent>", at most 64
@@ -678,6 +804,10 @@ struct RedoneArgs {
     /// Without one, a tenant is its one person's personal project.
     #[arg(long = "team", value_parser = parse_team)]
     teams: Vec<(String, String)>,
+    /// The driver each app's environment gets: planter's ship (M233). Only
+    /// a test platform has `fake`.
+    #[arg(long, default_value = SHIP_DRIVER)]
+    driver: String,
     /// Say what would change, and write nothing.
     #[arg(long)]
     dry_run: bool,
@@ -728,6 +858,7 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
         let o = Options {
             people: a.people.into_iter().collect(),
             teams: a.teams.into_iter().collect(),
+            driver: a.driver,
             dry_run: a.dry_run,
         };
         let r = import(&p, &backup, &o).await?;

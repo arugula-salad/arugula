@@ -47,6 +47,17 @@
 //                 the deploy still waiting, and the agent's calls noted.
 //                 --break: the owner revokes the token first, so the agent
 //                 files nothing: {project, token_id, issue, run, deploy, refused}
+//   redone TOKEN APP SECRET
+//                 redone's agent on the platform (M235), with only its old
+//                 rdn_ token, which `arugula-platform import redone` carried
+//                 over: tools/list has redone's names; it uploads a source
+//                 (PUT /api/mcp/uploads), plans a deploy of it to APP with
+//                 plan_deploy {app, upload_id} and asks, sets APP's secret
+//                 API_KEY = SECRET with set_secret {app, key, value}, and
+//                 apply_plan doesn't apply it. The owner (this device) sees
+//                 the deploy among those waiting for them (the phone's card)
+//                 and approves it with a passkey; get_plan then says
+//                 approved: {project, deploy, state, waiting, projected}
 //   issues-write  native issues before a platform restart (M206): chat on, a
 //                 team, two issues in its project (one closed), comments in
 //                 the first's thread, read to the first; what was seen:
@@ -552,6 +563,58 @@ async function agentMcp(d: Device, project: string, broken: boolean) {
   return { project, token_id: tokenId, issue: issue.id, run: [run.id, seenRun.state], deploy: [deploy.id, seenDeploy.state], refused, env: env.id };
 }
 
+/** redone's agent on the platform (M235), with only its carried-over token. */
+async function redone(d: Device, token: string, app: string, secret: string) {
+  const bearer = async (method: string, path: string, body?: BodyInit, type = "application/json") => {
+    const res = await fetch(d.reach(d.control + path), {
+      method,
+      headers: { authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "content-type": type }) },
+      body,
+    });
+    return { status: res.status, json: await res.json().catch(() => ({})) };
+  };
+  let id = 0;
+  const rpc = async (method: string, params: unknown) => {
+    const r = await bearer("POST", "/api/mcp", JSON.stringify({ jsonrpc: "2.0", id: ++id, method, params }));
+    if (r.status !== 200) throw new Error(`${method}: ${r.status} ${JSON.stringify(r.json)}`);
+    return r.json;
+  };
+  const call = async (name: string, args: unknown) => (await rpc("tools/call", { name, arguments: args })).result;
+  const tool = async (name: string, args: unknown) => {
+    const r = await call(name, args);
+    if (r?.isError) throw new Error(`${name}: ${r.content?.[0]?.text}`);
+    return r.structuredContent;
+  };
+  await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "redone-agent", version: "0" } });
+  const tools: string[] = (await rpc("tools/list", {})).result.tools.map((t: any) => t.name);
+  for (const t of ["whoami", "plan_deploy", "get_plan", "apply_plan", "set_secret", "list_secrets", "list_apps"]) {
+    if (!tools.includes(t)) throw new Error(`redone's ${t} isn't listed: ${tools}`);
+  }
+  if (tools.some((n) => /approv|deny/.test(n))) throw new Error(`a tool approves: ${tools}`);
+  const who = await tool("whoami", {});
+  // The source, as redone's agents upload it: a gzipped tar, by itself.
+  const dir = execFileSync("mktemp", ["-d"]).toString().trim();
+  execFileSync("sh", ["-c", `printf 'FROM node:22-slim\nCMD ["node","-e","1"]\n' > ${dir}/Dockerfile && echo hi > ${dir}/server.js`]);
+  const tgz = execFileSync("tar", ["-czf", "-", "-C", dir, "."]);
+  const up = await bearer("PUT", "/api/mcp/uploads", tgz, "application/gzip");
+  if (up.status !== 201 || !up.json.upload_id) throw new Error(`upload: ${up.status} ${JSON.stringify(up.json)}`);
+  const plan = await tool("plan_deploy", { app, upload_id: up.json.upload_id });
+  if (plan.state !== "pending" || !plan.plan_id) throw new Error(`plan_deploy: ${JSON.stringify(plan)}`);
+  const set = await tool("set_secret", { app, key: "API_KEY", value: secret });
+  const applied = await call("apply_plan", { plan_id: plan.plan_id });
+  if (!/approve/.test(applied.content?.[0]?.text ?? "") || (applied.structuredContent?.state ?? "pending") !== "pending") {
+    throw new Error(`apply_plan moved it: ${JSON.stringify(applied)}`);
+  }
+  // The owner's phone: the deploy waits for them, and they approve it.
+  const waiting = (await must(d, "GET", "/api/deploys/waiting")).deploys ?? [];
+  const card = waiting.some((w: any) => w.id === plan.plan_id);
+  if (!card) throw new Error(`no card for ${plan.plan_id}: ${JSON.stringify(waiting)}`);
+  const ok = await d.approveDeploy(plan.plan_id);
+  const after = await tool("get_plan", { plan_id: plan.plan_id });
+  if (after.state !== "approved") throw new Error(`get_plan after the approval: ${JSON.stringify(after)}`);
+  return { project: who.project, deploy: plan.plan_id, state: ok.state, waiting: card, projected: set.projected ?? null };
+}
+
 async function main() {
   const d = await Device.load(state);
   switch (cmd) {
@@ -573,8 +636,10 @@ async function main() {
       return agentMcpSetup(d);
     case "agent-mcp":
       return agentMcp(d, rest[0], rest.includes("--break"));
+    case "redone":
+      return redone(d, rest[0], rest[1], rest[2]);
     default:
-      throw new Error(`unknown command ${cmd ?? "(none)"}: chat, hold, measure, fanout, agents, issues-write, issues-read, agent-mcp-setup, agent-mcp`);
+      throw new Error(`unknown command ${cmd ?? "(none)"}: chat, hold, measure, fanout, agents, issues-write, issues-read, agent-mcp-setup, agent-mcp, redone`);
   }
 }
 

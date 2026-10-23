@@ -245,6 +245,16 @@ impl Db {
         Ok(wrote || imported)
     }
 
+    /// The stored names of `project`'s secrets that start with `prefix`
+    /// (an app's, `app/<app>/`), sorted: never a value.
+    pub fn project_secret_names(&self, project: &str, prefix: &str) -> anyhow::Result<Vec<String>> {
+        self.c().query_map(
+            "SELECT name FROM project_secrets WHERE project_id = ?1 AND substr(name, 1, length(?2)) = ?2 ORDER BY name",
+            params![project, prefix],
+            |r| r.get(0),
+        )
+    }
+
     /// The account's personal project, if it has one yet (never made here).
     pub fn redone_personal_project(&self, account: &str) -> anyhow::Result<Option<String>> {
         self.c()

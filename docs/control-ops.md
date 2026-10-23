@@ -933,6 +933,135 @@ the same way, so it needs:
   project (M232's import, or by hand), or they stay planter's until the
   shim ends.
 
+### Absorbing redone (M235)
+
+redone (arugula-salad/redone, `redone.arugula.io`) is an MCP server
+through which a friend's agent puts an app on home-cloud. Each of its parts
+becomes the platform's:
+
+| redone | the platform |
+| --- | --- |
+| a tenant | a project: one person's personal project, or a team's (`--team`) |
+| an `rdn_` token | an agent grant token (M230) with `deploys.plan` and `secrets.write` over that project, carried over by its hash |
+| an approver key | nothing: an owner approves each deploy on their device, with a passkey (aru-101) |
+| plan, approve, apply | a deploy to the app's environment, planned and asked by the agent, approved on the phone, applied by its driver |
+| `set_secret` | the project's secret for the app, sealed by the platform, projected into Infisical |
+| an ntfy topic | nothing: the project's owners get a phone card for each deploy |
+| `auto-approve-updates` | nothing: every deploy waits for an owner's device |
+
+Nothing here revokes a redone token, stops redone, or takes over its
+Infisical identity: each of those is Jake's to say.
+
+#### The import
+
+`arugula-platform import redone` reads a copy of redone's `DATA_DIR` (its
+`state.json`) and never writes it. It reads the tenants, the tokens' hashes
+and the apps with their live plan's spec. It never reads approver keys'
+hashes, uploads or their tarballs.
+
+- **A tenant's people are numeric GitHub ids**, given by the operator:
+  redone never knew anyone's GitHub id, and matching its names or logins
+  would match the wrong person when a login changes hands (aru-113).
+  `--people fern=4242` makes fern 4242's personal project.
+  `--people alder=5151,6161 --team alder=team_…` makes alder that team's
+  project; the first person must be an owner or editor there. The import
+  can't add anyone to a team: rosters are signed by the owners' devices.
+- **Someone not on Arugula yet waits.** A later run, after they sign in
+  with GitHub, picks them up.
+- **Each token becomes an agent grant token** owned by the tenant's first
+  person, named `redone: <its agent>`, with `deploys.plan` and
+  `secrets.write` over the project. The platform keeps the hash redone
+  kept, so the agent's token works unchanged (below). The owner is pushed
+  a notice, and sees and revokes it in Settings, Agents with no machine.
+- **Safe to run again.** What it carried over is in `redone_imports`, so a
+  second run changes nothing, and a token revoked since is never carried
+  over again. It never deletes anything.
+- `--dry-run` prints what a run would do and writes nothing; `--json`
+  prints the report as JSON.
+
+The production run (ask Jake first: it's step 8's "production imports"):
+
+```
+fly ssh sftp shell -a arugula-platform   # put state.json in /tmp/redone-backup/
+fly ssh console -a arugula-platform --machine <id> -C \
+  "/arugula-platform import redone --backup /tmp/redone-backup --people fern=<id> … --dry-run"
+fly ssh console -a arugula-platform --machine <id> -C \
+  "/arugula-platform import redone --backup /tmp/redone-backup --people fern=<id> …"
+```
+
+It reads the platform's database, hub and key from the server's own
+environment when the shell has none.
+
+#### The shim: redone's agents on the platform
+
+A carried-over `rdn_` token works on the platform's MCP endpoint,
+`https://control.arugula.io/api/mcp`, as it is. Its agent changes only the
+URL in its MCP config:
+
+```
+claude mcp add --transport http redone https://control.arugula.io/api/mcp \
+  --header "Authorization: Bearer $REDONE_TOKEN"
+```
+
+SHIM_TABLE
+
+The contract, until the token is revoked:
+
+- **The token is the same.** An `rdn_` token works on the platform only if
+  the import carried it over. An approver key (`rdn_approve_…`) never does.
+- **Nothing approves.** `apply_plan` doesn't apply: a deploy applies
+  itself once an owner approves it on their phone. It answers the deploy's
+  state.
+- **The end.** Old `rdn_` tokens are revoked on a date Jake announces.
+  After it, each person mints a token on the platform page, and their
+  agent uses the platform's own tool names. Revoking them all is one
+  query, run then (and not before):
+
+  ```sql
+  UPDATE grants SET revoked_at = <now> WHERE subject_kind = 'agent' AND revoked_at IS NULL
+    AND subject_id IN (SELECT id FROM agent_tokens WHERE imported_from = 'redone');
+  UPDATE agent_tokens SET revoked_at = <now> WHERE imported_from = 'redone' AND revoked_at IS NULL;
+  ```
+
+#### The Infisical projection
+
+Where a project's secret has to reach a cluster, the platform writes it
+into Infisical as a projection (aru-107): the platform's sealed copy is the
+truth. For redone's apps, that's what redone wrote: the `planter-apps`
+project, environment `prod`, folder `/<app>/`, as the
+`planter-apps-secret-writer` identity, which planter-apps' operator renders
+into the app's sandbox or pod.
+
+On `arugula-platform` (none is set yet; setting them is Jake's call, since
+it takes over redone's writer identity):
+
+- `ARUGULA_INFISICAL_PROJECTION`: `off` (the default), `dry-run` or `on`;
+- `ARUGULA_INFISICAL_URL`: redone's `INFISICAL_API`;
+- `ARUGULA_INFISICAL_PROJECT_ID`: `planter-apps`' id, redone's
+  `INFISICAL_PROJECT_ID`;
+- `ARUGULA_INFISICAL_ENVIRONMENT`: `prod` unless set;
+- `ARUGULA_INFISICAL_CLIENT_ID`, `ARUGULA_INFISICAL_CLIENT_SECRET`: the
+  writer identity's universal auth. `planter-apps-secret-writer` has two
+  client secrets (Infisical `redone` and a Managoat vault, Arugula #55): give
+  the platform a third of its own, so revoking redone's later leaves the
+  platform's working.
+
+**Dry run first.** With `dry-run`, the platform writes nothing to
+Infisical. With the identity's credentials it does log in and list the
+folders (read only), and logs each secret it would have written in
+`secret_projections`: the project, app and name, never the value. Read
+them, then switch to `on`.
+
+What it writes, and never:
+
+- **Only into a folder that's the project's:** one it wrote before, or an
+  app the import carried over to it. A folder that's there already and
+  isn't (a cluster app's) is refused, as redone refused such a name; so is
+  one another project wrote.
+- **Never a read of a value, never a delete.** The identity can't anyway.
+- **In process** (`arugula-control --platform in-process`) the projection
+  is off: production runs the platform as its own app.
+
 ### The platform
 
 Control is two processes ("Control is two processes: a hub and a

@@ -74,6 +74,14 @@ use crate::{
 
 pub use arugula_control_wire::agent_mcp::MCP;
 
+/// redone's tools, for an agent whose token came from redone (M235).
+#[path = "agent_mcp_redone.rs"]
+mod redone;
+
+/// Where an agent uploads a source to ship (M235): a gzipped tar, by
+/// itself, as redone's agents did.
+pub const UPLOADS: &str = "/api/mcp/uploads";
+
 /// The MCP version answered when the client asks for one this doesn't
 /// know.
 const PROTOCOL: &str = "2025-06-18";
@@ -248,6 +256,22 @@ struct Agent {
 }
 
 impl Agent {
+    /// Whether its token came from redone (M235): its agent gets redone's
+    /// tools too.
+    fn is_redone(&self) -> bool {
+        self.token.imported_from.as_deref() == Some(crate::db::redone::FROM_REDONE)
+    }
+
+    /// The tools its agent is offered.
+    fn listed(&self) -> Vec<Value> {
+        if self.is_redone() { redone::tools() } else { tools() }
+    }
+
+    /// Where its agent uploads a source.
+    fn upload_url(&self) -> String {
+        format!("{}{UPLOADS}", self.app.cfg.public_url)
+    }
+
     /// The token in a machine's place, for the routes a machine's agents
     /// call.
     fn me(&self) -> Machine {
@@ -272,7 +296,7 @@ impl Agent {
         let answer = match method.as_str() {
             "initialize" => Ok(self.initialize(&params)),
             "ping" => Ok(json!({})),
-            "tools/list" => Ok(json!({ "tools": tools() })),
+            "tools/list" => Ok(json!({ "tools": self.listed() })),
             "tools/call" => match params.get("name").and_then(Value::as_str) {
                 Some(name) => {
                     let a = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
@@ -304,9 +328,10 @@ impl Agent {
                  project's hosted boxes (start_run, read_run, wait), deploys (plan_deploy plans one and asks the \
                  project's owners to approve it; read_deploy follows it) and project secrets (set_secret, \
                  write-only). You never approve anything: an owner approves a deploy on their phone or in a \
-                 browser.",
+                 browser.{}",
                 self.owner,
-                token_label(&self.token.name)
+                token_label(&self.token.name),
+                if self.is_redone() { redone::instructions(&self.upload_url()) } else { String::new() }
             ),
         })
     }
@@ -316,7 +341,7 @@ impl Agent {
         let out = self.dispatch(name, a).await;
         // A name that's no tool is answered, never kept: the record holds
         // only tools there are, and an ask to approve (as `approve`).
-        let known = tools().iter().any(|t| t["name"] == name);
+        let known = self.listed().iter().any(|t| t["name"] == name);
         let name = match () {
             () if known => name,
             () if never_tool(name) => "approve",
@@ -360,6 +385,11 @@ impl Agent {
     }
 
     async fn dispatch(&self, name: &str, a: &Value) -> Out {
+        if self.is_redone()
+            && let Some(out) = redone::dispatch(self, name, a).await
+        {
+            return out;
+        }
         match name {
             "capabilities" => self.capabilities().await,
             "list" => self.list(a).await,
@@ -878,17 +908,8 @@ impl Agent {
     /// with the project's key and never read back here. Never past the
     /// owner's role: an owner or editor of the project.
     async fn set_secret(&self, a: SetSecret) -> Out {
-        self.app.limits.check_daemon(SECRET_WRITES, &self.token.id)?;
         let p = self.project(a.project.as_deref()).await?;
-        let me = self.me();
-        agent_may(&self.app, &me, SECRETS_WRITE, &AgentScope::Project(p.clone())).await?;
-        let (_, role) = deploys::project_as(&self.app, &me.account, &p, true).await.map_err(|e| match e.0 {
-            StatusCode::FORBIDDEN => {
-                Failure::Refused("a viewer doesn't set a project's secrets: its owner is a viewer there".into())
-            }
-            _ => e.into(),
-        })?;
-        debug_assert!(role != TeamRole::Viewer);
+        agent_may(&self.app, &self.me(), SECRETS_WRITE, &AgentScope::Project(p.clone())).await?;
         let name = a.name.trim();
         if !crate::secrets::valid_name(name) {
             return Err(failed(
@@ -896,7 +917,29 @@ impl Agent {
                  or another reserved prefix",
             ));
         }
-        if a.value.is_empty() || a.value.len() > MAX_SECRET || a.value.contains('\0') {
+        self.seal(&p, &project_secret(name), &a.value).await?;
+        tracing::info!(token = %self.token.id, account = %self.token.account, project = %p, name, "an agent set a project's secret");
+        let v = json!({ "project": p, "name": name, "set": true });
+        let text = format!("Set {name} in {p}. It's sealed, and nothing here reads it back.");
+        Ok(Done { text, value: v, project: Some(p), note: format!("set secret {name}") })
+    }
+
+    /// Seal `value` as project `p`'s secret `stored` (its stored name), as
+    /// the token's agent: never past the owner's role (an owner or editor
+    /// of the project), counted against the token, and at most
+    /// [`MAX_PROJECT_SECRETS`] of the project's own. The caller has asked
+    /// for `secrets.write`.
+    async fn seal(&self, p: &str, stored: &str, value: &str) -> Result<(), Failure> {
+        self.app.limits.check_daemon(SECRET_WRITES, &self.token.id)?;
+        let me = self.me();
+        let (_, role) = deploys::project_as(&self.app, &me.account, p, true).await.map_err(|e| match e.0 {
+            StatusCode::FORBIDDEN => {
+                Failure::Refused("a viewer doesn't set a project's secrets: its owner is a viewer there".into())
+            }
+            _ => e.into(),
+        })?;
+        debug_assert!(role != TeamRole::Viewer);
+        if value.is_empty() || value.len() > MAX_SECRET || value.contains('\0') {
             return Err(failed("a secret's value is 1 to 16384 bytes, with no NUL"));
         }
         let master = self
@@ -904,18 +947,12 @@ impl Agent {
             .secret_key
             .as_deref()
             .ok_or_else(|| failed("this platform keeps no secrets (it has no master key)"))?;
-        let stored = project_secret(name);
-        if !self.app.db.has_project_secret(&p, &stored)?
-            && self.app.db.project_secrets(&p)?.len() >= MAX_PROJECT_SECRETS
-        {
+        if !self.app.db.has_project_secret(p, stored)? && self.app.db.project_secrets(p)?.len() >= MAX_PROJECT_SECRETS {
             return Err(failed(format!("the project keeps {MAX_PROJECT_SECRETS} secrets of its own already")));
         }
-        crate::keys::seal(&self.app.db, master, &p, &stored, &a.value)?;
-        self.app.db.note_secret_writer(&p, &stored, &self.token.account, Some(&self.token.id))?;
-        tracing::info!(token = %self.token.id, account = %self.token.account, project = %p, name, "an agent set a project's secret");
-        let v = json!({ "project": p, "name": name, "set": true });
-        let text = format!("Set {name} in {p}. It's sealed, and nothing here reads it back.");
-        Ok(Done { text, value: v, project: Some(p), note: format!("set secret {name}") })
+        crate::keys::seal(&self.app.db, master, p, stored, value)?;
+        self.app.db.note_secret_writer(p, stored, &self.token.account, Some(&self.token.id))?;
+        Ok(())
     }
 }
 

@@ -38,6 +38,11 @@ fn sha(bytes: &[u8]) -> String {
 /// team t: b owns it, c edits, x views. The platform keeps secrets. Its
 /// routes.
 async fn platform() -> (Arc<TestHub>, Arc<Platform>, String) {
+    platform_with(Default::default()).await
+}
+
+/// [`platform`], projecting secrets as `projection` says.
+async fn platform_with(projection: crate::infisical::Projection) -> (Arc<TestHub>, Arc<Platform>, String) {
     let hub = Arc::new(TestHub::default());
     hub.github("a", 4242, "fern-gh");
     hub.github("b", 5151, "alder-gh");
@@ -47,6 +52,7 @@ async fn platform() -> (Arc<TestHub>, Arc<Platform>, String) {
     let cfg = crate::Config { public_url: "https://control.example".into(), ..Default::default() };
     let mut p = Platform::new(cfg, Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
     p.secret_key = Some(Arc::new(crate::secrets::SecretCipher::new(&"07".repeat(32)).unwrap()));
+    p.projection = projection;
     let app = Arc::new(p);
     crate::projects::follow(&app).await.unwrap();
     crate::cache::catch_up(&app).await.unwrap();
@@ -70,6 +76,7 @@ fn options(dry_run: bool) -> Options {
         .into_iter()
         .collect(),
         teams: [("alder".to_owned(), "t".to_owned())].into_iter().collect(),
+        driver: "fake".into(),
         dry_run,
     }
 }
@@ -80,6 +87,10 @@ fn line<'a>(r: &'a Report, tenant: &str) -> &'a TenantLine {
 
 fn token_outcome<'a>(r: &'a Report, id: &str) -> &'a TokenOutcome {
     &r.tenants.iter().flat_map(|t| &t.tokens).find(|k| k.token.id == id).unwrap().outcome
+}
+
+fn app_outcome<'a>(r: &'a Report, name: &str) -> &'a AppOutcome {
+    &r.tenants.iter().flat_map(|t| &t.apps).find(|a| a.app.name == name).unwrap().outcome
 }
 
 fn count(app: &Platform, table: &str) -> i64 {
@@ -143,6 +154,7 @@ async fn tenants_become_projects_and_redone_tokens_work_through_the_platform() {
     assert_eq!(line(&r, "lonely").outcome, TenantOutcome::WaitingPeople);
     assert!(matches!(token_outcome(&r, "tok_fern1"), TokenOutcome::Carried { agent_token: None, .. }));
     assert_eq!(token_outcome(&r, "tok_new1"), &TokenOutcome::WaitingTenant);
+    assert!(matches!(app_outcome(&r, "fern-site"), AppOutcome::Environment { environment: None, .. }));
     assert!(r.orphans.iter().any(|o| o.contains("tok_ghost1")), "{:?}", r.orphans);
     let text = r.render(&dir());
     assert!(text.contains("DRY RUN") && text.contains("nothing written"), "{text}");
@@ -176,6 +188,14 @@ async fn tenants_become_projects_and_redone_tokens_work_through_the_platform() {
     };
     assert!(matches!(token_outcome(&r, "tok_alder1"), TokenOutcome::Carried { account, .. } if account == "b"));
     assert_eq!(token_outcome(&r, "tok_moss1"), &TokenOutcome::WaitingTenant);
+    // Each app is an environment of its tenant's project now, by its name.
+    let AppOutcome::Environment { environment: Some(site), .. } = app_outcome(&r, "fern-site").clone() else {
+        panic!("{:?}", app_outcome(&r, "fern-site"))
+    };
+    let names = |p: &str| -> Vec<String> { app.db.environments(p).unwrap().into_iter().map(|e| e.name).collect() };
+    assert_eq!(names(&fern), ["fern-blog", "fern-site"]);
+    assert_eq!(names(&alder), ["alder-api"]);
+    assert_eq!(app.db.environment(&site).unwrap().unwrap().driver, "fake");
     assert_eq!(count(&app, "agent_tokens"), 3);
     // Only redone's hash is kept, and no grant approves anything.
     let t = app.db.agent_token(&fern1).unwrap().unwrap();
@@ -206,16 +226,7 @@ async fn tenants_become_projects_and_redone_tokens_work_through_the_platform() {
     assert_eq!(ok(&r)["set"], json!(true));
     let master = app.secret_key.clone().unwrap();
     assert_eq!(crate::keys::open(&app.db, &master, &fern, "project/API_KEY").unwrap().as_deref(), Some("hunter2-m235"));
-    // It plans a deploy, and asks: a gets the card.
-    let (st, env) = call(
-        &base,
-        "a",
-        "POST",
-        &format!("/api/projects/{fern}/environments"),
-        Some(json!({ "name": "fern-site", "driver": "fake", "secret_names": ["APP_TOKEN"] })),
-    )
-    .await;
-    assert_eq!(st, 200, "{env}");
+    // It plans a deploy to its app, and asks: a gets the card.
     let sha1 = "cd".repeat(20);
     let r =
         tool(&base, &token, "plan_deploy", json!({ "environment": "fern-site", "commit": sha1, "repo": "fern/site" }))
@@ -254,6 +265,7 @@ async fn tenants_become_projects_and_redone_tokens_work_through_the_platform() {
     let r = import(&app, &backup, &options(false)).await.unwrap();
     assert!(matches!(line(&r, "fern").outcome, TenantOutcome::ImportedBefore { .. }));
     assert!(matches!(token_outcome(&r, "tok_fern1"), TokenOutcome::ImportedBefore { .. }));
+    assert!(matches!(app_outcome(&r, "fern-site"), AppOutcome::ImportedBefore { .. }));
     assert_eq!(r.tokens_carried(), 0);
     assert_eq!(
         (count(&app, "agent_tokens"), count(&app, "grants"), count(&app, "redone_imports")),
@@ -294,6 +306,7 @@ async fn a_tenant_goes_only_where_its_people_may_write() {
     let o = Options {
         people: [("alder".to_owned(), vec![3131]), ("fern".to_owned(), vec![1])].into_iter().collect(),
         teams: [("alder".to_owned(), "t".to_owned())].into_iter().collect(),
+        driver: "fake".into(),
         dry_run: false,
     };
     let r = import(&app, &backup, &o).await.unwrap();
@@ -304,9 +317,172 @@ async fn a_tenant_goes_only_where_its_people_may_write() {
     let o = Options {
         people: [("alder".to_owned(), vec![5151])].into_iter().collect(),
         teams: [("alder".to_owned(), "no-such-team".to_owned())].into_iter().collect(),
+        driver: "fake".into(),
         dry_run: true,
     };
     let r = import(&app, &backup, &o).await.unwrap();
     assert!(matches!(line(&r, "alder").outcome, TenantOutcome::Refused { .. }), "{:?}", line(&r, "alder"));
     let _: Value = serde_json::to_value(&r).unwrap();
+}
+
+/// redone's tools on the platform, for a carried-over token only: an app
+/// is an environment of the token's project, which the agent can't claim
+/// (Arugula #55's hole: BREAK, a new name and another tenant's app are
+/// refused, and nothing reaches Infisical for them); `set_secret {app,
+/// key, value}` seals the app's secret and projects it into Infisical's
+/// `/<app>/`; `get_plan` and `apply_plan` read a deploy and never approve
+/// or apply it; an owner's phone approves it.
+#[tokio::test]
+async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
+    let (infisical, url) = crate::infisical::tests::fake(&["beds"], "s3cret").await;
+    let writer =
+        crate::infisical::Writer::new(reqwest::Client::new(), &url, "proj-planter-apps", "prod", "id", "s3cret");
+    let (hub, app, base) =
+        platform_with(crate::infisical::Projection::new(crate::infisical::Mode::On, Some(writer))).await;
+    let a = devices(&hub, "a");
+    import(&app, &Backup::read(&dir()).unwrap(), &options(false)).await.unwrap();
+    let fern = app.db.redone_personal_project("a").unwrap().unwrap();
+    let token = raw("tok_fern1");
+
+    // Its tools: the platform's, and redone's beside them. A token minted
+    // on the page gets the platform's alone.
+    let (_, listed) = rpc(&base, &token, "tools/list", json!({})).await;
+    let names: Vec<String> =
+        listed["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap().to_owned()).collect();
+    for n in [
+        "whoami",
+        "list_apps",
+        "plan_deploy",
+        "plan_rollback",
+        "get_plan",
+        "apply_plan",
+        "app_status",
+        "app_logs",
+        "set_secret",
+        "list_secrets",
+        "promote",
+        "capabilities",
+        "read_deploy",
+    ] {
+        assert!(names.iter().any(|x| x == n), "{n} in {names:?}");
+    }
+    assert!(!names.iter().any(|n| n.contains("approv") || n.contains("deny")), "{names:?}");
+    let (st, minted) = call(
+        &base,
+        "a",
+        "POST",
+        "/api/agent-tokens",
+        Some(json!({ "name": "page", "projects": [fern], "powers": ["deploys.plan"] })),
+    )
+    .await;
+    assert_eq!(st, 200, "{minted}");
+    let (_, plain) = rpc(&base, minted["token"].as_str().unwrap(), "tools/list", json!({})).await;
+    assert!(!plain.to_string().contains("\"whoami\""), "{plain}");
+    let (_, init) = rpc(&base, &token, "initialize", json!({})).await;
+    let says = init["result"]["instructions"].as_str().unwrap();
+    assert!(says.contains("https://control.example/api/mcp/uploads") && says.contains("can't claim"), "{says}");
+
+    let who = ok(&tool(&base, &token, "whoami", json!({})).await).clone();
+    assert_eq!((&who["project"], &who["approves"]), (&json!(fern), &json!(false)), "{who}");
+    let apps = ok(&tool(&base, &token, "list_apps", json!({})).await).clone();
+    let apps: Vec<&str> = apps.as_array().unwrap().iter().map(|a| a["app"].as_str().unwrap()).collect();
+    assert_eq!(apps, ["fern-blog", "fern-site"]);
+
+    // A secret of the app's: sealed as the project's, and in Infisical's
+    // /fern-site/.
+    let value = "hunter2-m235-app";
+    let r = tool(&base, &token, "set_secret", json!({ "app": "fern-site", "key": "API_KEY", "value": value })).await;
+    assert_eq!((&ok(&r)["set"], &ok(&r)["projected"]), (&json!(true), &json!("written")), "{r}");
+    let master = app.secret_key.clone().unwrap();
+    assert_eq!(crate::keys::open(&app.db, &master, &fern, "app/fern-site/API_KEY").unwrap().as_deref(), Some(value));
+    assert_eq!(infisical.secrets.lock().unwrap()["fern-site"]["API_KEY"], value);
+    let r = tool(&base, &token, "list_secrets", json!({ "app": "fern-site" })).await;
+    assert_eq!(ok(&r)["keys"], json!(["API_KEY"]));
+    assert!(!r.to_string().contains(value));
+    let (_, secrets) = call(&base, "a", "GET", &format!("/api/projects/{fern}/secrets"), None).await;
+    assert!(
+        secrets["secrets"].as_array().unwrap().iter().any(|s| s["name"] == json!("fern-site/API_KEY")),
+        "{secrets}"
+    );
+
+    // An app that doesn't run on home-cloud keeps its secret on the
+    // platform only.
+    let (st, env) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/projects/{fern}/environments"),
+        Some(json!({ "name": "flyapp", "driver": "chant-fly", "secret_names": ["FLY_API_TOKEN"],
+                     "settings": { "fly_app": "fern-fly", "chant_env": "github" } })),
+    )
+    .await;
+    assert_eq!(st, 200, "{env}");
+    let r = tool(&base, &token, "set_secret", json!({ "app": "flyapp", "key": "API_KEY", "value": value })).await;
+    assert_eq!((&ok(&r)["set"], &ok(&r)["projected"]), (&json!(true), &Value::Null), "{r}");
+
+    // BREAK (Arugula #55): no name is claimed by an agent's call. A name
+    // the project has no app of, and another tenant's app, are refused, and
+    // nothing of them reaches Infisical or the platform.
+    for (app_name, key) in
+        [("brand-new", "API_KEY"), ("alder-api", "API_KEY"), ("beds", "LOBBY_SECRET"), ("planter-x", "A")]
+    {
+        let why =
+            refused(&tool(&base, &token, "set_secret", json!({ "app": app_name, "key": key, "value": value })).await);
+        assert!(why.contains("no app") || why.contains("platform's names"), "{app_name}: {why}");
+    }
+    assert_eq!(infisical.secrets.lock().unwrap().keys().collect::<Vec<_>>(), ["fern-site"]);
+    assert_eq!(app.db.environments(&fern).unwrap().len(), 3, "an agent's call made an environment");
+    let why =
+        refused(&tool(&base, &token, "plan_deploy", json!({ "app": "brand-new", "upload_id": "sha256:00" })).await);
+    assert!(why.contains("no app brand-new"), "{why}");
+
+    // A deploy: get_plan and apply_plan read it, and never move it.
+    let sha1 = "ef".repeat(20);
+    let r =
+        tool(&base, &token, "plan_deploy", json!({ "environment": "fern-site", "commit": sha1, "repo": "fern/site" }))
+            .await;
+    let dep = ok(&r)["deploy"].clone();
+    let dep_id = dep["id"].as_str().unwrap().to_owned();
+    let op = dep["operation"]["hash"].as_str().unwrap().to_owned();
+    let got = ok(&tool(&base, &token, "get_plan", json!({ "plan_id": dep_id })).await).clone();
+    assert_eq!((&got["state"], &got["app"]), (&json!("pending"), &json!("fern-site")), "{got}");
+    let r = tool(&base, &token, "apply_plan", json!({ "plan_id": dep_id })).await;
+    assert!(r["content"][0]["text"].as_str().unwrap().contains("waits for an owner"), "{r}");
+    assert!(app.db.deploy_approvals(&dep_id).unwrap().is_empty());
+    let (_, waiting) = call(&base, "a", "GET", "/api/deploys/waiting", None).await;
+    assert!(waiting["deploys"].as_array().unwrap().iter().any(|d| d["id"] == json!(dep_id)), "{waiting}");
+    let (st, d) = call(
+        &base,
+        "a",
+        "POST",
+        &format!("/api/deploys/{dep_id}/approve"),
+        Some(signed(&a.phone, "a", &dep_id, &op, Decision::Once)),
+    )
+    .await;
+    assert_eq!((st, &d["state"]), (200, &json!("approved")), "{d}");
+    let got = ok(&tool(&base, &token, "get_plan", json!({ "plan_id": dep_id })).await).clone();
+    assert_eq!(got["state"], json!("approved"));
+    let r = tool(&base, &token, "apply_plan", json!({ "plan_id": dep_id })).await;
+    assert!(r["content"][0]["text"].as_str().unwrap().contains("applies itself"), "{r}");
+    let st = ok(&tool(&base, &token, "app_status", json!({ "app": "fern-site" })).await).clone();
+    assert_eq!((&st["state"], &st["applying"]), (&json!("deploying"), &json!(dep_id)), "{st}");
+    let why = refused(&tool(&base, &token, "plan_rollback", json!({ "app": "fern-site" })).await);
+    assert!(why.contains("no earlier deploy"), "{why}");
+    let why = refused(&tool(&base, &token, "promote", json!({ "app": "fern-site" })).await);
+    assert!(why.contains("its owner"), "{why}");
+    let r = tool(&base, &token, "app_logs", json!({ "app": "fern-blog" })).await;
+    assert!(ok(&r)["log"].is_null(), "{r}");
+    for name in ["approve_plan", "approve"] {
+        let why = refused(&tool(&base, &token, name, json!({ "plan_id": dep_id })).await);
+        assert!(why.contains("never approve"), "{name}: {why}");
+    }
+    // Every call is in its owner's list: the shim's names too.
+    let t = app.db.agent_token_by_hash(&sha(token.as_bytes())).unwrap().unwrap();
+    let calls = app.db.agent_calls("a", &t.id, 200).unwrap();
+    for (tool_name, outcome) in
+        [("set_secret", "ok"), ("set_secret", "failed"), ("get_plan", "ok"), ("approve", "refused")]
+    {
+        assert!(calls.iter().any(|c| c.tool == tool_name && c.outcome == outcome), "{tool_name}/{outcome}: {calls:?}");
+    }
+    assert!(!format!("{calls:?}").contains(value));
 }

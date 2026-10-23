@@ -218,6 +218,16 @@ services:
       GITHUB_APP_SLUG: arugula-testnet
       GITHUB_APP_WEBHOOK_SECRET: whsec-github-testnet
       GITHUB_APP_PRIVATE_KEY_FILE: /keys/github-app.pem
+      # The Infisical projection (M235), into the fake Infisical in `fakes`
+      # as a writer identity of its own (the redone claim).
+      ARUGULA_INFISICAL_PROJECTION: "on"
+      ARUGULA_INFISICAL_URL: http://fakes:9007
+      ARUGULA_INFISICAL_PROJECT_ID: testnet-planter-apps
+      ARUGULA_INFISICAL_CLIENT_ID: testnet-secret-writer
+      ARUGULA_INFISICAL_CLIENT_SECRET: infisical-testnet-secret
+      # Environments may name the fake driver (M219), as tests do: the redone
+      # claim's apps deploy with it.
+      ARUGULA_PLATFORM_FAKE_DRIVER: "1"
     volumes:
       - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
       - ${ARUGULA_TESTNET_STATE:-./.state}:/keys:ro
@@ -245,7 +255,8 @@ services:
 
   # The fakes control-smoke uses (web/fixtures/fakes.ts): GitHub sign-in on
   # 9001 (published, for the browser's redirect), Stripe on 9002, a Web Push
-  # endpoint on 9003. Only control talks to them, over the outer network.
+  # endpoint on 9003, Infisical on 9007 (M235: the platform's projection).
+# Only control and the platform talk to them, over the outer network.
   fakes:
     profiles: [control]
     image: node:22-slim
@@ -254,6 +265,8 @@ services:
     command: [node, --experimental-strip-types, --no-warnings, /fixtures/fakes-serve.ts]
     volumes:
       - ../web/fixtures:/fixtures:ro
+      # Infisical's captured answers, for the fake Infisical on 9007 (M235).
+      - ../crates/platform/fixtures/infisical:/infisical:ro
     ports:
       - "127.0.0.1:${ARUGULA_TESTNET_FAKES_PORT:-22981}:9001"
     networks: [outer]

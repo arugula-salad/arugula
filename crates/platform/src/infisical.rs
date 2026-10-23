@@ -419,4 +419,4 @@ async fn decide(app: &Platform, ask: &Ask<'_>) -> Result<bool, Decided> {
 
 #[cfg(test)]
 #[path = "infisical_tests.rs"]
-mod tests;
+pub(crate) mod tests;
