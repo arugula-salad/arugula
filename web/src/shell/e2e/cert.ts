@@ -193,6 +193,49 @@ function chainedIn(root: string, byId: Map<string, Cert[]>, device: string, link
   return true;
 }
 
+/** `chainedIn`, where `link` also sees the certificate just below each
+ * link, the one it certified (`undefined` for `device` itself):
+ * `Trust::chained_below`. A device reached from two below is looked at
+ * from each. */
+function chainedBelowIn(root: string, byId: Map<string, Cert[]>, device: string, link: (c: Cert, below: Cert | undefined) => boolean): boolean {
+  const next: [string, Cert | undefined][] = [[device, undefined]];
+  const seen = new Set<string>();
+  while (next.length) {
+    const [id, below] = next.pop()!;
+    const key = `${id} ${below?.device ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (seen.size > 64) return false;
+    const these = byId.get(id);
+    if (!these) return false;
+    for (const c of these) {
+      if (!link(c, below)) return false;
+      if (c.approver === c.device) {
+        if (c.device !== root) return false;
+      } else next.push([c.approver, c]);
+    }
+  }
+  return true;
+}
+
+/** A browser's or a phone's own all the way back to the root, as control
+ * asks of what signs for a browser (`Trust::chained_below` with
+ * `browser_or_legacy_link`): a browser, a recovery code that let a browser
+ * in, or the desktop app's window from before it had a kind just above a
+ * browser it approved back then (one of `legacyAppChildren`). A revoked
+ * device still links what it approved before, so `certs` is every
+ * certificate the account has, revoked or not. */
+export function browserOrLegacyChained(trust: { account: string; root: string }, certs: Cert[], device: string, legacyAppChildren: Set<string>): boolean {
+  const byId = new Map<string, Cert[]>();
+  for (const c of certs) if (c.account === trust.account) byId.set(c.device, [...(byId.get(c.device) ?? []), c]);
+  const browser = (c: Cert) => c.kind === "browser" && !fromApp(c);
+  return chainedBelowIn(trust.root, byId, device, (c, below) =>
+    browser(c) ||
+    (c.kind === "recovery" && c.device !== device) ||
+    (c.kind === "browser" && fromApp(c) && !!below && below.approver === c.device && browser(below) && legacyAppChildren.has(below.device)),
+  );
+}
+
 /** `kind: browser` on every link back to the root (`Trust::browser_chained`):
  * what may make a team's owner or editor, or remove a browser or a phone. */
 export async function browserChained(trust: { account: string; root: string }, certs: Cert[], device: string): Promise<boolean> {

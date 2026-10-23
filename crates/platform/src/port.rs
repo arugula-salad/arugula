@@ -21,7 +21,9 @@ use arugula_control_wire::{
 
 pub use crate::hosted::{inference::TurnAnswer, previews::PublicPreview, transcripts::Archived};
 use crate::{
-    Platform, billing, db,
+    Platform, billing,
+    boxes::{BoxMember, BoxPost, BoxPosted},
+    db,
     forge::{
         self, GithubUser, TokenAnswer,
         send::{Outcome, UserToken},
@@ -255,6 +257,22 @@ pub trait PlatformPort: Send + Sync {
         let _ = (machine, upload);
         Box::pin(async { Ok(Uploaded::Refused { why: "this platform keeps no run logs".into() }) })
     }
+
+    /// A bound hud box's project's members now (M237, `boxes::members`),
+    /// for the hub's `GET /oauth/hud/members`; `None`: no such project. A
+    /// platform from before M237 can't say.
+    fn box_members<'a>(&'a self, project: &'a str) -> BoxFuture<'a, anyhow::Result<Option<Vec<BoxMember>>>> {
+        let _ = project;
+        Box::pin(async { anyhow::bail!("this platform doesn't answer hud boxes") })
+    }
+
+    /// A bound hud box's review, into an object's thread in its project for
+    /// its author (M237, `boxes::post`), for the hub's `POST
+    /// /oauth/hud/threads`. A platform from before M237 can't.
+    fn box_post<'a>(&'a self, post: &'a BoxPost) -> BoxFuture<'a, anyhow::Result<BoxPosted>> {
+        let _ = post;
+        Box::pin(async { anyhow::bail!("this platform doesn't answer hud boxes") })
+    }
 }
 
 /// An account the hub deleted.
@@ -281,7 +299,7 @@ pub struct Deleted {
 /// `hosted_plan` and `hosted_setup`; hosted workspaces' agents (M184)
 /// `machine_drives` and `hosted_transcript`; public previews (M187)
 /// `public_preview` and `public_ports`; deploys' runs (M219)
-/// `hosted_secrets`.
+/// `hosted_secrets`; hud boxes (M237) `box_members` and `box_post`.
 impl PlatformPort for Platform {
     fn delete_blockers<'a>(&'a self, account: &'a str, start: bool) -> BoxFuture<'a, anyhow::Result<Vec<String>>> {
         let _ = (account, start);
@@ -298,6 +316,7 @@ impl PlatformPort for Platform {
                 // Before the projects go: their hosted workspaces are deleted.
                 db::hosted::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
                 db::inference::erase_account(&tx, deleted)?;
+                db::clients::erase_account(&tx, deleted)?;
                 db::hosted_transcripts::erase_account(&tx, deleted)?;
                 db::projects::erase_account(&tx, deleted)?;
                 db::forge::erase_account(&tx, deleted, arugula_e2e::now_ms())?;
@@ -476,5 +495,13 @@ impl PlatformPort for Platform {
         upload: &'a Upload,
     ) -> BoxFuture<'a, anyhow::Result<Uploaded>> {
         Box::pin(crate::run_logs::uploaded(self, machine, upload))
+    }
+
+    fn box_members<'a>(&'a self, project: &'a str) -> BoxFuture<'a, anyhow::Result<Option<Vec<BoxMember>>>> {
+        Box::pin(crate::boxes::members(self, project))
+    }
+
+    fn box_post<'a>(&'a self, post: &'a BoxPost) -> BoxFuture<'a, anyhow::Result<BoxPosted>> {
+        Box::pin(crate::boxes::post(self, post))
     }
 }

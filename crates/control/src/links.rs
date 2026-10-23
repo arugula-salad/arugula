@@ -10,8 +10,9 @@
 //!
 //! A product calls these from its server, never a browser, as itself: HTTP
 //! Basic with its client id and the link secret an operator gave it
-//! (`arugula-control issuer link-secret`, for `oidc` clients only: a hud box
-//! has no users of its own to link). A public client's tokens prove only
+//! (`arugula-control issuer link-secret`). Only `oidc` clients link: a hud
+//! box has no users of its own, and its secret is for its own routes
+//! (`hud_box.rs`, M237). A public client's tokens prove only
 //! who signed in, so without the secret anyone could name any of the
 //! product's users. Each call counts against the caller's address
 //! (`issuer::limited`) and against the product (`limit::ACCOUNT_LINKS`);
@@ -54,7 +55,7 @@ use serde::Deserialize;
 
 use crate::{
     App,
-    db::issuer::{Link, LinkRefused},
+    db::issuer::{ClientKind, Link, LinkRefused},
     issuer::{github_id, limited, no_store, off},
     limit,
 };
@@ -83,7 +84,7 @@ fn client(app: &App, headers: &HeaderMap) -> Option<String> {
     if id.is_empty() || secret.is_empty() {
         return None;
     }
-    app.db.issuer_client_secret_ok(id, secret).ok()?.then(|| id.to_owned())
+    app.db.issuer_client_by_secret(id, secret, ClientKind::Oidc).ok()?.map(|c| c.id)
 }
 
 /// Every link call: the issuer's limit on the address, then the product's

@@ -192,6 +192,17 @@
 #           reads the answer labelled as their agent on box-systemd; after
 #           the read grant is revoked, read_thread is refused. Broken: no
 #           grant given, so the box's first read is refused.
+#   broker  The inference broker (M231) as studio's lobby calls it
+#           (testnet/lobby.ts, a registered client), against the fake
+#           Anthropic: for an app's owner with no key, the platform's key
+#           pays and the answer streams back as sent, until $25 of calls
+#           passes studio's $20 a month and the next is refused before it
+#           goes out; the owner's own key then pays, and a sponsor's over
+#           it; the project's spend shows each. Anthropic saw only the key
+#           that paid, never the client's credential or a cookie, and no
+#           answer holds a key; before the owner lets studio act for them,
+#           it can't. Broken: the first call is a small one, so
+#           the cap never holds.
 #   issuer  The hub as an issuer (M228), as a product signs a person in:
 #           signed out, /oauth/authorize sends them through control's
 #           sign-in (the fake GitHub) and back with a code; the code and its
@@ -221,6 +232,32 @@
 #           the token from before the unlink no longer links; a fresh
 #           sign-in asks for consent again and links.
 #           Broken: nobody unlinks, so the product still sees the link.
+#   hud-box A hud box as a client of the platform (M237): a hud client
+#           bound to a person's personal project (`issuer add-client
+#           --project`, `client-secret`) reads its roster, the project's
+#           members by numeric GitHub id; the member opens the box with no
+#           invite (with ARUGULA_TESTNET_HUD naming a hud checkout built
+#           with hud's platform client, hud's own proxy: /__hud/signin,
+#           control, and back with the box's nonce), someone who isn't a
+#           member is refused. The box asks to post a review, which posts
+#           nothing: the member opens control's page it names, an answer
+#           from the box's origin is refused, and Post there puts it in the
+#           issue's thread, via the box. Without a hud checkout, the box's
+#           calls by hand. Broken: the box isn't bound to the project, so
+#           it has no roster.
+#   studio  Only with a studio checkout (ARUGULA_TESTNET_STUDIO; studio is
+#           private, so its code is read from there, never kept here),
+#           M236: studio's own lobby (testnet/studio-run.mjs, in a container
+#           on the stack's networks, with studio's fake loam) as a client of
+#           the platform (testnet/studio.ts). Jake and Alex sign in to it
+#           with Arugula (the hub's consent screen once; the same account
+#           again), let it see their projects and use Claude on the platform
+#           page; Jake makes an app in his team's project and Alex, an
+#           editor there, opens it; its egress secret takes its value from
+#           the project's own secret only once Jake grants it, and the read
+#           is counted; the box's Claude call goes through the broker on the
+#           platform's key, with nothing of the box's or studio's upstream.
+#           Broken: Alex is never admitted to the team, so he can't open it.
 #   public-preview
 #           Only with hosted workspaces at the fake E2B
 #           (ARUGULA_TESTNET_HOSTED=1) and a preview domain
@@ -245,7 +282,7 @@ PROFILE="${1:-ssh}"; shift || true
 CFG="$STATE/ssh_config"
 BREAK="${BREAK:-}"
 SSH_CLAIMS="login jump no-route bare bytes agent linger"
-CONTROL_CLAIMS="signin reach relay unreachable cli team hosted platform platform-page agents links issuer"
+CONTROL_CLAIMS="signin reach relay unreachable cli team hosted platform platform-page agents links broker hud-box issuer"
 
 need_docker
 
@@ -272,6 +309,8 @@ if [ "$PROFILE" = control ]; then
   PREVIEW_DOMAIN="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$TESTNET-control" 2>/dev/null |
     sed -n 's/^ARUGULA_PREVIEW_DOMAIN=//p')"
   [ "${ARUGULA_TESTNET_HOSTED:-}" != 1 ] || [ -z "$PREVIEW_DOMAIN" ] || CONTROL_CLAIMS="$CONTROL_CLAIMS public-preview"
+  # studio's own lobby as a client (M236), from a studio checkout.
+  [ -z "${ARUGULA_TESTNET_STUDIO:-}" ] || CONTROL_CLAIMS="$CONTROL_CLAIMS studio"
   [ "$PROFILE" != control ] || CLAIMS="$CONTROL_CLAIMS"
 fi
 
@@ -1166,6 +1205,34 @@ claim_links() {
   note "links: $(cat "$WORK/links")"
 }
 
+claim_hud_box() {
+  local db=/var/lib/arugula-control/control.db cli=/opt/arugula/arugula-control client=testnet-hud-bound
+  local name="Testnet hud box" port project secret hud=() st="$WORK/hud-box.json"
+  port="$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
+  local back="http://127.0.0.1:$port/__hud/signin/back"
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
+  hbox() { node --experimental-strip-types --no-warnings "$HERE/hud-box.ts" "$@" --control "$CONTROL_URL" $CONTROL_VIA; }
+  docker exec "$TESTNET-control" "$cli" issuer add-client --db "$db" --id "$client" --kind hud \
+    --name "$name" --redirect "$back" >/dev/null || { note "hud-box: the client wasn't registered"; return 1; }
+  hbox setup --login "hudm-$$" --client "$client" --port "$port" --state "$st" > "$WORK/hud-setup" 2> "$WORK/hud-box.err" ||
+    { note "hud-box: $(cat "$WORK/hud-box.err")"; return 1; }
+  project="$(sed -n 's/.*"project":"\([^"]*\)".*/\1/p' "$WORK/hud-setup")"
+  if [ -z "$BREAK" ]; then
+    docker exec "$TESTNET-control" "$cli" issuer add-client --db "$db" --id "$client" --kind hud \
+      --name "$name" --redirect "$back" --project "$project" >/dev/null || { note "hud-box: not bound to $project"; return 1; }
+  fi
+  secret="$(docker exec "$TESTNET-control" "$cli" issuer client-secret --db "$db" --id "$client" 2>/dev/null)" ||
+    { note "hud-box: no client secret"; return 1; }
+  [ -z "${ARUGULA_TESTNET_HUD:-}" ] || hud=(--hud "$ARUGULA_TESTNET_HUD")
+  if ! hbox box --state "$st" --client "$client" --secret "$secret" --port "$port" --name "$name" \
+    --login2 "hudx-$$" "${hud[@]}" > "$WORK/hud-box" 2> "$WORK/hud-box.err"; then
+    note "hud-box: $(cat "$WORK/hud-box.err")"; return 1
+  fi
+  local from="the box's calls by hand"
+  [ "${#hud[@]}" = 0 ] || from="hud's own proxy from $ARUGULA_TESTNET_HUD"
+  note "hud-box: $(cat "$WORK/hud-setup") $(cat "$WORK/hud-box") ($from)"
+}
+
 claim_issuer() {
   local d="$STATE/issuer" a b login="issuer-$$" cb=http://127.0.0.1:9/cb spki k1 k3 err until
   keyf() { printf '%s\n' "$2" > "$d/$1.new" && mv "$d/$1.new" "$d/$1"; }
@@ -1222,6 +1289,65 @@ claim_issuer() {
   until="$(docker logs --since 2m "$TESTNET-control" 2>&1 | grep -c 'no longer published' || true)"
   keyf previous ""; keyf previous_until ""
   note "issuer: signed in as $(field sub < "$WORK/iss-s1") (github_id $(sed -n 's/.*"github_id":\([0-9]*\).*/\1/p' "$WORK/iss-s1")), rotated $k1 -> $k3 with no token lost, the old key gone at its time (warned: $until); hud: $(cat "$WORK/iss-hud"); hud's own verifier: $(cat "$WORK/iss-hudown")"
+}
+
+# The inference broker (M231), as studio's lobby will call it (M236):
+# testnet/lobby.ts, a registered client, for an app's owner and their
+# sponsor, against the fake Anthropic in `fakes`.
+claim_broker() {
+  local owner="$WORK/broker-owner.json" sponsor="$WORK/broker-sponsor.json"
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
+  devs "$owner" signin --control "$CONTROL_URL" $CONTROL_VIA --login "broker-owner-$$-$RANDOM" > /dev/null ||
+    { note "broker: no owner signed in"; return 1; }
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
+  devs "$sponsor" signin --control "$CONTROL_URL" $CONTROL_VIA --login "broker-sponsor-$$-$RANDOM" > /dev/null ||
+    { note "broker: no sponsor signed in"; return 1; }
+  node --experimental-strip-types --no-warnings "$HERE/lobby.ts" --state "$owner" --sponsor "$sponsor" \
+    --credential testnet-studio-client-credential ${BREAK:+--break} > "$WORK/broker.json" ||
+    { note "broker: the lobby's calls through the platform"; return 1; }
+  note "broker: $(cat "$WORK/broker.json")"
+}
+
+# studio's own lobby as a client of the platform (M236): from the studio
+# checkout ARUGULA_TESTNET_STUDIO, in a container on the outer and inner
+# networks (the hub's issuer names itself by control's inner address),
+# published on ARUGULA_TESTNET_STUDIO_PORT for testnet/studio.ts, the
+# browser and the box. Its issuer client and link secret are registered
+# here; its platform credential is compose.yaml's `studio` client.
+claim_studio() {
+  local src="${ARUGULA_TESTNET_STUDIO:-}" port="${ARUGULA_TESTNET_STUDIO_PORT:-22985}" db=/var/lib/arugula-control/control.db
+  local cli=/opt/arugula/arugula-control name="$TESTNET-studio" url secret ok=0
+  [ -f "$src/lobby/server.mjs" ] || { note "studio: ARUGULA_TESTNET_STUDIO isn't a studio checkout"; return 1; }
+  url="http://127.0.0.1:$port"
+  docker exec "$TESTNET-control" "$cli" issuer add-client --db "$db" --id studio --kind oidc --name Studio \
+    --redirect "$url/api/auth/arugula/callback" >/dev/null || { note "studio: the issuer client wasn't registered"; return 1; }
+  secret="$(docker exec "$TESTNET-control" "$cli" issuer link-secret --db "$db" --id studio 2>/dev/null)" ||
+    { note "studio: no link secret"; return 1; }
+  docker rm -f "$name" >/dev/null 2>&1 || true
+  docker run -d --name "$name" --network "$TESTNET" -p "127.0.0.1:$port:8080" \
+    -v "$src:/studio:ro" -v "$HERE/studio-run.mjs:/run/studio-run.mjs:ro" \
+    -e PORT=8080 -e STUDIO_PUBLIC_URL="$url" -e STUDIO_EGRESS_INSECURE=1 -e STUDIO_GRACE_ENDS=2099-01-01T00:00:00Z \
+    -e ARUGULA_ISSUER="$CONTROL_URL" -e ARUGULA_CLIENT_ID=studio -e ARUGULA_CLIENT_SECRET="$secret" \
+    -e ARUGULA_PLATFORM_CREDENTIAL=testnet-studio-client-credential \
+    node:22-slim node /run/studio-run.mjs >/dev/null || { note "studio: the lobby's container didn't start"; return 1; }
+  docker network connect "$TESTNET-inner" "$name" || { note "studio: not on the inner network"; docker rm -f "$name" >/dev/null; return 1; }
+  for _ in $(seq 1 60); do
+    if docker logs "$name" 2>&1 | grep -q 'listening'; then ok=1; break; fi
+    sleep 0.5
+  done
+  [ "$ok" = 1 ] || { note "studio: the lobby never listened: $(docker logs "$name" 2>&1 | tail -5)"; docker rm -f "$name" >/dev/null; return 1; }
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
+  if node --experimental-strip-types --no-warnings "$HERE/studio.ts" --control "$CONTROL_URL" $CONTROL_VIA \
+    --studio "$url" --login "studio-$$-$RANDOM" ${BREAK:+--break} > "$WORK/studio.json" 2> "$WORK/studio.err"; then
+    note "studio: $(cat "$WORK/studio.json")"
+  else
+    note "studio: $(cat "$WORK/studio.err")"
+    docker logs "$name" > "$WORK/studio-lobby.log" 2>&1
+    docker rm -f "$name" >/dev/null
+    return 1
+  fi
+  docker logs "$name" > "$WORK/studio-lobby.log" 2>&1
+  docker rm -f "$name" >/dev/null
 }
 
 claim_platform_restart() {

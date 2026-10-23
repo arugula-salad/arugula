@@ -627,6 +627,7 @@ impl Shower {
                 machine: a.clone(),
                 machine_name: self.agents.get(a).cloned().unwrap_or_default(),
             }),
+            via: m.via.clone(),
         }
     }
 }
@@ -1416,6 +1417,26 @@ pub async fn agent_object_room(
     agent_room(app, machine, power, &room.id).await
 }
 
+/// The thread on an object in `project` for a hud box posting `author`'s
+/// review (M237, [`crate::boxes::post`]): its room's id, made now if nobody
+/// has opened it yet. An object outside the box's project is no such
+/// object, as for anyone it isn't there for; then `author` has to be able
+/// to open it themselves ([`objects::check_open`]), with chat on for them
+/// ([`gate`]).
+pub(crate) async fn box_object_room(
+    app: &Platform,
+    author: &str,
+    project: &str,
+    target: &str,
+) -> Result<String, ApiError> {
+    gate(app, author).await?;
+    let obj = objects::resolve(app, target)?;
+    if obj.project != project {
+        return Err(err(StatusCode::NOT_FOUND, "no such object"));
+    }
+    Ok(open_object(app, author, target).await?.0.id)
+}
+
 /// The agents a live grant lets read or post in `room` (M197), as everyone
 /// in it is told: thread grants over its scope (its project; for a DM, each
 /// of its people's accounts), and on a native issue's thread `issues.write`
@@ -1559,18 +1580,31 @@ pub async fn post_as(
     id: &str,
     b: ChatPost,
 ) -> Result<ChatPosted, ApiError> {
-    let app = app.clone();
+    post_full(app, author, agent, None, id, b).await
+}
+
+/// [`post_as`], and `via`: the product that posted it for `author` (M237,
+/// a hud box's review: [`crate::boxes::post`]), which the message keeps
+/// beside its author as the agent's machine is kept.
+pub(crate) async fn post_full(
+    app: &Platform,
+    author: &str,
+    agent: Option<&AgentPrincipal>,
+    via: Option<&str>,
+    id: &str,
+    b: ChatPost,
+) -> Result<ChatPosted, ApiError> {
     let s = Person { account: author.to_owned() };
-    gate(&app, &s.account).await?;
-    let (room, _, facts) = room_for(&app, &s.account, id).await?;
-    if watching(&app, &facts, &s.account, &room)? {
+    gate(app, &s.account).await?;
+    let (room, _, facts) = room_for(app, &s.account, id).await?;
+    if watching(app, &facts, &s.account, &room)? {
         return Err(refusal(
             StatusCode::FORBIDDEN,
             WATCHING,
             "you're watching this session: you read its threads, and its owner can let you post",
         ));
     }
-    if !writable(&app, &facts, &room, &s.account)? {
+    if !writable(app, &facts, &room, &s.account)? {
         return Err(err(StatusCode::CONFLICT, "this room is read-only"));
     }
     let text = b.text.trim();
@@ -1596,10 +1630,10 @@ pub async fn post_as(
     }
     app.limits.check_account_per_minute(CHAT_POSTS, &s.account)?;
     app.limits.check_all_per_minute(ALL_CHAT_POSTS)?;
-    let people = audience(&app, &room).await?;
-    let (named, mut unreached) = mentions(&app, text, &people, &s.account).await?;
+    let people = audience(app, &room).await?;
+    let (named, mut unreached) = mentions(app, text, &people, &s.account).await?;
     let mut stored = named.clone();
-    stored.extend(agent_mentions(&app, &facts, &room, &mut unreached, agent).await?);
+    stored.extend(agent_mentions(app, &facts, &room, &mut unreached, agent).await?);
     let at = now_ms();
     let seq = app.db.add_chat_message(
         &room.id,
@@ -1612,14 +1646,15 @@ pub async fn post_as(
             ref_pane: b.pane.as_ref().map(|p| p.pane.as_str()),
             mentions: &stored,
             agent: agent.map(|a| a.machine.as_str()),
+            via,
         },
     )?;
     app.chat.publish(&app.db, ChatLive::Message { room: room.id.clone(), seq }, None);
     let pushed = push(
-        &app,
+        app,
         &facts,
         &room,
-        (&s.account, agent),
+        (&s.account, agent, via),
         seq,
         text.is_empty().then_some(quote).flatten().unwrap_or(text),
         &named,
@@ -1644,10 +1679,10 @@ const PUSHES: PushOptions = PushOptions { ttl: None, any_subscription: true };
 /// one path, so one push ([`crate::inbox::thread_mentioned`]).
 #[allow(clippy::too_many_arguments)]
 async fn push(
-    app: &Arc<Platform>,
+    app: &Platform,
     facts: &Facts,
     room: &Room,
-    (author, agent): (&str, Option<&AgentPrincipal>),
+    (author, agent, via): (&str, Option<&AgentPrincipal>, Option<&str>),
     seq: i64,
     text: &str,
     named: &[String],
@@ -1669,6 +1704,11 @@ async fn push(
     let me = match agent {
         Some(a) => format!("{}'s agent on {}", name_of(app, author).await?, a.machine_name),
         None => name_of(app, author).await?,
+    };
+    // Posted for them by a product (M237): it says so, here as on the page.
+    let me = match via {
+        Some(v) => format!("{me} via {v}"),
+        None => me,
     };
     if inboxed {
         let mut quiet = Vec::new();
@@ -1712,10 +1752,10 @@ async fn push(
         sends.push((account.clone(), msg));
         out.push(ChatPushed { account, why });
     }
-    let app = app.clone();
+    let hub = app.hub.clone();
     tokio::spawn(async move {
         for (account, msg) in sends {
-            if let Err(e) = app.hub.push_with(&account, &msg, PUSHES).await {
+            if let Err(e) = hub.push_with(&account, &msg, PUSHES).await {
                 tracing::warn!(error = %e, %account, "chat's push didn't go");
             }
         }
@@ -2083,6 +2123,7 @@ async fn import(
                 ref_pane: m.pane.as_deref().filter(|p| valid_target(p)),
                 mentions,
                 agent: None,
+                via: None,
             },
         })
         .collect();

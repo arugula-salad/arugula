@@ -356,6 +356,45 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
   `ARUGULA_HOSTED_TURN_MINUTES` (120): caps on agent turns that run on the
   platform's key, per account: at once, per UTC day, and minutes per UTC
   day. A project's own key has none.
+- `ARUGULA_INFERENCE_ANTHROPIC_KEY`: the platform's own Anthropic key for
+  the inference broker (M231), on the platform (a Fly secret of the
+  platform's app; not set yet). Unlike hosted boxes' key, the platform holds
+  this one: the broker sets it on the calls it forwards. It pays, under a
+  monthly cap per account, for a registered client's accounts with no key
+  of their own (studio's lobby: its house key, studio-018) and for accounts
+  on `ARUGULA_CLOUD_ACCOUNTS` calling the broker themselves. Make it as the
+  hosted one (step 1 above): its own Anthropic workspace (`arugula-broker`),
+  with a hard monthly spend limit there, which is the bound; the caps are
+  fairness. Infisical keeps it as `ARUGULA_INFERENCE_ANTHROPIC_KEY`. Moving
+  studio's lobby over (M236): use the key beds holds as its
+  `ANTHROPIC_API_KEY` today, so the same Anthropic account pays as before.
+  Rotating: set the new value and restart the platform; calls under way
+  finish on the old one. Unset, the platform's key pays for nothing through
+  the broker.
+- `ARUGULA_INFERENCE_CLIENTS`: the broker's registered clients, comma-separated
+  `id:sha256[:house_usd[:payers]]` (`hosted::broker::clients`). `sha256` is
+  the hex SHA-256 of the client's credential (`printf %s "$CREDENTIAL" |
+  sha256sum`): the platform never holds the credential, which the client
+  keeps (studio: in its own secrets).
+  `house_usd`: what the platform's key may spend each UTC month for each
+  account the client names (studio: 20, the lobby's `STUDIO_SPEND_CAP_USD`).
+  The same credential is the client's on its own routes (M236,
+  `/api/client/...`: its apps by project, its people's projects, the
+  secrets project owners grant it), which the gateway lets a bearer reach.
+  `payers`: it may name a sponsor and a visitor. For studio:
+  `studio:<sha256>:20:payers`. M228's registered clients replace the digest
+  (the policy stays here).
+- `ARUGULA_INFERENCE_CONCURRENT` (4): how many of an account's calls may
+  run on the platform's key at once, through the broker.
+- `ARUGULA_INFERENCE_PLATFORM_BETAS` (none): the `anthropic-beta` values
+  the broker sends on the platform's key, comma-separated; the rest are
+  dropped, and the long-context ones (`context-1m-*`, billed at a premium)
+  are refused there and can't be listed.
+- `ARUGULA_INFERENCE_MONTHLY_USD` (20): what the platform's key may spend
+  through the broker each UTC month for an account on `ARUGULA_CLOUD_ACCOUNTS`
+  calling it itself.
+- `ARUGULA_INFERENCE_UPSTREAM` (`https://api.anthropic.com`): Anthropic's
+  API, for the broker (the testnet's is its fake).
 - `ARUGULA_CLOUD_SECRET_KEY`: the master key. It wraps each project's
   data key, which seals that project's secrets and its own inference keys
   ("Secrets' keys" below). Without it, a project can't set an inference
@@ -512,10 +551,13 @@ then. `/oauth/*` is rate-limited per client address (`limit::ISSUER`).
     the box's `HUD_FORGE_SIGNIN_AUDIENCE`, and its address is a page on the
     box. **Register a box's page only on an origin that serves hud's own UI,
     never agent or app content.** The assertion arrives in that page's
-    fragment, and anything that runs on that origin can read it. Set the
-    box's `HUD_FORGE_SIGNIN_URL` to
-    `https://control.arugula.io/oauth/hud?client_id=<id>&redirect_uri=<page>`.
-    Set its `HUD_FORGE_SIGNIN_KEY` to the signing key's SPKI (`issuer keys`,
+    fragment, and anything that runs on that origin can read it. A box with
+    hud's platform client (M237) sets `HUD_PLATFORM_URL` to control's URL
+    and registers `<HUD_PUBLIC_URL>/__hud/signin/back`, a page the box's
+    proxy serves itself. It reads the keys from the JWKS. An older box sets
+    `HUD_FORGE_SIGNIN_URL` to
+    `https://control.arugula.io/oauth/hud?client_id=<id>&redirect_uri=<page>`
+    and its `HUD_FORGE_SIGNIN_KEY` to the signing key's SPKI (`issuer keys`,
     below).
 
   ```
@@ -526,6 +568,55 @@ then. `/oauth/*` is rate-limited per client address (`limit::ISSUER`).
   ```
 
   Changing a client's kind ends its access tokens.
+- **A hud box bound to a project (M237).** `add-client --kind hud --project
+  prj_…` binds a box to a platform project, and `client-secret --id <box>`
+  gives it a secret (shown once). The box reads it from a 0600 file
+  (`HUD_PLATFORM_SECRET_FILE`), and refuses to start with it unless its
+  agent runs as another OS user (`HUD_AGENT_RUN_AS`), so nothing the agent
+  writes or runs can read it. Then:
+  - `GET /oauth/hud/members` (HTTP Basic, the box's id and secret) is the
+    box's roster: the project's members now, each with their numeric GitHub
+    id. A member who signs in to the box through control (`/__hud/signin`
+    on the box) is let in with no invite, matched by that number.
+  - **How long a removed member keeps a box:** at most about 71 seconds
+    after the hub takes them out of the team. The platform's cache has
+    the change within a feed tick and a cache tick (11 s,
+    `arugula_platform::cache::DELAY`); the box reads its roster afresh every
+    60 s and takes off anyone who left, which ends their session there. If
+    the box can't reach control, it takes nobody off until it can: run
+    `hud revoke` on the box to end every session at once.
+  - `POST /oauth/hud/posts` `{target, author, text}` posts nothing. It keeps
+    a comment-mode review for ten minutes and answers a link to the hub's
+    own page (`/oauth/hud/post?id=`). There the review's author, signed in
+    to control, sees which box, which object, and the text word for word,
+    and presses **Post** or **Cancel**. The page runs no script and nothing
+    may frame it, and its answer is taken only from that page (the consent
+    screen's same-origin check), once. So an app on the box (the agent's own
+    code included) can ask, but can't post for anyone. Posted, it's in the
+    thread on that object (the box's `HUD_PLATFORM_REVIEW_THREAD`, an
+    `iss_…` or a `fi_…`), shown as "<name> via <the client's name>" on the
+    page, in pushes and the inbox, over MCP and in the CLI. It's posted only
+    if the author may post there now, as when they post themselves. An object
+    outside the project is "no such object".
+  - **Limits:** 600 calls an hour per box, 120 reviews an hour, and 50
+    waiting at once. Past 30 reviews in an hour, a warn
+    (`hud-box-posts-bulk`, once an hour) and a `posts` row in
+    `issuer link-alerts`.
+  - The secret does nothing else. An `oidc` client's secret can't call
+    these, and a box's can't link accounts. An unbound box gets 409
+    `not_bound` and keeps its own roster. Changing a client's kind drops its
+    secret.
+
+  ```
+  fly ssh console -a illogical-control -C "/arugula-control issuer add-client --db /data/control.db \
+      --id notes-box --kind hud --name 'notes (hud)' --project prj_… \
+      --redirect https://notes.box.example/__hud/signin/back"
+  fly ssh console -a illogical-control -C "/arugula-control issuer client-secret --db /data/control.db --id notes-box"
+  ```
+
+  The CLI can't check that the project exists (the platform's database may
+  be elsewhere): a box bound to one that isn't there gets 404
+  `no_such_project`, and admits nobody by membership.
 - **What a client must do** (studio's lobby, or any `oidc` product):
   - send `state` (and `nonce`), and on the callback **check `state` first**,
     before anything else. Refuse a callback whose `state` isn't one this
@@ -557,8 +648,10 @@ then. `/oauth/*` is rate-limited per client address (`limit::ISSUER`).
   that has signed in with GitHub. If another GitHub account here has signed
   in with the same login since (someone renamed and the name was taken),
   it's refused (409) until they sign in again. It also carries `account`,
-  `github_id`, `kid`, and the box's `nonce` if the box sent one. hud reads
-  only `sub` today (see M237, below).
+  `github_id`, `kid`, and the box's `nonce` if the box sent one. hud from
+  M237 on matches people on `github_id`, never the login in `sub`, and
+  takes an assertion only with the nonce of the sign-in that browser
+  started on the box (login CSRF).
 - **Sign-in.** Anyone not signed in is sent to control's page
   (`#issuer-signin=`), signs in with GitHub or a passkey as always, and comes
   back to the same request. `prompt=none` returns `login_required` instead.
@@ -573,11 +666,45 @@ then. `/oauth/*` is rate-limited per client address (`limit::ISSUER`).
   code; no sends the client `access_denied`. With the consent kept, sign-in
   goes straight through; `prompt=none` without it returns
   `consent_required`. hud boxes never ask.
-- **For M237 (hud as a client):** have hud match people on `github_id`, not
-  the login in `sub`. Logins change hands, and `github_id` is already in the
-  payload. Have hud send a `nonce` tied to the session that asked, and check
-  it, which closes login CSRF through a link carrying someone else's
-  assertion. Both need hud's change, and neither breaks today's format.
+
+#### studio as a client (M236)
+
+What makes studio's lobby a client, once, in this order (each a choice for
+Jake: these are production secrets and a public product's sign-in):
+
+1. **The issuer client** (M228): `arugula-control issuer add-client --id studio
+   --kind oidc --name Studio --redirect https://studio.arugula.io/api/auth/arugula/callback`,
+   then its link secret (M229, above). studio holds them as
+   `ARUGULA_CLIENT_ID` and `ARUGULA_CLIENT_SECRET`, with `ARUGULA_ISSUER`.
+2. **The platform credential** (M231): a random credential studio keeps as
+   `ARUGULA_PLATFORM_CREDENTIAL`, whose SHA-256 goes in
+   `ARUGULA_INFERENCE_CLIENTS` as `studio:<sha256>:20:payers` on the
+   platform. Use the same id as the issuer client, so the platform page
+   shows the switches beside the linked product.
+3. **People turn it on themselves,** on the platform page: Settings, Linked
+   products, "Let Studio see my projects", and Settings, Claude, "Let studio
+   use Claude for me". Nothing turns either on for them. Until they do, the
+   lobby keeps an app its maker's and pays Claude as it did.
+4. **Project owners allow secrets** on the project's settings page, after
+   setting them there: studio asks for each one it would send, for one app
+   and one host, and an owner allows that ask. A grant's reads, whether the
+   value changed since and by whom, and the latest events show beside it.
+   An hour of unusually many reads of one secret is pushed to the owners
+   and logged (`ops="client-secret-reads"`).
+5. **beds** (studio's other pod): `STUDIO_SERVICE_PLANTING=off` once hosted
+   workspaces plant repos; studio's docs/planter-beds.md lists the rest.
+
+What studio's credential can do alone, if it leaks: read the project
+secrets owners allowed it, for the apps and hosts they allowed (limited,
+counted and pushed as above), and act for people only with their own access
+token from the hub, which lasts minutes. The next step is binding the
+credential to studio itself (`private_key_jwt` against a key studio holds,
+or an egress IP allowlist on the platform): Jake's call.
+
+Revoking studio: take its entry out of `ARUGULA_INFERENCE_CLIENTS` and
+restart the platform (every `/api/client/` and broker call is refused at
+once), and remove the issuer client (its links, consents and secret go with
+it, M229).
 
 #### Account links (M229)
 
@@ -594,8 +721,8 @@ account) with `links.rs`, from its server:
 person is, and nothing more. Nothing on the hub or the platform may grant a
 power, a project, a role or a machine because an `account_links` row
 exists, and no product should either: a product decides what its own users
-may do, and reads projects and roles from the platform with an access
-token.
+may do, and reads projects and roles from the platform: as a registered
+client for an account that let it see them (M236, below).
 
 - **Only with a link secret.** A public client's tokens prove who signed in,
   not which of the product's users that is, so these routes take the
@@ -702,10 +829,12 @@ Daemons reconnect by themselves, but pick a quiet hour.
    fly secrets deploy -a illogical-control
    ```
 
-   **hud boxes** hold a single key (`HUD_FORGE_SIGNIN_KEY`), not the JWKS.
-   Set each box's key to the new SPKI at this step. A box still on the old
-   key refuses the new assertions (no one can sign in to it) until it's
-   changed. A box changed early refuses them until this step.
+   **hud boxes** with `HUD_PLATFORM_URL` (M237) read the JWKS, kept at most
+   5 minutes, and need nothing. Older boxes hold a single key
+   (`HUD_FORGE_SIGNIN_KEY`): set each one's key to the new SPKI at this
+   step. A box still on the old key refuses the new assertions (no one can
+   sign in to it) until it's changed. A box changed early refuses them
+   until this step.
 4. **Drop the old key** once `_UNTIL` has passed: `fly secrets unset -a
    illogical-control ARUGULA_ISSUER_KEY_PREVIOUS
    ARUGULA_ISSUER_KEY_PREVIOUS_UNTIL`. The hub has already stopped publishing
@@ -741,7 +870,10 @@ There's no overlap to wait for:
      leaked key when their cached copy expires: 5 minutes for ours, longer
      if a client caches longer. Ask each product's owner to fetch the JWKS
      again (or restart) at once. Until they do, they accept forged tokens.
-   - **hud boxes** hold the leaked key itself, so **a box still on it
+   - **hud boxes with `HUD_PLATFORM_URL`** (M237) read the JWKS and stop
+     trusting the leaked key within 5 minutes of the swap (their cached
+     copy's age), or at once on a restart.
+   - **Older hud boxes** hold the leaked key itself, so **a box still on it
      accepts forged assertions** for any login, for as long as it keeps it.
      Change every box's `HUD_FORGE_SIGNIN_KEY` to the new SPKI right away,
      or take its `HUD_FORGE_SIGNIN_KEY` off (no forge sign-ins at all) if it
@@ -1649,6 +1781,7 @@ machines' writes took turns; M144 replaced it). What's left:
 | `chat_events` (transaction) | `Db::add_chat_event` | events commit in `seq` order, so a machine that has sent up to N never passes one still uncommitted below it |
 | `leader` (session) | the listening connection | one machine applies the feed and reports usage |
 | `window` (transaction) | `copy --to postgres://` | two copies at once wait for each other |
+| `inference:<account>` (transaction) | `Db::reserve_call` | an account's month on the platform's key and its calls running are sums over its calls (M231): two calls at once can't both take the last of its cap |
 
 Row-level instead of the old lock:
 

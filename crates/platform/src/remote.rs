@@ -48,6 +48,7 @@ use arugula_control_wire::{
 use crate::{
     Deleted, PlatformPort,
     auth::Asked,
+    boxes::{BoxMember, BoxPost, BoxPosted},
     forge::{
         GithubUser, TokenAnswer,
         send::{Outcome, UserToken},
@@ -321,6 +322,12 @@ fn hosted_args(project: &str, workspace: &str, machine: &str, report: Option<&Se
     }
 }
 
+/// A bound hud box's project (M237's `box_members`).
+#[derive(Serialize, Deserialize)]
+struct ProjectArgs {
+    project: String,
+}
+
 /// A machine and the account it acts for (M184's `machine_drives`).
 #[derive(Serialize, Deserialize)]
 struct DrivesArgs {
@@ -362,6 +369,12 @@ struct ProductUserArgs {
 #[derive(Serialize, Deserialize)]
 struct UnlinkArgs {
     account: String,
+    client: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct AccessArgs {
+    token: String,
     client: String,
 }
 
@@ -548,6 +561,11 @@ impl HubPort for HttpHub {
         Box::pin(self.0.call("unlink_product", a))
     }
 
+    fn client_account<'a>(&'a self, token: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        let a = AccessArgs { token: token.to_owned(), client: client.to_owned() };
+        Box::pin(self.0.call("client_account", a))
+    }
+
     fn linked_account<'a>(
         &'a self,
         client: &'a str,
@@ -664,6 +682,10 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
                 answer(hub.owner_browser_signed(&a.owner, &a.device, &a.body, &a.sig).await?)?
             }
             "product_links" => answer(hub.product_links(&args::<AccountArgs>(&body)?.account).await?)?,
+            "client_account" => {
+                let a: AccessArgs = args(&body)?;
+                answer(hub.client_account(&a.token, &a.client).await?)?
+            }
             "unlink_product" => {
                 let a: UnlinkArgs = args(&body)?;
                 answer(hub.unlink_product(&a.account, &a.client).await?)?
@@ -879,6 +901,14 @@ impl PlatformPort for HttpPlatform {
     ) -> BoxFuture<'a, anyhow::Result<Uploaded>> {
         Box::pin(self.0.call("hosted_uploaded", UploadArgs { machine: machine.clone(), upload: upload.clone() }))
     }
+
+    fn box_members<'a>(&'a self, project: &'a str) -> BoxFuture<'a, anyhow::Result<Option<Vec<BoxMember>>>> {
+        Box::pin(self.0.call("box_members", ProjectArgs { project: project.to_owned() }))
+    }
+
+    fn box_post<'a>(&'a self, post: &'a BoxPost) -> BoxFuture<'a, anyhow::Result<BoxPosted>> {
+        Box::pin(self.0.call("box_post", post.clone()))
+    }
 }
 
 /// The platform's internal API: every `PlatformPort` method of `port`,
@@ -976,6 +1006,8 @@ async fn platform_call(
                 let a: UploadArgs = args(&body)?;
                 answer(p.hosted_uploaded(&a.machine, &a.upload).await?)?
             }
+            "box_members" => answer(p.box_members(&args::<ProjectArgs>(&body)?.project).await?)?,
+            "box_post" => answer(p.box_post(&args::<BoxPost>(&body)?).await?)?,
             _ => return Ok(None),
         }))
     }

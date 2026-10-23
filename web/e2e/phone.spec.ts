@@ -3,7 +3,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { devices, expect, test } from "@playwright/test";
-import { active, ready, reset, text, type } from "./helpers";
+import { active, paneEl, ready, reset, text, type } from "./helpers";
 
 const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
 test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
@@ -161,4 +161,31 @@ test("share a session from the sheet, and from a push's Share", async ({ page })
   await page.reload();
   await expect(page.locator(`[data-share="${session}"]`)).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.active())).toBe(pane);
+});
+
+test("a keyboard suggestion replaces the word, not the line", async ({ page }) => {
+  await reset(page);
+  const shown = await active(page);
+  await ready(page, shown);
+  await paneEl(page, shown).click({ position: { x: 40, y: 40 } });
+  // Gboard, as on a Pixel: each key is a keyCode 229 keydown, then the
+  // textarea changes, sometimes after xterm.js has looked. A tapped
+  // suggestion replaces the word in the textarea.
+  await page.evaluate(async () => {
+    const ta = document.querySelector<HTMLTextAreaElement>(".pane .xterm-helper-textarea")!;
+    const edit = async (value: string, inputType: string) => {
+      const key = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Unidentified" });
+      Object.defineProperty(key, "keyCode", { value: 229 });
+      ta.dispatchEvent(key);
+      await new Promise((r) => setTimeout(r, 20));
+      ta.value = value;
+      ta.dispatchEvent(new InputEvent("input", { bubbles: true, inputType }));
+    };
+    let typed = "";
+    for (const c of "echo brpwn") await edit((typed += c), "insertText");
+    await edit("echo brown", "insertReplacementText");
+  });
+  await page.keyboard.press("Enter");
+  await expect.poll(() => text(page, shown)).toMatch(/^brown$/m);
+  expect(await text(page, shown)).not.toContain("brpwn");
 });

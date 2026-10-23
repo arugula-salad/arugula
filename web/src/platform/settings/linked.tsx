@@ -4,7 +4,11 @@
 // (`/api/linked-products`, through the platform). Unlinking ends both, is
 // audited, and the product sees it the next time it asks the hub; it links
 // again only when you sign in to it through Arugula again, which asks you
-// first. A link is never authorization: it grants nothing here.
+// first. A link is never authorization: it grants nothing here. A product
+// that's also a client of the platform (studio, M236) gets a switch of its
+// own beside it: whether it may see your projects and your role in each,
+// and keep its apps in the ones you edit. Off until you turn it on;
+// unlinking ends it.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
@@ -16,10 +20,12 @@ export type ProductLink = {
   user?: string;
   name?: string;
   linked?: number;
+  /** Whether it may see your projects (M236); missing when it isn't a client of the platform. */
+  projects?: boolean;
 };
 
-async function call<T>(path: string, post = false): Promise<T> {
-  const r = await platformFetch(path, { method: post ? "POST" : "GET", credentials: "same-origin" });
+async function call<T>(path: string, method = "GET"): Promise<T> {
+  const r = await platformFetch(path, { method, credentials: "same-origin" });
   const v = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((v as { error?: string }).error ?? `Request failed (${r.status})`);
   return v as T;
@@ -39,7 +45,18 @@ export function LinkedProducts() {
     setErr("");
     setBusy(l.client);
     try {
-      await call(`/api/linked-products/${encodeURIComponent(l.client)}/unlink`, true);
+      await call(`/api/linked-products/${encodeURIComponent(l.client)}/unlink`, "POST");
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+    await load();
+    setBusy("");
+  };
+  const sees = async (l: ProductLink) => {
+    setErr("");
+    setBusy(l.client);
+    try {
+      await call(`/api/linked-products/${encodeURIComponent(l.client)}/projects`, l.projects ? "DELETE" : "PUT");
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -68,6 +85,18 @@ export function LinkedProducts() {
                 <button class="control-linkish" data-unlink={l.client} disabled={busy === l.client} onClick={() => void unlink(l)}>
                   Unlink
                 </button>
+                {l.projects !== undefined && (
+                  <label class="platform-mirror">
+                    <input
+                      type="checkbox"
+                      data-linked-projects={l.client}
+                      checked={l.projects}
+                      disabled={busy === l.client}
+                      onChange={() => void sees(l)}
+                    />{" "}
+                    Let {l.product} see my projects and my role in each, and keep its apps in the ones I edit
+                  </label>
+                )}
               </li>
             );
           })}

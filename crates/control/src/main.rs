@@ -57,6 +57,9 @@ mod hosted_work;
 #[cfg(test)]
 mod hub_latency_bench;
 mod hub_port;
+mod hud_box;
+#[cfg(test)]
+mod hud_box_wire;
 mod internal;
 mod issuer;
 #[cfg(test)]
@@ -566,6 +569,10 @@ fn routes() -> Routes {
         .route("/oauth/token", post(issuer::token_endpoint))
         .route("/oauth/userinfo", get(issuer::userinfo))
         .route("/oauth/hud", get(issuer::hud))
+        // hud boxes bound to a project (M237): their roster, and reviews their people post.
+        .route("/oauth/hud/members", get(hud_box::members))
+        .route("/oauth/hud/posts", post(hud_box::posts))
+        .route("/oauth/hud/post", get(hud_box::post_page).post(hud_box::post_answer))
         // Account links (M229): a product's user to the platform account.
         .route("/oauth/links", post(links::link))
         .route("/oauth/links/{user}", get(links::show).delete(links::unlink))
@@ -1150,6 +1157,7 @@ async fn run() -> anyhow::Result<()> {
     if let Some(p) = app.platform.local() {
         arugula_platform::hosted::start(p);
         arugula_platform::keys::start(p);
+        arugula_platform::clients::start(p);
         // The job worker: runs' dispatch (M212) and schedules (M214).
         arugula_platform::work::start(p);
         // Runs' logs past their days (M213).

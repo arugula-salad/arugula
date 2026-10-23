@@ -22,6 +22,10 @@
 //!   product: assertions issued until then never link.
 //! - `link_alerts` (M229): the ops counter of bulk unlinks and lookups by a
 //!   client.
+//! - `issuer_clients.project` (M237): the platform project a `hud` client
+//!   (a box) is bound to. A bound box reads its project's members as its
+//!   roster and posts reviews to object threads in that project, with its
+//!   client secret; an unbound box keeps its own roster.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -91,6 +95,19 @@ CREATE TABLE IF NOT EXISTS link_alerts (
 );
 ";
 
+/// The tables, and the columns added since they were first made (M237's
+/// `issuer_clients.project`): what the hub runs at start, and the CLI on a
+/// hub's file.
+pub fn ensure(c: &Connection) -> rusqlite::Result<()> {
+    c.execute_batch(SCHEMA)?;
+    let mut q = c.prepare("PRAGMA table_info(issuer_clients)")?;
+    let names: Vec<String> = q.query_map([], |r| r.get(1))?.collect::<Result<_, _>>()?;
+    if !names.iter().any(|n| n == "project") {
+        c.execute_batch("ALTER TABLE issuer_clients ADD COLUMN project TEXT")?;
+    }
+    Ok(())
+}
+
 /// Which flow a client takes. Each refuses the other kind, so a hud box's
 /// address never receives a code and a product's never an assertion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -134,6 +151,15 @@ pub struct Client {
     /// sends, as registered (normalized).
     pub redirect_uris: Vec<String>,
     pub created: u64,
+    /// The platform project a `hud` client is bound to (M237): its
+    /// members are the box's roster. Never set on an `oidc` client.
+    pub project: Option<String>,
+}
+
+/// A platform project id as a binding names it: `prj_` and 1 to 64 letters
+/// and digits.
+pub fn project_id_ok(id: &str) -> bool {
+    id.strip_prefix("prj_").is_some_and(|r| (1..=64).contains(&r.len()) && r.bytes().all(|b| b.is_ascii_alphanumeric()))
 }
 
 /// A client id: lowercase letters, digits, `.`, `_` and `-`, 1 to 64, as a
@@ -171,14 +197,15 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Client> {
         name: r.get(2)?,
         redirect_uris: serde_json::from_str(&uris).unwrap_or_default(),
         created: r.get(4)?,
+        project: r.get(5)?,
     })
 }
 
-const COLUMNS: &str = "id, kind, name, redirect_uris, created";
+const COLUMNS: &str = "id, kind, name, redirect_uris, created, project";
 
-/// Register a client, or change its kind, name and addresses: what was
-/// kept, its addresses normalized. Changing a client's kind ends its
-/// access tokens.
+/// Register a client, or change its kind, name, addresses and project:
+/// what was kept, its addresses normalized. Changing a client's kind ends
+/// its access tokens and its secret.
 pub fn put_client(c: &Connection, client: &Client) -> anyhow::Result<Client> {
     anyhow::ensure!(
         client_id_ok(&client.id),
@@ -195,37 +222,53 @@ pub fn put_client(c: &Connection, client: &Client) -> anyhow::Result<Client> {
             uris.push(n);
         }
     }
-    c.execute_batch(SCHEMA)?;
+    if let Some(p) = &client.project {
+        anyhow::ensure!(client.kind == ClientKind::Hud, "only a hud client (a box) is bound to a project");
+        anyhow::ensure!(project_id_ok(p), "{p}: a project id is prj_ and letters and digits");
+    }
+    ensure(c)?;
     c.execute(
         "DELETE FROM issuer_tokens WHERE client = ?1 AND EXISTS
              (SELECT 1 FROM issuer_clients WHERE id = ?1 AND kind != ?2)",
         params![client.id, client.kind.as_str()],
     )?;
+    // A secret was given for one kind's routes (M237): a client that
+    // changes kind gets a new one.
     c.execute(
-        "INSERT INTO issuer_clients (id, kind, name, redirect_uris, created) VALUES (?1, ?2, ?3, ?4, ?5)
-         ON CONFLICT (id) DO UPDATE SET kind = ?2, name = ?3, redirect_uris = ?4",
-        params![client.id, client.kind.as_str(), client.name.trim(), serde_json::to_string(&uris)?, client.created],
+        "DELETE FROM issuer_client_secrets WHERE client = ?1 AND EXISTS
+             (SELECT 1 FROM issuer_clients WHERE id = ?1 AND kind != ?2)",
+        params![client.id, client.kind.as_str()],
+    )?;
+    c.execute(
+        "INSERT INTO issuer_clients (id, kind, name, redirect_uris, created, project) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT (id) DO UPDATE SET kind = ?2, name = ?3, redirect_uris = ?4, project = ?6",
+        params![
+            client.id,
+            client.kind.as_str(),
+            client.name.trim(),
+            serde_json::to_string(&uris)?,
+            client.created,
+            client.project
+        ],
     )?;
     Ok(Client { redirect_uris: uris, name: client.name.trim().to_owned(), ..client.clone() })
 }
 
 pub fn clients(c: &Connection) -> anyhow::Result<Vec<Client>> {
-    c.execute_batch(SCHEMA)?;
+    ensure(c)?;
     let mut q = c.prepare(&format!("SELECT {COLUMNS} FROM issuer_clients ORDER BY id"))?;
     Ok(q.query_map([], row)?.collect::<Result<_, _>>()?)
 }
 
-/// Give a registered client a link secret (its hash), replacing any it
-/// had: the old one stops working at once.
+/// Give a registered client a secret (its hash), replacing any it had: the
+/// old one stops working at once. An `oidc` client links accounts with it
+/// (M229); a `hud` client (a box) reads its project's members and posts
+/// review threads (M237). Each kind's routes refuse the other's.
 pub fn set_client_secret(c: &Connection, client: &str, secret_hash: &str, now: u64) -> anyhow::Result<()> {
-    c.execute_batch(SCHEMA)?;
-    let kind: Option<String> =
-        c.query_row("SELECT kind FROM issuer_clients WHERE id = ?1", params![client], |r| r.get(0)).optional()?;
-    let Some(kind) = kind else { anyhow::bail!("no client {client}: register it first (issuer add-client)") };
-    anyhow::ensure!(
-        kind == ClientKind::Oidc.as_str(),
-        "client {client} is a {kind} client: only oidc clients (products with users of their own) link accounts"
-    );
+    ensure(c)?;
+    let there: bool =
+        c.query_row("SELECT COUNT(*) > 0 FROM issuer_clients WHERE id = ?1", params![client], |r| r.get(0))?;
+    anyhow::ensure!(there, "no client {client}: register it first (issuer add-client)");
     c.execute(
         "INSERT INTO issuer_client_secrets (client, secret_hash, created) VALUES (?1, ?2, ?3)
          ON CONFLICT (client) DO UPDATE SET secret_hash = ?2, created = ?3",
@@ -236,7 +279,7 @@ pub fn set_client_secret(c: &Connection, client: &str, secret_hash: &str, now: u
 
 /// Take a client's link secret away. Whether it had one.
 pub fn drop_client_secret(c: &Connection, client: &str) -> anyhow::Result<bool> {
-    c.execute_batch(SCHEMA)?;
+    ensure(c)?;
     Ok(c.execute("DELETE FROM issuer_client_secrets WHERE client = ?1", params![client])? > 0)
 }
 
@@ -382,7 +425,7 @@ fn end(c: &Connection, client: &str, account: &str, by: LinkBy, now: u64) -> rus
 /// account links it holds: each link ended is audited as the operator's
 /// (the audit keeps them). Whether it was there.
 pub fn remove_client(c: &mut Connection, id: &str) -> anyhow::Result<bool> {
-    c.execute_batch(SCHEMA)?;
+    ensure(c)?;
     let tx = c.transaction()?;
     let now = arugula_e2e::now_ms();
     let accounts: Vec<String> = {
@@ -473,22 +516,33 @@ pub fn import_link(c: &Connection, link: &Link, dry: bool) -> anyhow::Result<Imp
 
 /// The ops counter of bulk link calls: (client, what, count, last ms).
 pub fn link_alerts(c: &Connection) -> anyhow::Result<Vec<(String, String, u64, u64)>> {
-    c.execute_batch(SCHEMA)?;
+    ensure(c)?;
     let mut q = c.prepare("SELECT client, what, count, last FROM link_alerts ORDER BY last DESC")?;
     let rows = q.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
 impl Db {
-    /// Whether `secret` is `client`'s link secret, and the client is still
-    /// registered, as an `oidc` client.
-    pub fn issuer_client_secret_ok(&self, client: &str, secret: &str) -> anyhow::Result<bool> {
-        Ok(self.c().query_row(
-            "SELECT COUNT(*) > 0 FROM issuer_client_secrets s JOIN issuer_clients c ON c.id = s.client
-             WHERE s.client = ?1 AND s.secret_hash = ?2 AND c.kind = ?3",
-            params![client, crate::auth::hash(secret), ClientKind::Oidc.as_str()],
-            |r| r.get(0),
-        )?)
+    /// The client whose secret `secret` is, when it's still registered as
+    /// a `kind` client.
+    pub fn issuer_client_by_secret(
+        &self,
+        client: &str,
+        secret: &str,
+        kind: ClientKind,
+    ) -> anyhow::Result<Option<Client>> {
+        let cols = COLUMNS.split(", ").map(|c| format!("c.{c}")).collect::<Vec<_>>().join(", ");
+        Ok(self
+            .c()
+            .query_row(
+                &format!(
+                    "SELECT {cols} FROM issuer_client_secrets s JOIN issuer_clients c ON c.id = s.client
+                     WHERE s.client = ?1 AND s.secret_hash = ?2 AND c.kind = ?3"
+                ),
+                params![client, crate::auth::hash(secret), kind.as_str()],
+                row,
+            )
+            .optional()?)
     }
 
     /// Whether `account` let `client` sign it in (the consent, M229).

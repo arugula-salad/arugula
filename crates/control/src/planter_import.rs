@@ -301,6 +301,7 @@ mod tests {
             name: "planter".into(),
             redirect_uris: vec!["https://planter.example/auth/arugula/callback".into()],
             created: 1,
+            project: None,
         })
         .unwrap();
         db

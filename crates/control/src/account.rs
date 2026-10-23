@@ -647,6 +647,7 @@ mod tests {
                 ref_pane: None,
                 mentions,
                 agent: None,
+                via: None,
             };
             chat.add_chat_message(room, &m).unwrap();
         };

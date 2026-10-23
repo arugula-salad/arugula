@@ -46,7 +46,10 @@ verify them are `arugula_control_common::issuer`, and
 links products' own users to the platform account by numeric GitHub id
 (M229), tested in `src/links_wire.rs`; `src/planter_import.rs` imports
 planter's accounts as such links from a backup (M232, `arugula-control
-import planter`).
+import planter`). `src/hud_box.rs` answers a hud box
+bound to a platform project (M237): its roster (the project's members, by
+numeric GitHub id) and its reviews as object threads, tested in
+`src/hud_box_wire.rs`.
 `src/platform_host.rs` serves the
 platform page's own host, `--platform-host` (M151: `app.arugula.io`), with
 only the platform's routes and its page (`crates/platform/src/page.rs`). Chat (M122: a team's channels, DMs and

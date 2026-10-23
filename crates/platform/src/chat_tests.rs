@@ -88,6 +88,10 @@ struct State {
     /// the hub can't say.
     activity: BTreeMap<String, bool>,
     activity_down: bool,
+    /// Products accounts let sign them in (M229), by account.
+    products: BTreeMap<String, Vec<crate::hub::ProductLink>>,
+    /// Issuer access tokens (M228): token, then its account and client.
+    access: BTreeMap<String, (String, String)>,
     /// Products' users linked to accounts (M229), by (client, user): the
     /// account and the GitHub id.
     product_links: BTreeMap<(String, String), (String, u64)>,
@@ -137,6 +141,26 @@ impl TestHub {
             s.teams.insert(id.into(), Team { id: id.into(), name: id.into(), founder, locked, version, members });
         }
         self.change(ChangeKind::TeamRoster, id);
+    }
+
+    /// `account` let `client` sign it in, and links its user `user` (M229).
+    pub(crate) fn product(&self, account: &str, client: &str, user: &str) {
+        let link = crate::hub::ProductLink {
+            client: client.into(),
+            product: client.into(),
+            granted: Some(1),
+            user: Some(user.into()),
+            name: None,
+            linked: Some(1),
+        };
+        self.state.lock().unwrap().products.entry(account.into()).or_default().push(link);
+    }
+
+    /// An issuer access token for `account`, issued to `client`.
+    pub(crate) fn access_token(&self, account: &str, client: &str) -> String {
+        let t = format!("aat_{account}_{client}");
+        self.state.lock().unwrap().access.insert(t.clone(), (account.into(), client.into()));
+        t
     }
 
     pub(crate) fn daemon(&self, id: &str, account: &str, team: Option<&str>) {
@@ -300,6 +324,23 @@ impl TestHub {
 }
 
 impl HubPort for TestHub {
+    fn client_account<'a>(&'a self, token: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        self.called("client_account");
+        let s = self.state.lock().unwrap();
+        done(s.access.get(token).filter(|(_, c)| c == client).map(|(a, _)| a.clone()))
+    }
+    fn product_links<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Vec<crate::hub::ProductLink>>> {
+        self.called("product_links");
+        done(self.state.lock().unwrap().products.get(account).cloned().unwrap_or_default())
+    }
+    fn unlink_product<'a>(&'a self, account: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<bool>> {
+        self.called("unlink_product");
+        let mut s = self.state.lock().unwrap();
+        let mine = s.products.entry(account.into()).or_default();
+        let before = mine.len();
+        mine.retain(|l| l.client != client);
+        done(mine.len() < before)
+    }
     fn resolve<'a>(&'a self, _: &'a Principal) -> BoxFuture<'a, HubResult<Option<Resolved>>> {
         self.called("resolve");
         done(None)
