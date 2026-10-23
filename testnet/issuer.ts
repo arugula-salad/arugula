@@ -106,7 +106,7 @@ async function signInThrough(b: Browser, path: string, login: string, stop: (u: 
       if (opts["consent-out"]) writeFileSync(opts["consent-out"], page);
       res = await b.get(`${control}/oauth/consent`, {
         method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", origin: control },
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: new URL(reach(control)).origin },
         body: new URLSearchParams({ ticket, decision: "allow" }).toString(),
       });
       b.consents++;

@@ -251,6 +251,22 @@ async fn the_first_sign_in_through_a_product_asks_and_an_unlink_asks_again() {
 
     // From another site: refused, and the ticket still waits.
     assert_eq!(c.answer(&t, &b, "allow", Some("https://evil.example")).await.0, 403);
+    // `Origin: null` (control's pages say no-referrer) counts only when
+    // Sec-Fetch-Site says the post came from this origin.
+    let null_from = |site: &'static str| {
+        let body = format!("ticket={t}&decision=allow");
+        c.http
+            .post(format!("{}/oauth/consent", c.base))
+            .header(header::HOST, "control.test")
+            .header(header::COOKIE, &b)
+            .header(header::ORIGIN, "null")
+            .header("sec-fetch-site", site)
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+    };
+    assert_eq!(null_from("cross-site").await.unwrap().status(), 403);
+    assert_eq!(null_from("same-site").await.unwrap().status(), 403);
     // In another session: refused, and the ticket is spent.
     assert_eq!(c.answer(&t, COOKIE, "allow", Some(crate::issuer_wire::CONTROL)).await.0, 403);
     assert_eq!(c.answer(&t, &b, "allow", Some(crate::issuer_wire::CONTROL)).await.0, 403, "once");

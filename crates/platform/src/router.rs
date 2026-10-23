@@ -14,7 +14,8 @@ use axum::{
 use arugula_control_wire::{issues, runs as wire_runs};
 
 use crate::{
-    Platform, agent_mcp, agent_tokens, billing, chat, deploys, forge, grants, hosted, links, projects, run_grant, run_logs,
+    Platform, agent_mcp, agent_tokens, billing, chat, deploys, forge, grants, hosted, links, projects, run_grant,
+    run_logs,
     triggers::{agent as run_agents, routes as runs},
 };
 

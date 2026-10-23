@@ -595,7 +595,7 @@ pub struct Consent {
 }
 
 /// `POST /oauth/consent`: the person's answer to the consent screen. Only
-/// from control's own page (a cross-site post is refused), with the
+/// from the same origin it was shown on (a cross-site post is refused), with the
 /// ticket that screen was shown with, in the hub session it was shown in.
 /// Allowed: the consent is kept and the client gets its code. Cancelled:
 /// the client hears `access_denied`.
@@ -610,11 +610,35 @@ pub async fn consent(
         return r;
     }
     let refused = |why: &str| no_store((StatusCode::FORBIDDEN, why.to_owned()).into_response());
-    let own = url::Url::parse(&app.cfg.public_url).map(|u| u.origin().ascii_serialization()).unwrap_or_default();
+    // Same origin as this request: the Origin's host and port are the
+    // Host this came to (control answers on more than one site, so not
+    // only its public URL's).
     let header_is = |h: &str| headers.get(h).and_then(|v| v.to_str().ok()).map(str::to_owned);
-    if header_is("origin").is_some_and(|o| o != own)
-        || header_is("sec-fetch-site").is_some_and(|s| s != "same-origin" && s != "none")
-    {
+    let host = header_is("host").unwrap_or_default().to_ascii_lowercase();
+    let same = |o: &str| {
+        url::Url::parse(o).ok().is_some_and(|u| {
+            let authority = match (u.host_str(), u.port()) {
+                (Some(h), Some(p)) => format!("{h}:{p}"),
+                (Some(h), None) => h.to_owned(),
+                _ => return false,
+            };
+            authority.to_ascii_lowercase() == host
+        })
+    };
+    // A browser that was told no-referrer says `Origin: null` on a form's
+    // post; its Sec-Fetch-Site still says where the post came from.
+    let fetch_site = header_is("sec-fetch-site");
+    let origin_ok = match header_is("origin").as_deref() {
+        None => true,
+        Some("null") => fetch_site.as_deref() == Some("same-origin"),
+        Some(o) => same(o),
+    };
+    if !origin_ok || fetch_site.is_some_and(|s| s != "same-origin" && s != "none") {
+        tracing::info!(
+            origin = header_is("origin").unwrap_or_default(),
+            fetch_site = header_is("sec-fetch-site").unwrap_or_default(),
+            "a consent answer from another page was refused"
+        );
         return refused("this answer didn't come from Arugula's own page");
     }
     let Some((p, state)) = b.ticket.as_deref().and_then(|t| issuer.answer(&hash(t))) else {
