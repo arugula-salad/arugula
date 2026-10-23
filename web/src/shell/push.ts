@@ -55,11 +55,28 @@ function key(b64url: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 }
 
-/** In control mode, subscribing goes to control instead (M21). */
-let backend: { enable(): Promise<PushState>; disable(): Promise<PushState> } | null = null;
+/** What control pushes an account about (`/api/push/prefs`). */
+export interface PushPrefs {
+  chat: boolean;
+  machines: boolean;
+  projects: boolean;
+}
+
+/** In control mode, subscribing goes to control instead (M21), and the
+ * account chooses what it's pushed about. */
+let backend: {
+  enable(): Promise<PushState>;
+  disable(): Promise<PushState>;
+  prefs(): Promise<PushPrefs>;
+  setPrefs(p: Partial<PushPrefs>): Promise<PushPrefs>;
+} | null = null;
 export function setPushBackend(b: typeof backend) {
   backend = b;
 }
+
+/** What control pushes about, or null off control. */
+export const pushPrefs = () => backend?.prefs() ?? Promise.resolve(null);
+export const setPushPrefs = (p: Partial<PushPrefs>) => backend?.setPrefs(p) ?? Promise.resolve(null);
 
 export async function enablePush(): Promise<PushState> {
   if (backend) return backend.enable();

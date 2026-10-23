@@ -13,6 +13,12 @@
 //! say only that something waits; approving happens on the page, with
 //! the fingerprint.
 //!
+//! Each person chooses what they're pushed about (`prefs`): chat, their
+//! machines (what daemons relay), their projects (the platform's inbox,
+//! deploys and runs). Control holds back what they turned off. Notices
+//! about their account (a device or a person waiting, a new agent token)
+//! always go.
+//!
 //! Endpoints are only the browsers' push services (so control can't be
 //! made to post anywhere else), plus `--push-host` for tests.
 
@@ -38,6 +44,81 @@ use crate::{
 };
 
 type R = Result<Json<Value>, ApiError>;
+
+/// What a push is about, for what a person chose to hear (`prefs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Kind {
+    /// Team channels, DMs and pane threads (the platform's `chat-…`).
+    Chat,
+    /// What a daemon relays: a pane or an agent that needs you.
+    Machines,
+    /// The rest of the platform's: inbox items, deploys, runs, workspaces.
+    Projects,
+    /// Who and what may act for the account: never turned off.
+    Account,
+}
+
+impl Kind {
+    /// The kinds a person may turn off, by the names the page uses.
+    const CHOSEN: [(Kind, &'static str); 3] =
+        [(Kind::Chat, "chat"), (Kind::Machines, "machines"), (Kind::Projects, "projects")];
+
+    /// The platform's push by its `tag`.
+    pub(crate) fn of_platform(message: &Value) -> Kind {
+        let tag = message.get("tag").and_then(Value::as_str).unwrap_or_default();
+        if tag.starts_with("chat-") {
+            Kind::Chat
+        } else if tag.starts_with("agent-token-") || tag.starts_with("client-secret-reads-") {
+            Kind::Account
+        } else {
+            Kind::Projects
+        }
+    }
+
+    fn name(self) -> Option<&'static str> {
+        Self::CHOSEN.iter().find(|(k, _)| *k == self).map(|(_, n)| *n)
+    }
+}
+
+/// `account` turned pushes about `kind` off.
+pub(crate) fn muted(app: &App, account: &str, kind: Kind) -> anyhow::Result<bool> {
+    let Some(name) = kind.name() else { return Ok(false) };
+    Ok(app.db.push_muted(account)?.iter().any(|m| m == name))
+}
+
+/// `GET /api/push/prefs`: which kinds of push the account hears.
+pub async fn prefs(State(app): State<Arc<App>>, s: Session) -> R {
+    prefs_of(&app, &s.account)
+}
+
+fn prefs_of(app: &App, account: &str) -> R {
+    let muted = app.db.push_muted(account)?;
+    let on: serde_json::Map<String, Value> =
+        Kind::CHOSEN.iter().map(|(_, n)| ((*n).to_owned(), json!(!muted.iter().any(|m| m == n)))).collect();
+    Ok(Json(Value::Object(on)))
+}
+
+/// `POST /api/push/prefs`: `{ "chat": true, "machines": false, … }`; a kind
+/// left out stays as it was.
+pub async fn set_prefs(State(app): State<Arc<App>>, s: Session, Json(b): Json<serde_json::Map<String, Value>>) -> R {
+    let mut muted = app.db.push_muted(&s.account)?;
+    for (k, v) in &b {
+        let (Some((_, name)), Some(on)) = (Kind::CHOSEN.iter().find(|(_, n)| n == k), v.as_bool()) else {
+            return Err(err(StatusCode::BAD_REQUEST, "chat, machines or projects: true or false"));
+        };
+        muted.retain(|m| m != name);
+        if !on {
+            muted.push((*name).to_owned());
+        }
+    }
+    let muted: Vec<&str> = Kind::CHOSEN.iter().map(|(_, n)| *n).filter(|n| muted.iter().any(|m| m == n)).collect();
+    app.db.set_push_muted(&s.account, &muted)?;
+    // The daemons that serve them drop (or take back) their subscriptions now.
+    let mut ds: Vec<String> = app.db.daemons(&s.account)?.into_iter().map(|d| d.id).collect();
+    ds.extend(crate::teams::reachable(&app, &s.account)?);
+    app.relay.nudge(&ds);
+    prefs_of(&app, &s.account)
+}
 
 /// Push services browsers use.
 const SERVICES: &[&str] =
@@ -154,10 +235,14 @@ fn served(app: &App, daemon: &str, own: &str) -> anyhow::Result<Vec<String>> {
     Ok(a)
 }
 
-/// Subscriptions of the people a daemon serves, for it to check and use.
+/// Subscriptions of the people a daemon serves, for it to check and use:
+/// not those of anyone who turned their machines' pushes off.
 pub async fn daemon_subs(State(app): State<Arc<App>>, d: DaemonAuth) -> R {
     let mut subs = Vec::new();
     for a in served(&app, &d.cert.device, &d.cert.account)? {
+        if muted(&app, &a, Kind::Machines)? {
+            continue;
+        }
         // Passed on as stored (signed by the device; control never reads it).
         subs.extend(app.db.push_subs(&a)?);
     }
@@ -261,7 +346,12 @@ async fn send_own(app: &App, sub: &PushSub, msg: &[u8]) -> Result<(), ApiError> 
 /// (as [`notify_with`] does, for chat's pushes), encrypted here as control's
 /// own notices are, kept by a push service for `ttl` (an hour by default).
 /// Waits for each push service, and says what they did.
+/// Nothing goes for a kind the account turned off ([`Kind::of_platform`]).
 pub(crate) async fn push_account(app: &App, account: &str, msg: &[u8], options: PushOptions) -> anyhow::Result<Pushed> {
+    let kind = serde_json::from_slice(msg).map_or(Kind::Projects, |m| Kind::of_platform(&m));
+    if muted(app, account, kind)? {
+        return Ok(Pushed::default());
+    }
     let revoked: std::collections::HashSet<String> =
         app.db.revocations(account)?.into_iter().map(|r| r.device).collect();
     let ttl = options.ttl.map_or(HOUR, |t| u32::try_from(t.as_secs()).unwrap_or(u32::MAX));
@@ -307,6 +397,11 @@ pub async fn daemon_send(State(app): State<Arc<App>>, d: DaemonAuth, Json(b): Js
     };
     if !served(&app, &d.cert.device, &d.cert.account)?.contains(&account) {
         return Err(err(StatusCode::FORBIDDEN, "not someone this daemon serves"));
+    }
+    // A daemon that hasn't fetched their subscriptions since they turned
+    // their machines' pushes off: held back, and done as far as it knows.
+    if muted(&app, &account, Kind::Machines)? {
+        return crate::reply(&PushAnswer { status: 204 });
     }
     // A brake on how much one daemon has control relay, and on all of them.
     app.limits.check_daemon(crate::limit::DAEMON_PUSHES, &d.cert.device)?;

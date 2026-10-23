@@ -192,6 +192,10 @@ CREATE TABLE IF NOT EXISTS push_subs (
     account TEXT NOT NULL,
     body TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS push_prefs (
+    account TEXT PRIMARY KEY,
+    muted TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS usage (
     account TEXT NOT NULL,
     day TEXT NOT NULL,
@@ -2240,6 +2244,24 @@ impl Db {
         rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
     }
 
+    /// What an account turned off pushes for (`push::Kind`'s names); none
+    /// for an account that never chose.
+    pub fn push_muted(&self, account: &str) -> anyhow::Result<Vec<String>> {
+        let muted: Option<String> = self
+            .c()
+            .query_row("SELECT muted FROM push_prefs WHERE account = ?1", params![account], |r| r.get(0))
+            .optional()?;
+        Ok(muted.map(|m| m.split(',').filter(|k| !k.is_empty()).map(str::to_owned).collect()).unwrap_or_default())
+    }
+
+    pub fn set_push_muted(&self, account: &str, muted: &[&str]) -> anyhow::Result<()> {
+        self.c().execute(
+            "INSERT OR REPLACE INTO push_prefs (account, muted) VALUES (?1, ?2)",
+            params![account, muted.join(",")],
+        )?;
+        Ok(())
+    }
+
     pub fn push_sub_account(&self, endpoint: &str) -> anyhow::Result<Option<String>> {
         Ok(self
             .c()
@@ -2398,6 +2420,7 @@ impl Db {
             "DELETE FROM daemon_offer_pushes WHERE account = ?1",
             "DELETE FROM share_answers WHERE account = ?1",
             "DELETE FROM push_subs WHERE account = ?1",
+            "DELETE FROM push_prefs WHERE account = ?1",
             "DELETE FROM notices WHERE account = ?1",
             "DELETE FROM labs_flags WHERE owner = 'account:' || ?1",
             "DELETE FROM usage WHERE account = ?1",

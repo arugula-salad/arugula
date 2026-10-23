@@ -267,3 +267,62 @@ async fn a_new_share_offer_pushes_the_person_offered_once() {
     refresh("a1jake,a2ada,a3bo").await;
     assert!(ada_phone.quiet().await, "once a day, however the offer comes and goes");
 }
+
+/// What a person chose to hear (`/api/push/prefs`): with only chat on, the
+/// platform's chat pushes go, its other pushes don't, their machines no
+/// longer get their subscriptions (nor relay to them), and notices about
+/// their account still go.
+#[tokio::test]
+async fn pushes_go_only_for_what_someone_chose() {
+    use crate::push::{Kind as PushKind, daemon_send, daemon_subs, prefs, push_account, set_prefs};
+    use arugula_control_wire::PushRequest;
+    use arugula_platform::hub::PushOptions;
+
+    let mut app = App::for_tests("http://control.test");
+    let jake = person(&app, "github", "1", "jhgaylor", "a1jake");
+    let (mut phone, host) = Phone::subscribe(&app, "a1jake", &jake, 11).await;
+    app.cfg.push_hosts = vec![host];
+    let app = app.start();
+    let cert = Cert::new(&DeviceKeys::generate(), "a1jake", Kind::Daemon, "geek");
+    app.db.put_device(&cert, true, now_ms()).unwrap();
+    app.db.put_daemon("a1jake", &cert.device, "geek", &[]).unwrap();
+    let me = || Session { account: "a1jake".into() };
+    let subs = async || daemon_subs(State(app.clone()), DaemonAuth { cert: cert.clone() }).await.unwrap().0;
+    let platform = async |tag: &str| {
+        let msg = json!({ "title": "t", "body": "b", "tag": tag }).to_string();
+        push_account(&app, "a1jake", msg.as_bytes(), PushOptions::default()).await.unwrap().sent
+    };
+
+    let all = prefs(State(app.clone()), me()).await.unwrap().0;
+    assert_eq!(all, json!({ "chat": true, "machines": true, "projects": true }), "everything, until they choose");
+    assert_eq!(subs().await["subs"].as_array().unwrap().len(), 1);
+
+    let set = |b: Value| set_prefs(State(app.clone()), me(), Json(serde_json::from_value(b).unwrap()));
+    let now = set(json!({ "machines": false, "projects": false })).await.unwrap().0;
+    assert_eq!(now, json!({ "chat": true, "machines": false, "projects": false }));
+    assert!(set(json!({ "email": false })).await.is_err(), "only the kinds there are");
+
+    assert_eq!(platform("chat-r1").await, 1);
+    assert_eq!(phone.next().await.unwrap()["tag"], "chat-r1");
+    for tag in ["inbox-i1", "deploy-d1", "deploy-failed-d1", "hosted-cap-w1"] {
+        assert_eq!(platform(tag).await, 0, "{tag}");
+    }
+    assert!(phone.quiet().await);
+    assert_eq!(platform("agent-token-t1").await, 1, "about the account: always");
+    assert!(phone.next().await.is_some());
+    assert_eq!(PushKind::of_platform(&json!({ "tag": "client-secret-reads-p-n" })), PushKind::Account);
+
+    assert!(subs().await["subs"].as_array().unwrap().is_empty(), "their machines don't get it");
+    let stale = PushRequest {
+        endpoint: format!("http://{}/push/11", app.cfg.push_hosts[0]),
+        body: "AAAA".into(),
+        ttl: None,
+        urgency: None,
+    };
+    let got = daemon_send(State(app.clone()), DaemonAuth { cert: cert.clone() }, Json(stale)).await.unwrap().0;
+    assert_eq!(got["status"], 204, "a daemon that hasn't heard: held back");
+    assert!(phone.quiet().await);
+
+    assert_eq!(set(json!({ "machines": true })).await.unwrap().0["machines"], true);
+    assert_eq!(subs().await["subs"].as_array().unwrap().len(), 1, "back on");
+}

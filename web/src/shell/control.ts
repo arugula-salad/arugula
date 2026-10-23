@@ -35,6 +35,7 @@ import type { E2ETarget } from "./client";
 import { desktopApp } from "../shared/desktop";
 import { platformFetch, refusalOf } from "../shared/maintenance";
 import { automated, counting, startCounting, stopCounting, type PageCounts } from "../shared/telemetry";
+import type { PushPrefs } from "./push";
 import {
   follows,
   inviteKey,
@@ -1973,6 +1974,16 @@ export class ControlSession {
 
   async unsubscribePush(endpoint: string) {
     await api("/api/push/unsubscribe", { endpoint });
+  }
+
+  /** What the account is pushed about, on every device it turned on. */
+  async pushPrefs() {
+    return api<PushPrefs>("/api/push/prefs");
+  }
+
+  /** Turn some kinds on or off; the rest stay. */
+  async setPushPrefs(prefs: Partial<PushPrefs>) {
+    return api<PushPrefs>("/api/push/prefs", prefs);
   }
 
   /** How a Client reaches daemon `id`. */
