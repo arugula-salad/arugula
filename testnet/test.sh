@@ -200,7 +200,8 @@
 #           goes out; the owner's own key then pays, and a sponsor's over
 #           it; the project's spend shows each. Anthropic saw only the key
 #           that paid, never the client's credential or a cookie, and no
-#           answer holds a key. Broken: the first call is a small one, so
+#           answer holds a key; before the owner lets studio act for them,
+#           it can't. Broken: the first call is a small one, so
 #           the cap never holds.
 #   issuer  The hub as an issuer (M228), as a product signs a person in:
 #           signed out, /oauth/authorize sends them through control's

@@ -256,29 +256,51 @@ credential broker and its metering move to the platform"). Point Anthropic's
 SDK or Claude Code at
 `ANTHROPIC_BASE_URL=<control>/api/projects/<project>/inference/anthropic`:
 `POST /v1/messages` (streamed or not), `/v1/messages/count_tokens` and
-`GET /v1/models` go to Anthropic, anything else is a 404. A member calls as
-themselves (a session or a CLI device); a registered client sends its
-credential as a bearer and names the account (`arugula-account`, a member
-of the project) and, if its policy lets it, a sponsor (`arugula-sponsor`)
-and a visitor (`arugula-visitor`). Whose key pays, in the lobby's order: a
-visitor's own key, a sponsor's own key, the project's own key, the
-account's own key (its personal project's: `arugula cloud key set anthropic
---project personal`), then the platform's key under a monthly cap per
-account (`ARUGULA_INFERENCE_ANTHROPIC_KEY`; the client's cap for any of its
-accounts, else `ARUGULA_INFERENCE_MONTHLY_USD` for accounts on
-`ARUGULA_CLOUD_ACCOUNTS`), else a refusal with how to add a key. Every
-refusal is a 403 (Claude Code shows it at once) in Anthropic's error shape,
-with `arugula.reason` (`no_key`, `cap` with `resets`, `key_refused`,
-`payers`) for a client; the answer's `arugula-pays` header says whose key
-paid. Each message is read for its usage as it streams, priced at list
-prices (the lobby's table, studio-058), and kept per project and per account
-(`inference_calls`, 90 days); the cap is checked before a call goes out. The
-project's settings page shows what its calls cost this month
-(`GET /api/projects/{project}/inference/spend`), with its hosted agent turns
-beside them (their calls go through E2B's proxy, which doesn't see their
-usage, so they're counted, not priced); `GET /api/inference/spend` is an
-account's month on the platform's key and its cap, as the lobby showed it
-(`crates/platform/src/hosted/broker/`).
+`GET /v1/models` go to Anthropic, anything else is a 404. Only allowlisted
+headers go each way (out: `content-type`, `accept`, `anthropic-version`,
+`user-agent` and the betas; back: `content-type`, `request-id` and the
+retry headers), and a redirect isn't followed.
+
+- **Who.** A member calls as themselves (a session or a CLI device). A
+  registered client sends its credential as a bearer and names the account
+  (`arugula-account`, a member of the project) and, if its policy lets it,
+  a sponsor (`arugula-sponsor`) and a visitor (`arugula-visitor`). **A
+  client acts only for accounts that let it**: each account it names turns
+  it on in its settings on the platform page (off until then), and a named
+  sponsor or visitor who isn't an account, or hasn't let it, is refused.
+- **Whose key pays,** in the lobby's order: a visitor's own key, a
+  sponsor's own key, the project's own key (never for a viewer), the
+  account's own key (its personal project's: `arugula cloud key set
+  anthropic --project personal`), then the platform's key
+  (`ARUGULA_INFERENCE_ANTHROPIC_KEY`) under a monthly cap per account (the
+  client's for any of its accounts, else `ARUGULA_INFERENCE_MONTHLY_USD`
+  for accounts on `ARUGULA_CLOUD_ACCOUNTS`) and at most
+  `ARUGULA_INFERENCE_CONCURRENT` of its calls at once, else a refusal with
+  how to add a key. On the platform's key only the betas
+  `ARUGULA_INFERENCE_PLATFORM_BETAS` names are sent, and the long-context
+  ones are refused.
+- **Refusals** are 403s (Claude Code shows them at once; too many calls at
+  once is a 429, which it retries) in Anthropic's error shape, with
+  `arugula.reason` (`no_key`, `cap` with `resets`, `busy`, `consent`,
+  `payer_unknown`, `payers`, `beta`, `key_refused`) for a client; the
+  answer's `arugula-pays` header says whose key paid.
+- **Metering.** Each message is reserved before it goes out (its input as
+  the dearest cache write, and all of `max_tokens`), in the same
+  transaction as the cap check, under the account's lock. The call runs in
+  a task that outlives the request, reads the answer as it streams, and
+  settles at list prices (the lobby's table, studio-058, web searches
+  included) only once the final usage arrives; a call that ends without it
+  (the caller went away, the answer was cut short) keeps its reservation,
+  and an error answer costs nothing. Calls are kept per project and per
+  account (`inference_calls`, 90 days).
+- **Where it shows.** The project's settings page shows what its calls
+  cost this month (`GET /api/projects/{project}/inference/spend`), with its
+  hosted agent turns beside them (their calls go through E2B's proxy, which
+  doesn't see their usage, so they're counted, not priced). The account's
+  settings show which clients it lets act for it, and what was spent on its
+  own key, by whom (`GET /api/inference/spend/paid`). `GET
+  /api/inference/spend` is an account's month on the platform's key and its
+  cap, as the lobby showed it (`crates/platform/src/hosted/broker/`).
 
 **Agents on hosted workspaces (M184, #1245).** A hosted workspace's agent
 blocks are its machine's, as on a laptop: + Agent on the platform page's

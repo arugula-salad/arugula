@@ -1063,11 +1063,21 @@ name = "inference_calls"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A call the inference broker made to Anthropic for a project (M231): the project, the account it was for and the registered client that made it (studio's lobby), whose key paid (the project's, an account's own, which account's, or the platform's), the model, the provider's status, the tokens it reported, its list price, and when it started and ended. Never a prompt or an answer. Kept 90 days."
+what = "A call the inference broker made to Anthropic for a project (M231): the project, the account it was for and the registered client that made it (studio's lobby), whose key paid (the project's, an account's own, which account's, or the platform's), whether it's running, settled or kept at its reservation, the model, the provider's status, the tokens and web searches it reported, what it was reserved at and what it cost at list prices, and when it started and ended. Never a prompt or an answer. Kept 90 days."
 why_asleep = "The broker checks an account's month on the platform's key against its cap before each call, and a project's members see what its calls cost, with every machine asleep."
 with_account = "partly"
 note = "It stops naming the account, as whose call and as whose key paid; the calls stay until they're 90 days old."
 seen_by = ["litestream", "anthropic"]
+
+[[table]]
+name = "inference_consents"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "An account letting a registered client of the inference broker act for it (M231): which account, which client, and since when. Off until the account turns it on."
+why_asleep = "The broker checks it on every call a client makes, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
 
 [[table]]
 name = "run_grants"

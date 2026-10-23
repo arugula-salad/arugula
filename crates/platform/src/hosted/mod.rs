@@ -151,6 +151,15 @@ pub struct Args {
     /// client's accounts have the client's cap).
     #[arg(long, env = "ARUGULA_INFERENCE_MONTHLY_USD", default_value_t = broker::MONTHLY_USD)]
     pub inference_monthly_usd: f64,
+    /// How many of an account's calls may run on the platform's key at
+    /// once, through the broker.
+    #[arg(long, env = "ARUGULA_INFERENCE_CONCURRENT", default_value_t = broker::CONCURRENT)]
+    pub inference_concurrent: u64,
+    /// The `anthropic-beta` values the broker sends on the platform's key,
+    /// comma-separated; the rest are dropped, and the long-context ones
+    /// refused. Empty: none.
+    #[arg(long, env = "ARUGULA_INFERENCE_PLATFORM_BETAS", value_delimiter = ',')]
+    pub inference_platform_betas: Vec<String>,
     /// The broker's registered clients (studio's lobby): `id:sha256[:house_usd[:payers]]`,
     /// comma-separated (`hosted::broker::clients::parse`). Empty: none.
     #[arg(long, env = "ARUGULA_INFERENCE_CLIENTS", value_delimiter = ',')]
@@ -186,6 +195,8 @@ impl Args {
                 self.inference_anthropic_key,
                 &self.inference_upstream,
                 self.inference_monthly_usd,
+                self.inference_concurrent,
+                &self.inference_platform_betas,
                 &self.inference_clients,
             )?,
         })

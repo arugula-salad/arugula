@@ -132,6 +132,12 @@ fn routes() -> Routes {
         .route("/api/projects/{project}/inference/anthropic/{*rest}", axum::routing::any(hosted::broker::forward))
         .route("/api/projects/{project}/inference/spend", get(hosted::broker::project_spend))
         .route("/api/inference/spend", get(hosted::broker::my_spend))
+        .route("/api/inference/spend/paid", get(hosted::broker::paid_by_me))
+        .route("/api/inference/clients", get(hosted::broker::list_clients))
+        .route(
+            "/api/inference/clients/{client}/consent",
+            axum::routing::put(hosted::broker::set_consent).delete(hosted::broker::set_consent),
+        )
         .route("/api/projects/{project}/inference-keys", get(hosted::inference::list_keys))
         .route(
             "/api/projects/{project}/inference-keys/{provider}",

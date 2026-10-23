@@ -1463,7 +1463,7 @@ path = "/api/projects/{project}/inference/anthropic/{*rest}"
 process = "platform"
 auth = "session_or_client"
 clients = ["page", "cli", "product"]
-note = "The inference broker (M231): Anthropic's API (POST v1/messages and v1/messages/count_tokens, GET v1/models; anything else is a 404) for a member of the project, or for the account a registered client names (studio's lobby). The platform sets the key that pays (a visitor's or sponsor's the client names, the project's, the account's own, or the platform's under a monthly cap) in place of the caller's credential, streams the answer back, and meters each message. No key is ever answered."
+note = "The inference broker (M231): Anthropic's API (POST v1/messages and v1/messages/count_tokens, GET v1/models; anything else is a 404) for a member of the project, or for an account a registered client names (studio's lobby) that let it. The platform sets the key that pays (a visitor's or sponsor's the client names and that let it, the project's for an editor or owner, the account's own, or the platform's under a monthly cap and a cap on calls at once) in place of the caller's credential, streams the answer back with allowlisted headers, and reserves each message before it goes out, settling it at its final usage. No key is ever answered."
 
 [[route]]
 method = "GET"
@@ -1480,6 +1480,38 @@ process = "platform"
 auth = "session_or_client"
 clients = ["page", "cli", "product"]
 note = "An account's month on the platform's key through the broker, and its cap (M231): a member's own, or the account a registered client names, through that client."
+
+[[route]]
+method = "GET"
+path = "/api/inference/spend/paid"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "What calls on the signed-in account's own key cost in a month (M231), by project, account and client: its own, and those a registered client made naming it as a sponsor or a visitor."
+
+[[route]]
+method = "GET"
+path = "/api/inference/clients"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "The inference broker's registered clients (M231), and which the signed-in account lets act for it."
+
+[[route]]
+method = "PUT"
+path = "/api/inference/clients/{client}/consent"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Let a registered client act for the signed-in account (M231): name it in a broker call, and spend its own key when it names it as the payer (a sponsor, a visitor). Off until this; the page's only (trust, never a CLI's or an agent's)."
+
+[[route]]
+method = "DELETE"
+path = "/api/inference/clients/{client}/consent"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Stop a registered client acting for the signed-in account (M231): its next call naming the account is refused."
 
 [[route]]
 method = "GET"

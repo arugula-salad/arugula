@@ -381,6 +381,12 @@ The rest of control's settings are in `fly.toml`'s `[env]`.
   `payers`: it may name a sponsor and a visitor. For studio:
   `studio:<sha256>:20:payers`. M228's registered clients replace the digest
   (the policy stays here).
+- `ARUGULA_INFERENCE_CONCURRENT` (4): how many of an account's calls may
+  run on the platform's key at once, through the broker.
+- `ARUGULA_INFERENCE_PLATFORM_BETAS` (none): the `anthropic-beta` values
+  the broker sends on the platform's key, comma-separated; the rest are
+  dropped, and the long-context ones (`context-1m-*`, billed at a premium)
+  are refused there and can't be listed.
 - `ARUGULA_INFERENCE_MONTHLY_USD` (20): what the platform's key may spend
   through the broker each UTC month for an account on `ARUGULA_CLOUD_ACCOUNTS`
   calling it itself.
@@ -1512,6 +1518,7 @@ machines' writes took turns; M144 replaced it). What's left:
 | `chat_events` (transaction) | `Db::add_chat_event` | events commit in `seq` order, so a machine that has sent up to N never passes one still uncommitted below it |
 | `leader` (session) | the listening connection | one machine applies the feed and reports usage |
 | `window` (transaction) | `copy --to postgres://` | two copies at once wait for each other |
+| `inference:<account>` (transaction) | `Db::reserve_call` | an account's month on the platform's key and its calls running are sums over its calls (M231): two calls at once can't both take the last of its cap |
 
 Row-level instead of the old lock:
 

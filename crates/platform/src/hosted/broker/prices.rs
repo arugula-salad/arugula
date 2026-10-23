@@ -56,6 +56,11 @@ pub const PRICES: [Price; 10] = [
 /// The models whose fast mode doubles their price.
 pub const FAST: [&str; 1] = ["claude-opus-5-5"];
 
+/// What one web search the server tool makes costs: $10 per thousand
+/// (`usage.server_tool_use.web_search_requests`). Web fetch costs only the
+/// tokens it adds.
+pub const WEB_SEARCH_USD: f64 = 0.01;
+
 /// What a model the table doesn't name is priced as: the row with the
 /// dearest output, never a cheaper one.
 pub fn dearest() -> Price {
@@ -92,6 +97,8 @@ pub struct Usage {
     /// One-hour cache writes.
     pub cache_write_1h: u64,
     pub cache_read: u64,
+    /// `usage.server_tool_use.web_search_requests`.
+    pub web_searches: u64,
     /// `usage.speed == "fast"`.
     pub fast: bool,
 }
@@ -122,6 +129,7 @@ impl Usage {
             cache_write: five,
             cache_write_1h: hour,
             cache_read: n(u.get("cache_read_input_tokens")),
+            web_searches: n(u.get("server_tool_use").and_then(|s| s.get("web_search_requests"))),
             fast: u.get("speed").and_then(Value::as_str) == Some("fast"),
         }
     }
@@ -137,7 +145,23 @@ pub fn cost_of(model: &str, usage: &Usage) -> (f64, &'static str) {
         + usage.cache_write as f64 * row.input * 1.25
         + usage.cache_write_1h as f64 * row.input * 2.0
         + usage.cache_read as f64 * row.cache_read;
-    (tokens * times / 1e6, row.prefix)
+    (tokens * times / 1e6 + usage.web_searches as f64 * WEB_SEARCH_USD, row.prefix)
+}
+
+/// What a Messages request is reserved at before it goes out, in
+/// millionths of a dollar: as if every byte of its body below
+/// `max_tokens` were a third of a token of input written to the one-hour
+/// cache (the dearest input there is), and it used all of `max_tokens`,
+/// at `model`'s prices (the dearest row for a model the table doesn't
+/// name), doubled in fast mode. With no `max_tokens` (Anthropic refuses
+/// those), `NO_MAX` of them.
+pub fn reservation(model: &str, body_bytes: usize, max_tokens: Option<u64>, fast: bool) -> u64 {
+    const NO_MAX: u64 = 128_000;
+    let (row, _) = price_of(model);
+    let input = (body_bytes as u64).div_ceil(3) as f64;
+    let output = max_tokens.unwrap_or(NO_MAX) as f64;
+    let times = if fast && FAST.contains(&row.prefix) { 2.0 } else { 1.0 };
+    micros((input * row.input * 2.0 + output * row.output) * times / 1e6)
 }
 
 /// Dollars as the ledger keeps them: millionths, rounded.
@@ -156,6 +180,9 @@ pub struct Reader {
     text: String,
     model: Option<String>,
     usage: Option<serde_json::Map<String, Value>>,
+    /// The final usage arrived: a `message_delta`'s, or a whole JSON
+    /// message's.
+    last: bool,
 }
 
 impl Reader {
@@ -165,6 +192,7 @@ impl Reader {
             Some("message") => Some(json),
             Some("message_delta") => {
                 if let Some(u) = json.get("usage").and_then(Value::as_object) {
+                    self.last = true;
                     let usage = self.usage.get_or_insert_with(Default::default);
                     for (k, v) in u {
                         if !v.is_null() {
@@ -207,15 +235,22 @@ impl Reader {
     }
 
     /// The model and what it used, or nothing when the response held no
-    /// usage.
-    pub fn result(mut self) -> Option<(String, Usage)> {
+    /// usage; and whether that's its final usage (a stream's
+    /// `message_delta`, or a whole JSON message), which is all a call is
+    /// settled at.
+    pub fn result(mut self) -> Option<(String, Usage, bool)> {
         let text = std::mem::take(&mut self.text);
-        let body = if text.starts_with('{') { Some(text.as_str()) } else { text.strip_prefix("data:") };
-        if let Some(json) = body.and_then(|b| serde_json::from_str::<Value>(b.trim()).ok()) {
+        if text.starts_with('{') {
+            if let Ok(json) = serde_json::from_str::<Value>(text.trim()) {
+                self.last = json.get("type").and_then(Value::as_str) == Some("message") && json.get("usage").is_some();
+                self.take(&json);
+            }
+        } else if let Some(json) = text.strip_prefix("data:").and_then(|b| serde_json::from_str::<Value>(b.trim()).ok())
+        {
             self.take(&json);
         }
         let usage = self.usage?;
-        Some((self.model.unwrap_or_default(), Usage::from_json(&Value::Object(usage))))
+        Some((self.model.unwrap_or_default(), Usage::from_json(&Value::Object(usage)), self.last))
     }
 }
 
@@ -316,6 +351,16 @@ mod tests {
         assert_eq!(p.prefix, "claude-fable-5-1");
         assert!(close(usd("claude-next-9", json!({ "output_tokens": 1_000_000 })), 50.0));
         assert!(close(usd("claude-haiku-4-5", json!({ "input_tokens": -5, "output_tokens": "x" })), 0.0));
+        let search = json!({ "server_tool_use": { "web_search_requests": 3 } });
+        assert!(close(usd("claude-haiku-4-5", search), 0.03), "web searches at $10 a thousand");
+        // A reservation: 3,000 bytes as 1,000 tokens of one-hour cache
+        // writes, and all of max_tokens.
+        assert_eq!(
+            reservation("claude-opus-5", 3000, Some(1000), false),
+            micros((1000.0 * 10.0 + 1000.0 * 25.0) / 1e6)
+        );
+        assert_eq!(reservation("claude-opus-5-5", 0, Some(1000), true), micros(1000.0 * 20.0 * 2.0 / 1e6));
+        assert_eq!(reservation("claude-next", 0, None, false), micros(128_000.0 * 50.0 / 1e6), "the dearest row");
         assert_eq!(micros(1.234_567_8), 1_234_568);
         assert_eq!(micros(f64::NAN), 0);
     }
@@ -337,15 +382,24 @@ mod tests {
             let mut r = Reader::default();
             r.feed(&sse.as_bytes()[..cut]);
             r.feed(&sse.as_bytes()[cut..]);
-            let (model, u) = r.result().unwrap();
+            let (model, u, last) = r.result().unwrap();
             assert_eq!(model, "claude-opus-5");
-            assert_eq!((u.input, u.output, u.cache_read), (10, 42, 4), "cut at {cut}");
+            assert_eq!((u.input, u.output, u.cache_read, last), (10, 42, 4, true), "cut at {cut}");
         }
+        // Cut before any message_delta: what it had, and not final.
+        let mut r = Reader::default();
+        r.feed(&sse.as_bytes()[..200]);
+        let (_, u, last) = r.result().unwrap();
+        assert_eq!((u.input, u.output, last), (10, 1, false));
         let mut r = Reader::default();
         r.feed(br#"{"type":"message","model":"claude-haiku-4-5","usage":{"input_tokens":3,"output_tokens":"#);
         r.feed(br#"5}}"#);
-        let (model, u) = r.result().unwrap();
-        assert_eq!((model.as_str(), u.input, u.output), ("claude-haiku-4-5", 3, 5));
+        let (model, u, last) = r.result().unwrap();
+        assert_eq!((model.as_str(), u.input, u.output, last), ("claude-haiku-4-5", 3, 5, true));
+        // A JSON body cut short holds no usage at all.
+        let mut r = Reader::default();
+        r.feed(br#"{"type":"message","model":"claude-haiku-4-5","usage":{"input_tokens":3,"output"#);
+        assert!(r.result().is_none());
         let mut r = Reader::default();
         r.feed(br#"{"type":"error","error":{"type":"overloaded_error"}}"#);
         assert!(r.result().is_none());

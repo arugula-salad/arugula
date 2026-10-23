@@ -9,6 +9,8 @@
 //
 // As studio, a registered client (its credential C), for a project of the
 // owner's team (an app's project):
+//   0. Until the owner lets studio act for them, it can't (403 consent);
+//      the owner and the sponsor let it on the platform page.
 //   1. A wrong credential is refused (401).
 //   2. The owner has no key: the platform's key pays (studio's house key),
 //      the answer streams back as Anthropic sent it, and it's metered.
@@ -118,6 +120,13 @@ async function main() {
   expect(Boolean(project), "the app's project");
   const base = `/api/projects/${project}/inference/anthropic/v1/messages`;
   const account = owner.account;
+
+  // 0. Nobody has let studio act for them yet: refused. Then the owner
+  // and the sponsor let it, on the platform page.
+  const unasked = await lobby(owner, base, { account, body: message(10) });
+  expect(unasked.status === 403 && unasked.json().arugula.reason === "consent", "a client acts only for accounts that let it", unasked.text);
+  await person(owner, "PUT", "/api/inference/clients/studio/consent");
+  await person(sponsor, "PUT", "/api/inference/clients/studio/consent");
 
   // 1.
   const wrong = await lobby(owner, base, { account, credential: "not-studio", body: message(10) });
