@@ -58,6 +58,9 @@ mod hosted_work;
 mod hub_latency_bench;
 mod hub_port;
 mod internal;
+mod issuer;
+#[cfg(test)]
+mod issuer_wire;
 mod labs_flags;
 mod legacy_app;
 mod limit;
@@ -295,6 +298,10 @@ struct Args {
     /// URL's host, and --guest-ssh's port].
     #[arg(long, env = "ARUGULA_CONTROL_GUEST_SSH_HOST")]
     guest_ssh_host: Option<String>,
+
+    /// The hub as an issuer (M228, issuer.rs): its keys.
+    #[command(flatten)]
+    issuer: issuer::KeyArgs,
 }
 
 pub struct Github {
@@ -420,6 +427,8 @@ pub struct App {
     /// The platform's view of the hub, attached to this app by
     /// [`App::start`].
     pub hub_port: Arc<hub_port::InProcess>,
+    /// The hub as an issuer (M228), when it has a key.
+    pub issuer: Option<issuer::Issuer>,
 }
 
 impl App {
@@ -522,6 +531,7 @@ impl App {
             platform,
             maintenance: Default::default(),
             hub_port,
+            issuer: None,
         }
     }
 }
@@ -544,6 +554,13 @@ fn routes() -> Routes {
         .route("/signin/platform", get(app_signin::start))
         .route(app_signin::APP_SESSION, post(app_signin::swap))
         .route(app_signin::APP_SIGNOUT, post(app_signin::signout))
+        // The hub as an issuer (M228): other products ask who someone is.
+        .route("/.well-known/openid-configuration", get(issuer::discovery))
+        .route("/.well-known/jwks.json", get(issuer::jwks))
+        .route("/oauth/authorize", get(issuer::authorize))
+        .route("/oauth/token", post(issuer::token_endpoint))
+        .route("/oauth/userinfo", get(issuer::userinfo))
+        .route("/oauth/hud", get(issuer::hud))
         .route("/auth/app", post(app_login::ask))
         .route("/auth/app/{id}/redeem", post(app_login::redeem))
         .route("/api/app-login/{id}", get(app_login::show))
@@ -839,7 +856,8 @@ fn main() -> anyhow::Result<()> {
     // database (census.rs), with no server; `device-review` another
     // (device_review.rs). `maintenance`: the switch
     // (maintenance.rs), set in the database the running hub reads.
-    // `notice`: a notice for every account (notice.rs). `hosted-enrollment`:
+    // `notice`: a notice for every account (notice.rs). `issuer`: the
+    // issuer's keys and clients (issuer.rs). `hosted-enrollment`:
     // what the platform asks as it makes a hosted box (hosted.rs). `platform`: a
     // window's tools, the platform's own code (`arugula_platform::window`).
     let mut argv = std::env::args().skip(1).peekable();
@@ -854,6 +872,9 @@ fn main() -> anyhow::Result<()> {
     }
     if argv.peek().is_some_and(|a| a == "hosted-enrollment") {
         return hosted::run(argv.skip(1));
+    }
+    if argv.peek().is_some_and(|a| a == "issuer") {
+        return issuer::run(argv.skip(1));
     }
     if argv.peek().is_some_and(|a| a == "notice") {
         return notice::run(argv.skip(1));
@@ -937,6 +958,13 @@ async fn run() -> anyhow::Result<()> {
     }
     let vapid = push::Vapid::load(&db)?;
     let hosted_key = hosted::load_key(&db)?;
+    let issuer = issuer::Keys::from_config(&a.issuer, arugula_e2e::now_ms() / 1000)?.map(|keys| {
+        info!("the issuer's keys: {}", keys.describe());
+        issuer::Issuer::new(keys)
+    });
+    if issuer.is_none() {
+        info!("no ARUGULA_ISSUER_KEY: the issuer is off");
+    }
     let stripe = a.billing.stripe()?;
     // The guests' jump host: bound now, so its port is known.
     let guest_ssh = match a.guest_ssh {
@@ -1086,6 +1114,7 @@ async fn run() -> anyhow::Result<()> {
         platform,
         maintenance: Default::default(),
         hub_port,
+        issuer,
     }
     .start();
     if let Some((l, key)) = internal_listener {

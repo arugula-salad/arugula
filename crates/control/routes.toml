@@ -31,6 +31,10 @@
 #   - `poll_token`: the token a join handed out;
 #   - `app_ticket`: the desktop app's sign-in ticket, its grant and verifier;
 #   - `webhook`: the provider's signature on the body.
+#   - `issuer_code`: the issuer's one-time code with its client, redirect
+#     address and PKCE verifier (M228);
+#   - `issuer_token`: an access token the issuer handed out, as a bearer
+#     (M228).
 #   - `hosted_enrollment`: a hosted box's one-time ticket or sandbox id,
 #     and its key proving it holds the key it enrolls (M178);
 #   - `hosted`: a live hosted machine's signature (`auth::HostedAuth`),
@@ -41,7 +45,8 @@
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
 #   link or a redirect, with no page of control's), `github` and `stripe`
-#   (their webhooks), `operator` (by hand). Enforced for the CLI: a CLI
+#   (their webhooks), `operator` (by hand), `product` (another product
+#   that takes the hub's tokens: studio, a hud box, M228's clients). Enforced for the CLI: a CLI
 #   device's signature is refused (401, `page_only`) on every route that
 #   doesn't list `cli` (`clients::gate`).
 # - `note`: anything the rest doesn't say.
@@ -112,6 +117,53 @@ process = "hub"
 auth = "session"
 clients = ["page"]
 note = "The platform page's own session, on its host."
+
+# The hub as an issuer (M228, issuer.rs): 404 when it has no key.
+
+[[route]]
+method = "GET"
+path = "/.well-known/openid-configuration"
+process = "hub"
+auth = "public"
+clients = ["product"]
+
+[[route]]
+method = "GET"
+path = "/.well-known/jwks.json"
+process = "hub"
+auth = "public"
+clients = ["product"]
+note = "Every key published: the one that signs, the next before it signs, the previous until its tokens run out."
+
+[[route]]
+method = "GET"
+path = "/oauth/authorize"
+process = "hub"
+auth = "session"
+clients = ["browser"]
+note = "A registered client and an exact redirect address, PKCE S256. Without a session it sends the browser to control's page to sign in, and back here."
+
+[[route]]
+method = "POST"
+path = "/oauth/token"
+process = "hub"
+auth = "issuer_code"
+clients = ["product"]
+
+[[route]]
+method = "GET"
+path = "/oauth/userinfo"
+process = "hub"
+auth = "issuer_token"
+clients = ["product"]
+
+[[route]]
+method = "GET"
+path = "/oauth/hud"
+process = "hub"
+auth = "session"
+clients = ["browser"]
+note = "hud's forge assertion for a box registered as a client, in the fragment of its own page. Without a session it signs in first, as /oauth/authorize does."
 
 [[route]]
 method = "POST"

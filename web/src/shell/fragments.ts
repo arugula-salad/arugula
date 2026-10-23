@@ -35,6 +35,7 @@ export const FRAGMENTS: Fragment[] = [
   { route: "#app-redeem=", why: "The desktop app's sign-in ticket, grant and verifier (M48), handed from the app to the browser.", where: ["shell/control.ts"] },
   { route: "#app=", why: "A desktop app asking to sign in as this account (M48): the request's id, for this page to allow.", where: ["shell/trust/overlay.tsx", "shell/control.ts"] },
   { route: "#platform-signin=", why: "The platform page's sign-in resumed after signing in here (M152): its return address, PKCE challenge and state.", where: ["shell/control.ts"] },
+  { route: "#issuer-signin=", why: "A product's sign-in through the hub's issuer resumed after signing in here (M228): the /oauth/authorize or /oauth/hud request it came in on.", where: ["shell/control.ts"] },
   // ---- the shell's own places: one page, served by the daemon
   { route: "#swarm", why: "The swarm (M41): the shell's.", where: ["shell/swarm/route.ts", "shell/main.tsx"] },
   { route: "#overview", why: "A machine's sessions at a glance (M111): the shell's.", where: ["shell/ui/places.tsx", "shell/ui/shell/overview.tsx"] },

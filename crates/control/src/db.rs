@@ -13,6 +13,7 @@
 pub mod changes;
 pub mod doc_links;
 pub mod hosted;
+pub mod issuer;
 pub mod platform;
 #[cfg(test)]
 mod secrets_list;
@@ -597,6 +598,7 @@ impl Db {
         conn.execute_batch(hosted::SCHEMA)?;
         conn.execute_batch(changes::SCHEMA)?;
         conn.execute_batch(platform::SCHEMA)?;
+        conn.execute_batch(issuer::SCHEMA)?;
         migrate(&conn)?;
         if !answers_before {
             grandfather_shares(&conn)?;
@@ -611,6 +613,7 @@ impl Db {
         conn.execute_batch(hosted::SCHEMA).unwrap();
         conn.execute_batch(changes::SCHEMA).unwrap();
         conn.execute_batch(platform::SCHEMA).unwrap();
+        conn.execute_batch(issuer::SCHEMA).unwrap();
         migrate(&conn).unwrap();
         Self { conn: Mutex::new(conn) }
     }
@@ -756,6 +759,7 @@ impl Db {
         let mut c = self.c();
         let tx = c.transaction()?;
         tx.execute("DELETE FROM app_sessions WHERE hub_session = ?1", params![token_hash])?;
+        tx.execute("DELETE FROM issuer_tokens WHERE hub_session = ?1", params![token_hash])?;
         tx.execute("DELETE FROM sessions WHERE token_hash = ?1", params![token_hash])?;
         tx.commit()?;
         Ok(())
@@ -901,11 +905,15 @@ impl Db {
         }
         let mut c = self.c();
         let tx = c.transaction()?;
-        tx.execute(
-            "DELETE FROM app_sessions WHERE hub_session IN
-                 (SELECT token_hash FROM sessions WHERE account = ?1 AND substr(token_hash, 1, ?3) = ?2)",
-            params![account, hash_prefix, hash_prefix.len()],
-        )?;
+        for t in ["app_sessions", "issuer_tokens"] {
+            tx.execute(
+                &format!(
+                    "DELETE FROM {t} WHERE hub_session IN
+                         (SELECT token_hash FROM sessions WHERE account = ?1 AND substr(token_hash, 1, ?3) = ?2)"
+                ),
+                params![account, hash_prefix, hash_prefix.len()],
+            )?;
+        }
         let n = tx.execute(
             "DELETE FROM sessions WHERE account = ?1 AND substr(token_hash, 1, ?3) = ?2",
             params![account, hash_prefix, hash_prefix.len()],
@@ -919,6 +927,7 @@ impl Db {
         let mut c = self.c();
         let tx = c.transaction()?;
         tx.execute("DELETE FROM app_sessions WHERE account = ?1", params![account])?;
+        tx.execute("DELETE FROM issuer_tokens WHERE account = ?1", params![account])?;
         let n = tx.execute("DELETE FROM sessions WHERE account = ?1", params![account])?;
         tx.commit()?;
         Ok(n)
@@ -931,6 +940,10 @@ impl Db {
         let n = c.execute("DELETE FROM sessions WHERE expires <= ?1", params![now])?;
         c.execute(
             "DELETE FROM app_sessions WHERE expires <= ?1 OR hub_session NOT IN (SELECT token_hash FROM sessions)",
+            params![now],
+        )?;
+        c.execute(
+            "DELETE FROM issuer_tokens WHERE expires <= ?1 OR hub_session NOT IN (SELECT token_hash FROM sessions)",
             params![now],
         )?;
         c.execute("DELETE FROM joins WHERE created < ?1", params![now.saturating_sub(JOIN_TTL_MS)])?;
@@ -2346,6 +2359,7 @@ impl Db {
             "DELETE FROM identities WHERE account = ?1",
             "DELETE FROM sessions WHERE account = ?1",
             "DELETE FROM app_sessions WHERE account = ?1",
+            "DELETE FROM issuer_tokens WHERE account = ?1",
             "DELETE FROM passkeys WHERE account = ?1",
             "DELETE FROM devices WHERE account = ?1",
             "DELETE FROM turned_down WHERE account = ?1",
