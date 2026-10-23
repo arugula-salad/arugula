@@ -205,11 +205,15 @@ struct Header {
     #[serde(default)]
     typ: Option<String>,
     kid: String,
+    /// Extensions a verifier must understand (RFC 7515 4.1.11): this one
+    /// understands none, so a token naming any is refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    crit: Option<serde_json::Value>,
 }
 
 /// Signs an ID token.
 pub fn sign_id_token(key: &IssuerKey, claims: &IdClaims) -> String {
-    let header = Header { alg: "EdDSA".into(), typ: Some("JWT".into()), kid: key.kid.clone() };
+    let header = Header { alg: "EdDSA".into(), typ: Some("JWT".into()), kid: key.kid.clone(), crit: None };
     let signed = format!(
         "{}.{}",
         b64(&serde_json::to_vec(&header).expect("a header")),
@@ -281,7 +285,7 @@ pub fn verify_id_token(token: &str, jwks: &Jwks, iss: &str, aud: &str, now: u64)
         return Err(Refused::Malformed);
     };
     let header: Header = unb64(h).and_then(|b| serde_json::from_slice(&b).ok()).ok_or(Refused::Malformed)?;
-    if header.alg != "EdDSA" {
+    if header.alg != "EdDSA" || header.crit.is_some() {
         return Err(Refused::Malformed);
     }
     let jwk = jwks.find(&header.kid).ok_or(Refused::Signature)?;
@@ -317,6 +321,11 @@ pub struct HudClaims {
     pub github_id: u64,
     /// The key that signed it, for whoever reads a log.
     pub kid: String,
+    /// The box's own nonce from its sign-in request, when it sent one:
+    /// hud ignores it today, and can bind it to the session that asked
+    /// (M237) against login CSRF.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nonce: Option<String>,
 }
 
 /// Signs a hud assertion: `hudfs1.<payload>.<signature>`, Ed25519 over the
@@ -386,6 +395,11 @@ mod tests {
         let signed = format!("{header}.{}", b64(&serde_json::to_vec(&claims(now)).unwrap()));
         let forged = format!("{signed}.{}", b.sign(signed.as_bytes()));
         assert_eq!(verify_id_token(&forged, &jwks, "https://control.example", "studio", now), Err(Refused::Signature));
+        // A header naming critical extensions this verifier can't know.
+        let header = b64(format!(r#"{{"alg":"EdDSA","kid":"{}","crit":["exp"]}}"#, a.kid()).as_bytes());
+        let signed = format!("{header}.{}", b64(&serde_json::to_vec(&claims(now)).unwrap()));
+        let crit = format!("{signed}.{}", a.sign(signed.as_bytes()));
+        assert_eq!(verify_id_token(&crit, &jwks, "https://control.example", "studio", now), Err(Refused::Malformed));
         // A payload changed after signing.
         let mut parts: Vec<String> = t.split('.').map(str::to_owned).collect();
         let mut c = claims(now);
@@ -425,6 +439,7 @@ mod tests {
             account: "acct1".into(),
             github_id: 7,
             kid: k.kid().into(),
+            nonce: None,
         };
         let t = sign_hud(&k, &c);
         let (signed, sig) = t.rsplit_once('.').unwrap();

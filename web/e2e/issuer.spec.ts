@@ -31,7 +31,7 @@ test("a signed-out person signs in on control's page and comes back to the produ
   await new Promise<void>((r) => product.listen(0, "127.0.0.1", r));
   BACK = `http://127.0.0.1:${(product.address() as { port: number }).port}/cb`;
   await t.start(["--issuer-key", randomBytes(32).toString("hex")]);
-  execFileSync("../target/debug/arugula-control", ["issuer", "add-client", "--db", t.db, "--id", CLIENT, "--name", "E2E", "--redirect", BACK]);
+  execFileSync("../target/debug/arugula-control", ["issuer", "add-client", "--db", t.db, "--id", CLIENT, "--kind", "oidc", "--name", "E2E", "--redirect", BACK]);
 
   const ctx = await browser.newContext({ baseURL: t.base });
   await ctx.addCookies([{ name: "as", value: "ida", url: t.github }]);

@@ -4,7 +4,9 @@
 //! client, address and verifier; an unregistered client or address gets
 //! nothing sent anywhere; tokens say who and never a project or a role;
 //! an access token ends with its hub session; a rotation keeps every token
-//! a client holds verifiable; and a hud box gets hud's own assertion.
+//! a client holds verifiable; and a hud box gets hud's own assertion. Each
+//! client takes only its own kind's flow, and a token issued to one client
+//! is never another's.
 
 use std::{net::SocketAddr, sync::Arc};
 
@@ -18,8 +20,8 @@ use sha2::{Digest, Sha256};
 use crate::{
     App,
     auth::hash,
-    db::issuer::Client,
-    issuer::{Issuer, Keys},
+    db::issuer::{Client, ClientKind},
+    issuer::{CODES_PER_SESSION, Issuer, Keys, access_token_for},
 };
 
 const CONTROL: &str = "http://control.test";
@@ -33,8 +35,13 @@ struct Control {
     app: Arc<App>,
 }
 
+/// Keys with a previous one published for ten more minutes.
 fn keys(current: &IssuerKey, next: Option<&IssuerKey>, previous: Option<&IssuerKey>) -> Keys {
-    Keys { current: current.clone(), next: next.cloned(), previous: previous.cloned() }
+    Keys { current: current.clone(), next: next.cloned(), previous: previous.map(|k| (k.clone(), now() + 600)) }
+}
+
+fn client(id: &str, kind: ClientKind, back: &str) -> Client {
+    Client { id: id.into(), kind, name: format!("{id} (test)"), redirect_uris: vec![back.into()], created: 0 }
 }
 
 /// A control with these keys, a registered client, and account `a` signed
@@ -46,14 +53,7 @@ async fn control(keys: Keys) -> Control {
     let now = now_ms();
     app.db.account_for("github", "4242", "jake-gh", "a", now).unwrap();
     app.db.add_session(&hash("session-a"), "a", now, now + 3_600_000).unwrap();
-    app.db
-        .put_issuer_client(&Client {
-            id: CLIENT.into(),
-            name: "Studio (test)".into(),
-            redirect_uris: vec![BACK.into()],
-            created: now,
-        })
-        .unwrap();
+    app.db.put_issuer_client(&client(CLIENT, ClientKind::Oidc, BACK)).unwrap();
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
     let svc = crate::router(app.clone()).into_make_service_with_connect_info::<SocketAddr>();
@@ -213,6 +213,10 @@ async fn a_client_signs_in_through_the_hub_and_verifies_against_the_jwks() {
     assert_eq!(st, 200);
     assert_eq!(me["sub"], "a");
     assert_eq!(me["github_id"], 4242);
+    assert_eq!(me["client_id"], CLIENT);
+    // No name the person didn't set, and never the login.
+    assert!(me.get("name").is_none(), "{me}");
+    assert!(!me.to_string().to_lowercase().contains("jake-gh"), "{me}");
     assert!(me.get("projects").is_none() && me.get("roles").is_none());
     assert_eq!(c.userinfo("aat_nope").await.0, 401);
 }
@@ -350,15 +354,7 @@ async fn a_hud_box_gets_huds_own_assertion() {
     let k = IssuerKey::generate();
     let c = control(keys(&k, None, None)).await;
     let page = "https://box1.example/hud/";
-    c.app
-        .db
-        .put_issuer_client(&Client {
-            id: "box1".into(),
-            name: "a hud box".into(),
-            redirect_uris: vec![page.into()],
-            created: 0,
-        })
-        .unwrap();
+    c.app.db.put_issuer_client(&client("box1", ClientKind::Hud, page)).unwrap();
     let path = format!(
         "/oauth/hud?client_id=box1&redirect_uri={}",
         url::form_urlencoded::byte_serialize(page.as_bytes()).collect::<String>()
@@ -383,6 +379,22 @@ async fn a_hud_box_gets_huds_own_assertion() {
     let (st, at, _) = c.get("/oauth/hud?client_id=box1&redirect_uri=https%3A%2F%2Fevil.example%2F", Some(COOKIE)).await;
     assert_eq!((st, at.as_str()), (400, ""));
 
+    // The box's nonce comes back in the assertion; a malformed one is
+    // refused.
+    let (st, at, _) = c.get(&format!("{path}&nonce=box-nonce-0123"), Some(COOKIE)).await;
+    assert_eq!(st, 303);
+    let a = at.split_once("#hud-forge=").unwrap().1;
+    assert_eq!(verify_hud(a, &jwks, "box1", now()).unwrap().nonce.as_deref(), Some("box-nonce-0123"));
+    assert_eq!(c.get(&format!("{path}&nonce=x"), Some(COOKIE)).await.0, 400);
+
+    // Another GitHub account here signed in with the same login since (a
+    // rename, and the name taken): the login vouches for no one.
+    c.app.db.account_for("github", "9999", "Jake-GH", "c", now_ms()).unwrap();
+    let (st, at, body) = c.get(&path, Some(COOKIE)).await;
+    assert_eq!((st, at.as_str()), (409, ""), "{body}");
+    c.app.db.conn().execute("UPDATE identities SET login = 'someone-new' WHERE subject = '9999'", []).unwrap();
+    assert_eq!(c.get(&path, Some(COOKIE)).await.0, 303);
+
     // An account that never signed in with GitHub has no login for hud.
     let now = now_ms();
     c.app.db.account_for("passkey", "pk1", "", "b", now).unwrap();
@@ -403,4 +415,112 @@ async fn without_a_key_there_is_no_issuer() {
     for p in ["/.well-known/openid-configuration", "/.well-known/jwks.json", "/oauth/authorize", "/oauth/userinfo"] {
         assert_eq!(reqwest::get(format!("{base}{p}")).await.unwrap().status(), 404, "{p}");
     }
+}
+
+/// Each kind of client takes its own flow only; a token issued to one
+/// client is never another's.
+#[tokio::test]
+async fn clients_take_their_own_flow_and_tokens_stay_theirs() {
+    let k = IssuerKey::generate();
+    let c = control(keys(&k, None, None)).await;
+    let page = "https://box1.example/hud/";
+    c.app.db.put_issuer_client(&client("box1", ClientKind::Hud, page)).unwrap();
+    c.app.db.put_issuer_client(&client("other", ClientKind::Oidc, "https://other.example/cb")).unwrap();
+    let (_, ch) = pkce(7);
+
+    // A hud box can't take a code; a product can't take an assertion.
+    let (st, at, _) = c.get(&c.authorize_path("box1", page, &ch, "S256"), Some(COOKIE)).await;
+    assert_eq!((st, at.as_str()), (400, ""));
+    let enc = |u: &str| url::form_urlencoded::byte_serialize(u.as_bytes()).collect::<String>();
+    let (st, at, _) = c.get(&format!("/oauth/hud?client_id={CLIENT}&redirect_uri={}", enc(BACK)), Some(COOKIE)).await;
+    assert_eq!((st, at.as_str()), (400, ""));
+
+    // A token issued to CLIENT is CLIENT's: another client asking with it
+    // is refused, and userinfo says whose it is.
+    let (_, access) = c.sign_in(7).await;
+    assert_eq!(access_token_for(&c.app, &access, CLIENT).as_deref(), Some("a"));
+    assert_eq!(access_token_for(&c.app, &access, "other"), None);
+    let r = c.http.get(format!("{}/oauth/userinfo?client_id=other", c.base)).bearer_auth(&access).send().await.unwrap();
+    assert_eq!(r.status(), 401);
+    let r =
+        c.http.get(format!("{}/oauth/userinfo?client_id={CLIENT}", c.base)).bearer_auth(&access).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+
+    // Made a hud box, the client's tokens end.
+    c.app.db.put_issuer_client(&client(CLIENT, ClientKind::Hud, BACK)).unwrap();
+    assert_eq!(c.userinfo(&access).await.0, 401);
+}
+
+/// A name the person set is userinfo's `name`; nothing else ever is.
+#[tokio::test]
+async fn only_a_name_they_set() {
+    let k = IssuerKey::generate();
+    let c = control(keys(&k, None, None)).await;
+    let (id_token, access) = c.sign_in(8).await;
+    assert!(!payload(&id_token).to_string().contains("jake-gh"));
+    assert!(c.userinfo(&access).await.1.get("name").is_none());
+    c.app.db.conn().execute("UPDATE accounts SET name = 'Jake' WHERE id = 'a'", []).unwrap();
+    assert_eq!(c.userinfo(&access).await.1["name"], "Jake");
+}
+
+/// Addresses are kept normalized, and a client sends them as kept.
+#[test]
+fn redirect_addresses_are_normalized() {
+    let db = crate::db::Db::memory();
+    let kept = db.put_issuer_client(&client("n", ClientKind::Oidc, "HTTPS://Studio.Example:443/cb")).unwrap();
+    assert_eq!(kept.redirect_uris, ["https://studio.example/cb"]);
+    for bad in ["http://studio.example/cb", "https://studio.example/cb#x", "https://u@studio.example/cb", "/cb"] {
+        assert!(db.put_issuer_client(&client("n", ClientKind::Oidc, bad)).is_err(), "{bad}");
+    }
+    assert!(db.put_issuer_client(&client("n", ClientKind::Oidc, "http://127.0.0.1:9/cb")).is_ok());
+}
+
+/// Codes waiting per hub session are capped, and `/oauth/*` is
+/// rate-limited per address.
+#[tokio::test]
+async fn codes_are_capped_and_calls_limited() {
+    let k = IssuerKey::generate();
+    let c = control(keys(&k, None, None)).await;
+    let (_, ch) = pkce(9);
+    for _ in 0..CODES_PER_SESSION {
+        c.code(&ch).await;
+    }
+    let (st, at, _) = c.get(&c.authorize_path(CLIENT, BACK, &ch, "S256"), Some(COOKIE)).await;
+    assert_eq!(st, 303);
+    assert_eq!(query(&at)["error"], "temporarily_unavailable");
+
+    let ip = "127.0.0.1".parse().unwrap();
+    while c.app.limits.check(crate::limit::ISSUER, ip).is_ok() {}
+    assert_eq!(c.userinfo("aat_x").await.0, 429);
+    assert_eq!(c.get(&c.authorize_path(CLIENT, BACK, &ch, "S256"), Some(COOKIE)).await.0, 429);
+}
+
+/// The hub trusts the key that signs and a live previous one, never next:
+/// next signs nothing until it's made the key.
+#[tokio::test]
+async fn the_hub_never_trusts_next() {
+    use arugula_control_common::issuer::{ID_TOKEN_SECS, IdClaims, sign_id_token};
+    let (cur, next, old) = (IssuerKey::generate(), IssuerKey::generate(), IssuerKey::generate());
+    let c = control(keys(&cur, Some(&next), Some(&old))).await;
+    let issuer = c.app.issuer.as_ref().unwrap();
+    let claims = IdClaims {
+        iss: CONTROL.into(),
+        sub: "a".into(),
+        aud: CLIENT.into(),
+        iat: now(),
+        exp: now() + ID_TOKEN_SECS,
+        github_id: Some(4242),
+        nonce: None,
+    };
+    for (k, ok) in [(&cur, true), (&old, true), (&next, false)] {
+        let t = sign_id_token(k, &claims);
+        assert_eq!(issuer.verify(CONTROL, &t, CLIENT).is_ok(), ok, "{}", k.kid());
+    }
+    // Published all the same, for clients to have it before its turn.
+    assert_eq!(c.jwks().await.keys.len(), 3);
+    // A previous key past its time is neither published nor trusted.
+    let c = control(Keys { current: cur.clone(), next: None, previous: Some((old.clone(), now() - 1)) }).await;
+    assert_eq!(c.jwks().await.keys.len(), 1);
+    let t = sign_id_token(&old, &claims);
+    assert_eq!(c.app.issuer.as_ref().unwrap().verify(CONTROL, &t, CLIENT), Err(Refused::Signature));
 }

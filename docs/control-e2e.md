@@ -1509,8 +1509,8 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `identities` | metadata | A sign-in identity: the provider, its id for the person, and their login. | yes | GitHub |
 | `sessions` | metadata | A sign-in session: a hash of its token, the browser's User-Agent, its device, how it signed in (GitHub, a passkey, or the desktop app's hand-over), when it ends. | yes |  |
 | `app_sessions` | metadata | A session on the platform page's host (app.arugula.io, M152): a hash of its token, its account, the hub session it was made from (it ends when that one does), when it ends. | yes |  |
-| `issuer_clients` | metadata | A product that may ask the hub who someone is (M228): its id, its name, the exact addresses a sign-in may go back to. Registered by an operator. | nothing of one |  |
-| `issuer_tokens` | metadata | An access token the issuer handed a product (M228): a hash of it, its account and client, the hub session it was made from (it ends when that one does), when it ends. | yes |  |
+| `issuer_clients` | metadata | A product that may ask the hub who someone is (M228): its id, its kind (oidc, or a hud box), its name, the exact addresses a sign-in may go back to. Registered by an operator. | nothing of one |  |
+| `issuer_tokens` | metadata | An access token the issuer handed a product (M228): a hash of it, its account and the client it was issued to (no other client may use it), the hub session it was made from (it ends when that one does), when it ends. | yes |  |
 | `passkeys` | metadata | A passkey's public key, its sign count, what keeps it, the browser that added it (its User-Agent, the device its sign-in said it is, and that sign-in), whether it gives PRF. | yes |  |
 | `devices` | metadata | A device's or machine's certificate (public keys, signed by a device the account trusts), and its approval. | yes |  |
 | `turned_down` | metadata | Which device turned a waiting device down, and when. | yes |  |

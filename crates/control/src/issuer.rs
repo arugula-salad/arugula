@@ -7,16 +7,16 @@
 //! OIDC-shaped, kept small:
 //! - `GET /.well-known/openid-configuration` and `/.well-known/jwks.json`;
 //! - `GET /oauth/authorize`: the authorization code flow with PKCE (S256
-//!   only), for clients registered as rows (`db/issuer.rs`) with exact
-//!   redirect addresses. Someone signed in to control's page gets a code at
-//!   once; anyone else signs in there first (GitHub or a passkey, as
-//!   always, `#issuer-signin=`) and comes back;
+//!   only), for `oidc` clients registered as rows (`db/issuer.rs`) with
+//!   exact redirect addresses. Someone signed in to control's page gets a
+//!   code at once; anyone else signs in there first (GitHub or a passkey,
+//!   as always, `#issuer-signin=`) and comes back;
 //! - `POST /oauth/token`: the code and its verifier for an ID token (a JWT
 //!   signed EdDSA, minutes long) and an access token (opaque, minutes long,
-//!   ending with the hub session it came from);
-//! - `GET /oauth/userinfo`: who an access token is for;
+//!   bound to its client, ending with the hub session it came from);
+//! - `GET /oauth/userinfo`: who an access token is for, and its client;
 //! - `GET /oauth/hud`: hud's forge assertion (`hudfs1`, hud's own format)
-//!   for a box registered as a client, in the redirect's fragment.
+//!   for a `hud` client (a box), in the redirect's fragment.
 //!
 //! Tokens say who (the account, its numeric GitHub id) and never a project
 //! or a role: a product reads those from the platform with the access
@@ -26,10 +26,11 @@
 //! Keys come from config, never the database: `ARUGULA_ISSUER_KEY` signs,
 //! `ARUGULA_ISSUER_KEY_NEXT` is published before it signs, and
 //! `ARUGULA_ISSUER_KEY_PREVIOUS` stays published after it stopped, until
-//! its tokens have run out (docs/control-ops.md, "The issuer").
+//! `ARUGULA_ISSUER_KEY_PREVIOUS_UNTIL` (docs/control-ops.md, "The issuer").
 
 use std::{
     collections::HashMap,
+    net::SocketAddr,
     sync::{Arc, Mutex},
 };
 
@@ -41,7 +42,7 @@ use arugula_control_common::issuer::{
 use arugula_e2e::now_ms;
 use axum::{
     Form, Json,
-    extract::{Query, State},
+    extract::{ConnectInfo, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, Uri, header},
     response::{IntoResponse, Redirect, Response},
 };
@@ -52,50 +53,87 @@ use sha2::{Digest, Sha256};
 use crate::{
     App,
     auth::{SESSION_COOKIE, cookie, hash, token},
-    db::issuer::Client,
+    db::issuer::{Client, ClientKind},
 };
 
 /// How long a code lasts: a redirect and a call.
 pub const CODE_MS: u64 = 60_000;
+/// Codes one hub session may have waiting at once.
+pub const CODES_PER_SESSION: usize = 20;
+/// The longest a previous key may stay published after a restart: its
+/// tokens last minutes, so a day is generous, and a key forgotten there
+/// stops the hub from starting rather than living on.
+pub const MAX_PREVIOUS_SECS: u64 = 86_400;
 
 /// The issuer's keys: the one that signs, the one published before it
-/// signs, and the one still published after it stopped.
+/// signs, and the one still published after it stopped, until a time.
 #[derive(Debug, Clone)]
 pub struct Keys {
     pub current: IssuerKey,
     pub next: Option<IssuerKey>,
-    pub previous: Option<IssuerKey>,
+    /// With when it stops being published (seconds since the epoch).
+    pub previous: Option<(IssuerKey, u64)>,
 }
 
-/// A key as config gives it: 32 bytes of hex, or `file:<path>` holding
-/// them. Empty (or an empty file) is none.
-fn key_value(v: &str, name: &str) -> anyhow::Result<Option<IssuerKey>> {
+/// A value as config gives it: itself, or `file:<path>` holding it.
+/// Empty (or an empty file) is none.
+fn config_value(v: &str, name: &str) -> anyhow::Result<Option<String>> {
     let v = v.trim();
     let text = match v.strip_prefix("file:") {
         Some(path) => std::fs::read_to_string(path).with_context(|| format!("{name}: reading {path}"))?,
         None => v.to_owned(),
     };
-    if text.trim().is_empty() {
-        return Ok(None);
-    }
-    IssuerKey::from_hex(&text).map(Some).with_context(|| name.to_owned())
+    let text = text.trim();
+    Ok((!text.is_empty()).then(|| text.to_owned()))
+}
+
+fn key_value(v: Option<&str>, name: &str) -> anyhow::Result<Option<IssuerKey>> {
+    let Some(v) = v.map(|v| config_value(v, name)).transpose()?.flatten() else { return Ok(None) };
+    IssuerKey::from_hex(&v).map(Some).with_context(|| name.to_owned())
+}
+
+/// The issuer's settings, as the hub and the CLI read them.
+#[derive(clap::Args, Debug, Default, Clone)]
+pub struct KeyArgs {
+    /// The issuer's signing key (M228): 32 bytes of hex, or `file:<path>`
+    /// holding them. Other products (studio, hud boxes) take the tokens it
+    /// signs. The issuer is off when unset (docs/control-ops.md, "The
+    /// issuer").
+    #[arg(long = "issuer-key", env = "ARUGULA_ISSUER_KEY", hide_env_values = true)]
+    pub key: Option<String>,
+    /// The key that signs next, published before it does.
+    #[arg(long = "issuer-key-next", env = "ARUGULA_ISSUER_KEY_NEXT", hide_env_values = true)]
+    pub next: Option<String>,
+    /// The key that signed before, published until
+    /// ARUGULA_ISSUER_KEY_PREVIOUS_UNTIL.
+    #[arg(long = "issuer-key-previous", env = "ARUGULA_ISSUER_KEY_PREVIOUS", hide_env_values = true)]
+    pub previous: Option<String>,
+    /// When the previous key stops being published, in seconds since the
+    /// epoch (or `file:<path>`): once its last token has run out. Required
+    /// with a previous key, and at most a day ahead when the hub starts.
+    #[arg(long = "issuer-key-previous-until", env = "ARUGULA_ISSUER_KEY_PREVIOUS_UNTIL")]
+    pub previous_until: Option<String>,
 }
 
 impl Keys {
-    /// From `ARUGULA_ISSUER_KEY`, `_NEXT` and `_PREVIOUS`: none when the
-    /// first is unset or empty, and an error for anything that would sign
-    /// with something other than what was meant.
-    pub fn from_config(
-        current: Option<&str>,
-        next: Option<&str>,
-        previous: Option<&str>,
-    ) -> anyhow::Result<Option<Keys>> {
-        let next = next.map(|v| key_value(v, "ARUGULA_ISSUER_KEY_NEXT")).transpose()?.flatten();
-        let previous = previous.map(|v| key_value(v, "ARUGULA_ISSUER_KEY_PREVIOUS")).transpose()?.flatten();
-        let current = match current.map(str::trim) {
+    /// From the issuer's settings at `now` (seconds): none when the key is
+    /// unset or empty, and an error for anything that would sign or trust
+    /// something other than what was meant.
+    pub fn from_config(a: &KeyArgs, now: u64) -> anyhow::Result<Option<Keys>> {
+        let next = key_value(a.next.as_deref(), "ARUGULA_ISSUER_KEY_NEXT")?;
+        let previous = key_value(a.previous.as_deref(), "ARUGULA_ISSUER_KEY_PREVIOUS")?;
+        let until = a
+            .previous_until
+            .as_deref()
+            .map(|v| config_value(v, "ARUGULA_ISSUER_KEY_PREVIOUS_UNTIL"))
+            .transpose()?
+            .flatten()
+            .map(|v| v.parse::<u64>().context("ARUGULA_ISSUER_KEY_PREVIOUS_UNTIL is seconds since the epoch"))
+            .transpose()?;
+        let current = match a.key.as_deref().map(str::trim) {
             None | Some("") => None,
             Some(v) => Some(
-                key_value(v, "ARUGULA_ISSUER_KEY")?
+                key_value(Some(v), "ARUGULA_ISSUER_KEY")?
                     .ok_or_else(|| anyhow::anyhow!("ARUGULA_ISSUER_KEY names an empty file"))?,
             ),
         };
@@ -106,8 +144,32 @@ impl Keys {
             );
             return Ok(None);
         };
-        let kids: Vec<&str> =
-            [Some(&current), next.as_ref(), previous.as_ref()].into_iter().flatten().map(|k| k.kid()).collect();
+        let previous = match (previous, until) {
+            (None, _) => None,
+            (Some(_), None) => anyhow::bail!(
+                "ARUGULA_ISSUER_KEY_PREVIOUS needs ARUGULA_ISSUER_KEY_PREVIOUS_UNTIL: when its last token runs out \
+                 (seconds since the epoch)"
+            ),
+            (Some(_), Some(u)) if u > now + MAX_PREVIOUS_SECS => anyhow::bail!(
+                "ARUGULA_ISSUER_KEY_PREVIOUS_UNTIL is more than a day away: a previous key is published only until \
+                 its tokens run out (minutes)"
+            ),
+            (Some(k), Some(u)) => {
+                if u <= now {
+                    tracing::warn!(
+                        kid = k.kid(),
+                        "ARUGULA_ISSUER_KEY_PREVIOUS is past ARUGULA_ISSUER_KEY_PREVIOUS_UNTIL and no longer \
+                         published: unset both"
+                    );
+                }
+                Some((k, u))
+            }
+        };
+        let kids: Vec<&str> = [Some(&current), next.as_ref(), previous.as_ref().map(|(k, _)| k)]
+            .into_iter()
+            .flatten()
+            .map(|k| k.kid())
+            .collect();
         let mut unique = kids.clone();
         unique.sort_unstable();
         unique.dedup();
@@ -115,10 +177,15 @@ impl Keys {
         Ok(Some(Keys { current, next, previous }))
     }
 
-    /// Every key published: the one that signs first.
-    pub fn jwks(&self) -> Jwks {
+    /// The previous key, while it's still published.
+    fn previous_live(&self, now: u64) -> Option<&IssuerKey> {
+        self.previous.as_ref().filter(|(_, until)| *until > now).map(|(k, _)| k)
+    }
+
+    /// Every key published at `now`: the one that signs first.
+    pub fn jwks(&self, now: u64) -> Jwks {
         Jwks {
-            keys: [Some(&self.current), self.next.as_ref(), self.previous.as_ref()]
+            keys: [Some(&self.current), self.next.as_ref(), self.previous_live(now)]
                 .into_iter()
                 .flatten()
                 .map(IssuerKey::jwk)
@@ -126,10 +193,20 @@ impl Keys {
         }
     }
 
+    /// The keys a token this hub issued may be signed by at `now`: the one
+    /// that signs and a live previous one. Never next: it signs nothing
+    /// until it's made the key.
+    pub fn trusted(&self, now: u64) -> Jwks {
+        Jwks {
+            keys: [Some(&self.current), self.previous_live(now)].into_iter().flatten().map(IssuerKey::jwk).collect(),
+        }
+    }
+
     /// For the log at start: which key is which, by id.
     pub fn describe(&self) -> String {
-        let id = |k: &Option<IssuerKey>| k.as_ref().map_or("none".to_owned(), |k| k.kid().to_owned());
-        format!("signs with {}, next {}, previous {}", self.current.kid(), id(&self.next), id(&self.previous))
+        let next = self.next.as_ref().map_or("none".to_owned(), |k| k.kid().to_owned());
+        let previous = self.previous.as_ref().map_or("none".to_owned(), |(k, u)| format!("{} until {u}", k.kid()));
+        format!("signs with {}, next {next}, previous {previous}", self.current.kid())
     }
 }
 
@@ -158,10 +235,16 @@ impl Issuer {
         Issuer { keys, codes: Mutex::default() }
     }
 
-    fn put(&self, code_hash: String, p: Pending, now: u64) {
+    /// Keep a code, unless its hub session already has
+    /// [`CODES_PER_SESSION`] waiting.
+    fn put(&self, code_hash: String, p: Pending, now: u64) -> bool {
         let mut m = self.codes.lock().unwrap();
         m.retain(|_, p| p.until > now);
+        if m.values().filter(|o| o.hub_session == p.hub_session).count() >= CODES_PER_SESSION {
+            return false;
+        }
         m.insert(code_hash, p);
+        true
     }
 
     /// Single use: gone whatever the swap makes of it.
@@ -177,13 +260,23 @@ impl Issuer {
         }
     }
 
-    /// Checks an ID token this hub issued to `client` against its
-    /// published keys, now: what a caller in this process (M229's link
-    /// API) takes a token with. Elsewhere, `issuer::verify_id_token` with
-    /// the JWKS.
+    /// Checks an ID token this hub issued to `client`, now, against the
+    /// keys it trusts (never next): what a caller in this process (M229's
+    /// link API) takes a token with. Elsewhere, `issuer::verify_id_token`
+    /// with the JWKS.
     pub fn verify(&self, iss: &str, token: &str, client: &str) -> Result<IdClaims, Refused> {
-        verify_id_token(token, &self.keys.jwks(), iss, client, now_ms() / 1000)
+        let now = now_ms() / 1000;
+        verify_id_token(token, &self.keys.trusted(now), iss, client, now)
     }
+}
+
+/// The account a live access token is for, when it was issued to
+/// `client`: what userinfo, and anything later that takes these tokens
+/// (the gateway, M229), checks. A token issued to one client is never
+/// another's.
+pub fn access_token_for(app: &App, token: &str, client: &str) -> Option<String> {
+    let (account, issued_to) = app.db.issuer_token(&hash(token), now_ms()).ok().flatten()?;
+    (issued_to == client).then_some(account)
 }
 
 fn b64url(b: &[u8]) -> String {
@@ -193,6 +286,11 @@ fn b64url(b: &[u8]) -> String {
 /// A PKCE value as RFC 7636 has it: 43 to 128 of `A-Z a-z 0-9 - . _ ~`.
 fn pkce_shaped(s: &str) -> bool {
     (43..=128).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b))
+}
+
+/// A nonce for hud's assertion: 8 to 200 URL-safe characters.
+fn nonce_shaped(s: &str) -> bool {
+    (8..=200).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b))
 }
 
 fn no_store(mut r: Response) -> Response {
@@ -208,12 +306,17 @@ fn off() -> Response {
 }
 
 /// Shown, never redirected: a client or address that isn't registered
-/// gets nothing sent anywhere.
+/// (for this flow) gets nothing sent anywhere.
 fn not_registered() -> Response {
     no_store(
         (StatusCode::BAD_REQUEST, "this sign-in's client or its redirect address isn't registered with this control")
             .into_response(),
     )
+}
+
+/// `/oauth/*` from one address, per hour (`limit.rs`).
+fn limited(app: &App, peer: SocketAddr, headers: &HeaderMap) -> Option<Response> {
+    app.limits.check(crate::limit::ISSUER, app.limits.client_ip(peer, headers)).err().map(IntoResponse::into_response)
 }
 
 /// The hub session on this request, by its cookie: its hash and account.
@@ -230,10 +333,16 @@ fn sign_in_first(uri: &Uri) -> Response {
     no_store(Redirect::to(&format!("/#issuer-signin={}", b64url(back.as_bytes()))).into_response())
 }
 
-/// The registered client and the address it named, exactly.
-fn registered(app: &App, client_id: Option<&str>, redirect_uri: Option<&str>) -> Option<(Client, String)> {
+/// The registered client of `kind` and the address it named, exactly as
+/// it was registered.
+fn registered(
+    app: &App,
+    kind: ClientKind,
+    client_id: Option<&str>,
+    redirect_uri: Option<&str>,
+) -> Option<(Client, String)> {
     let (id, uri) = client_id.zip(redirect_uri)?;
-    let c = app.db.issuer_client(id).ok().flatten()?;
+    let c = app.db.issuer_client(id).ok().flatten().filter(|c| c.kind == kind)?;
     c.redirect_uris.iter().any(|u| u == uri).then(|| (c, uri.to_owned()))
 }
 
@@ -292,7 +401,7 @@ pub const JWKS_MAX_AGE_SECS: u32 = 300;
 /// first.
 pub async fn jwks(State(app): State<Arc<App>>) -> Response {
     let Some(i) = &app.issuer else { return off() };
-    let mut r = Json(i.keys.jwks()).into_response();
+    let mut r = Json(i.keys.jwks(now_ms() / 1000)).into_response();
     public_json(&mut r, JWKS_MAX_AGE_SECS);
     r
 }
@@ -309,16 +418,22 @@ pub struct Authorize {
     prompt: Option<String>,
 }
 
-/// `GET /oauth/authorize`: a code for a registered client, or control's
-/// page to sign in first.
+/// `GET /oauth/authorize`: a code for a registered `oidc` client, or
+/// control's page to sign in first.
 pub async fn authorize(
     State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     uri: Uri,
     Query(q): Query<Authorize>,
 ) -> Response {
     let Some(issuer) = &app.issuer else { return off() };
-    let Some((client, redirect_uri)) = registered(&app, q.client_id.as_deref(), q.redirect_uri.as_deref()) else {
+    if let Some(r) = limited(&app, peer, &headers) {
+        return r;
+    }
+    let Some((client, redirect_uri)) =
+        registered(&app, ClientKind::Oidc, q.client_id.as_deref(), q.redirect_uri.as_deref())
+    else {
         return not_registered();
     };
     let iss = app.cfg.public_url.as_str();
@@ -347,7 +462,7 @@ pub async fn authorize(
         return sign_in_first(&uri);
     };
     let code = token();
-    issuer.put(
+    let kept = issuer.put(
         hash(&code),
         Pending {
             account,
@@ -360,6 +475,9 @@ pub async fn authorize(
         },
         now,
     );
+    if !kept {
+        return fail("temporarily_unavailable", "too many sign-ins under way: try again in a minute");
+    }
     let mut p = vec![("code", code.as_str()), ("iss", iss)];
     if !state.is_empty() {
         p.push(("state", state));
@@ -380,15 +498,23 @@ fn token_error(status: StatusCode, error: &str, why: &str) -> Response {
     no_store((status, Json(serde_json::json!({ "error": error, "error_description": why }))).into_response())
 }
 
-/// The account's numeric GitHub id, when it has one.
+/// The account's numeric GitHub id, when it has one, and its login then.
 fn github_id(app: &App, account: &str) -> anyhow::Result<Option<(u64, String)>> {
     Ok(app.db.github_identity(account)?.and_then(|(id, login)| id.parse().ok().map(|id| (id, login))))
 }
 
 /// `POST /oauth/token`: a code, its client, address and verifier, for an
 /// ID token and an access token.
-pub async fn token_endpoint(State(app): State<Arc<App>>, Form(b): Form<TokenRequest>) -> Response {
+pub async fn token_endpoint(
+    State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Form(b): Form<TokenRequest>,
+) -> Response {
     let Some(issuer) = &app.issuer else { return off() };
+    if let Some(r) = limited(&app, peer, &headers) {
+        return r;
+    }
     if b.grant_type.as_deref() != Some("authorization_code") {
         return token_error(StatusCode::BAD_REQUEST, "unsupported_grant_type", "only authorization_code");
     }
@@ -405,9 +531,10 @@ pub async fn token_endpoint(State(app): State<Arc<App>>, Form(b): Form<TokenRequ
     {
         return stale();
     }
-    // The client still registered, and the hub session it came from still
-    // live and still theirs.
-    if !app.db.issuer_client(&p.client).ok().flatten().is_some_and(|c| c.redirect_uris.contains(&p.redirect_uri)) {
+    // The client still registered as it was, and the hub session it came
+    // from still live and still theirs.
+    let still = app.db.issuer_client(&p.client).ok().flatten();
+    if !still.is_some_and(|c| c.kind == ClientKind::Oidc && c.redirect_uris.contains(&p.redirect_uri)) {
         return token_error(StatusCode::UNAUTHORIZED, "invalid_client", "that client isn't registered any more");
     }
     let Ok(Some((account, session_until))) = app.db.session_until(&p.hub_session, now) else { return stale() };
@@ -451,25 +578,45 @@ pub async fn token_endpoint(State(app): State<Arc<App>>, Form(b): Form<TokenRequ
     )
 }
 
-/// `GET /oauth/userinfo`: who an access token is for.
-pub async fn userinfo(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
+#[derive(Deserialize)]
+pub struct UserinfoQuery {
+    client_id: Option<String>,
+}
+
+/// `GET /oauth/userinfo`: who an access token is for, and the client it
+/// was issued to (`client_id`), which the caller checks is itself. Given
+/// `?client_id=`, a token issued to another client is refused here.
+pub async fn userinfo(
+    State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Query(q): Query<UserinfoQuery>,
+) -> Response {
     if app.issuer.is_none() {
         return off();
+    }
+    if let Some(r) = limited(&app, peer, &headers) {
+        return r;
     }
     let bearer = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .map(str::trim);
-    let found = bearer.and_then(|t| app.db.issuer_token(&hash(t), now_ms()).ok().flatten());
-    let Some((account, _client)) = found else {
+    let found = bearer.and_then(|t| match &q.client_id {
+        Some(c) => access_token_for(&app, t, c).map(|a| (a, c.clone())),
+        None => app.db.issuer_token(&hash(t), now_ms()).ok().flatten(),
+    });
+    let Some((account, client)) = found else {
         let mut r = no_store(StatusCode::UNAUTHORIZED.into_response());
         r.headers_mut().insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer error=\"invalid_token\""));
         return r;
     };
     let gh = github_id(&app, &account).ok().flatten();
-    let name = app.db.account(&account).ok().flatten().map(|a| a.name).filter(|n| !n.is_empty());
-    let mut body = serde_json::json!({ "sub": account });
+    // Only a name the person set: never their login, which isn't theirs to
+    // keep (logins change hands).
+    let name = app.db.issuer_set_name(&account).ok().flatten();
+    let mut body = serde_json::json!({ "sub": account, "client_id": client });
     if let Some((id, _)) = gh {
         body["github_id"] = id.into();
     }
@@ -483,28 +630,62 @@ pub async fn userinfo(State(app): State<Arc<App>>, headers: HeaderMap) -> Respon
 pub struct HudStart {
     client_id: Option<String>,
     redirect_uri: Option<String>,
+    nonce: Option<String>,
 }
 
-/// `GET /oauth/hud`: hud's forge assertion for a box registered as a
-/// client (its id is the box's `HUD_FORGE_SIGNIN_AUDIENCE`), in the
-/// fragment of the box's own page: `#hud-forge=hudfs1.…`. hud signs a
-/// session in as `github:<login>`, so the account needs a GitHub sign-in.
-pub async fn hud(State(app): State<Arc<App>>, headers: HeaderMap, uri: Uri, Query(q): Query<HudStart>) -> Response {
+fn refuse_hud(status: StatusCode, why: &'static str) -> Response {
+    no_store((status, why).into_response())
+}
+
+/// `GET /oauth/hud`: hud's forge assertion for a `hud` client (a box; its
+/// id is the box's `HUD_FORGE_SIGNIN_AUDIENCE`), in the fragment of the
+/// box's own page: `#hud-forge=hudfs1.…`. hud signs a session in as
+/// `github:<login>`, so the account needs a GitHub sign-in, and its login
+/// must be no one else's here. A `nonce` the box sends is echoed in the
+/// assertion (hud ignores it today; M237 can bind it to the box's session).
+pub async fn hud(
+    State(app): State<Arc<App>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    uri: Uri,
+    Query(q): Query<HudStart>,
+) -> Response {
     let Some(issuer) = &app.issuer else { return off() };
-    let Some((client, redirect_uri)) = registered(&app, q.client_id.as_deref(), q.redirect_uri.as_deref()) else {
+    if let Some(r) = limited(&app, peer, &headers) {
+        return r;
+    }
+    let Some((client, redirect_uri)) =
+        registered(&app, ClientKind::Hud, q.client_id.as_deref(), q.redirect_uri.as_deref())
+    else {
         return not_registered();
     };
+    if q.nonce.as_deref().is_some_and(|n| !nonce_shaped(n)) {
+        return refuse_hud(StatusCode::BAD_REQUEST, "a nonce is 8 to 200 of A-Z a-z 0-9 - . _ ~");
+    }
     let now = now_ms();
     let Some((_, account)) = hub_session(&app, &headers, now) else { return sign_in_first(&uri) };
     let Ok(Some((github_id, login))) = github_id(&app, &account) else {
-        return no_store(
-            (
-                StatusCode::FORBIDDEN,
-                "hud signs you in as your GitHub login: sign in to Arugula with GitHub once, then try again",
-            )
-                .into_response(),
+        return refuse_hud(
+            StatusCode::FORBIDDEN,
+            "hud signs you in as your GitHub login: sign in to Arugula with GitHub once, then try again",
         );
     };
+    // A login is only as good as its last sign-in: when another account
+    // here has signed in with the same one since (a rename, and the old
+    // name taken), neither is vouched for until both sign in again.
+    match app.db.github_login_shared(&login, &github_id.to_string()) {
+        Ok(false) => {}
+        Ok(true) => {
+            return refuse_hud(
+                StatusCode::CONFLICT,
+                "your GitHub login is another account's here too: sign out and in again with GitHub, then try again",
+            );
+        }
+        Err(e) => {
+            tracing::warn!("the issuer couldn't check a login: {e:#}");
+            return refuse_hud(StatusCode::INTERNAL_SERVER_ERROR, "try again");
+        }
+    }
     let iat = now / 1000;
     let claims = HudClaims {
         sub: format!("github:{login}"),
@@ -515,6 +696,7 @@ pub async fn hud(State(app): State<Arc<App>>, headers: HeaderMap, uri: Uri, Quer
         account,
         github_id,
         kid: issuer.keys.current.kid().to_owned(),
+        nonce: q.nonce,
     };
     let assertion = sign_hud(&issuer.keys.current, &claims);
     no_store(Redirect::to(&format!("{redirect_uri}#hud-forge={assertion}")).into_response())
@@ -539,14 +721,10 @@ enum What {
     /// the secrets): each one's id, and its SPKI as hud's
     /// HUD_FORGE_SIGNIN_KEY takes it.
     Keys {
-        #[arg(long, env = "ARUGULA_ISSUER_KEY", hide_env_values = true)]
-        key: Option<String>,
-        #[arg(long, env = "ARUGULA_ISSUER_KEY_NEXT", hide_env_values = true)]
-        next: Option<String>,
-        #[arg(long, env = "ARUGULA_ISSUER_KEY_PREVIOUS", hide_env_values = true)]
-        previous: Option<String>,
+        #[command(flatten)]
+        keys: KeyArgs,
     },
-    /// Register a client, or change one's name and redirect addresses.
+    /// Register a client, or change one's kind, name and redirect addresses.
     AddClient {
         #[arg(long, default_value = "control.db", env = "ARUGULA_CONTROL_DB")]
         db: std::path::PathBuf,
@@ -554,10 +732,16 @@ enum What {
         /// HUD_FORGE_SIGNIN_AUDIENCE.
         #[arg(long)]
         id: String,
+        /// `oidc` (a product signing people in with /oauth/authorize) or
+        /// `hud` (a box taking /oauth/hud's assertions). Each flow refuses
+        /// the other kind.
+        #[arg(long)]
+        kind: ClientKind,
         #[arg(long)]
         name: String,
-        /// An address a sign-in may go back to, compared whole; repeat it
-        /// for more than one.
+        /// An address a sign-in may go back to, compared whole as it's
+        /// printed back; repeat it for more than one. A hud box's page must
+        /// be on an origin that serves only hud's own UI.
         #[arg(long = "redirect", required = true)]
         redirect_uris: Vec<String>,
     },
@@ -596,29 +780,32 @@ pub fn run(args: impl Iterator<Item = String>) -> anyhow::Result<()> {
             eprintln!("kid {}\nhud's HUD_FORGE_SIGNIN_KEY {}", k.kid(), k.spki_base64());
             println!("{}", k.seed_hex());
         }
-        What::Keys { key, next, previous } => {
-            let Some(keys) = Keys::from_config(key.as_deref(), next.as_deref(), previous.as_deref())? else {
+        What::Keys { keys } => {
+            let now = now_ms() / 1000;
+            let Some(keys) = Keys::from_config(&keys, now)? else {
                 println!("no ARUGULA_ISSUER_KEY: the issuer is off");
                 return Ok(());
             };
-            for (slot, k) in
-                [("current", Some(&keys.current)), ("next", keys.next.as_ref()), ("previous", keys.previous.as_ref())]
-            {
-                if let Some(k) = k {
-                    println!("{slot:<8} kid {}  hud {}", k.kid(), k.spki_base64());
-                }
+            println!("current  kid {}  hud {}", keys.current.kid(), keys.current.spki_base64());
+            if let Some(k) = &keys.next {
+                println!("next     kid {}  hud {}", k.kid(), k.spki_base64());
+            }
+            if let Some((k, until)) = &keys.previous {
+                let state = if *until > now { "published" } else { "no longer published" };
+                println!("previous kid {}  hud {}  until {until} ({state})", k.kid(), k.spki_base64());
             }
         }
-        What::AddClient { db, id, name, redirect_uris } => {
+        What::AddClient { db, id, kind, name, redirect_uris } => {
             let c = open(&db)?;
             let created =
                 crate::db::issuer::clients(&c)?.into_iter().find(|c| c.id == id).map_or(now_ms(), |c| c.created);
-            crate::db::issuer::put_client(&c, &Client { id: id.clone(), name, redirect_uris, created })?;
-            println!("client {id} registered");
+            let stored =
+                crate::db::issuer::put_client(&c, &Client { id: id.clone(), kind, name, redirect_uris, created })?;
+            println!("client {id} ({}) registered: {}", kind.as_str(), stored.redirect_uris.join(" "));
         }
         What::Clients { db } => {
             for c in crate::db::issuer::clients(&open(&db)?)? {
-                println!("{}\t{}\t{}", c.id, c.name, c.redirect_uris.join(" "));
+                println!("{}\t{}\t{}\t{}", c.id, c.kind.as_str(), c.name, c.redirect_uris.join(" "));
             }
         }
         What::RemoveClient { db, id } => {
@@ -633,33 +820,61 @@ pub fn run(args: impl Iterator<Item = String>) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    fn args(key: Option<String>, next: Option<String>, previous: Option<String>, until: Option<u64>) -> KeyArgs {
+        KeyArgs { key, next, previous, previous_until: until.map(|u| u.to_string()) }
+    }
+
     #[test]
     fn keys_from_config() {
         let (a, b) = (IssuerKey::generate(), IssuerKey::generate());
-        assert!(Keys::from_config(None, None, None).unwrap().is_none());
-        assert!(Keys::from_config(Some(""), None, Some("")).unwrap().is_none());
+        let now = 1_800_000_000;
+        let hexa = || Some(a.seed_hex());
+        let hexb = || Some(b.seed_hex());
+        assert!(Keys::from_config(&args(None, None, None, None), now).unwrap().is_none());
+        assert!(Keys::from_config(&args(Some(String::new()), None, Some(String::new()), None), now).unwrap().is_none());
         // Next or previous with nothing that signs is a mistake, not off.
-        assert!(Keys::from_config(None, Some(&a.seed_hex()), None).is_err());
-        let k = Keys::from_config(Some(&a.seed_hex()), Some(&b.seed_hex()), Some("")).unwrap().unwrap();
+        assert!(Keys::from_config(&args(None, hexa(), None, None), now).is_err());
+        let k = Keys::from_config(&args(hexa(), hexb(), Some(String::new()), None), now).unwrap().unwrap();
         assert_eq!(k.current.kid(), a.kid());
         assert_eq!(k.next.as_ref().unwrap().kid(), b.kid());
         assert!(k.previous.is_none());
-        assert_eq!(k.jwks().keys.iter().map(|j| j.kid.clone()).collect::<Vec<_>>(), [a.kid(), b.kid()]);
+        assert_eq!(k.jwks(now).keys.iter().map(|j| j.kid.clone()).collect::<Vec<_>>(), [a.kid(), b.kid()]);
+        // Next is published, never trusted.
+        assert_eq!(k.trusted(now).keys.iter().map(|j| j.kid.clone()).collect::<Vec<_>>(), [a.kid()]);
         // The same key twice, or one that isn't a key.
-        assert!(Keys::from_config(Some(&a.seed_hex()), None, Some(&a.seed_hex())).is_err());
-        assert!(Keys::from_config(Some("not hex"), None, None).is_err());
+        assert!(Keys::from_config(&args(hexa(), None, hexa(), Some(now + 600)), now).is_err());
+        assert!(Keys::from_config(&args(Some("not hex".into()), None, None, None), now).is_err());
+
+        // A previous key needs an end, at most a day off, and is
+        // published and trusted until then only.
+        assert!(Keys::from_config(&args(hexb(), None, hexa(), None), now).is_err());
+        assert!(Keys::from_config(&args(hexb(), None, hexa(), Some(now + MAX_PREVIOUS_SECS + 1)), now).is_err());
+        let k = Keys::from_config(&args(hexb(), None, hexa(), Some(now + 600)), now).unwrap().unwrap();
+        assert_eq!(k.jwks(now).keys.len(), 2);
+        assert_eq!(k.trusted(now + 599).keys.len(), 2);
+        assert_eq!(k.jwks(now + 600).keys.iter().map(|j| j.kid.clone()).collect::<Vec<_>>(), [b.kid()]);
+        assert_eq!(k.trusted(now + 600).keys.len(), 1);
+        // Already past at start: kept out, with a warning.
+        let k = Keys::from_config(&args(hexb(), None, hexa(), Some(now - 1)), now).unwrap().unwrap();
+        assert_eq!(k.jwks(now).keys.len(), 1);
 
         // From files: an empty one is none, except for the key that signs.
         let dir = std::env::temp_dir().join(format!("issuer-keys-{}", hex::encode(arugula_e2e::random::<6>())));
         std::fs::create_dir_all(&dir).unwrap();
-        let (cur, next) = (dir.join("current"), dir.join("next"));
+        let (cur, next, until) = (dir.join("current"), dir.join("next"), dir.join("until"));
         std::fs::write(&cur, format!("{}\n", a.seed_hex())).unwrap();
         std::fs::write(&next, "").unwrap();
-        let f = |p: &std::path::Path| format!("file:{}", p.display());
-        let k = Keys::from_config(Some(&f(&cur)), Some(&f(&next)), None).unwrap().unwrap();
+        std::fs::write(&until, format!("{}\n", now + 60)).unwrap();
+        let f = |p: &std::path::Path| Some(format!("file:{}", p.display()));
+        let k = Keys::from_config(&args(f(&cur), f(&next), None, None), now).unwrap().unwrap();
         assert_eq!((k.current.kid(), k.next.is_none()), (a.kid(), true));
-        assert!(Keys::from_config(Some(&f(&next)), None, None).is_err());
-        assert!(Keys::from_config(Some(&f(&dir.join("missing"))), None, None).is_err());
+        let k =
+            Keys::from_config(&KeyArgs { key: hexb(), next: None, previous: f(&cur), previous_until: f(&until) }, now)
+                .unwrap()
+                .unwrap();
+        assert_eq!(k.previous.as_ref().unwrap().1, now + 60);
+        assert!(Keys::from_config(&args(f(&next), None, None, None), now).is_err());
+        assert!(Keys::from_config(&args(f(&dir.join("missing")), None, None, None), now).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

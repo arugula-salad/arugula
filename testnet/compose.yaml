@@ -162,6 +162,7 @@ services:
       ARUGULA_ISSUER_KEY: file:/issuer/current
       ARUGULA_ISSUER_KEY_NEXT: file:/issuer/next
       ARUGULA_ISSUER_KEY_PREVIOUS: file:/issuer/previous
+      ARUGULA_ISSUER_KEY_PREVIOUS_UNTIL: file:/issuer/previous_until
     volumes:
       - ${ARUGULA_TESTNET_BINARIES:-./.state/no-binaries}:/opt/arugula:ro
       - ${ARUGULA_TESTNET_STATE:-./.state}/issuer:/issuer:ro

@@ -14,6 +14,10 @@ pub use arugula_control_common::limit::{Limits, bucket};
 pub const JOINS: (&str, usize) = ("join", 30);
 pub const ACCOUNTS: (&str, usize) = ("account", 10);
 pub const SIGN_INS: (&str, usize) = ("sign-in", 60);
+/// The issuer's `/oauth/*` (M228), per client address: a product's
+/// server swaps codes and reads userinfo for everyone it signs in, so it's
+/// generous; a code's guessing is out of reach at any rate.
+pub const ISSUER: (&str, usize) = ("issuer", 6_000);
 pub const LINKS: (&str, usize) = ("link", 240);
 /// Block relay sockets opened, per client address (M50): a dev page's
 /// worker and shim open one each per load, and again after the browser

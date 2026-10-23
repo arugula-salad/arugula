@@ -85,7 +85,7 @@ fi
 # previous until the `issuer` claim rotates them.
 mkdir -p "$STATE/issuer"
 [ -s "$STATE/issuer/current" ] || openssl rand -hex 32 > "$STATE/issuer/current"
-for f in next previous; do [ -f "$STATE/issuer/$f" ] || : > "$STATE/issuer/$f"; done
+for f in next previous previous_until; do [ -f "$STATE/issuer/$f" ] || : > "$STATE/issuer/$f"; done
 # The git server's HTTPS (M183): a self-signed certificate for `git`, which
 # the boxes are told to trust (GIT_SSL_CAINFO), and a password for its basic
 # auth, user x-access-token, as a forge takes a token.

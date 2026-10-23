@@ -299,18 +299,9 @@ struct Args {
     #[arg(long, env = "ARUGULA_CONTROL_GUEST_SSH_HOST")]
     guest_ssh_host: Option<String>,
 
-    /// The issuer's signing key (M228, issuer.rs): 32 bytes of hex, or
-    /// `file:<path>` holding them. Other products (studio, hud boxes) take
-    /// the tokens it signs. The issuer is off when unset
-    /// (docs/control-ops.md, "The issuer").
-    #[arg(long, env = "ARUGULA_ISSUER_KEY", hide_env_values = true)]
-    issuer_key: Option<String>,
-    /// The key that signs next, published before it does.
-    #[arg(long, env = "ARUGULA_ISSUER_KEY_NEXT", hide_env_values = true)]
-    issuer_key_next: Option<String>,
-    /// The key that signed before, published until its tokens run out.
-    #[arg(long, env = "ARUGULA_ISSUER_KEY_PREVIOUS", hide_env_values = true)]
-    issuer_key_previous: Option<String>,
+    /// The hub as an issuer (M228, issuer.rs): its keys.
+    #[command(flatten)]
+    issuer: issuer::KeyArgs,
 }
 
 pub struct Github {
@@ -967,12 +958,7 @@ async fn run() -> anyhow::Result<()> {
     }
     let vapid = push::Vapid::load(&db)?;
     let hosted_key = hosted::load_key(&db)?;
-    let issuer = issuer::Keys::from_config(
-        a.issuer_key.as_deref(),
-        a.issuer_key_next.as_deref(),
-        a.issuer_key_previous.as_deref(),
-    )?
-    .map(|keys| {
+    let issuer = issuer::Keys::from_config(&a.issuer, arugula_e2e::now_ms() / 1000)?.map(|keys| {
         info!("the issuer's keys: {}", keys.describe());
         issuer::Issuer::new(keys)
     });
