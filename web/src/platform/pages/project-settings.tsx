@@ -5,7 +5,8 @@
 // `/installed`, which comes here with the repo filled in. Each linked repo
 // has a switch for content mirroring (M166), with what turning it on means.
 // Then its environments, their secrets and "Deploy…" (M252), and its
-// standing grant for runs (M211).
+// standing grant for runs (M211), and for its owners, the agent tokens
+// over it and its own secrets (M230).
 
 import { useEffect, useState } from "preact/hooks";
 import type { LinkedRepo, LinkedRepos } from "../../shared/proto.gen";
@@ -17,6 +18,7 @@ import { session } from "../session";
 import { Missing } from "./project";
 import { RunGrant } from "../settings/runs";
 import { Environments } from "../settings/environments";
+import { ProjectAgents } from "../settings/project-agents";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
  * with the rest of the answer. */
@@ -145,6 +147,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
       {err && <p class="control-error" data-link-error>{err}</p>}
       <Environments p={p} />
       <RunGrant project={p.id} />
+      <ProjectAgents p={p} />
     </section>
   );
 }

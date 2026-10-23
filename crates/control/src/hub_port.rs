@@ -436,6 +436,11 @@ pub async fn gate(State(app): State<Arc<App>>, req: Request, next: Next) -> Resp
     let (mut parts, body) = req.into_parts();
     // Only the hub says who's asking.
     parts.extensions.remove::<Asked>();
+    // A client's bearer reaches only the routes it's for, as through the
+    // gateway (`gateway::bearer_route`).
+    if !crate::gateway::bearer_route(parts.uri.path()) {
+        parts.headers.remove(axum::http::header::AUTHORIZATION);
+    }
     if let Some(a) = who(&app, &mut parts).await {
         parts.extensions.insert(a);
     }

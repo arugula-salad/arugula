@@ -40,13 +40,17 @@
 #   - `hosted`: a live hosted machine's signature (`auth::HostedAuth`),
 #     which no other route takes;
 #   - `daemon_or_hosted`: either a daemon's or a hosted machine's
-#     (`auth::Dialer`).
+#     (`auth::Dialer`);
+#   - `agent_token`: a live agent grant token (M230), `Authorization:
+#     Bearer aru_agent_…`, which the platform finds by its hash and no
+#     other route reads.
 # - `clients`: who calls it: `page` (control's web page, in a browser or the
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
 #   link or a redirect, with no page of control's), `github` and `stripe`
 #   (their webhooks), `operator` (by hand), `product` (another product
-#   that takes the hub's tokens: studio, a hud box, M228's clients). Enforced for the CLI: a CLI
+#   that takes the hub's tokens: studio, a hud box, M228's clients), `agent`
+#   (an agent with no machine, with an agent grant token, M230). Enforced for the CLI: a CLI
 #   device's signature is refused (401, `page_only`) on every route that
 #   doesn't list `cli` (`clients::gate`).
 # - `note`: anything the rest doesn't say.
@@ -1060,6 +1064,78 @@ path = "/api/grants/{id}/revoke"
 process = "platform"
 auth = "session"
 clients = ["page", "cli"]
+
+# ---- platform: agents with no machine (M230, platform step 8)
+# An owner mints a bearer agent grant token over projects they read, with an
+# agent's powers (and `secrets.write`), never `cloud.drive` and never an
+# approval; it's shown once and kept as a hash. Its agent calls the MCP
+# endpoint with it, and that's the only route that reads it: as the owner's
+# agent, labelled with the token's name, through the same checks as a
+# machine's agents.
+
+[[route]]
+method = "GET"
+path = "/api/agent-tokens"  # wire::agent_mcp::AGENT_TOKENS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "The account's agent grant tokens, live and revoked, with their grants (never a token), and the MCP endpoint's URL."
+
+[[route]]
+method = "POST"
+path = "/api/agent-tokens"  # wire::agent_mcp::AGENT_TOKENS
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Mints one, from a browser's session on the platform page only (a CLI's login is refused): a name, projects the minter reads (asked of the hub), powers. The token is in this answer only; the account's devices are pushed a notice."
+
+[[route]]
+method = "POST"
+path = "/api/agent-tokens/{id}/revoke"  # wire::agent_mcp::AGENT_TOKEN_REVOKE
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Revokes a token of the account's and its grants: its agent's next call is refused."
+
+[[route]]
+method = "GET"
+path = "/api/agent-tokens/{id}/calls"  # wire::agent_mcp::AGENT_TOKEN_CALLS
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "The calls a token's agent made, newest first: tool, project, outcome, what happened. Never a value."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/agent-tokens"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "Every live agent token over the project, whoever minted it, with its powers there: the project's owners."
+
+[[route]]
+method = "POST"
+path = "/api/projects/{project}/agent-tokens/{id}/revoke"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project owner revokes a token's grants over the project, whoever minted it."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/secrets"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "The project's own secrets (set_secret's) by name, who last set each and when: never a value. The project's owners."
+
+[[route]]
+method = "POST"
+path = "/api/mcp"  # wire::agent_mcp::MCP
+process = "platform"
+auth = "agent_token"
+clients = ["agent"]
+note = "MCP (Streamable HTTP, one JSON-RPC message per POST, at most 64 KiB, stateless; no batches) for agents with no machine. The only platform route a client's Authorization reaches besides the inference broker's (gateway::bearer_route): issues, threads, runs, deploy plans and asks, project secrets set by name. Never an approval. Every call is noted for the token's owner."
 
 # ---- platform: projects
 # The platform page's list of the reader's projects (M150): their own and

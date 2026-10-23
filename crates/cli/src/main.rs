@@ -378,6 +378,17 @@ enum Command {
         #[command(subcommand)]
         cmd: Option<cmd::grants::GrantsCmd>,
     },
+    /// Tokens for agents with no machine, on Arugula control's MCP endpoint.
+    ///
+    /// They're made on the platform page (Settings, Agents with no machine),
+    /// never from a CLI: its agent acts as yours over their projects,
+    /// labelled with its name, never past your role, and never approves
+    /// anything. `ls` (the default) lists them, `calls` what one's agent
+    /// did, `revoke` takes one back at once. Needs `arugula login`.
+    AgentTokens {
+        #[command(subcommand)]
+        cmd: Option<cmd::agent_tokens::AgentTokensCmd>,
+    },
     /// A project's hosted workspaces on Arugula control.
     ///
     /// `create NAME` makes one (owner or editor on the project; `--repo`,
@@ -700,6 +711,9 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
     if let Command::Grants { cmd } = cli.cmd {
         return cmd::grants::run(cmd, cli.json);
     }
+    if let Command::AgentTokens { cmd } = cli.cmd {
+        return cmd::agent_tokens::run(cmd, cli.json);
+    }
     if let Command::Cloud { cmd } = cli.cmd {
         return cmd::cloud::run(cmd, cli.json);
     }
@@ -828,6 +842,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         | Command::Login(_)
         | Command::Logout
         | Command::Grants { .. }
+        | Command::AgentTokens { .. }
         | Command::Cloud { .. }
         | Command::Runs { .. }
         | Command::Deploys { .. }

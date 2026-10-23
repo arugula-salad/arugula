@@ -389,14 +389,27 @@ fn hop(name: &HeaderName) -> bool {
     )
 }
 
+/// The platform routes a client's own `Authorization` is for, and so the
+/// only ones it reaches (in process too, `hub_port::gate`): the MCP
+/// endpoint's agent grant token (M230) and the inference broker's bearer
+/// (M231, `/api/projects/{project}/inference/anthropic/{*rest}`). On every
+/// other platform route it's dropped, so no route can come to trust one by
+/// mistake.
+pub fn bearer_route(path: &str) -> bool {
+    let s: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+    path == arugula_control_wire::agent_mcp::MCP
+        || matches!(s.as_slice(), ["api", "projects", p, "inference", "anthropic", _, ..] if !p.is_empty())
+}
+
 /// What the platform is sent of the client's headers: not one hop's, not
 /// the cookie or the signature ("The hub stays the identity provider": the
-/// platform never sees either), and never a principal or internal header
-/// a client made up.
-fn forwarded_headers(from: &HeaderMap) -> HeaderMap {
+/// platform never sees either), never a principal or internal header
+/// a client made up, and `Authorization` only where [`bearer_route`] says.
+fn forwarded_headers(from: &HeaderMap, path: &str) -> HeaderMap {
     let mut out = HeaderMap::with_capacity(from.len());
     for (k, v) in from {
         if hop(k)
+            || (*k == header::AUTHORIZATION && !bearer_route(path))
             || *k == header::COOKIE
             || k.as_str() == crate::auth::AUTH_HEADER
             || k.as_str() == principal::HEADER
@@ -473,7 +486,7 @@ pub(crate) async fn forward(State(app): State<Arc<App>>, req: Request) -> Respon
     let request = hex::encode(arugula_e2e::random::<8>());
     let pq = parts.uri.path_and_query().map_or_else(|| parts.uri.path().to_owned(), |p| p.as_str().to_owned());
     let method = parts_method(&parts.method);
-    let mut headers = forwarded_headers(&parts.headers);
+    let mut headers = forwarded_headers(&parts.headers, parts.uri.path());
     crate::hub_port::seq_header(&app, &mut headers);
     let url = format!("{}{pq}", r.base);
     let small = parts
@@ -596,9 +609,23 @@ mod tests {
         ] {
             h.append(HeaderName::from_static(k), v.parse().unwrap());
         }
-        let f = forwarded_headers(&h);
+        h.append(header::AUTHORIZATION, "Bearer aru_agent_x".parse().unwrap());
+        let f = forwarded_headers(&h, "/api/chat");
         let mut kept: Vec<&str> = f.keys().map(HeaderName::as_str).collect();
         kept.sort();
         assert_eq!(kept, ["host", "last-event-id", "origin", "stripe-signature"]);
+        // A bearer crosses to the two routes it's for (M230, M231), only.
+        for path in ["/api/mcp", "/api/projects/prj_1/inference/anthropic/v1/messages"] {
+            assert!(forwarded_headers(&h, path).contains_key(header::AUTHORIZATION), "{path}");
+        }
+        for path in [
+            "/api/mcp/x",
+            "/api/deploys/dep_1/approve",
+            "/api/projects/prj_1/inference/anthropic",
+            "/api/projects//inference/anthropic/v1",
+            "/api/agent-tokens",
+        ] {
+            assert!(!forwarded_headers(&h, path).contains_key(header::AUTHORIZATION), "{path}");
+        }
     }
 }

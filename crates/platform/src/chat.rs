@@ -577,7 +577,7 @@ impl Shower {
         named.dedup();
         let (accounts, daemons, reach) = tokio::try_join!(
             app.cache.accounts(hub, &authors),
-            app.cache.daemons(hub, &named),
+            crate::grants::agent_names(app, &named),
             app.cache.may_reach(hub, reader, &machines),
         )?;
         let agents = ms
@@ -1445,7 +1445,7 @@ async fn room_agents(app: &Platform, facts: &Facts, room: &Room) -> anyhow::Resu
     let mut owners: Vec<String> = by.keys().map(|(o, _)| o.clone()).collect();
     owners.dedup();
     let (daemons, names) =
-        tokio::try_join!(app.cache.daemons(&*app.hub, &machines), app.cache.accounts(&*app.hub, &owners))?;
+        tokio::try_join!(crate::grants::agent_names(app, &machines), app.cache.accounts(&*app.hub, &owners))?;
     let mut out = vec![];
     for ((owner, machine), mut powers) in by {
         let Some(d) = daemons.get(&machine).filter(|d| d.account == owner) else { continue };

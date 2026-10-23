@@ -27,6 +27,7 @@ use anyhow::Context as _;
 use arugula_control_common::sqlite;
 use rusqlite::Connection;
 
+pub mod agent_tokens;
 pub mod billing;
 pub mod chat;
 pub mod content;

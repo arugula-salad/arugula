@@ -14,7 +14,7 @@ use axum::{
 use arugula_control_wire::{issues, runs as wire_runs};
 
 use crate::{
-    Platform, billing, chat, deploys, forge, grants, hosted, projects, run_grant, run_logs,
+    Platform, agent_mcp, agent_tokens, billing, chat, deploys, forge, grants, hosted, projects, run_grant, run_logs,
     triggers::{agent as run_agents, routes as runs},
 };
 
@@ -27,7 +27,8 @@ use crate::{
 /// agents too (M200); hosted workspaces (M179) and their inference keys
 /// (M185); the standing project grant for runs (M211); what starts runs
 /// (M214); reading runs, and a machine's agents' runs (M216); runs'
-/// artifacts (M213); and hosted agents' archived transcripts (M184).
+/// artifacts (M213); hosted agents' archived transcripts (M184); and
+/// agents with no machine, their grant tokens and MCP endpoint (M230).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -56,6 +57,18 @@ fn routes() -> Routes {
         .route(arugula_control_wire::chat::AGENT_SEARCH, get(chat::agent_threads::search))
         .route("/api/grants", get(grants::list).post(grants::give))
         .route("/api/grants/{id}/revoke", post(grants::revoke))
+        // Agents with no machine (M230): their grant tokens, and the MCP
+        // endpoint only those tokens open.
+        .route(agent_tokens::AGENT_TOKENS, get(agent_tokens::list).post(agent_tokens::mint))
+        .route(agent_tokens::AGENT_TOKEN_REVOKE, post(agent_tokens::revoke))
+        .route(agent_tokens::AGENT_TOKEN_CALLS, get(agent_tokens::calls))
+        .route(
+            agent_mcp::MCP,
+            post(agent_mcp::endpoint).layer(axum::extract::DefaultBodyLimit::max(agent_mcp::MAX_BODY)),
+        )
+        .route("/api/projects/{project}/agent-tokens", get(agent_tokens::over))
+        .route("/api/projects/{project}/agent-tokens/{id}/revoke", post(agent_tokens::revoke_over))
+        .route("/api/projects/{project}/secrets", get(agent_tokens::secrets))
         .route(arugula_control_wire::projects::PROJECTS, get(projects::list))
         .route(arugula_control_wire::projects::PROJECT_REPOS, get(forge::links::list).post(forge::links::link))
         .route(

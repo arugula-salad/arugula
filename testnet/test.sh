@@ -171,6 +171,18 @@
 #           (the claim's comment says the rest). Broken: the secret is
 #           written into the box's state directory, so the disk check
 #           finds it.
+#   agent-mcp
+#           Only with ARUGULA_TESTNET_PLATFORM=out and ARUGULA_TESTNET_POSTGRES=1
+#           at `up` (M230): an agent with no machine, with only an agent
+#           grant token its owner minted, speaks MCP to control's /api/mcp
+#           through the hub's gateway: it files a native issue, starts a run
+#           on the project's hosted workspace and plans a deploy, each
+#           labelled as the owner's agent on the token, and is refused an
+#           approval by the approve tool, the deploy approve and deny routes,
+#           the standing grant's sign route and the hub's device approval;
+#           the deploy still waits, and the token is in the platform's
+#           database only as its hash. Broken: the token is revoked first, so
+#           the agent files nothing.
 #   agents  Agents in conversations (M198), signed by a joined box's daemon:
 #           box-systemd joins a person's account; they give it threads.read
 #           and threads.post over their team's project and @mention it in a
@@ -239,7 +251,7 @@ if [ "$PROFILE" = control ]; then
   # A platform of its own to restart, only out of process; two of them to
   # share chat and Cloud (M144).
   case "${ARUGULA_TESTNET_PLATFORM:-in}" in
-    out) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart github-webhook issues-restart runs" ;;
+    out) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart github-webhook issues-restart runs agent-mcp" ;;
     two) CONTROL_CLAIMS="$CONTROL_CLAIMS platform-restart platform-fanout" ;;
   esac
   # Hosted workspaces at the fake E2B (M183).
@@ -1030,6 +1042,35 @@ claim_agents() {
   [ -n "$fp" ] || { note "agents: no device signed in"; return 1; }
   join_box "$box" "$fp" || return 1
   plat agents "$box" "$CFG" ${BREAK:+--break} > "$WORK/agents.json" || { note "agents: through MCP on $box:"; return 1; }
+}
+
+# M230: an agent with no machine, with only an agent grant token, through
+# control's own site (the platform out of process, on Postgres: the hub's
+# gateway forwards the token). The owner signs in, turns chat on and makes a
+# team; the claim gives its project a hosted workspace (a row, as `runs`
+# does: no box is needed for a run to be started and wait); then
+# testnet/platform.ts `agent-mcp` mints the token and drives /api/mcp with
+# it alone (its comment says the rest). After, the token is nowhere in the
+# platform's database, only its hash.
+# BREAK: the owner revokes the token before the agent calls, so it files
+# nothing.
+claim_agent_mcp() {
+  local proj ws token_id
+  pq "SELECT 1" > /dev/null 2>&1 || { note "agent-mcp: the platform isn't on the stack's Postgres (ARUGULA_TESTNET_POSTGRES=1)"; return 1; }
+  signin "agentmcp-$$-$RANDOM" > /dev/null || { note "agent-mcp: no device signed in"; return 1; }
+  proj="$(plat agent-mcp-setup | field project)"
+  [ -n "$proj" ] || { note "agent-mcp: no team project"; return 1; }
+  ws="hw_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  pq "INSERT INTO hosted_workspaces (id, project_id, name, spec, spec_hash, state, machine, created_by, created_at, updated_at)
+      VALUES ('$ws', '$proj', 'mcp', '{}', '', 'ready', 'dev_m230', 'acct-testnet-m230', 0, 0)" > /dev/null
+  plat agent-mcp "$proj" ${BREAK:+--break} > "$WORK/agent-mcp.json" || { note "agent-mcp: the agent with only a token:"; return 1; }
+  note "agent-mcp: $(cat "$WORK/agent-mcp.json")"
+  token_id="$(field token_id < "$WORK/agent-mcp.json")"
+  [ "$(pq "SELECT count(*) FROM agent_tokens WHERE id = '$token_id' AND token_hash ~ '^[0-9a-f]{64}$'")" = 1 ] ||
+    { note "agent-mcp: the token isn't kept as its hash"; return 1; }
+  docker exec "$TESTNET-postgres" pg_dump -U postgres platform | grep -q 'aru_agent_' &&
+    { note "agent-mcp: a token is in the platform's database"; return 1; }
+  return 0
 }
 
 claim_platform_page() {

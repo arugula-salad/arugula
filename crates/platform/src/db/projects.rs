@@ -75,6 +75,19 @@ pub const RUNS_START: &str = "runs.start";
 pub const RUNS_COMMAND: &str = "runs.command";
 pub const RUN_POWERS: [&str; 3] = [RUNS_READ, RUNS_START, RUNS_COMMAND];
 
+/// An agent with no machine's power to set a project's secrets by name
+/// (M230), over a project only: write-only, never read back. Only a token
+/// is given it ([`crate::agent_tokens`]), never a machine.
+pub const SECRETS_WRITE: &str = "secrets.write";
+
+/// What a grant's subject is: a machine (`daemon`, its id 16 hex
+/// characters), or an agent with no machine (`agent`, M230: an agent grant
+/// token, `agt_…`). The hub signs only machines, so a machine's id is never
+/// a token's.
+pub fn subject_kind(id: &str) -> &'static str {
+    if id.starts_with(crate::db::agent_tokens::ID_PREFIX) { "agent" } else { "daemon" }
+}
+
 /// The reader in `hub_feed` that keeps these tables.
 const READER: &str = "projects";
 
@@ -121,10 +134,10 @@ pub struct Grant {
     pub revoked_at: Option<u64>,
 }
 
-const GRANT_COLUMNS: &str =
+pub(super) const GRANT_COLUMNS: &str =
     "id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at, revoked_at";
 
-fn grant_row(r: &Row) -> anyhow::Result<Grant> {
+pub(super) fn grant_row(r: &Row) -> anyhow::Result<Grant> {
     Ok(Grant {
         id: r.get(0)?,
         subject_kind: r.get(1)?,
@@ -196,6 +209,9 @@ impl Db {
             )?;
         }
         team_project(&tx, &team.id, &team.name, now)?;
+        // An agent token's reach over the team's projects goes with its
+        // owner's place in the team (M230).
+        super::agent_tokens::revoke_departed(&tx, &team.id, now)?;
         tx.commit()?;
         Ok(())
     }
@@ -393,10 +409,10 @@ impl Db {
         self.c()
             .query_row(
                 &format!(
-                    "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1 AND power = ?2
+                    "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = ?6 AND subject_id = ?1 AND power = ?2
                      AND scope_kind = ?3 AND scope_id = ?4 AND granted_by = ?5 AND revoked_at IS NULL"
                 ),
-                params![daemon, power, scope_kind, scope_id, by],
+                params![daemon, power, scope_kind, scope_id, by, subject_kind(daemon)],
                 grant_row,
             )
             .optional()
@@ -417,7 +433,7 @@ impl Db {
         }
         c.query_map(
             &format!(
-                "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = 'daemon' AND revoked_at IS NULL
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind IN ('daemon', 'agent') AND revoked_at IS NULL
                  AND power IN (?, ?, ?, ?) AND ({}) ORDER BY granted_by, subject_id, power",
                 ors.join(" OR ")
             ),
@@ -431,11 +447,19 @@ impl Db {
     pub fn agent_grants_of(&self, daemon: &str, by: &str) -> anyhow::Result<Vec<Grant>> {
         self.c().query_map(
             &format!(
-                "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = ?7 AND subject_id = ?1
                  AND granted_by = ?2 AND revoked_at IS NULL AND power IN (?3, ?4, ?5, ?6)
                  ORDER BY scope_kind, scope_id, power"
             ),
-            params![daemon, by, AGENT_POWERS[0], AGENT_POWERS[1], AGENT_POWERS[2], AGENT_POWERS[3]],
+            params![
+                daemon,
+                by,
+                AGENT_POWERS[0],
+                AGENT_POWERS[1],
+                AGENT_POWERS[2],
+                AGENT_POWERS[3],
+                subject_kind(daemon)
+            ],
             grant_row,
         )
     }
@@ -445,11 +469,11 @@ impl Db {
     pub fn run_grants_of(&self, daemon: &str, by: &str) -> anyhow::Result<Vec<Grant>> {
         self.c().query_map(
             &format!(
-                "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1
+                "SELECT {GRANT_COLUMNS} FROM grants WHERE subject_kind = ?6 AND subject_id = ?1
                  AND granted_by = ?2 AND revoked_at IS NULL AND scope_kind = 'project' AND power IN (?3, ?4, ?5)
                  ORDER BY scope_id, power"
             ),
-            params![daemon, by, RUN_POWERS[0], RUN_POWERS[1], RUN_POWERS[2]],
+            params![daemon, by, RUN_POWERS[0], RUN_POWERS[1], RUN_POWERS[2], subject_kind(daemon)],
             grant_row,
         )
     }
@@ -493,6 +517,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> anyhow::Result<()> {
         c.execute("DELETE FROM grants WHERE subject_kind = 'daemon' AND subject_id = ?1", params![m])?;
     }
     super::run_grants::erase_account(c, account)?;
+    super::agent_tokens::erase_account(c, account)?;
     Ok(())
 }
 

@@ -29,6 +29,7 @@ just testnet test control platform-restart  # out of process: a relayed session 
 just testnet test control issues-restart    # out of process: native issues and their threads outlive a platform restart
 ARUGULA_TESTNET_PLATFORM=out ARUGULA_TESTNET_POSTGRES=1 just testnet up control
 just testnet test control runs              # M212: a run on a hosted box runs once, across platform and daemon restarts
+just testnet test control agent-mcp         # M230 (out of process, on Postgres): an agent with only a token files, runs, plans, and never approves
 just testnet test control deploys           # M219 (with ARUGULA_TESTNET_HOSTED=1): each deploy on a fresh box at the fake E2B; its secret never on disk
 just testnet test control github-webhook    # out of process: the GitHub App's webhook lands on the platform (M161)
 ARUGULA_TESTNET_PLATFORM=two just testnet up control  # two platform machines on Postgres (M144)
