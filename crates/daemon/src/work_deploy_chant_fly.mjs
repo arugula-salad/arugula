@@ -39,24 +39,27 @@
 // GITHUB_TOKEN, chant's own git reads and writes its ledger through a
 // stand-in for origin here, and the driver pushes it.
 //
-// Its result goes on fd 3, which only it holds (it reopens it close-on-exec
-// and closes fd 3 before it runs anything): chant's ledger entry, chant's
+// Its result goes on fd 3, which only it holds (every program it runs starts
+// with fd 3 closed): chant's ledger entry, chant's
 // record and Fly's image and health, which arugulad reports with the run's
 // end, and the platform checks and keeps.
 
 import { spawnSync } from "node:child_process";
-import { closeSync, existsSync, openSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 
-// The result's pipe, before anything else runs: close-on-exec, so no
-// program this runs inherits it.
+// The result's pipe, written as fd 3 itself. Reopening it (/dev/fd/3) would
+// check the pipe's mode, which the daemon's user made and the run user can't
+// open; node can't mark it close-on-exec, so every program this runs starts
+// through `noFd3`, which closes it first.
 let resultFd = null;
 try {
-  resultFd = openSync("/dev/fd/3", "w");
-  closeSync(3);
+  if (fstatSync(3).isFIFO()) resultFd = 3;
 } catch {
   resultFd = null;
 }
+/** `argv`, started with fd 3 (the result pipe) closed. */
+const noFd3 = (argv) => ["/bin/sh", "-c", 'exec 3>&- "$@"', "sh", ...argv];
 
 const env = process.env;
 const say = (s) => process.stdout.write(`chant-fly: ${s}\n`);
@@ -94,7 +97,8 @@ const chantGithub = settings.chant_github === "true" && !!GITHUB_TOKEN;
 /** Run `argv` in `cwd` with `penv`: its output shown, `{status, stdout}` back. */
 function run(argv, { cwd, penv = base, capture = false, check = true } = {}) {
   say(`$ ${argv.join(" ")}`);
-  const r = spawnSync(argv[0], argv.slice(1), {
+  const [cmd, ...args] = noFd3(argv);
+  const r = spawnSync(cmd, args, {
     cwd,
     env: penv,
     stdio: ["ignore", capture ? "pipe" : "inherit", "inherit"],
@@ -168,7 +172,7 @@ const forChant = chantGithub ? { ...chantBase, FLY_API_TOKEN, GITHUB_TOKEN } : {
 
 // The token: a deploy token for one app that expires within 30 days, as
 // far as flyctl can tell (its caveats).
-const flyctl = spawnSync("flyctl", ["version"], { env: base }).status === 0 ? "flyctl" : "fly";
+const flyctl = spawnSync("/bin/sh", noFd3(["flyctl", "version"]).slice(1), { env: base }).status === 0 ? "flyctl" : "fly";
 function tokenOk() {
   const r = run([flyctl, "tokens", "debug"], { penv: withFly, capture: true, check: false });
   if (r.status !== 0) return "flyctl tokens debug didn't read it";
@@ -332,7 +336,7 @@ for (let i = 0; i < tries; i++) {
   if (fly.healthy && (!rollBack || fly.image === rollBack.to.image)) break;
   if (fly.healthy) fly = { healthy: false, why: `it runs ${fly.image}, not ${rollBack.to.image}`, image: fly.image };
   say(`Fly app ${app} isn't healthy yet: ${fly.why}`);
-  if (i + 1 < tries) spawnSync("sleep", [String(every)]);
+  if (i + 1 < tries) spawnSync("/bin/sh", noFd3(["sleep", String(every)]).slice(1));
 }
 
 if (rollBack) {
