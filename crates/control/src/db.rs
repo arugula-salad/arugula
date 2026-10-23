@@ -598,7 +598,7 @@ impl Db {
         conn.execute_batch(hosted::SCHEMA)?;
         conn.execute_batch(changes::SCHEMA)?;
         conn.execute_batch(platform::SCHEMA)?;
-        conn.execute_batch(issuer::SCHEMA)?;
+        issuer::ensure(&conn)?;
         migrate(&conn)?;
         if !answers_before {
             grandfather_shares(&conn)?;
@@ -613,7 +613,7 @@ impl Db {
         conn.execute_batch(hosted::SCHEMA).unwrap();
         conn.execute_batch(changes::SCHEMA).unwrap();
         conn.execute_batch(platform::SCHEMA).unwrap();
-        conn.execute_batch(issuer::SCHEMA).unwrap();
+        issuer::ensure(&conn).unwrap();
         migrate(&conn).unwrap();
         Self { conn: Mutex::new(conn) }
     }

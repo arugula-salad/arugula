@@ -1414,10 +1414,11 @@ chain; the device that signs must still be one the account trusts now,
 and a removed device approves nothing new. Rows approved before `approved_at` came
 have none; after the cutoff those were approved under #1343's rule, which
 refused a window approving a browser. The platform gets the list with an
-account's devices (`DeviceTrust::legacy_app_children`); a deploy's box pins
+account's devices (`DeviceTrust::legacy_app_children`); a hosted box pins
 the first list control sends (`Enrollment::legacy_app_children`), and each
 later refresh only shrinks it, never adds; a box that has none counts no
-window. The page gets it from `GET /api/devices` (`legacy_app_children`)
+window. A box checks a deploy's approval and a standing grant (and its
+revokes, M253) against the list it pinned, as the hub does. The page gets it from `GET /api/devices` (`legacy_app_children`)
 to show what control will take (Approve, recovery codes, standing grants).
 Daemons' and pages' own checks of team papers keep #1343's rule.
 
@@ -1509,9 +1510,9 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `identities` | metadata | A sign-in identity: the provider, its id for the person, and their login. | yes | GitHub |
 | `sessions` | metadata | A sign-in session: a hash of its token, the browser's User-Agent, its device, how it signed in (GitHub, a passkey, or the desktop app's hand-over), when it ends. | yes |  |
 | `app_sessions` | metadata | A session on the platform page's host (app.arugula.io, M152): a hash of its token, its account, the hub session it was made from (it ends when that one does), when it ends. | yes |  |
-| `issuer_clients` | metadata | A product that may ask the hub who someone is (M228): its id, its kind (oidc, or a hud box), its name, the exact addresses a sign-in may go back to. Registered by an operator. | nothing of one |  |
+| `issuer_clients` | metadata | A product that may ask the hub who someone is (M228): its id, its kind (oidc, or a hud box), its name, the exact addresses a sign-in may go back to, and a hud box's platform project (M237). Registered by an operator. | nothing of one |  |
 | `issuer_tokens` | metadata | An access token the issuer handed a product (M228): a hash of it, its account and the client it was issued to (no other client may use it), the hub session it was made from (it ends when that one does), when it ends. | yes |  |
-| `issuer_client_secrets` | metadata | A product's link secret (M229): a hash of it, which client it is, when it was made. The product calls the link API with it. | nothing of one |  |
+| `issuer_client_secrets` | metadata | A client's secret (M229, M237): a hash of it, which client it is, when it was made. A product calls the link API with it; a bound hud box, its roster and review threads. | nothing of one |  |
 | `account_links` | metadata | A product's user linked to a platform account (M229): the client, the product's own id for its user and the name it gives them, the account, the numeric GitHub id both had, when. | yes |  |
 | `account_link_events` | metadata | The audit of account links (M229): a link made, renamed or ended (with the consent), the client and product user, the account, by the product, the person or an operator, when. Kept a year. | yes |  |
 | `issuer_grants` | metadata | A person's yes on the consent screen (M229): the account, the product's client, when. Kept until they unlink the product. | yes |  |

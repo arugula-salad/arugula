@@ -5,13 +5,16 @@
 // only a deploy's run gets it, on its own box, while it runs. Setting one
 // takes a browser's session (a CLI's login or an agent is refused). Owners
 // and editors plan a deploy to one ("Deploy…"); approving it stays an
-// owner's, with a passkey, on control's page.
+// owner's, with a passkey, on control's page. Every member sees each
+// environment's latest deploys, whatever became of them, and reaches each
+// one's page from there, not only from its push.
 
 import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
-import { holdable, secretNote, environmentBody, type Driver, type Environment } from "../deploys-text";
+import { holdable, historyPath, secretNote, environmentBody, type DeployHistory, type Driver, type Environment } from "../deploys-text";
 import { names } from "../links";
+import { DeployRow } from "../pages/deploy";
 import { follow, pathOf } from "../router";
 import type { PlatformProject } from "../session";
 
@@ -145,6 +148,7 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
           {minted.map((s) => `${s.name}: ${secretNote(s)}`).join(". ")}.
         </p>
       )}
+      <RecentDeploys project={env.project} env={env.id} />
       {plans && (
         <div class="deploy-actions">
           <a class="button" href={deployPath} data-environment-deploy={env.name} onClick={(e) => follow(e, deployPath)}>
@@ -153,6 +157,55 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
         </div>
       )}
     </article>
+  );
+}
+
+/** How many of an environment's deploys it shows at first, and how many
+ * more each "Older" asks for. */
+const RECENT = 5;
+const OLDER = 20;
+
+/** An environment's latest deploys, whatever became of them, newest
+ * first: each opens its own page. */
+function RecentDeploys({ project, env }: { project: string; env: string }) {
+  const [page, setPage] = useState<DeployHistory | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    call<DeployHistory>("GET", historyPath(project, env, RECENT)).then(setPage, (e: Error) => setErr(e.message));
+  }, [project, env]);
+  const older = async () => {
+    if (!page?.next) return;
+    setBusy(true);
+    try {
+      const more = await call<DeployHistory>("GET", historyPath(project, env, OLDER, page.next));
+      setPage({ deploys: [...page.deploys, ...more.deploys], next: more.next });
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (err) return <p class="control-error">{err}</p>;
+  if (!page) return null;
+  return (
+    <div class="deploy-history" data-env-deploys={env}>
+      <h3>Deploys</h3>
+      {page.deploys.length === 0 ? (
+        <p class="dim">None yet.</p>
+      ) : (
+        <ol class="platform-list">
+          {page.deploys.map((d) => (
+            <DeployRow key={d.id} d={d} />
+          ))}
+        </ol>
+      )}
+      {page.next && (
+        <button class="control-linkish" disabled={busy} data-env-deploys-older onClick={() => void older()}>
+          Older
+        </button>
+      )}
+    </div>
   );
 }
 

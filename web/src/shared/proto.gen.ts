@@ -231,7 +231,12 @@ imported: string | null,
  * Written by an agent on the author's machine (M197): shown as
  * "<name>'s agent on <machine_name>".
  */
-agent: ChatAgent | null, };
+agent: ChatAgent | null, 
+/**
+ * Posted for the author by a product (M237): a hud box's name, for a
+ * review written there. Shown as "<name> via <via>".
+ */
+via?: string, };
 
 export type ChatMessages = { room: ChatRoom, 
 /**

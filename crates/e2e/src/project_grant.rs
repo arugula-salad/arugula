@@ -38,7 +38,10 @@
 //!   browser all the way back to its account's root
 //!   ([`Owners::browser_signed`]), and so are its revokes: never a CLI or
 //!   the desktop app (their keys may be a program's on their computer), a
-//!   machine, a recovery code, control's key or the platform.
+//!   machine, a recovery code, control's key or the platform. The app's
+//!   window from before it had a kind counts only just above a browser it
+//!   approved back then, as the machine pinned them (M253, #1394's
+//!   `LegacyAppChildren`), as for a deploy's approval.
 //! - **What it covers.** `runs.start` and `runs.instruct` ([`CAPS`]) on the
 //!   hosted workspaces of the project, under the delegation it names. A
 //!   new delegation needs a new grant. It never covers a deploy (aru-101).
@@ -61,7 +64,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::hosted::{Delegation, Owner, Owners};
+use crate::{
+    cert::LegacyAppChildren,
+    hosted::{Delegation, Owner, Owners},
+};
 
 /// What the grant gives, as signed: start runs, and instruct them.
 pub const CAPS: &[&str] = &["runs.instruct", "runs.start"];
@@ -187,9 +193,9 @@ impl ProjectGrant {
     }
 
     /// Signed by a browser of one of its project's owners, a browser all
-    /// the way back, as `owners` says.
-    pub fn signed_for(&self, owners: &Owners) -> bool {
-        self.well_formed() && owners.browser_signed(&self.owner, &self.by, &self.body(), &self.sig)
+    /// the way back, as `owners` and `children` say.
+    pub fn signed_for(&self, owners: &Owners, children: &LegacyAppChildren) -> bool {
+        self.well_formed() && owners.browser_signed(&self.owner, &self.by, &self.body(), &self.sig, children)
     }
 }
 
@@ -281,16 +287,16 @@ impl GrantRevoke {
     /// Signed by a browser (one all the way back) of the project `owner`
     /// names (any of its owners, not only the one who granted), trusted
     /// now.
-    pub fn signed_for(&self, owner: &str, owners: &Owners) -> bool {
+    pub fn signed_for(&self, owner: &str, owners: &Owners, children: &LegacyAppChildren) -> bool {
         token(&self.project)
             && token(&self.delegation)
-            && owners.browser_signed(owner, &self.by, &self.body(), &self.sig)
+            && owners.browser_signed(owner, &self.by, &self.body(), &self.sig, children)
     }
 
     /// It takes back `g`: it covers it, signed by one of the project's
     /// owners now.
-    pub fn revokes(&self, g: &ProjectGrant, owners: &Owners) -> bool {
-        self.covers(g) && self.signed_for(&g.owner, owners)
+    pub fn revokes(&self, g: &ProjectGrant, owners: &Owners, children: &LegacyAppChildren) -> bool {
+        self.covers(g) && self.signed_for(&g.owner, owners, children)
     }
 }
 
@@ -378,12 +384,14 @@ pub struct Revokes<'a> {
 /// `cap`, hasn't expired; `d` isn't revoked; and no revoke takes it back
 /// (a kept one, or a sent one that checks out). Revokes that don't check
 /// out are ignored: the platform may send junk, and only a refusal comes
-/// of it.
+/// of it. `children` is what the machine pinned of the browsers the
+/// desktop app's old windows approved ([`Owners::browser_signed`]).
 pub fn check(
     g: &ProjectGrant,
     d: &Delegation,
     revokes: Revokes,
     owners: &Owners,
+    children: &LegacyAppChildren,
     cap: &str,
     now: u64,
 ) -> Result<(), GrantRefusal> {
@@ -396,7 +404,7 @@ pub fn check(
     if g.delegation != d.id() {
         return Err(GrantRefusal::WrongDelegation);
     }
-    if !g.signed_for(owners) {
+    if !g.signed_for(owners, children) {
         return Err(GrantRefusal::Unsigned);
     }
     if !g.caps.iter().any(|c| c == cap) {
@@ -408,7 +416,7 @@ pub fn check(
     if revokes.delegation.iter().any(|r| r.revokes(d, owners)) {
         return Err(GrantRefusal::DelegationRevoked);
     }
-    if revokes.kept.iter().any(|r| r.covers(g)) || revokes.sent.iter().any(|r| r.revokes(g, owners)) {
+    if revokes.kept.iter().any(|r| r.covers(g)) || revokes.sent.iter().any(|r| r.revokes(g, owners, children)) {
         return Err(GrantRefusal::Revoked);
     }
     Ok(())
@@ -422,6 +430,9 @@ mod tests {
         hosted::HostedKey,
         team::{AccountCerts, Member, Roster, TeamRole},
     };
+
+    /// A machine that pinned no grandfathered app windows' browsers.
+    const NONE: &LegacyAppChildren = &LegacyAppChildren::new();
 
     struct Person {
         account: String,
@@ -512,13 +523,16 @@ mod tests {
         let g = grant(&d, &w.owner.keys);
         assert_eq!(g.caps, ["runs.instruct", "runs.start"]);
         for cap in CAPS {
-            assert_eq!(check(&g, &d, Revokes::default(), &owners, cap, 200), Ok(()));
+            assert_eq!(check(&g, &d, Revokes::default(), &owners, NONE, cap, 200), Ok(()));
         }
         // Not a deploy, or anything else.
-        assert_eq!(check(&g, &d, Revokes::default(), &owners, "deploys.apply", 200), Err(GrantRefusal::NotCovered));
+        assert_eq!(
+            check(&g, &d, Revokes::default(), &owners, NONE, "deploys.apply", 200),
+            Err(GrantRefusal::NotCovered)
+        );
         // Another owner's device's grant counts the same.
         let g2 = grant(&d, &w.other_owner.keys);
-        assert_eq!(check(&g2, &d, Revokes::default(), &owners, "runs.start", 200), Ok(()));
+        assert_eq!(check(&g2, &d, Revokes::default(), &owners, NONE, "runs.start", 200), Ok(()));
     }
 
     #[test]
@@ -529,7 +543,7 @@ mod tests {
         // An editor's device, a stranger's, control's own key: none.
         for by in [&w.editor.keys, &DeviceKeys::generate()] {
             assert_eq!(
-                check(&grant(&d, by), &d, Revokes::default(), &owners, "runs.start", 200),
+                check(&grant(&d, by), &d, Revokes::default(), &owners, NONE, "runs.start", 200),
                 Err(GrantRefusal::Unsigned)
             );
         }
@@ -544,7 +558,7 @@ mod tests {
             certs.get_mut(&w.owner.account).unwrap().0.push(kc);
             let owners = Owners::Team { roster: &w.roster, certs: &certs };
             assert_eq!(
-                check(&grant(&d, &k), &d, Revokes::default(), &owners, "runs.start", 200),
+                check(&grant(&d, &k), &d, Revokes::default(), &owners, NONE, "runs.start", 200),
                 Err(GrantRefusal::Unsigned)
             );
         }
@@ -556,11 +570,11 @@ mod tests {
             certs.get_mut(&w.owner.account).unwrap().0.push(kc);
             let owners = Owners::Team { roster: &w.roster, certs: &certs };
             let g = grant(&d, &w.owner.keys);
-            assert_eq!(check(&g, &d, Revokes::default(), &owners, "runs.start", 200), Ok(()));
+            assert_eq!(check(&g, &d, Revokes::default(), &owners, NONE, "runs.start", 200), Ok(()));
             let r = GrantRevoke::new(&g.project, &g.delegation, Running::Finish, 150, &k);
-            assert!(!r.revokes(&g, &owners), "a {} can't revoke it", kind.as_str());
+            assert!(!r.revokes(&g, &owners, NONE), "a {} can't revoke it", kind.as_str());
             let r = GrantRevoke::new(&g.project, &g.delegation, Running::Finish, 150, &w.other_owner.keys);
-            assert!(r.revokes(&g, &owners), "another owner's browser can");
+            assert!(r.revokes(&g, &owners, NONE), "another owner's browser can");
         }
         // A browser a CLI signed (control keeps none now) isn't one.
         let (ck, mut cc) =
@@ -574,14 +588,14 @@ mod tests {
         certs.get_mut(&w.owner.account).unwrap().0.extend([cc, laundered]);
         let owners = Owners::Team { roster: &w.roster, certs: &certs };
         assert_eq!(
-            check(&grant(&d, &lk), &d, Revokes::default(), &owners, "runs.start", 200),
+            check(&grant(&d, &lk), &d, Revokes::default(), &owners, NONE, "runs.start", 200),
             Err(GrantRefusal::Unsigned)
         );
         // An owner who's an editor now.
         let later = roster(vec![member(&w.owner, TeamRole::Editor), member(&w.editor, TeamRole::Owner)], &w.owner);
         let owners = Owners::Team { roster: &later, certs: &w.certs };
         assert_eq!(
-            check(&grant(&d, &w.owner.keys), &d, Revokes::default(), &owners, "runs.start", 200),
+            check(&grant(&d, &w.owner.keys), &d, Revokes::default(), &owners, NONE, "runs.start", 200),
             Err(GrantRefusal::Unsigned)
         );
     }
@@ -597,33 +611,45 @@ mod tests {
         let mut narrow = ProjectGrant { caps: vec!["runs.start".into()], ..g.clone() };
         narrow.sign_with(&w.owner.keys);
         assert_eq!(
-            check(&narrow, &d, Revokes::default(), &owners, "runs.instruct", 200),
+            check(&narrow, &d, Revokes::default(), &owners, NONE, "runs.instruct", 200),
             Err(GrantRefusal::NotCovered)
         );
         let wider = ProjectGrant { caps: g.caps.clone(), ..narrow.clone() };
-        assert_eq!(check(&wider, &d, Revokes::default(), &owners, "runs.instruct", 200), Err(GrantRefusal::Unsigned));
+        assert_eq!(
+            check(&wider, &d, Revokes::default(), &owners, NONE, "runs.instruct", 200),
+            Err(GrantRefusal::Unsigned)
+        );
         let mut short = ProjectGrant { expires: Some(150), ..g.clone() };
         short.sign_with(&w.owner.keys);
-        assert_eq!(check(&short, &d, Revokes::default(), &owners, "runs.start", 200), Err(GrantRefusal::Expired));
-        assert_eq!(check(&short, &d, Revokes::default(), &owners, "runs.start", 149), Ok(()));
+        assert_eq!(check(&short, &d, Revokes::default(), &owners, NONE, "runs.start", 200), Err(GrantRefusal::Expired));
+        assert_eq!(check(&short, &d, Revokes::default(), &owners, NONE, "runs.start", 149), Ok(()));
         let longer = ProjectGrant { expires: None, ..short.clone() };
-        assert_eq!(check(&longer, &d, Revokes::default(), &owners, "runs.start", 200), Err(GrantRefusal::Unsigned));
+        assert_eq!(
+            check(&longer, &d, Revokes::default(), &owners, NONE, "runs.start", 200),
+            Err(GrantRefusal::Unsigned)
+        );
         // An unknown power, signed or not, isn't well formed.
         let mut odd = ProjectGrant { caps: vec!["deploys.apply".into(), "runs.start".into()], ..g.clone() };
         odd.sign_with(&w.owner.keys);
-        assert_eq!(check(&odd, &d, Revokes::default(), &owners, "deploys.apply", 200), Err(GrantRefusal::Form));
+        assert_eq!(check(&odd, &d, Revokes::default(), &owners, NONE, "deploys.apply", 200), Err(GrantRefusal::Form));
         // Another project, or another delegation of this one.
         let mut other = ProjectGrant { project: "prj_2".into(), ..g.clone() };
         other.sign_with(&w.owner.keys);
-        assert_eq!(check(&other, &d, Revokes::default(), &owners, "runs.start", 200), Err(GrantRefusal::WrongProject));
+        assert_eq!(
+            check(&other, &d, Revokes::default(), &owners, NONE, "runs.start", 200),
+            Err(GrantRefusal::WrongProject)
+        );
         let d2 = delegation("team:t1", &w.owner.keys, 11);
-        assert_eq!(check(&g, &d2, Revokes::default(), &owners, "runs.start", 200), Err(GrantRefusal::WrongDelegation));
+        assert_eq!(
+            check(&g, &d2, Revokes::default(), &owners, NONE, "runs.start", 200),
+            Err(GrantRefusal::WrongDelegation)
+        );
         // Another team's project, signed by this team's owner.
         let mut theirs = ProjectGrant { owner: "team:t2".into(), ..g.clone() };
         theirs.sign_with(&w.owner.keys);
         let dt = Delegation { owner: "team:t2".into(), ..d.clone() };
         assert_eq!(
-            check(&theirs, &dt, Revokes::default(), &owners, "runs.start", 200),
+            check(&theirs, &dt, Revokes::default(), &owners, NONE, "runs.start", 200),
             Err(GrantRefusal::WrongProject)
         );
     }
@@ -639,26 +665,29 @@ mod tests {
         let d = delegation("team:t1", &w.owner.keys, 10);
         let g = grant(&d, &w.owner.keys);
         let spite = GrantRevoke::new(&g.project, &g.delegation, Running::Stop, 150, &w.editor.keys);
-        assert_eq!(check(&g, &d, sent(std::slice::from_ref(&spite)), &owners, "runs.start", 200), Ok(()));
+        assert_eq!(check(&g, &d, sent(std::slice::from_ref(&spite)), &owners, NONE, "runs.start", 200), Ok(()));
         let r = GrantRevoke::new(&g.project, &g.delegation, Running::Finish, 150, &w.other_owner.keys);
-        assert_eq!(check(&g, &d, sent(&[spite, r.clone()]), &owners, "runs.start", 200), Err(GrantRefusal::Revoked));
+        assert_eq!(
+            check(&g, &d, sent(&[spite, r.clone()]), &owners, NONE, "runs.start", 200),
+            Err(GrantRefusal::Revoked)
+        );
         // It names no grant: every grant of the project under the
         // delegation made by then is revoked, and one made after isn't.
         let mut before = ProjectGrant::new(&d, 140, None);
         before.sign_with(&w.other_owner.keys);
         assert_eq!(
-            check(&before, &d, sent(std::slice::from_ref(&r)), &owners, "runs.start", 200),
+            check(&before, &d, sent(std::slice::from_ref(&r)), &owners, NONE, "runs.start", 200),
             Err(GrantRefusal::Revoked)
         );
         let mut after = ProjectGrant::new(&d, 151, None);
         after.sign_with(&w.owner.keys);
-        assert_eq!(check(&after, &d, sent(std::slice::from_ref(&r)), &owners, "runs.start", 200), Ok(()));
+        assert_eq!(check(&after, &d, sent(std::slice::from_ref(&r)), &owners, NONE, "runs.start", 200), Ok(()));
         // The platform can't move it to another project or delegation, or
         // turn a finish into a stop.
         let moved = GrantRevoke { delegation: "other".into(), ..r.clone() };
-        assert!(!moved.revokes(&g, &owners));
+        assert!(!moved.revokes(&g, &owners, NONE));
         let harsher = GrantRevoke { running: Running::Stop, ..r.clone() };
-        assert!(!harsher.revokes(&g, &owners));
+        assert!(!harsher.revokes(&g, &owners, NONE));
     }
 
     /// A revoke the machine checked and kept counts after the platform
@@ -673,18 +702,18 @@ mod tests {
         let g = grant(&d, &w.owner.keys);
         let r = GrantRevoke::new(&g.project, &g.delegation, Running::Finish, 150, &w.other_owner.keys);
         let owners = Owners::Team { roster: &w.roster, certs: &w.certs };
-        assert!(r.revokes(&g, &owners), "checked when it's heard");
+        assert!(r.revokes(&g, &owners, NONE), "checked when it's heard");
         // A refresh from the platform without B's certificate.
         let mut certs = w.certs.clone();
         certs.remove(&w.other_owner.account);
         let refreshed = Owners::Team { roster: &w.roster, certs: &certs };
         assert_eq!(
-            check(&g, &d, sent(std::slice::from_ref(&r)), &refreshed, "runs.start", 200),
+            check(&g, &d, sent(std::slice::from_ref(&r)), &refreshed, NONE, "runs.start", 200),
             Ok(()),
             "sent: no longer checks out"
         );
         let kept = Revokes { kept: std::slice::from_ref(&r), ..Default::default() };
-        assert_eq!(check(&g, &d, kept, &refreshed, "runs.start", 200), Err(GrantRefusal::Revoked));
+        assert_eq!(check(&g, &d, kept, &refreshed, NONE, "runs.start", 200), Err(GrantRefusal::Revoked));
     }
 
     #[test]
@@ -695,11 +724,11 @@ mod tests {
         let g = grant(&d, &w.owner.keys);
         let gone = [crate::hosted::DelegationRevoke::new(&d, 120, &w.other_owner.keys)];
         let revokes = Revokes { delegation: &gone, ..Default::default() };
-        assert_eq!(check(&g, &d, revokes, &owners, "runs.start", 200), Err(GrantRefusal::DelegationRevoked));
+        assert_eq!(check(&g, &d, revokes, &owners, NONE, "runs.start", 200), Err(GrantRefusal::DelegationRevoked));
         // Not by an editor.
         let spite = [crate::hosted::DelegationRevoke::new(&d, 120, &w.editor.keys)];
         let revokes = Revokes { delegation: &spite, ..Default::default() };
-        assert_eq!(check(&g, &d, revokes, &owners, "runs.start", 200), Ok(()));
+        assert_eq!(check(&g, &d, revokes, &owners, NONE, "runs.start", 200), Ok(()));
     }
 
     #[test]
@@ -709,7 +738,7 @@ mod tests {
         let g = grant(&d, &me.keys);
         let t = Trust { account: "me".into(), root: me.cert.device.clone() };
         let owners = Owners::Account { trust: &t, certs: std::slice::from_ref(&me.cert), revocations: &[] };
-        assert_eq!(check(&g, &d, Revokes::default(), &owners, "runs.start", 200), Ok(()));
+        assert_eq!(check(&g, &d, Revokes::default(), &owners, NONE, "runs.start", 200), Ok(()));
         // A phone of mine, removed since: its grant stops counting.
         let pk = DeviceKeys::generate();
         let mut pc = Cert::new(&pk, "me", Kind::Browser, "phone");
@@ -717,10 +746,82 @@ mod tests {
         let g = grant(&d, &pk);
         let both = [me.cert.clone(), pc.clone()];
         let owners = Owners::Account { trust: &t, certs: &both, revocations: &[] };
-        assert_eq!(check(&g, &d, Revokes::default(), &owners, "runs.start", 200), Ok(()));
+        assert_eq!(check(&g, &d, Revokes::default(), &owners, NONE, "runs.start", 200), Ok(()));
         let gone = [Revocation::new("me", &pc.device, &me.keys)];
         let owners = Owners::Account { trust: &t, certs: &both, revocations: &gone };
-        assert_eq!(check(&g, &d, Revokes::default(), &owners, "runs.start", 200), Err(GrantRefusal::Unsigned));
+        assert_eq!(check(&g, &d, Revokes::default(), &owners, NONE, "runs.start", 200), Err(GrantRefusal::Unsigned));
+    }
+
+    /// The desktop app's window from before it had a kind (a `browser`
+    /// certificate it named) counts only as #1394 lets it (M253): as the
+    /// link just above a browser it approved back then, by the set the
+    /// machine pinned for that account. Never as the device that signs,
+    /// nor above what it certifies now; and a machine that pinned no set
+    /// counts no window at all.
+    #[test]
+    fn an_app_window_counts_only_just_above_a_grandfathered_browser() {
+        let mk = |name: &str, account: &str, by: Option<&DeviceKeys>| {
+            let k = DeviceKeys::generate();
+            let mut c = Cert::new(&k, account, Kind::Browser, name);
+            c.sign_with(by.unwrap_or(&k));
+            (k, c)
+        };
+        let (phone, root) = mk("Pixel", "me", None);
+        let (chrome, chrome_cert) = mk("Chrome on Mac", "me", Some(&phone));
+        let (window, window_cert) = mk("Arugula app on jake-air", "me", Some(&phone));
+        let (firefox, firefox_cert) = mk("Firefox on Mac", "me", Some(&window));
+        let (later, later_cert) = mk("Firefox on Linux", "me", Some(&firefox));
+        let (edge, edge_cert) = mk("Edge", "me", Some(&window));
+        let certs = [root, chrome_cert, window_cert, firefox_cert, later_cert, edge_cert];
+        let t = Trust { account: "me".into(), root: phone.id() };
+        let owners = Owners::Account { trust: &t, certs: &certs, revocations: &[] };
+        let d = delegation("account:me", &phone, 10);
+        let pinned = |account: &str, ks: &[&DeviceKeys]| {
+            LegacyAppChildren::from([(account.to_owned(), ks.iter().map(|k| k.id()).collect())])
+        };
+        let ff = pinned("me", &[&firefox]);
+        let start = |by: &DeviceKeys, children: &LegacyAppChildren| {
+            check(&grant(&d, by), &d, Revokes::default(), &owners, children, "runs.start", 200)
+        };
+        // A browser all the way back, with or without a set pinned.
+        assert_eq!(start(&chrome, NONE), Ok(()));
+        assert_eq!(start(&chrome, &ff), Ok(()));
+        // What the window approved back then, and what that approves now.
+        assert_eq!(start(&firefox, &ff), Ok(()));
+        assert_eq!(start(&later, &ff), Ok(()));
+        // The window itself never signs, whatever's pinned.
+        for children in [NONE, &ff, &pinned("me", &[&window])] {
+            assert_eq!(start(&window, children), Err(GrantRefusal::Unsigned));
+        }
+        // Not through the window to what it certifies now, nor when the
+        // machine pinned none (or another account's).
+        assert_eq!(start(&edge, &ff), Err(GrantRefusal::Unsigned), "not a grandfathered child");
+        assert_eq!(start(&firefox, NONE), Err(GrantRefusal::Unsigned), "pinned none");
+        assert_eq!(start(&later, NONE), Err(GrantRefusal::Unsigned), "pinned none");
+        assert_eq!(start(&firefox, &pinned("you", &[&firefox])), Err(GrantRefusal::Unsigned), "another account's");
+        // Its revokes the same.
+        let g = grant(&d, &chrome);
+        let by = |k: &DeviceKeys| GrantRevoke::new(&g.project, &g.delegation, Running::Stop, 150, k);
+        assert!(!by(&window).revokes(&g, &owners, &ff));
+        assert!(!by(&edge).revokes(&g, &owners, &ff));
+        assert!(!by(&firefox).revokes(&g, &owners, NONE));
+        assert!(by(&firefox).revokes(&g, &owners, &ff));
+        assert!(by(&chrome).revokes(&g, &owners, NONE));
+
+        // A team's owner, by the set pinned for that owner's account.
+        let mut w = world();
+        let (ow, ow_cert) = mk("illogical app", &w.owner.account, Some(&w.owner.keys));
+        let (ob, ob_cert) = mk("Firefox", &w.owner.account, Some(&ow));
+        w.certs.get_mut(&w.owner.account).unwrap().0.extend([ow_cert, ob_cert]);
+        let owners = Owners::Team { roster: &w.roster, certs: &w.certs };
+        let d = delegation("team:t1", &w.owner.keys, 10);
+        let start = |by: &DeviceKeys, children: &LegacyAppChildren| {
+            check(&grant(&d, by), &d, Revokes::default(), &owners, children, "runs.start", 200)
+        };
+        assert_eq!(start(&ob, &pinned(&w.owner.account, &[&ob])), Ok(()));
+        assert_eq!(start(&ob, NONE), Err(GrantRefusal::Unsigned));
+        assert_eq!(start(&ob, &pinned(&w.other_owner.account, &[&ob])), Err(GrantRefusal::Unsigned));
+        assert_eq!(start(&ow, &pinned(&w.owner.account, &[&ob])), Err(GrantRefusal::Unsigned));
     }
 
     #[test]
@@ -755,6 +856,8 @@ mod fixed {
     use super::*;
     use crate::{Cert, DeviceKeys, Kind, Trust, hosted::HostedKey};
     use ed25519_dalek::SigningKey;
+
+    const NONE: &LegacyAppChildren = &LegacyAppChildren::new();
 
     fn keys(sign: u8, noise: u8) -> DeviceKeys {
         DeviceKeys { noise_private: [0; 32], noise_public: [noise; 32], sign: SigningKey::from_bytes(&[sign; 32]) }
@@ -795,8 +898,8 @@ mod fixed {
         assert_eq!(got, want, "ARUGULA_WRITE_FIXTURE=1 writes it again, if the formats changed on purpose");
         let t = Trust { account: "acct1".into(), root: root.device.clone() };
         let owners = Owners::Account { trust: &t, certs: std::slice::from_ref(&root), revocations: &[] };
-        assert_eq!(check(&g, &d, Revokes::default(), &owners, "runs.start", 3500), Ok(()));
+        assert_eq!(check(&g, &d, Revokes::default(), &owners, NONE, "runs.start", 3500), Ok(()));
         let sent = Revokes { sent: std::slice::from_ref(&r), ..Default::default() };
-        assert_eq!(check(&g, &d, sent, &owners, "runs.start", 3500), Err(GrantRefusal::Revoked));
+        assert_eq!(check(&g, &d, sent, &owners, NONE, "runs.start", 3500), Err(GrantRefusal::Revoked));
     }
 }

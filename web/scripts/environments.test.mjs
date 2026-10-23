@@ -5,7 +5,7 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { COMMIT, environmentBody, holdable, planBody, secretNote } from "../src/platform/deploys-text.ts";
+import { COMMIT, environmentBody, historyPath, holdable, lastMoved, planBody, secretNote, shortRef } from "../src/platform/deploys-text.ts";
 import { REPO } from "../src/platform/paths.ts";
 
 // As `GET /api/projects/{project}/drivers` answers (crates/platform's
@@ -64,4 +64,16 @@ test("a plan's body: a full commit of a repo, to an environment", () => {
   assert.match(planBody("env_1", sha, "acme", false, REPO).error, /OWNER\/NAME/);
   assert.equal(planBody("", sha, "acme/app", false, REPO).error, "Pick an environment.");
   assert.ok(COMMIT.test("a".repeat(40)) && !COMMIT.test("a".repeat(39)) && !COMMIT.test("g".repeat(40)));
+});
+
+test("an environment's history: its page of the project's deploys, and when each last moved", () => {
+  assert.equal(historyPath("prj 1"), "/api/projects/prj%201/deploys");
+  assert.equal(historyPath("prj_1", "env_1", 5), "/api/projects/prj_1/deploys?environment=env_1&limit=5");
+  assert.equal(historyPath("prj_1", "env_1", 20, "dep_9"), "/api/projects/prj_1/deploys?environment=env_1&limit=20&before=dep_9");
+  assert.equal(historyPath("prj_1", undefined, undefined, null), "/api/projects/prj_1/deploys");
+  // Ended, then decided, then planned.
+  assert.equal(lastMoved({ created_at: 1, decided_at: 2, finished_at: 3 }), 3);
+  assert.equal(lastMoved({ created_at: 1, decided_at: 2, finished_at: null }), 2);
+  assert.equal(lastMoved({ created_at: 1, decided_at: null, finished_at: null }), 1);
+  assert.equal(shortRef("0123456789abcdef0123456789abcdef01234567"), "0123456789ab");
 });

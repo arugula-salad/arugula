@@ -24,6 +24,7 @@ just testnet test control platform # M140: chat and Cloud through control's own 
 just testnet test control platform-page # M151: the platform page on app.control.test
 just testnet test control agents # M198: a box's agent reads and posts in a channel over MCP, granted
 just testnet test control links # M229: a product links its user by numeric GitHub id; the person unlinks on the platform page
+just testnet test control hud-box # M237: a hud box bound to a project: its roster, a member let in, a review in an issue's thread (ARUGULA_TESTNET_HUD: hud's own proxy)
 just testnet test control issuer # M228: a product signs in through the hub's issuer, verifies against the JWKS, survives a rotation
 just testnet test control broker # M231: a lobby-shaped client calls Claude through the platform: whose key pays, the cap, spend, no key leaks
 ARUGULA_TESTNET_STUDIO=~/src/studio just testnet test control studio # M236: studio's own lobby (from a checkout) as a client: Sign in with Arugula, a teammate opens an app, secrets and Claude from the platform

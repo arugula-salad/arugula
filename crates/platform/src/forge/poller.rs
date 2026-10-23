@@ -18,7 +18,9 @@
 //!   now, counted (per repo per day, [`super::stats`]) and logged, when
 //!   GitHub's change came after the last reconcile and more than
 //!   [`GRACE_MS`] ago (its webhook may be on its way). An old item's
-//!   history (reviews of a PR updated again) is written, not counted.
+//!   history (reviews of a PR updated again) is written, not counted, and
+//!   so is a check run that started: GitHub sends `check_run` when one is
+//!   made and when it completes, never when it starts.
 //! - A turn reads at most `Settings::pages` list pages. One with more
 //!   keeps a cursor (`linked_repos.poll_cursor`), and the next turn, at
 //!   once, carries on from it: nothing is dropped.
@@ -285,7 +287,7 @@ impl<'p> Poll<'p> {
         let wrote = self.tx(|tx| {
             let mut out = Vec::new();
             for it in items {
-                out.push((upsert_item(tx, it, from, now)?, it.updated_at, format!("#{}", it.number), "item"));
+                out.push((upsert_item(tx, it, from, now)?, it.updated_at, format!("#{}", it.number), "item", false));
             }
             for c in checks {
                 out.push((
@@ -293,23 +295,32 @@ impl<'p> Poll<'p> {
                     c.updated_at,
                     format!("{}:{}", c.head_sha, c.name),
                     "check",
+                    // GitHub sends `check_run` for created and completed,
+                    // never for one that starts: in progress is the poller's.
+                    c.kind == "check_run" && c.status == "in_progress",
                 ));
             }
             for e in events {
-                out.push((add_event(tx, e)?, e.at, format!("#{}", e.number), "event"));
+                out.push((add_event(tx, e)?, e.at, format!("#{}", e.number), "event", false));
             }
             Ok(out)
         })?;
         let before = now.saturating_sub(GRACE_MS);
-        for (wrote, at, which, kind) in wrote {
+        for (wrote, at, which, kind, started) in wrote {
             if !wrote.fixed() {
                 continue;
             }
             self.fixed += 1;
             // A merge state is no webhook's to write (GitHub works it out
-            // when asked, and a base that moves sends nothing): never drift.
+            // when asked, and a base that moves sends nothing), nor a check
+            // run's start: never drift.
             let fields = match &wrote {
-                Wrote::Changed(f) => f.iter().filter(|f| **f != "merge_state").copied().collect::<Vec<_>>().join(","),
+                Wrote::Changed(f) => f
+                    .iter()
+                    .filter(|f| **f != "merge_state" && !(started && **f == "status"))
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join(","),
                 _ => "missing".into(),
             };
             if fields.is_empty() {

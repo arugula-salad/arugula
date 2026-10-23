@@ -359,7 +359,8 @@ function RoomMessage({
   reply: (text: string) => void;
   setError: (e: string | null) => void;
 }) {
-  const head = !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || m.at - prev.at > 5 * 60_000;
+  const head =
+    !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || prev.via !== m.via || m.at - prev.at > 5 * 60_000;
   const mine = chat.mine(m);
   // Mine or my agent's: I may delete it, not rewrite what an agent said.
   const owned = !!m.author && m.author === chat.me;
@@ -406,6 +407,11 @@ function RoomMessage({
             {m.imported && (
               <span class="msg-badge" title={`Brought in from its machine's own thread, where it was ${m.imported}'s`}>
                 imported
+              </span>
+            )}
+            {m.via && (
+              <span class="msg-badge via-badge" title={`Posted for ${name} by ${m.via}, where they wrote it`} data-via={m.via}>
+                via {m.via}
               </span>
             )}
             <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>
