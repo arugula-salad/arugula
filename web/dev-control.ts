@@ -57,6 +57,12 @@
 //                      E2B nobody answers: no box is made, so a hosted
 //                      workspace and its runs (M215's runs page) are rows
 //                      written into control's database by hand.
+//   DEV_CONTROL_BROKER=1
+//                      the inference broker (M231) with a registered client,
+//                      `studio` (its credential is `dev-studio`), and a
+//                      master key to keep projects' keys, against an
+//                      Anthropic nobody answers: its screens (the consent
+//                      switches, spend) with calls written by hand.
 //
 // Start over: delete the state directory.
 
@@ -208,6 +214,10 @@ async function startControl() {
       ...(blockDomain ? ["--block-domain", blockDomain] : []),
       ...(platformHost ? ["--platform-host", platformHost, "--platform-static-dir", platformWeb] : []),
       ...(process.env.DEV_CONTROL_HOSTED === "1" ? ["--hosted-accounts", "*", "--e2b-api-key", "dev-nobody", "--e2b-url", "http://127.0.0.1:9"] : []),
+      // `dev-studio`'s SHA-256.
+      ...(process.env.DEV_CONTROL_BROKER === "1"
+          ? ["--inference-clients", "studio:1edd80a2427c1ddb2398ac22c980e5e9513aa02f1ae50c52ea68df4b49502b81:20:payers", "--inference-upstream", "http://127.0.0.1:9", "--cloud-secret-key", "de".repeat(32)]
+          : []),
     ],
     { stdio: ["ignore", "ignore", "inherit"], detached: true },
   );

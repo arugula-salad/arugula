@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
+import { session } from "../session";
 
 interface Client {
   client: string;
@@ -25,6 +26,14 @@ async function call<T>(method: string, path: string): Promise<T> {
   const v = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((v as { error?: string }).error ?? `Request failed (${r.status})`);
   return v as T;
+}
+
+/** A project's name, and an account's in any project's team, as the
+ * session knows them; the id where it doesn't. */
+const projectName = (id: string) => session.project(id)?.name ?? id;
+function accountName(id: string): string {
+  for (const p of session.projects) for (const m of p.team?.members ?? []) if (m.account === id) return m.name;
+  return id;
 }
 
 const dollars = (usd: number) => `$${usd < 0.01 && usd > 0 ? usd.toFixed(4) : usd.toFixed(2)}`;
@@ -81,11 +90,11 @@ export function ClaudeSettings({ me }: { me?: string }) {
           <ul class="platform-list">
             {paid.lines.map((l) => (
               <li key={`${l.project}-${l.account}-${l.client}`}>
-                {l.account === me ? "You" : (l.account ?? "a deleted account")}
+                {l.account === me ? "You" : l.account ? accountName(l.account) : "a deleted account"}
                 {l.client ? <span class="dim"> · through {l.client}</span> : null} · {dollars(l.usd)}
                 <span class="dim">
                   {" "}
-                  · {l.calls} {l.calls === 1 ? "call" : "calls"} in {l.project}
+                  · {l.calls} {l.calls === 1 ? "call" : "calls"} in {projectName(l.project)}
                 </span>
               </li>
             ))}
