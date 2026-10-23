@@ -159,7 +159,7 @@ async fn tools_through_the_stdio_bridge() {
         assert!(!kinds(&tools, tool).contains(&kind.to_owned()), "{tool} kind {kind}");
     }
     let said = refused(&s, "list", json!({ "kind": "managoat_agent", "name": "nobody" })).await;
-    assert!(said.contains("Cloud workspaces in your Arugula account") && said.contains("cloud_workspaces"), "{said}");
+    assert!(said.contains("Cloud workspaces in your Arugula projects") && said.contains("cloud_workspaces"), "{said}");
     let ro = |n: &str| tools.iter().find(|t| t.name == n).unwrap().annotations.as_ref().unwrap().read_only_hint;
     assert_eq!(
         (ro("read_output"), ro("wait"), ro("run"), ro("close")),
