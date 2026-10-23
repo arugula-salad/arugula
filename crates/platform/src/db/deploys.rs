@@ -1375,7 +1375,7 @@ impl Db {
     /// The bytes `project`'s kept artifacts add up to, but `digest`'s.
     fn deploy_artifacts_size_in(&self, tx: &impl Sql, project: &str, digest: &str) -> Result<u64> {
         let n: i64 = tx.query_row(
-            "SELECT COALESCE(SUM(size), 0) FROM deploy_artifacts WHERE project_id = ?1 AND digest != ?2",
+            "SELECT CAST(COALESCE(SUM(size), 0) AS BIGINT) FROM deploy_artifacts WHERE project_id = ?1 AND digest != ?2",
             params![project, digest],
             |r| r.get(0),
         )?;
