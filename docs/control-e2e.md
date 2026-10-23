@@ -1367,14 +1367,17 @@ only the page does takes the session cookie alone (`auth::PageSession`):
 attestation is `none` and a passkey made in software can claim to verify
 anyone. Never from the desktop app's window (`sessions.via = app`), and:
 
-- an account with a browser or a phone: one of them (a browser all the
-  way back) signs the account, the new passkey's id and the
-  registration's challenge (`arugula add passkey device v1`);
-- an account with a passkey also confirms the new one with one of its own,
+- an account with a passkey confirms the new one with one of its own,
   with user verification, over a challenge that hashes the account and the
-  new passkey's id (`arugula add passkey v1`);
-- an account with neither (GitHub only, no browser) needs a GitHub sign-in
-  from the last ten minutes; the page sends the person through GitHub
+  new passkey's id (`arugula add passkey v1`), and with a browser or a
+  phone, one of them (a browser all the way back) also signs the account,
+  the new passkey's id and the registration's challenge
+  (`arugula add passkey device v1`);
+- an account with none: a browser or a phone of its signs, as above, or
+  the session is a GitHub sign-in from the last ten minutes. The page says
+  which device it is as it starts; when that one can't sign (no browser,
+  or browsers an app window approved before #1343, which don't count), the
+  page sends the person through GitHub
   again first, with `prompt=select_account` so GitHub asks rather than
   redirecting by itself. A code that comes back to a browser that didn't
   start that sign-in is still exchanged, and its token revoked, so it

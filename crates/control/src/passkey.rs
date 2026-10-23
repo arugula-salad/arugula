@@ -24,9 +24,13 @@
 //!   with user verification over a challenge that names the account and
 //!   the new passkey's id (`arugula add passkey v1`), asked for once the new
 //!   one is made (`/auth/passkey/register/step-up`);
-//! - an account with none (GitHub only) needs a GitHub sign-in from the last
-//!   ten minutes ([`REAUTH_MS`]); the page sends the person through GitHub
-//!   again when it's older (`reason: "reauth"`).
+//! - an account with none needs one of its browsers or phones (a browser
+//!   all the way back to its root) to sign for it, or a GitHub sign-in from
+//!   the last ten minutes ([`REAUTH_MS`]); the page says which device it is
+//!   as it starts, and control sends the person through GitHub again when
+//!   it can't sign and the sign-in is older (`reason: "reauth"`). Browsers
+//!   an app window approved before #1343 can't sign, so their accounts go
+//!   through GitHub.
 //!
 //! Every device of the account hears of it (a push), and the passkey keeps
 //! which device's sign-in added it, and which sign-in. Only the page does
@@ -214,6 +218,11 @@ pub struct Start {
     /// A new account's name: what teammates see (#102).
     #[serde(default)]
     name: Option<String>,
+    /// The page's own device, when it's one of the account's: whether it
+    /// may sign for a first passkey, or the page signs in with GitHub again
+    /// first.
+    #[serde(default)]
+    device: Option<String>,
 }
 
 pub async fn register_start(
@@ -231,16 +240,25 @@ pub async fn register_start(
         Some(a) => (app.db.passkey_ids(a)?, browser_devices(&app, a)?),
         None => (vec![], vec![]),
     };
+    let body = body.map(|Json(b)| b);
+    // A first passkey: this page's device signs for it if it's a browser
+    // or a phone all the way back to the root, or else the session is a
+    // GitHub sign-in from the last ten minutes. Browsers an app window
+    // approved before it had a kind of its own don't count, so an account
+    // whose browsers all came that way signs in with GitHub again.
+    let this_page = body.as_ref().and_then(|b| b.device.as_deref());
+    let page_signs = this_page.is_some_and(|d| browsers.iter().any(|c| c.device == d));
+    let first_by_github = have.is_empty() && session.as_ref().is_some_and(|(_, i)| fresh_github(i));
     if let Some((_, info)) = &session {
         from_app(info)?;
-        if have.is_empty() && browsers.is_empty() && !fresh_github(info) {
+        if have.is_empty() && !page_signs && !fresh_github(info) {
             return Err(reauth());
         }
     }
     let name = match &account {
         Some(a) => app.db.account(a)?.map(|x| x.name).unwrap_or_default(),
         None => {
-            let asked = body.and_then(|Json(b)| b.name).unwrap_or_default();
+            let asked = body.and_then(|b| b.name).unwrap_or_default();
             let name = crate::api::display_name(&asked).map_err(|_| bad("your name, as teammates will see it"))?;
             // A new account each time: limited.
             app.limits.check(crate::limit::ACCOUNTS, app.limits.client_ip(peer, &headers))?;
@@ -266,7 +284,9 @@ pub async fn register_start(
         "step_up": if have.is_empty() { None } else { Some("passkey") },
         // And one of the account's browsers or phones signs for it
         // (`add_passkey_device_body`).
-        "device_sig": !browsers.is_empty(),
+        // (Asked whenever this page can; needed unless a GitHub sign-in
+        // vouches for a first one.)
+        "device_sig": page_signs || (!browsers.is_empty() && !first_by_github),
     })))
 }
 
@@ -554,11 +574,12 @@ async fn register(
 }
 
 /// Adding `credential` to `account` (registered over `challenge`), which
-/// `info` is signed in to. With a browser or a phone, one of them signs
-/// for it (`device`); with passkeys, one of them agrees (`step_up`: UV,
-/// over the challenge [`register_step_up`] made for this account and this
-/// credential); with neither, the session is a GitHub sign-in from the last
-/// ten minutes. The device that signed, if one did.
+/// `info` is signed in to. A first passkey: one of its browsers or phones
+/// signs for it (`device`), or the session is a GitHub sign-in from the
+/// last ten minutes. One more: a passkey it has agrees (`step_up`: UV, over
+/// the challenge [`register_step_up`] made for this account and this
+/// credential), and with a browser or a phone, one of them signs too. The
+/// device that signed, if one did.
 #[allow(clippy::too_many_arguments)]
 fn confirm_adding(
     app: &App,
@@ -582,19 +603,21 @@ fn confirm_adding(
         }),
         None => None,
     };
+    let have = app.db.passkey_ids(account)?;
+    // A first one: a browser or a phone signed for it, or the session is a
+    // fresh GitHub sign-in.
+    if have.is_empty() {
+        if signed.is_none() && !fresh_github(info) {
+            return Err(reauth());
+        }
+        return Ok(signed.map(|c| c.device.clone()));
+    }
     if !browsers.is_empty() && signed.is_none() {
         return Err(refusal(
             StatusCode::FORBIDDEN,
             "device_sig",
             "add a passkey from a browser or a phone that's one of your devices: it signs for the new passkey",
         ));
-    }
-    let have = app.db.passkey_ids(account)?;
-    if have.is_empty() {
-        if browsers.is_empty() && !fresh_github(info) {
-            return Err(reauth());
-        }
-        return Ok(signed.map(|c| c.device.clone()));
     }
     let no = || refusal(StatusCode::FORBIDDEN, "step_up", "confirm with one of your passkeys to add another");
     let a = step_up.ok_or_else(no)?;
@@ -869,7 +892,7 @@ mod tests {
             State(app.start()),
             ConnectInfo("127.0.0.1:1".parse().unwrap()),
             h,
-            Some(Json(Start { name: Some("Sam Stranger".into()) })),
+            Some(Json(Start { name: Some("Sam Stranger".into()), device: None })),
         )
         .await
         .unwrap();
@@ -1133,7 +1156,13 @@ mod tests {
     }
 
     async fn start(app: &Arc<App>, h: &HeaderMap) -> Result<serde_json::Value, ApiError> {
-        register_start(State(app.clone()), ConnectInfo("127.0.0.1:1".parse().unwrap()), h.clone(), None)
+        start_on(app, h, None).await
+    }
+
+    /// Started by a page that says it's `device`.
+    async fn start_on(app: &Arc<App>, h: &HeaderMap, device: Option<&str>) -> Result<serde_json::Value, ApiError> {
+        let body = Start { name: None, device: device.map(str::to_owned) };
+        register_start(State(app.clone()), ConnectInfo("127.0.0.1:1".parse().unwrap()), h.clone(), Some(Json(body)))
             .await
             .map(|j| j.0)
     }
@@ -1259,7 +1288,7 @@ mod tests {
         let (mut phone, host) = crate::push_notices::Phone::subscribe(&app, "acct-p", &keys, 5).await;
         app.cfg.push_hosts = vec![host];
         let app = app.start();
-        let opts = start(&app, &h).await.unwrap();
+        let opts = start_on(&app, &h, Some(&keys.id())).await.unwrap();
         assert_eq!(opts["device_sig"], true);
         let challenge = opts["challenge"].as_str().unwrap();
         let a = Authn::new(3);
@@ -1275,15 +1304,15 @@ mod tests {
         assert_eq!(app.db.passkeys("acct-p").unwrap()[0].added_device.as_deref(), Some(keys.id().as_str()));
     }
 
-    /// An account with a browser or a phone adds a passkey only with one of
-    /// them signing for it: not a CLI's or the app's key, not for another
-    /// passkey or another registration, not a GitHub sign-in instead. Its
+    /// Without a fresh GitHub sign-in, an account with a browser or a phone
+    /// adds a passkey only with one of them signing for it: not a CLI's or
+    /// the app's key, not for another passkey or another registration. Its
     /// push names that device, not what the sign-in said it is.
     #[tokio::test]
     async fn a_browser_of_the_account_signs_for_a_new_passkey() {
         use arugula_e2e::{Cert, DeviceKeys, Kind};
         let app = App::for_tests(ORIGIN).start();
-        let h = signed_in(&app, "acct-d", auth::Via::Github, 0);
+        let h = signed_in(&app, "acct-d", auth::Via::Github, REAUTH_MS + 60_000);
         let root = DeviceKeys::generate();
         let mut rc = Cert::new(&root, "acct-d", Kind::Browser, "Safari on iPhone");
         rc.sign_with(&root);
@@ -1300,36 +1329,74 @@ mod tests {
             id: k.id(),
             sig: hex::encode(k.signature(add_passkey_device_body("acct-d", cred, ch).as_bytes())),
         };
+        let page = root.id();
+        assert_eq!(start(&app, &h).await.map_err(reason).err(), Some(Some(REAUTH)), "a page that isn't one");
         async fn attempt_with(
             app: &Arc<App>,
             h: &HeaderMap,
+            page: &str,
             seed: u8,
             device: &dyn Fn(&str, &str) -> Option<DeviceSig>,
         ) -> Result<String, ApiError> {
             let a = Authn::new(seed);
-            let opts = start(app, h).await.unwrap();
+            let opts = start_on(app, h, Some(page)).await.unwrap();
+            assert_eq!(opts["device_sig"], true);
             let ch = opts["challenge"].as_str().unwrap().to_owned();
             let mut r = a.create(&ch, None);
             r.device = device(&a.id(), &ch);
             register(app, h, r).await.map(|r| r.0)
         }
         assert_eq!(
-            attempt_with(&app, &h, 20, &|_, _| None).await.map_err(reason).err(),
-            Some(Some("device_sig")),
-            "a fresh GitHub sign-in isn't it"
+            attempt_with(&app, &h, &page, 20, &|_, _| None).await.map_err(reason).err(),
+            Some(Some(REAUTH)),
+            "no device's signature, and the GitHub sign-in is stale"
         );
-        assert!(attempt_with(&app, &h, 21, &|c, ch| Some(sig(&cli, c, ch))).await.is_err(), "a CLI's key");
-        assert!(attempt_with(&app, &h, 22, &|c, ch| Some(sig(&appk, c, ch))).await.is_err(), "the app's key");
+        assert!(attempt_with(&app, &h, &page, 21, &|c, ch| Some(sig(&cli, c, ch))).await.is_err(), "a CLI's key");
+        assert!(attempt_with(&app, &h, &page, 22, &|c, ch| Some(sig(&appk, c, ch))).await.is_err(), "the app's key");
         assert!(
-            attempt_with(&app, &h, 23, &|_, ch| Some(sig(&root, "another", ch))).await.is_err(),
+            attempt_with(&app, &h, &page, 23, &|_, ch| Some(sig(&root, "another", ch))).await.is_err(),
             "for another passkey"
         );
         assert!(
-            attempt_with(&app, &h, 24, &|c, _| Some(sig(&root, c, "another"))).await.is_err(),
+            attempt_with(&app, &h, &page, 24, &|c, _| Some(sig(&root, c, "another"))).await.is_err(),
             "for another registration"
         );
-        assert_eq!(attempt_with(&app, &h, 25, &|c, ch| Some(sig(&root, c, ch))).await.unwrap(), "acct-d");
+        assert_eq!(attempt_with(&app, &h, &page, 25, &|c, ch| Some(sig(&root, c, ch))).await.unwrap(), "acct-d");
         assert_eq!(app.db.passkeys("acct-d").unwrap()[0].added_device.as_deref(), Some(root.id().as_str()));
+    }
+
+    /// An account whose browsers an app window approved before #1343 (so
+    /// none of them can sign) adds its first passkey after a fresh GitHub
+    /// sign-in, and not with an older one; a second still takes a passkey
+    /// it has.
+    #[tokio::test]
+    async fn a_first_passkey_without_a_browser_that_signs_takes_github() {
+        use arugula_e2e::{Cert, DeviceKeys, Kind};
+        let app = App::for_tests(ORIGIN).start();
+        let stale = signed_in(&app, "acct-e", auth::Via::Github, REAUTH_MS + 60_000);
+        let root = DeviceKeys::generate();
+        let mut rc = Cert::new(&root, "acct-e", Kind::Browser, "Arugula app on geek");
+        rc.sign_with(&root);
+        app.db.put_device(&rc, true, now_ms()).unwrap();
+        let firefox = DeviceKeys::generate();
+        let mut fc = Cert::new(&firefox, "acct-e", Kind::Browser, "Firefox on Mac");
+        fc.sign_with(&root);
+        app.db.put_device(&fc, true, now_ms()).unwrap();
+        assert!(browser_devices(&app, "acct-e").unwrap().is_empty(), "approved by an app window");
+        let r = start_on(&app, &stale, Some(&firefox.id())).await;
+        assert_eq!(r.map_err(reason).err(), Some(Some(REAUTH)), "a stale sign-in goes through GitHub again");
+        let fresh = signed_in(&app, "acct-e", auth::Via::Github, 60_000);
+        let opts = start_on(&app, &fresh, Some(&firefox.id())).await.unwrap();
+        assert_eq!((opts["device_sig"].clone(), opts["step_up"].clone()), (json!(false), json!(null)));
+        let a = Authn::new(30);
+        let (account, _, _) =
+            register(&app, &fresh, a.create(opts["challenge"].as_str().unwrap(), None)).await.unwrap();
+        assert_eq!(account, "acct-e");
+        // A second one: GitHub isn't enough.
+        let opts = start_on(&app, &fresh, Some(&firefox.id())).await.unwrap();
+        assert_eq!(opts["step_up"], "passkey");
+        let r = register(&app, &fresh, Authn::new(31).create(opts["challenge"].as_str().unwrap(), None)).await;
+        assert_eq!(r.map_err(reason).err(), Some(Some("step_up")));
     }
 
     /// The desktop app's window signing in with a passkey stays the app's
