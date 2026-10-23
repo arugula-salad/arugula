@@ -1824,6 +1824,14 @@ clients = ["page"]
 note = "Sets one of an environment's secrets (M219): owners, from a browser's session only (a CLI's login and an agent's machine are refused), a name the environment lists, never a reserved one. Sealed with the project's key (M209) and never read back: only a deploy run's machine gets it, once, while it runs."
 
 [[route]]
+method = "GET"
+path = "/api/projects/{project}/deploys"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project's deploys, newest first (by environment, a page at a time after `before`), whatever became of them: for its members."
+
+[[route]]
 method = "POST"
 path = "/api/projects/{project}/deploys"
 process = "platform"
