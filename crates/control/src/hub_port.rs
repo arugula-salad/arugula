@@ -360,6 +360,10 @@ impl HubPort for InProcess {
         })
     }
 
+    fn client_account<'a>(&'a self, token: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        Box::pin(async move { Ok(crate::issuer::access_token_for(&self.app()?, token, client)) })
+    }
+
     fn unlink_product<'a>(&'a self, account: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<bool>> {
         Box::pin(async move {
             let gone = self.app()?.db.unlink_product(account, client, arugula_e2e::now_ms())?;

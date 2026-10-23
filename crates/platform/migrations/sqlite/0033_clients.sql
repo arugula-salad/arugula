@@ -37,32 +37,43 @@ CREATE TABLE client_apps (
 );
 CREATE INDEX client_apps_project ON client_apps (project_id);
 
--- A project's owner letting a registered client read one of the
--- project's own secrets (`project/<NAME>`, M230) for the project's apps
--- (M236: studio's egress secrets). Only by name, only for that client,
--- and only from the platform page. `reads` and `last_read_at` count the
--- client's reads, each also in `client_secret_events`.
+-- A project's own secret (`project/<NAME>`, M230) a registered client may
+-- send for one of its apps in the project, to one host (M236: studio's
+-- egress). The client asks (`requested_by`, an owner of the project it
+-- acts for, with the host the app sends it to); an owner of the project
+-- lets it on the platform page (`granted_by`, `granted_at`). The platform
+-- gives the value only for that app, that host, and while the grant
+-- stands: a move of the app ends it, and a value an agent changed since
+-- (`project_secrets.updated_by_agent`) needs granting again. `reads` and
+-- `last_read_at` count the client's reads, each also an event.
 CREATE TABLE client_secret_grants (
     project_id TEXT NOT NULL,
     client TEXT NOT NULL,
     name TEXT NOT NULL,
+    app TEXT NOT NULL,
+    host TEXT NOT NULL,
+    requested_by TEXT,
+    requested_at INTEGER NOT NULL,
     granted_by TEXT,
-    granted_at INTEGER NOT NULL,
+    granted_at INTEGER,
     reads INTEGER NOT NULL DEFAULT 0,
     last_read_at INTEGER,
-    PRIMARY KEY (project_id, client, name)
+    PRIMARY KEY (project_id, client, name, app)
 );
+CREATE INDEX client_secret_grants_app ON client_secret_grants (client, app);
 
 -- What happened to a client's reach into a project's secrets (M236):
--- `granted` and `revoked` by an owner (`by_account`), `read` by the client
--- for one of its apps (`app`). Never a value. Kept 90 days.
+-- `requested` by the client for an owner, `granted` and `revoked` by an
+-- owner (`by_account`), `read` by the client for one of its apps (`app`),
+-- `ended` when the app moved or went. Never a value. Kept 90 days.
 CREATE TABLE client_secret_events (
     id INTEGER PRIMARY KEY,
     project_id TEXT NOT NULL,
     client TEXT NOT NULL,
     name TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('granted', 'revoked', 'read')),
+    kind TEXT NOT NULL CHECK (kind IN ('requested', 'granted', 'revoked', 'read', 'ended')),
     app TEXT,
+    host TEXT,
     by_account TEXT,
     at INTEGER NOT NULL
 );

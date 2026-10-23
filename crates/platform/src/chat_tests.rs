@@ -90,6 +90,8 @@ struct State {
     activity_down: bool,
     /// Products accounts let sign them in (M229), by account.
     products: BTreeMap<String, Vec<crate::hub::ProductLink>>,
+    /// Issuer access tokens (M228): token, then its account and client.
+    access: BTreeMap<String, (String, String)>,
 }
 
 fn done<'a, T: Send + 'a>(t: T) -> BoxFuture<'a, HubResult<T>> {
@@ -149,6 +151,13 @@ impl TestHub {
             linked: Some(1),
         };
         self.state.lock().unwrap().products.entry(account.into()).or_default().push(link);
+    }
+
+    /// An issuer access token for `account`, issued to `client`.
+    pub(crate) fn access_token(&self, account: &str, client: &str) -> String {
+        let t = format!("aat_{account}_{client}");
+        self.state.lock().unwrap().access.insert(t.clone(), (account.into(), client.into()));
+        t
     }
 
     pub(crate) fn daemon(&self, id: &str, account: &str, team: Option<&str>) {
@@ -306,6 +315,11 @@ impl TestHub {
 }
 
 impl HubPort for TestHub {
+    fn client_account<'a>(&'a self, token: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        self.called("client_account");
+        let s = self.state.lock().unwrap();
+        done(s.access.get(token).filter(|(_, c)| c == client).map(|(a, _)| a.clone()))
+    }
     fn product_links<'a>(&'a self, account: &'a str) -> BoxFuture<'a, HubResult<Vec<crate::hub::ProductLink>>> {
         self.called("product_links");
         done(self.state.lock().unwrap().products.get(account).cloned().unwrap_or_default())

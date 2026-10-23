@@ -45,16 +45,48 @@ pub struct ClientApp {
     pub added_at: u64,
 }
 
-/// A project's owner letting a client read one of its own secrets, and the
-/// client's reads of it.
+/// One of a project's own secrets a client may send for one of its apps,
+/// to one host: asked for by the client, granted by an owner, and how the
+/// secret has changed since.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SecretGrant {
     pub client: String,
     pub name: String,
+    pub app: String,
+    pub host: String,
+    pub requested_by: Option<String>,
+    pub requested_at: u64,
+    /// Who let it, and when; none while it's only asked for.
     pub granted_by: Option<String>,
-    pub granted_at: u64,
+    pub granted_at: Option<u64>,
     pub reads: u64,
     pub last_read_at: Option<u64>,
+    /// When the secret's value was last set, and by whom (an agent's token
+    /// when an agent did): changed since it was granted shows here.
+    pub value_set_at: Option<u64>,
+    pub value_set_by: Option<String>,
+    pub value_set_by_agent: Option<String>,
+}
+
+impl SecretGrant {
+    /// Granted, for this host, and not stale: what a read needs.
+    pub fn holds(&self, host: &str) -> bool {
+        self.granted_at.is_some() && self.host == host && !self.stale()
+    }
+
+    /// An agent set the value after the grant: an owner grants it again
+    /// before the client gets it.
+    pub fn stale(&self) -> bool {
+        match (self.granted_at, self.value_set_at) {
+            (Some(g), Some(v)) => v > g && self.value_set_by_agent.is_some(),
+            _ => false,
+        }
+    }
+
+    /// The value was set (by anyone) after the grant.
+    pub fn changed_since(&self) -> bool {
+        matches!((self.granted_at, self.value_set_at), (Some(g), Some(v)) if v > g)
+    }
 }
 
 /// One thing that happened to a client's reach into a project's secrets.
@@ -64,6 +96,7 @@ pub struct SecretEvent {
     pub name: String,
     pub kind: String,
     pub app: Option<String>,
+    pub host: Option<String>,
     pub by: Option<String>,
     pub at: u64,
 }
@@ -81,24 +114,44 @@ fn app_row(r: &super::sql::Row) -> Result<ClientApp> {
     })
 }
 
-/// One event, as each of its writers knows it.
-#[allow(clippy::too_many_arguments)]
-fn event(
-    c: &impl Sql,
-    project: &str,
-    client: &str,
-    name: &str,
-    kind: &str,
-    app: Option<&str>,
-    by: Option<&str>,
-    at: u64,
-) -> Result<()> {
+/// One event of a grant's, as each of its writers knows it.
+struct Ev<'a> {
+    project: &'a str,
+    client: &'a str,
+    name: &'a str,
+    app: Option<&'a str>,
+    host: Option<&'a str>,
+}
+
+fn event(c: &impl Sql, e: &Ev<'_>, kind: &str, by: Option<&str>, at: u64) -> Result<()> {
     c.execute(
-        "INSERT INTO client_secret_events (project_id, client, name, kind, app, by_account, at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![project, client, name, kind, app, by, at],
+        "INSERT INTO client_secret_events (project_id, client, name, kind, app, host, by_account, at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![e.project, e.client, e.name, kind, e.app, e.host, by, at],
     )?;
     Ok(())
+}
+
+const GRANT: &str = "SELECT g.client, g.name, g.app, g.host, g.requested_by, g.requested_at, g.granted_by, g.granted_at,
+    g.reads, g.last_read_at, s.updated_at, s.updated_by, s.updated_by_agent
+    FROM client_secret_grants g LEFT JOIN project_secrets s ON s.project_id = g.project_id AND s.name = 'project/' || g.name";
+
+fn grant_row(r: &super::sql::Row) -> Result<SecretGrant> {
+    Ok(SecretGrant {
+        client: r.get(0)?,
+        name: r.get(1)?,
+        app: r.get(2)?,
+        host: r.get(3)?,
+        requested_by: r.get(4)?,
+        requested_at: r.get(5)?,
+        granted_by: r.get(6)?,
+        granted_at: r.get(7)?,
+        reads: r.get(8)?,
+        last_read_at: r.get(9)?,
+        value_set_at: r.get(10)?,
+        value_set_by: r.get(11)?,
+        value_set_by_agent: r.get(12)?,
+    })
 }
 
 impl Db {
@@ -212,110 +265,201 @@ impl Db {
         Ok(self.c().execute("DELETE FROM client_apps WHERE client = ?1 AND app = ?2", params![client, app])? > 0)
     }
 
-    /// Which of `project`'s own secrets its owners let clients read.
+    /// The secrets clients asked to send, and those owners let them, in
+    /// `project`.
     pub fn client_secret_grants(&self, project: &str) -> Result<Vec<SecretGrant>> {
         self.c().query_map(
-            "SELECT client, name, granted_by, granted_at, reads, last_read_at FROM client_secret_grants
-             WHERE project_id = ?1 ORDER BY client, name",
+            &format!("{GRANT} WHERE g.project_id = ?1 ORDER BY g.name, g.client, g.app"),
             params![project],
-            |r| {
-                Ok(SecretGrant {
-                    client: r.get(0)?,
-                    name: r.get(1)?,
-                    granted_by: r.get(2)?,
-                    granted_at: r.get(3)?,
-                    reads: r.get(4)?,
-                    last_read_at: r.get(5)?,
-                })
-            },
+            grant_row,
         )
     }
 
-    /// Whether `client` may read `project`'s own secret `name`.
-    pub fn client_secret_granted(&self, project: &str, client: &str, name: &str) -> Result<bool> {
-        Ok(self
-            .c()
+    /// `client`'s grant of `project`'s secret `name` for its app `app`.
+    pub fn client_secret_grant(
+        &self,
+        project: &str,
+        client: &str,
+        name: &str,
+        app: &str,
+    ) -> Result<Option<SecretGrant>> {
+        self.c()
             .query_row(
-                "SELECT 1 FROM client_secret_grants WHERE project_id = ?1 AND client = ?2 AND name = ?3",
-                params![project, client, name],
-                |r| r.get::<i64>(0),
+                &format!("{GRANT} WHERE g.project_id = ?1 AND g.client = ?2 AND g.name = ?3 AND g.app = ?4"),
+                params![project, client, name, app],
+                grant_row,
             )
-            .optional()?
-            .is_some())
+            .optional()
     }
 
-    /// `by` (an owner) lets `client` read `project`'s own secret `name`.
-    /// Whether it's new.
-    pub fn grant_client_secret(&self, project: &str, client: &str, name: &str, by: &str, now: u64) -> Result<bool> {
+    /// `client` asks to send `project`'s secret `name` for its app `app` to
+    /// `host`, for `by` (an owner). The same host again keeps a grant; a new
+    /// one asks afresh.
+    #[allow(clippy::too_many_arguments)]
+    pub fn request_client_secret(
+        &self,
+        project: &str,
+        client: &str,
+        name: &str,
+        app: &str,
+        host: &str,
+        by: &str,
+        now: u64,
+    ) -> Result<SecretGrant> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let same: Option<String> = tx
+            .query_row(
+                "SELECT host FROM client_secret_grants WHERE project_id = ?1 AND client = ?2 AND name = ?3 AND app = ?4",
+                params![project, client, name, app],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if same.as_deref() != Some(host) {
+            tx.execute(
+                "INSERT INTO client_secret_grants (project_id, client, name, app, host, requested_by, requested_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT (project_id, client, name, app) DO UPDATE SET host = excluded.host,
+                   requested_by = excluded.requested_by, requested_at = excluded.requested_at,
+                   granted_by = NULL, granted_at = NULL",
+                params![project, client, name, app, host, by, now],
+            )?;
+            let e = Ev { project, client, name, app: Some(app), host: Some(host) };
+            event(&tx, &e, "requested", Some(by), now)?;
+        }
+        tx.commit()?;
+        // The connection goes back before the read takes it again.
+        drop(c);
+        self.client_secret_grant(project, client, name, app)?
+            .ok_or_else(|| anyhow::anyhow!("{client}'s ask for {name} wasn't kept"))
+    }
+
+    /// `by` (an owner) lets `client` send `project`'s secret `name` for its
+    /// app `app` to the host it asked for. Whether there was an ask.
+    pub fn grant_client_secret(
+        &self,
+        project: &str,
+        client: &str,
+        name: &str,
+        app: &str,
+        by: &str,
+        now: u64,
+    ) -> Result<bool> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let host: Option<String> = tx
+            .query_row(
+                "SELECT host FROM client_secret_grants WHERE project_id = ?1 AND client = ?2 AND name = ?3 AND app = ?4",
+                params![project, client, name, app],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(host) = host else { return Ok(false) };
+        tx.execute(
+            "UPDATE client_secret_grants SET granted_by = ?5, granted_at = ?6
+             WHERE project_id = ?1 AND client = ?2 AND name = ?3 AND app = ?4",
+            params![project, client, name, app, by, now],
+        )?;
+        event(&tx, &Ev { project, client, name, app: Some(app), host: Some(&host) }, "granted", Some(by), now)?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// `by` (an owner) ends `client`'s grant, or ask, of `project`'s secret
+    /// `name` for its app `app`. Whether there was one.
+    pub fn revoke_client_secret(
+        &self,
+        project: &str,
+        client: &str,
+        name: &str,
+        app: &str,
+        by: &str,
+        now: u64,
+    ) -> Result<bool> {
         let mut c = self.c();
         let tx = c.transaction()?;
         let n = tx.execute(
-            "INSERT INTO client_secret_grants (project_id, client, name, granted_by, granted_at) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT (project_id, client, name) DO NOTHING",
-            params![project, client, name, by, now],
+            "DELETE FROM client_secret_grants WHERE project_id = ?1 AND client = ?2 AND name = ?3 AND app = ?4",
+            params![project, client, name, app],
         )?;
         if n > 0 {
-            event(&tx, project, client, name, "granted", None, Some(by), now)?;
+            event(&tx, &Ev { project, client, name, app: Some(app), host: None }, "revoked", Some(by), now)?;
         }
         tx.commit()?;
         Ok(n > 0)
     }
 
-    /// `by` (an owner) stops `client` reading `project`'s own secret
-    /// `name`. Whether it could.
-    pub fn revoke_client_secret(&self, project: &str, client: &str, name: &str, by: &str, now: u64) -> Result<bool> {
-        let mut c = self.c();
-        let tx = c.transaction()?;
-        let n = tx.execute(
-            "DELETE FROM client_secret_grants WHERE project_id = ?1 AND client = ?2 AND name = ?3",
-            params![project, client, name],
-        )?;
-        if n > 0 {
-            event(&tx, project, client, name, "revoked", None, Some(by), now)?;
-        }
-        tx.commit()?;
-        Ok(n > 0)
-    }
-
-    /// Every grant of `project`'s secret `name`, ended: the secret is gone.
+    /// Every grant of `project`'s secret `name` ends: the secret is gone.
     pub fn revoke_client_secret_everywhere(&self, project: &str, name: &str, by: &str, now: u64) -> Result<usize> {
         let mut c = self.c();
         let tx = c.transaction()?;
-        let clients: Vec<String> = tx.query_map(
-            "SELECT client FROM client_secret_grants WHERE project_id = ?1 AND name = ?2",
+        let rows: Vec<(String, String)> = tx.query_map(
+            "SELECT client, app FROM client_secret_grants WHERE project_id = ?1 AND name = ?2",
             params![project, name],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
-        for client in &clients {
-            tx.execute(
-                "DELETE FROM client_secret_grants WHERE project_id = ?1 AND client = ?2 AND name = ?3",
-                params![project, client, name],
-            )?;
-            event(&tx, project, client, name, "revoked", None, Some(by), now)?;
+        tx.execute("DELETE FROM client_secret_grants WHERE project_id = ?1 AND name = ?2", params![project, name])?;
+        for (client, app) in &rows {
+            event(&tx, &Ev { project, client, name, app: Some(app), host: None }, "revoked", Some(by), now)?;
         }
         tx.commit()?;
-        Ok(clients.len())
+        Ok(rows.len())
     }
 
-    /// `client` read `project`'s own secret `name` for its app `app`: one
-    /// more read on its grant, and an event.
-    pub fn note_client_secret_read(&self, project: &str, client: &str, name: &str, app: &str, now: u64) -> Result<()> {
+    /// Every grant and ask for `client`'s app `app` ends: it moved to
+    /// another project, or went. How many.
+    pub fn end_app_grants(&self, client: &str, app: &str, now: u64) -> Result<usize> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let rows: Vec<(String, String)> = tx.query_map(
+            "SELECT project_id, name FROM client_secret_grants WHERE client = ?1 AND app = ?2",
+            params![client, app],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        tx.execute("DELETE FROM client_secret_grants WHERE client = ?1 AND app = ?2", params![client, app])?;
+        for (project, name) in &rows {
+            event(&tx, &Ev { project, client, name, app: Some(app), host: None }, "ended", None, now)?;
+        }
+        tx.commit()?;
+        Ok(rows.len())
+    }
+
+    /// `client` read `project`'s own secret `name` for its app `app`, to
+    /// send to `host`: one more read on its grant, and an event.
+    pub fn note_client_secret_read(
+        &self,
+        project: &str,
+        client: &str,
+        name: &str,
+        app: &str,
+        host: &str,
+        now: u64,
+    ) -> Result<()> {
         let mut c = self.c();
         let tx = c.transaction()?;
         tx.execute(
-            "UPDATE client_secret_grants SET reads = reads + 1, last_read_at = ?4
-             WHERE project_id = ?1 AND client = ?2 AND name = ?3",
-            params![project, client, name, now],
+            "UPDATE client_secret_grants SET reads = reads + 1, last_read_at = ?5
+             WHERE project_id = ?1 AND client = ?2 AND name = ?3 AND app = ?4",
+            params![project, client, name, app, now],
         )?;
-        event(&tx, project, client, name, "read", Some(app), None, now)?;
+        event(&tx, &Ev { project, client, name, app: Some(app), host: Some(host) }, "read", None, now)?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// How many times clients read `project`'s secret `name` since `since`.
+    pub fn client_secret_reads_since(&self, project: &str, name: &str, since: u64) -> Result<u64> {
+        self.c().query_row(
+            "SELECT COUNT(*) FROM client_secret_events WHERE project_id = ?1 AND name = ?2 AND kind = 'read' AND at >= ?3",
+            params![project, name, since],
+            |r| r.get(0),
+        )
     }
 
     /// The newest `limit` events of clients' reach into `project`'s secrets.
     pub fn client_secret_events(&self, project: &str, limit: u32) -> Result<Vec<SecretEvent>> {
         self.c().query_map(
-            "SELECT client, name, kind, app, by_account, at FROM client_secret_events WHERE project_id = ?1
+            "SELECT client, name, kind, app, host, by_account, at FROM client_secret_events WHERE project_id = ?1
              ORDER BY at DESC, id DESC LIMIT ?2",
             params![project, i64::from(limit)],
             |r| {
@@ -324,8 +468,9 @@ impl Db {
                     name: r.get(1)?,
                     kind: r.get(2)?,
                     app: r.get(3)?,
-                    by: r.get(4)?,
-                    at: r.get(5)?,
+                    host: r.get(4)?,
+                    by: r.get(5)?,
+                    at: r.get(6)?,
                 })
             },
         )
@@ -356,6 +501,7 @@ pub(crate) fn erase_account(c: &impl Sql, d: &Deleted) -> Result<()> {
     c.execute("DELETE FROM client_consents WHERE account = ?1", params![d.account])?;
     c.execute("UPDATE client_apps SET added_by = NULL WHERE added_by = ?1", params![d.account])?;
     c.execute("UPDATE client_secret_grants SET granted_by = NULL WHERE granted_by = ?1", params![d.account])?;
+    c.execute("UPDATE client_secret_grants SET requested_by = NULL WHERE requested_by = ?1", params![d.account])?;
     c.execute("UPDATE client_secret_events SET by_account = NULL WHERE by_account = ?1", params![d.account])?;
     Ok(())
 }

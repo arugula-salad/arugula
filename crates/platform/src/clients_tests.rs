@@ -23,6 +23,8 @@ use crate::{
 const STUDIO: &str = "studio-client-credential-test-0123456789"; // gitleaks:allow: a test value
 const HUD: &str = "hud-client-credential-test-0123456789"; // gitleaks:allow: a test value
 const STRIPE: &str = "sk_test_stripe-value-0123456789"; // gitleaks:allow: a test value
+/// The host the owner chose for it.
+const API: &str = "https://api.stripe.com";
 
 struct Rig {
     app: Arc<Platform>,
@@ -78,6 +80,9 @@ impl Rig {
             .header("origin", "https://evil.example");
         if let Some(a) = account {
             req = req.header("arugula-account", a);
+            // The person is there: their own access token, issued to the client calling.
+            let client = if credential == HUD { "hud" } else { "studio" };
+            req = req.header("arugula-access-token", self.hub.access_token(a, client));
         }
         if let Some(b) = body {
             req = req.json(&b);
@@ -105,9 +110,37 @@ impl Rig {
         (status, r.json().await.unwrap_or(Value::Null))
     }
 
-    /// Studio reads STRIPE for `app`, as its egress broker does.
+    /// Studio reads STRIPE for `app`, to send to `host`, as its egress broker does.
+    async fn read_to(&self, app: &str, host: &str) -> (u16, Value) {
+        self.client(STUDIO, None, "GET", &format!("/api/client/apps/{app}/secrets/STRIPE?host={host}"), None).await
+    }
+
     async fn read(&self, app: &str) -> (u16, Value) {
-        self.client(STUDIO, None, "GET", &format!("/api/client/apps/{app}/secrets/STRIPE"), None).await
+        self.read_to(app, API).await
+    }
+
+    /// As studio, with a raw access token header (or none).
+    async fn with_token(&self, account: &str, token: Option<&str>, path: &str) -> (u16, Value) {
+        let mut req = reqwest::Client::new()
+            .get(format!("{}{path}", self.base))
+            .bearer_auth(STUDIO)
+            .header("arugula-account", account);
+        if let Some(t) = token {
+            req = req.header("arugula-access-token", t);
+        }
+        let r = req.send().await.unwrap();
+        (r.status().as_u16(), r.json().await.unwrap_or(Value::Null))
+    }
+
+    /// Studio asks, for `who`, to send STRIPE for `app` to `host`.
+    async fn ask(&self, who: &str, app: &str, host: &str) -> (u16, Value) {
+        self.studio(who, "PUT", &format!("/api/client/apps/{app}/secrets/STRIPE"), Some(json!({ "host": host }))).await
+    }
+
+    /// `who` grants (PUT) or ends (DELETE) studio's `name` for `app` in t1.
+    async fn grant(&self, who: &str, app: &str, name: &str, method: &str) -> (u16, Value) {
+        let path = format!("/api/projects/{}/clients/studio/apps/{app}/secrets/{name}", self.t1);
+        self.page(who, method, &path, None).await
     }
 
     async fn let_see(&self, account: &str) {
@@ -158,6 +191,19 @@ async fn a_client_sees_projects_only_once_the_account_lets_it() {
         .map(|m| (m["account"].as_str().unwrap(), m["role"].as_str().unwrap()))
         .collect();
     assert_eq!(members, [("alice", "owner"), ("bob", "editor"), ("vic", "viewer")]);
+    // The person must be there: their own access token from the hub, for
+    // this client and this account.
+    let (s, v) = r.with_token("alice", None, "/api/client/projects").await;
+    assert_eq!((s, reason(&v)), (401, "token"), "the switch and the header alone aren't enough");
+    let bobs = r.hub.access_token("bob", "studio");
+    assert_eq!(reason(&r.with_token("alice", Some(&bobs), "/api/client/projects").await.1), "token", "another's");
+    let huds = r.hub.access_token("alice", "hud");
+    assert_eq!(
+        reason(&r.with_token("alice", Some(&huds), "/api/client/projects").await.1),
+        "token",
+        "another client's"
+    );
+    assert_eq!(reason(&r.with_token("alice", Some("aat_made_up"), "/api/client/projects").await.1), "token");
     // Another client of alice's isn't let.
     assert_eq!(reason(&r.client(HUD, Some("alice"), "GET", "/api/client/projects", None).await.1), "consent");
     // Bob hasn't let it: studio can't act for him because alice did.
@@ -248,13 +294,15 @@ async fn apps_are_kept_by_project_and_a_teammate_opens_one() {
     assert_eq!(reason(&r.studio("alice", "GET", "/api/client/apps/app-1", None).await.1), "no_app");
 }
 
-/// A project's owner sets a secret and lets studio read it by name; studio
-/// reads it for its app there and nowhere else; each read is counted and
-/// kept as an event; revoking it, or clearing the secret, stops the next.
+/// A project's owner sets a secret; studio asks, for an owner, to send it
+/// for one app to one host; an owner grants that; studio reads it for that
+/// app and host and nowhere else; each read is counted and kept as an
+/// event; an agent changing the value makes the grant stale; revoking it,
+/// or clearing the secret, stops the next.
 #[tokio::test]
 async fn a_client_reads_a_project_secret_only_by_an_owners_grant() {
     let r = rig().await;
-    for a in ["alice", "dana"] {
+    for a in ["alice", "bob", "dana"] {
         r.let_see(a).await;
     }
     r.studio("alice", "PUT", "/api/client/apps/app-1", Some(json!({ "project": r.t1 }))).await;
@@ -272,45 +320,96 @@ async fn a_client_reads_a_project_secret_only_by_an_owners_grant() {
     assert_eq!(v["secrets"][0]["name"], "STRIPE");
     assert!(!v.to_string().contains(STRIPE), "never shown");
 
-    // Not granted: refused, with no account needed to say so.
+    // Not asked for, not granted: refused, with no account needed to say so.
     let (s, v) = r.read("app-1").await;
     assert_eq!((s, reason(&v)), (403, "no_grant"), "{v}");
     assert!(!v.to_string().contains(STRIPE));
 
-    // An editor can't grant; an owner grants only a secret that's set.
-    assert_eq!(r.page("bob", "PUT", &format!("{t1}/clients/studio/secrets/STRIPE"), None).await.0, 403);
-    assert_eq!(r.page("alice", "PUT", &format!("{t1}/clients/studio/secrets/OTHER"), None).await.0, 404);
-    assert_eq!(r.page("alice", "PUT", &format!("{t1}/clients/nobody/secrets/STRIPE"), None).await.0, 404);
-    let (s, v) = r.page("alice", "PUT", &format!("{t1}/clients/studio/secrets/STRIPE"), None).await;
+    // Studio asks, for an owner, to send it for app-1 to the host she chose.
+    assert_eq!(reason(&r.ask("bob", "app-1", API).await.1), "role", "an editor doesn't choose");
+    assert_eq!(r.ask("alice", "app-1", "https://api.stripe.com/v1?x").await.0, 400, "an origin only");
+    let (s, v) = r.ask("alice", "app-1", API).await;
+    assert_eq!((s, v["host"].as_str(), &v["granted_at"]), (200, Some(API), &Value::Null), "{v}");
+    assert_eq!(reason(&r.read("app-1").await.1), "no_grant", "asked isn't granted");
+
+    // An editor can't grant; an owner grants only what was asked, and a set secret.
+    assert_eq!(r.grant("bob", "app-1", "STRIPE", "PUT").await.0, 403);
+    assert_eq!(r.grant("alice", "app-1", "OTHER", "PUT").await.0, 404);
+    assert_eq!(r.grant("alice", "app-9", "STRIPE", "PUT").await.0, 404);
+    assert_eq!(r.page("alice", "PUT", &format!("{t1}/clients/nobody/apps/app-1/secrets/STRIPE"), None).await.0, 404);
+    let (s, v) = r.grant("alice", "app-1", "STRIPE", "PUT").await;
     assert_eq!(s, 200, "{v}");
-    assert_eq!((v["grants"][0]["name"].as_str(), v["grants"][0]["reads"].as_u64()), (Some("STRIPE"), Some(0)));
+    assert_eq!((v["grants"][0]["app"].as_str(), v["grants"][0]["reads"].as_u64()), (Some("app-1"), Some(0)));
 
     let (s, v) = r.read("app-1").await;
     assert_eq!((s, v["value"].as_str()), (200, Some(STRIPE)), "{v}");
-    // Not for an app in another project, nor for another client, nor
-    // another name, nor an app the client doesn't keep.
-    assert_eq!(reason(&r.read("app-2").await.1), "no_grant");
-    assert_eq!(reason(&r.client(HUD, None, "GET", "/api/client/apps/app-1/secrets/STRIPE", None).await.1), "no_app");
+    // Only to that host, for that app: not another host, not another app
+    // in the same project, not another client, name or project.
     assert_eq!(
-        reason(&r.client(STUDIO, None, "GET", "/api/client/apps/app-1/secrets/OTHER", None).await.1),
+        reason(&r.read_to("app-1", "https://evil.example").await.1),
+        "no_grant",
+        "the grant is bound to its host"
+    );
+    r.studio("alice", "PUT", "/api/client/apps/app-3", Some(json!({ "project": r.t1 }))).await;
+    assert_eq!(reason(&r.read("app-3").await.1), "no_grant", "and to its app");
+    assert_eq!(reason(&r.read("app-2").await.1), "no_grant");
+    assert_eq!(
+        reason(&r.client(HUD, None, "GET", &format!("/api/client/apps/app-1/secrets/STRIPE?host={API}"), None).await.1),
+        "no_app"
+    );
+    assert_eq!(
+        reason(
+            &r.client(STUDIO, None, "GET", &format!("/api/client/apps/app-1/secrets/OTHER?host={API}"), None).await.1
+        ),
         "no_grant"
     );
     assert_eq!(reason(&r.read("app-9").await.1), "no_app");
+    // Asking again for another host asks afresh: the grant is gone until granted.
+    r.ask("alice", "app-1", "https://elsewhere.example").await;
+    assert_eq!(reason(&r.read_to("app-1", "https://elsewhere.example").await.1), "no_grant");
+    r.ask("alice", "app-1", API).await;
+    r.grant("alice", "app-1", "STRIPE", "PUT").await;
     r.read("app-1").await;
 
-    // The owners see the reads and the events; no value.
+    // The owners see the asks, the reads and the events; no value.
     let (_, v) = r.page("alice", "GET", &format!("{t1}/clients"), None).await;
-    assert_eq!(v["grants"][0]["reads"].as_u64(), Some(2), "{v}");
+    let g = v["grants"].as_array().unwrap().iter().find(|g| g["app"] == "app-1").unwrap().clone();
+    assert_eq!((g["reads"].as_u64(), g["host"].as_str(), &g["stale"]), (Some(2), Some(API), &json!(false)), "{v}");
     let kinds: Vec<&str> = v["events"].as_array().unwrap().iter().map(|e| e["kind"].as_str().unwrap()).collect();
-    assert_eq!(kinds, ["read", "read", "granted"], "{v}");
-    assert_eq!((v["events"][0]["app"].as_str(), v["events"][2]["by"].as_str()), (Some("app-1"), Some("alice")));
+    assert_eq!(&kinds[..3], ["read", "granted", "requested"], "{v}");
+    assert_eq!((v["events"][0]["app"].as_str(), v["events"][0]["host"].as_str()), (Some("app-1"), Some(API)));
     assert!(!v.to_string().contains(STRIPE));
 
+    // An agent sets the value again: the grant is stale until an owner grants it again.
+    crate::keys::seal(&r.app.db, r.app.secret_key.as_deref().unwrap(), &r.t1, "project/STRIPE", "sk_test_agents_own")
+        .unwrap();
+    r.app.db.note_secret_writer(&r.t1, "project/STRIPE", "bob", Some("atk_bobs_agent")).unwrap();
+    let (s, v) = r.read("app-1").await;
+    assert_eq!((s, reason(&v)), (403, "stale"), "{v}");
+    let (_, v) = r.page("alice", "GET", &format!("{t1}/clients"), None).await;
+    let g = v["grants"].as_array().unwrap().iter().find(|g| g["app"] == "app-1").unwrap().clone();
+    assert_eq!(
+        (&g["stale"], &g["changed_since_grant"], g["value_set_by_agent"].as_str()),
+        (&json!(true), &json!(true), Some("atk_bobs_agent"))
+    );
+    r.grant("alice", "app-1", "STRIPE", "PUT").await;
+    assert_eq!(r.read("app-1").await.1["value"], "sk_test_agents_own", "granted again");
+    // An owner setting it on the page says who changed it, and keeps the grant.
+    r.page("alice", "PUT", &format!("{t1}/secrets/STRIPE"), Some(json!({ "value": STRIPE }))).await;
+    let (_, v) = r.page("alice", "GET", &format!("{t1}/clients"), None).await;
+    let g = v["grants"].as_array().unwrap().iter().find(|g| g["app"] == "app-1").unwrap().clone();
+    assert_eq!(
+        (&g["stale"], &g["changed_since_grant"], g["value_set_by"].as_str()),
+        (&json!(false), &json!(true), Some("alice"))
+    );
+    assert_eq!(r.read("app-1").await.0, 200);
+
     // Revoked: the next read is refused.
-    assert_eq!(r.page("alice", "DELETE", &format!("{t1}/clients/studio/secrets/STRIPE"), None).await.0, 200);
+    assert_eq!(r.grant("alice", "app-1", "STRIPE", "DELETE").await.0, 200);
     assert_eq!(reason(&r.read("app-1").await.1), "no_grant");
-    // Granted again, then the secret cleared: its grants end with it.
-    r.page("alice", "PUT", &format!("{t1}/clients/studio/secrets/STRIPE"), None).await;
+    // Asked and granted again, then the secret cleared: its grants end with it.
+    r.ask("alice", "app-1", API).await;
+    r.grant("alice", "app-1", "STRIPE", "PUT").await;
     assert_eq!(r.read("app-1").await.0, 200);
     let (s, v) = r.page("alice", "DELETE", &format!("{t1}/secrets/STRIPE"), None).await;
     assert_eq!((s, v["grants_ended"].as_u64()), (200, Some(1)), "{v}");
@@ -320,6 +419,74 @@ async fn a_client_reads_a_project_secret_only_by_an_owners_grant() {
     assert_eq!(v["events"][0]["kind"], "revoked");
     // The values are nowhere in the database in the clear.
     assert!(r.app.db.mentions(STRIPE).is_empty(), "sealed");
+}
+
+/// The exploit the review found: an editor moves an owner's app, whose
+/// secret was granted for it, into a project the editor owns, to send it
+/// elsewhere. The move ends the app's grants, so its next read is refused,
+/// whatever host the editor sets after.
+#[tokio::test]
+async fn moving_an_app_ends_its_grants() {
+    let r = rig().await;
+    for a in ["alice", "bob"] {
+        r.let_see(a).await;
+    }
+    let t1 = format!("/api/projects/{}", r.t1);
+    r.studio("alice", "PUT", "/api/client/apps/app-1", Some(json!({ "project": r.t1 }))).await;
+    r.page("alice", "PUT", &format!("{t1}/secrets/STRIPE"), Some(json!({ "value": STRIPE }))).await;
+    r.studio("alice", "PUT", "/api/client/apps/app-1/secrets/STRIPE", Some(json!({ "host": API }))).await;
+    assert_eq!(r.page("alice", "PUT", &format!("{t1}/clients/studio/apps/app-1/secrets/STRIPE"), None).await.0, 200);
+    assert_eq!(r.read("app-1").await.0, 200);
+
+    // Bob edits t1 and owns his own project: he can move the app there.
+    let (s, v) = r.studio("bob", "PUT", "/api/client/apps/app-1", Some(json!({ "project": "personal" }))).await;
+    assert_eq!(s, 200, "{v}");
+    for host in [API, "https://bob.example"] {
+        assert_eq!(reason(&r.read_to("app-1", host).await.1), "no_grant", "{host}");
+    }
+    // He owns the app's project now, but t1's secret isn't its project's, and nothing was granted there.
+    let (s, v) = r
+        .studio("bob", "PUT", "/api/client/apps/app-1/secrets/STRIPE", Some(json!({ "host": "https://bob.example" })))
+        .await;
+    assert_eq!(s, 200, "he may ask, in his own project: {v}");
+    assert_eq!(reason(&r.read_to("app-1", "https://bob.example").await.1), "no_grant");
+    let (_, v) = r.page("alice", "GET", &format!("{t1}/clients"), None).await;
+    assert_eq!(v["grants"], json!([]), "t1's grant for it ended");
+    assert_eq!(v["events"][0]["kind"], "ended");
+    // Back in t1 it starts with nothing granted.
+    r.studio("alice", "PUT", "/api/client/apps/app-1", Some(json!({ "project": r.t1 }))).await;
+    assert_eq!(reason(&r.read("app-1").await.1), "no_grant");
+}
+
+/// An hour of unusually many reads of one secret is pushed to its
+/// project's owners, once.
+#[tokio::test]
+async fn unusual_reads_are_pushed_to_the_owners() {
+    let r = rig().await;
+    r.let_see("alice").await;
+    let t1 = format!("/api/projects/{}", r.t1);
+    r.studio("alice", "PUT", "/api/client/apps/app-1", Some(json!({ "project": r.t1 }))).await;
+    r.page("alice", "PUT", &format!("{t1}/secrets/STRIPE"), Some(json!({ "value": STRIPE }))).await;
+    r.studio("alice", "PUT", "/api/client/apps/app-1/secrets/STRIPE", Some(json!({ "host": API }))).await;
+    r.page("alice", "PUT", &format!("{t1}/clients/studio/apps/app-1/secrets/STRIPE"), None).await;
+    for _ in 0..super::clients::READS_ALERT + 5 {
+        assert_eq!(r.read("app-1").await.0, 200);
+    }
+    for _ in 0..50 {
+        if !r.hub.pushes().is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let pushed: Vec<_> = r
+        .hub
+        .pushes()
+        .into_iter()
+        .filter(|(_, m, _)| m["tag"].as_str().is_some_and(|t| t.starts_with("client-secret-reads")))
+        .collect();
+    assert_eq!(pushed.len(), 1, "once, to t1's one owner: {pushed:?}");
+    assert_eq!(pushed[0].0, "alice");
+    assert!(pushed[0].1["title"].as_str().unwrap().contains("STRIPE was read"));
 }
 
 /// Unlinking the product on the platform page ends what the account let

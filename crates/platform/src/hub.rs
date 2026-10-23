@@ -316,6 +316,16 @@ pub trait HubPort: Send + Sync {
         Box::pin(async { anyhow::bail!("this hub doesn't link products' accounts") })
     }
 
+    /// The account an issuer access token (M228, `aat_…`) is for, when it
+    /// was issued to `client` and still stands (minutes long, ending with
+    /// the hub session it came from): what a client sends to show a person
+    /// is present (M236). `None` for anything else. A hub from before M236
+    /// can't say.
+    fn client_account<'a>(&'a self, token: &'a str, client: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
+        let _ = (token, client);
+        Box::pin(async { anyhow::bail!("this hub doesn't check access tokens for the platform") })
+    }
+
     /// End what `account` has with a product (M229), as the person asked
     /// on the platform page: its link and its consent, audited; the product
     /// sees it on its next call, and the next sign-in through it asks again.

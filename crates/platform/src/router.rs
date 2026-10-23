@@ -148,7 +148,7 @@ fn routes() -> Routes {
         .route(clients::PROJECTS, get(clients::projects))
         .route(clients::APPS, get(clients::apps))
         .route(clients::APP, get(clients::show).put(clients::put).delete(clients::remove))
-        .route(clients::APP_SECRET, get(clients::secret))
+        .route(clients::APP_SECRET, get(clients::secret).put(clients::ask_secret))
         .route(clients::CONSENT, axum::routing::put(clients::set_consent).delete(clients::set_consent))
         .route(clients::PROJECT_CLIENTS, get(clients::project_clients))
         .route(clients::PROJECT_GRANT, axum::routing::put(clients::set_grant).delete(clients::set_grant))

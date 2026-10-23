@@ -9,7 +9,10 @@
 //! - For an account it names (`arugula-account`), **only once that account
 //!   let it see its projects** ([`Scope::Projects`], a switch beside the
 //!   product under Settings, Linked products; off until then, and
-//!   unlinking ends it):
+//!   unlinking ends it), **and only with that person's own access token
+//!   from the hub** (`arugula-access-token`: M228's, issued to this client,
+//!   minutes long, ending with the person's hub session), so the
+//!   credential alone never acts for anyone who isn't there:
 //!   - `GET /api/client/projects`: the account's projects, its role in
 //!     each and their members, as the platform page shows them to it;
 //!   - `GET /api/client/apps`: the client's apps in those projects, with
@@ -19,25 +22,33 @@
 //!     read fresh (a member who left can't open it a moment later);
 //!   - `PUT /api/client/apps/{app}` `{project, title}`: keep the app in a
 //!     project the account edits or owns (`personal` is its own), and when
-//!     it moves, one it edits or owns there too.
+//!     it moves, one it edits or owns there too. A move ends every secret
+//!     grant the app had;
+//!   - `PUT /api/client/apps/{app}/secrets/{name}` `{host}`: ask, for an
+//!     owner of the app's project, to send the project's own secret `name`
+//!     for this app to `host`. An owner of the project grants it on the
+//!     project's settings page.
 //! - With no account:
 //!   - `DELETE /api/client/apps/{app}`: the client forgets its app (the
 //!     lobby retired it);
-//!   - `GET /api/client/apps/{app}/secrets/{name}`: the value of the app's
-//!     project's own secret `name` (`project/<NAME>`, M230), **only when a
-//!     project owner let this client read that secret** (a grant, by name,
-//!     on the project's settings), each read counted and kept as an event
-//!     for the project's owners to see. The lobby's egress broker uses it
-//!     server side, never a browser or a box.
+//!   - `GET /api/client/apps/{app}/secrets/{name}?host=...`: the value of
+//!     the app's project's own secret `name` (`project/<NAME>`, M230),
+//!     **only under a project owner's grant for this client, this app and
+//!     this host**, and not once an agent changed the value since (an owner
+//!     grants it again). Each read is counted and kept as an event; reads
+//!     are limited per secret, and an hour with unusually many is pushed to
+//!     the project's owners. The lobby's egress broker uses it server side,
+//!     never a browser or a box.
 //!
 //! **The platform page's** (a session; the switches are the page's only:
 //! trust, never a CLI's or an agent's):
 //! - the account's switch: `PUT`/`DELETE /api/linked-products/{client}/projects`;
 //! - a project's: its own secrets set and cleared by its owners
 //!   (`PUT`/`DELETE /api/projects/{project}/secrets/{name}`), the clients'
-//!   apps in it and, for owners, the grants and their reads
+//!   apps in it and, for owners, the asks, the grants, their reads and
+//!   whether the value changed since, and by whom
 //!   (`GET /api/projects/{project}/clients`), and a grant made or ended
-//!   (`PUT`/`DELETE /api/projects/{project}/clients/{client}/secrets/{name}`).
+//!   (`PUT`/`DELETE /api/projects/{project}/clients/{client}/apps/{app}/secrets/{name}`).
 //!
 //! A link (M229) is never authorization: nothing here is granted because a
 //! product's user is linked to an account. A client acts for an account
@@ -52,7 +63,7 @@ use arugula_control_common::{ApiError, err};
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, Method, StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -78,12 +89,19 @@ pub const APP_SECRET: &str = "/api/client/apps/{app}/secrets/{name}";
 /// The page's.
 pub const CONSENT: &str = "/api/linked-products/{client}/projects";
 pub const PROJECT_CLIENTS: &str = "/api/projects/{project}/clients";
-pub const PROJECT_GRANT: &str = "/api/projects/{project}/clients/{client}/secrets/{name}";
+pub const PROJECT_GRANT: &str = "/api/projects/{project}/clients/{client}/apps/{app}/secrets/{name}";
+/// The header a client sends the person's own access token in.
+pub const ACCESS: &str = "arugula-access-token";
 pub const PROJECT_SECRET: &str = "/api/projects/{project}/secrets/{name}";
 
 /// A client's secret reads in an hour, before they're refused (the lobby
 /// keeps a value a minute, so this is many apps' worth).
 pub const SECRET_READS: (&str, usize) = ("client secret reads", 6000);
+/// Reads of one project's one secret by one client in an hour.
+pub const SECRET_NAME_READS: (&str, usize) = ("client reads of one secret", 600);
+/// Reads of one secret in an hour that its project's owners are told of
+/// (at most once an hour each).
+pub const READS_ALERT: u64 = 120;
 /// The longest title an app is kept under.
 const MAX_TITLE: usize = 100;
 /// The events a project's owners see.
@@ -152,6 +170,18 @@ async fn acting(app: &Platform, headers: &HeaderMap) -> Result<(String, String),
                 "{account} hasn't let {client} see their projects. They turn it on in Arugula's settings, under Linked \
                  products."
             ),
+        ));
+    }
+    // The person is there: their own access token from the hub, issued to
+    // this client, for this account.
+    let token = header_of(headers, ACCESS).ok_or_else(|| {
+        nope(StatusCode::UNAUTHORIZED, "token", format!("Send {account}'s own access token from the hub in {ACCESS}."))
+    })?;
+    if app.hub.client_account(token, &client).await.map_err(ApiError::from)?.as_deref() != Some(account.as_str()) {
+        return Err(nope(
+            StatusCode::UNAUTHORIZED,
+            "token",
+            format!("That access token isn't {account}'s for {client}, or it ran out: sign them in again."),
         ));
     }
     Ok((client, account))
@@ -345,6 +375,10 @@ pub async fn put(
         if title.is_empty() { before.as_ref().map(|b| b.title.clone()).unwrap_or_else(|| id.clone()) } else { title };
     let kept = app.db.put_client_app(&client, &id, &target, &title, &account, now_ms())?;
     let moved = before.as_ref().map(|b| b.project.as_str()) != Some(target.as_str());
+    if moved && before.is_some() {
+        // What the app could send from its old project goes with the move.
+        app.db.end_app_grants(&client, &id, now_ms())?;
+    }
     if moved {
         info!(%client, app = %id, project = %target, %account, from = ?before.map(|b| b.project), "a client's app is in a project now");
     }
@@ -359,18 +393,28 @@ pub async fn remove(State(app): State<Arc<Platform>>, headers: HeaderMap, Path(i
     app_id(&id)?;
     let client = client_of(&app, &headers).await?;
     let removed = app.db.remove_client_app(&client, &id)?;
+    app.db.end_app_grants(&client, &id, now_ms())?;
     if removed {
         info!(%client, app = %id, "a client forgot its app");
     }
     Ok(Json(json!({ "removed": removed })))
 }
 
-/// `GET /api/client/apps/{app}/secrets/{name}`: the value of the app's
-/// project's own secret, when its owners let this client read it.
+#[derive(Debug, Deserialize)]
+pub struct ReadAt {
+    #[serde(default)]
+    pub host: String,
+}
+
+/// `GET /api/client/apps/{app}/secrets/{name}?host=`: the value of the
+/// app's project's own secret, under an owner's grant for this client,
+/// this app and this host, while the value is as it was granted (or an
+/// owner set it since).
 pub async fn secret(
     State(app): State<Arc<Platform>>,
     headers: HeaderMap,
     Path((id, name)): Path<(String, String)>,
+    Query(at): Query<ReadAt>,
 ) -> Result<Response, Nope> {
     app_id(&id)?;
     let client = client_of(&app, &headers).await?;
@@ -379,15 +423,32 @@ pub async fn secret(
         .db
         .client_app(&client, &id)?
         .ok_or_else(|| nope(StatusCode::NOT_FOUND, "no_app", format!("{client} keeps no app {id} here.")))?;
-    if !crate::secrets::valid_name(&name) || !app.db.client_secret_granted(&found.project, &client, &name)? {
-        return Err(nope(
+    let refused = |why: &str| {
+        nope(
             StatusCode::FORBIDDEN,
             "no_grant",
             format!(
-                "The owners of {id}'s project haven't let {client} read {name}. They do it in the project's settings."
+                "The owners of {id}'s project haven't let {client} send {name} to {} for it{why}. They do it in the project's settings.",
+                at.host
+            ),
+        )
+    };
+    let grant = if crate::secrets::valid_name(&name) {
+        app.db.client_secret_grant(&found.project, &client, &name, &id)?
+    } else {
+        None
+    };
+    let Some(grant) = grant.filter(|g| g.granted_at.is_some() && g.host == at.host) else { return Err(refused("")) };
+    if grant.stale() {
+        return Err(nope(
+            StatusCode::FORBIDDEN,
+            "stale",
+            format!(
+                "An agent changed {name} in {id}'s project since its owners let {client} send it: an owner grants it again in the project's settings."
             ),
         ));
     }
+    app.limits.check_client(SECRET_NAME_READS, &format!("{client}/{}/{name}", found.project))?;
     let master = app
         .secret_key
         .as_deref()
@@ -400,10 +461,117 @@ pub async fn secret(
         )
     })?;
     let now = now_ms();
-    app.db.note_client_secret_read(&found.project, &client, &name, &id, now)?;
-    info!(%client, app = %id, project = %found.project, name, "a client read a project's secret");
+    app.db.note_client_secret_read(&found.project, &client, &name, &id, &grant.host, now)?;
+    info!(%client, app = %id, project = %found.project, name, host = %grant.host, "a client read a project's secret");
+    watch_reads(&app, &found.project, &name, &client, now);
     Ok(([(header::CACHE_CONTROL, "no-store")], Json(json!({ "app": id, "name": name, "value": value })))
         .into_response())
+}
+
+/// When one secret was read unusually often in the last hour, its
+/// project's owners are pushed a notice, at most once an hour each.
+fn watch_reads(app: &Arc<Platform>, project: &str, name: &str, client: &str, now: u64) {
+    static TOLD: std::sync::Mutex<Option<std::collections::HashMap<String, u64>>> = std::sync::Mutex::new(None);
+    let reads = app.db.client_secret_reads_since(project, name, now.saturating_sub(3_600_000)).unwrap_or(0);
+    if reads < READS_ALERT {
+        return;
+    }
+    let key = format!("{project}/{name}");
+    {
+        let mut told = TOLD.lock().unwrap_or_else(|e| e.into_inner());
+        let told = told.get_or_insert_with(Default::default);
+        if told.get(&key).is_some_and(|at| now.saturating_sub(*at) < 3_600_000) {
+            return;
+        }
+        told.insert(key, now);
+    }
+    tracing::warn!(
+        project,
+        name,
+        client,
+        reads,
+        ops = "client-secret-reads",
+        "a project's secret was read unusually often"
+    );
+    let (app, project, name, client) = (app.clone(), project.to_owned(), name.to_owned(), client.to_owned());
+    tokio::spawn(async move {
+        let msg = json!({
+            "title": format!("{name} was read {reads} times in an hour"),
+            "body": format!("{client} read your project's secret {name} {reads} times in the last hour, for its apps. Not expected? Stop it in the project's settings."),
+            "tag": format!("client-secret-reads-{project}-{name}"),
+            "control": true,
+        });
+        for owner in owners(&app, &project).await {
+            if let Err(e) = app.hub.push(&owner, &msg).await {
+                tracing::warn!(%owner, error = %e, "the notice of a secret's reads didn't go");
+            }
+        }
+    });
+}
+
+/// A project's owners: its person, or its team's owners.
+async fn owners(app: &Platform, project: &str) -> Vec<String> {
+    match app.db.project_holder(project) {
+        Ok(Some((Some(owner), _))) => vec![owner],
+        Ok(Some((None, Some(team)))) => match app.cache.team(&*app.hub, &team).await {
+            Ok(Some(t)) => t.members.iter().filter(|m| m.role == TeamRole::Owner).map(|m| m.account.clone()).collect(),
+            _ => vec![],
+        },
+        _ => vec![],
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AskSecret {
+    pub host: String,
+}
+
+/// `PUT /api/client/apps/{app}/secrets/{name}` `{host}`: the client asks,
+/// for an owner of the app's project, to send the project's own secret
+/// `name` for this app to `host`. An owner of the project grants it on its
+/// settings page; the same host again keeps a grant, a new one asks afresh.
+pub async fn ask_secret(
+    State(app): State<Arc<Platform>>,
+    headers: HeaderMap,
+    Path((id, name)): Path<(String, String)>,
+    Json(b): Json<AskSecret>,
+) -> Answer<SecretGrant> {
+    app_id(&id)?;
+    let (client, account) = acting(&app, &headers).await?;
+    let found = app
+        .db
+        .client_app(&client, &id)?
+        .ok_or_else(|| nope(StatusCode::NOT_FOUND, "no_app", format!("{client} keeps no app {id} here.")))?;
+    let (_, role) = role_in(&app, &account, &found.project).await?;
+    if role != TeamRole::Owner {
+        return Err(nope(
+            StatusCode::FORBIDDEN,
+            "role",
+            format!("Only the owners of {id}'s project choose which of its secrets it sends."),
+        ));
+    }
+    if !crate::secrets::valid_name(&name) {
+        return Err(nope(StatusCode::BAD_REQUEST, "name", "That isn't a project secret's name."));
+    }
+    let host = origin(&b.host)
+        .ok_or_else(|| nope(StatusCode::BAD_REQUEST, "host", "A host is an origin, like https://api.example.com."))?;
+    let g = app.db.request_client_secret(&found.project, &client, &name, &id, &host, &account, now_ms())?;
+    info!(%client, app = %id, project = %found.project, name, %host, %account, "a client asked to send a project's secret");
+    Ok(Json(g))
+}
+
+/// `host` as an origin (`https://name[:port]`, or `http://` for a test's),
+/// with nothing else in it.
+fn origin(host: &str) -> Option<String> {
+    let u = reqwest::Url::parse(host.trim()).ok()?;
+    let plain = matches!(u.scheme(), "https" | "http")
+        && u.host_str().is_some()
+        && u.username().is_empty()
+        && u.password().is_none()
+        && matches!(u.path(), "" | "/")
+        && u.query().is_none()
+        && u.fragment().is_none();
+    plain.then(|| u.origin().ascii_serialization())
 }
 
 /// `PUT` (on) or `DELETE` (off) `/api/linked-products/{client}/projects`:
@@ -436,7 +604,7 @@ pub struct ProjectClients {
     pub apps: Vec<ClientApp>,
     /// Owners only.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub grants: Option<Vec<SecretGrant>>,
+    pub grants: Option<Vec<Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub events: Option<Vec<SecretEvent>>,
 }
@@ -451,7 +619,16 @@ pub async fn project_clients(
     Ok(Json(ProjectClients {
         clients: app.hosted.broker.clients.policies.keys().cloned().collect(),
         apps: app.db.project_client_apps(&project)?,
-        grants: owner.then(|| app.db.client_secret_grants(&project)).transpose()?,
+        grants: owner.then(|| app.db.client_secret_grants(&project)).transpose()?.map(|gs| {
+            gs.into_iter()
+                .map(|g| {
+                    let mut v = json!(g);
+                    v["stale"] = json!(g.stale());
+                    v["changed_since_grant"] = json!(g.changed_since());
+                    v
+                })
+                .collect()
+        }),
         events: owner.then(|| app.db.client_secret_events(&project, EVENTS)).transpose()?,
         project,
     }))
@@ -467,30 +644,36 @@ async fn owner_of(app: &Platform, account: &str, project: &str, what: &str) -> R
 }
 
 /// `PUT` (let it) or `DELETE` (stop it)
-/// `/api/projects/{project}/clients/{client}/secrets/{name}`: whether a
-/// registered client may read one of the project's own secrets for its
-/// apps there. Owners, from the page only; the secret must be set to be
-/// granted.
+/// `/api/projects/{project}/clients/{client}/apps/{app}/secrets/{name}`:
+/// whether a registered client may send one of the project's own secrets
+/// for one of its apps there, to the host it asked for. Owners, from the
+/// page only; the secret must be set, and the client must have asked.
+/// Granting again after an agent changed the value is how an owner says
+/// it's still theirs.
 pub async fn set_grant(
     State(app): State<Arc<Platform>>,
     Person { account }: Person,
-    Path((project, client, name)): Path<(String, String, String)>,
+    Path((project, client, id, name)): Path<(String, String, String, String)>,
     method: Method,
 ) -> Result<Json<ProjectClients>, ApiError> {
-    let project = owner_of(&app, &account, &project, "let products read its secrets").await?;
+    let project = owner_of(&app, &account, &project, "let products send its secrets").await?;
     if !app.hosted.broker.clients.policies.contains_key(&client) {
         return Err(err(StatusCode::NOT_FOUND, "no such client"));
     }
-    let on = method == Method::PUT;
-    if on {
+    if method == Method::PUT {
         if !crate::secrets::valid_name(&name) || !app.db.has_project_secret(&project, &project_secret(&name))? {
             return Err(err(StatusCode::NOT_FOUND, "the project has no secret by that name: set it first"));
         }
-        app.db.grant_client_secret(&project, &client, &name, &account, now_ms())?;
+        if app.db.client_app(&client, &id)?.is_none_or(|a| a.project != project) {
+            return Err(err(StatusCode::NOT_FOUND, "that product keeps no such app in this project"));
+        }
+        if !app.db.grant_client_secret(&project, &client, &name, &id, &account, now_ms())? {
+            return Err(err(StatusCode::NOT_FOUND, "that product hasn't asked to send it for that app"));
+        }
     } else {
-        app.db.revoke_client_secret(&project, &client, &name, &account, now_ms())?;
+        app.db.revoke_client_secret(&project, &client, &name, &id, &account, now_ms())?;
     }
-    info!(%account, %project, %client, name, on, "a project's owner changed what a client may read");
+    info!(%account, %project, %client, app = %id, name, on = method == Method::PUT, "a project's owner changed what a client may send");
     project_clients(State(app), Person { account }, Path(project)).await
 }
 

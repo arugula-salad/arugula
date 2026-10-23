@@ -32,9 +32,22 @@ type Secret = {
   agent: { id: string; name: string | null } | null;
 };
 
-/** A registered client's grant to read one of the project's secrets (M236). */
-type Grant = { client: string; name: string; granted_at: number; reads: number; last_read_at: number | null };
-type Clients = { clients: string[]; grants?: Grant[] };
+/** A registered client's ask, and an owner's grant, to send one of the
+ * project's secrets for one of its apps to one host (M236). */
+type Grant = {
+  client: string;
+  name: string;
+  app: string;
+  host: string;
+  granted_at: number | null;
+  reads: number;
+  last_read_at: number | null;
+  stale: boolean;
+  changed_since_grant: boolean;
+  value_set_by: string | null;
+  value_set_by_agent: string | null;
+};
+type Clients = { clients: string[]; apps: { client: string; app: string; title: string }[]; grants?: Grant[] };
 
 export function ProjectAgents({ p }: { p: PlatformProject }) {
   const [tokens, setTokens] = useState<Over[] | null>(null);
@@ -84,9 +97,16 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
       setName("");
     });
   };
-  const grant = (client: string, secret: string, on: boolean) =>
-    act(() => call(`${base}/clients/${encodeURIComponent(client)}/secrets/${encodeURIComponent(secret)}`, undefined, on ? "PUT" : "DELETE"));
-  const grantOf = (client: string, secret: string) => clients?.grants?.find((g) => g.client === client && g.name === secret);
+  const grant = (g: Grant, on: boolean) =>
+    act(() =>
+      call(
+        `${base}/clients/${encodeURIComponent(g.client)}/apps/${encodeURIComponent(g.app)}/secrets/${encodeURIComponent(g.name)}`,
+        undefined,
+        on ? "PUT" : "DELETE",
+      ),
+    );
+  const asksFor = (secret: string) => clients?.grants?.filter((g) => g.name === secret) ?? [];
+  const titleOf = (g: Grant) => clients?.apps.find((a) => a.client === g.client && a.app === g.app)?.title ?? g.app;
   const revoke = async (id: string) => {
     setErr("");
     try {
@@ -122,7 +142,7 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
         values are never shown.
         {secrets ? ` At most ${secrets.max}.` : ""}
         {clients?.clients.length
-          ? " A product you let read one (studio's apps, for their egress) gets its value for its apps in this project, and nothing else; each read is counted here."
+          ? " A product asks to send one for one of its apps to one host (studio's egress); once you allow that, it gets the value for that app and host only, each read is counted here, and an agent changing the value stops it until you allow it again."
           : ""}
       </p>
       {secrets?.secrets.length === 0 && <p class="dim">None.</p>}
@@ -147,22 +167,29 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
             <button class="control-linkish" data-project-secret-clear={s.name} disabled={busy} onClick={() => void act(() => call(`${base}/secrets/${encodeURIComponent(s.name)}`, undefined, "DELETE"))}>
               Clear
             </button>
-            {clients?.clients.map((c) => {
-              const g = grantOf(c, s.name);
-              return (
-                <label key={c} class="platform-mirror">
-                  <input
-                    type="checkbox"
-                    data-project-secret-grant={`${c}/${s.name}`}
-                    checked={Boolean(g)}
-                    disabled={busy}
-                    onChange={() => void grant(c, s.name, !g)}
-                  />{" "}
-                  Let <b>{c}</b> read it for its apps here
-                  {g ? <span class="dim"> · {g.reads ? `read ${g.reads} ${g.reads === 1 ? "time" : "times"}, last ${ago(g.last_read_at ?? g.granted_at)}` : "not read yet"}</span> : null}
-                </label>
-              );
-            })}
+            {asksFor(s.name).map((g) => (
+              <label key={`${g.client}/${g.app}`} class="platform-mirror">
+                <input
+                  type="checkbox"
+                  data-project-secret-grant={`${g.client}/${g.app}/${g.name}`}
+                  checked={g.granted_at !== null && !g.stale}
+                  disabled={busy}
+                  onChange={() => void grant(g, g.granted_at === null || g.stale)}
+                />{" "}
+                Let <b>{g.client}</b> send it for <bdi>{titleOf(g)}</bdi> to <code>{g.host}</code>
+                {g.stale ? (
+                  <span class="control-error"> · an agent changed it since you allowed this: allow it again</span>
+                ) : g.granted_at === null ? (
+                  <span class="dim"> · asked, not allowed yet</span>
+                ) : (
+                  <span class="dim">
+                    {" "}
+                    · {g.reads ? `read ${g.reads} ${g.reads === 1 ? "time" : "times"}, last ${ago(g.last_read_at ?? g.granted_at)}` : "not read yet"}
+                    {g.changed_since_grant ? ` · changed since by ${s.updated_by?.name ?? s.updated_by?.account ?? g.value_set_by ?? "someone"}` : ""}
+                  </span>
+                )}
+              </label>
+            ))}
           </li>
         ))}
       </ul>

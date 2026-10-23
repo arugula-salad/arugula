@@ -1159,18 +1159,18 @@ name = "client_secret_grants"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "A project's owner letting a registered client read one of the project's own secrets by name for its apps (M236): the project, the client, the secret's name, who let it and when, and how many reads and the last. Never a value."
+what = "A project's own secret a registered client may send for one of its apps, to one host (M236): the project, the client, the secret's name, the app, the host, who asked (an owner, through the client) and when, who let it and when, and how many reads and the last. Never a value."
 why_asleep = "Studio's egress broker reads the secret on its apps' behalf, with every machine asleep."
 with_account = "partly"
 seen_by = ["litestream"]
-note = "Deleting an account forgets it as `granted_by`; its personal project's grants go with the project."
+note = "Deleting an account forgets it as `granted_by` and `requested_by`; its personal project's grants go with the project."
 
 [[table]]
 name = "client_secret_events"
 plane = "platform"
 process = "platform"
 holds = "metadata"
-what = "What happened to a client's reach into a project's secrets (M236): granted and revoked by an owner, read by the client for one of its apps, with when. Never a value. Kept 90 days."
+what = "What happened to a client's reach into a project's secrets (M236): asked for, granted and revoked by an owner, read by the client for one of its apps and host, ended when the app moved or went, with when. Never a value. Kept 90 days."
 why_asleep = "Written as the client reads, with every machine asleep, for the project's owners to see."
 with_account = "partly"
 seen_by = ["litestream"]
