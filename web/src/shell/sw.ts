@@ -104,6 +104,10 @@ interface Msg {
   control?: boolean;
   /** M123: control's chat: the room and message a push is about. */
   chat?: { room: string; seq: number };
+  /** The platform's: an inbox item (M171), a deploy (M218). Read by
+   * `platformTap`. */
+  inbox?: unknown;
+  deploy?: unknown;
 }
 
 sw.addEventListener("push", (event: PushEvent) => {
@@ -153,7 +157,7 @@ sw.addEventListener("push", (event: PushEvent) => {
       icon: "/icon.svg",
       requireInteraction: !!(approve || ask || gate || point || msg.cloud_run || msg.cloud_tab),
       actions,
-      data: { cloud_run: msg.cloud_run, cloud_workspace: msg.cloud_workspace, cloud_tab: msg.cloud_tab, pane: msg.pane, daemon: msg.daemon, chat: msg.chat, approve, ask, reason, control: msg.control === true },
+      data: { cloud_run: msg.cloud_run, cloud_workspace: msg.cloud_workspace, cloud_tab: msg.cloud_tab, pane: msg.pane, daemon: msg.daemon, chat: msg.chat, inbox: msg.inbox, deploy: msg.deploy, approve, ask, reason, control: msg.control === true },
     } as NotificationOptions),
   );
 });
