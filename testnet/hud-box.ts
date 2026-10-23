@@ -47,6 +47,8 @@ const reach = (u: string) => {
   for (const [from, to] of via) if (u.startsWith(from)) return to + u.slice(from.length);
   return u;
 };
+// The result goes to stdout even once hud's own log lines are sent to stderr.
+const out = console.log.bind(console);
 const fail = (why: string): never => {
   throw new Error(why);
 };
@@ -255,7 +257,7 @@ if (!run) {
   process.exit(2);
 }
 run()
-  .then((r) => console.log(JSON.stringify(r)))
+  .then((r) => out(JSON.stringify(r)))
   .catch((e) => {
     console.error(`hud-box.ts ${cmd}: ${e instanceof Error ? e.message : e}`);
     process.exit(1);
