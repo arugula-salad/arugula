@@ -100,10 +100,11 @@ interface Msg {
   control?: boolean;
   /** M123: control's chat: the room and message a push is about. */
   chat?: { room: string; seq: number };
-  /** The platform's: an inbox item (M171), a deploy (M218). Read by
-   * `platformTap`. */
+  /** The platform's: an inbox item (M171), a deploy (M218), a hosted
+   * workspace. Read by `platformTap`. */
   inbox?: unknown;
   deploy?: unknown;
+  hosted?: unknown;
 }
 
 sw.addEventListener("push", (event: PushEvent) => {
@@ -153,7 +154,7 @@ sw.addEventListener("push", (event: PushEvent) => {
       icon: "/icon.svg",
       requireInteraction: !!(approve || ask || gate || point),
       actions,
-      data: { pane: msg.pane, daemon: msg.daemon, chat: msg.chat, inbox: msg.inbox, deploy: msg.deploy, approve, ask, reason, control: msg.control === true },
+      data: { pane: msg.pane, daemon: msg.daemon, chat: msg.chat, inbox: msg.inbox, deploy: msg.deploy, hosted: msg.hosted, approve, ask, reason, control: msg.control === true },
     } as NotificationOptions),
   );
 });

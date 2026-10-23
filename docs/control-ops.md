@@ -2742,18 +2742,19 @@ socket, so it sees those pages in plain text: they're public.
   rec CNAME '_acme-challenge.<domain>' '<target from fly certs show>'
   ```
 
-**Putting it live** (at a release):
+**Live** (2026-10-23): public previews are on at `arugula.site`. They
+went live with `ARUGULA_PREVIEW_DOMAIN` set as a Fly secret on both
+`illogical-control` and `arugula-platform`; it's now in the `[env]` of both
+`packaging/control/fly.toml` and `packaging/platform/fly.toml`, so a
+redeploy keeps it, and the secrets can be unset (`fly secrets unset
+ARUGULA_PREVIEW_DOMAIN -a <app>`, platform first, then the hub). To check
+it:
 
-1. Release with M187, so the hub, the platform and the hosted daemon in
-   the template all carry it.
-2. `ARUGULA_PREVIEW_DOMAIN = "arugula.site"` in the `[env]` of both
-   `packaging/control/fly.toml` and `packaging/platform/fly.toml`, and
-   deploy the platform, then the hub. `curl -sI
-   https://0123456789abcdef0123456789abcdef.arugula.site` then answers 404
-   with control's "No preview here" page.
-3. A live check: make a port of a test workspace public (`arugula cloud
-   preview public <workspace> <port>`), open it in a private window, then
-   `arugula cloud preview off` and see it go within a minute.
+1. `curl -sI https://0123456789abcdef0123456789abcdef.arugula.site`
+   answers 404 with control's "No preview here" page.
+2. Make a port of a test workspace public (`arugula cloud preview public
+   <workspace> <port>`), open it in a private window, then `arugula cloud
+   preview off` and see it go within a minute.
 
 ### Checking a migration on a copy
 

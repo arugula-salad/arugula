@@ -7,7 +7,7 @@
 
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-use arugula_e2e::now_ms;
+use arugula_e2e::{now_ms, team::TeamRole};
 
 use super::*;
 use crate::{
@@ -240,6 +240,57 @@ async fn a_turn_past_the_cap_is_woken_and_said() {
     set_box(&fake, State::Paused, t - 26 * HOUR, t - 2 * HOUR);
     drive(&app, t).await;
     assert!(fake.calls().is_empty());
+}
+
+/// A turn past the cap pushes the workspace's maker once per crossing: once
+/// when it first runs to the cap, again a cap later, never for a pause and
+/// resume between turns. A maker who left the team's project: its owners.
+#[tokio::test]
+async fn a_turn_past_the_cap_pushes_its_maker() {
+    let (hub, fake, app, project, id, t) = ready().await;
+    let pushed = || -> Vec<(String, serde_json::Value)> {
+        hub.pushes()
+            .into_iter()
+            .filter(|(_, m, _)| m["tag"] == serde_json::json!(format!("hosted-cap-{id}")))
+            .map(|(to, m, _)| (to, m))
+            .collect()
+    };
+    hub.say_busy("m1", Some(true));
+    set_box(&fake, State::Paused, t - 24 * HOUR, t - 5_000);
+    drive(&app, t).await;
+    assert_eq!(fake.calls(), ["resume sbx0"]);
+    let p = pushed();
+    assert_eq!(p.len(), 1, "{p:?}");
+    let (to, m) = &p[0];
+    assert_eq!(to, "bob", "its maker");
+    assert_eq!(m["title"], "dev: an agent turn has run past 24 hours; it keeps going");
+    assert_eq!(m["hosted"], serde_json::json!({ "project": project, "workspace": id }), "a tap opens the workspace");
+    drive(&app, t + 1_000).await;
+    assert_eq!(pushed().len(), 1, "once for the crossing");
+
+    // Still going a cap later: paused at the cap again, woken, pushed again.
+    let t2 = t + 24 * HOUR;
+    set_box(&fake, State::Paused, t2 - 24 * HOUR, t2 - 5_000);
+    drive(&app, t2).await;
+    assert_eq!(fake.calls(), ["resume sbx0"]);
+    assert_eq!(pushed().len(), 2, "another period, another push");
+
+    // Paused and resumed between turns before the cap: nobody's pushed.
+    let t3 = t2 + 23 * HOUR;
+    hub.say_busy("m1", Some(false));
+    set_box(&fake, State::Running, t3 - 23 * HOUR, t3 + HOUR);
+    drive(&app, t3).await;
+    assert_eq!(fake.calls(), ["pause sbx0", "resume sbx0"]);
+    assert_eq!(pushed().len(), 2, "an idle cycle pushes nobody");
+
+    // bob left the team: the project's owners are pushed instead.
+    hub.team("t1", &[("alice", TeamRole::Owner), ("vic", TeamRole::Viewer)]);
+    hub.say_busy("m1", None);
+    let t4 = t3 + 24 * HOUR;
+    set_box(&fake, State::Paused, t4 - 24 * HOUR, t4 - 5_000);
+    drive(&app, t4).await;
+    let p = pushed();
+    assert_eq!(p.iter().map(|(to, _)| to.as_str()).collect::<Vec<_>>(), ["bob", "bob", "alice"]);
 }
 
 /// A workspace on a real provider (E2B's cloud or loam's E2B-compatible

@@ -25,6 +25,10 @@ kill_timeout = "15s"
   # and _acme-challenge, DNS-only) is on Cloudflare; the wildcard certificate
   # is Fly's (`fly certs list`).
   ARUGULA_CONTROL_BLOCK_DOMAIN = "arugula.run"
+  # Public previews of hosted workspaces' ports (M187): <id>.arugula.site,
+  # a registrable domain of its own. The platform reads the same value
+  # (packaging/platform/fly.toml). DNS and the certificate: docs/control-ops.md.
+  ARUGULA_PREVIEW_DOMAIN = "arugula.site"
 
 [[mounts]]
   source = "control_data"

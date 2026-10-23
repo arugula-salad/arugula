@@ -31,6 +31,7 @@ use crate::{
     Platform,
     compute::{self, Create, State, Substrate},
     db::hosted::HostedJob,
+    hub::PushOptions,
 };
 
 /// How long a box runs without being held before it pauses itself
@@ -516,7 +517,9 @@ async fn near_cap(
 
 /// A box that paused at the provider's runtime cap just now, its daemon
 /// not saying idle: a single turn ran to the cap. Wake it so the turn goes
-/// on, and say so on the workspace and in the log.
+/// on, and say so on the workspace, in the log, and in a push to its maker
+/// ([`push_past_cap`]). A turn that runs on pauses at the cap again a cap
+/// later, and is woken and said again.
 async fn paused_at_cap(
     app: &Platform,
     sub: &dyn Substrate,
@@ -546,6 +549,7 @@ async fn paused_at_cap(
             ));
             job.seen.started_at = Some(now);
             job.seen.paused_at = None;
+            push_past_cap(app, job, hours).await;
             Ok((None, now + READY_MS))
         }
         Err(compute::Error::NotFound) => Ok(fail(job, GONE, now)),
@@ -556,6 +560,45 @@ async fn paused_at_cap(
             Ok((None, now + PAUSED_MS))
         }
     }
+}
+
+/// Push the workspace's maker that a turn ran past the provider's cap and
+/// goes on: the account that made it, while it's still there (in the
+/// team, for a team's project), else the project's owners. A tap opens the
+/// workspace. A push that doesn't go is only logged.
+async fn push_past_cap(app: &Platform, job: &HostedJob, hours: f64) {
+    let to = match past_cap_whom(app, job).await {
+        Ok(to) => to,
+        Err(e) => {
+            return tracing::warn!(workspace = %job.w.id, error = format!("{e:#}"), "whom to push about a turn past the cap");
+        }
+    };
+    let msg = serde_json::json!({
+        "hosted": { "project": job.w.project, "workspace": job.w.id },
+        "title": format!("{}: an agent turn has run past {hours} hours; it keeps going", job.w.name),
+        "body": "The box paused at the provider's limit and was woken. The turn may have lost its network connections.",
+        "tag": format!("hosted-cap-{}", job.w.id),
+        "control": true,
+    });
+    for account in to {
+        if let Err(e) = app.hub.push_with(&account, &msg, PushOptions::default()).await {
+            tracing::warn!(workspace = %job.w.id, %account, error = %e, "the push about a turn past the cap didn't go");
+        }
+    }
+}
+
+async fn past_cap_whom(app: &Platform, job: &HostedJob) -> Result<Vec<String>> {
+    let Some(p) = app.db.issue_project(&job.w.project)? else { return Ok(vec![]) };
+    if let Some(maker) = job.w.created_by.as_deref() {
+        let there = match &p.team {
+            Some(t) => app.cache.team_now(&*app.hub, t).await?.is_some_and(|t| t.role(maker).is_some()),
+            None => app.cache.account_there(&*app.hub, maker).await?,
+        };
+        if there {
+            return Ok(vec![maker.to_owned()]);
+        }
+    }
+    crate::deploys::owners(app, &p).await
 }
 
 /// What a box as the provider reports it says for its usage (M188): when

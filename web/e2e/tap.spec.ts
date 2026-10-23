@@ -31,6 +31,11 @@ test("with a platform page, a chat push opens there, by id (M156)", () => {
   expect(platformTap({ inbox: { item: iss, room: `ob_${"0c".repeat(8)}`, seq: 3 } })).toBe(`/issues/${iss}?msg=3`);
   expect(platformTap({ inbox: { item: `fi_${"0a".repeat(16)}`, room: `ob_${"0c".repeat(8)}`, seq: 3 } })).toBe(`/chat/ob_${"0c".repeat(8)}?msg=3`);
   expect(platformTap({ inbox: { item: "iss_../x" } })).toBe("/inbox");
+  // A hosted workspace's push (a turn past the provider's limit) opens it.
+  const prj = `prj_${"0d".repeat(16)}`;
+  const hw = `hw_${"0e".repeat(16)}`;
+  expect(platformTap({ hosted: { project: prj, workspace: hw } })).toBe(`/p/${prj}/workspaces/${hw}`);
+  expect(platformTap({ hosted: { project: prj, workspace: "hw_../x" } })).toBeUndefined();
   // Anything else stays the shell's.
   for (const n of [{}, { chat: { room: "ch_" } }, { pane: 3 }]) expect(platformTap(n)).toBeUndefined();
   expect(platformOf({ platform: "https://app.arugula.io" })).toBe("https://app.arugula.io");
