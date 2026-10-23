@@ -23,8 +23,11 @@ const bare = join(root, "arugula-salad/shipped.git");
 const env = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "github-actions[bot]",
   GIT_AUTHOR_EMAIL: "github-actions[bot]@users.noreply.github.com", GIT_COMMITTER_NAME: "github-actions[bot]",
   GIT_COMMITTER_EMAIL: "github-actions[bot]@users.noreply.github.com" };
-// The repositories are runner's: root reads them as safe.
-const git = (cwd, ...args) => execFileSync("git", ["-c", "safe.directory=*", ...args], { cwd, env, encoding: "utf8" }).trim();
+const git = (cwd, ...args) => execFileSync("git", args, { cwd, env, encoding: "utf8" }).trim();
+// The repositories are runner's: root (this box's, HOME=/root) reads them as
+// safe. Global config, since git 2.39's clone doesn't pass `-c` on to the
+// source's upload-pack.
+git("/", "config", "--global", "--replace-all", "safe.directory", "*");
 let pinned = false;
 
 createServer((req, res) => {
