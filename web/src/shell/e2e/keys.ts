@@ -207,6 +207,23 @@ export async function adoptKeys(noise: Uint8Array<ArrayBuffer>, sign: Uint8Array
 /** #764: what the passkey's PRF is evaluated at, one salt per key (WebAuthn
  * hashes each with its own "WebAuthn PRF" prefix before the authenticator
  * sees it). Frozen: changing one makes every passkey a new device. */
+/** A PRF output as bytes: an ArrayBuffer or a view as browsers give it,
+ * or base64 (url or not) as some password managers' passkeys do; else
+ * undefined, and no key comes from it. */
+export function prfBytes(x: unknown): ArrayBuffer | undefined {
+  if (x instanceof ArrayBuffer) return x.byteLength ? x : undefined;
+  if (ArrayBuffer.isView(x)) return x.byteLength ? new Uint8Array(x.buffer, x.byteOffset, x.byteLength).slice().buffer : undefined;
+  if (typeof x === "string" && /^[A-Za-z0-9+/_-]+=*$/.test(x)) {
+    try {
+      const b = Uint8Array.from(atob(x.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+      return b.byteLength ? b.buffer : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 export const PRF_SALTS = { noise: new TextEncoder().encode("arugula device noise v1"), sign: new TextEncoder().encode("arugula device sign v1") };
 
 // PKCS#8 for a 32-byte seed: the fixed prefix, then the seed (RFC 8410).

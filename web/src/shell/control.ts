@@ -20,6 +20,7 @@ import {
   loadEnrollment,
   loadKeys,
   PRF_SALTS,
+  prfBytes,
   prfDevice,
   saveEnrollment,
   saveWorkerDirectory,
@@ -409,7 +410,14 @@ interface PrfOut {
   results?: { first?: ArrayBuffer; second?: ArrayBuffer };
 }
 
-const prfOf = (cred: PublicKeyCredential) => (cred.getClientExtensionResults() as { prf?: PrfOut }).prf;
+/** The `prf` result with its outputs as bytes, whatever shape the
+ * passkey's provider gave them in (`prfBytes`). */
+const prfOf = (cred: PublicKeyCredential): PrfOut | undefined => {
+  const p = (cred.getClientExtensionResults() as { prf?: { enabled?: boolean; results?: { first?: unknown; second?: unknown } } }).prf;
+  if (!p) return undefined;
+  const r = p.results;
+  return { enabled: p.enabled, results: r ? { first: prfBytes(r.first), second: prfBytes(r.second) } : undefined };
+};
 
 /** #764: a passkey's PRF output as this browser's device keys, the same on
  * every browser with that passkey, so they're one device. Not while this
