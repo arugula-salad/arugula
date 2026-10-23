@@ -264,21 +264,17 @@ impl Db {
         )
     }
 
-    /// The projects whose planter ship or promote environment holds the
-    /// app's name `app` (M233's claims: its `app` setting), sorted.
+    /// The project that holds the shipped app's name `app` (M233's
+    /// `planter_app_claims`), if one does. Read only.
+    pub fn planter_app_owner(&self, app: &str) -> anyhow::Result<Option<String>> {
+        self.c()
+            .query_row("SELECT project_id FROM planter_app_claims WHERE app = ?1", params![app], |r| r.get(0))
+            .optional()
+    }
+
+    /// The projects that hold the app's name `app`: none or one.
     pub fn app_claimants(&self, app: &str) -> anyhow::Result<Vec<String>> {
-        use arugula_e2e::deploy::planter as p;
-        let mut out = vec![];
-        for driver in [p::SHIP, p::PROMOTE] {
-            for e in self.environments_driven_by(driver)? {
-                if e.settings.get(p::APP).map(String::as_str) == Some(app) {
-                    out.push(e.project);
-                }
-            }
-        }
-        out.sort();
-        out.dedup();
-        Ok(out)
+        Ok(self.planter_app_owner(app)?.into_iter().collect())
     }
 
     /// The tenants the import made into `project`.

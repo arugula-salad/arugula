@@ -345,6 +345,10 @@ pub struct Report {
     pub tenants: Vec<TenantLine>,
     /// Tokens and apps of no tenant in the backup.
     pub orphans: Vec<String>,
+    /// The projects that have planter environments from the import and
+    /// that PLANTER_PROJECTS doesn't name yet (M233): add them for their
+    /// deploys to plan.
+    pub allowlist: Vec<String>,
 }
 
 impl Report {
@@ -435,19 +439,11 @@ impl Report {
                 let _ = writeln!(out, "  app {} ({} deploys): {what}", a.app.name, a.app.deploys);
             }
         }
-        let ship: Vec<&str> = self
-            .tenants
-            .iter()
-            .filter(|t| {
-                t.apps.iter().any(|a| matches!(a.outcome, AppOutcome::Environment { .. } | AppOutcome::Already { .. }))
-            })
-            .filter_map(|t| t.apps.first().and_then(|a| a.project.as_deref()))
-            .collect();
-        if !ship.is_empty() {
+        if !self.allowlist.is_empty() {
             let _ = writeln!(
                 out,
-                "\nplanter's drivers deploy only for the projects they're allowed (PLANTER_PROJECTS, M233): add {}",
-                ship.join(" ")
+                "\nplanter's drivers deploy only for the projects PLANTER_PROJECTS names (M233): add {}",
+                self.allowlist.join(",")
             );
         }
         for o in &self.orphans {
@@ -546,7 +542,19 @@ pub async fn import(app: &Platform, backup: &Backup, o: &Options) -> anyhow::Res
             orphans.push(format!("--people/--team name tenant {t}, which isn't in the backup"));
         }
     }
-    Ok(Report { dry_run: o.dry_run, tenants, orphans })
+    let mut allowlist: Vec<String> = tenants
+        .iter()
+        .flat_map(|t| &t.apps)
+        .filter(|a| {
+            o.driver.starts_with("planter-")
+                && matches!(a.outcome, AppOutcome::Environment { .. } | AppOutcome::Already { .. })
+        })
+        .filter_map(|a| a.project.clone())
+        .filter(|p| crate::drivers::planter::project_allowed(p).is_err())
+        .collect();
+    allowlist.sort();
+    allowlist.dedup();
+    Ok(Report { dry_run: o.dry_run, tenants, orphans, allowlist })
 }
 
 /// One tenant's project.
@@ -733,7 +741,13 @@ async fn app_env(
         }
         return Ok(AppOutcome::Already { environment: e.id });
     }
-    if let Err(why) = project.map_or(Ok(()), |p| d.allowed_in(p)) {
+    // planter's drivers deploy only for the projects PLANTER_PROJECTS
+    // names (M233): the environment and the name's claim are made anyway,
+    // so nobody takes the name meanwhile, and the report says which
+    // projects to add.
+    if !o.driver.starts_with("planter-")
+        && let Err(why) = project.map_or(Ok(()), |p| d.allowed_in(p))
+    {
         return Ok(AppOutcome::Refused { why });
     }
     let settings = match d.settings(&app_settings(&o.driver, a)) {
@@ -753,7 +767,17 @@ async fn app_env(
         created_at: 0,
         updated_at: 0,
     };
-    if let Some(why) = d.claims(app, &would) {
+    // The name's claim (M233): taken now on a real run, atomically; a dry
+    // run only reads who has it.
+    if o.dry_run {
+        if let Some(owner) = app.db.planter_app_owner(&a.name)?
+            && Some(owner.as_str()) != project
+        {
+            return Ok(AppOutcome::Refused {
+                why: format!("the shipped app {} is another project's ({owner})", a.name),
+            });
+        }
+    } else if let Some(why) = d.claims(app, &would) {
         return Ok(AppOutcome::Refused { why });
     }
     let (Some(p), false) = (project, o.dry_run) else {

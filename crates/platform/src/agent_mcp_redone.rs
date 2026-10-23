@@ -439,15 +439,16 @@ async fn ship(agent: &Agent, a: &Value) -> Out {
     if !planter::artifact_ok(digest) {
         return Err(failed(format!("upload_id: what PUT {} answered (sha256:…)", agent.upload_url())));
     }
-    if agent.app.db.deploy_artifact(&p, digest)?.is_none() {
+    let Some(bytes) = agent.app.db.deploy_artifact(&p, digest)? else {
         return Err(failed(format!(
             "no upload {digest} in this project: PUT the source to {} first",
             agent.upload_url()
         )));
-    }
+    };
     agent.app.limits.check_account(super::ACCOUNT_DEPLOY_ASKS, &agent.token.account)?;
     let source = json!({ "kind": "artifact", "ref": digest, "where": planter::ARTIFACT_WHERE });
-    let done = agent.plan_and_ask(p.clone(), &env.id, source, false).await?;
+    // Kept again with its deploy (M233's rule), so it stays while that waits.
+    let done = agent.plan_and_ask(p.clone(), &env.id, source, false, Some(&bytes)).await?;
     let v = view(&done.value["deploy"], app_name(&env));
     let text = format!(
         "{}\nIt waits for an owner's approval on their phone; you can't approve it. get_plan {} follows it.",
@@ -476,7 +477,17 @@ async fn rollback(agent: &Agent, a: &Value) -> Out {
     agent.app.limits.check_account(super::ACCOUNT_DEPLOY_ASKS, &agent.token.account)?;
     let source =
         json!({ "kind": target.source.kind.as_str(), "ref": target.source.reference, "where": target.source.place });
-    let out = agent.plan_and_ask(p.clone(), &env.id, source, false).await?;
+    let kept = match target.source.kind.as_str() {
+        "artifact" => Some(
+            agent
+                .app
+                .db
+                .deploy_artifact(&p, &target.source.reference)?
+                .ok_or_else(|| failed(format!("the source of {} isn't kept any more: ship it again", target.id)))?,
+        ),
+        _ => None,
+    };
+    let out = agent.plan_and_ask(p.clone(), &env.id, source, false, kept.as_deref()).await?;
     let mut v = view(&out.value["deploy"], app_name(&env));
     v["kind"] = json!("rollback");
     v["rollback_to"] = json!(target.id);

@@ -222,6 +222,9 @@ services:
       # in `fakes`, which takes any App's JWT: the redone claim plans a ship.
       PLANTER_APP_ID: "4242"
       PLANTER_APP_PRIVATE_KEY_FILE: /keys/github-app.pem
+      # Every project may use planter's drivers here (`*` only where the fake
+      # driver is allowed, as it is above).
+      PLANTER_PROJECTS: "*"
       # The stack's own master key, so project secrets are sealed (M230's
       # set_secret, M235's redone claim).
       ARUGULA_CLOUD_SECRET_KEY: 5ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec05ec0

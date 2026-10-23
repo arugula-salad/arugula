@@ -68,6 +68,8 @@ async fn platform_with(projection: crate::infisical::Projection) -> (Arc<TestHub
     let mut p = Platform::new(cfg, Db::test(), hub.clone(), reqwest::Client::new(), Default::default());
     p.secret_key = Some(Arc::new(crate::secrets::SecretCipher::new(&"07".repeat(32)).unwrap()));
     p.projection = projection;
+    // planter's drivers apply on hosted boxes: these accounts may use them.
+    p.hosted = crate::hosted::Config { accounts: vec!["a".into(), "b".into()], ..Default::default() };
     p.deploy_app = Some(crate::forge::GithubApp::new(
         "4242".into(),
         "arugula-planter".into(),
@@ -107,6 +109,11 @@ fn options(dry_run: bool) -> Options {
 /// [`options`] with planter's ship driver, as production imports.
 fn ship_options(dry_run: bool) -> Options {
     Options { driver: SHIP_DRIVER.into(), ..options(dry_run) }
+}
+
+/// PLANTER_PROJECTS names `project`, as tests name it (M233).
+fn allow(project: &str) {
+    crate::drivers::planter::TEST_PROJECTS.lock().unwrap_or_else(|e| e.into_inner()).push(project.to_owned());
 }
 
 fn line<'a>(r: &'a Report, tenant: &str) -> &'a TenantLine {
@@ -378,6 +385,8 @@ async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
     import(&app, &Backup::read(&dir()).unwrap(), &ship_options(false)).await.unwrap();
     let fern = app.db.redone_personal_project("a").unwrap().unwrap();
     let alder = app.db.team_default_project("t").unwrap().unwrap();
+    allow(&fern);
+    allow(&alder);
     let token = raw("tok_fern1");
 
     // Its tools: the platform's, and redone's beside them. A token minted
@@ -626,6 +635,7 @@ async fn redones_tools_work_on_the_platform_and_never_claim_or_approve() {
 async fn apps_become_ship_environments_and_their_names_the_projects() {
     let (_, app, base) = platform().await;
     let t = crate::projects::team_project(&app, "t").await.unwrap().unwrap();
+    allow(&t);
     // b's team has a ship environment for fern-site already.
     let (st, env) = call(
         &base,
@@ -653,6 +663,12 @@ async fn apps_become_ship_environments_and_their_names_the_projects() {
     assert!(matches!(app_outcome(&r, "fern-blog"), AppOutcome::Environment { environment: None, .. }));
     let r = import(&app, &backup, &o(false)).await.unwrap();
     assert!(matches!(app_outcome(&r, "fern-site"), AppOutcome::Refused { .. }));
+    // Its project isn't one PLANTER_PROJECTS names yet: the report says to
+    // add it, and the environment and the name's claim are made anyway.
+    let fern = app.db.redone_personal_project("a").unwrap().unwrap();
+    assert_eq!(r.allowlist, std::slice::from_ref(&fern));
+    assert!(r.render(&dir()).contains(&format!("PLANTER_PROJECTS names (M233): add {fern}")));
+    assert_eq!(app.db.planter_app_owner("fern-blog").unwrap().as_deref(), Some(fern.as_str()));
     let AppOutcome::Environment { environment: Some(blog), driver } = app_outcome(&r, "fern-blog").clone() else {
         panic!("{:?}", app_outcome(&r, "fern-blog"))
     };

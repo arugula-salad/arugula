@@ -1350,7 +1350,15 @@ pub async fn upload(
             return Err(failed("the upload isn't gzipped: tar -czf - -C <dir> ."));
         }
         let digest = format!("sha256:{}", hex::encode(<sha2::Sha256 as sha2::Digest>::digest(&body)));
-        app.db.put_deploy_artifact(&p, &digest, &body, &agent.token.account, now_ms())?;
+        // Kept against the project's quota (M233's); it goes again once no
+        // deploy of it waits, so an upload is planned soon after.
+        let quota = arugula_e2e::deploy::planter::MAX_PROJECT_ARTIFACTS;
+        if let Err(e) = app.db.put_deploy_artifact(&p, &digest, &body, &agent.token.account, now_ms(), quota) {
+            return Err(match e.downcast_ref::<crate::db::deploys::OverQuota>() {
+                Some(q) => failed(format!("{q}")),
+                None => e.into(),
+            });
+        }
         Ok(json!({ "upload_id": digest, "project": p, "bytes": body.len(), "next": "plan_deploy with app and this upload_id" }))
     }
     .await;

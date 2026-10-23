@@ -155,6 +155,7 @@ fn platform(mode: Mode, writer: Option<Writer>) -> Platform {
 pub fn claim(p: &Platform, project: &str, app: &str, driver: &str) {
     let settings = [("app".to_owned(), app.to_owned())].into_iter().collect();
     p.db.create_environment_with(project, app, driver, &[], &settings, 1).unwrap();
+    assert!(p.db.claim_planter_app(app, project, 1).unwrap(), "{app} is another project's");
 }
 
 fn writer(url: &str, secret: &str) -> Writer {
