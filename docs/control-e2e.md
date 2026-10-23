@@ -1494,9 +1494,9 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 104 tables in two planes ("Two planes, two trust rules"):
+Control's database has 103 tables in two planes ("Two planes, two trust rules"):
 
-- **The machine plane** (44 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
+- **The machine plane** (43 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
 - **The platform plane** (60 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
@@ -1514,7 +1514,6 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `issuer_client_secrets` | metadata | A client's secret (M229, M237): a hash of it, which client it is, when it was made. A product calls the link API with it; a bound hud box, its roster and review threads. | nothing of one |  |
 | `account_links` | metadata | A product's user linked to a platform account (M229): the client, the product's own id for its user and the name it gives them, the account, the numeric GitHub id both had, when. | yes |  |
 | `account_link_events` | metadata | The audit of account links (M229): a link made, renamed or ended (with the consent), the client and product user, the account, by the product, the person or an operator, when. Kept a year. | yes |  |
-| `hud_signins` | metadata | Who the hub gave a project-bound hud box's assertion to (M237): the client, the account, when last. The box posts review threads only for these, for a month. | yes |  |
 | `issuer_grants` | metadata | A person's yes on the consent screen (M229): the account, the product's client, when. Kept until they unlink the product. | yes |  |
 | `account_link_tombstones` | metadata | When an account last unlinked a product (M229): the client, the account, when. An assertion issued until then never links. Kept a day, far past any assertion's life. | yes |  |
 | `link_alerts` | metadata | The ops counter of bulk link calls (M229): per product's client and kind (unlinks, lookups), how many went over the alert line, and when last. | nothing of one |  |

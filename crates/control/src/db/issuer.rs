@@ -26,9 +26,6 @@
 //!   (a box) is bound to. A bound box reads its project's members as its
 //!   roster and posts reviews to object threads in that project, with its
 //!   client secret; an unbound box keeps its own roster.
-//! - `hud_signins` (M237): who the hub gave a bound box's assertion to, and
-//!   when last. A box posts a review thread only for someone who signed in
-//!   to it through the hub lately ([`HUD_SIGNIN_TTL_MS`]).
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -96,13 +93,6 @@ CREATE TABLE IF NOT EXISTS link_alerts (
     last INTEGER NOT NULL,
     PRIMARY KEY (client, what)
 );
-CREATE TABLE IF NOT EXISTS hud_signins (
-    client TEXT NOT NULL,
-    account TEXT NOT NULL,
-    at INTEGER NOT NULL,
-    PRIMARY KEY (client, account)
-);
-CREATE INDEX IF NOT EXISTS hud_signins_account ON hud_signins (account);
 ";
 
 /// The tables, and the columns added since they were first made (M237's
@@ -117,10 +107,6 @@ pub fn ensure(c: &Connection) -> rusqlite::Result<()> {
     }
     Ok(())
 }
-
-/// How long a sign-in to a box through the hub lets the box post review
-/// threads for that person (M237): a month since their last one.
-pub const HUD_SIGNIN_TTL_MS: u64 = 30 * 24 * 3_600_000;
 
 /// Which flow a client takes. Each refuses the other kind, so a hud box's
 /// address never receives a code and a product's never an assertion.
@@ -219,8 +205,7 @@ const COLUMNS: &str = "id, kind, name, redirect_uris, created, project";
 
 /// Register a client, or change its kind, name, addresses and project:
 /// what was kept, its addresses normalized. Changing a client's kind ends
-/// its access tokens; changing a box's project ends who it may post for
-/// (`hud_signins`).
+/// its access tokens and its secret.
 pub fn put_client(c: &Connection, client: &Client) -> anyhow::Result<Client> {
     anyhow::ensure!(
         client_id_ok(&client.id),
@@ -247,10 +232,12 @@ pub fn put_client(c: &Connection, client: &Client) -> anyhow::Result<Client> {
              (SELECT 1 FROM issuer_clients WHERE id = ?1 AND kind != ?2)",
         params![client.id, client.kind.as_str()],
     )?;
+    // A secret was given for one kind's routes (M237): a client that
+    // changes kind gets a new one.
     c.execute(
-        "DELETE FROM hud_signins WHERE client = ?1 AND EXISTS
-             (SELECT 1 FROM issuer_clients WHERE id = ?1 AND (kind != ?2 OR project IS NOT ?3))",
-        params![client.id, client.kind.as_str(), client.project],
+        "DELETE FROM issuer_client_secrets WHERE client = ?1 AND EXISTS
+             (SELECT 1 FROM issuer_clients WHERE id = ?1 AND kind != ?2)",
+        params![client.id, client.kind.as_str()],
     )?;
     c.execute(
         "INSERT INTO issuer_clients (id, kind, name, redirect_uris, created, project) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -452,7 +439,6 @@ pub fn remove_client(c: &mut Connection, id: &str) -> anyhow::Result<bool> {
     }
     tx.execute("DELETE FROM account_link_tombstones WHERE client = ?1", params![id])?;
     tx.execute("DELETE FROM issuer_tokens WHERE client = ?1", params![id])?;
-    tx.execute("DELETE FROM hud_signins WHERE client = ?1", params![id])?;
     tx.execute("DELETE FROM issuer_client_secrets WHERE client = ?1", params![id])?;
     let gone = tx.execute("DELETE FROM issuer_clients WHERE id = ?1", params![id])? > 0;
     tx.commit()?;
@@ -488,28 +474,6 @@ impl Db {
                 row,
             )
             .optional()?)
-    }
-
-    /// The hub gave `account` an assertion for the box `client` (M237).
-    pub fn hud_signed_in(&self, client: &str, account: &str, now: u64) -> anyhow::Result<()> {
-        let c = self.c();
-        c.execute("DELETE FROM hud_signins WHERE at < ?1", params![now.saturating_sub(HUD_SIGNIN_TTL_MS)])?;
-        c.execute(
-            "INSERT INTO hud_signins (client, account, at) VALUES (?1, ?2, ?3)
-             ON CONFLICT (client, account) DO UPDATE SET at = ?3",
-            params![client, account, now],
-        )?;
-        Ok(())
-    }
-
-    /// Whether `account` signed in to the box `client` through the hub in
-    /// the last [`HUD_SIGNIN_TTL_MS`].
-    pub fn hud_signed_in_lately(&self, client: &str, account: &str, now: u64) -> anyhow::Result<bool> {
-        Ok(self.c().query_row(
-            "SELECT COUNT(*) > 0 FROM hud_signins WHERE client = ?1 AND account = ?2 AND at >= ?3",
-            params![client, account, now.saturating_sub(HUD_SIGNIN_TTL_MS)],
-            |r| r.get(0),
-        )?)
     }
 
     /// Whether `account` let `client` sign it in (the consent, M229).

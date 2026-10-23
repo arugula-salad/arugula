@@ -234,11 +234,14 @@ pub struct Issuer {
     /// Consent screens shown and not yet answered (M229), by their
     /// ticket's hash: the request each answers, and its `state`.
     asking: Mutex<HashMap<String, (Pending, String)>>,
+    /// hud boxes' reviews waiting for their author to post them on the
+    /// hub's own page (M237, `hud_box.rs`), by their id's hash.
+    pub(crate) box_posts: crate::hud_box::Waiting,
 }
 
 impl Issuer {
     pub fn new(keys: Keys) -> Self {
-        Issuer { keys, codes: Mutex::default(), asking: Mutex::default() }
+        Issuer { keys, codes: Mutex::default(), asking: Mutex::default(), box_posts: Default::default() }
     }
 
     /// Keep a request waiting on the person's consent, unless its hub
@@ -343,7 +346,7 @@ pub(crate) fn limited(app: &App, peer: SocketAddr, headers: &HeaderMap) -> Optio
 }
 
 /// The hub session on this request, by its cookie: its hash and account.
-fn hub_session(app: &App, headers: &HeaderMap, now: u64) -> Option<(String, String)> {
+pub(crate) fn hub_session(app: &App, headers: &HeaderMap, now: u64) -> Option<(String, String)> {
     cookie(headers, SESSION_COOKIE)
         .map(hash)
         .and_then(|h| app.db.session_until(&h, now).ok().flatten().map(|(account, _)| (h, account)))
@@ -351,7 +354,7 @@ fn hub_session(app: &App, headers: &HeaderMap, now: u64) -> Option<(String, Stri
 
 /// Signed out here: control's page signs them in, then comes back to this
 /// same request (`#issuer-signin=`).
-fn sign_in_first(uri: &Uri) -> Response {
+pub(crate) fn sign_in_first(uri: &Uri) -> Response {
     let back = uri.path_and_query().map_or_else(|| uri.path(), |p| p.as_str());
     no_store(Redirect::to(&format!("/#issuer-signin={}", b64url(back.as_bytes()))).into_response())
 }
@@ -542,7 +545,7 @@ fn give_code(app: &App, issuer: &Issuer, p: Pending, state: &str, now: u64) -> R
     back(&redirect_uri, &q)
 }
 
-fn escape(s: &str) -> String {
+pub(crate) fn escape(s: &str) -> String {
     s.chars()
         .map(|c| match c {
             '&' => "&amp;".into(),
@@ -594,6 +597,37 @@ pub struct Consent {
     decision: Option<String>,
 }
 
+fn header_of(headers: &HeaderMap, h: &str) -> Option<String> {
+    headers.get(h).and_then(|v| v.to_str().ok()).map(str::to_owned)
+}
+
+/// Whether a form's post came from a page of the hub's own (the consent
+/// screen, M229; a hud box's review, M237): its Origin's host and port are
+/// the Host it came to (control answers on more than one site, so not only
+/// its public URL's), and its Sec-Fetch-Site, when sent, says same-origin.
+pub(crate) fn own_page_form(headers: &HeaderMap) -> bool {
+    let host = header_of(headers, "host").unwrap_or_default().to_ascii_lowercase();
+    let same = |o: &str| {
+        url::Url::parse(o).ok().is_some_and(|u| {
+            let authority = match (u.host_str(), u.port()) {
+                (Some(h), Some(p)) => format!("{h}:{p}"),
+                (Some(h), None) => h.to_owned(),
+                _ => return false,
+            };
+            authority.to_ascii_lowercase() == host
+        })
+    };
+    // A browser that was told no-referrer says `Origin: null` on a form's
+    // post; its Sec-Fetch-Site still says where the post came from.
+    let fetch_site = header_of(headers, "sec-fetch-site");
+    let origin_ok = match header_of(headers, "origin").as_deref() {
+        None => true,
+        Some("null") => fetch_site.as_deref() == Some("same-origin"),
+        Some(o) => same(o),
+    };
+    origin_ok && fetch_site.is_none_or(|s| s == "same-origin" || s == "none")
+}
+
 /// `POST /oauth/consent`: the person's answer to the consent screen. Only
 /// from the same origin it was shown on (a cross-site post is refused), with the
 /// ticket that screen was shown with, in the hub session it was shown in.
@@ -610,33 +644,10 @@ pub async fn consent(
         return r;
     }
     let refused = |why: &str| no_store((StatusCode::FORBIDDEN, why.to_owned()).into_response());
-    // Same origin as this request: the Origin's host and port are the
-    // Host this came to (control answers on more than one site, so not
-    // only its public URL's).
-    let header_is = |h: &str| headers.get(h).and_then(|v| v.to_str().ok()).map(str::to_owned);
-    let host = header_is("host").unwrap_or_default().to_ascii_lowercase();
-    let same = |o: &str| {
-        url::Url::parse(o).ok().is_some_and(|u| {
-            let authority = match (u.host_str(), u.port()) {
-                (Some(h), Some(p)) => format!("{h}:{p}"),
-                (Some(h), None) => h.to_owned(),
-                _ => return false,
-            };
-            authority.to_ascii_lowercase() == host
-        })
-    };
-    // A browser that was told no-referrer says `Origin: null` on a form's
-    // post; its Sec-Fetch-Site still says where the post came from.
-    let fetch_site = header_is("sec-fetch-site");
-    let origin_ok = match header_is("origin").as_deref() {
-        None => true,
-        Some("null") => fetch_site.as_deref() == Some("same-origin"),
-        Some(o) => same(o),
-    };
-    if !origin_ok || fetch_site.is_some_and(|s| s != "same-origin" && s != "none") {
+    if !own_page_form(&headers) {
         tracing::info!(
-            origin = header_is("origin").unwrap_or_default(),
-            fetch_site = header_is("sec-fetch-site").unwrap_or_default(),
+            origin = header_of(&headers, "origin").unwrap_or_default(),
+            fetch_site = header_of(&headers, "sec-fetch-site").unwrap_or_default(),
             "a consent answer from another page was refused"
         );
         return refused("this answer didn't come from Arugula's own page");
@@ -882,14 +893,6 @@ pub async fn hud(
         kid: issuer.keys.current.kid().to_owned(),
         nonce: q.nonce,
     };
-    // A bound box (M237) may post review threads for whoever signs in to
-    // it through here, for a while (`hud_box.rs`).
-    if client.project.is_some()
-        && let Err(e) = app.db.hud_signed_in(&claims.aud, &claims.account, now)
-    {
-        tracing::warn!("the issuer couldn't note a box's sign-in: {e:#}");
-        return refuse_hud(StatusCode::INTERNAL_SERVER_ERROR, "try again");
-    }
     let assertion = sign_hud(&issuer.keys.current, &claims);
     no_store(Redirect::to(&format!("{redirect_uri}#hud-forge={assertion}")).into_response())
 }

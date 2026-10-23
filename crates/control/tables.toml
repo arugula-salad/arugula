@@ -152,15 +152,6 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
-name = "hud_signins"
-plane = "machine"
-process = "hub"
-holds = "metadata"
-what = "Who the hub gave a project-bound hud box's assertion to (M237): the client, the account, when last. The box posts review threads only for these, for a month."
-with_account = "deleted"
-seen_by = ["litestream"]
-
-[[table]]
 name = "issuer_grants"
 plane = "machine"
 process = "hub"

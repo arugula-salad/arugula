@@ -16,10 +16,12 @@
 //               platform client: hud's own proxy listens on P, L opens it
 //               through /__hud/signin (control, and back with the box's
 //               nonce) and is let in with no invite; L2, not a member, is
-//               refused; hud's PlatformClient posts a review for L. Without
-//               DIR, the same calls by hand. Then L reads the issue's
-//               thread on the platform, as the page does: the review is
-//               there, via the box.
+//               refused; hud's PlatformClient asks to post a review for L.
+//               Without DIR, the same calls by hand. The ask posts nothing:
+//               L opens control's page it names, an answer from another
+//               page is refused, and L presses Post there. Then L reads the
+//               issue's thread on the platform, as the page does: the review
+//               is there, via the box.
 //               {members, admitted, refused, posted, thread}
 
 import http from "node:http";
@@ -152,6 +154,7 @@ async function box() {
   let refused: unknown;
   let posted: unknown;
   let text: string;
+  let confirmUrl: string | undefined;
   if (opts.hud) {
     // hud's own code, from a checkout built with its platform client.
     // Its log lines go to stderr: stdout is this script's one JSON object.
@@ -169,9 +172,9 @@ async function box() {
     const dev = http.createServer((_q, s) => s.writeHead(200, { "content-type": "text/plain" }).end("the app"));
     const listen = (s: http.Server) => new Promise<number>((r) => s.listen(0, "127.0.0.1", () => r((s.address() as { port: number }).port)));
     const devPort = await listen(dev);
-    const config = { url: control, clientId: client, publicUrl: boxUrl, secret };
+    const config = { url: control, clientId: client, publicUrl: boxUrl };
     const signin = new ForgeSignin({ jwks: new JwksKeys(`${control}/.well-known/jwks.json`, boxFetch), audience: client, signinUrl: `${boxUrl}/__hud/signin` });
-    const platform = new PlatformClient(config, boxFetch);
+    const platform = new PlatformClient(config, secret, boxFetch);
     const identitySecret = createIdentitySecret();
     const players = new PlayerRegistry();
     const proxy = startHudProxy({
@@ -217,9 +220,9 @@ async function box() {
       if (stranger.status !== 403 || stranger.v.reason !== "not-a-member") fail(`a non-member: ${stranger.status} ${JSON.stringify(stranger.v)}`);
       refused = stranger.v.reason;
       text = reviewText(review);
-      const p = await platform.postReview(state.issue, state.account, text);
-      if (!p.ok) fail(`hud's review post: ${JSON.stringify(p)}`);
-      posted = p;
+      const p = await platform.askPost(state.issue, state.account, text);
+      if (!p.ok) fail(`hud's ask to post: ${JSON.stringify(p)}`);
+      confirmUrl = p.confirmUrl;
     } finally {
       proxy.server.closeAllConnections();
       proxy.server.close();
@@ -237,16 +240,35 @@ async function box() {
     if (members.some((m) => m.github_id === p2.github_id)) fail("the non-member is on the roster");
     refused = "not on the roster";
     text = `Review on /:\n1. The header overlaps the logo. (on header "Notes")\n\nFrom the testnet.`;
-    const r = await asBox("POST", "/oauth/hud/threads", { target: state.issue, author: state.account, text });
-    if (r.status !== 200) fail(`the review post: ${r.status} ${JSON.stringify(r.v)}`);
-    posted = r.v;
+    const r = await asBox("POST", "/oauth/hud/posts", { target: state.issue, author: state.account, text });
+    if (r.status !== 200 || typeof r.v.confirm_url !== "string") fail(`the ask to post: ${r.status} ${JSON.stringify(r.v)}`);
+    confirmUrl = r.v.confirm_url as string;
   }
-  // As the member reads it on the platform page.
+  // Asking posted nothing; the member posts it on control's own page.
   const room = await b.send("POST", `${control}/api/chat/targets`, { kind: "object", target: state.issue });
   if (room.status !== 200) fail(`the issue's thread: ${room.status} ${JSON.stringify(room.v)}`);
-  const msgs = await b.send("GET", `${control}/api/chat/rooms/${room.v.id}/messages`);
-  const m = ((msgs.v.messages ?? []) as { author: string; text: string; via?: string }[]).find((x) => x.text === text);
-  if (!m) fail(`the review isn't in the issue's thread: ${JSON.stringify(msgs.v)}`);
+  const thread = async () => ((await b.send("GET", `${control}/api/chat/rooms/${room.v.id}/messages`)).v.messages ?? []) as { author: string; text: string; via?: string }[];
+  if ((await thread()).some((x) => x.text === text)) fail("the box's ask posted the review by itself");
+  if (!confirmUrl!.startsWith(`${control}/oauth/hud/post?id=`)) fail(`control's page is somewhere else: ${confirmUrl}`);
+  const shown = await b.get(confirmUrl!);
+  const html = await shown.text();
+  if (shown.status !== 200 || !html.includes("The header overlaps the logo.") || !/frame-ancestors 'none'/.test(shown.headers.get("content-security-policy") ?? "")) fail(`control's page: ${shown.status} ${html.slice(0, 300)}`);
+  const id = new URL(confirmUrl!).searchParams.get("id")!;
+  const own = new URL(reach(control)).origin;
+  const answer = (origin: string) =>
+    fetch(reach(`${control}/oauth/hud/post`), {
+      method: "POST",
+      headers: { cookie: b.cookie(), origin, "sec-fetch-site": origin === own ? "same-origin" : "cross-site", "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ id, decision: "post" }),
+    });
+  const elsewhere = await answer(boxUrl);
+  if (elsewhere.status !== 403) fail(`an answer from the box's origin: ${elsewhere.status}`);
+  const pressed = await answer(own);
+  if (pressed.status !== 200) fail(`Post on control's page: ${pressed.status} ${(await pressed.text()).slice(0, 300)}`);
+  posted = { asked: true, confirmed_on: "control's page", refused_from_elsewhere: elsewhere.status };
+  // As the member reads it on the platform page.
+  const m = (await thread()).find((x) => x.text === text);
+  if (!m) fail("the review isn't in the issue's thread");
   if (m!.author !== state.account || m!.via !== name) fail(`the review's author or via: ${JSON.stringify(m)}`);
   return { members: members.length, admitted, refused, posted, thread: { room: room.v.id, author: m!.author, via: m!.via } };
 }

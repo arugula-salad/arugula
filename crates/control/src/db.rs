@@ -2373,7 +2373,6 @@ impl Db {
             "DELETE FROM account_link_events WHERE account = ?1",
             "DELETE FROM issuer_grants WHERE account = ?1",
             "DELETE FROM account_link_tombstones WHERE account = ?1",
-            "DELETE FROM hud_signins WHERE account = ?1",
             "DELETE FROM passkeys WHERE account = ?1",
             "DELETE FROM devices WHERE account = ?1",
             "DELETE FROM turned_down WHERE account = ?1",

@@ -531,24 +531,42 @@ then. `/oauth/*` is rate-limited per client address (`limit::ISSUER`).
   Changing a client's kind ends its access tokens.
 - **A hud box bound to a project (M237).** `add-client --kind hud --project
   prj_…` binds a box to a platform project, and `client-secret --id <box>`
-  gives it a secret (shown once; set it as the box's `HUD_PLATFORM_SECRET`).
-  Then:
+  gives it a secret (shown once). The box reads it from a 0600 file
+  (`HUD_PLATFORM_SECRET_FILE`), and refuses to start with it unless its
+  agent runs as another OS user (`HUD_AGENT_RUN_AS`), so nothing the agent
+  writes or runs can read it. Then:
   - `GET /oauth/hud/members` (HTTP Basic, the box's id and secret) is the
     box's roster: the project's members now, each with their numeric GitHub
     id. A member who signs in to the box through control (`/__hud/signin`
-    on the box) is let in with no invite, matched by that number. One who
-    leaves the project is taken off the box's roster within a minute.
-  - `POST /oauth/hud/threads` `{target, author, text}` posts a comment-mode
-    review into the thread on an object in that project (the box's
-    `HUD_PLATFORM_REVIEW_THREAD`, an `iss_…` or a `fi_…`), for its author,
-    shown there as "via <the client's name>". Only for an account the hub
-    gave this box's assertion to in the last 30 days (`hud_signins`), who is
-    a member who may post there now. An object outside the project is "no
-    such object".
+    on the box) is let in with no invite, matched by that number.
+  - **How long a removed member keeps a box:** at most about 71 seconds
+    after the hub takes them out of the team. The platform's cache has
+    the change within a feed tick and a cache tick (11 s,
+    `arugula_platform::cache::DELAY`); the box reads its roster afresh every
+    60 s and takes off anyone who left, which ends their session there. If
+    the box can't reach control, it takes nobody off until it can: run
+    `hud revoke` on the box to end every session at once.
+  - `POST /oauth/hud/posts` `{target, author, text}` posts nothing. It keeps
+    a comment-mode review for ten minutes and answers a link to the hub's
+    own page (`/oauth/hud/post?id=`). There the review's author, signed in
+    to control, sees which box, which object, and the text word for word,
+    and presses **Post** or **Cancel**. The page runs no script and nothing
+    may frame it, and its answer is taken only from that page (the consent
+    screen's same-origin check), once. So an app on the box (the agent's own
+    code included) can ask, but can't post for anyone. Posted, it's in the
+    thread on that object (the box's `HUD_PLATFORM_REVIEW_THREAD`, an
+    `iss_…` or a `fi_…`), shown as "<name> via <the client's name>" on the
+    page, in pushes and the inbox, over MCP and in the CLI. It's posted only
+    if the author may post there now, as when they post themselves. An object
+    outside the project is "no such object".
+  - **Limits:** 600 calls an hour per box, 120 reviews an hour, and 50
+    waiting at once. Past 30 reviews in an hour, a warn
+    (`hud-box-posts-bulk`, once an hour) and a `posts` row in
+    `issuer link-alerts`.
   - The secret does nothing else. An `oidc` client's secret can't call
     these, and a box's can't link accounts. An unbound box gets 409
-    `not_bound` and keeps its own roster. Changing a box's project, or
-    unbinding it, forgets who signed in to it.
+    `not_bound` and keeps its own roster. Changing a client's kind drops its
+    secret.
 
   ```
   fly ssh console -a illogical-control -C "/arugula-control issuer add-client --db /data/control.db \

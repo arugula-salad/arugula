@@ -228,10 +228,12 @@
 #           invite (with ARUGULA_TESTNET_HUD naming a hud checkout built
 #           with hud's platform client, hud's own proxy: /__hud/signin,
 #           control, and back with the box's nonce), someone who isn't a
-#           member is refused, and a review the box posts shows in the
-#           issue's thread on the platform, via the box. Without a hud
-#           checkout, the box's calls by hand. Broken: the box isn't bound
-#           to the project, so it has no roster.
+#           member is refused. The box asks to post a review, which posts
+#           nothing: the member opens control's page it names, an answer
+#           from the box's origin is refused, and Post there puts it in the
+#           issue's thread, via the box. Without a hud checkout, the box's
+#           calls by hand. Broken: the box isn't bound to the project, so
+#           it has no roster.
 #   public-preview
 #           Only with hosted workspaces at the fake E2B
 #           (ARUGULA_TESTNET_HOSTED=1) and a preview domain

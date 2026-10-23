@@ -568,9 +568,10 @@ fn routes() -> Routes {
         .route("/oauth/token", post(issuer::token_endpoint))
         .route("/oauth/userinfo", get(issuer::userinfo))
         .route("/oauth/hud", get(issuer::hud))
-        // hud boxes bound to a project (M237): their roster and review threads.
+        // hud boxes bound to a project (M237): their roster, and reviews their people post.
         .route("/oauth/hud/members", get(hud_box::members))
-        .route("/oauth/hud/threads", post(hud_box::threads))
+        .route("/oauth/hud/posts", post(hud_box::posts))
+        .route("/oauth/hud/post", get(hud_box::post_page).post(hud_box::post_answer))
         // Account links (M229): a product's user to the platform account.
         .route("/oauth/links", post(links::link))
         .route("/oauth/links/{user}", get(links::show).delete(links::unlink))

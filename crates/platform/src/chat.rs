@@ -1654,7 +1654,7 @@ pub(crate) async fn post_full(
         app,
         &facts,
         &room,
-        (&s.account, agent),
+        (&s.account, agent, via),
         seq,
         text.is_empty().then_some(quote).flatten().unwrap_or(text),
         &named,
@@ -1682,7 +1682,7 @@ async fn push(
     app: &Platform,
     facts: &Facts,
     room: &Room,
-    (author, agent): (&str, Option<&AgentPrincipal>),
+    (author, agent, via): (&str, Option<&AgentPrincipal>, Option<&str>),
     seq: i64,
     text: &str,
     named: &[String],
@@ -1704,6 +1704,11 @@ async fn push(
     let me = match agent {
         Some(a) => format!("{}'s agent on {}", name_of(app, author).await?, a.machine_name),
         None => name_of(app, author).await?,
+    };
+    // Posted for them by a product (M237): it says so, here as on the page.
+    let me = match via {
+        Some(v) => format!("{me} via {v}"),
+        None => me,
     };
     if inboxed {
         let mut quiet = Vec::new();
