@@ -604,14 +604,21 @@ pub fn check(
 }
 
 /// Keep loopback from `as_`'s processes to the daemon's ports, the box
-/// provider's and the privileged ones (`iptables` and `ip6tables`, owner
-/// match, through this daemon's sudo): a run can't drive the daemon or
-/// start processes through the provider's agent. Once a daemon; until the
-/// rules are in, nothing runs (fail closed).
+/// provider's and the privileged ones, through this daemon's sudo: a run
+/// can't drive the daemon or start processes through the provider's agent.
+/// nftables (`meta skuid`) first: E2B's kernel has nf_tables but not
+/// iptables' owner match, so `-m owner` fails there; else `iptables` and
+/// `ip6tables`. Once a daemon; until the rules are in, nothing runs (fail
+/// closed).
 pub fn firewall(state: &Path, as_: &RunAs) -> Result<(), Refused> {
     static DONE: Mutex<bool> = Mutex::new(false);
     let mut done = DONE.lock().unwrap_or_else(|e| e.into_inner());
     if *done {
+        return Ok(());
+    }
+    if firewall_nft(state, &as_.user) {
+        info!(user = as_.user, "hosted: runs can't reach the daemon's or the provider's ports (nftables)");
+        *done = true;
         return Ok(());
     }
     for (bin, rule) in firewall_rules(state, &as_.user) {
@@ -634,20 +641,69 @@ pub fn firewall(state: &Path, as_: &RunAs) -> Result<(), Refused> {
     Ok(())
 }
 
-/// The rules [`firewall`] keeps: each a REJECT of TCP on loopback from
-/// `user` to some ports.
-pub fn firewall_rules(state: &Path, user: &str) -> Vec<(&'static str, Vec<String>)> {
+/// [`firewall`] through nftables: [`firewall_script`] for `user`'s uid,
+/// loaded whole (`nft -f -`, which replaces the table each time). Whether it
+/// took.
+#[cfg(unix)]
+fn firewall_nft(state: &Path, user: &str) -> bool {
+    use std::io::Write as _;
+    let Some(uid) = nix::unistd::User::from_name(user).ok().flatten().map(|u| u.uid.as_raw()) else { return false };
+    let script = firewall_script(state, uid);
+    let child = std::process::Command::new("sudo")
+        .args(["-n", "nft", "-f", "-"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
+    let Ok(mut child) = child else { return false };
+    let wrote = child.stdin.take().is_some_and(|mut i| i.write_all(script.as_bytes()).is_ok());
+    child.wait().is_ok_and(|s| s.success()) && wrote
+}
+
+#[cfg(not(unix))]
+fn firewall_nft(_: &Path, _: &str) -> bool {
+    false
+}
+
+/// The nftables table [`firewall_nft`] loads: TCP on loopback from `uid`
+/// to the ports [`firewall_ports`] lists is reset. Declaring the table and
+/// deleting it first makes loading it again replace it.
+pub fn firewall_script(state: &Path, uid: u32) -> String {
+    let ports = firewall_ports(state).iter().map(|p| p.replace(':', "-")).collect::<Vec<_>>().join(", ");
+    format!(
+        "table inet arugula_runs\ndelete table inet arugula_runs\ntable inet arugula_runs {{\n  chain out {{\n    \
+         type filter hook output priority 0; policy accept;\n    \
+         oif \"lo\" meta skuid {uid} meta l4proto tcp tcp dport {{ {ports} }} reject with tcp reset\n  }}\n}}\n"
+    )
+}
+
+/// The loopback ports runs are kept off: the privileged ones, the box
+/// provider's, and this daemon's (as its state directory says), each once
+/// (an nftables set refuses one inside another).
+fn firewall_ports(state: &Path) -> Vec<String> {
     let mut ports = vec!["1:1023".to_owned(), PROVIDER_PORTS.to_owned()];
+    let inside = |p: u16, range: &str| {
+        let (a, b) = range.split_once(':').unwrap_or((range, range));
+        a.parse::<u16>().is_ok_and(|a| a <= p) && b.parse::<u16>().is_ok_and(|b| p <= b)
+    };
     for f in ["listen", "block-listen"] {
         if let Some(p) = std::fs::read_to_string(state.join(f))
             .ok()
             .and_then(|a| a.trim().parse::<std::net::SocketAddr>().ok())
             .map(|a| a.port())
             .filter(|p| *p > 0)
+            && !ports.iter().any(|r| inside(p, r))
         {
             ports.push(p.to_string());
         }
     }
+    ports
+}
+
+/// The rules [`firewall`] keeps where nftables doesn't: each a REJECT of
+/// TCP on loopback from `user` to some ports.
+pub fn firewall_rules(state: &Path, user: &str) -> Vec<(&'static str, Vec<String>)> {
+    let ports = firewall_ports(state);
     let mut out = Vec::new();
     for bin in ["iptables", "ip6tables"] {
         for p in &ports {
@@ -1314,6 +1370,19 @@ mod tests {
         assert_eq!(ports, ["1:1023", "49982:49983", "7681", "7690"]);
         assert_eq!(rules.len(), 8, "and the same for IPv6");
         assert_eq!(rules[0].1.join(" "), "-o lo -p tcp -m owner --uid-owner runner --dport 1:1023 -j REJECT");
+        // nftables, as E2B takes it (checked live on arugula-workspace:v0.60.3).
+        let script = firewall_script(&dir, 1002);
+        assert!(script.starts_with("table inet arugula_runs\ndelete table inet arugula_runs\n"), "{script}");
+        assert!(
+            script.contains(
+                "oif \"lo\" meta skuid 1002 meta l4proto tcp tcp dport { 1-1023, 49982-49983, 7681, 7690 } reject with tcp reset"
+            ),
+            "{script}"
+        );
+        // A daemon port inside a range already kept isn't listed twice.
+        std::fs::write(dir.join("listen"), "127.0.0.1:443").unwrap();
+        std::fs::write(dir.join("block-listen"), "127.0.0.1:49983").unwrap();
+        assert_eq!(firewall_ports(&dir), ["1:1023", "49982:49983"]);
     }
 
     #[test]
