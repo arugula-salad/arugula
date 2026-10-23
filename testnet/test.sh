@@ -1182,6 +1182,7 @@ claim_hud_box() {
   local name="Testnet hud box" port project secret hud=() st="$WORK/hud-box.json"
   port="$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')"
   local back="http://127.0.0.1:$port/__hud/signin/back"
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
   hbox() { node --experimental-strip-types --no-warnings "$HERE/hud-box.ts" "$@" --control "$CONTROL_URL" $CONTROL_VIA; }
   docker exec "$TESTNET-control" "$cli" issuer add-client --db "$db" --id "$client" --kind hud \
     --name "$name" --redirect "$back" >/dev/null || { note "hud-box: the client wasn't registered"; return 1; }
@@ -1199,7 +1200,9 @@ claim_hud_box() {
     --login2 "hudx-$$" "${hud[@]}" > "$WORK/hud-box" 2> "$WORK/hud-box.err"; then
     note "hud-box: $(cat "$WORK/hud-box.err")"; return 1
   fi
-  note "hud-box: $(cat "$WORK/hud-setup") $(cat "$WORK/hud-box")${hud[*]:+ (hud's own proxy from ${ARUGULA_TESTNET_HUD})}"
+  local from="the box's calls by hand"
+  [ "${#hud[@]}" = 0 ] || from="hud's own proxy from $ARUGULA_TESTNET_HUD"
+  note "hud-box: $(cat "$WORK/hud-setup") $(cat "$WORK/hud-box") ($from)"
 }
 
 claim_issuer() {

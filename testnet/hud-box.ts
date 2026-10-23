@@ -152,6 +152,8 @@ async function box() {
   let text: string;
   if (opts.hud) {
     // hud's own code, from a checkout built with its platform client.
+    // Its log lines go to stderr: stdout is this script's one JSON object.
+    console.log = console.error;
     const dist = join(opts.hud, "packages/daemon/dist");
     const load = (p: string) => import(pathToFileURL(join(dist, p)).href);
     const [{ startHudProxy }, { ForgeSignin, JwksKeys }, { PlatformClient, reviewText }, { createIdentitySecret, mintInvite, PlayerRegistry }] = await Promise.all([
