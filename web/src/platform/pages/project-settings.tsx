@@ -4,9 +4,10 @@
 // sends the person to GitHub to install it, and GitHub sends them back to
 // `/installed`, which comes here with the repo filled in. Each linked repo
 // has a switch for content mirroring (M166), with what turning it on means.
-// Then its environments, their secrets and "Deploy…" (M252), and its
-// standing grant for runs (M211), and for its owners, the agent tokens
-// over it and its own secrets (M230).
+// Then its environments, their secrets and "Deploy…" (M252), its
+// standing grant for runs (M211), for its owners the agent tokens over it
+// and its own secrets (M230), what its Claude calls cost (M231), and the
+// apps products keep in it (M236).
 
 import { useEffect, useState } from "preact/hooks";
 import type { LinkedRepo, LinkedRepos } from "../../shared/proto.gen";
@@ -19,6 +20,8 @@ import { Missing } from "./project";
 import { RunGrant } from "../settings/runs";
 import { Environments } from "../settings/environments";
 import { ProjectAgents } from "../settings/project-agents";
+import { ClaudeSpend } from "../settings/spend";
+import { ClientApps } from "../settings/client-apps";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
  * with the rest of the answer. */
@@ -148,6 +151,8 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
       <Environments p={p} />
       <RunGrant project={p.id} />
       <ProjectAgents p={p} />
+      <ClaudeSpend p={p} />
+      <ClientApps p={p} />
     </section>
   );
 }

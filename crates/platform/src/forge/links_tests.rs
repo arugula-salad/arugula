@@ -39,9 +39,9 @@ pub(crate) const SECRET: &str = "whsec-test";
 pub(crate) struct Gh {
     pub(crate) installed: BTreeMap<String, (u64, u64, String)>,
     pub(crate) repos: BTreeMap<String, (u64, bool)>,
-    pub(super) roles: BTreeMap<(String, String), (String, u64)>,
+    pub(crate) roles: BTreeMap<(String, String), (String, u64)>,
     /// How many times a person's permission was asked.
-    pub(super) asked: usize,
+    pub(crate) asked: usize,
     /// User tokens, and whose GitHub id each is (M168).
     pub(super) users: BTreeMap<String, u64>,
     /// What was posted as a person: the path, the `Authorization` header
@@ -57,6 +57,9 @@ pub(crate) struct Gh {
     pub(crate) green: std::collections::BTreeSet<String>,
     pub(crate) revoked: std::collections::BTreeSet<String>,
     pub(crate) on_main: std::collections::BTreeSet<String>,
+    /// Logins whose installations are a user's, not an organization's
+    /// (M232).
+    pub(crate) user_accounts: std::collections::BTreeSet<String>,
 }
 
 /// What the platform's real App (`arugula-io`) is granted today: it reads
@@ -103,7 +106,11 @@ async fn installation(State(h): State<Shared>, Path((o, r)): Path<(String, Strin
     let repo = format!("{o}/{r}");
     match h.installed.get(&repo) {
         Some((id, account, login)) => Json(json!({
-            "id": id, "account": { "id": account, "login": login, "type": "Organization" },
+            "id": id,
+            "account": {
+                "id": account, "login": login,
+                "type": if h.user_accounts.contains(login) { "User" } else { "Organization" },
+            },
             "permissions": h.grants.get(&repo).cloned().unwrap_or_else(granted),
         }))
         .into_response(),

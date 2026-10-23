@@ -14,7 +14,8 @@ use axum::{
 use arugula_control_wire::{issues, runs as wire_runs};
 
 use crate::{
-    Platform, agent_mcp, agent_tokens, billing, chat, deploys, forge, grants, hosted, projects, run_grant, run_logs,
+    Platform, agent_mcp, agent_tokens, billing, chat, clients, deploys, forge, grants, hosted, links, projects,
+    run_grant, run_logs,
     triggers::{agent as run_agents, routes as runs},
 };
 
@@ -25,10 +26,11 @@ use crate::{
 /// (M163); their items, each read checked against the viewer (M165);
 /// drafts on them (M170); the inbox (M171); native issues' (M195), for
 /// agents too (M200); hosted workspaces (M179) and their inference keys
-/// (M185); the standing project grant for runs (M211); what starts runs
+/// (M185), and the inference broker (M231); the standing project grant for runs (M211); what starts runs
 /// (M214); reading runs, and a machine's agents' runs (M216); runs'
-/// artifacts (M213); hosted agents' archived transcripts (M184); and
-/// agents with no machine, their grant tokens and MCP endpoint (M230).
+/// artifacts (M213); hosted agents' archived transcripts (M184); agents
+/// with no machine, their grant tokens and MCP endpoint (M230); the
+/// platform page's linked products (M229); and studio as a client (M236).
 fn routes() -> Routes {
     Routes::default()
         .route("/api/billing", get(billing::status))
@@ -76,6 +78,9 @@ fn routes() -> Routes {
         .route("/api/projects/{project}/agent-tokens", get(agent_tokens::over))
         .route("/api/projects/{project}/agent-tokens/{id}/revoke", post(agent_tokens::revoke_over))
         .route("/api/projects/{project}/secrets", get(agent_tokens::secrets))
+        // Linked products (M229): the hub keeps the links.
+        .route(links::LINKED_PRODUCTS, get(links::list))
+        .route(links::UNLINK_PRODUCT, post(links::unlink))
         .route(arugula_control_wire::projects::PROJECTS, get(projects::list))
         .route(arugula_control_wire::projects::PROJECT_REPOS, get(forge::links::list).post(forge::links::link))
         .route(
@@ -114,7 +119,7 @@ fn routes() -> Routes {
         .route(issues::AGENT_ISSUE_EVENTS, get(crate::issues::agent::events))
         // Deploys and their approval (M218).
         .route(deploys::ENVIRONMENTS, get(deploys::environments).post(deploys::create_environment))
-        .route(deploys::PROJECT_DEPLOYS, post(deploys::plan_route))
+        .route(deploys::PROJECT_DEPLOYS, get(deploys::list).post(deploys::plan_route))
         .route(deploys::WAITING, get(deploys::waiting))
         .route(deploys::DEPLOY, get(deploys::get))
         .route(deploys::DEPLOY_REQUEST, post(deploys::request_route))
@@ -134,6 +139,29 @@ fn routes() -> Routes {
         .route(
             "/api/projects/{project}/workspaces/{id}/ports/{port}/public",
             axum::routing::put(hosted::previews::make_public).delete(hosted::previews::make_private),
+        )
+        // The inference broker (M231), and what its calls cost.
+        .route("/api/projects/{project}/inference/anthropic/{*rest}", axum::routing::any(hosted::broker::forward))
+        .route("/api/projects/{project}/inference/spend", get(hosted::broker::project_spend))
+        .route("/api/inference/spend", get(hosted::broker::my_spend))
+        .route("/api/inference/spend/paid", get(hosted::broker::paid_by_me))
+        .route("/api/inference/clients", get(hosted::broker::list_clients))
+        .route(
+            "/api/inference/clients/{client}/consent",
+            axum::routing::put(hosted::broker::set_consent).delete(hosted::broker::set_consent),
+        )
+        // studio as a client (M236): its apps by project, the projects of
+        // the people who let it, and the secrets project owners let it read.
+        .route(clients::PROJECTS, get(clients::projects))
+        .route(clients::APPS, get(clients::apps))
+        .route(clients::APP, get(clients::show).put(clients::put).delete(clients::remove))
+        .route(clients::APP_SECRET, get(clients::secret).put(clients::ask_secret))
+        .route(clients::CONSENT, axum::routing::put(clients::set_consent).delete(clients::set_consent))
+        .route(clients::PROJECT_CLIENTS, get(clients::project_clients))
+        .route(clients::PROJECT_GRANT, axum::routing::put(clients::set_grant).delete(clients::set_grant))
+        .route(
+            clients::PROJECT_SECRET,
+            axum::routing::put(clients::set_project_secret).delete(clients::set_project_secret),
         )
         .route("/api/projects/{project}/inference-keys", get(hosted::inference::list_keys))
         .route(

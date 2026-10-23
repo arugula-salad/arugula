@@ -103,7 +103,7 @@ pub const MAX_PROJECT_SECRETS: usize = 100;
 /// Secrets a token's agent sets, per hour.
 const SECRET_WRITES: (&str, usize) = ("mcp-agent-secret", 120);
 /// The most a secret's value holds, in bytes.
-const MAX_SECRET: usize = 16 * 1024;
+pub(crate) const MAX_SECRET: usize = 16 * 1024;
 /// How long `wait` waits by default, and at most, in seconds.
 const WAIT_DEFAULT: u64 = 30;
 const WAIT_MAX: u64 = 120;
@@ -907,7 +907,8 @@ impl Agent {
     }
 
     /// `set_secret`: a project's secret by name (`secrets.write`), sealed
-    /// with the project's key and never read back here. Never past the
+    /// with the project's key and never read back here (only a product a
+    /// project owner lets read it, by name, gets its value: M236). Never past the
     /// owner's role: an owner or editor of the project.
     async fn set_secret(&self, a: SetSecret) -> Out {
         let p = self.project(a.project.as_deref()).await?;
@@ -922,7 +923,7 @@ impl Agent {
         self.seal(&p, &project_secret(name), &a.value).await?;
         tracing::info!(token = %self.token.id, account = %self.token.account, project = %p, name, "an agent set a project's secret");
         let v = json!({ "project": p, "name": name, "set": true });
-        let text = format!("Set {name} in {p}. It's sealed, and nothing here reads it back.");
+        let text = format!("Set {name} in {p}. It's sealed, and never shown: you can't read it back.");
         Ok(Done { text, value: v, project: Some(p), note: format!("set secret {name}") })
     }
 
@@ -1301,7 +1302,7 @@ pub fn tools() -> Vec<Value> {
         tool(
             "set_secret",
             "Set one of a project's secrets by name (secrets.write; your owner an owner or editor there). It's \
-             sealed with the project's key; nothing here reads it back, you included.",
+             sealed with the project's key and never shown, you included.",
             json!({
                 "project": prop("string", PROJECT),
                 "name": prop("string", "Capital letters, digits and '_'."),

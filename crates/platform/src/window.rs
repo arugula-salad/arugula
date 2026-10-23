@@ -386,7 +386,7 @@ pub(crate) fn running_env(var: &str) -> Option<(u32, String)> {
 
 /// The first words that make either binary run one of these instead of
 /// serving (and `platform`, control's prefix for them).
-pub const COMMANDS: [&str; 10] = [
+pub const COMMANDS: [&str; 11] = [
     "copy",
     "checksums",
     "secrets-check",
@@ -397,6 +397,7 @@ pub const COMMANDS: [&str; 10] = [
     "run-logs",
     "stuck",
     "platform",
+    "import",
 ];
 
 #[derive(Parser, Debug)]

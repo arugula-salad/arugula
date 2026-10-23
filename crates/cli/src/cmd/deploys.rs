@@ -1,8 +1,9 @@
 //! `arugula deploys`: a project's deploys on Arugula control (M252). `envs`
-//! lists its environments, `plan` plans a deploy of a commit to one of
-//! them (the platform makes the plan, from the environment's driver),
-//! `request` asks its owners to approve it, and `show` reads one: its
-//! plan's text, state and log. Through control, as this CLI's account
+//! lists its environments, `ls` its deploys (newest first, by environment
+//! with `--env`), `plan` plans a deploy of a commit to one of them (the
+//! platform makes the plan, from the environment's driver), `request` asks
+//! its owners to approve it, and `show` reads one: its plan's text, state
+//! and log. Through control, as this CLI's account
 //! (`arugula login`): an owner or an editor plans and asks.
 //!
 //! **No approving here, and no secrets.** An owner approves or denies a
@@ -33,6 +34,24 @@ pub enum DeploysCmd {
     /// read back.
     #[command(visible_alias = "environments")]
     Envs {
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// A project's deploys, newest first, whatever became of them.
+    ///
+    /// Each one's state, where it went, what it deployed, and when it last
+    /// moved.
+    #[command(name = "ls", visible_alias = "list")]
+    Ls {
+        /// Only this environment's: its name, or its id (`env_…`).
+        #[arg(long)]
+        env: Option<String>,
+        /// At most this many (20 without, at most 100).
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Those before this deploy (`dep_…`): the next page.
+        #[arg(long)]
+        before: Option<String>,
         #[arg(long)]
         project: Option<String>,
     },
@@ -132,7 +151,7 @@ pub fn run(cmd: DeploysCmd, json_out: bool) -> anyhow::Result<i32> {
     if matches!(cmd, DeploysCmd::Plan { .. } | DeploysCmd::Request { .. }) && http::agent() {
         bail!(
             "an agent doesn't plan or ask for deploys through this CLI, which acts as your person: it reads them \
-             here (`arugula deploys envs|show`), and plans with Arugula's MCP plan_deploy, under its machine's \
+             here (`arugula deploys envs|ls|show`), and plans with Arugula's MCP plan_deploy, under its machine's \
              deploys.plan grant. Only an owner approves, on their phone or in a browser"
         );
     }
@@ -149,6 +168,37 @@ pub fn run(cmd: DeploysCmd, json_out: bool) -> anyhow::Result<i32> {
             }
             for env in &envs {
                 println!("{}", env_lines(env));
+            }
+            return Ok(0);
+        }
+        DeploysCmd::Ls { env, limit, before, project: p } => {
+            let mut q = vec![];
+            if let Some(env) = env.as_deref().map(str::trim).filter(|e| !e.is_empty()) {
+                q.push(format!("environment={}", http::enc(env)));
+            }
+            if let Some(l) = limit {
+                q.push(format!("limit={l}"));
+            }
+            if let Some(b) = &before {
+                q.push(format!("before={}", checked_id(b)?));
+            }
+            let q = q.join("&");
+            let project = project(&e, p.as_deref())?;
+            let path = format!("/api/projects/{project}/deploys{}{q}", if q.is_empty() { "" } else { "?" });
+            let listed = e.api("GET", &path, None)?;
+            if json_out {
+                print_json(&listed);
+                return Ok(0);
+            }
+            let deploys = listed["deploys"].as_array().cloned().unwrap_or_default();
+            if deploys.is_empty() {
+                println!("No deploys.");
+            }
+            for d in &deploys {
+                println!("{}  {}", deploy_line(d), crate::hosts::ago(last_moved(d)));
+            }
+            if let Some(next) = listed["next"].as_str() {
+                println!("Older: `arugula deploys ls --before {next}`.");
             }
             return Ok(0);
         }
@@ -216,6 +266,12 @@ fn deploy_line(d: &Value) -> String {
     )
 }
 
+/// When a deploy as `ls` lists it last moved: it finished, it was
+/// decided, or it was planned.
+fn last_moved(d: &Value) -> u64 {
+    ["finished_at", "decided_at", "created_at"].iter().find_map(|k| d[k].as_u64()).unwrap_or_default()
+}
+
 /// A deploy as `show` prints it: its line, who planned it, its plan's text,
 /// its approvals and its log.
 fn deploy_text(d: &Value) -> String {
@@ -264,6 +320,8 @@ mod tests {
             &["arugula", "deploys", "plan", "--project", "prj_1", "--env", "x", "--commit", sha, "--repo", "a/b"],
             &["arugula", "deploys", "request", "dep_1"],
             &["arugula", "deploys", "show", "dep_1"],
+            &["arugula", "deploys", "ls"],
+            &["arugula", "deploys", "list", "--env", "production", "--limit", "5", "--before", "dep_1"],
         ] {
             assert!(crate::Cli::try_parse_from(argv).is_ok(), "{argv:?}");
         }
@@ -311,6 +369,11 @@ mod tests {
         );
         let env = json!({ "name": "production", "id": "env_1", "driver": "chant-fly",
             "settings": { "fly_app": "acme" }, "secret_names": ["FLY_API_TOKEN"] });
+        let listed = json!({ "id": "dep_2", "state": "approved", "environment": { "name": "production" },
+            "source": { "kind": "commit", "ref": "0123456789abcdef0123456789abcdef01234567", "where": "acme/app" },
+            "roll_back": { "deploy": "dep_1" }, "created_at": 1, "decided_at": 2, "finished_at": null });
+        assert_eq!(deploy_line(&listed), "dep_2  approved  to production: commit 0123456789ab of acme/app (roll back)");
+        assert_eq!(last_moved(&listed), 2, "approved, not applied yet");
         assert_eq!(
             env_lines(&env),
             "production       env_1  chant-fly\n  settings fly_app=acme\n  secrets FLY_API_TOKEN"

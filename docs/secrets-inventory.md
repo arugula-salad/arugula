@@ -237,8 +237,8 @@ shape):
 | --- | --- | --- |
 | `accounts.json`, each person's `key` | their Claude credential, sealed | **Platform**: the broker moves there (M231) |
 | `accounts.json`, `passkeys` | public keys | Kept a quarter as the fallback sign-in, then Deleted |
-| `accounts.json`, `tokens` | personal tokens, as hashes | M236 decides: studio's own, or platform grants |
-| `apps.json`, each app's `secrets` | an app's secrets, sealed (up to 20) | **Platform**: the app's project's secrets (M236) |
+| `accounts.json`, `tokens` | personal tokens, as hashes | Studio's own (M236): they list and open a person's studio apps, which stay studio's objects |
+| `apps.json`, each app's `secrets` | an app's secrets, sealed (up to 20) | **Platform**: the app's project's own secrets, which its owners grant studio by name (M236; a value saved in studio still works beside it until its people move it) |
 | `apps.json`, token hashes, `enter`, `nonce` | an app's own runtime | Studio's own |
 | `usage.json` | Claude spend per person | Not a secret; the metering moves to the platform (M231) |
 

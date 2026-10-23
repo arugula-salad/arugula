@@ -47,6 +47,16 @@ Start with `src/lib.rs`, then:
 - `src/projects.rs`: projects and team members, and the feed follower that
   keeps them and grants (from where it got to, in `hub_feed`).
 - `src/router.rs`: its routes, which the hub mounts in process.
+- `src/links.rs`: the platform page's "Linked products" (M229), which the
+  hub keeps beside its issuer's clients and answers through `HubPort`.
+- `src/boxes.rs`: hud boxes as clients (M237): a bound box's project's
+  members and its reviews posted into object threads (kept `via` the box),
+  which the hub asks for through `PlatformPort`.
+- `src/planter.rs`: planter's import (M232): its backup read, and
+  `arugula-platform import planter`, which links the repos planter's boxes
+  were planted from to projects and reports each box
+  (`docs/control-ops.md`, "Importing planter"). Its fixture backup is
+  `fixtures/planter-backup`.
 - `src/page.rs`: the platform page (M150's build, `web/dist-platform`),
   embedded, its CSP, and how it's served on `app.arugula.io` (M151): by
   the hub in process, by the binary for the hub's forwarded GETs out of

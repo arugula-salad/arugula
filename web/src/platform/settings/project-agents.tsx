@@ -1,7 +1,10 @@
 // A project's agents with no machine and its own secrets (M230), for its
 // owners: every agent token over the project, whoever minted it, with a
-// revoke that takes its reach here back; and the secrets agents set by name
-// (`set_secret`), each with who last set it and when, never a value.
+// revoke that takes its reach here back; and the secrets set by name, by
+// agents (`set_secret`) or by an owner here (M236), each with who last set
+// it and when, never a value. Beside each secret, which registered clients
+// (studio, M236) may read it for their apps in the project, and how often
+// they have: an owner's grant, by name.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
@@ -9,9 +12,9 @@ import type { PlatformProject } from "../session";
 import { ago, reachOf, type AgentToken } from "./agent-tokens";
 import { roleIn } from "./environments";
 
-async function call<T>(path: string, body?: unknown): Promise<T> {
+async function call<T>(path: string, body?: unknown, method?: string): Promise<T> {
   const r = await platformFetch(path, {
-    method: body === undefined ? "GET" : "POST",
+    method: method ?? (body === undefined ? "GET" : "POST"),
     credentials: "same-origin",
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -29,22 +32,81 @@ type Secret = {
   agent: { id: string; name: string | null } | null;
 };
 
+/** A registered client's ask, and an owner's grant, to send one of the
+ * project's secrets for one of its apps to one host (M236). */
+type Grant = {
+  client: string;
+  name: string;
+  app: string;
+  host: string;
+  granted_at: number | null;
+  reads: number;
+  last_read_at: number | null;
+  stale: boolean;
+  changed_since_grant: boolean;
+  value_set_by: string | null;
+  value_set_by_agent: string | null;
+};
+type Clients = { clients: string[]; apps: { client: string; app: string; title: string }[]; grants?: Grant[] };
+
 export function ProjectAgents({ p }: { p: PlatformProject }) {
   const [tokens, setTokens] = useState<Over[] | null>(null);
   const [secrets, setSecrets] = useState<{ secrets: Secret[]; max: number } | null>(null);
+  const [clients, setClients] = useState<Clients | null>(null);
   const [err, setErr] = useState("");
+  const [name, setName] = useState("");
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
   const base = `/api/projects/${encodeURIComponent(p.id)}`;
   const load = () =>
-    Promise.all([call<{ tokens: Over[] }>(`${base}/agent-tokens`), call<{ secrets: Secret[]; max: number }>(`${base}/secrets`)]).then(
-      ([t, s]) => {
+    Promise.all([
+      call<{ tokens: Over[] }>(`${base}/agent-tokens`),
+      call<{ secrets: Secret[]; max: number }>(`${base}/secrets`),
+      call<Clients>(`${base}/clients`).catch(() => null),
+    ]).then(
+      ([t, s, c]) => {
         setTokens(t.tokens);
         setSecrets(s);
+        setClients(c);
       },
       (e: Error) => setErr(e.message),
     );
   const owner = roleIn(p) === "owner";
   useEffect(() => void (owner && load()), [p.id, owner]);
   if (!owner) return null;
+  const act = async (f: () => Promise<unknown>) => {
+    setErr("");
+    setBusy(true);
+    try {
+      await f();
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+    await load();
+    setBusy(false);
+  };
+  const setSecret = (e: Event) => {
+    e.preventDefault();
+    const n = name.trim();
+    if (!n || !value) return;
+    const v = value;
+    // Never kept on the page, whatever happens.
+    setValue("");
+    void act(async () => {
+      await call(`${base}/secrets/${encodeURIComponent(n)}`, { value: v }, "PUT");
+      setName("");
+    });
+  };
+  const grant = (g: Grant, on: boolean) =>
+    act(() =>
+      call(
+        `${base}/clients/${encodeURIComponent(g.client)}/apps/${encodeURIComponent(g.app)}/secrets/${encodeURIComponent(g.name)}`,
+        undefined,
+        on ? "PUT" : "DELETE",
+      ),
+    );
+  const asksFor = (secret: string) => clients?.grants?.filter((g) => g.name === secret) ?? [];
+  const titleOf = (g: Grant) => clients?.apps.find((a) => a.client === g.client && a.app === g.app)?.title ?? g.app;
   const revoke = async (id: string) => {
     setErr("");
     try {
@@ -76,8 +138,12 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
       </ul>
       <h2>Project secrets</h2>
       <p class="dim">
-        Secrets set by name for this project, by agents with <code>secrets.write</code>: who set each last, and when. Their values are never shown.
+        Secrets set by name for this project, by its owners here or by agents with <code>secrets.write</code>: who set each last, and when. Their
+        values are never shown.
         {secrets ? ` At most ${secrets.max}.` : ""}
+        {clients?.clients.length
+          ? " A product asks to send one for one of its apps to one host (studio's egress); once you allow that, it gets the value for that app and host only, each read is counted here, and an agent changing the value stops it until you allow it again."
+          : ""}
       </p>
       {secrets?.secrets.length === 0 && <p class="dim">None.</p>}
       <ul class="platform-list" data-project-secrets>
@@ -97,10 +163,61 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
                   ) : null}
                 </>
               ) : null}
-            </span>
+            </span>{" "}
+            <button class="control-linkish" data-project-secret-clear={s.name} disabled={busy} onClick={() => void act(() => call(`${base}/secrets/${encodeURIComponent(s.name)}`, undefined, "DELETE"))}>
+              Clear
+            </button>
+            {asksFor(s.name).map((g) => (
+              <label key={`${g.client}/${g.app}`} class="platform-mirror">
+                <input
+                  type="checkbox"
+                  data-project-secret-grant={`${g.client}/${g.app}/${g.name}`}
+                  checked={g.granted_at !== null && !g.stale}
+                  disabled={busy}
+                  onChange={() => void grant(g, g.granted_at === null || g.stale)}
+                />{" "}
+                Let <b>{g.client}</b> send it for <bdi>{titleOf(g)}</bdi> to <code>{g.host}</code>
+                {g.stale ? (
+                  <span class="control-error"> · an agent changed it since you allowed this: allow it again</span>
+                ) : g.granted_at === null ? (
+                  <span class="dim"> · asked, not allowed yet</span>
+                ) : (
+                  <span class="dim">
+                    {" "}
+                    · {g.reads ? `read ${g.reads} ${g.reads === 1 ? "time" : "times"}, last ${ago(g.last_read_at ?? g.granted_at)}` : "not read yet"}
+                    {g.changed_since_grant ? ` · changed since by ${s.updated_by?.name ?? s.updated_by?.account ?? g.value_set_by ?? "someone"}` : ""}
+                  </span>
+                )}
+              </label>
+            ))}
           </li>
         ))}
       </ul>
+      <form class="platform-link-repo" aria-label="Set a project secret" data-project-secret-form onSubmit={setSecret}>
+        <input
+          required
+          aria-label="Secret name"
+          placeholder="NAME"
+          spellcheck={false}
+          value={name}
+          data-project-secret-name
+          onInput={(e) => setName(e.currentTarget.value.toUpperCase())}
+        />
+        <input
+          required
+          type="password"
+          autoComplete="new-password"
+          spellcheck={false}
+          aria-label="Secret value"
+          placeholder="Value"
+          value={value}
+          data-project-secret-value
+          onInput={(e) => setValue(e.currentTarget.value)}
+        />
+        <button class="primary" disabled={busy || !name.trim() || !value} data-project-secret-set>
+          Set
+        </button>
+      </form>
       {err ? <p class="control-error">{err}</p> : null}
     </div>
   );

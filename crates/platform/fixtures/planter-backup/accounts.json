@@ -1,0 +1,7 @@
+{
+  "4242": { "id": 4242, "login": "jake-gh", "name": "Jake", "avatarUrl": "https://avatars.example/u/4242", "createdAt": 1760000000000, "lastSignInAt": 1761000000000 },
+  "5151": { "id": 5151, "login": "alice", "name": null, "avatarUrl": null, "createdAt": 1760000100000, "lastSignInAt": 1760000200000, "platformAccount": null },
+  "7777": { "id": 7777, "login": "newbie", "name": "New", "avatarUrl": null, "createdAt": 1760000300000, "lastSignInAt": 1760000300000 },
+  "1111": { "id": 1111, "login": "jake-gh", "name": "Not Jake", "avatarUrl": null, "createdAt": 1750000000000, "lastSignInAt": 1750000000000 },
+  "ghost": { "login": "ghost", "name": null, "avatarUrl": null, "createdAt": 1750000000000, "lastSignInAt": 1750000000000 }
+}

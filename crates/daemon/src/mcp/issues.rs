@@ -297,6 +297,11 @@ fn text(issue: &Value, events: &[Value], comments: &[Value]) -> String {
                 Some(machine) => format!("{}'s agent on {machine}", m["name"].as_str().unwrap_or("?")),
                 None => m["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("someone").to_owned(),
             };
+            // Posted for them by a product (M237: a hud box's review).
+            let by = match m["via"].as_str() {
+                Some(v) => format!("{by} via {v}"),
+                None => by,
+            };
             out += &format!("\n[{}] {by}: {}", m["seq"], m["text"].as_str().unwrap_or(""));
         }
     }

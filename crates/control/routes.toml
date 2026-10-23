@@ -35,6 +35,9 @@
 #     address and PKCE verifier (M228);
 #   - `issuer_token`: an access token the issuer handed out, as a bearer
 #     (M228).
+#   - `client_secret`: a registered issuer client's id and secret, as
+#     HTTP Basic (M229: an `oidc` client's link secret; M237: a `hud`
+#     box's).
 #   - `hosted_enrollment`: a hosted box's one-time ticket or sandbox id,
 #     and its key proving it holds the key it enrolls (M178);
 #   - `hosted`: a live hosted machine's signature (`auth::HostedAuth`),
@@ -43,7 +46,13 @@
 #     (`auth::Dialer`);
 #   - `agent_token`: a live agent grant token (M230), `Authorization:
 #     Bearer aru_agent_…`, which the platform finds by its hash and no
-#     other route reads.
+#     other route reads;
+#   - `session_or_client`: a session (or a CLI device), or a registered
+#     client's credential, which the platform checks itself
+#     (`hosted::broker::clients`, M231);
+#   - `client`: a registered client's credential only (M236,
+#     `Authorization: Bearer`, checked by the platform as M231's are), on
+#     the client's own `/api/client/...` routes.
 # - `clients`: who calls it: `page` (control's web page, in a browser or the
 #   desktop app's webview), `daemon` (arugulad), `cli` (the arugula CLI),
 #   `app` (the desktop app's own code), `browser` (a browser following a
@@ -149,6 +158,14 @@ note = "A registered client and an exact redirect address, PKCE S256. Without a 
 
 [[route]]
 method = "POST"
+path = "/oauth/consent"
+process = "hub"
+auth = "session"
+clients = ["browser"]
+note = "M229: the person's answer to the consent screen, from control's own origin, with the screen's single-use ticket in the hub session it was shown in. Allowed: kept per account and client until an unlink, and the code goes to the client; cancelled: access_denied."
+
+[[route]]
+method = "POST"
 path = "/oauth/token"
 process = "hub"
 auth = "issuer_code"
@@ -168,6 +185,65 @@ process = "hub"
 auth = "session"
 clients = ["browser"]
 note = "hud's forge assertion for a box registered as a client, in the fragment of its own page. Without a session it signs in first, as /oauth/authorize does."
+
+# hud boxes bound to a project (M237, hud_box.rs): the box's server, with its secret, and its people on the hub's page.
+
+[[route]]
+method = "GET"
+path = "/oauth/hud/members"
+process = "hub"
+auth = "client_secret"
+clients = ["product"]
+note = "A bound box's roster: its project's members now (the platform's answer), with numeric GitHub ids to match on. An unbound box gets 409 not_bound."
+
+[[route]]
+method = "POST"
+path = "/oauth/hud/posts"
+process = "hub"
+auth = "client_secret"
+clients = ["product"]
+note = "A bound box's review, waiting ten minutes for its author to post it on the hub's own page: the answer is that page's address. Nothing is posted here."
+
+[[route]]
+method = "GET"
+path = "/oauth/hud/post"
+process = "hub"
+auth = "session"
+clients = ["browser"]
+note = "The hub's page where a box review's author posts it into the object's thread, or doesn't: the text word for word, no script, no framing. Without a session it signs in first."
+
+[[route]]
+method = "POST"
+path = "/oauth/hud/post"
+process = "hub"
+auth = "session"
+clients = ["browser"]
+note = "The author's answer, from that page only (same origin), once: posted via the box, if they may post there now."
+
+# Account links (M229, links.rs): a product's server, with its link secret.
+
+[[route]]
+method = "POST"
+path = "/oauth/links"
+process = "hub"
+auth = "client_secret"
+clients = ["product"]
+note = "Links the product's user to the account an ID token it was issued is for, only when the product's numeric GitHub id for that user is the account's. Idempotent; a user or account linked otherwise is a 409."
+
+[[route]]
+method = "GET"
+path = "/oauth/links/{user}"
+process = "hub"
+auth = "client_secret"
+clients = ["product"]
+note = "The product's user's link, or 404 not_linked: how a product sees an unlink made on the platform page."
+
+[[route]]
+method = "DELETE"
+path = "/oauth/links/{user}"
+process = "hub"
+auth = "client_secret"
+clients = ["product"]
 
 [[route]]
 method = "POST"
@@ -1161,6 +1237,144 @@ auth = "agent_token"
 clients = ["agent"]
 note = "The same as PUT, for clients that only POST."
 
+# ---- platform: linked products (M229)
+# The platform page's Settings: the products whose users are linked to the
+# reader's account (the hub keeps them, beside its issuer's clients), and
+# ending one. The product sees an unlink on its next call to /oauth/links.
+
+[[route]]
+method = "GET"
+path = "/api/linked-products"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
+path = "/api/linked-products/{client}/unlink"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Audited in the hub as the person's. Also ends what the person let that product do on the platform (M236): see their projects, use Claude for them."
+
+[[route]]
+method = "PUT"
+path = "/api/linked-products/{client}/projects"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Let a registered client (studio's lobby) see the signed-in account's projects and its role in each, and keep its apps in the ones it edits (M236). Off until this; the page's only (trust, never a CLI's or an agent's)."
+
+[[route]]
+method = "DELETE"
+path = "/api/linked-products/{client}/projects"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Stop a registered client seeing the signed-in account's projects (M236): its next call naming the account is refused."
+
+# ---- platform: studio as a client (M236)
+# A registered client (studio's lobby), by its credential: its apps by
+# project, the projects of the accounts that let it see them, and the
+# project secrets a project's owners let it read. A link is never
+# authorization: an account's own switch, and a project owner's grant, are.
+
+[[route]]
+method = "GET"
+path = "/api/client/projects"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "The projects of the account the client names (arugula-account), its role and the members in each, as the platform page shows them to it: only once that account let the client see its projects, and with that person's own access token from the hub, issued to this client (arugula-access-token), as on every route here that names an account."
+
+[[route]]
+method = "GET"
+path = "/api/client/apps"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "The client's apps in the named account's projects, with its role in each (so an app's owners are its project's members): only once the account let the client see its projects."
+
+[[route]]
+method = "GET"
+path = "/api/client/apps/{app}"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "One of the client's apps and the named account's role in its project, read fresh (404 no_app, 403 not_member)."
+
+[[route]]
+method = "PUT"
+path = "/api/client/apps/{app}"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "Keep the client's app in a project the named account edits or owns (`personal` is its own); a move needs that of the project it leaves too."
+
+[[route]]
+method = "DELETE"
+path = "/api/client/apps/{app}"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "The client forgets its own app (studio retired it)."
+
+[[route]]
+method = "GET"
+path = "/api/client/apps/{app}/secrets/{name}"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "The value of the app's project's own secret (project/<NAME>), only under a project owner's grant for this client, this app and this host (?host=), and not once an agent changed the value since the grant: studio's egress broker, server side. Every read is counted and kept as an event for the project's owners, never with its value; 6,000 an hour per client and 600 per secret, and an hour of 120 reads of one secret is pushed to its owners."
+
+[[route]]
+method = "PUT"
+path = "/api/client/apps/{app}/secrets/{name}"
+process = "platform"
+auth = "client"
+clients = ["product"]
+note = "The client asks, for an owner of the app's project (named, with their access token), to send the project's own secret `name` for this app to `host`. The project's owners grant it on its settings page; a new host asks afresh."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/clients"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "The registered clients' apps in a project (M236), for its members; for its owners also which of its own secrets each client asked to send and may send, for which app and host, the reads, whether the value changed since the grant and by whom, and the latest events. Never a value."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/clients/{client}/apps/{app}/secrets/{name}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's owner lets a registered client send one of its own secrets (set already) for one of its apps there, to the host it asked for (M236); granting again after an agent changed the value says it's still the owner's. The page's only (trust); audited as an event."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/clients/{client}/apps/{app}/secrets/{name}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's owner ends a registered client's grant (or ask) of one of its own secrets for one of its apps (M236): its next read is refused. Audited as an event."
+
+[[route]]
+method = "PUT"
+path = "/api/projects/{project}/secrets/{name}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's owner sets one of its own secrets by name (M236; agents set them with set_secret, M230): sealed with the project's key (M209) and never shown. The page's only."
+
+[[route]]
+method = "DELETE"
+path = "/api/projects/{project}/secrets/{name}"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A project's owner clears one of its own secrets (M236), which ends every client's grant to read it."
+
 # ---- platform: projects
 # The platform page's list of the reader's projects (M150): their own and
 # each team's default one, with the team's members read only.
@@ -1477,6 +1691,62 @@ process = "platform"
 auth = "cloud_driver"
 clients = ["cli", "daemon"]
 note = "Turns a port's public preview off (M187): a project's owner or editor. The hub's and the machine's caches let it go within a minute."
+
+[[route]]
+method = "ANY"
+path = "/api/projects/{project}/inference/anthropic/{*rest}"
+process = "platform"
+auth = "session_or_client"
+clients = ["page", "cli", "product"]
+note = "The inference broker (M231): Anthropic's API (POST v1/messages and v1/messages/count_tokens, GET v1/models; anything else is a 404) for a member of the project, or for an account a registered client names (studio's lobby) that let it. The platform sets the key that pays (a visitor's or sponsor's the client names and that let it, the project's for an editor or owner, the account's own, or the platform's under a monthly cap and a cap on calls at once) in place of the caller's credential, streams the answer back with allowlisted headers, and reserves each message before it goes out, settling it at its final usage. No key is ever answered."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/inference/spend"
+process = "platform"
+auth = "cloud_driver"
+clients = ["page", "cli", "daemon"]
+note = "What a project's Claude calls through the broker cost in a month (M231), by account, client and whose key paid, with its hosted agent turns beside them: for its members."
+
+[[route]]
+method = "GET"
+path = "/api/inference/spend"
+process = "platform"
+auth = "session_or_client"
+clients = ["page", "cli", "product"]
+note = "An account's month on the platform's key through the broker, and its cap (M231): a member's own, or the account a registered client names, through that client."
+
+[[route]]
+method = "GET"
+path = "/api/inference/spend/paid"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "What calls on the signed-in account's own key cost in a month (M231), by project, account and client: its own, and those a registered client made naming it as a sponsor or a visitor."
+
+[[route]]
+method = "GET"
+path = "/api/inference/clients"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "The inference broker's registered clients (M231), and which the signed-in account lets act for it."
+
+[[route]]
+method = "PUT"
+path = "/api/inference/clients/{client}/consent"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Let a registered client act for the signed-in account (M231): name it in a broker call, and spend its own key when it names it as the payer (a sponsor, a visitor). Off until this; the page's only (trust, never a CLI's or an agent's)."
+
+[[route]]
+method = "DELETE"
+path = "/api/inference/clients/{client}/consent"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Stop a registered client acting for the signed-in account (M231): its next call naming the account is refused."
 
 [[route]]
 method = "GET"
@@ -1846,6 +2116,14 @@ process = "platform"
 auth = "session"
 clients = ["page"]
 note = "Sets one of an environment's secrets (M219): owners, from a browser's session only (a CLI's login and an agent's machine are refused), a name the environment lists, never a reserved one. Sealed with the project's key (M209) and never read back: only a deploy run's machine gets it, once, while it runs."
+
+[[route]]
+method = "GET"
+path = "/api/projects/{project}/deploys"
+process = "platform"
+auth = "session"
+clients = ["page", "cli"]
+note = "A project's deploys, newest first (by environment, a page at a time after `before`), whatever became of them: for its members."
 
 [[route]]
 method = "POST"
