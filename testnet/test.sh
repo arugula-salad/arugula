@@ -1206,13 +1206,17 @@ claim_issuer() {
   until="$(docker logs --since 2m "$TESTNET-control" 2>&1 | grep -c 'no longer published' || true)"
   keyf previous ""; keyf previous_until ""
   note "issuer: signed in as $(field sub < "$WORK/iss-s1") (github_id $(sed -n 's/.*"github_id":\([0-9]*\).*/\1/p' "$WORK/iss-s1")), rotated $k1 -> $k3 with no token lost, the old key gone at its time (warned: $until); hud: $(cat "$WORK/iss-hud"); hud's own verifier: $(cat "$WORK/iss-hudown")"
+}
+
 # The inference broker (M231), as studio's lobby will call it (M236):
 # testnet/lobby.ts, a registered client, for an app's owner and their
 # sponsor, against the fake Anthropic in `fakes`.
 claim_broker() {
   local owner="$WORK/broker-owner.json" sponsor="$WORK/broker-sponsor.json"
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
   devs "$owner" signin --control "$CONTROL_URL" $CONTROL_VIA --login "broker-owner-$$-$RANDOM" > /dev/null ||
     { note "broker: no owner signed in"; return 1; }
+  # shellcheck disable=SC2086 # CONTROL_VIA is several words
   devs "$sponsor" signin --control "$CONTROL_URL" $CONTROL_VIA --login "broker-sponsor-$$-$RANDOM" > /dev/null ||
     { note "broker: no sponsor signed in"; return 1; }
   node --experimental-strip-types --no-warnings "$HERE/lobby.ts" --state "$owner" --sponsor "$sponsor" \
