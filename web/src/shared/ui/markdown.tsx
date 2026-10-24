@@ -17,7 +17,9 @@ import type { ComponentChildren } from "preact";
 import { useMemo } from "preact/hooks";
 import { Chart } from "./chart";
 import { Drawing } from "./drawing";
+import { SHORTCODE, onlyEmoji, useEmoji, withEmoji } from "../chat/emoji";
 import { bodyLines, readFence } from "./embeds";
+import { CodeBlock } from "./codeblock";
 import { inline, type ForgeInline, type IsMe } from "./markup";
 
 const ITEM = /^( *)([-*+]|\d+[.)])\s+(.*)$/;
@@ -36,17 +38,20 @@ const startsBlock = (l: string) => DETAILS.test(l) || DETAILS_END.test(l) || FEN
 /** What the blocks need besides the lines: `refs` for `inline()`,
  * whether a chart or svg fence is more than code, and, for a thread's
  * message, its @mentions as `Markup` marks them. */
-type Ctx = ForgeInline & { embeds?: boolean; isMe?: IsMe; landed?: (token: string) => boolean };
+type Ctx = ForgeInline & { embeds?: boolean; chat?: boolean; isMe?: IsMe; landed?: (token: string) => boolean };
 
 /** `refs`: where a `#N` goes (`…/issues/`), or null for text (GitLab).
  * `embeds`: charts and drawings (a Doc's; a forge's body is code). `image`:
  * draws a Doc's picture from its target (`assets/x.png`); a new function
- * draws the body again. */
+ * draws the body again. `chat`: a chat message (#109): `:joy:` as emoji
+ * (large when that's all there is), a copy button and colours on code, and
+ * the tight spacing a one-line message needs (style.css `.md.chat`). */
 export function Markdown({
   text,
   refs,
   embeds,
   image,
+  chat,
   isMe,
   landed,
 }: {
@@ -54,12 +59,19 @@ export function Markdown({
   refs: string | null;
   embeds?: boolean;
   image?: ForgeInline["image"];
+  chat?: boolean;
   isMe?: IsMe;
   landed?: (token: string) => boolean;
 }) {
+  // The shortcode table comes only for a text that has one.
+  const table = useEmoji(!!chat && SHORTCODE.test(text));
   // A poll that changes nothing hands back the same text: don't parse it again.
-  const out = useMemo(() => blocks(bodyLines(text), { refs, embeds, image, isMe, landed }), [text, refs, embeds, image, isMe, landed]);
-  return <div class="md">{out}</div>;
+  const out = useMemo(
+    () => blocks(bodyLines(text), { refs, embeds, image, chat, isMe, landed, text: chat && table ? (s) => withEmoji(s, table) : undefined }),
+    [text, refs, embeds, image, chat, isMe, landed, table],
+  );
+  const jumbo = !!chat && onlyEmoji(text, table);
+  return <div class={chat ? (jumbo ? "md chat jumbo" : "md chat") : "md"}>{out}</div>;
 }
 
 // Nobody is notified by what a body says, so no mention pill, unless it's
@@ -72,6 +84,7 @@ function fenced(lines: string[], i: number, strip: number, k: number, fx: Ctx): 
   const code = f.code.join("\n");
   if (fx.embeds && f.lang === "chart") return { node: <Chart key={k} source={code} />, next: f.next };
   if (fx.embeds && f.lang === "svg") return { node: <Drawing key={k} svg={code} alt={f.alt} />, next: f.next };
+  if (fx.chat) return { node: <CodeBlock key={k} code={code} lang={f.lang ?? ""} />, next: f.next };
   return { node: <pre key={k}>{code}</pre>, next: f.next };
 }
 

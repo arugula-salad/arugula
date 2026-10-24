@@ -6933,7 +6933,7 @@ button.thread-quote:hover {
 
 .compose-box {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   align-items: end;
   border: 1px solid var(--raised-hover);
   border-radius: 8px;
@@ -6981,7 +6981,7 @@ button.thread-quote:hover {
 
 /* M123: control's chat. The composer's "Quote a pane" beside Send. */
 .compose-box.with-tools {
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto auto auto;
 }
 
 .compose-tool {
@@ -10737,4 +10737,214 @@ html[data-workspace="new"] .thread-panel {
 
 .room-agents p {
   margin: 0;
+}
+
+/* Chat's Markdown (#109): a message is a line of talk, not a document.
+   Blocks sit close, a one-line message is one line, and the pieces that
+   need room (a quote, a list, a table) get just enough. */
+.md.chat {
+  line-height: 1.46;
+  margin: 1px 0;
+}
+
+.md.chat p,
+.md.chat ul,
+.md.chat ol,
+.md.chat blockquote,
+.md.chat .md-code,
+.md.chat .md-table {
+  margin: 0 0 4px;
+}
+
+.md.chat h1,
+.md.chat h2,
+.md.chat h3 {
+  margin: 6px 0 2px;
+}
+
+.md.chat ul,
+.md.chat ol {
+  padding-left: 1.3em;
+}
+
+.md.chat li {
+  margin: 0;
+}
+
+.md.chat a {
+  color: var(--info);
+}
+
+.md.chat code {
+  border: 1px solid var(--divider);
+  background: var(--letterbox);
+  color: var(--peach);
+}
+
+.md.chat blockquote {
+  border-left-color: var(--raised-hover);
+}
+
+.md.chat table {
+  font-size: 12px;
+}
+
+.md.chat.jumbo > p {
+  font-size: 32px;
+  line-height: 1.2;
+}
+
+/* A fenced block with its copy button, shown on hover (always on a touch screen). */
+.md-code {
+  position: relative;
+}
+
+.md-code pre {
+  margin: 0;
+  padding-right: 54px;
+  background: var(--letterbox);
+}
+
+.md-code .copy-button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0;
+}
+
+.md-code:hover .copy-button,
+.md-code:focus-within .copy-button {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .md-code .copy-button {
+    opacity: 1;
+  }
+}
+
+.md pre .hl-k {
+  color: var(--accent);
+}
+
+.md pre .hl-s {
+  color: var(--ok);
+}
+
+.md pre .hl-n {
+  color: var(--peach);
+}
+
+.md pre .hl-c {
+  color: var(--dim);
+  font-style: italic;
+}
+
+/* Emoji (#105): the autocomplete reuses the mention list's box. */
+.emoji-pick .emoji-char {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.emoji-picker {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% + 4px);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  height: 340px;
+  max-height: 60dvh;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+}
+
+.emoji-search {
+  flex: none;
+  margin: 8px 8px 4px;
+  padding: 6px 10px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--letterbox);
+  border: 1px solid var(--raised-hover);
+  border-radius: 6px;
+  outline: none;
+}
+
+.emoji-search:focus {
+  border-color: var(--dim);
+}
+
+.emoji-cats {
+  flex: none;
+  display: flex;
+  overflow-x: auto;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.emoji-cats button {
+  flex: none;
+  padding: 4px 7px;
+  font-size: 16px;
+  line-height: 1.3;
+  border-bottom: 2px solid transparent;
+  opacity: 0.6;
+}
+
+.emoji-cats button[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  opacity: 1;
+}
+
+.emoji-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+  align-content: start;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.emoji-grid button {
+  height: 36px;
+  font-size: 22px;
+  line-height: 1;
+  border-radius: 6px;
+}
+
+.emoji-grid button:hover,
+.emoji-grid button:focus-visible {
+  background: var(--raised);
+}
+
+.emoji-note {
+  grid-column: 1 / -1;
+  margin: 8px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+/* On a phone the picker is a sheet along the bottom of the screen. */
+@media (max-width: 600px) {
+  .emoji-picker {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    height: 45dvh;
+    border-radius: 12px 12px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .emoji-grid button {
+    height: 42px;
+  }
 }

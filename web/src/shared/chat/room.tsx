@@ -18,8 +18,10 @@ import { chat, type PaneQuote } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
 import { agentLines, authorLabel } from "./agents";
 import { Markdown } from "../ui/markdown";
-import { Markup, mentionToken } from "../ui/markup";
+import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
+import { EmojiPicker } from "./emoji-picker";
+import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
 
@@ -208,7 +210,6 @@ export function RoomBody({
   name,
   between,
   empty,
-  markdown,
 }: {
   room: ChatRoom;
   phone: boolean;
@@ -222,9 +223,6 @@ export function RoomBody({
   between?: Between[];
   /** What the room says before anything's in it, instead of its own. */
   empty?: string;
-  /** Messages with all of GitHub's Markdown (an issue's comments, moved
-   * from GitHub), not just a chat's. */
-  markdown?: boolean;
 }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const [error, setError] = useState<string | null>(null);
@@ -329,7 +327,7 @@ export function RoomBody({
                     <span>New</span>
                   </div>
                 )}
-                <RoomMessage room={current} m={m} prev={prev} reply={(q) => composeRef.current?.reply(q)} setError={setError} markdown={markdown} />
+                <RoomMessage room={current} m={m} prev={prev} reply={(q) => composeRef.current?.reply(q)} setError={setError} />
               </Fragment>
             );
           })}
@@ -357,14 +355,12 @@ function RoomMessage({
   prev,
   reply,
   setError,
-  markdown,
 }: {
   room: ChatRoom;
   m: ChatMessage;
   prev?: ChatMessage;
   reply: (text: string) => void;
   setError: (e: string | null) => void;
-  markdown?: boolean;
 }) {
   const head =
     !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || prev.via !== m.via || m.at - prev.at > 5 * 60_000;
@@ -441,12 +437,7 @@ function RoomMessage({
             }}
           />
         ) : (
-          m.text &&
-          (markdown ? (
-            <Markdown text={m.text} refs={null} isMe={chat.isMe} landed={landed} />
-          ) : (
-            <Markup text={m.text} isMe={chat.isMe} landed={landed} />
-          ))
+          m.text && <Markdown text={m.text} refs={null} chat isMe={chat.isMe} landed={landed} />
         )}
         {m.edited !== null && !editing && <span class="thread-tag" title={new Date(m.edited).toLocaleString()}>(edited)</span>}
         {m.pane && <PaneChip pane={m.pane} quote={m.quote} />}
@@ -500,6 +491,12 @@ function RoomMessage({
   );
 }
 
+/** Whether the caret is inside a ``` block that hasn't closed: Enter there is
+ * a new line in the code, and Ctrl/Cmd+Enter sends. */
+function inOpenFence(text: string, caret: number): boolean {
+  return ((text.slice(0, caret).match(/^ {0,3}(?:```|~~~)/gm) ?? []).length & 1) === 1;
+}
+
 function EditBox({ text: start, done }: { text: string; done: (t: string | null) => void }) {
   const [text, setText] = useState(start);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -513,13 +510,13 @@ function EditBox({ text: start, done }: { text: string; done: (t: string | null)
         onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
         onKeyDown={(e) => {
           if (e.key === "Escape") done(null);
-          if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+          if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !inOpenFence(text, (e.target as HTMLTextAreaElement).selectionStart)) {
             e.preventDefault();
             done(text.trim() ? text : null);
           }
         }}
       />
-      <span class="dim">Enter saves, Esc cancels</span>
+      <span class="dim">Enter saves, Shift+Enter is a new line, Esc cancels</span>
     </div>
   );
 }
@@ -603,6 +600,7 @@ function RoomCompose({
   const [pick, setPick] = useState(0);
   const [missed, setMissed] = useState<string[]>([]);
   const [picking, setPicking] = useState(false);
+  const [emoji, setEmoji] = useState(false);
   // Quoting reads a pane on a machine of yours: none, no button.
   const api = usePlatformApi();
   useSubscribe((fn) => api.subscribe(fn));
@@ -647,6 +645,37 @@ function RoomCompose({
       const at = start + token.length + 1;
       input.current?.setSelectionRange(at, at);
       input.current?.focus();
+    });
+  };
+
+  // `:jo` after a space or at the start: the shortcodes that begin so (two
+  // letters, so a time like 10:3 doesn't ask). The table loads on the first.
+  const coloned = /(?:^|[^\w:]):([\w+-]{2,})$/.exec(text.slice(0, caret));
+  const table = useEmoji(!!coloned);
+  const emojis = coloned && table && !options.length ? findEmoji(table, coloned[1], 8) : [];
+  const chooseEmoji = (char: string) => {
+    const start = caret - coloned![1].length - 1;
+    rememberEmoji(char);
+    setText(`${text.slice(0, start)}${char} ${text.slice(caret)}`);
+    setPick(0);
+    requestAnimationFrame(() => {
+      const at = start + char.length + 1;
+      input.current?.setSelectionRange(at, at);
+      input.current?.focus();
+    });
+  };
+  // From the picker: at the caret (or the end, before it's been in the box).
+  const insert = (char: string) => {
+    const el = input.current;
+    const from = el?.selectionStart ?? text.length;
+    const to = el?.selectionEnd ?? from;
+    setText(`${text.slice(0, from)}${char}${text.slice(to)}`);
+    // A phone keeps the keyboard down: the picker stays for the next one.
+    if (!phone) setEmoji(false);
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.setSelectionRange(from + char.length, from + char.length);
+      if (!phone) el.focus();
     });
   };
 
@@ -711,6 +740,26 @@ function RoomCompose({
           ))}
         </ul>
       )}
+      {emoji && <EmojiPicker pick={insert} close={() => setEmoji(false)} />}
+      {emojis.length > 0 && (
+        <ul class="mention-pick emoji-pick" role="listbox" aria-label="Emoji">
+          {emojis.map((e, i) => (
+            <li
+              key={e.char}
+              role="option"
+              aria-selected={i === pick % emojis.length}
+              class={i === pick % emojis.length ? "picked" : ""}
+              onMouseDown={(ev) => {
+                ev.preventDefault();
+                chooseEmoji(e.char);
+              }}
+            >
+              <span class="emoji-char">{e.char}</span>
+              <b>:{e.names[0]}:</b>
+            </li>
+          ))}
+        </ul>
+      )}
       <div class={canQuote ? "compose-box with-tools" : "compose-box"}>
         {quote && (
           <div class="thread-quote pending" data-quote-pending>
@@ -734,9 +783,15 @@ function RoomCompose({
             setText((e.target as HTMLTextAreaElement).value);
           }}
           onKeyDown={(e) => {
-            if (options.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+            const n = options.length || emojis.length;
+            if (n && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
               e.preventDefault();
-              setPick((p) => (p + (e.key === "ArrowDown" ? 1 : options.length - 1)) % options.length);
+              setPick((p) => (p + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+              return;
+            }
+            if (emojis.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !e.isComposing))) {
+              e.preventDefault();
+              chooseEmoji(emojis[pick % emojis.length].char);
               return;
             }
             if (options.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !whole))) {
@@ -745,6 +800,8 @@ function RoomCompose({
               return;
             }
             if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+              // In a ``` block Enter writes the next line; Ctrl/Cmd+Enter sends.
+              if (!(e.ctrlKey || e.metaKey) && inOpenFence(text, caret)) return;
               e.preventDefault();
               void send();
             }
@@ -756,7 +813,14 @@ function RoomCompose({
             <path d="M4 6l2 2-2 2M8 10h4" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </button>)}
-        <button class="compose-send" type="submit" title="Send (Enter)" aria-label="Send" disabled={sending || (!text.trim() && !quote)}>
+        <button type="button" class="compose-tool" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button onClick={() => setEmoji((v) => !v)}>
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
+            <circle cx="8" cy="8" r="6.2" />
+            <path d="M5.4 9.6c.6 1.1 1.5 1.6 2.6 1.6s2-.5 2.6-1.6" stroke-linecap="round" />
+            <path d="M5.9 6.2v.6M10.1 6.2v.6" stroke-linecap="round" stroke-width="1.8" />
+          </svg>
+        </button>
+        <button class="compose-send" type="submit" title="Send (Enter; Shift+Enter for a new line)" aria-label="Send" disabled={sending || (!text.trim() && !quote)}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
             <path d="M2 2.5l12 5.5-12 5.5 1.8-5.5L2 2.5zm1.8 5.5h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
           </svg>
