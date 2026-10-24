@@ -219,6 +219,65 @@ test("with every daemon stopped, they write in #general and a DM, from the web a
   await expect(list.locator(".thread-msg").last()).toContainText("still here with alices asleep");
 });
 
+test("messages are Markdown with emoji: lists, quotes and code; :ta offers 🎉; the picker inserts; a phone fits", async () => {
+  test.setTimeout(90_000);
+  await platform(aliceChat, `/chat/${general}`);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const box = room.getByRole("textbox", { name: "Message #general" });
+  await expect(box).toBeVisible({ timeout: 15_000 });
+
+  // Enter inside an open fence is a new line; the closing fence lets it send.
+  await box.fill("- one\n- two\n\n> quoted\n\n```ts\nconst a = 1;");
+  await box.press("Enter");
+  await expect(box).toHaveValue(/const a = 1;\n$/);
+  await box.pressSequentially("```");
+  await box.press("Enter");
+  const md = room.locator(".thread-msg").last().locator(".md.chat");
+  await expect(md.locator("ul > li")).toHaveCount(2);
+  await expect(md.locator("blockquote")).toHaveText("quoted");
+  await expect(md.locator(".md-code pre")).toContainText("const a = 1;");
+  await expect(md.locator(".md-code .hl-k")).toHaveText("const");
+  await expect(md.locator(".md-code [data-copy]")).toBeAttached();
+
+  // A short message is one line, with no margins around its paragraph.
+  await box.fill("just one line");
+  await box.press("Enter");
+  const one = room.locator(".thread-msg").last().locator(".md.chat p");
+  await expect(one).toHaveText("just one line");
+  expect((await one.boundingBox())!.height).toBeLessThan(26);
+
+  // `:ta` offers the party popper; Tab puts the character in the text.
+  await box.fill("party :ta");
+  await expect(room.locator(".emoji-pick li").first()).toContainText("🎉");
+  await box.press("Tab");
+  await expect(box).toHaveValue("party 🎉 ");
+
+  // The picker inserts at the caret, and old stored shortcodes draw as emoji.
+  await box.fill("ab");
+  await box.press("ArrowLeft");
+  await room.locator("[data-emoji-button]").click();
+  await room.locator("[data-emoji-picker] .emoji-search").fill("tada");
+  await room.locator('[data-emoji-picker] [data-emoji="🎉"]').click();
+  await expect(box).toHaveValue("a🎉b");
+  await box.fill(":joy: :+1:");
+  await box.press("Enter");
+  await expect(room.locator(".thread-msg").last()).toContainText("😂 👍");
+  await box.fill("🎉");
+  await box.press("Enter");
+  await expect(room.locator(".thread-msg").last().locator(".md.chat.jumbo")).toBeVisible();
+
+  // Phone width: the code block scrolls inside the message, the page doesn't.
+  await platform(bob, "/chat");
+  const list = bob.locator("[data-chat-control]");
+  await list.locator(`[data-chat-room="${general}"]`).click();
+  await expect(list.locator(".thread-msg .md-code").last()).toBeVisible({ timeout: 15_000 });
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await list.locator("[data-emoji-button]").click();
+  const sheet = list.locator("[data-emoji-picker]");
+  await expect(sheet).toBeVisible();
+  expect((await sheet.boundingBox())!.width).toBeLessThanOrEqual(390);
+});
+
 test("a mention pushes, and the push's tap opens the room at the message", async () => {
   // A room Bob doesn't have open, and wasn't pushed for in the last minute
   // (control pushes once a minute per room).
