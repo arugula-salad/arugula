@@ -1,6 +1,6 @@
 // Team chat as one piece (#123): the sidebar and the room, as the platform
-// page shows them, for any host to mount: the platform page today, a
-// multiplexer block later. Not mounted by the shell yet.
+// page shows them, for any host to mount: the platform page, and the
+// shell's chat block (../../shell/blocks/team-chat).
 //
 // What a host provides:
 //  - a `PlatformApiContext` (../platform-api): `nav` (where a room, a
@@ -11,19 +11,20 @@
 //    true when it is on for them, and `maintenance` says when control is down;
 //  - the `route` it is showing, read from its own address: a host with no
 //    address of its own (a block) keeps it in its layout entry;
-//  - `.chat` styles and a box with a height to fill.
+//  - `.chat` styles and a box with a height to fill; `fit` says how it
+//    fits that box (a narrow one, a single pinned room, one of several).
 
 import { maintenance, MAINTENANCE_SAID } from "../maintenance";
 import { useSubscribe } from "../ui/hooks";
 import { usePlatformApi } from "../platform-api";
 import type { ChatRoute } from "./route";
-import { RoomsView, useChat } from "./rooms";
+import { RoomsView, useChat, type ChatFit } from "./rooms";
 
-export function ChatApp({ route }: { route: ChatRoute }) {
+export function ChatApp({ route, fit }: { route: ChatRoute; fit?: ChatFit }) {
   const { Bar } = usePlatformApi();
   const store = useChat();
   useSubscribe((fn) => maintenance.subscribe(fn));
-  if (store) return <RoomsView route={route} store={store} />;
+  if (store) return <RoomsView route={route} store={store} fit={fit} />;
   return (
     <div class="chat" data-chat data-chat-off>
       <Bar />

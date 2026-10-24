@@ -617,6 +617,19 @@ pub struct OpenWorkspaceArgs {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub struct ShowChatArgs {
+    /// A room to open on, by its id (read_thread and search_threads give them): team chat opens on it, with the sidebar. Default: the newest unread room.
+    #[serde(default)]
+    pub room: Option<String>,
+    /// With room: a block for that room alone, without the sidebar, to leave beside a terminal (a deploy channel beside the deploy).
+    #[serde(default)]
+    pub pinned: bool,
+    /// Beside this pane. Default: the caller's own pane (an agent block, or the terminal pane `arugula mcp` runs in).
+    #[serde(default)]
+    pub beside: Option<PaneArg>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 pub struct OpenPrArgs {
     /// The pull request: its link (a Forgejo PR's or a GitLab MR's),
     /// OWNER/REPO#N, GROUP/PROJECT!N (GitLab), or N (in dir's repository).
@@ -903,6 +916,12 @@ const SHOW: &[Kind] = &[
         flag: None,
     },
     super::ops::kind::<ConversationOpen>(),
+    Kind {
+        name: "chat",
+        description: "Team chat as a block beside a pane: the user's channels, direct messages, threads and Activity, with everything the chat page has. Pinned to a room (room, pinned) it is that room alone. It reads as the user, through Arugula control, so it shows nothing on a machine that has not joined it. Read and post in rooms with read_thread and post_thread.",
+        schema: schema_for_type::<ShowChatArgs>,
+        flag: None,
+    },
     Kind {
         name: "app",
         description: "One of the user's studio apps (a box with its own agent, hud) as an app block: the app in a frame, and its agent's questions as asks on the block; send_input to the block prompts its agent. Without app: lists the user's apps.",
@@ -2089,6 +2108,10 @@ impl<'a> Call<'a> {
                 Err(e) => Err(e),
             },
             ("show", Some("conversation")) => super::ops::call::<ConversationOpen>(self, args).await,
+            ("show", Some("chat")) => match parse(args) {
+                Ok(a) => self.show_chat(a).await,
+                Err(e) => Err(e),
+            },
             ("show", Some("app")) => match parse(args) {
                 Ok(a) => self.open_app(a).await,
                 Err(e) => Err(e),
@@ -3104,6 +3127,34 @@ impl<'a> Call<'a> {
         let block = self.open(req).await?;
         let at = a.line.map(|l| format!(" at line {l}")).unwrap_or_default();
         done(format!("Showing {}{at} in file block %{block}", a.path), results::BlockOnly { block })
+    }
+
+    /// `show chat`: team chat beside the caller's pane, on a room or pinned
+    /// to one.
+    async fn show_chat(&self, a: ShowChatArgs) -> Out {
+        let room = a.room.map(|r| r.trim().to_owned()).filter(|r| !r.is_empty());
+        if a.pinned && room.is_none() {
+            return Err("pinned needs the room to pin to".into());
+        }
+        let (beside, host) = self.beside(a.beside.as_ref()).await?;
+        let req = OpenRequest {
+            kind: BlockType::TeamChat,
+            config: json!({ "room": room, "pinned": a.pinned }),
+            session: None,
+            split: beside,
+            from_pane: beside,
+            vm: false,
+            image: None,
+            host,
+            local: host.is_none(),
+        };
+        let block = self.open(req).await?;
+        let what = match (&room, a.pinned) {
+            (Some(r), true) => format!("pinned to {r}"),
+            (Some(r), false) => format!("on {r}"),
+            _ => "on the newest unread room".into(),
+        };
+        done(format!("Showing team chat {what} in block %{block}"), results::BlockOnly { block })
     }
 
     /// `doc new`: the block beside the caller's pane, then its outline.

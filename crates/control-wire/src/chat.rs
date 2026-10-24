@@ -796,12 +796,16 @@ pub struct ChatFound {
 
 /// `POST /api/chat/live/open`: the room a page's stream has open (`None`:
 /// none, or the page is hidden). Nobody is pushed for a room they have
-/// open.
+/// open. A page with several chat blocks (#123) has several: `room` is the
+/// first and `more` the rest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatOpen {
     pub stream: String,
     pub room: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub more: Option<Vec<String>>,
 }
 
 /// How a person's presence shows to the teammates who see it: `active` (a

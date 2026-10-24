@@ -20,7 +20,7 @@ import { usePhone, useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import type { ChatRoute } from "./route";
 import { SavedView } from "./saved";
-import { RoomActivityView, RoomSearchView, SearchField, openSwitcher, useSwitcherOpen, closeSwitcher } from "./find";
+import { RoomActivityView, RoomSearchView, SearchField } from "./find";
 import { MsgAvatar } from "./avatar";
 import { WebPreviewsSwitch } from "./previews";
 import { AboutButton, editDescription, editTopic, PinsButton, TopicLine } from "./pins-ui";
@@ -190,8 +190,25 @@ function pickRoom(store: ChatStore, route: ChatRoute, phone: boolean): ChatRoom 
   return live.filter((r) => r.unread).sort(byNewest)[0] ?? live.filter((r) => r.last).sort(byNewest)[0] ?? live[0] ?? null;
 }
 
-export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore }) {
-  const phone = usePhone();
+/** How a host fits chat in its box (#123). The platform page fills the
+ * window and has neither. */
+export interface ChatFit {
+  /** Draw the phone's one-pane-at-a-time layout though the window is wide: a
+   * block is as narrow as its slot. */
+  narrow?: boolean;
+  /** One room, no sidebar: the room is the route's. */
+  pinned?: boolean;
+  /** The page has other views of chat (blocks): keys answer only while focus
+   * is in this one. */
+  scoped?: boolean;
+}
+
+export function RoomsView({ route, store, fit = {} }: { route: ChatRoute; store: ChatStore; fit?: ChatFit }) {
+  const phone = usePhone() || !!fit.narrow;
+  // The keys (and the switcher they open) are this view's while focus is in
+  // it: a page with two chat blocks has two views.
+  const root = useRef<HTMLDivElement>(null);
+  const [switching, setSwitching] = useState(false);
   const api = usePlatformApi();
   const { nav, Bar } = api;
   useSubscribe((fn) => store.subscribe(fn));
@@ -217,7 +234,7 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
   useEffect(() => () => document.documentElement.style.removeProperty("--chat-side"), []);
 
   const order = groups.flatMap((g) => (collapsed.has(g.key) ? [] : g.rooms));
-  useRoomKeys(order, picked?.id ?? null, () => void store.readAll(), nav);
+  useRoomKeys(fit.pinned ? [] : order, picked?.id ?? null, () => void store.readAll(), nav, () => setSwitching(true), fit.scoped && !fit.pinned ? root : null);
   const savedTodo = store.savedTodo();
   const mentions = store.rooms.reduce((n, r) => n + (r.mentions ? 1 : 0), 0);
 
@@ -370,9 +387,26 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
     openMenu({ clientX: r.left, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items);
   };
 
+  if (fit.pinned) {
+    return (
+      <div class={phone ? "chat phone pinned" : "chat pinned"} ref={root} data-chat data-chat-control data-chat-pinned={route.room}>
+        <MaintenanceNote />
+        {picked ? (
+          <div class="chat-body">
+            <RoomView key={picked.id} store={store} room={picked} phone={phone} focus={route.msg} pinned />
+          </div>
+        ) : (
+          <div class="chat-thread chat-empty" data-room-missing>
+            That room isn't one you can read (or it's gone).
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (phone) {
     return (
-      <div class="chat phone" data-chat data-chat-control>
+      <div class="chat phone" ref={root} data-chat data-chat-control>
         {view ?? (
           <>
             <header class="chat-head">
@@ -416,12 +450,12 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
 
   const ts = teams(api);
   return (
-    <div class="chat" data-chat data-chat-control>
+    <div class="chat" ref={root} data-chat data-chat-control>
       <Bar>
         <SearchField route={route} />
       </Bar>
       <MaintenanceNote />
-      <RoomSwitcher rooms={order} />
+      <RoomSwitcher rooms={order} open={switching} close={() => setSwitching(false)} />
       <div class="chat-body">
         <aside class="chat-side">
           <header class="chat-side-head">
@@ -457,7 +491,7 @@ function topicOf(r: ChatRoom, api: PlatformApi): string {
   }
 }
 
-function RoomView({ store, room, phone, focus }: { store: ChatStore; room: ChatRoom; phone: boolean; focus?: number }) {
+function RoomView({ store, room, phone, focus, pinned }: { store: ChatStore; room: ChatRoom; phone: boolean; focus?: number; pinned?: boolean }) {
   const [details, setDetails] = useState(detailsOpen && !phone);
   const api = usePlatformApi();
   const { nav, toast } = api;
@@ -482,7 +516,7 @@ function RoomView({ store, room, phone, focus }: { store: ChatStore; room: ChatR
     <div class="chat-main">
       <section class="chat-thread" aria-label={name} data-room-view={room.id}>
         <header class="chat-head">
-          {phone && (
+          {phone && !pinned && (
             <button class="chat-back" title="Every room" aria-label="Every room" onClick={() => nav.openChat()}>
               ‹
             </button>
@@ -527,7 +561,7 @@ function RoomView({ store, room, phone, focus }: { store: ChatStore; room: ChatR
               ⓘ
             </button>
           )}
-          {phone && (
+          {phone && !pinned && (
             <button class="thread-close" title="Close" aria-label="Close chat" onClick={nav.closeChat}>
               ✕
             </button>
@@ -606,9 +640,8 @@ function RoomDetails({ store, room, close }: { store: ChatStore; room: ChatRoom;
 
 // ---- the switcher (Ctrl/Cmd+K) and keys
 
-function RoomSwitcher({ rooms }: { rooms: ChatRoom[] }) {
+function RoomSwitcher({ rooms, open, close }: { rooms: ChatRoom[]; open: boolean; close: () => void }) {
   const api = usePlatformApi();
-  const open = useSwitcherOpen();
   const [q, setQ] = useState("");
   const [pick, setPick] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -625,11 +658,11 @@ function RoomSwitcher({ rooms }: { rooms: ChatRoom[] }) {
     .map((x) => x.r)
     .slice(0, 12);
   const go = (r: ChatRoom | undefined) => {
-    closeSwitcher();
+    close();
     if (r) api.nav.openRoom(r.id);
   };
   return (
-    <div class="chat-switcher-back" onMouseDown={(e) => e.target === e.currentTarget && closeSwitcher()}>
+    <div class="chat-switcher-back" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div class="chat-switcher" role="dialog" aria-label="Jump to a room" data-chat-switcher>
         <input
           ref={input}
@@ -642,7 +675,7 @@ function RoomSwitcher({ rooms }: { rooms: ChatRoom[] }) {
           onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.preventDefault();
-              closeSwitcher();
+              close();
             } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();
               if (list.length) setPick((p) => (p + (e.key === "ArrowDown" ? 1 : list.length - 1)) % list.length);
@@ -680,12 +713,14 @@ function RoomSwitcher({ rooms }: { rooms: ChatRoom[] }) {
 
 /** Ctrl/Cmd+K: the switcher. Alt+↑/↓: the room above or below; with
  * Shift, the next unread one. Shift+Esc: everything read. */
-function useRoomKeys(rooms: ChatRoom[], picked: string | null, markAll: () => void, nav: ChatNav) {
+function useRoomKeys(rooms: ChatRoom[], picked: string | null, markAll: () => void, nav: ChatNav, openSwitcher: () => void, within: { current: HTMLElement | null } | null) {
   const latest = useRef({ rooms, picked, markAll, nav });
   latest.current = { rooms, picked, markAll, nav };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (document.querySelector(".menu, .prompt")) return;
+      // A block answers only while focus is in it.
+      if (within && !within.current?.contains(document.activeElement)) return;
       const { rooms, picked, markAll, nav } = latest.current;
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
         e.preventDefault();

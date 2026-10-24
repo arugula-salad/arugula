@@ -35,6 +35,7 @@ import "./pins-hooks";
 import { longPress, mayReact, ReactionChips, ReactMenu } from "./reactions-ui";
 import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
+import { useChatShown } from "./shown";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
 
 // ---- machines, by control's id for them
@@ -273,16 +274,23 @@ export function RoomBody({
   // Marked unread from a message (#116): the line is there, and stays.
   const newAt = chat.heldAt(room.id) ?? newFrom.current;
 
+  // Who has this room open, to control: this view, not the page; and only
+  // while it's on screen (a chat block in another tab isn't).
+  const opener = useRef({}).current;
+  const shown = useChatShown();
+  useEffect(() => {
+    if (!shown) return;
+    chat.setOpen(room.id, opener);
+    return () => chat.setOpen(null, opener);
+  }, [room.id, shown]);
   useEffect(() => {
     chat.load(room.id).catch((e: Error) => setError(e.message));
     // Fresh each time it opens: who reads it, and whose agents (M197).
     chat.detailOf(room.id, true).catch(() => {});
-    chat.setOpen(room.id);
     setEditing(null);
     stuck.current = true;
     setAtBottom(true);
     setSeenTo(0);
-    return () => chat.setOpen(null);
   }, [room.id]);
 
   // What's shown is read; the newest stays in view (or the message a link
@@ -343,9 +351,9 @@ export function RoomBody({
     // Scrolled up, what's below isn't read yet: the button says so.
     // A room marked unread on purpose (#116) stays so while it's open.
     const held = chat.heldAt(room.id) !== undefined;
-    if (last !== undefined && atBottom && !held && document.visibilityState === "visible" && (current.unread > 0 || last > current.read))
+    if (last !== undefined && atBottom && shown && !held && document.visibilityState === "visible" && (current.unread > 0 || last > current.read))
       void chat.read(room.id, last);
-  }, [room.id, last, current.unread, atBottom, chat.heldAt(room.id)]);
+  }, [room.id, last, current.unread, atBottom, shown, chat.heldAt(room.id)]);
   // Esc: read it all, and to the newest. Not when something else is using
   // Esc (a menu, a picker, an edit, the mention list, a dialog), and Shift+Esc
   // is everything (rooms.tsx).

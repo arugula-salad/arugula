@@ -946,6 +946,10 @@ pub enum BlockType {
     /// with every tool off, in a folder the daemon owns, and no repo, shell
     /// or MCP. Config `{agent: claude, model?, title?, prompt?}`.
     Chat,
+    /// Team chat (#123): the platform's channels, messages and threads in a
+    /// block, read through Arugula control as the person looking. Config
+    /// `{room?, pinned?, view?, q?}`; the daemon keeps no message.
+    TeamChat,
     /// A type a newer daemon has and this build doesn't know: its state
     /// still parses. Nothing opens one, and the web client's types leave
     /// it out.

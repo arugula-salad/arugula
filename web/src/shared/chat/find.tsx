@@ -1,6 +1,6 @@
 // Getting around the chat page (M75): search and Activity (your mentions
-// and what needs you) over control's rooms (M123), and whether the
-// switcher (Ctrl/Cmd+K, drawn by ./rooms) is open.
+// and what needs you) over control's rooms (M123). The switcher
+// (Ctrl/Cmd+K) is ./rooms'.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { useSubscribe } from "../ui/hooks";
@@ -192,34 +192,4 @@ export function SearchField({ route, phone }: { route: ChatRoute; phone?: boolea
       }}
     />
   );
-}
-
-// ---- the switcher (Ctrl/Cmd+K)
-
-let switcherOpen = false;
-const switcherListeners = new Set<() => void>();
-
-export function openSwitcher() {
-  switcherOpen = true;
-  switcherListeners.forEach((fn) => fn());
-}
-
-export function closeSwitcher() {
-  switcherOpen = false;
-  switcherListeners.forEach((fn) => fn());
-}
-
-/** Whether the switcher is open, kept current (control's chat, M123,
- * draws its own list of rooms in it). */
-export function useSwitcherOpen(): boolean {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const fn = () => setTick((t) => t + 1);
-    switcherListeners.add(fn);
-    return () => {
-      switcherListeners.delete(fn);
-      switcherOpen = false;
-    };
-  }, []);
-  return switcherOpen;
 }

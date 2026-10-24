@@ -9,6 +9,7 @@ pub mod app;
 pub mod attention;
 pub mod call;
 pub mod capture;
+pub mod chat;
 pub mod claude;
 pub mod close;
 pub mod cloud;

@@ -83,6 +83,7 @@ mod selfupdate;
 mod server;
 mod setup;
 mod share;
+mod team_chat;
 use arugula_mux::shellenv;
 use arugula_mux::shellint;
 use arugula_mux::shim;
@@ -730,6 +731,7 @@ fn kinds(
     forges::kinds(&mut kinds);
     kinds.add(BlockType::Invite, invite::card::InviteKind(invite.clone()));
     kinds.add(BlockType::Doc, docs::DocKind);
+    kinds.add(BlockType::TeamChat, Make(team_chat::TeamChat::create));
     labs::kinds(&mut kinds, invite);
     kinds
 }
@@ -1201,6 +1203,7 @@ mod tests {
             BlockType::Agents,
             BlockType::Doc,
             BlockType::Chat,
+            BlockType::TeamChat,
             BlockType::Unknown,
         ];
         // A new type is a compile error here until it is listed above.
@@ -1220,6 +1223,7 @@ mod tests {
                 | BlockType::Agents
                 | BlockType::Doc
                 | BlockType::Chat
+                | BlockType::TeamChat
                 | BlockType::Unknown => {}
             }
             let made = !matches!(kind, BlockType::Terminal | BlockType::Unknown);

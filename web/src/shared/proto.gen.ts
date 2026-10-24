@@ -147,7 +147,7 @@ export type Attention = "idle" | "working" | "needs_input" | "done";
  * What a block is; where one runs is its `host`, not its type. All types
  * share one id space (`%N`) and one place in the layout tree.
  */
-export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat";
+export type BlockType = "terminal" | "browser" | "agent" | "editor" | "diff" | "file" | "remote" | "workspace" | "app" | "forge" | "invite" | "agents" | "doc" | "chat" | "team_chat";
 
 /**
  * A side of a PR: which repository (a fork's, for its head), branch and
@@ -334,9 +334,10 @@ export type ChatNewDm = { with: string, };
 /**
  * `POST /api/chat/live/open`: the room a page's stream has open (`None`:
  * none, or the page is hidden). Nobody is pushed for a room they have
- * open.
+ * open. A page with several chat blocks (#123) has several: `room` is the
+ * first and `more` the rest.
  */
-export type ChatOpen = { stream: string, room: string | null, };
+export type ChatOpen = { stream: string, room: string | null, more?: Array<string>, };
 
 /**
  * `POST /api/chat/targets`: the thread about a pane or a session, or an
