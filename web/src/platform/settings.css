@@ -114,6 +114,18 @@
   gap: 4px;
 }
 
+/* On a light palette a settings card is big (an environment's holds its
+   deploys), and swarm.css's tint flooded it with its tone: Latte's
+   production read solid green. Here the bar says the state, the border
+   only hints at it, and the card is the surface with the faintest cast,
+   as calm as it is on a dark palette. */
+@supports (color: oklch(from red l c h)) {
+  html[data-scheme="light"] .platform .sw-cards.settings-cards .sw-card {
+    border-color: oklch(from var(--c) 0.88 min(calc(c * 0.35), 0.04) h);
+    background: color-mix(in srgb, var(--c) 4%, var(--surface));
+  }
+}
+
 .platform .agent-token-reach {
   color: var(--fg);
   overflow-wrap: anywhere;
