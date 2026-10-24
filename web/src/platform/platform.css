@@ -79,9 +79,11 @@ html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
 }
 
 /* The panel is the frame's width; what's in it keeps a reading width,
-   the old column's. Any rule of a page's own says otherwise. */
+   the old column's, centred in it as the column was. Any rule of a
+   page's own says otherwise. */
 :where(.platform-section) > * {
   max-width: 880px;
+  margin-inline: auto;
 }
 
 .platform-section + .platform-section {
