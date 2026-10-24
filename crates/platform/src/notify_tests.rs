@@ -332,12 +332,12 @@ async fn do_not_disturb_covers_other_notices_only_when_asked() {
 
 #[test]
 fn the_migration_carries_muted_over_to_nothing() {
-    // A database as 0037 left it, with a muted room and an open one.
+    // A database as 0041 left it, with a muted room and an open one.
     let mut c = rusqlite::Connection::open_in_memory().unwrap();
-    crate::db::migrate::run_to(&mut c, 37).unwrap();
+    crate::db::migrate::run_to(&mut c, 41).unwrap();
     c.execute_batch("INSERT INTO chat_reads (room, account, seq, muted) VALUES ('r1', 'x', 3, 1), ('r2', 'x', 0, 0)")
         .unwrap();
-    assert_eq!(crate::db::migrate::run_to(&mut c, 38).unwrap().ran, [38]);
+    assert_eq!(crate::db::migrate::run_to(&mut c, 42).unwrap().ran, [42]);
     let level = |room: &str| -> Option<String> {
         c.query_row("SELECT level FROM chat_reads WHERE room = ?1", [room], |r| r.get(0)).unwrap()
     };
