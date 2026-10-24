@@ -25,6 +25,7 @@ import type {
   ChatTargetKind,
 } from "./proto";
 import { platformFetch, refusalOf } from "./maintenance";
+import { reacted } from "./chat/reactions";
 import { chatUnread, listedInChat } from "./chat/unread";
 
 /** A refusal from control's chat API: its status, and `reason`
@@ -237,6 +238,10 @@ export class ChatStore {
       case "changed":
         if (this.loaded.has(ev.room)) void this.refetch(ev.room, ev.seq);
         this.roomsSoon();
+        return;
+      case "reacted":
+        // Only the message: no room's count or order moved.
+        if (this.loaded.has(ev.room)) void this.refetch(ev.room, ev.seq);
         return;
       case "read": {
         const r = this.room(ev.room);
@@ -505,6 +510,20 @@ export class ChatStore {
   async remove(id: string, seq: number) {
     const m = await call<ChatMessage>("DELETE", `/api/chat/rooms/${enc(id)}/messages/${seq}`);
     this.replace(id, m);
+  }
+
+  /** React to a message with `emoji`, or take mine back (#104). It shows at
+   * once and the server's answer replaces it; a refusal puts it back. */
+  async react(id: string, seq: number, emoji: string, on: boolean) {
+    const was = this.loaded.get(id)?.list.find((m) => m.seq === seq);
+    if (was) this.replace(id, reacted(was, emoji, on, this.me));
+    const path = `/api/chat/rooms/${enc(id)}/messages/${seq}/reactions`;
+    try {
+      this.replace(id, on ? await call<ChatMessage>("POST", path, { emoji }) : await call<ChatMessage>("DELETE", `${path}?emoji=${enc(emoji)}`));
+    } catch (e) {
+      if (was) this.replace(id, was);
+      throw e;
+    }
   }
 
   private replace(id: string, m: ChatMessage) {

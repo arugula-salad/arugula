@@ -199,7 +199,7 @@ export type ChatKind = "channel" | "dm" | "pane" | "session" | "archive" | "obje
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "resync", };
 
 /**
  * A message as the reader sees it.
@@ -243,7 +243,12 @@ agent: ChatAgent | null,
  * Posted for the author by a product (M237): a hud box's name, for a
  * review written there. Shown as "<name> via <via>".
  */
-via?: string, };
+via?: string, 
+/**
+ * Who reacted with which emoji (#104), the first reaction first.
+ * Empty for a deleted message and for archives brought in.
+ */
+reactions: Array<ChatReaction>, };
 
 export type ChatMessages = { room: ChatRoom, 
 /**
@@ -332,6 +337,35 @@ pushed: Array<ChatPushed>, };
 export type ChatPushWhy = "mention" | "dm" | "keyword";
 
 export type ChatPushed = { account: string, why: ChatPushWhy, };
+
+/**
+ * `POST`/`DELETE /api/chat/rooms/{id}/messages/{seq}/reactions` (and the
+ * same under `/api/daemon/chat/` for an agent, see [`agent_reactions`]):
+ * add the caller's reaction, or take it back. The emoji is the body of a
+ * post and `?emoji=` of a delete. Both answer the message ([`ChatMessage`]),
+ * and doing either twice is not an error.
+ */
+export type ChatReact = { emoji: string, };
+
+/**
+ * One emoji on a message, as the reader sees it.
+ */
+export type ChatReaction = { emoji: string, 
+/**
+ * All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].
+ */
+count: number, 
+/**
+ * The reader has: a person's own reaction, or for an agent reading,
+ * its own (never the owner's, nor the agent's for the owner).
+ */
+mine: boolean, who: Array<ChatReactor>, };
+
+/**
+ * Someone who reacted: an account, and the machine's agent if it was
+ * the agent reacting for them.
+ */
+export type ChatReactor = { account: string, name: string, agent: ChatAgent | null, };
 
 /**
  * `POST /api/chat/rooms/{id}/read`: read up to here (it only moves

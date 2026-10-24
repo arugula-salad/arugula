@@ -279,6 +279,61 @@ test("messages are Markdown with emoji: lists, quotes and code; :ta offers 🎉;
   expect((await sheet.boundingBox())!.width).toBeLessThanOrEqual(await bob.evaluate(() => innerWidth));
 });
 
+test("reactions: Alice and Bob react to one message, each sees both live; a long-press on the phone opens the menu", async () => {
+  test.setTimeout(90_000);
+  await platform(aliceChat, `/chat/${general}`);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const seq = await aliceChat.evaluate((r) => window.__arugula.chat.post(r, "ship it?").then((p) => p.seq), general);
+  const msg = room.locator(`[data-msg="${seq}"]`);
+  await expect(msg).toBeVisible({ timeout: 15_000 });
+
+  // Bob is on his phone, in #general, with the message in front of him.
+  await platform(bob, "/chat");
+  const list = bob.locator("[data-chat-control]");
+  await list.locator(`[data-chat-room="${general}"]`).click();
+  const onPhone = list.locator(`[data-msg="${seq}"]`);
+  await expect(onPhone).toBeVisible({ timeout: 15_000 });
+
+  // Alice: the toolbar's menu, the quick set.
+  await msg.hover();
+  await msg.locator("[data-react-button]").first().click();
+  await expect(msg.locator("[data-react-menu] [data-quick]")).toHaveText(["👍", "❤️", "😂", "🎉", "👀", "✅"]);
+  await msg.locator('[data-quick="👍"]').click();
+  await expect(msg.locator('[data-reaction="👍"]')).toHaveClass(/mine/);
+  // Bob has it live, not his.
+  const theirs = onPhone.locator('[data-reaction="👍"]');
+  await expect(theirs).toContainText("1", { timeout: 15_000 });
+  await expect(theirs).not.toHaveClass(/mine/);
+
+  // Bob adds his to the same chip by tapping it; Alice sees two, and who.
+  await theirs.click();
+  await expect(theirs).toHaveClass(/mine/);
+  await expect(theirs).toContainText("2");
+  const chip = msg.locator('[data-reaction="👍"]');
+  await expect(chip).toContainText("2", { timeout: 15_000 });
+  await expect(chip).toHaveAttribute("title", /You and bob reacted with 👍/);
+
+  // A long-press on the phone opens the menu as a sheet; a quick one adds.
+  await onPhone.locator(".md").dispatchEvent("pointerdown", { pointerType: "touch", clientX: 40, clientY: 40 });
+  const sheet = list.locator("[data-react-menu]");
+  await expect(sheet).toBeVisible({ timeout: 3_000 });
+  expect((await sheet.boundingBox())!.width).toBeLessThanOrEqual(await bob.evaluate(() => innerWidth));
+  await sheet.locator('[data-quick="✅"]').click();
+  await expect(msg.locator('[data-reaction="✅"]')).toContainText("1", { timeout: 15_000 });
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+  // Taking back: Alice's 👍 leaves 1; the last one takes the chip away.
+  await chip.click();
+  await expect(chip).toContainText("1");
+  await expect(theirs).toContainText("1", { timeout: 15_000 });
+  await expect(onPhone.locator('[data-reaction="👍"]')).toHaveClass(/mine/);
+  // Deleting the message drops its reactions: only its tombstone is left.
+  await msg.hover();
+  await msg.locator("[data-msg-delete]").click();
+  await expect(room.locator(`[data-msg="${seq}"]`)).toContainText("This message was deleted.", { timeout: 15_000 });
+  await expect(room.locator(`[data-msg="${seq}"] [data-reaction]`)).toHaveCount(0);
+});
+
 test("a mention pushes, and the push's tap opens the room at the message", async () => {
   // A room Bob doesn't have open, and wasn't pushed for in the last minute
   // (control pushes once a minute per room).

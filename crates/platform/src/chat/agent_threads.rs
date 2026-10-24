@@ -21,8 +21,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use arugula_control_common::ApiError;
 use arugula_control_wire::chat::{
-    self as wire, AgentMessages, AgentMessagesQuery, AgentReach, AgentRoom, AgentRooms, ChatFound, ChatPost,
-    ChatPosted, ChatSearchQuery,
+    self as wire, AgentMessages, AgentMessagesQuery, AgentReach, AgentRoom, AgentRooms, ChatFound, ChatMessage,
+    ChatPost, ChatPosted, ChatReact, ChatReactQuery, ChatSearchQuery,
 };
 use axum::{
     Json,
@@ -31,7 +31,7 @@ use axum::{
 
 use super::{
     Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, gate, in_team, listed_as, objects,
-    post_as, rooms_seen, search_in,
+    post_as, reactions, rooms_seen, search_in,
 };
 use crate::{
     Platform,
@@ -197,7 +197,7 @@ pub async fn messages(
         app.db.chat_messages(&room.id, page, limit)?
     };
     let ms: Vec<&Message> = ms.iter().filter(|m| m.at >= from).collect();
-    let shower = Shower::of(&app, &d.account, &ms).await?;
+    let shower = Shower::of(&app, &d.account, &ms).await?.as_agent(&d.daemon);
     let messages = ms.into_iter().map(|m| shower.show(m)).collect();
     let facts = Facts::of(&app, Some(&d.account), &[&room]).await?;
     let scope = agent_scope(&app, &room, &d.account)?;
@@ -217,6 +217,33 @@ pub async fn post(
 ) -> J<ChatPosted> {
     let (room, _, agent) = room_of(&app, &d, THREADS_POST, &id).await?;
     Ok(Json(post_as(&app, &d.account, Some(&agent), &room.id, b).await?))
+}
+
+/// `POST /api/daemon/chat/rooms/{id}/messages/{seq}/reactions`: an agent's
+/// reaction (`threads.post`), its owner's, labelled with the machine.
+pub async fn react(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, seq)): Path<(String, i64)>,
+    Json(b): Json<ChatReact>,
+) -> J<ChatMessage> {
+    reacting(&app, &d, &id, seq, &b.emoji, true).await
+}
+
+/// `DELETE` the same with `?emoji=`: takes back the agent's own.
+pub async fn unreact(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, seq)): Path<(String, i64)>,
+    Query(q): Query<ChatReactQuery>,
+) -> J<ChatMessage> {
+    reacting(&app, &d, &id, seq, &q.emoji, false).await
+}
+
+async fn reacting(app: &Platform, d: &Machine, id: &str, seq: i64, emoji: &str, on: bool) -> J<ChatMessage> {
+    let (room, from, agent) = room_of(app, d, THREADS_POST, id).await?;
+    let facts = Facts::of(app, Some(&d.account), &[&room]).await?;
+    Ok(Json(reactions::set(app, &d.account, Some(&agent), (&room, from, &facts), seq, emoji, on).await?))
 }
 
 /// `GET /api/daemon/chat/search?q=&team=`: over the rooms this machine's

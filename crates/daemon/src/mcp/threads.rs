@@ -17,7 +17,9 @@
 
 use std::time::Duration;
 
-use arugula_control_wire::chat::{AGENT_ROOMS, AGENT_SEARCH, agent_messages};
+use arugula_control_wire::chat::{
+    AGENT_ROOMS, AGENT_SEARCH, ChatReaction, agent_messages, agent_reactions, reactions_line,
+};
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
 use schemars::JsonSchema;
@@ -56,8 +58,21 @@ pub struct PostThreadArgs {
     /// The room's id (list kind threads), or an issue's, PR's or hosted
     /// box's id (iss_…, fi_…, hw_…) to comment on it.
     pub room: String,
-    /// The message, in markdown; @login mentions a person there.
+    /// The message, in markdown; @login mentions a person there. Not
+    /// needed to react.
+    #[serde(default)]
     pub text: String,
+    /// React to this message (its seq) with `emoji` instead of posting:
+    /// as your person's agent on this machine, apart from their own
+    /// reaction. Needs the same threads.post grant.
+    #[serde(default)]
+    pub react_to_seq: Option<i64>,
+    /// The emoji to react with (or take back), for `react_to_seq`.
+    #[serde(default)]
+    pub emoji: Option<String>,
+    /// Take your reaction back instead of adding it.
+    #[serde(default)]
+    pub remove: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -83,7 +98,7 @@ pub(crate) const POST_TOOL: &str = "post_thread";
 pub(crate) const SEARCH_TOOL: &str = "search_threads";
 
 pub(crate) const READ_DESCRIPTION: &str = "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.";
-pub(crate) const POST_DESCRIPTION: &str = "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.";
+pub(crate) const POST_DESCRIPTION: &str = "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one.";
 pub(crate) const SEARCH_DESCRIPTION: &str = "Search the conversations in Arugula control this machine's agents may read (threads.read): words (mea* a prefix), in:#channel, from:@login, has:quote. Newest first, at most 50.";
 
 /// What a refusal says to an agent.
@@ -126,9 +141,15 @@ fn by(m: &Value) -> String {
 fn message(m: &Value, mention: &str) -> Value {
     json!({
         "seq": m["seq"], "at": m["at"], "by": by(m), "author": m["author"], "agent": m["agent"], "via": m["via"],
-        "text": m["text"], "quote": m["quote"], "deleted": m["deleted"].is_u64(),
+        "text": m["text"], "quote": m["quote"], "deleted": m["deleted"].is_u64(), "reactions": m["reactions"],
         "mentions_you": m["mentions"].as_array().is_some_and(|a| a.iter().any(|x| x == mention)),
     })
+}
+
+/// A message's reactions as one line (empty when none).
+fn reactions_of(m: &Value) -> String {
+    let rs: Vec<ChatReaction> = serde_json::from_value(m["reactions"].clone()).unwrap_or_default();
+    reactions_line(&rs)
 }
 
 fn query(pairs: &[(&str, String)]) -> String {
@@ -218,7 +239,14 @@ impl Call<'_> {
         let lines: Vec<String> = messages
             .iter()
             .map(|m| {
-                format!("[{}] {}: {}", m["seq"], m["by"].as_str().unwrap_or("?"), m["text"].as_str().unwrap_or(""))
+                let reacted = reactions_of(m);
+                format!(
+                    "[{}] {}: {}{}",
+                    m["seq"],
+                    m["by"].as_str().unwrap_or("?"),
+                    m["text"].as_str().unwrap_or(""),
+                    if reacted.is_empty() { String::new() } else { format!("  [reactions: {reacted}]") }
+                )
             })
             .collect();
         let summary = format!(
@@ -235,6 +263,19 @@ impl Call<'_> {
     /// `post_thread`.
     pub(crate) async fn post_thread(&self, a: PostThreadArgs) -> Out {
         self.owners_agent(POST_TOOL).await?;
+        if let Some(seq) = a.react_to_seq {
+            let emoji =
+                a.emoji.as_deref().map(str::trim).filter(|e| !e.is_empty()).ok_or("react_to_seq needs an emoji")?;
+            let room = a.room.trim();
+            let v = if a.remove {
+                let path = format!("{}?{}", agent_reactions(room, seq), query(&[("emoji", emoji.to_owned())]));
+                self.threads_call(Method::DELETE, &path, None).await?
+            } else {
+                self.threads_call(Method::POST, &agent_reactions(room, seq), Some(json!({ "emoji": emoji }))).await?
+            };
+            let what = if a.remove { "Took back" } else { "Reacted with" };
+            return done(format!("{what} {emoji} on seq {seq} in {room}, as your person's agent on this machine"), v);
+        }
         let body = json!({ "text": a.text });
         let v = self.threads_call(Method::POST, &agent_messages(a.room.trim()), Some(body)).await?;
         let mut summary =

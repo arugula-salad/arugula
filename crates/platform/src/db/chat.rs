@@ -666,6 +666,7 @@ impl Db {
             "UPDATE chat_rooms SET bytes = CASE WHEN bytes > ?2 THEN bytes - ?2 ELSE 0 END WHERE id = ?1",
             params![room, old],
         )?;
+        super::chat_reactions::drop_for_message(&tx, room, seq)?;
         tx.commit()?;
         Ok(())
     }
@@ -988,7 +989,7 @@ pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::
     let ids: Vec<String> =
         tx.query_map(&format!("SELECT id FROM chat_rooms WHERE {cond}"), params![arg], |r| r.get(0))?;
     for id in ids {
-        for table in ["chat_messages", "chat_reads", "chat_members"] {
+        for table in ["chat_messages", "chat_reads", "chat_members", "chat_reactions"] {
             tx.execute(&format!("DELETE FROM {table} WHERE room = ?1"), params![id])?;
         }
         tx.execute("DELETE FROM chat_rooms WHERE id = ?1", params![id])?;
@@ -1019,6 +1020,12 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     // The threads on objects in projects that went with it (its personal
     // ones, its disbanded teams'): projects are erased first.
     drop_rooms_where(tx, "kind = ?1 AND scope NOT IN (SELECT 'project:' || id FROM projects)", "object")?;
+    // Reactions on the messages it blanks, and those it made.
+    tx.execute(
+        "DELETE FROM chat_reactions WHERE account = ?1 OR EXISTS (SELECT 1 FROM chat_messages m
+         WHERE m.room = chat_reactions.room AND m.seq = chat_reactions.seq AND m.author = ?1)",
+        params![account],
+    )?;
     tx.execute(
         "UPDATE chat_messages SET author = '', text = '', quote = NULL, ref_machine = NULL, ref_pane = NULL,
          mentions = '[]', imported = NULL, agent = NULL, via = NULL, deleted = coalesce(deleted, ?2) WHERE author = ?1",

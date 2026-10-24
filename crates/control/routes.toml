@@ -1139,6 +1139,22 @@ note = "A team owner's switch for web link previews in the team's chat."
 
 [[route]]
 method = "POST"
+path = "/api/chat/rooms/{id}/messages/{seq}/reactions"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Adds the caller's emoji (body `{emoji}`); the same twice is not an error. Answers the message."
+
+[[route]]
+method = "DELETE"
+path = "/api/chat/rooms/{id}/messages/{seq}/reactions"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Takes the caller's `?emoji=` back; none to take back is not an error."
+
+[[route]]
+method = "POST"
 path = "/api/chat/rooms/{id}/read"
 process = "platform"
 auth = "session"
@@ -1226,6 +1242,22 @@ process = "platform"
 auth = "daemon"
 clients = ["daemon"]
 note = "Labelled as the owner's agent on the machine; nobody is woken."
+
+[[route]]
+method = "POST"
+path = "/api/daemon/chat/rooms/{id}/messages/{seq}/reactions"  # wire::chat::agent_reactions
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "An agent's reaction (`threads.post`), its owner's and labelled with the machine; nobody is woken."
+
+[[route]]
+method = "DELETE"
+path = "/api/daemon/chat/rooms/{id}/messages/{seq}/reactions"  # wire::chat::agent_reactions
+process = "platform"
+auth = "daemon"
+clients = ["daemon"]
+note = "Takes back the agent's own `?emoji=`."
 
 [[route]]
 method = "GET"
