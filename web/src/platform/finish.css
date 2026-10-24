@@ -16,6 +16,24 @@ html[data-scheme="light"] {
   --platform-shadow: #0003;
 }
 
+/* The repo and secret fields had the browser's own grey, which grey
+   placeholders barely read on: they take the dialogs' fields' look
+   (style.css's .prompt input) under every finish. Placeholders are
+   --subtle, which reads on the letterbox where --dim doesn't (Latte). */
+.platform-link-repo input {
+  padding: 4px 8px;
+  color: var(--fg);
+  background: var(--letterbox);
+  border: 1px solid var(--raised-hover);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.platform input::placeholder,
+.platform textarea::placeholder {
+  color: var(--subtle);
+}
+
 /* -- Aqua: pinstripes behind the pages, a lit bar (style.css's .bar),
       lit panels, a gel on what's picked */
 
@@ -25,6 +43,16 @@ html[data-finish="aqua"] .chat {
     var(--bg) 0 2px,
     color-mix(in srgb, var(--bg) 90%, var(--fg)) 2px 4px
   );
+}
+
+/* A page's section is the platform's pane area (style.css's .tab-area
+   under each finish). Fixed to the window, its stripes line up with the
+   frame's, so a section with no fill of its own shows no seam. */
+html[data-finish="aqua"] .platform-section {
+  background: repeating-linear-gradient(
+    var(--bg) 0 2px,
+    color-mix(in srgb, var(--bg) 90%, var(--fg)) 2px 4px
+  ) fixed;
 }
 
 /* A hosted workspace's head is its bar. */
@@ -74,6 +102,10 @@ html[data-finish="brushed"] .chat {
   background: var(--grain), linear-gradient(#fff1, #0001), var(--bg);
 }
 
+html[data-finish="brushed"] .platform-section {
+  background: var(--grain) fixed, linear-gradient(#fff1, #0001) fixed, var(--bg);
+}
+
 html[data-finish="brushed"] .platform-ws-head,
 html[data-finish="brushed"] .chat-side {
   background: var(--grain), linear-gradient(#fff2, #0001), var(--surface);
@@ -94,11 +126,13 @@ html[data-finish="brushed"] .chat-switcher li.picked {
   background: var(--grain), linear-gradient(#fff3, #0001), color-mix(in srgb, var(--accent) 25%, var(--surface));
 }
 
+/* A card is solid metal with a bevelled top: grain under its dim text read
+   as busy, so the grain stays behind the cards. */
 html[data-finish="brushed"] .platform-card,
 html[data-finish="brushed"] .deploy-card,
 html[data-finish="brushed"] .deploy-form,
 html[data-finish="brushed"] .run-start {
-  background: var(--grain), linear-gradient(#fff2, #fff0 40px, #0001), var(--surface);
+  background: linear-gradient(#fff2, #fff0 40px, #0001), var(--surface);
   box-shadow: inset 0 1px 0 #fff3, 0 1px 2px #0004;
 }
 
@@ -136,6 +170,15 @@ html[data-finish="glass"] .chat {
     var(--bg);
 }
 
+/* A section is see-through, a frosted pane over the glow. No
+   backdrop-filter: it would trap a dialog drawn inside the section (the
+   plan's Modal is position: fixed), and the glow under it is smooth, so
+   a blur wouldn't show. */
+html[data-finish="glass"] .platform-section {
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  box-shadow: inset 0 1px 0 #fff2;
+}
+
 html[data-finish="glass"] .platform-ws-head,
 html[data-finish="glass"] .chat-side {
   background: color-mix(in srgb, var(--surface) 65%, transparent);
@@ -168,9 +211,11 @@ html[data-finish="glass"] .run-start {
   box-shadow: inset 0 1px 0 #fff2;
 }
 
+/* Mostly opaque: the switcher sits on its backdrop's blur, which bounds
+   its own, so at .menu's 62% the room's lines read through its text. */
 html[data-finish="glass"] .chat-switcher,
 html[data-finish="glass"] .platform-toast {
-  background: color-mix(in srgb, var(--raised) 62%, transparent);
+  background: color-mix(in srgb, var(--raised) 90%, transparent);
   backdrop-filter: blur(20px) saturate(1.6);
   box-shadow: inset 0 1px 0 #fff2, 0 0 0 1px #fff1, 0 16px 40px #0006;
 }
