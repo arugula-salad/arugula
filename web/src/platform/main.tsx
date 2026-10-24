@@ -6,6 +6,7 @@
 import { render } from "preact";
 import "../shared/style.css";
 import "./platform.css";
+import "./finish.css";
 import { apply as applyAppearance } from "../shared/appearance";
 import { setupDesktop } from "../shared/desktop";
 import { PlatformApiContext } from "../shared/platform-api";
