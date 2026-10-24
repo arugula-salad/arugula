@@ -183,7 +183,7 @@ html[data-corners="square"] .platform-workspace {
 }
 
 .hosted-ws-view .platform-section {
-  padding: 0 24px;
+  padding: 0 max(24px, calc((100% - 880px) / 2));
   border: 0;
   border-radius: 0;
   background: none;
