@@ -3089,22 +3089,44 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "emoji": {
+            "default": null,
+            "description": "The emoji to react with (or take back), for `react_to_seq`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "react_to_seq": {
+            "default": null,
+            "description": "React to this message (its seq) with `emoji` instead of posting:\nas your person's agent on this machine, apart from their own\nreaction. Needs the same threads.post grant.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remove": {
+            "default": false,
+            "description": "Take your reaction back instead of adding it.",
+            "type": "boolean"
+          },
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
-            "description": "The message, in markdown; @login mentions a person there.",
+            "default": "",
+            "description": "The message, in markdown; @login mentions a person there. Not\nneeded to react.",
             "type": "string"
           }
         },
         "required": [
-          "room",
-          "text"
+          "room"
         ],
         "title": "PostThreadArgs",
         "type": "object"
@@ -6804,22 +6826,44 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "emoji": {
+            "default": null,
+            "description": "The emoji to react with (or take back), for `react_to_seq`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "react_to_seq": {
+            "default": null,
+            "description": "React to this message (its seq) with `emoji` instead of posting:\nas your person's agent on this machine, apart from their own\nreaction. Needs the same threads.post grant.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remove": {
+            "default": false,
+            "description": "Take your reaction back instead of adding it.",
+            "type": "boolean"
+          },
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
-            "description": "The message, in markdown; @login mentions a person there.",
+            "default": "",
+            "description": "The message, in markdown; @login mentions a person there. Not\nneeded to react.",
             "type": "string"
           }
         },
         "required": [
-          "room",
-          "text"
+          "room"
         ],
         "title": "PostThreadArgs",
         "type": "object"
@@ -10238,22 +10282,44 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "emoji": {
+            "default": null,
+            "description": "The emoji to react with (or take back), for `react_to_seq`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "react_to_seq": {
+            "default": null,
+            "description": "React to this message (its seq) with `emoji` instead of posting:\nas your person's agent on this machine, apart from their own\nreaction. Needs the same threads.post grant.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remove": {
+            "default": false,
+            "description": "Take your reaction back instead of adding it.",
+            "type": "boolean"
+          },
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
-            "description": "The message, in markdown; @login mentions a person there.",
+            "default": "",
+            "description": "The message, in markdown; @login mentions a person there. Not\nneeded to react.",
             "type": "string"
           }
         },
         "required": [
-          "room",
-          "text"
+          "room"
         ],
         "title": "PostThreadArgs",
         "type": "object"
@@ -13953,22 +14019,44 @@
         "readOnlyHint": false,
         "title": "Post in a conversation"
       },
-      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq.",
+      "description": "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
+          "emoji": {
+            "default": null,
+            "description": "The emoji to react with (or take back), for `react_to_seq`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "react_to_seq": {
+            "default": null,
+            "description": "React to this message (its seq) with `emoji` instead of posting:\nas your person's agent on this machine, apart from their own\nreaction. Needs the same threads.post grant.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remove": {
+            "default": false,
+            "description": "Take your reaction back instead of adding it.",
+            "type": "boolean"
+          },
           "room": {
             "description": "The room's id (list kind threads), or an issue's, PR's or hosted\nbox's id (iss_…, fi_…, hw_…) to comment on it.",
             "type": "string"
           },
           "text": {
-            "description": "The message, in markdown; @login mentions a person there.",
+            "default": "",
+            "description": "The message, in markdown; @login mentions a person there. Not\nneeded to react.",
             "type": "string"
           }
         },
         "required": [
-          "room",
-          "text"
+          "room"
         ],
         "title": "PostThreadArgs",
         "type": "object"

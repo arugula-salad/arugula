@@ -43,7 +43,7 @@ use std::{
 
 use arugula_control_common::ApiError;
 use arugula_control_wire::{
-    chat::{AgentMessagesQuery, ChatPost, ChatSearchQuery},
+    chat::{AgentMessagesQuery, ChatPost, ChatReact, ChatReactQuery, ChatReaction, ChatSearchQuery, reactions_line},
     issues::{IssueListEdit, IssuePatch, IssueQuery, NewIssue},
     runs::{AgentRunStart, RUN_WAIT_MAX, RunListQuery, RunLogQuery, RunQuery},
 };
@@ -523,7 +523,10 @@ impl Agent {
                     Some(machine) => format!("{by}'s agent on {machine}"),
                     None => by,
                 };
-                format!("[{}] {by}: {}", v["seq"], v["text"].as_str().unwrap_or_default())
+                let rs: Vec<ChatReaction> = serde_json::from_value(v["reactions"].clone()).unwrap_or_default();
+                let reacted =
+                    if rs.is_empty() { String::new() } else { format!("  [reactions: {}]", reactions_line(&rs)) };
+                format!("[{}] {by}: {}{reacted}", v["seq"], v["text"].as_str().unwrap_or_default())
             })
             .collect();
         let text = format!("{} message(s) in {}:\n{}", lines.len(), a.room, lines.join("\n"));
@@ -532,6 +535,28 @@ impl Agent {
     }
 
     async fn post_thread(&self, a: PostThread) -> Out {
+        if let Some(seq) = a.react_to_seq {
+            let emoji = a
+                .emoji
+                .clone()
+                .filter(|e| !e.trim().is_empty())
+                .ok_or_else(|| failed("react_to_seq needs an emoji"))?;
+            let path = Path((a.room.clone(), seq));
+            let m = if a.remove {
+                let q = Query(ChatReactQuery { emoji: emoji.clone() });
+                agent_threads::unreact(self.state(), self.me(), path, q).await?.0
+            } else {
+                agent_threads::react(self.state(), self.me(), path, Json(ChatReact { emoji: emoji.clone() })).await?.0
+            };
+            let what = if a.remove { "Took back" } else { "Reacted with" };
+            let text = format!(
+                "{what} {emoji} on seq {seq} in {} as {}'s agent on {}",
+                a.room,
+                self.owner,
+                token_label(&self.token.name)
+            );
+            return Ok(Done { text, value: to_value(&m), project: None, note: format!("reacted in {}", a.room) });
+        }
         let b = ChatPost { text: a.text, pane: None, quote: None };
         let r = agent_threads::post(self.state(), self.me(), Path(a.room.clone()), Json(b)).await?.0;
         let v = to_value(&r);
@@ -987,7 +1012,14 @@ struct ReadThread {
 #[derive(Deserialize)]
 struct PostThread {
     room: String,
+    #[serde(default)]
     text: String,
+    #[serde(default)]
+    react_to_seq: Option<i64>,
+    #[serde(default)]
+    emoji: Option<String>,
+    #[serde(default)]
+    remove: bool,
 }
 
 #[derive(Deserialize)]
@@ -1174,9 +1206,12 @@ pub fn tools() -> Vec<Value> {
              id. Everyone there sees it as written by the owner's agent, never as the owner.",
             json!({
                 "room": prop("string", "The room's id, or an issue's or PR's id."),
-                "text": prop("string", "The message, in markdown."),
+                "text": prop("string", "The message, in markdown. Not needed to react."),
+                "react_to_seq": prop("integer", "React to this message (its seq) with emoji instead of posting."),
+                "emoji": prop("string", "The emoji to react with, for react_to_seq."),
+                "remove": prop("boolean", "Take your reaction back instead of adding it."),
             }),
-            &["room", "text"],
+            &["room"],
             false,
         ),
         tool(

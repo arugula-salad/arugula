@@ -51,6 +51,10 @@ fn routes() -> Routes {
         .route("/api/chat/rooms/{id}/messages/{seq}/previews", post(chat::previews::hide))
         .route("/api/chat/previews/image", get(chat::previews::image))
         .route("/api/chat/teams/{team}/previews", get(chat::previews::team_get).put(chat::previews::team_put))
+        .route(
+            "/api/chat/rooms/{id}/messages/{seq}/reactions",
+            post(chat::reactions::add).delete(chat::reactions::remove),
+        )
         .route("/api/chat/rooms/{id}/read", post(chat::read))
         .route("/api/chat/rooms/{id}/mute", post(chat::mute))
         .route("/api/chat/rooms/{id}/typing", post(chat::typing::typing))
@@ -62,6 +66,10 @@ fn routes() -> Routes {
         .route(
             "/api/daemon/chat/rooms/{id}/messages",
             get(chat::agent_threads::messages).post(chat::agent_threads::post),
+        )
+        .route(
+            "/api/daemon/chat/rooms/{id}/messages/{seq}/reactions",
+            post(chat::agent_threads::react).delete(chat::agent_threads::unreact),
         )
         .route(arugula_control_wire::chat::AGENT_SEARCH, get(chat::agent_threads::search))
         .route("/api/grants", get(grants::list).post(grants::give))

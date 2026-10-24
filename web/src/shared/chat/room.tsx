@@ -24,6 +24,7 @@ import { TypingLine } from "./typing";
 import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alerts";
 import { EmojiPicker } from "./emoji-picker";
 import { MessagePreviews } from "./previews";
+import { longPress, mayReact, ReactionChips, ReactMenu } from "./reactions-ui";
 import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
@@ -375,6 +376,8 @@ function RoomMessage({
   const landed = useCallback((t: string) => forMe && chat.isMe(t), [forMe]);
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [reacting, setReacting] = useState(false);
+  const may = mayReact(room, m);
   const name = authorLabel(m);
   const link = usePlatformApi().nav.roomLink(room.id, m.seq);
   if (m.deleted !== null) {
@@ -393,6 +396,7 @@ function RoomMessage({
       data-msg={m.seq}
       data-author={m.author}
       data-agent={m.agent?.machine}
+      {...(may ? longPress(() => setReacting(true)) : {})}
     >
       <div class="msg-gutter">
         {head ? (
@@ -450,8 +454,14 @@ function RoomMessage({
             <pre>{m.quote}</pre>
           </div>
         )}
+        <ReactionChips room={room} m={m} open={() => setReacting(true)} setError={setError} />
       </div>
       <div class="msg-tools" role="toolbar" aria-label="Message actions">
+        {may && (
+          <button title="Add a reaction" aria-label="Add a reaction" aria-expanded={reacting} data-react-button onClick={() => setReacting((v) => !v)}>
+            ☺
+          </button>
+        )}
         {room.writable && (
           <button title="Quote in reply" aria-label="Quote in reply" data-msg-reply onClick={() => reply(m.text || m.quote || "")}>
             ❝
@@ -491,6 +501,7 @@ function RoomMessage({
           </button>
         )}
       </div>
+      {reacting && may && <ReactMenu room={room} m={m} close={() => setReacting(false)} setError={setError} />}
     </div>
   );
 }

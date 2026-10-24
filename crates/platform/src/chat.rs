@@ -67,8 +67,8 @@ use arugula_control_common::{ApiError, err, refusal};
 use arugula_control_wire::chat::{
     self as wire, ChatEdit, ChatFound, ChatHit, ChatKind, ChatLive, ChatMessage, ChatMessages, ChatMessagesQuery,
     ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget, ChatPane, ChatPerson, ChatPost, ChatPosted,
-    ChatPushWhy, ChatPushed, ChatRead, ChatReaderList, ChatReaders, ChatReadersStored, ChatRoom, ChatRoomAgent,
-    ChatRoomChange, ChatRoomDetail, ChatRooms, ChatSearchQuery,
+    ChatPushWhy, ChatPushed, ChatReaction, ChatReactor, ChatRead, ChatReaderList, ChatReaders, ChatReadersStored,
+    ChatRoom, ChatRoomAgent, ChatRoomChange, ChatRoomDetail, ChatRooms, ChatSearchQuery,
 };
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -87,6 +87,7 @@ use crate::{
     db::{
         Db, Taken,
         chat::{Message, NewChatEvent, NewMessage, OldMessage, Page, Room, Search, UnreadAsk, Word},
+        chat_reactions::Reaction,
         objects::Holder,
         projects::{ISSUES_WRITE, THREADS_POST, THREADS_READ},
     },
@@ -99,6 +100,7 @@ pub(crate) mod alerts;
 mod link_fetch;
 pub(crate) mod objects;
 pub mod previews;
+pub(crate) mod reactions;
 pub(crate) mod typing;
 
 type J<T> = Result<Json<T>, ApiError>;
@@ -562,12 +564,20 @@ struct Shower {
     machines: HashMap<String, (String, bool)>,
     /// Agents' machines' names (M197): "" for one that's gone.
     agents: HashMap<String, String>,
+    /// The reactions on these messages (#104), first reaction first.
+    reactions: HashMap<(String, i64), Vec<Reaction>>,
+    /// Who is reading: a reaction is "mine" when it is this account's and
+    /// this agent's ("" for the person), so an agent sees its own apart
+    /// from its owner's.
+    reader: (String, String),
 }
 
 impl Shower {
     async fn of(app: &Platform, reader: &str, ms: &[&Message]) -> anyhow::Result<Self> {
         let hub = &*app.hub;
+        let reactions = reactions_of(&app.db, ms)?;
         let mut authors: Vec<String> = ms.iter().map(|m| m.author.clone()).filter(|a| !a.is_empty()).collect();
+        authors.extend(reactions.values().flatten().map(|r| r.account.clone()));
         authors.sort();
         authors.dedup();
         let mut machines: Vec<String> =
@@ -577,6 +587,7 @@ impl Shower {
         // The agents' machines, for their names only.
         let mut named = machines.clone();
         named.extend(ms.iter().filter_map(|m| m.agent.clone()));
+        named.extend(reactions.values().flatten().filter(|r| !r.agent.is_empty()).map(|r| r.agent.clone()));
         named.sort();
         named.dedup();
         let (accounts, daemons, reach) = tokio::try_join!(
@@ -587,6 +598,7 @@ impl Shower {
         let agents = ms
             .iter()
             .filter_map(|m| m.agent.clone())
+            .chain(reactions.values().flatten().filter(|r| !r.agent.is_empty()).map(|r| r.agent.clone()))
             .map(|a| {
                 let name = daemons.get(&a).map(|d| d.name.clone()).unwrap_or_default();
                 (a, name)
@@ -604,7 +616,13 @@ impl Shower {
                 (m, (name, opens))
             })
             .collect();
-        Ok(Self { names, machines, agents })
+        Ok(Self { names, machines, agents, reactions, reader: (reader.to_owned(), String::new()) })
+    }
+
+    /// Read as the agent on `machine` (for its owner `reader`).
+    pub(super) fn as_agent(mut self, machine: &str) -> Self {
+        self.reader.1 = machine.to_owned();
+        self
     }
 
     fn show(&self, m: &Message) -> ChatMessage {
@@ -632,8 +650,55 @@ impl Shower {
                 machine_name: self.agents.get(a).cloned().unwrap_or_default(),
             }),
             via: m.via.clone(),
+            reactions: self.reacted(m),
         }
     }
+
+    /// A message's reactions, grouped by emoji in the order each was
+    /// first made.
+    fn reacted(&self, m: &Message) -> Vec<ChatReaction> {
+        let mut out: Vec<ChatReaction> = Vec::new();
+        for r in self.reactions.get(&(m.room.clone(), m.seq)).into_iter().flatten() {
+            let at = match out.iter().position(|x| x.emoji == r.emoji) {
+                Some(i) => i,
+                None => {
+                    out.push(ChatReaction { emoji: r.emoji.clone(), count: 0, mine: false, who: vec![] });
+                    out.len() - 1
+                }
+            };
+            let c = &mut out[at];
+            c.count += 1;
+            c.mine |= (r.account.as_str(), r.agent.as_str()) == (self.reader.0.as_str(), self.reader.1.as_str());
+            if c.who.len() < wire::MAX_REACTORS_SHOWN {
+                c.who.push(ChatReactor {
+                    name: self.names.get(&r.account).cloned().unwrap_or_default(),
+                    account: r.account.clone(),
+                    agent: (!r.agent.is_empty()).then(|| wire::ChatAgent {
+                        machine: r.agent.clone(),
+                        machine_name: self.agents.get(&r.agent).cloned().unwrap_or_default(),
+                    }),
+                });
+            }
+        }
+        out
+    }
+}
+
+/// The reactions on `ms`, by (room, seq): one query a room, over the
+/// numbers it spans.
+fn reactions_of(db: &Db, ms: &[&Message]) -> anyhow::Result<HashMap<(String, i64), Vec<Reaction>>> {
+    let mut span: HashMap<&str, (i64, i64)> = HashMap::new();
+    for m in ms.iter().filter(|m| m.deleted.is_none() && m.imported.is_none()) {
+        let e = span.entry(m.room.as_str()).or_insert((m.seq, m.seq));
+        *e = (e.0.min(m.seq), e.1.max(m.seq));
+    }
+    let mut out: HashMap<(String, i64), Vec<Reaction>> = HashMap::new();
+    for (room, (from, to)) in span {
+        for r in db.chat_reactions(room, from, to)? {
+            out.entry((r.room.clone(), r.seq)).or_default().push(r);
+        }
+    }
+    Ok(out)
 }
 
 // ---------------------------------------------------------------- mentions
@@ -1038,6 +1103,7 @@ impl Live {
             }
             ChatLive::Message { room, .. }
             | ChatLive::Changed { room, .. }
+            | ChatLive::Reacted { room, .. }
             | ChatLive::Read { room, .. }
             | ChatLive::Object { room, .. } => self.rooms.contains(room),
             ChatLive::Hello { .. } | ChatLive::Resync {} | ChatLive::Typing { .. } => true,

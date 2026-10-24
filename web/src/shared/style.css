@@ -6881,6 +6881,135 @@ button.diff-why-run {
   color: var(--fg);
 }
 
+/* Reactions (#104): chips under a message, and the menu that adds one. */
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  background: var(--raised);
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.reaction:hover:not(:disabled) {
+  border-color: var(--dim);
+}
+
+.reaction:disabled {
+  cursor: default;
+}
+
+.reaction.mine {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--fg);
+}
+
+.reaction-emoji {
+  font-size: 14px;
+}
+
+.reaction.add {
+  padding: 1px 7px;
+  opacity: 0;
+}
+
+.thread-msg:hover .reaction.add,
+.reaction.add:focus-visible {
+  opacity: 1;
+}
+
+.react-menu {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+}
+
+.react-menu > button {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.react-menu > button:hover,
+.react-menu > button:focus-visible {
+  background: var(--raised);
+}
+
+.react-menu > button.mine {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.react-menu > .more {
+  color: var(--dim);
+}
+
+/* The picker opens below the menu, in the message's column. */
+.react-menu .emoji-picker {
+  top: calc(100% + 4px);
+  right: 0;
+  bottom: auto;
+}
+
+@media (pointer: coarse) {
+  .thread-msg {
+    -webkit-touch-callout: none;
+  }
+
+  .reaction.add {
+    opacity: 1;
+  }
+}
+
+/* On a phone the menu is a sheet along the bottom, under a long-press. */
+@media (max-width: 600px) {
+  .react-menu {
+    position: fixed;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    justify-content: space-around;
+    padding: 10px 8px calc(10px + env(safe-area-inset-bottom));
+    border-width: 1px 0 0;
+    border-radius: 12px 12px 0 0;
+  }
+
+  .react-menu > button {
+    width: 44px;
+    height: 44px;
+    font-size: 24px;
+  }
+
+  /* Over the sheet, as the composer's is over its box. */
+  .react-menu .emoji-picker {
+    top: auto;
+    right: 0;
+    bottom: 0;
+  }
+}
+
 .thread-quote {
   display: block;
   width: 100%;

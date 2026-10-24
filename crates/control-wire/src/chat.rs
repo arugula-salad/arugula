@@ -217,7 +217,83 @@ pub struct ChatMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub via: Option<String>,
+    /// Who reacted with which emoji (#104), the first reaction first.
+    /// Empty for a deleted message and for archives brought in.
+    #[serde(default)]
+    pub reactions: Vec<ChatReaction>,
 }
+
+/// One emoji on a message, as the reader sees it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatReaction {
+    pub emoji: String,
+    /// All who reacted with it; `who` names the first [`MAX_REACTORS_SHOWN`].
+    pub count: u32,
+    /// The reader has: a person's own reaction, or for an agent reading,
+    /// its own (never the owner's, nor the agent's for the owner).
+    pub mine: bool,
+    pub who: Vec<ChatReactor>,
+}
+
+/// Someone who reacted: an account, and the machine's agent if it was
+/// the agent reacting for them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatReactor {
+    pub account: String,
+    pub name: String,
+    pub agent: Option<ChatAgent>,
+}
+
+/// A message's reactions in one line for an agent to read: `👍 2 (Sam,
+/// Jake's agent on geek), 🎉 1 (you)`; empty when there are none. `mine` is
+/// the reader's own, which is the agent's when an agent reads.
+pub fn reactions_line(rs: &[ChatReaction]) -> String {
+    rs.iter()
+        .map(|c| {
+            let mut who: Vec<String> = c
+                .who
+                .iter()
+                .map(|w| {
+                    let n = if w.name.is_empty() { "someone" } else { w.name.as_str() };
+                    match &w.agent {
+                        Some(a) => format!(
+                            "{n}'s agent on {}",
+                            if a.machine_name.is_empty() { "a machine" } else { &a.machine_name }
+                        ),
+                        None => n.to_owned(),
+                    }
+                })
+                .collect();
+            if c.mine {
+                who.push("you".into());
+            }
+            format!("{} {} ({})", c.emoji, c.count, who.join(", "))
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// How many reactors a [`ChatReaction`] names.
+pub const MAX_REACTORS_SHOWN: usize = 20;
+
+/// At most this many different emoji on one message.
+pub const MAX_REACTIONS: usize = 20;
+
+/// `POST`/`DELETE /api/chat/rooms/{id}/messages/{seq}/reactions` (and the
+/// same under `/api/daemon/chat/` for an agent, see [`agent_reactions`]):
+/// add the caller's reaction, or take it back. The emoji is the body of a
+/// post and `?emoji=` of a delete. Both answer the message ([`ChatMessage`]),
+/// and doing either twice is not an error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatReact {
+    pub emoji: String,
+}
+
+/// `DELETE`'s query: [`ChatReact`] in the URL.
+pub type ChatReactQuery = ChatReact;
 
 /// `GET /api/chat/rooms/{id}/messages?after=N` (oldest first after N),
 /// `?before=N` (the page before N), or neither (the newest page);
@@ -430,6 +506,12 @@ pub enum ChatLive {
         room: String,
         seq: i64,
     },
+    /// Reactions to a message were added or taken back (#104): fetch it
+    /// again. No room list changes with it.
+    Reacted {
+        room: String,
+        seq: i64,
+    },
     /// A room appeared, changed or went: reload the rooms.
     Room {
         room: String,
@@ -597,6 +679,12 @@ pub const AGENT_SEARCH: &str = "/api/daemon/chat/search";
 /// thread, made the first time.
 pub fn agent_messages(room: &str) -> String {
     format!("{AGENT_ROOMS}/{room}/messages")
+}
+
+/// An agent's reactions to message `seq` (`threads.post`): `POST` a
+/// [`ChatReact`], or `DELETE` with `?emoji=`; answered the [`ChatMessage`].
+pub fn agent_reactions(room: &str, seq: i64) -> String {
+    format!("{AGENT_ROOMS}/{room}/messages/{seq}/reactions")
 }
 
 /// How a message's `mentions` names a machine's agents: `machine:` and the
