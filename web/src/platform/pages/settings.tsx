@@ -2,12 +2,14 @@
 // (`/api/billing`, the platform's), and which machines' agents read and
 // post in conversations (M197), agents with no machine (M230), the
 // products linked to the account (M229), and which apps may use Claude through
-// Arugula for the account, with what was spent on its own key (M231). Sign-in, passkeys, devices and teams are
+// Arugula for the account, with what was spent on its own key (M231), and
+// this device's Appearance…, the shell's dialog. Sign-in, passkeys, devices and teams are
 // trust, signed by a device, so they stay on control's page and this links
 // there.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
+import { openAppearance } from "../../shared/ui/appearance";
 import { Plan, type Billing } from "../settings/plan";
 import { AgentGrants } from "../settings/agents";
 import { AgentTokens } from "../settings/agent-tokens";
@@ -47,6 +49,12 @@ export function SettingsPage() {
             </button>
           </li>
         )}
+        <li>
+          <button class="control-linkish" data-open-appearance onClick={openAppearance}>
+            Appearance…
+          </button>{" "}
+          <span class="dim">This device's palette, finish and corners.</span>
+        </li>
         <li>
           <a href={controlOrigin()} data-settings-control>
             Sign-in, passkeys, devices, teams and usage reports
