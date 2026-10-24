@@ -50,6 +50,8 @@ mod boxes_tests;
 pub mod cache;
 pub mod chat;
 #[cfg(test)]
+mod chat_files_tests;
+#[cfg(test)]
 mod chat_people_tests;
 #[cfg(test)]
 mod chat_previews_tests;

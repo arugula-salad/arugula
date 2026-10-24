@@ -622,8 +622,9 @@ export class ChatStore {
     return p;
   }
 
-  async post(id: string, text: string, quote?: PaneQuote): Promise<ChatPosted> {
+  async post(id: string, text: string, quote?: PaneQuote, files?: string[] | null): Promise<ChatPosted> {
     const body: ChatPost = { text };
+    if (files?.length) body.files = files;
     if (quote) {
       body.pane = { machine: quote.machine, pane: String(quote.pane) } satisfies ChatPaneRef;
       if (quote.text) body.quote = quote.text;

@@ -18,7 +18,8 @@
 use std::time::Duration;
 
 use arugula_control_wire::chat::{
-    AGENT_ROOMS, AGENT_SEARCH, ChatReaction, SYSTEM_VIA, agent_messages, agent_reactions, reactions_line,
+    AGENT_ROOMS, AGENT_SEARCH, ChatReaction, MAX_FILE_BYTES, MAX_FILES, SYSTEM_VIA, agent_files, agent_messages,
+    agent_reactions, reactions_line,
 };
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
@@ -62,6 +63,11 @@ pub struct PostThreadArgs {
     /// needed to react.
     #[serde(default)]
     pub text: String,
+    /// Files to attach: paths on this machine that you may read (a
+    /// screenshot, a log), each up to 25 MB, at most 10. They show in the
+    /// room as pictures, players or file cards. A message may be only files.
+    #[serde(default)]
+    pub files: Vec<String>,
     /// React to this message (its seq) with `emoji` instead of posting:
     /// as your person's agent on this machine, apart from their own
     /// reaction. Needs the same threads.post grant.
@@ -97,8 +103,8 @@ pub(crate) const READ_TOOL: &str = "read_thread";
 pub(crate) const POST_TOOL: &str = "post_thread";
 pub(crate) const SEARCH_TOOL: &str = "search_threads";
 
-pub(crate) const READ_DESCRIPTION: &str = "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Nothing wakes you on a mention: read them when you look.";
-pub(crate) const POST_DESCRIPTION: &str = "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one.";
+pub(crate) const READ_DESCRIPTION: &str = "Read a conversation in Arugula control that this machine's owner gave its agents a grant for (list kind threads lists them): a team channel, a DM, or an issue's or PR's thread by its id. Paged by seq: pass next_after_seq back as after_seq for what came since. mentions_only reads the messages that @mention this machine's agents. Each message lists its attachments (name, type, size and control's address). Nothing wakes you on a mention: read them when you look.";
+pub(crate) const POST_DESCRIPTION: &str = "Post in a conversation in Arugula control where this machine's owner granted its agents threads.post: a team channel, a DM, or an issue's or PR's thread by its id (a comment on that issue). Everyone there sees it as written by the owner's agent on this machine, never as the owner. An @login mentions a person, who is notified. Returns the message's seq. Or react to a message instead of posting: react_to_seq and emoji (remove: true takes yours back); reactions are shown beside the message when you read_thread, and nobody is notified of one. files attaches files from this machine (paths you may read, 25 MB each, at most 10): pictures show inline, the rest as download cards; a message may be only files.";
 pub(crate) const SEARCH_DESCRIPTION: &str = "Search the conversations in Arugula control this machine's agents may read (threads.read): words (mea* a prefix), in:#channel, from:@login, has:quote. Newest first, at most 50.";
 
 /// What a refusal says to an agent.
@@ -146,8 +152,29 @@ fn message(m: &Value, mention: &str) -> Value {
     json!({
         "seq": m["seq"], "at": m["at"], "by": by(m), "author": m["author"], "agent": m["agent"], "via": m["via"],
         "text": m["text"], "quote": m["quote"], "deleted": m["deleted"].is_u64(), "reactions": m["reactions"],
+        "files": m["files"],
         "mentions_you": m["mentions"].as_array().is_some_and(|a| a.iter().any(|x| x == mention)),
     })
+}
+
+/// A message's attachments as one line (empty when none): name, kind and
+/// size, and control's address for each.
+fn files_of(m: &Value) -> String {
+    m["files"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|f| {
+            format!(
+                "{} ({}, {} bytes) {}",
+                f["name"].as_str().unwrap_or("?"),
+                f["mime"].as_str().unwrap_or("?"),
+                f["size"],
+                f["url"].as_str().unwrap_or("")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// A message's reactions as one line (empty when none).
@@ -244,11 +271,13 @@ impl Call<'_> {
             .iter()
             .map(|m| {
                 let reacted = reactions_of(m);
+                let attached = files_of(m);
                 format!(
-                    "[{}] {}: {}{}",
+                    "[{}] {}: {}{}{}",
                     m["seq"],
                     m["by"].as_str().unwrap_or("?"),
                     m["text"].as_str().unwrap_or(""),
+                    if attached.is_empty() { String::new() } else { format!("  [files: {attached}]") },
                     if reacted.is_empty() { String::new() } else { format!("  [reactions: {reacted}]") }
                 )
             })
@@ -280,15 +309,64 @@ impl Call<'_> {
             let what = if a.remove { "Took back" } else { "Reacted with" };
             return done(format!("{what} {emoji} on seq {seq} in {room}, as your person's agent on this machine"), v);
         }
-        let body = json!({ "text": a.text });
-        let v = self.threads_call(Method::POST, &agent_messages(a.room.trim()), Some(body)).await?;
+        let room = a.room.trim();
+        if a.files.len() > MAX_FILES {
+            return Err(format!("a message carries at most {MAX_FILES} files"));
+        }
+        let mut ids = vec![];
+        for path in &a.files {
+            ids.push(self.upload_file(room, path).await?);
+        }
+        let body = json!({ "text": a.text, "files": ids });
+        let v = self.threads_call(Method::POST, &agent_messages(room), Some(body)).await?;
         let mut summary =
-            format!("Posted as seq {} in {}, labelled as your person's agent on this machine", v["seq"], a.room.trim());
+            format!("Posted as seq {} in {}, labelled as your person's agent on this machine", v["seq"], room);
+        if !ids.is_empty() {
+            summary += &format!(", with {} file(s)", ids.len());
+        }
         if let Some(u) = v["unreached"].as_array().filter(|u| !u.is_empty()) {
             let words: Vec<&str> = u.iter().filter_map(Value::as_str).collect();
             summary += &format!(" (@{} reached nobody there)", words.join(", @"));
         }
         done(summary, v)
+    }
+
+    /// One file from this machine, read as `read_file` reads (a path the
+    /// agent may read, relative to its pane's directory), up to control's
+    /// limit, and uploaded to the room: its id there.
+    async fn upload_file(&self, room: &str, path: &str) -> Result<String, String> {
+        let pane = self.own_pane();
+        let mut full = path.to_owned();
+        if let Some(p) = pane {
+            let info = self.readable(p).await?;
+            if !full.starts_with('/')
+                && !full.starts_with('~')
+                && let Some(cwd) = info.info.cwd.as_deref()
+            {
+                full = format!("{}/{full}", cwd.trim_end_matches('/'));
+            }
+        }
+        let mut bytes: Vec<u8> = vec![];
+        loop {
+            let (chunk, size) =
+                crate::fs::read_on(self.app(), pane, &full, bytes.len() as u64, arugula_proto::fs::READ_MAX).await?;
+            if size > MAX_FILE_BYTES as u64 {
+                return Err(format!("{path} is {size} bytes: a file in chat is at most {MAX_FILE_BYTES}"));
+            }
+            bytes.extend_from_slice(&chunk);
+            if chunk.is_empty() || bytes.len() as u64 >= size {
+                break;
+            }
+        }
+        let name = path.rsplit('/').next().unwrap_or(path);
+        let up = format!("{}?{}", agent_files(room), query(&[("name", name.to_owned())]));
+        let v = self
+            .app()
+            .control
+            .cloud_bytes(Method::POST, &up, bytes)
+            .await
+            .map_err(|e| format!("{path}: {}", said(e)))?;
+        v["id"].as_str().map(str::to_owned).ok_or_else(|| format!("{path}: control didn't give the file an id"))
     }
 
     /// `search_threads`.

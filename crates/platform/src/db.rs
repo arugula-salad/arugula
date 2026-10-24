@@ -30,6 +30,7 @@ use rusqlite::Connection;
 pub mod agent_tokens;
 pub mod billing;
 pub mod chat;
+pub mod chat_files;
 pub mod chat_people;
 pub mod chat_reactions;
 mod chat_sidebar;

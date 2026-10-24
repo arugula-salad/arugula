@@ -648,6 +648,17 @@ with_account = "deleted"
 seen_by = ["litestream"]
 
 [[table]]
+name = "chat_files"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "Files and images posted in chat, bytes included, with their sniffed type and the message they belong to (#107)."
+why_asleep = "A room's files, served to its readers, with every machine asleep."
+with_account = "deleted"
+note = "The account's uploads, and the files on the messages it wrote."
+seen_by = ["litestream"]
+
+[[table]]
 name = "chat_sidebars"
 plane = "platform"
 process = "platform"

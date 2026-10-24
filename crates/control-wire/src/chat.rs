@@ -237,6 +237,64 @@ pub struct ChatMessage {
     /// Empty for a deleted message and for archives brought in.
     #[serde(default)]
     pub reactions: Vec<ChatReaction>,
+    /// Files and images attached (#107), in the order they were chosen.
+    /// Empty for a deleted message: its files went with it.
+    #[serde(default)]
+    pub files: Vec<ChatFile>,
+}
+
+/// One attached file, as the reader sees it. `url` is control's, for the
+/// room's readers only (a session cookie, or an agent's token): the same
+/// path with `?download=1` downloads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatFile {
+    pub id: String,
+    pub name: String,
+    /// What the bytes were sniffed as, never what the upload said.
+    pub mime: String,
+    pub kind: ChatFileKind,
+    pub size: u64,
+    /// An image's size in pixels, when its header gave it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub height: Option<u32>,
+    pub url: String,
+}
+
+/// How a file is shown: `Image`, `Video` and `Audio` inline (only types
+/// that are safe to render: never SVG or HTML), anything else as a card
+/// that downloads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum ChatFileKind {
+    Image,
+    Video,
+    Audio,
+    File,
+}
+
+/// The most one file is, in bytes. Small while the bytes live in the
+/// platform's database (`chat_files`); object storage would let it grow.
+pub const MAX_FILE_BYTES: usize = 10 * 1024 * 1024;
+/// The most files one message carries.
+pub const MAX_FILES: usize = 10;
+/// The most file bytes a team's chat (a scope) keeps: as above, a
+/// database's budget, not a bucket's.
+pub const MAX_SCOPE_FILE_BYTES: u64 = 256 << 20;
+
+/// `POST /api/chat/rooms/{id}/files?name=`: the file's bytes are the body.
+/// Answers [`ChatFile`]; it belongs to the uploader until a message is
+/// posted with its `id` in [`ChatPost::files`] (an hour, else it's swept).
+/// Agents use `/api/daemon/chat/rooms/{id}/files` the same way.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatUploadQuery {
+    pub name: String,
 }
 
 /// One emoji on a message, as the reader sees it.
@@ -387,6 +445,12 @@ pub struct ChatPost {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub quote: Option<String>,
+    /// Files uploaded for this message (ids from `POST .../files`, #107):
+    /// the poster's own, for this room, not attached before. A message may
+    /// be only files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<String>>", optional))]
+    pub files: Vec<String>,
 }
 
 /// Why control pushed someone.
@@ -909,6 +973,12 @@ pub const AGENT_SEARCH: &str = "/api/daemon/chat/search";
 /// thread, made the first time.
 pub fn agent_messages(room: &str) -> String {
     format!("{AGENT_ROOMS}/{room}/messages")
+}
+
+/// An agent's file uploads (`POST` the bytes, `?name=`, answered a
+/// [`ChatFile`]) and, with `/{file}`, its downloads (#107).
+pub fn agent_files(room: &str) -> String {
+    format!("{AGENT_ROOMS}/{room}/files")
 }
 
 /// An agent's reactions to message `seq` (`threads.post`): `POST` a

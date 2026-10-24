@@ -643,3 +643,82 @@ test("a channel is quiet until its bell says all, and a snooze shows Alice a moo
 function menuItem(p: Page, label: string) {
   return p.locator(".menu .menu-item", { hasText: label }).first();
 }
+
+// A 2x2 PNG, so the browser decodes it (a broken image has no width).
+const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGP8z8Dwn4GBgYGJAQoAHhgCAh6X4CYAAAAASUVORK5CYII=";
+
+test("files: Alice pastes a screenshot and Bob's phone sees it inline; she drops a PDF and Bob downloads it; outsiders get nothing", async ({ browser }) => {
+  test.setTimeout(120_000);
+  await platform(aliceChat, `/chat/${general}`);
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const box = room.getByRole("textbox", { name: "Message #general" });
+
+  // Paste: the clipboard holds a picture, not text. It goes up as a chip.
+  await box.focus();
+  await box.evaluate((el, b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const data = new DataTransfer();
+    data.items.add(new File([bytes], "image.png", { type: "image/png" }));
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, PNG_B64);
+  const chip = room.locator("[data-attach-chip]");
+  await expect(chip).toHaveCount(1);
+  await expect(chip.locator("progress")).toHaveCount(0, { timeout: 15_000 });
+  await expect(chip).toHaveAttribute("data-attach-chip", /^pasted-.*\.png$/);
+
+  // Drop: a PDF onto the room, beside the picture. Remove works per chip.
+  await room.locator(".thread-list").evaluate((el) => {
+    const data = new DataTransfer();
+    data.items.add(new File(["%PDF-1.4\n% e2e\n"], "plan.pdf", { type: "application/pdf" }));
+    el.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
+  });
+  await expect(chip).toHaveCount(2);
+  await expect(room.locator('[data-attach-chip="plan.pdf"] progress')).toHaveCount(0, { timeout: 15_000 });
+  await room.locator('[data-attach-chip="plan.pdf"] [data-attach-remove]').click();
+  await expect(chip).toHaveCount(1);
+  await room.locator("[data-attach-input]").setInputFiles({ name: "plan.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n% e2e\n") });
+  await expect(room.locator('[data-attach-chip="plan.pdf"]')).toBeVisible();
+  await expect(room.locator("[data-attach-chip] progress")).toHaveCount(0, { timeout: 15_000 });
+
+  await box.fill("the screenshot and the plan");
+  await box.press("Enter");
+  const mine = room.locator(".thread-msg").last();
+  const image = mine.locator("[data-msg-image] img");
+  await expect(image).toBeVisible({ timeout: 15_000 });
+  // Under control's CSP the picture really loaded (a blocked one has no width).
+  await expect.poll(() => image.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(2);
+  await expect(room.locator("[data-attach-chip]")).toHaveCount(0);
+  await expect(mine.locator('[data-msg-file="plan.pdf"]')).toContainText("PDF");
+
+  // It opens full size, and Escape closes it.
+  await mine.locator("[data-msg-image]").click();
+  await expect(aliceChat.locator("[data-image-viewer] img")).toBeVisible();
+  await aliceChat.keyboard.press("Escape");
+  await expect(aliceChat.locator("[data-image-viewer]")).toHaveCount(0);
+
+  // Bob, on his phone, sees it inline within the screen, and downloads the PDF.
+  await platform(bob, `/chat/${general}`);
+  const theirs = bob.locator("[data-chat-control] .thread-msg").last();
+  await expect(theirs.locator("[data-msg-image] img")).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => theirs.locator("[data-msg-image] img").evaluate((i: HTMLImageElement) => i.naturalWidth)).toBe(2);
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const [download] = await Promise.all([bob.waitForEvent("download"), theirs.locator('[data-msg-file="plan.pdf"] [data-file-download]').click()]);
+  expect(download.suggestedFilename()).toBe("plan.pdf");
+
+  // The address answers readers of the room and no one else: not a visitor
+  // with no session, and not through a public path.
+  const url = await theirs.locator("[data-msg-image] img").getAttribute("src");
+  const stranger = await browser.newContext();
+  const denied = await stranger.request.get(`${app}${url}`);
+  expect(denied.status()).not.toBe(200);
+  const seen = await bob.request.get(`${app}${url}`);
+  expect(seen.status()).toBe(200);
+  expect(seen.headers()["x-content-type-options"]).toBe("nosniff");
+  await stranger.close();
+
+  // Deleting the message takes the files with it.
+  await mine.hover();
+  await mine.locator("[data-msg-delete]").click();
+  await expect(mine).toContainText("This message was deleted.", { timeout: 15_000 });
+  expect((await bob.request.get(`${app}${url}`)).status()).toBe(404);
+});
