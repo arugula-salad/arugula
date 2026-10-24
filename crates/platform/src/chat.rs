@@ -96,6 +96,7 @@ use crate::{
     hub::{Account, Daemon, Flags, PushOptions, Team},
 };
 
+pub(crate) mod agent_notice;
 pub(crate) mod agent_threads;
 pub(crate) mod alerts;
 mod link_fetch;
@@ -103,6 +104,7 @@ pub(crate) mod objects;
 pub(crate) mod people;
 pub mod previews;
 pub(crate) mod reactions;
+pub(crate) mod sidebar;
 pub(crate) mod typing;
 
 type J<T> = Result<Json<T>, ApiError>;
@@ -1194,7 +1196,8 @@ impl Live {
             | ChatLive::Reacted { room, .. }
             | ChatLive::Read { room, .. }
             | ChatLive::Object { room, .. } => self.rooms.contains(room),
-            ChatLive::Hello { .. } | ChatLive::Resync {} | ChatLive::Typing { .. } => true,
+            // Sidebar is told to its account only (`out.to`).
+            ChatLive::Hello { .. } | ChatLive::Sidebar {} | ChatLive::Resync {} | ChatLive::Typing { .. } => true,
         };
         ok.then(|| Event::default().id(self.app().chat.id(out.n)).data(data(&out.ev)))
     }

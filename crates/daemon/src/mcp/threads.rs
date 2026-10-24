@@ -18,7 +18,7 @@
 use std::time::Duration;
 
 use arugula_control_wire::chat::{
-    AGENT_ROOMS, AGENT_SEARCH, ChatReaction, agent_messages, agent_reactions, reactions_line,
+    AGENT_ROOMS, AGENT_SEARCH, ChatReaction, SYSTEM_VIA, agent_messages, agent_reactions, reactions_line,
 };
 use reqwest::Method;
 use rmcp::handler::server::common::schema_for_type;
@@ -124,8 +124,12 @@ fn room_name(r: &Value) -> String {
 
 /// Who wrote it: a person, or "<owner>'s agent on <machine>"; and
 /// "via <product>" when a product posted it for them (M237: a hud box's
-/// review).
+/// review). A line the platform wrote (a grant reached the room, #122) is
+/// "Arugula".
 fn by(m: &Value) -> String {
+    if m["via"] == SYSTEM_VIA && m["author"].as_str().is_none_or(str::is_empty) {
+        return "Arugula".to_owned();
+    }
     let name = m["name"].as_str().filter(|n| !n.is_empty()).unwrap_or("someone");
     let who = match m["agent"]["machine_name"].as_str() {
         Some(machine) => format!("{name}'s agent on {machine}"),
@@ -366,5 +370,7 @@ mod tests {
         assert_eq!(super::by(&json!({ "name": "Ada", "via": "notes (hud)" })), "Ada via notes (hud)");
         let m = super::message(&json!({ "name": "Ada", "via": "notes (hud)", "mentions": [] }), "a");
         assert_eq!(m["via"], "notes (hud)");
+        let line = json!({ "author": "", "name": "", "via": "system", "text": "a's agents on geek can now read here" });
+        assert_eq!(super::by(&line), "Arugula");
     }
 }

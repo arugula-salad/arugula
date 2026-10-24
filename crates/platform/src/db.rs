@@ -32,6 +32,7 @@ pub mod billing;
 pub mod chat;
 pub mod chat_people;
 pub mod chat_reactions;
+mod chat_sidebar;
 pub mod clients;
 pub mod content;
 pub mod deploy_approvals;

@@ -137,7 +137,8 @@ async fn an_agent_reaches_what_its_owner_granted_and_reads() {
     let posted = post_as(&app, "a", Some(&agent), "ch_general", post("built it")).await.unwrap();
     let (st, v) = call(&base, "b", "GET", "/api/chat/rooms/ch_general/messages", None).await;
     assert_eq!(st, 200, "{v}");
-    let m = &v["messages"][0];
+    // After the line that said its grants (#122).
+    let m = v["messages"].as_array().unwrap().last().unwrap();
     assert_eq!((&m["author"], &m["text"]), (&json!("a"), &json!("built it")));
     assert_eq!(m["agent"], json!({ "machine": "geek", "machine_name": "geek-box" }));
     let a_rooms = call(&base, "a", "GET", "/api/chat", None).await.1;
@@ -164,7 +165,7 @@ async fn an_agent_reaches_what_its_owner_granted_and_reads() {
     assert_eq!(agent_room(&app, &geek(), THREADS_POST, "ch_general").await.unwrap_err().2, Some(AGENT_UNGRANTED));
     assert!(agent_room(&app, &geek(), THREADS_READ, "ch_general").await.is_ok(), "only that grant");
     let (_, v) = call(&base, "b", "GET", "/api/chat/rooms/ch_general/messages", None).await;
-    assert_eq!(v["messages"][0]["agent"]["machine"], "geek");
+    assert_eq!(v["messages"].as_array().unwrap().last().unwrap()["agent"]["machine"], "geek");
     let (_, detail) = call(&base, "b", "GET", "/api/chat/rooms/ch_general", None).await;
     assert_eq!(detail["agents"][0]["powers"], json!(["threads.read"]));
 

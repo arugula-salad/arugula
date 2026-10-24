@@ -562,6 +562,102 @@ note = "As chat_messages: it's rebuilt from them, and merged when an account goe
 seen_by = ["litestream"]
 
 [[table]]
+name = "chat_keywords"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "The words a person asked to be notified about as if mentioned (#114)."
+why_asleep = "A message with one of them pushes, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_team_settings"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "What a team's owners decided about its chat: whether @channel and @here are theirs only (#114)."
+why_asleep = "The guard on a post, with every machine asleep."
+with_account = "none"
+note = "By team: gone when the team is disbanded."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_team_prefs"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A team's chat preferences: whether web links in its rooms get previews (#108)."
+why_asleep = "Previews drawn from it, with every machine asleep."
+with_account = "none"
+note = "By team."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_link_previews"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "What control read of a public web page posted in chat, for its preview (title, description, image), by its address (#108)."
+why_asleep = "A preview drawn once for every reader, not fetched per reader, with every machine asleep."
+with_account = "none"
+note = "By address, not by who posted it; pruned once old."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_preview_hidden"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "The messages whose author took their previews off (#108)."
+why_asleep = "The same message without its preview for everyone, with every machine asleep."
+with_account = "none"
+note = "By room and message number."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_reactions"
+plane = "platform"
+process = "platform"
+holds = "plaintext"
+what = "Who reacted to which message with which emoji, and whether their agent did it (#104)."
+why_asleep = "Reactions shown and changed, with every machine asleep."
+with_account = "deleted"
+note = "The account's own reactions, and every reaction on the messages it wrote."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_avatars"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "A GitHub login's public picture as control fetched it, so readers never load it from GitHub themselves (#112)."
+why_asleep = "Pictures in chat, with every machine asleep."
+with_account = "kept"
+note = "By GitHub login, not account: a public picture, fetched again after a day."
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_presence"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "When a person's pages were last heard from and last used, and whether they chose away or offline (#110)."
+why_asleep = "Who's around, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
+name = "chat_sidebars"
+plane = "platform"
+process = "platform"
+holds = "metadata"
+what = "How a person arranges their chat sidebar: starred rooms, their own sections, what is collapsed and how each is sorted."
+why_asleep = "The same sidebar on every device, with every machine asleep."
+with_account = "deleted"
+seen_by = ["litestream"]
+
+[[table]]
 name = "chat_reads"
 plane = "platform"
 process = "platform"

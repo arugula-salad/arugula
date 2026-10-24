@@ -16,7 +16,7 @@ import { Fragment, type ComponentChildren } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
-import { agentLines, authorLabel } from "./agents";
+import { agentLines, authorLabel, isSystemLine } from "./agents";
 import { Markdown } from "../ui/markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
@@ -103,7 +103,9 @@ export function AuthorAvatar({ m }: { m: ChatMessage }) {
   );
 }
 
-/** The line every room an agent grant reaches shows, to everyone in it. */
+/** The line every room an agent grant reaches shows, to everyone in it. A
+ * room with a header of its own (the chat page's) shows the chip there
+ * instead (./agents-chip, #122). */
 function RoomAgents({ room }: { room: string }) {
   const lines = agentLines(chat.agents(room));
   if (!lines.length) return null;
@@ -224,6 +226,7 @@ export function RoomBody({
   name,
   between,
   empty,
+  chip,
 }: {
   room: ChatRoom;
   phone: boolean;
@@ -237,6 +240,9 @@ export function RoomBody({
   between?: Between[];
   /** What the room says before anything's in it, instead of its own. */
   empty?: string;
+  /** The host's header shows whose agents reach the room (a chip), so the
+   * room doesn't repeat it above its messages. */
+  chip?: boolean;
 }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const [error, setError] = useState<string | null>(null);
@@ -356,7 +362,7 @@ export function RoomBody({
 
   return (
     <>
-      <RoomAgents room={room.id} />
+      {!chip && <RoomAgents room={room.id} />}
       <div class="thread-list" ref={list} data-room={room.id} onScroll={onScroll}>
         {loaded?.older && (
           <button class="chat-older" onClick={more} data-room-older>
@@ -492,6 +498,14 @@ function RoomMessage({
         }
       : undefined,
   });
+  if (isSystemLine(m)) {
+    return (
+      <div class="msg-system" data-msg={m.seq} data-system role="note">
+        <span>{m.text}</span>
+        <time title={new Date(m.at).toLocaleString()}>{when(m.at)}</time>
+      </div>
+    );
+  }
   if (m.deleted !== null) {
     return (
       <div class="thread-msg first deleted" data-msg={m.seq}>
