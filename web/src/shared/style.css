@@ -10742,54 +10742,54 @@ html[data-workspace="new"] .thread-panel {
 /* Chat's Markdown (#109): a message is a line of talk, not a document.
    Blocks sit close, a one-line message is one line, and the pieces that
    need room (a quote, a list, a table) get just enough. */
-.md.chat {
+.md.md-chat {
   line-height: 1.46;
   margin: 1px 0;
 }
 
-.md.chat p,
-.md.chat ul,
-.md.chat ol,
-.md.chat blockquote,
-.md.chat .md-code,
-.md.chat .md-table {
+.md.md-chat p,
+.md.md-chat ul,
+.md.md-chat ol,
+.md.md-chat blockquote,
+.md.md-chat .md-code,
+.md.md-chat .md-table {
   margin: 0 0 4px;
 }
 
-.md.chat h1,
-.md.chat h2,
-.md.chat h3 {
+.md.md-chat h1,
+.md.md-chat h2,
+.md.md-chat h3 {
   margin: 6px 0 2px;
 }
 
-.md.chat ul,
-.md.chat ol {
+.md.md-chat ul,
+.md.md-chat ol {
   padding-left: 1.3em;
 }
 
-.md.chat li {
+.md.md-chat li {
   margin: 0;
 }
 
-.md.chat a {
+.md.md-chat a {
   color: var(--info);
 }
 
-.md.chat code {
+.md.md-chat code {
   border: 1px solid var(--divider);
   background: var(--letterbox);
   color: var(--peach);
 }
 
-.md.chat blockquote {
+.md.md-chat blockquote {
   border-left-color: var(--raised-hover);
 }
 
-.md.chat table {
+.md.md-chat table {
   font-size: 12px;
 }
 
-.md.chat.jumbo > p {
+.md.md-chat.md-jumbo > p {
   font-size: 32px;
   line-height: 1.2;
 }

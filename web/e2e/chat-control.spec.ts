@@ -232,7 +232,7 @@ test("messages are Markdown with emoji: lists, quotes and code; :ta offers 🎉;
   await expect(box).toHaveValue(/const a = 1;\n$/);
   await box.pressSequentially("```");
   await box.press("Enter");
-  const md = room.locator(".thread-msg").last().locator(".md.chat");
+  const md = room.locator(".thread-msg").last().locator(".md.md-chat");
   await expect(md.locator("ul > li")).toHaveCount(2);
   await expect(md.locator("blockquote")).toHaveText("quoted");
   await expect(md.locator(".md-code pre")).toContainText("const a = 1;");
@@ -242,7 +242,7 @@ test("messages are Markdown with emoji: lists, quotes and code; :ta offers 🎉;
   // A short message is one line, with no margins around its paragraph.
   await box.fill("just one line");
   await box.press("Enter");
-  const one = room.locator(".thread-msg").last().locator(".md.chat p");
+  const one = room.locator(".thread-msg").last().locator(".md.md-chat p");
   await expect(one).toHaveText("just one line");
   expect((await one.boundingBox())!.height).toBeLessThan(26);
 
@@ -264,7 +264,7 @@ test("messages are Markdown with emoji: lists, quotes and code; :ta offers 🎉;
   await expect(room.locator(".thread-msg").last()).toContainText("😂 👍");
   await box.fill("🎉");
   await box.press("Enter");
-  await expect(room.locator(".thread-msg").last().locator(".md.chat.jumbo")).toBeVisible();
+  await expect(room.locator(".thread-msg").last().locator(".md.md-chat.md-jumbo")).toBeVisible();
 
   // Phone width: the code block scrolls inside the message, the page doesn't.
   await platform(bob, "/chat");
