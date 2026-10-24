@@ -11,6 +11,7 @@ import { useSubscribe } from "../../shared/ui/hooks";
 import { names, roomPath } from "../links";
 import { follow, pathOf } from "../router";
 import { controlOrigin, session, type PlatformProject } from "../session";
+import { roomTone, toneClass } from "../swarm";
 import { HostedWorkspaceList, NoWorkspaces, useHostedWorkspaces } from "./hosted-workspace";
 import { ProjectIssues } from "./issues";
 
@@ -29,7 +30,7 @@ export function ProjectHome({ id }: { id: string }) {
   const nameOf = (account: string) =>
     account === session.me?.account ? "you" : (p.team?.members.find((m) => m.account === account)?.name ?? "someone who left");
   return (
-    <section class="platform-section" data-project-home={p.id}>
+    <section class="platform-section sw-page" data-project-home={p.id}>
       <h1>{p.name}</h1>
       <p>
         <a href={settingsPath} data-project-settings onClick={(e) => follow(e, settingsPath)}>
@@ -47,13 +48,13 @@ export function ProjectHome({ id }: { id: string }) {
           </h2>
           {chat.on === false && <p class="dim">Chat is off for you. A team owner turns it on in the team's Labs, on control's page.</p>}
           {chat.on && rooms.length === 0 && <p class="dim">No channels yet.</p>}
-          <ul class="platform-list" data-project-rooms>
+          <ul class="platform-list sw-rows" data-project-rooms>
             {rooms
               .sort((a, b) => Number(a.kind === "dm") - Number(b.kind === "dm") || a.name.localeCompare(b.name))
               .map((r) => {
                 const to = roomPath(r.id);
                 return (
-                  <li key={r.id}>
+                  <li key={r.id} class={`sw-row ${toneClass(roomTone(r.unread, r.mentions))}`}>
                     <a href={to} data-project-room={r.id} onClick={(e) => follow(e, to)}>
                       {r.kind === "channel" ? `# ${r.name}` : `@ ${r.with?.name ?? "someone who left"}`}
                       {r.unread > 0 && <span class={r.mentions ? "chat-count mention" : "chat-count"}>{r.unread}</span>}

@@ -7,6 +7,8 @@ import { render } from "preact";
 import "../shared/style.css";
 import "../shared/frame.css";
 import "./platform.css";
+// The lists in the swarm's language, over platform.css's.
+import "./swarm.css";
 import "./finish.css";
 import { apply as applyAppearance } from "../shared/appearance";
 import { setupDesktop } from "../shared/desktop";
