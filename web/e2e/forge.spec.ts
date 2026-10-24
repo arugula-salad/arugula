@@ -135,12 +135,19 @@ test("a description is drawn as Markdown, with the status chips and the actions 
     "",
     "[x](javascript:alert(1)) <img src=x onerror=alert(1)>",
     "",
+    "<details><summary>The *old* plan</summary>",
+    "",
+    "- [x] folded",
+    "</details>",
+    "",
+    "<details onclick=alert(1)>",
+    "",
     ...Array.from({ length: 80 }, (_, i) => `line ${i}`).join("\n\n").split("\n"),
   ].join("\n");
   const block = await openPr(page);
   const el = page.locator(`[data-forge-block="${block}"]`);
   const desc = el.locator(".forge-desc");
-  await expect(desc.locator("li")).toHaveCount(2);
+  await expect(desc.locator("li")).toHaveCount(3);
   await expect(desc.locator("strong")).toHaveText("a lot");
   await expect(desc.locator("code")).toHaveText("inline code");
   await expect(desc).not.toContainText("**");
@@ -149,6 +156,12 @@ test("a description is drawn as Markdown, with the status chips and the actions 
   await expect(desc).toContainText("<img src=x onerror=alert(1)>");
   await expect(el.locator('a[href^="javascript:"]')).toHaveCount(0);
   await expect(el.locator("img")).toHaveCount(0);
+  // GitHub's fold folds, its summary drawn as Markdown; one with more on
+  // its line than `open` is text.
+  await expect(desc.locator("details > summary em")).toHaveText("old");
+  await expect(desc.locator("details li.md-task input")).toBeChecked();
+  await expect(desc.locator("details")).toHaveCount(1);
+  await expect(desc).toContainText("<details onclick=alert(1)>");
   // Where it stands, in chips under the meta line.
   const chips = el.locator("[data-forge-chips]");
   await expect(chips).toContainText("checks passed");
