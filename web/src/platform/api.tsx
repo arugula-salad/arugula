@@ -38,6 +38,7 @@ export const platformApi: PlatformApi = {
       go(pathOf(r, names), view === "search" && now.page === "chat" && now.view === "search");
     },
     roomLink: (room, seq) => `${location.origin}${roomPath(room, seq)}`,
+    openGrants: () => go("/settings"),
   },
   ...noMachines,
   // A pane's chip opens on control's page, where the machines are.

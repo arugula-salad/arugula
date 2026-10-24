@@ -10,7 +10,7 @@ import type { Client } from "./client";
 import type { FleetPane } from "./fleet";
 import { directory } from "./hosts";
 import { whatItDoes } from "./swarm/model";
-import { platformHref } from "./platform-links";
+import { openPlatform, platformHref } from "./platform-links";
 import { getFleet } from "./ui/hosts";
 import { getControlSession } from "./ui/people";
 import { openChat, openChatView, openRoom } from "./ui/places";
@@ -53,6 +53,7 @@ function build(client: Client): PlatformApi {
       openChatView,
       // The platform page's address for it, else the shell's old one, which
       // goes there once control has a platform page (M154).
+      openGrants: () => openPlatform("/settings"),
       roomLink: (room, seq) => platformHref(`/chat/${room}?msg=${seq}`) ?? `${location.origin}${location.pathname}${location.search}#chat=${room}&msg=${seq}`,
     },
     machine(id) {

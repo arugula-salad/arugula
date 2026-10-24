@@ -1036,6 +1036,20 @@ auth = "session"
 clients = ["page"]
 
 [[route]]
+method = "GET"
+path = "/api/chat/sidebar"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PUT"
+path = "/api/chat/sidebar"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
 method = "POST"
 path = "/api/chat/presence"
 process = "platform"

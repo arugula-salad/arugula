@@ -27,6 +27,10 @@ pub const CHAT_IMPORT: &str = "/api/daemon/chat/import";
 /// to update it, so its threads come into chat.
 pub const CHAT_IMPORT_FEATURE: &str = "chat-import";
 
+/// The `via` of a line the platform wrote in a room, with no author (#122:
+/// an agent grant reached the room).
+pub const SYSTEM_VIA: &str = "system";
+
 /// The most text a message carries, and the most of a pane it quotes.
 pub const MAX_TEXT: usize = 8 * 1024;
 pub const MAX_QUOTE: usize = 16 * 1024;
@@ -223,7 +227,9 @@ pub struct ChatMessage {
     #[serde(default)]
     pub agent: Option<ChatAgent>,
     /// Posted for the author by a product (M237): a hud box's name, for a
-    /// review written there. Shown as "<name> via <via>".
+    /// review written there. Shown as "<name> via <via>". [`SYSTEM_VIA`]
+    /// with no author: a line the platform wrote (#122), shown apart, as
+    /// plain text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub via: Option<String>,
@@ -697,6 +703,9 @@ pub enum ChatLive {
         account: String,
         name: String,
     },
+    /// The reader's sidebar changed (another of their pages; #120): fetch
+    /// it again. Only they hear it.
+    Sidebar {},
     Resync {},
 }
 

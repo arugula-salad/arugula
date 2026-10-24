@@ -110,6 +110,12 @@ fn generate() -> String {
         c.visit::<ChatBeat>();
         c.visit::<ChatPresence>();
     }
+    {
+        use arugula_control_wire::chat_sidebar::*;
+        c.visit::<ChatSidebar>();
+        c.visit::<ChatSection>();
+        c.visit::<ChatSort>();
+    }
     // The platform page's projects (M150).
     c.visit::<arugula_control_wire::projects::Projects>();
     // A project's linked repos (M163).

@@ -215,7 +215,7 @@ export type ChatLevel = { level: NotifyLevel | null, };
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "reacted", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "sidebar", } | { "type": "resync", };
 
 /**
  * A message as the reader sees it.
@@ -257,7 +257,9 @@ imported: string | null,
 agent: ChatAgent | null, 
 /**
  * Posted for the author by a product (M237): a hud box's name, for a
- * review written there. Shown as "<name> via <via>".
+ * review written there. Shown as "<name> via <via>". [`SYSTEM_VIA`]
+ * with no author: a line the platform wrote (#122), shown apart, as
+ * plain text.
  */
 via?: string, 
 /**
@@ -507,6 +509,46 @@ agents: Array<ChatRoomAgent>, };
  * `GET /api/chat`: every room the reader sees.
  */
 export type ChatRooms = { rooms: Array<ChatRoom>, };
+
+/**
+ * A section the account made.
+ */
+export type ChatSection = { 
+/**
+ * Made by the page that creates it (`s_` and hex), stable under rename.
+ */
+id: string, name: string, 
+/**
+ * Room ids, in the order the person dragged them.
+ */
+rooms: Array<string>, };
+
+/**
+ * `GET /api/chat/sidebar`, and the body of `PUT` (which replaces it).
+ */
+export type ChatSidebar = { 
+/**
+ * Starred rooms, in the order they were starred.
+ */
+starred: Array<string>, 
+/**
+ * The account's own sections, top to bottom, below Starred.
+ */
+sections: Array<ChatSection>, 
+/**
+ * Groups shown shut, by key: `starred`, a section's id, or a built-in
+ * group's (`<team>/channels`, `<team>/dms`, `machine/<id>`, `archives`).
+ */
+collapsed: Array<string>, 
+/**
+ * Groups not sorted by name, by the same keys.
+ */
+sorts: { [key in string]: ChatSort }, };
+
+/**
+ * How a group's rooms are ordered.
+ */
+export type ChatSort = "name" | "recent";
 
 /**
  * What a daemon's thread is about.

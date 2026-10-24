@@ -22,6 +22,7 @@ import type {
   ChatRoomAgent,
   ChatRoomDetail,
   ChatRooms,
+  ChatSidebar,
   ChatTargetKind,
   NotifyLevel,
 } from "./proto";
@@ -29,6 +30,7 @@ import { platformFetch, refusalOf } from "./maintenance";
 import { reacted } from "./chat/reactions";
 import { chatUnread, listedInChat } from "./chat/unread";
 import { presence } from "./chat/presence";
+import { emptySidebar } from "./chat/sidebar";
 
 /** A refusal from control's chat API: its status, and `reason`
  * (`chat_off`, or `maintenance` for a window that outlasted the wait,
@@ -89,6 +91,8 @@ export class ChatStore {
   /** What `@` of me looks like: my login and name, lowercased. */
   myNames: string[] = [];
   rooms: ChatRoom[] = [];
+  /** How this account arranges the sidebar (#120), the same on every device. */
+  sidebar: ChatSidebar = emptySidebar();
   /** This page's live stream, once control said hello. */
   stream: string | null = null;
   private loaded = new Map<string, Loaded>();
@@ -156,6 +160,7 @@ export class ChatStore {
     let failed = false;
     try {
       await this.loadRooms();
+      void this.loadSidebar();
       if (!this.es) this.listen();
     } catch (e) {
       if (e instanceof ChatError && (e.reason === "chat_off" || e.status === 401 || e.status === 404)) this.turnOff();
@@ -173,6 +178,7 @@ export class ChatStore {
     this.es = null;
     this.stream = null;
     this.rooms = [];
+    this.sidebar = emptySidebar();
     this.loaded.clear();
     this.detail.clear();
     presence.stop();
@@ -184,6 +190,42 @@ export class ChatStore {
     this.on = true;
     presence.start();
     this.rooms = r.rooms;
+    this.emit();
+  }
+
+  /** Edits sent and not yet answered: what is read meanwhile is older. */
+  private sidebarPending = 0;
+
+  async loadSidebar() {
+    try {
+      const s = await call<ChatSidebar>("GET", "/api/chat/sidebar");
+      if (this.sidebarPending) return;
+      this.sidebar = s;
+      this.emit();
+    } catch {
+      // As it was: the rooms still list, in their kinds' groups.
+    }
+  }
+
+  /** Change the sidebar: shown at once, kept on the server (the last write
+   * wins), and told to the account's other pages. If control refuses, it's
+   * read again so the page shows what is kept. */
+  async editSidebar(change: (s: ChatSidebar) => ChatSidebar) {
+    const was = this.sidebar;
+    const next = change(was);
+    if (next === was) return;
+    this.sidebar = next;
+    this.emit();
+    this.sidebarPending++;
+    try {
+      const kept = await call<ChatSidebar>("PUT", "/api/chat/sidebar", next);
+      if (this.sidebarPending === 1) this.sidebar = kept;
+    } catch (e) {
+      this.sidebarPending--;
+      await this.loadSidebar();
+      throw e;
+    }
+    this.sidebarPending--;
     this.emit();
   }
 
@@ -229,6 +271,7 @@ export class ChatStore {
         this.tellOpen(true);
         // Anything missed while there was no stream.
         this.roomsSoon();
+        void this.loadSidebar();
         for (const room of this.loaded.keys()) void this.newer(room);
         this.objectChanged();
         return;
@@ -256,6 +299,9 @@ export class ChatStore {
         this.roomsSoon();
         return;
       }
+      case "sidebar":
+        void this.loadSidebar();
+        return;
       case "room":
         this.detail.delete(ev.room);
         this.roomsSoon();
@@ -270,6 +316,7 @@ export class ChatStore {
         this.loaded.clear();
         this.detail.clear();
         this.roomsSoon();
+        void this.loadSidebar();
         this.emit();
         return;
     }

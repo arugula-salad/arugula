@@ -337,6 +337,32 @@ impl Db {
         )
     }
 
+    /// The rooms an agent grant over a scope reaches (#122), when it's
+    /// given: the channels of the team whose default project it is, or the
+    /// DMs of the account. Not object threads (a grant over a project
+    /// reaches every issue's: they show their agents when opened).
+    pub fn chat_rooms_reached(&self, scope_kind: &str, scope_id: &str) -> Result<Vec<Room>> {
+        let c = self.c();
+        let (sql, arg) = match scope_kind {
+            "project" => (
+                format!(
+                    "SELECT {ROOM_COLS} FROM chat_rooms WHERE kind = 'channel' AND archived IS NULL AND scope IN
+                     (SELECT 'team:' || team_id FROM projects WHERE id = ?1 AND is_default = TRUE)"
+                ),
+                scope_id,
+            ),
+            "account" => (
+                format!(
+                    "SELECT {ROOM_COLS} FROM chat_rooms WHERE kind = 'dm' AND archived IS NULL
+                     AND id IN (SELECT room FROM chat_members WHERE account = ?1)"
+                ),
+                scope_id,
+            ),
+            _ => return Ok(vec![]),
+        };
+        c.query_map(&sql, params![arg], room_row)
+    }
+
     pub fn chat_members(&self, room: &str) -> Result<Vec<String>> {
         self.c()
             .query_map("SELECT account FROM chat_members WHERE room = ?1 ORDER BY account", params![room], |r| r.get(0))
@@ -403,7 +429,7 @@ impl Db {
                 m.via
             ],
         )?;
-        if m.agent.is_some() {
+        if m.agent.is_some() || m.author.is_empty() {
             tx.commit()?;
             return Ok(seq);
         }
@@ -840,7 +866,7 @@ impl Db {
             &format!(
                 "SELECT count(*), CAST(coalesce(sum(CASE WHEN {mentioned} THEN 1 ELSE 0 END), 0) AS BIGINT)
                  FROM chat_messages WHERE room = ?1 AND seq > ?2 AND (author != ?3 OR agent IS NOT NULL) AND deleted IS NULL AND at >= ?4
-                 AND imported_id IS NULL"
+                 AND imported_id IS NULL AND (via IS NULL OR via != 'system')"
             ),
             params![room, read, account, from],
             |r| Ok((r.get(0)?, r.get(1)?)),
@@ -883,6 +909,7 @@ impl Db {
                  FROM ({want}) w
                  LEFT JOIN chat_messages m ON m.room = w.room AND m.seq > w.since AND (m.author != ?1 OR m.agent IS NOT NULL)
                      AND m.deleted IS NULL AND m.at >= w.floor AND m.imported_id IS NULL
+                     AND (m.via IS NULL OR m.via != 'system')
                  GROUP BY w.room"
             ),
             params![account, asks],
@@ -1070,6 +1097,7 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     tx.execute("DELETE FROM notify_prefs WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_members WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_presence WHERE account = ?1", params![account])?;
+    tx.execute("DELETE FROM chat_sidebars WHERE account = ?1", params![account])?;
     // Its own live events (its read marks) keep their numbers, naming no one.
     tx.execute(
         "UPDATE chat_events SET kind = 'changed', body = '', to_account = NULL WHERE to_account = ?1",
