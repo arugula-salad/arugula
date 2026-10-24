@@ -426,7 +426,7 @@ async fn an_agent_acts_through_its_grant_and_is_labelled() {
         "a",
         Some(&agent),
         room,
-        ChatPost { text: "repro attached".into(), pane: None, quote: None },
+        ChatPost { text: "repro attached".into(), ..Default::default() },
     )
     .await
     .unwrap();

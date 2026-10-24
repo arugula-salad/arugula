@@ -712,6 +712,7 @@ impl Db {
             params![room, old],
         )?;
         super::chat_reactions::drop_for_message(&tx, room, seq)?;
+        super::chat_files::drop_for_message(&tx, room, seq)?;
         tx.commit()?;
         Ok(())
     }
@@ -1039,8 +1040,30 @@ impl Db {
         Ok(rows.into_iter().collect())
     }
 
-    /// Messages in these rooms that match, newest first.
+    /// Messages in these rooms that match, newest first: by their words,
+    /// or (#107) by a file's name that has all the words.
     pub fn chat_search(&self, rooms: &[String], s: &Search, limit: u32) -> Result<Vec<Message>> {
+        let mut hits = self.chat_search_text(rooms, s, limit)?;
+        if s.words.is_empty() || s.has_quote {
+            return Ok(hits);
+        }
+        let words: Vec<String> = s.words.iter().map(|w| w.text.clone()).collect();
+        for (room, seq) in self.chat_file_name_hits(rooms, &words, limit)? {
+            if hits.iter().any(|m| m.room == room && m.seq == seq) {
+                continue;
+            }
+            if let Some(m) = self.chat_message(&room, seq)? {
+                if m.deleted.is_none() && s.author.is_none_or(|a| m.author == a) {
+                    hits.push(m);
+                }
+            }
+        }
+        hits.sort_by(|a, b| b.at.cmp(&a.at));
+        hits.truncate(limit as usize);
+        Ok(hits)
+    }
+
+    fn chat_search_text(&self, rooms: &[String], s: &Search, limit: u32) -> Result<Vec<Message>> {
         if rooms.is_empty() {
             return Ok(vec![]);
         }
@@ -1150,7 +1173,7 @@ pub(super) fn drop_rooms_where(tx: &impl Sql, cond: &str, arg: impl super::sql::
     let ids: Vec<String> =
         tx.query_map(&format!("SELECT id FROM chat_rooms WHERE {cond}"), params![arg], |r| r.get(0))?;
     for id in ids {
-        for table in ["chat_messages", "chat_reads", "chat_members", "chat_reactions", "chat_saved"] {
+        for table in ["chat_messages", "chat_reads", "chat_members", "chat_reactions", "chat_saved", "chat_files"] {
             tx.execute(&format!("DELETE FROM {table} WHERE room = ?1"), params![id])?;
         }
         tx.execute("DELETE FROM chat_rooms WHERE id = ?1", params![id])?;
@@ -1185,6 +1208,12 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     tx.execute(
         "DELETE FROM chat_reactions WHERE account = ?1 OR EXISTS (SELECT 1 FROM chat_messages m
          WHERE m.room = chat_reactions.room AND m.seq = chat_reactions.seq AND m.author = ?1)",
+        params![account],
+    )?;
+    // Files on the messages it blanks, and any it uploaded and never posted.
+    tx.execute(
+        "DELETE FROM chat_files WHERE account = ?1 OR EXISTS (SELECT 1 FROM chat_messages m
+         WHERE m.room = chat_files.room AND m.seq = chat_files.seq AND m.author = ?1)",
         params![account],
     )?;
     tx.execute(

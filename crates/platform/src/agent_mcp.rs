@@ -557,7 +557,7 @@ impl Agent {
             );
             return Ok(Done { text, value: to_value(&m), project: None, note: format!("reacted in {}", a.room) });
         }
-        let b = ChatPost { text: a.text, pane: None, quote: None };
+        let b = ChatPost { text: a.text, ..Default::default() };
         let r = agent_threads::post(self.state(), self.me(), Path(a.room.clone()), Json(b)).await?.0;
         let v = to_value(&r);
         let text = format!("Posted in {} as {}'s agent on {}: {v}", a.room, self.owner, token_label(&self.token.name));
@@ -591,7 +591,7 @@ impl Agent {
     }
 
     async fn comment(&self, id: &str, text: String) -> Result<Value, Failure> {
-        let b = ChatPost { text, pane: None, quote: None };
+        let b = ChatPost { text, ..Default::default() };
         Ok(to_value(agent_threads::post(self.state(), self.me(), Path(id.to_owned()), Json(b)).await?.0))
     }
 

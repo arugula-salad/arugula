@@ -88,6 +88,7 @@ use crate::{
     db::{
         Db, Taken,
         chat::{Message, NewChatEvent, NewMessage, OldMessage, Page, Room, Search, UnreadAsk, Word},
+        chat_files::ChatFileRow,
         chat_reactions::Reaction,
         objects::Holder,
         projects::{ISSUES_WRITE, THREADS_POST, THREADS_READ},
@@ -99,12 +100,13 @@ use crate::{
 pub(crate) mod agent_notice;
 pub(crate) mod agent_threads;
 pub(crate) mod alerts;
+pub(crate) mod files;
 mod link_fetch;
 pub(crate) mod objects;
-pub(crate) mod saved;
 pub(crate) mod people;
 pub mod previews;
 pub(crate) mod reactions;
+pub(crate) mod saved;
 pub(crate) mod sidebar;
 pub(crate) mod typing;
 
@@ -642,6 +644,8 @@ struct Shower {
     agents: HashMap<String, String>,
     /// The reactions on these messages (#104), first reaction first.
     reactions: HashMap<(String, i64), Vec<Reaction>>,
+    /// The files on these messages (#107), in the order they were chosen.
+    files: HashMap<(String, i64), Vec<ChatFileRow>>,
     /// Who is reading: a reaction is "mine" when it is this account's and
     /// this agent's ("" for the person), so an agent sees its own apart
     /// from its owner's.
@@ -652,6 +656,7 @@ impl Shower {
     async fn of(app: &Platform, reader: &str, ms: &[&Message]) -> anyhow::Result<Self> {
         let hub = &*app.hub;
         let reactions = reactions_of(&app.db, ms)?;
+        let files = files::files_of(&app.db, ms)?;
         let mut authors: Vec<String> = ms.iter().map(|m| m.author.clone()).filter(|a| !a.is_empty()).collect();
         authors.extend(reactions.values().flatten().map(|r| r.account.clone()));
         authors.sort();
@@ -692,7 +697,7 @@ impl Shower {
                 (m, (name, opens))
             })
             .collect();
-        Ok(Self { names, machines, agents, reactions, reader: (reader.to_owned(), String::new()) })
+        Ok(Self { names, machines, agents, reactions, files, reader: (reader.to_owned(), String::new()) })
     }
 
     /// Read as the agent on `machine` (for its owner `reader`).
@@ -727,6 +732,14 @@ impl Shower {
             }),
             via: m.via.clone(),
             reactions: self.reacted(m),
+            // An agent reads them at its machine's address.
+            files: self
+                .files
+                .get(&(m.room.clone(), m.seq))
+                .into_iter()
+                .flatten()
+                .map(|f| files::shown(f, !self.reader.1.is_empty()))
+                .collect(),
         }
     }
 
@@ -1208,7 +1221,11 @@ impl Live {
             | ChatLive::Read { room, .. }
             | ChatLive::Object { room, .. } => self.rooms.contains(room),
             // Sidebar and Saved are told to their account only (`out.to`).
-            ChatLive::Hello { .. } | ChatLive::Sidebar {} | ChatLive::Saved {} | ChatLive::Resync {} | ChatLive::Typing { .. } => true,
+            ChatLive::Hello { .. }
+            | ChatLive::Sidebar {}
+            | ChatLive::Saved {}
+            | ChatLive::Resync {}
+            | ChatLive::Typing { .. } => true,
         };
         ok.then(|| Event::default().id(self.app().chat.id(out.n)).data(data(&out.ev)))
     }
@@ -1828,7 +1845,9 @@ pub(crate) async fn post_full(
     }
     let text = b.text.trim();
     let quote = b.quote.as_deref().filter(|q| !q.trim().is_empty());
-    if text.is_empty() && quote.is_none() {
+    let attach = files::to_attach(app, &room, &s.account, &b.files)?;
+    let files_label = files::label(&attach);
+    if text.is_empty() && quote.is_none() && attach.is_empty() {
         return Err(err(StatusCode::BAD_REQUEST, "say something"));
     }
     sizes(text, quote)?;
@@ -1878,6 +1897,10 @@ pub(crate) async fn post_full(
             via,
         },
     )?;
+    if !attach.is_empty() {
+        let ids: Vec<String> = attach.into_iter().map(|f| f.id).collect();
+        app.db.attach_chat_files(&room.id, seq, &s.account, &ids)?;
+    }
     app.chat.publish(&app.db, ChatLive::Message { room: room.id.clone(), seq }, None);
     let pushed = push(
         app,
@@ -1885,7 +1908,11 @@ pub(crate) async fn post_full(
         &room,
         (&s.account, agent, via),
         seq,
-        text.is_empty().then_some(quote).flatten().unwrap_or(text),
+        if text.is_empty() && quote.is_none() {
+            &files_label
+        } else {
+            text.is_empty().then_some(quote).flatten().unwrap_or(text)
+        },
         &named,
         &extra.keyword,
         &people,
@@ -2569,6 +2596,9 @@ pub fn start(app: &Arc<Platform>) {
             if pruned.elapsed() >= Duration::from_secs(60) && !p.is_paused() {
                 if let Err(e) = p.db.prune_chat_events() {
                     tracing::warn!(error = %e, "chat: pruning live events");
+                }
+                if let Err(e) = p.db.sweep_chat_files(now_ms()) {
+                    tracing::warn!(error = %e, "chat: sweeping files nobody posted");
                 }
                 pruned = Instant::now();
             }

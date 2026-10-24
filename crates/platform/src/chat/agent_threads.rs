@@ -30,8 +30,8 @@ use axum::{
 };
 
 use super::{
-    Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, gate, in_team, listed_as, objects,
-    post_as, reactions, rooms_seen, search_in,
+    Facts, J, MAX_PAGE, PAGE, Shower, agent_object_room, agent_room, agent_scope, files, gate, in_team, listed_as,
+    objects, post_as, reactions, rooms_seen, search_in,
 };
 use crate::{
     Platform,
@@ -217,6 +217,37 @@ pub async fn post(
 ) -> J<ChatPosted> {
     let (room, _, agent) = room_of(&app, &d, THREADS_POST, &id).await?;
     Ok(Json(post_as(&app, &d.account, Some(&agent), &room.id, b).await?))
+}
+
+/// `POST /api/daemon/chat/rooms/{id}/files?name=`: an agent's file
+/// (`threads.post`), kept for its next post in the room, as a person's is.
+pub async fn upload(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path(id): Path<String>,
+    Query(q): Query<wire::ChatUploadQuery>,
+    body: axum::body::Bytes,
+) -> J<wire::ChatFile> {
+    let (room, _, _) = room_of(&app, &d, THREADS_POST, &id).await?;
+    let facts = Facts::of(&app, Some(&d.account), &[&room]).await?;
+    let mut f = files::store(&app, &d.account, (&room, &facts), &q.name, &body).await?;
+    f.url = files::url(&room.id, &f.id, true);
+    Ok(Json(f))
+}
+
+/// `GET /api/daemon/chat/rooms/{id}/files/{file}`: a file in a room the
+/// agent reads (`threads.read`); the bytes, as a person gets them.
+pub async fn download(
+    State(app): State<Arc<Platform>>,
+    d: Machine,
+    Path((id, file)): Path<(String, String)>,
+    Query(q): Query<files::Download>,
+    headers: axum::http::HeaderMap,
+) -> Result<axum::response::Response, ApiError> {
+    gate(&app, &d.account).await?;
+    app.limits.check_daemon(AGENT_READS, &d.daemon)?;
+    let (room, from, _) = room_of(&app, &d, THREADS_READ, &id).await?;
+    files::fetch(&app, (&room, from), &d.account, &file, &headers, q.download.is_some()).await
 }
 
 /// `POST /api/daemon/chat/rooms/{id}/messages/{seq}/reactions`: an agent's

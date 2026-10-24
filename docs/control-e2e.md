@@ -1508,10 +1508,10 @@ sleeps, and control pushes and searches them itself.
 
 <!-- Written by `just control-tables` from crates/control/tables.toml. Edit that, not this. -->
 
-Control's database has 126 tables in two planes ("Two planes, two trust rules"):
+Control's database has 127 tables in two planes ("Two planes, two trust rules"):
 
 - **The machine plane** (44 tables) is what control needs to route and check: ids, names, addresses, public keys and signed statements. What moves between a client and a machine stays end to end, and control can't read it.
-- **The platform plane** (82 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
+- **The platform plane** (83 tables) is what has to exist while every machine is asleep: billing and usage, chat and the threads on objects, Shared Docs, Cloud workspaces, linked repos' PRs and issues, and projects' native issues, runs and deploys. Control reads most of it, and says so here.
 
 Every table is listed in `crates/control/tables.toml`, and a test fails when one isn't. **Holds** is what's in it: metadata (ids, names, addresses, times, counts, public keys, signed statements), ciphertext (encrypted to keys control never holds), or plaintext (what people or their agents wrote, or a secret control can read). **Gone with the account** is what deleting an account does to its rows.
 
@@ -1583,6 +1583,7 @@ Every table is listed in `crates/control/tables.toml`, and a test fails when one
 | `chat_reactions` | **plaintext** | Who reacted to which message with which emoji, and whether their agent did it (#104). | Reactions shown and changed, with every machine asleep. | yes: the account's own reactions, and every reaction on the messages it wrote. |  |
 | `chat_avatars` | metadata | A GitHub login's public picture as control fetched it, so readers never load it from GitHub themselves (#112). | Pictures in chat, with every machine asleep. | kept: by GitHub login, not account: a public picture, fetched again after a day. |  |
 | `chat_presence` | metadata | When a person's pages were last heard from and last used, and whether they chose away or offline (#110). | Who's around, with every machine asleep. | yes |  |
+| `chat_files` | **plaintext** | Files and images posted in chat, bytes included, with their sniffed type and the message they belong to (#107). | A room's files, served to its readers, with every machine asleep. | yes: the account's uploads, and the files on the messages it wrote. |  |
 | `chat_sidebars` | metadata | How a person arranges their chat sidebar: starred rooms, their own sections, what is collapsed and how each is sorted. | The same sidebar on every device, with every machine asleep. | yes |  |
 | `chat_reads` | metadata | A person's read mark in a room, and how loud they chose it (all, mentions or nothing; none is their default). | Unread counts and pushes, with every machine asleep. | yes |  |
 | `notify_prefs` | metadata | A person's notification settings (#113, #115): their default levels for channels, DMs and followed threads, a snooze, quiet hours by weekday with their time zone, and whether do not disturb covers every push. No message text. | Chat's pushes are decided from it with every machine asleep but the platform's. | yes |  |

@@ -102,7 +102,7 @@ pub async fn post(app: &Platform, p: &BoxPost) -> anyhow::Result<BoxPosted> {
         Err(e) if e.0 == StatusCode::INTERNAL_SERVER_ERROR => anyhow::bail!("{}", e.1),
         Err(e) => return Ok(e.into()),
     };
-    let b = ChatPost { text: p.text.clone(), pane: None, quote: None };
+    let b = ChatPost { text: p.text.clone(), ..Default::default() };
     match chat::post_full(app, &p.author, None, Some(&p.via), &room, b).await {
         Ok(posted) => Ok(BoxPosted::Posted { room, seq: posted.seq }),
         Err(e) if e.0 == StatusCode::INTERNAL_SERVER_ERROR => anyhow::bail!("{}", e.1),

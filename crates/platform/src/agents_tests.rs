@@ -40,7 +40,7 @@ fn room(id: &str, kind: &str) -> Room {
 }
 
 pub(crate) fn post(text: &str) -> ChatPost {
-    ChatPost { text: text.into(), pane: None, quote: None }
+    ChatPost { text: text.into(), ..Default::default() }
 }
 
 pub(crate) fn give(machine: &str, power: &str, scope: Value) -> Option<Value> {

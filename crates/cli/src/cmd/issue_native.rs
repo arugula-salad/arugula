@@ -1333,6 +1333,7 @@ mod tests {
             agent: None,
             via: None,
             reactions: vec![],
+            files: vec![],
         };
         let events = [event("opened", json!({})), event("closed", json!({ "reason": "not_planned" }))];
         let text = shown(&issue, &events, std::slice::from_ref(&comment), &names);

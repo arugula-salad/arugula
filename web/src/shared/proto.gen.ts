@@ -185,6 +185,28 @@ export type ChatBeat = { idle: boolean, gone: boolean, mode: PresenceMode | null
  */
 export type ChatEdit = { text: string, };
 
+/**
+ * One attached file, as the reader sees it. `url` is control's, for the
+ * room's readers only (a session cookie, or an agent's token): the same
+ * path with `?download=1` downloads it.
+ */
+export type ChatFile = { id: string, name: string, 
+/**
+ * What the bytes were sniffed as, never what the upload said.
+ */
+mime: string, kind: ChatFileKind, size: number, 
+/**
+ * An image's size in pixels, when its header gave it.
+ */
+width?: number, height?: number, url: string, };
+
+/**
+ * How a file is shown: `Image`, `Video` and `Audio` inline (only types
+ * that are safe to render: never SVG or HTML), anything else as a card
+ * that downloads.
+ */
+export type ChatFileKind = "image" | "video" | "audio" | "file";
+
 export type ChatFound = { found: Array<ChatHit>, };
 
 export type ChatHit = { room: string, message: ChatMessage, };
@@ -266,7 +288,12 @@ via?: string,
  * Who reacted with which emoji (#104), the first reaction first.
  * Empty for a deleted message and for archives brought in.
  */
-reactions: Array<ChatReaction>, };
+reactions: Array<ChatReaction>, 
+/**
+ * Files and images attached (#107), in the order they were chosen.
+ * Empty for a deleted message: its files went with it.
+ */
+files: Array<ChatFile>, };
 
 export type ChatMessages = { room: ChatRoom, 
 /**
@@ -337,7 +364,13 @@ export type ChatPost = { text: string,
  * A pane the message is about: only one on a machine the poster may
  * reach.
  */
-pane?: ChatPaneRef, quote?: string, };
+pane?: ChatPaneRef, quote?: string, 
+/**
+ * Files uploaded for this message (ids from `POST .../files`, #107):
+ * the poster's own, for this room, not attached before. A message may
+ * be only files.
+ */
+files?: Array<string>, };
 
 export type ChatPosted = { seq: number, 
 /**

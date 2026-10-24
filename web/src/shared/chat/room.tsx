@@ -28,6 +28,7 @@ import { EmojiPicker } from "./emoji-picker";
 import { MessagePreviews } from "./previews";
 import { hookFor, itemsOf, MsgItems, MsgMenu } from "./msg-actions";
 import { QUICK } from "./reactions";
+import { AttachButton, AttachChips, dragsFiles, filesOf, MessageFiles, useAttachments } from "./files-ui";
 import { longPress, mayReact, ReactionChips, ReactMenu } from "./reactions-ui";
 import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
@@ -249,6 +250,7 @@ export function RoomBody({
   useSubscribe((fn) => chat.subscribe(fn));
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<PaneQuote | undefined>(initialQuote);
+  const [dropping, setDropping] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   // The message being edited (↑ in an empty composer picks my last).
   const [editing, setEditing] = useState<number | null>(null);
@@ -370,7 +372,13 @@ export function RoomBody({
   return (
     <>
       {!chip && <RoomAgents room={room.id} />}
-      <div class="thread-list" ref={list} data-room={room.id} onScroll={onScroll}>
+      <div
+        class={`thread-list${dropping ? " dropping" : ""}`}
+        ref={list}
+        data-room={room.id}
+        onScroll={onScroll}
+        {...(current.writable ? dropTarget(setDropping) : {})}
+      >
         {loaded?.older && (
           <button class="chat-older" onClick={more} data-room-older>
             Earlier messages
@@ -446,7 +454,7 @@ export function RoomBody({
 }
 
 // The composer's handle for "Quote in reply" (one is shown at a time).
-const composeRef: { current: { reply(text: string): void; focus(): void } | null } = { current: null };
+const composeRef: { current: { reply(text: string): void; focus(): void; attach(files: File[]): void } | null } = { current: null };
 
 /** One message: its author and time, its text, the pane it names, and its
  * tools (quote in reply, copy link, edit and delete for its author). */
@@ -586,6 +594,7 @@ function RoomMessage({
           m.text && <Markdown text={m.text} refs={null} chat isMe={chat.isMe} landed={landed} />
         )}
         {m.edited !== null && !editing && <span class="thread-tag" title={new Date(m.edited).toLocaleString()}>(edited)</span>}
+        <MessageFiles files={m.files} />
         {!editing && m.text && <MessagePreviews room={room.id} seq={m.seq} text={m.text} mine={owned} />}
         {m.pane && <PaneChip pane={m.pane} quote={m.quote} />}
         {!m.pane && m.quote && (
@@ -656,6 +665,29 @@ function RoomMessage({
       )}
     </div>
   );
+}
+
+/** A room accepts files dropped on it (#107): the handlers for a drop
+ * target, and whether a drag is over it. */
+function dropTarget(over: (v: boolean) => void) {
+  return {
+    onDragOver: (e: DragEvent) => {
+      if (!dragsFiles(e)) return;
+      e.preventDefault();
+      over(true);
+    },
+    onDragLeave: (e: DragEvent) => {
+      // Moving between the target's children isn't leaving it.
+      if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) over(false);
+    },
+    onDrop: (e: DragEvent) => {
+      over(false);
+      const dropped = filesOf(e.dataTransfer);
+      if (!dropped.length) return;
+      e.preventDefault();
+      composeRef.current?.attach(dropped);
+    },
+  };
 }
 
 /** Whether the caret is inside a ``` block that hasn't closed: Enter there is
@@ -776,6 +808,8 @@ function RoomCompose({
   const [missed, setMissed] = useState<string[]>([]);
   const [picking, setPicking] = useState(false);
   const [emoji, setEmoji] = useState(false);
+  const [dropping, setDropping] = useState(false);
+  const files = useAttachments(room.id, setError);
   // Quoting reads a pane on a machine of yours: none, no button.
   const api = usePlatformApi();
   useSubscribe((fn) => api.subscribe(fn));
@@ -799,11 +833,12 @@ function RoomCompose({
         input.current?.focus();
       },
       focus: () => input.current?.focus(),
+      attach: files.add,
     };
     return () => {
       composeRef.current = null;
     };
-  }, []);
+  }, [files.add]);
 
   const caret = input.current?.selectionStart ?? text.length;
   const typing = /(?:^|[^\w])@([\w.-]*)$/.exec(text.slice(0, caret));
@@ -874,7 +909,11 @@ function RoomCompose({
   };
 
   const send = async () => {
-    if (sending || (!text.trim() && !quote)) return;
+    if (sending || files.busy || (!text.trim() && !quote && !files.items.length)) return;
+    if (files.ids === null) {
+      setError("A file didn't upload: remove it, or wait for it");
+      return;
+    }
     // A big room is woken only on purpose (#114).
     if (usesBroadcast(text) && chat.people(room.id).length > BROADCAST_CONFIRM_OVER) {
       const n = chat.people(room.id).length - 1;
@@ -884,10 +923,11 @@ function RoomCompose({
     setError(null);
     setMissed([]);
     try {
-      const posted = await chat.post(room.id, text, quote);
+      const posted = await chat.post(room.id, text, quote, files.ids);
       setMissed(posted.unreached.map((w) => `Nobody here called ${w} can read this room`));
       setText("");
       setQuote(undefined);
+      files.clear();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -898,7 +938,8 @@ function RoomCompose({
 
   return (
     <form
-      class="thread-compose"
+      class={`thread-compose${dropping ? " dropping" : ""}`}
+      {...dropTarget(setDropping)}
       onSubmit={(e) => {
         e.preventDefault();
         void send();
@@ -972,6 +1013,7 @@ function RoomCompose({
             </button>
           </div>
         )}
+        <AttachChips items={files.items} remove={files.remove} />
         <textarea
           ref={input}
           rows={1}
@@ -981,6 +1023,13 @@ function RoomCompose({
           onBlur={(e) => {
             const t = e.currentTarget as HTMLTextAreaElement;
             at.current = { from: t.selectionStart, to: t.selectionEnd };
+          }}
+          onPaste={(e) => {
+            // A screenshot on the clipboard is a file; text pastes as text.
+            const pasted = filesOf(e.clipboardData);
+            if (!pasted.length) return;
+            e.preventDefault();
+            files.add(pasted);
           }}
           onInput={(e) => {
             setMissed([]);
@@ -1026,6 +1075,7 @@ function RoomCompose({
             <path d="M4 6l2 2-2 2M8 10h4" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </button>)}
+        <AttachButton add={files.add} />
         <button type="button" class="compose-tool" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button onClick={openEmoji}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
             <circle cx="8" cy="8" r="6.2" />
@@ -1033,7 +1083,7 @@ function RoomCompose({
             <path d="M5.9 6.2v.6M10.1 6.2v.6" stroke-linecap="round" stroke-width="1.8" />
           </svg>
         </button>
-        <button class="compose-send" type="submit" title="Send (Enter; Shift+Enter for a new line)" aria-label="Send" disabled={sending || (!text.trim() && !quote)}>
+        <button class="compose-send" type="submit" title="Send (Enter; Shift+Enter for a new line)" aria-label="Send" disabled={sending || files.busy || (!text.trim() && !quote && !files.items.length)}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
             <path d="M2 2.5l12 5.5-12 5.5 1.8-5.5L2 2.5zm1.8 5.5h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
           </svg>

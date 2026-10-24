@@ -1847,15 +1847,37 @@ impl Control {
         path_and_query: &str,
         body: Option<&serde_json::Value>,
     ) -> Result<serde_json::Value, CloudRefused> {
-        let e = self.enrolled().ok_or(CloudRefused::NotJoined)?;
         let bytes = body.map(|b| serde_json::to_vec(b).unwrap_or_default()).unwrap_or_default();
+        self.cloud_raw(patience, method, path_and_query, bytes, body.map(|_| "application/json")).await
+    }
+
+    /// [`cloud`](Self::cloud) with a body of bytes as they are, such as a
+    /// file for chat (#107), not JSON.
+    pub async fn cloud_bytes(
+        &self,
+        method: reqwest::Method,
+        path_and_query: &str,
+        bytes: Vec<u8>,
+    ) -> Result<serde_json::Value, CloudRefused> {
+        self.cloud_raw(Some(Patience::AGENT), method, path_and_query, bytes, Some("application/octet-stream")).await
+    }
+
+    async fn cloud_raw(
+        &self,
+        patience: Option<Patience>,
+        method: reqwest::Method,
+        path_and_query: &str,
+        bytes: Vec<u8>,
+        content_type: Option<&str>,
+    ) -> Result<serde_json::Value, CloudRefused> {
+        let e = self.enrolled().ok_or(CloudRefused::NotJoined)?;
         let build = || {
             let req = self
                 .http
                 .request(method.clone(), format!("{}{path_and_query}", e.saved.url))
                 .header(AUTH, self.sign(&e, method.as_str(), path_and_query, &bytes));
-            match body {
-                Some(_) => req.header(reqwest::header::CONTENT_TYPE, "application/json").body(bytes.clone()),
+            match content_type {
+                Some(t) => req.header(reqwest::header::CONTENT_TYPE, t).body(bytes.clone()),
                 None => req,
             }
         };

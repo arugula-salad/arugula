@@ -50,6 +50,12 @@ fn routes() -> Routes {
         .route("/api/chat/rooms/{id}", get(chat::room).patch(chat::change_room))
         .route("/api/chat/rooms/{id}/messages", get(chat::messages).post(chat::post))
         .route("/api/chat/rooms/{id}/messages/{seq}", axum::routing::patch(chat::edit).delete(chat::delete))
+        .route(
+            "/api/chat/rooms/{id}/files",
+            post(chat::files::upload)
+                .layer(axum::extract::DefaultBodyLimit::max(arugula_control_wire::chat::MAX_FILE_BYTES + 1)),
+        )
+        .route("/api/chat/rooms/{id}/files/{file}", get(chat::files::get))
         .route("/api/chat/rooms/{id}/previews", get(chat::previews::previews))
         .route("/api/chat/rooms/{id}/messages/{seq}/previews", post(chat::previews::hide))
         .route("/api/chat/previews/image", get(chat::previews::image))
@@ -78,6 +84,12 @@ fn routes() -> Routes {
             "/api/daemon/chat/rooms/{id}/messages",
             get(chat::agent_threads::messages).post(chat::agent_threads::post),
         )
+        .route(
+            "/api/daemon/chat/rooms/{id}/files",
+            post(chat::agent_threads::upload)
+                .layer(axum::extract::DefaultBodyLimit::max(arugula_control_wire::chat::MAX_FILE_BYTES + 1)),
+        )
+        .route("/api/daemon/chat/rooms/{id}/files/{file}", get(chat::agent_threads::download))
         .route(
             "/api/daemon/chat/rooms/{id}/messages/{seq}/reactions",
             post(chat::agent_threads::react).delete(chat::agent_threads::unreact),
