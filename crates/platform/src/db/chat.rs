@@ -759,6 +759,60 @@ impl Db {
         Ok(())
     }
 
+    /// The words that notify `account` as a mention does (#114).
+    pub fn chat_keywords(&self, account: &str) -> Result<Vec<String>> {
+        let words: Option<String> = self
+            .c()
+            .query_row("SELECT words FROM chat_keywords WHERE account = ?1", params![account], |r| r.get(0))
+            .optional()?;
+        Ok(words.and_then(|w| serde_json::from_str(&w).ok()).unwrap_or_default())
+    }
+
+    /// [`chat_keywords`](Self::chat_keywords) for a room's audience, those
+    /// who have any.
+    pub fn chat_keywords_of(&self, accounts: &[String]) -> Result<Vec<(String, Vec<String>)>> {
+        if accounts.is_empty() {
+            return Ok(vec![]);
+        }
+        let c = self.c();
+        let rows = c.query_map(
+            &format!("SELECT account, words FROM chat_keywords WHERE {}", in_json(&c, "account", 1)),
+            params![json_list(accounts)?],
+            |r| Ok((r.get::<String>(0)?, r.get::<String>(1)?)),
+        )?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(a, w)| Some((a, serde_json::from_str::<Vec<String>>(&w).ok().filter(|w| !w.is_empty())?)))
+            .collect())
+    }
+
+    pub fn set_chat_keywords(&self, account: &str, words: &[String]) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO chat_keywords (account, words) VALUES (?1, ?2)
+             ON CONFLICT (account) DO UPDATE SET words = excluded.words",
+            params![account, serde_json::to_string(words)?],
+        )?;
+        Ok(())
+    }
+
+    /// Whether `@channel` and `@here` are for a team's owners only (#114).
+    pub fn chat_broadcast_owners(&self, team: &str) -> Result<bool> {
+        Ok(self
+            .c()
+            .query_row("SELECT broadcast_owners FROM chat_team_settings WHERE team = ?1", params![team], |r| r.get(0))
+            .optional()?
+            .unwrap_or(false))
+    }
+
+    pub fn set_chat_broadcast_owners(&self, team: &str, owners_only: bool) -> Result<()> {
+        self.c().execute(
+            "INSERT INTO chat_team_settings (team, broadcast_owners) VALUES (?1, ?2)
+             ON CONFLICT (team) DO UPDATE SET broadcast_owners = excluded.broadcast_owners",
+            params![team, owners_only],
+        )?;
+        Ok(())
+    }
+
     /// Others' messages after `read` (from `from` ms on), and how many of
     /// them mention `account`. Messages brought in from a machine (M124)
     /// count as read; the account's own agents' (M197) don't.
@@ -958,6 +1012,7 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     }
     for t in disband {
         drop_rooms_where(tx, "scope = 'team:' || ?1", t)?;
+        tx.execute("DELETE FROM chat_team_settings WHERE team = ?1", params![t])?;
     }
     // Its machines' old conversations, archived under it (M124).
     drop_rooms_where(tx, "scope = 'account:' || ?1", account)?;
@@ -991,6 +1046,7 @@ pub(crate) fn erase_account(tx: &impl Sql, account: &str, machines: &[String], d
     tx.execute(readers, params![account])?;
     tx.execute("UPDATE chat_rooms SET created_by = '' WHERE created_by = ?1", params![account])?;
     tx.execute("DELETE FROM chat_reads WHERE account = ?1", params![account])?;
+    tx.execute("DELETE FROM chat_keywords WHERE account = ?1", params![account])?;
     tx.execute("DELETE FROM chat_members WHERE account = ?1", params![account])?;
     // Its own live events (its read marks) keep their numbers, naming no one.
     tx.execute(

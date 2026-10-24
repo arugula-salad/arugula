@@ -180,6 +180,13 @@ export type ChatFound = { found: Array<ChatHit>, };
 export type ChatHit = { room: string, message: ChatMessage, };
 
 /**
+ * `GET`/`PUT /api/chat/keywords`: the words that notify this account as a
+ * mention does (#114), lowercased, at most [`KEYWORDS_MAX`], each at most
+ * [`KEYWORD_CHARS`] long.
+ */
+export type ChatKeywords = { words: Array<string>, };
+
+/**
  * What a room is.
  */
 export type ChatKind = "channel" | "dm" | "pane" | "session" | "archive" | "object";
@@ -192,7 +199,7 @@ export type ChatKind = "channel" | "dm" | "pane" | "session" | "archive" | "obje
  * behind, or missed more events than control keeps) gets `resync`: reload
  * the rooms.
  */
-export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "resync", };
+export type ChatLive = { "type": "hello", stream: string, } | { "type": "message", room: string, seq: number, } | { "type": "changed", room: string, seq: number, } | { "type": "room", room: string, } | { "type": "read", room: string, seq: number, } | { "type": "object", room: string, target: string, } | { "type": "typing", room: string, account: string, name: string, } | { "type": "resync", };
 
 /**
  * A message as the reader sees it.
@@ -322,7 +329,7 @@ pushed: Array<ChatPushed>, };
 /**
  * Why control pushed someone.
  */
-export type ChatPushWhy = "mention" | "dm";
+export type ChatPushWhy = "mention" | "dm" | "keyword";
 
 export type ChatPushed = { account: string, why: ChatPushWhy, };
 
@@ -423,6 +430,17 @@ export type ChatRooms = { rooms: Array<ChatRoom>, };
  * What a daemon's thread is about.
  */
 export type ChatTargetKind = "pane" | "session" | "object";
+
+/**
+ * `GET`/`PUT /api/chat/teams/{team}/settings`: what a team's owners
+ * decide about its chat (#114). Anyone in the team reads it, for the
+ * composer; only an owner sets it.
+ */
+export type ChatTeamSettings = { 
+/**
+ * `@channel` and `@here` are for owners only.
+ */
+broadcast_owners: boolean, };
 
 export type Check = { name: string, source: CheckSource, state: CheckState, allow_failure: boolean, 
 /**
