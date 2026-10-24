@@ -50,12 +50,15 @@ listed is at the end.
 | `GITHUB_APP_WEBHOOK_SECRET` | the platform; workstation: **no Infisical copy** | Operator; rollback copy, as above; escrow it |
 | `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`, `LITESTREAM_BUCKET` (*config*), `LITESTREAM_ENDPOINT` (*config*) | the platform; Infisical `/illogical/control` | Operator |
 | `ARUGULA_PLATFORM_KEY` | the platform; Infisical `/illogical/control` | Operator |
-| `ARUGULA_CLOUD_SECRET_KEY` | the platform; Infisical `/illogical/control` (escrow) | Operator. Rollback copy on the hub, as above |
-| `ARUGULA_CLOUD_ACCOUNTS` (*config*) | the platform | Operator; rollback copy |
 | `POSTHOG_API_KEY` (a public project key) | the platform | Operator |
 | `ARUGULA_PLATFORM`, `ARUGULA_PLATFORM_HOST`, `ARUGULA_PREVIEW_DOMAIN` (*config*) | | Operator |
-| `ARUGULA_CLOUD_CONCURRENT_RUNS`, `ARUGULA_CLOUD_DAILY_RUNS`, `ARUGULA_CLOUD_RUN_MINUTES` (*config*) | | Deleted **now**: read by nothing since the run caps were retired |
 | The hub database's `settings`: VAPID key pair, hosted-machine signing key | Litestream only | Operator. M228's issuer keys will sit beside them; no escrow today |
+
+Unset from the hub on 2026-10-24 with the platform's old copies (Arugula #71):
+`ARUGULA_CLOUD_SECRET_KEY` (the platform's has the same digest),
+`ARUGULA_CLOUD_ACCOUNTS` (a stale copy; the platform has its own) and the
+retired run caps `ARUGULA_CLOUD_CONCURRENT_RUNS`, `ARUGULA_CLOUD_DAILY_RUNS`
+and `ARUGULA_CLOUD_RUN_MINUTES`.
 
 The hub's sign-in tables hold no secret it can use: sessions keep a hash of
 their token, passkeys and devices keep public keys. They stay the hub's.
@@ -299,19 +302,17 @@ Copies in Jake's `~/.config`, each `0600`:
 
 ## Duplicates and orphans
 
-- **Read by nothing** (Deleted now): the hub's three `ARUGULA_CLOUD_*_RUNS`/`_RUN_MINUTES`;
-  planter's `GITHUB_WEBHOOK_SECRET`, `BEDS_CALLBACK_TOKEN`, `BEDS_SERVICE_TOKEN`
+- **Read by nothing** (Deleted now): planter's `GITHUB_WEBHOOK_SECRET`, `BEDS_CALLBACK_TOKEN`, `BEDS_SERVICE_TOKEN`
   (beds still reads its half, `STUDIO_SERVICE_TOKEN` and `PLANTER_CALLBACK_TOKEN`);
   beds' `SPRITE_TOKEN`;
   studio's `SANDPIT_KEY`, `SPRITE_TOKEN`; arcade's `/` folder and `/arugula`'s
   `SANDPIT_KEY`, `WISP_KEY`; Infisical's `ILLOGICAL_SANDBOX_ACCOUNTS`,
   `ARUGULA_CLOUD_MODEL`, `ARUGULA_CLOUD_RUNTIME`; the workstation's
   `github-app.env`.
-- **Rollback copies on the hub**: `ARUGULA_CLOUD_SECRET_KEY`,
-  `ARUGULA_CLOUD_ACCOUNTS`, `GITHUB_APP_PRIVATE_KEY`,
+- **Rollback copies on the hub**: `GITHUB_APP_PRIVATE_KEY` and
   `GITHUB_APP_WEBHOOK_SECRET`. The hub reads them only with the platform in
-  process. Unset them with the hub's other leftovers after the soak
-  (arugula-salad/arugula#1196, arugula-salad/arugula#1202).
+  process. They stay until Jake decides; the cloud copies and run caps
+  went on 2026-10-24 (Arugula #71).
 - **Two names, one E2B key**: `E2B_API_KEY` and `ARUGULA_E2B_API_KEY` sit side
   by side in `/illogical/control` and again in `/illogical/control-tests`.
 - **Same name, different keys**: `LOBBY_SECRET` (studio, beds, arcade twice),
