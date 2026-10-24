@@ -275,7 +275,8 @@ test("messages are Markdown with emoji: lists, quotes and code; :ta offers 🎉;
   await list.locator("[data-emoji-button]").click();
   const sheet = list.locator("[data-emoji-picker]");
   await expect(sheet).toBeVisible();
-  expect((await sheet.boundingBox())!.width).toBeLessThanOrEqual(390);
+  // A sheet along the bottom: the phone's width, and no wider.
+  expect((await sheet.boundingBox())!.width).toBeLessThanOrEqual(await bob.evaluate(() => innerWidth));
 });
 
 test("a mention pushes, and the push's tap opens the room at the message", async () => {

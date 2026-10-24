@@ -99,10 +99,22 @@ export function findEmoji(t: EmojiTable, query: string, max: number): Emoji[] {
   for (const e of t.list) {
     if (e.names.some((n) => n.startsWith(q))) start.push(e);
     else if (e.names.some((n) => n.includes(q)) || e.words.split(" ").some((w) => w.startsWith(q))) within.push(e);
-    if (start.length >= max) break;
   }
-  return [...start, ...within].slice(0, max);
+  // As Slack does: what you use, then what most people use, then the table's
+  // order (`:ta` is 🎉 before 🍊).
+  const recent = recentEmoji();
+  const rank = (e: Emoji) => {
+    const r = recent.indexOf(e.char);
+    if (r >= 0) return r;
+    const c = COMMON.indexOf(e.char);
+    return c >= 0 ? RECENT_MAX + c : Infinity;
+  };
+  const byRank = (a: Emoji, b: Emoji) => rank(a) - rank(b);
+  return [...start.sort(byRank), ...within.sort(byRank)].slice(0, max);
 }
+
+/** What most people react and write with, first among equal matches. */
+const COMMON = ["👍", "❤️", "😂", "🎉", "👀", "✅", "🙏", "🔥", "😄", "😅", "🤔", "👋", "🚀", "💯", "😢", "😍", "✨", "🙌", "👏", "😭", "🥲", "😎", "🤝", "⚠️", "❌"];
 
 // ---- recently used, per device
 
