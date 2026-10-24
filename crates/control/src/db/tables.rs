@@ -300,6 +300,74 @@ fn the_hub_leaves_the_platforms_old_copies_alone() {
     }
 }
 
+/// After the 14 days `drop-copies` (#1196) drops those copies from a file
+/// with the hub's real schema: the window's 22 tables (Cloud's, which no
+/// build makes now, among them), `chat_fts` and its shadow tables, and
+/// `platform_migrations`. None of the hub's foreign keys, views or
+/// triggers names them, every hub table keeps its rows, and the hub opens
+/// the file again.
+#[test]
+fn dropping_the_copies_leaves_the_hub_as_it_was() {
+    use arugula_platform::window;
+    let dir = std::env::temp_dir().join(format!("arugula-drop-{}", hex::encode(arugula_e2e::random::<16>())));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (path, expect) = (dir.join("control.db"), dir.join("window-hub.txt"));
+    {
+        let hub = Db::open(&path).unwrap();
+        hub.c().execute("INSERT INTO accounts (id, created) VALUES ('acct-a', 1)", []).unwrap();
+    }
+    window::window_era(&path);
+    std::fs::write(&expect, window::window_output(&path)).unwrap();
+    let copies: Vec<String> = window::parse_expected(&std::fs::read_to_string(&expect).unwrap())
+        .unwrap()
+        .into_iter()
+        .map(|e| e.name)
+        .collect();
+    assert_eq!(copies.len(), 22);
+    let sums = || -> std::collections::BTreeMap<String, (u64, String)> {
+        let c = rusqlite::Connection::open(&path).unwrap();
+        let names: Vec<String> = c
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND sql NOT LIKE 'CREATE VIRTUAL%'")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        names
+            .into_iter()
+            .filter(|n| !n.starts_with("sqlite_"))
+            .map(|n| {
+                // A `WITHOUT ROWID` table has no rowid to sum: its count.
+                let s = window::sum(&c, "main", &n).unwrap_or_else(|_| {
+                    let rows = c.query_row(&format!("SELECT count(*) FROM \"{n}\""), [], |r| r.get(0)).unwrap();
+                    (rows, String::new())
+                });
+                (n, s)
+            })
+            .collect()
+    };
+    let before = sums();
+
+    let out =
+        window::drop_command(&path, &expect, true, ("http://arugula-platform.internal:7700", "the test's")).unwrap();
+    assert!(out.contains("24 tables"), "{out}");
+
+    let after = sums();
+    let mut gone: Vec<&String> = before.keys().filter(|n| !after.contains_key(*n)).collect();
+    gone.sort();
+    let mut want: Vec<String> = copies.clone();
+    want.extend(["platform_migrations"].map(String::from));
+    // External content: no `chat_fts_content`.
+    want.extend(["_data", "_idx", "_docsize", "_config"].map(|s| format!("chat_fts{s}")));
+    want.sort();
+    assert_eq!(gone, want.iter().collect::<Vec<_>>());
+    for (t, s) in &after {
+        assert_eq!(before.get(t), Some(s), "the hub's {t} is as it was");
+    }
+    drop(Db::open(&path).unwrap());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 fn party_names(m: &Manifest, t: &Table) -> String {
     let names: Vec<&str> = PARTIES
         .iter()

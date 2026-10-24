@@ -742,6 +742,19 @@ fn steps(set: &[Migration]) -> anyhow::Result<Vec<Shape>> {
     Ok(out)
 }
 
+/// Every table and virtual table any SQLite migration has made, whether a
+/// later one dropped it or not: the only tables `drop-copies` drops
+/// (`window::drop_copies`), so never one of the hub's.
+pub(crate) fn ever_made() -> anyhow::Result<BTreeSet<String>> {
+    let c = Connection::open_in_memory()?;
+    let mut out = BTreeSet::new();
+    for m in Dialect::Sqlite.migrations() {
+        c.execute_batch(m.sql).with_context(|| format!("building migration {}", m.file()))?;
+        out.extend(tables(&c)?);
+    }
+    Ok(out)
+}
+
 /// The tables and virtual tables in `main`: not SQLite's own, not an FTS5
 /// table's shadow tables, and not the runner's.
 pub(crate) fn tables(c: &Connection) -> rusqlite::Result<Vec<String>> {

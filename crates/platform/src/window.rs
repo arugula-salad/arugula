@@ -38,6 +38,9 @@
 //! transaction); a source that isn't migrated to this build's tables; the
 //! same file on both sides. The source is attached read-only, so it can be
 //! the live hub's database: a copy reads one consistent snapshot of it.
+//!
+//! **After the window** (#1196): `drop-copies` drops the hub's copies once
+//! they're no longer the rollback ([`drop_copies`]).
 
 use std::{collections::BTreeSet, fmt::Write as _, path::Path};
 
@@ -48,6 +51,11 @@ use sha2::{Digest as _, Sha256};
 
 #[path = "window_portable.rs"]
 pub mod portable;
+
+#[path = "window_drop.rs"]
+mod drop_copies;
+
+pub use drop_copies::{Dropped, Expected, Why, drop_copies, out_of_process, parse_expected};
 
 use portable::Place;
 
@@ -364,6 +372,20 @@ pub fn secrets_open(path: &Path, key: &str, previous: Option<&str>) -> anyhow::R
 /// always carry the app's secrets, and the server's are the ones that
 /// matter. `None` off Linux, or when there's no such process.
 pub(crate) fn running_env(var: &str) -> Option<(u32, String)> {
+    let (pid, environ) = running_server()?;
+    let value = env_value(&environ, var)?;
+    Some((pid, value))
+}
+
+/// `var` in a process's `environ` (NUL-separated `NAME=value`).
+fn env_value(environ: &[u8], var: &str) -> Option<String> {
+    let prefix = format!("{var}=");
+    let value = environ.split(|b| *b == 0).find_map(|kv| kv.strip_prefix(prefix.as_bytes()))?;
+    Some(String::from_utf8_lossy(value).into_owned())
+}
+
+/// The running server ([`running_env`]'s): its pid and its environment.
+fn running_server() -> Option<(u32, Vec<u8>)> {
     let me = std::process::id();
     let exe = std::env::current_exe().ok()?;
     for e in std::fs::read_dir("/proc").ok()?.flatten() {
@@ -377,11 +399,22 @@ pub(crate) fn running_env(var: &str) -> Option<(u32, String)> {
             continue;
         }
         let environ = std::fs::read(e.path().join("environ")).ok()?;
-        let prefix = format!("{var}=");
-        let value = environ.split(|b| *b == 0).find_map(|kv| kv.strip_prefix(prefix.as_bytes()))?;
-        return Some((pid, String::from_utf8_lossy(value).into_owned()));
+        return Some((pid, environ));
     }
     None
+}
+
+/// Where the hub runs its platform: the running server's `ARUGULA_PLATFORM`
+/// (`in-process` when it has none, as the server defaults), else this
+/// shell's when no server runs here; and whose it is.
+fn hub_platform() -> (String, String) {
+    const VAR: &str = "ARUGULA_PLATFORM";
+    match running_server() {
+        Some((pid, environ)) => {
+            (env_value(&environ, VAR).unwrap_or_default(), format!("the running server's (pid {pid})"))
+        }
+        None => (std::env::var(VAR).unwrap_or_default(), "this shell's: no server runs here".into()),
+    }
 }
 
 /// The first words that make either binary run one of these instead of
@@ -525,6 +558,44 @@ enum What {
         #[arg(long)]
         reason: Option<String>,
     },
+    /// On the hub, after the first window (#1196): drop the platform's
+    /// copies from control.db, in one transaction, once they're no longer
+    /// the rollback. Refused unless every table the window copied is still
+    /// as --expect says, and while the hub runs the platform in process.
+    /// Without --yes, checks and says what it would drop.
+    DropCopies {
+        /// The hub's file (`/data/control.db`).
+        #[arg(long)]
+        db: std::path::PathBuf,
+        /// The window's output: `copy`'s (`window-hub.txt`) or `checksums`'.
+        #[arg(long)]
+        expect: std::path::PathBuf,
+        /// Drop them. Without it, nothing is written.
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+/// `drop-copies`, with where the hub runs its platform and whose setting
+/// that is ([`hub_platform`]): what it prints, or why it refused.
+pub fn drop_command(db: &Path, expect: &Path, yes: bool, platform: (&str, &str)) -> anyhow::Result<String> {
+    let (at, whose) = platform;
+    if !out_of_process(at) {
+        let shown = if at.is_empty() { "unset" } else { at };
+        bail!(
+            "the hub runs the platform in process (ARUGULA_PLATFORM {shown}, {whose}): its tables in {} are the live \
+             ones, not copies. drop-copies runs only on a hub whose platform runs on its own",
+            db.display()
+        );
+    }
+    let text = std::fs::read_to_string(expect).with_context(|| format!("reading {}", expect.display()))?;
+    let expected = parse_expected(&text).with_context(|| format!("{} isn't the window's output", expect.display()))?;
+    let d = drop_copies(db, &expected, yes)?;
+    let out = d.render(db);
+    if !yes {
+        bail!("{out}");
+    }
+    Ok(out)
 }
 
 /// `var` as the running server has it, else as this shell does, and
@@ -662,6 +733,10 @@ pub fn run(prog: &str, args: impl Iterator<Item = String>) -> anyhow::Result<()>
                 println!("  (there are none, so this proves nothing about the key)");
             }
         }
+        What::DropCopies { db, expect, yes } => {
+            let (at, whose) = hub_platform();
+            print!("{}", drop_command(&db, &expect, yes, (&at, &whose))?);
+        }
         What::RotateKey { db } => {
             let (new, old) = ("ARUGULA_CLOUD_SECRET_KEY", "ARUGULA_CLOUD_SECRET_KEY_PREVIOUS");
             let Some((new_key, whose)) = key_from(new)? else { bail!("no {new}: the new master key") };
@@ -766,6 +841,70 @@ pub fn sample(db: &crate::db::Db) {
         [cipher.seal("hw_1", "GITHUB_TOKEN", "ghp_never_printed").unwrap()],
     )
     .unwrap();
+}
+
+/// The platform's tables in the hub's file at `path` as the first window
+/// left them (tests, here and in control): migrations 0001 to 0003, the
+/// 22 tables `window-hub.txt` lists (Cloud's `cloud_*` among them, which
+/// later builds don't make), `chat_fts` and `platform_migrations`, with
+/// rows in chat, Cloud, projects, grants and the feed.
+#[cfg(any(test, feature = "contract"))]
+pub fn window_era(path: &Path) {
+    let mut c = arugula_control_common::sqlite::open(path).unwrap();
+    crate::db::migrate::run_to(&mut c, 3).unwrap();
+    c.execute_batch(
+        "INSERT INTO projects (id, team_id, account_id, name, is_default, created_at)
+             VALUES ('prj_t', 'team-1', NULL, 'acme', 1, 5), ('prj_a', NULL, 'acct-a', 'Personal', 1, 6);
+         INSERT INTO team_members VALUES ('team-1', 'acct-a', 'owner', 'A', 1), ('team-1', 'acct-b', 'member', 'B', 1);
+         INSERT INTO chat_rooms (id, scope, kind, name, created_by, created, last_seq, project_id)
+             VALUES ('r1', 'team:team-1', 'channel', 'general', 'acct-a', 10, 2, 'prj_t');
+         INSERT INTO chat_messages (id, room, seq, author, at, text, quote)
+             VALUES (7, 'r1', 1, 'acct-a', 20, 'before the window', NULL),
+                    (9, 'r1', 2, 'acct-b', 21, 'ship it', 'before the window');
+         INSERT INTO chat_reads (room, account, seq) VALUES ('r1', 'acct-a', 2);
+         INSERT INTO chat_readers VALUES ('m1', 'pane', 't1', '[]', 22);
+         INSERT INTO grants (id, subject_kind, subject_id, power, scope_kind, scope_id, granted_by, created_at)
+             VALUES ('g1', 'daemon', 'd1', 'cloud.drive', 'account', 'acct-a', 'acct-a', 30);
+         INSERT INTO hub_feed (reader, seq) VALUES ('projects', 1234);
+         INSERT INTO cloud_runs (id, account, request_key, spec, created, deadline)
+             VALUES ('run_1', 'acct-a', 'k1', '{}', 40, 50);
+         INSERT INTO cloud_jobs (id, body) VALUES ('job_1', '{}'), ('job_2', '{}');
+         INSERT INTO cloud_workspaces (id, account, request_key, name, saved_spec, created, project_id)
+             VALUES ('cw_1', 'acct-a', 'k2', 'dev', '{}', 41, 'prj_a');
+         INSERT INTO cloud_tabs (id, account, cloud_workspace, request_key, spec, created)
+             VALUES ('tab_1', 'acct-a', 'cw_1', 'k3', '{}', 42);
+         INSERT INTO cloud_events (conversation, account, cursor, body)
+             VALUES ('c1', 'acct-a', 1, '{}'), ('c1', 'acct-a', 2, '{}'), ('c1', 'acct-a', 3, x'00ff');",
+    )
+    .unwrap();
+}
+
+/// What the window's `copy` printed for the hub's file at `path`, as
+/// `window-hub.txt` has it: every platform table any migration made that's
+/// in the file (tests).
+#[cfg(any(test, feature = "contract"))]
+pub fn window_output(path: &Path) -> String {
+    let c = read_only(path).unwrap();
+    let ever = crate::db::migrate::ever_made().unwrap();
+    let names: Vec<String> = c
+        .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND sql NOT LIKE 'CREATE VIRTUAL%' ORDER BY rowid",
+        )
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<Vec<String>, _>>()
+        .unwrap()
+        .into_iter()
+        .filter(|n| ever.contains(n))
+        .collect();
+    let mut report = Report { tables: Vec::new(), fts_rows: 0, replaced: 0 };
+    for t in names {
+        let (n, s) = sum(&c, "main", &t).unwrap();
+        report.tables.push(Table { name: t, from_rows: n, to_rows: n, from_sum: s.clone(), to_sum: s });
+    }
+    report.fts_rows = report.tables.iter().find(|t| t.name == "chat_messages").map_or(0, |t| t.to_rows);
+    report.render(path, Path::new("/tmp/window.db"))
 }
 
 #[cfg(test)]
