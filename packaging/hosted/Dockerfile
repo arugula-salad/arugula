@@ -39,7 +39,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates \
  && apt-get update -qq --snapshot "$APT_SNAPSHOT" \
  && apt-get install -y -qq --no-install-recommends \
-      bash curl git iptables less openssh-client procps sudo tmux xz-utils \
+      bash curl git iptables less nftables openssh-client procps sudo tmux xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
 RUN set -eu; cd /tmp; f="node-v$NODE_VERSION-linux-x64.tar.xz"; \
@@ -84,7 +84,9 @@ RUN id -u user >/dev/null 2>&1 || { userdel -r ubuntu 2>/dev/null; useradd -m -u
 # - never arugulad's state directory (0700), where its keys, its enrollment
 #   and the grant revokes it heard are;
 # - kept off the daemon's and the provider's ports on loopback by arugulad's
-#   iptables rules (owner match), made before its first run.
+#   nftables table (`meta skuid`, so `nft` is installed above; E2B's base
+#   has it, loam's doesn't), else iptables rules (owner match), made before
+#   its first run.
 RUN { id -u runner >/dev/null 2>&1 || useradd -m -s /bin/bash runner; } && usermod -aG user runner && chmod 0750 /home/user \
  && echo 'Defaults>runner env_reset, use_pty' > /etc/sudoers.d/runner && chmod 0440 /etc/sudoers.d/runner
 
