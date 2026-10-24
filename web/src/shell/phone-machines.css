@@ -79,18 +79,20 @@
   font: 600 13px "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
 }
 
-.host-panes,
-.host-tag {
+/* Not .host-tag: that's the VM and remote tag elsewhere (style.css). The
+   state comes before the count, so the counts line up on the right. */
+.sheet-host .host-panes,
+.sheet-host .host-state {
   flex: none;
   color: var(--dim);
   font: 12px "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
 }
 
-.host-tag {
+.sheet-host .host-state {
   color: var(--subtle);
 }
 
-.sheet-host.current .host-tag {
+.sheet-host.current .host-state {
   color: var(--accent);
 }
 

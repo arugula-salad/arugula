@@ -299,12 +299,12 @@ export function HostSection({ close }: { close: () => void }) {
       >
         <span class="host-dot" data-dot={dotOf(state)} data-fleet={fleet?.host(name)?.state} aria-hidden="true" />
         <span class="host-name">{name}</span>
+        {tag && <span class="host-state">{tag}</span>}
         {n !== undefined && (
           <span class="host-panes" aria-label={`${n} pane${n === 1 ? "" : "s"}`}>
             {n}
           </span>
         )}
-        {tag && <span class="host-tag">{tag}</span>}
         {name !== directory.current && dotOf(state) !== "on" && <span class="sr-state">{state}</span>}
       </button>
     );

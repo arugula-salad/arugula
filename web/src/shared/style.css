@@ -870,50 +870,6 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   font-weight: 600;
 }
 
-.sheet-danger {
-  margin-top: 6px;
-  padding-top: 10px;
-  border-top: 1px solid var(--divider);
-}
-
-.sheet-danger button {
-  background: none;
-  border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent);
-}
-
-/* Machines: chips that wrap. */
-.sheet-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.chip {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 1px;
-  min-height: 44px;
-  padding: 4px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--divider);
-  text-align: left;
-}
-
-.chip.current {
-  border-color: var(--accent);
-  background: var(--raised);
-}
-
-.chip .host-name {
-  font-weight: 600;
-}
-
-.chip .host-seen {
-  font-size: 11px;
-}
-
 /* Notifications in the sheet (#95, #96). */
 .sheet-note {
   margin: 4px 12px 8px;
