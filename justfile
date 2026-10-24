@@ -689,8 +689,9 @@ macos cmd="tools" *args:
 # Tests for the shell side of releases: install.sh picks the right release
 # per machine, and the ratchet that what a release ships is named the same
 # everywhere (release.yml, scripts/release, Homebrew, install.sh, the site);
-# `just notices` keeping THIRD_PARTY.md when cargo-about fails; and
-# `scripts/release check-green` refusing a tag on a commit CI didn't pass.
+# `just notices` keeping THIRD_PARTY.md when cargo-about fails;
+# `scripts/release check-green` refusing a tag on a commit CI didn't pass;
+# and a release deploying the hub only when what it's built from changed.
 test-scripts:
     scripts/tests/ci-red.sh
     scripts/tests/install.sh
@@ -699,6 +700,7 @@ test-scripts:
     scripts/tests/release-green.sh
     scripts/tests/suite-lock.sh
     scripts/tests/release-bump.sh
+    scripts/tests/hub-changed.sh
 
 # arugula-mux names no integration (DECISIONS.md, "The mux names no
 # integration"): none of these crates may be in its dependency tree, with or

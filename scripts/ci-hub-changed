@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+# Did anything the hub (illogical-control, arugula-control) runs change
+# between two releases? The hub holds every relayed terminal, so a deploy
+# drops them all ("Control is two processes: a hub and a platform": the hub
+# deploys rarely). release.yml's `linux` job lists what this tag's hub was
+# built from (`inputs`), and its `control` job compares that with the
+# release the hub runs now (`diff`, through scripts/ci-control-deploy),
+# deploying the hub only when something there differs.
+#
+#   ci-hub-changed inputs DEPFILE      the hub's inputs as git pathspecs, one
+#                                      a line, from DEPFILE, cargo's dep-info
+#                                      beside the arugula-control it built
+#   ci-hub-changed diff FROM TO INPUTS which of INPUTS differ between commits
+#                                      FROM and TO, Arugula's own version
+#                                      numbers aside, one a line. Exits 0
+#                                      when any does, 1 when none does, and
+#                                      anything else when it can't tell
+#
+# The inputs are:
+# - every workspace file rustc read to build arugula-control (the dep-info:
+#   its crates' sources, routes.toml, migrations, all of crates/platform
+#   that it links, and so on; no tests), and each of their crates' build.rs;
+# - web/'s sources (web/dist and web/dist-platform, which it embeds, are
+#   built from them), less the specs and the dev servers, always: a page
+#   the hub serves must never lag its release;
+# - the platform's contract with the hub (HubPort, PlatformPort, signed
+#   internal calls, routes.toml), always, even if the hub stopped
+#   compiling them;
+# - every crate's Cargo.toml (`just static` builds the hub beside arugulad
+#   and arugula-platform, whose features it shares), Cargo.toml and
+#   Cargo.lock: registry crates are absent from the dep-info, and their
+#   versions are in the lock file;
+# - the build itself: rust-toolchain.toml, .cargo/config.toml, .mise.toml
+#   (Zig), the Zig wrappers, the setup action, the `static`, `web` and
+#   `bootstrap` recipes (recipe:NAME lines), and packaging/control (the
+#   image and fly.toml).
+# A release's bump changes only version numbers in manifests, lock files and
+# THIRD_PARTY.md, release notes and its copy of the client fixtures: `diff`
+# compares manifests and lock files with every arugula crate's version
+# blanked (`scripts/release blank`), and the rest aren't inputs. Without a
+# dep-info, or with one that names none of crates/control/src, the inputs
+# are the whole tree (`.`): every release deploys.
+set -euo pipefail
+here=$(cd "$(dirname "$0")" && pwd)
+
+# The platform's contract with the hub: the seam's traits and their wire,
+# the signed calls between the two processes, the hub's route table.
+contract=(
+  crates/platform/src/hub.rs
+  crates/platform/src/port.rs
+  crates/platform/src/remote.rs
+  crates/platform/src/contract.rs
+  crates/control-common/src/internal.rs
+  crates/control-common/src/principal.rs
+  crates/control-wire
+  crates/control/routes.toml
+)
+
+# web/'s sources for the pages the hub embeds: all of web/ but the specs,
+# their fixtures and the dev and test servers.
+web=(
+  web
+  ':(exclude)web/e2e'
+  ':(exclude)web/fixtures'
+  ':(exclude)web/screenshots'
+  ':(exclude)web/safari'
+  ':(exclude,glob)web/**/*.test.*'
+  ':(exclude,glob)web/**/*.fixture.*'
+  ':(exclude,glob)web/playwright*.ts'
+  ':(exclude)web/safari.config.ts'
+  ':(exclude)web/screenshots.config.ts'
+  ':(exclude)web/control-smoke.ts'
+  ':(exclude,glob)web/dev-*.ts'
+  ':(exclude)web/e2e-interop.ts'
+  ':(exclude)web/fake-fleet.ts'
+  ':(exclude)web/reconnect-watch.ts'
+  ':(exclude,glob)web/scripts/e2e-*'
+  ':(exclude,glob)web/scripts/perf-*'
+)
+
+# How the binary and its image are built.
+build=(
+  Cargo.toml
+  Cargo.lock
+  ':(glob)crates/*/Cargo.toml'
+  rust-toolchain.toml
+  .cargo/config.toml
+  .mise.toml
+  scripts/zig-cc-musl
+  scripts/zig-ar
+  .github/actions/setup
+  packaging/control
+  recipe:static
+  recipe:web
+  recipe:bootstrap
+)
+
+# The files a dep-info names, one a line, absolute (its target dropped).
+depfile_paths() {
+  # Make syntax: "target: dep dep ...", spaces in a path escaped.
+  awk '{ gsub(/\\ /, "\001"); sub(/\\$/, ""); print }' "$1" | tr '\t' ' ' | tr ' ' '\n' |
+    sed -e '/:$/d' -e '/^$/d' | tr '\001' ' '
+}
+
+# The workspace files a dep-info names, relative to the checkout, one a
+# line, but web/dist and web/dist-platform (built, not in git: web/'s
+# sources stand for them).
+compiled() {
+  local dep=$1 root real target p rel dir
+  root=$(git rev-parse --show-toplevel)
+  real=$(cd "$root" && pwd -P)
+  target=${CARGO_TARGET_DIR:-$root/target}
+  depfile_paths "$dep" | while IFS= read -r p; do
+    case "$p" in "$target"/*) continue ;; esac # build scripts' output
+    case "$p" in
+      "$root"/*) rel=${p#"$root"/} ;;
+      "$real"/*) rel=${p#"$real"/} ;;
+      *) continue ;; # registry crates (Cargo.lock), the toolchain's own
+    esac
+    case "$rel" in
+      target/*) continue ;;
+      web/dist/* | web/dist-platform/*) continue ;;
+    esac
+    echo "$rel"
+    # Its crate's manifest and build script.
+    dir=$(dirname "$rel")
+    while [ "$dir" != . ] && [ ! -f "$root/$dir/Cargo.toml" ]; do dir=$(dirname "$dir"); done
+    if [ "$dir" != . ]; then
+      echo "$dir/Cargo.toml"
+      [ ! -f "$root/$dir/build.rs" ] || echo "$dir/build.rs"
+    fi
+  done | sort -u
+}
+
+inputs() {
+  local dep=${1:?usage: ci-hub-changed inputs DEPFILE} files
+  echo "# What the hub is built from (scripts/ci-hub-changed inputs)."
+  if [ ! -s "$dep" ]; then
+    echo "::warning::no dep-info at $dep: comparing the whole tree, so the hub deploys" >&2
+    echo "# No dep-info ($dep): the whole tree."
+    echo .
+    return 0
+  fi
+  files=$(compiled "$dep")
+  # A dep-info that names none of the hub's own sources was read wrong (a
+  # checkout at another path?): never let that pass for "nothing changed".
+  if ! grep -q '^crates/control/src/' <<<"$files"; then
+    echo "::warning::$dep names none of crates/control/src: comparing the whole tree, so the hub deploys" >&2
+    echo "# $dep names none of crates/control/src: the whole tree."
+    echo .
+    return 0
+  fi
+  echo "# Compiled into arugula-control (its dep-info):"
+  echo "$files"
+  echo "# The pages it embeds (web/dist, web/dist-platform), by their sources:"
+  printf '%s\n' "${web[@]}"
+  echo "# The platform's contract with the hub:"
+  printf '%s\n' "${contract[@]}"
+  echo "# How it's built:"
+  printf '%s\n' "${build[@]}"
+}
+
+# The justfile's recipe NAME at REV: its line and its indented body.
+recipe() {
+  git show "$1:justfile" 2>/dev/null |
+    awk -v r="$2" '$0 ~ "^" r "( |:)" { p = 1; print; next } p && /^[^ \t]/ { p = 0 } p'
+}
+
+diff_() {
+  local from=${1:?usage: ci-hub-changed diff FROM TO INPUTS} to=${2:?usage: ci-hub-changed diff FROM TO INPUTS}
+  local list=${3:?usage: ci-hub-changed diff FROM TO INPUTS} l f files any=1
+  local specs=() recipes=()
+  git rev-parse -q --verify "$from^{commit}" >/dev/null || { echo "no commit $from here" >&2; return 2; }
+  git rev-parse -q --verify "$to^{commit}" >/dev/null || { echo "no commit $to here" >&2; return 2; }
+  while IFS= read -r l; do
+    case "$l" in
+      '' | '#'*) ;;
+      recipe:*) recipes+=("${l#recipe:}") ;;
+      *) specs+=("$l") ;;
+    esac
+  done <"$list"
+  [ "${#specs[@]}" -gt 0 ] || { echo "$list lists no inputs" >&2; return 2; }
+  files=$(git diff --name-only --no-renames "$from" "$to" -- "${specs[@]}") || return 2
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    # A manifest or lock file whose only change is a bump isn't a change.
+    case "$f" in
+      Cargo.toml | Cargo.lock | crates/*/Cargo.toml | crates/*/Cargo.lock)
+        [ "$(git show "$from:$f" 2>/dev/null | "$here/release" blank "$f")" = \
+          "$(git show "$to:$f" 2>/dev/null | "$here/release" blank "$f")" ] && continue
+        ;;
+    esac
+    echo "$f"
+    any=0
+  done <<<"$files"
+  for l in "${recipes[@]}"; do
+    [ "$(recipe "$from" "$l")" = "$(recipe "$to" "$l")" ] && continue
+    echo "justfile (just $l)"
+    any=0
+  done
+  return "$any"
+}
+
+case ${1:-} in
+  inputs) shift; inputs "$@" ;;
+  diff) shift; diff_ "$@" ;;
+  *) sed -n '10,17p' "$0" >&2; exit 2 ;;
+esac

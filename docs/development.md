@@ -193,10 +193,15 @@ daemon's update check read it.
    `platform` job deploys control's platform (`arugula-platform`) from the
    tag's x86_64 static build, once that app exists (the
    `FLY_PLATFORM_API_TOKEN` secret; without it the job deploys nothing and
-   succeeds), then its `control` job deploys the hosted control, with no
-   approval step, and fails unless control then answers and runs the tag's
-   image (the `FLY_API_TOKEN` secret; [control-ops.md](control-ops.md#deploys),
-   [The platform](control-ops.md#the-platform)). Its `template` job
+   succeeds), then its `control` job deploys the hosted control's hub, with
+   no approval step, and fails unless control then answers and runs the
+   tag's image (the `FLY_API_TOKEN` secret; [control-ops.md](control-ops.md#deploys),
+   [The platform](control-ops.md#the-platform)). The hub holds every
+   relayed terminal, so it deploys only when something it's built from
+   changed since the release it runs (`scripts/ci-hub-changed`); otherwise
+   the job's summary says `hub unchanged since vX: not deployed` and the
+   hub stays on vX. The repository variable `ARUGULA_HUB_DEPLOY=always`
+   deploys it anyway (set it, re-run the job, unset it). Its `template` job
    builds a hosted workspace's E2B template, `arugula-workspace:vX.Y.Z`,
    from the same build (the `E2B_API_KEY` secret;
    [control-ops.md](control-ops.md#hosted-workspaces-template)). It builds
