@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { active, menu, paneEl, panes, ready, run, text } from "./helpers";
+import { active, menu, paneEl, panes, ready, run, text, sheetTab } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 import { labs } from "./labs";
 
@@ -141,6 +141,7 @@ test.describe("phone", () => {
     await expect.poll(() => base(page)).toBe("");
     await expect.poll(() => connected(page)).toBe(true);
     await page.locator(".sheet-button").click();
+    await sheetTab(page, "Machines");
     await expect(page.locator(".sheet-host")).toHaveCount(2);
     await page.locator('.sheet-host[data-host="other"]').click();
     await expect.poll(() => base(page)).toBe(otherUrl);

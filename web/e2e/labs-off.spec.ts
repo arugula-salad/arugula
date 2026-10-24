@@ -15,7 +15,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { closeContexts, open, paneEl, ready } from "./helpers";
+import { closeContexts, open, paneEl, ready, sheetTab } from "./helpers";
 import { labs } from "./labs";
 import { ANY, daemonPort } from "./ports";
 
@@ -190,6 +190,10 @@ test.describe("on a phone", () => {
     await open(page);
     await expect.poll(() => page.evaluate(() => window.__arugula.client.features !== null)).toBe(true);
     await page.locator(".sheet-button").tap();
+    await sheetTab(page, "More");
+    // Here has chat when there is any, else New chat; studio is More's.
+    await expect(page.locator("[data-open-chat]")).toHaveCount(0);
+    await sheetTab(page, "More");
     // What it does have.
     await expect(page.locator("[data-open-swarm]")).toBeVisible();
     await expect(page.locator("[data-open-pr]")).toBeVisible();

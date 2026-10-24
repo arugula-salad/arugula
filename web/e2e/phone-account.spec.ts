@@ -4,6 +4,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import { TeamControl, home, show } from "./team-fixture";
+import { sheetTab } from "./helpers";
 
 const ctl = new TeamControl("phone-account");
 /** A small phone: what fits here fits a bigger one. */
@@ -29,6 +30,7 @@ async function fits(page: Page, selector: string) {
 const openSheet = async (page: Page) => {
   await page.locator(".sheet-button").click();
   await expect(page.locator(".sheet")).toBeVisible();
+  await sheetTab(page, "More");
 };
 
 test("the phone's sheet has the account's items; a machine is removed from it", async ({ browser }) => {

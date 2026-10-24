@@ -57,6 +57,15 @@
 //                      E2B nobody answers: no box is made, so a hosted
 //                      workspace and its runs (M215's runs page) are rows
 //                      written into control's database by hand.
+//   DEV_CONTROL_CLOUD=api,docs
+//                      hosted machines (M178) in the account's project, by
+//                      these names: hosted workspaces on (as
+//                      DEV_CONTROL_HOSTED=1) against a fake E2B
+//                      (fixtures/fake-e2b.ts) that makes no box, so each
+//                      workspace's box is an `arugulad --hosted` here,
+//                      started with the ticket its create was given. Made
+//                      on the first run; the fake forgets its boxes, so
+//                      start over to change them.
 //   DEV_CONTROL_BROKER=1
 //                      the inference broker (M231) with a registered client,
 //                      `studio` (its credential is `dev-studio`), and a
@@ -64,15 +73,19 @@
 //                      Anthropic nobody answers: its screens (the consent
 //                      switches, spend) with calls written by hand.
 //
+// A machine named NAME@TEAM (`ci@Acme`) joins into that team, which is
+// made (you its owner) if you have none by that name.
+//
 // Start over: delete the state directory.
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import type { Server } from "node:http";
 import { Device } from "./fixtures/device.ts";
 import { fakeGithub } from "./fixtures/fakes.ts";
+import { fakeE2b } from "./fixtures/fake-e2b.ts";
 import { fingerprint, type Cert } from "./src/shell/e2e/cert.ts";
 
 // An agent's pane exports ARUGULA_* (the socket, keep-panes…) that would
@@ -94,6 +107,9 @@ const labs = process.env.DEV_CONTROL_LABS !== "0";
 const approveAll = process.env.DEV_CONTROL_APPROVE_BROWSERS !== "0";
 const chatOn = process.env.DEV_CONTROL_CHAT === "1";
 const machines = process.argv.slice(2).length ? process.argv.slice(2) : ["workstation", "laptop"];
+const machineNames = machines.map((m) => m.split("@")[0]);
+const cloud = (process.env.DEV_CONTROL_CLOUD ?? "").split(",").map((l) => l.trim()).filter(Boolean);
+const hosted = process.env.DEV_CONTROL_HOSTED === "1" || cloud.length > 0;
 const bin = process.env.TARGET_DIR ?? "../target/debug";
 const base = `http://${host}:${port}`;
 /** Where control listens: localhost may be ::1 first to a resolver, and
@@ -106,6 +122,7 @@ const platformWeb = join(dir, "platform-web");
 
 const procs: ChildProcess[] = [];
 let github: Server | undefined;
+let e2b: Server | undefined;
 /** Each child leads a process group of its own (`detached`), and goes with
  * its whole group: `npx vite` runs vite under a shell, and a daemon its
  * panes' shims, which a signal to the child alone would leave running. */
@@ -126,6 +143,7 @@ const bye = (code = 0) => {
     // none left, or no pkill
   }
   github?.close();
+  e2b?.close();
   process.exit(code);
 };
 process.on("exit", () => procs.forEach(stop));
@@ -205,6 +223,14 @@ async function startControl() {
   github = fakeGithub(0, "127.0.0.1", () => login, logins);
   await new Promise((r) => github!.once("listening", r));
   const gh = `http://127.0.0.1:${(github.address() as { port: number }).port}`;
+  // DEV_CONTROL_CLOUD: a fake E2B that answers (its key is the one it
+  // takes), and boxes that enroll by the ticket in their env, as testnet's.
+  let e2bUrl = "http://127.0.0.1:9";
+  if (cloud.length) {
+    e2b = fakeE2b(0, "127.0.0.1").server;
+    await new Promise((r) => e2b!.once("listening", r));
+    e2bUrl = `http://127.0.0.1:${(e2b.address() as { port: number }).port}`;
+  }
   const control = spawn(
     `${bin}/arugula-control`,
     [
@@ -213,13 +239,17 @@ async function startControl() {
       ...["--github-url", gh, "--github-api", gh],
       ...(blockDomain ? ["--block-domain", blockDomain] : []),
       ...(platformHost ? ["--platform-host", platformHost, "--platform-static-dir", platformWeb] : []),
-      ...(process.env.DEV_CONTROL_HOSTED === "1" ? ["--hosted-accounts", "*", "--e2b-api-key", "dev-nobody", "--e2b-url", "http://127.0.0.1:9"] : []),
+      ...(hosted ? ["--hosted-accounts", "*", "--e2b-api-key", cloud.length ? "e2b-testnet" : "dev-nobody", "--e2b-url", e2bUrl] : []),
       // `dev-studio`'s SHA-256.
       ...(process.env.DEV_CONTROL_BROKER === "1"
           ? ["--inference-clients", "studio:1edd80a2427c1ddb2398ac22c980e5e9513aa02f1ae50c52ea68df4b49502b81:20:payers", "--inference-upstream", "http://127.0.0.1:9", "--cloud-secret-key", "de".repeat(32)]
           : []),
     ],
-    { stdio: ["ignore", "ignore", "inherit"], detached: true },
+    {
+      stdio: ["ignore", "ignore", "inherit"],
+      detached: true,
+      env: { ...process.env, ...(cloud.length ? { ARUGULA_HOSTED_TEMPLATE: "dev", ARUGULA_HOSTED_ENROLL: "ticket" } : {}) },
+    },
   );
   procs.push(control);
   await up(`${direct}/control.json`, control);
@@ -256,7 +286,7 @@ async function seedChat(d: Device): Promise<Device[]> {
   }
   const file = join(dir, "chat.json");
   if (existsSync(file)) return others;
-  const team = await d.createTeam("Acme");
+  const team = await teamNamed(d, "Acme");
   for (const o of others) await o.acceptInvite(team, await d.invite(team, "editor"));
   if (others.length) await d.admitAll(team);
   await d.api("/api/flags", { name: "chat", on: true, team });
@@ -272,8 +302,14 @@ async function seedChat(d: Device): Promise<Device[]> {
   return others;
 }
 
-/** `arugulad join`, approved by the device. */
-async function join_(d: Device, name: string, state: string) {
+/** The team of yours called `name`: made, you its owner, if there's none. */
+async function teamNamed(d: Device, name: string): Promise<string> {
+  const { teams } = await d.api<{ teams: { team: string; roster: { name: string } }[] }>("/api/teams");
+  return teams.find((t) => t.roster.name === name)?.team ?? (await d.createTeam(name));
+}
+
+/** `arugulad join`, approved by the device (into `team`, with one). */
+async function join_(d: Device, name: string, state: string, team?: string) {
   const joining = spawn(`${bin}/arugulad`, ["join", base, "--name", name, "--state-dir", state], { stdio: ["pipe", "pipe", "inherit"] });
   let out = "";
   const code = await new Promise<string>((res) => {
@@ -288,17 +324,18 @@ async function join_(d: Device, name: string, state: string) {
   joining.removeAllListeners("exit");
   const exited = new Promise<number | null>((r) => joining.on("exit", r));
   // Its answer to the secret is all the machine needs: it asks nothing.
-  await d.approveJoin(code);
+  await d.approveJoin(code, team);
   if ((await exited) !== 0) fail(`joining ${name} failed:\n${out}`);
 }
 
 async function startMachines(d: Device) {
   const listed = new Set((await d.directory()).map((m) => m.name));
-  for (const name of machines) {
+  for (const [i, name] of machineNames.entries()) {
     const state = join(dir, "machines", name);
     mkdirSync(state, { recursive: true });
     if (!listed.has(name)) {
-      await join_(d, name, state);
+      const team = machines[i].split("@")[1];
+      await join_(d, name, state, team ? await teamNamed(d, team) : undefined);
       log(`${name} joined`);
     }
     const flags = join(state, "flags.json");
@@ -311,10 +348,53 @@ async function startMachines(d: Device) {
       ),
     );
   }
-  for (const name of machines) {
+  for (const name of machineNames) {
     const m = (await d.directory()).find((x) => x.name === name);
     if (m) await d.waitOnline(m.id).catch(() => log(`${name} isn't online yet`));
   }
+}
+
+/** DEV_CONTROL_CLOUD: a hosted workspace for each name in the account's
+ * project (delegated to control on the first run), its box an
+ * `arugulad --hosted` here with the env the platform made the box with at
+ * the fake E2B (the ticket). A later run starts the same daemons,
+ * enrolled already. */
+async function startCloud(d: Device) {
+  const home = join(dir, "cloud");
+  const made = join(home, "made.json");
+  mkdirSync(home, { recursive: true });
+  if (!existsSync(made)) {
+    const p = await d.delegate();
+    for (const name of cloud) await d.api(`/api/projects/${p.project}/workspaces`, { name });
+    const at = `http://127.0.0.1:${(e2b!.address() as { port: number }).port}/_testnet/sandboxes`;
+    type Box = { sandboxID: string; envVars: Record<string, string> };
+    let boxes: Box[] = [];
+    for (let i = 0; i < 100 && boxes.length < cloud.length; i++) {
+      boxes = ((await (await fetch(at)).json()) as { boxes: Box[] }).boxes.filter((b) => b.envVars.ARUGULA_HOSTED_TICKET);
+      if (boxes.length < cloud.length) await sleep(300);
+    }
+    if (boxes.length < cloud.length) fail(`the platform made ${boxes.length} of ${cloud.length} boxes at the fake E2B`);
+    for (const [i, b] of boxes.entries()) {
+      const state = join(home, `box${i}`);
+      mkdirSync(state, { recursive: true });
+      writeFileSync(join(state, "e2b-id"), b.sandboxID);
+      writeFileSync(join(state, "env.json"), JSON.stringify(b.envVars));
+    }
+    writeFileSync(made, JSON.stringify({ project: p.project, boxes: boxes.length }));
+  }
+  const { boxes } = JSON.parse(readFileSync(made, "utf8")) as { boxes: number };
+  for (let i = 0; i < boxes; i++) {
+    const state = join(home, `box${i}`);
+    const env = JSON.parse(readFileSync(join(state, "env.json"), "utf8")) as Record<string, string>;
+    procs.push(
+      spawn(
+        `${bin}/arugulad`,
+        ["--hosted", ...["--listen", "127.0.0.1:0", "--state-dir", state], "--no-manager-env", ...["--tailscale-socket", "/nonexistent/sock"]],
+        { stdio: "ignore", detached: true, env: { ...process.env, ...env, ARUGULA_E2B_ID_FILE: join(state, "e2b-id") } },
+      ),
+    );
+  }
+  log(`cloud: ${cloud.join(", ")} (hosted, their boxes daemons here)`);
 }
 
 /** Any browser that signs in is approved, as another device of yours would. */
@@ -343,6 +423,7 @@ await webBuild();
 await startControl();
 const d = await device();
 await startMachines(d);
+if (cloud.length) await startCloud(d);
 const chatPeople = chatOn ? await seedChat(d).catch((e) => (log(`chat: ${String(e)}`), [] as Device[])) : [];
 console.log(`
 dev-control: ${base}${host === "127.0.0.1" ? " (no passkeys on an IP address: DEV_CONTROL_HOST=localhost)" : ""}

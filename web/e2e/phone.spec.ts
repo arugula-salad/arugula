@@ -3,7 +3,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { devices, expect, test } from "@playwright/test";
-import { active, paneEl, ready, reset, text, type } from "./helpers";
+import { active, paneEl, ready, reset, text, type, sheetTab } from "./helpers";
 
 const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
 test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
@@ -21,6 +21,7 @@ test("one pane at a time, switch from the sheet, extra keys work", async ({ page
   await reset(page);
   // A split made on the phone.
   await page.locator(".sheet-button").click();
+  await sheetTab(page, "More");
   await page.getByRole("button", { name: "Split pane" }).click();
   await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.panes.length)).toBe(2);
   // Only the active pane is drawn, filling the screen.
@@ -88,6 +89,7 @@ test("notify this device from the sheet", async ({ page, context }) => {
   await context.grantPermissions(["notifications"]);
   await reset(page);
   await page.locator(".sheet-button").click();
+  await sheetTab(page, "More");
   const notify = page.getByRole("button", { name: "Notify this device" });
   await expect(notify).toHaveAttribute("aria-pressed", "false");
   await notify.click();
@@ -146,6 +148,7 @@ test("share a session from the sheet, and from a push's Share", async ({ page })
     return { session: c.state!.sessions[0].id, pane: c.state!.panes[0].id };
   });
   await page.locator(".sheet-button").tap();
+  await sheetTab(page, "More");
   await page.locator(".sheet [data-share-session]").tap();
   await expect(page.locator(".sheet")).toHaveCount(0);
   const dialog = page.locator(`[data-share="${session}"]`);

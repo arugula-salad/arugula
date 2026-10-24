@@ -1,0 +1,152 @@
+/* The phone sheet's Machines tab: one line per machine, in groups. The
+ * palette's own variables only; the swarm's mono for names and counts. */
+
+.sheet-hosts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.host-filter {
+  min-height: 44px;
+  margin: 0 4px 6px;
+  padding: 0 12px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font: 13px "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+
+.host-filter:focus-visible {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.sheet-hosts .host-group {
+  margin: 10px 4px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.host-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-host {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+}
+
+.sheet-host.current {
+  border-left-color: var(--accent);
+  background: var(--raised);
+}
+
+.host-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.host-dot[data-dot="on"] {
+  background: var(--ok);
+}
+
+.host-dot[data-dot="mid"] {
+  background: var(--warn);
+}
+
+.sheet-host .host-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 13px "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+
+/* Not .host-tag: that's the VM and remote tag elsewhere (style.css). The
+   state comes before the count, so the counts line up on the right. */
+.sheet-host .host-panes,
+.sheet-host .host-state {
+  flex: none;
+  color: var(--dim);
+  font: 12px "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+
+.sheet-host .host-state {
+  color: var(--subtle);
+}
+
+.sheet-host.current .host-state {
+  color: var(--accent);
+}
+
+/* The state in words, for a screen reader (the tag is the short form). */
+.sr-state {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.host-fold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+
+.host-count {
+  font-family: "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color: var(--fg);
+}
+
+.host-caveat {
+  flex: 1;
+  text-align: right;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--warn);
+}
+
+.host-add {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+}
+
+.host-add button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: var(--accent);
+}

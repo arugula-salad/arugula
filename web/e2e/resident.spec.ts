@@ -18,7 +18,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Page } from "@playwright/test";
-import { ready, type as typeIn } from "./helpers";
+import { ready, type as typeIn, sheetTab } from "./helpers";
 import { ANY, daemonPort } from "./ports";
 import { labs } from "./labs";
 
@@ -102,6 +102,7 @@ const connected = (page: Page) =>
 
 async function sandboxes(page: Page) {
   await page.locator(".sheet-button").click();
+  await sheetTab(page, "More");
   await page.getByRole("button", { name: "Sandboxes" }).click();
   const row = page.locator(`[data-sandbox="${sprite}"]`);
   // wisp may hold many sandboxes: filter, once the list is in.

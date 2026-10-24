@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { devices, expect, test } from "@playwright/test";
-import { reset } from "./helpers";
+import { reset, sheetTab } from "./helpers";
 
 // VM panes need a wispd (and its token) on this host; elsewhere these skip.
 const WISP = process.env.ARUGULA_WISP_URL ?? "http://127.0.0.1:7788";
@@ -35,6 +35,7 @@ test.describe("phone", () => {
     await reset(page);
 
     await page.locator(".sheet-button").click();
+    await sheetTab(page, "More");
     await page.getByRole("button", { name: "New VM tab" }).click();
     const pane = await expect
       .poll(() => page.evaluate(() => window.__arugula.client.state!.panes.find((p) => p.host !== null)?.id ?? null))
@@ -56,6 +57,7 @@ test.describe("phone", () => {
 
     // Close it from the sheet: the machine is deleted, the session kept.
     await page.locator(".sheet-button").click();
+    await sheetTab(page, "More");
     await page.getByRole("button", { name: "Close pane" }).click();
     await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.machines.length)).toBe(0);
     await expect.poll(() => sprites(sprite)).toEqual([]);

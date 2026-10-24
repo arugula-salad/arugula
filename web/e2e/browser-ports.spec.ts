@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, test, type Frame, type Page } from "@playwright/test";
 import { createServer, type ViteDevServer } from "vite";
-import { menu, open, paneEl, panes, reset, closeContexts } from "./helpers";
+import { menu, open, paneEl, panes, reset, closeContexts, sheetTab } from "./helpers";
 import type { PaneId } from "../src/shared/proto";
 import { ANY, blockPort, daemonPort } from "./ports";
 import { labs } from "./labs";
@@ -204,6 +204,7 @@ test.describe("phone", () => {
     await page.evaluate((b) => window.__arugula.client.intent({ op: "close_pane", pane: b }), block);
     await expect.poll(() => page.evaluate(() => window.__arugula.client.state!.panes.length)).toBe(1);
     await page.locator(".sheet-button").click();
+    await sheetTab(page, "More");
     await page.getByRole("button", { name: "Open port" }).click();
     await page.locator(".prompt input").fill(`${VITE}/`);
     await page.keyboard.press("Enter");

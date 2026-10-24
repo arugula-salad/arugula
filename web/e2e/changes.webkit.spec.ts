@@ -12,7 +12,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { open, text } from "./helpers";
+import { open, text, sheetTab } from "./helpers";
 import { daemon, FakePush, iphone } from "./phones";
 import type { PaneId } from "../src/shared/proto";
 
@@ -65,6 +65,7 @@ test("Changes, a hunk's line, a live file block: on an iPhone", async ({ page })
 
   const before = (await panesOf(page)).map((p) => p.id);
   await page.locator(".sheet-button").tap();
+  await sheetTab(page, "More");
   await page.locator("[data-changes]").tap();
   diff = await newPane(page, "diff", before);
   const row = page.locator(`[data-diff="${diff}"] .diff-file[data-file="src/lib.rs"]`);

@@ -205,3 +205,11 @@ export async function uploadedPath(page: Page, pane: PaneId, ext = "png"): Promi
     .not.toBe("");
   return path;
 }
+
+/** The phone sheet opens on Here; the rest is a tab away. Call it after
+ * opening the sheet to reach the Machines or More buttons. */
+export async function sheetTab(page: Page, tab: "Here" | "Machines" | "More") {
+  const button = page.locator(`[data-sheet-tab="${tab.toLowerCase()}"]`);
+  await button.click();
+  await expect(button).toHaveAttribute("aria-selected", "true");
+}
