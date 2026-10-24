@@ -7143,11 +7143,17 @@ button.diff-why-run {
   color: var(--dim);
 }
 
-/* The picker opens below the menu, in the message's column. */
+/* The picker opens below the menu, in the message's column, or above it
+   when there's no room below (the newest message). */
 .react-menu .emoji-picker {
   top: calc(100% + 4px);
   right: 0;
   bottom: auto;
+}
+
+.react-menu .emoji-picker.above {
+  top: auto;
+  bottom: calc(100% + 4px);
 }
 
 @media (pointer: coarse) {
