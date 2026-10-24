@@ -16,6 +16,7 @@ import { Plan, type Billing } from "../settings/plan";
 import { AgentGrants } from "../settings/agents";
 import { AgentTokens } from "../settings/agent-tokens";
 import { LinkedProducts } from "../settings/linked";
+import { ChatAlerts } from "../settings/chat-alerts";
 import { ClaudeSettings } from "../settings/claude";
 import { Section, SectionIndex } from "../settings/section";
 import { controlOrigin, session } from "../session";
@@ -75,6 +76,7 @@ export function SettingsPage() {
           <LinkedProducts />
           <AgentGrants />
           <AgentTokens />
+          <ChatAlerts />
           <ClaudeSettings me={session.me?.account} />
         </div>
       </div>

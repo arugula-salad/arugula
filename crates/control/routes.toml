@@ -1114,6 +1114,41 @@ clients = ["page"]
 
 [[route]]
 method = "POST"
+path = "/api/chat/rooms/{id}/typing"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/chat/keywords"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PUT"
+path = "/api/chat/keywords"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "GET"
+path = "/api/chat/teams/{team}/settings"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PUT"
+path = "/api/chat/teams/{team}/settings"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "POST"
 path = "/api/daemon/chat/readers"  # wire::chat::CHAT_READERS
 process = "platform"
 auth = "daemon"

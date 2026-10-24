@@ -40,7 +40,7 @@ export class ChatError extends Error {
   }
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await platformFetch(path, {
     method,
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
@@ -53,6 +53,11 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 }
 
 const enc = encodeURIComponent;
+
+/** How long a typing ping shows, and the gap between a page's pings:
+ * control's `TYPING_MS` and `TYPING_PING_MS` (#111). */
+const TYPING_MS = 6_000;
+const TYPING_PING_MS = 3_000;
 
 /** A room's messages as far as the page has them, oldest first, and
  * whether older ones are left to fetch. */
@@ -92,6 +97,10 @@ export class ChatStore {
   private probe: number | undefined;
   private roomsTimer: number | undefined;
   private started = false;
+  /** Who is typing where (#111), by `room account`, until when. Never
+   * fetched: only what the stream said in the last few seconds. */
+  private typers = new Map<string, { room: string; account: string; name: string; until: number }>();
+  private typed = new Map<string, number>();
 
   /** Whether control has signed this page in (so chat is only off). */
   get signedIn(): boolean {
@@ -242,7 +251,12 @@ export class ChatStore {
         this.detail.delete(ev.room);
         this.roomsSoon();
         return;
+      case "typing":
+        this.typers.set(`${ev.room} ${ev.account}`, { ...ev, until: Date.now() + TYPING_MS });
+        this.emit();
+        return;
       case "resync":
+        this.typers.clear();
         this.objectChanged();
         this.loaded.clear();
         this.detail.clear();
@@ -269,6 +283,36 @@ export class ChatStore {
     if (!force && room === this.told) return;
     this.told = room;
     void call("POST", "/api/chat/live/open", { stream: this.stream, room }).catch(() => {});
+  }
+
+  // ---- typing (#111)
+
+  /** Who else is typing in a room now, by name, longest first. */
+  typingIn(room: string): string[] {
+    const now = Date.now();
+    return [...this.typers.values()].filter((t) => t.room === room && t.until > now && t.account !== this.me).map((t) => t.name);
+  }
+
+  /** The next time a name in a room stops showing, for a redraw. */
+  typingEnds(room: string): number | null {
+    const ends = [...this.typers.values()].filter((t) => t.room === room).map((t) => t.until);
+    return ends.length ? Math.min(...ends) : null;
+  }
+
+  /** Tell the room I'm typing: at most one ping per [`TYPING_PING_MS`] per
+   * room, and the caller sends none while the composer is empty. */
+  typing(room: string) {
+    const now = Date.now();
+    if (now - (this.typed.get(room) ?? 0) < TYPING_PING_MS) return;
+    this.typed.set(room, now);
+    void call("POST", `/api/chat/rooms/${enc(room)}/typing`).catch(() => {});
+  }
+
+  /** Whoever wrote a message has stopped typing it. */
+  private sent(room: string, list: ChatMessage[]) {
+    let any = false;
+    for (const m of list) if (m.author && this.typers.delete(`${room} ${m.author}`)) any = true;
+    if (any) this.emit();
   }
 
   // ---- rooms
@@ -417,6 +461,7 @@ export class ChatStore {
         );
         if (!r) return this.emit();
         this.loaded.set(id, { list: merge(had.list, r.messages), older: last === undefined ? r.more : had.older });
+        this.sent(id, r.messages);
         this.took(r.room);
         if (last === undefined || !r.more) return;
       }

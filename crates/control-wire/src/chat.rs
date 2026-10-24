@@ -304,6 +304,8 @@ pub struct ChatPost {
 pub enum ChatPushWhy {
     Mention,
     Dm,
+    /// One of the account's keyword alerts matched (#114).
+    Keyword,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -346,6 +348,28 @@ pub struct ChatRead {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatMute {
     pub muted: bool,
+}
+
+/// `GET`/`PUT /api/chat/keywords`: the words that notify this account as a
+/// mention does (#114), lowercased, at most [`KEYWORDS_MAX`], each at most
+/// [`KEYWORD_CHARS`] long.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatKeywords {
+    pub words: Vec<String>,
+}
+
+pub const KEYWORDS_MAX: usize = 20;
+pub const KEYWORD_CHARS: usize = 60;
+
+/// `GET`/`PUT /api/chat/teams/{team}/settings`: what a team's owners
+/// decide about its chat (#114). Anyone in the team reads it, for the
+/// composer; only an owner sets it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatTeamSettings {
+    /// `@channel` and `@here` are for owners only.
+    pub broadcast_owners: bool,
 }
 
 /// `GET /api/chat/search?q=&team=`: words (each a phrase, `mea*` a
@@ -422,8 +446,19 @@ pub enum ChatLive {
         room: String,
         target: String,
     },
+    /// Someone is typing in a room (#111): shown for [`TYPING_MS`] and
+    /// never stored or replayed. Sent to the room's other readers.
+    Typing {
+        room: String,
+        account: String,
+        name: String,
+    },
     Resync {},
 }
+
+/// How long a typing ping shows, and the client's gap between pings.
+pub const TYPING_MS: u64 = 6_000;
+pub const TYPING_PING_MS: u64 = 3_000;
 
 /// What a daemon says of a thread's readers: for each pane or session it
 /// names, the whole list, which replaces the last one control had. Those it

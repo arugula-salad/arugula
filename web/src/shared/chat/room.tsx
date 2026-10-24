@@ -20,6 +20,8 @@ import { agentLines, authorLabel } from "./agents";
 import { Markdown } from "../ui/markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
+import { TypingLine } from "./typing";
+import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alerts";
 import { EmojiPicker } from "./emoji-picker";
 import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
@@ -566,8 +568,10 @@ function PaneChip({ pane, quote }: { pane: NonNullable<ChatMessage["pane"]>; quo
  * matches a login, a whole name, or the one word a team's roster calls
  * someone. A name with spaces can't be typed after `@`, so it's their
  * roster word, from the teams this page knows. */
-function mentionables(api: PlatformApi, room: string): { token: string; name: string; who: string }[] {
-  const out: { token: string; name: string; who: string }[] = [];
+type Mentionable = { token: string; name: string; who: string; note?: string };
+
+function mentionables(api: PlatformApi, room: string): Mentionable[] {
+  const out: Mentionable[] = [];
   const words = new Map<string, string>();
   for (const t of api.teams()) for (const m of t.roster.members) if (m.name) words.set(m.account, m.name);
   for (const p of chat.people(room)) {
@@ -631,10 +635,14 @@ function RoomCompose({
 
   const caret = input.current?.selectionStart ?? text.length;
   const typing = /(?:^|[^\w])@([\w.-]*)$/.exec(text.slice(0, caret));
-  const options = typing
-    ? mentionables(api, room.id)
-        .filter((p) => p.token.startsWith(typing[1].toLowerCase()) || p.name.toLowerCase().startsWith(typing[1].toLowerCase()))
-        .slice(0, 6)
+  const options: Mentionable[] = typing
+    ? [
+        ...mentionables(api, room.id)
+          .filter((p) => p.token.startsWith(typing[1].toLowerCase()) || p.name.toLowerCase().startsWith(typing[1].toLowerCase()))
+          .slice(0, 6),
+        // `@channel` and `@here` after the people (#114).
+        ...broadcastOptions(typing[1]).map((b) => ({ token: b.token, name: `@${b.token}`, who: "", note: b.note })),
+      ]
     : [];
   const whole = !!typing && options.some((p) => p.token === typing[1].toLowerCase());
   const choose = (token: string) => {
@@ -695,6 +703,11 @@ function RoomCompose({
 
   const send = async () => {
     if (sending || (!text.trim() && !quote)) return;
+    // A big room is woken only on purpose (#114).
+    if (usesBroadcast(text) && chat.people(room.id).length > BROADCAST_CONFIRM_OVER) {
+      const n = chat.people(room.id).length - 1;
+      if (!confirm(`This notifies ${n} people. Send it?`)) return;
+    }
     setSending(true);
     setError(null);
     setMissed([]);
@@ -719,6 +732,7 @@ function RoomCompose({
         void send();
       }}
     >
+      <TypingLine room={room.id} />
       {missed.map((n) => (
         <p key={n} class="thread-note unreached">
           {n}
@@ -738,7 +752,7 @@ function RoomCompose({
         <ul class="mention-pick" role="listbox" aria-label="People to mention">
           {options.map((p, i) => (
             <li
-              key={p.who}
+              key={p.who || p.token}
               role="option"
               aria-selected={i === pick % options.length}
               class={i === pick % options.length ? "picked" : ""}
@@ -747,9 +761,9 @@ function RoomCompose({
                 choose(p.token);
               }}
             >
-              <MsgAvatar who={p.who} name={p.name} />
-              <b>{p.name}</b>
-              <span>@{p.token}</span>
+              {p.who ? <MsgAvatar who={p.who} name={p.name} /> : <span class="mention-all" aria-hidden="true">@</span>}
+              <b>{p.who ? p.name : `@${p.token}`}</b>
+              <span>{p.note ?? `@${p.token}`}</span>
             </li>
           ))}
         </ul>
@@ -798,7 +812,10 @@ function RoomCompose({
           }}
           onInput={(e) => {
             setMissed([]);
-            setText((e.target as HTMLTextAreaElement).value);
+            const v = (e.target as HTMLTextAreaElement).value;
+            setText(v);
+            // Never while it's empty; the store holds it to one in 3 s.
+            if (v.trim()) chat.typing(room.id);
           }}
           onKeyDown={(e) => {
             const n = options.length || emojis.length;

@@ -300,3 +300,44 @@ test("a mention pushes, and the push's tap opens the room at the message", async
   await home(bob);
   await expect.poll(async () => (await roomsOf(bob)).find((r) => r.id === deploys)?.mentions, { timeout: 15_000 }).toBe(0);
 });
+
+test("typing shows to the other reader and clears; @channel is offered; a keyword counts as a mention", async () => {
+  test.setTimeout(90_000);
+  const room = await alice.evaluate((tm) => window.__arugula.chat.newChannel(tm, "alerts").then((r) => r.id), team);
+  await platform(alice, `/chat/${room}-alerts`);
+  await platform(bob, `/chat/${room}-alerts`);
+  const a = alice.locator("[data-chat-control]");
+  const b = bob.locator("[data-chat-control]");
+  const abox = a.getByRole("textbox", { name: "Message #alerts" });
+  const bbox = b.getByRole("textbox", { name: "Message #alerts" });
+  // Nothing while the box is empty.
+  await expect(b.locator(".typing-line")).toHaveText("");
+  await abox.fill("");
+  await abox.pressSequentially("one moment");
+  await expect(b.locator(".typing-line")).toContainText(/is typing/, { timeout: 5_000 });
+  // Not to the typist, and gone within 6 s of stopping.
+  await expect(a.locator(".typing-line")).toHaveText("");
+  await expect(b.locator(".typing-line")).toHaveText("", { timeout: 9_000 });
+  // On send it clears at once.
+  await abox.pressSequentially(" again");
+  await expect(b.locator(".typing-line")).toContainText(/is typing/, { timeout: 5_000 });
+  await abox.press("Enter");
+  await expect(b.locator(".typing-line")).toHaveText("", { timeout: 3_000 });
+
+  // `@` offers the people, then @channel and @here.
+  await bbox.fill("@");
+  const picks = b.locator(".mention-pick li");
+  await expect(picks.nth(0)).toContainText("alice");
+  await expect(picks.getByText("@channel")).toBeVisible();
+  await expect(picks.getByText("@here")).toBeVisible();
+  await bbox.fill("");
+
+  // Bob's keyword makes Alice's message a mention for him.
+  await call(bob, "PUT", "/api/chat/keywords", { words: ["deploy failed"] });
+  const posted = await alice.evaluate((r) => window.__arugula.chat.post(r, "the deploy failed on geek"), room);
+  expect(posted.pushed).toContainEqual({ account: bobAccount, why: "keyword" });
+  expect(posted.mentions).toContain(bobAccount);
+  // And @channel reaches him as a mention too.
+  const all = await alice.evaluate((r) => window.__arugula.chat.post(r, "@channel standup"), room);
+  expect(all.mentions).toContain(bobAccount);
+});

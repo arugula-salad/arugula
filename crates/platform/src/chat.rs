@@ -95,7 +95,9 @@ use crate::{
 };
 
 pub(crate) mod agent_threads;
+pub(crate) mod alerts;
 pub(crate) mod objects;
+pub(crate) mod typing;
 
 type J<T> = Result<Json<T>, ApiError>;
 
@@ -780,6 +782,8 @@ pub struct Hub {
     /// rooms.
     generation: AtomicU64,
     pushed: Mutex<HashMap<(String, String), u64>>,
+    /// When each person last pinged typing in each room ([`typing`]).
+    typed: Mutex<HashMap<(String, String), u64>>,
 }
 
 /// Event ids are `c-<seq>`, `seq` being the event's row in `chat_events`
@@ -808,6 +812,7 @@ impl Default for Hub {
             streams: Mutex::new(HashMap::new()),
             generation: AtomicU64::new(0),
             pushed: Mutex::new(HashMap::new()),
+            typed: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -1004,6 +1009,15 @@ impl Live {
 
     /// The event to send for `out`, if this stream gets it.
     async fn deliver(&mut self, out: &Out) -> Option<Event> {
+        // Typing isn't in the log (`n` 0): no id, never replayed, and heard
+        // only by another person's page that has the room open.
+        if let ChatLive::Typing { room, account, .. } = &out.ev {
+            // `open` is the page's word: the room is also one this stream sees.
+            let hears = *account != self.account
+                && self.rooms.contains(room)
+                && self.app().chat.stream_has_open(&self.reg.id, room);
+            return hears.then(|| Event::default().data(data(&out.ev)));
+        }
         if out.n <= self.seen {
             return None;
         }
@@ -1024,7 +1038,7 @@ impl Live {
             | ChatLive::Changed { room, .. }
             | ChatLive::Read { room, .. }
             | ChatLive::Object { room, .. } => self.rooms.contains(room),
-            ChatLive::Hello { .. } | ChatLive::Resync {} => true,
+            ChatLive::Hello { .. } | ChatLive::Resync {} | ChatLive::Typing { .. } => true,
         };
         ok.then(|| Event::default().id(self.app().chat.id(out.n)).data(data(&out.ev)))
     }
@@ -1631,7 +1645,17 @@ pub(crate) async fn post_full(
     app.limits.check_account_per_minute(CHAT_POSTS, &s.account)?;
     app.limits.check_all_per_minute(ALL_CHAT_POSTS)?;
     let people = audience(app, &room).await?;
-    let (named, mut unreached) = mentions(app, text, &people, &s.account).await?;
+    let (mut named, mut unreached) = mentions(app, text, &people, &s.account).await?;
+    // `@channel`, `@here` and keywords are mentions too (#114): stored
+    // beside the named, so counts and Activity see them.
+    let extra = alerts::extra(app, &facts, &room, text, &people, &s.account, &named).await?;
+    unreached.retain(|w| !matches!(w.as_str(), alerts::CHANNEL | alerts::HERE));
+    for a in &extra.broadcast {
+        if !named.contains(a) {
+            named.push(a.clone());
+        }
+    }
+    named.extend(extra.keyword.iter().cloned());
     let mut stored = named.clone();
     stored.extend(agent_mentions(app, &facts, &room, &mut unreached, agent).await?);
     let at = now_ms();
@@ -1658,6 +1682,7 @@ pub(crate) async fn post_full(
         seq,
         text.is_empty().then_some(quote).flatten().unwrap_or(text),
         &named,
+        &extra.keyword,
         &people,
     )
     .await?;
@@ -1686,11 +1711,15 @@ async fn push(
     seq: i64,
     text: &str,
     named: &[String],
+    keyed: &[String],
     people: &[String],
 ) -> anyhow::Result<Vec<ChatPushed>> {
     let inboxed = room.kind == "object" && room.target.as_deref().and_then(crate::inbox::thread_reason).is_some();
-    let mut to: Vec<(String, ChatPushWhy)> =
-        named.iter().filter(|_| !inboxed).map(|a| (a.clone(), ChatPushWhy::Mention)).collect();
+    let mut to: Vec<(String, ChatPushWhy)> = named
+        .iter()
+        .filter(|_| !inboxed)
+        .map(|a| (a.clone(), if keyed.contains(a) { ChatPushWhy::Keyword } else { ChatPushWhy::Mention }))
+        .collect();
     if room.kind == "dm" {
         for a in people {
             if a != author && !named.contains(a) {
@@ -1743,6 +1772,7 @@ async fn push(
         let title = match why {
             ChatPushWhy::Mention if room.kind == "dm" => format!("{me} mentioned you"),
             ChatPushWhy::Mention => format!("{me} mentioned you in {place}"),
+            ChatPushWhy::Keyword => format!("{me} wrote a word you watch in {place}"),
             ChatPushWhy::Dm => format!("{me} wrote to you"),
         };
         let msg = json!({
@@ -1806,7 +1836,12 @@ pub async fn edit(
     }
     sizes(text, None)?;
     app.limits.check_account_per_minute(CHAT_POSTS, &s.account)?;
-    let (mut named, mut unreached) = mentions(&app, text, &audience(&app, &room).await?, &s.account).await?;
+    let people = audience(&app, &room).await?;
+    let (mut named, mut unreached) = mentions(&app, text, &people, &s.account).await?;
+    let extra = alerts::extra(&app, &facts, &room, text, &people, &s.account, &named).await?;
+    unreached.retain(|w| !matches!(w.as_str(), alerts::CHANNEL | alerts::HERE));
+    named.extend(extra.broadcast.iter().filter(|a| !named.contains(a)).cloned().collect::<Vec<_>>());
+    named.extend(extra.keyword);
     named.extend(agent_mentions(&app, &facts, &room, &mut unreached, None).await?);
     app.db.edit_chat_message(&room.id, seq, text, &named, now_ms())?;
     app.chat.publish(&app.db, ChatLive::Changed { room: room.id.clone(), seq }, None);

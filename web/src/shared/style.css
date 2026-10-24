@@ -7147,6 +7147,36 @@ button.thread-quote:hover {
   opacity: 0.7;
 }
 
+.mention-pick .mention-all {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--divider);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mention-pick li.picked .mention-all {
+  background: var(--surface);
+  color: var(--accent);
+}
+
+/* Reserves its line, so the box doesn't jump when a name comes. */
+.typing-line {
+  flex: none;
+  min-height: 1.4em;
+  margin: 0;
+  padding: 0 12px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.4em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mention-pick .msg-avatar {
   border-radius: 4px;
   font-size: 9px;
