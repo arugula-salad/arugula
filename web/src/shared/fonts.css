@@ -1,14 +1,16 @@
 /* The swarm's three fonts, self-hosted: --f-display, --f-ui and --f-mono
-   (style.css's .swarm and .start), the swarm's canvases (field.ts, city.ts,
-   flat.ts) and the terminal (terminal-view.ts) name them, and before this
-   nothing loaded them, so a machine without them drew the fallbacks.
+   (style.css's .swarm and .start) and the swarm's canvases (field.ts,
+   city.ts, flat.ts) name them, and before this nothing loaded them, so a
+   machine without them drew the fallbacks.
    Fontsource's variable builds (npm, so no font file is committed; Vite
    copies them into the build): one latin file a family covers every
    weight used (display 500 to 800, UI 400 to 600, mono 400 to 700), in
-   less than the static weights would. The families keep the names the
-   stacks use, not Fontsource's "… Variable", and the latin ranges are
-   Fontsource's own. No italics: nothing sets one, and the browser slants
-   the upright one for the terminal's. */
+   less than the static weights would. Display and UI keep the names their
+   stacks use, not Fontsource's "… Variable". JetBrains Mono is "Arugula
+   Mono" here, first in the swarm's mono stacks with "JetBrains Mono" after
+   it: the terminal's stack (terminal-view.ts) names JetBrains Mono too,
+   and stays on the one installed, or its fallback. The latin ranges are
+   Fontsource's own. No italics: nothing sets one. */
 
 @font-face {
   font-family: "Big Shoulders Display";
@@ -29,7 +31,7 @@
 }
 
 @font-face {
-  font-family: "JetBrains Mono";
+  font-family: "Arugula Mono";
   font-style: normal;
   font-display: swap;
   font-weight: 100 800;

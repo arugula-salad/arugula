@@ -140,7 +140,7 @@ const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const reduce = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Stub lengths for a tile's lines, steady per pane (no live text yet). */
-const META_FONT = `500 11px "JetBrains Mono", ui-monospace, monospace`;
+const META_FONT = `500 11px "Arugula Mono", "JetBrains Mono", ui-monospace, monospace`;
 
 /** A cluster's name as drawn, and the box it takes on the screen. */
 interface Label {
@@ -197,10 +197,15 @@ export class Field implements SwarmScene {
     this.cx = cv.getContext("2d")!;
     this.listen();
     // Labels are drawn in the swarm's faces (shared/fonts.css), and a field
-    // asleep doesn't draw: draw again once those load.
-    void document.fonts?.load(`800 16px "Big Shoulders Display"`).then(() => document.fonts.load(META_FONT)).then(() => {
-      this.dirty = true;
-    });
+    // asleep doesn't draw: draw again once those load. A face that didn't
+    // load leaves the fallback's, already drawn.
+    void document.fonts
+      ?.load(`800 16px "Big Shoulders Display"`)
+      .then(() => document.fonts.load(META_FONT))
+      .then(() => {
+        this.dirty = true;
+      })
+      .catch(() => {});
   }
 
   // ---- data
@@ -753,7 +758,7 @@ export class Field implements SwarmScene {
     // open, not a pixel).
     const textMode = w > 48;
     const fs = Math.max(6, h / 9);
-    if (textMode) cx.font = `${fs}px "JetBrains Mono", ui-monospace, monospace`;
+    if (textMode) cx.font = `${fs}px "Arugula Mono", "JetBrains Mono", ui-monospace, monospace`;
     for (const t of this.tiles.values()) {
       if (t.fly) continue;
       const s = this.toScreen(t.x, t.y);
