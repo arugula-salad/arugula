@@ -73,7 +73,10 @@ Start with `src/lib.rs`, then:
   (`arugula-platform copy|checksums|secrets-check`, and `arugula-control
   platform …`): copy the platform's tables from one file to another,
   proven by a count and a checksum per table, and check that sealed
-  secrets open with the running server's key.
+  secrets open with the running server's key. `src/window_drop.rs`:
+  the hub's `arugula-control platform drop-copies` (#1196), which drops
+  the first window's leftover copies from `control.db` once they still
+  match the window's output.
 - `src/agent_mcp.rs` and `src/agent_tokens.rs`: the MCP endpoint for
   agents with no machine (M230, `POST /api/mcp`), and the bearer agent
   grant tokens that open it, which only it reads. Each tool calls the

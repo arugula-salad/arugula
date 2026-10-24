@@ -2003,15 +2003,33 @@ copied from `control.db` to `platform.db` and proven, then
 That restarts the hub once (relay sockets reconnect on their own), with
 its internal API on `[::]:7691`.
 
-**Rolling back to in process:** hold the platform first
-(`ARUGULA_PLATFORM_PAUSED=1`), so two cloud workers never run on two
-files, then `fly secrets unset -a illogical-control ARUGULA_PLATFORM` (or
-set it to `in-process`): the hub restarts running its own platform on
-`control.db`, migrating its platform tables as the hub's build knows them
-(the same additive-only rule). After M141 that file's platform tables are
-the 14-day read-only copies, so anything written on the platform since is
-in `platform.db`: copy it back first ("Rolling back", in the window's
-runbook).
+**Rolling back to in process** always starts with copying the platform's
+tables back into `control.db`, which has none of them once the first
+window's copies are dropped (#1196: "Dropping the copies", below). The
+platform's database is Postgres since M145, so the copy goes Postgres →
+a file on a platform machine → the hub, and each copy proves itself (it
+ends `every count and checksum matches`, or writes nothing). With the
+helpers from "The second window", `M` one platform machine:
+
+```
+hub maintenance on --retry-after 60 --db /data/control.db
+fly secrets set -a arugula-platform ARUGULA_PLATFORM_PAUSED=1        # never two workers on two databases
+plat copy --from env:ARUGULA_PLATFORM_DATABASE_URL --to /tmp/back.db | tee back-platform.txt
+fly ssh sftp get /tmp/back.db back.db -a arugula-platform --machine $M
+fly ssh sftp put back.db /tmp/back.db -a illogical-control
+hub platform copy --from /tmp/back.db --to /data/control.db --replace | tee back-hub.txt
+fly secrets set -a illogical-control --stage ARUGULA_CLOUD_SECRET_KEY=… ARUGULA_CLOUD_ACCOUNTS=… \
+  GITHUB_APP_PRIVATE_KEY=… GITHUB_APP_WEBHOOK_SECRET=…               # from Infisical, unset by #1196
+fly secrets unset -a illogical-control ARUGULA_PLATFORM            # restarts the hub, in process
+hub maintenance off --db /data/control.db
+shred -u back.db
+```
+
+The hub's `copy` migrates `control.db`'s platform tables to the hub's
+build first (they're made from nothing, since there are none), then fills
+them; `--replace` only matters if an earlier attempt left rows. It runs
+beside the forwarding hub, which never touches those tables. Leave the
+platform paused while the hub runs in process.
 
 **The maintenance switch** (M141): every platform route answers `503`,
 `Retry-After: N`, `{"error": "Chat and Cloud are down for maintenance; try again in N seconds.", "reason": "maintenance"}`
@@ -2537,10 +2555,80 @@ hub platform checksums --db /data/control.db > hub-later.txt
 diff <(copied window-hub.txt) <(current hub-later.txt) && echo untouched
 ```
 
-Keep the hub's cloud secrets (`ARUGULA_MANAGOAT_API_KEY` …) for the same 14
-days: the in-process rollback needs them. After 14 days a follow-up drops
-the copies and unsets those; the rollback then always copies
-`platform.db` back first.
+(A build after M190 doesn't list Cloud's `cloud_*` tables there, since it
+no longer makes them, though the copies still hold them: `drop-copies`
+below checks all 22 against `window-hub.txt` itself.)
+
+Keep the hub's platform-only secrets for the same 14 days: the in-process
+rollback needs them.
+
+#### Dropping the copies (#1196)
+
+After the 14 days, with Jake's go, the copies go. From then on the
+rollback always copies the platform's tables back first ("Rolling back to
+in process", above). Before:
+
+- the hub has run the platform out of process since the window, with no
+  rollback;
+- the platform's backups are healthy, and one has been restored
+  ("Restoring the platform's Postgres");
+- a copy of `control.db` from before the drop is kept off Fly (a
+  Litestream restore of the hub, "Restoring"). Rehearse on it locally,
+  where no hub runs, so the shell's setting counts:
+  `ARUGULA_PLATFORM=http://arugula-platform.internal:7700 arugula-control platform drop-copies --db control.db --expect window-hub.txt --yes`
+  on a second copy of it.
+
+`drop-copies` drops, in one transaction, every table `window-hub.txt`
+lists (Cloud's `cloud_*` among them, which no build makes since M190),
+every table this build's platform makes that's in the file (only if
+empty), `chat_fts` with its shadow tables, and `platform_migrations`;
+their indexes and triggers go with them. It refuses, writing nothing,
+unless every listed table is still there with the window's rows and
+checksum (it sums whatever columns a table has, so tables this build
+doesn't model are checked too); when the running hub runs the platform in
+process (its `ARUGULA_PLATFORM`, found as `secrets-check` finds its key);
+when a table it would drop is one no platform migration ever made, or one
+the hub's own foreign keys, views or triggers name. Without `--yes` it
+checks everything and lists what it would drop. A second run says the
+copies are gone already and changes nothing.
+
+```
+fly ssh sftp put window-hub.txt /tmp/window-hub.txt -a illogical-control
+hub platform drop-copies --db /data/control.db --expect /tmp/window-hub.txt          # the check
+hub platform drop-copies --db /data/control.db --expect /tmp/window-hub.txt --yes    # the drop
+```
+
+It ends `24 tables, N rows, in one transaction; the hub's M tables are as
+they were` (22 copies, `chat_fts`, `platform_migrations`).
+
+Then, by hand:
+
+1. **The hub restarts clean** (`fly machine restart` on its one machine):
+   its logs show no migration and no error, chat and Cloud answer through
+   it (the post-checks of the first window), and `hub platform
+   checksums --db /data/control.db` lists no table.
+2. **Unset the hub's platform-only secrets.** Their values stay in
+   Infisical, and the platform has its own; `fly secrets list -a
+   illogical-control` first, unsetting only what's there (one restart):
+
+   ```
+   fly secrets unset -a illogical-control ARUGULA_CLOUD_SECRET_KEY ARUGULA_CLOUD_ACCOUNTS \
+     GITHUB_APP_PRIVATE_KEY GITHUB_APP_WEBHOOK_SECRET \
+     ARUGULA_MANAGOAT_API_KEY ARUGULA_CLOUD_MODELS \
+     ARUGULA_CLOUD_CONCURRENT_RUNS ARUGULA_CLOUD_DAILY_RUNS ARUGULA_CLOUD_RUN_MINUTES
+   ```
+
+   Update `docs/secrets-inventory.md`'s hub table to match.
+3. **Optionally reclaim the space** with `VACUUM`, which rewrites the
+   whole file: only with free space on `control_data` at least the size of
+   `control.db` (`df -h /data`, `ls -l /data/control.db`), at a quiet
+   hour, since it holds the write lock while it runs. The hub's image has
+   no `sqlite3` (distroless), so it needs a static one carried to `/tmp`
+   with `fly ssh sftp put` and removed after. Skipping it costs nothing
+   but disk: SQLite reuses the freed pages.
+4. **Litestream** drops the tables from the hub's backups as its 7-day
+   retention ages the older snapshots out; nothing to do but not restore
+   one of those expecting the copies.
 
 ### The second window (M145)
 
