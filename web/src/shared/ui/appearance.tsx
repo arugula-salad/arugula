@@ -1,8 +1,9 @@
-// Appearance… in the account menu: this device's palette, finish and
+// Appearance…, in the shell's settings menu and on the platform page (its
+// account menu and Settings, M150): this device's palette, finish and
 // corners. Each choice applies at once, so the page behind is the preview.
 
 import { useEffect, useState } from "preact/hooks";
-import { appearance, CORNERS, darkDefault, FINISHES, onAppearance, palette, PALETTES, setAppearance, type Palette } from "../../shared/appearance";
+import { appearance, CORNERS, darkDefault, FINISHES, onAppearance, palette, PALETTES, setAppearance, type Palette } from "../appearance";
 
 let shown = false;
 const listeners = new Set<() => void>();

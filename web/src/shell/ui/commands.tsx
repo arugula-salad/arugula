@@ -19,7 +19,7 @@ import { openGettingStarted } from "./welcome";
 import { openDeveloper } from "./developer";
 import { openMachineTelemetry } from "./machine-telemetry";
 import { openRules } from "./rules";
-import { openAppearance } from "./appearance";
+import { openAppearance } from "../../shared/ui/appearance";
 import { desktopApp, desktopPlatform, openInNewWindow } from "../../shared/desktop";
 import { keyHint } from "./keys";
 import { sessionThreadItems, threadItems } from "./threads";

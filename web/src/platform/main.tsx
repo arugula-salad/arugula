@@ -9,10 +9,14 @@ import "./platform.css";
 import { apply as applyAppearance } from "../shared/appearance";
 import { setupDesktop } from "../shared/desktop";
 import { PlatformApiContext } from "../shared/platform-api";
+import { AppearanceLayer } from "../shared/ui/appearance";
 import { MenuLayer, PromptLayer } from "../shared/ui/menu";
 import { platformApi } from "./api";
 import { PlatformPage } from "./page";
 
+// This device's palette and finish, before anything draws: on
+// app.arugula.io, the one picked on control's page too (the cookie,
+// shared/appearance-cookie.ts).
 applyAppearance();
 // In the desktop app: macOS's buttons over the bar's left end, Linux's
 // own buttons in it (the bar's CSS reads this).
@@ -23,6 +27,8 @@ render(
     {/* Menus and the questions they ask (a new channel's name…). */}
     <MenuLayer />
     <PromptLayer />
+    {/* Appearance…, from the account menu and Settings: the shell's dialog. */}
+    <AppearanceLayer />
   </PlatformApiContext.Provider>,
   document.getElementById("root")!,
 );

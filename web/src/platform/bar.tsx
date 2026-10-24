@@ -6,6 +6,7 @@
 import type { ComponentChildren } from "preact";
 import { useSubscribe } from "../shared/ui/hooks";
 import { openMenu, type MenuItem } from "../shared/ui/menu";
+import { openAppearance } from "../shared/ui/appearance";
 import { WindowButtons } from "../shared/ui/window-buttons";
 import { follow, go, pathOf, useRoute, type Route } from "./router";
 import { controlOrigin, session } from "./session";
@@ -47,6 +48,9 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
     const items: MenuItem[] = [
       { header: me?.login || me?.name || "Signed in" },
       { label: "Settings", run: () => go("/settings") },
+      // This device's look, as in the shell's settings menu; on arugula.io
+      // the two pages share it.
+      { label: "Appearance…", run: openAppearance },
       { label: "Your machines, devices and teams ↗", run: () => location.assign(controlOrigin()) },
       "separator",
       // This page only: the hub's session, on control's page, stays.

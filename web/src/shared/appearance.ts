@@ -1,9 +1,11 @@
 // How the page looks, on this device: a palette (the page's colors and the
 // terminals'), a finish (flat, Aqua, brushed metal, glass) and how round
-// the panes' corners are. Kept in this browser, applied before the first
-// draw so a reload doesn't flash the default.
+// the panes' corners are. Kept in this browser (and, on arugula.io, in a
+// cookie every arugula.io host reads: appearance-cookie.ts), applied
+// before the first draw so a reload doesn't flash the default.
 
 import type { ITheme } from "@xterm/xterm";
+import { cookieDomain, cookieLine, pickStored, readCookie } from "./appearance-cookie";
 import { theme as mochaTerm } from "./theme";
 
 /** The page's colors: style.css's custom properties, without the `--`. */
@@ -363,22 +365,60 @@ const lightQuery = typeof matchMedia === "function" ? matchMedia("(prefers-color
 let current: Appearance = load();
 const listeners = new Set<() => void>();
 
-function load(): Appearance {
+function parse(raw: string): Appearance | null {
   try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? "null") as (Partial<Appearance> & { workspace?: unknown }) | null;
-    if (!v) return DEFAULT;
-    const a: Appearance = {
+    const v = JSON.parse(raw) as Partial<Appearance> | null;
+    if (!v || typeof v !== "object") return null;
+    return {
       palette: v.palette === "system" || v.palette === "default" || PALETTES.some((p) => p.id === v.palette) ? v.palette! : DEFAULT.palette,
       finish: FINISHES.some((f) => f.id === v.finish) ? v.finish! : DEFAULT.finish,
       corners: CORNERS.some((c) => c.id === v.corners) ? v.corners! : DEFAULT.corners,
     };
-    // M108–M112's "New workspace" switch (`workspace: "classic" | "new"`)
-    // is gone: the new workspace is the only one. Forget it, whatever it
-    // said.
-    if ("workspace" in v) localStorage.setItem(KEY, JSON.stringify(a));
-    return a;
   } catch {
-    return DEFAULT;
+    return null;
+  }
+}
+
+/** The cookie's copy (on arugula.io), then this origin's localStorage. */
+function load(): Appearance {
+  let cookie: string | null = null;
+  let stored: string | null = null;
+  try {
+    if (cookieDomain(location.hostname)) cookie = readCookie(document.cookie, KEY);
+  } catch {
+    // No document (a test) or cookies blocked: localStorage alone.
+  }
+  try {
+    stored = localStorage.getItem(KEY);
+  } catch {
+    // Private mode or blocked storage.
+  }
+  const a = pickStored(cookie, stored, parse);
+  if (!a) return DEFAULT;
+  // Keep the two in step: a choice made on another arugula.io host lands
+  // in this origin's localStorage, one kept only in localStorage (from
+  // before the cookie) goes into the cookie, and M108–M112's "New
+  // workspace" switch (`workspace: "classic" | "new"`), gone now, drops
+  // out of both.
+  const json = JSON.stringify(a);
+  if (stored !== json) {
+    try {
+      localStorage.setItem(KEY, json);
+    } catch {
+      // Private mode.
+    }
+  }
+  store(json);
+  return a;
+}
+
+/** Sets the cookie on arugula.io (renewing it); nothing elsewhere. */
+function store(json: string) {
+  try {
+    const domain = cookieDomain(location.hostname);
+    if (domain) document.cookie = cookieLine(KEY, json, domain);
+  } catch {
+    // Cookies blocked: localStorage still has it.
   }
 }
 
@@ -404,11 +444,13 @@ export function onAppearance(fn: () => void): () => void {
 
 export function setAppearance(change: Partial<Appearance>) {
   current = { ...current, ...change };
+  const json = JSON.stringify(current);
   try {
-    localStorage.setItem(KEY, JSON.stringify(current));
+    localStorage.setItem(KEY, json);
   } catch {
-    // Private mode: it lasts for this page.
+    // Private mode: it lasts for this page (and, on arugula.io, the cookie).
   }
+  store(json);
   apply();
 }
 
