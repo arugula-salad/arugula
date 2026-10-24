@@ -239,45 +239,117 @@ export function HostCrumb() {
   );
 }
 
+/** The sheet's dot for a machine, from machineState's words: up, away, or
+ * somewhere between (connecting, reconnecting). */
+function dotOf(state: string): "on" | "off" | "mid" {
+  if (state === "online" || state.startsWith("running")) return "on";
+  if (state.startsWith("connecting") || state.startsWith("reconnecting")) return "mid";
+  return "off";
+}
+
+/** The short tag that matters: "offline 8h", "asleep"; nothing when online. */
+function tagOf(state: string): string {
+  if (dotOf(state) === "on") return "";
+  const m = /^(?:offline|reconnecting), seen (\S+) ago$/.exec(state);
+  if (m) return `${state.startsWith("offline") ? "offline" : "reconnecting"} ${m[1]}`;
+  return state.split(/[,·]/)[0].trim();
+}
+
+/** The phone sheet's machines (the Machines tab): one line each, in groups. */
+const CLOUD = "Cloud workspaces";
+const FILTER_OVER = 8;
+
 /** Phone: a section of the sheet listing every host. */
 export function HostSection({ close }: { close: () => void }) {
+  const [filter, setFilter] = useState("");
+  // The cloud group's own fold; undefined follows the default (shut unless
+  // the current machine is in it).
+  const [cloudOpen, setCloudOpen] = useState<boolean | undefined>(undefined);
   if (!useHosts()) return null;
-  const groups = hostGroups();
+  const isHosted = (name: string) => !!fleet?.host(name)?.hosted;
+  // Hosted machines leave their person's group for the cloud one; the
+  // current machine goes first in its group, its group first.
+  const pin = (names: string[]) => [...names.filter((n) => n === directory.current), ...names.filter((n) => n !== directory.current)];
+  const groups = hostGroups()
+    .map((g) => ({ label: g.label, names: pin(g.names.filter((n) => !isHosted(n))) }))
+    .filter((g) => g.names.length)
+    .sort((x, y) => Number(y.names[0] === directory.current) - Number(x.names[0] === directory.current));
+  const cloud = pin(directory.names.filter(isHosted));
+  const q = filter.trim().toLowerCase();
+  const hit = (names: string[]) => (q ? names.filter((n) => n.toLowerCase().includes(q)) : names);
+  const shown = groups.map((g) => ({ ...g, names: hit(g.names) })).filter((g) => g.names.length);
+  const cloudShown = hit(cloud);
+  const cloudNow = cloudOpen ?? (cloud.includes(directory.current) || (!!q && cloudShown.length > 0));
+  const named = shown.length > 1 || cloudShown.length > 0;
+  const row = (name: string) => {
+    const state = machineState(name);
+    const n = fleet?.host(name)?.summary?.panes.length;
+    const tag = name === directory.current ? "you" : tagOf(state);
+    return (
+      <button
+        key={name}
+        class={name === directory.current ? "sheet-host current" : "sheet-host"}
+        aria-pressed={name === directory.current}
+        data-host={name}
+        title={fleetLabel(name)}
+        onClick={() => {
+          directory.select(name);
+          close();
+        }}
+      >
+        <span class="host-dot" data-dot={dotOf(state)} data-fleet={fleet?.host(name)?.state} aria-hidden="true" />
+        <span class="host-name">{name}</span>
+        {n !== undefined && (
+          <span class="host-panes" aria-label={`${n} pane${n === 1 ? "" : "s"}`}>
+            {n}
+          </span>
+        )}
+        {tag && <span class="host-tag">{tag}</span>}
+        {name !== directory.current && dotOf(state) !== "on" && <span class="sr-state">{state}</span>}
+      </button>
+    );
+  };
   return (
     <section class="sheet-hosts">
-      <h2>Machines{directory.stale ? " (saved list)" : ""}</h2>
-      {groups.map((g) => (
+      {directory.stale && <p class="sheet-note">Saved list</p>}
+      {directory.names.length > FILTER_OVER && (
+        <input
+          type="search"
+          class="host-filter"
+          placeholder="Filter machines"
+          aria-label="Filter machines"
+          value={filter}
+          onInput={(e) => setFilter((e.currentTarget as HTMLInputElement).value)}
+        />
+      )}
+      {shown.map((g) => (
         <Fragment key={g.label}>
-          {groups.length > 1 && <h3>{g.label}</h3>}
-          <div class="sheet-chips">
-            {g.names.map((name) => (
-              <button
-                key={name}
-                class={name === directory.current ? "chip sheet-host current" : "chip sheet-host"}
-                aria-pressed={name === directory.current}
-                data-host={name}
-                onClick={() => {
-                  directory.select(name);
-                  close();
-                }}
-              >
-                <span class="host-name">{name}</span>
-                <span class="host-seen" data-fleet={fleet?.host(name)?.state}>
-                  {name === directory.home ? "home · " : ""}
-                  {fleetLabel(name)}
-                </span>
-              </button>
-            ))}
-          </div>
+          {named && <h3 class="host-group">{g.label}</h3>}
+          <div class="host-list">{g.names.map(row)}</div>
         </Fragment>
       ))}
-      <div class="sheet-chips">
+      {cloudShown.length > 0 && (
+        <Fragment>
+          <h3 class="host-group">
+            <button class="host-fold" aria-expanded={cloudNow} data-cloud-fold onClick={() => setCloudOpen(!cloudNow)}>
+              <span class="host-caret" aria-hidden="true">
+                {cloudNow ? "▾" : "▸"}
+              </span>
+              {CLOUD}
+              <span class="host-count">{cloudShown.length}</span>
+              <span class="host-caveat">{HOSTED_LABEL.split(": ")[1] ?? HOSTED_LABEL}</span>
+            </button>
+          </h3>
+          {cloudNow && <div class="host-list">{cloudShown.map(row)}</div>}
+        </Fragment>
+      )}
+      {q && !shown.length && !cloudShown.length && <p class="sheet-note">No machine matches.</p>}
+      <div class="host-list host-add">
         {[...allMachines(), ...extras()].flatMap((item) =>
           typeof item === "object" && "run" in item
             ? [
                 <button
                   key={item.label}
-                  class="chip"
                   onClick={() => {
                     item.run();
                     close();
