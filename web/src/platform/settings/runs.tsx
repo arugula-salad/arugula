@@ -3,11 +3,15 @@
 // with every device asleep, signed by which device and when, and what was
 // revoked. Signing and revoking are trust, done by a device ("The platform
 // page is on app.arugula.io, not on the keys' origin"), so they're on
-// control's page (here or on the phone), and this links there.
+// control's page (here or on the phone), and this links there. The grant
+// in place is a card: its bar ok, or warn when workspaces enrolled since
+// refuse it or it expires soon.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { controlOrigin } from "../session";
+import { toneClass } from "../swarm";
+import { Section } from "./section";
 
 interface Grant {
   id: string;
@@ -49,30 +53,49 @@ export function RunGrant({ project }: { project: string }) {
     </a>
   );
   return (
-    <div data-run-grant={g ? "yes" : v.offer ? "offered" : "no"}>
-      <h2>Runs</h2>
-      {g ? (
+    <Section
+      id="runs"
+      title="Runs"
+      hooks={{ "data-run-grant": g ? "yes" : v.offer ? "offered" : "no" }}
+      lede={
+        g
+          ? "The platform may start runs on this project's hosted workspaces while every device sleeps."
+          : "No runs start here: nobody has allowed them, or the last grant expired or was revoked."
+      }
+      more={
         <p>
-          A standing grant is in place: the platform may start runs and instruct them on every hosted workspace of this project, running
-          whatever command the project's runs start, with every device asleep, {g.expires ? `until ${day(g.expires)}` : "until it's revoked"} unless
-          it's revoked first. A project owner's device signed it on {day(g.made)}. Each workspace checks that signature before it starts
-          anything.
-          {v.stale ? " It's for an earlier delegation, so workspaces enrolled since refuse it: sign it again." : ""}
-          {!v.stale && v.renew ? " It expires soon: renew it to keep runs starting." : ""}
+          A standing grant lets the platform start runs and instruct them on every hosted workspace of this project, running whatever command
+          the project's runs start, with every device asleep, until it expires or is revoked. A project owner's device signs it, and each
+          workspace checks that signature before it starts anything. Deploys still ask an owner every time.
         </p>
-      ) : (
-        <p class="dim">No runs start here: nobody has allowed them, or the last grant expired or was revoked.</p>
-      )}
+      }
+    >
+      {g ? (
+        <ul class="platform-list sw-cards settings-cards">
+          <li class={`sw-card ${toneClass(v.stale || v.renew ? "warn" : "ok")}`}>
+            <div class="sw-head">
+              <b class="sw-name">Standing grant</b>
+              <span class="settings-tag">{g.expires ? `until ${day(g.expires)}` : "until it's revoked"}</span>
+            </div>
+            <span class="dim">A project owner's device signed it on {day(g.made)}.</span>
+            {v.stale ? (
+              <span class="settings-warn">It's for an earlier delegation, so workspaces enrolled since refuse it: sign it again.</span>
+            ) : v.renew ? (
+              <span class="settings-warn">It expires soon: renew it to keep runs starting.</span>
+            ) : null}
+          </li>
+        </ul>
+      ) : null}
       {v.role === "owner" ? (
-        <p class="dim">
+        <p class="dim settings-note">
           {g ? (v.stale || v.renew ? "Sign it again, or revoke it," : "Revoke it") : v.offer ? "This project has hosted workspaces. Allow runs on them" : "Allow runs"} on{" "}
-          {sign}, under Devices and machines, on a computer or your phone: your devices sign it there. Deploys still ask you every time.
+          {sign}, under Devices and machines, on a computer or your phone: your devices sign it there.
         </p>
       ) : (
-        <p class="dim">A project owner allows runs, or revokes them, from a device.</p>
+        <p class="dim settings-note">A project owner allows runs, or revokes them, from a device.</p>
       )}
       {v.past.length ? (
-        <ul class="platform-list dim" data-run-grants-past>
+        <ul class="platform-list dim settings-past" data-run-grants-past>
           {v.past.map((p) => (
             <li key={p.grant.id}>
               Allowed {day(p.grant.made)},{" "}
@@ -81,6 +104,6 @@ export function RunGrant({ project }: { project: string }) {
           ))}
         </ul>
       ) : null}
-    </div>
+    </Section>
   );
 }

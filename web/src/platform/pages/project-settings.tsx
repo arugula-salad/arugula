@@ -7,9 +7,12 @@
 // Then its environments, their secrets and "Deploy…" (M252), its
 // standing grant for runs (M211), for its owners the agent tokens over it
 // and its own secrets (M230), what its Claude calls cost (M231), and the
-// apps products keep in it (M236).
+// apps products keep in it (M236). Each part is a section
+// (../settings/section), as /settings's are: a heading, one line, the rest
+// behind More, and on a wide screen an index of them beside the column.
+// The repos are a table, a row each with its switch.
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { LinkedRepo, LinkedRepos } from "../../shared/proto.gen";
 import { platformFetch } from "../../shared/maintenance";
 import { useSubscribe } from "../../shared/ui/hooks";
@@ -22,6 +25,7 @@ import { Environments } from "../settings/environments";
 import { ProjectAgents } from "../settings/project-agents";
 import { ClaudeSpend } from "../settings/spend";
 import { ClientApps } from "../settings/client-apps";
+import { Section, SectionIndex } from "../settings/section";
 
 /** A call to the platform: its JSON, or the platform's `{error}` thrown
  * with the rest of the answer. */
@@ -39,6 +43,10 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 const hours = (ms: number) => Math.max(1, Math.ceil((ms - Date.now()) / 3_600_000));
 
+/** What Keep bodies does: its column's and each switch's tooltip. */
+const KEEP =
+  "Keeps its pull requests' and issues' bodies and comments here, so the project can search them. People sometimes paste secrets into comments. Takes admin or maintain on GitHub.";
+
 export function ProjectSettings({ id, link }: { id: string; link?: string }) {
   useSubscribe((fn) => session.subscribe(fn));
   const p = session.project(id);
@@ -46,6 +54,7 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
   const [repo, setRepo] = useState(link ?? "");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const body = useRef<HTMLDivElement>(null);
   const base = `/api/projects/${encodeURIComponent(id)}/repos`;
   const load = () =>
     call<LinkedRepos>("GET", base).then(
@@ -80,79 +89,126 @@ export function ProjectSettings({ id, link }: { id: string; link?: string }) {
       setRepo("");
     });
   };
+  // The head counts the linked ones, not those waiting for the purge.
+  const linked = (repos ?? []).filter((r) => r.purge_after === null).length;
   return (
-    <section class="platform-section" data-project-settings={p.id}>
-      <h1>{p.name}: settings</h1>
-      <h2>Linked repos</h2>
-      <p class="dim">
-        A linked GitHub repo's pull requests and issues live here, for the project's members. Linking one takes admin or maintain on it on GitHub. Unlinking stops reading
-        it at once, and what was read of it goes within a day.
-      </p>
-      <p class="dim" data-mirror-notice>
-        Bodies and comments are read from GitHub when someone opens a PR or issue, and kept a few minutes in memory. Keeping a repo's here
-        means the platform holds the bodies, comments and review comments of its pull requests and issues, so the project can search
-        their text. They stay until you turn this off (they're deleted at once) or unlink the repo, and they're deleted within 24 hours of
-        the GitHub App being uninstalled. People sometimes paste secrets into comments. Turning it on takes admin or maintain on GitHub.
-      </p>
-      {repos?.length === 0 && <p class="dim">None yet.</p>}
-      <ul class="platform-list" data-linked-repos>
-        {(repos ?? []).map((r) => (
-          <li key={r.repo_id} data-linked-repo={r.full_name}>
-            {r.full_name}
-            {r.private && <span class="dim"> · private</span>}
-            {r.purge_after !== null ? (
+    <section class="platform-section sw-page settings-page" data-project-settings={p.id}>
+      <div class="settings-layout">
+        <SectionIndex body={body} />
+        <div class="settings-body" ref={body}>
+          <h1>{p.name}: settings</h1>
+          <Section
+            id="repos"
+            title="Linked repos"
+            count={repos ? linked : undefined}
+            lede="GitHub repos whose pull requests and issues live in this project, for its members."
+            more={
               <>
-                <span class="dim"> · unlinked, gone within {hours(r.purge_after)}h</span>{" "}
-                {changes && (
-                  <button class="control-linkish" disabled={busy} onClick={() => act(() => call("POST", base, { repo: r.full_name }))}>
-                    Link again
-                  </button>
-                )}
+                <p>
+                  Linking a repo takes admin or maintain on it on GitHub, and so does keeping its bodies. Unlinking stops reading it at once, and
+                  what was read of it goes within a day.
+                </p>
+                <p data-mirror-notice>
+                  Otherwise a PR's or issue's body and comments are read from GitHub when someone opens it, and kept a few minutes in memory.
+                  Keep bodies holds the bodies, comments and review comments of the repo's pull requests and issues here, so the project can
+                  search their text, until you turn it off (they're deleted at once) or unlink the repo; they're deleted within 24 hours of the
+                  GitHub App being uninstalled. People sometimes paste secrets into comments.
+                </p>
               </>
+            }
+          >
+            <div data-linked-repos>
+              {repos?.length === 0 && <p class="dim">None yet.</p>}
+              {repos?.length ? (
+                <table class="settings-table repo-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Repo</th>
+                      <th scope="col" title={KEEP}>
+                        Keep bodies
+                      </th>
+                      <th scope="col">
+                        <span class="settings-hidden">Unlink</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {repos.map((r) => (
+                      <tr key={r.repo_id} data-linked-repo={r.full_name}>
+                        <th scope="row">
+                          <span class="repo-name">{r.full_name}</span>
+                          {r.private && <span class="settings-tag">private</span>}
+                        </th>
+                        {r.purge_after !== null ? (
+                          <>
+                            <td class="repo-keep">
+                              <span class="dim">unlinked, gone within {hours(r.purge_after)}h</span>
+                            </td>
+                            <td class="settings-row-act">
+                              {changes && (
+                                <button class="control-linkish" disabled={busy} onClick={() => act(() => call("POST", base, { repo: r.full_name }))}>
+                                  Link again
+                                </button>
+                              )}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td class="repo-keep" data-col="Keep bodies">
+                              <input
+                                type="checkbox"
+                                role="switch"
+                                class="sw-switch"
+                                aria-label={`Keep ${r.full_name}'s bodies and comments here`}
+                                title={KEEP}
+                                data-mirror-content={r.full_name}
+                                checked={r.mirror_content}
+                                disabled={busy || !changes}
+                                onChange={(e) => {
+                                  const on = e.currentTarget.checked;
+                                  void act(() => call("PATCH", `${base}/${r.full_name}`, { mirror_content: on }));
+                                }}
+                              />
+                            </td>
+                            <td class="settings-row-act">
+                              {changes && (
+                                <button
+                                  class="control-linkish"
+                                  data-unlink={r.full_name}
+                                  disabled={busy}
+                                  onClick={() => act(() => call("DELETE", `${base}/${r.full_name}`))}
+                                >
+                                  Unlink
+                                </button>
+                              )}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : null}
+            </div>
+            {changes ? (
+              <form class="platform-link-repo" aria-label="Link a repo" onSubmit={submit}>
+                <input required aria-label="Repo" placeholder="OWNER/NAME" value={repo} data-link-repo onInput={(e) => setRepo(e.currentTarget.value)} />
+                <button class="primary" disabled={busy}>
+                  Link
+                </button>
+              </form>
             ) : (
-              <>
-                {changes && (
-                  <>
-                    {" "}
-                    <button class="control-linkish" data-unlink={r.full_name} disabled={busy} onClick={() => act(() => call("DELETE", `${base}/${r.full_name}`))}>
-                      Unlink
-                    </button>
-                  </>
-                )}
-                <label class="platform-mirror">
-                  <input
-                    type="checkbox"
-                    data-mirror-content={r.full_name}
-                    checked={r.mirror_content}
-                    disabled={busy || !changes}
-                    onChange={(e) => {
-                      const on = e.currentTarget.checked;
-                      void act(() => call("PATCH", `${base}/${r.full_name}`, { mirror_content: on }));
-                    }}
-                  />{" "}
-                  Keep its bodies and comments here
-                </label>
-              </>
+              <p class="dim">A team's owners and editors link repos.</p>
             )}
-          </li>
-        ))}
-      </ul>
-      {changes ? (
-        <form class="platform-link-repo" aria-label="Link a repo" onSubmit={submit}>
-          <input required aria-label="Repo" placeholder="OWNER/NAME" value={repo} data-link-repo onInput={(e) => setRepo(e.currentTarget.value)} />
-          <button class="primary" disabled={busy}>
-            Link
-          </button>
-        </form>
-      ) : (
-        <p class="dim">A team's owners and editors link repos.</p>
-      )}
-      {err && <p class="control-error" data-link-error>{err}</p>}
-      <Environments p={p} />
-      <RunGrant project={p.id} />
-      <ProjectAgents p={p} />
-      <ClaudeSpend p={p} />
-      <ClientApps p={p} />
+            {err && <p class="control-error" data-link-error>{err}</p>}
+          </Section>
+          <Environments p={p} />
+          <RunGrant project={p.id} />
+          <ProjectAgents p={p} />
+          <ClaudeSpend p={p} />
+          <ClientApps p={p} />
+        </div>
+      </div>
     </section>
   );
 }

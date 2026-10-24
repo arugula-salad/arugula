@@ -14,6 +14,8 @@ import { platformFetch, refusalOf } from "../../shared/maintenance";
 import { controlOrigin } from "../session";
 import { follow } from "../router";
 import { lastMoved, shortRef, type DeploySummary } from "../deploys-text";
+import { ago } from "../settings/agent-tokens";
+import { deployTone, toneClass } from "../swarm";
 
 export interface Deploy {
   id: string;
@@ -194,21 +196,33 @@ export function DeployPage({ id }: { id: string }) {
 
 /** One deploy in a history: its state, what it deployed, a roll back's
  * mark and when it last moved, opening its own page. */
+/** A deploy in an environment's history: a table row, its state in its
+ * tone (../swarm), its short ref opening its page (the whole row does),
+ * whether it's a roll back, and when it last moved. */
 export function DeployRow({ d }: { d: DeploySummary }) {
   const path = `/deploys/${d.id}`;
+  const at = lastMoved(d);
   return (
-    <li data-deploy-row={d.id} data-deploy-state={d.state}>
-      <a href={path} onClick={(e) => follow(e, path)} title={`${d.source.kind} ${d.source.ref} from ${d.source.where}, planned by ${planner(d)}`}>
+    <tr class={`deploy-row ${toneClass(deployTone(d.state))}`} data-deploy-row={d.id} data-deploy-state={d.state}>
+      <td>
         <span class={`deploy-state deploy-state-${d.state}`}>{stateText(d.state)}</span>
-        <code>{shortRef(d.source.ref)}</code>
+      </td>
+      <td>
+        <a href={path} onClick={(e) => follow(e, path)} title={`${d.source.kind} ${d.source.ref} from ${d.source.where}, planned by ${planner(d)}`}>
+          <code>{shortRef(d.source.ref)}</code>
+        </a>
+      </td>
+      <td>
         {d.roll_back ? (
           <span class="deploy-roll-back" data-deploy-roll-back>
             roll back
           </span>
         ) : null}
-        <span class="dim">{when(lastMoved(d))}</span>
-      </a>
-    </li>
+      </td>
+      <td class="dim" title={when(at)}>
+        {ago(at)}
+      </td>
+    </tr>
   );
 }
 

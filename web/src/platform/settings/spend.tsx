@@ -4,12 +4,15 @@
 // (studio's lobby), on one kind of key: the project's own, an account's own,
 // or Arugula's (under a monthly cap per account). Agent turns on the
 // project's hosted workspaces are counted beside them: their calls go
-// through E2B's proxy, which doesn't see their usage.
+// through E2B's proxy, which doesn't see their usage. A section
+// (./section): the month's totals as the swarm's stats, then the lines as
+// a table.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import type { PlatformProject } from "../session";
 import { nameIn } from "../pages/issues";
+import { Section } from "./section";
 
 interface Line {
   account: string | null;
@@ -51,32 +54,77 @@ export function ClaudeSpend({ p }: { p: PlatformProject }) {
   const name = nameIn(p);
   const who = (a: string | null) => (a ? (name(a) ?? a) : "a deleted account");
   return (
-    <div data-claude-spend={v.month}>
-      <h2>Claude spend</h2>
-      <p class="dim">
-        What this project's Claude calls through Arugula cost in {v.month} (UTC), at Anthropic's list prices: {dollars(v.usd)}
-        {v.platform_usd > 0 ? `, of which Arugula's key paid ${dollars(v.platform_usd)}` : ""}. Keys are never shown, here or anywhere.
-      </p>
+    <Section
+      id="spend"
+      title="Claude spend"
+      hooks={{ "data-claude-spend": v.month }}
+      lede={`What this project's Claude calls through Arugula cost in ${v.month} (UTC).`}
+      more={
+        <p>
+          At Anthropic's list prices, by who made the calls (or a product, for them) and whose key paid: the project's, their own, or Arugula's,
+          which has a monthly cap per account. Agent turns on the project's hosted workspaces are counted beside them: their calls go through
+          E2B's proxy, which doesn't see their usage, so their tokens aren't priced here. Keys are never shown, here or anywhere.
+        </p>
+      }
+    >
+      <div class="sw-stats">
+        <span>
+          <b>{dollars(v.usd)}</b>this month
+        </span>
+        {v.platform_usd > 0 ? (
+          <span>
+            <b>{dollars(v.platform_usd)}</b>on Arugula's key
+          </span>
+        ) : null}
+        {v.hosted.turns > 0 ? (
+          <span>
+            <b>{count(v.hosted.turns)}</b>hosted agent {v.hosted.turns === 1 ? "turn" : "turns"}
+          </span>
+        ) : null}
+      </div>
       {v.lines.length > 0 && (
-        <ul class="platform-list" data-spend-lines>
-          {v.lines.map((l) => (
-            <li key={`${l.account}-${l.client}-${l.pays}`} data-spend-line={l.pays}>
-              {who(l.account)}
-              {l.client ? <span class="dim"> · through {l.client}</span> : null} · {dollars(l.usd)}
-              <span class="dim">
-                {" "}
-                · {count(l.calls)} {l.calls === 1 ? "call" : "calls"}, {count(l.input_tokens)} in, {count(l.output_tokens)} out, on {whose[l.pays]}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <table class="settings-table spend-table" data-spend-lines>
+          <thead>
+            <tr>
+              <th scope="col">Who</th>
+              <th scope="col">Key</th>
+              <th scope="col">Calls</th>
+              <th scope="col">In</th>
+              <th scope="col">Out</th>
+              <th scope="col">Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {v.lines.map((l) => (
+              <tr key={`${l.account}-${l.client}-${l.pays}`} data-spend-line={l.pays}>
+                <th scope="row">
+                  {who(l.account)}
+                  {l.client ? <span class="dim"> · through {l.client}</span> : null}
+                </th>
+                <td data-col="Key">{whose[l.pays]}</td>
+                <td class="num" data-col="Calls">
+                  {count(l.calls)}
+                </td>
+                <td class="num" data-col="In">
+                  {count(l.input_tokens)}
+                </td>
+                <td class="num" data-col="Out">
+                  {count(l.output_tokens)}
+                </td>
+                <td class="num spend-usd" data-col="Cost">
+                  {dollars(l.usd)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
       {v.hosted.turns > 0 && (
-        <p class="dim" data-spend-hosted>
+        <p class="dim settings-note" data-spend-hosted>
           Hosted workspaces: {count(v.hosted.turns)} agent {v.hosted.turns === 1 ? "turn" : "turns"} ({count(v.hosted.minutes)} min)
           {v.hosted.platform_turns > 0 ? `, ${count(v.hosted.platform_turns)} on Arugula's key` : ""}. Their tokens aren't priced here.
         </p>
       )}
-    </div>
+    </Section>
   );
 }

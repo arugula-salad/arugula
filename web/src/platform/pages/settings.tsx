@@ -9,7 +9,6 @@
 // line, the rest behind More; on a wide screen an index of them sits
 // beside the column (../settings.css).
 
-import type { RefObject } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { openAppearance } from "../../shared/ui/appearance";
@@ -18,7 +17,7 @@ import { AgentGrants } from "../settings/agents";
 import { AgentTokens } from "../settings/agent-tokens";
 import { LinkedProducts } from "../settings/linked";
 import { ClaudeSettings } from "../settings/claude";
-import { Section } from "../settings/section";
+import { Section, SectionIndex } from "../settings/section";
 import { controlOrigin, session } from "../session";
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
@@ -46,7 +45,7 @@ export function SettingsPage() {
   return (
     <section class="platform-section sw-page settings-page" data-platform-settings>
       <div class="settings-layout">
-        <Index body={body} />
+        <SectionIndex body={body} />
         <div class="settings-body" ref={body}>
           <h1>Settings</h1>
           <Section id="account" title="Appearance & account" lede="How this device looks, your plan, and where the rest of your account is.">
@@ -81,46 +80,5 @@ export function SettingsPage() {
       </div>
       {plan && <Plan billing={billing} upgrade={upgrade} close={() => setPlan(false)} />}
     </section>
-  );
-}
-
-/** The section index, beside the column on a wide screen: the sections
- * the page shows, read off it as each one loads (Claude's shows only when
- * there's something in it). */
-function Index({ body }: { body: RefObject<HTMLDivElement | null> }) {
-  const [secs, setSecs] = useState<{ id: string; title: string }[]>([]);
-  useEffect(() => {
-    const el = body.current;
-    if (!el) return;
-    const read = () => {
-      const next = [...el.querySelectorAll<HTMLElement>(".settings-sec")].map((s) => ({ id: s.id, title: s.querySelector("h2")?.textContent ?? s.id }));
-      setSecs((prev) => (prev.map((s) => s.id).join() === next.map((s) => s.id).join() ? prev : next));
-    };
-    read();
-    const watch = new MutationObserver(read);
-    watch.observe(el, { childList: true, subtree: true });
-    return () => watch.disconnect();
-  }, []);
-  // To the section's heading, which takes the focus for a keyboard.
-  const go = (e: MouseEvent, id: string) => {
-    const h = document.getElementById(`${id}-h`);
-    if (!h) return;
-    e.preventDefault();
-    h.scrollIntoView({ block: "start" });
-    h.tabIndex = -1;
-    h.focus({ preventScroll: true });
-  };
-  return (
-    <nav class="settings-index" aria-label="Settings sections">
-      <ul>
-        {secs.map((s) => (
-          <li key={s.id}>
-            <a href={`#${s.id}`} onClick={(e) => go(e, s.id)}>
-              {s.title}
-            </a>
-          </li>
-        ))}
-      </ul>
-    </nav>
   );
 }
