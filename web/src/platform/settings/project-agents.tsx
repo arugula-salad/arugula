@@ -4,13 +4,17 @@
 // agents (`set_secret`) or by an owner here (M236), each with who last set
 // it and when, never a value. Beside each secret, which registered clients
 // (studio, M236) may read it for their apps in the project, and how often
-// they have: an owner's grant, by name.
+// they have: an owner's grant, by name, a switch each. Two sections
+// (./section): the tokens as cards, as /settings's are (the bar: live or
+// revoked), and the secrets as rows.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import type { PlatformProject } from "../session";
+import { toneClass } from "../swarm";
 import { ago, reachOf, type AgentToken } from "./agent-tokens";
 import { roleIn } from "./environments";
+import { Section } from "./section";
 
 async function call<T>(path: string, body?: unknown, method?: string): Promise<T> {
   const r = await platformFetch(path, {
@@ -117,108 +121,154 @@ export function ProjectAgents({ p }: { p: PlatformProject }) {
     await load();
   };
   return (
-    <div data-project-agents>
-      <h2>Agents with no machine</h2>
-      <p class="dim">
-        Every agent token over this project, whoever made it. Revoke takes its reach here back at once; its owner keeps it elsewhere.
-      </p>
-      {tokens?.length === 0 && <p class="dim">None.</p>}
-      <ul class="platform-list agent-tokens">
-        {tokens?.map((t) => (
-          <li key={t.id} data-project-agent-token={t.id}>
-            <strong>
-              <bdi>{t.owner.name ?? t.owner.account}</bdi>'s agent token “<bdi>{t.name}</bdi>”
-            </strong>{" "}
-            <span class="dim">{reachOf(t)}</span> <span class="dim">{t.last_used_at ? `used ${ago(t.last_used_at)}` : "never used"}</span>{" "}
-            <button class="control-linkish" data-project-agent-revoke={t.id} onClick={() => void revoke(t.id)}>
-              Revoke here
-            </button>
-          </li>
-        ))}
-      </ul>
-      <h2>Project secrets</h2>
-      <p class="dim">
-        Secrets set by name for this project, by its owners here or by agents with <code>secrets.write</code>: who set each last, and when. Their
-        values are never shown.
-        {secrets ? ` At most ${secrets.max}.` : ""}
-        {clients?.clients.length
-          ? " A product asks to send one for one of its apps to one host (studio's egress); once you allow that, it gets the value for that app and host only, each read is counted here, and an agent changing the value stops it until you allow it again."
-          : ""}
-      </p>
-      {secrets?.secrets.length === 0 && <p class="dim">None.</p>}
-      <ul class="platform-list" data-project-secrets>
-        {secrets?.secrets.map((s) => (
-          <li key={s.name} data-project-secret={s.name}>
-            <code>{s.name}</code>{" "}
-            <span class="dim">
-              set {ago(s.updated_at)}
-              {s.updated_by ? (
-                <>
-                  {" "}
-                  by <bdi>{s.updated_by.name ?? s.updated_by.account}</bdi>
-                  {s.agent ? (
+    <>
+      <Section
+        id="agents"
+        title="Agents with no machine"
+        count={tokens?.length}
+        hooks={{ "data-project-agents": "" }}
+        lede="Every agent token over this project, whoever made it."
+        more={
+          <p>
+            Revoke here takes a token's reach over this project back at once; its owner keeps it for the rest. Owners make them on their own
+            Settings.
+          </p>
+        }
+      >
+        {tokens?.length === 0 && <p class="dim">None.</p>}
+        {tokens?.length ? (
+          <ul class="platform-list sw-cards settings-cards agent-tokens">
+            {/* The bar: live, or revoked. */}
+            {tokens.map((t) => (
+              <li key={t.id} class={`sw-card ${toneClass(t.live ? "accent" : "muted")}`} data-project-agent-token={t.id}>
+                <div class="sw-head">
+                  <b class="sw-name">
+                    <bdi>{t.name}</bdi>
+                  </b>
+                  <span class="dim">
+                    <bdi>{t.owner.name ?? t.owner.account}</bdi>'s agent token
+                  </span>
+                  <span class="settings-card-act">
+                    <button class="control-linkish" data-project-agent-revoke={t.id} onClick={() => void revoke(t.id)}>
+                      Revoke here
+                    </button>
+                  </span>
+                </div>
+                <span class="sw-mono agent-token-reach">{reachOf(t)}</span>
+                <span class="dim">{t.last_used_at ? `Used ${ago(t.last_used_at)}` : "Never used"}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </Section>
+      <Section
+        id="secrets"
+        title="Project secrets"
+        count={secrets?.secrets.length}
+        lede="Secrets set by name for this project, by its owners or their agents. Their values are never shown."
+        more={
+          <>
+            <p>
+              Owners set them here, and agents with <code>secrets.write</code> by name; each shows who set it last, and when.
+              {secrets ? ` At most ${secrets.max}.` : ""}
+            </p>
+            {clients?.clients.length ? (
+              <p>
+                A product asks to send one for one of its apps to one host (studio's egress). Once you allow that, it gets the value for that app
+                and host only, each read is counted here, and an agent changing the value stops it until you allow it again.
+              </p>
+            ) : null}
+          </>
+        }
+      >
+        {secrets?.secrets.length === 0 && <p class="dim">None.</p>}
+        <ul class="platform-list settings-rows secret-rows" data-project-secrets>
+          {secrets?.secrets.map((s) => (
+            <li key={s.name} data-project-secret={s.name}>
+              <div class="secret-head">
+                <code class="secret-name">{s.name}</code>
+                <span class="dim">
+                  set {ago(s.updated_at)}
+                  {s.updated_by ? (
                     <>
-                      's agent token “<bdi>{s.agent.name?.replace(/ \(MCP\)$/, "") ?? s.agent.id}</bdi>”
+                      {" "}
+                      by <bdi>{s.updated_by.name ?? s.updated_by.account}</bdi>
+                      {s.agent ? (
+                        <>
+                          's agent token “<bdi>{s.agent.name?.replace(/ \(MCP\)$/, "") ?? s.agent.id}</bdi>”
+                        </>
+                      ) : null}
                     </>
                   ) : null}
-                </>
-              ) : null}
-            </span>{" "}
-            <button class="control-linkish" data-project-secret-clear={s.name} disabled={busy} onClick={() => void act(() => call(`${base}/secrets/${encodeURIComponent(s.name)}`, undefined, "DELETE"))}>
-              Clear
-            </button>
-            {asksFor(s.name).map((g) => (
-              <label key={`${g.client}/${g.app}`} class="platform-mirror">
-                <input
-                  type="checkbox"
-                  data-project-secret-grant={`${g.client}/${g.app}/${g.name}`}
-                  checked={g.granted_at !== null && !g.stale}
-                  disabled={busy}
-                  onChange={() => void grant(g, g.granted_at === null || g.stale)}
-                />{" "}
-                Let <b>{g.client}</b> send it for <bdi>{titleOf(g)}</bdi> to <code>{g.host}</code>
-                {g.stale ? (
-                  <span class="control-error"> · an agent changed it since you allowed this: allow it again</span>
-                ) : g.granted_at === null ? (
-                  <span class="dim"> · asked, not allowed yet</span>
-                ) : (
-                  <span class="dim">
-                    {" "}
-                    · {g.reads ? `read ${g.reads} ${g.reads === 1 ? "time" : "times"}, last ${ago(g.last_read_at ?? g.granted_at)}` : "not read yet"}
-                    {g.changed_since_grant ? ` · changed since by ${s.updated_by?.name ?? s.updated_by?.account ?? g.value_set_by ?? "someone"}` : ""}
+                </span>
+                <span class="settings-card-act">
+                  <button
+                    class="control-linkish"
+                    data-project-secret-clear={s.name}
+                    disabled={busy}
+                    onClick={() => void act(() => call(`${base}/secrets/${encodeURIComponent(s.name)}`, undefined, "DELETE"))}
+                  >
+                    Clear
+                  </button>
+                </span>
+              </div>
+              {asksFor(s.name).map((g) => (
+                <label key={`${g.client}/${g.app}`} class="settings-switch">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    class="sw-switch"
+                    data-project-secret-grant={`${g.client}/${g.app}/${g.name}`}
+                    checked={g.granted_at !== null && !g.stale}
+                    disabled={busy}
+                    onChange={() => void grant(g, g.granted_at === null || g.stale)}
+                  />
+                  <span>
+                    Let <b>{g.client}</b> send it for <bdi>{titleOf(g)}</bdi> to <code>{g.host}</code>
+                    {g.stale ? (
+                      <span class="control-error"> · an agent changed it since you allowed this: allow it again</span>
+                    ) : g.granted_at === null ? (
+                      <span class="dim"> · asked, not allowed yet</span>
+                    ) : (
+                      <span class="dim">
+                        {" "}
+                        · {g.reads ? `read ${g.reads} ${g.reads === 1 ? "time" : "times"}, last ${ago(g.last_read_at ?? g.granted_at)}` : "not read yet"}
+                        {g.changed_since_grant ? ` · changed since by ${s.updated_by?.name ?? s.updated_by?.account ?? g.value_set_by ?? "someone"}` : ""}
+                      </span>
+                    )}
                   </span>
-                )}
-              </label>
-            ))}
-          </li>
-        ))}
-      </ul>
-      <form class="platform-link-repo" aria-label="Set a project secret" data-project-secret-form onSubmit={setSecret}>
-        <input
-          required
-          aria-label="Secret name"
-          placeholder="NAME"
-          spellcheck={false}
-          value={name}
-          data-project-secret-name
-          onInput={(e) => setName(e.currentTarget.value.toUpperCase())}
-        />
-        <input
-          required
-          type="password"
-          autoComplete="new-password"
-          spellcheck={false}
-          aria-label="Secret value"
-          placeholder="Value"
-          value={value}
-          data-project-secret-value
-          onInput={(e) => setValue(e.currentTarget.value)}
-        />
-        <button class="primary" disabled={busy || !name.trim() || !value} data-project-secret-set>
-          Set
-        </button>
-      </form>
-      {err ? <p class="control-error">{err}</p> : null}
-    </div>
+                </label>
+              ))}
+            </li>
+          ))}
+        </ul>
+        <form class="platform-link-repo" aria-label="Set a project secret" data-project-secret-form onSubmit={setSecret}>
+          <input
+            required
+            aria-label="Secret name"
+            placeholder="NAME"
+            spellcheck={false}
+            value={name}
+            data-project-secret-name
+            onInput={(e) => setName(e.currentTarget.value.toUpperCase())}
+          />
+          <input
+            required
+            type="password"
+            autoComplete="new-password"
+            spellcheck={false}
+            aria-label="Secret value"
+            placeholder="Value"
+            value={value}
+            data-project-secret-value
+            onInput={(e) => setValue(e.currentTarget.value)}
+          />
+          <button class="primary" disabled={busy || !name.trim() || !value} data-project-secret-set>
+            Set
+          </button>
+        </form>
+        {err ? <p class="control-error">{err}</p> : null}
+      </Section>
+    </>
   );
 }

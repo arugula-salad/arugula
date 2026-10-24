@@ -4,8 +4,12 @@
    says whether any machine's agents reach it (accent) or none do (muted);
    linked products and agent tokens as cards (the bar: linked or only
    signing you in; live or revoked). On a wide screen a sticky index of the
-   sections sits in the panel's gutter, beside the 880px column. The
-   colors are the palette's, so every appearance holds. */
+   sections sits in the panel's gutter, beside the 880px column. A
+   project's settings (/p/:project/settings) are the same sections: its
+   linked repos a table with a switch column, its environments cards whose
+   bar is the latest deploy's state (swarm.ts's deployTone), with a tag for
+   the driver, a chip per secret and the deploys as a table. The colors
+   are the palette's, so every appearance holds. */
 
 /* -- The sections */
 
@@ -290,7 +294,10 @@ html[data-corners="square"] .platform input.sw-switch {
   padding: 7px 6px;
 }
 
-.platform .agent-matrix thead th {
+/* A matrix's and a settings table's column heads, mono capitals; one with a
+   tooltip says so. */
+.platform .agent-matrix thead th,
+.platform .settings-table thead th {
   padding-top: 2px;
   border-bottom: 1px solid var(--divider);
   font: 500 11px/1.3 var(--f-mono);
@@ -301,7 +308,8 @@ html[data-corners="square"] .platform input.sw-switch {
   vertical-align: bottom;
 }
 
-.platform .agent-matrix thead th[title] {
+.platform .agent-matrix thead th[title],
+.platform .settings-table thead th[title] {
   cursor: help;
   text-decoration: underline dotted color-mix(in srgb, var(--dim) 60%, transparent);
   text-underline-offset: 3px;
@@ -317,7 +325,8 @@ html[data-corners="square"] .platform input.sw-switch {
   width: 24%;
 }
 
-.platform .agent-matrix tbody th {
+.platform .agent-matrix tbody th,
+.platform .settings-table tbody th {
   padding-left: 0;
   font: 500 13px/1.3 var(--f-mono);
   color: var(--fg);
@@ -325,7 +334,8 @@ html[data-corners="square"] .platform input.sw-switch {
   overflow-wrap: anywhere;
 }
 
-.platform .agent-matrix tbody tr + tr > * {
+.platform .agent-matrix tbody tr + tr > *,
+.platform .settings-table tbody tr + tr > * {
   border-top: 1px solid color-mix(in srgb, var(--divider) 60%, transparent);
 }
 
@@ -357,6 +367,370 @@ html[data-corners="square"] .platform input.sw-switch {
   font: 500 10px/1.2 var(--f-mono);
   color: var(--warn);
   overflow-wrap: anywhere;
+}
+
+/* -- A project's settings: tables, tags and chips, and the environments'
+      cards. */
+
+/* Only for a screen reader: a column's name nothing else shows. */
+.platform .settings-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A tag: one fact about what it's beside (a repo's private, an
+   environment's driver, a product), a quiet pill. */
+.platform .settings-tag {
+  flex: none;
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--raised-hover);
+  border-radius: 999px;
+  font: 500 11px/1.4 var(--f-mono);
+  color: var(--dim);
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.platform .sw-head .settings-tag,
+.platform .settings-rows .settings-tag {
+  margin-left: 0;
+}
+
+/* A table of a section's things (linked repos, a month's spend): mono
+   names, a row each, quiet actions at the end. */
+.platform .settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.platform .settings-table th,
+.platform .settings-table td {
+  padding: 7px 8px;
+  vertical-align: middle;
+}
+
+.platform .settings-table thead th {
+  text-align: left;
+}
+
+.platform .settings-table thead th:first-child,
+.platform .settings-table tbody th {
+  padding-left: 0;
+}
+
+.platform .settings-row-act {
+  padding-right: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.platform .settings-table tbody tr:hover > * {
+  background: color-mix(in srgb, var(--raised) 45%, transparent);
+}
+
+.platform .repo-table thead th:nth-child(2),
+.platform .repo-table .repo-keep {
+  width: 140px;
+  text-align: center;
+}
+
+.platform .repo-table .settings-row-act {
+  width: 90px;
+}
+
+.platform .repo-table .repo-keep .dim {
+  font-size: 12px;
+}
+
+.platform .spend-table .num,
+.platform .spend-table thead th:nth-child(n + 3) {
+  text-align: right;
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.platform .spend-table td:not(.num) {
+  color: var(--dim);
+}
+
+.platform .spend-table .spend-usd {
+  padding-right: 0;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.platform .settings-sec .sw-stats {
+  margin: 4px 0 12px;
+}
+
+.platform .settings-sec .platform-link-repo {
+  flex-wrap: wrap;
+}
+
+.platform .settings-sec .platform-link-repo input {
+  min-width: 0;
+}
+
+.platform .settings-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
+
+.platform .settings-warn {
+  font-size: 13px;
+  color: var(--warn);
+}
+
+.platform .settings-past {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+/* A project secret: its name, who set it, Clear, and under it a switch
+   for each product that asked for it. */
+.platform .secret-rows > li {
+  display: block;
+}
+
+.platform .secret-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+}
+
+.platform .secret-name {
+  font: 600 13px/1.3 var(--f-mono);
+}
+
+.platform .secret-rows .settings-switch {
+  margin: 8px 0 2px;
+}
+
+/* An environment: its card's head holds its name, its driver's tag and
+   Deploy… at the end. */
+.platform .env-card .sw-head {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.platform .settings-btn.env-deploy {
+  margin: 0 0 0 auto;
+  text-decoration: none;
+}
+
+/* Its driver's settings, a key and value each, wrapping. */
+.platform .env-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 18px;
+  margin: 6px 0 0;
+  font: 500 12px/1.4 var(--f-mono);
+}
+
+.platform .env-facts > div {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.platform .env-facts dt {
+  color: var(--dim);
+}
+
+.platform .env-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.platform .env-facts code {
+  font: inherit;
+}
+
+.platform .env-part {
+  margin-top: 10px;
+}
+
+.platform .env-label {
+  display: block;
+  margin-bottom: 4px;
+  font: 500 11px/1.3 var(--f-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.platform .env-part > p {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Its secrets: a chip each, wrapping; an owner's held ones a row each,
+   the chip then a box to replace the value. */
+.platform .env-secrets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.platform .env-secret-row {
+  flex: 1 1 100%;
+}
+
+.platform .env-secret {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.platform .env-secret input {
+  flex: 0 1 240px;
+  height: 26px;
+}
+
+/* Set: the swarm's tool pill, as New agent token is. */
+.platform .env-secret button {
+  padding: 5px 12px;
+  border: 1px solid var(--raised-hover);
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--fg);
+  font: 500 11px/1 var(--f-mono);
+  cursor: pointer;
+}
+
+.platform .env-secret button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.platform .env-secret button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* A chip: the secret's name in mono, then where its value comes from. */
+.platform .settings-chip {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--raised-hover);
+  border-radius: 999px;
+  overflow: hidden;
+  font: 500 11px/1.5 var(--f-mono);
+  white-space: nowrap;
+}
+
+.platform .settings-chip > * {
+  padding: 1px 8px;
+}
+
+.platform .settings-chip code {
+  font: 600 11px/1.5 var(--f-mono);
+  color: var(--fg);
+  background: var(--raised);
+}
+
+.platform .settings-chip > span {
+  color: var(--ok);
+}
+
+.platform .settings-chip.minted {
+  border-style: dashed;
+}
+
+.platform .settings-chip.minted > span {
+  color: var(--dim);
+}
+
+/* Its deploys: state (in its tone, after a dot), short commit, roll back,
+   when. The whole row opens the deploy. */
+.platform .deploy-table {
+  font-size: 12px;
+}
+
+.platform .deploy-table tr {
+  position: relative;
+}
+
+.platform .deploy-table td {
+  padding: 4px 12px 4px 0;
+  white-space: nowrap;
+}
+
+.platform .deploy-table td:first-child {
+  width: 12em;
+}
+
+/* The commit as wide as it is; roll back, after it, takes the rest. */
+.platform .deploy-table td:nth-child(2) {
+  width: 1%;
+}
+
+.platform .deploy-table td:last-child {
+  width: 1%;
+  padding-right: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.platform .deploy-table .deploy-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: 600 12px/1.3 var(--f-ui);
+  color: var(--ct);
+}
+
+.platform .deploy-table .deploy-state::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c);
+}
+
+.platform .deploy-table a {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.platform .deploy-table a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.platform .deploy-table a code {
+  font: 500 12px/1.3 var(--f-mono);
+}
+
+.platform .deploy-table tr:hover a code,
+.platform .deploy-table a:focus-visible code {
+  text-decoration: underline;
+}
+
+.platform .deploy-table a:focus-visible {
+  outline: none;
+}
+
+.platform .deploy-table tr:has(a:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.platform .env-older {
+  margin-top: 4px;
+  font-size: 12px;
 }
 
 /* -- The index: in the panel's left gutter, where it's wide enough for
@@ -459,6 +833,108 @@ html[data-corners="square"] .platform input.sw-switch {
   .platform .agent-only {
     margin-top: 0;
     text-align: center;
+  }
+}
+
+/* -- A phone: a project's tables are stacked rows. A repo's name gets a
+      line, its switch (labelled) and Unlink the next; a deploy's state
+      and when, then its commit; a spend line's who, then its numbers,
+      each labelled. */
+
+@media (max-width: 600px) {
+  .platform .settings-table:not(.deploy-table) thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .platform .settings-table,
+  .platform .settings-table tbody {
+    display: block;
+  }
+  .platform .settings-table tbody tr {
+    display: grid;
+    align-items: center;
+    padding: 8px 0;
+  }
+  .platform .settings-table tbody tr + tr {
+    border-top: 1px solid color-mix(in srgb, var(--divider) 60%, transparent);
+  }
+  .platform .settings-table tbody tr > *,
+  .platform .settings-table tbody tr + tr > * {
+    border-top: 0;
+    padding: 0;
+    width: auto;
+  }
+  .platform .settings-table tbody th {
+    grid-column: 1 / -1;
+    padding-bottom: 6px;
+  }
+  .platform .settings-table td[data-col]::before {
+    content: attr(data-col);
+    margin-right: 8px;
+    font: 500 10px/1.2 var(--f-mono);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .platform .repo-table tbody tr {
+    grid-template-columns: 1fr auto;
+  }
+  .platform .repo-table .repo-keep {
+    display: flex;
+    align-items: center;
+    text-align: left;
+  }
+  .platform .spend-table tbody tr {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px 8px;
+  }
+  .platform .spend-table td[data-col="Key"] {
+    grid-column: 1 / -1;
+  }
+  .platform .spend-table td.num {
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+  }
+  .platform .spend-table td.num::before {
+    margin: 0 0 2px;
+  }
+  .platform .deploy-table tbody tr {
+    grid-template-columns: 1fr auto;
+    gap: 2px 10px;
+    padding: 6px 0;
+  }
+  .platform .deploy-table tbody tr > td:nth-child(2) {
+    grid-row: 2;
+  }
+  .platform .deploy-table tbody tr > td:nth-child(3) {
+    grid-row: 2;
+    text-align: right;
+  }
+  .platform .deploy-table tbody tr > td:last-child {
+    grid-row: 1;
+    grid-column: 2;
+  }
+  .platform .settings-btn.env-deploy {
+    margin-left: 0;
+  }
+  .platform .env-card .sw-head .settings-tag {
+    margin-right: auto;
+  }
+  .platform .env-secret {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .platform .env-secret > .settings-chip,
+  .platform .env-secret > [role="status"] {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .platform .deploy-table tbody tr > td:nth-child(n) {
+    width: auto;
   }
 }
 

@@ -252,13 +252,6 @@ html[data-corners="square"] .platform-workspace {
   flex: 1;
 }
 
-/* A linked repo's content mirroring switch (M166). */
-.platform-mirror {
-  display: block;
-  margin: 4px 0 8px;
-  font-size: 13px;
-}
-
 /* Drafts waiting on a project's linked repos (M170). */
 .platform-drafts li {
   display: grid;
@@ -860,8 +853,9 @@ html[data-corners="square"] .platform-workspace {
 }
 
 /* A project's environments and "Deploy…" (M252): the forms that make an
-   environment and plan a deploy, each environment's secrets (a password
-   box each, never shown again), and the plan's text on a deploy's card. */
+   environment and plan a deploy, the field of an environment's secret (a
+   password box each, never shown again; its card is ./settings.css's),
+   and the plan's text on a deploy's card. */
 .deploy-form {
   display: grid;
   gap: 12px;
@@ -873,9 +867,7 @@ html[data-corners="square"] .platform-workspace {
   background: var(--surface);
 }
 
-.deploy-form h3,
-.deploy-secrets h3,
-.deploy-history h3 {
+.deploy-form h3 {
   margin: 0;
   font-size: 14px;
 }
@@ -892,7 +884,7 @@ html[data-corners="square"] .platform-workspace {
 
 .deploy-form input:not([type="checkbox"]),
 .deploy-form select,
-.deploy-secret input {
+.env-secret input {
   box-sizing: border-box;
   min-width: 0;
   height: 30px;
@@ -920,88 +912,6 @@ html[data-corners="square"] .platform-workspace {
 
 .deploy-secret-names p {
   margin: 4px 0;
-}
-
-.deploy-secrets {
-  display: grid;
-  gap: 6px;
-  margin: 8px 0;
-}
-
-.deploy-secrets p {
-  margin: 0;
-}
-
-.deploy-secret {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.deploy-secret label {
-  display: flex;
-  flex: 1;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.deploy-secret label code {
-  min-width: 140px;
-}
-
-.deploy-secret input {
-  flex: 1;
-  min-width: 140px;
-}
-
-h2 .button.deploy-new {
-  margin-left: 8px;
-  padding: 2px 10px;
-  border: 1px solid var(--raised);
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: normal;
-  color: var(--fg);
-  text-decoration: none;
-}
-
-.deploy-env .deploy-actions {
-  margin-top: 8px;
-}
-
-/* An environment's latest deploys: a row each, opening its page. */
-.deploy-history {
-  display: grid;
-  gap: 6px;
-  margin: 8px 0;
-}
-
-.deploy-history p {
-  margin: 0;
-}
-
-.deploy-history li a {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-  color: var(--fg);
-  text-decoration: none;
-}
-
-.deploy-history li a:hover code {
-  text-decoration: underline;
-}
-
-.deploy-history .deploy-state {
-  min-width: 11em;
-}
-
-.deploy-history .control-linkish {
-  justify-self: start;
 }
 
 .deploy-roll-back {

@@ -35,6 +35,16 @@
                       mono, right        its short id · its workspace's name
                       stats              shown (the newest 50 that match);
                                          waiting, running, failed
+   Environments       bar                its latest deploy's state: planned,
+   (project settings)                    waiting, approved warn; being applied
+                                         accent; applied ok; failed danger;
+                                         denied, canceled, expired, stale and
+                                         none yet muted
+                      name (display)     its name
+                      tag                its driver
+                      chips              its secrets: held, or minted per run
+                      table              its deploys, each in its own state's
+                                         tone
    Inbox              bar                why it wants the reader: review asked
                                          accent, changes asked warn, checks or a
                                          run failed danger, mentioned info,

@@ -2,13 +2,15 @@
 // the project's settings, for its members. An app in a project is its
 // members' to open in that product (editors and owners), so its owners are
 // the project's. The product puts it here for a member who edits the
-// project; nothing on this page changes it.
+// project; nothing on this page changes it. A section (./section), a row
+// each.
 
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import type { PlatformProject } from "../session";
 import { nameIn } from "../pages/issues";
 import { ago } from "./agent-tokens";
+import { Section } from "./section";
 
 type App = { client: string; app: string; title: string; added_by: string | null; added_at: number };
 
@@ -21,17 +23,29 @@ export function ClientApps({ p }: { p: PlatformProject }) {
   }, [p.id]);
   if (!apps?.length) return null;
   return (
-    <div data-client-apps>
-      <h2>Apps from products</h2>
-      <p class="dim">Apps other products keep in this project. Its editors and owners open them there; its viewers see them listed.</p>
-      <ul class="platform-list">
+    <Section
+      id="apps"
+      title="Apps from products"
+      count={apps.length}
+      hooks={{ "data-client-apps": "" }}
+      lede="Apps other products keep in this project."
+      more={
+        <p>
+          Its editors and owners open them in that product; its viewers see them listed. A product puts one here for a member who edits the
+          project, and nothing here changes them.
+        </p>
+      }
+    >
+      <ul class="platform-list settings-rows">
         {apps.map((a) => (
           <li key={`${a.client}/${a.app}`} data-client-app={a.app}>
             <strong>
               <bdi>{a.title}</bdi>
-            </strong>{" "}
+            </strong>
+            <span class="settings-tag">{a.client}</span>
+            <code class="sw-mono">{a.app}</code>
             <span class="dim">
-              {a.client} · <code>{a.app}</code> · added {ago(a.added_at)}
+              added {ago(a.added_at)}
               {a.added_by ? (
                 <>
                   {" "}
@@ -42,6 +56,6 @@ export function ClientApps({ p }: { p: PlatformProject }) {
           </li>
         ))}
       </ul>
-    </div>
+    </Section>
   );
 }

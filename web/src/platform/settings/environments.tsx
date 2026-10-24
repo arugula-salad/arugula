@@ -8,8 +8,12 @@
 // owner's, with a passkey, on control's page. Every member sees each
 // environment's latest deploys, whatever became of them, and reaches each
 // one's page from there, not only from its push.
+//
+// Each environment is a card in the swarm's language (../swarm.css): its
+// bar is its latest deploy's state (none yet is muted), its driver a tag,
+// each secret a chip saying whether the environment holds it or the
+// platform mints it per run, and its deploys a compact table.
 
-import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { platformFetch } from "../../shared/maintenance";
 import { holdable, historyPath, secretNote, environmentBody, type DeployHistory, type Driver, type Environment } from "../deploys-text";
@@ -17,6 +21,8 @@ import { names } from "../links";
 import { DeployRow } from "../pages/deploy";
 import { follow, pathOf } from "../router";
 import type { PlatformProject } from "../session";
+import { deployTone, toneClass } from "../swarm";
+import { Section } from "./section";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const r = await platformFetch(path, {
@@ -51,38 +57,38 @@ export function Environments({ p }: { p: PlatformProject }) {
   const role = roleIn(p);
   const owner = role === "owner";
   const plans = role !== "viewer";
-  const deployPath = (env?: string) => pathOf({ page: "new-deploy", project: p.id, ...(env ? { env } : {}) }, names);
+  const deployPath = (env: string) => pathOf({ page: "new-deploy", project: p.id, env }, names);
   return (
-    <div data-environments>
-      <h2>
-        Environments
-        {plans && envs?.length ? (
-          <>
-            {" "}
-            <a class="button deploy-new" href={deployPath()} data-deploy-new onClick={(e) => follow(e, deployPath())}>
-              Deploy…
-            </a>
-          </>
-        ) : null}
-      </h2>
-      <p class="dim">
-        Where the project's deploys go. Each has a driver that applies a deploy, the driver's settings, and the secrets it holds. A deploy is planned by an
-        owner or editor (or their agent), and applied only once an owner approves it on their phone or in a browser, with a passkey.
-      </p>
+    <Section
+      id="environments"
+      title="Environments"
+      count={envs?.length}
+      hooks={{ "data-environments": "" }}
+      lede="Where the project's deploys go. Nothing is applied until an owner approves it with a passkey."
+      more={
+        <p>
+          Each has a driver that applies a deploy, the driver's settings, and the secrets it holds. An owner or editor (or their agent) plans a
+          deploy with Deploy…, and it's applied only once an owner approves it on their phone or in a browser, with a passkey. A secret's value
+          is never shown here again, or read back: only a deploy's run gets it. Set one to replace it.
+        </p>
+      }
+    >
       {err && <p class="control-error">{err}</p>}
       {envs?.length === 0 && <p class="dim">None yet.</p>}
-      <div class="deploy-cards">
-        {(envs ?? []).map((env) => (
-          <EnvironmentCard
-            key={env.id}
-            env={env}
-            driver={drivers.find((d) => d.name === env.driver)}
-            owner={owner}
-            plans={plans}
-            deployPath={deployPath(env.id)}
-          />
-        ))}
-      </div>
+      {envs?.length ? (
+        <div class="sw-cards settings-cards env-cards">
+          {envs.map((env) => (
+            <EnvironmentCard
+              key={env.id}
+              env={env}
+              driver={drivers.find((d) => d.name === env.driver)}
+              owner={owner}
+              plans={plans}
+              deployPath={deployPath(env.id)}
+            />
+          ))}
+        </div>
+      ) : null}
       {owner ? (
         making ? (
           <NewEnvironment
@@ -94,69 +100,88 @@ export function Environments({ p }: { p: PlatformProject }) {
             }}
           />
         ) : (
-          <p>
-            <button class="control-linkish" data-environment-new onClick={() => setMaking(true)} disabled={!drivers.length}>
-              New environment
-            </button>
-          </p>
+          <button class="settings-btn" data-environment-new onClick={() => setMaking(true)} disabled={!drivers.length}>
+            New environment
+          </button>
         )
       ) : (
         <p class="dim">A project's owners make its environments and set their secrets.</p>
       )}
-    </div>
+    </Section>
   );
 }
 
 function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Environment; driver?: Driver; owner: boolean; plans: boolean; deployPath: string }) {
   const settings = Object.entries(env.settings);
   const minted = (driver?.secrets ?? []).filter((s) => s.minted && !env.secret_names.includes(s.name));
+  const history = useHistory(env.project, env.id);
+  // The bar: its latest deploy's state, muted until it has one.
+  const latest = history.page?.deploys[0];
   return (
-    <article class="deploy-card deploy-env" data-environment={env.name}>
-      <header class="deploy-card-head">
-        <h2>{env.name}</h2>
-        <span class="deploy-state">{env.driver}</span>
-      </header>
+    <article class={`sw-card env-card ${toneClass(latest ? deployTone(latest.state) : "muted")}`} data-environment={env.name}>
+      <div class="sw-head">
+        <b class="sw-name">{env.name}</b>
+        <span class="settings-tag" title="Its driver: what applies its deploys">
+          {env.driver}
+        </span>
+        {plans && (
+          <a class="settings-btn env-deploy" href={deployPath} data-environment-deploy={env.name} data-deploy-new onClick={(e) => follow(e, deployPath)}>
+            Deploy…
+          </a>
+        )}
+      </div>
       {settings.length > 0 && (
-        <dl class="deploy-facts">
+        <dl class="env-facts">
           {settings.map(([k, v]) => (
-            <Fragment key={k}>
+            <div key={k}>
               <dt>{k}</dt>
               <dd>
                 <code>{v}</code>
               </dd>
-            </Fragment>
+            </div>
           ))}
         </dl>
       )}
-      {env.secret_names.length > 0 && (
-        <div class="deploy-secrets">
-          <h3>Secrets</h3>
-          {owner && <p class="dim">Values are never shown here again, or read back: set one to replace it.</p>}
-          {env.secret_names.map((n) =>
-            owner ? (
-              <SecretRow key={n} env={env.id} name={n} />
-            ) : (
-              <p key={n}>
-                <code>{n}</code>
-              </p>
-            ),
-          )}
+      {env.secret_names.length + minted.length > 0 && (
+        <div class="env-part">
+          <span class="env-label">Secrets</span>
+          <ul class="env-secrets">
+            {env.secret_names.map((n) =>
+              owner ? (
+                <SecretRow key={n} env={env.id} name={n} />
+              ) : (
+                <li key={n}>
+                  <SecretChip name={n} />
+                </li>
+              ),
+            )}
+            {minted.map((s) => (
+              <li key={s.name}>
+                <SecretChip name={s.name} minted={secretNote(s)} />
+              </li>
+            ))}
+          </ul>
         </div>
       )}
-      {minted.length > 0 && (
-        <p class="dim" data-env-minted>
-          {minted.map((s) => `${s.name}: ${secretNote(s)}`).join(". ")}.
-        </p>
-      )}
-      <RecentDeploys project={env.project} env={env.id} />
-      {plans && (
-        <div class="deploy-actions">
-          <a class="button" href={deployPath} data-environment-deploy={env.name} onClick={(e) => follow(e, deployPath)}>
-            Deploy…
-          </a>
-        </div>
-      )}
+      <RecentDeploys env={env.id} history={history} />
     </article>
+  );
+}
+
+/** A secret's chip: its name, then held (the environment has a value) or
+ * minted per run (the platform makes one for each run; the tooltip says
+ * whether the environment's own would win). */
+function SecretChip({ name, minted }: { name: string; minted?: string }) {
+  return minted ? (
+    <span class="settings-chip minted" title={`${name}: ${minted}`} data-env-minted>
+      <code>{name}</code>
+      <span>minted per run</span>
+    </span>
+  ) : (
+    <span class="settings-chip" title={`${name}: the environment holds its value`}>
+      <code>{name}</code>
+      <span>held</span>
+    </span>
   );
 }
 
@@ -165,9 +190,11 @@ function EnvironmentCard({ env, driver, owner, plans, deployPath }: { env: Envir
 const RECENT = 5;
 const OLDER = 20;
 
-/** An environment's latest deploys, whatever became of them, newest
- * first: each opens its own page. */
-function RecentDeploys({ project, env }: { project: string; env: string }) {
+type History = ReturnType<typeof useHistory>;
+
+/** An environment's latest deploys, whatever became of them, newest first,
+ * and asking for older ones. The card's bar reads the newest. */
+function useHistory(project: string, env: string) {
   const [page, setPage] = useState<DeployHistory | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -186,22 +213,37 @@ function RecentDeploys({ project, env }: { project: string; env: string }) {
       setBusy(false);
     }
   };
+  return { page, busy, err, older };
+}
+
+/** Those deploys as a table: each row opens its own page. */
+function RecentDeploys({ env, history: { page, busy, err, older } }: { env: string; history: History }) {
   if (err) return <p class="control-error">{err}</p>;
   if (!page) return null;
   return (
-    <div class="deploy-history" data-env-deploys={env}>
-      <h3>Deploys</h3>
+    <div class="env-part" data-env-deploys={env}>
+      <span class="env-label">Deploys</span>
       {page.deploys.length === 0 ? (
         <p class="dim">None yet.</p>
       ) : (
-        <ol class="platform-list">
-          {page.deploys.map((d) => (
-            <DeployRow key={d.id} d={d} />
-          ))}
-        </ol>
+        <table class="settings-table deploy-table">
+          <thead class="settings-hidden">
+            <tr>
+              <th scope="col">State</th>
+              <th scope="col">Commit</th>
+              <th scope="col">Roll back</th>
+              <th scope="col">When</th>
+            </tr>
+          </thead>
+          <tbody>
+            {page.deploys.map((d) => (
+              <DeployRow key={d.id} d={d} />
+            ))}
+          </tbody>
+        </table>
       )}
       {page.next && (
-        <button class="control-linkish" disabled={busy} data-env-deploys-older onClick={() => void older()}>
+        <button class="control-linkish env-older" disabled={busy} data-env-deploys-older onClick={() => void older()}>
           Older
         </button>
       )}
@@ -209,7 +251,8 @@ function RecentDeploys({ project, env }: { project: string; env: string }) {
   );
 }
 
-/** One secret: a password box, sent once, then cleared. */
+/** One secret the environment holds, for an owner: its chip, and a
+ * password box to replace its value, sent once, then cleared. */
 function SecretRow({ env, name }: { env: string; name: string }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -231,29 +274,30 @@ function SecretRow({ env, name }: { env: string; name: string }) {
     }
   };
   return (
-    <form class="deploy-secret" data-env-secret={name} onSubmit={(e) => void save(e)}>
-      <label>
-        <code>{name}</code>
+    <li class="env-secret-row">
+      <form class="env-secret" data-env-secret={name} onSubmit={(e) => void save(e)}>
+        <SecretChip name={name} />
         <input
           type="password"
           autoComplete="new-password"
           spellcheck={false}
           placeholder="New value"
           aria-label={`${name}'s value`}
+          title="Values are never shown again, or read back: set one to replace it."
           value={value}
           data-env-secret-value={name}
           onInput={(e) => setValue(e.currentTarget.value)}
         />
-      </label>
-      <button disabled={busy || !value} data-env-secret-save={name}>
-        Set
-      </button>
-      {said && (
-        <span class={said.ok ? "dim" : "control-error"} role="status" data-env-secret-said={name}>
-          {said.text}
-        </span>
-      )}
-    </form>
+        <button disabled={busy || !value} data-env-secret-save={name}>
+          Set
+        </button>
+        {said && (
+          <span class={said.ok ? "dim" : "control-error"} role="status" data-env-secret-said={name}>
+            {said.text}
+          </span>
+        )}
+      </form>
+    </li>
   );
 }
 

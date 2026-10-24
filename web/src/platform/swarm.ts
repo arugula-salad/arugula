@@ -37,6 +37,13 @@ export function runTone(state: string): Tone {
   return "muted";
 }
 
+/** A deploy (M217's states, a run's with `planned` before them and
+ * `stale` beside them): planned and waiting for its approval waits, then
+ * as a run. A stale one never applied, as a denied one didn't. */
+export function deployTone(state: string): Tone {
+  return state === "planned" ? "warn" : runTone(state);
+}
+
 /** An inbox entry (M171): why it wants the reader, as the swarm colors a
  * card by why its pane wants them. A review asked of them is the swarm's
  * ask, changes asked of their PR wait on them, a failed check or run is a
