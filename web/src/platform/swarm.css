@@ -106,7 +106,9 @@
 
 .platform .sw-stats b {
   display: block;
-  font: 700 22px/1 var(--f-display);
+  /* Mono, not the display face: Big Shoulders' 1 is a bare stroke at this
+     size ("| ready"), and tabular digits keep the counts in step. */
+  font: 700 20px/1 var(--f-mono);
   color: var(--fg);
 }
 
