@@ -106,7 +106,7 @@ GitHub Actions on `arugula-salad/arugula`:
 
 | Name | Used by | Copies | Fate |
 | --- | --- | --- | --- |
-| `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | `app-release.yml` | Infisical `/illogical/release`; the certificate's files on the workstation | Operator |
+| `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_PROVISIONING_PROFILE` (D2: the Developer ID provisioning profile, base64; not secret, kept beside the others) | `app-release.yml` | Infisical `/illogical/release`; the certificate's files on the workstation | Operator |
 | `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | `app-release.yml` | Infisical `/illogical/release` (with `TAURI_UPDATER_PUBKEY`, public) | Operator |
 | `FLY_API_TOKEN` (deploys the hub), `FLY_PLATFORM_API_TOKEN` (deploys the platform) | `release.yml` | none; Fly mints new ones | Operator |
 | `E2B_API_KEY` | `release.yml` (the hosted template) | Infisical | Operator |

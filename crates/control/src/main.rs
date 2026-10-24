@@ -21,6 +21,7 @@ mod app_login;
 mod app_signin;
 #[cfg(test)]
 mod app_signin_wire;
+mod apple_site;
 mod auth;
 mod blocks;
 #[cfg(test)]
@@ -306,6 +307,13 @@ struct Args {
     #[arg(long, env = "ARUGULA_CONTROL_GUEST_SSH_HOST")]
     guest_ssh_host: Option<String>,
 
+    /// The Apple Developer Team ID that signs the macOS app
+    /// (`HNDPMQPF22` for the hosted one's), for its passkeys (D2,
+    /// `apple_site.rs`): control's site names the app as one that may use
+    /// its passkeys. Off when unset.
+    #[arg(long, env = "ARUGULA_CONTROL_APPLE_TEAM_ID")]
+    apple_team_id: Option<String>,
+
     /// The hub as an issuer (M228, issuer.rs): its keys.
     #[command(flatten)]
     issuer: issuer::KeyArgs,
@@ -345,6 +353,9 @@ pub struct Config {
     /// client signs people in.
     pub github_app_client: Option<Github>,
     pub static_dir: Option<PathBuf>,
+    /// The macOS app's Team ID, for `/.well-known/apple-app-site-association`
+    /// (`apple_site.rs`).
+    pub apple_team_id: Option<String>,
 }
 
 /// One URL control answers at (#507).
@@ -515,6 +526,7 @@ impl App {
                 github: None,
                 github_app_client: None,
                 static_dir: None,
+                apple_team_id: None,
             },
             db,
             http,
@@ -565,6 +577,8 @@ fn routes() -> Routes {
         // The hub as an issuer (M228): other products ask who someone is.
         .route("/.well-known/openid-configuration", get(issuer::discovery))
         .route("/.well-known/jwks.json", get(issuer::jwks))
+        // The macOS app may use control's passkeys in its window (D2).
+        .route(apple_site::PATH, get(apple_site::association))
         .route("/oauth/authorize", get(issuer::authorize))
         .route("/oauth/consent", post(issuer::consent))
         .route("/oauth/token", post(issuer::token_endpoint))
@@ -1038,6 +1052,11 @@ async fn run() -> anyhow::Result<()> {
         Some(d) => info!(domain = %d, "public previews served at <id>.{d}"),
         None => info!("no ARUGULA_PREVIEW_DOMAIN: public previews are off"),
     }
+    let apple_team_id = apple_site::team_id(a.apple_team_id.as_deref().unwrap_or(""))?;
+    match &apple_team_id {
+        Some(t) => info!(team = %t, "the macOS app may use control's passkeys"),
+        None => info!("no ARUGULA_CONTROL_APPLE_TEAM_ID: the macOS app's window can't use passkeys"),
+    }
     let billing = stripe.is_some();
     let platform_key = set(a.platform_key.clone())
         .map(|k| arugula_control_common::principal::PrincipalKey::from_hex(&k))
@@ -1105,6 +1124,7 @@ async fn run() -> anyhow::Result<()> {
             github,
             github_app_client,
             static_dir: a.static_dir,
+            apple_team_id,
         },
         db,
         http,

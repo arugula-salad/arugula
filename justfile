@@ -241,13 +241,34 @@ desktop-macos arch="" *tauri_args="":
     set -euo pipefail
     # An unset GitHub secret arrives as "": treat it as unset, or Tauri
     # takes APPLE_CERTIFICATE="" for a certificate to import.
-    for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+    for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID APPLE_PROVISIONING_PROFILE TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
       [ -n "${!v:-}" ] || unset "$v"
     done
     root={{justfile_directory()}}
     dist=$root/dist
     mkdir -p "$dist"
     command -v cargo-tauri >/dev/null || cargo install tauri-cli --version "^2" --locked
+    # Passkeys in the window (D2): with the Developer ID provisioning
+    # profile (APPLE_PROVISIONING_PROFILE, a base64 .provisionprofile) the
+    # bundle carries it as Contents/embedded.provisionprofile, and
+    # scripts/macos-sign signs the app with the associated-domains
+    # entitlement it allows. The bundler doesn't sign then: it would give
+    # the sidecars the app's entitlements too, and a bare executable that
+    # claims a restricted one is killed at launch. Without the profile (or
+    # without the certificate, which it's useless without) nothing changes.
+    sysbin=$(mktemp -d); keep=$(mktemp -d); trap 'rm -rf "$sysbin" "$keep"' EXIT
+    profile=()
+    if [ -n "${APPLE_PROVISIONING_PROFILE:-}" ] && [ -n "${APPLE_CERTIFICATE:-}" ]; then
+      cargo tauri build --help | grep -q -- --no-sign \
+        || { echo "this cargo-tauri has no --no-sign: cargo install tauri-cli --version '^2' --locked" >&2; exit 1; }
+      printf '%s' "$APPLE_PROVISIONING_PROFILE" | base64 --decode > "$keep/embedded.provisionprofile"
+      profile=(--no-sign --config "{\"bundle\":{\"macOS\":{\"files\":{\"embedded.provisionprofile\":\"$keep/embedded.provisionprofile\"}}}}")
+      echo "with the provisioning profile: passkeys in the window (D2)"
+    elif [ -n "${APPLE_PROVISIONING_PROFILE:-}" ]; then
+      echo "APPLE_PROVISIONING_PROFILE is set but APPLE_CERTIFICATE isn't: built without it (no passkeys in the window)"
+    else
+      echo "no APPLE_PROVISIONING_PROFILE: no passkeys in the window (D2)"
+    fi
     cd crates/desktop
     host=$(rustc -vV | sed -n 's/^host: //p')
     a="{{arch}}"; t=${a:-${host%%-*}}-apple-darwin
@@ -273,10 +294,9 @@ desktop-macos arch="" *tauri_args="":
     # The bundler runs `xattr -crs` from PATH: pyenv's shim (Python's
     # xattr, no -c or -r) can come first and fail it (#467). Only the
     # system xattr goes first; the rest of PATH stays as it was.
-    sysbin=$(mktemp -d); trap 'rm -rf "$sysbin"' EXIT
     ln -s /usr/bin/xattr "$sysbin/xattr"
     # ${flags[@]+…}: macOS bash 3.2 calls an empty array unbound.
-    PATH="$sysbin:$PATH" cargo tauri build --bundles app ${flags[@]+"${flags[@]}"} {{tauri_args}}
+    PATH="$sysbin:$PATH" cargo tauri build --bundles app ${flags[@]+"${flags[@]}"} ${profile[@]+"${profile[@]}"} {{tauri_args}}
     # The bundle is named after the app's productName (Arugula.app).
     product=$(sed -n 's/^ *"productName": "\(.*\)",$/\1/p' tauri.conf.json)
     app=$out/bundle/macos/$product.app

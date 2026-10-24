@@ -230,6 +230,17 @@ arugula-control --public-url https://control.example.com --listen 127.0.0.1:7690
   - `--platform-static-dir` (control's, platform in process) and
     `--static-dir` (`arugula-platform`'s) serve a local build instead, as
     `just dev-control` does on `app.localhost`.
+- **Passkeys in the macOS app** (D2, optional): `--apple-team-id`
+  (`ARUGULA_CONTROL_APPLE_TEAM_ID`, `HNDPMQPF22` for the hosted one) serves
+  `/.well-known/apple-app-site-association` naming
+  `<team>.io.arugula.desktop` for `webcredentials`, on every site, as JSON
+  and never a redirect. A Developer ID build of the app that carries the
+  matching associated-domains entitlement (`webcredentials:<control's
+  host>`) can then sign in and approve deploys with a passkey in its own
+  window. Unset, it's a 404 and the app's window has no passkey button.
+  Apple's CDN reads the file within a day of it changing, and Macs about
+  weekly; `https://app-site-association.cdn-apple.com/a/v1/<host>` shows
+  what the CDN has.
 - **Billing** (optional) needs both `STRIPE_SECRET_KEY` and
   `STRIPE_WEBHOOK_SECRET`; with the key alone control doesn't start.
 - **Behind a proxy** that passes the client's address in a header, use

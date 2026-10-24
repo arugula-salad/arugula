@@ -12,6 +12,15 @@
 # Without APPLE_CERTIFICATE it says so and leaves the ad-hoc signature
 # (exit 0): releases stay unsigned until there's a Developer ID.
 #
+# Passkeys in the window (D2): an app that carries the Developer ID
+# provisioning profile as Contents/embedded.provisionprofile (`just
+# desktop-macos` with APPLE_PROVISIONING_PROFILE) is signed with the
+# associated-domains entitlement `webcredentials:control.arugula.io`, its
+# App ID and its team, after checking the profile allows them, is our
+# team's and this app's, and names our certificate. macOS kills an app at
+# launch that claims a restricted entitlement no profile allows, so no app
+# claims it without one, and the sidecars never do (they have no profile).
+#
 # It signs with rcodesign (apple-codesign, which Tauri builds on), from the
 # certificate and key directly: no keychain. codesign through a keychain of
 # our own failed on the runner VMs with errSecInternalComponent once Tauri
@@ -71,6 +80,57 @@ printf '%s' "$APPLE_CERTIFICATE_PASSWORD" >"$tmp/pass"
 openssl pkcs12 -in "$tmp/cert.p12" -passin "file:$tmp/pass" -clcerts -nokeys -out "$tmp/cert.pem"
 openssl pkcs12 -in "$tmp/cert.p12" -passin "file:$tmp/pass" -nocerts -nodes -out "$tmp/key.pem"
 
+# The app's entitlements: the microphone's, and with the provisioning
+# profile the passkeys' (D2, above).
+entitlements="$(dirname "$0")/../crates/desktop/macos/entitlements.plist"
+profile=$path/Contents/embedded.provisionprofile
+passkeys=
+if [ "$what" = app ] && [ -e "$profile" ]; then
+  domain=control.arugula.io
+  pb() { /usr/libexec/PlistBuddy -c "Print :$1" "$tmp/profile.plist" 2>/dev/null; }
+  bad() { echo "macos-sign: Contents/embedded.provisionprofile $1" >&2; exit 1; }
+  security cms -D -i "$profile" -o "$tmp/profile.plist" || bad "isn't a provisioning profile"
+  app_id=$APPLE_TEAM_ID.$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$path/Contents/Info.plist")
+  [ "$(pb TeamIdentifier:0)" = "$APPLE_TEAM_ID" ] || bad "is team $(pb TeamIdentifier:0)'s, not APPLE_TEAM_ID $APPLE_TEAM_ID"
+  [ "$(pb Entitlements:com.apple.application-identifier)" = "$app_id" ] ||
+    bad "is for $(pb Entitlements:com.apple.application-identifier), not $app_id"
+  [ "$(pb ProvisionsAllDevices)" = true ] || bad "isn't a Developer ID profile (it lists devices)"
+  pb Entitlements:com.apple.developer.associated-domains >/dev/null ||
+    bad "doesn't allow Associated Domains: turn the capability on for $app_id and make the profile again"
+  # It names the certificate we sign with (an account can have two
+  # Developer ID certificates, and a profile authorizes the ones it lists).
+  ours=$(openssl x509 -in "$tmp/cert.pem" -outform DER | base64 | tr -d ' \n')
+  named=
+  i=0
+  while /usr/libexec/PlistBuddy -x -c "Print :DeveloperCertificates:$i" "$tmp/profile.plist" >"$tmp/c.plist" 2>/dev/null; do
+    [ "$(sed -n '/<data>/,/<\/data>/p' "$tmp/c.plist" | sed 's/<\/*data>//g' | tr -d ' \t\n')" = "$ours" ] && named=1
+    i=$((i + 1))
+  done
+  [ -n "$named" ] || bad "doesn't name the certificate in APPLE_CERTIFICATE: make it again with that one"
+  cp "$entitlements" "$tmp/entitlements.plist"
+  entitlements=$tmp/entitlements.plist
+  e() { /usr/libexec/PlistBuddy -c "$1" "$entitlements"; }
+  e "Add :com.apple.application-identifier string $app_id"
+  if pb Entitlements:com.apple.developer.team-identifier >/dev/null; then
+    e "Add :com.apple.developer.team-identifier string $APPLE_TEAM_ID"
+  fi
+  e "Add :com.apple.developer.associated-domains array"
+  e "Add :com.apple.developer.associated-domains:0 string webcredentials:$domain"
+  passkeys=webcredentials:$domain
+  echo "macos-sign: with the provisioning profile for $app_id: passkeys on $domain in the window"
+fi
+# The signed app claims the passkeys' entitlement exactly when it carries
+# the profile.
+claims() {
+  if [ -n "$passkeys" ]; then
+    codesign -d --entitlements - "$1" 2>/dev/null | grep -qF "$passkeys" ||
+      { echo "macos-sign: $(basename "$1") isn't signed with $passkeys" >&2; exit 1; }
+  elif codesign -d --entitlements - "$1" 2>/dev/null | grep -q com.apple.developer.associated-domains; then
+    echo "macos-sign: $(basename "$1") claims associated domains without a provisioning profile: it wouldn't launch" >&2
+    exit 1
+  fi
+}
+
 sign() { "$rcodesign" sign --pem-file "$tmp/key.pem" --pem-file "$tmp/cert.pem" --for-notarization "$@"; }
 notarize() {
   xcrun notarytool submit "$1" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
@@ -82,9 +142,15 @@ case "$what" in
     for f in "$path"/Contents/MacOS/*; do
       [ "$(basename "$f")" = arugula-desktop ] || sign --code-signature-flags runtime "$f"
     done
-    sign --code-signature-flags runtime --entitlements-xml-file "$(dirname "$0")/../crates/desktop/macos/entitlements.plist" "$path"
+    sign --code-signature-flags runtime --entitlements-xml-file "$entitlements" "$path"
     codesign --verify --deep --strict "$path"
     mic "$path"
+    claims "$path"
+    for f in "$path"/Contents/MacOS/*; do
+      [ "$(basename "$f")" = arugula-desktop ] ||
+        ! codesign -d --entitlements - "$f" 2>/dev/null | grep -q com.apple.developer ||
+        { echo "macos-sign: $(basename "$f") claims a restricted entitlement: with no profile of its own it wouldn't launch" >&2; exit 1; }
+    done
     ditto -c -k --keepParent "$path" "$tmp/notarize.zip"
     notarize "$tmp/notarize.zip"
     xcrun stapler staple "$path"
