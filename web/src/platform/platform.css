@@ -1011,3 +1011,31 @@ h2 .button.deploy-new {
   font-size: 12px;
   color: var(--dim);
 }
+
+/* What's new in an issue's or a run's thread, on its row in the list
+   (./thread-unread.tsx): a dot and a count, in chat's colours. */
+.thread-unread {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.thread-unread-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.thread-unread.mention {
+  color: var(--warn);
+}
+
+.frame-place .chat-count {
+  margin-left: 5px;
+}

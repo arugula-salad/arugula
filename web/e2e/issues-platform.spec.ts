@@ -4,7 +4,10 @@
 // (issues come with it); Bob is a viewer. Alice opens an issue and
 // comments; Bob, who can't open one, reads it on a phone, comments, and
 // Alice has it over the live stream; Alice closes it as not planned and
-// the timeline says so. A local control (team-fixture.ts, `--platform-host
+// the timeline says so. What's new in an issue's thread is on its row and
+// the Issues place, and in the inbox's New in threads, never on the Chat
+// button (chat doesn't list the thread); opening the issue, or Done in the
+// inbox, reads it. A local control (team-fixture.ts, `--platform-host
 // app.localhost`), as platform.spec.ts runs it.
 
 import { expect, test, type Page } from "@playwright/test";
@@ -100,10 +103,28 @@ test("a viewer reads and comments on a phone, and can't open or close one", asyn
   await view.locator(".thread-compose textarea").fill("Same here on the phone");
   await view.locator(".thread-compose textarea").press("Enter");
   await expect(view.locator(".thread-msg").last()).toContainText("Same here on the phone");
-  // Alice has it with no reload.
+  // Alice has it with no reload: a dot on its row and a count on Issues.
   await alice.locator("[data-issues-search]").fill("");
+  await expect(alice.locator("[data-issue-row] [data-thread-unread]")).toHaveAttribute("data-thread-unread", "1", { timeout: 15_000 });
+  await expect(alice.locator("[data-platform-issues] [data-place-unread]")).toHaveAttribute("data-place-unread", "1");
+  // Control's page has the thread unread too, and its Chat button doesn't
+  // count it: chat doesn't list an issue's thread.
+  const shell = await alice.context().newPage();
+  await home(shell);
+  await expect
+    .poll(() => shell.evaluate(() => window.__arugula.chat.rooms.find((r) => r.kind === "object")?.unread ?? -1), { timeout: 15_000 })
+    .toBe(1);
+  expect(await shell.evaluate(() => window.__arugula.chat.unread())).toEqual({ n: 0, mention: false });
+  await expect(shell.locator(".ws-rail [data-open-chat] .ws-rail-count")).toHaveCount(0);
+  await shell.close();
+  // Opening the issue reads its thread.
   await alice.locator("[data-issue-row] a").first().click();
   await expect(alice.locator("[data-issue] .thread-msg").last()).toContainText("Same here on the phone", { timeout: 15_000 });
+  await alice.locator("[data-issue-back]").click();
+  await expect(alice.locator("[data-issue-row]")).toHaveCount(1);
+  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-issues] [data-place-unread]")).toHaveCount(0);
+  await alice.locator("[data-issue-row] a").first().click();
+  await expect(alice.locator("[data-issue] [data-issue-title]")).toHaveText("Search misses hyphenated words");
 
   // A viewer has no New issue, and the new issue page says why.
   await platform(bob, issuePath.replace(/\/issues\/.*$/, "/issues"));
@@ -131,4 +152,33 @@ test("the owner closes it as not planned, and the timeline and the lists say so"
   await view.locator("[data-issue-reopen]").click();
   await expect(view.locator("[data-issue-state]")).toHaveText("Open");
   await expect(view.locator('[data-issue-event="reopened"]')).toBeVisible();
+});
+
+test("what's new in its thread is in the inbox, and Done there reads it", async () => {
+  test.setTimeout(90_000);
+  await alice.locator("[data-issue-back]").click();
+  await expect(alice.locator("[data-issue-row]")).toHaveCount(1);
+  await platform(bob, issuePath);
+  const box = bob.locator("[data-issue] .thread-compose textarea");
+  await box.fill("It finds dry run without the hyphen");
+  await box.press("Enter");
+  await expect(bob.locator("[data-issue] .thread-msg").last()).toContainText("without the hyphen");
+
+  await expect(alice.locator("[data-issue-row] [data-thread-unread]")).toHaveAttribute("data-thread-unread", "1", { timeout: 15_000 });
+  await alice.locator("[data-platform-inbox]").click();
+  const card = alice.locator('[data-inbox-group="threads"] [data-inbox-thread]');
+  await expect(card).toHaveCount(1, { timeout: 15_000 });
+  await expect(card).toContainText("Search misses hyphenated words");
+  await expect(card).toContainText("1 new in its thread");
+  await card.locator("[data-inbox-thread-done]").click();
+  await expect(alice.locator('[data-inbox-group="threads"]')).toHaveCount(0);
+
+  // The list agrees, and so does control after a reload. (The inbox is no
+  // project's, so the bar's Issues there is Alice's own project's.)
+  await platform(alice, issuePath.replace(/\/issues\/.*$/, "/issues"));
+  await expect(alice.locator("[data-issue-row]")).toHaveCount(1, { timeout: 15_000 });
+  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-issues] [data-place-unread]")).toHaveCount(0);
+  await alice.reload();
+  await expect(alice.locator("[data-issue-row]")).toHaveCount(1, { timeout: 15_000 });
+  await expect(alice.locator("[data-issue-row] [data-thread-unread], [data-platform-issues] [data-place-unread]")).toHaveCount(0);
 });
