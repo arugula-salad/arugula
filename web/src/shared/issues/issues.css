@@ -287,6 +287,18 @@ button.ws-tag.issue-label:hover {
   overflow-wrap: anywhere;
 }
 
+/* An issue's Markdown, its body's and its comments', with the thread's
+   code chips. */
+.issue-text .md code,
+.issue-thread .md code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--divider);
+  background: var(--letterbox);
+  color: var(--peach);
+  font: 12px ui-monospace, monospace;
+}
+
 /* The thread is part of the page: the page scrolls, and the box to write
    in stays at its foot. */
 .issue-thread {

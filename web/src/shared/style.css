@@ -5208,7 +5208,13 @@ button.diff-why-run {
 
 .md .md-task {
   list-style: none;
-  margin-left: -1.3em;
+}
+
+/* The box sits in the bullet's place, so a wrapped line lines up with the
+   text, not under the box. */
+.md .md-task > input {
+  margin: 0 0.35em 0 -1.3em;
+  vertical-align: -1px;
 }
 
 .md code {
@@ -5258,6 +5264,23 @@ button.diff-why-run {
   border: 1px solid var(--divider);
   padding: 3px 8px;
   text-align: left;
+}
+
+/* A `<details>` fold: its summary is the line to click. */
+.md details {
+  margin: 0 0 0.7em;
+  padding: 4px 10px;
+  border: 1px solid var(--divider);
+  border-radius: 6px;
+}
+
+.md summary {
+  cursor: pointer;
+  color: var(--dim);
+}
+
+.md details[open] > summary {
+  margin-bottom: 0.5em;
 }
 
 /* Charts and drawings in a Doc (#964). A chart's series take the palette's

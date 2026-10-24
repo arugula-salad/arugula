@@ -20,7 +20,7 @@ import { chat } from "../chat-store";
 import { MsgAvatar } from "../chat/avatar";
 import { RoomBody, type Between } from "../chat/room";
 import { usePlatformApi } from "../platform-api";
-import { Markup } from "../ui/markup";
+import { Markdown } from "../ui/markdown";
 import { usePhone, useSubscribe } from "../ui/hooks";
 import { askText, openMenu, type MenuItem } from "../ui/menu";
 import { IssueError, issues } from "./store";
@@ -285,7 +285,7 @@ export function IssueView({
                 />
               ) : issue.body.trim() ? (
                 <div class="issue-text">
-                  <Markup text={issue.body} />
+                  <Markdown text={issue.body} refs={null} />
                 </div>
               ) : (
                 <p class="dim">No description.</p>
@@ -294,7 +294,7 @@ export function IssueView({
           </article>
           <div class="issue-thread chat-thread" data-issue-thread={room?.id}>
             {room ? (
-              <RoomBody room={room} phone={phone} focus={msg} name={`#${issue.number}`} between={between} empty="No comments yet. Everyone in the project reads them; write @name to notify someone." />
+              <RoomBody room={room} phone={phone} focus={msg} name={`#${issue.number}`} between={between} markdown empty="No comments yet. Everyone in the project reads them; write @name to notify someone." />
             ) : (
               <>
                 {between.map((b) => (

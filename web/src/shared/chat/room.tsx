@@ -13,10 +13,11 @@
 // is all they see.
 
 import { Fragment, type ComponentChildren } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
 import { agentLines, authorLabel } from "./agents";
+import { Markdown } from "../ui/markdown";
 import { Markup, mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
 import { useSubscribe } from "../ui/hooks";
@@ -207,6 +208,7 @@ export function RoomBody({
   name,
   between,
   empty,
+  markdown,
 }: {
   room: ChatRoom;
   phone: boolean;
@@ -220,6 +222,9 @@ export function RoomBody({
   between?: Between[];
   /** What the room says before anything's in it, instead of its own. */
   empty?: string;
+  /** Messages with all of GitHub's Markdown (an issue's comments, moved
+   * from GitHub), not just a chat's. */
+  markdown?: boolean;
 }) {
   useSubscribe((fn) => chat.subscribe(fn));
   const [error, setError] = useState<string | null>(null);
@@ -324,7 +329,7 @@ export function RoomBody({
                     <span>New</span>
                   </div>
                 )}
-                <RoomMessage room={current} m={m} prev={prev} reply={(q) => composeRef.current?.reply(q)} setError={setError} />
+                <RoomMessage room={current} m={m} prev={prev} reply={(q) => composeRef.current?.reply(q)} setError={setError} markdown={markdown} />
               </Fragment>
             );
           })}
@@ -352,12 +357,14 @@ function RoomMessage({
   prev,
   reply,
   setError,
+  markdown,
 }: {
   room: ChatRoom;
   m: ChatMessage;
   prev?: ChatMessage;
   reply: (text: string) => void;
   setError: (e: string | null) => void;
+  markdown?: boolean;
 }) {
   const head =
     !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || prev.via !== m.via || m.at - prev.at > 5 * 60_000;
@@ -365,6 +372,8 @@ function RoomMessage({
   // Mine or my agent's: I may delete it, not rewrite what an agent said.
   const owned = !!m.author && m.author === chat.me;
   const forMe = m.mentions.includes(chat.me);
+  // The same function while it's for the same people: Markdown parses again for a new one.
+  const landed = useCallback((t: string) => forMe && chat.isMe(t), [forMe]);
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const name = authorLabel(m);
@@ -432,7 +441,12 @@ function RoomMessage({
             }}
           />
         ) : (
-          m.text && <Markup text={m.text} isMe={chat.isMe} landed={(t) => forMe && chat.isMe(t)} />
+          m.text &&
+          (markdown ? (
+            <Markdown text={m.text} refs={null} isMe={chat.isMe} landed={landed} />
+          ) : (
+            <Markup text={m.text} isMe={chat.isMe} landed={landed} />
+          ))
         )}
         {m.edited !== null && !editing && <span class="thread-tag" title={new Date(m.edited).toLocaleString()}>(edited)</span>}
         {m.pane && <PaneChip pane={m.pane} quote={m.quote} />}
