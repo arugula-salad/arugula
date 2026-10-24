@@ -69,20 +69,19 @@ check() {
   return 1
 }
 
-# SQLite is one machine, Postgres two (M144, fly.toml's "Two modes"): more
-# than one machine without ARUGULA_PLATFORM_DATABASE_URL among the app's
-# secrets would be a database per machine, so it isn't deployed. Fly lists
-# secrets' names, never their values; if it won't list them, say so and go on.
-modes() {
-  local n names
-  n=$(flyctl status -a "$app" --json | jq '[.Machines[] | select(.config.metadata.fly_process_group == "app")] | length') || n=0
-  [ "${n:-0}" -gt 1 ] || return 0
+# The hosted platform is Postgres only (fly.toml; Arugula #72 dropped its volume):
+# without ARUGULA_PLATFORM_DATABASE_URL among the app's secrets there's no
+# database to start on (the platform refuses: ARUGULA_PLATFORM_REQUIRE_POSTGRES),
+# so it isn't deployed. Fly lists secrets' names, never their values; if it
+# won't list them, say so and go on.
+postgres() {
+  local names
   if ! names=$(flyctl secrets list -a "$app" --json 2>/dev/null | jq -r '.[] | (.Name // .name)'); then
-    echo "::warning::$app runs $n machines, and fly wouldn't list its secrets to check it's on Postgres"
+    echo "::warning::fly wouldn't list $app's secrets to check it's on Postgres"
     return 0
   fi
   if ! grep -qx ARUGULA_PLATFORM_DATABASE_URL <<<"$names"; then
-    echo "::error::$app runs $n machines on SQLite (no ARUGULA_PLATFORM_DATABASE_URL): each would have its own database. Scale it to one (fly scale count 1 -a $app), or set the secret first. docs/control-ops.md, \"Two platform machines\"."
+    echo "::error::$app has no ARUGULA_PLATFORM_DATABASE_URL secret: it's Postgres only, with no volume for a SQLite file. docs/control-ops.md, \"Two platform machines\"."
     return 1
   fi
 }
@@ -103,7 +102,15 @@ private() {
 }
 
 # The dump image carries the same arugula-platform as the platform, so its
-# read-only checks (`migrations`, `checksums`) read this build's tables. Until
+# read-only checks (`migrations`, `checksums`) read this build's tables.
+#
+# Each update also sets the machine's schedule to `hourly`. A machine update
+# restarts Fly's schedule clock, so under `daily` every deploy less than
+# 24 h after the last pushed the run back again: from 2026-10-21 to
+# 2026-10-23 deploys came closer than that and the dump never ran. Hourly, a
+# deploy delays a run by an hour at most, and dump.sh skips a run while the
+# newest dump is younger than ARUGULA_DUMP_EVERY_HOURS (20), so it still
+# dumps about once a day (docs/control-ops.md, "The nightly dump"). Until
 # the lead has made the dump machine (docs/control-ops.md, "The nightly
 # dump"), this only says so. It never fails a deploy: the dump logs a warning
 # when its build and the platform's differ, and runs on.
@@ -129,8 +136,8 @@ dump() {
     return 0
   fi
   # --skip-start: it runs on its schedule, not now.
-  if flyctl machine update "$id" -a "$app" --image "$ref" --skip-start -y >/dev/null; then
-    echo "the dump machine $id runs $ref"
+  if flyctl machine update "$id" -a "$app" --image "$ref" --schedule hourly --skip-start -y >/dev/null; then
+    echo "the dump machine $id runs $ref, hourly"
   else
     echo "::warning::the dump machine $id wasn't moved onto $ref"
   fi
@@ -149,7 +156,7 @@ deploy() {
     echo "::notice::$app already runs $now, newer than $tag: not deployed"
     return 0
   fi
-  modes || return 1
+  postgres || return 1
   private || return 1
   local ctx
   ctx=$(mktemp -d)

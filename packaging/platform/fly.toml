@@ -21,26 +21,24 @@
 # Secrets (fly secrets set -a arugula-platform): ARUGULA_PLATFORM_KEY (the
 # same as the hub's), and the platform's own: ARUGULA_CLOUD_SECRET_KEY,
 # ARUGULA_CLOUD_ACCOUNTS, the E2B and hosted workspaces' ones,
-# POSTHOG_API_KEY; and Litestream's for platform.db's backup,
-# LITESTREAM_BUCKET, LITESTREAM_ENDPOINT, LITESTREAM_ACCESS_KEY_ID,
-# LITESTREAM_SECRET_ACCESS_KEY, under the bucket's `platform` path
-# (docs/control-ops.md, "The platform" and "Backups"). Each release tag
-# deploys it before the hub (release.yml's `platform` job), once
+# POSTHOG_API_KEY; ARUGULA_PLATFORM_DATABASE_URL, its Managed Postgres
+# (arugula-platform-db); and LITESTREAM_BUCKET, LITESTREAM_ENDPOINT,
+# LITESTREAM_ACCESS_KEY_ID and LITESTREAM_SECRET_ACCESS_KEY, which only the
+# nightly dump's machine uses now (R2, docs/control-ops.md "The nightly
+# dump"): on Postgres the platform runs no Litestream, and its image (Arugula #72)
+# carries none. Each release tag deploys it before the hub (release.yml's `platform` job), once
 # FLY_PLATFORM_API_TOKEN is set; `just platform-deploy` is for hotfixes.
 #
-# Two modes (M144, docs/control-ops.md "Two platform machines"):
-# - SQLite (no ARUGULA_PLATFORM_DATABASE_URL secret): exactly ONE machine.
-#   Its database is the file on its volume; a second machine would have a
-#   volume, and so a database, of its own. ci-platform-deploy refuses to
-#   deploy two machines without the secret.
-# - Postgres (ARUGULA_PLATFORM_DATABASE_URL set, from M145): two machines,
-#   `fly scale count 2`. They share the database, take Cloud jobs with
-#   SKIP LOCKED, tell each other chat's events with LISTEN/NOTIFY, and one
-#   of them leads (the feed follower, usage reports). Neither needs a
-#   volume; the first machine's keeps the SQLite file as the rollback for
-#   14 days, and the second gets an empty one from `fly scale count`,
-#   since every machine mounts what [[mounts]] says. After the 14 days
-#   [[mounts]] can go (a follow-up).
+# Postgres only (M145; Arugula #72 dropped the volume): two machines, `fly scale
+# count 2`, with no volume and no /data. They share the database, take
+# Cloud jobs with SKIP LOCKED, tell each other chat's events with
+# LISTEN/NOTIFY, and one of them leads (the feed follower, usage reports).
+# SQLite stays the platform's default where you run your own, but not
+# here: with no volume a file would be lost on the next restart, so
+# ARUGULA_PLATFORM_REQUIRE_POSTGRES ([env]) makes the platform refuse to
+# start without ARUGULA_PLATFORM_DATABASE_URL, and ci-platform-deploy
+# refuses to deploy without the secret (docs/control-ops.md "Two platform
+# machines").
 # A deploy replaces one machine at a time ([deploy]), each waiting for its
 # health check, which answers 503 while the machine can't reach its
 # database; a stopping machine hands its Cloud jobs back before it goes.
@@ -49,7 +47,7 @@ app = "arugula-platform"
 # ewr, a ~5 ms hop away (Jake, 2026-10-21).
 primary_region = "iad"
 # On a stop, the platform hands back its Cloud jobs (up to 10 s), then
-# lets Litestream sync one last time (up to 10 s, SQLite only).
+# flushes analytics.
 kill_signal = "SIGTERM"
 kill_timeout = "25s"
 
@@ -62,17 +60,14 @@ kill_timeout = "25s"
   # 6PN is IPv6: listen on every address, which only the private network
   # reaches with no service declared.
   ARUGULA_PLATFORM_LISTEN = "[::]:7700"
-  ARUGULA_PLATFORM_DB = "/data/platform.db"
+  # No volume, so no SQLite file: Postgres or nothing (above).
+  ARUGULA_PLATFORM_REQUIRE_POSTGRES = "1"
   ARUGULA_PLATFORM_HUB = "http://illogical-control.internal:7691"
   # The hub's site, where billing's checkout comes back to.
   ARUGULA_CONTROL_URL = "https://control.arugula.io"
   # Public previews of hosted workspaces' ports (M187), as the hub serves
   # them (packaging/control/fly.toml).
   ARUGULA_PREVIEW_DOMAIN = "arugula.site"
-
-[[mounts]]
-  source = "platform_data"
-  destination = "/data"
 
 # Flycast only (see the top): plain TCP on 7700, passed through to the
 # platform as it is, with no handlers (no TLS, no HTTP rewriting, no

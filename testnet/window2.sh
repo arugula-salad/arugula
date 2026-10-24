@@ -316,6 +316,12 @@ dc run --rm -v "$W/curl:/usr/local/bin/curl:ro" dump > "$W/dump-prune-fails.txt"
 grep -q 'platform-dump: warning: pruning old dumps failed' "$W/dump-prune-fails.txt" || die "a failed prune wasn't logged"
 s3 ls s3://backups/platform-pg/ | grep -c '\.pgdump\.age$' | grep -qx 4 || die "the run whose prune failed didn't put its dump"
 echo "a failed prune: logged, exit 0, its dump in" | record
+# The gate: production starts the dump hourly, and a run skips while the
+# newest dump is younger than ARUGULA_DUMP_EVERY_HOURS (20).
+dc run --rm -e ARUGULA_DUMP_EVERY_HOURS=20 dump > "$W/dump-gate.txt" 2>&1 || die "a skipped run failed: $(tail -n 3 "$W/dump-gate.txt")"
+grep -q 'platform-dump: skipped: the newest dump is 0h old' "$W/dump-gate.txt" || die "a run right after a dump didn't skip: $(tail -n 3 "$W/dump-gate.txt")"
+s3 ls s3://backups/platform-pg/ | grep -c '\.pgdump\.age$' | grep -qx 4 || die "a skipped run put a dump"
+echo "the gate: a run within 20 h of the newest dump skips, exit 0, nothing put" | record
 # A dump that can't reach its database fails loudly.
 if dc run --rm -e ARUGULA_PLATFORM_DATABASE_URL=postgres://postgres:wrong@postgres:5432/platform dump > "$W/dump-broken.txt" 2>&1; then
   die "a dump with the wrong password succeeded"
