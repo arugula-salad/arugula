@@ -68,7 +68,8 @@ use arugula_control_wire::chat::{
     self as wire, ChatEdit, ChatFound, ChatHit, ChatKind, ChatLevel, ChatLive, ChatMessage, ChatMessages,
     ChatMessagesQuery, ChatMute, ChatNewChannel, ChatNewDm, ChatOpen, ChatOpenTarget, ChatPane, ChatPerson, ChatPost,
     ChatPosted, ChatPushWhy, ChatPushed, ChatReaction, ChatReactor, ChatRead, ChatReaderList, ChatReaders,
-    ChatReadersStored, ChatRoom, ChatRoomAgent, ChatRoomChange, ChatRoomDetail, ChatRooms, ChatSearchQuery, NotifyLevel,
+    ChatReadersStored, ChatRoom, ChatRoomAgent, ChatRoomChange, ChatRoomDetail, ChatRooms, ChatSearchQuery,
+    NotifyLevel,
 };
 use arugula_e2e::{now_ms, team::TeamRole};
 use axum::{
@@ -516,18 +517,34 @@ fn listed(app: &Platform, facts: &Facts, account: &str, room: &Room, from: u64) 
     let mark = app.db.chat_mark(&room.id, account)?;
     let counts = app.db.chat_unread(&room.id, account, mark.0, from)?;
     let mut r = listed_as(app, facts, account, room, mark, counts)?;
-    with_levels(app, account, std::slice::from_mut(&mut r))?;
+    with_levels(app, account, std::slice::from_mut(&mut r), None)?;
     Ok(r)
 }
 
 /// What each room is set to for `account` (#113): their own choice, else
 /// their default for its kind; and whether a DM's other person has
-/// notifications paused (#115). One statement for the levels and one for
-/// the people, whatever the page's size.
-fn with_levels(app: &Platform, account: &str, rooms: &mut [ChatRoom]) -> anyhow::Result<()> {
-    let ids: Vec<&str> = rooms.iter().map(|r| r.id.as_str()).collect();
-    let own = app.db.chat_levels_for(account, &ids)?;
-    let prefs = app.db.notify_prefs(account)?;
+/// notifications paused (#115). `own` is the reader's choices when the
+/// caller read them with the marks ([`rooms`]); else one statement reads
+/// them. One more reads the reader's defaults and the DM people's pauses
+/// together, whatever the page's size (`GET /api/chat`'s budget,
+/// `hub_calls_tests`).
+fn with_levels(
+    app: &Platform,
+    account: &str,
+    rooms: &mut [ChatRoom],
+    own: Option<HashMap<String, NotifyLevel>>,
+) -> anyhow::Result<()> {
+    let own = match own {
+        Some(o) => o,
+        None => {
+            let ids: Vec<&str> = rooms.iter().map(|r| r.id.as_str()).collect();
+            app.db.chat_levels_for(account, &ids)?
+        }
+    };
+    let mut who: Vec<String> = rooms.iter().filter_map(|r| r.with.as_ref().map(|w| w.account.clone())).collect();
+    who.push(account.to_owned());
+    let mut prefs = app.db.notify_prefs_of(&who)?;
+    let mine = prefs.remove(account).unwrap_or_default();
     for r in rooms.iter_mut() {
         let kind = match r.kind {
             ChatKind::Dm => "dm",
@@ -535,15 +552,14 @@ fn with_levels(app: &Platform, account: &str, rooms: &mut [ChatRoom]) -> anyhow:
             _ => "thread",
         };
         let chosen = own.get(&r.id).copied();
-        r.level = chosen.unwrap_or_else(|| crate::notify::default_level(&prefs, kind));
+        r.level = chosen.unwrap_or_else(|| crate::notify::default_level(&mine, kind));
         r.level_own = chosen.is_some();
         // The old flag reads the same as `nothing`.
         r.muted = r.level == NotifyLevel::Nothing;
     }
-    let others: Vec<String> = rooms.iter().filter_map(|r| r.with.as_ref().map(|w| w.account.clone())).collect();
-    let paused = paused_among(app, &others)?;
+    let now = now_ms();
     for w in rooms.iter_mut().filter_map(|r| r.with.as_mut()) {
-        w.dnd = paused.contains(&w.account);
+        w.dnd = prefs.get(&w.account).is_some_and(|p| crate::notify::paused(p, now));
     }
     Ok(())
 }
@@ -1301,7 +1317,7 @@ pub async fn rooms(State(app): State<Arc<Platform>>, s: Person) -> J<ChatRooms> 
     // room (a round trip each on Postgres, where one per room added up).
     let ids: Vec<&str> = seen.iter().map(|(r, _)| r.id.as_str()).collect();
     let marks = app.db.chat_marks(&ids, &s.account)?;
-    let mark = |id: &str| marks.get(id).copied().unwrap_or((0, false));
+    let mark = |id: &str| marks.get(id).map(|m| (m.0, m.1)).unwrap_or((0, false));
     let asks: Vec<UnreadAsk<'_>> =
         seen.iter().map(|(r, from)| UnreadAsk { room: &r.id, read: mark(&r.id).0, from: *from }).collect();
     let counts = app.db.chat_unread_in(&s.account, &asks)?;
@@ -1310,7 +1326,8 @@ pub async fn rooms(State(app): State<Arc<Platform>>, s: Person) -> J<ChatRooms> 
         let n = counts.get(&r.id).copied().unwrap_or((0, 0));
         rooms.push(listed_as(&app, &facts, &s.account, r, mark(&r.id), n)?);
     }
-    with_levels(&app, &s.account, &mut rooms)?;
+    let own = marks.iter().filter_map(|(id, m)| m.2.map(|l| (id.clone(), l))).collect();
+    with_levels(&app, &s.account, &mut rooms, Some(own))?;
     Ok(Json(ChatRooms { rooms }))
 }
 

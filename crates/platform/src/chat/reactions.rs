@@ -19,7 +19,7 @@ const CHAT_REACTS: (&str, usize) = ("chat-react", 240);
 fn valid(emoji: &str) -> bool {
     emoji.len() <= 64
         && emoji.chars().count() <= 16
-        && emoji.chars().any(|c| !c.is_ascii())
+        && !emoji.is_ascii()
         && emoji.chars().all(|c| !c.is_whitespace() && !c.is_control() && !c.is_alphabetic())
 }
 

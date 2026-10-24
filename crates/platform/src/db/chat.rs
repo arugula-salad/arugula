@@ -728,16 +728,29 @@ impl Db {
     }
 
     /// [`chat_mark`](Self::chat_mark) for a page of rooms, in one
-    /// statement: the rooms with a mark (the rest are `(0, false)`).
-    pub fn chat_marks(&self, rooms: &[&str], account: &str) -> Result<std::collections::HashMap<String, (i64, bool)>> {
+    /// statement: the rooms with a mark (the rest are `(0, false)`), with
+    /// the reader's own notification level for each where they chose one
+    /// (#113), so a page needn't read those apart.
+    #[allow(clippy::type_complexity)]
+    pub fn chat_marks(
+        &self,
+        rooms: &[&str],
+        account: &str,
+    ) -> Result<std::collections::HashMap<String, (i64, bool, Option<arugula_control_wire::chat::NotifyLevel>)>> {
         if rooms.is_empty() {
             return Ok(Default::default());
         }
         let c = self.c();
         let rows = c.query_map(
-            &format!("SELECT room, seq, muted FROM chat_reads WHERE account = ?1 AND {}", in_json(&c, "room", 2)),
+            &format!(
+                "SELECT room, seq, muted, level FROM chat_reads WHERE account = ?1 AND {}",
+                in_json(&c, "room", 2)
+            ),
             params![account, json_list(rooms)?],
-            |r| Ok((r.get::<String>(0)?, (r.get(1)?, r.get(2)?))),
+            |r| {
+                let level: Option<String> = r.get(3)?;
+                Ok((r.get::<String>(0)?, (r.get(1)?, r.get(2)?, level.as_deref().map(crate::db::notify::level))))
+            },
         )?;
         Ok(rows.into_iter().collect())
     }

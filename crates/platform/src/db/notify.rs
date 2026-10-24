@@ -39,7 +39,7 @@ impl Default for Prefs {
     }
 }
 
-fn level(s: &str) -> NotifyLevel {
+pub(crate) fn level(s: &str) -> NotifyLevel {
     match s {
         "all" => NotifyLevel::All,
         "nothing" => NotifyLevel::Nothing,
