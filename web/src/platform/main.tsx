@@ -5,6 +5,7 @@
 
 import { render } from "preact";
 import "../shared/style.css";
+import "../shared/frame.css";
 import "./platform.css";
 import "./finish.css";
 import { apply as applyAppearance } from "../shared/appearance";

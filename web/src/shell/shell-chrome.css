@@ -1,44 +1,6 @@
 /* Workspace chrome: keep the structure quiet, and make selection legible.
-   All colors come from the chosen palette; phone chrome is unchanged. */
-.app.ws {
-  --chrome-line: color-mix(in srgb, var(--muted) 55%, var(--surface));
-  --chrome-panel: color-mix(in srgb, var(--bg) 60%, var(--surface));
-  --chrome-selected: color-mix(in srgb, var(--accent) 14%, var(--surface));
-  --chrome-selected-line: color-mix(in srgb, var(--accent) 65%, var(--surface));
-}
-
-.ws-head {
-  padding-left: 0;
-  gap: 10px;
-  border-bottom-color: var(--chrome-line);
-}
-
-.ws-wordmark {
-  flex: none;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 18px;
-  box-sizing: border-box;
-  border-right: 1px solid var(--chrome-line);
-  color: var(--subtle);
-  font-size: 12px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: .15em;
-  white-space: nowrap;
-}
-
-.ws-wordmark strong {
-  color: var(--accent);
-  font-weight: 500;
-}
-
-.ws-wordmark:hover {
-  background: var(--raised);
-}
-
+   All colors come from the chosen palette; phone chrome is unchanged. The
+   frame's tokens, head, wordmark and selected place are shared/frame.css. */
 .ws-crumbs {
   margin-left: 8px;
 }
@@ -68,12 +30,6 @@
   padding: 6px 0;
   border: 1px solid transparent;
   border-radius: 5px;
-}
-
-.ws-rail-button.here {
-  background: var(--chrome-selected);
-  border-color: var(--chrome-selected-line);
-  color: var(--accent);
 }
 
 .ws-rail-button.here::before {

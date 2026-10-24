@@ -1,31 +1,49 @@
 /* The platform page (M150): its frame and the lists on its own pages.
-   Everything else (the bar, chat, Cloud workspaces) is shared/style.css,
-   so the platform page and the shell look alike. */
+   Everything else (chat, Cloud workspaces) is shared/style.css, and the
+   bar is the shell's head (shared/frame.css), so the platform page and the
+   shell look alike. */
 
 #root {
   height: 100%;
 }
 
+/* The shell's frame (shared/frame.css, #1018): its surface around the
+   page, and the page in a panel inside it, as a pane sits in the shell. */
 .platform {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--surface);
 }
 
 .platform-main {
   flex: 1;
+  min-height: 0;
   overflow: auto;
+  padding: 8px;
+  box-sizing: border-box;
 }
 
+/* The project, as the shell's head names the machine. */
 .platform-bar .platform-project {
   gap: 4px;
+  height: 28px;
+  padding: 0 8px;
   border: 0;
-  border-right: 1px solid var(--divider);
+  border-radius: 5px;
   background: none;
   color: var(--fg);
   font-weight: 600;
   cursor: pointer;
+}
+
+.platform-bar .platform-project:hover {
+  background: var(--raised);
+}
+
+.platform-bar a {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 
 .platform-bar a.place {
@@ -35,14 +53,42 @@
   text-decoration: none;
 }
 
-.platform-bar a.place:hover {
+.platform-bar a.place:not(.here):hover {
   color: var(--fg);
 }
 
+/* Chat's search, after the places. */
+.platform-bar .chat-search {
+  align-self: center;
+  margin-left: 8px;
+}
+
+/* The desktop app on macOS: its buttons sit over the head's left end,
+   before the wordmark (the shell's rail is under them instead). */
+html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
+  padding-left: 78px;
+}
+
 .platform-section {
-  max-width: 880px;
-  margin: 0 auto;
-  padding: 24px 16px;
+  margin: 0;
+  padding: 20px 24px;
+  box-sizing: border-box;
+  border: 1px solid var(--chrome-line);
+  border-radius: 5px;
+  background: var(--bg);
+}
+
+.platform-section + .platform-section {
+  margin-top: 8px;
+}
+
+/* A page that's one panel fills the frame, as a lone pane does. */
+.platform-main > .platform-section:only-child {
+  min-height: 100%;
+}
+
+html[data-corners="square"] .platform-section {
+  border-radius: 0;
 }
 
 .platform-section h1 {
@@ -112,14 +158,21 @@
   height: 100%;
 }
 
+/* A Cloud workspace's own strip, a panel over its panels. */
 .platform-ws-head {
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--divider);
+  margin-bottom: 8px;
+  background: var(--chrome-panel);
+  border: 1px solid var(--chrome-line);
+  border-radius: 5px;
+}
+
+html[data-corners="square"] .platform-ws-head {
+  border-radius: 0;
 }
 
 .platform-workspace .tab {
@@ -312,6 +365,7 @@
      places hides it once the last (or first) is in view. */
   .platform-bar .places {
     --edge: color-mix(in srgb, var(--accent) 55%, transparent);
+    align-self: stretch;
     min-width: 0;
     overflow-x: auto;
     scrollbar-width: none;
@@ -325,6 +379,31 @@
   .platform-bar a.platform-shell,
   .platform-bar .account-login {
     display: none;
+  }
+
+  /* The wordmark keeps its name and its way home, in less room. */
+  .platform-bar .ws-wordmark {
+    padding: 0 12px;
+  }
+
+  .platform-bar .ws-wordmark :is(span, strong) {
+    display: none;
+  }
+
+  .platform-main {
+    padding: 6px;
+  }
+
+  .platform-section {
+    padding: 16px 12px;
+  }
+
+  .platform-section + .platform-section {
+    margin-top: 6px;
+  }
+
+  .platform-ws-head {
+    margin-bottom: 6px;
   }
 
   .issues-search {

@@ -1,0 +1,65 @@
+/* The frame both pages sit in (#1018): the shell's workspace (`.app.ws`)
+   and the platform page (its #root) carry `.frame`. Its head bar, the
+   wordmark at the head's left end, the chrome's lines and the selected
+   place's look. The shell's own chrome (rail, sidebar, tabs, panes) stays
+   in shell/shell-chrome.css. All colors come from the chosen palette. */
+.frame {
+  /* The shell's `.app.ws` says the same in style.css. */
+  --head-h: 44px;
+  --chrome-line: color-mix(in srgb, var(--muted) 55%, var(--surface));
+  --chrome-panel: color-mix(in srgb, var(--bg) 60%, var(--surface));
+  --chrome-selected: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  --chrome-selected-line: color-mix(in srgb, var(--accent) 65%, var(--surface));
+}
+
+.ws-head {
+  padding-left: 0;
+  gap: 10px;
+  border-bottom-color: var(--chrome-line);
+}
+
+/* "Arugula / Control" on the shell, "Arugula / Projects" on the platform
+   page: which page you're on, and the way to its overview. */
+.ws-wordmark {
+  flex: none;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  box-sizing: border-box;
+  border-right: 1px solid var(--chrome-line);
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .15em;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.ws-wordmark strong {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.ws-wordmark:hover {
+  background: var(--raised);
+}
+
+/* A place in the head (the platform page's): a line only once it's the
+   one you're in. */
+.frame-place {
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 5px;
+}
+
+/* The place you're in, the same on the shell's rail and in the platform
+   page's head. */
+.ws-rail-button.here,
+.frame-place.here {
+  background: var(--chrome-selected);
+  border-color: var(--chrome-selected-line);
+  color: var(--accent);
+}
