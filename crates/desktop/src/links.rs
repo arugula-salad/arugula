@@ -4,8 +4,9 @@
 //!   daemon, in a window of ours;
 //! - `arugula://open?cwd=/some/dir`: a new tab there, shown; with no
 //!   `cwd`, a new tab in the home directory;
-//! - `arugula://notice?to=URL`: a Windows toast's click for what control
-//!   pushed (`notices.rs`), only to control's page or the platform page.
+//! - `arugula://notice?n=ID` (Windows): a toast's click for what control
+//!   pushed (`notices.rs`), by the id the app gave the notification; never
+//!   a URL.
 //!
 //! macOS hands links to the running app (or starts it) through the URL
 //! scheme in Info.plist (tauri-plugin-deep-link). Linux runs the app with
@@ -24,8 +25,11 @@ use tauri::AppHandle;
 #[derive(Debug, PartialEq)]
 pub enum Link {
     Pane(u32),
-    Open { cwd: Option<String> },
-    Notice(String),
+    Open {
+        cwd: Option<String>,
+    },
+    #[cfg(windows)]
+    Notice(u64),
 }
 
 /// What to do once the daemon answers.
@@ -53,8 +57,9 @@ pub fn parse(url: &str) -> Option<Link> {
                 url.query_pairs().find(|(k, _)| k == "cwd").map(|(_, v)| v.into_owned()).filter(|v| !v.is_empty());
             Some(Link::Open { cwd })
         }
+        #[cfg(windows)]
         "notice" if path.is_empty() => {
-            url.query_pairs().find(|(k, _)| k == "to").map(|(_, v)| Link::Notice(v.into_owned()))
+            url.query_pairs().find(|(k, _)| k == "n").and_then(|(_, v)| v.parse().ok()).map(Link::Notice)
         }
         _ => None,
     }
@@ -78,7 +83,8 @@ pub fn handle(app: &AppHandle, url: String) {
     let act = match link {
         Link::Pane(p) => Act::Show(p),
         Link::Open { cwd } => Act::Run { cwd, command: None },
-        Link::Notice(to) => return crate::notices::open_link(app, &to),
+        #[cfg(windows)]
+        Link::Notice(id) => return crate::notices::open_recent(app, id),
     };
     act_on(app, url, act);
 }
@@ -161,9 +167,13 @@ mod tests {
         assert_eq!(parse("arugula://pane/x"), None);
         assert_eq!(parse("arugula://pane/"), None);
         assert_eq!(parse("arugula://delete/everything"), None);
-        // A toast's click (notices.rs), its URL as Tap::link writes it.
-        let tap = crate::notices::Tap { url: "https://control.test/#pane=d1.3".into(), event: None };
-        assert_eq!(parse(&tap.link()), Some(Link::Notice("https://control.test/#pane=d1.3".into())));
+        // A toast's click (notices.rs, Windows): an id, never a URL.
+        #[cfg(windows)]
+        assert_eq!(parse("arugula://notice?n=7"), Some(Link::Notice(7)));
+        #[cfg(windows)]
+        assert_eq!(parse("arugula://notice?to=data:text/html,x"), None);
+        #[cfg(not(windows))]
+        assert_eq!(parse("arugula://notice?n=7"), None);
         assert_eq!(parse("https://pane/3"), None);
         assert_eq!(parse("illogical://pane/%3"), None);
     }

@@ -966,7 +966,7 @@ fn notify(app: &AppHandle, click: Click, title: String, body: String) {
     std::thread::spawn(move || {
         // Windows: a toast under the app's own id (its Start menu shortcut,
         // which the installer makes, carries it). A click opens
-        // `arugula://pane/N` (or a notice's `arugula://notice?to=…`), which
+        // `arugula://pane/N` (or a notice's `arugula://notice?n=ID`), which
         // comes back to this app (one instance) as a link, from the popup or
         // the Action Center alike.
         #[cfg(windows)]

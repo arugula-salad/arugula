@@ -78,17 +78,43 @@ fn load(app: &AppHandle) -> Option<Kept> {
 }
 
 fn save(app: &AppHandle, k: &Kept) -> Result<(), String> {
-    let f = file(app).ok_or("no config directory")?;
-    if let Some(dir) = f.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&f, serde_json::to_string_pretty(k).unwrap()).map_err(|e| e.to_string())?;
+    write_private(&file(app).ok_or("no config directory")?, serde_json::to_string_pretty(k).unwrap().as_bytes())
+}
+
+/// `bytes` at `f`, readable by this user alone from the start (it holds a
+/// private key): a new file made 0600, then renamed over the old.
+fn write_private(f: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let dir = f.parent().ok_or("no directory")?;
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let tmp = f.with_extension(format!("tmp-{}", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o600));
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
     }
-    Ok(())
+    let written = o.open(&tmp).and_then(|mut w| {
+        // Not 0600 after all (a filesystem that ignores it): refused.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if w.metadata()?.permissions().mode() & 0o077 != 0 {
+                return Err(std::io::Error::other("can't make it private"));
+            }
+        }
+        w.write_all(bytes)?;
+        w.sync_all()
+    });
+    match written.and_then(|()| std::fs::rename(&tmp, f)) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(format!("saving {}: {e}", f.display()))
+        }
+    }
 }
 
 fn forget(app: &AppHandle) {
@@ -445,19 +471,37 @@ impl Tap {
     }
 
     /// Windows: the link a toast's click opens, which comes back to this
-    /// app (`links.rs`).
-    #[cfg_attr(not(windows), allow(dead_code))]
+    /// app (`links.rs`): `arugula://notice?n=ID`, the tap kept here by an id
+    /// of its own. Never a URL: a link any site can open mustn't say what
+    /// the window shows.
+    #[cfg(any(windows, test))]
     pub fn link(&self) -> String {
-        let to: String = self
-            .url
-            .bytes()
-            .map(|b| match b {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
-                _ => format!("%{b:02X}"),
-            })
-            .collect();
-        format!("arugula://notice?to={to}")
+        format!("arugula://notice?n={}", remember(self.clone()))
     }
+}
+
+/// The taps of the notifications shown lately, by id (Windows: a toast's
+/// link names one).
+#[cfg(any(windows, test))]
+static RECENT: Mutex<std::collections::VecDeque<(u64, Tap)>> = Mutex::new(std::collections::VecDeque::new());
+#[cfg(any(windows, test))]
+const RECENT_MAX: usize = 64;
+
+#[cfg(any(windows, test))]
+fn remember(tap: Tap) -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    let id = NEXT.fetch_add(1, Ordering::SeqCst);
+    let mut r = RECENT.lock().unwrap();
+    r.push_back((id, tap));
+    while r.len() > RECENT_MAX {
+        r.pop_front();
+    }
+    id
+}
+
+#[cfg(any(windows, test))]
+fn recall(id: u64) -> Option<Tap> {
+    RECENT.lock().unwrap().iter().find(|(n, _)| *n == id).map(|(_, t)| t.clone())
 }
 
 /// `platformTap`: where a push opens on the platform page.
@@ -491,15 +535,14 @@ fn platform_path(msg: &Value) -> Option<String> {
     None
 }
 
-/// A toast's `arugula://notice?to=…` (Windows): only control's page or the
-/// platform page's, as any other link would be refused anyway.
-pub fn open_link(app: &AppHandle, to: &str) {
-    let Ok(url) = to.parse::<tauri::Url>() else { return };
-    if !crate::ours(&url) && !crate::platform_page(&url) {
-        eprintln!("arugula: not a page of control's: {url}");
+/// A toast's `arugula://notice?n=ID` (Windows): the tap it was shown with,
+/// if it's one of the recent ones; nothing else.
+#[cfg(windows)]
+pub fn open_recent(app: &AppHandle, id: u64) {
+    let Some(tap) = recall(id) else {
+        eprintln!("arugula: no notification {id} here");
         return;
-    }
-    let tap = Tap { url: url.to_string(), event: None };
+    };
     let a = app.clone();
     let _ = app.run_on_main_thread(move || tap.open(&a));
 }
@@ -543,6 +586,44 @@ mod tests {
         // Nothing that isn't an id gets into the address.
         assert_eq!(tap(json!({ "control": true, "chat": { "room": "../x" } }), P), "https://control.test/");
         assert_eq!(tap(json!({ "pane": 3, "daemon": "d1/../x" }), P), "https://control.test/#pane=3");
+    }
+
+    /// A toast's link names a tap kept here, never a URL; an id that isn't
+    /// one of them opens nothing.
+    #[test]
+    fn a_toasts_link_names_a_tap_kept_here() {
+        let tap = Tap { url: "https://control.test/#pane=d1.3".into(), event: None };
+        let link = tap.link();
+        let id: u64 = link.strip_prefix("arugula://notice?n=").unwrap().parse().unwrap();
+        assert!(!link.contains("control.test"));
+        assert_eq!(recall(id), Some(tap));
+        assert_eq!(recall(id + 1_000_000), None);
+        for _ in 0..RECENT_MAX {
+            Tap { url: "https://control.test/".into(), event: None }.link();
+        }
+        assert_eq!(recall(id), None, "only the recent ones");
+    }
+
+    /// The file with the key is this user's alone from the moment it's
+    /// there, and is replaced whole.
+    #[cfg(unix)]
+    #[test]
+    fn the_key_file_is_private_from_the_start() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("arugula-notices-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let f = dir.join("notices.json");
+        write_private(&f, b"one").unwrap();
+        assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o600);
+        // An old file anyone could read is replaced by a private one.
+        std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o644)).unwrap();
+        write_private(&f, b"two").unwrap();
+        assert_eq!(std::fs::read(&f).unwrap(), b"two");
+        assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file left");
+        // Somewhere it can't be written: an error, not a quiet failure.
+        assert!(write_private(&f.join("under-a-file.json"), b"x").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
