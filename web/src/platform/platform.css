@@ -78,6 +78,12 @@ html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
   background: var(--bg);
 }
 
+/* The panel is the frame's width; what's in it keeps a reading width,
+   the old column's. Any rule of a page's own says otherwise. */
+:where(.platform-section) > * {
+  max-width: 880px;
+}
+
 .platform-section + .platform-section {
   margin-top: 8px;
 }
@@ -152,30 +158,50 @@ html[data-corners="square"] .platform-section {
   margin-left: auto;
 }
 
+/* A Cloud workspace is one panel: where you are as its head, as a pane's
+   header sits on the pane, and its sections in it. */
 .platform-workspace {
   display: flex;
   flex-direction: column;
   height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--chrome-line);
+  border-radius: 5px;
+  background: var(--bg);
 }
 
-/* A Cloud workspace's own strip, a panel over its panels. */
+html[data-corners="square"] .platform-workspace {
+  border-radius: 0;
+}
+
 .platform-ws-head {
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  margin-bottom: 8px;
+  padding: 6px 20px;
   background: var(--chrome-panel);
-  border: 1px solid var(--chrome-line);
-  border-radius: 5px;
+  border-bottom: 1px solid var(--chrome-line);
 }
 
-html[data-corners="square"] .platform-ws-head {
+.hosted-ws-view .platform-section {
+  padding: 0 24px;
+  border: 0;
   border-radius: 0;
+  background: none;
 }
 
+.hosted-ws-view .platform-section + .platform-section {
+  margin-top: 0;
+}
+
+/* Its way back, in line with the rest of the head and the text under it. */
 .platform-workspace .tab {
+  min-width: 0;
+  margin: 0;
+  padding: 2px 4px;
+  border-radius: 5px;
   color: inherit;
   text-decoration: none;
 }
@@ -183,6 +209,7 @@ html[data-corners="square"] .platform-ws-head {
 .platform-workspace .hosted-ws-view {
   flex: 1;
   overflow: auto;
+  padding: 4px 0 20px;
 }
 
 .hosted-ws-view button.link {
@@ -381,13 +408,15 @@ html[data-corners="square"] .platform-ws-head {
     display: none;
   }
 
-  /* The wordmark keeps its name and its way home, in less room. */
+  /* The places get the room: the shell's phone chrome has no wordmark
+     either, and the project button still says where you are. */
   .platform-bar .ws-wordmark {
-    padding: 0 12px;
+    display: none;
   }
 
-  .platform-bar .ws-wordmark :is(span, strong) {
-    display: none;
+  .platform-bar {
+    gap: 4px;
+    padding-left: 4px;
   }
 
   .platform-main {
@@ -403,7 +432,11 @@ html[data-corners="square"] .platform-ws-head {
   }
 
   .platform-ws-head {
-    margin-bottom: 6px;
+    padding: 6px 8px;
+  }
+
+  .hosted-ws-view .platform-section {
+    padding: 0 12px;
   }
 
   .issues-search {
