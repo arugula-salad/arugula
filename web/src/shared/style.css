@@ -7417,6 +7417,28 @@ button.thread-quote:hover {
   line-height: 1;
 }
 
+/* "Notify anyway" over the composer of a DM whose person paused (#115). */
+.thread-note.compose-paused {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 4px 12px;
+  border-top: 0;
+  font-size: 12px;
+}
+
+.compose-paused button {
+  background: none;
+  padding: 2px 4px;
+  color: var(--accent);
+  font-size: inherit;
+}
+
+.compose-paused button[aria-pressed="true"] {
+  font-weight: 600;
+}
+
 .chat-sigil.chat-dm-pic {
   width: 16px;
   --msg-gutter: 16px;

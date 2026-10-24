@@ -549,6 +549,12 @@ pub struct ChatPost {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<String>>", optional))]
     pub files: Vec<String>,
+    /// "Notify anyway" (#115): in a DM, push the other person though they
+    /// have paused notifications. For this message only; anywhere else it
+    /// does nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub notify_anyway: Option<bool>,
 }
 
 /// Why control pushed someone.

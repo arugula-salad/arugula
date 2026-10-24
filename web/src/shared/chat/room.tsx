@@ -823,6 +823,9 @@ function RoomCompose({
   const [emoji, setEmoji] = useState(false);
   const [dropping, setDropping] = useState(false);
   const files = useAttachments(room.id, setError);
+  // "Notify anyway" (#115): for the next message only.
+  const [anyway, setAnyway] = useState(false);
+  const paused = room.kind === "dm" && !!room.with?.dnd;
   // Quoting reads a pane on a machine of yours: none, no button.
   const api = usePlatformApi();
   useSubscribe((fn) => api.subscribe(fn));
@@ -936,11 +939,12 @@ function RoomCompose({
     setError(null);
     setMissed([]);
     try {
-      const posted = await chat.post(room.id, text, quote, files.ids);
+      const posted = await chat.post(room.id, text, quote, files.ids, paused && anyway);
       setMissed(posted.unreached.map((w) => `Nobody here called ${w} can read this room`));
       setText("");
       setQuote(undefined);
       files.clear();
+      setAnyway(false);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -993,6 +997,14 @@ function RoomCompose({
             </li>
           ))}
         </ul>
+      )}
+      {paused && (
+        <p class="thread-note compose-paused" data-compose-paused>
+          {room.with?.name} has paused notifications.
+          <button type="button" class="link" aria-pressed={anyway} data-notify-anyway onClick={() => setAnyway((v) => !v)}>
+            {anyway ? "Will notify anyway" : "Notify anyway"}
+          </button>
+        </p>
       )}
       {emoji && <EmojiPicker pick={insert} close={() => setEmoji(false)} />}
       {emojis.length > 0 && (
