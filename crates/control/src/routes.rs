@@ -72,6 +72,7 @@ enum Client {
     Operator,
     Product,
     Agent,
+    Apple,
 }
 
 const METHODS: [&str; 6] = ["GET", "POST", "PUT", "PATCH", "DELETE", "ANY"];

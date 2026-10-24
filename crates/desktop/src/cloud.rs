@@ -5,7 +5,9 @@
 //! the button that joins).
 //!
 //! Signing in happens in the person's browser, where passkeys work (an
-//! unsigned app's webview has none): the app makes a verifier it keeps,
+//! app's webview has none, except a macOS build associated with control's
+//! site, which may also use them in the window, D2, `passkeys_on`): the
+//! app makes a verifier it keeps,
 //! listens on a loopback port, asks control for a ticket, and opens
 //! control's page on it. Once the person allows it there, their browser
 //! hands a one-time grant to that port (so only the app on the computer
@@ -357,11 +359,57 @@ const DRAG_SCRIPT: &str = r#"(() => {
   }
 })();"#;
 
+/// Whether the window can use passkeys on `control`'s page (D2). A
+/// WKWebView in an app that isn't a browser gets WebAuthn only for a
+/// relying party the app is associated with: so on macOS, only a build
+/// signed with `webcredentials:<control's host>` in its associated-domains
+/// entitlement (a Developer ID build with its provisioning profile,
+/// scripts/macos-sign), whose control names the app back (control's
+/// `apple_site.rs`). Linux's and Windows' windows offer none.
+fn passkeys_on(control: &str) -> bool {
+    associated_with(control, associated_domains())
+}
+
+/// Whether `domains` (an associated-domains entitlement's) associate the
+/// app with `control`'s host for its passkeys.
+fn associated_with(control: &str, domains: &[String]) -> bool {
+    let Some(host) = control.parse::<tauri::Url>().ok().and_then(|u| u.host_str().map(str::to_owned)) else {
+        return false;
+    };
+    domains.iter().any(|d| *d == format!("webcredentials:{host}"))
+}
+
+/// This app's associated domains, as its signature claims them (macOS).
+#[cfg(target_os = "macos")]
+fn associated_domains() -> &'static [String] {
+    use objc2_core_foundation::{CFArray, CFRetained, CFString, CFType};
+    use objc2_security::SecTask;
+    static D: OnceLock<Vec<String>> = OnceLock::new();
+    D.get_or_init(|| {
+        // SAFETY: a task for this process, asked for one entitlement, with
+        // no error out; an array's elements are CF objects.
+        unsafe {
+            let Some(task) = SecTask::from_self(None) else { return Vec::new() };
+            let key = CFString::from_static_str("com.apple.developer.associated-domains");
+            let Some(v) = task.value_for_entitlement(&key, std::ptr::null_mut()) else { return Vec::new() };
+            let Ok(a) = v.downcast::<CFArray>() else { return Vec::new() };
+            let a: CFRetained<CFArray<CFType>> = CFRetained::cast_unchecked(a);
+            a.iter().filter_map(|d| d.downcast_ref::<CFString>().map(|s| s.to_string())).collect()
+        }
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn associated_domains() -> &'static [String] {
+    &[]
+}
+
 /// Script for every page in the app's windows: the name control's page
-/// gives this device, no passkey button where passkeys can't work, and
-/// window dragging (`DRAG_SCRIPT`).
+/// gives this device, no passkey button where passkeys can't work
+/// (`passkeys_on`), and window dragging (`DRAG_SCRIPT`).
 pub fn init_script() -> String {
     let control = control().unwrap_or_default();
+    let hide = !passkeys_on(&control);
     // Debug builds only: a test's script for the page, to drive the window
     // where nothing else can.
     #[cfg(debug_assertions)]
@@ -371,7 +419,7 @@ pub fn init_script() -> String {
     let test = String::new();
     let s = format!(
         "window.__arugulaApp = {{ name: {}, platform: {:?} }};\n\
-         if ({control:?} && location.origin === new URL({control:?}).origin) {{\n\
+         if ({hide} && {control:?} && location.origin === new URL({control:?}).origin) {{\n\
            addEventListener('DOMContentLoaded', () => {{\n\
              const s = document.createElement('style');\n\
              s.textContent = '[data-signin=passkey] {{ display: none !important; }}';\n\
@@ -589,6 +637,19 @@ mod tests {
 
     fn url(s: &str) -> tauri::Url {
         s.parse().unwrap()
+    }
+
+    /// Passkeys only on the control the app is associated with, for
+    /// webcredentials (D2); none here, where the app claims no domains.
+    #[test]
+    fn passkeys_only_where_the_app_is_associated() {
+        let d = ["applinks:control.arugula.io".to_owned(), "webcredentials:control.arugula.io".to_owned()];
+        assert!(associated_with("https://control.arugula.io", &d));
+        assert!(!associated_with("https://control.example.com", &d));
+        assert!(!associated_with("https://control.arugula.io", &d[..1]));
+        assert!(!associated_with("", &d));
+        let script = init_script();
+        assert!(script.contains("if (true && "), "the button stays hidden: {script}");
     }
 
     #[test]

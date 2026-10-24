@@ -16,3 +16,12 @@ sites go to the browser.
 why the platform page does (on the origin control's `/control.json` says,
 with the same window permissions as control's page).
 `just desktop-check` checks it.
+
+Passkeys in the window (D2, macOS): a WKWebView gets WebAuthn only for a
+site the app is associated with. A release built with the Developer ID
+provisioning profile (`APPLE_PROVISIONING_PROFILE`, `just desktop-macos`)
+carries it as `Contents/embedded.provisionprofile` and is signed with
+`webcredentials:control.arugula.io` (`scripts/macos-sign`); control names
+the app back in `/.well-known/apple-app-site-association`. Only then does
+control's page in the window keep its passkey button (`src/cloud.rs`,
+`passkeys_on`). Without the profile the app is built as before.

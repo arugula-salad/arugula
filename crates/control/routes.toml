@@ -59,7 +59,8 @@
 #   link or a redirect, with no page of control's), `github` and `stripe`
 #   (their webhooks), `operator` (by hand), `product` (another product
 #   that takes the hub's tokens: studio, a hud box, M228's clients), `agent`
-#   (an agent with no machine, with an agent grant token, M230). Enforced for the CLI: a CLI
+#   (an agent with no machine, with an agent grant token, M230), `apple`
+#   (Apple's associated-domains CDN, for the macOS app, D2). Enforced for the CLI: a CLI
 #   device's signature is refused (401, `page_only`) on every route that
 #   doesn't list `cli` (`clients::gate`).
 # - `note`: anything the rest doesn't say.
@@ -147,6 +148,16 @@ process = "hub"
 auth = "public"
 clients = ["product"]
 note = "Every key published: the one that signs, the next before it signs, the previous until its tokens run out."
+
+# The macOS app's passkeys (D2, apple_site.rs): 404 without a Team ID.
+
+[[route]]
+method = "GET"
+path = "/.well-known/apple-app-site-association"  # apple_site::PATH
+process = "hub"
+auth = "public"
+clients = ["apple"]
+note = "Names the desktop app (`<team>.io.arugula.desktop`) for webcredentials. JSON, never a redirect, on every site."
 
 [[route]]
 method = "GET"

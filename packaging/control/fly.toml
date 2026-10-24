@@ -29,6 +29,10 @@ kill_timeout = "15s"
   # a registrable domain of its own. The platform reads the same value
   # (packaging/platform/fly.toml). DNS and the certificate: docs/control-ops.md.
   ARUGULA_PREVIEW_DOMAIN = "arugula.site"
+  # Passkeys in the macOS app's window (D2): the Developer ID team that
+  # signs it ("Developer ID Application: Jake Gaylor (HNDPMQPF22)"), named
+  # in /.well-known/apple-app-site-association. Not a secret.
+  ARUGULA_CONTROL_APPLE_TEAM_ID = "HNDPMQPF22"
 
 [[mounts]]
   source = "control_data"
