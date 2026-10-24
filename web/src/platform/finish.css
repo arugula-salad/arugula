@@ -35,6 +35,13 @@ html[data-scheme="light"] {
   color: var(--subtle);
 }
 
+/* On a dark palette --subtle is nearly the typed text's brightness, so an
+   empty field looked filled; --dim reads there. */
+html[data-scheme="dark"] .platform input::placeholder,
+html[data-scheme="dark"] .platform textarea::placeholder {
+  color: var(--dim);
+}
+
 /* -- Aqua: pinstripes behind the pages, a lit bar (style.css's .bar),
       lit panels, a gel on what's picked */
 
