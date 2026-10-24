@@ -969,7 +969,8 @@ const EVENTS_PAGE: u32 = 500;
 
 struct StreamInfo {
     account: String,
-    open: Option<String>,
+    /// The rooms its page shows (more than one with several chat blocks).
+    open: Vec<String>,
 }
 
 impl Default for Hub {
@@ -1116,7 +1117,7 @@ impl Hub {
     }
 
     fn has_open(&self, account: &str, room: &str) -> bool {
-        self.streams.lock().unwrap().values().any(|s| s.account == account && s.open.as_deref() == Some(room))
+        self.streams.lock().unwrap().values().any(|s| s.account == account && s.open.iter().any(|r| r == room))
     }
 
     /// Whether `account` may be pushed for `room` now (and note it). Per
@@ -1269,7 +1270,7 @@ pub async fn live(
         if streams.values().filter(|x| x.account == s.account).count() >= STREAMS_PER_ACCOUNT {
             return Err(err(StatusCode::TOO_MANY_REQUESTS, "too many open chat pages; close some"));
         }
-        streams.insert(id.clone(), StreamInfo { account: s.account.clone(), open: None });
+        streams.insert(id.clone(), StreamInfo { account: s.account.clone(), open: Vec::new() });
     }
     // A page that opened is a person who's here: seen now, active at the
     // page's first beat (it says whether it's in use).
@@ -1348,7 +1349,7 @@ pub async fn open(State(app): State<Arc<Platform>>, s: Person, Json(b): Json<Cha
         .get_mut(&b.stream)
         .filter(|x| x.account == s.account)
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "no such stream"))?;
-    st.open = b.room.clone();
+    st.open = b.room.iter().chain(b.more.iter().flatten()).cloned().collect();
     Ok(Json(b))
 }
 

@@ -9,6 +9,7 @@ import { paneIds, tabLabel, type Client } from "../../client";
 import { directory } from "../../hosts";
 import type { Session, TabView } from "../../../shared/proto";
 import { AttentionBadge, tabAttention } from "../attention";
+import { ChatTabBadge } from "../../blocks";
 import { machineState, newTabItems, tabItems } from "../commands";
 import { drag, startDrag } from "../drag";
 import { useSubscribe } from "../../../shared/ui/hooks";
@@ -223,6 +224,7 @@ function TabItem({
       <span class="tab-label">{label}</span>
       <TabPeople client={client} tab={tab.id} />
       <AttentionBadge {...tabAttention(client, tab)} client={client} />
+      <ChatTabBadge client={client} panes={paneIds(tab)} />
       {edits && (
         <button
           class="tab-close"

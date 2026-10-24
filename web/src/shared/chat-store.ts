@@ -105,7 +105,9 @@ export class ChatStore {
   private pinned = new Map<string, ChatPin[]>();
   private fetching = new Map<string, Promise<void>>();
   private es: EventSource | null = null;
-  private open: string | null = null;
+  /** The rooms this page shows, by who shows each: a page with two chat
+   * blocks (#123) has two, and closing one mustn't say the other's shut. */
+  private open = new Map<unknown, string>();
   private listeners = new Set<() => void>();
   private probe: number | undefined;
   private roomsTimer: number | undefined;
@@ -352,22 +354,27 @@ export class ChatStore {
 
   // ---- what the page has open
 
-  /** The room this page shows (null: none), so control pushes nobody here
-   * for it. A hidden page has none open. */
-  setOpen(room: string | null) {
-    if (room === this.open) return;
-    if (this.open) this.held.delete(this.open);
-    this.open = room;
+  /** The room `by` shows (null: it shows none), so control pushes nobody
+   * here for it. A hidden page has none open. `by` is whatever one view
+   * of a room passes every time; the default is the page's only one. */
+  setOpen(room: string | null, by: unknown = this) {
+    const was = this.open.get(by) ?? null;
+    if (room === was) return;
+    if (room === null) this.open.delete(by);
+    else this.open.set(by, room);
+    // Closed (#116): a room marked unread is no longer held, unless another view still shows it.
+    if (was && ![...this.open.values()].includes(was)) this.held.delete(was);
     this.tellOpen();
   }
 
-  private told: string | null | undefined = undefined;
+  private told: string | undefined = undefined;
   private tellOpen(force = false) {
     if (!this.stream) return;
-    const room = document.visibilityState === "visible" ? this.open : null;
-    if (!force && room === this.told) return;
-    this.told = room;
-    void call("POST", "/api/chat/live/open", { stream: this.stream, room }).catch(() => {});
+    const rooms = document.visibilityState === "visible" ? [...new Set(this.open.values())] : [];
+    const key = rooms.join(" ");
+    if (!force && key === this.told) return;
+    this.told = key;
+    void call("POST", "/api/chat/live/open", { stream: this.stream, room: rooms[0] ?? null, more: rooms.slice(1) }).catch(() => {});
   }
 
   // ---- typing (#111)

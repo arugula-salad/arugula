@@ -10,6 +10,7 @@ import "./lazy";
 import "./forge";
 import "./invite";
 import "./doc";
+import "./team-chat";
 
 export { makeBlockView, type BlockView } from "./view";
 export { openPort } from "./browser";
@@ -18,3 +19,4 @@ export { newRemote, remoteHosts, remotes } from "./remote";
 export { openChanges, openFile } from "./diff";
 export { isWorkspace, openAgents, openWorkspace, useWorkspaceDir } from "./open-labs";
 export { openIssue, openPr } from "./forge";
+export { openTeamChat, pinChatRoom, ChatTabBadge } from "./team-chat";

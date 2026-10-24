@@ -7580,6 +7580,64 @@ button.thread-quote:hover {
   align-items: center;
 }
 
+/* Team chat as a block (#123): the same .chat, in the slot instead of over
+   the window. A narrow slot gets the phone's layout (.chat.phone), without
+   the phone's own full-window position and safe-area padding. */
+.chat-block {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.block-team-chat .chat,
+.block-team-chat .chat.phone {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.chat-block-bar {
+  display: flex;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.chat-block-bar .chat-search {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat.pinned .chat-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.chat-block-needs {
+  margin: auto;
+  max-width: 34em;
+  padding: 24px;
+  text-align: center;
+  color: var(--dim);
+}
+
+.chat-block-needs h3 {
+  margin: 0 0 8px;
+  color: var(--fg);
+}
+
+.tab .chat-count {
+  flex: none;
+}
+
 .chat-search {
   flex: 0 1 420px;
   min-width: 120px;

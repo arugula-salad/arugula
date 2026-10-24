@@ -25,7 +25,7 @@ import { Client } from "./client";
 import { Fleet, type HostRef } from "./fleet";
 import { directory } from "./hosts";
 import { App } from "./ui/app";
-import { remotes } from "./blocks";
+import { openTeamChat, remotes } from "./blocks";
 import { measureCell } from "./ui/cells";
 import { desktopPush, enableControlPush, registerWorker, setPushBackend } from "./push";
 import { ControlSession, detectControl, restoreInvite, showMoving } from "./control";
@@ -478,6 +478,22 @@ if (toMachine) {
   }
   history.replaceState(null, "", "/");
 }
+
+// A room's link to the multiplexer side (#123): `#chat-block` is team chat in
+// a block here, `#chat-block=<room>` (`&msg=N`) on that room. The platform
+// page's own `#chat…` links still go to its chat page.
+const chatBlockAtHash = () => {
+  const m = /^#chat-block(?:=([a-z]{2,3}_[0-9a-f]{4,64})(?:&msg=(-?\d+))?)?$/.exec(location.hash);
+  if (!m) return;
+  history.replaceState(null, "", location.pathname + location.search);
+  untilShown((c) => {
+    if (!c.connected || !c.state) return false;
+    void openTeamChat(c, { room: m[1], msg: m[2] !== undefined ? Number(m[2]) : undefined, session: c.session ?? undefined });
+    return true;
+  });
+};
+chatBlockAtHash();
+window.addEventListener("hashchange", chatBlockAtHash);
 
 // The desktop app's notification when control drops this machine, and its
 // Daemon menu (#325): Join… and Join again… open Getting started at the

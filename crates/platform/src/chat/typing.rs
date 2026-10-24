@@ -41,7 +41,7 @@ impl Hub {
 
     /// Whether the stream `id` has `room` open (it hears typing there only).
     pub(super) fn stream_has_open(&self, id: &str, room: &str) -> bool {
-        self.streams.lock().unwrap().get(id).is_some_and(|s| s.open.as_deref() == Some(room))
+        self.streams.lock().unwrap().get(id).is_some_and(|s| s.open.iter().any(|r| r == room))
     }
 }
 
@@ -111,10 +111,22 @@ mod tests {
     #[test]
     fn only_a_stream_with_the_room_open_hears_it() {
         let hub = Hub::default();
-        hub.streams.lock().unwrap().insert("s1".into(), StreamInfo { account: "b".into(), open: Some("ch_1".into()) });
-        hub.streams.lock().unwrap().insert("s2".into(), StreamInfo { account: "c".into(), open: None });
+        hub.streams.lock().unwrap().insert("s1".into(), StreamInfo { account: "b".into(), open: vec!["ch_1".into()] });
+        hub.streams.lock().unwrap().insert("s2".into(), StreamInfo { account: "c".into(), open: Vec::new() });
         assert!(hub.stream_has_open("s1", "ch_1"));
         assert!(!hub.stream_has_open("s1", "ch_2"));
         assert!(!hub.stream_has_open("s2", "ch_1"));
+    }
+
+    #[test]
+    fn a_page_with_two_chat_blocks_has_both_rooms_open() {
+        let hub = Hub::default();
+        hub.streams
+            .lock()
+            .unwrap()
+            .insert("s1".into(), StreamInfo { account: "b".into(), open: vec!["ch_1".into(), "ch_2".into()] });
+        assert!(hub.stream_has_open("s1", "ch_1") && hub.stream_has_open("s1", "ch_2"));
+        assert!(hub.has_open("b", "ch_2"), "no push for either");
+        assert!(!hub.has_open("c", "ch_2"));
     }
 }

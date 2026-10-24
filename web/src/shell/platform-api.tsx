@@ -89,7 +89,7 @@ function build(client: Client): PlatformApi {
 
 /** Pick a pane on a machine that's up, read its screen end to end, and
  * keep the lines you want: they're copied into the message. */
-function QuotePicker({ close, take }: { close: () => void; take: (q: PaneQuote) => void }) {
+export function QuotePicker({ close, take }: { close: () => void; take: (q: PaneQuote) => void }) {
   const fleet = getFleet();
   useSubscribe((fn) => fleet?.subscribe(fn) ?? (() => {}));
   const [picked, setPicked] = useState<FleetPane | null>(null);

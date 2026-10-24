@@ -112,6 +112,14 @@ enum Command {
     /// `PATH[:LINE]` here, or `%N:PATH[:LINE]` on the host pane %N runs on
     /// (relative to its directory). Prints its block.
     View(cmd::view::Args),
+    /// Show team chat as a block.
+    ///
+    /// Your teams' channels, direct messages, threads and Activity, as on the
+    /// chat page, in a block beside this terminal: split, tabbed, zoomed like
+    /// any other. `ROOM` opens on that room; with `--pin` the block is that
+    /// room alone. It reads as you through Arugula control, so this machine
+    /// has to have joined it. Prints the block.
+    Chat(cmd::chat::Args),
     /// Show a chant workspace as a block.
     ///
     /// Its members as cards to open shells, agents and diffs on, its records, and
@@ -862,6 +870,7 @@ fn real_main(mut cli: Cli) -> anyhow::Result<i32> {
         Command::Edit(args) => cmd::edit::run(args, ctx),
         Command::Diff(args) => cmd::diff::run(args, ctx),
         Command::View(args) => cmd::view::run(args, ctx),
+        Command::Chat(args) => cmd::chat::run(args, ctx),
         Command::Workspace(args) => cmd::workspace::run(args, ctx),
         Command::Agents(args) => cmd::agents::run(args, ctx),
         Command::Pr(args) => cmd::pr::run(args, ctx),
