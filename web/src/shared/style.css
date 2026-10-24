@@ -11276,17 +11276,13 @@ html[data-workspace="new"] .thread-panel {
   text-decoration: underline;
 }
 
+/* The chip on a line of its own, over an issue's, a run's or a drawer's thread. */
 .room-agents {
   flex: none;
-  padding: 6px 12px;
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 8px;
   border-bottom: 1px solid var(--divider);
-  color: var(--teal);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.room-agents p {
-  margin: 0;
 }
 
 /* Chat's Markdown (#109): a message is a line of talk, not a document.
