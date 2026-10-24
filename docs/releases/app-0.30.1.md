@@ -15,6 +15,6 @@
   settings. A click opens the right place. The app holds the stream
   itself, so it keeps working with every window closed on macOS. Nothing
   arrives while the app is quit, and a pane on this machine never
-  notifies twice. Needs control 0.60.16.
+  notifies twice. Needs control 0.60.17.
 
-It carries arugulad 0.60.16.
+It carries arugulad 0.60.17.
