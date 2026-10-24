@@ -68,7 +68,7 @@ async fn ready(hub: &TestHub, app: &Platform, base: &str, project: &str, who: &s
 /// answers with.
 async fn turn(app: &Platform, w: &str, machine: &str, agent: &str) -> (u16, Value) {
     match app.hosted_turn(w, machine, agent).await.unwrap() {
-        TurnAnswer::Given { turn, pays } => (200, json!({ "turn": turn, "pays": pays })),
+        TurnAnswer::Given { turn, pays, auth } => (200, json!({ "turn": turn, "pays": pays, "auth": auth })),
         TurnAnswer::Refused { status, reason, error } => (status, json!({ "reason": reason, "error": error })),
     }
 }
@@ -94,6 +94,7 @@ fn rules(fake: &Fake) -> compute::Rules {
 const SK: &str = "sk-ant-test-0123456789"; // gitleaks:allow: a test value
 const SK2: &str = "sk-ant-test-9876543210"; // gitleaks:allow: a test value
 const OPENAI: &str = "sk-proj-test-0123456789"; // gitleaks:allow: a test value
+const SUBSCRIPTION: &str = "sk-ant-oat01-test-0123456789"; // gitleaks:allow: a test value
 
 /// A workspace whose maker isn't on the allowlist can't run an agent
 /// until an owner adds a key, then can. The key is sealed here (nothing
@@ -153,6 +154,33 @@ async fn a_stranger_brings_a_key() {
     assert!(rules(&fake).is_empty(), "gone from its rules once it woke: {:?}", rules(&fake));
     let (status, no) = turn(&app, w, "box-a", "claude").await;
     assert_eq!((status, no["reason"].as_str()), (403, Some("no_key")));
+}
+
+/// A project's Anthropic key may be a Claude subscription's token
+/// (`claude setup-token`): the box's rules set it as a bearer, never as
+/// `x-api-key`, and its turns say so, for the box's Claude Code to hold
+/// its placeholder as one. An API key put back is a key again.
+#[tokio::test]
+async fn a_subscription_token_goes_as_a_bearer() {
+    let (hub, fake, app, base, project) = serve(&["anthropic"], CAPS).await;
+    let w = &ready(&hub, &app, &base, &project, "bob", "box-b").await;
+    let (_, t) = turn(&app, w, "box-b", "claude").await;
+    assert_eq!((t["pays"].as_str(), t["auth"].as_str()), (Some("platform"), Some("key")), "{t}");
+    assert!(end(&app, w, "box-b", &t).await);
+
+    assert_eq!(key(&base, "alice", &project, "anthropic", Some(SUBSCRIPTION)).await.0, 200);
+    let set = &rules(&fake)["api.anthropic.com"];
+    assert_eq!(set.get("authorization").map(String::as_str), Some(format!("Bearer {SUBSCRIPTION}").as_str()));
+    assert!(!set.contains_key("x-api-key"), "{:?}", set.keys());
+    let (status, t) = turn(&app, w, "box-b", "claude").await;
+    assert_eq!((status, t["pays"].as_str(), t["auth"].as_str()), (200, Some("project"), Some("subscription")), "{t}");
+    assert!(end(&app, w, "box-b", &t).await);
+    assert!(app.db.mentions(SUBSCRIPTION).is_empty(), "never kept in the clear");
+
+    assert_eq!(key(&base, "alice", &project, "anthropic", Some(SK)).await.0, 200);
+    assert_eq!(rules(&fake)["api.anthropic.com"]["x-api-key"], SK);
+    let (_, t) = turn(&app, w, "box-b", "claude").await;
+    assert_eq!(t["auth"].as_str(), Some("key"), "{t}");
 }
 
 /// With no key for the agent's provider, a turn is told so (`no_key`),

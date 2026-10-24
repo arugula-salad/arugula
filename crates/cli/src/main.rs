@@ -398,7 +398,8 @@ enum Command {
     /// clones with and takes as env, `rebuild` makes its box again from its
     /// spec (asking the box for unpushed work first), `delete` takes it and
     /// its box away. `key set anthropic|openai` gives the project its own
-    /// inference key (from stdin; never in the box), `key clear` and `key ls`.
+    /// inference key (from stdin; never in the box; Anthropic's may be a
+    /// Claude subscription's `claude setup-token`), `key clear` and `key ls`.
     /// `preview public WORKSPACE PORT` gives a port a public address for 7
     /// days (`renew`, `off`, `ls`).
     /// `--project` names a project by id or name; the default is your

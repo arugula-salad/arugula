@@ -429,7 +429,9 @@ pub async fn trust(State(app): State<Arc<App>>, h: HostedAuth) -> R {
 pub async fn turn(State(app): State<Arc<App>>, h: HostedAuth, Json(b): Json<Value>) -> R {
     let agent = b["agent"].as_str().unwrap_or_default();
     match app.platform.hosted_turn(&h.0.cert.workspace, &h.0.cert.device, agent).await? {
-        arugula_platform::TurnAnswer::Given { turn, pays } => Ok(Json(json!({ "turn": turn, "pays": pays }))),
+        arugula_platform::TurnAnswer::Given { turn, pays, auth } => {
+            Ok(Json(json!({ "turn": turn, "pays": pays, "auth": auth.as_deref().unwrap_or("key") })))
+        }
         arugula_platform::TurnAnswer::Refused { status, reason, error } => {
             let status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
             Err(match reason.as_deref() {

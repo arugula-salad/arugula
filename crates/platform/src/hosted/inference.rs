@@ -7,6 +7,12 @@
 //!   (`Authorization: Bearer`). The box's agents hold only a placeholder
 //!   ([`PLACEHOLDER`]), which the proxy overwrites; plain HTTP is never
 //!   filled.
+//! - **Or a Claude subscription's token.** A project's Anthropic key may
+//!   be a `claude setup-token` token (`sk-ant-oat…`), as the broker takes
+//!   it ([`super::broker::Key`]). The proxy sets it as a bearer instead,
+//!   and the turn says so ([`Auth`]): the box's Claude Code holds the
+//!   placeholder as `CLAUDE_CODE_OAUTH_TOKEN`, which makes it send a
+//!   bearer and the OAuth beta itself. The subscription's own limits apply.
 //! - **A project brings its own key**, one per provider, set and cleared
 //!   by its owners and shown as set or not, never read back. The platform
 //!   keeps it sealed with the project's key ([`crate::keys`], bound to the
@@ -125,10 +131,37 @@ impl Provider {
 
     /// The header its key goes in: `key` is the key itself, or a broker
     /// reference ([`compute::fill`]).
-    fn header(self, key: &str) -> (String, String) {
+    fn header(self, key: &str, auth: Auth) -> (String, String) {
+        match (self, auth) {
+            (Provider::Anthropic, Auth::Key) => ("x-api-key".into(), key.to_owned()),
+            (Provider::Anthropic, Auth::Subscription) | (Provider::OpenAi, _) => {
+                ("authorization".into(), format!("Bearer {key}"))
+            }
+        }
+    }
+}
+
+/// What kind of credential pays for a provider's turns, which the box's
+/// agent must hold its placeholder as: an API key, or a Claude
+/// subscription's token (`claude setup-token`), sent as a bearer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Auth {
+    #[default]
+    Key,
+    Subscription,
+}
+
+impl Auth {
+    /// A project's own key, by its shape: the platform's is always a key.
+    pub fn of(p: Provider, key: &str) -> Auth {
+        if p == Provider::Anthropic && super::broker::Key::new(key).oauth() { Auth::Subscription } else { Auth::Key }
+    }
+
+    /// As a turn's answer carries it (`auth`).
+    pub fn as_str(self) -> &'static str {
         match self {
-            Provider::Anthropic => ("x-api-key".into(), key.to_owned()),
-            Provider::OpenAi => ("authorization".into(), format!("Bearer {key}")),
+            Auth::Key => "key",
+            Auth::Subscription => "subscription",
         }
     }
 }
@@ -187,6 +220,8 @@ impl Settings {
 /// they go to the provider and nowhere else.
 pub struct Plan {
     pub payers: BTreeMap<Provider, Pays>,
+    /// The kind of credential each payer's is.
+    pub auth: BTreeMap<Provider, Auth>,
     pub rules: Rules,
 }
 
@@ -205,18 +240,20 @@ pub fn plan(app: &Platform, project: &str, maker: Option<&str>) -> anyhow::Resul
             .map_err(|e| anyhow::anyhow!("project {project}'s own {} key doesn't open: {e:#}", p.as_str()))?;
         own.insert(p, key);
     }
-    let mut plan = Plan { payers: BTreeMap::new(), rules: Rules::new() };
+    let mut plan = Plan { payers: BTreeMap::new(), auth: BTreeMap::new(), rules: Rules::new() };
     for p in Provider::ALL {
-        let key = if let Some(key) = own.remove(&p) {
+        let (key, auth) = if let Some(key) = own.remove(&p) {
             plan.payers.insert(p, Pays::Project);
-            key
+            let auth = Auth::of(p, &key);
+            (key, auth)
         } else if let Some(account) = app.hosted.inference.covers(maker, p) {
             plan.payers.insert(p, Pays::Platform { account });
-            compute::fill(&platform_secret(p))
+            (compute::fill(&platform_secret(p)), Auth::Key)
         } else {
             continue;
         };
-        plan.rules.insert(p.host().to_owned(), BTreeMap::from([p.header(&key)]));
+        plan.auth.insert(p, auth);
+        plan.rules.insert(p.host().to_owned(), BTreeMap::from([p.header(&key, auth)]));
     }
     Ok(plan)
 }
@@ -231,15 +268,25 @@ pub fn rules_for(app: &Platform, project: &str, maker: Option<&str>) -> anyhow::
     Ok(plan(app, project, maker)?.rules)
 }
 
-/// What a hosted box's turn is told ([`turn`]): its turn id and whose
-/// key pays (`project` or `platform`), or why it can't run, as the hub
+/// What a hosted box's turn is told ([`turn`]): its turn id, whose key
+/// pays (`project` or `platform`) and what kind it is ([`Auth::as_str`];
+/// absent from an older platform, a key), or why it can't run, as the hub
 /// answers the box: an HTTP status, a reason (`no_key`, `cap`) and a
 /// sentence for the person. It crosses `PlatformPort`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TurnAnswer {
-    Given { turn: String, pays: String },
-    Refused { status: u16, reason: Option<String>, error: String },
+    Given {
+        turn: String,
+        pays: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        auth: Option<String>,
+    },
+    Refused {
+        status: u16,
+        reason: Option<String>,
+        error: String,
+    },
 }
 
 impl TurnAnswer {
@@ -290,9 +337,10 @@ async fn push(app: &Platform, project: &str) -> anyhow::Result<()> {
 
 /// What a workspace with no key for `p` is told: how to add one.
 pub fn no_key(b: &HostedBox, p: Provider) -> String {
+    let or = if p == Provider::Anthropic { " (or a Claude subscription's, from `claude setup-token`)" } else { "" };
     format!(
         "No {label} key for this workspace's project, and Arugula's key doesn't cover it. \
-         An owner of the project adds one with `arugula cloud key set {name} --project {project}`. \
+         An owner of the project adds one{or} with `arugula cloud key set {name} --project {project}`. \
          It's never in the box.",
         label = p.label(),
         project = b.project,
@@ -329,7 +377,7 @@ pub async fn turn(app: &Platform, workspace: &str, machine: &str, agent: &str) -
     let Some(b) = the_box(app, workspace, machine)? else {
         return Ok(TurnAnswer::refused(StatusCode::NOT_FOUND, None, "this machine isn't a live hosted workspace"));
     };
-    let Plan { payers, rules } = plan(app, &b.project, b.created_by.as_deref())?;
+    let Plan { payers, auth, rules } = plan(app, &b.project, b.created_by.as_deref())?;
     let synced = sync_rules(app, &b, &rules).await?;
     let Some(pays) = payers.get(&p) else {
         info!(workspace = %b.workspace, provider = p.as_str(), "a hosted agent turn has no key");
@@ -345,7 +393,8 @@ pub async fn turn(app: &Platform, workspace: &str, machine: &str, agent: &str) -
                 Pays::Project => "project",
                 Pays::Platform { .. } => "platform",
             };
-            TurnAnswer::Given { turn, pays: pays.into() }
+            let auth = auth.get(&p).copied().unwrap_or_default().as_str();
+            TurnAnswer::Given { turn, pays: pays.into(), auth: Some(auth.into()) }
         }
         Started::Capped(cap) => {
             let Pays::Platform { account } = pays else { unreachable!("a project's key has no cap") };
@@ -456,7 +505,7 @@ pub async fn set_key(
     let project = owner(&app, &account, &project).await?;
     let value = b.value.trim();
     if !good_key(value) {
-        return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "that doesn't look like an API key"));
+        return Err(err(StatusCode::UNPROCESSABLE_ENTITY, "that doesn't look like an API key or a Claude token"));
     }
     let Some(cipher) = app.hosted.cipher.as_deref() else {
         return Err(err(
