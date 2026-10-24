@@ -106,7 +106,7 @@ export function HostedWorkspaceList({ project: id, list }: { project: string; li
                 <b class="sw-name">{w.name}</b>
               </span>
               <span class="sw-id">
-                {w.id} · {w.machine ?? "no machine yet"}
+                <span title={w.id}>{w.id.slice(0, 11)}</span> · {w.machine ?? "no machine yet"}
               </span>
               <span class="dim">
                 {said(w)}

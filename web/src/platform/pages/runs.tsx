@@ -224,7 +224,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
                   {r.exit_code !== null && r.exit_code !== undefined ? ` · exit ${r.exit_code}` : ""}
                 </span>
               </div>
-              <code class="run-id sw-id">
+              <code class="run-id sw-id" title={r.id}>
                 {short(r.id)}
                 {ws ? ` · ${ws}` : ""}
               </code>

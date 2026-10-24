@@ -38,7 +38,9 @@ export function Home() {
                     </span>
                   )}
                 </span>
-                <span class="sw-id">{p.id.slice(0, 12)}</span>
+                <span class="sw-id" title={p.id}>
+                  {p.id.slice(0, 12)}
+                </span>
                 <span class="dim">
                   {p.team ? `${p.team.name}'s · ${people} ${people === 1 ? "person" : "people"} · you're ${p.team.role === "editor" ? "an editor" : `the ${p.team.role === "owner" ? "owner" : "viewer"}`}` : "Yours alone"}
                 </span>

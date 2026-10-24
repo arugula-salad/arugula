@@ -15,14 +15,15 @@
                                          its default one)
    Project: rooms     bar                unread with a mention warn, unread
                                          accent, else none (.chat-count's)
-                      mono               # channel, @ person
+                      name               # channel, @ person (underlined only
+                                         on hover or focus)
    Workspaces         bar                its state: creating, enrolling,
    (project page and                     waking (or asked to wake) warn; ready
    /workspaces)                          ok; failed danger; paused, deleting
                                          muted
                       name (display)     its name
-                      mono line          hw_ id · its machine's id, or "no
-                                         machine yet"
+                      mono line          its id, hw_ and 8 of its hex · its
+                                         machine's id, or "no machine yet"
                       dim line           its state in words, and whether it
                                          wants a rebuild
                       stats              workspaces; ready, on the way, paused,
@@ -46,12 +47,19 @@
    The colors are the palette's (shared/appearance.ts), never the swarm's
    fixed ones, so every appearance holds; a name or a count takes its tone's
    color only where appearance.ts keeps that color legible (muted isn't: a
-   muted card's name is subtle). The swarm's fonts aren't loaded on any
-   page (no @font-face, no font link): the stacks fall back to what the
-   machine has, Arial Narrow (Liberation Sans Narrow on Linux) or a plain
-   sans for the headings, the system's sans, and JetBrains Mono where it's
-   installed, else the system's monospace. Motion is the swarm's: a card
-   comes in once, and glows while it's hovered or focused. */
+   muted card's name is subtle). On a light palette those legible colors
+   are darkened toward black (Latte's warn is a brown), and a few percent
+   of one over the grey surface comes out grey: there the tint keeps the
+   tone's hue and takes its own lightness instead. Names keep their case:
+   in the fonts' wide fallbacks, capitals shout, so only the section
+   headings are uppercase, as the swarm's are.
+
+   The swarm's fonts aren't loaded on any page (no @font-face, no font
+   link): the stacks fall back to what the machine has, Arial Narrow
+   (Liberation Sans Narrow on Linux) or a plain sans for the headings, the
+   system's sans, and JetBrains Mono where it's installed, else the
+   system's monospace. Motion is the swarm's: a card comes in once, and
+   glows while it's hovered or focused. */
 
 .platform {
   --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
@@ -192,6 +200,19 @@
   animation: sw-card-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
 }
 
+/* On a light palette: the tone's hue at a light card's lightness, rather
+   than a few percent of a darkened color over grey (see the top). */
+@supports (color: oklch(from red l c h)) {
+  html[data-scheme="light"] .platform .sw-cards .sw-card {
+    border-color: oklch(from var(--c) 0.8 min(calc(c * 0.7), 0.1) h);
+    background: oklch(from var(--c) 0.955 min(calc(c * 0.4), 0.05) h);
+  }
+  html[data-scheme="light"] .platform .sw-cards .sw-card.seen {
+    border-color: var(--divider);
+    background: var(--surface);
+  }
+}
+
 /* A card that is a link opens as a whole. */
 .platform .sw-cards a.sw-card {
   display: flex;
@@ -248,7 +269,6 @@
   min-width: 0;
   font: 700 19px/1.05 var(--f-display);
   color: var(--ct);
-  text-transform: uppercase;
   overflow-wrap: anywhere;
 }
 
@@ -283,6 +303,18 @@
   margin-top: 3px;
 }
 
+/* Titles take two lines before they're cut. */
+.platform .sw-page .platform-inbox-item,
+.platform .sw-page a.run-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .platform .sw-mono {
   font-family: var(--f-mono);
   font-size: 12px;
@@ -297,8 +329,11 @@
 }
 
 .platform .sw-row > a {
-  font-family: var(--f-mono);
-  font-size: 13px;
+  text-decoration: none;
+}
+
+.platform .sw-row > a:is(:hover, :focus-visible) {
+  text-decoration: underline;
 }
 
 .platform .sw-row:is(.sw-accent, .sw-warn)::before {
@@ -318,6 +353,24 @@
   }
   .platform .sw-stats b {
     font-size: 18px;
+  }
+  /* A phone's width: what sat beside the title gets a line of its own,
+     so the title isn't squeezed and the side isn't cut. */
+  .platform .platform-inbox-list > li.sw-card {
+    grid-template-columns: 1fr;
+  }
+  .platform .sw-page .platform-inbox-actions {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+  }
+  .platform .run-row.sw-card {
+    flex-wrap: wrap;
+  }
+  .platform .run-row .sw-id {
+    flex: 1 1 100%;
+    max-width: none;
+    margin-top: 0;
   }
 }
 
