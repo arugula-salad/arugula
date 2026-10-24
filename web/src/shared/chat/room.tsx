@@ -641,12 +641,24 @@ function RoomCompose({
     const start = caret - typing![1].length;
     setText(`${text.slice(0, start)}${token} ${text.slice(caret)}`);
     setPick(0);
-    requestAnimationFrame(() => {
-      const at = start + token.length + 1;
-      input.current?.setSelectionRange(at, at);
-      input.current?.focus();
-    });
+    placeCaret(start + token.length + 1, true);
   };
+
+  // Where the caret goes once a change to the text has drawn: right after the
+  // render, not on the next frame, which a page in the background doesn't
+  // get until something else draws it (and which then moved a later caret).
+  const caretAfter = useRef<{ at: number; focus: boolean } | null>(null);
+  const placeCaret = (at: number, focus: boolean) => {
+    caretAfter.current = { at, focus };
+  };
+  useLayoutEffect(() => {
+    const c = caretAfter.current;
+    const el = input.current;
+    if (!c || !el) return;
+    caretAfter.current = null;
+    el.setSelectionRange(c.at, c.at);
+    if (c.focus) el.focus();
+  }, [text]);
 
   // `:jo` after a space or at the start: the shortcodes that begin so (two
   // letters, so a time like 10:3 doesn't ask). The table loads on the first.
@@ -658,25 +670,27 @@ function RoomCompose({
     rememberEmoji(char);
     setText(`${text.slice(0, start)}${char} ${text.slice(caret)}`);
     setPick(0);
-    requestAnimationFrame(() => {
-      const at = start + char.length + 1;
-      input.current?.setSelectionRange(at, at);
-      input.current?.focus();
-    });
+    placeCaret(start + char.length + 1, true);
   };
-  // From the picker: at the caret (or the end, before it's been in the box).
-  const insert = (char: string) => {
+  // From the picker: at the caret as it was when the picker opened (the box
+  // has lost focus by the pick, and its selection with it in some browsers),
+  // then just after each pick.
+  const at = useRef<{ from: number; to: number } | null>(null);
+  const openEmoji = () => {
+    // The box blurred on the button's press and kept where it was (onBlur):
+    // by the click, a rerender may have moved its caret to the end.
     const el = input.current;
-    const from = el?.selectionStart ?? text.length;
-    const to = el?.selectionEnd ?? from;
+    if (el && document.activeElement === el) at.current = { from: el.selectionStart, to: el.selectionEnd };
+    setEmoji((v) => !v);
+  };
+  const insert = (char: string) => {
+    const from = Math.min(at.current?.from ?? text.length, text.length);
+    const to = Math.min(at.current?.to ?? from, text.length);
+    at.current = { from: from + char.length, to: from + char.length };
     setText(`${text.slice(0, from)}${char}${text.slice(to)}`);
     // A phone keeps the keyboard down: the picker stays for the next one.
     if (!phone) setEmoji(false);
-    requestAnimationFrame(() => {
-      if (!el) return;
-      el.setSelectionRange(from + char.length, from + char.length);
-      if (!phone) el.focus();
-    });
+    placeCaret(from + char.length, !phone);
   };
 
   const send = async () => {
@@ -778,6 +792,10 @@ function RoomCompose({
           value={text}
           aria-label={`Message ${name}`}
           placeholder={`Message ${name}`}
+          onBlur={(e) => {
+            const t = e.currentTarget as HTMLTextAreaElement;
+            at.current = { from: t.selectionStart, to: t.selectionEnd };
+          }}
           onInput={(e) => {
             setMissed([]);
             setText((e.target as HTMLTextAreaElement).value);
@@ -813,7 +831,7 @@ function RoomCompose({
             <path d="M4 6l2 2-2 2M8 10h4" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </button>)}
-        <button type="button" class="compose-tool" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button onClick={() => setEmoji((v) => !v)}>
+        <button type="button" class="compose-tool" title="Emoji" aria-label="Emoji" aria-pressed={emoji} data-emoji-button onClick={openEmoji}>
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4">
             <circle cx="8" cy="8" r="6.2" />
             <path d="M5.4 9.6c.6 1.1 1.5 1.6 2.6 1.6s2-.5 2.6-1.6" stroke-linecap="round" />
