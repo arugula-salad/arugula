@@ -23,6 +23,7 @@ import type {
   ChatRoomDetail,
   ChatRooms,
   ChatTargetKind,
+  NotifyLevel,
 } from "./proto";
 import { platformFetch, refusalOf } from "./maintenance";
 import { reacted } from "./chat/reactions";
@@ -407,6 +408,12 @@ export class ChatStore {
     await call("POST", `/api/chat/rooms/${enc(id)}/mute`, { muted });
     this.rooms = this.rooms.map((r) => (r.id === id ? { ...r, muted } : r));
     this.emit();
+  }
+
+  /** What I'm notified of in a room (#113); none is my default for rooms
+   * like it. The server says what that comes to. */
+  async setLevel(id: string, level: NotifyLevel | null) {
+    return this.took(await call<ChatRoom>("POST", `/api/chat/rooms/${enc(id)}/level`, { level }));
   }
 
   /** Read up to `seq` (it only moves forward). */

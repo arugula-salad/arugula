@@ -18,6 +18,7 @@ import { AgentTokens } from "../settings/agent-tokens";
 import { LinkedProducts } from "../settings/linked";
 import { ChatAlerts } from "../settings/chat-alerts";
 import { ClaudeSettings } from "../settings/claude";
+import { NotificationSettings } from "../settings/notifications";
 import { Section, SectionIndex } from "../settings/section";
 import { controlOrigin, session } from "../session";
 
@@ -73,6 +74,7 @@ export function SettingsPage() {
               </li>
             </ul>
           </Section>
+          <NotificationSettings />
           <LinkedProducts />
           <AgentGrants />
           <AgentTokens />

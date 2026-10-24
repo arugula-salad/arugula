@@ -10,7 +10,9 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { chat, type ChatStore } from "../chat-store";
-import { listedInChat } from "./unread";
+import { bold, counted, listedInChat } from "./unread";
+import { bellFor, openBell } from "./bell";
+import { loadNotify, subscribeNotify } from "./notify";
 import type { ChatRoom } from "../proto";
 import { MaintenanceNote } from "../ui/maintenance-note";
 import { usePhone, useSubscribe } from "../ui/hooks";
@@ -189,11 +191,11 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
   };
 
   const row = (r: ChatRoom) => {
-    const n = r.muted ? r.mentions : r.unread;
+    const n = counted(r);
     return (
       <button
         key={r.id}
-        class={`chat-row${r.id === picked?.id ? " selected" : ""}${n ? " unread" : ""}${r.last ? "" : " quiet"}${r.archived || r.muted ? " muted" : ""}`}
+        class={`chat-row${r.id === picked?.id ? " selected" : ""}${bold(r) ? " unread" : ""}${r.last ? "" : " quiet"}${r.archived || r.level === "nothing" ? " muted" : ""}`}
         data-chat-room={r.id}
         data-room-kind={r.kind}
         title={r.kind === "channel" ? `#${r.name} in ${teamName(api, r.team)}` : r.kind === "dm" ? `You and ${r.with?.name ?? "them"}` : `${r.name} on ${machineName(api, r.machine, r.machine_name ?? "")}`}
@@ -207,6 +209,11 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
           <span class="chat-sigil">{roomSigil(r)}</span>
         )}
         <span class="chat-label">{roomLabel(r, api)}</span>
+        {r.with?.dnd && (
+          <span class="chat-dnd" title={`${r.with.name} has paused notifications`} aria-label="Paused notifications" data-dnd>
+            🌙
+          </span>
+        )}
         {n > 0 && <span class={r.mentions ? "chat-count mention" : "chat-count"}>{r.mentions ? `@${n}` : n}</span>}
       </button>
     );
@@ -368,6 +375,9 @@ function RoomView({ store, room, phone, focus }: { store: ChatStore; room: ChatR
   const [details, setDetails] = useState(detailsOpen && !phone);
   const api = usePlatformApi();
   const { nav, toast } = api;
+  // The bell's moon follows a snooze, here or in Settings.
+  useSubscribe(subscribeNotify);
+  useEffect(() => void loadNotify(), []);
   const people = store.people(room.id);
   const label = roomLabel(room, api);
   const name = room.kind === "channel" ? `#${room.name}` : label;
@@ -412,14 +422,15 @@ function RoomView({ store, room, phone, focus }: { store: ChatStore; room: ChatR
             </button>
           )}
           <button
-            class={room.muted ? "chat-info on" : "chat-info"}
-            title={room.muted ? "Muted: no notifications from it but mentions' counts. Unmute" : "Mute: no notifications from it"}
-            aria-label={room.muted ? "Unmute this room" : "Mute this room"}
-            aria-pressed={room.muted}
-            data-room-mute
-            onClick={() => store.mute(room.id, !room.muted).catch((e: Error) => toast(e.message))}
+            class={room.level === "all" ? "chat-info" : "chat-info on"}
+            title={bellFor(room).title}
+            aria-label={bellFor(room).title}
+            aria-haspopup="menu"
+            data-room-bell
+            data-room-level={room.level}
+            onClick={(e) => openBell(e, room, (l) => store.setLevel(room.id, l), toast)}
           >
-            {room.muted ? "🔕" : "🔔"}
+            {bellFor(room).glyph}
           </button>
           {!phone && (
             <button class={details ? "chat-info on" : "chat-info"} title={details ? "Hide details" : "Details: who's in it"} aria-pressed={details} data-chat-details onClick={toggleDetails}>

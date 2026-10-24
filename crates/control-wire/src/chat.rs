@@ -82,6 +82,10 @@ impl ChatTargetKind {
 pub struct ChatPerson {
     pub account: String,
     pub name: String,
+    /// They've paused their notifications (do not disturb, #115): a moon
+    /// on their avatar. Only that it's on, never until when or why.
+    #[serde(default)]
+    pub dnd: bool,
 }
 
 /// A room as one person sees it.
@@ -112,8 +116,14 @@ pub struct ChatRoom {
     /// of those mention the reader.
     pub unread: u64,
     pub mentions: u64,
-    /// The reader turned its pushes off.
+    /// The reader turned its pushes off (`level` is `nothing`).
     pub muted: bool,
+    /// What the reader is notified of here: their own choice for the room,
+    /// else their default for its kind (#113).
+    pub level: NotifyLevel,
+    /// Whether `level` is the reader's own choice for this room (else it's
+    /// their default), so the menu can offer "use my default".
+    pub level_own: bool,
     /// A channel its team's owners archived: read, not written.
     pub archived: bool,
     /// Whether the reader may post here now (a DM whose other person left
@@ -382,6 +392,8 @@ pub enum ChatPushWhy {
     Dm,
     /// One of the account's keyword alerts matched (#114).
     Keyword,
+    /// A message in a room the person set to every message (#113).
+    Message,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -446,6 +458,90 @@ pub const KEYWORD_CHARS: usize = 60;
 pub struct ChatTeamSettings {
     /// `@channel` and `@here` are for owners only.
     pub broadcast_owners: bool,
+}
+
+/// How much of a room reaches the reader's pushes, and how its unread shows
+/// (#113).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum NotifyLevel {
+    /// Every message.
+    All,
+    /// The reader's mentions and DMs.
+    #[default]
+    Mentions,
+    /// Nothing: what muting was.
+    Nothing,
+}
+
+/// `POST /api/chat/rooms/{id}/level`: the reader's level for the room; none
+/// is "use my default".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatLevel {
+    pub level: Option<NotifyLevel>,
+}
+
+/// Quiet hours on some weekdays: from `from` to `to`, in minutes after
+/// midnight in the account's time zone. A window that ends at or before it
+/// starts runs past midnight, into the next day (its weekday is the day it
+/// starts on).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct QuietHours {
+    /// ISO weekdays: 1 Monday … 7 Sunday.
+    pub days: Vec<u8>,
+    pub from: u16,
+    pub to: u16,
+}
+
+/// `GET /api/notify/prefs`: the account's notification settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NotifyPrefs {
+    /// Levels for rooms with none of their own (#113).
+    pub channels: NotifyLevel,
+    pub dms: NotifyLevel,
+    /// Followed threads (they come with following).
+    pub threads: NotifyLevel,
+    /// Snoozed until (ms since the epoch), while that's ahead.
+    pub snooze_until: Option<u64>,
+    /// IANA name; the schedule is read in it.
+    pub tz: String,
+    pub quiet: Vec<QuietHours>,
+    /// Do not disturb holds back every push, not only chat's.
+    pub all_notices: bool,
+    /// Do not disturb is on now: snoozed, or inside quiet hours.
+    pub paused: bool,
+}
+
+/// `POST /api/notify/prefs`: what's given changes, the rest stays.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct NotifySet {
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub channels: Option<NotifyLevel>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub dms: Option<NotifyLevel>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub threads: Option<NotifyLevel>,
+    /// Snooze until this time (ms); 0 ends a snooze.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub snooze_until: Option<u64>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub tz: Option<String>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub quiet: Option<Vec<QuietHours>>,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub all_notices: Option<bool>,
 }
 
 /// `GET /api/chat/search?q=&team=`: words (each a phrase, `mea*` a

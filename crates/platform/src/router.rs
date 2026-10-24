@@ -62,6 +62,8 @@ fn routes() -> Routes {
         .route("/api/chat/rooms/{id}/typing", post(chat::typing::typing))
         .route("/api/chat/keywords", get(chat::alerts::keywords).put(chat::alerts::set_keywords))
         .route("/api/chat/teams/{team}/settings", get(chat::alerts::team_settings).put(chat::alerts::set_team_settings))
+        .route("/api/chat/rooms/{id}/level", post(chat::level))
+        .route("/api/notify/prefs", get(crate::notify::prefs).post(crate::notify::set_prefs))
         .route(arugula_control_wire::chat::CHAT_READERS, post(chat::daemon_readers))
         .route(arugula_control_wire::chat::CHAT_IMPORT, post(chat::daemon_import))
         .route(arugula_control_wire::chat::AGENT_ROOMS, get(chat::agent_threads::rooms))

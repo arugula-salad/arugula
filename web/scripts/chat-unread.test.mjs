@@ -6,7 +6,7 @@
 // --experimental-strip-types`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chatUnread, listedInChat, objectUnread, projectUnread, threadNews } from "../src/shared/chat/unread.ts";
+import { bold, counted, chatUnread, listedInChat, objectUnread, projectUnread, threadNews } from "../src/shared/chat/unread.ts";
 
 const P = "prj_8f2ec0ffee00112233445566778899aa";
 const Q = "prj_00112233445566778899aabbccddeeff";
@@ -100,4 +100,21 @@ test("New in threads: object threads with something unread, unless an unseen men
   assert.deepEqual(ids(threadNews(rooms, seen)), ["iss_d", "run_b", "iss_a", "fi_c"]);
   // Reading a thread (Done here, or opening it) takes it out.
   assert.deepEqual(ids(threadNews(rooms.map((r) => (r === run ? { ...r, unread: 0, read: r.last } : r)), entries)), ["iss_a"]);
+});
+
+test("a channel on mentions counts its mentions and shows its other unread as bold (#113)", () => {
+  const quiet = room("channel", { level: "mentions", unread: 4, mentions: 0 });
+  assert.equal(counted(quiet), 0);
+  assert.equal(bold(quiet), true);
+  assert.equal(counted({ ...quiet, mentions: 1 }), 1);
+  // Every message counts them all; nothing counts only mentions and never bolds.
+  assert.equal(counted({ ...quiet, level: "all" }), 4);
+  const none = { ...quiet, level: "nothing", mentions: 2 };
+  assert.deepEqual([counted(none), bold(none)], [2, true]);
+  assert.deepEqual([counted({ ...none, mentions: 0 }), bold({ ...none, mentions: 0 })], [0, false]);
+  // A DM, a pane's thread and an object's keep counting everything.
+  for (const k of ["dm", "pane", "session"]) assert.equal(counted(room(k, { level: "mentions", unread: 3 })), 3, k);
+  assert.equal(counted(thread("iss_x", { level: "mentions", unread: 2 })), 2);
+  // The Chat button follows: a quiet channel adds nothing.
+  assert.deepEqual(chatUnread([quiet, room("dm", { level: "all", unread: 1 })]), { n: 1, mention: false });
 });

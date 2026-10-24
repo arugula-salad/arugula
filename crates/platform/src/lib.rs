@@ -83,6 +83,7 @@ pub mod issues;
 pub mod jobs;
 pub mod keys;
 pub mod links;
+pub mod notify;
 #[cfg(test)]
 mod object_threads_tests;
 pub mod page;

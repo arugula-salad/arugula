@@ -202,6 +202,12 @@ export type ChatKeywords = { words: Array<string>, };
 export type ChatKind = "channel" | "dm" | "pane" | "session" | "archive" | "object";
 
 /**
+ * `POST /api/chat/rooms/{id}/level`: the reader's level for the room; none
+ * is "use my default".
+ */
+export type ChatLevel = { level: NotifyLevel | null, };
+
+/**
  * What `GET /api/chat/live` sends, one JSON object per event (no event
  * names). Every event but `hello` has an id, so `EventSource` resumes
  * with `Last-Event-ID` after a drop, on whichever of the platform's
@@ -314,7 +320,12 @@ export type ChatPaneRef = { machine: string, pane: string, };
 /**
  * Someone, as the reader sees them.
  */
-export type ChatPerson = { account: string, name: string, };
+export type ChatPerson = { account: string, name: string, 
+/**
+ * They've paused their notifications (do not disturb, #115): a moon
+ * on their avatar. Only that it's on, never until when or why.
+ */
+dnd: boolean, };
 
 /**
  * `POST /api/chat/rooms/{id}/messages`.
@@ -361,7 +372,7 @@ export type ChatPresent = { account: string, state: PresenceState, };
 /**
  * Why control pushed someone.
  */
-export type ChatPushWhy = "mention" | "dm" | "keyword";
+export type ChatPushWhy = "mention" | "dm" | "keyword" | "message";
 
 export type ChatPushed = { account: string, why: ChatPushWhy, };
 
@@ -439,9 +450,19 @@ last: number, read: number,
  */
 unread: number, mentions: number, 
 /**
- * The reader turned its pushes off.
+ * The reader turned its pushes off (`level` is `nothing`).
  */
 muted: boolean, 
+/**
+ * What the reader is notified of here: their own choice for the room,
+ * else their default for its kind (#113).
+ */
+level: NotifyLevel, 
+/**
+ * Whether `level` is the reader's own choice for this room (else it's
+ * their default), so the menu can offer "use my default".
+ */
+level_own: boolean, 
 /**
  * A channel its team's owners archived: read, not written.
  */
@@ -1883,11 +1904,46 @@ assignees: Array<string>, };
 export type Node = { "type": "pane", pane: number, } | { "type": "split", id: number, dir: Dir, children: Array<Child>, };
 
 /**
+ * How much of a room reaches the reader's pushes, and how its unread shows
+ * (#113).
+ */
+export type NotifyLevel = "all" | "mentions" | "nothing";
+
+/**
  * What "needs you" notifications someone other than the owner gets (M29):
  * agents in these sessions, or everything they may edit here ("this team's
  * agents" on a team daemon). The owner always is.
  */
 export type NotifyPref = { all: boolean, sessions: Array<number>, };
+
+/**
+ * `GET /api/notify/prefs`: the account's notification settings.
+ */
+export type NotifyPrefs = { 
+/**
+ * Levels for rooms with none of their own (#113).
+ */
+channels: NotifyLevel, dms: NotifyLevel, 
+/**
+ * Followed threads (they come with following).
+ */
+threads: NotifyLevel, 
+/**
+ * Snoozed until (ms since the epoch), while that's ahead.
+ */
+snooze_until: number | null, 
+/**
+ * IANA name; the schedule is read in it.
+ */
+tz: string, quiet: Array<QuietHours>, 
+/**
+ * Do not disturb holds back every push, not only chat's.
+ */
+all_notices: boolean, 
+/**
+ * Do not disturb is on now: snoozed, or inside quiet hours.
+ */
+paused: boolean, };
 
 /**
  * `POST /api/notify`: opt in or out of a session's agents, or all of them.
@@ -1897,6 +1953,15 @@ export type NotifyRequest = {
  * One session; none: everything you may edit here.
  */
 session?: number, on: boolean, };
+
+/**
+ * `POST /api/notify/prefs`: what's given changes, the rest stays.
+ */
+export type NotifySet = { channels?: NotifyLevel, dms?: NotifyLevel, threads?: NotifyLevel, 
+/**
+ * Snooze until this time (ms); 0 ends a snooze.
+ */
+snooze_until?: number, tz?: string, quiet?: Array<QuietHours>, all_notices?: boolean, };
 
 /**
  * `POST /api/conversations/open` (M33): a Claude Code conversation as an
@@ -2240,6 +2305,18 @@ role: string, members: Array<ProjectMember>, };
  * Which forge.
  */
 export type Provider = "forgejo" | "github" | "gitlab";
+
+/**
+ * Quiet hours on some weekdays: from `from` to `to`, in minutes after
+ * midnight in the account's time zone. A window that ends at or before it
+ * starts runs past midnight, into the next day (its weekday is the day it
+ * starts on).
+ */
+export type QuietHours = { 
+/**
+ * ISO weekdays: 1 Monday … 7 Sunday.
+ */
+days: Array<number>, from: number, to: number, };
 
 /**
  * GitHub's rate limit as last heard, and any backing off (M38).
