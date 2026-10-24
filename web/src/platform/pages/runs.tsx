@@ -34,6 +34,7 @@ import { Missing } from "./project";
 import { runs, type HostedWorkspace, type RunArtifacts, type RunFilter, type RunLogPage, type RunSpec, type RunView } from "../runs";
 import { runTone, toneClass, type Tone } from "../swarm";
 import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, startedBy, stripAnsi, tone, took } from "../runs-text";
+import { ThreadUnread } from "../thread-unread";
 
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
   const at = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -217,6 +218,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
                 <a href={path} class="issue-row-title run-title" onClick={(e) => follow(e, path)}>
                   {runTitle(r.op, specName(r.source.spec))}
                 </a>
+                <ThreadUnread target={r.id} />
                 <span class="issue-row-meta dim">
                   {STATES[r.state] ?? r.state} · {TRIGGERS[r.trigger] ?? r.trigger}
                   {r.trigger === "manual" ? ` by ${startedBy(r, nameOf)}` : ""} · {ago(r.created_at)}

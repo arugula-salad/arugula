@@ -45,8 +45,9 @@ export function hasChat(): boolean {
   return !!platformOrigin() && !!chatStore();
 }
 
-/** Unread messages in every thread this person sees, and whether one
- * mentions them: for the bar's button. */
+/** Unread messages in the rooms chat lists, and whether one mentions
+ * them: for the bar's button. The threads on issues and runs count on
+ * their own lists (shared/chat/unread). */
 export function chatUnread(): { n: number; mention: boolean } {
   return chatStore()?.unread() ?? { n: 0, mention: false };
 }

@@ -19,6 +19,7 @@ import { names } from "../links";
 import { follow, go, pathOf } from "../router";
 import { session, type PlatformProject } from "../session";
 import { toast } from "../toast";
+import { ThreadUnread } from "../thread-unread";
 import { Missing } from "./project";
 
 /** Who's in a project: its team's roster, or its one person. */
@@ -245,6 +246,7 @@ function IssueRow({ p, i, nameOf, label }: { p: PlatformProject; i: NativeIssue;
         <a href={to} class="issue-row-title" onClick={(e) => follow(e, to)}>
           {i.title}
         </a>
+        <ThreadUnread target={i.id} />
         {i.labels.map((l) => (
           <LabelChip key={l} label={l} onClick={() => label(l)} />
         ))}

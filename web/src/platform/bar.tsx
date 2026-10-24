@@ -15,6 +15,7 @@ import { controlOrigin, session } from "./session";
 import { signOut } from "./signin";
 import { names } from "./links";
 import { chat } from "../shared/chat-store";
+import { PlaceUnread } from "./thread-unread";
 
 /** The project the route is in, else the reader's own. */
 export function routeProject(r: Route): string | undefined {
@@ -31,7 +32,8 @@ function Place({ to, here, children, data }: { to: string; here: boolean; childr
 
 export function PlatformBar({ children }: { children?: ComponentChildren }) {
   useSubscribe((fn) => session.subscribe(fn));
-  // Issues come with chat (M201): its Labs flag says whether they're there.
+  // Issues come with chat (M201): its Labs flag says whether they're there,
+  // and its rooms what's new in issues' and runs' threads.
   useSubscribe((fn) => chat.subscribe(fn));
   const r = useRoute();
   const project = routeProject(r);
@@ -87,11 +89,13 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
         {project && chat.on && (
           <Place to={pathOf({ page: "issues", project }, names)} here={r.page === "issues" || r.page === "issue" || r.page === "new-issue"} data="issues">
             Issues
+            <PlaceUnread project={project} prefix="iss_" />
           </Place>
         )}
         {project && (
           <Place to={pathOf({ page: "runs", project }, names)} here={r.page === "runs" || r.page === "run"} data="runs">
             Runs
+            <PlaceUnread project={project} prefix="run_" />
           </Place>
         )}
         {project && (

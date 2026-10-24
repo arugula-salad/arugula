@@ -25,6 +25,7 @@ import type {
   ChatTargetKind,
 } from "./proto";
 import { platformFetch, refusalOf } from "./maintenance";
+import { chatUnread, listedInChat } from "./chat/unread";
 
 /** A refusal from control's chat API: its status, and `reason`
  * (`chat_off`, or `maintenance` for a window that outlasted the wait,
@@ -288,16 +289,12 @@ export class ChatStore {
     return { unread: r?.unread ?? 0, mention: !!r?.mentions, room: r };
   }
 
-  /** Everything unread, and whether any of it mentions me: the Chat
-   * button's count. Muted rooms count only their mentions. */
+  /** What's unread in the rooms the chat page lists, and whether any of
+   * it mentions me: the Chat button's count. Muted rooms count only their
+   * mentions. An object's thread (an issue's, a run's) counts on its
+   * object's list and in the inbox instead (./chat/unread). */
   unread(): { n: number; mention: boolean } {
-    let n = 0;
-    let mention = false;
-    for (const r of this.rooms) {
-      n += r.muted ? r.mentions : r.unread;
-      mention ||= r.mentions > 0;
-    }
-    return { n, mention };
+    return chatUnread(this.rooms);
   }
 
   async detailOf(id: string, fresh = false): Promise<ChatRoomDetail> {
@@ -369,9 +366,11 @@ export class ChatStore {
     await call("POST", `/api/chat/rooms/${enc(id)}/read`, { seq }).catch(() => {});
   }
 
-  /** Everything read. */
+  /** Everything the chat page lists read, as its button counts it. The
+   * threads on objects stay as they are: they're read on their objects'
+   * pages, or from the inbox. */
   async readAll() {
-    await Promise.all(this.rooms.filter((r) => r.unread).map((r) => this.read(r.id, r.last)));
+    await Promise.all(this.rooms.filter((r) => listedInChat(r) && r.unread).map((r) => this.read(r.id, r.last)));
   }
 
   // ---- messages
