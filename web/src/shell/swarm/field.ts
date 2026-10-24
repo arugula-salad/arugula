@@ -196,6 +196,11 @@ export class Field implements SwarmScene {
   ) {
     this.cx = cv.getContext("2d")!;
     this.listen();
+    // Labels are drawn in the swarm's faces (shared/fonts.css), and a field
+    // asleep doesn't draw: draw again once those load.
+    void document.fonts?.load(`800 16px "Big Shoulders Display"`).then(() => document.fonts.load(META_FONT)).then(() => {
+      this.dirty = true;
+    });
   }
 
   // ---- data

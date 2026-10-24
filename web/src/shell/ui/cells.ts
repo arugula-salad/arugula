@@ -1,4 +1,4 @@
-import { TerminalView } from "../terminal-view";
+import { fontReady, TerminalView } from "../terminal-view";
 
 export interface Cell {
   width: number;
@@ -9,6 +9,9 @@ export interface Cell {
  * The daemon lays tabs out in cells, so this turns its layout into pixels
  * and a window's pixels into a size in cells. */
 export async function measureCell(): Promise<Cell> {
+  // The terminal's face is a web font (shared/fonts.css), and panes draw in
+  // it: measure in it too.
+  await fontReady;
   await document.fonts?.ready;
   const probe = new TerminalView();
   const box = document.createElement("div");

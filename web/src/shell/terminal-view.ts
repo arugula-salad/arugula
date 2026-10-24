@@ -11,6 +11,19 @@ import type { Chip } from "./upload";
 
 export const FONT_FAMILY = '"JetBrains Mono", "Fira Code", ui-monospace, Menlo, monospace';
 export const FONT_SIZE = 14;
+/** JetBrains Mono once it has loaded, or failed to (shared/fonts.css; on a
+ * page without that sheet, at once). xterm.js measures its cell and draws
+ * its glyphs in whatever face is there when it opens, so the boot's cell
+ * measure waits for it (fontReady) and a terminal opened sooner measures
+ * again after it. Asked for here, so it's on its way before the first
+ * terminal. */
+const fontLoad: Promise<unknown> =
+  document.fonts?.load(`${FONT_SIZE}px ${FONT_FAMILY}`).catch(() => undefined) ?? Promise.resolve();
+let fontLoaded = false;
+void fontLoad.then(() => (fontLoaded = true));
+/** fontLoad, for ui/cells.ts, but a stalled download holds the shell's
+ * start for 3 s at most. */
+export const fontReady: Promise<unknown> = Promise.race([fontLoad, new Promise((r) => setTimeout(r, 3000))]);
 /** Rows of scrollback a pane keeps; snapshots bring no more than this. */
 export const SCROLLBACK = 10000;
 const enc = new TextEncoder();
@@ -130,6 +143,7 @@ export class TerminalView {
   private kitty = { normal: new KittyFlags(), alternate: new KittyFlags() };
   /** The next focus report is xterm.js answering `CSI ? 1004 h` (#909). */
   private focusEcho = false;
+  private disposed = false;
 
   /** `link`: a link clicked in the terminal, before the browser opens it;
    * true if it was handled (M36: a pull request opens as a block). */
@@ -166,6 +180,15 @@ export class TerminalView {
     this.mirrorTextarea();
     this.touchScroll();
     this.offAppearance = onAppearance(() => this.applyTheme());
+    if (!fontLoaded) void fontLoad.then(() => this.refont());
+  }
+
+  /** Measure the cell and draw the glyphs again, in the face that's there
+   * now: xterm.js does that only when the family changes. */
+  private refont() {
+    if (this.disposed) return;
+    this.term.options.fontFamily = "monospace";
+    this.term.options.fontFamily = FONT_FAMILY;
   }
 
   /** A phone keyboard (Gboard) edits xterm.js's hidden textarea anywhere,
@@ -789,6 +812,7 @@ export class TerminalView {
   }
 
   dispose() {
+    this.disposed = true;
     this.offAppearance();
     this.dropWebgl();
     this.term.dispose();

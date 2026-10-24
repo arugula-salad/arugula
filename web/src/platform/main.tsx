@@ -4,6 +4,7 @@
 // on app.arugula.io, not on the keys' origin"; web/scripts/check-imports.mjs).
 
 import { render } from "preact";
+import "../shared/fonts.css";
 import "../shared/style.css";
 import "../shared/frame.css";
 import "./platform.css";
