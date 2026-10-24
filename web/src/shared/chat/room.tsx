@@ -24,6 +24,8 @@ import { TypingLine } from "./typing";
 import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alerts";
 import { EmojiPicker } from "./emoji-picker";
 import { MessagePreviews } from "./previews";
+import { hookFor, itemsOf, MsgItems, MsgMenu } from "./msg-actions";
+import { QUICK } from "./reactions";
 import { longPress, mayReact, ReactionChips, ReactMenu } from "./reactions-ui";
 import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
@@ -139,6 +141,14 @@ function when(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+/** The time for the gutter, which is narrower than the head's: "10:42", no AM/PM. */
+function whenShort(at: number): string {
+  return when(at).replace(/\s?[AP]\.?M\.?$/i, "");
+}
+
+/** How near the bottom still counts as at it, for following new messages. */
+const NEAR_BOTTOM = 80;
+
 function draftOf(key: string): string {
   try {
     return sessionStorage.getItem(key) ?? "";
@@ -232,6 +242,13 @@ export function RoomBody({
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<PaneQuote | undefined>(initialQuote);
   const list = useRef<HTMLDivElement>(null);
+  // The message being edited (↑ in an empty composer picks my last).
+  const [editing, setEditing] = useState<number | null>(null);
+  // Whether the view is at the newest message, and the last one it was at
+  // when it was: the "new messages" button counts what came after.
+  const [atBottom, setAtBottom] = useState(true);
+  const stuck = useRef(true);
+  const [seenTo, setSeenTo] = useState(0);
   const loaded = chat.messages(room.id);
   const msgs = loaded?.list ?? null;
   // The red "New" line: the first message after the read mark when the
@@ -246,6 +263,10 @@ export function RoomBody({
     // Fresh each time it opens: who reads it, and whose agents (M197).
     chat.detailOf(room.id, true).catch(() => {});
     chat.setOpen(room.id);
+    setEditing(null);
+    stuck.current = true;
+    setAtBottom(true);
+    setSeenTo(0);
     return () => chat.setOpen(null);
   }, [room.id]);
 
@@ -276,12 +297,56 @@ export function RoomBody({
       // Further back than what's loaded: fetch older until it's there.
       if (loaded?.older && msgs.length && focus < msgs[0].seq) void chat.older(room.id);
     }
-    if (focused.current === null) el.scrollTop = el.scrollHeight;
+    // Follow new messages only from the bottom (or my own): someone reading
+    // further up isn't pulled away.
+    const lastMsg = msgs.at(-1);
+    if (focused.current === null && (stuck.current || (lastMsg && chat.mine(lastMsg)))) {
+      el.scrollTop = el.scrollHeight;
+      stuck.current = true;
+      setAtBottom(true);
+    }
   }, [last, msgs?.[0]?.seq, focus, !!msgs]);
+  useEffect(() => {
+    if (atBottom && last !== undefined) setSeenTo(last);
+  }, [atBottom, last]);
+  const onScroll = () => {
+    const el = list.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM;
+    if (near !== stuck.current) {
+      stuck.current = near;
+      setAtBottom(near);
+    }
+  };
+  const toNewest = () => {
+    const el = list.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  };
   const current = chat.room(room.id) ?? room;
   useEffect(() => {
-    if (last !== undefined && document.visibilityState === "visible" && (current.unread > 0 || last > current.read)) void chat.read(room.id, last);
-  }, [room.id, last, current.unread]);
+    // Scrolled up, what's below isn't read yet: the button says so.
+    if (last !== undefined && atBottom && document.visibilityState === "visible" && (current.unread > 0 || last > current.read)) void chat.read(room.id, last);
+  }, [room.id, last, current.unread, atBottom]);
+  // Esc: read it all, and to the newest. Not when something else is using
+  // Esc (a menu, a picker, an edit, the mention list, a dialog), and Shift+Esc
+  // is everything (rooms.tsx).
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.shiftKey || e.defaultPrevented || e.isComposing || last === undefined) return;
+      if (document.querySelector("[data-react-menu], [data-msg-menu], [data-emoji-picker], .mention-pick, .menu, .prompt")) return;
+      if ((e.target as Element | null)?.closest(".msg-edit")) return;
+      const c = chat.room(room.id);
+      if (!c || (c.unread === 0 && c.read >= last && stuck.current)) return;
+      void chat.read(room.id, last).catch(() => {});
+      toNewest();
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [room.id, last]);
+  const unseen = msgs ? msgs.filter((m) => m.seq > seenTo && m.deleted === null && !chat.mine(m)).length : 0;
+  // My last message that I may rewrite: not an agent's, not an archive's.
+  const lastOwn = msgs?.findLast((m) => m.deleted === null && !m.imported && !!m.author && m.author === chat.me);
 
   const more = () => {
     const el = list.current;
@@ -292,7 +357,7 @@ export function RoomBody({
   return (
     <>
       <RoomAgents room={room.id} />
-      <div class="thread-list" ref={list} data-room={room.id}>
+      <div class="thread-list" ref={list} data-room={room.id} onScroll={onScroll}>
         {loaded?.older && (
           <button class="chat-older" onClick={more} data-room-older>
             Earlier messages
@@ -331,14 +396,33 @@ export function RoomBody({
                     <span>New</span>
                   </div>
                 )}
-                <RoomMessage room={current} m={m} prev={prev} reply={(q) => composeRef.current?.reply(q)} setError={setError} />
+                <RoomMessage
+                  room={current}
+                  m={m}
+                  prev={prev}
+                  reply={(q) => composeRef.current?.reply(q)}
+                  setError={setError}
+                  editing={editing === m.seq}
+                  setEditing={(on) => {
+                    setEditing(on ? m.seq : null);
+                    // Back to the composer once the edit is saved or cancelled.
+                    if (!on) composeRef.current?.focus();
+                  }}
+                />
               </Fragment>
             );
           })}
+        {!atBottom && (
+          <div class="jump-newest">
+            <button type="button" data-jump-newest onClick={toNewest}>
+              {unseen > 0 ? `↓ ${unseen} new ${unseen === 1 ? "message" : "messages"}` : "↓ Jump to newest"}
+            </button>
+          </div>
+        )}
       </div>
       {error && <p class="thread-error">{error}</p>}
       {current.writable ? (
-        <RoomCompose room={current} phone={phone} quote={quote} setQuote={setQuote} setError={setError} name={name} />
+        <RoomCompose room={current} phone={phone} quote={quote} setQuote={setQuote} setError={setError} name={name} editLast={lastOwn ? () => setEditing(lastOwn.seq) : undefined} />
       ) : (
         <p class="thread-note" data-room-readonly>
           {readOnly(current)}
@@ -349,7 +433,7 @@ export function RoomBody({
 }
 
 // The composer's handle for "Quote in reply" (one is shown at a time).
-const composeRef: { current: { reply(text: string): void } | null } = { current: null };
+const composeRef: { current: { reply(text: string): void; focus(): void } | null } = { current: null };
 
 /** One message: its author and time, its text, the pane it names, and its
  * tools (quote in reply, copy link, edit and delete for its author). */
@@ -359,12 +443,16 @@ function RoomMessage({
   prev,
   reply,
   setError,
+  editing,
+  setEditing,
 }: {
   room: ChatRoom;
   m: ChatMessage;
   prev?: ChatMessage;
   reply: (text: string) => void;
   setError: (e: string | null) => void;
+  editing: boolean;
+  setEditing: (on: boolean) => void;
 }) {
   const head =
     !prev || prev.author !== m.author || prev.agent?.machine !== m.agent?.machine || prev.via !== m.via || m.at - prev.at > 5 * 60_000;
@@ -375,11 +463,35 @@ function RoomMessage({
   // The same function while it's for the same people: Markdown parses again for a new one.
   const landed = useCallback((t: string) => forMe && chat.isMe(t), [forMe]);
   const [copied, setCopied] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [reacting, setReacting] = useState(false);
+  // Which of its pop-ups is open: the emoji menu, the ⋯ menu, or the sheet
+  // a long-press opens on a phone (the emoji and the menu's items together).
+  const [panel, setPanel] = useState<"react" | "menu" | "sheet" | null>(null);
   const may = mayReact(room, m);
   const name = authorLabel(m);
   const link = usePlatformApi().nav.roomLink(room.id, m.seq);
+  const close = useCallback(() => setPanel(null), []);
+  const ctx = { room, m };
+  const thread = hookFor("thread", ctx);
+  const save = hookFor("save", ctx);
+  const items = itemsOf(ctx, {
+    quote: room.writable ? () => reply(m.text || m.quote || "") : undefined,
+    copied,
+    copy: () => {
+      void navigator.clipboard?.writeText(link).then(
+        () => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        },
+        () => {},
+      );
+    },
+    edit: mine && room.writable ? () => setEditing(true) : undefined,
+    remove: owned
+      ? () => {
+          chat.remove(room.id, m.seq).catch((e: Error) => setError(e.message));
+        }
+      : undefined,
+  });
   if (m.deleted !== null) {
     return (
       <div class="thread-msg first deleted" data-msg={m.seq}>
@@ -396,14 +508,20 @@ function RoomMessage({
       data-msg={m.seq}
       data-author={m.author}
       data-agent={m.agent?.machine}
-      {...(may ? longPress(() => setReacting(true)) : {})}
+      {...longPress(() => setPanel("sheet"))}
     >
       <div class="msg-gutter">
         {head ? (
           <AuthorAvatar m={m} />
         ) : (
           <time class="msg-hover-time" title={new Date(m.at).toLocaleString()}>
-            {when(m.at)}
+            {whenShort(m.at)}
+          </time>
+        )}
+        {/* Compact rows have no picture: the time takes the gutter. */}
+        {head && (
+          <time class="msg-hover-time compact-time" title={new Date(m.at).toLocaleString()}>
+            {whenShort(m.at)}
           </time>
         )}
       </div>
@@ -454,54 +572,67 @@ function RoomMessage({
             <pre>{m.quote}</pre>
           </div>
         )}
-        <ReactionChips room={room} m={m} open={() => setReacting(true)} setError={setError} />
+        <ReactionChips room={room} m={m} open={() => setPanel("react")} setError={setError} />
       </div>
-      <div class="msg-tools" role="toolbar" aria-label="Message actions">
+      <div class={panel === "react" || panel === "menu" ? "msg-tools open" : "msg-tools"} role="toolbar" aria-label="Message actions">
         {may && (
-          <button title="Add a reaction" aria-label="Add a reaction" aria-expanded={reacting} data-react-button onClick={() => setReacting((v) => !v)}>
-            ☺
+          <>
+            {QUICK.slice(0, 3).map((e) => (
+              <button
+                key={e}
+                class="msg-quick"
+                title={`React with ${e}`}
+                aria-label={`React with ${e}`}
+                aria-pressed={!!m.reactions?.some((c) => c.emoji === e && c.mine)}
+                data-tool-quick={e}
+                onClick={() => chat.react(room.id, m.seq, e, !m.reactions?.some((c) => c.emoji === e && c.mine)).catch((x: Error) => setError(x.message))}
+              >
+                {e}
+              </button>
+            ))}
+            <button title="Add a reaction" aria-label="Add a reaction" aria-expanded={panel === "react"} data-react-button onClick={() => setPanel(panel === "react" ? null : "react")}>
+              ☺
+            </button>
+          </>
+        )}
+        {thread && (
+          <button title="Reply in thread" aria-label="Reply in thread" data-msg-thread onClick={() => thread.run(ctx)}>
+            ↩
           </button>
         )}
-        {room.writable && (
-          <button title="Quote in reply" aria-label="Quote in reply" data-msg-reply onClick={() => reply(m.text || m.quote || "")}>
-            ❝
-          </button>
-        )}
-        <button
-          title={copied ? "Copied" : "Copy link"}
-          aria-label="Copy link"
-          data-msg-link
-          onClick={() => {
-            void navigator.clipboard?.writeText(link).then(
-              () => {
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1200);
-              },
-              () => {},
-            );
-          }}
-        >
-          {copied ? "✓" : "🔗"}
-        </button>
-        {mine && room.writable && (
-          <button title="Edit" aria-label="Edit message" data-msg-edit onClick={() => setEditing(true)}>
-            ✎
-          </button>
-        )}
-        {owned && (
+        {save && (
           <button
-            title="Delete"
-            aria-label="Delete message"
-            data-msg-delete
-            onClick={() => {
-              chat.remove(room.id, m.seq).catch((e: Error) => setError(e.message));
-            }}
+            title={save.label?.(ctx) ?? "Save for later"}
+            aria-label={save.label?.(ctx) ?? "Save for later"}
+            aria-pressed={save.on?.(ctx)}
+            data-msg-save
+            onClick={() => save.run(ctx)}
           >
-            🗑
+            {save.on?.(ctx) ? "★" : "☆"}
           </button>
         )}
+        <button title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded={panel === "menu"} data-msg-more onClick={() => setPanel(panel === "menu" ? null : "menu")}>
+          ⋯
+        </button>
       </div>
-      {reacting && may && <ReactMenu room={room} m={m} close={() => setReacting(false)} setError={setError} />}
+      {panel === "menu" && <MsgMenu items={items} close={close} />}
+      {panel === "react" && may && <ReactMenu room={room} m={m} close={close} setError={setError} />}
+      {panel === "sheet" && (
+        <ReactMenu room={room} m={m} close={close} setError={setError} react={may}>
+          {thread && (
+            <button type="button" role="menuitem" class="msg-item" data-msg-thread onClick={() => (close(), thread.run(ctx))}>
+              <span class="msg-item-icon" aria-hidden="true">↩</span>Reply in thread
+            </button>
+          )}
+          {save && (
+            <button type="button" role="menuitem" class="msg-item" aria-pressed={save.on?.(ctx)} data-msg-save onClick={() => (close(), save.run(ctx))}>
+              <span class="msg-item-icon" aria-hidden="true">{save.on?.(ctx) ? "★" : "☆"}</span>
+              {save.label?.(ctx) ?? "Save for later"}
+            </button>
+          )}
+          <MsgItems items={items} done={close} />
+        </ReactMenu>
+      )}
     </div>
   );
 }
@@ -515,7 +646,10 @@ function inOpenFence(text: string, caret: number): boolean {
 function EditBox({ text: start, done }: { text: string; done: (t: string | null) => void }) {
   const [text, setText] = useState(start);
   const input = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => input.current?.focus(), []);
+  useEffect(() => {
+    input.current?.focus();
+    input.current?.scrollIntoView({ block: "nearest" });
+  }, []);
   return (
     <div class="msg-edit">
       <textarea
@@ -603,6 +737,7 @@ function RoomCompose({
   setQuote,
   setError,
   name,
+  editLast,
 }: {
   room: ChatRoom;
   phone: boolean;
@@ -610,6 +745,8 @@ function RoomCompose({
   setQuote: (q: PaneQuote | undefined) => void;
   setError: (e: string | null) => void;
   name: string;
+  /** Edit my last message (↑ in an empty box), if I have one. */
+  editLast?: () => void;
 }) {
   const key = `chat.draft:room:${room.id}`;
   const [text, setText] = useState(() => draftOf(key));
@@ -640,6 +777,7 @@ function RoomCompose({
         setText((t) => `${q.split("\n").map((l) => `> ${l}`).join("\n")}\n${t}`);
         input.current?.focus();
       },
+      focus: () => input.current?.focus(),
     };
     return () => {
       composeRef.current = null;
@@ -845,6 +983,12 @@ function RoomCompose({
             if (options.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !whole))) {
               e.preventDefault();
               choose(options[pick % options.length].token);
+              return;
+            }
+            // Slack's: ↑ with nothing written (and nothing quoted) edits the last one.
+            if (e.key === "ArrowUp" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !e.isComposing && !text && !quote && editLast) {
+              e.preventDefault();
+              editLast();
               return;
             }
             if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {

@@ -6697,9 +6697,16 @@ button.diff-why-run {
   }
 }
 
+/* Mentions me (#121): a tint of the accent and a bar on the left, which
+   reads the same on Latte as on the dark palettes (the amber it was is a
+   beige band on Latte). The bar follows the row's own corners. */
 .thread-msg.for-me {
-  background: color-mix(in srgb, var(--warn) 8%, transparent);
-  box-shadow: inset 2px 0 0 var(--warn);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.thread-msg.for-me:hover {
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
 }
 
 .msg-gutter {
@@ -6729,8 +6736,14 @@ button.diff-why-run {
   visibility: hidden;
   padding-top: 3px;
   font-size: 10px;
+  font-variant-numeric: tabular-nums;
   color: var(--dim);
   white-space: nowrap;
+}
+
+/* The head's own time is in its line; the gutter's copy is for compact rows. */
+.compact-time {
+  display: none;
 }
 
 .thread-msg:hover .msg-hover-time {
@@ -6865,8 +6878,170 @@ button.diff-why-run {
   display: flex;
 }
 
+.msg-tools.open {
+  display: flex;
+}
+
 .msg-tools:empty {
   display: none !important;
+}
+
+.msg-tools .msg-quick {
+  font-size: 14px;
+}
+
+.msg-tools button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--fg);
+}
+
+/* The ⋯ menu (#121), where the react menu opens: under the toolbar. */
+.msg-menu {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+}
+
+.msg-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.msg-item:hover,
+.msg-item:focus-visible {
+  background: var(--raised);
+}
+
+.msg-item[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.msg-item.danger {
+  color: var(--danger);
+}
+
+.msg-item-icon {
+  width: 16px;
+  text-align: center;
+  color: var(--dim);
+}
+
+.msg-item.danger .msg-item-icon {
+  color: inherit;
+}
+
+/* The long-press sheet's items sit under the emoji row. */
+.react-menu.with-items {
+  flex-wrap: wrap;
+}
+
+.react-menu-items {
+  display: flex;
+  flex: 1 0 100%;
+  flex-direction: column;
+}
+
+.react-menu.with-items > button + .react-menu-items,
+.react-menu.with-items > .react-menu-items:not(:first-child) {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--divider);
+}
+
+/* "↓ 3 new messages", floating over the bottom of a list scrolled up. The
+   wrapper has no height, so the list's scroll size is the same with it. */
+.jump-newest {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  height: 0;
+  text-align: center;
+}
+
+.jump-newest button {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-color);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.35);
+}
+
+/* Compact rows (#121, Appearance → Messages): IRC's, one line each: time,
+   name, text. No pictures; a run's name is on its first line only. The
+   head's name floats so the text beside it wraps under it. */
+:root[data-density="compact"] .thread-msg {
+  grid-template-columns: 52px 1fr;
+  column-gap: 6px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+:root[data-density="compact"] .thread-msg.first {
+  margin-top: 2px;
+  padding-top: 0;
+}
+
+:root[data-density="compact"] .thread-msg .msg-avatar,
+:root[data-density="compact"] .thread-head time {
+  display: none;
+}
+
+:root[data-density="compact"] .thread-msg .compact-time {
+  display: block;
+}
+
+:root[data-density="compact"] .thread-msg .msg-hover-time {
+  visibility: visible;
+  padding-top: 0;
+  line-height: 1.7;
+  text-align: right;
+}
+
+:root[data-density="compact"] .msg-gutter {
+  justify-content: flex-end;
+}
+
+:root[data-density="compact"] .thread-head {
+  float: left;
+  margin-right: 6px;
+  line-height: 1.7;
+}
+
+:root[data-density="compact"] .thread-text {
+  margin: 0;
+  line-height: 1.7;
+}
+
+:root[data-density="compact"] .msg-body > .reactions,
+:root[data-density="compact"] .msg-body > .thread-quote,
+:root[data-density="compact"] .msg-body > .msg-edit {
+  clear: both;
+}
+
+:root[data-density="compact"] .thread-msg.deleted .msg-hover-time {
+  visibility: hidden;
 }
 
 .msg-tools button {
