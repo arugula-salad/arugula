@@ -160,9 +160,24 @@ async fn private_addresses_are_never_fetched_and_the_switches_work() {
     let card = &v["previews"][m.to_string()][0];
     assert_eq!((&card["kind"], &card["title"], &card["site"]), (&json!("web"), &json!("A page"), &json!("Docs")));
     assert!(
-        card["image"].as_str().unwrap().starts_with("/api/chat/previews/image?page="),
+        card["image"].as_str().unwrap().starts_with(&format!("/api/chat/previews/image?room={room}&seq={m}&page=")),
         "readers get our proxy, not the site: {card}"
     );
+
+    // The image proxy answers only for a message the reader can see that
+    // carries the link: another room's reader, or a made-up pair, learn
+    // nothing about the cache.
+    app.db.put_preview_image("https://docs.example/a", "image/png", b"png").unwrap();
+    let img = |who: &'static str, room: &str, seq: i64, page: &str| {
+        let path = format!("/api/chat/previews/image?room={room}&seq={seq}&page={page}");
+        let base = base.clone();
+        async move { call(&base, who, "GET", &path, None).await.0 }
+    };
+    let page = "https://docs.example/a";
+    assert_eq!(img("a", &room, m, page).await, 200);
+    assert_eq!(img("a", &room, m, "https://docs.example/b").await, 404, "not in that message");
+    assert_eq!(img("a", &room, m + 99, page).await, 404, "no such message");
+    assert_eq!(img("b", &room, m, page).await, 404, "b isn't in the room");
 
     let hide = |who: &'static str, hidden: bool| {
         let (base, room) = (base.clone(), room.clone());

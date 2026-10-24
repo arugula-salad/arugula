@@ -1164,7 +1164,7 @@ path = "/api/chat/previews/image"
 process = "platform"
 auth = "session"
 clients = ["page"]
-note = "The image of a page that was read for a preview, fetched by the platform so readers never contact the site."
+note = "The image of a page that was read for a preview, fetched by the platform so readers never contact the site. Takes the room and message the card is under; only a reader of that message gets it."
 
 [[route]]
 method = "GET"
