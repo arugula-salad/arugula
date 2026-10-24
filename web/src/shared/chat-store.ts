@@ -27,6 +27,7 @@ import type {
 import { platformFetch, refusalOf } from "./maintenance";
 import { reacted } from "./chat/reactions";
 import { chatUnread, listedInChat } from "./chat/unread";
+import { presence } from "./chat/presence";
 
 /** A refusal from control's chat API: its status, and `reason`
  * (`chat_off`, or `maintenance` for a window that outlasted the wait,
@@ -173,12 +174,14 @@ export class ChatStore {
     this.rooms = [];
     this.loaded.clear();
     this.detail.clear();
+    presence.stop();
     if (was !== false) this.emit();
   }
 
   async loadRooms() {
     const r = await call<ChatRooms>("GET", "/api/chat");
     this.on = true;
+    presence.start();
     this.rooms = r.rooms;
     this.emit();
   }

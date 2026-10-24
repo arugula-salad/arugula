@@ -11237,4 +11237,94 @@ html[data-workspace="new"] .thread-panel {
 
 .link-card-remove:hover {
   color: var(--fg);
+
+/* Pictures and presence (#112, #110). The picture sits over the letters
+   and fades in once it has loaded. */
+.msg-avatar {
+  position: relative;
+}
+
+.msg-avatar img {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.msg-avatar img.loaded {
+  opacity: 1;
+}
+
+.avatar-wrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* A dot's ring is the surface behind it, so it reads on any row. */
+.presence-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 30%;
+  min-width: 6px;
+  max-width: 10px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 2px solid var(--bg);
+  background: var(--dim);
+}
+
+.presence-dot.presence-active,
+.presence-dot.presence-online {
+  background: var(--ok);
+}
+
+.presence-dot.presence-away {
+  background: var(--warn);
+}
+
+.presence-dot.presence-offline {
+  background: transparent;
+  border-color: var(--dim);
+}
+
+/* An agent: its owner's picture, round, with the machine's badge. */
+.avatar-wrap.by-agent .msg-avatar {
+  border-radius: 50%;
+}
+
+.avatar-badge {
+  position: absolute;
+  left: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid var(--bg);
+  background: var(--teal);
+  color: var(--on-color);
+  font-size: 9px;
+  line-height: 1;
+}
+
+.chat-sigil.chat-dm-pic .avatar-badge {
+  display: none;
+}
+
+.account-avatar {
+  position: relative;
+  overflow: hidden;
+}
+
+.account-picture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
 }

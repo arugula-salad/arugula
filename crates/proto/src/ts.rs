@@ -104,6 +104,8 @@ fn generate() -> String {
         c.visit::<ChatLive>();
         c.visit::<ChatKeywords>();
         c.visit::<ChatTeamSettings>();
+        c.visit::<ChatBeat>();
+        c.visit::<ChatPresence>();
     }
     // The platform page's projects (M150).
     c.visit::<arugula_control_wire::projects::Projects>();

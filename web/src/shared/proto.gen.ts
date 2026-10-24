@@ -171,6 +171,16 @@ revised_ms?: number, };
 export type ChatAgent = { machine: string, machine_name: string, };
 
 /**
+ * `POST /api/chat/presence`: a page's heartbeat, every 15 s while it's
+ * open, and the answer is what it shows. `idle`: the page hasn't been
+ * used for 10 minutes. `gone`: it's closing (sent as a beacon), so the
+ * person shows offline now rather than when the beat goes stale. `mode`
+ * sets their choice (absent: leave it). `machines`: whose online state
+ * the page wants too (the machines its messages' agents are on).
+ */
+export type ChatBeat = { idle: boolean, gone: boolean, mode: PresenceMode | null, machines: Array<string>, };
+
+/**
  * `PATCH /api/chat/rooms/{id}/messages/{seq}`: the author's new text.
  */
 export type ChatEdit = { text: string, };
@@ -330,6 +340,23 @@ unreached: Array<string>,
  * for it in the last minute).
  */
 pushed: Array<ChatPushed>, };
+
+/**
+ * Who's around, for one reader: themselves and everyone who shares a team
+ * with them (nobody else is named, online or not), and the asked-for
+ * machines they may see that are connected. Machines' agents show as
+ * their machine, not as a person.
+ */
+export type ChatPresence = { 
+/**
+ * The reader's own choice.
+ */
+mode: PresenceMode, people: Array<ChatPresent>, machines_online: Array<string>, };
+
+/**
+ * One teammate's presence.
+ */
+export type ChatPresent = { account: string, state: PresenceState, };
 
 /**
  * Why control pushed someone.
@@ -2163,6 +2190,21 @@ who: string, name: string, pic?: string,
  * The tab it shows, and the pane it's focused on.
  */
 tab?: number, pane?: number, };
+
+/**
+ * What a person chose for their own presence: `auto` (as their pages
+ * say), `away` (shown away while a page is open) or `offline` (shown
+ * offline always).
+ */
+export type PresenceMode = "auto" | "away" | "offline";
+
+/**
+ * How a person's presence shows to the teammates who see it: `active` (a
+ * page of theirs is open and was used in the last 10 minutes), `away`
+ * (open but idle, or set by hand) or `offline` (no page, or they chose to
+ * appear so).
+ */
+export type PresenceState = "active" | "away" | "offline";
 
 /**
  * A whole-tab arrangement for [`Intent::Arrange`].

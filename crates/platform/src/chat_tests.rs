@@ -88,6 +88,8 @@ struct State {
     /// the hub can't say.
     activity: BTreeMap<String, bool>,
     activity_down: bool,
+    /// Machines on the relay (presence's machine dots).
+    online: BTreeSet<String>,
     /// Products accounts let sign them in (M229), by account.
     products: BTreeMap<String, Vec<crate::hub::ProductLink>>,
     /// Issuer access tokens (M228): token, then its account and client.
@@ -199,6 +201,16 @@ impl TestHub {
             Some(b) => s.activity.insert(machine.into(), b),
             None => s.activity.remove(machine),
         };
+    }
+
+    /// `machine` is (or is no longer) connected to the relay.
+    pub(crate) fn set_online(&self, machine: &str, on: bool) {
+        let mut s = self.state.lock().unwrap();
+        if on {
+            s.online.insert(machine.into());
+        } else {
+            s.online.remove(machine);
+        }
     }
 
     /// The hub can't say which machines are working until one says again.
@@ -595,6 +607,12 @@ impl HubPort for TestHub {
                 })
                 .collect(),
         )
+    }
+
+    fn machines_online<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<String>>> {
+        self.called("machines_online");
+        let s = self.state.lock().unwrap();
+        done(machines.iter().filter(|m| s.online.contains(*m)).cloned().collect())
     }
 
     fn hosted_gone<'a>(&'a self, workspaces: &'a [String]) -> BoxFuture<'a, HubResult<()>> {

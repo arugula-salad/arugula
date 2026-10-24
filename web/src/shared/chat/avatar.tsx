@@ -1,4 +1,12 @@
-// A person's picture in chat: theirs, or their initials on their color.
+// A person's picture in chat: their GitHub avatar as control serves it
+// (never github's own host), or their initials on their color while it
+// loads and when they have none. An agent shows its owner's, with a small
+// machine badge. A dot says who's around (#110).
+
+import { useState } from "preact/hooks";
+import { useSubscribe } from "../ui/hooks";
+import { chat } from "../chat-store";
+import { presence } from "./presence";
 
 /** A steady colour per person. */
 export function colorOf(who: string): string {
@@ -7,17 +15,96 @@ export function colorOf(who: string): string {
   return `hsl(${h % 360} 70% 68%)`;
 }
 
-/** A message's picture: theirs, or their initials on their color. */
-export function MsgAvatar({ who, name, pic }: { who: string; name: string; pic?: string }) {
-  const initials = name
+/** Where control serves an account's picture (404 for one the reader
+ * doesn't share a team with, or that has none). 128 px, so it stays sharp
+ * at 3x on the biggest avatar. */
+export function avatarUrl(account: string): string {
+  return `/api/chat/avatar/${encodeURIComponent(account)}`;
+}
+
+/** Accounts control had no picture for, so a list of them doesn't ask again. */
+const none = new Set<string>();
+
+function initialsOf(name: string): string {
+  return name
     .split(/[\s@]+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((w) => w[0]!.toUpperCase())
     .join("");
-  return (
+}
+
+/** The dot on an avatar: a person's state, or an agent's machine's. */
+function Dot({ account, machine }: { account?: string; machine?: string }) {
+  useSubscribe((fn) => presence.subscribe(fn));
+  const state = machine ? (presence.machine(machine) ? "online" : "offline") : account ? presence.of(account) : null;
+  if (!state) return null;
+  return <span class={`presence-dot presence-${state}`} data-presence={state} title={state} role="img" aria-label={state} />;
+}
+
+/** A message's picture: the account's (`account`; none for a deleted one),
+ * or their initials on their color. `agent` is the machine of an agent's
+ * message: the owner's picture, a machine badge, and the machine's dot.
+ * `dot` shows presence (a person's; an agent's machine's). */
+export function MsgAvatar({
+  who,
+  name,
+  account,
+  agent,
+  dot,
+}: {
+  who: string;
+  name: string;
+  /** Whose picture. None: letters only. */
+  account?: string;
+  agent?: string;
+  dot?: boolean;
+}) {
+  // The picture sits over the letters and shows once it has loaded, so the
+  // letters are what shows while it loads and when control has none.
+  const [shown, setShown] = useState(false);
+  const [failed, setFailed] = useState(() => !!account && none.has(account));
+  const face = (
     <span class="msg-avatar" style={{ background: colorOf(who) }} aria-hidden="true">
-      {pic ? <img src={pic} alt="" referrerpolicy="no-referrer" /> : initials}
+      {initialsOf(name)}
+      {account && !failed && (
+        <img
+          class={shown ? "loaded" : ""}
+          src={avatarUrl(account)}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          referrerpolicy="no-referrer"
+          onLoad={() => setShown(true)}
+          onError={() => {
+            // Not asked for again this session: control said it has none.
+            if (account) none.add(account);
+            setFailed(true);
+          }}
+        />
+      )}
     </span>
   );
+  if (!dot && !agent) return face;
+  return (
+    <span class={agent ? "avatar-wrap by-agent" : "avatar-wrap"}>
+      {face}
+      {agent && (
+        <span class="avatar-badge" title="An agent" aria-hidden="true">
+          ▣
+        </span>
+      )}
+      {dot && <Dot account={agent ? undefined : account} machine={agent} />}
+    </span>
+  );
+}
+
+/** The signed-in person's own picture on the account button, over its
+ * letter: only while chat is on (control serves pictures to chat's people),
+ * and not when it has none. */
+export function AccountPicture() {
+  useSubscribe((fn) => chat.subscribe(fn));
+  const [failed, setFailed] = useState(false);
+  if (chat.on !== true || !chat.me || failed || none.has(chat.me)) return null;
+  return <img class="account-picture" src={avatarUrl(chat.me)} alt="" decoding="async" referrerpolicy="no-referrer" onError={() => setFailed(true)} />;
 }

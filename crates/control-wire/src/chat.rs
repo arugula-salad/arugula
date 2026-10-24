@@ -482,6 +482,72 @@ pub struct ChatOpen {
     pub room: Option<String>,
 }
 
+/// How a person's presence shows to the teammates who see it: `active` (a
+/// page of theirs is open and was used in the last 10 minutes), `away`
+/// (open but idle, or set by hand) or `offline` (no page, or they chose to
+/// appear so).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum PresenceState {
+    Active,
+    Away,
+    Offline,
+}
+
+/// What a person chose for their own presence: `auto` (as their pages
+/// say), `away` (shown away while a page is open) or `offline` (shown
+/// offline always).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "lowercase")]
+pub enum PresenceMode {
+    #[default]
+    Auto,
+    Away,
+    Offline,
+}
+
+/// `POST /api/chat/presence`: a page's heartbeat, every 15 s while it's
+/// open, and the answer is what it shows. `idle`: the page hasn't been
+/// used for 10 minutes. `gone`: it's closing (sent as a beacon), so the
+/// person shows offline now rather than when the beat goes stale. `mode`
+/// sets their choice (absent: leave it). `machines`: whose online state
+/// the page wants too (the machines its messages' agents are on).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatBeat {
+    #[serde(default)]
+    pub idle: bool,
+    #[serde(default)]
+    pub gone: bool,
+    #[serde(default)]
+    pub mode: Option<PresenceMode>,
+    #[serde(default)]
+    pub machines: Vec<String>,
+}
+
+/// One teammate's presence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatPresent {
+    pub account: String,
+    pub state: PresenceState,
+}
+
+/// Who's around, for one reader: themselves and everyone who shares a team
+/// with them (nobody else is named, online or not), and the asked-for
+/// machines they may see that are connected. Machines' agents show as
+/// their machine, not as a person.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ChatPresence {
+    /// The reader's own choice.
+    pub mode: PresenceMode,
+    pub people: Vec<ChatPresent>,
+    pub machines_online: Vec<String>,
+}
+
 /// What `GET /api/chat/live` sends, one JSON object per event (no event
 /// names). Every event but `hello` has an id, so `EventSource` resumes
 /// with `Last-Event-ID` after a drop, on whichever of the platform's

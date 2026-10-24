@@ -420,6 +420,13 @@ impl HubPort for InProcess {
         Box::pin(async move { Ok(self.app()?.relay.activity.of(machines)) })
     }
 
+    fn machines_online<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<String>>> {
+        Box::pin(async move {
+            let app = self.app()?;
+            Ok(machines.iter().filter(|m| app.relay.online(m)).cloned().collect())
+        })
+    }
+
     fn live_delegation<'a>(&'a self, project: &'a str, owner: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
         Box::pin(async move {
             let app = self.app()?;

@@ -16,6 +16,8 @@ import { openPalette } from "./palette";
 import { UpdateChip } from "./update";
 import { WindowButtons } from "../../shared/ui/window-buttons";
 import { countView } from "../../shared/telemetry";
+import { AccountPicture } from "../../shared/chat/avatar";
+import { presenceItems } from "../../shared/chat/presence";
 import { SearchIcon } from "./shell/icons";
 
 /** Who is signed in, through control: their name and their account's
@@ -117,7 +119,7 @@ export function AccountButton({ client }: { client: Client | null }) {
     countView("settings");
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const mine: MenuItem[] = account ? [{ header: accountHeader(login) }, ...account.items(), "separator"] : [];
-    const items: MenuItem[] = [...mine, ...settingsItems(client)];
+    const items: MenuItem[] = [...mine, ...presenceItems(), ...settingsItems(client)];
     if (account) items.push("separator", { label: "Sign out", run: () => account!.signOut() });
     // Right-aligned under the button; the menu keeps itself on screen.
     openMenu({ clientX: r.right, clientY: r.bottom + 4, preventDefault: () => e.preventDefault() }, items);
@@ -133,6 +135,7 @@ export function AccountButton({ client }: { client: Client | null }) {
     >
       <span class="account-avatar" aria-hidden="true">
         {login ? login.slice(0, 1).toUpperCase() : "⚙"}
+        {login && <AccountPicture />}
       </span>
       {login && <span class="account-login" data-signed-in-as>{login}</span>} <span class="caret">▾</span>
     </button>

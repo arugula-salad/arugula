@@ -201,7 +201,7 @@ export function RoomsView({ route, store }: { route: ChatRoute; store: ChatStore
       >
         {r.kind === "dm" && r.with ? (
           <span class="chat-sigil chat-dm-pic">
-            <MsgAvatar who={r.with.account} name={r.with.name} />
+            <MsgAvatar who={r.with.account} name={r.with.name} account={r.with.account} dot />
           </span>
         ) : (
           <span class="chat-sigil">{roomSigil(r)}</span>
@@ -401,7 +401,7 @@ function RoomView({ store, room, phone, focus }: { store: ChatStore; room: ChatR
           {!phone && people.length > 0 && (
             <button class="chat-members" title={people.map((p) => p.name).join(", ")} onClick={() => !details && toggleDetails()}>
               {people.slice(0, 3).map((p) => (
-                <MsgAvatar key={p.account} who={p.account} name={p.name} />
+                <MsgAvatar key={p.account} who={p.account} name={p.name} account={p.account} dot />
               ))}
               <span>{people.length}</span>
             </button>
@@ -466,7 +466,7 @@ function RoomDetails({ store, room, close }: { store: ChatStore; room: ChatRoom;
         <ul class="chat-people">
           {people.map((p) => (
             <li key={p.account} data-room-person={p.account}>
-              <MsgAvatar who={p.account} name={p.name} />
+              <MsgAvatar who={p.account} name={p.name} account={p.account} dot />
               <span>{p.name}</span>
             </li>
           ))}

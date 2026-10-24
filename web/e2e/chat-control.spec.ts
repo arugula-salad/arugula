@@ -334,6 +334,36 @@ test("reactions: Alice and Bob react to one message, each sees both live; a long
   await expect(room.locator(`[data-msg="${seq}"] [data-reaction]`)).toHaveCount(0);
 });
 
+test("pictures come through control, and a teammate's dot shows them around, away or offline", async () => {
+  test.setTimeout(90_000);
+  // No request from either page leaves control for GitHub's picture host.
+  const hosts: string[] = [];
+  for (const p of [aliceChat, bob]) p.on("request", (r) => void hosts.push(new URL(r.url()).hostname));
+  await platform(aliceChat, `/chat/${general}`);
+  await platform(bob, `/chat/${general}`);
+  const room = bob.locator("[data-chat-control] [data-room-view]");
+  const head = room.locator(".thread-msg.first").first();
+  // Alice's message head has her picture's slot and a dot: she's here.
+  await expect(head.locator(".msg-avatar")).toBeVisible({ timeout: 15_000 });
+  await expect(head.locator("[data-presence]")).toHaveAttribute("data-presence", "active", { timeout: 15_000 });
+  // She chooses to appear offline: Bob sees it on his next beat.
+  const choose = async (name: string) => {
+    await aliceChat.locator(".platform-me").click();
+    await aliceChat.getByRole("menuitemradio", { name }).click();
+  };
+  await choose("Appear offline");
+  await expect(head.locator("[data-presence]")).toHaveAttribute("data-presence", "offline", { timeout: 30_000 });
+  await choose("Automatic");
+  await expect(head.locator("[data-presence]")).toHaveAttribute("data-presence", "active", { timeout: 30_000 });
+  // Closing her page: offline for Bob within about a minute.
+  await aliceChat.close();
+  await expect(head.locator("[data-presence]")).toHaveAttribute("data-presence", "offline", { timeout: 70_000 });
+  expect(hosts.filter((h) => h.includes("githubusercontent"))).toEqual([]);
+  // The phone's width holds with pictures and dots in it.
+  expect(await bob.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  aliceChat = await alice.context().newPage();
+});
+
 test("a mention pushes, and the push's tap opens the room at the message", async () => {
   // A room Bob doesn't have open, and wasn't pushed for in the last minute
   // (control pushes once a minute per room).
