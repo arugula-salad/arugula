@@ -8,4 +8,13 @@
   in iCloud Keychain or on your phone: one kept only in Chrome's password
   manager isn't offered to apps. Linux and Windows are unchanged.
 
-It carries arugulad 0.60.16.
+- **Notifications from control, natively** (#1461). In the app, **Notify
+  this device** now turns on the app's own notifications for everything
+  control would push to that device: chat, panes on any machine, inbox,
+  deploys, runs, workspaces and account notices, filtered by your Push
+  settings. A click opens the right place. The app holds the stream
+  itself, so it keeps working with every window closed on macOS. Nothing
+  arrives while the app is quit, and a pane on this machine never
+  notifies twice. Needs control 0.60.17.
+
+It carries arugulad 0.60.17.
