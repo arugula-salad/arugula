@@ -139,12 +139,13 @@ export function App({ client, cell }: { client: Client; cell: Cell }) {
     noteLastTab(client);
     const session = state?.sessions.find((s) => s.id === client.session) ?? state?.sessions[0];
     // The chrome is all outside `.main`, so the panes' cells and who sizes
-    // the tab are the panes' own business.
+    // the tab are the panes' own business. `frame` is the head and chrome
+    // the platform page shares (shared/frame.css).
     // M113: while the link is down, what's shown is the last word from the
     // machine; the chrome greys what it can't vouch for (style.css).
     const stale = !!state && !client.connected;
     return (
-      <div class={stale ? "app ws stale" : "app ws"}>
+      <div class={stale ? "app ws frame stale" : "app ws frame"}>
         <Rail client={client} />
         <div class="ws-shell-body">
           <ContextHeader client={client} setRenaming={setRenaming} />

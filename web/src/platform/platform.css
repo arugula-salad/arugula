@@ -1,31 +1,49 @@
 /* The platform page (M150): its frame and the lists on its own pages.
-   Everything else (the bar, chat, Cloud workspaces) is shared/style.css,
-   so the platform page and the shell look alike. */
+   Everything else (chat, Cloud workspaces) is shared/style.css, and the
+   bar is the shell's head (shared/frame.css), so the platform page and the
+   shell look alike. */
 
 #root {
   height: 100%;
 }
 
+/* The shell's frame (shared/frame.css, #1018): its surface around the
+   page, and the page in a panel inside it, as a pane sits in the shell. */
 .platform {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--surface);
 }
 
 .platform-main {
   flex: 1;
+  min-height: 0;
   overflow: auto;
+  padding: 8px;
+  box-sizing: border-box;
 }
 
+/* The project, as the shell's head names the machine. */
 .platform-bar .platform-project {
   gap: 4px;
+  height: 28px;
+  padding: 0 8px;
   border: 0;
-  border-right: 1px solid var(--divider);
+  border-radius: 5px;
   background: none;
   color: var(--fg);
   font-weight: 600;
   cursor: pointer;
+}
+
+.platform-bar .platform-project:hover {
+  background: var(--raised);
+}
+
+.platform-bar a {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 
 .platform-bar a.place {
@@ -35,14 +53,45 @@
   text-decoration: none;
 }
 
-.platform-bar a.place:hover {
+.platform-bar a.place:not(.here):hover {
   color: var(--fg);
 }
 
+/* Chat's search, after the places. */
+.platform-bar .chat-search {
+  align-self: center;
+  margin-left: 8px;
+}
+
+/* The desktop app on macOS: its buttons sit over the head's left end,
+   before the wordmark (the shell's rail is under them instead). */
+html[data-desktop="macos"]:not([data-native-tabs]) .platform-bar {
+  padding-left: 78px;
+}
+
 .platform-section {
-  max-width: 880px;
-  margin: 0 auto;
-  padding: 24px 16px;
+  margin: 0;
+  /* The panel is the frame's width; what's in it keeps the old column's
+     reading width, 880px, centred: the side padding grows to take the
+     rest, so headings, stats and lists all share one column. */
+  padding: 20px max(24px, calc((100% - 880px) / 2));
+  box-sizing: border-box;
+  border: 1px solid var(--chrome-line);
+  border-radius: 5px;
+  background: var(--bg);
+}
+
+.platform-section + .platform-section {
+  margin-top: 8px;
+}
+
+/* A page that's one panel fills the frame, as a lone pane does. */
+.platform-main > .platform-section:only-child {
+  min-height: 100%;
+}
+
+html[data-corners="square"] .platform-section {
+  border-radius: 0;
 }
 
 .platform-section h1 {
@@ -106,10 +155,21 @@
   margin-left: auto;
 }
 
+/* A Cloud workspace is one panel: where you are as its head, as a pane's
+   header sits on the pane, and its sections in it. */
 .platform-workspace {
   display: flex;
   flex-direction: column;
   height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--chrome-line);
+  border-radius: 5px;
+  background: var(--bg);
+}
+
+html[data-corners="square"] .platform-workspace {
+  border-radius: 0;
 }
 
 .platform-ws-head {
@@ -117,12 +177,28 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--divider);
+  padding: 6px 20px;
+  background: var(--chrome-panel);
+  border-bottom: 1px solid var(--chrome-line);
 }
 
+.hosted-ws-view .platform-section {
+  padding: 0 max(24px, calc((100% - 880px) / 2));
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.hosted-ws-view .platform-section + .platform-section {
+  margin-top: 0;
+}
+
+/* Its way back, in line with the rest of the head and the text under it. */
 .platform-workspace .tab {
+  min-width: 0;
+  margin: 0;
+  padding: 2px 4px;
+  border-radius: 5px;
   color: inherit;
   text-decoration: none;
 }
@@ -130,6 +206,7 @@
 .platform-workspace .hosted-ws-view {
   flex: 1;
   overflow: auto;
+  padding: 4px 0 20px;
 }
 
 .hosted-ws-view button.link {
@@ -312,6 +389,7 @@
      places hides it once the last (or first) is in view. */
   .platform-bar .places {
     --edge: color-mix(in srgb, var(--accent) 55%, transparent);
+    align-self: stretch;
     min-width: 0;
     overflow-x: auto;
     scrollbar-width: none;
@@ -325,6 +403,37 @@
   .platform-bar a.platform-shell,
   .platform-bar .account-login {
     display: none;
+  }
+
+  /* The places get the room: the shell's phone chrome has no wordmark
+     either, and the project button still says where you are. */
+  .platform-bar .ws-wordmark {
+    display: none;
+  }
+
+  .platform-bar {
+    gap: 4px;
+    padding-left: 4px;
+  }
+
+  .platform-main {
+    padding: 6px;
+  }
+
+  .platform-section {
+    padding: 16px 12px;
+  }
+
+  .platform-section + .platform-section {
+    margin-top: 6px;
+  }
+
+  .platform-ws-head {
+    padding: 6px 8px;
+  }
+
+  .hosted-ws-view .platform-section {
+    padding: 0 12px;
   }
 
   .issues-search {

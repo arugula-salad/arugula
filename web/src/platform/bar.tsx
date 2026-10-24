@@ -1,7 +1,9 @@
 // The platform page's bar (M150): where you are (the project, with a way
 // to the others), the platform's places, and a way back to the shell on
 // control's page, where the machines, the keys and the trust screens are.
-// Built from the shell's bar's classes, so the two pages look alike.
+// It's the shell's workspace head (shared/frame.css, #1018): the wordmark
+// at its left end, then the project and its places, so the two pages sit
+// in one frame.
 
 import type { ComponentChildren } from "preact";
 import { useSubscribe } from "../shared/ui/hooks";
@@ -21,7 +23,7 @@ export function routeProject(r: Route): string | undefined {
 
 function Place({ to, here, children, data }: { to: string; here: boolean; children: ComponentChildren; data: string }) {
   return (
-    <a class={here ? "place here" : "place"} href={to} aria-current={here ? "page" : undefined} {...{ [`data-platform-${data}`]: "" }} onClick={(e) => follow(e, to)}>
+    <a class={here ? "place frame-place here" : "place frame-place"} href={to} aria-current={here ? "page" : undefined} {...{ [`data-platform-${data}`]: "" }} onClick={(e) => follow(e, to)}>
       {children}
     </a>
   );
@@ -59,7 +61,20 @@ export function PlatformBar({ children }: { children?: ComponentChildren }) {
     openMenu({ clientX: at.right, clientY: at.bottom + 4, preventDefault: () => e.preventDefault() }, items);
   };
   return (
-    <header class="bar app-bar platform-bar" data-tauri-drag-region data-platform-bar>
+    <header class="ws-head platform-bar" data-tauri-drag-region data-platform-bar>
+      {/* As the shell's "Arugula / Control": which page this is, and the
+          way to its overview, every project. */}
+      <a
+        class="ws-wordmark"
+        href="/"
+        aria-label="Arugula Projects: all your projects"
+        title="All your projects"
+        aria-current={r.page === "home" ? "page" : undefined}
+        data-platform-wordmark
+        onClick={(e) => follow(e, "/")}
+      >
+        Arugula <span aria-hidden="true">/</span> <strong>Projects</strong>
+      </a>
       <button class="scope-label platform-project" data-project-switcher title="Your projects" onClick={pick}>
         {p?.name ?? "Arugula"} <span class="caret">▾</span>
       </button>
