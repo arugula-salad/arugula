@@ -96,7 +96,9 @@ use crate::{
 
 pub(crate) mod agent_threads;
 pub(crate) mod alerts;
+mod link_fetch;
 pub(crate) mod objects;
+pub mod previews;
 pub(crate) mod typing;
 
 type J<T> = Result<Json<T>, ApiError>;

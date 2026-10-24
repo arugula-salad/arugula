@@ -18,6 +18,7 @@ import { askText, openMenu, type MenuItem } from "../ui/menu";
 import type { ChatRoute } from "./route";
 import { RoomActivityView, RoomSearchView, SearchField, openSwitcher, useSwitcherOpen, closeSwitcher } from "./find";
 import { MsgAvatar } from "./avatar";
+import { WebPreviewsSwitch } from "./previews";
 import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
 import { fuzzy } from "../fuzzy";
 import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
@@ -470,6 +471,7 @@ function RoomDetails({ store, room, close }: { store: ChatStore; room: ChatRoom;
             </li>
           ))}
         </ul>
+        {room.team && teams(api).find((t) => t.team === room.team)?.role === "owner" && <WebPreviewsSwitch team={room.team} toast={toast} />}
         {owner && (
           <div class="thread-offer-buttons">
             <button

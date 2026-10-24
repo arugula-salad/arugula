@@ -1099,6 +1099,45 @@ auth = "session"
 clients = ["page"]
 
 [[route]]
+method = "GET"
+path = "/api/chat/rooms/{id}/previews"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "Link previews (#108) under the messages named by `seqs`, for the reader: cards for their own objects, and Open Graph for web links."
+
+[[route]]
+method = "POST"
+path = "/api/chat/rooms/{id}/messages/{seq}/previews"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A message's author takes its previews off, or puts them back."
+
+[[route]]
+method = "GET"
+path = "/api/chat/previews/image"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "The image of a page that was read for a preview, fetched by the platform so readers never contact the site."
+
+[[route]]
+method = "GET"
+path = "/api/chat/teams/{team}/previews"
+process = "platform"
+auth = "session"
+clients = ["page"]
+
+[[route]]
+method = "PUT"
+path = "/api/chat/teams/{team}/previews"
+process = "platform"
+auth = "session"
+clients = ["page"]
+note = "A team owner's switch for web link previews in the team's chat."
+
+[[route]]
 method = "POST"
 path = "/api/chat/rooms/{id}/read"
 process = "platform"
