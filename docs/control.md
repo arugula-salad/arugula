@@ -243,8 +243,19 @@ only: a member who runs `claude` in a terminal on an allowlisted account's
 box uses the platform's key too, within its spend limit
 (`crates/platform/src/hosted/inference.rs`).
 
+A project's Anthropic key may instead be a Claude subscription's token,
+from `claude setup-token` (`sk-ant-oat…`): the boxes' Claude Code then runs
+on that subscription, within its plan's usage limits, and not on API
+billing. The proxy sets it as a bearer (`Authorization`) rather than
+`x-api-key`, and each turn's answer says so (`"auth": "subscription"`), so
+the box's Claude Code holds the placeholder as `CLAUDE_CODE_OAUTH_TOKEN`
+instead of `ANTHROPIC_API_KEY`, with no API key beside it. An agent that
+started holding the other kind starts again on its session before its
+prompt goes. The token belongs to whoever made it: everyone who runs
+Claude in the project's workspaces spends that person's subscription.
+
 ```
-arugula cloud key set anthropic --project acme   # reads the key from stdin
+arugula cloud key set anthropic --project acme   # reads the key (or token) from stdin
 arugula cloud key ls --project acme
 arugula cloud key clear anthropic --project acme
 ```

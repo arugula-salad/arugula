@@ -496,13 +496,18 @@ pub fn pane_command(
     let a = quote(&artifacts.to_string_lossy());
     let Some(as_) = as_ else {
         // Tests only: as this daemon's own user, where it is, with the
-        // agent's environment besides its own.
+        // agent's environment besides its own (less the daemon's own
+        // logins, as the empty one below has none).
         let env: String = env_extra
             .iter()
             .filter(|(k, _)| k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
             .map(|(k, v)| format!(" {k}={}", quote(v)))
             .collect();
-        let env = if env.is_empty() { String::new() } else { format!("env{env} ") };
+        let env = if env.is_empty() {
+            String::new()
+        } else {
+            format!("env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN{env} ")
+        };
         return Ok(format!(
             "{banner}; rm -rf -- {a}; mkdir -p -m 700 -- {a}; export {ARTIFACTS_ENV}={a}; exec {env}{cmd}"
         ));
@@ -848,9 +853,9 @@ async fn take(app: &Arc<App>, item: WorkItem) {
     let checked = match checked {
         Ok((op, src, as_, login)) if op.instruction.is_some() => match crate::agent::hosted::gate() {
             Some(g) => match g.start("claude").await {
-                Ok(turn) => {
-                    l.turn = Some(turn);
-                    let env = crate::agent::hosted::env_here(crate::agent::defs::Kind::Claude);
+                Ok(given) => {
+                    l.turn = Some(given.turn);
+                    let env = crate::agent::hosted::env_here(crate::agent::defs::Kind::Claude, given.auth);
                     Ok((op, src, as_, login, env))
                 }
                 Err(why) => Err(Refused("inference", why)),

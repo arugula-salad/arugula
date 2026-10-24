@@ -179,7 +179,8 @@ pub enum PreviewCmd {
 
 #[derive(clap::Subcommand)]
 pub enum KeyCmd {
-    /// Set the project's key for a provider, from stdin.
+    /// Set the project's key for a provider, from stdin. Anthropic's may
+    /// be a Claude subscription's token from `claude setup-token`.
     Set {
         #[arg(value_parser = ["anthropic", "openai"])]
         provider: String,
@@ -343,7 +344,11 @@ pub fn run(cmd: CloudCmd, json_out: bool) -> anyhow::Result<i32> {
             let keys = match cmd {
                 KeyCmd::Set { provider, project } => {
                     let project = project_of(&e, project.as_deref())?;
-                    let value = super::studio::secret_input(&format!("{provider} API key: "))?;
+                    let ask = match provider.as_str() {
+                        "anthropic" => "Anthropic API key, or a token from `claude setup-token`: ".to_owned(),
+                        p => format!("{p} API key: "),
+                    };
+                    let value = super::studio::secret_input(&ask)?;
                     let body = json!({ "value": value });
                     e.api("PUT", &format!("/api/projects/{project}/inference-keys/{provider}"), Some(&body))?
                 }

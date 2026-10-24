@@ -73,6 +73,8 @@ struct Fake {
     again: Arc<Mutex<u32>>,
     /// Agent turns the box asked for (M185), and the ones it ended.
     turns: Arc<Mutex<Vec<String>>>,
+    /// Turns run on a Claude subscription's token, not an API key.
+    subscription: Arc<AtomicBool>,
     /// Reports aren't taken: the platform is down.
     down: Arc<AtomicBool>,
     /// The bucket's objects, by key (M213).
@@ -122,6 +124,7 @@ impl Fake {
             reports: Default::default(),
             revokes: Default::default(),
             turns: Default::default(),
+            subscription: Default::default(),
             again: Default::default(),
             down: Default::default(),
             objects: Default::default(),
@@ -321,7 +324,8 @@ async fn uploaded(Axum(f): Axum<Fake>, Json(u): Json<Upload>) -> Json<Uploaded> 
 /// M185's gate: a hosted box asks before each agent turn; any may run.
 async fn turn(Axum(f): Axum<Fake>, Json(b): Json<serde_json::Value>) -> Json<serde_json::Value> {
     f.turns.lock().unwrap().push(format!("start {}", b["agent"].as_str().unwrap_or_default()));
-    Json(json!({ "turn": "trn_1", "key": "platform" }))
+    let auth = if f.subscription.load(SeqCst) { "subscription" } else { "key" };
+    Json(json!({ "turn": "trn_1", "pays": "platform", "auth": auth }))
 }
 
 async fn turn_end(Axum(f): Axum<Fake>, axum::extract::Path(t): axum::extract::Path<String>) -> Json<serde_json::Value> {
@@ -440,7 +444,10 @@ fn a_hosted_machine_runs_each_run_once() {
     let claude = bin.join("claude");
     std::fs::write(
         &claude,
-        format!("#!/bin/sh\necho \"$* key:$ANTHROPIC_API_KEY\" > {}\n", marks.join("claude").display()),
+        format!(
+            "#!/bin/sh\necho \"$* key:${{ANTHROPIC_API_KEY:-}} oauth:${{CLAUDE_CODE_OAUTH_TOKEN:-}}\" > {}\n",
+            marks.join("claude").display()
+        ),
     )
     .unwrap();
     std::fs::set_permissions(&claude, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
@@ -562,9 +569,25 @@ fn a_hosted_machine_runs_each_run_once() {
     // A hosted box's agent: a turn the platform said may run, on M185's
     // placeholder key (the provider's proxy fills in the real one), never
     // the daemon's own.
-    assert_eq!(said, "-p fix the build --output-format text --dangerously-skip-permissions key:arugula-brokered\n");
+    assert_eq!(
+        said,
+        "-p fix the build --output-format text --dangerously-skip-permissions key:arugula-brokered oauth:\n"
+    );
     wait(&marks, &f, "the turn ended", || f.turns.lock().unwrap().len() == 2);
     assert_eq!(*f.turns.lock().unwrap(), ["start claude", "end trn_1"]);
+
+    // On a Claude subscription's token the placeholder is Claude Code's
+    // OAuth token, and no API key goes first.
+    f.subscription.store(true, SeqCst);
+    let o = run_id('4');
+    f.items.lock().unwrap().push(f.item_of(&o, &agent, f.grant(&f.root)));
+    wait(&marks, &f, "run 4 reported", || f.reports_of(&o).len() == 2);
+    let said = std::fs::read_to_string(marks.join("claude")).unwrap();
+    assert_eq!(
+        said,
+        "-p fix the build --output-format text --dangerously-skip-permissions key: oauth:arugula-brokered\n"
+    );
+    wait(&marks, &f, "the turn ended", || f.turns.lock().unwrap().len() == 4);
 
     // M219: a people's workspace never applies a deploy, even one approved
     // by the account's own browser: only a deploy's own box does.
@@ -573,6 +596,61 @@ fn a_hosted_machine_runs_each_run_once() {
     wait(&marks, &f, "the deploy refused", || f.reports_of(&dep).len() == 1);
     assert!(f.reports_of(&dep)[0].detail.contains("not_deploy_box"), "{}", f.reports_of(&dep)[0].detail);
     assert!(f.secrets_asked.lock().unwrap().is_empty(), "no secrets");
+    let _ = std::fs::remove_dir_all(&marks);
+}
+
+/// A hosted box's Claude Code holds its placeholder as the kind of
+/// credential each turn says: an API key, or a Claude subscription's
+/// token, with no API key of the daemon's going first. One started
+/// holding the other starts again on its session before the prompt goes,
+/// and the conversation carries on.
+#[test]
+fn a_hosted_agent_holds_the_credential_its_turn_says() {
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let f = Fake::new();
+    let url = serve(&rt, f.clone());
+    let marks: PathBuf = std::env::temp_dir().join(format!("arugula-hosted-agent-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&marks);
+    let sessions = marks.join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    let d = arugulad!("hostedagent")
+        .no_wisp()
+        .no_tailscale()
+        .args(["--hosted"])
+        .env("ARUGULA_HOSTED_TICKET", "ticket-1")
+        .env("ARUGULA_CONTROL_URL", &url)
+        .env("FAKE_ACP_DIR", &sessions)
+        .env("ANTHROPIC_API_KEY", "sk-test")
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .env("RUST_LOG", "info")
+        .args(["--log-file", &marks.join("arugulad.log").to_string_lossy()])
+        .wait_secs(30)
+        .start();
+    wait(&marks, &f, "the box enrolled", || !f.device().is_empty());
+
+    let fake = format!("{}/tests/fake_acp.py", env!("CARGO_MANIFEST_DIR"));
+    let config = json!({ "agent": "claude", "command": ["python3", fake], "cwd": sessions, "prompt": "remember plum" });
+    let id = d.post("/api/blocks", json!({ "type": "agent", "config": config }))["block"].as_u64().unwrap();
+    let said = |prompt: &str| {
+        d.post(&format!("/api/blocks/{id}/call/send"), json!({ "text": prompt }));
+        let v = d.get(&format!("/api/panes/{id}/wait?until=idle&timeout=20"));
+        assert_ne!(v["result"], "timeout", "{}", d.get(&format!("/api/blocks/{id}")));
+        let state = d.get(&format!("/api/blocks/{id}"))["state"].clone();
+        let last = state["entries"].as_array().into_iter().flatten().rev().find(|e| e["type"] != "user").cloned();
+        last.and_then(|e| e["text"].as_str().map(str::to_owned)).unwrap_or_default()
+    };
+    let v = d.get(&format!("/api/panes/{id}/wait?until=idle&timeout=20"));
+    assert_ne!(v["result"], "timeout", "{}", d.get(&format!("/api/blocks/{id}")));
+    assert_eq!(said("env ANTHROPIC_API_KEY"), "ENV ANTHROPIC_API_KEY=arugula-brokered", "an API key's placeholder");
+
+    f.subscription.store(true, SeqCst);
+    assert_eq!(said("env CLAUDE_CODE_OAUTH_TOKEN"), "ENV CLAUDE_CODE_OAUTH_TOKEN=arugula-brokered", "an OAuth token's");
+    assert_eq!(said("env ANTHROPIC_API_KEY"), "ENV ANTHROPIC_API_KEY unset", "no API key goes first");
+    assert!(said("recall").contains("plum"), "the same session, carried on");
+
+    f.subscription.store(false, SeqCst);
+    assert_eq!(said("env ANTHROPIC_API_KEY"), "ENV ANTHROPIC_API_KEY=arugula-brokered", "a key again");
+    drop(d);
     let _ = std::fs::remove_dir_all(&marks);
 }
 

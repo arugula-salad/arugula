@@ -414,6 +414,9 @@ struct Inner {
     hosted_turn: Option<String>,
     gating: bool,
     to_self: Option<mpsc::UnboundedSender<Msg>>,
+    /// The kind of credential its last turn ran on, which it's started
+    /// holding (else the box's last Claude turn's).
+    hosted_auth: Option<hosted::Auth>,
 }
 
 enum Msg {
@@ -423,8 +426,8 @@ enum Msg {
     /// Something changed outside the actor (a method call).
     Changed,
     /// M185: what the platform said about the next turn on a hosted box:
-    /// its turn id, or why it can't run.
-    Gated(Result<String, String>),
+    /// its turn, or why it can't run.
+    Gated(Result<hosted::Given, String>),
 }
 
 /// The agent type's kind: what an agent block is given beside what every
@@ -598,6 +601,7 @@ impl Inner {
             hosted_turn: None,
             gating: false,
             to_self: None,
+            hosted_auth: None,
         }
     }
 
@@ -1523,7 +1527,9 @@ impl Agent {
             agent.inner.lock().unwrap().runs = Some(runs);
         }
         agent.begin();
-        ctx.rt.spawn(run(agent.ctx.clone(), agent.inner.clone(), rx));
+        let actor =
+            Agent { ctx: agent.ctx.clone(), inner: agent.inner.clone(), tx: agent.tx.clone(), chat: agent.chat };
+        ctx.rt.spawn(run(actor, rx));
         Ok(agent)
     }
 
@@ -1741,8 +1747,15 @@ impl Agent {
                 }
                 // M185: on a hosted box, a placeholder for its provider's
                 // key, which the egress proxy fills in. Never the key.
+                let mut remove = launch.remove.clone();
                 if hosted::gate().is_some() {
-                    env.extend(hosted::env_here(inner.cfg.def.agent));
+                    let auth = inner.hosted_auth.unwrap_or_else(hosted::claude_auth);
+                    for k in hosted::unset(inner.cfg.def.agent, auth) {
+                        env.retain(|(n, _)| n != k);
+                        remove.push((*k).to_owned());
+                    }
+                    env.extend(hosted::env_here(inner.cfg.def.agent, auth));
+                    let _ = std::fs::write(self.ctx.dir.join(AUTH_IN_ENV), auth.as_str());
                 }
                 let marker = self.ctx.dir.join(TOKEN_IN_ENV);
                 if by_reference(&inner.cfg.def, &self.ctx)
@@ -1767,7 +1780,7 @@ impl Agent {
                 }
                 with_node_on_path(&mut env, &self.ctx.home);
                 if says_login(&inner.cfg.def) {
-                    inner.note(json!({ "e": "login", "login": local_login(&env, &launch.remove) }));
+                    inner.note(json!({ "e": "login", "login": local_login(&env, &remove) }));
                 }
                 let spawn = link::LocalSpawn {
                     id: self.ctx.id,
@@ -1775,7 +1788,7 @@ impl Agent {
                     argv: &launch.argv,
                     cwd: &cwd,
                     env: &env,
-                    remove: &launch.remove,
+                    remove: &remove,
                     launch: &self.ctx.launch,
                 };
                 match link::spawn_local(spawn, sink) {
@@ -2047,7 +2060,8 @@ fn mise_node(installs: &Path) -> Option<std::path::PathBuf> {
 }
 
 /// The block's task: frames from the agent server, and publishing.
-async fn run(ctx: AgentCtx, inner: Arc<Mutex<Inner>>, mut rx: mpsc::UnboundedReceiver<Msg>) {
+async fn run(agent: Agent, mut rx: mpsc::UnboundedReceiver<Msg>) {
+    let (ctx, inner) = (agent.ctx.clone(), agent.inner.clone());
     let mut tick = tokio::time::interval(PUBLISH_EVERY);
     let mut dirty = true;
     let mut machine_up = false;
@@ -2080,8 +2094,24 @@ async fn run(ctx: AgentCtx, inner: Arc<Mutex<Inner>>, mut rx: mpsc::UnboundedRec
                         Msg::Gated(given) => {
                             g.gating = false;
                             match given {
-                                Ok(turn) => {
-                                    g.hosted_turn = Some(turn);
+                                // Claude Code holds the placeholder as the
+                                // kind of credential the turn runs on: one
+                                // started holding the other starts again on
+                                // its session, and the prompt goes once
+                                // that's open.
+                                Ok(given)
+                                    if g.cfg.def.agent == Kind::Claude
+                                        && ctx.sprite.is_none()
+                                        && held_auth(&ctx) != given.auth =>
+                                {
+                                    info!(block = ctx.id, auth = given.auth.as_str(), "hosted: Claude Code starts again on its turn's credential");
+                                    g.hosted_turn = Some(given.turn);
+                                    g.hosted_auth = Some(given.auth);
+                                    agent.spawn(&mut g);
+                                }
+                                Ok(given) => {
+                                    g.hosted_turn = Some(given.turn);
+                                    g.hosted_auth = Some(given.auth);
                                     send_next(&ctx, &mut g);
                                 }
                                 // Not sent: said in its place, and what was
@@ -2532,6 +2562,16 @@ fn by_reference(def: &Def, ctx: &AgentCtx) -> bool {
 /// environment (#128), holding the variable's name: one started by an
 /// older daemon hasn't, and is started again when taken over.
 const TOKEN_IN_ENV: &str = "mcp-token-env";
+
+/// On a hosted box, the kind of credential the running agent server was
+/// given (`hosted::Auth::as_str`): none, from before there were two, is a
+/// key.
+const AUTH_IN_ENV: &str = "hosted-auth";
+
+/// The kind of credential the block's agent server holds, on a hosted box.
+fn held_auth(ctx: &AgentCtx) -> hosted::Auth {
+    hosted::Auth::parse(std::fs::read_to_string(ctx.dir.join(AUTH_IN_ENV)).ok().as_deref().map(str::trim))
+}
 
 fn new_session(ctx: &AgentCtx, g: &mut Inner, cwd: &str) {
     // A worn agent never opens a plain session (M44).

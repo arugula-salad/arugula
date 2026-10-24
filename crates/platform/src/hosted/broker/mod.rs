@@ -159,7 +159,7 @@ impl Key {
         Key(s.trim().to_owned())
     }
 
-    fn oauth(&self) -> bool {
+    pub(crate) fn oauth(&self) -> bool {
         self.0.starts_with("sk-ant-oat")
     }
 
