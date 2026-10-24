@@ -9,18 +9,18 @@
 // and `#chat=<room>&msg=<n>`, `#chat=activity`, `#chat=search/<words>`.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import { chat, type ChatStore } from "../../shared/chat-store";
-import { listedInChat } from "../../shared/chat/unread";
-import type { ChatRoom } from "../../shared/proto";
-import { MaintenanceNote } from "../../shared/ui/maintenance-note";
-import { usePhone, useSubscribe } from "../../shared/ui/hooks";
-import { askText, openMenu, type MenuItem } from "../../shared/ui/menu";
-import type { ChatRoute } from "../../shared/chat/route";
+import { chat, type ChatStore } from "../chat-store";
+import { listedInChat } from "./unread";
+import type { ChatRoom } from "../proto";
+import { MaintenanceNote } from "../ui/maintenance-note";
+import { usePhone, useSubscribe } from "../ui/hooks";
+import { askText, openMenu, type MenuItem } from "../ui/menu";
+import type { ChatRoute } from "./route";
 import { RoomActivityView, RoomSearchView, SearchField, openSwitcher, useSwitcherOpen, closeSwitcher } from "./find";
-import { MsgAvatar } from "../../shared/chat/avatar";
-import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "../../shared/chat/room";
-import { fuzzy } from "../../shared/fuzzy";
-import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../../shared/platform-api";
+import { MsgAvatar } from "./avatar";
+import { machineName, machineUp, roomLabel, roomSigil, RoomBody } from "./room";
+import { fuzzy } from "../fuzzy";
+import { usePlatformApi, type ChatNav, type PlatformApi, type PlatformTeam } from "../platform-api";
 
 function remembered<T>(key: string, fallback: T): T {
   try {
@@ -149,7 +149,7 @@ function pickRoom(store: ChatStore, route: ChatRoute, phone: boolean): ChatRoom 
   if (route.room) return store.room(route.room) ?? null;
   if (phone || route.view) return null;
   // Object threads (M196) aren't listed here: one opens from its object,
-  // and its unread counts there (../../shared/chat/unread).
+  // and its unread counts there (./unread).
   const live = store.rooms.filter((r) => r.kind !== "archive" && listedInChat(r));
   return live.filter((r) => r.unread).sort(byNewest)[0] ?? live.filter((r) => r.last).sort(byNewest)[0] ?? live[0] ?? null;
 }

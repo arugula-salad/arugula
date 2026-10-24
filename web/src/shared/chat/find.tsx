@@ -1,16 +1,16 @@
 // Getting around the chat page (M75): search and Activity (your mentions
 // and what needs you) over control's rooms (M123), and whether the
-// switcher (Ctrl/Cmd+K, drawn by ./chat-rooms) is open.
+// switcher (Ctrl/Cmd+K, drawn by ./rooms) is open.
 
 import { useEffect, useRef, useState } from "preact/hooks";
-import { useSubscribe } from "../../shared/ui/hooks";
-import { Markup } from "../../shared/ui/markup";
-import type { ChatStore } from "../../shared/chat-store";
-import type { ChatHit, ChatMessage, ChatRoom } from "../../shared/proto";
-import { AuthorAvatar, roomLabel, roomSigil, machineName } from "../../shared/chat/room";
-import { authorLabel } from "../../shared/chat/agents";
-import { usePlatformApi, type PlatformApi } from "../../shared/platform-api";
-import type { ChatRoute } from "../../shared/chat/route";
+import { useSubscribe } from "../ui/hooks";
+import { Markup } from "../ui/markup";
+import type { ChatStore } from "../chat-store";
+import type { ChatHit, ChatMessage, ChatRoom } from "../proto";
+import { AuthorAvatar, roomLabel, roomSigil, machineName } from "./room";
+import { authorLabel } from "./agents";
+import { usePlatformApi, type PlatformApi } from "../platform-api";
+import type { ChatRoute } from "./route";
 
 function when(at: number): string {
   const d = new Date(at);

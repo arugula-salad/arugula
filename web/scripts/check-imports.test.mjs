@@ -101,6 +101,6 @@ test("a bundle holding a key module or the shell's fails; the daemon's holding p
   assert.deepEqual(checkBundle(["/w/web/src/platform/main.tsx", "/w/web/src/shared/proto.ts", "/w/web/node_modules/preact/dist/preact.mjs", "\0vite/preload-helper.js"], "keys", src), []);
   assert.match(checkBundle(["/w/web/src/shell/e2e/keys.ts?used"], "keys", src)[0], /shell\/e2e\/keys\.ts \(the key code/);
   assert.match(checkBundle(["/w/web/src/shell/ui/menu.tsx"], "keys", src)[0], /the shell's/);
-  assert.match(checkBundle(["/w/web/src/platform/chat/rooms.tsx"], "platform", src)[0], /platform\/chat\/rooms\.tsx/);
+  assert.match(checkBundle(["/w/web/src/platform/pages/chat.tsx"], "platform", src)[0], /platform\/pages\/chat\.tsx/);
   assert.deepEqual(checkBundle(["/w/web/src/shell/client.ts"], "platform", src), []);
 });
