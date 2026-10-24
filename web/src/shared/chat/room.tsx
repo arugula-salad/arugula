@@ -16,7 +16,8 @@ import { Fragment, type ComponentChildren } from "preact";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { chat, type PaneQuote } from "../chat-store";
 import type { ChatMessage, ChatRoom } from "../proto";
-import { agentLines, authorLabel, isSystemLine } from "./agents";
+import { AgentsChip } from "./agents-chip";
+import { authorLabel, isSystemLine } from "./agents";
 import { Markdown } from "../ui/markdown";
 import { mentionToken } from "../ui/markup";
 import { MsgAvatar } from "./avatar";
@@ -110,17 +111,16 @@ export function AuthorAvatar({ m }: { m: ChatMessage }) {
   );
 }
 
-/** The line every room an agent grant reaches shows, to everyone in it. A
- * room with a header of its own (the chat page's) shows the chip there
- * instead (./agents-chip, #122). */
+/** Whose agents reach a room, for a host with no header of its own (an
+ * issue, a run, the shell's thread drawer): the same chip the chat page
+ * has in its header (./agents-chip, #122), alone on a slim line, and no
+ * line at all when no agent reaches the room. */
 function RoomAgents({ room }: { room: string }) {
-  const lines = agentLines(chat.agents(room));
-  if (!lines.length) return null;
+  useSubscribe((fn) => chat.subscribe(fn));
+  if (!chat.agents(room).length) return null;
   return (
-    <div class="room-agents" data-room-agents role="note">
-      {lines.map((l) => (
-        <p key={l}>{l}.</p>
-      ))}
+    <div class="room-agents">
+      <AgentsChip room={room} />
     </div>
   );
 }
