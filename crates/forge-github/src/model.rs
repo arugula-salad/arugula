@@ -162,7 +162,10 @@ pub fn attention(pr: &Pr, me: &Me, seen: i64) -> Vec<Want> {
         && pr.rollup == Some(CheckState::Success)
         && changes.is_empty()
         && !it.draft
-        && it.mergeable != Some(false)
+        // Unknown isn't mergeable: GitHub says null while it works a moved
+        // base out, and a conflicted PR isn't done meanwhile (the platform's
+        // inbox holds it back too).
+        && it.mergeable == Some(true)
         && !it.blocked
     {
         let approved = last.iter().any(|r| r.state == ReviewState::Approved);
