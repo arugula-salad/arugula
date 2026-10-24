@@ -1002,6 +1002,16 @@ impl Hub {
                             tracing::warn!(seq = e.seq, error = %err, "chat: a live event this build can't read")
                         }
                     },
+                    // A ping of #111: sent while it's fresh, not replayed
+                    // after (a machine that was away, a stream that resumes).
+                    "typing" => {
+                        if now_ms().saturating_sub(e.at) <= wire::TYPING_MS {
+                            if let Ok(ev) = serde_json::from_str::<ChatLive>(&e.body) {
+                                // `n: 0`: not numbered, so no stream keeps its place by it.
+                                let _ = self.tx.send(Arc::new(Out { n: 0, ev, to: None }));
+                            }
+                        }
+                    }
                     _ => self.changed(),
                 }
                 self.last.store(e.seq, Ordering::SeqCst);
@@ -2548,6 +2558,9 @@ pub fn start(app: &Arc<Platform>) {
         loop {
             let Some(p) = app.upgrade() else { return };
             p.chat.catch_up(&p.db);
+            if let Err(e) = p.db.prune_typing(now_ms()) {
+                tracing::warn!(error = %e, "chat: pruning typing");
+            }
             // Held with the rest of the background work for a window.
             if pruned.elapsed() >= Duration::from_secs(60) && !p.is_paused() {
                 if let Err(e) = p.db.prune_chat_events() {

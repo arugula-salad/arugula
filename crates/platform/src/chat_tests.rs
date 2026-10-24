@@ -887,6 +887,34 @@ async fn a_message_posted_on_one_machine_reaches_a_stream_on_the_other() {
     hears(&old, "\"type\":\"resync\"", Duration::from_secs(4)).await;
 }
 
+/// Typing (#111) crosses machines as a short-lived `chat_events` row: a
+/// ping through one reaches the other's stream that has the room open.
+#[tokio::test]
+async fn a_typing_ping_on_one_machine_reaches_a_stream_on_the_other() {
+    let db = crate::db::Db::test();
+    let Some(db_a) = db.second() else { return eprintln!("skipped: two machines need Postgres") };
+    let db_b = db.second().unwrap();
+    let hub = Arc::new(TestHub::default());
+    let (a, base_a) = serve_on(hub.clone(), db_a).await;
+    let (b, base_b) = serve_on(hub.clone(), db_b).await;
+    crate::chat::start(&a);
+    crate::chat::start(&b);
+    seed(&a, &hub);
+
+    let on_b = open_live(&base_b, "b", None).await;
+    hears(&on_b, "\"type\":\"hello\"", Duration::from_secs(5)).await;
+    let stream = {
+        let text = on_b.lock().unwrap().clone();
+        let at = text.find("\"stream\":\"").unwrap() + 10;
+        text[at..].split('"').next().unwrap().to_owned()
+    };
+    let (st, _) = call(&base_b, "b", "POST", "/api/chat/live/open", Some(json!({ "stream": stream, "room": "ch_general" }))).await;
+    assert_eq!(st, 200);
+    let (st, _) = call(&base_a, "a", "POST", "/api/chat/rooms/ch_general/typing", None).await;
+    assert_eq!(st, 204);
+    hears(&on_b, "\"type\":\"typing\"", Duration::from_secs(4)).await;
+}
+
 /// One of two machines leads (M144): it alone applies the hub's feed to
 /// projects and grants, and when its connection closes the other takes
 /// over within a try or two.
