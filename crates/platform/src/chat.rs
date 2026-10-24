@@ -99,6 +99,7 @@ pub(crate) mod agent_threads;
 pub(crate) mod alerts;
 mod link_fetch;
 pub(crate) mod objects;
+pub(crate) mod people;
 pub mod previews;
 pub(crate) mod reactions;
 pub(crate) mod typing;
@@ -1032,7 +1033,19 @@ struct Registered {
 
 impl Drop for Registered {
     fn drop(&mut self) {
-        self.app.chat.streams.lock().unwrap().remove(&self.id);
+        let last = {
+            let mut streams = self.app.chat.streams.lock().unwrap();
+            let account = streams.remove(&self.id).map(|s| s.account);
+            account.filter(|a| !streams.values().any(|s| s.account == *a))
+        };
+        // The person's last open page here closed: they're gone now, not
+        // when the beat goes stale (a page on another machine's streams
+        // says so again within [`people::STREAM_BEAT`]).
+        if let Some(a) = last
+            && let Err(e) = self.app.db.chat_beat(&a, now_ms(), false, true)
+        {
+            tracing::warn!(error = %e, "chat: noting a page closed");
+        }
     }
 }
 
@@ -1047,6 +1060,9 @@ struct Live {
     rooms: HashSet<String>,
     generation: u64,
     read_at: Instant,
+    /// Keeps the person seen while the stream is open, even if the page's
+    /// own timers are throttled in a background tab.
+    beat: tokio::time::Interval,
 }
 
 fn data(ev: &ChatLive) -> String {
@@ -1138,6 +1154,11 @@ pub async fn live(
         }
         streams.insert(id.clone(), StreamInfo { account: s.account.clone(), open: None });
     }
+    // A page that opened is a person who's here: seen now, active at the
+    // page's first beat (it says whether it's in use).
+    if let Err(e) = app.db.chat_beat(&s.account, now_ms(), false, false) {
+        tracing::warn!(error = %e, "chat: noting a page opened");
+    }
     let last = headers.get("last-event-id").and_then(|v| v.to_str().ok()).map(str::to_owned);
     // Subscribe first, then read what was missed from the database: what's
     // published in between is in both, and `seen` drops the second copy. A
@@ -1153,6 +1174,7 @@ pub async fn live(
         rooms: HashSet::new(),
         generation: 0,
         read_at: Instant::now(),
+        beat: tokio::time::interval_at(tokio::time::Instant::now() + people::STREAM_BEAT, people::STREAM_BEAT),
     };
     live.refresh().await;
     live.pending.push_back(Event::default().data(data(&ChatLive::Hello { stream: id })));
@@ -1176,7 +1198,16 @@ pub async fn live(
             if let Some(ev) = live.pending.pop_front() {
                 return Some((Ok(ev), live));
             }
-            match live.rx.recv().await {
+            let got = tokio::select! {
+                got = live.rx.recv() => got,
+                _ = live.beat.tick() => {
+                    if let Err(e) = live.app().db.chat_beat(&live.account, now_ms(), false, false) {
+                        tracing::warn!(error = %e, "chat: noting a page is still open");
+                    }
+                    continue;
+                }
+            };
+            match got {
                 Ok(out) => {
                     if let Some(ev) = live.deliver(&out).await {
                         return Some((Ok(ev), live));

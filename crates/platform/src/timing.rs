@@ -325,6 +325,9 @@ impl HubPort for Timed {
     fn activity<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<crate::hub::MachineActivity>>> {
         timed!(self.0.activity(machines))
     }
+    fn machines_online<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<String>>> {
+        timed!(self.0.machines_online(machines))
+    }
     fn live_delegation<'a>(&'a self, project: &'a str, owner: &'a str) -> BoxFuture<'a, HubResult<Option<String>>> {
         timed!(self.0.live_delegation(project, owner))
     }

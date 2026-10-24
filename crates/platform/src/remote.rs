@@ -529,6 +529,10 @@ impl HubPort for HttpHub {
         Box::pin(self.0.call("activity", IdsArgs { ids: machines.to_vec() }))
     }
 
+    fn machines_online<'a>(&'a self, machines: &'a [String]) -> BoxFuture<'a, HubResult<Vec<String>>> {
+        Box::pin(self.0.call("machines_online", IdsArgs { ids: machines.to_vec() }))
+    }
+
     fn owner_browser_signed<'a>(
         &'a self,
         owner: &'a str,
@@ -683,6 +687,7 @@ async fn hub_call(State(s): State<Arc<Serving<dyn HubPort>>>, Path(method): Path
             "hosted_enrolled" => answer(hub.hosted_enrolled(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
             "hosted_gone" => answer(hub.hosted_gone(&args::<WorkspacesArgs>(&body)?.workspaces).await?)?,
             "activity" => answer(hub.activity(&args::<IdsArgs>(&body)?.ids).await?)?,
+            "machines_online" => answer(hub.machines_online(&args::<IdsArgs>(&body)?.ids).await?)?,
             "live_delegation" => {
                 let a: DelegationArgs = args(&body)?;
                 answer(hub.live_delegation(&a.project, &a.owner).await?)?

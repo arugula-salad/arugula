@@ -95,9 +95,9 @@ export function roomSigil(r: ChatRoom): string {
 /** A message's picture: its author's, or its agent's machine's (M197). */
 export function AuthorAvatar({ m }: { m: ChatMessage }) {
   return m.agent ? (
-    <MsgAvatar who={`agent:${m.agent.machine}`} name={m.agent.machine_name || "agent"} />
+    <MsgAvatar who={`agent:${m.agent.machine}`} name={m.agent.machine_name || "agent"} account={m.author || undefined} agent={m.agent.machine} dot />
   ) : (
-    <MsgAvatar who={m.author || "gone"} name={m.author ? m.name || "someone" : "a deleted account"} />
+    <MsgAvatar who={m.author || "gone"} name={m.author ? m.name || "someone" : "a deleted account"} account={m.author || undefined} dot />
   );
 }
 
@@ -774,7 +774,7 @@ function RoomCompose({
                 choose(p.token);
               }}
             >
-              {p.who ? <MsgAvatar who={p.who} name={p.name} /> : <span class="mention-all" aria-hidden="true">@</span>}
+              {p.who ? <MsgAvatar who={p.who} name={p.name} account={p.who} /> : <span class="mention-all" aria-hidden="true">@</span>}
               <b>{p.who ? p.name : `@${p.token}`}</b>
               <span>{p.note ?? `@${p.token}`}</span>
             </li>
