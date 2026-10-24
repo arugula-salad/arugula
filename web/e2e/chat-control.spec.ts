@@ -341,3 +341,51 @@ test("typing shows to the other reader and clears; @channel is offered; a keywor
   const all = await alice.evaluate((r) => window.__arugula.chat.post(r, "@channel standup"), room);
   expect(all.mentions).toContain(bobAccount);
 });
+
+test("an issue's link unfurls into a card for those who can see it, follows the issue, and a private address makes none", async () => {
+  test.setTimeout(90_000);
+  // Alice's personal project: Bob is not in it, though he reads #general.
+  const api = (p: Page, method: string, path: string, body?: unknown) =>
+    p.evaluate(
+      async ([m, u, b]) => {
+        const r = await fetch(u as string, { method: m as string, credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: b === undefined ? undefined : JSON.stringify(b) });
+        return { status: r.status, body: (await r.json().catch(() => null)) as Record<string, any> | null };
+      },
+      [method, path, body] as const,
+    );
+  await platform(aliceChat, `/chat/${general}`);
+  const made = await api(aliceChat, "POST", "/api/projects/personal/issues", { title: "Link cards", body: "", labels: [], assignees: [] });
+  expect(made.status).toBe(200);
+  const id = made.body!.id as string;
+  const room = aliceChat.locator("[data-chat-control] [data-room-view]");
+  const box = room.getByRole("textbox", { name: "Message #general" });
+  await box.fill(`look: ${app}/issues/${id} and http://169.254.169.254/latest/meta-data/`);
+  await box.press("Enter");
+  const card = room.locator(".thread-msg").last().locator("[data-link-card-object]");
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await expect(card).toContainText("Link cards");
+  await expect(card.locator("[data-link-card-state]")).toHaveText("open");
+  // The private address is only text: no web card, and the link is still there.
+  await expect(room.locator(".thread-msg").last().locator("[data-link-card-web]")).toHaveCount(0);
+  // Phone width: the card stays inside the message.
+  expect((await card.boundingBox())!.width).toBeLessThanOrEqual(440);
+
+  // Closing the issue changes the open card (it asks again while open).
+  const closed = await api(aliceChat, "PATCH", `/api/issues/${id}`, { state: "closed" });
+  expect(closed.status).toBe(200);
+  await expect(card.locator("[data-link-card-state]")).toHaveText("closed", { timeout: 45_000 });
+
+  // Bob can't see the issue: the plain link, and nothing of it leaks.
+  await platform(bob, `/chat/${general}`);
+  const theirs = bob.locator("[data-chat-control] .thread-msg").last();
+  await expect(theirs).toContainText(`/issues/${id}`, { timeout: 15_000 });
+  await expect(theirs.locator("[data-link-card]")).toHaveCount(0);
+  await expect(theirs).not.toContainText("Link cards");
+
+  // The author takes the preview off; it goes for everyone.
+  await aliceChat.reload();
+  const again = aliceChat.locator("[data-chat-control] .thread-msg").last();
+  await expect(again.locator("[data-link-card-object]")).toBeVisible({ timeout: 15_000 });
+  await again.locator("[data-link-card-remove]").click();
+  await expect(again.locator("[data-link-card]")).toHaveCount(0);
+});

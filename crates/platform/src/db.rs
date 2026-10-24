@@ -44,6 +44,7 @@ pub mod inference;
 pub mod issues;
 pub mod jobs;
 mod legacy;
+pub mod link_previews;
 pub mod migrate;
 pub mod mirror;
 pub mod objects;

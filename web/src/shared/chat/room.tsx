@@ -23,6 +23,7 @@ import { MsgAvatar } from "./avatar";
 import { TypingLine } from "./typing";
 import { BROADCAST_CONFIRM_OVER, broadcastOptions, usesBroadcast } from "./alerts";
 import { EmojiPicker } from "./emoji-picker";
+import { MessagePreviews } from "./previews";
 import { findEmoji, rememberEmoji, useEmoji } from "./emoji";
 import { useSubscribe } from "../ui/hooks";
 import { usePlatformApi, type PlatformApi } from "../platform-api";
@@ -442,6 +443,7 @@ function RoomMessage({
           m.text && <Markdown text={m.text} refs={null} chat isMe={chat.isMe} landed={landed} />
         )}
         {m.edited !== null && !editing && <span class="thread-tag" title={new Date(m.edited).toLocaleString()}>(edited)</span>}
+        {!editing && m.text && <MessagePreviews room={room.id} seq={m.seq} text={m.text} mine={owned} />}
         {m.pane && <PaneChip pane={m.pane} quote={m.quote} />}
         {!m.pane && m.quote && (
           <div class="thread-quote">
