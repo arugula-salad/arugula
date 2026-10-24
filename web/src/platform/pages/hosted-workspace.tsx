@@ -15,6 +15,7 @@ import { usePlatformApi } from "../../shared/platform-api";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
 import { controlOrigin, session } from "../session";
+import { toneClass, workspaceTone, type Tone } from "../swarm";
 import { Missing } from "./project";
 
 /** A hosted workspace, as the platform answers it. */
@@ -90,18 +91,28 @@ export function useHostedWorkspaces(id: string): HostedWorkspace[] | null {
   return list;
 }
 
-/** The links to a project's hosted workspaces, each with its state. */
+/** The links to a project's hosted workspaces, each a card in the swarm's
+ * language (../swarm.css): its bar is its state, its mono line its id and
+ * its machine's. */
 export function HostedWorkspaceList({ project: id, list }: { project: string; list: HostedWorkspace[] }) {
   return (
-    <ul class="platform-list" data-hosted-workspaces-list>
+    <ul class="platform-list sw-cards sw-grid" data-hosted-workspaces-list>
       {list.map((w) => {
         const to = pathOf({ page: "workspace", project: id, workspace: w.id }, names);
         return (
           <li key={w.id}>
-            <a href={to} data-hosted-workspace-link={w.id} onClick={(e) => follow(e, to)}>
-              {w.name}
-            </a>{" "}
-            <span class="dim">· {said(w)}</span>
+            <a class={`sw-card ${toneClass(workspaceTone(w.state, w.asked))}`} href={to} data-hosted-workspace-link={w.id} onClick={(e) => follow(e, to)}>
+              <span class="sw-head">
+                <b class="sw-name">{w.name}</b>
+              </span>
+              <span class="sw-id">
+                {w.id} · {w.machine ?? "no machine yet"}
+              </span>
+              <span class="dim">
+                {said(w)}
+                {w.rebuild_needed ? " · wants a rebuild" : ""}
+              </span>
+            </a>
           </li>
         );
       })}
@@ -109,12 +120,39 @@ export function HostedWorkspaceList({ project: id, list }: { project: string; li
   );
 }
 
+/** How many of them are in each state, as the swarm's bar counts its
+ * panes: the ready, the ones being made or woken, the paused, the failed. */
+function WorkspaceStats({ list }: { list: HostedWorkspace[] }) {
+  const n = (t: Tone) => list.filter((w) => workspaceTone(w.state, w.asked) === t).length;
+  const stats: [number, string][] = [
+    [n("ok"), "ready"],
+    [n("warn"), "on the way"],
+    [list.filter((w) => w.state === "paused" && w.asked !== "wake").length, "paused"],
+    [n("danger"), "failed"],
+  ];
+  return (
+    <div class="sw-stats" data-hosted-stats>
+      <span>
+        <b>{list.length}</b> {list.length === 1 ? "workspace" : "workspaces"}
+      </span>
+      {stats.map(([k, what]) =>
+        k ? (
+          <span key={what} class={what === "failed" ? "bad" : undefined}>
+            <b>{k}</b> {what}
+          </span>
+        ) : null,
+      )}
+    </div>
+  );
+}
+
 /** `/p/:project/workspaces`: the project's hosted workspaces. */
 export function HostedWorkspaces({ project: id }: { project: string }) {
   const list = useHostedWorkspaces(id);
   return (
-    <section class="platform-section hosted-list" data-hosted-workspaces>
+    <section class="platform-section sw-page hosted-list" data-hosted-workspaces>
       <h1>Workspaces</h1>
+      {list?.length ? <WorkspaceStats list={list} /> : null}
       {list === null ? <p class="dim">Loading…</p> : list.length ? <HostedWorkspaceList project={id} list={list} /> : <NoWorkspaces project={id} />}
     </section>
   );
@@ -228,7 +266,7 @@ export function HostedWorkspacePage({ project: id, workspace }: { project: strin
                   <button type="button" class="link" onClick={() => void readTranscript(t)} aria-expanded={open?.id === t.id}>
                     {t.title || t.agent}
                   </button>{" "}
-                  <span class="dim">
+                  <span class="dim sw-mono">
                     {t.agent} · closed {when(t.closed_at)} · {size(t.bytes)}
                     {t.cut ? " · its middle was cut" : ""}
                   </span>

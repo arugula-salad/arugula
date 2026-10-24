@@ -1,0 +1,328 @@
+/* The platform's lists in the swarm's language (.swarm and .start in
+   shared/style.css): rail cards with a state bar, display headings, mono
+   identities and tabular counts. Each channel says one fact the list's
+   data has, and nothing is there for decoration:
+
+   list               element            what it shows
+   ------------------ ------------------ ---------------------------------------
+   Home: projects     bar                the reader's role: owner (their own
+                                         project too) accent, editor info,
+                                         viewer muted
+                      name (display)     the project's name
+                      pill               people in its team (none on their own)
+                      mono line          its id, prj_ and 8 of its hex
+                      stats              projects; teams (a team's project is
+                                         its default one)
+   Project: rooms     bar                unread with a mention warn, unread
+                                         accent, else none (.chat-count's)
+                      mono               # channel, @ person
+   Workspaces         bar                its state: creating, enrolling,
+   (project page and                     waking (or asked to wake) warn; ready
+   /workspaces)                          ok; failed danger; paused, deleting
+                                         muted
+                      name (display)     its name
+                      mono line          hw_ id · its machine's id, or "no
+                                         machine yet"
+                      dim line           its state in words, and whether it
+                                         wants a rebuild
+                      stats              workspaces; ready, on the way, paused,
+                                         failed (each only when there are some)
+   One workspace      mono               a closed agent's agent · closed · size
+   Runs               bar                its state: pending, approved warn;
+                                         running accent; succeeded ok; failed
+                                         danger; denied, canceled, expired muted
+                      mono, right        its short id · its workspace's name
+                      stats              shown (the newest 50 that match);
+                                         waiting, running, failed
+   Inbox              bar                why it wants the reader: review asked
+                                         accent, changes asked warn, checks or a
+                                         run failed danger, mentioned info,
+                                         assigned teal, done ok; full while
+                                         unseen, faded once seen
+                      group heading      the reason, with its count
+                      stats              unseen, items, deploys waiting for an
+                                         approval, drafts
+
+   The colors are the palette's (shared/appearance.ts), never the swarm's
+   fixed ones, so every appearance holds; a name or a count takes its tone's
+   color only where appearance.ts keeps that color legible (muted isn't: a
+   muted card's name is subtle). The swarm's fonts aren't loaded on any
+   page (no @font-face, no font link): the stacks fall back to what the
+   machine has, Arial Narrow (Liberation Sans Narrow on Linux) or a plain
+   sans for the headings, the system's sans, and JetBrains Mono where it's
+   installed, else the system's monospace. Motion is the swarm's: a card
+   comes in once, and glows while it's hovered or focused. */
+
+.platform {
+  --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-ui: "Instrument Sans", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+
+.platform .sw-page {
+  font-family: var(--f-ui);
+}
+
+.platform .sw-page h1 {
+  margin: 0 0 12px;
+  font: 800 32px/0.95 var(--f-display);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+.platform .sw-page .issues-head h1 {
+  margin: 0;
+}
+
+.platform .sw-page h2 {
+  margin: 24px 0 10px;
+  font: 700 19px/1.05 var(--f-display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.platform .sw-page h2 > .dim {
+  margin-left: 4px;
+  font: 700 12px/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  vertical-align: 2px;
+}
+
+/* The counts over a list, as the swarm's bar counts its panes. */
+.platform .sw-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0 0 16px;
+  font: 500 12px/1.2 var(--f-mono);
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.platform .sw-stats b {
+  display: block;
+  font: 700 22px/1 var(--f-display);
+  color: var(--fg);
+}
+
+.platform .sw-stats .needs b {
+  color: var(--accent);
+}
+
+.platform .sw-stats .bad b {
+  color: var(--danger);
+}
+
+.platform .runs-page .sw-stats {
+  margin: 12px 0 0;
+}
+
+/* The cards: what a list holds, one each, as the swarm's rail holds them. */
+.platform .sw-cards {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.platform .sw-grid {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.platform .issues-list.sw-cards {
+  margin-top: 12px;
+  border: 0;
+  border-radius: 0;
+}
+
+.platform .sw-cards > li:not(.sw-card) {
+  padding: 0;
+}
+
+/* A card's tone, below the card's own rule so a tone class wins. */
+.platform .sw-card,
+.platform .sw-row {
+  --c: var(--muted);
+  --ct: var(--subtle);
+}
+
+.platform .sw-accent {
+  --c: var(--accent);
+  --ct: var(--accent);
+}
+
+.platform .sw-ok {
+  --c: var(--ok);
+  --ct: var(--ok);
+}
+
+.platform .sw-warn {
+  --c: var(--warn);
+  --ct: var(--warn);
+}
+
+.platform .sw-danger {
+  --c: var(--danger);
+  --ct: var(--danger);
+}
+
+.platform .sw-info {
+  --c: var(--info);
+  --ct: var(--info);
+}
+
+.platform .sw-teal {
+  --c: var(--teal);
+  --ct: var(--teal);
+}
+
+.platform .sw-muted {
+  --c: var(--muted);
+  --ct: var(--subtle);
+}
+
+.platform .sw-cards .sw-card {
+  position: relative;
+  margin: 0;
+  padding: 10px 12px 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--divider));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--c) 7%, var(--surface));
+  animation: sw-card-in 0.3s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+/* A card that is a link opens as a whole. */
+.platform .sw-cards a.sw-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.platform .sw-page .platform-inbox-ref {
+  font: 500 12px/1.3 var(--f-mono);
+}
+
+.platform .sw-cards .sw-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
+}
+
+.platform .sw-cards .sw-card:is(:hover, :focus-visible, :focus-within) {
+  box-shadow: 0 0 20px color-mix(in srgb, var(--c) 40%, transparent);
+}
+
+/* An inbox entry once seen: still there, no longer calling. */
+.platform .sw-cards .sw-card.seen {
+  border-color: var(--divider);
+  background: var(--surface);
+}
+
+.platform .sw-cards .sw-card.seen::before {
+  opacity: 0.4;
+}
+
+@keyframes sw-card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.platform .sw-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.platform .sw-name {
+  min-width: 0;
+  font: 700 19px/1.05 var(--f-display);
+  color: var(--ct);
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.platform .sw-n {
+  margin-left: auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--c);
+  color: var(--on-color);
+  font: 700 12px/1 var(--f-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.platform .sw-muted .sw-n {
+  background: var(--raised);
+  color: var(--fg);
+}
+
+.platform .sw-id {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  font: 500 11px/1.3 var(--f-mono);
+  color: var(--dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.platform .run-row .sw-id {
+  flex: 0 1 auto;
+  max-width: 40%;
+  margin-top: 3px;
+}
+
+.platform .sw-mono {
+  font-family: var(--f-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A project's rooms: a list, not cards, with the bar only where there's
+   something unread. */
+.platform .sw-rows > li {
+  position: relative;
+  padding: 4px 0 4px 12px;
+}
+
+.platform .sw-row > a {
+  font-family: var(--f-mono);
+  font-size: 13px;
+}
+
+.platform .sw-row:is(.sw-accent, .sw-warn)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--c);
+}
+
+@media (max-width: 600px) {
+  .platform .sw-page h1 {
+    font-size: 28px;
+  }
+  .platform .sw-stats b {
+    font-size: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .platform .sw-cards .sw-card {
+    animation: none;
+  }
+}

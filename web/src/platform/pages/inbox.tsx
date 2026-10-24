@@ -17,6 +17,7 @@ import { DraftList, useMyDrafts } from "../drafts";
 import { WaitingDeploys, useWaitingDeploys } from "./deploy";
 import { names } from "../links";
 import { follow, pathOf } from "../router";
+import { reasonTone, toneClass } from "../swarm";
 import { toast } from "../toast";
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -85,8 +86,28 @@ export function InboxPage() {
   const drafts = mine.drafts ?? [];
   const empty = entries !== null && mine.drafts !== null && deploys !== null && shown.length === 0 && drafts.length === 0 && deploys.length === 0;
   return (
-    <section class="platform-section platform-inbox" data-platform-inbox>
+    <section class="platform-section sw-page platform-inbox" data-platform-inbox>
       <h1>Inbox</h1>
+      {entries !== null && !empty && (
+        <div class="sw-stats" data-inbox-stats>
+          <span class={shown.some((e) => !e.seen_at) ? "needs" : undefined}>
+            <b>{shown.filter((e) => !e.seen_at).length}</b> unseen
+          </span>
+          <span>
+            <b>{shown.length}</b> {shown.length === 1 ? "item" : "items"}
+          </span>
+          {!!deploys?.length && (
+            <span>
+              <b>{deploys.length}</b> {deploys.length === 1 ? "deploy waits" : "deploys wait"}
+            </span>
+          )}
+          {drafts.length > 0 && (
+            <span>
+              <b>{drafts.length}</b> {drafts.length === 1 ? "draft" : "drafts"}
+            </span>
+          )}
+        </div>
+      )}
       {error && <p class="control-error">{error}</p>}
       {entries === null && !error && <p class="dim">Loading…</p>}
       {empty && <p class="dim" data-inbox-empty>Nothing wants you right now.</p>}
@@ -99,7 +120,7 @@ export function InboxPage() {
             <h2>
               {heading} <span class="dim">{group.length}</span>
             </h2>
-            <ul class="platform-list platform-inbox-list">
+            <ul class="platform-list platform-inbox-list sw-cards">
               {group.map((e) => {
                 const key = `${e.item} ${e.reason}`;
                 const link = linkOf(e);
@@ -109,7 +130,9 @@ export function InboxPage() {
                 };
                 const away = link.here ? {} : { target: "_blank", rel: "noopener noreferrer" };
                 return (
-                  <li key={key} class={e.seen_at ? "seen" : "unseen"} data-inbox-entry={e.item} data-inbox-reason={e.reason}>
+                  // A card in the swarm's language (../swarm.css): its bar is
+                  // why it wants the reader, full while it's unseen.
+                  <li key={key} class={`sw-card ${toneClass(reasonTone(e.reason))} ${e.seen_at ? "seen" : "unseen"}`} data-inbox-entry={e.item} data-inbox-reason={e.reason}>
                     <a class="platform-inbox-item" href={link.href} {...away} onClick={open}>
                       <span class="platform-inbox-ref">{e.kind === "run" ? `${e.repo}:` : `${e.repo}#${e.number}`}</span>{" "}
                       <span class="platform-inbox-title">{e.title}</span>

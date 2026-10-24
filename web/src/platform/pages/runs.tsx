@@ -32,6 +32,7 @@ import { toast } from "../toast";
 import { mayWrite, nameIn } from "./issues";
 import { Missing } from "./project";
 import { runs, type HostedWorkspace, type RunArtifacts, type RunFilter, type RunLogPage, type RunSpec, type RunView } from "../runs";
+import { runTone, toneClass, type Tone } from "../swarm";
 import { STATES, TRIGGERS, argvOf, commandLine, decodeOp, httpsOnly, ended, eventDetail, keepLatest, paneLink, runTitle, startedBy, stripAnsi, tone, took } from "../runs-text";
 
 const menuAt = (e: MouseEvent, items: MenuItem[]) => {
@@ -77,6 +78,32 @@ function useWorkspaces(project: string): HostedWorkspace[] {
 
 function StateDot({ state }: { state: string }) {
   return <span class={`run-dot ${tone(state)}`} title={STATES[state] ?? state} aria-label={STATES[state] ?? state} />;
+}
+
+/** What the list holds, as the swarm's bar counts its panes: the runs
+ * shown (the newest 50 that match), and of them the waiting, the going and
+ * the failed. */
+function RunStats({ list }: { list: RunView[] }) {
+  const n = (t: Tone) => list.filter((r) => runTone(r.state) === t).length;
+  const stats: [number, string][] = [
+    [n("warn"), "waiting"],
+    [n("accent"), "running"],
+    [n("danger"), "failed"],
+  ];
+  return (
+    <div class="sw-stats" data-runs-stats>
+      <span>
+        <b>{list.length}</b> shown
+      </span>
+      {stats.map(([k, what]) =>
+        k ? (
+          <span key={what} class={what === "failed" ? "bad" : undefined}>
+            <b>{k}</b> {what}
+          </span>
+        ) : null,
+      )}
+    </div>
+  );
 }
 
 export function RunsPage({ project, filter }: { project: string; filter: RunFilter }) {
@@ -135,7 +162,7 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
   const settings = pathOf({ page: "project-settings", project: p.id }, names);
 
   return (
-    <section class="platform-section runs-page" data-runs={p.id}>
+    <section class="platform-section sw-page runs-page" data-runs={p.id}>
       <header class="issues-head">
         <h1>Runs</h1>
         {starter(p) && (
@@ -176,13 +203,16 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
           {narrowed ? "No runs match." : starter(p) ? "No runs yet. Start one, or give a run spec a schedule." : "No runs yet."}
         </p>
       )}
-      <ul class="issues-list" data-runs-list>
+      {!!list?.length && <RunStats list={list} />}
+      <ul class="issues-list sw-cards" data-runs-list>
         {list?.map((r) => {
           const path = pathOf({ page: "run", project: p.id, run: r.id }, names);
           const end = r.ended_at ?? (ended(r.state) ? null : Date.now());
+          const ws = r.workspace ? (workspaces.find((w) => w.id === r.workspace)?.name ?? r.workspace) : null;
           return (
-            <li class="issue-row run-row" key={r.id} data-run-row={r.id} data-run-state={r.state}>
-              <StateDot state={r.state} />
+            // A card in the swarm's language (../swarm.css): its bar is the
+            // run's state, which the meta line says in words.
+            <li class={`issue-row run-row sw-card ${toneClass(runTone(r.state))}`} key={r.id} data-run-row={r.id} data-run-state={r.state}>
               <div class="issue-row-main">
                 <a href={path} class="issue-row-title run-title" onClick={(e) => follow(e, path)}>
                   {runTitle(r.op, specName(r.source.spec))}
@@ -194,7 +224,10 @@ function RunList({ p, filter }: { p: PlatformProject; filter: RunFilter }) {
                   {r.exit_code !== null && r.exit_code !== undefined ? ` · exit ${r.exit_code}` : ""}
                 </span>
               </div>
-              <code class="run-id dim">{short(r.id)}</code>
+              <code class="run-id sw-id">
+                {short(r.id)}
+                {ws ? ` · ${ws}` : ""}
+              </code>
             </li>
           );
         })}
