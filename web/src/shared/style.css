@@ -3675,7 +3675,7 @@ html[data-native-tabs][data-desktop="macos"] .bar {
   --s-wait: #ffc04d;
   --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
   --f-ui: "Instrument Sans", system-ui, sans-serif;
-  --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --f-mono: "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
   --rail: 330px;
   position: fixed;
   inset: 0;
@@ -5489,7 +5489,7 @@ button.diff-why-run {
   --s-wait: #ffc04d;
   --f-display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
   --f-ui: "Instrument Sans", system-ui, sans-serif;
-  --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --f-mono: "Arugula Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   width: min(720px, calc(100vw - 24px));
@@ -5908,7 +5908,7 @@ button.diff-why-run {
   border-radius: 999px;
   background: #06080d;
   color: #e6ebf4;
-  font: 500 12px/1 "JetBrains Mono", ui-monospace, monospace;
+  font: 500 12px/1 "Arugula Mono", "JetBrains Mono", ui-monospace, monospace;
   box-shadow: 0 12px 40px #000a;
 }
 

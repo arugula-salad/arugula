@@ -10,6 +10,7 @@ import { OPS, opPath } from "./ops";
 import { setLending } from "./hand";
 import { type TeamPins, type TeamPinsRequest } from "../shared/proto";
 import { render } from "preact";
+import "../shared/fonts.css";
 import "../shared/style.css";
 import "../shared/frame.css";
 import "./shell-chrome.css";

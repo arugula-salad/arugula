@@ -1,0 +1,40 @@
+/* The swarm's three fonts, self-hosted: --f-display, --f-ui and --f-mono
+   (style.css's .swarm and .start) and the swarm's canvases (field.ts,
+   city.ts, flat.ts) name them, and before this nothing loaded them, so a
+   machine without them drew the fallbacks.
+   Fontsource's variable builds (npm, so no font file is committed; Vite
+   copies them into the build): one latin file a family covers every
+   weight used (display 500 to 800, UI 400 to 600, mono 400 to 700), in
+   less than the static weights would. Display and UI keep the names their
+   stacks use, not Fontsource's "… Variable". JetBrains Mono is "Arugula
+   Mono" here, first in the swarm's mono stacks with "JetBrains Mono" after
+   it: the terminal's stack (terminal-view.ts) names JetBrains Mono too,
+   and stays on the one installed, or its fallback. The latin ranges are
+   Fontsource's own. No italics: nothing sets one. */
+
+@font-face {
+  font-family: "Big Shoulders Display";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/big-shoulders-display/files/big-shoulders-display-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Instrument Sans";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400 700;
+  src: url("@fontsource-variable/instrument-sans/files/instrument-sans-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Arugula Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url("@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

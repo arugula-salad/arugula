@@ -178,7 +178,7 @@ const towerFrag = /* glsl */ `
     gl_FragColor = vec4(mix(col, uFog, smoothstep(uFogNear, uFogFar, length(vP - cameraPosition))), 1.);
   }`;
 
-const MONO = `"JetBrains Mono", ui-monospace, monospace`;
+const MONO = `"Arugula Mono", "JetBrains Mono", ui-monospace, monospace`;
 const DISPLAY = `"Big Shoulders Display", "Arial Narrow", sans-serif`;
 
 function textTexture(lines: [string, string, string, number, number][], w: number, h: number): THREE.CanvasTexture {
@@ -305,11 +305,16 @@ export class City implements SwarmScene {
 
     this.listen();
     // Block names are drawn into textures: draw them again in the swarm's
-    // faces once those load.
-    void document.fonts?.load(`800 112px "Big Shoulders Display"`).then(() => document.fonts.load(`500 34px "JetBrains Mono"`)).then(() => {
-      this.fontsReady = true;
-      this.blockSig = "";
-    });
+    // faces once those load (shared/fonts.css). A face that didn't load
+    // leaves the fallback's, already drawn.
+    void document.fonts
+      ?.load(`800 112px "Big Shoulders Display"`)
+      .then(() => document.fonts.load(`500 34px "Arugula Mono"`))
+      .then(() => {
+        this.fontsReady = true;
+        this.blockSig = "";
+      })
+      .catch(() => {});
   }
 
   // ---- data

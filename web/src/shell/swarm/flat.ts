@@ -41,7 +41,7 @@ export function fmtDur(s: number): string {
 
 export const FONT = {
   display: (w: number, px: number) => `${w} ${px}px "Big Shoulders Display", "Arial Narrow", sans-serif`,
-  mono: (w: number, px: number) => `${w} ${px}px "JetBrains Mono", ui-monospace, monospace`,
+  mono: (w: number, px: number) => `${w} ${px}px "Arugula Mono", "JetBrains Mono", ui-monospace, monospace`,
 };
 export const C = { void: "#06080d", ink: "#e6ebf4", mute: "#7c8698", line: "#1a2030", fail: "#ff5468" };
 
