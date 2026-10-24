@@ -1,7 +1,8 @@
 //! Live push (`push_live.rs`) over HTTP: a live subscription's stream hears
 //! what control would push its account, and only that account; under what
 //! it chose; from control, the platform and its daemons alike; and ends
-//! when the subscription goes.
+//! when the subscription goes. Nobody else takes an endpoint over, and an
+//! account's subscriptions and pushes are bounded.
 
 use std::time::Duration;
 
@@ -22,24 +23,48 @@ struct Listener {
 /// Subscribe `account`'s device `keys` at a new live endpoint, as the page
 /// does for the desktop app.
 async fn subscribe(c: &Control, cookie: &str, account: &str, keys: &DeviceKeys, seed: u8) -> Listener {
+    let endpoint = format!("{}/api/push/live/{}", c.base, hex::encode([seed; 16]));
+    let (st, v) = post_sub(c, cookie, account, keys, seed, &endpoint).await;
+    assert_eq!(st, 200, "{v}");
+    let listen = v["listen"].as_str().expect("a live endpoint's listen token").to_owned();
+    let ua = p256::SecretKey::from_slice(&[seed; 32]).unwrap();
+    Listener { ua, auth: [seed; 16], endpoint, listen }
+}
+
+/// `POST /api/push/subscribe` at `endpoint`, signed by `keys`, with keys
+/// made from `seed`.
+async fn post_sub(
+    c: &Control,
+    cookie: &str,
+    account: &str,
+    keys: &DeviceKeys,
+    seed: u8,
+    endpoint: &str,
+) -> (u16, Value) {
     let ua = p256::SecretKey::from_slice(&[seed; 32]).unwrap();
     let auth = [seed; 16];
-    let endpoint = format!("{}/api/push/live/{}", c.base, hex::encode([seed; 16]));
     let mut sub = PushSub {
         v: 1,
         account: account.into(),
         device: String::new(),
-        endpoint: endpoint.clone(),
+        endpoint: endpoint.into(),
         p256dh: B64.encode(ua.public_key().to_sec1_bytes()),
         auth: B64.encode(auth),
         at: now_ms(),
         sig: String::new(),
     };
     sub.sign_with(keys);
-    let (st, v) = c.as_person(cookie, "POST", "/api/push/subscribe", Some(json!({ "sub": sub }))).await;
-    assert_eq!(st, 200, "{v}");
-    let listen = v["listen"].as_str().expect("a live endpoint's listen token").to_owned();
-    Listener { ua, auth, endpoint, listen }
+    c.as_person(cookie, "POST", "/api/push/subscribe", Some(json!({ "sub": sub }))).await
+}
+
+/// Another approved device of `account`'s (the app's window beside the
+/// browser).
+fn second_device(c: &Control, account: &str, name: &str) -> DeviceKeys {
+    let keys = DeviceKeys::generate();
+    let mut cert = arugula_e2e::Cert::new(&keys, account, arugula_e2e::Kind::Browser, name);
+    cert.sign_with(&keys);
+    c.app.db.put_device(&cert, true, now_ms()).unwrap();
+    keys
 }
 
 /// An open stream.
@@ -256,4 +281,105 @@ async fn a_live_stream_hears_what_was_chosen_from_machines_too() {
     crate::push::notify(&c.app, vec!["a1jake".into()], "control-y", "t".into(), "b".into());
     assert!(back.ended().await, "no more for a revoked device");
     assert_eq!(Stream::open(&c, &j.endpoint, &j.listen).await.err(), Some(404));
+}
+
+/// Someone whose daemon serves Jake sees his live endpoint (it's in the
+/// subscriptions daemons fetch). Subscribing there with their own device is
+/// refused, and his stream goes on; his token is his subscription's alone.
+#[tokio::test]
+async fn nobody_else_takes_a_live_endpoint_over() {
+    use crate::push::push_account;
+    use arugula_platform::hub::PushOptions;
+
+    let c = control(|_| {}).await;
+    let jake = person(&c.app, "jake", "a1jake");
+    let mallory = person(&c.app, "mallory", "a3mal");
+    let (jc, mc) = (session(&c.app, "a1jake"), session(&c.app, "a3mal"));
+    let j = subscribe(&c, &jc, "a1jake", &jake, 5).await;
+    let mut js = Stream::open(&c, &j.endpoint, &j.listen).await.unwrap();
+
+    let (st, v) = post_sub(&c, &mc, "a3mal", &mallory, 6, &j.endpoint).await;
+    assert_eq!(st, 409, "{v}");
+    assert_eq!(c.app.db.push_sub_account(&j.endpoint).unwrap().as_deref(), Some("a1jake"), "still his");
+    let (st, _) = c.as_person(&mc, "POST", "/api/push/unsubscribe", Some(json!({ "endpoint": j.endpoint }))).await;
+    assert_eq!(st, 200);
+    let msg = json!({ "title": "t", "body": "b", "tag": "chat-r1" });
+    assert_eq!(
+        push_account(&c.app, "a1jake", msg.to_string().as_bytes(), PushOptions::default()).await.unwrap().sent,
+        1
+    );
+    assert_eq!(j.open(&js.next(SOON).await.expect("his stream goes on")), msg);
+
+    // A second device of his gets a token of its own, which opens only its
+    // own endpoint.
+    let app2 = second_device(&c, "a1jake", "Arugula app on jake-air");
+    let k = subscribe(&c, &jc, "a1jake", &app2, 7).await;
+    assert_ne!(k.listen, j.listen);
+    assert_eq!(Stream::open(&c, &j.endpoint, &k.listen).await.err(), Some(401));
+    assert!(Stream::open(&c, &k.endpoint, &k.listen).await.is_ok());
+
+    // Turned on again on the first device (a new endpoint and keys): the
+    // old one goes, with its stream, and its token opens nothing.
+    let j2 = subscribe(&c, &jc, "a1jake", &jake, 8).await;
+    assert!(js.ended().await, "the replaced subscription's stream ends");
+    assert_eq!(Stream::open(&c, &j.endpoint, &j.listen).await.err(), Some(404));
+    assert_eq!(Stream::open(&c, &j2.endpoint, &j.listen).await.err(), Some(401));
+    assert!(Stream::open(&c, &j2.endpoint, &j2.listen).await.is_ok());
+    assert_eq!(c.app.db.push_subs("a1jake").unwrap().len(), 2, "one live endpoint per device");
+}
+
+/// Two first subscribes at once each get a token that works, and keep
+/// working: nothing but the database holds them.
+#[tokio::test]
+async fn subscribes_at_once_each_get_a_token_that_works() {
+    let c = control(|_| {}).await;
+    let jake = person(&c.app, "jake", "a1jake");
+    let other = second_device(&c, "a1jake", "Arugula app on geek");
+    let jc = session(&c.app, "a1jake");
+    let (a, b) = tokio::join!(subscribe(&c, &jc, "a1jake", &jake, 9), subscribe(&c, &jc, "a1jake", &other, 10));
+    for l in [&a, &b] {
+        assert!(Stream::open(&c, &l.endpoint, &l.listen).await.is_ok());
+    }
+}
+
+/// An account has at most 50 subscriptions; a live one nobody listened at
+/// for 30 days is forgotten; and pushes to one account are counted before
+/// the brake for everyone.
+#[tokio::test]
+async fn subscriptions_and_pushes_are_bounded() {
+    use crate::push::push_account;
+    use arugula_platform::hub::PushOptions;
+
+    let c = control(|_| {}).await;
+    let jake = person(&c.app, "jake", "a1jake");
+    let ada = person(&c.app, "ada", "a2ada");
+    let (jc, ac) = (session(&c.app, "a1jake"), session(&c.app, "a2ada"));
+
+    // Idle for 30 days: gone, the next time it's looked at, its stream too.
+    let j = subscribe(&c, &jc, "a1jake", &jake, 11).await;
+    let mut js = Stream::open(&c, &j.endpoint, &j.listen).await.unwrap();
+    c.app.db.touch_live_sub(&j.endpoint, 1).unwrap();
+    crate::push_live::forget_idle(&c.app, "a1jake").unwrap();
+    assert!(js.ended().await);
+    assert_eq!(Stream::open(&c, &j.endpoint, &j.listen).await.err(), Some(404));
+
+    // 50 subscriptions: no more, live or not.
+    for n in 0..50 {
+        c.app.db.put_push_sub(&format!("https://fcm.googleapis.com/fcm/send/{n}"), "a1jake", "{}").unwrap();
+    }
+    let live = format!("{}/api/push/live/{}", c.base, hex::encode([12u8; 16]));
+    assert_eq!(post_sub(&c, &jc, "a1jake", &jake, 12, &live).await.0, 429);
+    let web = "https://fcm.googleapis.com/fcm/send/new";
+    assert_eq!(post_sub(&c, &jc, "a1jake", &jake, 13, web).await.0, 429);
+    // Replacing one of its own is still fine.
+    assert_eq!(post_sub(&c, &jc, "a1jake", &jake, 14, "https://fcm.googleapis.com/fcm/send/3").await.0, 200);
+
+    // Jake's pushes used up: his go no further, Ada's still go.
+    let a = subscribe(&c, &ac, "a2ada", &ada, 15).await;
+    let _ads = Stream::open(&c, &a.endpoint, &a.listen).await.unwrap();
+    while c.app.limits.check_account(crate::limit::ACCOUNT_PUSHES, "a1jake").is_ok() {}
+    let msg = json!({ "title": "t", "body": "b", "tag": "agent-token-t1" }).to_string();
+    let got = push_account(&c.app, "a1jake", msg.as_bytes(), PushOptions::default()).await.unwrap();
+    assert_eq!((got.sent, got.failed > 0), (0, true));
+    assert_eq!(push_account(&c.app, "a2ada", msg.as_bytes(), PushOptions::default()).await.unwrap().sent, 1);
 }

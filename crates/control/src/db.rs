@@ -402,6 +402,14 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     if has("joins", "sandbox")? {
         conn.execute_batch("ALTER TABLE joins DROP COLUMN sandbox")?;
     }
+    // A live push subscription's (the desktop app's, `push_live.rs`): the
+    // hash of the token its device listens with, and when it last did.
+    // NULL for a push service's.
+    if !has("push_subs", "listen")? {
+        conn.execute_batch(
+            "ALTER TABLE push_subs ADD COLUMN listen TEXT; ALTER TABLE push_subs ADD COLUMN listened INTEGER;",
+        )?;
+    }
     Ok(())
 }
 
@@ -2227,6 +2235,95 @@ impl Db {
         Ok(())
     }
 
+    /// How many push subscriptions `account` has.
+    pub fn push_sub_count(&self, account: &str) -> anyhow::Result<usize> {
+        let n: i64 =
+            self.c().query_row("SELECT COUNT(*) FROM push_subs WHERE account = ?1", params![account], |r| r.get(0))?;
+        Ok(n as usize)
+    }
+
+    /// Keep a live subscription (`push_live.rs`) with the hash of its listen
+    /// token, in place of `device`'s other live ones (each device listens
+    /// at one). Refused when the endpoint is another account's, or when
+    /// `account` has `most` subscriptions already. The endpoints it took
+    /// the place of, this one too when it was there, whose streams end.
+    pub fn put_live_sub(
+        &self,
+        sub: &LiveSub<'_>,
+        most: usize,
+        now: u64,
+    ) -> anyhow::Result<Result<Vec<String>, LiveRefused>> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        let owner: Option<String> = tx
+            .query_row("SELECT account FROM push_subs WHERE endpoint = ?1", params![sub.endpoint], |r| r.get(0))
+            .optional()?;
+        if owner.as_deref().is_some_and(|o| o != sub.account) {
+            return Ok(Err(LiveRefused::Taken));
+        }
+        let mut gone: Vec<String> = Vec::new();
+        {
+            let mut q = tx.prepare("SELECT endpoint, body FROM push_subs WHERE account = ?1 AND listen IS NOT NULL")?;
+            let rows = q.query_map(params![sub.account], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+            for row in rows {
+                let (endpoint, body) = row?;
+                let device = serde_json::from_str::<serde_json::Value>(&body)
+                    .ok()
+                    .and_then(|v| v["device"].as_str().map(str::to_owned));
+                if endpoint == sub.endpoint || device.as_deref() == Some(sub.device) {
+                    gone.push(endpoint);
+                }
+            }
+        }
+        for e in &gone {
+            tx.execute("DELETE FROM push_subs WHERE endpoint = ?1", params![e])?;
+        }
+        let n: i64 =
+            tx.query_row("SELECT COUNT(*) FROM push_subs WHERE account = ?1", params![sub.account], |r| r.get(0))?;
+        if n as usize >= most {
+            return Ok(Err(LiveRefused::Full));
+        }
+        tx.execute(
+            "INSERT INTO push_subs (endpoint, account, body, listen, listened) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![sub.endpoint, sub.account, sub.body, sub.listen, now as i64],
+        )?;
+        tx.commit()?;
+        Ok(Ok(gone))
+    }
+
+    /// A live subscription by its endpoint: its account, the subscription
+    /// as stored, and its listen token's hash.
+    pub fn live_sub(&self, endpoint: &str) -> anyhow::Result<Option<(String, String, String)>> {
+        Ok(self
+            .c()
+            .query_row(
+                "SELECT account, body, listen FROM push_subs WHERE endpoint = ?1 AND listen IS NOT NULL",
+                params![endpoint],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?)
+    }
+
+    /// Its device listened at `endpoint` just now.
+    pub fn touch_live_sub(&self, endpoint: &str, now: u64) -> anyhow::Result<()> {
+        self.c().execute(
+            "UPDATE push_subs SET listened = ?2 WHERE endpoint = ?1 AND listen IS NOT NULL",
+            params![endpoint, now as i64],
+        )?;
+        Ok(())
+    }
+
+    /// Forget `account`'s live subscriptions nobody listened at since
+    /// `before`: the endpoints.
+    pub fn drop_idle_live_subs(&self, account: &str, before: u64) -> anyhow::Result<Vec<String>> {
+        let c = self.c();
+        let mut q = c.prepare(
+            "DELETE FROM push_subs WHERE account = ?1 AND listen IS NOT NULL AND listened < ?2 RETURNING endpoint",
+        )?;
+        let rows = q.query_map(params![account, before as i64], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     pub fn drop_push_sub(&self, endpoint: &str, account: Option<&str>) -> anyhow::Result<()> {
         match account {
             Some(a) => {
@@ -2696,4 +2793,24 @@ mod tests {
         db.put_device(&pending("d1"), false, 4).unwrap();
         assert_eq!(db.turned_down("a1", "d1").unwrap(), None);
     }
+}
+
+/// A live push subscription to keep ([`Db::put_live_sub`]).
+pub struct LiveSub<'a> {
+    pub endpoint: &'a str,
+    pub account: &'a str,
+    pub device: &'a str,
+    /// The subscription as signed, stored as a push service's is.
+    pub body: &'a str,
+    /// The hash of its listen token.
+    pub listen: &'a str,
+}
+
+/// Why [`Db::put_live_sub`] didn't keep one.
+#[derive(Debug, PartialEq)]
+pub enum LiveRefused {
+    /// The endpoint is another account's.
+    Taken,
+    /// The account has as many subscriptions as it may.
+    Full,
 }

@@ -50,6 +50,10 @@ pub const INVITES: (&str, usize) = ("invite", 240);
 pub const PUSHES: (&str, usize) = ("push", 100_000);
 /// Notifications one daemon relays per hour.
 pub const DAEMON_PUSHES: (&str, usize) = ("daemon-push", 2_000);
+/// Notifications to one account's subscriptions per hour, whoever sends
+/// them: counted before the brake for everyone, so one account's many
+/// subscriptions can't spend it.
+pub const ACCOUNT_PUSHES: (&str, usize) = ("account-push", 3_000);
 /// Looking people up to share with, per account.
 pub const PEOPLE: (&str, usize) = ("people", 120);
 /// Devices asking into an account, per account.

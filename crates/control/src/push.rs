@@ -182,6 +182,9 @@ pub struct Subscribe {
     sub: PushSub,
 }
 
+/// Push subscriptions one account may have, its devices' together.
+const SUBS_MOST: usize = 50;
+
 pub async fn subscribe(State(app): State<Arc<App>>, s: Session, Json(b): Json<Subscribe>) -> R {
     let sub = b.sub;
     if sub.account != s.account || !allowed_endpoint(&app, &sub.endpoint) {
@@ -193,18 +196,31 @@ pub async fn subscribe(State(app): State<Arc<App>>, s: Session, Json(b): Json<Su
     if !sub.signed_by(&cert) {
         return Err(err(StatusCode::FORBIDDEN, "the subscription isn't signed by that device"));
     }
-    app.db.put_push_sub(&sub.endpoint, &s.account, &serde_json::to_string(&sub)?)?;
+    // A live endpoint (`push_live.rs`): kept with the token its device
+    // listens with, which only this answer shows.
+    let live = crate::push_live::is_live(&app, &sub.endpoint);
+    let listen = if live {
+        Some(crate::push_live::subscribe(&app, &sub, SUBS_MOST)?)
+    } else {
+        // A push service's: the same endpoint again from another account
+        // takes it over, as a browser that signs into another account
+        // keeps its endpoint. (Whoever takes one can't read what's sent.)
+        let mine = app.db.push_sub_account(&sub.endpoint)?.as_deref() == Some(s.account.as_str());
+        if !mine && app.db.push_sub_count(&s.account)? >= SUBS_MOST {
+            return Err(err(StatusCode::TOO_MANY_REQUESTS, "too many push subscriptions; turn some off"));
+        }
+        app.db.put_push_sub(&sub.endpoint, &s.account, &serde_json::to_string(&sub)?)?;
+        None
+    };
     // The daemons that serve them pick it up now.
     let mut ds: Vec<String> = app.db.daemons(&s.account)?.into_iter().map(|d| d.id).collect();
     ds.extend(crate::teams::reachable(&app, &s.account)?);
     app.relay.nudge(&ds);
     app.analytics.capture(&s.account, "push turned on", json!({ "service": push_service(&app, &sub.endpoint) }));
-    // A live endpoint: the token its device listens with (`push_live.rs`),
-    // in this answer only.
-    if crate::push_live::is_live(&app, &sub.endpoint) {
-        return Ok(Json(json!({ "listen": app.live.token(&app, &sub.endpoint)? })));
+    match listen {
+        Some(listen) => Ok(Json(json!({ "listen": listen }))),
+        None => Ok(Json(json!({}))),
     }
-    Ok(Json(json!({})))
 }
 
 /// Which push service an endpoint is at (its host), never the endpoint.
@@ -260,6 +276,7 @@ pub async fn daemon_subs(State(app): State<Arc<App>>, d: DaemonAuth) -> R {
         if muted(&app, &a, Kind::Machines)? {
             continue;
         }
+        crate::push_live::forget_idle(&app, &a)?;
         // Passed on as stored (signed by the device; control never reads it).
         subs.extend(app.db.push_subs(&a)?);
     }
@@ -351,6 +368,7 @@ pub fn notify_with(
 }
 
 async fn send_own(app: &App, sub: &PushSub, msg: &[u8]) -> Result<(), ApiError> {
+    app.limits.check_account(crate::limit::ACCOUNT_PUSHES, &sub.account)?;
     app.limits.check_all(crate::limit::PUSHES)?;
     let bad = |_| err(StatusCode::BAD_REQUEST, "subscription keys");
     let (ua, auth) = (B64.decode(&sub.p256dh).map_err(bad)?, B64.decode(&sub.auth).map_err(bad)?);
@@ -388,6 +406,7 @@ pub(crate) async fn push_account(app: &App, account: &str, msg: &[u8], options: 
             }
         }
         let sent = async {
+            app.limits.check_account(crate::limit::ACCOUNT_PUSHES, account)?;
             app.limits.check_all(crate::limit::PUSHES)?;
             let bad = |_| err(StatusCode::BAD_REQUEST, "subscription keys");
             let (ua, auth) = (B64.decode(&sub.p256dh).map_err(bad)?, B64.decode(&sub.auth).map_err(bad)?);
@@ -426,6 +445,7 @@ pub async fn daemon_send(State(app): State<Arc<App>>, d: DaemonAuth, Json(b): Js
     }
     // A brake on how much one daemon has control relay, and on all of them.
     app.limits.check_daemon(crate::limit::DAEMON_PUSHES, &d.cert.device)?;
+    app.limits.check_account(crate::limit::ACCOUNT_PUSHES, &account)?;
     app.limits.check_all(crate::limit::PUSHES)?;
     let body = base64::engine::general_purpose::STANDARD
         .decode(&b.body)

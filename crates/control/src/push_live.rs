@@ -14,11 +14,17 @@
 //! encrypted: control can't read a daemon's, as with any push service.
 //!
 //! Only the device that subscribed can listen. `subscribe` answers a live
-//! endpoint with its listen token (a MAC of the endpoint, under a key that
-//! never leaves control), which `GET /api/push/live/{id}` takes as a bearer.
-//! The endpoint itself isn't enough: the daemons that serve the account see
-//! it. A stream also needs its subscription still there, and its device
-//! approved and not revoked, and it ends when either changes.
+//! endpoint with its listen token, random and made for that subscription
+//! alone (control keeps only its hash, with the subscription), which
+//! `GET /api/push/live/{id}` takes as a bearer. The endpoint itself isn't
+//! enough: the daemons that serve the account see it. Nor can anyone else
+//! take it over: an endpoint that's one account's is refused to another,
+//! and a stream needs the subscription it opened on still there, as it was
+//! (account, device, token), its device approved and not revoked. It ends
+//! when any of that changes, and when the subscription is replaced.
+//!
+//! Each device listens at one live endpoint (subscribing again replaces
+//! it), and one nobody has listened at for 30 days is forgotten.
 //!
 //! Nothing waits for a device that isn't listening, beyond a few minutes
 //! for one that drops and comes back (`Last-Event-ID`).
@@ -29,24 +35,27 @@ use std::{
     collections::{HashMap, VecDeque},
     convert::Infallible,
     sync::{
-        Arc, Mutex, OnceLock,
+        Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
 
-use arugula_e2e::push::PushSub;
+use arugula_e2e::{now_ms, push::PushSub};
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::sse::{Event, KeepAlive, Sse},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
-use hmac::{Hmac, KeyInit, Mac};
-use sha2::Sha256;
 use tokio::sync::broadcast;
 
-use crate::{ApiError, App, err};
+use crate::{
+    ApiError, App,
+    auth::hash,
+    db::{LiveRefused, LiveSub},
+    err,
+};
 
 /// Where live endpoints are, on any of control's sites.
 pub(crate) const PATH: &str = "/api/push/live/";
@@ -59,6 +68,8 @@ const KEEP_MAX: usize = 32;
 const PER_ENDPOINT: usize = 4;
 /// How often an open stream checks its subscription and device again.
 const RECHECK: Duration = Duration::from_secs(60);
+/// A live subscription nobody listened at for this long is forgotten.
+const IDLE_MS: u64 = 30 * 24 * 3600 * 1000;
 
 /// One notice, as a push service would have been handed it.
 struct Notice {
@@ -97,7 +108,6 @@ impl Slot {
 pub struct Live {
     slots: Mutex<HashMap<String, Slot>>,
     next: AtomicU64,
-    key: OnceLock<[u8; 32]>,
 }
 
 impl Live {
@@ -141,28 +151,6 @@ impl Live {
     pub(crate) fn close(&self, endpoint: &str) {
         self.slots.lock().unwrap().remove(endpoint);
     }
-
-    /// The token that listens on `endpoint`.
-    pub(crate) fn token(&self, app: &App, endpoint: &str) -> anyhow::Result<String> {
-        let key = match self.key.get() {
-            Some(k) => *k,
-            None => {
-                let k = match app.db.setting("push-live")? {
-                    Some(h) => hex::decode(h)?.try_into().map_err(|_| anyhow::anyhow!("bad push-live key"))?,
-                    None => {
-                        let k = arugula_e2e::random::<32>();
-                        app.db.set_setting("push-live", &hex::encode(k))?;
-                        k
-                    }
-                };
-                *self.key.get_or_init(|| k)
-            }
-        };
-        let mut mac = Hmac::<Sha256>::new_from_slice(&key).expect("any key length");
-        mac.update(b"arugula push live v1\n");
-        mac.update(endpoint.as_bytes());
-        Ok(B64.encode(mac.finalize().into_bytes()))
-    }
 }
 
 /// `endpoint` is a live one: on one of control's sites, at `PATH` and an
@@ -181,22 +169,61 @@ fn valid_id(id: &str) -> bool {
     id.len() == 32 && id.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// Whether the subscription at `endpoint` may still listen: there, signed
-/// by an approved device of its account that isn't revoked.
-fn still_ok(app: &App, endpoint: &str) -> anyhow::Result<Option<String>> {
-    let Some(account) = app.db.push_sub_account(endpoint)? else { return Ok(None) };
-    let sub = app
-        .db
-        .push_subs(&account)?
-        .into_iter()
-        .filter_map(|v| serde_json::from_value::<PushSub>(v).ok())
-        .find(|s| s.endpoint == endpoint);
-    let Some(sub) = sub else { return Ok(None) };
-    let Some((cert, true)) = app.db.device(&account, &sub.device)? else { return Ok(None) };
-    if !sub.signed_by(&cert) || app.db.revocations(&account)?.iter().any(|r| r.device == sub.device) {
-        return Ok(None);
+/// Keep `sub` (signed and checked by `push::subscribe`) at its live
+/// endpoint, in place of its device's other live one: the listen token,
+/// shown here alone. `most` subscriptions an account may have.
+pub(crate) fn subscribe(app: &App, sub: &PushSub, most: usize) -> Result<String, ApiError> {
+    forget_idle(app, &sub.account)?;
+    let token = B64.encode(arugula_e2e::random::<32>());
+    let body = serde_json::to_string(sub).map_err(anyhow::Error::from)?;
+    let listen = hash(&token);
+    let live =
+        LiveSub { endpoint: &sub.endpoint, account: &sub.account, device: &sub.device, body: &body, listen: &listen };
+    match app.db.put_live_sub(&live, most, now_ms())? {
+        Ok(gone) => {
+            // Their streams end: the one this replaced too.
+            for e in gone {
+                app.live.close(&e);
+            }
+            Ok(token)
+        }
+        Err(LiveRefused::Taken) => Err(err(StatusCode::CONFLICT, "that endpoint is someone else's")),
+        Err(LiveRefused::Full) => Err(err(StatusCode::TOO_MANY_REQUESTS, "too many push subscriptions; turn some off")),
     }
-    Ok(Some(account))
+}
+
+/// Forget `account`'s live subscriptions nobody listened at lately.
+pub(crate) fn forget_idle(app: &App, account: &str) -> anyhow::Result<()> {
+    for e in app.db.drop_idle_live_subs(account, now_ms().saturating_sub(IDLE_MS))? {
+        app.live.close(&e);
+    }
+    Ok(())
+}
+
+/// Who opened a stream: what its subscription was then.
+#[derive(Clone)]
+struct Holder {
+    account: String,
+    device: String,
+    listen: String,
+}
+
+/// Whether the subscription at `endpoint` is still the one `holder` opened
+/// a stream on: there, by the same account, device and token, signed by an
+/// approved device of the account that isn't revoked.
+fn still_ok(app: &App, endpoint: &str, holder: &Holder) -> anyhow::Result<bool> {
+    let Some((account, body, listen)) = app.db.live_sub(endpoint)? else { return Ok(false) };
+    let Ok(sub) = serde_json::from_str::<PushSub>(&body) else { return Ok(false) };
+    if account != holder.account || sub.account != account || sub.device != holder.device || listen != holder.listen {
+        return Ok(false);
+    }
+    let Some((cert, true)) = app.db.device(&account, &sub.device)? else { return Ok(false) };
+    Ok(sub.signed_by(&cert) && !app.db.revocations(&account)?.iter().any(|r| r.device == sub.device))
+}
+
+/// Constant time: the token is the only secret here.
+fn same(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |d, (x, y)| d | (x ^ y)) == 0
 }
 
 /// `GET /api/push/live/{id}`: Server-Sent Events, one notice each, as its
@@ -218,15 +245,18 @@ pub async fn live(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .unwrap_or_default();
-    let want = app.live.token(&app, &endpoint)?;
-    // Constant time: the token is the only secret here.
-    let same = given.len() == want.len() && given.bytes().zip(want.bytes()).fold(0u8, |d, (a, b)| d | (a ^ b)) == 0;
-    if !same {
+    let Some((account, body, listen)) = app.db.live_sub(&endpoint)? else {
+        return Err(err(StatusCode::NOT_FOUND, "that subscription is gone"));
+    };
+    if !same(&hash(given), &listen) {
         return Err(err(StatusCode::UNAUTHORIZED, "the listen token this endpoint's subscribe answered"));
     }
-    if still_ok(&app, &endpoint)?.is_none() {
-        return Err(err(StatusCode::NOT_FOUND, "that subscription is gone, or its device is"));
+    let device = serde_json::from_str::<PushSub>(&body).map(|s| s.device).unwrap_or_default();
+    let holder = Holder { account, device, listen };
+    if !still_ok(&app, &endpoint, &holder)? {
+        return Err(err(StatusCode::NOT_FOUND, "that subscription's device is gone"));
     }
+    app.db.touch_live_sub(&endpoint, now_ms())?;
     let last = headers.get("last-event-id").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
     let Some((missed, rx)) = app.live.listen(&endpoint, last) else {
         return Err(err(StatusCode::TOO_MANY_REQUESTS, "this endpoint has streams open already"));
@@ -235,10 +265,11 @@ pub async fn live(
     struct Open {
         app: Arc<App>,
         endpoint: String,
-        rx: broadcast::Receiver<Arc<Notice>>,
+        holder: Holder,
+        rx: Next,
         pending: VecDeque<Event>,
     }
-    let open = Open { app, endpoint, rx, pending: missed.iter().map(|n| event(n)).collect() };
+    let open = Open { app, endpoint, holder, rx, pending: missed.iter().map(|n| event(n)).collect() };
     let stream = futures_util::stream::unfold(open, move |mut o| async move {
         loop {
             if let Some(ev) = o.pending.pop_front() {
@@ -247,8 +278,8 @@ pub async fn live(
             tokio::select! {
                 got = o.rx.recv() => match got {
                     Ok(n) => {
-                        // Revoked or unsubscribed since: no more.
-                        if !matches!(still_ok(&o.app, &o.endpoint), Ok(Some(_))) {
+                        // Revoked, unsubscribed or replaced since: no more.
+                        if !matches!(still_ok(&o.app, &o.endpoint, &o.holder), Ok(true)) {
                             return None;
                         }
                         return Some((Ok(event(&n)), o));
@@ -259,9 +290,11 @@ pub async fn live(
                     Err(broadcast::error::RecvError::Closed) => return None,
                 },
                 _ = tokio::time::sleep(RECHECK) => {
-                    if !matches!(still_ok(&o.app, &o.endpoint), Ok(Some(_))) {
+                    if !matches!(still_ok(&o.app, &o.endpoint, &o.holder), Ok(true)) {
                         return None;
                     }
+                    // Listened at: not idle.
+                    let _ = o.app.db.touch_live_sub(&o.endpoint, now_ms());
                 }
             }
         }
